@@ -69,7 +69,44 @@ export function VaultPagePreview({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hovered = useRef(false)
   const focused = useRef(false)
+  const linkIdentity = JSON.stringify([
+    vaultId,
+    link.id,
+    targetNoteId,
+    link.target_relative_path,
+  ])
+  const previousLinkIdentity = useRef(linkIdentity)
+  const [mismatchedLinkIdentity, setMismatchedLinkIdentity] = useState<
+    string | null
+  >(null)
   const preview = useVaultPagePreview(vaultId, targetNoteId || undefined, intent && canOpen)
+  const page = preview.data
+  const path = page?.file.relative_path
+  const pageMatchesTarget = Boolean(
+    page
+    && targetNoteId
+    && page.file.vault_id === vaultId
+    && page.file.note_id === targetNoteId,
+  )
+  const observedPathMismatch = Boolean(
+    pageMatchesTarget
+    && link.target_relative_path
+    && path !== link.target_relative_path,
+  )
+  const pathMismatchLatched = mismatchedLinkIdentity === linkIdentity
+  const navigationBlocked = observedPathMismatch || pathMismatchLatched
+  const previewExcerpts = useMemo(
+    () => pageMatchesTarget && page ? excerpts(page) : [],
+    [page, pageMatchesTarget],
+  )
+  const canDisplay = Boolean(
+    !preview.isError
+    && pageMatchesTarget
+    && page
+    && !navigationBlocked
+    && isCanonicalRelativePath(path)
+    && path === link.target_relative_path
+  )
 
   const cancelPendingIntent = useCallback(() => {
     if (timer.current) {
@@ -86,7 +123,7 @@ export function VaultPagePreview({
   }, [cancelPendingIntent])
 
   const beginIntent = useCallback(() => {
-    if (!canOpen || timer.current) return
+    if (!canOpen || navigationBlocked || timer.current) return
     setPending(true)
     timer.current = setTimeout(() => {
       timer.current = null
@@ -94,7 +131,7 @@ export function VaultPagePreview({
       setIntent(true)
       setOpen(true)
     }, previewIntentDelayMs)
-  }, [canOpen])
+  }, [canOpen, navigationBlocked])
 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current)
@@ -109,27 +146,26 @@ export function VaultPagePreview({
     return () => document.removeEventListener('keydown', closeOnEscape)
   }, [closePreview, open, pending])
 
-  const page = preview.data
-  const path = page?.file.relative_path
-  const pathMismatch = Boolean(
-    page
-    && link.target_relative_path
-    && path !== link.target_relative_path,
-  )
-  const previewExcerpts = useMemo(
-    () => page ? excerpts(page) : [],
-    [page],
-  )
-  const canDisplay = Boolean(
-    !preview.isError
-    && page
-    && isCanonicalRelativePath(path)
-    && path === link.target_relative_path
-  )
+  useEffect(() => {
+    if (previousLinkIdentity.current === linkIdentity) return
+    previousLinkIdentity.current = linkIdentity
+    setMismatchedLinkIdentity(null)
+    closePreview()
+  }, [closePreview, linkIdentity])
 
   useEffect(() => {
-    if (preview.isError || pathMismatch) closePreview()
-  }, [closePreview, pathMismatch, preview.isError])
+    if (observedPathMismatch) {
+      setMismatchedLinkIdentity(linkIdentity)
+      closePreview()
+      return
+    }
+    if (preview.isError) closePreview()
+  }, [
+    closePreview,
+    linkIdentity,
+    observedPathMismatch,
+    preview.isError,
+  ])
 
   return (
     <Popover
@@ -156,7 +192,7 @@ export function VaultPagePreview({
           if (!hovered.current) cancelPendingIntent()
         }}
         onClick={() => {
-          if (canOpen && targetNoteId && !pathMismatch) {
+          if (canOpen && targetNoteId && !navigationBlocked) {
             onNavigate?.(targetNoteId)
           }
         }}
