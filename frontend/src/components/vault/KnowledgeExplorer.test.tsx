@@ -62,12 +62,42 @@ const files = [
 ] as const
 
 function pageFor(noteId?: string) {
-  const suffix = noteId === 'note:two' ? 'Two' : 'One'
+  const resolvedNoteId = noteId || 'note:one'
+  const canonical = {
+    'note:two': { title: 'Two', relativePath: 'notes/two.md' },
+    'note:linked': {
+      title: 'Linked canonical',
+      relativePath: 'notes/linked.md',
+    },
+    'note:graph-linked': {
+      title: 'Graph linked',
+      relativePath: 'notes/graph-linked.md',
+    },
+    'note:archived': {
+      title: 'Persisted one',
+      relativePath: 'archive/persisted-one.md',
+    },
+  }[resolvedNoteId] ?? { title: 'One', relativePath: 'notes/one.md' }
   return {
+    file: {
+      id: `vault_file:${resolvedNoteId}`,
+      note_id: resolvedNoteId,
+      vault_id: 'vault:one',
+      relative_path: canonical.relativePath,
+      file_kind: 'markdown',
+      format: 'markdown',
+      content_hash: 'a'.repeat(64),
+      parse_status: 'parsed',
+      size_bytes: 5,
+      modified_ns: 1,
+      encoding: 'utf-8',
+      newline: 'lf',
+      deleted_state: 'present',
+    },
     note: {
-      id: noteId || 'note:one',
-      title: suffix,
-      content: `# ${suffix}`,
+      id: resolvedNoteId,
+      title: canonical.title,
+      content: `# ${canonical.title}`,
       properties: {},
       tags: [],
     },
@@ -231,15 +261,13 @@ async function selectFile(name: string) {
   fireEvent.click(screen.getByRole('treeitem', { name }))
   await waitFor(() => {
     expect(screen.getByRole('tab', {
-      name: name.endsWith('one.md') ? 'one' : 'two',
+      name: name.endsWith('one.md') ? /one/i : /two/i,
     })).toBeInTheDocument()
   })
 }
 
 function selectLocalGraph() {
-  const graphTab = screen.getByRole('tab', { name: 'knowledge.localGraph' })
-  graphTab.focus()
-  fireEvent.keyDown(graphTab, { key: 'Enter' })
+  fireEvent.click(screen.getByRole('button', { name: 'knowledge.localGraph' }))
 }
 
 describe('KnowledgeExplorer durable workspace integration', () => {
@@ -383,7 +411,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
       .toMatchObject({
         noteId: 'note:two',
-        title: 'Canonical Two',
+        title: 'Two',
         relativePath: 'notes/two.md',
       })
   })
@@ -410,7 +438,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
       .toMatchObject({
         noteId: 'note:two',
-        title: 'Mention Two',
+        title: 'Two',
         relativePath: 'notes/two.md',
       })
   })
@@ -477,11 +505,10 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     const paneThree = screen.getByRole('region', {
       name: /knowledge\.knowledgePane pane-3/,
     })
-    const graphTab = within(paneThree).getByRole('tab', {
+    const graphTab = within(paneThree).getByRole('button', {
       name: 'knowledge.localGraph',
     })
-    graphTab.focus()
-    fireEvent.keyDown(graphTab, { key: 'Enter' })
+    fireEvent.click(graphTab)
     await waitFor(() => {
       expect(within(paneThree).getByText('Local graph content'))
         .toBeInTheDocument()
@@ -556,15 +583,15 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       name: /knowledge\.knowledgePane pane-1/,
     })
     expect(
-      within(paneRegion).getByRole('tab', { name: 'knowledge.reader' }),
-    ).toHaveAttribute('data-state', 'active')
+      within(paneRegion).getByRole('button', { name: 'knowledge.reader' }),
+    ).toHaveAttribute('aria-pressed', 'true')
 
-    fireEvent.click(within(paneRegion).getByRole('tab', { name: 'one' }))
+    fireEvent.click(within(paneRegion).getByRole('tab', { name: /one/i }))
 
     await waitFor(() => {
       expect(
-        within(paneRegion).getByRole('tab', { name: 'knowledge.localGraph' }),
-      ).toHaveAttribute('data-state', 'active')
+        within(paneRegion).getByRole('button', { name: 'knowledge.localGraph' }),
+      ).toHaveAttribute('aria-pressed', 'true')
     })
     const workspace = useKnowledgeWorkspaceStore.getState()
     expect(workspace.panes['pane-1'].tabs.map((tab) => [
@@ -588,7 +615,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     await renderExplorer()
 
     expect(screen.getByText('knowledge.workspaceLoading')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'one' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /one/i })).toBeInTheDocument()
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
       .toHaveLength(1)
   })
@@ -605,7 +632,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'knowledge.workspaceSaveError',
     )
-    expect(screen.getByRole('tab', { name: 'one' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /one/i })).toBeInTheDocument()
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
       .toHaveLength(1)
   })
@@ -634,7 +661,7 @@ describe('KnowledgeExplorer query states', () => {
     await selectFile('notes/one.md')
 
     expect(screen.getByText('knowledge.linksLoading')).toBeInTheDocument()
-    expect(screen.getByText('knowledge.noProperties')).toBeInTheDocument()
+    expect(screen.getByText('No properties')).toBeInTheDocument()
     selectLocalGraph()
     await waitFor(() => {
       expect(screen.getByText('knowledge.graphLoading')).toBeInTheDocument()

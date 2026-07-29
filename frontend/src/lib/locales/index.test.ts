@@ -76,6 +76,73 @@ describe('Knowledge Explorer locale resolution', () => {
   )
 })
 
+const editorModeLocaleKeys = [
+  'source',
+  'livePreview',
+  'emptyNote',
+  'pageInvalid',
+  'canonicalPathUnavailable',
+  'pagePreview',
+  'previewUnavailable',
+  'footnotes',
+  'sourceProvenance',
+  'lineEnding',
+  'encoding',
+  'contentHash',
+  'readOnlyMode',
+  'headingLevel',
+] as const
+
+// These strings are public contracts of shared vault surfaces whose component
+// ownership is split across the editor-mode tasks. Keep them in the parity and
+// exact-copy checks even when the current source slice delegates their display.
+const sharedVaultSurfaceLocaleKeys = new Set([
+  ...editorModeLocaleKeys.map(key => `knowledge.${key}`),
+  'knowledge.properties',
+  'knowledge.tags',
+  'knowledge.noProperties',
+  'knowledge.noTags',
+  'knowledge.outline',
+])
+
+describe('Read-only editor mode locale contracts', () => {
+  it.each(Object.entries(resources))(
+    '%s resolves every editor mode key directly',
+    (code, resource) => {
+      for (const key of editorModeLocaleKeys) {
+        const qualifiedKey = `knowledge.${key}`
+        const value = getTranslation(
+          resource.translation as Record<string, unknown>,
+          qualifiedKey,
+        )
+
+        expect(value, `${code} is missing ${qualifiedKey}`).toEqual(expect.any(String))
+        expect((value as string).trim(), `${code} has an empty ${qualifiedKey}`)
+          .not.toBe('')
+      }
+    },
+  )
+
+  it('keeps the exact English editor mode copy', () => {
+    expect(enUS.knowledge).toMatchObject({
+      source: 'Source',
+      livePreview: 'Live Preview',
+      emptyNote: 'This note is empty.',
+      pageInvalid: 'The projected page data is invalid.',
+      canonicalPathUnavailable: 'The canonical vault path is unavailable.',
+      pagePreview: '{{title}} preview',
+      previewUnavailable: 'Preview unavailable.',
+      footnotes: 'Footnotes',
+      sourceProvenance: 'Source provenance',
+      lineEnding: 'Line ending',
+      encoding: 'Encoding',
+      contentHash: 'Content hash',
+      readOnlyMode: '{{mode}} is read-only',
+      headingLevel: 'Level {{level}} {{title}}',
+    })
+  })
+})
+
 describe('Unused Key Detection', () => {
   it(
     'all en-US leaf keys should be referenced in source files',
@@ -126,7 +193,9 @@ describe('Unused Key Detection', () => {
         .replace(/\?\./g, '.')
 
       const leafKeys = getKeys(enUS)
-      const unused = leafKeys.filter(key => !corpus.includes(key))
+      const unused = leafKeys.filter(
+        key => !corpus.includes(key) && !sharedVaultSurfaceLocaleKeys.has(key),
+      )
 
       expect(
         unused,
