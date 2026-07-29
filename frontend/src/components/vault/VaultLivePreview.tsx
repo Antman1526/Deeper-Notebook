@@ -21,8 +21,8 @@ export function VaultLivePreview({
   onNavigate,
 }: VaultLivePreviewProps) {
   const extensions = useMemo(
-    () => [livePreviewExtension({ links, onNavigate })],
-    [links, onNavigate],
+    () => [livePreviewExtension({ links, onNavigate, source: markdown })],
+    [links, markdown, onNavigate],
   )
 
   return (

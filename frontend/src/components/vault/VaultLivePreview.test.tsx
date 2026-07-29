@@ -57,6 +57,28 @@ describe('VaultLivePreview', () => {
     expect(onNavigate).toHaveBeenCalledWith('note:research')
   })
 
+  it('navigates by a raw UTF-8 span after a preceding CRLF', () => {
+    const prefix = 'é\r\n'
+    const linkSource = '[[Research]]'
+    const markdown = `${prefix}${linkSource}`
+    const onNavigate = vi.fn()
+    render(
+      <VaultLivePreview
+        title="Plan"
+        markdown={markdown}
+        links={[{
+          ...resolvedLinkFixture,
+          source_start: new TextEncoder().encode(prefix).length,
+          source_end: new TextEncoder().encode(markdown).length,
+        }]}
+        onNavigate={onNavigate}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Research' }))
+    expect(onNavigate).toHaveBeenCalledWith('note:research')
+  })
+
   it('does not navigate unresolved, external, or attachment links', () => {
     const onNavigate = vi.fn()
     const external = '[External](https://example.test)'

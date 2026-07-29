@@ -1,6 +1,7 @@
-import { markdown } from '@codemirror/lang-markdown'
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorState } from '@codemirror/state'
-import { describe, expect, it } from 'vitest'
+import { Decoration } from '@codemirror/view'
+import { describe, expect, it, vi } from 'vitest'
 
 import { buildLivePreviewDecorationRecords } from './live-preview'
 
@@ -8,7 +9,7 @@ function previewState(doc: string, anchor = doc.length) {
   return EditorState.create({
     doc,
     selection: { anchor },
-    extensions: [markdown()],
+    extensions: [markdown({ base: markdownLanguage })],
   })
 }
 
@@ -62,6 +63,52 @@ describe('buildLivePreviewDecorationRecords', () => {
 
     expect(buildLivePreviewDecorationRecords(state, [{ from: 0, to: state.doc.length }]))
       .toEqual([])
+  })
+
+  it('does not decorate a footnote parser artifact as a Markdown link', () => {
+    const state = previewState('evidence[^1]\n\n[^1]: source')
+
+    expect(buildLivePreviewDecorationRecords(state, [{ from: 0, to: state.doc.length }])
+      .filter((record) => record.kind.startsWith('markdown-link')))
+      .toEqual([])
+  })
+
+  it.each([
+    ['tag', 'dn-live-preview-tag', ['footnote-mark', 'math-mark']],
+    ['footnote', 'dn-live-preview-footnote', ['tag', 'math-mark']],
+    ['math', 'dn-live-preview-math', ['tag', 'footnote-mark']],
+  ] as const)('isolates a failed %s decoration from peer scanner constructs', (
+    _name,
+    failedClass,
+    survivingKinds,
+  ) => {
+    const state = previewState('#tag $x$ [^1]')
+    const originalMark = Decoration.mark
+    const mark = vi.spyOn(Decoration, 'mark').mockImplementation((spec = {}) => {
+      if (spec.class === failedClass) throw new Error('synthetic decoration failure')
+      return originalMark(spec)
+    })
+
+    try {
+      const records = buildLivePreviewDecorationRecords(state, [{ from: 0, to: state.doc.length }])
+      expect(records.some((record) => record.decoration.spec.class === failedClass)).toBe(false)
+      expect(records.map((record) => record.kind))
+        .toEqual(expect.arrayContaining([...survivingKinds]))
+    } finally {
+      mark.mockRestore()
+    }
+  })
+
+  it('uses the state-managed syntax tree without a full parser parse', () => {
+    const state = previewState('# Heading\n\n~~strike~~\n\n- [ ] task')
+    const parse = vi.spyOn(markdownLanguage.parser, 'parse')
+
+    try {
+      buildLivePreviewDecorationRecords(state, [{ from: 0, to: state.doc.length }])
+      expect(parse).not.toHaveBeenCalled()
+    } finally {
+      parse.mockRestore()
+    }
   })
 
   it.each([
