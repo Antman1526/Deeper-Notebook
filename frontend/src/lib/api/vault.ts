@@ -91,7 +91,7 @@ export type VaultGraph = z.infer<typeof vaultGraphSchema>
 
 function assertNoAbsolutePath(value: unknown): void {
   if (typeof value === 'string') {
-    if (/^(?:[\\/]{2}|\/|[A-Za-z]:[\\/])/.test(value)) throw new Error('Vault response contained an absolute path')
+    if (/^(?:[\\/]|[A-Za-z]:[\\/])/.test(value)) throw new Error('Vault response contained an absolute path')
     return
   }
   if (Array.isArray(value)) value.forEach(assertNoAbsolutePath)
