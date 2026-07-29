@@ -12,26 +12,33 @@ export const knowledgeViewModeSchema = z.enum([
 ])
 export const splitDirectionSchema = z.enum(['horizontal', 'vertical'])
 
-const relativePathSchema = z.string().min(1).max(4096).superRefine((value, context) => {
-  if (/^(?:[\\/]|[A-Za-z]:)/.test(value)) {
-    context.addIssue({
-      code: 'custom',
-      message: 'note path must be relative to its vault',
-    })
-  }
-  if (value.split(/[\\/]/).includes('..')) {
-    context.addIssue({
-      code: 'custom',
-      message: 'note path must not escape its vault',
-    })
-  }
-})
+export const canonicalVaultRelativePathSchema = z.string()
+  .min(1)
+  .max(4096)
+  .superRefine((value, context) => {
+    const segments = value.split('/')
+    if (
+      !value
+      || value.trim() !== value
+      || value.startsWith('/')
+      || /^[A-Za-z]:/.test(value)
+      || value.includes('\\')
+      || value.includes('\0')
+      || segments.some((segment) =>
+        !segment || segment === '.' || segment === '..')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'value must be a canonical vault-relative path',
+      })
+    }
+  })
 
 export const openKnowledgeTabSchema = z.object({
   vaultId: z.string().min(1).max(128),
   noteId: z.string().min(1).max(128),
   title: z.string().min(1).max(512),
-  relativePath: relativePathSchema,
+  relativePath: canonicalVaultRelativePathSchema,
   viewMode: knowledgeViewModeSchema.optional(),
 }).strict()
 
@@ -40,7 +47,7 @@ export const knowledgeTabWireSchema = z.object({
   vault_id: z.string().min(1).max(128),
   note_id: z.string().min(1).max(128),
   title: z.string().min(1).max(512),
-  relative_path: relativePathSchema,
+  relative_path: canonicalVaultRelativePathSchema,
   view_mode: knowledgeViewModeSchema,
 }).strict()
 

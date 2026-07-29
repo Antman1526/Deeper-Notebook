@@ -522,6 +522,48 @@ def test_native_close_waits_for_frontend_workspace_flush(
     assert cleaned == [True]
 
 
+def test_native_close_flush_does_not_block_the_appkit_event_thread():
+    threading = window_module.threading
+
+    class Event:
+        def __init__(self):
+            self.callback = None
+
+        def __iadd__(self, callback):
+            self.callback = callback
+            return self
+
+    closing = Event()
+    flush_started = threading.Event()
+    destroyed = threading.Event()
+    evaluation_threads: list[int] = []
+    native_event_thread = threading.get_ident()
+
+    def evaluate_js(_source, callback=None):
+        evaluation_threads.append(threading.get_ident())
+        flush_started.set()
+        if callback is not None:
+            callback({"ok": True})
+
+    fake_window = SimpleNamespace(
+        events=SimpleNamespace(closing=closing),
+        evaluate_js=evaluate_js,
+        destroy=destroyed.set,
+    )
+    frontend_loaded = threading.Event()
+    frontend_loaded.set()
+
+    window_module._install_workspace_flush_close_gate(
+        fake_window,
+        frontend_loaded,
+    )
+
+    assert closing.callback() is False
+    assert flush_started.wait(timeout=1)
+    assert destroyed.wait(timeout=1)
+    assert evaluation_threads != [native_event_thread]
+
+
 def test_relaunch_helper_starts_only_after_the_flush_gated_window_closes(
     monkeypatch: pytest.MonkeyPatch,
 ):

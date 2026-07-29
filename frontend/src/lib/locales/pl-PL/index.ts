@@ -1261,3 +1261,20 @@ export const plPL = {
     },
   },
 }
+
+Object.assign(plPL.knowledge, {
+  source: "Źródło",
+  livePreview: "Podgląd na żywo",
+  emptyNote: "Ta notatka jest pusta.",
+  pageInvalid: "Dane projekcji strony są nieprawidłowe.",
+  canonicalPathUnavailable: "Kanoniczna ścieżka sejfu jest niedostępna.",
+  pagePreview: "Podgląd: {{title}}",
+  previewUnavailable: "Podgląd niedostępny.",
+  footnotes: "Przypisy",
+  sourceProvenance: "Pochodzenie źródła",
+  lineEnding: "Zakończenie linii",
+  encoding: "Kodowanie",
+  contentHash: "Skrót treści",
+  readOnlyMode: "{{mode}} jest tylko do odczytu",
+  headingLevel: "Poziom {{level}} {{title}}",
+})

@@ -51,6 +51,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -180,10 +181,43 @@ class SingletonHandle:
                         self.pid_file, exc)
 
 
+@dataclass
+class SignalHandlerRegistration:
+    """Own the POSIX wakeup pipe used by the native-loop signal bridge."""
+
+    wakeup_read_fd: int | None = None
+    wakeup_write_fd: int | None = None
+    previous_wakeup_fd: int = -1
+    _closed: bool = False
+
+    def close(self) -> None:
+        """Restore the previous wakeup fd and close this registration."""
+        if self._closed:
+            return
+        self._closed = True
+        if self.wakeup_write_fd is not None:
+            try:
+                signal.set_wakeup_fd(self.previous_wakeup_fd)
+            except (OSError, ValueError):
+                pass
+            try:
+                os.write(self.wakeup_write_fd, b"\0")
+            except OSError:
+                pass
+        for descriptor in (self.wakeup_write_fd, self.wakeup_read_fd):
+            if descriptor is None:
+                continue
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
 def acquire_singleton(
     pid_file: Path,
     *,
     on_acquire_callback: Callable[[], None] | None = None,
+    on_signal_cleanup: Callable[[int], None] | None = None,
 ) -> SingletonHandle:
     """Acquire the singleton lock or raise `AlreadyRunning`.
 
@@ -277,7 +311,10 @@ def acquire_singleton(
     # kill from another process). SIGKILL can't be trapped — that's
     # what reap_orphans is for.
     atexit.register(handle.release)
-    _install_signal_handlers(handle)
+    _install_signal_handlers(
+        handle,
+        on_signal_cleanup=on_signal_cleanup,
+    )
 
     if on_acquire_callback is not None:
         try:
@@ -292,7 +329,11 @@ def acquire_singleton(
     return handle
 
 
-def _install_signal_handlers(handle: SingletonHandle) -> None:
+def _install_signal_handlers(
+    handle: SingletonHandle,
+    *,
+    on_signal_cleanup: Callable[[int], None] | None = None,
+) -> SignalHandlerRegistration:
     """Register SIGTERM + SIGINT handlers that release the lock then
     exit normally. macOS's Force Quit sends SIGTERM; Ctrl+C in a
     terminal sends SIGINT. Both should trigger graceful cleanup.
@@ -301,15 +342,35 @@ def _install_signal_handlers(handle: SingletonHandle) -> None:
     the OS produce a core dump). Those cases are caught by the
     next launcher's stale-PID-file detection."""
 
-    def _handler(signum: int, frame) -> None:
+    shutdown_lock = threading.Lock()
+    shutdown_started = False
+
+    def _shutdown(signum: int) -> None:
+        nonlocal shutdown_started
+        with shutdown_lock:
+            if shutdown_started:
+                return
+            shutdown_started = True
         log.info(
-            "Received signal %s — releasing singleton + exiting",
+            "Received signal %s — cleaning runtime + exiting",
             signal.Signals(signum).name if hasattr(signal, "Signals") else signum,
         )
-        handle.release()
-        # sys.exit raises SystemExit which lets atexit handlers run;
-        # using os._exit would skip them.
-        sys.exit(128 + signum)
+        try:
+            if on_signal_cleanup is not None:
+                on_signal_cleanup(signum)
+        except BaseException:
+            log.exception("Signal-triggered runtime cleanup failed")
+        finally:
+            handle.release()
+            # Native Cocoa/WebKit loops may catch SystemExit raised by a Python
+            # signal handler. Runtime cleanup and singleton release have both
+            # completed, so terminate unconditionally instead of relying on
+            # the native event loop to unwind back through desktop.app.run().
+            logging.shutdown()
+            os._exit(128 + signum)
+
+    def _handler(signum: int, frame) -> None:
+        _shutdown(signum)
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
@@ -319,6 +380,57 @@ def _install_signal_handlers(handle: SingletonHandle) -> None:
             # on platforms that don't allow handlers for the signal.
             # Best-effort — atexit still covers the normal-exit case.
             log.debug("Could not install handler for %s: %s", sig, exc)
+
+    registration = SignalHandlerRegistration()
+    if sys.platform == "win32" or not hasattr(signal, "set_wakeup_fd"):
+        return registration
+
+    read_fd: int | None = None
+    write_fd: int | None = None
+    try:
+        read_fd, write_fd = os.pipe()
+        os.set_blocking(write_fd, False)
+        previous_wakeup_fd = signal.set_wakeup_fd(
+            write_fd,
+            warn_on_full_buffer=False,
+        )
+    except (OSError, ValueError) as exc:
+        log.debug("Could not install native-loop signal bridge: %s", exc)
+        for descriptor in (write_fd, read_fd):
+            if descriptor is None:
+                continue
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        return registration
+
+    registration = SignalHandlerRegistration(
+        wakeup_read_fd=read_fd,
+        wakeup_write_fd=write_fd,
+        previous_wakeup_fd=previous_wakeup_fd,
+    )
+
+    def _wakeup_loop() -> None:
+        assert read_fd is not None
+        while True:
+            try:
+                payload = os.read(read_fd, 64)
+            except OSError:
+                return
+            if not payload:
+                return
+            for encoded_signal in payload:
+                if encoded_signal in (signal.SIGTERM, signal.SIGINT):
+                    _shutdown(encoded_signal)
+                    return
+
+    threading.Thread(
+        target=_wakeup_loop,
+        name="native-signal-shutdown",
+        daemon=True,
+    ).start()
+    return registration
 
 
 # ---------------------------------------------------------------------- #
