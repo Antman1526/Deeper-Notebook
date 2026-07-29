@@ -155,6 +155,69 @@ describe('knowledge workspace API boundary', () => {
     })).toThrow(/depth 64/i)
   })
 
+  it('rejects oversized wire collections before nested tab validation', async () => {
+    const tabs = Array.from({ length: 129 }, (_, index) => ({
+      ...wireDocument.panes['pane-1'].tabs[0],
+      id: `tab-${index + 1}`,
+      note_id: `note-${index + 1}`,
+      relative_path: `Notes/${index + 1}.md`,
+    }))
+    tabs[128] = {
+      ...tabs[128],
+      relative_path: '/must-not-be-deeply-validated.md',
+    }
+
+    const result = knowledgeWorkspaceWireSchema.safeParse({
+      ...wireDocument,
+      panes: {
+        'pane-1': {
+          ...wireDocument.panes['pane-1'],
+          tabs,
+        },
+      },
+    })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    const messages = result.error.issues.map((issue) => issue.message)
+    expect(messages).toContain('workspace cannot contain more than 128 tabs')
+    expect(messages).not.toContain('note path must be relative to its vault')
+
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        ...wireDocument,
+        panes: {
+          'pane-1': {
+            ...wireDocument.panes['pane-1'],
+            tabs,
+          },
+        },
+      },
+    } as never)
+    await expect(knowledgeWorkspaceApi.get()).rejects
+      .toThrow(/more than 128 tabs/i)
+  })
+
+  it('rejects oversized store collections before outbound tab conversion', () => {
+    const document = defaultKnowledgeWorkspace()
+    document.panes['pane-1'].tabs = Array.from(
+      { length: 129 },
+      (_, index) => ({
+        id: `tab-${index + 1}`,
+        vaultId: 'vault:one',
+        noteId: `note-${index + 1}`,
+        title: `Note ${index + 1}`,
+        relativePath: `Notes/${index + 1}.md`,
+        viewMode: 'reading' as const,
+      }),
+    )
+    document.panes['pane-1'].tabs[128].relativePath =
+      '/must-not-be-converted.md'
+    document.panes['pane-1'].activeTabId = 'tab-1'
+
+    expect(() => serializeKnowledgeWorkspace(document))
+      .toThrow(/more than 128 tabs/i)
+  })
+
   it('converts snake_case responses to the camelCase store document', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: wireDocument } as never)
 

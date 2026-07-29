@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -13,6 +14,8 @@ from deeper_notebook.workspace.contracts import (
     default_knowledge_workspace,
 )
 from desktop.data_root import active_data_root
+
+MAX_KNOWLEDGE_WORKSPACE_BYTES = 1024 * 1024
 
 
 class WorkspaceStateError(ValueError):
@@ -35,9 +38,20 @@ def load_knowledge_workspace(
         return default_knowledge_workspace()
 
     try:
-        payload = json.loads(target.read_text(encoding="utf-8"))
+        with target.open("rb") as stream:
+            encoded = stream.read(MAX_KNOWLEDGE_WORKSPACE_BYTES + 1)
+        if len(encoded) > MAX_KNOWLEDGE_WORKSPACE_BYTES:
+            raise WorkspaceStateError(
+                f"invalid workspace state in {target}"
+            )
+        payload = json.loads(encoded.decode("utf-8"))
         return KnowledgeWorkspaceDocument.model_validate(payload)
-    except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        RecursionError,
+        ValidationError,
+    ) as exc:
         raise WorkspaceStateError(f"invalid workspace state in {target}") from exc
 
 
@@ -69,7 +83,6 @@ def save_knowledge_workspace(
     )
     target = path if path is not None else knowledge_workspace_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(f"{target.suffix}.tmp")
     serialized = (
         json.dumps(
             validated_document.model_dump(mode="json"),
@@ -79,19 +92,26 @@ def save_knowledge_workspace(
         )
         + "\n"
     ).encode("utf-8")
+    if len(serialized) > MAX_KNOWLEDGE_WORKSPACE_BYTES:
+        raise WorkspaceStateError(f"invalid workspace state in {target}")
 
-    created_temporary = False
+    temporary: Path | None = None
     try:
-        with temporary.open("xb") as stream:
-            created_temporary = True
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+        )
+        temporary = Path(temporary_name)
+        with os.fdopen(descriptor, "wb") as stream:
             stream.write(serialized)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, target)
-        created_temporary = False
+        temporary = None
         _fsync_parent_directory(target.parent)
     except BaseException:
-        if created_temporary:
+        if temporary is not None:
             try:
                 temporary.unlink()
             except FileNotFoundError:

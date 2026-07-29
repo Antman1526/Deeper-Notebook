@@ -11,6 +11,7 @@ from deeper_notebook.workspace.contracts import (
     default_knowledge_workspace,
 )
 from deeper_notebook.workspace.persistence import (
+    MAX_KNOWLEDGE_WORKSPACE_BYTES,
     WorkspaceStateError,
     knowledge_workspace_path,
     load_knowledge_workspace,
@@ -22,6 +23,7 @@ __all__ = [
     "KnowledgeTabState",
     "KnowledgeViewMode",
     "KnowledgeWorkspaceDocument",
+    "MAX_KNOWLEDGE_WORKSPACE_BYTES",
     "PaneLayoutNode",
     "SplitDirection",
     "SplitLayoutNode",

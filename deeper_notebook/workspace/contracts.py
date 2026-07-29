@@ -47,7 +47,10 @@ class KnowledgePaneState(BaseModel):
 
     id: str = Field(min_length=1, max_length=128)
     active_tab_id: str | None = Field(default=None, min_length=1, max_length=128)
-    tabs: list[KnowledgeTabState] = Field(default_factory=list)
+    tabs: list[KnowledgeTabState] = Field(
+        default_factory=list,
+        max_length=128,
+    )
 
 
 class PaneLayoutNode(BaseModel):
@@ -97,8 +100,45 @@ class KnowledgeWorkspaceDocument(BaseModel):
     version: Literal[1] = 1
     active_pane_id: str = Field(min_length=1, max_length=128)
     next_id: int = Field(ge=1)
-    panes: dict[str, KnowledgePaneState]
+    panes: dict[str, KnowledgePaneState] = Field(max_length=32)
     layout: KnowledgeLayoutNode
+
+    @model_validator(mode="before")
+    @classmethod
+    def workspace_shape_is_bounded_before_nested_validation(
+        cls,
+        value: object,
+    ) -> object:
+        if not isinstance(value, dict):
+            return value
+
+        panes = value.get("panes")
+        if isinstance(panes, dict):
+            if len(panes) > 32:
+                raise ValueError("workspace cannot contain more than 32 panes")
+            total_tabs = 0
+            for pane in panes.values():
+                if not isinstance(pane, dict):
+                    continue
+                tabs = pane.get("tabs")
+                if not isinstance(tabs, list):
+                    continue
+                total_tabs += len(tabs)
+                if total_tabs > 128:
+                    raise ValueError(
+                        "workspace cannot contain more than 128 tabs"
+                    )
+
+        stack: list[tuple[object, int]] = [(value.get("layout"), 1)]
+        while stack:
+            node, depth = stack.pop()
+            if depth > 64:
+                raise ValueError("workspace layout cannot exceed depth 64")
+            if not isinstance(node, dict) or node.get("type") != "split":
+                continue
+            stack.append((node.get("first"), depth + 1))
+            stack.append((node.get("second"), depth + 1))
+        return value
 
     @model_validator(mode="after")
     def workspace_references_are_consistent(self) -> "KnowledgeWorkspaceDocument":

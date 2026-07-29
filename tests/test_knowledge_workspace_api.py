@@ -104,6 +104,53 @@ async def test_put_rejects_absolute_relative_path(api_app: FastAPI) -> None:
 
 
 @pytest.mark.asyncio
+async def test_put_rejects_oversized_content_length_before_json_parsing(
+    api_app: FastAPI,
+) -> None:
+    body = b'{"padding":"' + (b"x" * (1024 * 1024)) + b'"}'
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app),
+        base_url="http://test",
+    ) as client:
+        response = await client.put(
+            "/api/deeper-notebook/workspace/knowledge",
+            content=body,
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "detail": {"code": "workspace_request_too_large"}
+    }
+
+
+@pytest.mark.asyncio
+async def test_put_rejects_oversized_chunked_body_while_streaming(
+    api_app: FastAPI,
+) -> None:
+    async def oversized_body():
+        yield b'{"padding":"'
+        for _ in range(17):
+            yield b"x" * (64 * 1024)
+        yield b'"}'
+
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app),
+        base_url="http://test",
+    ) as client:
+        response = await client.put(
+            "/api/deeper-notebook/workspace/knowledge",
+            content=oversized_body(),
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "detail": {"code": "workspace_request_too_large"}
+    }
+
+
+@pytest.mark.asyncio
 async def test_malformed_stored_json_returns_stable_conflict(
     api_app: FastAPI,
 ) -> None:
@@ -181,6 +228,37 @@ async def test_write_failure_returns_stable_unavailable(
     assert response.status_code == 503
     assert response.json() == {"detail": {"code": "workspace_state_unavailable"}}
     assert str(workspace_path) not in response.text
+
+
+@pytest.mark.asyncio
+async def test_encoded_write_over_limit_returns_stable_too_large(
+    api_app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from api.routers import knowledge_workspace
+    from deeper_notebook.workspace import WorkspaceStateError
+
+    monkeypatch.setattr(
+        knowledge_workspace,
+        "save_knowledge_workspace",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            WorkspaceStateError("encoded state is too large")
+        ),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app),
+        base_url="http://test",
+    ) as client:
+        response = await client.put(
+            "/api/deeper-notebook/workspace/knowledge",
+            json=default_knowledge_workspace().model_dump(mode="json"),
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "detail": {"code": "workspace_request_too_large"}
+    }
 
 
 @pytest.mark.asyncio
