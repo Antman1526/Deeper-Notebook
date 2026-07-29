@@ -9,6 +9,8 @@ import { vaultApi, vaultFileSchema } from './vault'
 
 const mockedGet = vi.mocked(apiClient.get)
 
+const realisticModifiedNs = 1_780_000_000_000_000_000
+
 const fileFixture = {
   id: 'vault_file:one',
   vault_id: 'vault:one',
@@ -19,7 +21,7 @@ const fileFixture = {
   content_hash: 'a'.repeat(64),
   parse_status: 'parsed',
   size_bytes: 123,
-  modified_ns: 456,
+  modified_ns: realisticModifiedNs,
   encoding: 'utf-8',
   newline: 'lf',
   deleted_state: 'present',
@@ -57,6 +59,29 @@ describe('vault API boundary', () => {
     expect(vaultFileSchema.parse(fileFixture)).toMatchObject(fileFixture)
     expect(() => vaultFileSchema.parse({ ...fileFixture, note_id: undefined })).toThrow()
     expect(() => vaultFileSchema.parse({ ...fileFixture, parse_status: 'unknown' })).toThrow()
+  })
+
+  it.each([
+    ['NaN', Number.NaN],
+    ['positive infinity', Number.POSITIVE_INFINITY],
+    ['negative', -1],
+    ['fractional', 1.5],
+  ])('rejects a %s modified_ns value', (_case, modified_ns) => {
+    expect(() => vaultFileSchema.parse({ ...fileFixture, modified_ns })).toThrow()
+  })
+
+  it('accepts realistic decoded modified_ns values from files and page responses', async () => {
+    mockedGet
+      .mockResolvedValueOnce({ data: [fileFixture] } as never)
+      .mockResolvedValueOnce({ data: pageFixture() } as never)
+
+    await expect(vaultApi.files('vault:one')).resolves.toEqual([
+      expect.objectContaining({ modified_ns: realisticModifiedNs }),
+    ])
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .resolves.toMatchObject({
+        file: { modified_ns: realisticModifiedNs },
+      })
   })
 
   it.each([
