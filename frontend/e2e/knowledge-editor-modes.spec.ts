@@ -11,6 +11,7 @@ async function installKnowledgeRoutes(
   page: Page,
   state: KnowledgeFixtureState,
   vaultWrites: string[],
+  unexpectedApiTraffic: string[],
 ): Promise<void> {
   await page.route('**/api/deeper-notebook/**', async (route) => {
     const request = route.request()
@@ -23,7 +24,7 @@ async function installKnowledgeRoutes(
       vaultWrites.push(`${request.method()} ${url.pathname}`)
     }
 
-    await fulfillKnowledgeRequest(route, state)
+    await fulfillKnowledgeRequest(route, state, unexpectedApiTraffic)
   })
 }
 
@@ -31,9 +32,15 @@ test.describe('knowledge editor modes', () => {
   test('persists Live Preview without writing to the vault', async ({ page }) => {
     const state: KnowledgeFixtureState = initialKnowledgeFixtureState()
     const vaultWrites: string[] = []
+    const unexpectedApiTraffic: string[] = []
 
-    await installKnowledgeShellMocks(page)
-    await installKnowledgeRoutes(page, state, vaultWrites)
+    await installKnowledgeShellMocks(page, unexpectedApiTraffic)
+    await installKnowledgeRoutes(
+      page,
+      state,
+      vaultWrites,
+      unexpectedApiTraffic,
+    )
 
     await page.goto('/knowledge')
     await page.getByRole('treeitem', { name: 'pages/plan.md', exact: true }).click()
@@ -53,14 +60,21 @@ test.describe('knowledge editor modes', () => {
     await expect(livePreview).toBeVisible()
     await expect(livePreview).toHaveAttribute('aria-readonly', 'true')
     expect(vaultWrites).toEqual([])
+    expect(unexpectedApiTraffic).toEqual([])
   })
 
   test('records collection-level vault writes', async ({ page }) => {
     const state = initialKnowledgeFixtureState()
     const vaultWrites: string[] = []
+    const unexpectedApiTraffic: string[] = []
 
-    await installKnowledgeShellMocks(page)
-    await installKnowledgeRoutes(page, state, vaultWrites)
+    await installKnowledgeShellMocks(page, unexpectedApiTraffic)
+    await installKnowledgeRoutes(
+      page,
+      state,
+      vaultWrites,
+      unexpectedApiTraffic,
+    )
     await page.goto('/knowledge')
 
     const status = await page.evaluate(async () => {
@@ -70,7 +84,33 @@ test.describe('knowledge editor modes', () => {
       return response.status
     })
 
-    expect(status).toBe(200)
+    expect(status).toBe(405)
     expect(vaultWrites).toEqual(['POST /api/deeper-notebook/vaults'])
+    expect(unexpectedApiTraffic).toEqual([
+      'POST /api/deeper-notebook/vaults',
+    ])
+  })
+
+  test('rejects off-namespace and wrong-method API traffic', async ({ page }) => {
+    const unexpectedApiTraffic: string[] = []
+
+    await installKnowledgeShellMocks(page, unexpectedApiTraffic)
+    await page.goto('/knowledge')
+
+    const statuses = await page.evaluate(async () => {
+      const legacyVaultResponse = await fetch('/api/onp/vaults', {
+        method: 'POST',
+      })
+      const wrongMethodResponse = await fetch('/api/notebooks', {
+        method: 'POST',
+      })
+      return [legacyVaultResponse.status, wrongMethodResponse.status]
+    })
+
+    expect(statuses).toEqual([501, 405])
+    expect(unexpectedApiTraffic).toEqual([
+      'POST /api/onp/vaults',
+      'POST /api/notebooks',
+    ])
   })
 })
