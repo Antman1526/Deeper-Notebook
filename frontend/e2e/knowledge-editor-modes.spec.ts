@@ -8,6 +8,8 @@ import {
 } from './fixtures/knowledge-editor-modes'
 
 const testOnlyLegacyVaultPath = `/${['api', 'onp', 'vaults'].join('/')}`
+const unknownPageDescendantPath =
+  '/api/deeper-notebook/vaults/vault%3Afixture/pages/note%3Aplan/unknown'
 
 async function installKnowledgeRoutes(
   page: Page,
@@ -113,6 +115,32 @@ test.describe('knowledge editor modes', () => {
     expect(unexpectedApiTraffic).toEqual([
       `POST ${testOnlyLegacyVaultPath}`,
       'POST /api/notebooks',
+    ])
+  })
+
+  test('rejects unknown canonical page descendants', async ({ page }) => {
+    const state = initialKnowledgeFixtureState()
+    const vaultWrites: string[] = []
+    const unexpectedApiTraffic: string[] = []
+
+    await installKnowledgeShellMocks(page, unexpectedApiTraffic)
+    await installKnowledgeRoutes(
+      page,
+      state,
+      vaultWrites,
+      unexpectedApiTraffic,
+    )
+    await page.goto('/knowledge')
+
+    const status = await page.evaluate(async (unknownPath) => {
+      const response = await fetch(unknownPath)
+      return response.status
+    }, unknownPageDescendantPath)
+
+    expect(status).toBe(501)
+    expect(vaultWrites).toEqual([])
+    expect(unexpectedApiTraffic).toEqual([
+      `GET ${unknownPageDescendantPath}`,
     ])
   })
 })
