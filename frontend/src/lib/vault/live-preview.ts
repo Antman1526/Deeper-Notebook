@@ -137,6 +137,13 @@ function collectMatches(
   return matches.sort((left, right) => left.from - right.from || left.to - right.to)
 }
 
+function isEscapedAt(doc: Text, offset: number): boolean {
+  const from = Math.max(0, offset - constructReadLimit)
+  const prefix = doc.sliceString(from, offset)
+  const backslashes = /\\+$/u.exec(prefix)?.[0].length || 0
+  return backslashes === constructReadLimit || backslashes % 2 === 1
+}
+
 function indexMathRanges(source: string): SourceRange[] {
   return [...source.matchAll(/(?<!\\)\$(?:[^$\\\r\n]|\\.)+\$/gu)]
     .map((match) => {
@@ -420,7 +427,12 @@ function resolvedLinkFor(
   const sourceStart = sourceIndex.byteOffset(range.from)
   const sourceEnd = sourceIndex.byteOffset(range.to)
   const link = resolvedSpans.get(vaultLinkSpanKey(sourceStart, sourceEnd))
-  if (!link?.target_note_id || !isInternalNavigationSource(sourceText(state, range), kind)) {
+  const expectedLinkKind = kind === 'wiki' ? 'wikilink' : 'markdown'
+  if (
+    !link?.target_note_id
+    || link.link_kind !== expectedLinkKind
+    || !isInternalNavigationSource(sourceText(state, range), kind)
+  ) {
     return undefined
   }
   return link
@@ -436,8 +448,22 @@ function createRecords(
   if (visible.length === 0) return []
 
   const bounded = scannerRanges(state, visible)
-  const rawWikiRanges = collectMatches(state.doc, bounded, /\[\[[^\]\r\n]{1,2048}\]\]/gu)
-  const rawFootnoteRanges = collectMatches(state.doc, bounded, /\[\^[^\]\r\n]{1,256}\]/gu)
+  const rawWikiLiteralRanges = collectMatches(
+    state.doc,
+    bounded,
+    /\[\[[^\]\r\n]{1,2048}\]\]/gu,
+  )
+  const rawFootnoteLiteralRanges = collectMatches(
+    state.doc,
+    bounded,
+    /\[\^[^\]\r\n]{1,256}\]/gu,
+  )
+  const rawWikiRanges = rawWikiLiteralRanges.filter((range) =>
+    !isEscapedAt(state.doc, range.from),
+  )
+  const rawFootnoteRanges = rawFootnoteLiteralRanges.filter((range) =>
+    !isEscapedAt(state.doc, range.from),
+  )
   const rawMathRanges = indexedIntersections(context.mathRanges, visible)
   const parserRanges: Array<{ kind: MarkdownConstructKind; range: SourceRange }> = []
   const exclusions: SourceRange[] = []
@@ -475,8 +501,17 @@ function createRecords(
 
   const mergedExclusions = mergeRanges(exclusions)
   const wikiRanges = rawWikiRanges.filter((range) => !overlapsSorted(range, mergedExclusions))
-  const footnoteRanges = rawFootnoteRanges.filter((range) => !overlapsSorted(range, mergedExclusions))
-  const mathRanges = rawMathRanges.filter((range) => !overlapsSorted(range, mergedExclusions))
+  const scannerExclusions = mergeRanges([...mergedExclusions, ...rawWikiLiteralRanges])
+  const literalArtifactRanges = mergeRanges([
+    ...rawWikiLiteralRanges,
+    ...rawFootnoteLiteralRanges,
+  ])
+  const footnoteRanges = rawFootnoteRanges.filter(
+    (range) => !overlapsSorted(range, scannerExclusions),
+  )
+  const mathRanges = rawMathRanges.filter(
+    (range) => !overlapsSorted(range, scannerExclusions),
+  )
   const tagRanges = collectMatches(
     state.doc,
     bounded,
@@ -486,7 +521,7 @@ function createRecords(
       state.doc.sliceString(range.from, range.to),
     )?.[0]
     return tag ? { from: range.to - tag.length, to: range.to } : range
-  }).filter((range) => !overlapsSorted(range, mergedExclusions))
+  }).filter((range) => !overlapsSorted(range, scannerExclusions))
 
   const records: PreviewDecorationRecord[] = []
   const pushRecord = (
@@ -521,6 +556,7 @@ function createRecords(
 
   for (const { kind, range } of parserRanges) {
     try {
+      if (containedBy(range, literalArtifactRanges)) continue
       if (selectionIntersects(state, range)) continue
       if (kind === 'heading') {
         const prefix = linePrefixFragment(state, range, range.from).value
