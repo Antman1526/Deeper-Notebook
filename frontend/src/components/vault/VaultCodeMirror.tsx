@@ -148,10 +148,12 @@ export const VaultCodeMirror = forwardRef<
         ],
       }),
       dispatchTransactions: (transactions, editor) => {
-        editor.update(transactions.filter(
-          (transaction) => !transaction.docChanged
-            || Boolean(transaction.annotation(externalUpdate)),
-        ))
+        const containsUnauthorizedDocumentChange = transactions.some(
+          (transaction) => transaction.docChanged
+            && !transaction.annotation(externalUpdate),
+        )
+        if (containsUnauthorizedDocumentChange) return
+        editor.update(transactions)
       },
       parent: host,
     })
