@@ -89,13 +89,60 @@ export type VaultPage = z.infer<typeof vaultPageSchema>
 export type VaultLink = z.infer<typeof vaultLinkSchema>
 export type VaultGraph = z.infer<typeof vaultGraphSchema>
 
-function assertNoAbsolutePath(value: unknown): void {
-  if (typeof value === 'string') {
-    if (/^(?:[\\/]|[A-Za-z]:[\\/])/.test(value)) throw new Error('Vault response contained an absolute path')
-    return
+function isPathBearingField(key: string): boolean {
+  const normalized = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+  if (normalized === 'heading_path' || normalized === 'heading_paths') {
+    return false
   }
-  if (Array.isArray(value)) value.forEach(assertNoAbsolutePath)
-  else if (value && typeof value === 'object') Object.values(value).forEach(assertNoAbsolutePath)
+  return normalized === 'path'
+    || normalized === 'paths'
+    || normalized.endsWith('_path')
+    || normalized.endsWith('_paths')
+}
+
+function assertNoAbsolutePath(value: unknown): void {
+  const stack: Array<{ value: unknown; pathBearing: boolean }> = [{
+    value,
+    pathBearing: false,
+  }]
+  const visitedByContext = [
+    new WeakSet<object>(),
+    new WeakSet<object>(),
+  ]
+
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (!current) break
+    if (typeof current.value === 'string') {
+      if (
+        current.pathBearing
+        && /^(?:[\\/]|[A-Za-z]:[\\/])/.test(current.value)
+      ) {
+        throw new Error('Vault response contained an absolute path')
+      }
+      continue
+    }
+    if (!current.value || typeof current.value !== 'object') continue
+
+    const visited = visitedByContext[current.pathBearing ? 1 : 0]
+    if (visited.has(current.value)) continue
+    visited.add(current.value)
+
+    if (Array.isArray(current.value)) {
+      for (const item of current.value) {
+        stack.push({ value: item, pathBearing: current.pathBearing })
+      }
+      continue
+    }
+    for (const [key, item] of Object.entries(current.value)) {
+      stack.push({
+        value: item,
+        pathBearing: current.pathBearing || isPathBearingField(key),
+      })
+    }
+  }
 }
 
 function safeParse<T>(schema: z.ZodType<T>, data: unknown): T {

@@ -79,7 +79,17 @@ describe('vault API boundary', () => {
           },
         }),
       } as never)
-      .mockResolvedValueOnce({ data: { nodes: [{ id: '/Users/owner/secret.md', title: 'Secret', source_format: 'obsidian' }], edges: [] } } as never)
+      .mockResolvedValueOnce({
+        data: {
+          nodes: [{
+            id: 'note:secret',
+            title: 'Secret',
+            source_format: 'obsidian',
+            source_path: '/Users/owner/secret.md',
+          }],
+          edges: [],
+        },
+      } as never)
 
     await expect(vaultApi.page('vault:one', 'note:one'))
       .rejects.toMatchObject({ code: 'page-invalid' })
@@ -93,6 +103,70 @@ describe('vault API boundary', () => {
         note: {
           id: 'note:one',
           source_path: rootRelativePath,
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({
+        name: 'VaultPageContractError',
+        code: 'page-invalid',
+        message: 'page-invalid',
+      })
+  })
+
+  it('preserves Markdown and TeX content that begins with a backslash', async () => {
+    const content = '\\# Literal heading\n\\alpha\n\\[x^2\\]'
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          content,
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .resolves.toMatchObject({
+        note: { content },
+      })
+  })
+
+  it('preserves authored title and property values that resemble rooted paths', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          title: '\\Literal title',
+          properties: {
+            example: '/not/a/path-field',
+          },
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .resolves.toMatchObject({
+        note: {
+          title: '\\Literal title',
+          properties: {
+            example: '/not/a/path-field',
+          },
+        },
+      })
+  })
+
+  it('rejects rooted paths nested in a named path array', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          provenance: {
+            source_paths: [
+              'pages/one.md',
+              '\\Users\\owner\\private.md',
+            ],
+          },
         },
       }),
     } as never)
