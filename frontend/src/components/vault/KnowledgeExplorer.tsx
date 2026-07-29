@@ -60,7 +60,11 @@ export function KnowledgeExplorer() {
     (tab) => tab.id === activePane.activeTabId,
   ) ?? activePane?.tabs[0]
   const openTab = useKnowledgeWorkspaceStore((state) => state.openTab)
-  const { mutateAsync: scanVault, isPending: scanPending } = useScanVault(
+  const {
+    mutateAsync: scanVault,
+    isPending: scanPending,
+    error: scanError,
+  } = useScanVault(
     vaultId,
     activeTab?.vaultId === vaultId ? activeTab.noteId : undefined,
   )
@@ -161,7 +165,7 @@ export function KnowledgeExplorer() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => void scanVault()}
+            onClick={() => { void scanVault().catch(() => undefined) }}
             disabled={!vaultId || scanPending}
           >
             <RefreshCw
@@ -191,6 +195,11 @@ export function KnowledgeExplorer() {
               {t('knowledge.workspaceSaveError')}
             </p>
           )}
+          {scanError && (
+            <p role="alert" className="text-sm text-destructive">
+              {t('knowledge.loadError')}
+            </p>
+          )}
         </div>
       </header>
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)_minmax(15rem,20rem)]">
@@ -198,6 +207,7 @@ export function KnowledgeExplorer() {
           ref={fileTreeRef}
           className="flex min-h-64 flex-col gap-4 border-b p-4 lg:border-b-0 lg:border-r"
           aria-label={t('knowledge.files')}
+          tabIndex={-1}
         >
           <label className="text-sm font-medium" htmlFor="vault-mount">
             {t('knowledge.mounts')}
@@ -270,7 +280,7 @@ export function KnowledgeExplorer() {
             )}
           />
         </main>
-        <div ref={linksRef}>
+        <div ref={linksRef} tabIndex={-1}>
           <KnowledgeLinksInspector onNavigate={navigate} />
         </div>
       </div>

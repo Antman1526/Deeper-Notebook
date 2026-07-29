@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   requestCommandSurface,
   resetCommandSurfaceStore,
+  useCommandSurfaceStore,
 } from '@/lib/commands/command-surface-store'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 
@@ -85,9 +86,58 @@ describe('KnowledgeQuickSwitcher', () => {
     render(<KnowledgeQuickSwitcher mounts={[]} />)
     act(() => requestCommandSurface('quick-switcher'))
     const dialog = await screen.findByRole('dialog', { name: 'knowledge.quickSwitcher' })
-    expect(within(dialog).getByText('knowledge.partialCatalogFailure')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('knowledge.partialCatalogFailure'))
+      .toHaveLength(2)
     expect(within(dialog).getByRole('option', { name: /Evidence/ })).toBeInTheDocument()
     fireEvent.click(within(dialog).getByRole('button', { name: 'common.retry' }))
     await waitFor(() => expect(catalog.retryFailedVaults).toHaveBeenCalledOnce())
+  })
+
+  it('keeps a persistent live status through loading and partial failure transitions', async () => {
+    catalog.isLoading = true
+    const { rerender } = render(<KnowledgeQuickSwitcher mounts={[]} />)
+    act(() => requestCommandSurface('quick-switcher'))
+    const status = await screen.findByRole('status')
+    expect(status).toHaveAttribute('aria-live', 'polite')
+    expect(status).toHaveTextContent('knowledge.filesLoading')
+
+    catalog.isLoading = false
+    catalog.failedVaultCount = 1
+    rerender(<KnowledgeQuickSwitcher mounts={[]} />)
+    expect(screen.getByRole('status')).toBe(status)
+    expect(status).toHaveTextContent('knowledge.partialCatalogFailure')
+  })
+
+  it('announces no matches and marks already-open results', async () => {
+    render(<KnowledgeQuickSwitcher mounts={[]} />)
+    act(() => requestCommandSurface('quick-switcher', 'missing'))
+    const dialog = await screen.findByRole('dialog', { name: 'knowledge.quickSwitcher' })
+    expect(within(dialog).getByRole('status')).toHaveTextContent('knowledge.noMatchingFiles')
+
+    fireEvent.change(within(dialog).getByRole('combobox'), {
+      target: { value: 'plan' },
+    })
+    expect(within(dialog).getByRole('option', { name: /Plan/ }))
+      .toHaveTextContent('knowledge.alreadyOpen')
+  })
+
+  it('consumes its request without losing local invoker restoration or replaying on remount', async () => {
+    const invoker = document.createElement('button')
+    document.body.append(invoker)
+    const first = render(<KnowledgeQuickSwitcher mounts={[]} />)
+    act(() => requestCommandSurface('quick-switcher', '', invoker))
+    const dialog = await screen.findByRole('dialog', { name: 'knowledge.quickSwitcher' })
+    expect(useCommandSurfaceStore.getState()).toMatchObject({
+      kind: null,
+      initialQuery: '',
+      invoker: null,
+    })
+    fireEvent.keyDown(within(dialog).getByRole('combobox'), { key: 'Escape' })
+    await waitFor(() => expect(invoker).toHaveFocus())
+
+    first.unmount()
+    render(<KnowledgeQuickSwitcher mounts={[]} />)
+    expect(screen.queryByRole('dialog', { name: 'knowledge.quickSwitcher' })).toBeNull()
+    invoker.remove()
   })
 })

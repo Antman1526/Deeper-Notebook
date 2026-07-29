@@ -7,6 +7,7 @@ import {
   resetKnowledgeCommandContextStore,
   useKnowledgeCommandContextStore,
 } from '@/lib/commands/knowledge-command-context-store'
+import { resetCommandSurfaceStore } from '@/lib/commands/command-surface-store'
 
 const states = vi.hoisted(() => ({
   page: { isLoading: false, isError: false },
@@ -20,6 +21,18 @@ const vaultQueries = vi.hoisted(() => ({
   backlinks: vi.fn(),
   outgoing: vi.fn(),
   scan: vi.fn(async (vaultId: string) => { void vaultId }),
+}))
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('@/lib/hooks/use-create-dialogs', () => ({
+  useCreateDialogs: () => ({
+    openSourceDialog: vi.fn(),
+    openNotebookDialog: vi.fn(),
+    openPodcastDialog: vi.fn(),
+  }),
+}))
+vi.mock('@/lib/hooks/use-notebooks', () => ({
+  useNotebooks: () => ({ data: [], isLoading: false }),
 }))
 
 const resolvedLink = {
@@ -169,15 +182,23 @@ vi.mock('@/lib/hooks/use-vault', () => ({
   }),
   useScanVault: (vaultId: string) => {
     const [isPending, setIsPending] = useState(false)
+    const [error, setError] = useState<Error | null>(null)
     const mutateAsync = useCallback(async () => {
       setIsPending(true)
+      setError(null)
       try {
         await vaultQueries.scan(vaultId)
+      } catch (scanError) {
+        const normalizedError = scanError instanceof Error
+          ? scanError
+          : new Error('scan failed')
+        setError(normalizedError)
+        throw normalizedError
       } finally {
         setIsPending(false)
       }
     }, [vaultId])
-    return { mutateAsync, isPending }
+    return { mutateAsync, isPending, error }
   },
 }))
 
@@ -192,6 +213,11 @@ vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
     isLoading: false,
     failedVaultCount: 0,
     retryFailedVaults: vi.fn(async () => undefined),
+  }),
+  useKnowledgeIndexedSearch: () => ({
+    runSemanticSearch: vi.fn(),
+    text: { data: { results: [] }, isCurrent: true },
+    semantic: { data: undefined, variables: undefined, error: null },
   }),
 }))
 
@@ -295,6 +321,7 @@ vi.mock('./VaultDocumentView', () => ({
 }))
 
 import { KnowledgeExplorer } from './KnowledgeExplorer'
+import { CommandPalette } from '../common/CommandPalette'
 
 async function renderExplorer() {
   const result = render(<KnowledgeExplorer />)
@@ -319,6 +346,7 @@ function selectLocalGraph() {
 
 describe('KnowledgeExplorer durable workspace integration', () => {
   beforeEach(() => {
+    HTMLElement.prototype.scrollIntoView = vi.fn()
     states.page = { isLoading: false, isError: false }
     states.graph = { isLoading: false, isError: false }
     states.links = { isLoading: false, isError: false }
@@ -326,6 +354,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
     resetKnowledgeCommandContextStore()
+    resetCommandSurfaceStore()
     vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
       noteId === 'note:one'
         ? { data: [resolvedLink, graphLink], ...states.links }
@@ -363,6 +392,15 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(useKnowledgeCommandContextStore.getState().context).toBeNull()
   })
 
+  it('registers programmatically focusable file, pane, and links regions', async () => {
+    await renderExplorer()
+    const context = useKnowledgeCommandContextStore.getState().context
+
+    expect(context?.fileTreeElement).toHaveAttribute('tabindex', '-1')
+    expect(context?.activePaneElement).toHaveAttribute('tabindex')
+    expect(context?.linksElement).toHaveAttribute('tabindex', '-1')
+  })
+
   it('delegates scan commands only to the selected mount', async () => {
     await renderExplorer()
     await useKnowledgeCommandContextStore.getState().context?.scanSelectedVault?.()
@@ -390,6 +428,27 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       expect(screen.getByRole('button', { name: 'knowledge.scan' })).not.toBeDisabled()
     })
     expect(useKnowledgeCommandContextStore.getState().generation).toBe(generation)
+  })
+
+  it('keeps the palette open and announces a localized error when a scan rejects', async () => {
+    vaultQueries.scan.mockRejectedValueOnce(new Error('private backend detail'))
+    render(
+      <>
+        <KnowledgeExplorer />
+        <CommandPalette />
+      </>,
+    )
+    await waitFor(() => expect(screen.getAllByRole('treeitem')).toHaveLength(2))
+    fireEvent.keyDown(screen.getByTestId('knowledge-workspace'), { key: '/' })
+    const palette = await screen.findByRole('dialog', { name: 'common.quickActions' })
+
+    fireEvent.click(within(palette).getByRole('option', {
+      name: 'knowledge.commands.scanVault',
+    }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('knowledge.loadError'))
+    expect(screen.getByRole('alert')).not.toHaveTextContent('private backend detail')
+    expect(palette).toBeVisible()
   })
 
   it('copies the active tab when splitting and opens later selections only in the active pane', async () => {

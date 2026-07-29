@@ -15,7 +15,12 @@ export interface KnowledgeCatalogCandidate {
 }
 
 function normalized(value: string): string {
-  return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase()
+  return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+}
+
+function compareCodePoints(left: string, right: string): number {
+  if (left === right) return 0
+  return left < right ? -1 : 1
 }
 
 function titleFromPath(relativePath: string): string {
@@ -40,7 +45,7 @@ export function buildKnowledgeCatalog(
       relativePath: file.relative_path,
       isOpen: open.has(`${file.vault_id}\0${file.note_id}`),
     })))
-    .sort((a, b) => a.key.localeCompare(b.key))
+    .sort((a, b) => compareCodePoints(a.key, b.key))
 }
 
 function score(candidate: KnowledgeCatalogCandidate, query: string): number {
@@ -68,9 +73,9 @@ export function rankKnowledgeCatalog(
     .map(candidate => ({ candidate, score: score(candidate, needle) }))
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score
-      || a.candidate.title.localeCompare(b.candidate.title)
-      || a.candidate.relativePath.localeCompare(b.candidate.relativePath)
-      || a.candidate.key.localeCompare(b.candidate.key))
+      || compareCodePoints(a.candidate.title, b.candidate.title)
+      || compareCodePoints(a.candidate.relativePath, b.candidate.relativePath)
+      || compareCodePoints(a.candidate.key, b.candidate.key))
     .slice(0, Math.max(0, limit))
     .map(item => item.candidate)
 }

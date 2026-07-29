@@ -25,6 +25,14 @@ export function requestCommandSurface(
   useCommandSurfaceStore.setState({ requestId, kind, initialQuery, invoker })
 }
 
+export function acknowledgeCommandSurface(requestId: number): void {
+  useCommandSurfaceStore.setState(state => (
+    state.requestId === requestId
+      ? { kind: null, initialQuery: '', invoker: null }
+      : state
+  ))
+}
+
 export function resetCommandSurfaceStore(): void {
   useCommandSurfaceStore.setState({
     requestId: 0,
