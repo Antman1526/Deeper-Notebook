@@ -27,7 +27,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 )
 
 describe('knowledge command data', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => vi.resetAllMocks())
   afterEach(() => vi.useRealTimers())
 
   it('keeps healthy catalogs when one vault fails', async () => {
@@ -62,17 +62,26 @@ describe('knowledge command data', () => {
   })
 
   it('debounces text search and never starts vector search automatically', async () => {
+    vi.useFakeTimers()
     vi.mocked(searchApi.search).mockResolvedValue({
       results: [],
       total_count: 0,
       search_type: 'text',
     })
-    const { result, rerender } = renderHook(
+    const { rerender } = renderHook(
       ({ query }) => useKnowledgeIndexedSearch(query, true),
       { initialProps: { query: 're' }, wrapper },
     )
     rerender({ query: 'research' })
-    await waitFor(() => expect(result.current.text.isSuccess).toBe(true))
+
+    expect(searchApi.search).not.toHaveBeenCalled()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(249)
+    })
+    expect(searchApi.search).not.toHaveBeenCalled()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
     expect(searchApi.search).toHaveBeenCalledTimes(1)
     expect(searchApi.search).toHaveBeenCalledWith(expect.objectContaining({
       query: 'research',
@@ -81,6 +90,57 @@ describe('knowledge command data', () => {
     expect(searchApi.search).not.toHaveBeenCalledWith(expect.objectContaining({
       type: 'vector',
     }))
+  })
+
+  it('suppresses resolved text data while a newer query is debouncing', async () => {
+    vi.useFakeTimers()
+    let resolveFirst: (value: { results: []; total_count: number; search_type: string }) => void
+    let resolveSecond: (value: { results: []; total_count: number; search_type: string }) => void
+    const first = new Promise<{ results: []; total_count: number; search_type: string }>(resolve => {
+      resolveFirst = resolve
+    })
+    const second = new Promise<{ results: []; total_count: number; search_type: string }>(resolve => {
+      resolveSecond = resolve
+    })
+    vi.mocked(searchApi.search)
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second)
+
+    const { result, rerender } = renderHook(
+      ({ query }) => useKnowledgeIndexedSearch(query, true),
+      { initialProps: { query: 'alpha' }, wrapper },
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250)
+    })
+    expect(searchApi.search).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      resolveFirst!({ results: [], total_count: 0, search_type: 'text' })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.text.data?.search_type).toBe('text')
+
+    rerender({ query: 'beta' })
+    expect(result.current.text.isCurrent).toBe(false)
+    expect(result.current.text.data).toBeUndefined()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(249)
+    })
+    expect(result.current.text.data).toBeUndefined()
+    expect(searchApi.search).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(result.current.text.data).toBeUndefined()
+    await act(async () => {
+      resolveSecond!({ results: [], total_count: 0, search_type: 'text' })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.text.isCurrent).toBe(true)
+    expect(result.current.text.data?.search_type).toBe('text')
   })
 
   it('starts vector search only through the explicit semantic action', async () => {
