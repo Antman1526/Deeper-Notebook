@@ -37,6 +37,17 @@ def test_migration_36_is_schemafull_idempotent_and_authority_explicit():
     assert all("IF NOT EXISTS" in line.upper() for line in defines)
 
 
+def test_migration_36_block_uniqueness_is_scoped_to_projected_note():
+    """External blocks retain NONE overlay IDs, so uniqueness cannot use that ID."""
+    sql = UP.read_text(encoding="utf-8")
+
+    assert (
+        "DEFINE INDEX IF NOT EXISTS idx_note_block_overlay ON TABLE note_block "
+        "COLUMNS note_id, parser_id UNIQUE;"
+    ) in sql
+    assert "COLUMNS overlay_note_id, parser_id UNIQUE;" not in sql
+
+
 def test_migration_36_down_removes_only_overlay_schema():
     sql = DOWN.read_text(encoding="utf-8")
     for table in TABLES:
