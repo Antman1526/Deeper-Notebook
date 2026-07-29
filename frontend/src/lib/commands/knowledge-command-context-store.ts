@@ -33,5 +33,5 @@ export function clearKnowledgeCommandContext(generation: number): void {
 }
 
 export function resetKnowledgeCommandContextStore(): void {
-  useKnowledgeCommandContextStore.setState({ generation: 0, context: null })
+  useKnowledgeCommandContextStore.setState({ context: null })
 }
