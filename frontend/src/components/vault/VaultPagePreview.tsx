@@ -104,8 +104,14 @@ export function VaultPagePreview({
         onMouseEnter={() => {
           beginIntent()
         }}
+        onMouseLeave={() => {
+          clearIntentTimer()
+        }}
         onFocus={() => {
           beginIntent()
+        }}
+        onBlur={() => {
+          clearIntentTimer()
         }}
         onClick={() => {
           if (canOpen && targetNoteId) onNavigate?.(targetNoteId)

@@ -361,6 +361,60 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       })
   })
 
+  it('keeps a listed target file identity while using its canonical link title', async () => {
+    vaultQueries.outgoing.mockReturnValue({
+      data: [{
+        ...resolvedLink,
+        target_note_id: 'note:two',
+        target_note_title: 'Canonical Two',
+        target_relative_path: 'notes/two.md',
+        target_text: 'Mention Two',
+      }],
+      isLoading: false,
+      isError: false,
+    })
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate Markdown link',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
+      .toMatchObject({
+        noteId: 'note:two',
+        title: 'Canonical Two',
+        relativePath: 'notes/two.md',
+      })
+  })
+
+  it('uses target text as the display fallback for an empty canonical listed title', async () => {
+    vaultQueries.outgoing.mockReturnValue({
+      data: [{
+        ...resolvedLink,
+        target_note_id: 'note:two',
+        target_note_title: '',
+        target_relative_path: 'notes/two.md',
+        target_text: 'Mention Two',
+      }],
+      isLoading: false,
+      isError: false,
+    })
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate Markdown link',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
+      .toMatchObject({
+        noteId: 'note:two',
+        title: 'Mention Two',
+        relativePath: 'notes/two.md',
+      })
+  })
+
   it('opens inspector outgoing links with their canonical target fields', async () => {
     await renderExplorer()
     await selectFile('notes/one.md')

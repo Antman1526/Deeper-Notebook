@@ -126,6 +126,36 @@ afterEach(() => {
 })
 
 describe('VaultPagePreview', () => {
+  it('cancels pending hover intent when the pointer leaves', async () => {
+    vi.useFakeTimers()
+    vi.mocked(vaultApi.page).mockResolvedValueOnce(pageFixture)
+    renderPreview()
+
+    const trigger = screen.getByRole('button', { name: 'Research' })
+    fireEvent.mouseEnter(trigger)
+    fireEvent.mouseLeave(trigger)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251)
+    })
+
+    expect(vaultApi.page).not.toHaveBeenCalled()
+  })
+
+  it('cancels pending focus intent when the trigger blurs', async () => {
+    vi.useFakeTimers()
+    vi.mocked(vaultApi.page).mockResolvedValueOnce(pageFixture)
+    renderPreview()
+
+    const trigger = screen.getByRole('button', { name: 'Research' })
+    fireEvent.focus(trigger)
+    fireEvent.blur(trigger)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251)
+    })
+
+    expect(vaultApi.page).not.toHaveBeenCalled()
+  })
+
   it('loads a bounded preview after hover intent and closes with Escape', async () => {
     vi.useFakeTimers()
     vi.mocked(vaultApi.page).mockResolvedValueOnce(pageFixture)

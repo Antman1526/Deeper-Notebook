@@ -78,7 +78,14 @@ export function KnowledgeExplorer() {
         && file.note_id === targetNoteId,
     )
     if (listedFile) {
-      openFile(listedFile, paneId)
+      openTab({
+        vaultId: listedFile.vault_id,
+        noteId: listedFile.note_id,
+        title: titleHint?.trim()
+          || targetText
+          || titleFromRelativePath(listedFile.relative_path),
+        relativePath: listedFile.relative_path,
+      }, paneId)
       return
     }
 
