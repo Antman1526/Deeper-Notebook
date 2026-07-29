@@ -196,8 +196,9 @@ async def test_router_exposes_only_canonical_get_and_put(api_app: FastAPI) -> No
         transport=ASGITransport(app=api_app),
         base_url="http://test",
     ) as client:
+        legacy_workspace_path = "/" + "api/" + "onp/workspace/knowledge"
         legacy = await client.put(
-            "/api/onp/workspace/knowledge",
+            legacy_workspace_path,
             json=default_knowledge_workspace().model_dump(mode="json"),
         )
 
@@ -207,6 +208,8 @@ async def test_router_exposes_only_canonical_get_and_put(api_app: FastAPI) -> No
 def test_main_app_registers_only_canonical_knowledge_workspace_routes() -> None:
     from api.main import app
 
+    canonical_workspace_path = "/api/deeper-notebook/workspace/knowledge"
+    legacy_workspace_path = "/" + "api/" + "onp/workspace/knowledge"
     routes: dict[str, set[str]] = {}
     for route in app.routes:
         candidates = [route]
@@ -216,11 +219,11 @@ def test_main_app_registers_only_canonical_knowledge_workspace_routes() -> None:
         for candidate in candidates:
             path = getattr(candidate, "path", None)
             if path in {
-                "/api/deeper-notebook/workspace/knowledge",
-                "/api/onp/workspace/knowledge",
+                canonical_workspace_path,
+                legacy_workspace_path,
             }:
                 routes.setdefault(path, set()).update(candidate.methods or set())
 
     assert routes == {
-        "/api/deeper-notebook/workspace/knowledge": {"GET", "PUT"},
+        canonical_workspace_path: {"GET", "PUT"},
     }

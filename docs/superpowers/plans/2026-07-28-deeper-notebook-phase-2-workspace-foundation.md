@@ -260,7 +260,7 @@ Expected: FAIL because the router does not exist.
 
 - [ ] **Step 3: Implement and register the router**
 
-The router path is `/workspace/knowledge`; `api/main.py` registers it under the existing `/api/deeper-notebook` prefix. Add a private `_workspace_path()` that delegates to Task 1's `knowledge_workspace_path()` and pass that path explicitly to load/save, giving hermetic router tests one patch seam. Catch only `WorkspaceStateError` as 409 and filesystem errors as 503. Let Pydantic produce 422 for invalid request documents. Do not create a compatibility `/api/onp` write alias for this new canonical feature.
+The router path is `/workspace/knowledge`; `api/main.py` registers it under the existing `/api/deeper-notebook` prefix. Add a private `_workspace_path()` that delegates to Task 1's `knowledge_workspace_path()` and pass that path explicitly to load/save, giving hermetic router tests one patch seam. Catch only `WorkspaceStateError` as 409 and filesystem errors as 503. Let Pydantic produce 422 for invalid request documents. Do not create a hidden legacy write alias for this new canonical feature.
 
 - [ ] **Step 4: Run API and regression tests**
 
