@@ -2,6 +2,10 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
+import {
+  resetKnowledgeCommandContextStore,
+  useKnowledgeCommandContextStore,
+} from '@/lib/commands/knowledge-command-context-store'
 
 const states = vi.hoisted(() => ({
   page: { isLoading: false, isError: false },
@@ -14,6 +18,7 @@ const vaultQueries = vi.hoisted(() => ({
   page: vi.fn(),
   backlinks: vi.fn(),
   outgoing: vi.fn(),
+  scan: vi.fn(async () => undefined),
 }))
 
 const resolvedLink = {
@@ -161,12 +166,24 @@ vi.mock('@/lib/hooks/use-vault', () => ({
     data: { nodes: [{ id: 'note:one', title: 'One' }], edges: [] },
     ...states.graph,
   }),
-  useScanVault: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useScanVault: (vaultId: string) => ({
+    mutateAsync: () => vaultQueries.scan(vaultId),
+    isPending: false,
+  }),
 }))
 
 vi.mock('@/lib/hooks/use-knowledge-workspace', () => ({
   useHydrateKnowledgeWorkspace: () => states.hydration,
   usePersistKnowledgeWorkspace: () => states.persistence,
+}))
+
+vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
+  useKnowledgeCatalog: () => ({
+    candidates: [],
+    isLoading: false,
+    failedVaultCount: 0,
+    retryFailedVaults: vi.fn(async () => undefined),
+  }),
 }))
 
 vi.mock('./VaultGraph', () => ({
@@ -247,14 +264,35 @@ vi.mock('./VaultMarkdown', () => ({
     </div>
   ),
 }))
+vi.mock('./VaultDocumentView', () => ({
+  VaultDocumentView: ({ page, onNavigate }: {
+    page: ReturnType<typeof pageFor>
+    onNavigate: (noteId: string) => void
+  }) => (
+    <div>
+      {page.note.content}
+      <span>No properties</span>
+      {page.outgoing_links[0]?.target_note_id
+        && page.outgoing_links[0]?.target_relative_path && (
+        <button
+          type="button"
+          onClick={() => onNavigate(page.outgoing_links[0].target_note_id!)}
+        >
+          Navigate Markdown link
+        </button>
+      )}
+    </div>
+  ),
+}))
 
 import { KnowledgeExplorer } from './KnowledgeExplorer'
 
 async function renderExplorer() {
-  render(<KnowledgeExplorer />)
+  const result = render(<KnowledgeExplorer />)
   await waitFor(() => {
     expect(screen.getAllByRole('treeitem')).toHaveLength(2)
   })
+  return result
 }
 
 async function selectFile(name: string) {
@@ -278,6 +316,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
+    resetKnowledgeCommandContextStore()
     vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
       noteId === 'note:one'
         ? { data: [resolvedLink, graphLink], ...states.links }
@@ -301,6 +340,20 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     ])
     expect(pane.tabs.find((tab) => tab.id === pane.activeTabId)?.noteId)
       .toBe('note:one')
+  })
+
+  it('clears its command registration on unmount', async () => {
+    const { unmount } = await renderExplorer()
+    expect(useKnowledgeCommandContextStore.getState().context?.selectedVaultId)
+      .toBe('vault:one')
+    unmount()
+    expect(useKnowledgeCommandContextStore.getState().context).toBeNull()
+  })
+
+  it('delegates scan commands only to the selected mount', async () => {
+    await renderExplorer()
+    await useKnowledgeCommandContextStore.getState().context?.scanSelectedVault?.()
+    expect(vaultQueries.scan).toHaveBeenCalledWith('vault:one')
   })
 
   it('copies the active tab when splitting and opens later selections only in the active pane', async () => {
@@ -646,6 +699,7 @@ describe('KnowledgeExplorer query states', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
+    resetKnowledgeCommandContextStore()
     vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
       noteId === 'note:one'
         ? { data: [resolvedLink, graphLink], ...states.links }
