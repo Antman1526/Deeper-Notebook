@@ -4,10 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 
 const states = vi.hoisted(() => ({
+  page: { isLoading: false, isError: false },
   graph: { isLoading: false, isError: false },
   links: { isLoading: false, isError: false },
   hydration: { isLoading: false, isError: false },
   persistence: { isPending: false, isError: false, error: null as Error | null },
+}))
+const vaultQueries = vi.hoisted(() => ({
+  page: vi.fn(),
+  backlinks: vi.fn(),
 }))
 
 const files = [
@@ -76,15 +81,22 @@ vi.mock('@/lib/hooks/use-vault', () => ({
     isError: false,
   }),
   useVaultFiles: () => ({ data: files, isLoading: false, isError: false }),
-  useVaultPage: (_vaultId?: string, noteId?: string) => ({
-    data: noteId ? pageFor(noteId) : undefined,
-    isLoading: false,
-    isError: false,
-  }),
-  useVaultBacklinks: (_vaultId?: string, noteId?: string) => ({
-    data: noteId ? backlinkFor(noteId) : undefined,
-    ...states.links,
-  }),
+  useVaultPage: (vaultId?: string, noteId?: string) => {
+    vaultQueries.page(vaultId, noteId)
+    return {
+      data: noteId && !states.page.isLoading && !states.page.isError
+        ? pageFor(noteId)
+        : undefined,
+      ...states.page,
+    }
+  },
+  useVaultBacklinks: (vaultId?: string, noteId?: string) => {
+    vaultQueries.backlinks(vaultId, noteId)
+    return {
+      data: noteId ? backlinkFor(noteId) : undefined,
+      ...states.links,
+    }
+  },
   useVaultOutgoing: () => ({ data: [], ...states.links }),
   useVaultGraph: () => ({
     data: { nodes: [{ id: 'note:one', title: 'One' }], edges: [] },
@@ -99,7 +111,18 @@ vi.mock('@/lib/hooks/use-knowledge-workspace', () => ({
 }))
 
 vi.mock('./VaultGraph', () => ({
-  VaultGraph: () => <div>Local graph content</div>,
+  VaultGraph: ({
+    onNavigate,
+  }: {
+    onNavigate: (noteId: string) => void
+  }) => (
+    <div>
+      Local graph content
+      <button type="button" onClick={() => onNavigate('note:graph-linked')}>
+        Navigate graph node
+      </button>
+    </div>
+  ),
 }))
 vi.mock('./VaultLinks', () => ({
   VaultLinks: ({
@@ -128,7 +151,20 @@ vi.mock('./VaultLinks', () => ({
   ),
 }))
 vi.mock('./VaultMarkdown', () => ({
-  VaultMarkdown: ({ markdown }: { markdown: string }) => <div>{markdown}</div>,
+  VaultMarkdown: ({
+    markdown,
+    onNavigate,
+  }: {
+    markdown: string
+    onNavigate: (noteId: string) => void
+  }) => (
+    <div>
+      {markdown}
+      <button type="button" onClick={() => onNavigate('note:linked')}>
+        Navigate Markdown link
+      </button>
+    </div>
+  ),
 }))
 
 import { KnowledgeExplorer } from './KnowledgeExplorer'
@@ -157,10 +193,12 @@ function selectLocalGraph() {
 
 describe('KnowledgeExplorer durable workspace integration', () => {
   beforeEach(() => {
+    states.page = { isLoading: false, isError: false }
     states.graph = { isLoading: false, isError: false }
     states.links = { isLoading: false, isError: false }
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
+    vi.clearAllMocks()
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
   })
 
@@ -222,6 +260,73 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(screen.queryByText('Backlink for Two')).not.toBeInTheDocument()
   })
 
+  it('opens pane-local Markdown navigation in its originating split pane', async () => {
+    await renderExplorer()
+    await selectFile('notes/one.md')
+    fireEvent.click(screen.getByRole('button', {
+      name: 'knowledge.splitPaneRight',
+    }))
+
+    fireEvent.focus(screen.getByRole('region', {
+      name: /knowledge\.knowledgePane pane-1/,
+    }))
+    const paneThree = screen.getByRole('region', {
+      name: /knowledge\.knowledgePane pane-3/,
+    })
+    fireEvent.click(within(paneThree).getByRole('button', {
+      name: 'Navigate Markdown link',
+    }))
+
+    const workspace = useKnowledgeWorkspaceStore.getState()
+    expect(workspace.panes['pane-1'].tabs.map((tab) => tab.noteId))
+      .toEqual(['note:one'])
+    expect(workspace.panes['pane-3'].tabs.map((tab) => tab.noteId))
+      .toEqual(['note:one', 'note:linked'])
+    expect(
+      workspace.panes['pane-3'].tabs.find(
+        (tab) => tab.id === workspace.panes['pane-3'].activeTabId,
+      )?.noteId,
+    ).toBe('note:linked')
+  })
+
+  it('opens pane-local graph navigation in its originating split pane', async () => {
+    await renderExplorer()
+    await selectFile('notes/one.md')
+    fireEvent.click(screen.getByRole('button', {
+      name: 'knowledge.splitPaneRight',
+    }))
+
+    const paneThree = screen.getByRole('region', {
+      name: /knowledge\.knowledgePane pane-3/,
+    })
+    const graphTab = within(paneThree).getByRole('tab', {
+      name: 'knowledge.localGraph',
+    })
+    graphTab.focus()
+    fireEvent.keyDown(graphTab, { key: 'Enter' })
+    await waitFor(() => {
+      expect(within(paneThree).getByText('Local graph content'))
+        .toBeInTheDocument()
+    })
+    fireEvent.focus(screen.getByRole('region', {
+      name: /knowledge\.knowledgePane pane-1/,
+    }))
+    fireEvent.click(within(paneThree).getByRole('button', {
+      name: 'Navigate graph node',
+    }))
+
+    const workspace = useKnowledgeWorkspaceStore.getState()
+    expect(workspace.panes['pane-1'].tabs.map((tab) => tab.noteId))
+      .toEqual(['note:one'])
+    expect(workspace.panes['pane-3'].tabs.map((tab) => tab.noteId))
+      .toEqual(['note:one', 'note:graph-linked'])
+    expect(
+      workspace.panes['pane-3'].tabs.find(
+        (tab) => tab.id === workspace.panes['pane-3'].activeTabId,
+      )?.noteId,
+    ).toBe('note:graph-linked')
+  })
+
   it('loads a persisted tab missing from the file listing when its active ID is null', async () => {
     useKnowledgeWorkspaceStore.getState().replaceWorkspace({
       version: 1,
@@ -249,6 +354,14 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(screen.getByRole('tab', { name: 'Persisted one' }))
       .toBeInTheDocument()
     expect(screen.getByText('Backlink for One')).toBeInTheDocument()
+    expect(vaultQueries.page).toHaveBeenCalledWith(
+      'vault:one',
+      'note:archived',
+    )
+    expect(vaultQueries.backlinks).toHaveBeenCalledWith(
+      'vault:one',
+      'note:archived',
+    )
   })
 
   it('persists Reader and Local Graph modes independently on each active tab', async () => {
@@ -322,10 +435,12 @@ describe('KnowledgeExplorer durable workspace integration', () => {
 
 describe('KnowledgeExplorer query states', () => {
   beforeEach(() => {
+    states.page = { isLoading: false, isError: false }
     states.graph = { isLoading: false, isError: false }
     states.links = { isLoading: false, isError: false }
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
+    vi.clearAllMocks()
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
   })
 
@@ -341,6 +456,16 @@ describe('KnowledgeExplorer query states', () => {
     await waitFor(() => {
       expect(screen.getByText('knowledge.graphLoading')).toBeInTheDocument()
     })
+  })
+
+  it('shows the retained page-load error in the active pane', async () => {
+    states.page = { isLoading: false, isError: true }
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'knowledge.loadError',
+    )
   })
 
   it('shows errors for link and graph queries instead of empty panes', async () => {

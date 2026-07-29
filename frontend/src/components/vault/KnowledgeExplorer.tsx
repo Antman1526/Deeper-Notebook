@@ -77,8 +77,8 @@ export function KnowledgeExplorer() {
     if (!vaultId && mounts.data?.[0]) setVaultId(mounts.data[0].id)
   }, [mounts.data, vaultId])
 
-  const openFile = (file: VaultFile) => {
-    openTab(tabFromFile(file))
+  const openFile = (file: VaultFile, paneId?: string) => {
+    openTab(tabFromFile(file), paneId)
   }
 
   const navigate: KnowledgeNavigate = (
@@ -86,13 +86,14 @@ export function KnowledgeExplorer() {
     targetNoteId,
     relativePathHint,
     titleHint,
+    paneId,
   ) => {
     const listedFile = files.data?.find(
       (file) => file.vault_id === targetVaultId
         && file.note_id === targetNoteId,
     )
     if (listedFile) {
-      openFile(listedFile)
+      openFile(listedFile, paneId)
       return
     }
 
@@ -109,7 +110,7 @@ export function KnowledgeExplorer() {
         title: existingTab.title,
         relativePath: existingTab.relativePath,
         viewMode: existingTab.viewMode,
-      })
+      }, paneId)
       return
     }
 
@@ -119,7 +120,7 @@ export function KnowledgeExplorer() {
       noteId: targetNoteId,
       title: titleHint?.trim() || titleFromRelativePath(relativePath),
       relativePath,
-    })
+    }, paneId)
   }
 
   const selected = mounts.data?.find((mount) => mount.id === vaultId)
