@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Book,
@@ -40,7 +40,11 @@ import {
   rankKnowledgeCatalog,
   searchResultToOpenTab,
 } from '@/lib/commands/knowledge-command-catalog'
-import { useCommandSurfaceStore, requestCommandSurface } from '@/lib/commands/command-surface-store'
+import {
+  acknowledgeCommandSurface,
+  requestCommandSurface,
+  useCommandSurfaceStore,
+} from '@/lib/commands/command-surface-store'
 import { useKnowledgeCommandContextStore } from '@/lib/commands/knowledge-command-context-store'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { useKnowledgeCatalog, useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
@@ -73,8 +77,19 @@ const getThemeItems = (t: TFunction) => [
   { name: t('common.system'), value: 'system' as const, icon: Monitor, keywords: ['auto', 'default'] },
 ]
 
-function embeddingConfigurationError(error: Error | null): boolean {
-  return /embedding model/iu.test(error?.message ?? '')
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function embeddingConfigurationError(error: unknown): boolean {
+  const messages: string[] = []
+  if (error instanceof Error) messages.push(error.message)
+  if (isRecord(error) && isRecord(error.response) && isRecord(error.response.data)) {
+    const { detail, message } = error.response.data
+    if (typeof detail === 'string') messages.push(detail)
+    if (typeof message === 'string') messages.push(message)
+  }
+  return messages.some(message => /embedding model/iu.test(message))
 }
 
 export function CommandPalette() {
@@ -82,6 +97,12 @@ export function CommandPalette() {
   const router = useRouter()
   const commandInputId = useId()
   const surface = useCommandSurfaceStore()
+  const {
+    requestId: surfaceRequestId,
+    kind: surfaceKind,
+    initialQuery: surfaceInitialQuery,
+    invoker: surfaceInvoker,
+  } = surface
   const pageContext = useKnowledgeCommandContextStore()
   const workspace = useKnowledgeWorkspaceStore()
   const mounts = useVaults()
@@ -93,6 +114,7 @@ export function CommandPalette() {
   const [invocationMode, setInvocationMode] = useState<'global' | 'slash'>('global')
   const [invoker, setInvoker] = useState<HTMLElement | null>(null)
   const [commandUnavailableVersion, setCommandUnavailableVersion] = useState(0)
+  const restoreInvokerRef = useRef(true)
   const navigationItems = useMemo(() => getNavigationItems(t), [t])
   const createItems = useMemo(() => getCreateItems(t), [t])
   const themeItems = useMemo(() => getThemeItems(t), [t])
@@ -111,13 +133,15 @@ export function CommandPalette() {
   )
 
   useEffect(() => {
-    if (surface.requestId === 0 || surface.kind === null || surface.kind === 'quick-switcher') return
-    setInvocationMode(surface.kind)
-    setQuery(surface.initialQuery)
-    setInvoker(surface.invoker)
+    if (surfaceRequestId === 0 || surfaceKind === null || surfaceKind === 'quick-switcher') return
+    setInvocationMode(surfaceKind)
+    setQuery(surfaceInitialQuery)
+    setInvoker(surfaceInvoker)
+    restoreInvokerRef.current = true
     setCommandUnavailableVersion(0)
     setOpen(true)
-  }, [surface.initialQuery, surface.invoker, surface.kind, surface.requestId])
+    acknowledgeCommandSurface(surfaceRequestId)
+  }, [surfaceInitialQuery, surfaceInvoker, surfaceKind, surfaceRequestId])
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -161,6 +185,10 @@ export function CommandPalette() {
   useEffect(() => {
     if (open) return
     setQuery('')
+    if (!restoreInvokerRef.current) {
+      restoreInvokerRef.current = true
+      return
+    }
     requestAnimationFrame(() => {
       if (invoker?.isConnected) invoker.focus()
     })
@@ -281,6 +309,13 @@ export function CommandPalette() {
   const executeKnowledge = useCallback(async (id: Parameters<typeof executeKnowledgeCommand>[0]) => {
     const generation = pageContext.generation
     const liveContext = buildKnowledgeContext()
+    const focusAfterClose = id === 'knowledge.focus-files'
+      ? liveContext?.focusFileTree
+      : id === 'knowledge.focus-pane'
+        ? liveContext?.focusActivePane
+        : id === 'knowledge.focus-links'
+          ? liveContext?.focusLinks
+          : null
     try {
       if (
         !liveContext
@@ -293,7 +328,9 @@ export function CommandPalette() {
     } catch {
       return
     }
+    if (focusAfterClose) restoreInvokerRef.current = false
     closePalette()
+    if (focusAfterClose) setTimeout(focusAfterClose, 0)
   }, [buildKnowledgeContext, closePalette, pageContext.generation])
 
   const selectTab = useCallback((tab: ReturnType<typeof searchResultToOpenTab>) => {

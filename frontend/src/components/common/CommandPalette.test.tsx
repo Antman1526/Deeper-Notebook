@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -8,6 +8,7 @@ import {
 import {
   requestCommandSurface,
   resetCommandSurfaceStore,
+  useCommandSurfaceStore,
 } from '@/lib/commands/command-surface-store'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import type { SearchResponse } from '@/lib/types/search'
@@ -91,6 +92,9 @@ vi.mock('@/lib/hooks/use-translation', () => ({
       'knowledge.commands.viewSource': 'Source',
       'knowledge.commands.closePane': 'Close pane',
       'knowledge.commands.scanVault': 'Scan vault',
+      'knowledge.commands.focusFiles': 'Focus vault files',
+      'knowledge.commands.focusPane': 'Focus active pane',
+      'knowledge.commands.focusLinks': 'Focus note links',
       'knowledge.commands.splitRight': 'Split pane right',
       'knowledge.commands.requiresActiveTab': 'Requires active tab',
       'knowledge.commands.requiresActivePane': 'Requires active pane',
@@ -276,6 +280,34 @@ describe('CommandPalette', () => {
     expect(screen.getByRole('dialog', { name: 'Quick actions' })).toBeVisible()
   })
 
+  it('re-announces a second live context rejection in the same open session', async () => {
+    const elements = registerKnowledgeContext()
+    const rejectLiveContext = vi.fn(async () => {
+      registerKnowledgeCommandContext({
+        selectedVaultId: 'vault:one',
+        activePaneElement: elements.activePane,
+        fileTreeElement: elements.fileTree,
+        linksElement: elements.links,
+        scanSelectedVault: rejectLiveContext,
+      })
+    })
+    registerKnowledgeCommandContext({
+      selectedVaultId: 'vault:one',
+      activePaneElement: elements.activePane,
+      fileTreeElement: elements.fileTree,
+      linksElement: elements.links,
+      scanSelectedVault: rejectLiveContext,
+    })
+    renderPalette()
+    act(() => requestCommandSurface('slash', '/'))
+
+    fireEvent.click(await screen.findByRole('option', { name: 'Scan vault' }))
+    const firstStatus = await screen.findByRole('status')
+    fireEvent.click(await screen.findByRole('option', { name: 'Scan vault' }))
+    await waitFor(() => expect(screen.getByRole('status')).not.toBe(firstStatus))
+    expect(screen.getByRole('status')).toHaveTextContent('Command unavailable')
+  })
+
   it('restores focus to the command invoker after closing', async () => {
     const invoker = document.createElement('button')
     document.body.append(invoker)
@@ -287,6 +319,50 @@ describe('CommandPalette', () => {
     await waitFor(() => expect(invoker).toHaveFocus())
     invoker.remove()
   })
+
+  it.each([
+    ['Focus vault files', 'fileTree'],
+    ['Focus active pane', 'activePane'],
+    ['Focus note links', 'links'],
+  ] as const)('leaves focus on the requested region for %s', async (label, target) => {
+    const invoker = document.createElement('button')
+    document.body.append(invoker)
+    const elements = registerKnowledgeContext()
+    Object.values(elements).forEach(element => { element.tabIndex = -1 })
+    renderPalette()
+    act(() => requestCommandSurface('slash', '/', invoker))
+
+    fireEvent.click(await screen.findByRole('option', { name: label }))
+    await waitFor(() => expect(document.activeElement).toBe(elements[target]))
+    expect(screen.queryByRole('dialog', { name: 'Quick actions' })).toBeNull()
+    invoker.remove()
+    Object.values(elements).forEach(element => element.remove())
+  })
+
+  it.each(['global', 'slash'] as const)(
+    'consumes a handled %s request so it does not replay after remount',
+    async (kind) => {
+      if (kind === 'slash') registerKnowledgeContext()
+      const invoker = document.createElement('button')
+      document.body.append(invoker)
+      const first = renderPalette()
+      act(() => requestCommandSurface(kind, kind === 'slash' ? '/' : '', invoker))
+      const dialog = await screen.findByRole('dialog', { name: 'Quick actions' })
+      fireEvent.keyDown(within(dialog).getByRole('combobox'), { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await waitFor(() => expect(invoker).toHaveFocus())
+      expect(useCommandSurfaceStore.getState()).toMatchObject({
+        kind: null,
+        initialQuery: '',
+        invoker: null,
+      })
+
+      first.unmount()
+      renderPalette()
+      expect(screen.queryByRole('dialog', { name: 'Quick actions' })).toBeNull()
+      invoker.remove()
+    },
+  )
 
   it('renders exact catalog results before accepted indexed results', async () => {
     registerKnowledgeContext()
@@ -348,6 +424,27 @@ describe('CommandPalette', () => {
     fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'research' } })
 
     expect(screen.queryByRole('option', { name: 'Stale semantic' })).toBeNull()
+    fireEvent.click(screen.getByRole('option', { name: 'Semantic search unavailable' }))
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/settings/api-keys'))
+  })
+
+  it('routes an Axios-shaped embedding configuration error to model settings', async () => {
+    registerKnowledgeContext()
+    indexed.semantic = {
+      data: undefined,
+      variables: 'research',
+      isError: true,
+      error: {
+        response: {
+          status: 400,
+          data: { detail: 'Vector search requires an embedding model' },
+        },
+      } as Error,
+    }
+    renderPalette()
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'research' } })
+
     fireEvent.click(screen.getByRole('option', { name: 'Semantic search unavailable' }))
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/settings/api-keys'))
   })

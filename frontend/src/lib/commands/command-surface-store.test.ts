@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  acknowledgeCommandSurface,
   requestCommandSurface,
   resetCommandSurfaceStore,
   useCommandSurfaceStore,
@@ -29,6 +30,29 @@ describe('command surface requests', () => {
       requestId: 2,
       kind: 'quick-switcher',
       initialQuery: 'plan',
+      invoker: null,
+    })
+  })
+
+  it('acknowledges only the current request and clears transient request data', () => {
+    const staleInvoker = document.createElement('button')
+    const currentInvoker = document.createElement('button')
+    requestCommandSurface('global', 'stale', staleInvoker)
+    requestCommandSurface('slash', '/current', currentInvoker)
+
+    acknowledgeCommandSurface(1)
+    expect(useCommandSurfaceStore.getState()).toMatchObject({
+      requestId: 2,
+      kind: 'slash',
+      initialQuery: '/current',
+      invoker: currentInvoker,
+    })
+
+    acknowledgeCommandSurface(2)
+    expect(useCommandSurfaceStore.getState()).toEqual({
+      requestId: 2,
+      kind: null,
+      initialQuery: '',
       invoker: null,
     })
   })
