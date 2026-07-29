@@ -86,6 +86,25 @@ describe('vault API boundary', () => {
     await expect(vaultApi.graph('vault:one', 'note:one')).rejects.toThrow(/absolute path/i)
   })
 
+  it('rejects a Windows root-relative passthrough path without leaking it', async () => {
+    const rootRelativePath = '\\Users\\owner\\private.md'
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          source_path: rootRelativePath,
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({
+        name: 'VaultPageContractError',
+        code: 'page-invalid',
+        message: 'page-invalid',
+      })
+  })
+
   it('accepts a page with canonical requested identity', async () => {
     mockedGet.mockResolvedValueOnce({ data: pageFixture() } as never)
 
