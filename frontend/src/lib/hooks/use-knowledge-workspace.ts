@@ -239,8 +239,12 @@ function startCoordinatedSave(snapshot: ValidWorkspaceSnapshot): void {
       persistenceCoordinator.inFlightSnapshot = null
       const next = persistenceCoordinator.queuedSnapshot
       persistenceCoordinator.queuedSnapshot = null
-      if (next) startCoordinatedSave(next)
-      else publishPersistenceStatus()
+      if (next) {
+        startCoordinatedSave(next)
+        if (!coordinatorHasPendingWork()) publishPersistenceStatus()
+      } else {
+        publishPersistenceStatus()
+      }
     })
 }
 
