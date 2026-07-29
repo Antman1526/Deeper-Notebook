@@ -24,6 +24,7 @@ from deeper_notebook.vault.contracts import (
     ParsedLink,
     ParsedTask,
 )
+from deeper_notebook.vault.parsers import parse_document
 from deeper_notebook.vault.repository import (
     VaultMount,
     VaultMountCreate,
@@ -919,6 +920,38 @@ async def test_complete_projection_is_atomic_and_record_typed(clean_namespace):
     assert receipts[0]["status"] == "success"
     assert receipts[0].get("before_hash") is None
     assert receipts[0]["after_hash"] == "a" * 64
+
+
+async def test_obsidian_fixture_embeds_project_once_per_source_span(clean_namespace):
+    await _create_mount()
+    raw = (ROOT / "tests/fixtures/vault/obsidian/complete.md").read_bytes()
+    parsed = parse_document("complete.md", raw, format_mode="obsidian")
+    work = VaultWorkItem(
+        vault_id="vault_mount:integration",
+        relative_path="complete.md",
+        file_kind="markdown",
+        protected=False,
+        content=raw,
+        content_hash=parsed.content_hash,
+        byte_size=len(raw),
+        modified_ns=456,
+    )
+    repository = VaultRepository(embedding_submitter=lambda *_args: None)
+
+    first = await repository.project_document(
+        _mount(), work, parsed, "integration-obsidian-embeds"
+    )
+    second = await repository.project_document(
+        _mount(), work, parsed, "integration-obsidian-embeds-repeat"
+    )
+
+    assert first.status == "projected"
+    assert second.status == "unchanged"
+    links = await repo_query("SELECT * FROM note_link;")
+    assert len(links) == len(
+        {(link.source_start, link.source_end) for link in parsed.links}
+    )
+    assert sum(link["link_kind"] == "embed" for link in links) == 2
 
 
 class _InjectFailureConnection:
