@@ -1326,6 +1326,42 @@ async def test_backlinks_project_source_note_title_for_display_identity():
     )
 
 
+@pytest.mark.asyncio
+async def test_unresolved_link_keeps_null_target_identity_and_explicit_spans():
+    class UnresolvedLinkRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            self.calls.append((compact, variables or {}))
+            if "SELECT VALUE id FROM $note_id" in compact:
+                return ["note:source"]
+            if "FROM note_link" in compact:
+                return [
+                    {
+                        "id": "note_link:unresolved",
+                        "source_note_id": "note:source",
+                        "target_note_id": None,
+                        "target_note_title": None,
+                        "target_relative_path": None,
+                        "target_text": "Missing",
+                        "source_start": 4,
+                        "source_end": 15,
+                        "link_kind": "wikilink",
+                        "resolved": False,
+                    }
+                ]
+            return []
+
+    connection = UnresolvedLinkRecorder()
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    links = await repository.outgoing_links("vault_mount:test", "note:source")
+
+    assert links[0].target_note_title is None
+    assert links[0].target_relative_path is None
+    assert links[0].source_start == 4
+    assert links[0].source_end == 15
+
+
 def test_resolved_link_requires_canonical_target_identity():
     with pytest.raises(ValidationError):
         VaultLink(
