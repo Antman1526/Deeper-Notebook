@@ -245,3 +245,28 @@ The real Windows installer and install/upgrade/repair/uninstall proof remain
 release gates. The unlocked-session menu-bar gesture also remains as a narrow
 macOS smoke test, although the underlying native AppKit termination route is
 covered by the successful packaged proof above.
+
+## 2026-07-29 dependency security review update
+
+The PR review found five high-severity findings in the production npm tree.
+They were pre-existing transitive/runtime findings rather than vulnerabilities
+introduced by the new CodeMirror packages, but the release branch was updated
+instead of carrying them forward.
+
+- Axios was raised to 1.18.1 and Form Data was pinned to 4.0.6.
+- Next.js and its matching analyzer/lint configuration were raised to 16.2.12.
+- PostCSS was pinned to 8.5.24.
+- Sharp was pinned to 0.35.3 so the packaged Next server does not carry the
+  vulnerable pre-0.35 libvips runtime.
+- `npm audit --omit=dev --audit-level=high` reports 0 vulnerabilities.
+- The complete frontend suite passed 761 tests, ESLint passed, and the
+  production build passed with `/knowledge` under Next.js 16.2.12.
+
+The full development-tree audit still reports nine high-severity findings
+propagated from the old Brace Expansion call shape used by ESLint's Minimatch
+tooling. A forced global override to Brace Expansion 5.0.8 was tested and
+rejected because ESLint failed with `expand is not a function`. That toolchain
+is not installed in the packaged runtime, so this is a documented
+development-only deferral rather than a production exception. Review it again
+by 2026-08-12 or when ESLint/Minimatch publish a compatible dependency path,
+whichever occurs first.
