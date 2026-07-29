@@ -179,7 +179,7 @@ function uniqueSortedConstructs(constructs: MarkdownConstruct[]): MarkdownConstr
 export function buildMarkdownModel(markdown: string): MarkdownModel {
   const headings: HeadingDescriptor[] = []
   const constructs: MarkdownConstruct[] = []
-  const codeExclusions: SourceRange[] = []
+  const wikiExclusions: SourceRange[] = []
   const tagExclusions: SourceRange[] = []
   const slugCounts = new Map<string, number>()
   const wikiRanges = collectRegexRanges(
@@ -209,30 +209,35 @@ export function buildMarkdownModel(markdown: string): MarkdownModel {
       const kind = constructKinds[name]
       if (kind) {
         const construct = { kind, from, to }
-        if (
-          kind !== 'link'
-          || !isContainedBySortedRange(wikiRanges, from, to)
-        ) {
+        const isWikiParserArtifact = kind === 'link'
+          && isContainedBySortedRange(wikiRanges, from, to)
+        if (!isWikiParserArtifact) {
           constructs.push(construct)
         }
         if (kind === 'fenced-code' || kind === 'inline-code') {
-          codeExclusions.push({ from, to })
+          wikiExclusions.push({ from, to })
           tagExclusions.push({ from, to })
         } else if (kind === 'link') {
           tagExclusions.push({ from, to })
+          if (!isWikiParserArtifact) wikiExclusions.push({ from, to })
         }
       }
 
-      if (name === 'URL') tagExclusions.push({ from, to })
+      if (name === 'URL') {
+        tagExclusions.push({ from, to })
+        if (!isContainedBySortedRange(wikiRanges, from, to)) {
+          wikiExclusions.push({ from, to })
+        }
+      }
     },
   })
 
-  const mergedCodeExclusions = mergeRanges(codeExclusions)
+  const mergedWikiExclusions = mergeRanges(wikiExclusions)
   appendRangesOutsideExclusions(
     'wikilink',
     wikiRanges,
     constructs,
-    mergedCodeExclusions,
+    mergedWikiExclusions,
   )
 
   const tagRanges = collectRegexRanges(

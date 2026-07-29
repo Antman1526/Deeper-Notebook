@@ -73,6 +73,18 @@ describe('buildMarkdownModel', () => {
     ])
   })
 
+  it('does not create a wikilink inside a Markdown link destination', () => {
+    const markdown = '[outer](https://example.test/[[inner]])'
+    const relevant = buildMarkdownModel(markdown).constructs
+      .filter((construct) =>
+        construct.kind === 'link' || construct.kind === 'wikilink',
+      )
+
+    expect(relevant).toEqual([
+      { kind: 'link', from: 0, to: markdown.length },
+    ])
+  })
+
   it.each(['\n', '\r\n'])(
     'strips an indented Setext underline with %j newlines',
     (newline) => {
@@ -90,38 +102,26 @@ describe('buildMarkdownModel', () => {
     },
   )
 
-  it('keeps regex exclusion work linear for adversarial Markdown', () => {
-    const count = 200
+  it('scales across a large adversarial Markdown document', () => {
+    const count = 20_000
     const markdown = Array.from(
       { length: count },
       (_, index) => `\`#hidden-${index}\` #visible-${index}`,
     ).join('\n')
-    const originalSome = Array.prototype.some
-    let predicateVisits = 0
+    const tags = buildMarkdownModel(markdown).constructs
+      .filter((construct) => construct.kind === 'tag')
+    const finalTag = `#visible-${count - 1}`
 
-    function instrumentedSome<T>(
-      this: T[],
-      predicate: (value: T, index: number, array: T[]) => unknown,
-      thisArg?: unknown,
-    ): boolean {
-      for (let index = 0; index < this.length; index += 1) {
-        if (!(index in this)) continue
-        predicateVisits += 1
-        if (predicate.call(thisArg, this[index], index, this)) return true
-      }
-      return false
-    }
-
-    let model: ReturnType<typeof buildMarkdownModel> | undefined
-    Array.prototype.some = instrumentedSome as typeof Array.prototype.some
-    try {
-      model = buildMarkdownModel(markdown)
-    } finally {
-      Array.prototype.some = originalSome
-    }
-
-    expect(model?.constructs.filter((construct) => construct.kind === 'tag'))
-      .toHaveLength(count)
-    expect(predicateVisits).toBeLessThan(count * 20)
-  })
+    expect(tags).toHaveLength(count)
+    expect(tags[0]).toEqual({
+      kind: 'tag',
+      from: markdown.indexOf('#visible-0'),
+      to: markdown.indexOf('#visible-0') + '#visible-0'.length,
+    })
+    expect(tags.at(-1)).toEqual({
+      kind: 'tag',
+      from: markdown.lastIndexOf(finalTag),
+      to: markdown.lastIndexOf(finalTag) + finalTag.length,
+    })
+  }, 5_000)
 })
