@@ -205,6 +205,7 @@ describe('VaultMarkdown reading mode', () => {
   it('renders resolved wiki and Markdown attachments as inert metadata', () => {
     const wikiMarkdown = '[[photo.png]]'
     const markdownAttachment = '[Photo](assets/photo.png?download=1#preview)'
+    const svgAttachment = '[Vector](assets/vector.svg?download=1#preview)'
     render(
       <>
         <VaultMarkdown
@@ -217,14 +218,31 @@ describe('VaultMarkdown reading mode', () => {
           links={[{ ...resolvedLinkFixture, link_kind: 'markdown', target_text: 'assets/photo.png?download=1#preview', source_start: 0, source_end: new TextEncoder().encode(markdownAttachment).length }]}
           onNavigate={vi.fn()}
         />
+        <VaultMarkdown
+          markdown={svgAttachment}
+          links={[{ ...resolvedLinkFixture, link_kind: 'markdown', target_text: 'assets/vector.svg?download=1#preview', source_start: 0, source_end: new TextEncoder().encode(svgAttachment).length }]}
+          onNavigate={vi.fn()}
+        />
       </>,
     )
 
-    expect(screen.queryByRole('button', { name: /photo/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /photo/i })).not.toBeInTheDocument()
-    for (const label of screen.getAllByText(/photo/i)) {
+    expect(screen.queryByRole('button', { name: /photo|vector/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /photo|vector/i })).not.toBeInTheDocument()
+    for (const label of screen.getAllByText(/photo|vector/i)) {
       expect(label).toHaveClass('text-muted-foreground')
     }
+  })
+
+  it.each([
+    ['PNG alt text', '![Photo](assets/photo.png)', 'Photo'],
+    ['SVG filename fallback', '![](assets/diagram.svg?raw=1#preview)', 'diagram.svg'],
+  ])('renders %s as inert text without loading image bytes', (_label, markdown, expectedLabel) => {
+    render(<VaultMarkdown markdown={markdown} links={[]} onNavigate={vi.fn()} />)
+
+    expect(document.querySelector('img')).toBeNull()
+    expect(screen.queryByRole('link', { name: expectedLabel })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: expectedLabel })).not.toBeInTheDocument()
+    expect(screen.getByText(expectedLabel)).toHaveClass('text-muted-foreground')
   })
 
   it.each([
