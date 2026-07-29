@@ -26,6 +26,11 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   ) => void
   markWorkspaceDurable: (revision: number, fingerprint: string) => void
   openTab: (tab: OpenKnowledgeTab, paneId?: string) => void
+  reconcileTabReference: (
+    paneId: string,
+    tabId: string,
+    reference: Pick<OpenKnowledgeTab, 'title' | 'relativePath'>,
+  ) => void
   closeTab: (paneId: string, tabId: string) => void
   activateTab: (paneId: string, tabId: string) => void
   setActivePane: (paneId: string) => void
@@ -232,6 +237,43 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
           ...pane,
           activeTabId: created.id,
           tabs: [...pane.tabs, created],
+        },
+      },
+    })
+  },
+
+  reconcileTabReference: (paneId, tabId, reference) => {
+    const state = get()
+    const pane = state.panes[paneId]
+    const tab = pane?.tabs.find((candidate) => candidate.id === tabId)
+    if (!pane || !tab) return
+    const parsed = openKnowledgeTabSchema.safeParse({
+      vaultId: tab.vaultId,
+      noteId: tab.noteId,
+      title: reference.title,
+      relativePath: reference.relativePath,
+      viewMode: tab.viewMode,
+    })
+    if (!parsed.success) return
+    if (
+      tab.title === parsed.data.title
+      && tab.relativePath === parsed.data.relativePath
+    ) {
+      return
+    }
+    set({
+      revision: state.revision + 1,
+      panes: {
+        ...state.panes,
+        [paneId]: {
+          ...pane,
+          tabs: pane.tabs.map((candidate) => candidate.id === tabId
+            ? {
+                ...candidate,
+                title: parsed.data.title,
+                relativePath: parsed.data.relativePath,
+              }
+            : candidate),
         },
       },
     })

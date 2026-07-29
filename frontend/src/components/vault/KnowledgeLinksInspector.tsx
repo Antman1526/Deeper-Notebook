@@ -54,9 +54,18 @@ export function KnowledgeLinksInspector({
     const link = currentOutgoing.find(
       (candidate) => candidate.target_note_id === targetNoteId,
     )
-    const relativePath = link?.target_text || targetNoteId
-    const title = link?.alias || link?.target_text || targetNoteId
-    onNavigate(activeTab.vaultId, targetNoteId, relativePath, title)
+    const titleHint = link?.target_note_title === null
+      || link?.target_note_title === undefined
+      ? undefined
+      : link.target_note_title
+    onNavigate(
+      activeTab.vaultId,
+      targetNoteId,
+      link?.target_relative_path ?? undefined,
+      titleHint,
+      undefined,
+      link?.target_text || targetNoteId,
+    )
   }
 
   return (

@@ -13,7 +13,30 @@ const states = vi.hoisted(() => ({
 const vaultQueries = vi.hoisted(() => ({
   page: vi.fn(),
   backlinks: vi.fn(),
+  outgoing: vi.fn(),
 }))
+
+const resolvedLink = {
+  id: 'link:linked',
+  source_note_id: 'note:one',
+  target_note_id: 'note:linked',
+  target_note_title: 'Linked canonical',
+  target_relative_path: 'notes/linked.md',
+  target_text: 'Linked mention',
+  link_kind: 'wikilink',
+  resolved: true,
+  source_start: 0,
+  source_end: 12,
+}
+
+const graphLink = {
+  ...resolvedLink,
+  id: 'link:graph-linked',
+  target_note_id: 'note:graph-linked',
+  target_note_title: 'Graph linked',
+  target_relative_path: 'notes/graph-linked.md',
+  target_text: 'Graph linked',
+}
 
 const files = [
   {
@@ -39,18 +62,48 @@ const files = [
 ] as const
 
 function pageFor(noteId?: string) {
-  const suffix = noteId === 'note:two' ? 'Two' : 'One'
+  const resolvedNoteId = noteId || 'note:one'
+  const canonical = {
+    'note:two': { title: 'Two', relativePath: 'notes/two.md' },
+    'note:linked': {
+      title: 'Linked canonical',
+      relativePath: 'notes/linked.md',
+    },
+    'note:graph-linked': {
+      title: 'Graph linked',
+      relativePath: 'notes/graph-linked.md',
+    },
+    'note:archived': {
+      title: 'Persisted one',
+      relativePath: 'archive/persisted-one.md',
+    },
+  }[resolvedNoteId] ?? { title: 'One', relativePath: 'notes/one.md' }
   return {
+    file: {
+      id: `vault_file:${resolvedNoteId}`,
+      note_id: resolvedNoteId,
+      vault_id: 'vault:one',
+      relative_path: canonical.relativePath,
+      file_kind: 'markdown',
+      format: 'markdown',
+      content_hash: 'a'.repeat(64),
+      parse_status: 'parsed',
+      size_bytes: 5,
+      modified_ns: 1,
+      encoding: 'utf-8',
+      newline: 'lf',
+      deleted_state: 'present',
+    },
     note: {
-      id: noteId || 'note:one',
-      title: suffix,
-      content: `# ${suffix}`,
+      id: resolvedNoteId,
+      title: canonical.title,
+      content: `# ${canonical.title}`,
       properties: {},
       tags: [],
     },
     blocks: [],
     tasks: [],
-    outgoing_links: [],
+    outgoing_links: [resolvedLink],
     backlinks: [],
   }
 }
@@ -97,7 +150,13 @@ vi.mock('@/lib/hooks/use-vault', () => ({
       ...states.links,
     }
   },
-  useVaultOutgoing: () => ({ data: [], ...states.links }),
+  useVaultOutgoing: (vaultId?: string, noteId?: string) => (
+    vaultQueries.outgoing(vaultId, noteId)
+    || {
+      data: noteId === 'note:one' ? [resolvedLink, graphLink] : [],
+      ...states.links,
+    }
+  ),
   useVaultGraph: () => ({
     data: { nodes: [{ id: 'note:one', title: 'One' }], edges: [] },
     ...states.graph,
@@ -129,23 +188,38 @@ vi.mock('./VaultLinks', () => ({
     title,
     links,
     direction,
+    onNavigate,
   }: {
     title: string
     links: Array<{
       source_note_title?: string | null
       source_note_id: string
+      target_note_id?: string | null
       target_text: string
     }>
     direction: 'source' | 'target'
+    onNavigate: (noteId: string) => void
   }) => (
     <section>
       <h2>{title}</h2>
       {links.map((link) => (
-        <p key={`${direction}:${link.source_note_id}`}>
-          {direction === 'source'
-            ? link.source_note_title || link.source_note_id
-            : link.target_text}
-        </p>
+        <div key={`${direction}:${link.source_note_id}:${link.target_text}`}>
+          <p>
+            {direction === 'source'
+              ? link.source_note_title || link.source_note_id
+              : link.target_text}
+          </p>
+          <button
+            type="button"
+            onClick={() => onNavigate(
+              direction === 'source'
+                ? link.source_note_id
+                : link.target_note_id!,
+            )}
+          >
+            Navigate {direction} {link.target_text}
+          </button>
+        </div>
       ))}
     </section>
   ),
@@ -153,16 +227,23 @@ vi.mock('./VaultLinks', () => ({
 vi.mock('./VaultMarkdown', () => ({
   VaultMarkdown: ({
     markdown,
+    links,
     onNavigate,
   }: {
     markdown: string
+    links: (typeof resolvedLink)[]
     onNavigate: (noteId: string) => void
   }) => (
     <div>
       {markdown}
-      <button type="button" onClick={() => onNavigate('note:linked')}>
-        Navigate Markdown link
-      </button>
+      {links[0]?.target_note_id && links[0]?.target_relative_path && (
+        <button
+          type="button"
+          onClick={() => onNavigate(links[0].target_note_id!)}
+        >
+          Navigate Markdown link
+        </button>
+      )}
     </div>
   ),
 }))
@@ -180,15 +261,13 @@ async function selectFile(name: string) {
   fireEvent.click(screen.getByRole('treeitem', { name }))
   await waitFor(() => {
     expect(screen.getByRole('tab', {
-      name: name.endsWith('one.md') ? 'one' : 'two',
+      name: name.endsWith('one.md') ? /one/i : /two/i,
     })).toBeInTheDocument()
   })
 }
 
 function selectLocalGraph() {
-  const graphTab = screen.getByRole('tab', { name: 'knowledge.localGraph' })
-  graphTab.focus()
-  fireEvent.keyDown(graphTab, { key: 'Enter' })
+  fireEvent.click(screen.getByRole('button', { name: 'knowledge.localGraph' }))
 }
 
 describe('KnowledgeExplorer durable workspace integration', () => {
@@ -199,6 +278,11 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
+    vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
+      noteId === 'note:one'
+        ? { data: [resolvedLink, graphLink], ...states.links }
+        : { data: [], ...states.links }
+    ))
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
   })
 
@@ -289,6 +373,128 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     ).toBe('note:linked')
   })
 
+  it('opens resolved links with their canonical target path', async () => {
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate Markdown link',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
+      .toMatchObject({
+        noteId: 'note:linked',
+        title: 'Linked canonical',
+        relativePath: 'notes/linked.md',
+      })
+  })
+
+  it('keeps a listed target file identity while using its canonical link title', async () => {
+    vaultQueries.outgoing.mockReturnValue({
+      data: [{
+        ...resolvedLink,
+        target_note_id: 'note:two',
+        target_note_title: 'Canonical Two',
+        target_relative_path: 'notes/two.md',
+        target_text: 'Mention Two',
+      }],
+      isLoading: false,
+      isError: false,
+    })
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate Markdown link',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
+      .toMatchObject({
+        noteId: 'note:two',
+        title: 'Two',
+        relativePath: 'notes/two.md',
+      })
+  })
+
+  it('uses target text as the display fallback for an empty canonical listed title', async () => {
+    vaultQueries.outgoing.mockReturnValue({
+      data: [{
+        ...resolvedLink,
+        target_note_id: 'note:two',
+        target_note_title: '',
+        target_relative_path: 'notes/two.md',
+        target_text: 'Mention Two',
+      }],
+      isLoading: false,
+      isError: false,
+    })
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate Markdown link',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
+      .toMatchObject({
+        noteId: 'note:two',
+        title: 'Two',
+        relativePath: 'notes/two.md',
+      })
+  })
+
+  it('opens inspector outgoing links with their canonical target fields', async () => {
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate target Linked mention',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
+      .toMatchObject({
+        noteId: 'note:linked',
+        title: 'Linked canonical',
+        relativePath: 'notes/linked.md',
+      })
+  })
+
+  it('refuses resolved navigation without a canonical target path', async () => {
+    vaultQueries.outgoing.mockReturnValue({
+      data: [{ ...resolvedLink, target_relative_path: null }],
+      isLoading: false,
+      isError: false,
+    })
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    expect(screen.queryByRole('button', {
+      name: 'Navigate Markdown link',
+    })).not.toBeInTheDocument()
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
+      .toHaveLength(1)
+  })
+
+  it('fails closed when inspector links do not provide a canonical path', async () => {
+    vaultQueries.outgoing.mockReturnValue({
+      data: [{ ...resolvedLink, target_relative_path: null }],
+      isLoading: false,
+      isError: false,
+    })
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate target Linked mention',
+    }))
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate source One',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
+      .toHaveLength(1)
+  })
+
   it('opens pane-local graph navigation in its originating split pane', async () => {
     await renderExplorer()
     await selectFile('notes/one.md')
@@ -299,11 +505,10 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     const paneThree = screen.getByRole('region', {
       name: /knowledge\.knowledgePane pane-3/,
     })
-    const graphTab = within(paneThree).getByRole('tab', {
+    const graphTab = within(paneThree).getByRole('button', {
       name: 'knowledge.localGraph',
     })
-    graphTab.focus()
-    fireEvent.keyDown(graphTab, { key: 'Enter' })
+    fireEvent.click(graphTab)
     await waitFor(() => {
       expect(within(paneThree).getByText('Local graph content'))
         .toBeInTheDocument()
@@ -378,15 +583,15 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       name: /knowledge\.knowledgePane pane-1/,
     })
     expect(
-      within(paneRegion).getByRole('tab', { name: 'knowledge.reader' }),
-    ).toHaveAttribute('data-state', 'active')
+      within(paneRegion).getByRole('button', { name: 'knowledge.reader' }),
+    ).toHaveAttribute('aria-pressed', 'true')
 
-    fireEvent.click(within(paneRegion).getByRole('tab', { name: 'one' }))
+    fireEvent.click(within(paneRegion).getByRole('tab', { name: /one/i }))
 
     await waitFor(() => {
       expect(
-        within(paneRegion).getByRole('tab', { name: 'knowledge.localGraph' }),
-      ).toHaveAttribute('data-state', 'active')
+        within(paneRegion).getByRole('button', { name: 'knowledge.localGraph' }),
+      ).toHaveAttribute('aria-pressed', 'true')
     })
     const workspace = useKnowledgeWorkspaceStore.getState()
     expect(workspace.panes['pane-1'].tabs.map((tab) => [
@@ -410,7 +615,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     await renderExplorer()
 
     expect(screen.getByText('knowledge.workspaceLoading')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'one' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /one/i })).toBeInTheDocument()
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
       .toHaveLength(1)
   })
@@ -427,7 +632,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'knowledge.workspaceSaveError',
     )
-    expect(screen.getByRole('tab', { name: 'one' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /one/i })).toBeInTheDocument()
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
       .toHaveLength(1)
   })
@@ -441,6 +646,11 @@ describe('KnowledgeExplorer query states', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
+    vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
+      noteId === 'note:one'
+        ? { data: [resolvedLink, graphLink], ...states.links }
+        : { data: [], ...states.links }
+    ))
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
   })
 
@@ -451,7 +661,7 @@ describe('KnowledgeExplorer query states', () => {
     await selectFile('notes/one.md')
 
     expect(screen.getByText('knowledge.linksLoading')).toBeInTheDocument()
-    expect(screen.getByText('knowledge.noProperties')).toBeInTheDocument()
+    expect(screen.getByText('No properties')).toBeInTheDocument()
     selectLocalGraph()
     await waitFor(() => {
       expect(screen.getByText('knowledge.graphLoading')).toBeInTheDocument()

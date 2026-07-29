@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -77,29 +77,6 @@ class VaultErrorDetail(_VaultSchema):
     code: str
 
 
-class VaultPageResponse(_VaultSchema):
-    note: dict[str, Any]
-    blocks: list[dict[str, Any]] = Field(default_factory=list)
-    tasks: list[dict[str, Any]] = Field(default_factory=list)
-    outgoing_links: list[dict[str, Any]] = Field(default_factory=list)
-    backlinks: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class VaultLinkResponse(_VaultSchema):
-    id: str
-    source_note_id: str
-    source_note_title: str | None = None
-    source_block_id: str | None = None
-    target_note_id: str | None = None
-    target_block_id: str | None = None
-    target_text: str
-    target_heading: str | None = None
-    target_block: str | None = None
-    alias: str | None = None
-    link_kind: str
-    resolved: bool = False
-
-
 class VaultFileResponse(_VaultSchema):
     id: str
     note_id: str
@@ -111,6 +88,35 @@ class VaultFileResponse(_VaultSchema):
     size_bytes: int = 0
     modified_ns: int = 0
     encoding: str | None = None
+    newline: Literal["lf", "crlf", "mixed", "none"] | None = None
     parse_status: str
     parse_error_code: str | None = None
     deleted_state: str
+
+
+class VaultLinkResponse(_VaultSchema):
+    id: str
+    source_note_id: str
+    source_note_title: str | None = None
+    source_block_id: str | None = None
+    target_note_id: str | None = None
+    target_note_title: str | None = None
+    target_relative_path: str | None = None
+    target_block_id: str | None = None
+    target_text: str
+    target_heading: str | None = None
+    target_block: str | None = None
+    alias: str | None = None
+    link_kind: str
+    resolved: bool = False
+    source_start: int = Field(ge=0)
+    source_end: int = Field(ge=0)
+
+
+class VaultPageResponse(_VaultSchema):
+    file: VaultFileResponse
+    note: dict[str, Any]
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
+    outgoing_links: list[VaultLinkResponse] = Field(default_factory=list)
+    backlinks: list[VaultLinkResponse] = Field(default_factory=list)

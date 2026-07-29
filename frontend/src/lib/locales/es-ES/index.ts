@@ -1262,3 +1262,20 @@ export const esES = {
     },
   },
 }
+
+Object.assign(esES.knowledge, {
+  source: "Fuente",
+  livePreview: "Vista previa en vivo",
+  emptyNote: "Esta nota está vacía.",
+  pageInvalid: "Los datos proyectados de la página no son válidos.",
+  canonicalPathUnavailable: "La ruta canónica de la bóveda no está disponible.",
+  pagePreview: "Vista previa de {{title}}",
+  previewUnavailable: "Vista previa no disponible.",
+  footnotes: "Notas al pie",
+  sourceProvenance: "Procedencia de la fuente",
+  lineEnding: "Fin de línea",
+  encoding: "Codificación",
+  contentHash: "Hash del contenido",
+  readOnlyMode: "{{mode}} es de solo lectura",
+  headingLevel: "Nivel {{level}} {{title}}",
+})

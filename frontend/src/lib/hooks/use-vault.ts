@@ -14,6 +14,14 @@ export const vaultKeys = {
 export function useVaults() { return useQuery({ queryKey: vaultKeys.all, queryFn: vaultApi.list }) }
 export function useVaultFiles(vaultId?: string) { return useQuery({ queryKey: vaultKeys.files(vaultId ?? ''), queryFn: () => vaultApi.files(vaultId!), enabled: Boolean(vaultId) }) }
 export function useVaultPage(vaultId?: string, noteId?: string) { return useQuery({ queryKey: vaultKeys.page(vaultId ?? '', noteId ?? ''), queryFn: () => vaultApi.page(vaultId!, noteId!), enabled: Boolean(vaultId && noteId) }) }
+export function useVaultPagePreview(vaultId?: string, noteId?: string, enabled = false) {
+  return useQuery({
+    queryKey: vaultKeys.page(vaultId ?? '', noteId ?? ''),
+    queryFn: () => vaultApi.page(vaultId!, noteId!),
+    enabled: Boolean(vaultId && noteId && enabled),
+    staleTime: 30_000,
+  })
+}
 export function useVaultBacklinks(vaultId?: string, noteId?: string) { return useQuery({ queryKey: vaultKeys.backlinks(vaultId ?? '', noteId ?? ''), queryFn: () => vaultApi.backlinks(vaultId!, noteId!), enabled: Boolean(vaultId && noteId) }) }
 export function useVaultOutgoing(vaultId?: string, noteId?: string) { return useQuery({ queryKey: [...vaultKeys.page(vaultId ?? '', noteId ?? ''), 'outgoing'], queryFn: () => vaultApi.outgoing(vaultId!, noteId!), enabled: Boolean(vaultId && noteId) }) }
 export function useVaultGraph(vaultId?: string, noteId?: string, enabled = true) { return useQuery({ queryKey: vaultKeys.graph(vaultId ?? '', noteId), queryFn: () => vaultApi.graph(vaultId!, noteId!), enabled: Boolean(vaultId && noteId && enabled) }) }

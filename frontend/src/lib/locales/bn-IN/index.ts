@@ -1262,3 +1262,20 @@ export const bnIN = {
     },
   },
 }
+
+Object.assign(bnIN.knowledge, {
+  source: "উৎস",
+  livePreview: "লাইভ প্রিভিউ",
+  emptyNote: "এই নোটটি খালি।",
+  pageInvalid: "প্রক্ষেপিত পৃষ্ঠার ডেটা অবৈধ।",
+  canonicalPathUnavailable: "ক্যানোনিক্যাল ভল্ট পথটি উপলভ্য নয়।",
+  pagePreview: "{{title}} পূর্বরূপ",
+  previewUnavailable: "পূর্বরূপ উপলভ্য নয়।",
+  footnotes: "পাদটীকা",
+  sourceProvenance: "উৎসের প্রামাণ্য তথ্য",
+  lineEnding: "লাইনের সমাপ্তি",
+  encoding: "এনকোডিং",
+  contentHash: "কনটেন্ট হ্যাশ",
+  readOnlyMode: "{{mode}} শুধু-পঠন",
+  headingLevel: "স্তর {{level}} {{title}}",
+})

@@ -1261,3 +1261,20 @@ export const ptBR = {
     },
   },
 }
+
+Object.assign(ptBR.knowledge, {
+  source: "Fonte",
+  livePreview: "Prévia ao vivo",
+  emptyNote: "Esta nota está vazia.",
+  pageInvalid: "Os dados projetados da página são inválidos.",
+  canonicalPathUnavailable: "O caminho canônico do cofre não está disponível.",
+  pagePreview: "Prévia de {{title}}",
+  previewUnavailable: "Prévia indisponível.",
+  footnotes: "Notas de rodapé",
+  sourceProvenance: "Proveniência da fonte",
+  lineEnding: "Fim de linha",
+  encoding: "Codificação",
+  contentHash: "Hash do conteúdo",
+  readOnlyMode: "{{mode}} é somente leitura",
+  headingLevel: "Nível {{level}} {{title}}",
+})
