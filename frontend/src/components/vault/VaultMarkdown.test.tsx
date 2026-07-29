@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { VaultMarkdown } from './VaultMarkdown'
+
+const previewQuery = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/hooks/use-vault', () => ({
+  useVaultPagePreview: previewQuery,
+}))
 
 const resolvedLinkFixture = {
   id: 'link:research',
@@ -26,6 +32,13 @@ const unresolvedLinkFixture = {
   resolved: false,
 }
 
+beforeEach(() => {
+  previewQuery.mockReturnValue({
+    data: undefined,
+    isError: false,
+  })
+})
+
 describe('VaultMarkdown', () => {
   it('renders markdown without executing raw HTML and navigates resolved wikilinks', () => {
     const onNavigate = vi.fn()
@@ -43,6 +56,7 @@ describe('VaultMarkdown', () => {
     }]} onNavigate={onNavigate} />)
     fireEvent.click(screen.getByRole('button', { name: 'Research' }))
     expect(onNavigate).toHaveBeenCalledWith('note:two')
+    expect(onNavigate).toHaveBeenCalledTimes(1)
     expect(document.querySelector('img')).toBeNull()
   })
 })
@@ -95,6 +109,30 @@ describe('VaultMarkdown reading mode', () => {
     fireEvent.focus(screen.getByRole('button', { name: 'Research' }))
     expect(onPreview).toHaveBeenCalledWith(resolvedLinkFixture)
     expect(screen.queryByRole('link', { name: 'Web' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['a successful preview query', false],
+    ['a failed preview query', true],
+  ])('navigates exactly once with %s', (_label, isError) => {
+    previewQuery.mockReturnValue({
+      data: undefined,
+      isError,
+    })
+    const onNavigate = vi.fn()
+    render(
+      <VaultMarkdown
+        vaultId="vault:one"
+        markdown="[[Research]]"
+        links={[resolvedLinkFixture]}
+        onNavigate={onNavigate}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Research' }))
+
+    expect(onNavigate).toHaveBeenCalledTimes(1)
+    expect(onNavigate).toHaveBeenCalledWith('note:research')
   })
 
   it('maps a resolved Markdown link by its UTF-8 source span', () => {

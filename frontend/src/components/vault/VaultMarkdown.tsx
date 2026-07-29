@@ -204,7 +204,9 @@ function readingComponents(
         <button
           type="button"
           className="font-medium text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => onNavigate(link.target_note_id!)}
+          onClick={vaultId
+            ? undefined
+            : () => onNavigate(link.target_note_id!)}
           onFocus={() => onPreview?.(link)}
           onMouseEnter={() => onPreview?.(link)}
         >
