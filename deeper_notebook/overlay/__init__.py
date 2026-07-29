@@ -14,13 +14,23 @@ from deeper_notebook.overlay.contracts import (
     OverlaySpace,
     UpdateOverlayNote,
 )
+from deeper_notebook.overlay.paths import (
+    OverlayLayout,
+    OverlayPathError,
+    daily_relative_path,
+    overlay_frontmatter,
+    unique_relative_path,
+    validate_relative_path,
+)
 
 __all__ = [
     "CreateDailyNote",
     "CreateUniqueNote",
     "OverlayMutationReceipt",
+    "OverlayLayout",
     "OverlayNote",
     "OverlayNoteKind",
+    "OverlayPathError",
     "OverlayPage",
     "OverlayProjectionState",
     "OverlayReceiptStatus",
@@ -28,4 +38,8 @@ __all__ = [
     "OverlaySourceAuthority",
     "OverlaySpace",
     "UpdateOverlayNote",
+    "daily_relative_path",
+    "overlay_frontmatter",
+    "unique_relative_path",
+    "validate_relative_path",
 ]
