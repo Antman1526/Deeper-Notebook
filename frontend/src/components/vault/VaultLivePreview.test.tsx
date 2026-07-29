@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { EditorSelection } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { describe, expect, it, vi } from 'vitest'
@@ -158,5 +158,25 @@ describe('VaultLivePreview', () => {
     const moved = view.moveByChar(EditorSelection.cursor(prefix.length), true)
 
     expect(moved.head).toBe(prefix.length + linkSource.length)
+  })
+
+  it('reuses its document source-index cache for selection-driven decoration rebuilds', () => {
+    const markdown = `${'# Plan\n\n'.repeat(2_000)}[[Research]]`
+    render(
+      <VaultLivePreview
+        title="Plan"
+        markdown={markdown}
+        links={[]}
+        onNavigate={vi.fn()}
+      />,
+    )
+
+    const editor = screen.getByRole('textbox', { name: 'Plan live preview' })
+    const view = EditorView.findFromDOM(editor)!
+    const toString = vi.spyOn(view.state.doc, 'toString')
+
+    act(() => view.dispatch({ selection: { anchor: view.state.doc.length } }))
+
+    expect(toString).not.toHaveBeenCalled()
   })
 })
