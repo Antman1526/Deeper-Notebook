@@ -23,6 +23,7 @@ export type KnowledgeNavigate = (
   relativePathHint?: string,
   titleHint?: string,
   paneId?: string,
+  targetText?: string,
 ) => void
 
 interface KnowledgePaneContentProps {
@@ -76,16 +77,17 @@ export function KnowledgePaneContent({
     const graphNode = graph.data?.nodes.find(
       (candidate) => candidate.id === targetNoteId,
     )
-    const title = graphNode?.title
-      || link?.alias
-      || link?.target_text
-      || targetNoteId
+    const titleHint = link?.target_note_title === null
+      || link?.target_note_title === undefined
+      ? graphNode?.title ?? undefined
+      : link.target_note_title
     onNavigate(
       activeTab.vaultId,
       targetNoteId,
-      link?.target_text,
-      title,
+      link?.target_relative_path ?? undefined,
+      titleHint,
       pane.id,
+      link?.target_text || targetNoteId,
     )
   }
 
@@ -149,8 +151,9 @@ export function KnowledgePaneContent({
             </div>
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_12rem]">
               <VaultMarkdown
+                vaultId={vaultId}
                 markdown={markdown}
-                links={page.data.outgoing_links}
+                links={currentOutgoing}
                 onNavigate={navigate}
               />
               <aside className="space-y-5">

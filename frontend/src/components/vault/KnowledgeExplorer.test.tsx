@@ -13,7 +13,30 @@ const states = vi.hoisted(() => ({
 const vaultQueries = vi.hoisted(() => ({
   page: vi.fn(),
   backlinks: vi.fn(),
+  outgoing: vi.fn(),
 }))
+
+const resolvedLink = {
+  id: 'link:linked',
+  source_note_id: 'note:one',
+  target_note_id: 'note:linked',
+  target_note_title: 'Linked canonical',
+  target_relative_path: 'notes/linked.md',
+  target_text: 'Linked mention',
+  link_kind: 'wikilink',
+  resolved: true,
+  source_start: 0,
+  source_end: 12,
+}
+
+const graphLink = {
+  ...resolvedLink,
+  id: 'link:graph-linked',
+  target_note_id: 'note:graph-linked',
+  target_note_title: 'Graph linked',
+  target_relative_path: 'notes/graph-linked.md',
+  target_text: 'Graph linked',
+}
 
 const files = [
   {
@@ -50,7 +73,7 @@ function pageFor(noteId?: string) {
     },
     blocks: [],
     tasks: [],
-    outgoing_links: [],
+    outgoing_links: [resolvedLink],
     backlinks: [],
   }
 }
@@ -97,7 +120,13 @@ vi.mock('@/lib/hooks/use-vault', () => ({
       ...states.links,
     }
   },
-  useVaultOutgoing: () => ({ data: [], ...states.links }),
+  useVaultOutgoing: (vaultId?: string, noteId?: string) => (
+    vaultQueries.outgoing(vaultId, noteId)
+    || {
+      data: noteId === 'note:one' ? [resolvedLink, graphLink] : [],
+      ...states.links,
+    }
+  ),
   useVaultGraph: () => ({
     data: { nodes: [{ id: 'note:one', title: 'One' }], edges: [] },
     ...states.graph,
@@ -129,23 +158,38 @@ vi.mock('./VaultLinks', () => ({
     title,
     links,
     direction,
+    onNavigate,
   }: {
     title: string
     links: Array<{
       source_note_title?: string | null
       source_note_id: string
+      target_note_id?: string | null
       target_text: string
     }>
     direction: 'source' | 'target'
+    onNavigate: (noteId: string) => void
   }) => (
     <section>
       <h2>{title}</h2>
       {links.map((link) => (
-        <p key={`${direction}:${link.source_note_id}`}>
-          {direction === 'source'
-            ? link.source_note_title || link.source_note_id
-            : link.target_text}
-        </p>
+        <div key={`${direction}:${link.source_note_id}:${link.target_text}`}>
+          <p>
+            {direction === 'source'
+              ? link.source_note_title || link.source_note_id
+              : link.target_text}
+          </p>
+          <button
+            type="button"
+            onClick={() => onNavigate(
+              direction === 'source'
+                ? link.source_note_id
+                : link.target_note_id!,
+            )}
+          >
+            Navigate {direction} {link.target_text}
+          </button>
+        </div>
       ))}
     </section>
   ),
@@ -153,16 +197,23 @@ vi.mock('./VaultLinks', () => ({
 vi.mock('./VaultMarkdown', () => ({
   VaultMarkdown: ({
     markdown,
+    links,
     onNavigate,
   }: {
     markdown: string
+    links: (typeof resolvedLink)[]
     onNavigate: (noteId: string) => void
   }) => (
     <div>
       {markdown}
-      <button type="button" onClick={() => onNavigate('note:linked')}>
-        Navigate Markdown link
-      </button>
+      {links[0]?.target_note_id && links[0]?.target_relative_path && (
+        <button
+          type="button"
+          onClick={() => onNavigate(links[0].target_note_id!)}
+        >
+          Navigate Markdown link
+        </button>
+      )}
     </div>
   ),
 }))
@@ -199,6 +250,11 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
+    vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
+      noteId === 'note:one'
+        ? { data: [resolvedLink, graphLink], ...states.links }
+        : { data: [], ...states.links }
+    ))
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
   })
 
@@ -287,6 +343,74 @@ describe('KnowledgeExplorer durable workspace integration', () => {
         (tab) => tab.id === workspace.panes['pane-3'].activeTabId,
       )?.noteId,
     ).toBe('note:linked')
+  })
+
+  it('opens resolved links with their canonical target path', async () => {
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate Markdown link',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
+      .toMatchObject({
+        noteId: 'note:linked',
+        title: 'Linked canonical',
+        relativePath: 'notes/linked.md',
+      })
+  })
+
+  it('opens inspector outgoing links with their canonical target fields', async () => {
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate target Linked mention',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[1])
+      .toMatchObject({
+        noteId: 'note:linked',
+        title: 'Linked canonical',
+        relativePath: 'notes/linked.md',
+      })
+  })
+
+  it('refuses resolved navigation without a canonical target path', async () => {
+    vaultQueries.outgoing.mockReturnValue({
+      data: [{ ...resolvedLink, target_relative_path: null }],
+      isLoading: false,
+      isError: false,
+    })
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    expect(screen.queryByRole('button', {
+      name: 'Navigate Markdown link',
+    })).not.toBeInTheDocument()
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
+      .toHaveLength(1)
+  })
+
+  it('fails closed when inspector links do not provide a canonical path', async () => {
+    vaultQueries.outgoing.mockReturnValue({
+      data: [{ ...resolvedLink, target_relative_path: null }],
+      isLoading: false,
+      isError: false,
+    })
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate target Linked mention',
+    }))
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Navigate source One',
+    }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
+      .toHaveLength(1)
   })
 
   it('opens pane-local graph navigation in its originating split pane', async () => {
@@ -441,6 +565,11 @@ describe('KnowledgeExplorer query states', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
+    vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
+      noteId === 'note:one'
+        ? { data: [resolvedLink, graphLink], ...states.links }
+        : { data: [], ...states.links }
+    ))
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
   })
 
