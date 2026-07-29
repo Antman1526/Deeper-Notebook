@@ -1,4 +1,4 @@
-import { markdownLanguage } from '@codemirror/lang-markdown'
+import { syntaxTree } from '@codemirror/language'
 import type { Extension, EditorState } from '@codemirror/state'
 import {
   Decoration,
@@ -32,6 +32,7 @@ export interface PreviewDecorationRecord {
 export interface LivePreviewOptions {
   links?: VaultLink[]
   onNavigate?: (noteId: string) => void
+  source?: string
 }
 
 const parserKinds: Partial<Record<string, MarkdownConstructKind>> = {
@@ -159,6 +160,37 @@ function sourceText(state: EditorState, range: SourceRange): string {
   return state.doc.sliceString(range.from, range.to)
 }
 
+function createPreviewSourceIndex(editorSource: string, rawSource?: string) {
+  if (!rawSource || rawSource === editorSource) {
+    return createMarkdownSourceIndex(editorSource)
+  }
+  if (rawSource.replace(/\r\n/g, '\n') !== editorSource) {
+    return createMarkdownSourceIndex(editorSource)
+  }
+
+  const editorToRaw = new Array<number>(editorSource.length + 1)
+  let editorOffset = 0
+  let rawOffset = 0
+  while (rawOffset < rawSource.length) {
+    editorToRaw[editorOffset] = rawOffset
+    if (rawSource.startsWith('\r\n', rawOffset)) {
+      rawOffset += 2
+      editorOffset += 1
+    } else {
+      rawOffset += 1
+      editorOffset += 1
+    }
+  }
+  editorToRaw[editorOffset] = rawOffset
+  const rawIndex = createMarkdownSourceIndex(rawSource)
+
+  return {
+    byteOffset: (offset: number) => rawIndex.byteOffset(
+      editorToRaw[Math.max(0, Math.min(editorOffset, offset))],
+    ),
+  }
+}
+
 function linkLabel(source: string, kind: 'markdown' | 'wiki'): string {
   if (kind === 'markdown') return /^\[([^\]]*)\]/.exec(source)?.[1] || source
   const body = source.slice(2, -2)
@@ -234,7 +266,7 @@ function resolvedLinkFor(
   kind: 'markdown' | 'wiki',
   options: LivePreviewOptions,
   resolvedSpans: Map<string, VaultLink>,
-  sourceIndex: ReturnType<typeof createMarkdownSourceIndex>,
+  sourceIndex: Pick<ReturnType<typeof createMarkdownSourceIndex>, 'byteOffset'>,
 ): VaultLink | undefined {
   if (!options.onNavigate || resolvedSpans.size === 0) return undefined
   const sourceStart = sourceIndex.byteOffset(range.from)
@@ -262,7 +294,7 @@ function createRecords(
   const parserRanges: Array<{ kind: MarkdownConstructKind; range: SourceRange }> = []
   const exclusions: SourceRange[] = []
   const seenParserRanges = new Set<string>()
-  const tree = markdownLanguage.parser.parse(source)
+  const tree = syntaxTree(state)
 
   for (const range of visible) {
     tree.iterate({
@@ -306,7 +338,7 @@ function createRecords(
   }).filter((range) => !overlapsSorted(range, mergedExclusions))
 
   const resolvedSpans = buildUniqueResolvedSpanMap(options.links || [])
-  const sourceIndex = createMarkdownSourceIndex(source)
+  const sourceIndex = createPreviewSourceIndex(source, options.source)
   const records: PreviewDecorationRecord[] = []
   const add = (
     kind: string,
@@ -384,7 +416,7 @@ function createRecords(
         }
         add('fenced-code-content', range, Decoration.mark({ class: 'dn-live-preview-code' }))
       } else if (kind === 'link') {
-        if (containedBy(range, wikiRanges)) continue
+        if (containedBy(range, wikiRanges) || containedBy(range, footnoteRanges)) continue
         const link = resolvedLinkFor(state, range, 'markdown', options, resolvedSpans, sourceIndex)
         if (link && options.onNavigate) {
           replace('markdown-link', range, Decoration.replace({
@@ -441,13 +473,31 @@ function createRecords(
   }
 
   for (const range of tagRanges) {
-    if (!selectionIntersects(state, range)) add('tag', range, Decoration.mark({ class: 'dn-live-preview-tag' }))
+    try {
+      if (!selectionIntersects(state, range)) {
+        add('tag', range, Decoration.mark({ class: 'dn-live-preview-tag' }))
+      }
+    } catch {
+      // Omit only the failed scanner construct.
+    }
   }
   for (const range of footnoteRanges) {
-    if (!selectionIntersects(state, range)) add('footnote-mark', range, Decoration.mark({ class: 'dn-live-preview-footnote' }))
+    try {
+      if (!selectionIntersects(state, range)) {
+        add('footnote-mark', range, Decoration.mark({ class: 'dn-live-preview-footnote' }))
+      }
+    } catch {
+      // Omit only the failed scanner construct.
+    }
   }
   for (const range of mathRanges) {
-    if (!selectionIntersects(state, range)) add('math-mark', range, Decoration.mark({ class: 'dn-live-preview-math' }))
+    try {
+      if (!selectionIntersects(state, range)) {
+        add('math-mark', range, Decoration.mark({ class: 'dn-live-preview-math' }))
+      }
+    } catch {
+      // Omit only the failed scanner construct.
+    }
   }
 
   return records.sort((left, right) => left.from - right.from
