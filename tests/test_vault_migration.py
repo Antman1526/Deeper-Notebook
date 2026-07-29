@@ -17,6 +17,8 @@ UP = ROOT / "deeper_notebook/database/migrations/32.surrealql"
 DOWN = ROOT / "deeper_notebook/database/migrations/32_down.surrealql"
 UPGRADE = ROOT / "deeper_notebook/database/migrations/33.surrealql"
 UPGRADE_DOWN = ROOT / "deeper_notebook/database/migrations/33_down.surrealql"
+NEWLINE_UP = ROOT / "deeper_notebook/database/migrations/35.surrealql"
+NEWLINE_DOWN = ROOT / "deeper_notebook/database/migrations/35_down.surrealql"
 
 VAULT_TABLES = (
     "vault_mount",
@@ -145,6 +147,20 @@ def test_migration_33_down_is_discoverable_and_non_destructive():
     assert sql.strip()
     assert "REMOVE FIELD" not in sql
     assert "REMOVE TABLE" not in sql
+
+
+def test_migration_35_adds_optional_vault_file_newline_metadata():
+    sql = NEWLINE_UP.read_text(encoding="utf-8")
+    assert (
+        "DEFINE FIELD IF NOT EXISTS newline ON TABLE vault_file "
+        "TYPE option<string> ASSERT $value = NONE OR $value IN "
+        '["lf", "crlf", "mixed", "none"];'
+    ) in sql
+
+
+def test_migration_35_down_removes_only_vault_file_newline_metadata():
+    sql = NEWLINE_DOWN.read_text(encoding="utf-8")
+    assert sql.strip() == "REMOVE FIELD IF EXISTS newline ON TABLE vault_file;"
 
 
 def _document(**updates) -> ParsedDocument:
