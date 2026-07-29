@@ -79,7 +79,18 @@ function rehypeViewScopedFootnotes(options: { viewPrefix: string }) {
 function isAttachmentTarget(target?: string): boolean {
   if (!target) return false
   const path = target.trim().split(/[?#]/, 1)[0]
-  return /\.(?:png|jpe?g|gif|webp|pdf|mp3|mp4|mov)$/i.test(path)
+  return /\.(?:png|jpe?g|gif|webp|svg|pdf|mp3|mp4|mov)$/i.test(path)
+}
+
+function inertImageLabel(alt?: string, source?: string | Blob): string {
+  if (alt?.trim()) return alt.trim()
+  const path = typeof source === 'string' ? source.trim().split(/[?#]/, 1)[0] : ''
+  const filename = path.split(/[\\/]/).at(-1) || ''
+  try {
+    return decodeURIComponent(filename) || 'Attachment'
+  } catch {
+    return filename || 'Attachment'
+  }
 }
 
 function sourceSpan(
@@ -167,6 +178,9 @@ function readingComponents(
     h5: headingComponent('h5', 5, headingsByLevel.get(5) || [], headingIdPrefix),
     h6: headingComponent('h6', 6, headingsByLevel.get(6) || [], headingIdPrefix),
     li: taskListItem,
+    img: ({ alt, src }) => (
+      <span className="text-muted-foreground">{inertImageLabel(alt, src)}</span>
+    ),
     a: ({ node, children, ...props }) => {
       const properties = props as Record<string, unknown>
       const href = typeof properties.href === 'string' ? properties.href : undefined
