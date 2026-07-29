@@ -2,6 +2,7 @@ import {
   useMutation,
   useQueries,
   useQuery,
+  type UseQueryResult,
 } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { useDebounce } from 'use-debounce'
@@ -9,6 +10,7 @@ import { useDebounce } from 'use-debounce'
 import type { OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
 import { searchApi } from '@/lib/api/search'
 import { vaultApi, type VaultMount } from '@/lib/api/vault'
+import type { SearchResponse } from '@/lib/types/search'
 import {
   buildKnowledgeCatalog,
   type KnowledgeCatalogCandidate,
@@ -23,6 +25,21 @@ const searchRequest = (query: string, type: 'text' | 'vector') => ({
   search_notes: true,
   minimum_score: 0.3,
 })
+
+/**
+ * Query-shaped text-search state. Data is available only when `isCurrent` is
+ * true, so a result for an earlier query cannot be rendered as the live query.
+ */
+export type KnowledgeIndexedTextSearch =
+  | (UseQueryResult<SearchResponse, Error> & {
+    isCurrent: true
+    query: string
+  })
+  | (Omit<UseQueryResult<SearchResponse, Error>, 'data'> & {
+    data: undefined
+    isCurrent: false
+    query: string
+  })
 
 export function useKnowledgeCatalog(
   mounts: VaultMount[],
@@ -61,17 +78,21 @@ export function useKnowledgeCatalog(
 }
 
 export function useKnowledgeIndexedSearch(query: string, enabled: boolean) {
+  const liveQuery = query.trim()
   const [input, setInput] = useState('')
   useEffect(() => {
-    setInput(query.trim())
-  }, [query])
+    setInput(liveQuery)
+  }, [liveQuery])
   const [debounced] = useDebounce(input, 250)
-  const text = useQuery({
+  const textQuery = useQuery({
     queryKey: ['knowledge-command-search', 'text', debounced],
     queryFn: () => searchApi.search(searchRequest(debounced, 'text')),
     enabled: enabled && debounced.length >= 2,
     staleTime: 10_000,
   })
+  const text: KnowledgeIndexedTextSearch = liveQuery === debounced
+    ? { ...textQuery, isCurrent: true, query: liveQuery }
+    : { ...textQuery, data: undefined, isCurrent: false, query: liveQuery }
   const semantic = useMutation({
     mutationFn: (value: string) =>
       searchApi.search(searchRequest(value.trim(), 'vector')),
