@@ -6,6 +6,14 @@
 - Tested feature commit: `3f634fb0100e95cb328406c91b10941bd1fce3aa` (`test(knowledge): tighten command navigation proof`).
 - The feature tree was checked before dependency installation and before every
   gate below. This record is deliberately committed *after* the tested tree.
+- Initial verification-record commit:
+  `1299a314895b47dafdc27790d1bf782bc486a5dd`
+  (`docs(verification): record command navigation proof`), whose parent is the
+  tested feature tree `3f634fb0100e95cb328406c91b10941bd1fce3aa`.
+- A commit cannot self-record its own final hash. This traceability text is a
+  later documentation-only addendum, so readers can distinguish the tested
+  feature tree, the initial verification-record commit, and this addendum
+  commit rather than treating them as one tree.
 - The browser run used the repository's mocked-browser Playwright project and
   fixture routes only; it did not access a real Second Brain or an external
   vault.
@@ -51,8 +59,8 @@ rg -n \
   frontend/src frontend/e2e
 ```
 
-The broad diff expression returned 45 textual matches, so this was not a
-grep-silence result. They are command safety labels and their tests,
+The broad diff expression returned 45 textual matches and its shell pipeline
+(including `|| true`) exited 0, so this was not a grep-silence result. They are command safety labels and their tests,
 mocked-fixture `POST` allowlists for existing scan/search traffic, DOM event
 or element cleanup (`remove`/`removeEventListener`), pane movement, and string
 normalization/replacement. The targeted `vaultApi`/vault-mutation search had
@@ -61,6 +69,39 @@ write, rename, move, delete, or toggle request path was found.
 
 `git diff --check origin/main...3f634fb0` also exited 0 before this record was
 created.
+
+## Post-initial-record clean audit (exact commit `1299a314`)
+
+The following audit ran while `HEAD` was exactly
+`1299a314895b47dafdc27790d1bf782bc486a5dd`, before this later
+documentation-only addendum:
+
+```text
+git status --short --branch
+exit: 0
+output: ## codex/deeper-notebook-command-navigation...origin/main [ahead 13]
+
+git diff --check origin/main...HEAD
+exit: 0
+output: (none)
+
+find frontend -maxdepth 1 \( -name node_modules -o -name .next -o -name test-results -o -name playwright-report -o -name blob-report -o -name .cache -o -name .turbo \) -print
+exit: 0
+output: frontend/test-results
+
+find . -maxdepth 2 -type d \( -name .venv -o -name .pytest_cache -o -name .ruff_cache -o -name .mypy_cache \) -print
+exit: 0
+output: (none)
+
+test -f frontend/test-results/.last-run.json && git ls-files --error-unmatch frontend/test-results/.last-run.json
+exit: 0
+output: frontend/test-results/.last-run.json
+```
+
+The only remaining generated-artifact path was the tracked repository fixture
+`frontend/test-results/.last-run.json`; no `node_modules`, `.next`, virtualenv,
+pytest cache, Playwright report, blob report, or frontend cache directory
+remained.
 
 ## Non-blocking warnings kept separate from pass claims
 
