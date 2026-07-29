@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { VaultMarkdown } from './VaultMarkdown'
@@ -33,6 +33,8 @@ describe('VaultMarkdown', () => {
       id: 'link:1',
       source_note_id: 'note:one',
       target_note_id: 'note:two',
+      target_note_title: 'Research',
+      target_relative_path: 'research.md',
       target_text: 'Research',
       link_kind: 'wikilink',
       resolved: true,
@@ -164,5 +166,106 @@ describe('VaultMarkdown reading mode', () => {
     fireEvent.click(links[1])
     expect(onNavigate).toHaveBeenNthCalledWith(1, 'note:first')
     expect(onNavigate).toHaveBeenNthCalledWith(2, 'note:second')
+  })
+
+  it('namespaces generated footnotes to each rendered view', () => {
+    const markdown = 'Evidence[^1].\n\n[^1]: Local source'
+    render(
+      <>
+        <section data-testid="first-view">
+          <VaultMarkdown noteId="note:same" headingIdPrefix="Pane One / Tab" markdown={markdown} links={[]} onNavigate={vi.fn()} footnoteLabel="Footnotes" />
+        </section>
+        <section data-testid="second-view">
+          <VaultMarkdown noteId="note:same" headingIdPrefix="Pane Two / Tab" markdown={markdown} links={[]} onNavigate={vi.fn()} footnoteLabel="Footnotes" />
+        </section>
+      </>,
+    )
+
+    const firstView = screen.getByTestId('first-view')
+    const secondView = screen.getByTestId('second-view')
+    const firstReference = within(firstView).getByRole('doc-noteref')
+    const secondReference = within(secondView).getByRole('doc-noteref')
+    const firstHref = firstReference.getAttribute('href')!
+    const secondHref = secondReference.getAttribute('href')!
+    expect(firstHref).not.toBe(secondHref)
+    expect(firstHref).not.toMatch(/[\s/]/)
+    expect(firstView.contains(document.getElementById(firstHref.slice(1)))).toBe(true)
+    expect(secondView.contains(document.getElementById(secondHref.slice(1)))).toBe(true)
+
+    const firstDescription = firstReference.getAttribute('aria-describedby')!
+    const secondDescription = secondReference.getAttribute('aria-describedby')!
+    expect(firstDescription).not.toBe(secondDescription)
+    expect(firstView.contains(document.getElementById(firstDescription))).toBe(true)
+    expect(secondView.contains(document.getElementById(secondDescription))).toBe(true)
+
+    const ids = Array.from(document.querySelectorAll('[id]'), (element) => element.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('renders resolved wiki and Markdown attachments as inert metadata', () => {
+    const wikiMarkdown = '[[photo.png]]'
+    const markdownAttachment = '[Photo](assets/photo.png?download=1#preview)'
+    render(
+      <>
+        <VaultMarkdown
+          markdown={wikiMarkdown}
+          links={[{ ...resolvedLinkFixture, target_text: 'photo.png', source_start: 0, source_end: new TextEncoder().encode(wikiMarkdown).length }]}
+          onNavigate={vi.fn()}
+        />
+        <VaultMarkdown
+          markdown={markdownAttachment}
+          links={[{ ...resolvedLinkFixture, link_kind: 'markdown', target_text: 'assets/photo.png?download=1#preview', source_start: 0, source_end: new TextEncoder().encode(markdownAttachment).length }]}
+          onNavigate={vi.fn()}
+        />
+      </>,
+    )
+
+    expect(screen.queryByRole('button', { name: /photo/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /photo/i })).not.toBeInTheDocument()
+    for (const label of screen.getAllByText(/photo/i)) {
+      expect(label).toHaveClass('text-muted-foreground')
+    }
+  })
+
+  it.each([
+    ['first record first', false],
+    ['second record first', true],
+  ])('keeps a conflicting source span inert with %s', (_label, reverse) => {
+    const markdown = '[[Research]]'
+    const links = [
+      { ...resolvedLinkFixture, id: 'first', target_note_id: 'note:first' },
+      { ...resolvedLinkFixture, id: 'second', target_note_id: 'note:second' },
+    ]
+    render(
+      <VaultMarkdown
+        markdown={markdown}
+        links={reverse ? links.reverse() : links}
+        onNavigate={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Research' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Research' })).not.toBeInTheDocument()
+  })
+
+  it('indexes outgoing spans once instead of scanning every link for every anchor', () => {
+    const markdown = Array.from({ length: 80 }, (_, index) => `[[Note-${index}]]`).join(' ')
+    const records = Array.from({ length: 500 }, (_, index) => ({
+      ...resolvedLinkFixture,
+      id: `irrelevant-${index}`,
+      source_start: markdown.length + index,
+      source_end: markdown.length + index + 1,
+    }))
+    let indexedReads = 0
+    const links = new Proxy(records, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) indexedReads += 1
+        return Reflect.get(target, property, receiver)
+      },
+    })
+
+    render(<VaultMarkdown markdown={markdown} links={links} onNavigate={vi.fn()} />)
+
+    expect(indexedReads).toBeLessThan(records.length * 2)
   })
 })

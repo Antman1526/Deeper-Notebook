@@ -1,6 +1,6 @@
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { remarkVaultLinks } from './remark-vault-links'
 
@@ -37,5 +37,70 @@ describe('remarkVaultLinks', () => {
       expect.objectContaining({ 'data-source-start': firstStart, 'data-source-end': firstEnd }),
       expect.objectContaining({ 'data-source-start': secondStart, 'data-source-end': secondEnd }),
     ])
+  })
+
+  it('does not transform wiki syntax nested inside a reference link', () => {
+    const markdown = '[before [[Research]]][ref]\n\n[ref]: /target'
+    const file = { value: markdown }
+    const tree = unified().use(remarkParse).parse(file)
+
+    remarkVaultLinks({ links: [] })(tree, file)
+
+    expect(file.value).toBe(markdown)
+    const paragraph = tree.children[0] as unknown as { children: Array<{ type: string; children?: Array<{ type: string }> }> }
+    expect(paragraph.children[0].type).toBe('linkReference')
+    expect(paragraph.children[0].children?.some((child) => child.type === 'link')).toBe(false)
+  })
+
+  it('positions a surrogate-pair alias at its visible source text', () => {
+    const markdown = '😀 [[Research|Alias😀]]'
+    const file = { value: markdown }
+    const tree = unified().use(remarkParse).parse(file)
+
+    remarkVaultLinks({ links: [] })(tree, file)
+
+    const paragraph = tree.children[0] as unknown as { children: Array<Record<string, unknown>> }
+    const anchor = paragraph.children.find((child) => child.type === 'link') as { children: Array<{ position: unknown }> }
+    const aliasStart = markdown.indexOf('Alias')
+    const aliasEnd = aliasStart + 'Alias😀'.length
+    expect(anchor.children[0].position).toEqual({
+      start: { line: 1, column: aliasStart + 1, offset: aliasStart },
+      end: { line: 1, column: aliasEnd + 1, offset: aliasEnd },
+    })
+  })
+
+  it('positions a trimmed alias correctly after CRLF', () => {
+    const markdown = 'head\r\n[[Research|  Alias  ]]'
+    const file = { value: markdown }
+    const tree = unified().use(remarkParse).parse(file)
+
+    remarkVaultLinks({ links: [] })(tree, file)
+
+    const paragraph = tree.children[0] as unknown as { children: Array<Record<string, unknown>> }
+    const anchor = paragraph.children.find((child) => child.type === 'link') as { children: Array<{ position: unknown }> }
+    const aliasStart = markdown.indexOf('Alias')
+    expect(anchor.children[0].position).toEqual({
+      start: { line: 2, column: 14, offset: aliasStart },
+      end: { line: 2, column: 19, offset: aliasStart + 5 },
+    })
+  })
+
+  it('builds UTF-8 spans with linear encoding work for many wiki links', () => {
+    const markdown = Array.from({ length: 200 }, (_, index) => `[[Note-${index}|Alias-${index}]]`).join(' ')
+    const file = { value: markdown }
+    const tree = unified().use(remarkParse).parse(file)
+    const originalEncode = TextEncoder.prototype.encode
+    let encodedCodeUnits = 0
+    const encode = vi.spyOn(TextEncoder.prototype, 'encode').mockImplementation(function (this: TextEncoder, input = '') {
+      encodedCodeUnits += input.length
+      return originalEncode.call(this, input)
+    })
+
+    try {
+      remarkVaultLinks({ links: [] })(tree, file)
+      expect(encodedCodeUnits).toBeLessThan(markdown.length * 4)
+    } finally {
+      encode.mockRestore()
+    }
   })
 })
