@@ -1,15 +1,17 @@
 import { keymap } from '@codemirror/view'
-import { EditorState } from '@codemirror/state'
+import { EditorState, StateEffect } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { openSearchPanel } from '@codemirror/search'
 import { createRef } from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   VaultCodeMirror,
   type VaultCodeMirrorHandle,
 } from './VaultCodeMirror'
+
+afterEach(() => vi.restoreAllMocks())
 
 describe('VaultCodeMirror', () => {
   it('exposes exact source while rejecting every mutation path', () => {
@@ -102,5 +104,38 @@ describe('VaultCodeMirror', () => {
     expect(ref.current?.getDocument()).toBe('# Updated\r\n')
     const editor = screen.getByRole('textbox', { name: 'Plan source' })
     expect(EditorView.findFromDOM(editor)!.state.doc.toString()).toBe('# Updated\n')
+  })
+
+  it('maps raw CRLF offsets to the exact CodeMirror selection and scroll position', () => {
+    const ref = createRef<VaultCodeMirrorHandle>()
+    const inertScrollEffect = StateEffect.define<null>()
+    const scrollIntoView = vi.spyOn(EditorView, 'scrollIntoView')
+      .mockImplementation(() => inertScrollEffect.of(null))
+    const { rerender } = render(
+      <VaultCodeMirror
+        ref={ref}
+        ariaLabel="Plan source"
+        markdown={'# Original\n\n## Target\n'}
+        extensions={[]}
+      />,
+    )
+    const updatedSource = '# Updated\r\n\r\nParagraph\r\n\r\n## Target\r\n'
+
+    rerender(
+      <VaultCodeMirror
+        ref={ref}
+        ariaLabel="Plan source"
+        markdown={updatedSource}
+        extensions={[]}
+      />,
+    )
+
+    const editor = screen.getByRole('textbox', { name: 'Plan source' })
+    const view = EditorView.findFromDOM(editor)!
+    const expectedOffset = view.state.doc.toString().indexOf('## Target')
+    act(() => ref.current?.scrollToOffset(updatedSource.indexOf('## Target')))
+
+    expect(view.state.selection.main.anchor).toBe(expectedOffset)
+    expect(scrollIntoView).toHaveBeenCalledWith(expectedOffset, { y: 'center' })
   })
 })
