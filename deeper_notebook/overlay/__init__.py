@@ -22,12 +22,20 @@ from deeper_notebook.overlay.paths import (
     unique_relative_path,
     validate_relative_path,
 )
+from deeper_notebook.overlay.storage import (
+    OverlayConflictError,
+    OverlaySnapshot,
+    OverlayStorage,
+    OverlayStorageError,
+    StoredOverlayBytes,
+)
 
 __all__ = [
     "CreateDailyNote",
     "CreateUniqueNote",
     "OverlayMutationReceipt",
     "OverlayLayout",
+    "OverlayConflictError",
     "OverlayNote",
     "OverlayNoteKind",
     "OverlayPathError",
@@ -35,8 +43,12 @@ __all__ = [
     "OverlayProjectionState",
     "OverlayReceiptStatus",
     "OverlayRevision",
+    "OverlaySnapshot",
     "OverlaySourceAuthority",
     "OverlaySpace",
+    "OverlayStorage",
+    "OverlayStorageError",
+    "StoredOverlayBytes",
     "UpdateOverlayNote",
     "daily_relative_path",
     "overlay_frontmatter",
