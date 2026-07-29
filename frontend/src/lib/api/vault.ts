@@ -16,7 +16,11 @@ export const vaultFileSchema = z.object({
   content_hash: z.string().nullable(),
   parse_status: z.enum(['pending', 'parsed', 'unsupported', 'invalid', 'conflict', 'missing']),
   size_bytes: z.number().int().nonnegative(),
-  modified_ns: z.number().int().nonnegative(),
+  // JSON number precision is approximate above 2^53; content_hash is the exact identity.
+  modified_ns: z.number()
+    .finite()
+    .nonnegative()
+    .refine(Number.isInteger, 'modified_ns must be an integer'),
   encoding: z.string().nullable(),
   newline: z.enum(['lf', 'crlf', 'mixed', 'none']).nullable(),
   deleted_state: z.enum(['present', 'missing']),
