@@ -92,7 +92,7 @@ export function CommandPalette() {
   const [query, setQuery] = useState('')
   const [invocationMode, setInvocationMode] = useState<'global' | 'slash'>('global')
   const [invoker, setInvoker] = useState<HTMLElement | null>(null)
-  const [commandUnavailable, setCommandUnavailable] = useState(false)
+  const [commandUnavailableVersion, setCommandUnavailableVersion] = useState(0)
   const navigationItems = useMemo(() => getNavigationItems(t), [t])
   const createItems = useMemo(() => getCreateItems(t), [t])
   const themeItems = useMemo(() => getThemeItems(t), [t])
@@ -115,12 +115,19 @@ export function CommandPalette() {
     setInvocationMode(surface.kind)
     setQuery(surface.initialQuery)
     setInvoker(surface.invoker)
-    setCommandUnavailable(false)
+    setCommandUnavailableVersion(0)
     setOpen(true)
   }, [surface.initialQuery, surface.invoker, surface.kind, surface.requestId])
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const editable = target && (
+        target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+      )
+      if (editable && !(open && event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey))) {
+        return
+      }
       if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         event.stopPropagation()
@@ -133,10 +140,6 @@ export function CommandPalette() {
         return
       }
 
-      const target = event.target as HTMLElement | null
-      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) {
-        return
-      }
       if (event.key === 'n' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         event.stopPropagation()
@@ -278,12 +281,16 @@ export function CommandPalette() {
   const executeKnowledge = useCallback(async (id: Parameters<typeof executeKnowledgeCommand>[0]) => {
     const generation = pageContext.generation
     const liveContext = buildKnowledgeContext()
-    if (
-      !liveContext
-      || !await executeKnowledgeCommand(id, liveContext)
-      || useKnowledgeCommandContextStore.getState().generation !== generation
-    ) {
-      setCommandUnavailable(true)
+    try {
+      if (
+        !liveContext
+        || !await executeKnowledgeCommand(id, liveContext)
+        || useKnowledgeCommandContextStore.getState().generation !== generation
+      ) {
+        setCommandUnavailableVersion(version => version + 1)
+        return
+      }
+    } catch {
       return
     }
     closePalette()
@@ -320,8 +327,8 @@ export function CommandPalette() {
           className={invocationMode === 'slash' ? 'pl-3' : undefined}
         />
       </div>
-      {commandUnavailable && (
-        <p aria-live="polite" role="status" className="sr-only">
+      {commandUnavailableVersion > 0 && (
+        <p key={commandUnavailableVersion} aria-live="polite" role="status" className="sr-only">
           {t('knowledge.commandUnavailable')}
         </p>
       )}
@@ -439,7 +446,12 @@ export function CommandPalette() {
               <CommandGroup heading={t('knowledge.semanticSearchResults')}>
                 {semanticResults.map(result => {
                   const tab = searchResultToOpenTab(result)
-                  if (!tab) return null
+                  if (result.vault_provenance && !tab) return null
+                  if (!tab) return (
+                    <CommandItem key={result.id} value={`semantic search ${result.title}`} onSelect={handleSearch}>
+                      <Search className="h-4 w-4" /><span>{result.title}</span>
+                    </CommandItem>
+                  )
                   return (
                     <CommandItem key={result.id} value={`semantic result ${tab.title} ${tab.relativePath}`} onSelect={() => selectTab(tab)}>
                       <FileText className="h-4 w-4" /><span>{tab.title}</span>
