@@ -36,6 +36,8 @@ const pageFixture: VaultPage = {
   backlinks: [],
 }
 
+const mixedNewlineMarkdown = '# ATX\r\nBody\r\rSetext\r------\r\n## Tail'
+
 function pageFixtureWith(
   overrides: Omit<Partial<VaultPage>, 'note' | 'file'> & {
     note?: Partial<VaultPage['note']>
@@ -141,13 +143,94 @@ describe('VaultDocumentView', () => {
 
     const ids = headings.map((heading) => heading.id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(ids[0]).toMatch(/^pane-1-tab-1-/)
-    expect(ids[1]).toMatch(/^pane-2-tab-2-/)
+    expect(ids[0]).toMatch(/^v-/)
+    expect(ids[1]).toMatch(/^v-/)
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Level 1 Plan' })[1])
     expect(firstScroll).not.toHaveBeenCalled()
     expect(secondScroll).toHaveBeenCalledWith({ block: 'start' })
   })
+
+  it('builds ATX and Setext outline entries across mixed CR and CRLF input', () => {
+    renderDocument('reading', pageFixtureWith({
+      note: { content: mixedNewlineMarkdown },
+    }))
+
+    expect(screen.getByRole('button', { name: 'Level 1 ATX' }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Level 2 Setext' }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Level 2 Tail' }))
+      .toBeInTheDocument()
+  })
+
+  it.each([
+    ['source', 'Level 2 Setext', 'Setext'],
+    ['live-preview', 'Level 2 Setext', 'Setext'],
+    ['source', 'Level 2 Tail', '## Tail'],
+    ['live-preview', 'Level 2 Tail', '## Tail'],
+  ] as const)(
+    'moves the %s editor to the exact mixed-newline offset for %s',
+    (mode, outlineLabel, sourceNeedle) => {
+      renderDocument(mode, pageFixtureWith({
+        note: { content: mixedNewlineMarkdown },
+      }))
+      const editor = screen.getByRole('textbox')
+      const view = EditorView.findFromDOM(editor)!
+
+      fireEvent.click(screen.getByRole('button', { name: outlineLabel }))
+
+      const rawOffset = mixedNewlineMarkdown.indexOf(sourceNeedle)
+      const editorOffset = mixedNewlineMarkdown
+        .slice(0, rawOffset)
+        .replace(/\r\n?/g, '\n')
+        .length
+      expect(view.state.selection.main.head).toBe(editorOffset)
+    },
+  )
+
+  it.each([
+    ['pane:a', 'pane-a'],
+    ['1:pane', 'pane:1'],
+    ['pane/a', 'pane-a'],
+    ['pane a', 'pane-a'],
+    ['é', 'e\u0301'],
+  ] as const)(
+    'uses safe injective heading prefixes for %s and %s',
+    (firstViewId, secondViewId) => {
+      render(
+        <>
+          <VaultDocumentView
+            viewId={firstViewId}
+            mode="reading"
+            page={pageFixture}
+            onNavigate={vi.fn()}
+          />
+          <VaultDocumentView
+            viewId={secondViewId}
+            mode="reading"
+            page={pageFixture}
+            onNavigate={vi.fn()}
+          />
+        </>,
+      )
+
+      const headings = screen.getAllByRole('heading', { name: 'Plan' })
+      const ids = headings.map((heading) => heading.id)
+      expect(ids.every((id) => id.startsWith('v-'))).toBe(true)
+      expect(new Set(ids).size).toBe(ids.length)
+
+      const firstScroll = vi.fn()
+      const secondScroll = vi.fn()
+      headings[0].scrollIntoView = firstScroll
+      headings[1].scrollIntoView = secondScroll
+      expect(() => {
+        fireEvent.click(screen.getAllByRole('button', { name: 'Level 1 Plan' })[1])
+      }).not.toThrow()
+      expect(firstScroll).not.toHaveBeenCalled()
+      expect(secondScroll).toHaveBeenCalledWith({ block: 'start' })
+    },
+  )
 
   it.each(['source', 'live-preview'] as const)(
     'moves the %s editor to the exact outline source offset',

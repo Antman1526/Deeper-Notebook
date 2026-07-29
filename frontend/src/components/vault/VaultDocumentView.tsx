@@ -27,12 +27,11 @@ interface VaultDocumentViewProps {
   onPreview?: (link: VaultLink) => void
 }
 
-function sanitizeIdPrefix(value: string): string {
-  return value
-    .normalize('NFKC')
-    .toLocaleLowerCase('en-US')
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'view'
+function encodeIdPrefix(value: string): string {
+  const encoded = Array.from({ length: value.length }, (_, index) => (
+    value.charCodeAt(index).toString(16).padStart(4, '0')
+  )).join('')
+  return `v-${encoded || 'empty'}`
 }
 
 function normalizedEditorOffset(source: string, rawOffset: number): number {
@@ -52,8 +51,15 @@ export function VaultDocumentView({
   const { t } = useTranslation()
   const containerRef = useRef<HTMLElement>(null)
   const markdown = page.note.content ?? page.note.markdown ?? ''
-  const model = useMemo(() => buildMarkdownModel(markdown), [markdown])
-  const headingIdPrefix = useMemo(() => sanitizeIdPrefix(viewId), [viewId])
+  const parserMarkdown = useMemo(
+    () => markdown.replace(/\r(?!\n)/g, '\n'),
+    [markdown],
+  )
+  const model = useMemo(
+    () => buildMarkdownModel(parserMarkdown),
+    [parserMarkdown],
+  )
+  const headingIdPrefix = useMemo(() => encodeIdPrefix(viewId), [viewId])
   const title = page.note.title?.trim()
     || page.file.relative_path.split('/').at(-1)?.replace(/\.md$/i, '')
     || t('knowledge.untitledNote')
@@ -63,7 +69,7 @@ export function VaultDocumentView({
         vaultId={page.file.vault_id}
         noteId={page.note.id}
         headingIdPrefix={headingIdPrefix}
-        markdown={markdown}
+        markdown={parserMarkdown}
         links={page.outgoing_links}
         onNavigate={onNavigate}
         onPreview={onPreview}
@@ -76,10 +82,10 @@ export function VaultDocumentView({
     const container = containerRef.current
     if (!container) return
     if (mode === 'reading') {
-      const target = container.querySelector<HTMLElement>(
-        `#${headingIdPrefix}-${heading.slug}`,
-      ) ?? container.querySelector<HTMLElement>(
-        `[data-heading-slug="${heading.slug}"]`,
+      const target = Array.from(
+        container.querySelectorAll<HTMLElement>('[data-heading-slug]'),
+      ).find(
+        (candidate) => candidate.dataset.headingSlug === heading.slug,
       )
       target?.scrollIntoView({ block: 'start' })
       return
@@ -94,7 +100,7 @@ export function VaultDocumentView({
       selection: { anchor: offset },
       effects: EditorView.scrollIntoView(offset, { y: 'center' }),
     })
-  }, [headingIdPrefix, markdown, mode])
+  }, [markdown, mode])
 
   const accessibleMode = mode === 'reading'
     ? t('knowledge.reader')

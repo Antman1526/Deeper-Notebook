@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { VaultPage } from '@/lib/api/vault'
@@ -38,7 +38,14 @@ vi.mock('./VaultLivePreview', () => ({
 
 vi.mock('./VaultSourceView', () => ({
   VaultSourceView: ({ title }: { title: string }) => (
-    <section aria-label={`${title} source`} />
+    <section aria-label={`${title} source`}>
+      <input aria-label={`${title} source input`} />
+      <textarea aria-label={`${title} source textarea`} />
+      <select aria-label={`${title} source select`}>
+        <option>Fixture</option>
+      </select>
+      <div aria-label={`${title} source editable`} contentEditable />
+    </section>
   ),
 }))
 
@@ -125,6 +132,57 @@ function renderPane() {
   return render(<PaneHarness />)
 }
 
+function replaceTwoPaneWorkspace() {
+  useKnowledgeWorkspaceStore.getState().replaceWorkspace({
+    version: 1,
+    activePaneId: 'pane-1',
+    nextId: 3,
+    panes: {
+      'pane-1': {
+        id: 'pane-1',
+        activeTabId: 'tab-1',
+        tabs: [{
+          id: 'tab-1',
+          vaultId: 'vault:one',
+          noteId: 'note:plan',
+          title: 'Pane One',
+          relativePath: 'pages/one.md',
+          viewMode: 'source',
+        }],
+      },
+      'pane-2': {
+        id: 'pane-2',
+        activeTabId: 'tab-2',
+        tabs: [{
+          id: 'tab-2',
+          vaultId: 'vault:one',
+          noteId: 'note:plan',
+          title: 'Pane Two',
+          relativePath: 'pages/two.md',
+          viewMode: 'reading',
+        }],
+      },
+    },
+    layout: {
+      type: 'split',
+      id: 'split-1',
+      direction: 'horizontal',
+      first: { type: 'pane', paneId: 'pane-1' },
+      second: { type: 'pane', paneId: 'pane-2' },
+    },
+  })
+}
+
+function TwoPaneHarness() {
+  const panes = useKnowledgeWorkspaceStore((state) => state.panes)
+  return (
+    <>
+      <KnowledgePaneContent pane={panes['pane-1']} mounts={[]} onNavigate={vi.fn()} />
+      <KnowledgePaneContent pane={panes['pane-2']} mounts={[]} onNavigate={vi.fn()} />
+    </>
+  )
+}
+
 describe('KnowledgePaneContent', () => {
   beforeEach(() => {
     editorState.failLivePreview = false
@@ -176,6 +234,89 @@ describe('KnowledgePaneContent', () => {
 
     fireEvent.keyDown(region, { key: '2', ctrlKey: true, metaKey: true })
     expect(screen.queryByLabelText('Canonical Plan source'))
+      .not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['without Control', {}],
+    ['with Shift', { ctrlKey: true, shiftKey: true }],
+    ['with Meta', { ctrlKey: true, metaKey: true }],
+    ['with Alt', { ctrlKey: true, altKey: true }],
+    ['when repeated', { ctrlKey: true, repeat: true }],
+  ] as const)('ignores Control-number shortcuts %s', (_label, modifiers) => {
+    renderPane()
+    const region = screen.getByRole('region', {
+      name: 'knowledge.knowledgePane modes pane-1',
+    })
+
+    fireEvent.keyDown(region, { key: '3', ...modifiers })
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].viewMode)
+      .toBe('reading')
+  })
+
+  it.each(['input', 'textarea', 'select', 'editable'] as const)(
+    'ignores Control-number shortcuts from a descendant %s',
+    (descendant) => {
+      replaceWorkspace('source')
+      renderPane()
+      const target = screen.getByLabelText(`Canonical Plan source ${descendant}`)
+
+      fireEvent.keyDown(target, { key: '3', ctrlKey: true })
+
+      expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].viewMode)
+        .toBe('source')
+    },
+  )
+
+  it.each([
+    ['1', 'reading'],
+    ['2', 'source'],
+    ['3', 'live-preview'],
+    ['4', 'graph'],
+  ] as const)(
+    'keeps Control+%s scoped to the focused pane',
+    (key, expectedMode) => {
+      replaceTwoPaneWorkspace()
+      render(<TwoPaneHarness />)
+      const paneTwoRegion = screen.getByRole('region', {
+        name: 'knowledge.knowledgePane modes pane-2',
+      })
+
+      fireEvent.keyDown(paneTwoRegion, { key, ctrlKey: true })
+
+      const workspace = useKnowledgeWorkspaceStore.getState()
+      expect(workspace.panes['pane-1'].tabs[0].viewMode).toBe('source')
+      expect(workspace.panes['pane-2'].tabs[0].viewMode).toBe(expectedMode)
+      expect(within(paneTwoRegion).getByRole('button', {
+        name: expectedMode === 'reading'
+          ? 'knowledge.reader'
+          : expectedMode === 'source'
+            ? 'knowledge.source'
+            : expectedMode === 'live-preview'
+              ? 'knowledge.livePreview'
+              : 'knowledge.localGraph',
+      })).toHaveAttribute('aria-pressed', 'true')
+    },
+  )
+
+  it('does not reconcile or display stale page data during a refetch error', () => {
+    queries.page = {
+      data: pageFixture,
+      isLoading: false,
+      isError: true,
+      error: new Error('refetch failed'),
+    }
+
+    renderPane()
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0])
+      .toMatchObject({
+        title: 'Stale Plan',
+        relativePath: 'synthetic/stale.md',
+      })
+    expect(screen.getByText('knowledge.loadError')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Canonical Plan' }))
       .not.toBeInTheDocument()
   })
 
