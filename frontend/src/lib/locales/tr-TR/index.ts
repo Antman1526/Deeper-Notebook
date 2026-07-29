@@ -1261,3 +1261,20 @@ export const trTR = {
     },
   },
 }
+
+Object.assign(trTR.knowledge, {
+  source: "Kaynak",
+  livePreview: "Canlı önizleme",
+  emptyNote: "Bu not boş.",
+  pageInvalid: "Yansıtılan sayfa verileri geçersiz.",
+  canonicalPathUnavailable: "Kanonik kasa yolu kullanılamıyor.",
+  pagePreview: "{{title}} önizlemesi",
+  previewUnavailable: "Önizleme kullanılamıyor.",
+  footnotes: "Dipnotlar",
+  sourceProvenance: "Kaynak kökeni",
+  lineEnding: "Satır sonu",
+  encoding: "Kodlama",
+  contentHash: "İçerik karması",
+  readOnlyMode: "{{mode}} salt okunurdur",
+  headingLevel: "Düzey {{level}} {{title}}",
+})

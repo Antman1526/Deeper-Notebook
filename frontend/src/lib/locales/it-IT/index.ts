@@ -1259,3 +1259,20 @@ export const itIT = {
     },
   },
 }
+
+Object.assign(itIT.knowledge, {
+  source: "Sorgente",
+  livePreview: "Anteprima live",
+  emptyNote: "Questa nota è vuota.",
+  pageInvalid: "I dati proiettati della pagina non sono validi.",
+  canonicalPathUnavailable: "Il percorso canonico del vault non è disponibile.",
+  pagePreview: "Anteprima di {{title}}",
+  previewUnavailable: "Anteprima non disponibile.",
+  footnotes: "Note a piè di pagina",
+  sourceProvenance: "Provenienza della fonte",
+  lineEnding: "Fine riga",
+  encoding: "Codifica",
+  contentHash: "Hash del contenuto",
+  readOnlyMode: "{{mode}} è di sola lettura",
+  headingLevel: "Livello {{level}} {{title}}",
+})

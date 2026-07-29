@@ -1261,3 +1261,20 @@ export const caES = {
     },
   },
 }
+
+Object.assign(caES.knowledge, {
+  source: "Codi font",
+  livePreview: "Previsualització en directe",
+  emptyNote: "Aquesta nota és buida.",
+  pageInvalid: "Les dades projectades de la pàgina no són vàlides.",
+  canonicalPathUnavailable: "La ruta canònica de la caixa no està disponible.",
+  pagePreview: "Previsualització de {{title}}",
+  previewUnavailable: "Previsualització no disponible.",
+  footnotes: "Notes al peu",
+  sourceProvenance: "Procedència de la font",
+  lineEnding: "Final de línia",
+  encoding: "Codificació",
+  contentHash: "Hash del contingut",
+  readOnlyMode: "{{mode}} és només de lectura",
+  headingLevel: "Nivell {{level}} {{title}}",
+})

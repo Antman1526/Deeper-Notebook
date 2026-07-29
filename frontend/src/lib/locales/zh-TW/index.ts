@@ -1261,3 +1261,20 @@ export const zhTW = {
     },
   },
 }
+
+Object.assign(zhTW.knowledge, {
+  source: "原始碼",
+  livePreview: "即時預覽",
+  emptyNote: "此筆記為空。",
+  pageInvalid: "投影的頁面資料無效。",
+  canonicalPathUnavailable: "規範的知識庫路徑無法使用。",
+  pagePreview: "{{title}} 預覽",
+  previewUnavailable: "預覽無法使用。",
+  footnotes: "註腳",
+  sourceProvenance: "來源溯源",
+  lineEnding: "換行符號",
+  encoding: "編碼",
+  contentHash: "內容雜湊",
+  readOnlyMode: "{{mode}} 為唯讀模式",
+  headingLevel: "{{level}} 級 {{title}}",
+})
