@@ -117,6 +117,51 @@ describe('knowledge workspace store', () => {
     expect(tabs[1].viewMode).toBe('reading')
   })
 
+  it('reconciles a hydrated tab to canonical metadata exactly once', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab({
+      vaultId: 'vault:one',
+      noteId: 'note:one',
+      title: 'Synthetic',
+      relativePath: 'note-one.md',
+    })
+    const before = useKnowledgeWorkspaceStore.getState()
+    const tabId = before.panes['pane-1'].activeTabId!
+
+    before.reconcileTabReference('pane-1', tabId, {
+      title: 'Canonical',
+      relativePath: 'pages/canonical.md',
+    })
+    const reconciled = useKnowledgeWorkspaceStore.getState()
+    expect(reconciled.panes['pane-1'].tabs[0]).toMatchObject({
+      title: 'Canonical',
+      relativePath: 'pages/canonical.md',
+    })
+    expect(reconciled.revision).toBe(before.revision + 1)
+
+    reconciled.reconcileTabReference('pane-1', tabId, {
+      title: 'Canonical',
+      relativePath: 'pages/canonical.md',
+    })
+    expect(useKnowledgeWorkspaceStore.getState().revision)
+      .toBe(reconciled.revision)
+  })
+
+  it('refuses unsafe canonical reconciliation paths', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    const before = useKnowledgeWorkspaceStore.getState()
+    const tabId = before.panes['pane-1'].activeTabId!
+
+    before.reconcileTabReference('pane-1', tabId, {
+      title: 'Unsafe',
+      relativePath: '../outside.md',
+    })
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0])
+      .toMatchObject(plan)
+  })
+
   it.each([
     { ...plan, vaultId: '' },
     { ...plan, vaultId: 'v'.repeat(129) },
