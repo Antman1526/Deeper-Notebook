@@ -68,7 +68,7 @@ export function KnowledgePaneContent({
   const graph = useVaultGraph(vaultId, noteId, visibleMode === 'graph')
 
   useEffect(() => {
-    if (!activeTab || !page.data) return
+    if (!activeTab || !page.data || page.isError) return
     reconcileTabReference(pane.id, activeTab.id, {
       title: page.data.note.title?.trim() || activeTab.title,
       relativePath: page.data.file.relative_path,
@@ -76,6 +76,7 @@ export function KnowledgePaneContent({
   }, [
     activeTab,
     page.data,
+    page.isError,
     pane.id,
     reconcileTabReference,
   ])
@@ -141,7 +142,20 @@ export function KnowledgePaneContent({
       aria-label={`${t('knowledge.knowledgePane')} modes ${pane.id}`}
       tabIndex={0}
       onKeyDown={(event) => {
-        if (!event.ctrlKey || event.metaKey || event.altKey) return
+        if (
+          !event.ctrlKey
+          || event.shiftKey
+          || event.metaKey
+          || event.altKey
+          || event.repeat
+        ) return
+        const target = event.target
+        if (
+          target instanceof Element
+          && target.closest(
+            'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+          )
+        ) return
         const mode = shortcutModes[event.key]
         if (!mode) return
         event.preventDefault()
@@ -169,7 +183,7 @@ export function KnowledgePaneContent({
         ))}
       </div>
 
-      {page.data && (
+      {page.data && !page.isError && (
         <div className="mt-5 border-b pb-4">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-2xl font-semibold">
