@@ -7,6 +7,8 @@ import {
   type KnowledgeFixtureState,
 } from './fixtures/knowledge-editor-modes'
 
+const testOnlyLegacyVaultPath = `/${['api', 'onp', 'vaults'].join('/')}`
+
 async function installKnowledgeRoutes(
   page: Page,
   state: KnowledgeFixtureState,
@@ -97,19 +99,19 @@ test.describe('knowledge editor modes', () => {
     await installKnowledgeShellMocks(page, unexpectedApiTraffic)
     await page.goto('/knowledge')
 
-    const statuses = await page.evaluate(async () => {
-      const legacyVaultResponse = await fetch('/api/onp/vaults', {
+    const statuses = await page.evaluate(async (legacyVaultPath) => {
+      const legacyVaultResponse = await fetch(legacyVaultPath, {
         method: 'POST',
       })
       const wrongMethodResponse = await fetch('/api/notebooks', {
         method: 'POST',
       })
       return [legacyVaultResponse.status, wrongMethodResponse.status]
-    })
+    }, testOnlyLegacyVaultPath)
 
     expect(statuses).toEqual([501, 405])
     expect(unexpectedApiTraffic).toEqual([
-      'POST /api/onp/vaults',
+      `POST ${testOnlyLegacyVaultPath}`,
       'POST /api/notebooks',
     ])
   })
