@@ -60,7 +60,7 @@ export function KnowledgeExplorer() {
     (tab) => tab.id === activePane.activeTabId,
   ) ?? activePane?.tabs[0]
   const openTab = useKnowledgeWorkspaceStore((state) => state.openTab)
-  const scan = useScanVault(
+  const { mutateAsync: scanVault, isPending: scanPending } = useScanVault(
     vaultId,
     activeTab?.vaultId === vaultId ? activeTab.noteId : undefined,
   )
@@ -128,8 +128,8 @@ export function KnowledgeExplorer() {
     ? activeTab.noteId
     : ''
   const scanSelectedVault = useCallback(
-    async () => { await scan.mutateAsync() },
-    [scan],
+    async () => { await scanVault() },
+    [scanVault],
   )
 
   useEffect(() => {
@@ -161,11 +161,11 @@ export function KnowledgeExplorer() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => void scan.mutateAsync()}
-            disabled={!vaultId || scan.isPending}
+            onClick={() => void scanVault()}
+            disabled={!vaultId || scanPending}
           >
             <RefreshCw
-              className={`mr-2 h-4 w-4 ${scan.isPending ? 'animate-spin' : ''}`}
+              className={`mr-2 h-4 w-4 ${scanPending ? 'animate-spin' : ''}`}
             />
             {t('knowledge.scan')}
           </Button>

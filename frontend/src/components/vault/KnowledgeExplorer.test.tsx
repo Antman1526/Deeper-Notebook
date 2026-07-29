@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -166,10 +167,18 @@ vi.mock('@/lib/hooks/use-vault', () => ({
     data: { nodes: [{ id: 'note:one', title: 'One' }], edges: [] },
     ...states.graph,
   }),
-  useScanVault: (vaultId: string) => ({
-    mutateAsync: () => vaultQueries.scan(vaultId),
-    isPending: false,
-  }),
+  useScanVault: (vaultId: string) => {
+    const [isPending, setIsPending] = useState(false)
+    const mutateAsync = useCallback(async () => {
+      setIsPending(true)
+      try {
+        await vaultQueries.scan(vaultId)
+      } finally {
+        setIsPending(false)
+      }
+    }, [vaultId])
+    return { mutateAsync, isPending }
+  },
 }))
 
 vi.mock('@/lib/hooks/use-knowledge-workspace', () => ({
@@ -358,6 +367,29 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     await renderExplorer()
     await useKnowledgeCommandContextStore.getState().context?.scanSelectedVault?.()
     expect(vaultQueries.scan).toHaveBeenCalledWith('vault:one')
+  })
+
+  it('keeps its command generation stable through a pending selected-vault scan', async () => {
+    let resolveScan: (() => void) | undefined
+    vaultQueries.scan.mockImplementationOnce(() => new Promise<void>(resolve => {
+      resolveScan = resolve
+    }))
+    await renderExplorer()
+    const generation = useKnowledgeCommandContextStore.getState().generation
+    const scan = useKnowledgeCommandContextStore.getState().context?.scanSelectedVault
+
+    const pending = scan?.()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'knowledge.scan' })).toBeDisabled()
+    })
+    expect(useKnowledgeCommandContextStore.getState().generation).toBe(generation)
+
+    resolveScan?.()
+    await pending
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'knowledge.scan' })).not.toBeDisabled()
+    })
+    expect(useKnowledgeCommandContextStore.getState().generation).toBe(generation)
   })
 
   it('copies the active tab when splitting and opens later selections only in the active pane', async () => {
