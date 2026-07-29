@@ -1,0 +1,458 @@
+import { syntaxTree } from '@codemirror/language'
+import type { Extension, EditorState } from '@codemirror/state'
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  ViewPlugin,
+  WidgetType,
+} from '@codemirror/view'
+
+import type { VaultLink } from '@/lib/api/vault'
+import type { MarkdownConstructKind } from '@/lib/vault/markdown-model'
+import {
+  buildUniqueResolvedSpanMap,
+  createMarkdownSourceIndex,
+  vaultLinkSpanKey,
+} from '@/lib/vault/remark-vault-links'
+
+interface SourceRange {
+  from: number
+  to: number
+}
+
+export interface PreviewDecorationRecord {
+  kind: string
+  from: number
+  to: number
+  decoration: Decoration
+}
+
+export interface LivePreviewOptions {
+  links?: VaultLink[]
+  onNavigate?: (noteId: string) => void
+}
+
+const parserKinds: Partial<Record<string, MarkdownConstructKind>> = {
+  Emphasis: 'emphasis',
+  StrongEmphasis: 'strong',
+  Strikethrough: 'strikethrough',
+  InlineCode: 'inline-code',
+  FencedCode: 'fenced-code',
+  Link: 'link',
+  TaskMarker: 'task-marker',
+  Blockquote: 'blockquote',
+  HorizontalRule: 'horizontal-rule',
+  ListMark: 'list-marker',
+}
+
+const attachmentExtension = /\.(?:png|jpe?g|gif|webp|svg|pdf|mp3|mp4|mov)$/i
+
+function intersects(left: SourceRange, right: SourceRange): boolean {
+  return left.from < right.to && right.from < left.to
+}
+
+function visibleRanges(state: EditorState, ranges: readonly SourceRange[]): SourceRange[] {
+  const normalized = ranges
+    .map(({ from, to }) => ({
+      from: Math.max(0, Math.min(from, state.doc.length)),
+      to: Math.max(0, Math.min(to, state.doc.length)),
+    }))
+    .filter((range) => range.to > range.from)
+    .sort((left, right) => left.from - right.from || left.to - right.to)
+  const merged: SourceRange[] = []
+
+  for (const range of normalized) {
+    const previous = merged.at(-1)
+    if (!previous || previous.to < range.from) merged.push(range)
+    else previous.to = Math.max(previous.to, range.to)
+  }
+  return merged
+}
+
+function isVisible(range: SourceRange, ranges: readonly SourceRange[]): boolean {
+  return ranges.some((visible) => intersects(range, visible))
+}
+
+function selectionIntersects(state: EditorState, construct: SourceRange): boolean {
+  return state.selection.ranges.some((selection) => selection.empty
+    ? selection.from >= construct.from && selection.from < construct.to
+    : selection.from < construct.to && construct.from < selection.to)
+}
+
+function rangeIsSingleLine(state: EditorState, range: SourceRange): boolean {
+  return range.to > range.from
+    && state.doc.lineAt(range.from).number === state.doc.lineAt(range.to - 1).number
+}
+
+function lineBoundedRanges(state: EditorState, ranges: readonly SourceRange[]): SourceRange[] {
+  return ranges.map((range) => {
+    const from = state.doc.lineAt(range.from).from
+    const to = state.doc.lineAt(Math.max(range.from, range.to - 1)).to
+    return { from, to }
+  })
+}
+
+function collectMatches(
+  source: string,
+  ranges: readonly SourceRange[],
+  expression: RegExp,
+): SourceRange[] {
+  const matches: SourceRange[] = []
+  const seen = new Set<string>()
+  for (const range of ranges) {
+    const scoped = source.slice(range.from, range.to)
+    expression.lastIndex = 0
+    for (const match of scoped.matchAll(expression)) {
+      const from = range.from + (match.index || 0)
+      const to = from + match[0].length
+      const key = `${from}:${to}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        matches.push({ from, to })
+      }
+    }
+  }
+  return matches.sort((left, right) => left.from - right.from || left.to - right.to)
+}
+
+function containedBy(range: SourceRange, candidates: readonly SourceRange[]): boolean {
+  let low = 0
+  let high = candidates.length - 1
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    const candidate = candidates[middle]
+    if (candidate.from > range.from) high = middle - 1
+    else if (candidate.to < range.to) low = middle + 1
+    else return true
+  }
+  return false
+}
+
+function overlapsSorted(range: SourceRange, candidates: readonly SourceRange[]): boolean {
+  let low = 0
+  let high = candidates.length - 1
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    const candidate = candidates[middle]
+    if (candidate.to <= range.from) low = middle + 1
+    else if (candidate.from >= range.to) high = middle - 1
+    else return true
+  }
+  return false
+}
+
+function sourceText(state: EditorState, range: SourceRange): string {
+  return state.doc.sliceString(range.from, range.to)
+}
+
+function linkLabel(source: string, kind: 'markdown' | 'wiki'): string {
+  if (kind === 'markdown') return /^\[([^\]]*)\]/.exec(source)?.[1] || source
+  const body = source.slice(2, -2)
+  return (body.includes('|') ? body.slice(body.indexOf('|') + 1) : body).trim() || body.trim()
+}
+
+function markdownLinkTarget(source: string): string | undefined {
+  const match = /\]\(([^\s)]+)(?:\s+[^)]*)?\)$/.exec(source)
+  return match?.[1]
+}
+
+function isInternalNavigationSource(source: string, kind: 'markdown' | 'wiki'): boolean {
+  const target = kind === 'markdown'
+    ? markdownLinkTarget(source)
+    : source.slice(2, -2).split('|', 1)[0].split('#', 1)[0].trim()
+  if (!target || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(target)) return false
+  return !attachmentExtension.test(target.split(/[?#]/, 1)[0])
+}
+
+class TaskMarkerWidget extends WidgetType {
+  constructor(private readonly checked: boolean) {
+    super()
+  }
+
+  eq(other: TaskMarkerWidget): boolean {
+    return this.checked === other.checked
+  }
+
+  toDOM(): HTMLElement {
+    const input = document.createElement('input')
+    input.type = 'checkbox'
+    input.checked = this.checked
+    input.disabled = true
+    input.className = 'dn-live-preview-task'
+    input.setAttribute('aria-label', this.checked ? 'Completed task' : 'Incomplete task')
+    return input
+  }
+
+  ignoreEvent(): boolean {
+    return true
+  }
+}
+
+class NavigationWidget extends WidgetType {
+  constructor(
+    private readonly label: string,
+    private readonly noteId: string,
+    private readonly onNavigate: (noteId: string) => void,
+  ) {
+    super()
+  }
+
+  eq(other: NavigationWidget): boolean {
+    return this.label === other.label
+      && this.noteId === other.noteId
+      && this.onNavigate === other.onNavigate
+  }
+
+  toDOM(): HTMLElement {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'dn-live-preview-link'
+    button.textContent = this.label
+    button.setAttribute('aria-label', this.label)
+    button.addEventListener('click', () => this.onNavigate(this.noteId))
+    return button
+  }
+}
+
+function resolvedLinkFor(
+  state: EditorState,
+  range: SourceRange,
+  kind: 'markdown' | 'wiki',
+  options: LivePreviewOptions,
+  resolvedSpans: Map<string, VaultLink>,
+  sourceIndex: ReturnType<typeof createMarkdownSourceIndex>,
+): VaultLink | undefined {
+  if (!options.onNavigate || resolvedSpans.size === 0) return undefined
+  const sourceStart = sourceIndex.byteOffset(range.from)
+  const sourceEnd = sourceIndex.byteOffset(range.to)
+  const link = resolvedSpans.get(vaultLinkSpanKey(sourceStart, sourceEnd))
+  if (!link?.target_note_id || !isInternalNavigationSource(sourceText(state, range), kind)) {
+    return undefined
+  }
+  return link
+}
+
+function createRecords(
+  state: EditorState,
+  ranges: readonly SourceRange[],
+  options: LivePreviewOptions,
+): PreviewDecorationRecord[] {
+  const visible = visibleRanges(state, ranges)
+  if (visible.length === 0) return []
+
+  const source = state.doc.toString()
+  const bounded = lineBoundedRanges(state, visible)
+  const wikiRanges = collectMatches(source, bounded, /\[\[[^\]\r\n]{1,2048}\]\]/gu)
+  const footnoteRanges = collectMatches(source, bounded, /\[\^[^\]\r\n]{1,256}\]/gu)
+  const mathRanges = collectMatches(source, bounded, /(?<!\\)\$(?:[^$\\\r\n]|\\.)+\$/gu)
+  const strikethroughRanges = collectMatches(source, bounded, /~~[^~\r\n]+~~/gu)
+  const taskRanges = collectMatches(source, bounded, /\[(?: |x|X)\]/gu)
+  const parserRanges: Array<{ kind: MarkdownConstructKind; range: SourceRange }> = []
+  const exclusions: SourceRange[] = [...wikiRanges]
+  const seenParserRanges = new Set<string>()
+
+  for (const range of visible) {
+    syntaxTree(state).iterate({
+      from: range.from,
+      to: range.to,
+      enter: ({ from, name, to }) => {
+        const kind = /^ATXHeading[1-6]$/.test(name) || /^SetextHeading[1-6]$/.test(name)
+          ? 'heading'
+          : parserKinds[name]
+        if (!kind || !isVisible({ from, to }, visible)) return
+        const key = `${kind}:${from}:${to}`
+        if (seenParserRanges.has(key)) return
+        seenParserRanges.add(key)
+        parserRanges.push({ kind, range: { from, to } })
+        if (kind === 'inline-code' || kind === 'fenced-code' || kind === 'link') {
+          exclusions.push({ from, to })
+        }
+      },
+    })
+  }
+
+  for (const [kind, fallbackRanges] of [
+    ['strikethrough', strikethroughRanges],
+    ['task-marker', taskRanges],
+  ] as const) {
+    for (const range of fallbackRanges) {
+      const key = `${kind}:${range.from}:${range.to}`
+      if (!seenParserRanges.has(key)) {
+        seenParserRanges.add(key)
+        parserRanges.push({ kind, range })
+      }
+    }
+  }
+
+  exclusions.sort((left, right) => left.from - right.from || left.to - right.to)
+  const tagRanges = collectMatches(
+    source,
+    bounded,
+    /(?:^|[\s([{])(#[\p{Letter}\p{Number}_/-]{1,256})/gmu,
+  ).map((range) => {
+    const tag = /#[\p{Letter}\p{Number}_/-]{1,256}/u.exec(source.slice(range.from, range.to))?.[0]
+    return tag ? { from: range.to - tag.length, to: range.to } : range
+  }).filter((range) => !overlapsSorted(range, exclusions))
+
+  const resolvedSpans = buildUniqueResolvedSpanMap(options.links || [])
+  const sourceIndex = createMarkdownSourceIndex(source)
+  const records: PreviewDecorationRecord[] = []
+  const add = (kind: string, range: SourceRange, decoration: Decoration) => {
+    try {
+      if (range.to <= range.from || !isVisible(range, visible)) return
+      records.push({ kind, from: range.from, to: range.to, decoration })
+    } catch {
+      // Decoration failures must not hide unrelated visible source.
+    }
+  }
+  const replace = (kind: string, range: SourceRange, decoration: Decoration) => {
+    if (!rangeIsSingleLine(state, range)) return
+    add(kind, range, decoration)
+  }
+
+  for (const { kind, range } of parserRanges) {
+    try {
+      if (selectionIntersects(state, range)) continue
+      const value = sourceText(state, range)
+      if (kind === 'heading') {
+        const marker = /^ {0,3}#{1,6}[ \t]+/.exec(value)?.[0]
+        if (marker) replace('heading-mark', { from: range.from, to: range.from + marker.length }, Decoration.replace({}))
+        add('heading-content', range, Decoration.mark({ class: 'dn-live-preview-heading' }))
+      } else if (kind === 'emphasis' || kind === 'strong' || kind === 'strikethrough') {
+        const marker = kind === 'emphasis' ? /^[_*]/.exec(value)?.[0]
+          : kind === 'strong' ? /^(?:\*\*|__)/.exec(value)?.[0]
+            : /^~~/.exec(value)?.[0]
+        if (!marker || value.length < marker.length * 2) continue
+        replace(`${kind}-mark`, { from: range.from, to: range.from + marker.length }, Decoration.replace({}))
+        replace(`${kind}-mark`, { from: range.to - marker.length, to: range.to }, Decoration.replace({}))
+        add(`${kind}-content`, range, Decoration.mark({ class: `dn-live-preview-${kind}` }))
+      } else if (kind === 'inline-code') {
+        const marker = /^`+/.exec(value)?.[0]
+        if (!marker || value.length < marker.length * 2) continue
+        replace('inline-code-mark', { from: range.from, to: range.from + marker.length }, Decoration.replace({}))
+        replace('inline-code-mark', { from: range.to - marker.length, to: range.to }, Decoration.replace({}))
+        add('inline-code-content', range, Decoration.mark({ class: 'dn-live-preview-code' }))
+      } else if (kind === 'fenced-code') {
+        const fences = [...value.matchAll(/^( {0,3}(?:`{3,}|~{3,}))/gmu)]
+        const opening = fences[0]
+        const closing = fences.at(-1)
+        if (opening) {
+          replace('fenced-code-mark', {
+            from: range.from + (opening.index || 0),
+            to: range.from + (opening.index || 0) + opening[1].length,
+          }, Decoration.replace({}))
+        }
+        if (closing && closing !== opening) {
+          replace('fenced-code-mark', {
+            from: range.from + (closing.index || 0),
+            to: range.from + (closing.index || 0) + closing[1].length,
+          }, Decoration.replace({}))
+        }
+        add('fenced-code-content', range, Decoration.mark({ class: 'dn-live-preview-code' }))
+      } else if (kind === 'link') {
+        if (containedBy(range, wikiRanges)) continue
+        const link = resolvedLinkFor(state, range, 'markdown', options, resolvedSpans, sourceIndex)
+        if (link && options.onNavigate) {
+          replace('markdown-link', range, Decoration.replace({
+            widget: new NavigationWidget(linkLabel(value, 'markdown'), link.target_note_id!, options.onNavigate),
+          }))
+          continue
+        }
+        add('markdown-link', range, Decoration.mark({ class: 'dn-live-preview-link-mark' }))
+        const closingBracket = value.indexOf(']')
+        if (closingBracket >= 0) {
+          replace('markdown-link-mark', { from: range.from, to: range.from + 1 }, Decoration.replace({}))
+          replace('markdown-link-mark', { from: range.from + closingBracket, to: range.to }, Decoration.replace({}))
+        }
+      } else if (kind === 'task-marker') {
+        replace('task-marker', range, Decoration.replace({
+          widget: new TaskMarkerWidget(/^\[x\]/i.test(value)),
+        }))
+      } else if (kind === 'blockquote') {
+        const marker = /^ {0,3}>[ \t]?/.exec(value)?.[0]
+        if (marker) replace('blockquote-mark', { from: range.from, to: range.from + marker.length }, Decoration.replace({}))
+        add('blockquote-content', range, Decoration.mark({ class: 'dn-live-preview-quote' }))
+      } else if (kind === 'horizontal-rule') {
+        add('horizontal-rule', range, Decoration.mark({ class: 'dn-live-preview-rule' }))
+      } else if (kind === 'list-marker') {
+        const listKind = /^\d/.test(value) ? 'ordered-list-mark' : 'unordered-list-mark'
+        add(listKind, range, Decoration.mark({ class: 'dn-live-preview-list-marker' }))
+      }
+    } catch {
+      // Unsupported parser nodes remain source-visible, independently of peers.
+    }
+  }
+
+  for (const range of wikiRanges) {
+    try {
+      if (selectionIntersects(state, range)) continue
+      const value = sourceText(state, range)
+      const link = resolvedLinkFor(state, range, 'wiki', options, resolvedSpans, sourceIndex)
+      if (link && options.onNavigate) {
+        replace('wiki-link', range, Decoration.replace({
+          widget: new NavigationWidget(linkLabel(value, 'wiki'), link.target_note_id!, options.onNavigate),
+        }))
+        continue
+      }
+      add('wiki-link', range, Decoration.mark({ class: 'dn-live-preview-link-mark' }))
+      replace('wiki-link-mark', { from: range.from, to: range.from + 2 }, Decoration.replace({}))
+      replace('wiki-link-mark', { from: range.to - 2, to: range.to }, Decoration.replace({}))
+    } catch {
+      // Keep malformed wiki syntax inspectable.
+    }
+  }
+
+  for (const range of tagRanges) {
+    if (!selectionIntersects(state, range)) add('tag', range, Decoration.mark({ class: 'dn-live-preview-tag' }))
+  }
+  for (const range of footnoteRanges) {
+    if (!selectionIntersects(state, range)) add('footnote-mark', range, Decoration.mark({ class: 'dn-live-preview-footnote' }))
+  }
+  for (const range of mathRanges) {
+    if (!selectionIntersects(state, range)) add('math-mark', range, Decoration.mark({ class: 'dn-live-preview-math' }))
+  }
+
+  return records.sort((left, right) => left.from - right.from
+    || left.decoration.startSide - right.decoration.startSide
+    || left.to - right.to)
+}
+
+export function buildLivePreviewDecorationRecords(
+  state: EditorState,
+  ranges: readonly SourceRange[],
+  options: LivePreviewOptions = {},
+): PreviewDecorationRecord[] {
+  return createRecords(state, ranges, options)
+}
+
+function decorationSet(
+  state: EditorState,
+  ranges: readonly SourceRange[],
+  options: LivePreviewOptions,
+): DecorationSet {
+  const records = createRecords(state, ranges, options)
+  return Decoration.set(records.map((record) => record.decoration.range(record.from, record.to)), true)
+}
+
+export function buildLivePreviewDecorations(view: EditorView): DecorationSet {
+  return decorationSet(view.state, view.visibleRanges, {})
+}
+
+export function livePreviewExtension(options: LivePreviewOptions): Extension {
+  return ViewPlugin.fromClass(class {
+    decorations: DecorationSet
+
+    constructor(view: EditorView) {
+      this.decorations = decorationSet(view.state, view.visibleRanges, options)
+    }
+
+    update(update: { docChanged: boolean; selectionSet: boolean; viewportChanged: boolean; view: EditorView }) {
+      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        this.decorations = decorationSet(update.view.state, update.view.visibleRanges, options)
+      }
+    }
+  }, {
+    decorations: (plugin) => plugin.decorations,
+  })
+}
