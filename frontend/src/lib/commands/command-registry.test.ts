@@ -94,4 +94,19 @@ describe('knowledge command registry', () => {
       knowledgeCommandDefinitions.pop()
     }
   })
+
+  it('returns a rejected promise when an execution callback throws synchronously', async () => {
+    const commandContext = {
+      ...context(),
+      setViewMode: () => {
+        throw new Error('synchronous command failure')
+      },
+    }
+
+    let execution: Promise<boolean> | undefined
+    expect(() => {
+      execution = executeKnowledgeCommand('knowledge.view-source', commandContext)
+    }).not.toThrow()
+    await expect(execution).rejects.toThrow('synchronous command failure')
+  })
 })

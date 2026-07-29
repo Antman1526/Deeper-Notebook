@@ -8,7 +8,7 @@ import {
 } from './knowledge-command-context-store'
 
 beforeEach(() => {
-  resetKnowledgeCommandContextStore()
+  useKnowledgeCommandContextStore.setState({ generation: 0, context: null })
 })
 
 describe('knowledge command context registration', () => {
@@ -25,5 +25,16 @@ describe('knowledge command context registration', () => {
   it('increments page generations from a reset state', () => {
     expect(registerKnowledgeCommandContext({ selectedVaultId: null })).toBe(1)
     expect(registerKnowledgeCommandContext({ selectedVaultId: 'vault:two' })).toBe(2)
+  })
+
+  it('does not reuse a generation token after reset', () => {
+    const first = registerKnowledgeCommandContext({ selectedVaultId: 'vault:first' })
+    resetKnowledgeCommandContextStore()
+    const second = registerKnowledgeCommandContext({ selectedVaultId: 'vault:second' })
+
+    expect(second).toBe(2)
+    clearKnowledgeCommandContext(first)
+    expect(useKnowledgeCommandContextStore.getState().context?.selectedVaultId)
+      .toBe('vault:second')
   })
 })

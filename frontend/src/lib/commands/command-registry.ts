@@ -239,5 +239,7 @@ export function executeKnowledgeCommand(
   ) {
     return Promise.resolve(false)
   }
-  return Promise.resolve(command.execute(context)).then(() => true)
+  return Promise.resolve()
+    .then(() => command.execute(context))
+    .then(() => true)
 }
