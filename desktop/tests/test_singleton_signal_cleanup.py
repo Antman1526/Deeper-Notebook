@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import os
 import signal
+import sys
 import threading
 from pathlib import Path
+
+import pytest
 
 from desktop import singleton
 
@@ -43,6 +46,10 @@ def test_signal_handler_cleans_runtime_before_unconditional_exit(
     assert exit_codes == [128 + signal.SIGTERM]
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX native-loop wakeup fd bridge only",
+)
 def test_wakeup_fd_dispatches_cleanup_without_python_handler_execution(
     tmp_path: Path,
     monkeypatch,
