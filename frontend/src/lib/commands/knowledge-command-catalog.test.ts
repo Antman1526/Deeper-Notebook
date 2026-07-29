@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
 import type { VaultFile, VaultMount } from '@/lib/api/vault'
@@ -71,6 +71,46 @@ describe('knowledge command catalog', () => {
       noteId: 'note:cafe',
       isOpen: true,
     })
+  })
+
+  it('matches Turkish dotted and dotless capital I without ambient locale rules', () => {
+    const catalog = buildKnowledgeCatalog(
+      mounts,
+      new Map([['vault:research', [
+        file('note:dotted', 'İstanbul.md'),
+        file('note:capital', 'INDEX.md'),
+      ]]]),
+      [],
+    )
+
+    expect(rankKnowledgeCatalog(catalog, 'istanbul', 10).map(item => item.noteId))
+      .toEqual(['note:dotted'])
+    expect(rankKnowledgeCatalog(catalog, 'index', 10).map(item => item.noteId))
+      .toEqual(['note:capital'])
+  })
+
+  it('uses deterministic code-point tie ordering without locale-sensitive methods', () => {
+    const localeLower = vi.spyOn(String.prototype, 'toLocaleLowerCase')
+      .mockImplementation(() => { throw new Error('ambient locale lowercasing used') })
+    const localeCompare = vi.spyOn(String.prototype, 'localeCompare')
+      .mockImplementation(() => { throw new Error('ambient locale comparison used') })
+    try {
+      const catalog = buildKnowledgeCatalog(
+        mounts,
+        new Map([['vault:research', [
+          file('note:z', 'Zulu.md'),
+          file('note:a', 'Alpha.md'),
+          file('note:accent', 'Álpha.md'),
+        ]]]),
+        [],
+      )
+
+      expect(rankKnowledgeCatalog(catalog, '', 10).map(item => item.noteId))
+        .toEqual(['note:a', 'note:z', 'note:accent'])
+    } finally {
+      localeLower.mockRestore()
+      localeCompare.mockRestore()
+    }
   })
 
   it('maps a candidate to a canonical workspace tab request', () => {

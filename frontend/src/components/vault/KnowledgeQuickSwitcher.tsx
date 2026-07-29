@@ -15,7 +15,10 @@ import {
   candidateToOpenTab,
   rankKnowledgeCatalog,
 } from '@/lib/commands/knowledge-command-catalog'
-import { useCommandSurfaceStore } from '@/lib/commands/command-surface-store'
+import {
+  acknowledgeCommandSurface,
+  useCommandSurfaceStore,
+} from '@/lib/commands/command-surface-store'
 import { useKnowledgeCatalog } from '@/lib/hooks/use-knowledge-command-data'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
@@ -27,6 +30,12 @@ interface KnowledgeQuickSwitcherProps {
 export function KnowledgeQuickSwitcher({ mounts }: KnowledgeQuickSwitcherProps) {
   const { t } = useTranslation()
   const surface = useCommandSurfaceStore()
+  const {
+    requestId: surfaceRequestId,
+    kind: surfaceKind,
+    initialQuery: surfaceInitialQuery,
+    invoker: surfaceInvoker,
+  } = surface
   const workspace = useKnowledgeWorkspaceStore()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -42,11 +51,20 @@ export function KnowledgeQuickSwitcher({ mounts }: KnowledgeQuickSwitcherProps) 
   )
 
   useEffect(() => {
-    if (surface.kind !== 'quick-switcher') return
-    setQuery(surface.initialQuery)
-    setInvoker(surface.invoker)
+    if (surfaceKind !== 'quick-switcher') return
+    setQuery(surfaceInitialQuery)
+    setInvoker(surfaceInvoker)
     setOpen(true)
-  }, [surface.initialQuery, surface.invoker, surface.kind, surface.requestId])
+    acknowledgeCommandSurface(surfaceRequestId)
+  }, [surfaceInitialQuery, surfaceInvoker, surfaceKind, surfaceRequestId])
+
+  const statusMessage = catalog.isLoading
+    ? t('knowledge.filesLoading')
+    : catalog.failedVaultCount > 0
+      ? t('knowledge.partialCatalogFailure', { count: catalog.failedVaultCount })
+      : candidates.length === 0
+        ? t('knowledge.noMatchingFiles')
+        : ''
 
   const close = (nextOpen: boolean) => {
     setOpen(nextOpen)
@@ -75,6 +93,9 @@ export function KnowledgeQuickSwitcher({ mounts }: KnowledgeQuickSwitcherProps) 
         onValueChange={setQuery}
         autoComplete="off"
       />
+      <p role="status" aria-live="polite" className="sr-only">
+        {statusMessage}
+      </p>
       {catalog.failedVaultCount > 0 && (
         <div className="flex items-center justify-between gap-3 border-b px-3 py-2 text-sm text-muted-foreground">
           <span>{t('knowledge.partialCatalogFailure', { count: catalog.failedVaultCount })}</span>
