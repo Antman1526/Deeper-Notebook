@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,8 @@ import {
 } from './KnowledgePaneContent'
 import { KnowledgeWorkspaceLayout } from './KnowledgeWorkspaceLayout'
 import { VaultFileTree } from './VaultFileTree'
+import { KnowledgeCommandBridge } from './KnowledgeCommandBridge'
+import { KnowledgeQuickSwitcher } from './KnowledgeQuickSwitcher'
 
 function titleFromRelativePath(relativePath: string): string {
   return relativePath.split('/').pop()?.replace(/\.md$/i, '') || relativePath
@@ -44,6 +46,9 @@ export function KnowledgeExplorer() {
   const persistence = usePersistKnowledgeWorkspace()
   const mounts = useVaults()
   const [vaultId, setVaultId] = useState('')
+  const workspaceRef = useRef<HTMLDivElement>(null)
+  const fileTreeRef = useRef<HTMLElement>(null)
+  const linksRef = useRef<HTMLDivElement>(null)
   const files = useVaultFiles(vaultId)
   const activePane = useKnowledgeWorkspaceStore(
     (state) => state.panes[state.activePaneId],
@@ -119,9 +124,18 @@ export function KnowledgeExplorer() {
   const selectedNoteId = activeTab?.vaultId === vaultId
     ? activeTab.noteId
     : ''
+  const scanSelectedVault = useCallback(
+    () => scan.mutateAsync(),
+    [scan],
+  )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      ref={workspaceRef}
+      className="flex min-h-0 flex-1 flex-col"
+      data-testid="knowledge-workspace"
+      tabIndex={-1}
+    >
       <header className="border-b px-4 py-4 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -169,6 +183,7 @@ export function KnowledgeExplorer() {
       </header>
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)_minmax(15rem,20rem)]">
         <aside
+          ref={fileTreeRef}
           className="flex min-h-64 flex-col gap-4 border-b p-4 lg:border-b-0 lg:border-r"
           aria-label={t('knowledge.files')}
         >
@@ -242,8 +257,18 @@ export function KnowledgeExplorer() {
             )}
           />
         </main>
-        <KnowledgeLinksInspector onNavigate={navigate} />
+        <div ref={linksRef}>
+          <KnowledgeLinksInspector onNavigate={navigate} />
+        </div>
       </div>
+      <KnowledgeCommandBridge
+        workspaceRef={workspaceRef}
+        fileTreeRef={fileTreeRef}
+        linksRef={linksRef}
+        selectedVaultId={vaultId || null}
+        scanSelectedVault={scanSelectedVault}
+      />
+      <KnowledgeQuickSwitcher mounts={mounts.data || []} />
     </div>
   )
 }
