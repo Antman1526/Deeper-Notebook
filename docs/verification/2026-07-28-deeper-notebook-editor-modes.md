@@ -176,3 +176,72 @@ The remaining native release gates are macOS menu Quit from an unlocked
 interactive session and the real Windows packaged launch/upgrade/repair/
 uninstall proof. Broader Obsidian/Logseq parity work also remains as described
 above.
+
+## 2026-07-29 native Quit and compatibility upgrade update
+
+The native AppKit termination route initially reproduced a separate shutdown
+deadlock after the terminal-signal hardening above. A sample of the blocked
+launcher showed the main thread inside AppKit's quit event while the pywebview
+closing callback synchronously called `window.evaluate_js`. That evaluation
+scheduled work back onto AppKit and waited for the same native event thread.
+
+The workspace close gate now starts the frontend flush evaluation on a daemon
+thread and retains the existing timeout, callback, and failed-flush behavior.
+A regression test records the native event thread and proves that the
+evaluation runs elsewhere. The test was observed red before the production
+change and green afterward. The relevant lifecycle selection passed 99 tests.
+
+The rebuilt packaged application was launched against the migrated disposable
+compatibility home and terminated through
+`NSRunningApplication.terminate()`, the same AppKit termination route used by
+the application Quit event. All 11 exact launcher and descendant PIDs exited,
+both API and frontend ports were released within 3 seconds, the launcher
+exited with status 0, and its readiness and PID markers were removed. A
+literal menu-bar click remains pending because the macOS session was locked;
+no claim is made for that interactive gesture.
+
+### Open Notebook Plus compatibility upgrade
+
+The upgrade proof used an exact detached build of the approved legacy baseline
+at commit `78881021` with Python 3.12 and Node 20. It ran entirely under the
+disposable root `/tmp/deeper-notebook-upgrade-proof.V0yBV4`; it did not launch
+against, mount, scan, or modify the user's live application data or Second
+Brain.
+
+- The legacy app launched ready on API/frontend ports `65156`/`65157`.
+- A synthetic legacy state file was seeded under `.open-notebook-plus/data`
+  with SHA-256
+  `59e18371208799b21e2e4282f0f03a6f9924471888dcaba49fe9c6bdd463a247`.
+- Deeper Notebook migrated the state into `.deeper-notebook/data` with the
+  identical hash and replaced the legacy data directory with a compatibility
+  symlink to the canonical location.
+- The migration receipt reported `completed`, matching critical hashes before
+  and after, successful validation, and a created compatibility link.
+- A second canonical launch preserved the state hash, compatibility link, and
+  exactly one migration receipt, proving restart idempotency.
+- The disposable application replacement proof moved only the temporary
+  legacy `Open Notebook Plus.app` bundle to the macOS Trash, left one canonical
+  `Deeper Notebook.app` in the temporary Applications directory, recorded a
+  completed replacement receipt, and preserved the synthetic state hash.
+- The legacy baseline left known historical sidecars after native
+  termination. The proof removed only the exact recorded disposable legacy
+  process tree before continuing; this behavior is not attributed to the
+  rebuilt canonical application.
+
+### Rebuilt artifact and regression evidence
+
+- Desktop/memory suite: 646 passed, 2 skipped, 4 warnings.
+- Backend suite: 3,192 passed, 1 skipped, 11 warnings.
+- Next.js production build passed and included `/knowledge`.
+- Rebrand audit reported 0 unexpected active identities and 0 stale entries.
+- `codesign --verify --deep --strict` passed for the application.
+- `hdiutil verify` reported the DMG checksum as valid.
+- Application executable SHA-256:
+  `36964c0d80f80f3d1b5643e4a70ab172f703639a6ce6143b1d38fc7c39be2c31`.
+- DMG SHA-256:
+  `1a5448890a1bfb1cba257a587957cd4913ddcd6b1daa77cabaf8f8cc932f8f85`.
+
+The real Windows installer and install/upgrade/repair/uninstall proof remain
+release gates. The unlocked-session menu-bar gesture also remains as a narrow
+macOS smoke test, although the underlying native AppKit termination route is
+covered by the successful packaged proof above.
