@@ -904,14 +904,25 @@ class VaultRepository:
 
         persisted_links: list[dict[str, Any]] = []
         links: list[dict[str, Any]] = [link.model_dump() for link in parsed.links]
-        links.extend(
-            {
-                **embed.model_dump(),
-                "alias": None,
-                "link_kind": "embed",
-            }
-            for embed in parsed.embeds
-        )
+        link_spans = {
+            (int(link["source_start"]), int(link["source_end"])) for link in links
+        }
+        for embed in parsed.embeds:
+            span = (embed.source_start, embed.source_end)
+            # Parsers expose embeds both as rich metadata and as explicit graph
+            # edges. The note_link identity/index is one edge per source span,
+            # so only synthesize an edge when a parser supplied embed metadata
+            # without the corresponding ParsedLink.
+            if span in link_spans:
+                continue
+            links.append(
+                {
+                    **embed.model_dump(),
+                    "alias": None,
+                    "link_kind": "embed",
+                }
+            )
+            link_spans.add(span)
         for link in links:
             link_id = _record_id(
                 "note_link",
