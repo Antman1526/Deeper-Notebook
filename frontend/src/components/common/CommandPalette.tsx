@@ -1,37 +1,54 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo, useId } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
-import { useNotebooks } from '@/lib/hooks/use-notebooks'
-import { useTheme } from '@/lib/stores/theme-store'
+import {
+  Book,
+  Bot,
+  FileText,
+  Loader2,
+  MessageCircleQuestion,
+  Mic,
+  Monitor,
+  Moon,
+  Plus,
+  Search,
+  Settings,
+  Shuffle,
+  Sparkles,
+  Sun,
+  Wrench,
+} from 'lucide-react'
+import type { TFunction } from 'i18next'
+
 import {
   CommandDialog,
-  CommandInput,
-  CommandList,
   CommandEmpty,
   CommandGroup,
+  CommandInput,
   CommandItem,
+  CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
 import {
-  Book,
-  Search,
-  Mic,
-  Bot,
-  Shuffle,
-  Settings,
-  FileText,
-  Wrench,
-  MessageCircleQuestion,
-  Plus,
-  Sun,
-  Moon,
-  Monitor,
-  Loader2,
-} from 'lucide-react'
+  availableKnowledgeCommands,
+  executeKnowledgeCommand,
+  type KnowledgeCommandExecutionContext,
+} from '@/lib/commands/command-registry'
+import {
+  candidateToOpenTab,
+  rankKnowledgeCatalog,
+  searchResultToOpenTab,
+} from '@/lib/commands/knowledge-command-catalog'
+import { useCommandSurfaceStore, requestCommandSurface } from '@/lib/commands/command-surface-store'
+import { useKnowledgeCommandContextStore } from '@/lib/commands/knowledge-command-context-store'
+import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
+import { useKnowledgeCatalog, useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
+import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import type { TFunction } from 'i18next'
+import { useVaults } from '@/lib/hooks/use-vault'
+import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
+import { useTheme } from '@/lib/stores/theme-store'
 
 const getNavigationItems = (t: TFunction) => [
   { name: t('navigation.sources'), href: '/sources', icon: FileText, keywords: ['files', 'documents', 'upload'] },
@@ -56,139 +73,227 @@ const getThemeItems = (t: TFunction) => [
   { name: t('common.system'), value: 'system' as const, icon: Monitor, keywords: ['auto', 'default'] },
 ]
 
+function embeddingConfigurationError(error: Error | null): boolean {
+  return /embedding model/iu.test(error?.message ?? '')
+}
+
 export function CommandPalette() {
   const { t } = useTranslation()
-  const commandInputId = useId()
-  const navigationItems = useMemo(() => getNavigationItems(t), [t])
-  const createItems = useMemo(() => getCreateItems(t), [t])
-  const themeItems = useMemo(() => getThemeItems(t), [t])
-  
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
   const router = useRouter()
+  const commandInputId = useId()
+  const surface = useCommandSurfaceStore()
+  const pageContext = useKnowledgeCommandContextStore()
+  const workspace = useKnowledgeWorkspaceStore()
+  const mounts = useVaults()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
   const { setTheme } = useTheme()
   const { data: notebooks, isLoading: notebooksLoading } = useNotebooks(false)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [invocationMode, setInvocationMode] = useState<'global' | 'slash'>('global')
+  const [invoker, setInvoker] = useState<HTMLElement | null>(null)
+  const [commandUnavailable, setCommandUnavailable] = useState(false)
+  const navigationItems = useMemo(() => getNavigationItems(t), [t])
+  const createItems = useMemo(() => getCreateItems(t), [t])
+  const themeItems = useMemo(() => getThemeItems(t), [t])
+  const openTabs = useMemo(
+    () => Object.values(workspace.panes).flatMap(pane => pane.tabs),
+    [workspace.panes],
+  )
+  const catalog = useKnowledgeCatalog(
+    mounts.data || [],
+    openTabs,
+    open && invocationMode === 'global' && pageContext.context !== null,
+  )
+  const indexed = useKnowledgeIndexedSearch(
+    query,
+    open && invocationMode === 'global' && pageContext.context !== null && query.trim().length >= 2,
+  )
 
-  // Global keyboard listener for ⌘K / Ctrl+K
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      // Skip if focus is inside editable elements
-      const target = e.target as HTMLElement | null
-      if (
-        target &&
-        (target.isContentEditable ||
-          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-      ) {
+    if (surface.requestId === 0 || surface.kind === null || surface.kind === 'quick-switcher') return
+    setInvocationMode(surface.kind)
+    setQuery(surface.initialQuery)
+    setInvoker(surface.invoker)
+    setCommandUnavailable(false)
+    setOpen(true)
+  }, [surface.initialQuery, surface.invoker, surface.kind, surface.requestId])
+
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (open) setOpen(false)
+        else requestCommandSurface(
+          'global',
+          '',
+          document.activeElement instanceof HTMLElement ? document.activeElement : null,
+        )
         return
       }
 
-      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        e.stopPropagation()
-        setOpen((open) => !open)
+      const target = event.target as HTMLElement | null
+      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) {
         return
       }
-      // v0.7.35 — additional shortcuts. All gated on Cmd/Ctrl to avoid
-      // hijacking single-letter typing outside form fields (the early
-      // return above already excludes inputs/textareas/contentEditable).
-      //
-      //   Cmd+N → open New Notebook dialog
-      //   Cmd+U → open Upload Source dialog (U for Upload — N is taken)
-      //   Cmd+/ → jump to /search (Ask + global search)
-      if (e.key === 'n' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        e.stopPropagation()
+      if (event.key === 'n' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        event.stopPropagation()
         openNotebookDialog()
-        return
-      }
-      if (e.key === 'u' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        e.stopPropagation()
+      } else if (event.key === 'u' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        event.stopPropagation()
         openSourceDialog()
-        return
-      }
-      if (e.key === '/' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        e.stopPropagation()
+      } else if (event.key === '/' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        event.stopPropagation()
         router.push('/search')
-        return
       }
     }
-
-    // Use capture phase to intercept before other handlers
     document.addEventListener('keydown', down, true)
     return () => document.removeEventListener('keydown', down, true)
-    // v0.7.35 — depends on closures captured by the new shortcuts.
-    // The handlers themselves are stable across re-renders (from
-    // useCreateDialogs + router), so this just keeps the linter happy.
-  }, [openNotebookDialog, openSourceDialog, router])
+  }, [open, openNotebookDialog, openSourceDialog, router])
 
-  // Reset query when dialog closes
   useEffect(() => {
-    if (!open) {
-      setQuery('')
-    }
-  }, [open])
-
-  const handleSelect = useCallback((callback: () => void) => {
-    setOpen(false)
+    if (open) return
     setQuery('')
-    // Use setTimeout to ensure dialog closes before action
-    setTimeout(callback, 0)
-  }, [])
+    requestAnimationFrame(() => {
+      if (invoker?.isConnected) invoker.focus()
+    })
+  }, [invoker, open])
 
+  const closePalette = useCallback(() => setOpen(false), [])
+  const handleSelect = useCallback((callback: () => void) => {
+    closePalette()
+    setTimeout(callback, 0)
+  }, [closePalette])
   const handleNavigate = useCallback((href: string) => {
     handleSelect(() => router.push(href))
   }, [handleSelect, router])
-
   const handleSearch = useCallback(() => {
     if (!query.trim()) return
-    handleSelect(() => router.push(`/search?q=${encodeURIComponent(query)}&mode=search`))
-  }, [handleSelect, router, query])
-
+    handleNavigate(`/search?q=${encodeURIComponent(query)}&mode=search`)
+  }, [handleNavigate, query])
   const handleAsk = useCallback(() => {
     if (!query.trim()) return
-    handleSelect(() => router.push(`/search?q=${encodeURIComponent(query)}&mode=ask`))
-  }, [handleSelect, router, query])
-
+    handleNavigate(`/search?q=${encodeURIComponent(query)}&mode=ask`)
+  }, [handleNavigate, query])
   const handleCreate = useCallback((action: string) => {
     handleSelect(() => {
       if (action === 'source') openSourceDialog()
       else if (action === 'notebook') openNotebookDialog()
       else if (action === 'podcast') openPodcastDialog()
     })
-  }, [handleSelect, openSourceDialog, openNotebookDialog, openPodcastDialog])
-
+  }, [handleSelect, openNotebookDialog, openPodcastDialog, openSourceDialog])
   const handleTheme = useCallback((theme: 'light' | 'dark' | 'system') => {
     handleSelect(() => setTheme(theme))
   }, [handleSelect, setTheme])
 
-  // Check if query matches any command (navigation, create, theme, or notebook)
-  const queryLower = query.toLowerCase().trim()
-  const hasCommandMatch = useMemo(() => {
-    if (!queryLower) return false
-    return (
-      navigationItems.some(item =>
-        item.name.toLowerCase().includes(queryLower) ||
-        item.keywords.some(k => k.includes(queryLower))
-      ) ||
-      createItems.some(item =>
-        item.name.toLowerCase().includes(queryLower)
-      ) ||
-      themeItems.some(item =>
-        item.name.toLowerCase().includes(queryLower) ||
-        item.keywords.some(k => k.includes(queryLower))
-      ) ||
-      (notebooks?.some(nb =>
-        nb.name.toLowerCase().includes(queryLower) ||
-        (nb.description && nb.description.toLowerCase().includes(queryLower))
-      ) ?? false)
-    )
-  }, [queryLower, notebooks, navigationItems, createItems, themeItems])
+  const buildKnowledgeContext = useCallback((): KnowledgeCommandExecutionContext | null => {
+    const page = useKnowledgeCommandContextStore.getState()
+    if (page.generation !== pageContext.generation || !page.context) return null
+    const live = useKnowledgeWorkspaceStore.getState()
+    const pane = live.panes[live.activePaneId]
+    const activeTab = pane?.tabs.find(tab => tab.id === pane.activeTabId) ?? pane?.tabs[0]
+    const activePaneElement = page.context.activePaneElement
+    return {
+      activePaneId: pane?.id ?? null,
+      activeTabId: activeTab?.id ?? null,
+      paneCount: Object.keys(live.panes).length,
+      selectedVaultId: page.context.selectedVaultId,
+      setViewMode: mode => {
+        const current = useKnowledgeWorkspaceStore.getState()
+        const currentPane = current.panes[current.activePaneId]
+        const tabId = currentPane?.activeTabId ?? currentPane?.tabs[0]?.id
+        if (currentPane && tabId) current.setTabViewMode(currentPane.id, tabId, mode)
+      },
+      splitPane: direction => {
+        const current = useKnowledgeWorkspaceStore.getState()
+        if (current.panes[current.activePaneId]) current.splitPane(current.activePaneId, direction)
+      },
+      closePane: () => {
+        const current = useKnowledgeWorkspaceStore.getState()
+        current.closePane(current.activePaneId)
+      },
+      closeTab: () => {
+        const current = useKnowledgeWorkspaceStore.getState()
+        const currentPane = current.panes[current.activePaneId]
+        const tabId = currentPane?.activeTabId ?? currentPane?.tabs[0]?.id
+        if (currentPane && tabId) current.closeTab(currentPane.id, tabId)
+      },
+      scanSelectedVault: page.context.scanSelectedVault ?? null,
+      focusFileTree: page.context.fileTreeElement?.isConnected
+        ? () => page.context?.fileTreeElement?.focus()
+        : null,
+      focusActivePane: activePaneElement?.isConnected
+        ? () => activePaneElement.focus()
+        : null,
+      focusLinks: page.context.linksElement?.isConnected
+        ? () => page.context?.linksElement?.focus()
+        : null,
+      moveTab: offset => {
+        const current = useKnowledgeWorkspaceStore.getState()
+        const currentPane = current.panes[current.activePaneId]
+        const activeIndex = currentPane?.tabs.findIndex(tab => tab.id === currentPane.activeTabId) ?? -1
+        if (!currentPane?.tabs.length || activeIndex < 0) return
+        const target = currentPane.tabs[(activeIndex + offset + currentPane.tabs.length) % currentPane.tabs.length]
+        current.activateTab(currentPane.id, target.id)
+      },
+    }
+  }, [pageContext.generation])
 
-  // Determine if we should show the Search/Ask section at the top
-  const showSearchFirst = query.trim() && !hasCommandMatch
+  const knowledgeContext = buildKnowledgeContext()
+  const knowledgeCommands = knowledgeContext
+    ? availableKnowledgeCommands(knowledgeContext, invocationMode)
+    : []
+  const queryLower = query.toLowerCase().trim()
+  const commandFilterQuery = invocationMode === 'slash'
+    ? query.replace(/^\/+/, '')
+    : query
+  const hasCommandMatch = queryLower.length > 0 && (
+    navigationItems.some(item => item.name.toLowerCase().includes(queryLower) || item.keywords.some(keyword => keyword.includes(queryLower)))
+    || createItems.some(item => item.name.toLowerCase().includes(queryLower))
+    || themeItems.some(item => item.name.toLowerCase().includes(queryLower) || item.keywords.some(keyword => keyword.includes(queryLower)))
+    || (notebooks?.some(notebook => notebook.name.toLowerCase().includes(queryLower) || notebook.description?.toLowerCase().includes(queryLower)) ?? false)
+  )
+  const showSearchFirst = invocationMode === 'global' && query.trim() && !hasCommandMatch
+  const exactCandidates = useMemo(
+    () => invocationMode === 'global' && open && query.trim().length >= 2
+      ? rankKnowledgeCatalog(catalog.candidates, query, 8)
+      : [],
+    [catalog.candidates, invocationMode, open, query],
+  )
+  const indexedResults = useMemo(() => (
+    invocationMode === 'global' && open && indexed.text.isCurrent
+      ? indexed.text.data?.results || []
+      : []
+  ), [indexed.text.data?.results, indexed.text.isCurrent, invocationMode, open])
+  const semanticResults = useMemo(() => (
+    invocationMode === 'global' && open && indexed.semantic.variables === query.trim()
+      ? indexed.semantic.data?.results || []
+      : []
+  ), [indexed.semantic.data?.results, indexed.semantic.variables, invocationMode, open, query])
+
+  const executeKnowledge = useCallback(async (id: Parameters<typeof executeKnowledgeCommand>[0]) => {
+    const generation = pageContext.generation
+    const liveContext = buildKnowledgeContext()
+    if (
+      !liveContext
+      || !await executeKnowledgeCommand(id, liveContext)
+      || useKnowledgeCommandContextStore.getState().generation !== generation
+    ) {
+      setCommandUnavailable(true)
+      return
+    }
+    closePalette()
+  }, [buildKnowledgeContext, closePalette, pageContext.generation])
+
+  const selectTab = useCallback((tab: ReturnType<typeof searchResultToOpenTab>) => {
+    if (!tab) return
+    useKnowledgeWorkspaceStore.getState().openTab(tab)
+    closePalette()
+  }, [closePalette])
 
   return (
     <CommandDialog
@@ -198,134 +303,164 @@ export function CommandPalette() {
       description={t('common.quickActionsDesc')}
       className="sm:max-w-lg"
     >
-      <CommandInput
-        id={commandInputId}
-        name="command-search"
-        placeholder={t('searchPage.enterSearchPlaceholder')}
-        value={query}
-        onValueChange={setQuery}
-        aria-label={t('common.search')}
-        autoComplete="off"
-      />
+      <div className="relative">
+        {invocationMode === 'slash' && (
+          <span aria-hidden="true" className="pointer-events-none absolute left-10 top-3 z-10 text-sm">
+            /
+          </span>
+        )}
+        <CommandInput
+          id={commandInputId}
+          name="command-search"
+          placeholder={t('searchPage.enterSearchPlaceholder')}
+          value={commandFilterQuery}
+          onValueChange={(value) => setQuery(invocationMode === 'slash' ? `/${value}` : value)}
+          aria-label={t('common.search')}
+          autoComplete="off"
+          className={invocationMode === 'slash' ? 'pl-3' : undefined}
+        />
+      </div>
+      {commandUnavailable && (
+        <p aria-live="polite" role="status" className="sr-only">
+          {t('knowledge.commandUnavailable')}
+        </p>
+      )}
       <CommandList>
-        {/* v0.7.25 — show empty state when the user's query matches
-            nothing. Without this, a zero-match query rendered a
-            completely blank list with no signal that the search ran. */}
         <CommandEmpty>{t('common.noResults', 'No results found.')}</CommandEmpty>
-
-        {/* Search/Ask - show FIRST when there's a query with no command match */}
-        {showSearchFirst && (
+        {invocationMode === 'global' && showSearchFirst && (
           <CommandGroup heading={t('searchPage.searchAndAsk')} forceMount>
-            <CommandItem
-              value={`__search__ ${query}`}
-              onSelect={handleSearch}
-              forceMount
-            >
+            <CommandItem value={`__search__ ${query}`} onSelect={handleSearch} forceMount>
               <Search className="h-4 w-4" />
               <span>{t('searchPage.searchResultsFor').replace('{query}', query)}</span>
             </CommandItem>
-            <CommandItem
-              value={`__ask__ ${query}`}
-              onSelect={handleAsk}
-              forceMount
-            >
+            <CommandItem value={`__ask__ ${query}`} onSelect={handleAsk} forceMount>
               <MessageCircleQuestion className="h-4 w-4" />
               <span>{t('searchPage.askAbout').replace('{query}', query)}</span>
             </CommandItem>
           </CommandGroup>
         )}
-
-        {/* Navigation */}
-        <CommandGroup heading={t('navigation.nav')}>
-          {navigationItems.map((item) => (
-            <CommandItem
-              key={item.href}
-              value={`${item.name} ${item.keywords.join(' ')}`}
-              onSelect={() => handleNavigate(item.href)}
-            >
-              <item.icon className="h-4 w-4" />
-              <span>{item.name}</span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-
-        {/* Notebooks
-            v0.7.25 — conditionally render the whole group only when
-            there are notebooks (or we're loading). Previously, with
-            zero notebooks, the heading "Notebooks" still rendered
-            above nothing — an orphan label in the palette. */}
-        {(notebooksLoading || (notebooks && notebooks.length > 0)) && (
-          <CommandGroup heading={t('notebooks.title')}>
-            {notebooksLoading ? (
-              <CommandItem disabled>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>{t('common.loading')}</span>
+        {knowledgeContext && (
+          <CommandGroup heading={t('knowledge.commands')}>
+            {knowledgeCommands.map(command => (
+              <CommandItem
+                key={command.id}
+                value={`${command.labelKey} ${command.aliases.join(' ')} ${command.keywords.join(' ')}`}
+                disabled={!command.available}
+                onSelect={() => void executeKnowledge(command.id)}
+              >
+                <span>{t(command.labelKey)}</span>
+                {!command.available && command.unavailableReasonKey && (
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {t(command.unavailableReasonKey)}
+                  </span>
+                )}
               </CommandItem>
-            ) : (
-              notebooks!.map((notebook) => (
-                <CommandItem
-                  key={notebook.id}
-                  value={`notebook ${notebook.name} ${notebook.description || ''}`}
-                  onSelect={() => handleNavigate(`/notebooks/${notebook.id}`)}
-                >
-                  <Book className="h-4 w-4" />
-                  <span>{notebook.name}</span>
-                </CommandItem>
-              ))
-            )}
+            ))}
           </CommandGroup>
         )}
-
-        {/* Create */}
-        <CommandGroup heading={t('navigation.create')}>
-          {createItems.map((item) => (
-            <CommandItem
-              key={item.action}
-              value={`create ${item.name}`}
-              onSelect={() => handleCreate(item.action)}
-            >
-              <Plus className="h-4 w-4" />
-              <span>{item.name}</span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-
-        {/* Theme */}
-        <CommandGroup heading={t('navigation.theme')}>
-          {themeItems.map((item) => (
-            <CommandItem
-              key={item.value}
-              value={`theme ${item.name} ${item.keywords.join(' ')}`}
-              onSelect={() => handleTheme(item.value)}
-            >
-              <item.icon className="h-4 w-4" />
-              <span>{item.name}</span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-
-        {/* Search/Ask - show at bottom when there IS a command match */}
-        {query.trim() && hasCommandMatch && (
+        {invocationMode === 'global' && (
           <>
-            <CommandSeparator />
-            <CommandGroup heading={t('searchPage.orSearchKb')} forceMount>
-              <CommandItem
-                value={`__search__ ${query}`}
-                onSelect={handleSearch}
-                forceMount
-              >
-                <Search className="h-4 w-4" />
-                <span>{t('searchPage.searchResultsFor').replace('{query}', query)}</span>
-              </CommandItem>
-              <CommandItem
-                value={`__ask__ ${query}`}
-                onSelect={handleAsk}
-                forceMount
-              >
-                <MessageCircleQuestion className="h-4 w-4" />
-                <span>{t('searchPage.askAbout').replace('{query}', query)}</span>
-              </CommandItem>
+            <CommandGroup heading={t('navigation.nav')}>
+              {navigationItems.map(item => (
+                <CommandItem key={item.href} value={`${item.name} ${item.keywords.join(' ')}`} onSelect={() => handleNavigate(item.href)}>
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.name}</span>
+                </CommandItem>
+              ))}
             </CommandGroup>
+            {(notebooksLoading || (notebooks && notebooks.length > 0)) && (
+              <CommandGroup heading={t('notebooks.title')}>
+                {notebooksLoading ? (
+                  <CommandItem disabled><Loader2 className="h-4 w-4 animate-spin" /><span>{t('common.loading')}</span></CommandItem>
+                ) : notebooks!.map(notebook => (
+                  <CommandItem key={notebook.id} value={`notebook ${notebook.name} ${notebook.description || ''}`} onSelect={() => handleNavigate(`/notebooks/${notebook.id}`)}>
+                    <Book className="h-4 w-4" /><span>{notebook.name}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            <CommandGroup heading={t('navigation.create')}>
+              {createItems.map(item => (
+                <CommandItem key={item.action} value={`create ${item.name}`} onSelect={() => handleCreate(item.action)}>
+                  <Plus className="h-4 w-4" /><span>{item.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandGroup heading={t('navigation.theme')}>
+              {themeItems.map(item => (
+                <CommandItem key={item.value} value={`theme ${item.name} ${item.keywords.join(' ')}`} onSelect={() => handleTheme(item.value)}>
+                  <item.icon className="h-4 w-4" /><span>{item.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            {exactCandidates.length > 0 && (
+              <CommandGroup heading={t('knowledge.exactResults')}>
+                {exactCandidates.map(candidate => (
+                  <CommandItem key={candidate.key} value={`exact ${candidate.title} ${candidate.relativePath}`} onSelect={() => selectTab(candidateToOpenTab(candidate))}>
+                    <FileText className="h-4 w-4" /><span>{candidate.title}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {indexedResults.length > 0 && (
+              <CommandGroup heading={t('knowledge.indexedSearchResults')}>
+                {indexedResults.map(result => {
+                  const tab = searchResultToOpenTab(result)
+                  if (result.vault_provenance && !tab) return null
+                  if (!tab) return (
+                    <CommandItem key={result.id} value={`search ${result.title}`} onSelect={handleSearch}>
+                      <Search className="h-4 w-4" /><span>{result.title}</span>
+                    </CommandItem>
+                  )
+                  return (
+                    <CommandItem key={result.id} value={`indexed ${tab.title} ${tab.relativePath}`} onSelect={() => selectTab(tab)}>
+                      <FileText className="h-4 w-4" /><span>{tab.title}</span>
+                    </CommandItem>
+                  )
+                })}
+              </CommandGroup>
+            )}
+            {query.trim().length >= 2 && (
+              <CommandGroup heading={t('knowledge.semanticSearch')} forceMount>
+                <CommandItem value={`semantic ${query}`} onSelect={indexed.runSemanticSearch} forceMount>
+                  <Sparkles aria-hidden="true" className="h-4 w-4" />
+                  <span>{t('knowledge.semanticSearchFor', { query })}</span>
+                </CommandItem>
+              </CommandGroup>
+            )}
+            {embeddingConfigurationError(indexed.semantic.error) && (
+              <CommandGroup heading={t('knowledge.semanticUnavailable')} forceMount>
+                <CommandItem value="configure embedding model" onSelect={() => handleNavigate('/settings/api-keys')} forceMount>
+                  <Settings className="h-4 w-4" /><span>{t('knowledge.semanticUnavailable')}</span>
+                </CommandItem>
+              </CommandGroup>
+            )}
+            {semanticResults.length > 0 && (
+              <CommandGroup heading={t('knowledge.semanticSearchResults')}>
+                {semanticResults.map(result => {
+                  const tab = searchResultToOpenTab(result)
+                  if (!tab) return null
+                  return (
+                    <CommandItem key={result.id} value={`semantic result ${tab.title} ${tab.relativePath}`} onSelect={() => selectTab(tab)}>
+                      <FileText className="h-4 w-4" /><span>{tab.title}</span>
+                    </CommandItem>
+                  )
+                })}
+              </CommandGroup>
+            )}
+            {query.trim() && hasCommandMatch && (
+              <>
+                <CommandSeparator />
+                <CommandGroup heading={t('searchPage.orSearchKb')} forceMount>
+                  <CommandItem value={`__search__ ${query}`} onSelect={handleSearch} forceMount>
+                    <Search className="h-4 w-4" /><span>{t('searchPage.searchResultsFor').replace('{query}', query)}</span>
+                  </CommandItem>
+                  <CommandItem value={`__ask__ ${query}`} onSelect={handleAsk} forceMount>
+                    <MessageCircleQuestion className="h-4 w-4" /><span>{t('searchPage.askAbout').replace('{query}', query)}</span>
+                  </CommandItem>
+                </CommandGroup>
+              </>
+            )}
           </>
         )}
       </CommandList>

@@ -18,6 +18,8 @@ function renderBridge() {
   const fileTreeRef = createRef<HTMLDivElement>()
   const linksRef = createRef<HTMLDivElement>()
   const scanSelectedVault = vi.fn(async () => undefined)
+  const activePaneElement = document.createElement('section')
+  document.body.append(activePaneElement)
   const result = render(
     <>
       <div ref={workspaceRef} data-testid="knowledge-workspace" tabIndex={-1}>
@@ -28,6 +30,7 @@ function renderBridge() {
       <div ref={linksRef} />
       <KnowledgeCommandBridge
         workspaceRef={workspaceRef}
+        activePaneElement={activePaneElement}
         fileTreeRef={fileTreeRef}
         linksRef={linksRef}
         selectedVaultId="vault:fixture"
@@ -35,7 +38,7 @@ function renderBridge() {
       />
     </>,
   )
-  return { ...result, scanSelectedVault }
+  return { ...result, activePaneElement, scanSelectedVault }
 }
 
 describe('KnowledgeCommandBridge', () => {
@@ -87,12 +90,14 @@ describe('KnowledgeCommandBridge', () => {
   })
 
   it('registers selected context and clears its captured generation on unmount', () => {
-    const { unmount } = renderBridge()
+    const { activePaneElement, unmount } = renderBridge()
     expect(useKnowledgeCommandContextStore.getState().context).toMatchObject({
       selectedVaultId: 'vault:fixture',
       scanSelectedVault: expect.any(Function),
+      activePaneElement,
     })
     unmount()
     expect(useKnowledgeCommandContextStore.getState().context).toBeNull()
+    activePaneElement.remove()
   })
 })
