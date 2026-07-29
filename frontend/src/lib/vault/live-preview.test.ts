@@ -39,6 +39,32 @@ describe('buildLivePreviewDecorationRecords', () => {
   })
 
   it.each([
+    ['inline code', '`[[Not]] $x$ [^x] ~~x~~ [ ]`', 'inline-code'],
+    ['fenced code', '```md\n[[Not]] $x$ [^x] ~~x~~ [ ]\n```', 'fenced-code'],
+  ] as const)('does not decorate scanner syntax inside %s', (_name, source, allowedKind) => {
+    const state = previewState(source)
+    const records = buildLivePreviewDecorationRecords(state, [{ from: 0, to: state.doc.length }])
+
+    const forbiddenKinds = new Set([
+      'wiki-link',
+      'tag',
+      'footnote-mark',
+      'math-mark',
+      'strikethrough-mark',
+      'task-marker',
+    ])
+    expect(records.filter((record) => forbiddenKinds.has(record.kind))).toEqual([])
+    expect(records.some((record) => record.kind.startsWith(allowedKind))).toBe(true)
+  })
+
+  it('does not decorate a prose checkbox lookalike as a task', () => {
+    const state = previewState('prose [ ]')
+
+    expect(buildLivePreviewDecorationRecords(state, [{ from: 0, to: state.doc.length }]))
+      .toEqual([])
+  })
+
+  it.each([
     ['heading', '# Heading', 'heading-mark'],
     ['emphasis', '*emphasis*', 'emphasis-mark'],
     ['strong', '**strong**', 'strong-mark'],
@@ -95,5 +121,41 @@ describe('buildLivePreviewDecorationRecords', () => {
       const toLine = state.doc.lineAt(Math.max(record.from, record.to - 1)).number
       return fromLine === toLine
     })).toBe(true)
+  })
+
+  it('collapses a Setext heading underline on its own line', () => {
+    const state = previewState('Plan\n---')
+
+    expect(buildLivePreviewDecorationRecords(state, [{ from: 0, to: state.doc.length }]))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'heading-mark', from: 5, to: 8 }),
+      ]))
+  })
+
+  it('collapses every marker in a multi-line blockquote', () => {
+    const state = previewState('> one\n> two')
+
+    expect(buildLivePreviewDecorationRecords(state, [{ from: 0, to: state.doc.length }])
+      .filter((record) => record.kind === 'blockquote-mark'))
+      .toEqual([
+        expect.objectContaining({ from: 0, to: 2 }),
+        expect.objectContaining({ from: 6, to: 8 }),
+      ])
+  })
+
+  it.each([
+    ['Setext heading', 'Plan\n---', 6, 'heading-mark'],
+    ['multi-line blockquote', '> one\n> two', 7, 'blockquote-mark'],
+  ] as const)('reveals all %s punctuation when selection intersects the construct', (
+    _name,
+    source,
+    anchor,
+    markerKind,
+  ) => {
+    const state = previewState(source, anchor)
+
+    expect(buildLivePreviewDecorationRecords(state, [{ from: 0, to: state.doc.length }])
+      .filter((record) => record.kind === markerKind))
+      .toEqual([])
   })
 })

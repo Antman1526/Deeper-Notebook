@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { EditorSelection } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
 import { describe, expect, it, vi } from 'vitest'
 
 import { VaultLivePreview } from './VaultLivePreview'
@@ -101,5 +103,38 @@ describe('VaultLivePreview', () => {
     expect(buttons).toHaveLength(1)
     fireEvent.click(buttons[0])
     expect(onNavigate).toHaveBeenCalledWith('note:second')
+  })
+
+  it.each([
+    ['wiki', '[[Research]]', 'wikilink'],
+    ['Markdown', '[Research](pages/research.md)', 'markdown'],
+  ] as const)('treats an exact resolved %s navigation widget as one cursor atom', (
+    _name,
+    linkSource,
+    linkKind,
+  ) => {
+    const prefix = 'a '
+    const markdown = `${prefix}${linkSource} tail`
+    const sourceStart = new TextEncoder().encode(prefix).length
+    const sourceEnd = sourceStart + new TextEncoder().encode(linkSource).length
+    render(
+      <VaultLivePreview
+        title="Plan"
+        markdown={markdown}
+        links={[{
+          ...resolvedLinkFixture,
+          link_kind: linkKind,
+          source_start: sourceStart,
+          source_end: sourceEnd,
+        }]}
+        onNavigate={vi.fn()}
+      />,
+    )
+
+    const editor = screen.getByRole('textbox', { name: 'Plan live preview' })
+    const view = EditorView.findFromDOM(editor)!
+    const moved = view.moveByChar(EditorSelection.cursor(prefix.length), true)
+
+    expect(moved.head).toBe(prefix.length + linkSource.length)
   })
 })

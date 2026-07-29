@@ -1,4 +1,4 @@
-import { syntaxTree } from '@codemirror/language'
+import { markdownLanguage } from '@codemirror/lang-markdown'
 import type { Extension, EditorState } from '@codemirror/state'
 import {
   Decoration,
@@ -26,6 +26,7 @@ export interface PreviewDecorationRecord {
   from: number
   to: number
   decoration: Decoration
+  atomic?: boolean
 }
 
 export interface LivePreviewOptions {
@@ -114,6 +115,18 @@ function collectMatches(
     }
   }
   return matches.sort((left, right) => left.from - right.from || left.to - right.to)
+}
+
+function mergeRanges(ranges: readonly SourceRange[]): SourceRange[] {
+  const merged: SourceRange[] = []
+  for (const range of [...ranges].sort(
+    (left, right) => left.from - right.from || left.to - right.to,
+  )) {
+    const previous = merged.at(-1)
+    if (!previous || previous.to < range.from) merged.push({ ...range })
+    else previous.to = Math.max(previous.to, range.to)
+  }
+  return merged
 }
 
 function containedBy(range: SourceRange, candidates: readonly SourceRange[]): boolean {
@@ -243,17 +256,16 @@ function createRecords(
 
   const source = state.doc.toString()
   const bounded = lineBoundedRanges(state, visible)
-  const wikiRanges = collectMatches(source, bounded, /\[\[[^\]\r\n]{1,2048}\]\]/gu)
-  const footnoteRanges = collectMatches(source, bounded, /\[\^[^\]\r\n]{1,256}\]/gu)
-  const mathRanges = collectMatches(source, bounded, /(?<!\\)\$(?:[^$\\\r\n]|\\.)+\$/gu)
-  const strikethroughRanges = collectMatches(source, bounded, /~~[^~\r\n]+~~/gu)
-  const taskRanges = collectMatches(source, bounded, /\[(?: |x|X)\]/gu)
+  const rawWikiRanges = collectMatches(source, bounded, /\[\[[^\]\r\n]{1,2048}\]\]/gu)
+  const rawFootnoteRanges = collectMatches(source, bounded, /\[\^[^\]\r\n]{1,256}\]/gu)
+  const rawMathRanges = collectMatches(source, bounded, /(?<!\\)\$(?:[^$\\\r\n]|\\.)+\$/gu)
   const parserRanges: Array<{ kind: MarkdownConstructKind; range: SourceRange }> = []
-  const exclusions: SourceRange[] = [...wikiRanges]
+  const exclusions: SourceRange[] = []
   const seenParserRanges = new Set<string>()
+  const tree = markdownLanguage.parser.parse(source)
 
   for (const range of visible) {
-    syntaxTree(state).iterate({
+    tree.iterate({
       from: range.from,
       to: range.to,
       enter: ({ from, name, to }) => {
@@ -265,27 +277,25 @@ function createRecords(
         if (seenParserRanges.has(key)) return
         seenParserRanges.add(key)
         parserRanges.push({ kind, range: { from, to } })
-        if (kind === 'inline-code' || kind === 'fenced-code' || kind === 'link') {
+        const parserRange = { from, to }
+        const linkArtifact = kind === 'link'
+          && (containedBy(parserRange, rawWikiRanges)
+            || /^\[\^[^\]]+\]$/u.test(source.slice(from, to)))
+        if (
+          kind === 'inline-code'
+          || kind === 'fenced-code'
+          || kind === 'link' && !linkArtifact
+        ) {
           exclusions.push({ from, to })
         }
       },
     })
   }
 
-  for (const [kind, fallbackRanges] of [
-    ['strikethrough', strikethroughRanges],
-    ['task-marker', taskRanges],
-  ] as const) {
-    for (const range of fallbackRanges) {
-      const key = `${kind}:${range.from}:${range.to}`
-      if (!seenParserRanges.has(key)) {
-        seenParserRanges.add(key)
-        parserRanges.push({ kind, range })
-      }
-    }
-  }
-
-  exclusions.sort((left, right) => left.from - right.from || left.to - right.to)
+  const mergedExclusions = mergeRanges(exclusions)
+  const wikiRanges = rawWikiRanges.filter((range) => !overlapsSorted(range, mergedExclusions))
+  const footnoteRanges = rawFootnoteRanges.filter((range) => !overlapsSorted(range, mergedExclusions))
+  const mathRanges = rawMathRanges.filter((range) => !overlapsSorted(range, mergedExclusions))
   const tagRanges = collectMatches(
     source,
     bounded,
@@ -293,22 +303,32 @@ function createRecords(
   ).map((range) => {
     const tag = /#[\p{Letter}\p{Number}_/-]{1,256}/u.exec(source.slice(range.from, range.to))?.[0]
     return tag ? { from: range.to - tag.length, to: range.to } : range
-  }).filter((range) => !overlapsSorted(range, exclusions))
+  }).filter((range) => !overlapsSorted(range, mergedExclusions))
 
   const resolvedSpans = buildUniqueResolvedSpanMap(options.links || [])
   const sourceIndex = createMarkdownSourceIndex(source)
   const records: PreviewDecorationRecord[] = []
-  const add = (kind: string, range: SourceRange, decoration: Decoration) => {
+  const add = (
+    kind: string,
+    range: SourceRange,
+    decoration: Decoration,
+    atomic = false,
+  ) => {
     try {
       if (range.to <= range.from || !isVisible(range, visible)) return
-      records.push({ kind, from: range.from, to: range.to, decoration })
+      records.push({ kind, from: range.from, to: range.to, decoration, atomic })
     } catch {
       // Decoration failures must not hide unrelated visible source.
     }
   }
-  const replace = (kind: string, range: SourceRange, decoration: Decoration) => {
+  const replace = (
+    kind: string,
+    range: SourceRange,
+    decoration: Decoration,
+    atomic = false,
+  ) => {
     if (!rangeIsSingleLine(state, range)) return
-    add(kind, range, decoration)
+    add(kind, range, decoration, atomic)
   }
 
   for (const { kind, range } of parserRanges) {
@@ -317,7 +337,20 @@ function createRecords(
       const value = sourceText(state, range)
       if (kind === 'heading') {
         const marker = /^ {0,3}#{1,6}[ \t]+/.exec(value)?.[0]
-        if (marker) replace('heading-mark', { from: range.from, to: range.from + marker.length }, Decoration.replace({}))
+        if (marker) {
+          replace('heading-mark', {
+            from: range.from,
+            to: range.from + marker.length,
+          }, Decoration.replace({}))
+        } else {
+          const underlines = [...value.matchAll(/^ {0,3}[=-]+[ \t]*$/gmu)]
+          for (const underline of underlines) {
+            replace('heading-mark', {
+              from: range.from + (underline.index || 0),
+              to: range.from + (underline.index || 0) + underline[0].length,
+            }, Decoration.replace({}))
+          }
+        }
         add('heading-content', range, Decoration.mark({ class: 'dn-live-preview-heading' }))
       } else if (kind === 'emphasis' || kind === 'strong' || kind === 'strikethrough') {
         const marker = kind === 'emphasis' ? /^[_*]/.exec(value)?.[0]
@@ -356,7 +389,7 @@ function createRecords(
         if (link && options.onNavigate) {
           replace('markdown-link', range, Decoration.replace({
             widget: new NavigationWidget(linkLabel(value, 'markdown'), link.target_note_id!, options.onNavigate),
-          }))
+          }), true)
           continue
         }
         add('markdown-link', range, Decoration.mark({ class: 'dn-live-preview-link-mark' }))
@@ -370,8 +403,12 @@ function createRecords(
           widget: new TaskMarkerWidget(/^\[x\]/i.test(value)),
         }))
       } else if (kind === 'blockquote') {
-        const marker = /^ {0,3}>[ \t]?/.exec(value)?.[0]
-        if (marker) replace('blockquote-mark', { from: range.from, to: range.from + marker.length }, Decoration.replace({}))
+        for (const marker of value.matchAll(/^ {0,3}>[ \t]?/gmu)) {
+          replace('blockquote-mark', {
+            from: range.from + (marker.index || 0),
+            to: range.from + (marker.index || 0) + marker[0].length,
+          }, Decoration.replace({}))
+        }
         add('blockquote-content', range, Decoration.mark({ class: 'dn-live-preview-quote' }))
       } else if (kind === 'horizontal-rule') {
         add('horizontal-rule', range, Decoration.mark({ class: 'dn-live-preview-rule' }))
@@ -392,7 +429,7 @@ function createRecords(
       if (link && options.onNavigate) {
         replace('wiki-link', range, Decoration.replace({
           widget: new NavigationWidget(linkLabel(value, 'wiki'), link.target_note_id!, options.onNavigate),
-        }))
+        }), true)
         continue
       }
       add('wiki-link', range, Decoration.mark({ class: 'dn-live-preview-link-mark' }))
@@ -426,33 +463,55 @@ export function buildLivePreviewDecorationRecords(
   return createRecords(state, ranges, options)
 }
 
-function decorationSet(
+function decorationSets(
   state: EditorState,
   ranges: readonly SourceRange[],
   options: LivePreviewOptions,
-): DecorationSet {
+): { decorations: DecorationSet; atomicRanges: DecorationSet } {
   const records = createRecords(state, ranges, options)
-  return Decoration.set(records.map((record) => record.decoration.range(record.from, record.to)), true)
+  return {
+    decorations: Decoration.set(
+      records.map((record) => record.decoration.range(record.from, record.to)),
+      true,
+    ),
+    atomicRanges: Decoration.set(
+      records.filter((record) => record.atomic)
+        .map((record) => record.decoration.range(record.from, record.to)),
+      true,
+    ),
+  }
 }
 
 export function buildLivePreviewDecorations(view: EditorView): DecorationSet {
-  return decorationSet(view.state, view.visibleRanges, {})
+  return decorationSets(view.state, view.visibleRanges, {}).decorations
 }
 
 export function livePreviewExtension(options: LivePreviewOptions): Extension {
-  return ViewPlugin.fromClass(class {
+  const plugin = ViewPlugin.fromClass(class {
     decorations: DecorationSet
+    atomicRanges: DecorationSet
 
     constructor(view: EditorView) {
-      this.decorations = decorationSet(view.state, view.visibleRanges, options)
+      const sets = decorationSets(view.state, view.visibleRanges, options)
+      this.decorations = sets.decorations
+      this.atomicRanges = sets.atomicRanges
     }
 
     update(update: { docChanged: boolean; selectionSet: boolean; viewportChanged: boolean; view: EditorView }) {
       if (update.docChanged || update.selectionSet || update.viewportChanged) {
-        this.decorations = decorationSet(update.view.state, update.view.visibleRanges, options)
+        const sets = decorationSets(update.view.state, update.view.visibleRanges, options)
+        this.decorations = sets.decorations
+        this.atomicRanges = sets.atomicRanges
       }
     }
   }, {
     decorations: (plugin) => plugin.decorations,
   })
+
+  return [
+    plugin,
+    EditorView.atomicRanges.of(
+      (view) => view.plugin(plugin)?.atomicRanges || Decoration.none,
+    ),
+  ]
 }
