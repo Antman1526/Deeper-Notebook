@@ -69,31 +69,51 @@ describe('vault API boundary', () => {
     await expect(vaultApi.files('vault:one')).rejects.toThrow(/absolute path/i)
   })
 
-  it('rejects absolute paths from page and graph responses', async () => {
-    mockedGet
-      .mockResolvedValueOnce({
-        data: pageFixture({
-          note: {
-            id: 'note:one',
-            source_path: '/Users/owner/secret.md',
-          },
-        }),
-      } as never)
-      .mockResolvedValueOnce({
-        data: {
-          nodes: [{
-            id: 'note:secret',
-            title: 'Secret',
-            source_format: 'obsidian',
-            source_path: '/Users/owner/secret.md',
-          }],
-          edges: [],
+  it('rejects an absolute source path from a page response', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          source_path: '/Users/owner/secret.md',
         },
-      } as never)
+      }),
+    } as never)
 
     await expect(vaultApi.page('vault:one', 'note:one'))
       .rejects.toMatchObject({ code: 'page-invalid' })
+  })
+
+  it('rejects an absolute path exposed as a graph node ID', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        nodes: [{
+          id: '/Users/owner/secret.md',
+          title: 'Secret',
+          source_format: 'obsidian',
+        }],
+        edges: [],
+      },
+    } as never)
+
     await expect(vaultApi.graph('vault:one', 'note:one')).rejects.toThrow(/absolute path/i)
+  })
+
+  it('rejects an absolute path in unknown passthrough metadata', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        note: {
+          id: 'note:one',
+          integrity_marker: '/Users/owner/secret.md',
+        },
+      }),
+    } as never)
+
+    await expect(vaultApi.page('vault:one', 'note:one'))
+      .rejects.toMatchObject({
+        name: 'VaultPageContractError',
+        code: 'page-invalid',
+        message: 'page-invalid',
+      })
   })
 
   it('rejects a Windows root-relative passthrough path without leaking it', async () => {
