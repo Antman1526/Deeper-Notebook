@@ -56,6 +56,22 @@ const page = {
   backlinks: [],
 }
 
+const fixturePagePaths = [
+  '/api/deeper-notebook/vaults/vault%3Afixture/pages/note%3Aplan',
+  '/api/deeper-notebook/vaults/vault:fixture/pages/note:plan',
+] as const
+
+type FixturePageRoute = 'page' | 'outgoing' | 'backlinks'
+
+function matchFixturePageRoute(pathname: string): FixturePageRoute | null {
+  for (const pagePath of fixturePagePaths) {
+    if (pathname === pagePath) return 'page'
+    if (pathname === `${pagePath}/outgoing`) return 'outgoing'
+    if (pathname === `${pagePath}/backlinks`) return 'backlinks'
+  }
+  return null
+}
+
 export function initialKnowledgeFixtureState(): KnowledgeFixtureState {
   return {
     workspace: {
@@ -280,6 +296,7 @@ export async function fulfillKnowledgeRequest(
   const request = route.request()
   const path = new URL(request.url()).pathname
   const method = request.method()
+  const pageRoute = matchFixturePageRoute(path)
   let payload: unknown
 
   if (path.endsWith('/deeper-notebook/workspace/knowledge')) {
@@ -322,18 +339,15 @@ export async function fulfillKnowledgeRequest(
       return
     }
     payload = [file]
-  } else if (
-    path.includes('/pages/note%3Aplan') ||
-    path.includes('/pages/note:plan')
-  ) {
+  } else if (pageRoute !== null) {
     if (
       !(await allowRequestMethod(route, ['GET', 'HEAD'], unexpectedApiTraffic))
     ) {
       return
     }
-    payload = path.endsWith('/outgoing')
+    payload = pageRoute === 'outgoing'
       ? page.outgoing_links
-      : path.endsWith('/backlinks')
+      : pageRoute === 'backlinks'
         ? page.backlinks
         : page
   } else if (
