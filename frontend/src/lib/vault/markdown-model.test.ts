@@ -103,7 +103,7 @@ describe('buildMarkdownModel', () => {
   )
 
   it('scales across a large adversarial Markdown document', () => {
-    const count = 20_000
+    const count = 100_000
     const markdown = Array.from(
       { length: count },
       (_, index) => `\`#hidden-${index}\` #visible-${index}`,
