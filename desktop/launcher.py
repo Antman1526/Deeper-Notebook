@@ -290,7 +290,10 @@ class Supervisor:
             default_pid_file,
             reap_orphans,
         )
-        self._singleton = acquire_singleton(default_pid_file())
+        self._singleton = acquire_singleton(
+            default_pid_file(),
+            on_signal_cleanup=lambda _signum: self.stop_all(),
+        )
         # Best-effort orphan reap. The bundle paths cover the two places
         # our subprocess children live: the user-data venv (Python API +
         # worker) and the bundled binary dir (Node, surreal, llama-cpp).

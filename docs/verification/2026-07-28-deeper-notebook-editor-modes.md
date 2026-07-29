@@ -136,3 +136,43 @@ This proof does not claim complete Obsidian or Logseq parity.
 5. The first fixture location under `/tmp` was correctly rejected because
    macOS resolves `/tmp` through a symlink. The successful fixture used a
    descriptor-safe workspace path, demonstrating the fail-closed mount policy.
+
+## 2026-07-29 packaged shutdown hardening update
+
+The terminal-signal shutdown gate in item 1 above is resolved for the packaged
+macOS arm64 runtime. The native AppKit event loop could remain blocked in
+`NSApplication.run`, preventing Python's normal high-level signal handler from
+running. The singleton now installs a POSIX wakeup-fd bridge so a dedicated
+shutdown thread can immediately stop the supervisor, release the singleton,
+flush logging, and exit even while the main thread remains inside Cocoa.
+
+Verification used the exact rebuilt packaged executable for two complete
+launch-to-ready-to-SIGTERM cycles:
+
+- First launch: ready on API/frontend ports `63315`/`63316`; all 12 recorded
+  launcher and descendant PIDs exited and both ports were released in 4
+  seconds.
+- Restart: ready on fresh API/frontend ports `63586`/`63587`; all 12 recorded
+  launcher and descendant PIDs exited and both ports were released in 4
+  seconds.
+- Both launchers exited with status 143, logged
+  `Received signal SIGTERM — cleaning runtime + exiting`, and released the
+  singleton PID file.
+- The final build preconditions passed: 645 desktop/memory tests with 2
+  skipped, 3,192 backend tests with 1 skipped, and the Next.js production
+  build including `/knowledge`.
+- Focused singleton/launcher signal regressions passed: 3 tests.
+- Rebrand audit, Ruff, `codesign --verify --deep --strict`, and `hdiutil
+  verify` passed.
+
+Updated local artifacts:
+
+- Application executable SHA-256:
+  `9e31e814d4d4dcf0acdbbfa83ec40488819832942957b88055a02aa086951136`
+- DMG SHA-256:
+  `ecb137b6164a61a6855dcf8e734349993d0e3a60d25271301aa586dfd7c77cca`
+
+The remaining native release gates are macOS menu Quit from an unlocked
+interactive session and the real Windows packaged launch/upgrade/repair/
+uninstall proof. Broader Obsidian/Logseq parity work also remains as described
+above.
