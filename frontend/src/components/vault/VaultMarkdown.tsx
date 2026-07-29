@@ -16,8 +16,10 @@ import {
   type MarkdownSourceIndex,
   vaultLinkSpanKey,
 } from '@/lib/vault/remark-vault-links'
+import { VaultPagePreview } from './VaultPagePreview'
 
 interface VaultMarkdownProps {
+  vaultId?: string
   noteId?: string
   headingIdPrefix?: string
   markdown: string
@@ -156,6 +158,7 @@ function headingComponent(
 }
 
 function readingComponents(
+  vaultId: string | undefined,
   sourceIndex: MarkdownSourceIndex,
   modelHeadings: HeadingDescriptor[],
   headingIdPrefix: string,
@@ -197,7 +200,7 @@ function readingComponents(
       const span = sourceSpan(sourceIndex, node, properties)
       const link = span && resolvedSpans.get(vaultLinkSpanKey(span.start, span.end))
       if (!link?.target_note_id) return <span>{children}</span>
-      return (
+      const trigger = (
         <button
           type="button"
           className="font-medium text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -208,11 +211,20 @@ function readingComponents(
           {children}
         </button>
       )
+      return vaultId ? (
+        <VaultPagePreview
+          vaultId={vaultId}
+          link={link}
+          onNavigate={onNavigate}
+          trigger={trigger}
+        />
+      ) : trigger
     },
   }
 }
 
 export function VaultMarkdown({
+  vaultId,
   noteId = 'note',
   headingIdPrefix = 'vault',
   markdown,
@@ -225,6 +237,7 @@ export function VaultMarkdown({
   const sourceIndex = createMarkdownSourceIndex(markdown)
   const resolvedSpans = buildUniqueResolvedSpanMap(links)
   const components = readingComponents(
+    vaultId,
     sourceIndex,
     model.headings,
     headingIdPrefix,
