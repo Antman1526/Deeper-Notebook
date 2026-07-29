@@ -489,7 +489,7 @@
           "content"
         ]
       },
-      "coverage_sha256": "05935ad47a5a96bdccea5aa7c3109c4d6e8f80e37f3fff63671092d442f52747"
+      "coverage_sha256": "fa1dc3a8683cee2e6d7fc147dbe0462ec4e26fa4e3c888a429bd55a392f4a056"
     },
     "env-alias-v1": {
       "kind": "env_alias",
@@ -14018,7 +14018,7 @@
         "column": 36,
         "context_sha256": "08b36edce1ebcc836736ac8412fadf25aece8b642c1a8b45c6e41353edef5077",
         "category": "compatibility_alias",
-        "explanation": "The desktop build deeper notebook project artifact keeps the legacy behavior in the active artifact section because the statement uses that role while expressing Type: files Name: \" autoprograms \\ current former full desktop product title .lnk\", while the preceding context concerns Remove only the exact retired per-user Start Menu shortcut; the following context concerns Icons.",
+        "explanation": "The desktop build deeper notebook project artifact keeps the legacy behavior in the active artifact section because the statement uses that role while expressing Type: files Name: \" autoprograms \\ current former full desktop product title .lnk\", while the preceding context concerns Remove only the exact retired per-user Start Menu shortcut; the following context concerns The internal bundle is app-owned. Replacing it atomically prevents runtime.",
         "compatibility_contract": "installer-upgrade-v1"
       }
     },
@@ -16946,7 +16946,7 @@
       "path": "desktop/window.py",
       "pattern": "ONP_",
       "source": "content",
-      "line": 1050,
+      "line": 1060,
       "column": 13,
       "context_sha256": "e92dfc8a22589276a725a696f56bff9f0a707c759640b9009135439642c72fd1",
       "category": "compatibility_alias",
@@ -16954,7 +16954,7 @@
         "path": "desktop/window.py",
         "pattern": "ONP_",
         "source": "content",
-        "line": 1050,
+        "line": 1060,
         "column": 13,
         "context_sha256": "e92dfc8a22589276a725a696f56bff9f0a707c759640b9009135439642c72fd1",
         "category": "compatibility_alias",
@@ -16966,7 +16966,7 @@
       "path": "desktop/window.py",
       "pattern": "ONP_",
       "source": "content",
-      "line": 1050,
+      "line": 1060,
       "column": 36,
       "context_sha256": "e92dfc8a22589276a725a696f56bff9f0a707c759640b9009135439642c72fd1",
       "category": "compatibility_alias",
@@ -16974,7 +16974,7 @@
         "path": "desktop/window.py",
         "pattern": "ONP_",
         "source": "content",
-        "line": 1050,
+        "line": 1060,
         "column": 36,
         "context_sha256": "e92dfc8a22589276a725a696f56bff9f0a707c759640b9009135439642c72fd1",
         "category": "compatibility_alias",
@@ -51839,6 +51839,66 @@
         "context_sha256": "ceae77341c059c7edb54a220900a5d4ebe7d068e156f17548b27cafa48cbe3e0",
         "category": "migration_documentation",
         "explanation": "The superpowers specs 2026 07 26 deeper notebook rebrand design document documents the upgrade boundary in the \"Deeper Notebook Rebrand Design / Localization\" section because the statement uses that role while expressing current former full desktop product title as the product name, while the preceding context concerns Tests assert no active locale retains former identifier , former identifier , or; the following context concerns Error Handling.",
+        "compatibility_contract": null
+      }
+    },
+    {
+      "path": "docs/verification/2026-07-28-deeper-notebook-editor-modes.md",
+      "pattern": "Open Notebook Plus",
+      "source": "content",
+      "line": 203,
+      "column": 5,
+      "context_sha256": "1b158f01481c79089ec6ca31667d48f6758a85e19ccc992628851539d34a3c54",
+      "category": "migration_documentation",
+      "rationale": {
+        "path": "docs/verification/2026-07-28-deeper-notebook-editor-modes.md",
+        "pattern": "Open Notebook Plus",
+        "source": "content",
+        "line": 203,
+        "column": 5,
+        "context_sha256": "1b158f01481c79089ec6ca31667d48f6758a85e19ccc992628851539d34a3c54",
+        "category": "migration_documentation",
+        "explanation": "The verification 2026 07 28 deeper notebook editor modes document documents the upgrade boundary in the \"Deeper Notebook editor modes and native vault proof / 2026-07-29 native Quit and compatibility upgrade update / former identifier compatibility upgrade\" section because the statement uses that role while expressing current former full desktop product title compatibility upgrade, while the preceding context concerns no claim is made for that interactive gesture; the following context concerns The upgrade proof used an exact detached build of the approved legacy baseline.",
+        "compatibility_contract": null
+      }
+    },
+    {
+      "path": "docs/verification/2026-07-28-deeper-notebook-editor-modes.md",
+      "pattern": "open-notebook-plus",
+      "source": "content",
+      "line": 212,
+      "column": 52,
+      "context_sha256": "07dd5e10830e0b4cf5984da5b516018a2bd17d2f06e61c7d1ba89188da646947",
+      "category": "migration_documentation",
+      "rationale": {
+        "path": "docs/verification/2026-07-28-deeper-notebook-editor-modes.md",
+        "pattern": "open-notebook-plus",
+        "source": "content",
+        "line": 212,
+        "column": 52,
+        "context_sha256": "07dd5e10830e0b4cf5984da5b516018a2bd17d2f06e61c7d1ba89188da646947",
+        "category": "migration_documentation",
+        "explanation": "The verification 2026 07 28 deeper notebook editor modes document documents the upgrade boundary in the \"Deeper Notebook editor modes and native vault proof / 2026-07-29 native Quit and compatibility upgrade update / former identifier compatibility upgrade\" section because the statement uses that role while expressing A synthetic legacy state file was seeded under . current former lowercase package slug /data, while the preceding context concerns The legacy app launched ready on API/frontend ports 65156 / 65157; the following context concerns with SHA-256.",
+        "compatibility_contract": null
+      }
+    },
+    {
+      "path": "docs/verification/2026-07-28-deeper-notebook-editor-modes.md",
+      "pattern": "Open Notebook Plus",
+      "source": "content",
+      "line": 223,
+      "column": 11,
+      "context_sha256": "dbe5122a5a71587e9ad8096526af0ad1790b16a49a6708bbe6610630e284fac2",
+      "category": "migration_documentation",
+      "rationale": {
+        "path": "docs/verification/2026-07-28-deeper-notebook-editor-modes.md",
+        "pattern": "Open Notebook Plus",
+        "source": "content",
+        "line": 223,
+        "column": 11,
+        "context_sha256": "dbe5122a5a71587e9ad8096526af0ad1790b16a49a6708bbe6610630e284fac2",
+        "category": "migration_documentation",
+        "explanation": "The verification 2026 07 28 deeper notebook editor modes document documents the upgrade boundary in the \"Deeper Notebook editor modes and native vault proof / 2026-07-29 native Quit and compatibility upgrade update / former identifier compatibility upgrade\" section because the statement uses that role while expressing legacy current former full desktop product title .app bundle to the macOS Trash, left one canonical, while the preceding context concerns The disposable application replacement proof moved only the temporary; the following context concerns Deeper Notebook.app in the temporary Applications directory, recorded a.",
         "compatibility_contract": null
       }
     },
