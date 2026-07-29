@@ -355,7 +355,7 @@ describe('VaultPagePreview', () => {
     expect(screen.queryByText('pages/different.md')).not.toBeInTheDocument()
   })
 
-  it('fails closed from navigation after a canonical page mismatch', async () => {
+  it('keeps navigation closed after mismatch data settles out of the observer', async () => {
     vi.useFakeTimers()
     vi.mocked(vaultApi.page).mockResolvedValueOnce({
       ...pageFixture,
@@ -365,13 +365,96 @@ describe('VaultPagePreview', () => {
       },
     })
     const onNavigate = vi.fn()
-    renderPreview(previewFixture({ onNavigate }))
+    const client = createClient()
+    const view = renderPreview(previewFixture({ onNavigate }), client)
 
     await openPreviewByFocus()
     await flushQueryNotifications()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+    await act(async () => {})
+    client.removeQueries({
+      queryKey: ['vaults', 'vault:one', 'pages', 'note:research'],
+    })
+    view.rerender(
+      <QueryClientProvider client={client}>
+        {previewFixture({ onNavigate })}
+      </QueryClientProvider>,
+    )
+    await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Research' }))
 
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('resets a latched mismatch only when the link identity changes', async () => {
+    vi.useFakeTimers()
+    const nextLink = {
+      ...resolvedLinkFixture,
+      id: 'link:next',
+      target_note_id: 'note:next',
+      target_note_title: 'Next',
+      target_relative_path: 'pages/next.md',
+      target_text: 'Next',
+    } satisfies VaultLink
+    const nextPage = {
+      ...pageFixture,
+      file: {
+        ...pageFixture.file,
+        id: 'file:next',
+        note_id: 'note:next',
+        relative_path: 'pages/next.md',
+      },
+      note: {
+        ...pageFixture.note,
+        id: 'note:next',
+        title: 'Next',
+      },
+    } satisfies VaultPage
+    vi.mocked(vaultApi.page)
+      .mockResolvedValueOnce({
+        ...pageFixture,
+        file: {
+          ...pageFixture.file,
+          relative_path: 'pages/different.md',
+        },
+      })
+      .mockResolvedValueOnce(nextPage)
+    const onNavigate = vi.fn()
+    const client = createClient()
+    const view = renderPreview(previewFixture({ onNavigate }), client)
+
+    await openPreviewByFocus()
+    await flushQueryNotifications()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+
+    view.rerender(
+      <QueryClientProvider client={client}>
+        {previewFixture({
+          label: 'Next',
+          link: nextLink,
+          onNavigate,
+        })}
+      </QueryClientProvider>,
+    )
+    const nextTrigger = screen.getByRole('button', { name: 'Next' })
+    fireEvent.blur(nextTrigger)
+    fireEvent.mouseEnter(nextTrigger)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251)
+    })
+    await flushQueryNotifications()
+
+    expect(vaultApi.page).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('dialog', { name: 'Next preview' }))
+      .toBeInTheDocument()
+    fireEvent.click(nextTrigger)
+    expect(onNavigate).toHaveBeenCalledTimes(1)
+    expect(onNavigate).toHaveBeenCalledWith('note:next')
   })
 
   it('reads only enough blocks to build three non-empty excerpts', async () => {
