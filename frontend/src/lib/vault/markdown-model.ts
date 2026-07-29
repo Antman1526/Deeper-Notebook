@@ -80,7 +80,7 @@ function headingText(source: string, name: string): string {
   }
 
   return source
-    .replace(/\r?\n {0,3}[=-]+[ \t]*$/, '')
+    .replace(/\r?\n {0,3}[=-]+[ \t]*\r?$/, '')
     .trim()
 }
 
