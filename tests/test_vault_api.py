@@ -262,6 +262,7 @@ def test_read_only_vault_resources_return_relative_data_only(client):
     assert page.status_code == 200
     assert page.json()["file"]["relative_path"] == "notes/one.md"
     assert page.json()["file"]["content_hash"] == "a" * 64
+    assert page.json()["file"]["encoding"] == "utf-8"
     assert page.json()["file"]["newline"] == "lf"
     assert "/Users/" not in page.text
     backlinks = test_client.get(f"{root}/pages/note:one/backlinks")
@@ -278,6 +279,34 @@ def test_read_only_vault_resources_return_relative_data_only(client):
     receipts = test_client.get(f"{root}/receipts")
     assert receipts.status_code == 200
     assert "/Users/owner" not in receipts.text
+
+
+def test_unresolved_link_response_keeps_null_target_identity_and_spans(client):
+    test_client, repository, _ = client
+    repository.outgoing_links = AsyncMock(
+        return_value=[
+            VaultLink(
+                id="note_link:unresolved",
+                source_note_id="note:one",
+                target_text="Missing",
+                source_start=4,
+                source_end=15,
+                link_kind="wikilink",
+                resolved=False,
+            )
+        ]
+    )
+
+    response = test_client.get(
+        "/api/deeper-notebook/vaults/"
+        "vault_mount:fixture/pages/note:one/outgoing"
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["target_note_title"] is None
+    assert response.json()[0]["target_relative_path"] is None
+    assert response.json()[0]["source_start"] == 4
+    assert response.json()[0]["source_end"] == 15
 
 
 def test_trust_import_is_relative_and_idempotent(client):
