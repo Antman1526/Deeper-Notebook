@@ -17,6 +17,7 @@ import {
 import { findNext, findPrevious, openSearchPanel } from '@codemirror/search'
 import {
   Annotation,
+  Compartment,
   EditorState,
   Prec,
   type Extension,
@@ -102,12 +103,14 @@ export const VaultCodeMirror = forwardRef<
     () => collectCrlfCarriageReturns(source),
     [source],
   )
+  const ariaLabelCompartment = useMemo(() => new Compartment(), [])
+  const callerExtensionsCompartment = useMemo(() => new Compartment(), [])
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const sourceRef = useRef(source)
   const crlfCarriageReturnsRef = useRef(crlfCarriageReturns)
-  const initialExtensionsRef = useRef(extensions)
-  const initialAriaLabelRef = useRef(ariaLabel)
+  const configuredExtensionsRef = useRef(extensions)
+  const configuredAriaLabelRef = useRef(ariaLabel)
 
   useImperativeHandle(ref, () => ({
     getDocument: () => sourceRef.current,
@@ -134,9 +137,14 @@ export const VaultCodeMirror = forwardRef<
       state: EditorState.create({
         doc: sourceRef.current,
         extensions: [
-          Prec.highest([rejectDocumentChanges, ...lockedExtensions]),
-          initialExtensionsRef.current,
-          EditorView.contentAttributes.of({ 'aria-label': initialAriaLabelRef.current }),
+          Prec.highest([
+            rejectDocumentChanges,
+            ...lockedExtensions,
+            ariaLabelCompartment.of(EditorView.contentAttributes.of({
+              'aria-label': configuredAriaLabelRef.current,
+            })),
+          ]),
+          callerExtensionsCompartment.of(configuredExtensionsRef.current),
         ],
       }),
       dispatchTransactions: (transactions, editor) => {
@@ -153,7 +161,7 @@ export const VaultCodeMirror = forwardRef<
       view.destroy()
       if (viewRef.current === view) viewRef.current = null
     }
-  }, [])
+  }, [ariaLabelCompartment, callerExtensionsCompartment])
 
   useLayoutEffect(() => {
     const view = viewRef.current
@@ -162,10 +170,31 @@ export const VaultCodeMirror = forwardRef<
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: source },
       annotations: externalUpdate.of(true),
+      filter: false,
     })
     sourceRef.current = source
     crlfCarriageReturnsRef.current = crlfCarriageReturns
   }, [crlfCarriageReturns, source])
+
+  useLayoutEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+
+    const effects = []
+    if (configuredAriaLabelRef.current !== ariaLabel) {
+      effects.push(ariaLabelCompartment.reconfigure(
+        EditorView.contentAttributes.of({ 'aria-label': ariaLabel }),
+      ))
+    }
+    if (configuredExtensionsRef.current !== extensions) {
+      effects.push(callerExtensionsCompartment.reconfigure(extensions))
+    }
+    if (effects.length === 0) return
+
+    view.dispatch({ effects, filter: false })
+    configuredAriaLabelRef.current = ariaLabel
+    configuredExtensionsRef.current = extensions
+  }, [ariaLabel, ariaLabelCompartment, callerExtensionsCompartment, extensions])
 
   return <div ref={hostRef} className={['dn-vault-editor', className].filter(Boolean).join(' ')} />
 })
