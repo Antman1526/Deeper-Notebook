@@ -10,6 +10,7 @@ import { requestCommandSurface } from '@/lib/commands/command-surface-store'
 
 export interface KnowledgeCommandBridgeProps {
   workspaceRef: React.RefObject<HTMLElement | null>
+  activePaneElement: HTMLElement | null
   fileTreeRef: React.RefObject<HTMLElement | null>
   linksRef: React.RefObject<HTMLElement | null>
   selectedVaultId: string | null
@@ -25,6 +26,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export function KnowledgeCommandBridge({
   workspaceRef,
+  activePaneElement,
   fileTreeRef,
   linksRef,
   selectedVaultId,
@@ -34,12 +36,12 @@ export function KnowledgeCommandBridge({
     const generation = registerKnowledgeCommandContext({
       selectedVaultId,
       fileTreeElement: fileTreeRef.current,
-      activePaneElement: workspaceRef.current,
+      activePaneElement,
       linksElement: linksRef.current,
       scanSelectedVault,
     })
     return () => clearKnowledgeCommandContext(generation)
-  }, [fileTreeRef, linksRef, scanSelectedVault, selectedVaultId, workspaceRef])
+  }, [activePaneElement, fileTreeRef, linksRef, scanSelectedVault, selectedVaultId])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

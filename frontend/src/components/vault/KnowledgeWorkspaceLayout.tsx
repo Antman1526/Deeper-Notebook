@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils'
 
 interface KnowledgeWorkspaceLayoutProps {
   renderPane: (pane: KnowledgePane) => ReactNode
+  onPaneElement?: (paneId: string, element: HTMLElement | null) => void
 }
 
 interface PaneActionProps {
@@ -229,6 +230,7 @@ function LayoutNode({
 
 export function KnowledgeWorkspaceLayout({
   renderPane,
+  onPaneElement,
 }: KnowledgeWorkspaceLayoutProps) {
   const { t } = useTranslation()
   const layout = useKnowledgeWorkspaceStore((state) => state.layout)
@@ -253,6 +255,7 @@ export function KnowledgeWorkspaceLayout({
 
   const registerPane = (paneId: string, element: HTMLElement | null) => {
     paneRefs.current[paneId] = element
+    onPaneElement?.(paneId, element)
   }
 
   const closePaneWithFocus = (paneId: string) => {
