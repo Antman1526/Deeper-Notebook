@@ -1,5 +1,5 @@
 import { syntaxTree } from '@codemirror/language'
-import type { Extension, EditorState } from '@codemirror/state'
+import type { Extension, EditorState, Text } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -19,6 +19,11 @@ import {
 interface SourceRange {
   from: number
   to: number
+}
+
+interface PreviewDocumentContext {
+  resolvedSpans: Map<string, VaultLink>
+  sourceIndex: Pick<ReturnType<typeof createMarkdownSourceIndex>, 'byteOffset'>
 }
 
 export interface PreviewDecorationRecord {
@@ -49,6 +54,8 @@ const parserKinds: Partial<Record<string, MarkdownConstructKind>> = {
 }
 
 const attachmentExtension = /\.(?:png|jpe?g|gif|webp|svg|pdf|mp3|mp4|mov)$/i
+const scannerLookaround = 2_052
+const constructReadLimit = 4_096
 
 function intersects(left: SourceRange, right: SourceRange): boolean {
   return left.from < right.to && right.from < left.to
@@ -87,23 +94,26 @@ function rangeIsSingleLine(state: EditorState, range: SourceRange): boolean {
     && state.doc.lineAt(range.from).number === state.doc.lineAt(range.to - 1).number
 }
 
-function lineBoundedRanges(state: EditorState, ranges: readonly SourceRange[]): SourceRange[] {
+function scannerRanges(state: EditorState, ranges: readonly SourceRange[]): SourceRange[] {
   return ranges.map((range) => {
-    const from = state.doc.lineAt(range.from).from
-    const to = state.doc.lineAt(Math.max(range.from, range.to - 1)).to
-    return { from, to }
+    const firstLine = state.doc.lineAt(range.from)
+    const lastLine = state.doc.lineAt(Math.max(range.from, range.to - 1))
+    return {
+      from: Math.max(firstLine.from, range.from - scannerLookaround),
+      to: Math.min(lastLine.to, range.to + scannerLookaround),
+    }
   })
 }
 
 function collectMatches(
-  source: string,
+  doc: Text,
   ranges: readonly SourceRange[],
   expression: RegExp,
 ): SourceRange[] {
   const matches: SourceRange[] = []
   const seen = new Set<string>()
   for (const range of ranges) {
-    const scoped = source.slice(range.from, range.to)
+    const scoped = doc.sliceString(range.from, range.to)
     expression.lastIndex = 0
     for (const match of scoped.matchAll(expression)) {
       const from = range.from + (match.index || 0)
@@ -116,6 +126,25 @@ function collectMatches(
     }
   }
   return matches.sort((left, right) => left.from - right.from || left.to - right.to)
+}
+
+function visibleIntersections(
+  range: SourceRange,
+  visible: readonly SourceRange[],
+): SourceRange[] {
+  const intersections: SourceRange[] = []
+  for (const viewport of visible) {
+    const from = Math.max(range.from, viewport.from)
+    const to = Math.min(range.to, viewport.to)
+    if (to > from) intersections.push({ from, to })
+  }
+  return intersections
+}
+
+function isFullyVisible(range: SourceRange, visible: readonly SourceRange[]): boolean {
+  return visible.some((viewport) =>
+    range.from >= viewport.from && range.to <= viewport.to,
+  )
 }
 
 function mergeRanges(ranges: readonly SourceRange[]): SourceRange[] {
@@ -188,6 +217,17 @@ function createPreviewSourceIndex(editorSource: string, rawSource?: string) {
     byteOffset: (offset: number) => rawIndex.byteOffset(
       editorToRaw[Math.max(0, Math.min(editorOffset, offset))],
     ),
+  }
+}
+
+function createPreviewDocumentContext(
+  state: EditorState,
+  options: LivePreviewOptions,
+): PreviewDocumentContext {
+  const editorSource = state.doc.toString()
+  return {
+    resolvedSpans: buildUniqueResolvedSpanMap(options.links || []),
+    sourceIndex: createPreviewSourceIndex(editorSource, options.source),
   }
 }
 
@@ -282,15 +322,15 @@ function createRecords(
   state: EditorState,
   ranges: readonly SourceRange[],
   options: LivePreviewOptions,
+  context: PreviewDocumentContext,
 ): PreviewDecorationRecord[] {
   const visible = visibleRanges(state, ranges)
   if (visible.length === 0) return []
 
-  const source = state.doc.toString()
-  const bounded = lineBoundedRanges(state, visible)
-  const rawWikiRanges = collectMatches(source, bounded, /\[\[[^\]\r\n]{1,2048}\]\]/gu)
-  const rawFootnoteRanges = collectMatches(source, bounded, /\[\^[^\]\r\n]{1,256}\]/gu)
-  const rawMathRanges = collectMatches(source, bounded, /(?<!\\)\$(?:[^$\\\r\n]|\\.)+\$/gu)
+  const bounded = scannerRanges(state, visible)
+  const rawWikiRanges = collectMatches(state.doc, bounded, /\[\[[^\]\r\n]{1,2048}\]\]/gu)
+  const rawFootnoteRanges = collectMatches(state.doc, bounded, /\[\^[^\]\r\n]{1,256}\]/gu)
+  const rawMathRanges = collectMatches(state.doc, bounded, /(?<!\\)\$(?:[^$\\\r\n]|\\.)+\$/gu)
   const parserRanges: Array<{ kind: MarkdownConstructKind; range: SourceRange }> = []
   const exclusions: SourceRange[] = []
   const seenParserRanges = new Set<string>()
@@ -312,7 +352,8 @@ function createRecords(
         const parserRange = { from, to }
         const linkArtifact = kind === 'link'
           && (containedBy(parserRange, rawWikiRanges)
-            || /^\[\^[^\]]+\]$/u.test(source.slice(from, to)))
+            || to - from <= 260
+              && /^\[\^[^\]]+\]$/u.test(state.doc.sliceString(from, to)))
         if (
           kind === 'inline-code'
           || kind === 'fenced-code'
@@ -329,17 +370,23 @@ function createRecords(
   const footnoteRanges = rawFootnoteRanges.filter((range) => !overlapsSorted(range, mergedExclusions))
   const mathRanges = rawMathRanges.filter((range) => !overlapsSorted(range, mergedExclusions))
   const tagRanges = collectMatches(
-    source,
+    state.doc,
     bounded,
     /(?:^|[\s([{])(#[\p{Letter}\p{Number}_/-]{1,256})/gmu,
   ).map((range) => {
-    const tag = /#[\p{Letter}\p{Number}_/-]{1,256}/u.exec(source.slice(range.from, range.to))?.[0]
+    const tag = /#[\p{Letter}\p{Number}_/-]{1,256}/u.exec(
+      state.doc.sliceString(range.from, range.to),
+    )?.[0]
     return tag ? { from: range.to - tag.length, to: range.to } : range
   }).filter((range) => !overlapsSorted(range, mergedExclusions))
 
-  const resolvedSpans = buildUniqueResolvedSpanMap(options.links || [])
-  const sourceIndex = createPreviewSourceIndex(source, options.source)
   const records: PreviewDecorationRecord[] = []
+  const pushRecord = (
+    kind: string,
+    range: SourceRange,
+    decoration: Decoration,
+    atomic: boolean,
+  ) => records.push({ kind, from: range.from, to: range.to, decoration, atomic })
   const add = (
     kind: string,
     range: SourceRange,
@@ -347,8 +394,9 @@ function createRecords(
     atomic = false,
   ) => {
     try {
-      if (range.to <= range.from || !isVisible(range, visible)) return
-      records.push({ kind, from: range.from, to: range.to, decoration, atomic })
+      for (const intersection of visibleIntersections(range, visible)) {
+        pushRecord(kind, intersection, decoration, atomic)
+      }
     } catch {
       // Decoration failures must not hide unrelated visible source.
     }
@@ -359,14 +407,15 @@ function createRecords(
     decoration: Decoration,
     atomic = false,
   ) => {
-    if (!rangeIsSingleLine(state, range)) return
-    add(kind, range, decoration, atomic)
+    if (!rangeIsSingleLine(state, range) || !isFullyVisible(range, visible)) return
+    pushRecord(kind, range, decoration, atomic)
   }
 
   for (const { kind, range } of parserRanges) {
     try {
       if (selectionIntersects(state, range)) continue
-      const value = sourceText(state, range)
+      const canReadConstruct = range.to - range.from <= constructReadLimit
+      const value = canReadConstruct ? sourceText(state, range) : ''
       if (kind === 'heading') {
         const marker = /^ {0,3}#{1,6}[ \t]+/.exec(value)?.[0]
         if (marker) {
@@ -417,7 +466,16 @@ function createRecords(
         add('fenced-code-content', range, Decoration.mark({ class: 'dn-live-preview-code' }))
       } else if (kind === 'link') {
         if (containedBy(range, wikiRanges) || containedBy(range, footnoteRanges)) continue
-        const link = resolvedLinkFor(state, range, 'markdown', options, resolvedSpans, sourceIndex)
+        const link = canReadConstruct && isFullyVisible(range, visible)
+          ? resolvedLinkFor(
+            state,
+            range,
+            'markdown',
+            options,
+            context.resolvedSpans,
+            context.sourceIndex,
+          )
+          : undefined
         if (link && options.onNavigate) {
           replace('markdown-link', range, Decoration.replace({
             widget: new NavigationWidget(linkLabel(value, 'markdown'), link.target_note_id!, options.onNavigate),
@@ -457,7 +515,16 @@ function createRecords(
     try {
       if (selectionIntersects(state, range)) continue
       const value = sourceText(state, range)
-      const link = resolvedLinkFor(state, range, 'wiki', options, resolvedSpans, sourceIndex)
+      const link = isFullyVisible(range, visible)
+        ? resolvedLinkFor(
+          state,
+          range,
+          'wiki',
+          options,
+          context.resolvedSpans,
+          context.sourceIndex,
+        )
+        : undefined
       if (link && options.onNavigate) {
         replace('wiki-link', range, Decoration.replace({
           widget: new NavigationWidget(linkLabel(value, 'wiki'), link.target_note_id!, options.onNavigate),
@@ -510,15 +577,21 @@ export function buildLivePreviewDecorationRecords(
   ranges: readonly SourceRange[],
   options: LivePreviewOptions = {},
 ): PreviewDecorationRecord[] {
-  return createRecords(state, ranges, options)
+  return createRecords(
+    state,
+    ranges,
+    options,
+    createPreviewDocumentContext(state, options),
+  )
 }
 
 function decorationSets(
   state: EditorState,
   ranges: readonly SourceRange[],
   options: LivePreviewOptions,
+  context: PreviewDocumentContext,
 ): { decorations: DecorationSet; atomicRanges: DecorationSet } {
-  const records = createRecords(state, ranges, options)
+  const records = createRecords(state, ranges, options, context)
   return {
     decorations: Decoration.set(
       records.map((record) => record.decoration.range(record.from, record.to)),
@@ -533,23 +606,44 @@ function decorationSets(
 }
 
 export function buildLivePreviewDecorations(view: EditorView): DecorationSet {
-  return decorationSets(view.state, view.visibleRanges, {}).decorations
+  const options = {}
+  return decorationSets(
+    view.state,
+    view.visibleRanges,
+    options,
+    createPreviewDocumentContext(view.state, options),
+  ).decorations
 }
 
 export function livePreviewExtension(options: LivePreviewOptions): Extension {
   const plugin = ViewPlugin.fromClass(class {
     decorations: DecorationSet
     atomicRanges: DecorationSet
+    context: PreviewDocumentContext
 
     constructor(view: EditorView) {
-      const sets = decorationSets(view.state, view.visibleRanges, options)
+      this.context = createPreviewDocumentContext(view.state, options)
+      const sets = decorationSets(
+        view.state,
+        view.visibleRanges,
+        options,
+        this.context,
+      )
       this.decorations = sets.decorations
       this.atomicRanges = sets.atomicRanges
     }
 
     update(update: { docChanged: boolean; selectionSet: boolean; viewportChanged: boolean; view: EditorView }) {
       if (update.docChanged || update.selectionSet || update.viewportChanged) {
-        const sets = decorationSets(update.view.state, update.view.visibleRanges, options)
+        if (update.docChanged) {
+          this.context = createPreviewDocumentContext(update.view.state, options)
+        }
+        const sets = decorationSets(
+          update.view.state,
+          update.view.visibleRanges,
+          options,
+          this.context,
+        )
         this.decorations = sets.decorations
         this.atomicRanges = sets.atomicRanges
       }
