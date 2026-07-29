@@ -21,10 +21,13 @@ interface SourceRange {
   to: number
 }
 
-interface PreviewDocumentContext {
+interface PreviewSourceContext {
   mathRanges: SourceRange[]
-  resolvedSpans: Map<string, VaultLink>
   sourceIndex: Pick<ReturnType<typeof createMarkdownSourceIndex>, 'byteOffset'>
+}
+
+interface PreviewDocumentContext extends PreviewSourceContext {
+  resolvedSpans: Map<string, VaultLink>
 }
 
 export interface PreviewDecorationRecord {
@@ -57,6 +60,10 @@ const parserKinds: Partial<Record<string, MarkdownConstructKind>> = {
 const attachmentExtension = /\.(?:png|jpe?g|gif|webp|svg|pdf|mp3|mp4|mov)$/i
 const scannerLookaround = 2_052
 const constructReadLimit = 4_096
+const sourceContextCache = new WeakMap<
+  Text,
+  Map<string | undefined, PreviewSourceContext>
+>()
 
 function intersects(left: SourceRange, right: SourceRange): boolean {
   return left.from < right.to && right.from < left.to
@@ -307,15 +314,31 @@ function createPreviewSourceIndex(editorSource: string, rawSource?: string) {
   }
 }
 
+function sourceContextFor(doc: Text, rawSource?: string): PreviewSourceContext {
+  let byRawSource = sourceContextCache.get(doc)
+  if (!byRawSource) {
+    byRawSource = new Map()
+    sourceContextCache.set(doc, byRawSource)
+  }
+  let sourceContext = byRawSource.get(rawSource)
+  if (!sourceContext) {
+    const editorSource = doc.toString()
+    sourceContext = {
+      mathRanges: indexMathRanges(editorSource),
+      sourceIndex: createPreviewSourceIndex(editorSource, rawSource),
+    }
+    byRawSource.set(rawSource, sourceContext)
+  }
+  return sourceContext
+}
+
 function createPreviewDocumentContext(
   state: EditorState,
   options: LivePreviewOptions,
 ): PreviewDocumentContext {
-  const editorSource = state.doc.toString()
   return {
-    mathRanges: indexMathRanges(editorSource),
+    ...sourceContextFor(state.doc, options.source),
     resolvedSpans: buildUniqueResolvedSpanMap(options.links || []),
-    sourceIndex: createPreviewSourceIndex(editorSource, options.source),
   }
 }
 
