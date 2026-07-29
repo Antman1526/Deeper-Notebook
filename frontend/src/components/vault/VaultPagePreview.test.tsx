@@ -76,15 +76,19 @@ function createClient() {
 
 function previewFixture({
   onNavigate = vi.fn(),
+  link = resolvedLinkFixture,
+  label = 'Research',
 }: {
   onNavigate?: (noteId: string) => void
+  link?: VaultLink
+  label?: string
 } = {}) {
   return (
     <VaultPagePreview
       vaultId="vault:one"
-      link={resolvedLinkFixture}
+      link={link}
       onNavigate={onNavigate}
-      trigger={<button type="button">Research</button>}
+      trigger={<button type="button">{label}</button>}
     />
   )
 }
@@ -120,12 +124,60 @@ async function closePreviewWithEscape() {
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 }
 
+async function flushQueryNotifications() {
+  await act(async () => {
+    await vi.runOnlyPendingTimersAsync()
+  })
+}
+
 afterEach(() => {
   vi.useRealTimers()
   vi.clearAllMocks()
+  vi.mocked(vaultApi.page).mockReset()
 })
 
 describe('VaultPagePreview', () => {
+  it('does not install Escape listeners for idle preview links', () => {
+    const addEventListener = vi.spyOn(document, 'addEventListener')
+    renderPreview(
+      <>
+        {Array.from({ length: 24 }, (_, index) => (
+          <span key={index}>
+            {previewFixture({
+              label: `Research ${index}`,
+              link: {
+                ...resolvedLinkFixture,
+                id: `link:research:${index}`,
+                target_note_id: `note:research:${index}`,
+              },
+            })}
+          </span>
+        ))}
+      </>,
+    )
+
+    expect(
+      addEventListener.mock.calls.filter(([eventName]) => eventName === 'keydown'),
+    ).toHaveLength(0)
+    addEventListener.mockRestore()
+  })
+
+  it('cancels pending intent with Escape before a query begins', async () => {
+    vi.useFakeTimers()
+    vi.mocked(vaultApi.page).mockResolvedValueOnce(pageFixture)
+    renderPreview()
+
+    const trigger = screen.getByRole('button', { name: 'Research' })
+    fireEvent.mouseEnter(trigger)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251)
+    })
+
+    expect(vaultApi.page).not.toHaveBeenCalled()
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('cancels pending hover intent when the pointer leaves', async () => {
     vi.useFakeTimers()
     vi.mocked(vaultApi.page).mockResolvedValueOnce(pageFixture)
@@ -139,6 +191,38 @@ describe('VaultPagePreview', () => {
     })
 
     expect(vaultApi.page).not.toHaveBeenCalled()
+  })
+
+  it('keeps focus intent pending when hover leaves the trigger', async () => {
+    vi.useFakeTimers()
+    vi.mocked(vaultApi.page).mockResolvedValueOnce(pageFixture)
+    renderPreview()
+
+    const trigger = screen.getByRole('button', { name: 'Research' })
+    fireEvent.focus(trigger)
+    fireEvent.mouseEnter(trigger)
+    fireEvent.mouseLeave(trigger)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251)
+    })
+
+    expect(vaultApi.page).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps hover intent pending when the trigger loses focus', async () => {
+    vi.useFakeTimers()
+    vi.mocked(vaultApi.page).mockResolvedValueOnce(pageFixture)
+    renderPreview()
+
+    const trigger = screen.getByRole('button', { name: 'Research' })
+    fireEvent.mouseEnter(trigger)
+    fireEvent.focus(trigger)
+    fireEvent.blur(trigger)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251)
+    })
+
+    expect(vaultApi.page).toHaveBeenCalledTimes(1)
   })
 
   it('cancels pending focus intent when the trigger blurs', async () => {
@@ -219,6 +303,113 @@ describe('VaultPagePreview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Research' }))
 
     expect(onNavigate).toHaveBeenCalledWith('note:research')
+    expect(onNavigate).toHaveBeenCalledTimes(1)
+  })
+
+  it('resets a failed preview and retries after deliberate refocus', async () => {
+    vi.useFakeTimers()
+    vi.mocked(vaultApi.page)
+      .mockRejectedValueOnce(new Error('preview unavailable'))
+      .mockResolvedValueOnce(pageFixture)
+    const onNavigate = vi.fn()
+    renderPreview(previewFixture({ onNavigate }))
+    const trigger = screen.getByRole('button', { name: 'Research' })
+
+    fireEvent.focus(trigger)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251)
+    })
+    await flushQueryNotifications()
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(trigger)
+    expect(onNavigate).toHaveBeenCalledTimes(1)
+
+    fireEvent.blur(trigger)
+    fireEvent.focus(trigger)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251)
+    })
+    await flushQueryNotifications()
+
+    expect(vaultApi.page).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('dialog', { name: 'Research preview' }))
+      .toBeInTheDocument()
+  })
+
+  it('suppresses a mismatched canonical page response', async () => {
+    vi.useFakeTimers()
+    vi.mocked(vaultApi.page).mockResolvedValueOnce({
+      ...pageFixture,
+      file: {
+        ...pageFixture.file,
+        relative_path: 'pages/different.md',
+      },
+    })
+    renderPreview()
+
+    await openPreviewByFocus()
+    await flushQueryNotifications()
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('pages/different.md')).not.toBeInTheDocument()
+  })
+
+  it('fails closed from navigation after a canonical page mismatch', async () => {
+    vi.useFakeTimers()
+    vi.mocked(vaultApi.page).mockResolvedValueOnce({
+      ...pageFixture,
+      file: {
+        ...pageFixture.file,
+        relative_path: 'pages/different.md',
+      },
+    })
+    const onNavigate = vi.fn()
+    renderPreview(previewFixture({ onNavigate }))
+
+    await openPreviewByFocus()
+    await flushQueryNotifications()
+    fireEvent.click(screen.getByRole('button', { name: 'Research' }))
+
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('reads only enough blocks to build three non-empty excerpts', async () => {
+    vi.useFakeTimers()
+    let markdownReads = 0
+    const blocks = Array.from({ length: 1_000 }, (_, index) => ({
+      get markdown() {
+        markdownReads += 1
+        return `Excerpt ${index}`
+      },
+    }))
+    vi.mocked(vaultApi.page).mockResolvedValueOnce({
+      ...pageFixture,
+      blocks,
+    })
+    renderPreview()
+
+    await openPreviewByFocus()
+    await flushQueryNotifications()
+
+    expect(markdownReads).toBe(3)
+    expect(screen.getByText('Excerpt 2')).toBeInTheDocument()
+    expect(screen.queryByText('Excerpt 3')).not.toBeInTheDocument()
+  })
+
+  it('truncates excerpts at 240 Unicode code points without splitting a surrogate pair', async () => {
+    vi.useFakeTimers()
+    const expectedExcerpt = `${'a'.repeat(239)}😀`
+    vi.mocked(vaultApi.page).mockResolvedValueOnce({
+      ...pageFixture,
+      blocks: [{ markdown: `${expectedExcerpt}tail` }],
+    })
+    renderPreview()
+
+    await openPreviewByFocus()
+    await flushQueryNotifications()
+
+    expect(screen.getByText(expectedExcerpt)).toBeInTheDocument()
   })
 
   it('never displays an absolute path returned by a hostile response', async () => {

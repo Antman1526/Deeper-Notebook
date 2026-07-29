@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -30,12 +31,26 @@ function isCanonicalRelativePath(value: string | null | undefined): value is str
     && !value.split('/').some((segment) => !segment || segment === '.' || segment === '..')
 }
 
+function truncateCodePoints(value: string): string {
+  let result = ''
+  let count = 0
+  for (const codePoint of value) {
+    if (count === excerptLimit) break
+    result += codePoint
+    count += 1
+  }
+  return result
+}
+
 function excerpts(page: VaultPage): string[] {
-  return page.blocks
-    .map((block) => block.markdown?.trim())
-    .filter((block): block is string => Boolean(block))
-    .slice(0, 3)
-    .map((block) => block.slice(0, excerptLimit))
+  const result: string[] = []
+  for (const block of page.blocks) {
+    const markdown = block.markdown?.trim()
+    if (!markdown) continue
+    result.push(truncateCodePoints(markdown))
+    if (result.length === 3) break
+  }
+  return result
 }
 
 export function VaultPagePreview({
@@ -50,48 +65,71 @@ export function VaultPagePreview({
   )
   const [intent, setIntent] = useState(false)
   const [open, setOpen] = useState(false)
+  const [pending, setPending] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hovered = useRef(false)
+  const focused = useRef(false)
   const preview = useVaultPagePreview(vaultId, targetNoteId || undefined, intent && canOpen)
 
-  const clearIntentTimer = useCallback(() => {
+  const cancelPendingIntent = useCallback(() => {
     if (timer.current) {
       clearTimeout(timer.current)
       timer.current = null
     }
+    setPending(false)
   }, [])
 
   const closePreview = useCallback(() => {
-    clearIntentTimer()
+    cancelPendingIntent()
     setIntent(false)
     setOpen(false)
-  }, [clearIntentTimer])
+  }, [cancelPendingIntent])
 
   const beginIntent = useCallback(() => {
     if (!canOpen || timer.current) return
+    setPending(true)
     timer.current = setTimeout(() => {
       timer.current = null
+      setPending(false)
       setIntent(true)
       setOpen(true)
     }, previewIntentDelayMs)
   }, [canOpen])
 
-  useEffect(() => () => clearIntentTimer(), [clearIntentTimer])
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current)
+  }, [])
 
   useEffect(() => {
+    if (!pending && !open) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closePreview()
     }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [closePreview])
+  }, [closePreview, open, pending])
 
   const page = preview.data
   const path = page?.file.relative_path
+  const pathMismatch = Boolean(
+    page
+    && link.target_relative_path
+    && path !== link.target_relative_path,
+  )
+  const previewExcerpts = useMemo(
+    () => page ? excerpts(page) : [],
+    [page],
+  )
   const canDisplay = Boolean(
     !preview.isError
     && page
-    && isCanonicalRelativePath(path),
+    && isCanonicalRelativePath(path)
+    && path === link.target_relative_path
   )
+
+  useEffect(() => {
+    if (preview.isError || pathMismatch) closePreview()
+  }, [closePreview, pathMismatch, preview.isError])
 
   return (
     <Popover
@@ -102,19 +140,25 @@ export function VaultPagePreview({
     >
       <span
         onMouseEnter={() => {
+          hovered.current = true
           beginIntent()
         }}
         onMouseLeave={() => {
-          clearIntentTimer()
+          hovered.current = false
+          if (!focused.current) cancelPendingIntent()
         }}
         onFocus={() => {
+          focused.current = true
           beginIntent()
         }}
         onBlur={() => {
-          clearIntentTimer()
+          focused.current = false
+          if (!hovered.current) cancelPendingIntent()
         }}
         onClick={() => {
-          if (canOpen && targetNoteId) onNavigate?.(targetNoteId)
+          if (canOpen && targetNoteId && !pathMismatch) {
+            onNavigate?.(targetNoteId)
+          }
         }}
       >
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
@@ -133,9 +177,9 @@ export function VaultPagePreview({
               {page.note.source_format || page.file.format}
             </p>
           </div>
-          {excerpts(page).length > 0 && (
+          {previewExcerpts.length > 0 && (
             <div className="space-y-2 text-sm text-muted-foreground">
-              {excerpts(page).map((excerpt, index) => (
+              {previewExcerpts.map((excerpt, index) => (
                 <p key={`${index}-${excerpt}`}>{excerpt}</p>
               ))}
             </div>
