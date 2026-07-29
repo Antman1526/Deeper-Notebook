@@ -26,6 +26,10 @@ interface PreviewSourceContext {
   sourceIndex: Pick<ReturnType<typeof createMarkdownSourceIndex>, 'byteOffset'>
 }
 
+interface CachedPreviewSourceContext extends PreviewSourceContext {
+  rawSource?: string
+}
+
 interface PreviewDocumentContext extends PreviewSourceContext {
   resolvedSpans: Map<string, VaultLink>
 }
@@ -60,10 +64,7 @@ const parserKinds: Partial<Record<string, MarkdownConstructKind>> = {
 const attachmentExtension = /\.(?:png|jpe?g|gif|webp|svg|pdf|mp3|mp4|mov)$/i
 const scannerLookaround = 2_052
 const constructReadLimit = 4_096
-const sourceContextCache = new WeakMap<
-  Text,
-  Map<string | undefined, PreviewSourceContext>
->()
+const sourceContextCache = new WeakMap<Text, CachedPreviewSourceContext>()
 
 function intersects(left: SourceRange, right: SourceRange): boolean {
   return left.from < right.to && right.from < left.to
@@ -287,7 +288,7 @@ function createPreviewSourceIndex(editorSource: string, rawSource?: string) {
   if (!rawSource || rawSource === editorSource) {
     return createMarkdownSourceIndex(editorSource)
   }
-  if (rawSource.replace(/\r\n/g, '\n') !== editorSource) {
+  if (rawSource.replace(/\r\n?|\n/g, '\n') !== editorSource) {
     return createMarkdownSourceIndex(editorSource)
   }
 
@@ -296,8 +297,8 @@ function createPreviewSourceIndex(editorSource: string, rawSource?: string) {
   let rawOffset = 0
   while (rawOffset < rawSource.length) {
     editorToRaw[editorOffset] = rawOffset
-    if (rawSource.startsWith('\r\n', rawOffset)) {
-      rawOffset += 2
+    if (rawSource[rawOffset] === '\r') {
+      rawOffset += rawSource[rawOffset + 1] === '\n' ? 2 : 1
       editorOffset += 1
     } else {
       rawOffset += 1
@@ -315,20 +316,16 @@ function createPreviewSourceIndex(editorSource: string, rawSource?: string) {
 }
 
 function sourceContextFor(doc: Text, rawSource?: string): PreviewSourceContext {
-  let byRawSource = sourceContextCache.get(doc)
-  if (!byRawSource) {
-    byRawSource = new Map()
-    sourceContextCache.set(doc, byRawSource)
+  const cached = sourceContextCache.get(doc)
+  if (cached && cached.rawSource === rawSource) return cached
+
+  const editorSource = doc.toString()
+  const sourceContext: CachedPreviewSourceContext = {
+    rawSource,
+    mathRanges: indexMathRanges(editorSource),
+    sourceIndex: createPreviewSourceIndex(editorSource, rawSource),
   }
-  let sourceContext = byRawSource.get(rawSource)
-  if (!sourceContext) {
-    const editorSource = doc.toString()
-    sourceContext = {
-      mathRanges: indexMathRanges(editorSource),
-      sourceIndex: createPreviewSourceIndex(editorSource, rawSource),
-    }
-    byRawSource.set(rawSource, sourceContext)
-  }
+  sourceContextCache.set(doc, sourceContext)
   return sourceContext
 }
 
