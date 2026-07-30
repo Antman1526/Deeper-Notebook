@@ -124,6 +124,17 @@ def test_default_migration_discovery_includes_overlay_index_repair_37_and_down()
     assert downs[36].version == 37
 
 
+def test_default_migration_discovery_includes_unified_engine_38_and_down():
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 38
+    assert "knowledge_engine_document" in ups[37].sql
+    assert downs[37] is not None
+    assert "schema_preserved: true" in downs[37].sql
+    assert ups[37].version == 38
+    assert downs[37].version == 38
+
+
 def test_discover_ignores_non_numeric_files(tmp_path):
     """README.md / *.txt in the migrations dir must not break discovery."""
     _write_migration_files(tmp_path, ns=[1, 2])
