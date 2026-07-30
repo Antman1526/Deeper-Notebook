@@ -50,6 +50,7 @@ from api.routers import (
     models,
     notebooks,
     notes,
+    overlay,
     podcasts,
     research,
     search,
@@ -277,6 +278,27 @@ async def lifespan(app: FastAPI):
         logger.exception(e)
         # Fail fast - don't start the API with an outdated database schema
         raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
+
+    # App-owned overlay startup is isolated from the rest of the API. The
+    # canonical filesystem root is never exposed through app state or routes.
+    overlay_service = None
+    app.state.overlay_service = None
+    try:
+        from deeper_notebook.overlay.paths import OverlayLayout
+        from deeper_notebook.overlay.repository import OverlayRepository
+        from deeper_notebook.overlay.service import OverlayService
+        from deeper_notebook.overlay.storage import OverlayStorage
+
+        overlay_service = OverlayService(
+            OverlayRepository(),
+            OverlayStorage(OverlayLayout.active()),
+        )
+        app.state.overlay_service = overlay_service
+    except Exception as exc:
+        logger.warning(
+            "Overlay startup unavailable ({})",
+            type(exc).__name__,
+        )
 
     # Vault indexing begins only after migrations are durable. Unavailable roots
     # are contained by the service so local API startup remains available.
@@ -592,6 +614,9 @@ async def lifespan(app: FastAPI):
     # Yield control to the application
     yield
 
+    if overlay_service is not None:
+        app.state.overlay_service = None
+
     if vault_service is not None:
         try:
             await vault_service.stop_watchers()
@@ -607,7 +632,9 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            logger.warning("Vault initial scan shutdown raised ({})", type(exc).__name__)
+            logger.warning(
+                "Vault initial scan shutdown raised ({})", type(exc).__name__
+            )
 
     # v0.7.165 — Cancel the gmail-prewarm task on shutdown if it's
     # still running. The task is short-lived (a single SurrealDB read)
@@ -1019,6 +1046,11 @@ app.include_router(
     vault.router,
     prefix="/api/deeper-notebook",
     tags=["deeper-notebook-vault"],
+)
+app.include_router(
+    overlay.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook-overlay"],
 )
 app.include_router(
     knowledge_workspace.router,

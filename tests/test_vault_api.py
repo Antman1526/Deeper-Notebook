@@ -191,12 +191,11 @@ def client(monkeypatch):
 
 def test_canonical_vault_endpoints_are_read_only_and_omit_legacy_alias(client):
     test_client, _, _ = client
-    from api.routers.vault import router as vault_router
 
     prefix = "/api/deeper-notebook/vaults"
     routes = {
-        f"/api/deeper-notebook{route.path}": route.methods
-        for route in vault_router.routes
+        path: {method.upper() for method in operations}
+        for path, operations in test_client.app.openapi()["paths"].items()
     }
     required = {
         prefix,
@@ -299,8 +298,7 @@ def test_unresolved_link_response_keeps_null_target_identity_and_spans(client):
     )
 
     response = test_client.get(
-        "/api/deeper-notebook/vaults/"
-        "vault_mount:fixture/pages/note:one/outgoing"
+        "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one/outgoing"
     )
 
     assert response.status_code == 200
@@ -426,14 +424,11 @@ def test_page_maps_invalid_persisted_file_to_safe_projection_error(client):
 def test_outgoing_maps_invalid_resolved_link_to_safe_projection_error(client):
     test_client, repository, _ = client
     repository.outgoing_links = AsyncMock(
-        side_effect=VaultProjectionError(
-            "incomplete resolved link pages/private.md"
-        ),
+        side_effect=VaultProjectionError("incomplete resolved link pages/private.md"),
     )
 
     response = test_client.get(
-        "/api/deeper-notebook/vaults/"
-        "vault_mount:fixture/pages/note:one/outgoing"
+        "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one/outgoing"
     )
 
     assert response.status_code == 409
