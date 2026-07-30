@@ -107,17 +107,21 @@ vi.mock('./VaultLinks', () => ({
     <section>
       <h2>{title}</h2>
       {links.map((link) => (
-        <button
-          key={link.id}
-          type="button"
-          onClick={() => onNavigate(
-            direction === 'source'
-              ? link.source_note_id
-              : link.target_note_id!,
-          )}
-        >
-          Open {link.target_text}
-        </button>
+        link.resolved ? (
+          <button
+            key={link.id}
+            type="button"
+            onClick={() => onNavigate(
+              direction === 'source'
+                ? link.source_note_id
+                : link.target_note_id!,
+            )}
+          >
+            Open {link.target_text}
+          </button>
+        ) : (
+          <span key={link.id}>Unresolved {link.target_text}</span>
+        )
       ))}
     </section>
   ),
@@ -195,8 +199,9 @@ describe('KnowledgeLinksInspector authority routing', () => {
     const onNavigate = vi.fn()
     render(<KnowledgeLinksInspector onNavigate={onNavigate} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Target' }))
-
+    expect(screen.queryByRole('button', { name: 'Open Target' }))
+      .not.toBeInTheDocument()
+    expect(screen.getByText('Unresolved Target')).toBeInTheDocument()
     expect(onNavigate).not.toHaveBeenCalled()
   })
 })

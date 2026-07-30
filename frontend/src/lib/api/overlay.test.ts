@@ -25,6 +25,20 @@ const validOverlayLink = {
   source_end: 5,
 } as const
 
+const validOverlayGraph = {
+  nodes: [
+    { id: 'note:overlay-one', title: 'Today', source_format: 'markdown' },
+    { id: 'note:overlay-two', title: 'Two', source_format: 'markdown' },
+  ],
+  edges: [{
+    id: 'note_link:one',
+    source: 'note:overlay-one',
+    target: 'note:overlay-two',
+    kind: 'wikilink',
+    resolved: true,
+  }],
+} as const
+
 const validOverlayPage = {
   overlay: {
     id: 'overlay_note:one',
@@ -86,6 +100,7 @@ describe('overlay API boundary', () => {
       data: {
         ...validOverlayPage,
         outgoing_links: [validOverlayLink],
+        graph: validOverlayGraph,
       },
     } as never)
     await expect(overlayApi.page('overlay_note:one')).resolves.toMatchObject({
@@ -95,6 +110,16 @@ describe('overlay API boundary', () => {
         target_note_id: 'note:overlay-two',
         target_overlay_note_id: 'overlay_note:two',
       }],
+      graph: {
+        nodes: [
+          { id: 'note:overlay-one' },
+          { id: 'note:overlay-two' },
+        ],
+        edges: [{
+          source: 'note:overlay-one',
+          target: 'note:overlay-two',
+        }],
+      },
     })
 
     for (const missingField of [

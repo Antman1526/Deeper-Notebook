@@ -257,6 +257,67 @@ def test_overlay_root_list_and_encoded_note_id_use_service_methods(client):
     assert service.last_get_id == "overlay_note:unique-one"
 
 
+def test_overlay_page_serializes_identity_aliases_and_local_graph(client):
+    test_client, service = client
+    note = _note(
+        "overlay_note:center",
+        kind="unique",
+        title="Center",
+        date_key=None,
+    )
+    mapped = {
+        "id": "note_link:mapped",
+        "source_note_id": note.projected_note_id,
+        "source_overlay_note_id": note.id,
+        "target_note_id": "note:target",
+        "target_overlay_note_id": "overlay_note:target",
+        "target_note_title": "Target",
+        "target_relative_path": "Notes/20260729-1201 Target.md",
+        "target_text": "Target",
+        "link_kind": "wikilink",
+        "resolved": True,
+        "source_start": 0,
+        "source_end": 6,
+    }
+    external = {
+        **mapped,
+        "id": "note_link:external",
+        "target_note_id": "note:external",
+        "target_overlay_note_id": None,
+        "target_note_title": "External",
+        "target_text": "External",
+    }
+    service.notes[note.id] = OverlayPage(
+        overlay=note,
+        note={"id": note.projected_note_id, "title": note.title},
+        outgoing_links=[mapped, external],
+    )
+
+    response = test_client.get(
+        "/api/deeper-notebook/overlay/notes/overlay_note%3Acenter"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outgoing_links"][0]["source_overlay_note_id"] == note.id
+    assert (
+        body["outgoing_links"][0]["target_overlay_note_id"]
+        == "overlay_note:target"
+    )
+    assert body["outgoing_links"][1]["target_overlay_note_id"] is None
+    assert {node["id"] for node in body["graph"]["nodes"]} == {
+        note.projected_note_id,
+        "note:target",
+    }
+    assert body["graph"]["edges"] == [{
+        "id": "note_link:mapped",
+        "source": note.projected_note_id,
+        "target": "note:target",
+        "kind": "wikilink",
+        "resolved": True,
+    }]
+
+
 def test_daily_create_is_idempotent_and_contains_no_absolute_path(client):
     test_client, _ = client
     first = test_client.put("/api/deeper-notebook/overlay/daily/2026-07-29")

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import date, datetime
+from itertools import islice, zip_longest
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -22,6 +24,9 @@ _DATE_KEY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _UNIQUE_RELATIVE_PATH = re.compile(
     r"^Notes/(?P<timestamp>\d{8}-\d{4}) (?P<title>[^/\x00]+?)(?:-[2-9]\d*)?\.md$"
 )
+_OVERLAY_GRAPH_MAX_NEIGHBORS = 128
+_OVERLAY_GRAPH_MAX_EDGES = 128
+_OVERLAY_GRAPH_MAX_LINKS_PER_DIRECTION = 256
 
 
 def _canonical_relative_path(value: str) -> str:
@@ -195,6 +200,99 @@ class OverlayLink(VaultLink):
     target_overlay_note_id: str | None = Field(min_length=1, max_length=128)
 
 
+def _build_overlay_local_graph(
+    *,
+    overlay: OverlayNote,
+    note: dict[str, Any],
+    outgoing_links: Sequence[OverlayLink],
+    backlinks: Sequence[OverlayLink],
+) -> VaultGraph:
+    center_id = overlay.projected_note_id
+    nodes: dict[str, dict[str, Any]] = {
+        center_id: {
+            "id": center_id,
+            "title": note.get("title") or overlay.title,
+            "source_format": note.get("source_format") or "markdown",
+            "external_state": None,
+        }
+    }
+    edges: list[dict[str, Any]] = []
+    edge_keys: set[tuple[str, str, str]] = set()
+
+    def add_link(link: OverlayLink, *, incoming: bool) -> None:
+        if not link.resolved or len(edges) >= _OVERLAY_GRAPH_MAX_EDGES:
+            return
+        if incoming:
+            if (
+                link.target_note_id != center_id
+                or link.target_overlay_note_id != overlay.id
+                or link.source_note_id == center_id
+                or link.source_overlay_note_id is None
+            ):
+                return
+            source_id = link.source_note_id
+            target_id = center_id
+            neighbor_id = source_id
+            neighbor_title = link.source_note_title
+        else:
+            if (
+                link.source_note_id != center_id
+                or link.source_overlay_note_id != overlay.id
+                or link.target_note_id is None
+                or link.target_note_id == center_id
+                or link.target_overlay_note_id is None
+            ):
+                return
+            source_id = center_id
+            target_id = link.target_note_id
+            neighbor_id = target_id
+            neighbor_title = link.target_note_title
+
+        edge_key = (source_id, target_id, link.link_kind)
+        if edge_key in edge_keys:
+            return
+        if (
+            neighbor_id not in nodes
+            and len(nodes) - 1 >= _OVERLAY_GRAPH_MAX_NEIGHBORS
+        ):
+            return
+        nodes.setdefault(
+            neighbor_id,
+            {
+                "id": neighbor_id,
+                "title": neighbor_title,
+                "source_format": "markdown",
+                "external_state": None,
+            },
+        )
+        edge_keys.add(edge_key)
+        edges.append({
+            "id": link.id,
+            "source": source_id,
+            "target": target_id,
+            "kind": link.link_kind,
+            "resolved": True,
+        })
+
+    outgoing = islice(
+        outgoing_links,
+        _OVERLAY_GRAPH_MAX_LINKS_PER_DIRECTION,
+    )
+    incoming = islice(
+        backlinks,
+        _OVERLAY_GRAPH_MAX_LINKS_PER_DIRECTION,
+    )
+    for outgoing_link, incoming_link in zip_longest(outgoing, incoming):
+        if outgoing_link is not None:
+            add_link(outgoing_link, incoming=False)
+        if incoming_link is not None:
+            add_link(incoming_link, incoming=True)
+        if len(edges) >= _OVERLAY_GRAPH_MAX_EDGES:
+            break
+
+    return VaultGraph(nodes=list(nodes.values()), edges=edges)
+
+
 class OverlayPage(_Strict):
     overlay: OverlayNote
     note: dict[str, Any]
@@ -208,4 +306,10 @@ class OverlayPage(_Strict):
     def note_matches_overlay_projection(self) -> OverlayPage:
         if self.note.get("id") != self.overlay.projected_note_id:
             raise ValueError("page note must match the overlay projection")
+        self.graph = _build_overlay_local_graph(
+            overlay=self.overlay,
+            note=self.note,
+            outgoing_links=self.outgoing_links,
+            backlinks=self.backlinks,
+        )
         return self

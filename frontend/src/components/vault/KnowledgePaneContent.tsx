@@ -154,9 +154,16 @@ export function KnowledgePaneContent({
   }>
 
   const navigate = (targetNoteId: string) => {
+    const isOverlayCenter = isOverlay
+      && overlayPage.data?.note.id === targetNoteId
     const overlayLink = isOverlay
       ? overlayPage.data?.outgoing_links.find(
           (candidate) => candidate.target_note_id === targetNoteId,
+        )
+      : undefined
+    const overlayBacklink = isOverlay
+      ? overlayPage.data?.backlinks.find(
+          (candidate) => candidate.source_note_id === targetNoteId,
         )
       : undefined
     const link = currentOutgoing.find(
@@ -165,21 +172,34 @@ export function KnowledgePaneContent({
     const graphNode = currentGraph?.nodes.find(
       (candidate) => candidate.id === targetNoteId,
     )
-    const titleHint = link?.target_note_title === null
-      || link?.target_note_title === undefined
-      ? graphNode?.title ?? undefined
-      : link.target_note_title
-    const navigationNoteId = isOverlay
-      ? overlayLink?.target_overlay_note_id
-      : targetNoteId
+    const titleHint = isOverlayCenter
+      ? overlayPage.data?.overlay.title
+      : link?.target_note_title === null
+        || link?.target_note_title === undefined
+        ? overlayBacklink?.source_note_title ?? graphNode?.title ?? undefined
+        : link.target_note_title
+    const navigationNoteId = isOverlayCenter
+      ? overlayPage.data?.overlay.id
+      : isOverlay
+        ? overlayLink?.target_overlay_note_id
+          ?? overlayBacklink?.source_overlay_note_id
+        : targetNoteId
+    const relativePathHint = isOverlayCenter
+      ? overlayPage.data?.overlay.relative_path
+      : overlayLink?.target_relative_path ?? link?.target_relative_path
+    const targetText = isOverlayCenter
+      ? overlayPage.data?.overlay.title
+      : overlayLink?.target_text
+        ?? overlayBacklink?.source_note_title
+        ?? targetNoteId
     if (!navigationNoteId) return
     onNavigate(
       activeTab.vaultId,
       navigationNoteId,
-      link?.target_relative_path ?? undefined,
+      relativePathHint ?? undefined,
       titleHint,
       pane.id,
-      link?.target_text || targetNoteId,
+      targetText,
       activeTab.sourceAuthority,
     )
   }
