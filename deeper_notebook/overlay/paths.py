@@ -77,7 +77,9 @@ def validate_relative_path(value: str) -> str:
         or "\\" in value
         or "\x00" in value
         or re.match(r"^[A-Za-z]:", value)
-        or any(not part or part in {".", ".."} or part.strip() != part for part in parts)
+        or any(
+            not part or part in {".", ".."} or part.strip() != part for part in parts
+        )
     ):
         raise OverlayPathError("invalid_relative_path")
     return value
@@ -96,11 +98,15 @@ def daily_relative_path(date_key: str) -> str:
 
 def _safe_title(title: str) -> str:
     value = unicodedata.normalize("NFC", title).strip()
-    value = "".join(char if not 0xD800 <= ord(char) <= 0xDFFF else " " for char in value)
+    value = "".join(
+        char if not 0xD800 <= ord(char) <= 0xDFFF else " " for char in value
+    )
     value = _UNSAFE_TITLE.sub(" ", value)
     value = re.sub(r"\s+", " ", value).strip(" .")
     value = value or "Untitled"
-    fixed_name = f"{_FILENAME_PREFIX}{_WORST_CASE_COLLISION_SUFFIX}{_FILENAME_EXTENSION}"
+    fixed_name = (
+        f"{_FILENAME_PREFIX}{_WORST_CASE_COLLISION_SUFFIX}{_FILENAME_EXTENSION}"
+    )
     remaining_utf8_bytes = MAX_FILENAME_BYTES - len(fixed_name.encode("utf-8"))
     remaining_utf16_code_units = (
         MAX_FILENAME_UTF16_CODE_UNITS - len(fixed_name.encode("utf-16-le")) // 2
@@ -141,13 +147,14 @@ def unique_relative_path(
 def overlay_frontmatter(note: OverlayNote, body: str) -> str:
     """Prepend canonical, app-owned metadata without changing the Markdown body."""
     metadata = {
+        "title": note.title,
         "deeper_notebook": {
             "id": note.id,
             "kind": note.kind,
             "created_at": note.created_at.isoformat(),
             "updated_at": note.updated_at.isoformat(),
             "date_key": note.date_key,
-        }
+        },
     }
     frontmatter = yaml.safe_dump(
         metadata,

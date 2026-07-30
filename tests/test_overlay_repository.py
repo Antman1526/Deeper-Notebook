@@ -318,6 +318,47 @@ async def test_prepare_revision_durably_binds_receipt_to_intended_hash():
 
 
 @pytest.mark.asyncio
+async def test_commit_rejects_projected_title_that_differs_from_canonical_metadata():
+    connection = ScriptedConnection(
+        [
+            {
+                "outcome": "committed",
+                "note": _note_row(
+                    content_hash="a" * 64,
+                    projection_state="current",
+                ),
+            }
+        ]
+    )
+    repository = OverlayRepository(
+        connection_factory=ReusableFactory(connection),
+        clock=lambda: NOW,
+    )
+    reservation = OverlayReservation(
+        operation_id="op-one",
+        idempotency_key="daily:2026-07-29",
+        overlay_note_id="overlay_note:one",
+        projected_note_id="note:one",
+        relative_path="Daily/2026-07-29.md",
+        title="2026-07-29",
+        kind="daily",
+        date_key="2026-07-29",
+        expected_revision=None,
+    )
+
+    with pytest.raises(ValueError, match="overlay_projection_title_mismatch"):
+        await repository.commit_revision(
+            reservation=reservation,
+            content_hash="a" * 64,
+            byte_size=42,
+            relative_snapshot="revisions/one-r1-aaaa.md",
+            parsed=_parsed_document().model_copy(update={"title": "Different"}),
+        )
+
+    assert connection.calls == []
+
+
+@pytest.mark.asyncio
 async def test_commit_uses_public_owned_projection_unit_of_work():
     committed = _note_row(
         content_hash="a" * 64,
