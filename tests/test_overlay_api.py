@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import os
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,6 +21,7 @@ from deeper_notebook.overlay.contracts import (
     OverlayPage,
     UpdateOverlayNote,
 )
+from deeper_notebook.overlay.paths import OverlayLayout
 from deeper_notebook.overlay.repository import (
     OverlayConflictError,
     OverlayRepositoryError,
@@ -565,6 +569,42 @@ def test_unknown_failures_and_unavailable_service_are_redacted(client):
     assert unavailable.json() == {"detail": {"code": "overlay_unavailable"}}
 
 
+def test_proof_identity_reports_stable_process_and_actual_overlay_root(
+    client,
+    tmp_path,
+):
+    test_client, service = client
+    data_root = tmp_path / "controlled-overlay-data"
+    data_root.mkdir()
+    service.storage = SimpleNamespace(
+        layout=OverlayLayout.from_data_root(data_root),
+    )
+
+    first = test_client.get("/api/deeper-notebook/overlay/proof-identity")
+    second = test_client.get("/api/deeper-notebook/overlay/proof-identity")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    payload = first.json()
+    assert payload == second.json()
+    assert payload["instance_pid"] == os.getpid()
+    assert payload["instance_nonce"] == second.json()["instance_nonce"]
+    assert len(payload["instance_nonce"]) >= 43
+    assert payload["overlay_root_sha256"] == hashlib.sha256(
+        str(data_root.resolve()).encode("utf-8")
+    ).hexdigest()
+    assert str(data_root) not in first.text
+
+
+def test_proof_identity_fails_closed_without_owned_storage(client):
+    test_client, _service = client
+
+    response = test_client.get("/api/deeper-notebook/overlay/proof-identity")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": {"code": "overlay_unavailable"}}
+
+
 def test_service_http_exception_is_fail_closed_and_non_reflective(client):
     test_client, service = client
 
@@ -605,4 +645,10 @@ def test_overlay_routes_remain_behind_password_auth(monkeypatch):
                 headers={"Authorization": "Bearer overlay-test-password"},
             ).status_code
             == 200
+        )
+        assert (
+            auth_client.get(
+                "/api/deeper-notebook/overlay/proof-identity",
+            ).status_code
+            == 401
         )
