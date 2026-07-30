@@ -45,10 +45,16 @@ MIGRATION_34_DOWN = ROOT / "deeper_notebook/database/migrations/34_down.surrealq
 MIGRATION_35 = ROOT / "deeper_notebook/database/migrations/35.surrealql"
 MIGRATION_35_DOWN = ROOT / "deeper_notebook/database/migrations/35_down.surrealql"
 MIGRATION_36_DOWN = ROOT / "deeper_notebook/database/migrations/36_down.surrealql"
+MIGRATION_37_DOWN = ROOT / "deeper_notebook/database/migrations/37_down.surrealql"
+MIGRATION_38_DOWN = ROOT / "deeper_notebook/database/migrations/38_down.surrealql"
 
 
 async def _restore_recorded_v35_state() -> None:
     """Undo overlay migration 36 so migration-35 behavior can be isolated."""
+    await repo_query(MIGRATION_38_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 38);")
+    await repo_query(MIGRATION_37_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 37);")
     await repo_query(MIGRATION_36_DOWN.read_text(encoding="utf-8"))
     await repo_query("DELETE type::thing('_sbl_migrations', 36);")
 
@@ -82,6 +88,59 @@ async def test_migration_creates_vault_projection_tables(clean_namespace):
         "vault_sync_receipt",
         "vault_trust_record",
     }.issubset(tables)
+    assert {
+        "knowledge_engine_space",
+        "knowledge_engine_document",
+        "knowledge_engine_block",
+        "knowledge_engine_relation",
+        "knowledge_engine_task",
+        "knowledge_engine_asset",
+        "knowledge_engine_view",
+        "knowledge_engine_source_revision",
+        "knowledge_engine_identity_map",
+        "knowledge_engine_projection_receipt",
+        "knowledge_engine_backfill_checkpoint",
+    }.issubset(tables)
+    assert await get_latest_version() == 38
+
+
+async def test_migration_38_down_up_preserves_shadow_records(clean_namespace):
+    await repo_query(
+        "CREATE knowledge_engine_backfill_checkpoint:round_trip CONTENT $checkpoint;",
+        {
+            "checkpoint": {
+                "schema_version": 1,
+                "space_id": "space:round_trip",
+                "last_relative_locator": "Pages/Round Trip.md",
+                "last_source_hash": "a" * 64,
+                "status": "completed",
+                "projected": 1,
+                "unchanged": 0,
+                "failed": 0,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    await repo_query(MIGRATION_38_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 38);")
+    assert await get_latest_version() == 37
+
+    row_after_down = (
+        await repo_query(
+            "SELECT * FROM knowledge_engine_backfill_checkpoint:round_trip;"
+        )
+    )[0]
+    assert str(row_after_down["id"]) == "knowledge_engine_backfill_checkpoint:round_trip"
+
+    manager = AsyncMigrationManager()
+    await manager.run_migration_up()
+    assert await get_latest_version() == 38
+    row_after_up = (
+        await repo_query(
+            "SELECT * FROM knowledge_engine_backfill_checkpoint:round_trip;"
+        )
+    )[0]
+    assert str(row_after_up["id"]) == "knowledge_engine_backfill_checkpoint:round_trip"
 
 
 async def _vault_file_fields() -> dict:
@@ -118,7 +177,7 @@ async def test_migration_35_exposes_optional_vault_file_newline_field(
     clean_namespace,
 ):
     assert "newline" in await _vault_file_fields()
-    assert await get_latest_version() == 36
+    assert await get_latest_version() == 38
 
 
 async def test_migration_35_upgrades_v34_row_without_newline(clean_namespace):
@@ -139,7 +198,7 @@ async def test_migration_35_upgrades_v34_row_without_newline(clean_namespace):
     manager = AsyncMigrationManager()
     await manager.run_migration_up()
 
-    assert await get_latest_version() == 36
+    assert await get_latest_version() == 38
     row = (
         await repo_query(
             "SELECT * FROM $id;",
@@ -189,7 +248,7 @@ async def test_migration_35_down_preserves_row_and_up_is_idempotent(
     manager = AsyncMigrationManager()
     await manager.run_migration_up()
     await manager.run_migration_up()
-    assert await get_latest_version() == 36
+    assert await get_latest_version() == 38
     assert "newline" in await _vault_file_fields()
 
 
@@ -503,7 +562,7 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
 
     manager = AsyncMigrationManager()
     await manager.run_migration_up()
-    assert await get_latest_version() == 36
+    assert await get_latest_version() == 38
 
     note_info = await repo_query("INFO FOR TABLE note;")
     link_info = await repo_query("INFO FOR TABLE note_link;")
@@ -569,6 +628,10 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
         assert after["source_end"] == before["source_end"]
 
     await manager.runner.run_one_down()
+    assert await get_latest_version() == 37
+    await manager.runner.run_one_down()
+    assert await get_latest_version() == 36
+    await manager.runner.run_one_down()
     assert await get_latest_version() == 35
     await manager.runner.run_one_down()
     assert await get_latest_version() == 34
@@ -577,7 +640,7 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
     await manager.runner.run_one_down()
     assert await get_latest_version() == 32
     await manager.run_migration_up()
-    assert await get_latest_version() == 36
+    assert await get_latest_version() == 38
     assert await repo_query("SELECT * FROM note ORDER BY id;") == list(
         notes_after.values()
     )
@@ -676,7 +739,7 @@ async def test_migration_33_note_batch_failure_rolls_back_row_and_field_definiti
     assert "VALUE" not in failed_schema
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 36
+    assert await get_latest_version() == 38
     migrated = (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0]
     assert migrated["title_key"] == "rollback note"
     assert migrated["updated"] == before["updated"]
@@ -771,7 +834,7 @@ async def test_migration_33_link_batch_failure_rolls_back_row_and_field_definiti
     assert "VALUE" not in failed_schema
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 36
+    assert await get_latest_version() == 38
     migrated = (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0]
     assert migrated["target_title_key"] == "target"
     assert migrated["target_note_id"] == str(target_id)
@@ -818,7 +881,7 @@ async def test_migration_33_final_restore_failure_rolls_back_both_field_definiti
     assert "VALUE" not in failed_link_schema
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 36
+    assert await get_latest_version() == 38
     assert await _updated_field_definition("note") == note_schema_before
     assert await _updated_field_definition("note_link") == link_schema_before
 
