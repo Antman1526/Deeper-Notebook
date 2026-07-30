@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import type { OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
 import type { VaultFile } from '@/lib/api/vault'
 import {
@@ -15,6 +16,7 @@ import {
   useVaultFiles,
   useVaults,
 } from '@/lib/hooks/use-vault'
+import { useTodayOverlayNote } from '@/lib/hooks/use-overlay'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import { KnowledgeLinksInspector } from './KnowledgeLinksInspector'
@@ -26,6 +28,12 @@ import { KnowledgeWorkspaceLayout } from './KnowledgeWorkspaceLayout'
 import { VaultFileTree } from './VaultFileTree'
 import { KnowledgeCommandBridge } from './KnowledgeCommandBridge'
 import { KnowledgeQuickSwitcher } from './KnowledgeQuickSwitcher'
+import { CreateUniqueNoteDialog } from '../overlay/CreateUniqueNoteDialog'
+import { OverlayUtilityPanel, localDateKey, tabFromOverlay } from '../overlay/OverlayUtilityPanel'
+
+type SelectedKnowledgeRoot =
+  | { authority: 'overlay'; id: 'overlay_space:default' }
+  | { authority: 'external-vault'; id: string }
 
 function titleFromRelativePath(relativePath: string): string {
   return relativePath.split('/').pop()?.replace(/\.md$/i, '') || relativePath
@@ -45,13 +53,19 @@ export function KnowledgeExplorer() {
   const hydration = useHydrateKnowledgeWorkspace()
   const persistence = usePersistKnowledgeWorkspace()
   const mounts = useVaults()
-  const [vaultId, setVaultId] = useState('')
+  const [selectedRootState, setSelectedRootState] = useState<SelectedKnowledgeRoot | null>(null)
+  const [uniqueDialogOpen, setUniqueDialogOpen] = useState(false)
   const [activePaneElement, setActivePaneElement] = useState<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const fileTreeRef = useRef<HTMLElement>(null)
   const linksRef = useRef<HTMLDivElement>(null)
   const paneElementsRef = useRef<Record<string, HTMLElement | null>>({})
-  const files = useVaultFiles(vaultId)
+  const selectedRoot = selectedRootState
+    ?? (mounts.data?.[0]
+      ? { authority: 'external-vault' as const, id: mounts.data[0].id }
+      : { authority: 'overlay' as const, id: 'overlay_space:default' as const })
+  const selectedVaultId = selectedRoot.authority === 'external-vault' ? selectedRoot.id : ''
+  const files = useVaultFiles(selectedVaultId)
   const activePane = useKnowledgeWorkspaceStore(
     (state) => state.panes[state.activePaneId],
   )
@@ -65,13 +79,12 @@ export function KnowledgeExplorer() {
     isPending: scanPending,
     error: scanError,
   } = useScanVault(
-    vaultId,
-    activeTab?.vaultId === vaultId ? activeTab.noteId : undefined,
+    selectedVaultId,
+    activeTab?.sourceAuthority === 'external-vault' && activeTab.vaultId === selectedVaultId
+      ? activeTab.noteId
+      : undefined,
   )
-
-  useEffect(() => {
-    if (!vaultId && mounts.data?.[0]) setVaultId(mounts.data[0].id)
-  }, [mounts.data, vaultId])
+  const { mutateAsync: createTodayOverlay } = useTodayOverlayNote()
 
   const openFile = (file: VaultFile, paneId?: string) => {
     openTab(tabFromFile(file), paneId)
@@ -127,14 +140,24 @@ export function KnowledgeExplorer() {
     }, paneId)
   }
 
-  const selected = mounts.data?.find((mount) => mount.id === vaultId)
-  const selectedNoteId = activeTab?.vaultId === vaultId
+  const selected = selectedRoot.authority === 'external-vault'
+    ? mounts.data?.find((mount) => mount.id === selectedRoot.id)
+    : undefined
+  const selectedNoteId = activeTab?.sourceAuthority === 'external-vault' && activeTab.vaultId === selectedVaultId
     ? activeTab.noteId
     : ''
   const scanSelectedVault = useCallback(
-    async () => { await scanVault() },
-    [scanVault],
+    async () => {
+      if (selectedRoot.authority !== 'external-vault') return
+      await scanVault()
+    },
+    [scanVault, selectedRoot.authority],
   )
+  const openTodayOverlay = useCallback(async () => {
+    const page = await createTodayOverlay(localDateKey())
+    openTab(tabFromOverlay(page))
+  }, [createTodayOverlay, openTab])
+  const openUniqueOverlayDialog = useCallback(() => setUniqueDialogOpen(true), [])
 
   useEffect(() => {
     setActivePaneElement(paneElementsRef.current[activePaneId] ?? null)
@@ -162,17 +185,17 @@ export function KnowledgeExplorer() {
               {t('knowledge.description')}
             </p>
           </div>
-          <Button
+          {selectedRoot.authority === 'external-vault' && <Button
             type="button"
             variant="outline"
             onClick={() => { void scanVault().catch(() => undefined) }}
-            disabled={!vaultId || scanPending}
+            disabled={scanPending}
           >
             <RefreshCw
               className={`mr-2 h-4 w-4 ${scanPending ? 'animate-spin' : ''}`}
             />
             {t('knowledge.scan')}
-          </Button>
+          </Button>}
         </div>
         <div className="mt-3 space-y-1" aria-live="polite">
           {hydration.isLoading && (
@@ -195,7 +218,7 @@ export function KnowledgeExplorer() {
               {t('knowledge.workspaceSaveError')}
             </p>
           )}
-          {scanError && (
+          {selectedRoot.authority === 'external-vault' && scanError && (
             <p role="alert" className="text-sm text-destructive">
               {t('knowledge.loadError')}
             </p>
@@ -214,18 +237,28 @@ export function KnowledgeExplorer() {
           </label>
           <select
             id="vault-mount"
-            value={vaultId}
-            onChange={(event) => setVaultId(event.target.value)}
+            value={`${selectedRoot.authority}:${selectedRoot.id}`}
+            onChange={(event) => {
+              const next = event.target.value
+              setSelectedRootState(next === 'overlay:overlay_space:default'
+                ? { authority: 'overlay', id: 'overlay_space:default' }
+                : { authority: 'external-vault', id: next.replace(/^external-vault:/, '') })
+            }}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            disabled={mounts.isLoading || mounts.isError}
           >
+            <option value="overlay:overlay_space:default">{t('knowledge.overlay.name')}</option>
             {mounts.data?.map((mount) => (
-              <option key={mount.id} value={mount.id}>
+              <option key={mount.id} value={`external-vault:${mount.id}`}>
                 {mount.name} · {mount.format_mode}
               </option>
             ))}
           </select>
-          {mounts.isLoading ? (
+          <OverlayUtilityPanel
+            onOpen={openTab}
+            onNewUnique={openUniqueOverlayDialog}
+            onToday={openTodayOverlay}
+          />
+          {selectedRoot.authority === 'external-vault' && (mounts.isLoading ? (
             <p className="text-sm text-muted-foreground">
               {t('knowledge.mountsLoading')}
             </p>
@@ -240,7 +273,10 @@ export function KnowledgeExplorer() {
           ) : (
             <>
               <div className="rounded-md bg-muted p-3 text-sm">
-                <span className="font-medium">{t('knowledge.status')}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{t('knowledge.status')}</span>
+                  <Badge variant="outline">{t('knowledge.readOnly')}</Badge>
+                </div>
                 <p className="mt-1 text-muted-foreground">
                   {selected?.state || t('common.unknown')}
                 </p>
@@ -266,7 +302,7 @@ export function KnowledgeExplorer() {
                 />
               )}
             </>
-          )}
+          ))}
         </aside>
         <main className="min-h-0 min-w-0 overflow-hidden">
           <KnowledgeWorkspaceLayout
@@ -289,10 +325,17 @@ export function KnowledgeExplorer() {
         activePaneElement={activePaneElement}
         fileTreeRef={fileTreeRef}
         linksRef={linksRef}
-        selectedVaultId={vaultId || null}
+        selectedVaultId={selectedRoot.authority === 'external-vault' ? selectedRoot.id : null}
         scanSelectedVault={scanSelectedVault}
+        openTodayOverlay={openTodayOverlay}
+        openUniqueOverlayDialog={openUniqueOverlayDialog}
       />
       <KnowledgeQuickSwitcher mounts={mounts.data || []} />
+      <CreateUniqueNoteDialog
+        open={uniqueDialogOpen}
+        onOpenChange={setUniqueDialogOpen}
+        onOpen={openTab}
+      />
     </div>
   )
 }

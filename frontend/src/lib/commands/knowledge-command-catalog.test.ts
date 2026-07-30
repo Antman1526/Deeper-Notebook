@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
+import type { OverlayNote } from '@/lib/api/overlay'
 import type { VaultFile, VaultMount } from '@/lib/api/vault'
 import type { SearchResult } from '@/lib/types/search'
 import {
@@ -37,6 +38,27 @@ const file = (noteId: string, relativePath: string): VaultFile => ({
 })
 
 describe('knowledge command catalog', () => {
+  it('keeps overlay and external candidates distinct when IDs or titles match', () => {
+    const overlay: OverlayNote = {
+      id: 'note:shared', source_authority: 'overlay', space_id: 'overlay_space:default',
+      projected_note_id: 'projected:shared', stable_id: 'a'.repeat(20), kind: 'unique', date_key: null,
+      relative_path: 'Notes/Shared.md', title: 'Shared', content_hash: 'a'.repeat(64), revision: 1,
+      projection_state: 'current', encoding: 'utf-8', newline: 'lf',
+      created_at: '2026-07-29T00:00:00.000Z', updated_at: '2026-07-29T00:00:00.000Z',
+    }
+    const catalog = buildKnowledgeCatalog(
+      mounts,
+      new Map([['vault:research', [file('note:shared', 'Shared.md')]]]),
+      [],
+      [overlay],
+    )
+
+    expect(rankKnowledgeCatalog(catalog, 'shared', 10)).toHaveLength(2)
+    expect(rankKnowledgeCatalog(catalog, 'shared', 10).map(candidate => candidate.sourceAuthority))
+      .toEqual(['overlay', 'external-vault'])
+    expect(candidateToOpenTab(catalog.find(candidate => candidate.sourceAuthority === 'overlay')!))
+      .toMatchObject({ sourceAuthority: 'overlay', vaultId: 'overlay_space:default' })
+  })
   it('ranks exact titles before prefixes, path matches, and vault matches', () => {
     const catalog = buildKnowledgeCatalog(
       mounts,
@@ -121,6 +143,7 @@ describe('knowledge command catalog', () => {
     )
 
     expect(candidateToOpenTab(candidate)).toEqual({
+      sourceAuthority: 'external-vault',
       vaultId: 'vault:research',
       noteId: 'note:plan',
       title: 'Plan',

@@ -166,6 +166,11 @@ const knowledgeCommandLocaleKeys = [
   'requiresFileTree', 'requiresLinks',
 ] as const
 
+const overlayLocaleKeys = [
+  'name', 'writable', 'today', 'newUnique', 'uniqueTitle', 'create', 'creating',
+  'empty', 'loadError', 'createError',
+] as const
+
 const rawEnglishRuntimeLeafAllowlist = new Set([
   'de-DE:commands.viewGraph',
   'fr-FR:commands.viewSource',
@@ -256,6 +261,18 @@ describe('Command-navigation locale contracts', () => {
     const translation = resource.translation as Record<string, unknown>
     expect(getTranslation(translation, 'knowledge.partialCatalogFailure')).toContain('{{count}}')
     expect(getTranslation(translation, 'knowledge.semanticSearchFor')).toContain('{{query}}')
+  })
+})
+
+describe('Overlay locale contracts', () => {
+  it.each(Object.entries(resources))('%s provides the exact overlay leaf set', (code, resource) => {
+    const overlay = getTranslation(resource.translation as Record<string, unknown>, 'knowledge.overlay')
+    expect(overlay, `${code} is missing knowledge.overlay`).toEqual(expect.any(Object))
+    expect(Object.keys(overlay as Record<string, unknown>).sort()).toEqual([...overlayLocaleKeys].sort())
+    for (const key of overlayLocaleKeys) {
+      expect(getTranslation(resource.translation as Record<string, unknown>, `knowledge.overlay.${key}`))
+        .toEqual(expect.any(String))
+    }
   })
 })
 

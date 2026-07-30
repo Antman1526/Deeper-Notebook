@@ -15,6 +15,8 @@ export interface KnowledgeCommandBridgeProps {
   linksRef: React.RefObject<HTMLElement | null>
   selectedVaultId: string | null
   scanSelectedVault: () => Promise<void>
+  openTodayOverlay: () => Promise<void>
+  openUniqueOverlayDialog: () => void
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -31,6 +33,8 @@ export function KnowledgeCommandBridge({
   linksRef,
   selectedVaultId,
   scanSelectedVault,
+  openTodayOverlay,
+  openUniqueOverlayDialog,
 }: KnowledgeCommandBridgeProps) {
   useEffect(() => {
     const generation = registerKnowledgeCommandContext({
@@ -39,9 +43,11 @@ export function KnowledgeCommandBridge({
       activePaneElement,
       linksElement: linksRef.current,
       scanSelectedVault,
+      openTodayOverlay,
+      openUniqueOverlayDialog,
     })
     return () => clearKnowledgeCommandContext(generation)
-  }, [activePaneElement, fileTreeRef, linksRef, scanSelectedVault, selectedVaultId])
+  }, [activePaneElement, fileTreeRef, linksRef, openTodayOverlay, openUniqueOverlayDialog, scanSelectedVault, selectedVaultId])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

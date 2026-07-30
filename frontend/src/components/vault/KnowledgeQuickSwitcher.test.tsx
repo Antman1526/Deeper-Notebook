@@ -12,6 +12,7 @@ const catalog = vi.hoisted(() => ({
   candidates: [
     {
       key: 'vault:fixture\\0note:evidence',
+      sourceAuthority: 'external-vault' as const,
       vaultId: 'vault:fixture',
       noteId: 'note:evidence',
       vaultName: 'Fixture vault',
@@ -22,6 +23,7 @@ const catalog = vi.hoisted(() => ({
     },
     {
       key: 'vault:fixture\\0note:plan',
+      sourceAuthority: 'external-vault' as const,
       vaultId: 'vault:fixture',
       noteId: 'note:plan',
       vaultName: 'Fixture vault',
@@ -35,9 +37,19 @@ const catalog = vi.hoisted(() => ({
   failedVaultCount: 0,
   retryFailedVaults: vi.fn(async () => undefined),
 }))
+const overlay = vi.hoisted(() => ({
+  notes: [] as Array<{
+    id: string; source_authority: 'overlay'; space_id: string; projected_note_id: string; stable_id: string
+    kind: 'daily' | 'unique'; date_key: string | null; relative_path: string; title: string; content_hash: string
+    revision: number; projection_state: 'current'; encoding: 'utf-8'; newline: 'lf'; created_at: string; updated_at: string
+  }>,
+}))
 
 vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
   useKnowledgeCatalog: () => catalog,
+}))
+vi.mock('@/lib/hooks/use-overlay', () => ({
+  useOverlayNotes: () => ({ data: overlay.notes, isLoading: false, isError: false }),
 }))
 
 import { KnowledgeQuickSwitcher } from './KnowledgeQuickSwitcher'
@@ -49,7 +61,25 @@ describe('KnowledgeQuickSwitcher', () => {
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
     catalog.isLoading = false
     catalog.failedVaultCount = 0
+    overlay.notes = []
     catalog.retryFailedVaults.mockClear()
+  })
+
+  it('keeps an overlay candidate distinct from an external note with the same title', async () => {
+    overlay.notes = [{
+      id: 'note:evidence', source_authority: 'overlay', space_id: 'overlay_space:default',
+      projected_note_id: 'projected:evidence', stable_id: 'a'.repeat(20), kind: 'unique', date_key: null,
+      relative_path: 'Notes/Evidence.md', title: 'Evidence', content_hash: 'a'.repeat(64), revision: 1,
+      projection_state: 'current', encoding: 'utf-8', newline: 'lf',
+      created_at: '2026-07-29T00:00:00.000Z', updated_at: '2026-07-29T00:00:00.000Z',
+    }]
+    render(<KnowledgeQuickSwitcher mounts={[]} />)
+    act(() => requestCommandSurface('quick-switcher', 'evidence'))
+    const dialog = await screen.findByRole('dialog', { name: 'knowledge.quickSwitcher' })
+    expect(within(dialog).getAllByRole('option', { name: /Evidence/ })).toHaveLength(2)
+    fireEvent.click(within(dialog).getAllByRole('option', { name: /Evidence/ })[0])
+    await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs.at(-1))
+      .toMatchObject({ sourceAuthority: 'overlay', vaultId: 'overlay_space:default' }))
   })
 
   it('ranks notes and opens the selected note in the active pane', async () => {

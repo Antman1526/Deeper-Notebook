@@ -1,17 +1,37 @@
 import type { OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
 import { canonicalVaultRelativePathSchema } from '@/lib/api/knowledge-workspace'
 import type { VaultFile, VaultMount } from '@/lib/api/vault'
+import type { OverlayNote } from '@/lib/api/overlay'
 import type { SearchResult } from '@/lib/types/search'
 
 export interface KnowledgeCatalogCandidate {
   key: string
+  sourceAuthority: 'external-vault' | 'overlay'
   vaultId: string
   noteId: string
   vaultName: string
-  format: VaultFile['format']
+  format: VaultFile['format'] | 'overlay'
   title: string
   relativePath: string
   isOpen: boolean
+}
+
+export function overlayNotesToKnowledgeCandidates(
+  overlayNotes: readonly OverlayNote[],
+  openTabs: readonly OpenKnowledgeTab[],
+): KnowledgeCatalogCandidate[] {
+  const open = new Set(openTabs.map(tab => `${tab.sourceAuthority || 'external-vault'}\0${tab.vaultId}\0${tab.noteId}`))
+  return overlayNotes.map(note => ({
+    key: `overlay\0${note.space_id}\0${note.id}`,
+    sourceAuthority: 'overlay',
+    vaultId: note.space_id,
+    noteId: note.id,
+    vaultName: 'Deeper Notebook Overlay',
+    format: 'overlay',
+    title: note.title,
+    relativePath: note.relative_path,
+    isOpen: open.has(`overlay\0${note.space_id}\0${note.id}`),
+  }))
 }
 
 function normalized(value: string): string {
@@ -31,21 +51,24 @@ export function buildKnowledgeCatalog(
   mounts: VaultMount[],
   filesByVault: ReadonlyMap<string, readonly VaultFile[]>,
   openTabs: readonly OpenKnowledgeTab[],
+  overlayNotes: readonly OverlayNote[] = [],
 ): KnowledgeCatalogCandidate[] {
-  const open = new Set(openTabs.map(tab => `${tab.vaultId}\0${tab.noteId}`))
-  return mounts.flatMap(mount => (filesByVault.get(mount.id) || [])
+  const open = new Set(openTabs.map(tab => `${tab.sourceAuthority || 'external-vault'}\0${tab.vaultId}\0${tab.noteId}`))
+  const external = mounts.flatMap(mount => (filesByVault.get(mount.id) || [])
     .filter(file => file.deleted_state === 'present' && file.parse_status === 'parsed')
     .map(file => ({
-      key: `${file.vault_id}\0${file.note_id}`,
+      key: `external-vault\0${file.vault_id}\0${file.note_id}`,
+      sourceAuthority: 'external-vault' as const,
       vaultId: file.vault_id,
       noteId: file.note_id,
       vaultName: mount.name,
       format: file.format,
       title: titleFromPath(file.relative_path),
       relativePath: file.relative_path,
-      isOpen: open.has(`${file.vault_id}\0${file.note_id}`),
+      isOpen: open.has(`external-vault\0${file.vault_id}\0${file.note_id}`),
     })))
-    .sort((a, b) => compareCodePoints(a.key, b.key))
+  const overlay = overlayNotesToKnowledgeCandidates(overlayNotes, openTabs)
+  return [...external, ...overlay].sort((a, b) => compareCodePoints(a.key, b.key))
 }
 
 function score(candidate: KnowledgeCatalogCandidate, query: string): number {
@@ -84,6 +107,7 @@ export function candidateToOpenTab(
   candidate: KnowledgeCatalogCandidate,
 ): OpenKnowledgeTab {
   return {
+    sourceAuthority: candidate.sourceAuthority,
     vaultId: candidate.vaultId,
     noteId: candidate.noteId,
     title: candidate.title,

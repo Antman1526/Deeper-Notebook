@@ -235,6 +235,8 @@ export const zhTW = {
     knowledge: "知識",
   },
   knowledge: { mounts: "已掛載的知識庫", scan: "掃描知識庫", status: "狀態", readOnly: "唯讀外部檔案", backlinks: "反向連結", outgoing: "傳出連結", properties: "屬性", tags: "標籤", unresolved: "未解析連結", loadError: "無法載入知識。", description: "讀取本機 Obsidian 與 Logseq 筆記，不會變更原始檔。", files: "知識庫檔案", mountsLoading: "正在載入已掛載的知識庫…", noMounts: "尚無可用的已掛載知識庫。", filesLoading: "正在載入檔案…", reader: "閱讀器", localGraph: "本機圖譜", selectNote: "選取筆記以探索", externalReadOnly: "您的知識庫保持在外部且為唯讀。", noteLoading: "正在載入筆記…", untitledNote: "未命名筆記", canonicalSource: "標準來源", noProperties: "沒有屬性。", noTags: "沒有標籤。", outline: "大綱", graphLoading: "正在載入圖譜…", graphLoadError: "無法載入圖譜。", noteLinks: "筆記連結", linksLoading: "正在載入連結…", linksLoadError: "無法載入連結。", filterFiles: "篩選檔案", noMatchingFiles: "沒有相符的檔案。", noGraphLinks: "尚無筆記連結可繪製。", noLinks: "尚無連結。", openTabs: "開啟的分頁", closeTab: "關閉 {{title}}", knowledgeWorkspace: "知識工作區", knowledgePane: "知識窗格", splitPaneRight: "向右分割窗格", splitPaneDown: "向下分割窗格", closePane: "關閉窗格", resizeHorizontalSplit: "調整水平分割大小", resizeVerticalSplit: "調整垂直分割大小", workspaceLoading: "正在載入已儲存的工作區…", workspaceLoadError: "無法載入已儲存的工作區。本機分頁仍可使用。", workspaceSaving: "正在儲存工作區…", workspaceSaveError: "無法儲存工作區。本機分頁仍保持開啟。",
+    overlay: { name: "Deeper Notebook 覆蓋層", writable: "可寫入的應用程式自有筆記", today: "今天", newUnique: "新增唯一筆記", uniqueTitle: "唯一筆記標題", create: "建立筆記", creating: "正在建立筆記…", empty: "尚無覆蓋層筆記", loadError: "無法載入覆蓋層筆記。", createError: "無法建立覆蓋層筆記。" },
+
     quickSwitcher: "快速切換",
     quickSwitcherDescription: "開啟已索引的知識庫筆記",
     alreadyOpen: "已開啟",

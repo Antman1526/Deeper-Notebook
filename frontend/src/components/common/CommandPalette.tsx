@@ -37,9 +37,11 @@ import {
 } from '@/lib/commands/command-registry'
 import {
   candidateToOpenTab,
+  overlayNotesToKnowledgeCandidates,
   rankKnowledgeCatalog,
   searchResultToOpenTab,
 } from '@/lib/commands/knowledge-command-catalog'
+import { useOverlayNotes } from '@/lib/hooks/use-overlay'
 import {
   acknowledgeCommandSurface,
   requestCommandSurface,
@@ -126,6 +128,11 @@ export function CommandPalette() {
     mounts.data || [],
     openTabs,
     open && invocationMode === 'global' && pageContext.context !== null,
+  )
+  const overlay = useOverlayNotes()
+  const allKnowledgeCandidates = useMemo(
+    () => [...catalog.candidates, ...overlayNotesToKnowledgeCandidates(overlay.data || [], openTabs)],
+    [catalog.candidates, openTabs, overlay.data],
   )
   const indexed = useKnowledgeIndexedSearch(
     query,
@@ -254,6 +261,8 @@ export function CommandPalette() {
         if (currentPane && tabId) current.closeTab(currentPane.id, tabId)
       },
       scanSelectedVault: page.context.scanSelectedVault ?? null,
+      openTodayOverlay: page.context.openTodayOverlay ?? null,
+      openUniqueOverlayDialog: page.context.openUniqueOverlayDialog ?? null,
       focusFileTree: page.context.fileTreeElement?.isConnected
         ? () => page.context?.fileTreeElement?.focus()
         : null,
@@ -291,9 +300,9 @@ export function CommandPalette() {
   const showSearchFirst = invocationMode === 'global' && query.trim() && !hasCommandMatch
   const exactCandidates = useMemo(
     () => invocationMode === 'global' && open && query.trim().length >= 2
-      ? rankKnowledgeCatalog(catalog.candidates, query, 8)
+      ? rankKnowledgeCatalog(allKnowledgeCandidates, query, 8)
       : [],
-    [catalog.candidates, invocationMode, open, query],
+    [allKnowledgeCandidates, invocationMode, open, query],
   )
   const indexedResults = useMemo(() => (
     invocationMode === 'global' && open && indexed.text.isCurrent

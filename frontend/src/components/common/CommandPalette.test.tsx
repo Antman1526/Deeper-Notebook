@@ -95,6 +95,8 @@ vi.mock('@/lib/hooks/use-translation', () => ({
       'knowledge.commands.focusFiles': 'Focus vault files',
       'knowledge.commands.focusPane': 'Focus active pane',
       'knowledge.commands.focusLinks': 'Focus note links',
+      'knowledge.overlay.today': 'Today',
+      'knowledge.overlay.newUnique': 'New unique note',
       'knowledge.commands.splitRight': 'Split pane right',
       'knowledge.commands.requiresActiveTab': 'Requires active tab',
       'knowledge.commands.requiresActivePane': 'Requires active pane',
@@ -117,6 +119,9 @@ vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
 vi.mock('@/lib/hooks/use-vault', () => ({
   useVaults: () => ({ data: [], isLoading: false, isError: false }),
 }))
+vi.mock('@/lib/hooks/use-overlay', () => ({
+  useOverlayNotes: () => ({ data: [], isLoading: false, isError: false }),
+}))
 
 import { CommandPalette } from './CommandPalette'
 
@@ -126,6 +131,8 @@ function renderPalette() {
 
 function registerKnowledgeContext(options: {
   scanSelectedVault?: () => Promise<void>
+  openTodayOverlay?: () => Promise<void>
+  openUniqueOverlayDialog?: () => void
 } = {}) {
   const activePane = document.createElement('section')
   const fileTree = document.createElement('aside')
@@ -137,6 +144,8 @@ function registerKnowledgeContext(options: {
     fileTreeElement: fileTree,
     linksElement: links,
     scanSelectedVault: options.scanSelectedVault ?? vi.fn(async () => undefined),
+    openTodayOverlay: options.openTodayOverlay ?? vi.fn(async () => undefined),
+    openUniqueOverlayDialog: options.openUniqueOverlayDialog ?? vi.fn(),
   })
   return { activePane, fileTree, links }
 }
@@ -210,10 +219,29 @@ describe('CommandPalette', () => {
 
     expect(await screen.findByText('Knowledge commands')).toBeVisible()
     expect(await screen.findByRole('option', { name: 'Source' })).toBeVisible()
+    expect(await screen.findByRole('option', { name: 'Today' })).toBeVisible()
+    expect(await screen.findByRole('option', { name: 'New unique note' })).toBeVisible()
     expect(screen.getByRole('option', { name: 'Split pane right' })).toBeVisible()
     expect(screen.queryByRole('option', { name: 'Sources' })).toBeNull()
     expect(screen.queryByRole('option', { name: 'New notebook' })).toBeNull()
     expect(screen.queryByRole('option', { name: 'Dark' })).toBeNull()
+    elements.activePane.remove()
+    elements.fileTree.remove()
+    elements.links.remove()
+  })
+
+  it('executes app-owned overlay actions from slash commands', async () => {
+    const openTodayOverlay = vi.fn(async () => undefined)
+    const openUniqueOverlayDialog = vi.fn()
+    const elements = registerKnowledgeContext({ openTodayOverlay, openUniqueOverlayDialog })
+    renderPalette()
+    act(() => requestCommandSurface('slash', '/'))
+    fireEvent.click(await screen.findByRole('option', { name: 'Today' }))
+    await waitFor(() => expect(openTodayOverlay).toHaveBeenCalledOnce())
+
+    act(() => requestCommandSurface('slash', '/'))
+    fireEvent.click(await screen.findByRole('option', { name: 'New unique note' }))
+    await waitFor(() => expect(openUniqueOverlayDialog).toHaveBeenCalledOnce())
     elements.activePane.remove()
     elements.fileTree.remove()
     elements.links.remove()
