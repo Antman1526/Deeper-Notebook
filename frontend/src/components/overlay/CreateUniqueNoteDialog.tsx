@@ -21,23 +21,24 @@ function newIdempotencyKey(): string {
 
 export function CreateUniqueNoteDialog({ open, onOpenChange, onOpen }: CreateUniqueNoteDialogProps) {
   const { t } = useTranslation()
-  const create = useCreateUniqueOverlayNote()
+  const { error, isPending, mutateAsync, reset } = useCreateUniqueOverlayNote()
   const requestKey = useRef<string | null>(null)
   const [title, setTitle] = useState('')
   const [createError, setCreateError] = useState(false)
 
   useEffect(() => {
     if (open && !requestKey.current) {
-      create.reset()
+      reset()
       requestKey.current = newIdempotencyKey()
+      return
     }
-    if (!open) {
-      create.reset()
+    if (!open && requestKey.current) {
+      reset()
       requestKey.current = null
       setTitle('')
       setCreateError(false)
     }
-  }, [create, open])
+  }, [open, reset])
 
   const createNote = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -45,7 +46,7 @@ export function CreateUniqueNoteDialog({ open, onOpenChange, onOpen }: CreateUni
     if (!trimmedTitle || !requestKey.current) return
     setCreateError(false)
     try {
-      const page = await create.mutateAsync({ title: trimmedTitle, idempotencyKey: requestKey.current })
+      const page = await mutateAsync({ title: trimmedTitle, idempotencyKey: requestKey.current })
       onOpen(tabFromOverlay(page))
       onOpenChange(false)
     } catch {
@@ -72,11 +73,11 @@ export function CreateUniqueNoteDialog({ open, onOpenChange, onOpen }: CreateUni
               autoFocus
             />
           </div>
-          <p aria-live="polite" className="sr-only">{create.isPending ? t('knowledge.overlay.creating') : ''}</p>
-          {(createError || create.error) && <p role="alert" className="text-sm text-destructive">{t('knowledge.overlay.createError')}</p>}
+          <p aria-live="polite" className="sr-only">{isPending ? t('knowledge.overlay.creating') : ''}</p>
+          {(createError || error) && <p role="alert" className="text-sm text-destructive">{t('knowledge.overlay.createError')}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-            <Button type="submit" disabled={!title.trim() || create.isPending}>{create.isPending ? t('knowledge.overlay.creating') : t('knowledge.overlay.create')}</Button>
+            <Button type="submit" disabled={!title.trim() || isPending}>{isPending ? t('knowledge.overlay.creating') : t('knowledge.overlay.create')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
