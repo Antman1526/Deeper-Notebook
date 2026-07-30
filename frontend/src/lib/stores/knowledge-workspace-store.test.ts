@@ -63,6 +63,15 @@ describe('knowledge workspace store', () => {
     expect(selectActiveKnowledgeTab(useKnowledgeWorkspaceStore.getState())).toMatchObject(plan)
   })
 
+  it('keeps overlay and external tabs distinct for identical note IDs', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    store.openTab({ ...plan, sourceAuthority: 'overlay' })
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
+      .toHaveLength(2)
+  })
+
   it('creates recursively nestable horizontal and vertical splits', () => {
     const store = useKnowledgeWorkspaceStore.getState()
     store.openTab(plan)
