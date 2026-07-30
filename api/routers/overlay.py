@@ -7,6 +7,8 @@ from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from loguru import logger
 from pydantic import AfterValidator
@@ -22,6 +24,8 @@ from api.schemas.overlay import (
 from deeper_notebook.overlay.repository import OverlayRepositoryError
 
 MAX_OVERLAY_JSON_BYTES = 10 * 1024 * 1024 + 64 * 1024
+# Bound database pagination work even for authenticated local clients.
+MAX_OVERLAY_OFFSET = 1_000_000
 
 _ERRORS = {
     "overlay_not_found": (404, "overlay_not_found"),
@@ -78,7 +82,13 @@ class _BoundedOverlayRoute(APIRoute):
                 request.scope,
                 request.receive,
             )
-            return await original_route_handler(bounded_request)
+            try:
+                return await original_route_handler(bounded_request)
+            except RequestValidationError:
+                return JSONResponse(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    content={"detail": {"code": "overlay_request_invalid"}},
+                )
 
         return bounded_route_handler
 
@@ -158,12 +168,10 @@ async def get_overlay(request: Request) -> OverlayRootResponse:
 async def list_overlay_notes(
     request: Request,
     limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=MAX_OVERLAY_OFFSET),
 ) -> list[OverlayNote]:
     try:
         return await _service(request).list_notes(limit, offset)
-    except HTTPException:
-        raise
     except Exception as exc:
         raise _map_exception(exc) from None
 
@@ -175,8 +183,6 @@ async def create_daily_overlay_note(
 ) -> OverlayPage:
     try:
         return await _service(request).create_daily(CreateDailyNote(date_key=date_key))
-    except HTTPException:
-        raise
     except Exception as exc:
         raise _map_exception(exc) from None
 
@@ -192,8 +198,6 @@ async def create_unique_overlay_note(
 ) -> OverlayPage:
     try:
         return await _service(request).create_unique(payload)
-    except HTTPException:
-        raise
     except Exception as exc:
         raise _map_exception(exc) from None
 
@@ -205,8 +209,6 @@ async def get_overlay_note(
 ) -> OverlayPage:
     try:
         return await _service(request).get_page(note_id)
-    except HTTPException:
-        raise
     except Exception as exc:
         raise _map_exception(exc) from None
 
@@ -219,10 +221,8 @@ async def update_overlay_note(
 ) -> OverlayPage:
     try:
         return await _service(request).update(note_id, payload)
-    except HTTPException:
-        raise
     except Exception as exc:
         raise _map_exception(exc) from None
 
 
-__all__ = ["MAX_OVERLAY_JSON_BYTES", "router"]
+__all__ = ["MAX_OVERLAY_JSON_BYTES", "MAX_OVERLAY_OFFSET", "router"]
