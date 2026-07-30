@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 KnowledgeViewMode = Literal["reading", "source", "live-preview", "graph"]
+KnowledgeSourceAuthority = Literal["external-vault", "overlay"]
 SplitDirection = Literal["horizontal", "vertical"]
 
 
@@ -22,6 +23,7 @@ class KnowledgeTabState(BaseModel):
     title: str = Field(min_length=1, max_length=512)
     relative_path: str = Field(min_length=1, max_length=4096)
     view_mode: KnowledgeViewMode
+    source_authority: KnowledgeSourceAuthority = "external-vault"
 
     @field_validator("relative_path")
     @classmethod
@@ -125,9 +127,7 @@ class KnowledgeWorkspaceDocument(BaseModel):
                     continue
                 total_tabs += len(tabs)
                 if total_tabs > 128:
-                    raise ValueError(
-                        "workspace cannot contain more than 128 tabs"
-                    )
+                    raise ValueError("workspace cannot contain more than 128 tabs")
 
         stack: list[tuple[object, int]] = [(value.get("layout"), 1)]
         while stack:

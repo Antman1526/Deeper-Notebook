@@ -11,6 +11,10 @@ export const knowledgeViewModeSchema = z.enum([
   'graph',
 ])
 export const splitDirectionSchema = z.enum(['horizontal', 'vertical'])
+export const knowledgeSourceAuthoritySchema = z.enum([
+  'external-vault',
+  'overlay',
+])
 
 export const canonicalVaultRelativePathSchema = z.string()
   .min(1)
@@ -40,6 +44,7 @@ export const openKnowledgeTabSchema = z.object({
   title: z.string().min(1).max(512),
   relativePath: canonicalVaultRelativePathSchema,
   viewMode: knowledgeViewModeSchema.optional(),
+  sourceAuthority: knowledgeSourceAuthoritySchema.optional(),
 }).strict()
 
 export const knowledgeTabWireSchema = z.object({
@@ -49,6 +54,7 @@ export const knowledgeTabWireSchema = z.object({
   title: z.string().min(1).max(512),
   relative_path: canonicalVaultRelativePathSchema,
   view_mode: knowledgeViewModeSchema,
+  source_authority: knowledgeSourceAuthoritySchema.default('external-vault'),
 }).strict()
 
 export const knowledgePaneWireSchema = z.object({
@@ -227,6 +233,7 @@ export const knowledgeWorkspaceWireSchema = knowledgeWorkspacePreflightSchema
 
 export type KnowledgeViewMode = z.infer<typeof knowledgeViewModeSchema>
 export type SplitDirection = z.infer<typeof splitDirectionSchema>
+export type KnowledgeSourceAuthority = z.infer<typeof knowledgeSourceAuthoritySchema>
 
 export interface KnowledgeTab {
   id: string
@@ -235,6 +242,7 @@ export interface KnowledgeTab {
   title: string
   relativePath: string
   viewMode: KnowledgeViewMode
+  sourceAuthority: KnowledgeSourceAuthority
 }
 
 export interface OpenKnowledgeTab {
@@ -243,6 +251,7 @@ export interface OpenKnowledgeTab {
   title: string
   relativePath: string
   viewMode?: KnowledgeViewMode
+  sourceAuthority?: KnowledgeSourceAuthority
 }
 
 export interface KnowledgePane {
@@ -401,12 +410,17 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
             title: tab.title,
             relativePath: tab.relative_path,
             viewMode: tab.view_mode,
+            sourceAuthority: tab.source_authority,
           })),
         },
       ]),
     ),
     layout: fromWireLayout(wire.layout),
   }
+}
+
+export function parseKnowledgeWorkspace(data: unknown): KnowledgeWorkspaceDocument {
+  return fromWire(data)
 }
 
 export function serializeKnowledgeWorkspace(document: KnowledgeWorkspaceDocument) {
@@ -429,6 +443,7 @@ export function serializeKnowledgeWorkspace(document: KnowledgeWorkspaceDocument
             title: tab.title,
             relative_path: tab.relativePath,
             view_mode: tab.viewMode,
+            source_authority: tab.sourceAuthority,
           })),
         },
       ]),
