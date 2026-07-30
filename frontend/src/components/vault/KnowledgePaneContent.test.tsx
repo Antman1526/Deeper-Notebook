@@ -13,12 +13,28 @@ const queries = vi.hoisted(() => ({
     isError: false,
     error: null as Error | null,
   },
+  overlayPage: {
+    data: undefined as import('@/lib/api/overlay').OverlayPage | undefined,
+    isLoading: false,
+    isError: false,
+    error: null as Error | null,
+    refetch: vi.fn(),
+  },
+  vaultPageArgs: vi.fn(),
+  vaultOutgoingArgs: vi.fn(),
   graph: vi.fn(),
+  overlayPageArgs: vi.fn(),
 }))
 
 vi.mock('@/lib/hooks/use-vault', () => ({
-  useVaultPage: () => queries.page,
-  useVaultOutgoing: () => ({ data: [], isLoading: false, isError: false }),
+  useVaultPage: (vaultId?: string, noteId?: string) => {
+    queries.vaultPageArgs(vaultId, noteId)
+    return queries.page
+  },
+  useVaultOutgoing: (vaultId?: string, noteId?: string) => {
+    queries.vaultOutgoingArgs(vaultId, noteId)
+    return { data: [], isLoading: false, isError: false }
+  },
   useVaultGraph: (vaultId?: string, noteId?: string, enabled?: boolean) => {
     queries.graph(vaultId, noteId, enabled)
     return {
@@ -27,6 +43,19 @@ vi.mock('@/lib/hooks/use-vault', () => ({
       isError: false,
     }
   },
+}))
+
+vi.mock('@/lib/hooks/use-overlay', () => ({
+  useOverlayPage: (noteId?: string) => {
+    queries.overlayPageArgs(noteId)
+    return queries.overlayPage
+  },
+}))
+
+vi.mock('@/components/overlay/OverlayDocumentView', () => ({
+  OverlayDocumentView: ({ mode }: { mode: string }) => (
+    <section aria-label={`Overlay document ${mode}`} />
+  ),
 }))
 
 vi.mock('./VaultLivePreview', () => ({
@@ -105,6 +134,32 @@ function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'gra
           relativePath: 'synthetic/stale.md',
           viewMode,
           sourceAuthority: 'external-vault',
+        }],
+      },
+    },
+    layout: { type: 'pane', paneId: 'pane-1' },
+  })
+}
+
+function replaceOverlayWorkspace(
+  viewMode: 'reading' | 'source' | 'live-preview' | 'graph' = 'source',
+) {
+  useKnowledgeWorkspaceStore.getState().replaceWorkspace({
+    version: 1,
+    activePaneId: 'pane-1',
+    nextId: 2,
+    panes: {
+      'pane-1': {
+        id: 'pane-1',
+        activeTabId: 'tab-1',
+        tabs: [{
+          id: 'tab-1',
+          vaultId: 'overlay_space:default',
+          noteId: 'overlay_note:research',
+          title: 'Research',
+          relativePath: 'Unique/research.md',
+          viewMode,
+          sourceAuthority: 'overlay',
         }],
       },
     },
@@ -196,6 +251,16 @@ describe('KnowledgePaneContent', () => {
       error: null,
     }
     queries.graph.mockClear()
+    queries.vaultPageArgs.mockClear()
+    queries.vaultOutgoingArgs.mockClear()
+    queries.overlayPageArgs.mockClear()
+    queries.overlayPage = {
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }
     replaceWorkspace()
   })
 
@@ -338,6 +403,70 @@ describe('KnowledgePaneContent', () => {
       'note:plan',
       true,
     )
+  })
+
+  it('routes external authority only to vault data paths', () => {
+    replaceWorkspace('source')
+    renderPane()
+
+    expect(queries.vaultPageArgs).toHaveBeenLastCalledWith(
+      'vault:one',
+      'note:plan',
+    )
+    expect(queries.vaultOutgoingArgs).toHaveBeenLastCalledWith(
+      'vault:one',
+      'note:plan',
+    )
+    expect(queries.overlayPageArgs).toHaveBeenLastCalledWith(undefined)
+    expect(screen.getByLabelText('Canonical Plan source')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Overlay document/)).not.toBeInTheDocument()
+  })
+
+  it('routes overlay authority only to overlay page data, including graph and links', () => {
+    replaceOverlayWorkspace('graph')
+    queries.overlayPage = {
+      data: {
+        overlay: {
+          id: 'overlay_note:research',
+          source_authority: 'overlay',
+          space_id: 'overlay_space:default',
+          projected_note_id: 'note:research',
+          stable_id: 'stable-research-note-1',
+          kind: 'unique',
+          date_key: null,
+          relative_path: 'Unique/research.md',
+          title: 'Research',
+          content_hash: 'b'.repeat(64),
+          revision: 2,
+          projection_state: 'current',
+          encoding: 'utf-8',
+          newline: 'lf',
+          created_at: '2026-07-29T12:00:00+00:00',
+          updated_at: '2026-07-29T12:00:00+00:00',
+        },
+        note: { id: 'note:research', title: 'Research', markdown: '# Research\n' },
+        blocks: [],
+        tasks: [],
+        outgoing_links: [],
+        backlinks: [],
+        graph: { nodes: [], edges: [] },
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }
+
+    renderPane()
+
+    expect(queries.overlayPageArgs).toHaveBeenLastCalledWith(
+      'overlay_note:research',
+    )
+    expect(queries.vaultPageArgs).toHaveBeenLastCalledWith(undefined, undefined)
+    expect(queries.vaultOutgoingArgs).toHaveBeenLastCalledWith(undefined, undefined)
+    expect(queries.graph).toHaveBeenLastCalledWith(undefined, undefined, false)
+    expect(screen.getByLabelText('Overlay document graph')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/source$/)).not.toBeInTheDocument()
   })
 
   it('shows Reading after editor failure without mutating the persisted mode', () => {
