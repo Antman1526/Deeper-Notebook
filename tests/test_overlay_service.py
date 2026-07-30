@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,7 +15,7 @@ from deeper_notebook.overlay.contracts import (
     OverlayPage,
     UpdateOverlayNote,
 )
-from deeper_notebook.overlay.paths import OverlayLayout
+from deeper_notebook.overlay.paths import OverlayLayout, overlay_frontmatter
 from deeper_notebook.overlay.repository import (
     OverlayConflictError,
     OverlayRepositoryError,
@@ -26,15 +28,17 @@ NOW = datetime(2026, 7, 29, 15, 42, tzinfo=timezone.utc)
 
 
 class MemoryRepository:
-    def __init__(self) -> None:
-        self.notes: dict[str, OverlayNote] = {}
-        self.pages: dict[str, OverlayPage] = {}
-        self.reservations: dict[tuple[str, str], OverlayReservation] = {}
-        self.receipts: dict[str, OverlayMutationReceipt] = {}
-        self.paths: dict[str, str] = {}
+    def __init__(self, durable: MemoryRepository | None = None) -> None:
+        self.notes = durable.notes if durable else {}
+        self.pages = durable.pages if durable else {}
+        self.reservations = durable.reservations if durable else {}
+        self.receipts = durable.receipts if durable else {}
+        self.paths = durable.paths if durable else {}
+        self.revisions = durable.revisions if durable else []
         self.commit_calls = 0
         self.failure_codes: list[str] = []
         self.fail_commit_once = False
+        self.fail_record_failure = False
         self.staged_hashes: dict[str, str] = {}
 
     async def reserve_create(
@@ -163,6 +167,50 @@ class MemoryRepository:
     ) -> None:
         self.staged_hashes[reservation.operation_id] = content_hash
 
+    async def prepare_revision(
+        self,
+        *,
+        reservation: OverlayReservation,
+        content_hash: str,
+    ) -> None:
+        receipt = self.receipts[reservation.operation_id]
+        if receipt.after_hash not in {None, content_hash}:
+            raise OverlayConflictError("overlay_hash_conflict")
+        self.receipts[reservation.operation_id] = receipt.model_copy(
+            update={"after_hash": content_hash}
+        )
+
+    async def reassign_unique_path(
+        self,
+        *,
+        reservation: OverlayReservation,
+        relative_path: str,
+    ) -> OverlayReservation:
+        note = self.notes[reservation.overlay_note_id]
+        self.paths.pop(note.relative_path)
+        reassigned = note.model_copy(
+            update={
+                "relative_path": relative_path,
+                "projection_state": "pending",
+            }
+        )
+        self.notes[note.id] = reassigned
+        self.paths[relative_path] = note.id
+        updated_reservation = replace(reservation, relative_path=relative_path)
+        self.reservations[("create-unique", reservation.idempotency_key)] = (
+            updated_reservation
+        )
+        receipt = self.receipts[reservation.operation_id]
+        self.receipts[reservation.operation_id] = receipt.model_copy(
+            update={
+                "after_hash": None,
+                "status": "started",
+                "error_code": None,
+                "completed_at": None,
+            }
+        )
+        return updated_reservation
+
     async def commit_revision(
         self,
         *,
@@ -172,7 +220,6 @@ class MemoryRepository:
         relative_snapshot: str | None,
         parsed,
     ) -> OverlayNote:
-        del byte_size, relative_snapshot
         self.commit_calls += 1
         self.stage_failure_hash(reservation, content_hash)
         if self.fail_commit_once:
@@ -216,6 +263,15 @@ class MemoryRepository:
                 "completed_at": NOW,
             }
         )
+        self.revisions.append(
+            {
+                "overlay_note_id": note.id,
+                "revision": revision,
+                "relative_snapshot": relative_snapshot,
+                "content_hash": content_hash,
+                "byte_size": byte_size,
+            }
+        )
         return note
 
     async def record_failure(
@@ -224,12 +280,12 @@ class MemoryRepository:
         reservation: OverlayReservation,
         error_code: str,
     ) -> None:
+        if self.fail_record_failure:
+            raise OverlayRepositoryError("overlay_repository_unavailable")
         self.failure_codes.append(error_code)
         prior = self.receipts[reservation.operation_id]
-        after_hash = self.staged_hashes.get(reservation.operation_id)
         self.receipts[reservation.operation_id] = prior.model_copy(
             update={
-                "after_hash": after_hash,
                 "status": "failed",
                 "error_code": error_code,
                 "completed_at": NOW,
@@ -242,17 +298,32 @@ class CountingStorage(OverlayStorage):
         super().__init__(layout)
         self.create_calls = 0
         self.replace_calls = 0
+        self.snapshot_calls = []
         self.fail_create = False
+        self.inject_create_collision_once = False
 
     def create(self, *args, **kwargs):
         self.create_calls += 1
         if self.fail_create:
             raise OverlayStorageError("overlay_storage_unavailable")
+        if self.inject_create_collision_once:
+            self.inject_create_collision_once = False
+            OverlayStorage.create(
+                self,
+                args[0],
+                "# Raced manual note\n",
+                operation_id="manual-race",
+            )
         return super().create(*args, **kwargs)
 
     def replace(self, *args, **kwargs):
         self.replace_calls += 1
         return super().replace(*args, **kwargs)
+
+    def snapshot(self, *args, **kwargs):
+        result = super().snapshot(*args, **kwargs)
+        self.snapshot_calls.append(result)
+        return result
 
 
 class Fixture:
@@ -306,6 +377,68 @@ async def test_unique_collisions_receive_deterministic_suffixes(fixture):
 
 
 @pytest.mark.asyncio
+async def test_manual_unique_collision_advances_without_adopting_orphan_bytes(fixture):
+    orphan = fixture.storage.create(
+        "Notes/20260729-1542 Research.md",
+        "# Manual note\n",
+        operation_id="manual",
+    )
+
+    page = await fixture.service().create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="one")
+    )
+
+    assert page.overlay.relative_path == "Notes/20260729-1542 Research-2.md"
+    assert fixture.storage.read(orphan.relative_path) == orphan
+    assert page.note["content"] != orphan.markdown
+
+
+@pytest.mark.asyncio
+async def test_racing_manual_unique_collision_reassigns_reserved_path(fixture):
+    fixture.storage.inject_create_collision_once = True
+
+    page = await fixture.service().create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="one")
+    )
+
+    assert page.overlay.relative_path == "Notes/20260729-1542 Research-2.md"
+    assert (
+        fixture.storage.read("Notes/20260729-1542 Research.md").markdown
+        == "# Raced manual note\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_daily_collision_with_different_reserved_identity_fails_closed(fixture):
+    foreign = OverlayNote(
+        id="overlay_note:foreign",
+        space_id="overlay_space:default",
+        projected_note_id="note:foreign",
+        stable_id="01JTESTOVERLAY000000FOREIGN",
+        kind="daily",
+        date_key="2026-07-29",
+        relative_path="Daily/2026-07-29.md",
+        title="2026-07-29",
+        content_hash="0" * 64,
+        revision=1,
+        projection_state="pending",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    foreign_bytes = fixture.storage.create(
+        foreign.relative_path,
+        overlay_frontmatter(foreign, "# Foreign daily\n"),
+        operation_id="foreign",
+    )
+
+    with pytest.raises(OverlayConflictError, match="overlay_identity_conflict"):
+        await fixture.service().create_daily(CreateDailyNote(date_key="2026-07-29"))
+
+    assert fixture.repository.commit_calls == 0
+    assert fixture.storage.read(foreign.relative_path) == foreign_bytes
+
+
+@pytest.mark.asyncio
 async def test_update_conflict_never_replaces_canonical_file(fixture):
     page = await fixture.service().create_unique(
         CreateUniqueNote(title="Research", idempotency_key="one")
@@ -325,6 +458,53 @@ async def test_update_conflict_never_replaces_canonical_file(fixture):
     stored = fixture.storage.read(page.overlay.relative_path)
     assert stored.content_hash == page.overlay.content_hash
     assert fixture.storage.replace_calls == 0
+
+
+def _assert_revision_snapshot(
+    fixture: Fixture,
+    revision: dict,
+) -> None:
+    relative_snapshot = revision["relative_snapshot"]
+    assert relative_snapshot.startswith("revisions/")
+    payload = (fixture.layout.state_root / relative_snapshot).read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == revision["content_hash"]
+    assert len(payload) == revision["byte_size"]
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_revisions_reference_exact_resulting_snapshots(fixture):
+    created = await fixture.service().create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="one")
+    )
+
+    assert len(fixture.repository.revisions) == 1
+    create_revision = fixture.repository.revisions[0]
+    assert create_revision["revision"] == 1
+    assert create_revision["content_hash"] == created.overlay.content_hash
+    _assert_revision_snapshot(fixture, create_revision)
+
+    updated = await fixture.service().update(
+        created.overlay.id,
+        UpdateOverlayNote(
+            title="Changed",
+            markdown="# Changed\n",
+            expected_revision=1,
+            idempotency_key="save",
+        ),
+    )
+
+    assert len(fixture.repository.revisions) == 2
+    update_revision = fixture.repository.revisions[1]
+    assert update_revision["revision"] == 2
+    assert update_revision["content_hash"] == updated.overlay.content_hash
+    _assert_revision_snapshot(fixture, update_revision)
+    assert len(fixture.storage.snapshot_calls) == 3
+    assert (
+        fixture.storage.snapshot_calls[-2].content_hash == created.overlay.content_hash
+    )
+    assert (
+        fixture.storage.snapshot_calls[-1].content_hash == updated.overlay.content_hash
+    )
 
 
 @pytest.mark.asyncio
@@ -372,7 +552,69 @@ async def test_storage_failure_leaves_no_successful_revision(fixture):
     assert fixture.repository.failure_codes == ["overlay_storage_unavailable"]
     receipt = next(iter(fixture.repository.receipts.values()))
     assert receipt.status == "failed"
-    assert receipt.after_hash is None
+    assert receipt.after_hash is not None
+
+
+@pytest.mark.asyncio
+async def test_started_create_recovers_in_fresh_instance_after_both_db_calls_fail(
+    fixture,
+):
+    fixture.repository.fail_commit_once = True
+    fixture.repository.fail_record_failure = True
+    request = CreateUniqueNote(title="Research", idempotency_key="one")
+
+    with pytest.raises(OverlayRepositoryError, match="overlay_projection_pending"):
+        await fixture.service().create_unique(request)
+
+    reservation = fixture.repository.reservations[("create-unique", "one")]
+    canonical = fixture.storage.read(reservation.relative_path)
+    started = fixture.repository.receipts[reservation.operation_id]
+    assert started.status == "started"
+    assert started.after_hash == canonical.content_hash
+
+    fresh_repository = MemoryRepository(fixture.repository)
+    fresh_service = OverlayService(
+        fresh_repository,
+        fixture.storage,
+        clock=fixture.clock,
+    )
+    recovered = await fresh_service.create_unique(request)
+
+    assert recovered.overlay.content_hash == canonical.content_hash
+    assert fixture.storage.create_calls == 2
+    assert fixture.storage.replace_calls == 0
+    assert len(fresh_repository.revisions) == 1
+    _assert_revision_snapshot(fixture, fresh_repository.revisions[0])
+
+
+@pytest.mark.asyncio
+async def test_started_receipt_hash_mismatch_fails_closed(fixture):
+    reservation = await fixture.repository.reserve_create(
+        operation="create-unique",
+        idempotency_key="one",
+        kind="unique",
+        date_key=None,
+        relative_path="Notes/20260729-1542 Research.md",
+        title="Research",
+    )
+    note = await fixture.repository.get_note(reservation.overlay_note_id)
+    canonical = fixture.storage.create(
+        reservation.relative_path,
+        overlay_frontmatter(note, "# Reserved note\n"),
+        operation_id=reservation.operation_id,
+    )
+    receipt = fixture.repository.receipts[reservation.operation_id]
+    fixture.repository.receipts[reservation.operation_id] = receipt.model_copy(
+        update={"after_hash": "b" * 64}
+    )
+
+    with pytest.raises(OverlayConflictError, match="overlay_hash_conflict"):
+        await fixture.service().create_unique(
+            CreateUniqueNote(title="Research", idempotency_key="one")
+        )
+
+    assert fixture.storage.read(reservation.relative_path) == canonical
+    assert fixture.repository.commit_calls == 0
 
 
 @pytest.mark.asyncio
@@ -408,6 +650,80 @@ async def test_db_failure_after_replace_is_retryable_without_second_write(fixtur
     assert reconciled.overlay.revision == 2
     assert reconciled.overlay.content_hash == replaced.content_hash
     assert fixture.storage.replace_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_started_update_recovers_in_fresh_instance_after_both_db_calls_fail(
+    fixture,
+):
+    page = await fixture.service().create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="one")
+    )
+    fixture.repository.fail_commit_once = True
+    fixture.repository.fail_record_failure = True
+    request = UpdateOverlayNote(
+        title="Changed",
+        markdown="# Changed\n",
+        expected_revision=1,
+        idempotency_key="save-started",
+    )
+
+    with pytest.raises(OverlayRepositoryError, match="overlay_projection_pending"):
+        await fixture.service().update(page.overlay.id, request)
+
+    reservation = fixture.repository.reservations[("update", "save-started")]
+    canonical = fixture.storage.read(page.overlay.relative_path)
+    started = fixture.repository.receipts[reservation.operation_id]
+    assert started.status == "started"
+    assert started.after_hash == canonical.content_hash
+
+    fresh_repository = MemoryRepository(fixture.repository)
+    recovered = await OverlayService(
+        fresh_repository,
+        fixture.storage,
+        clock=fixture.clock,
+    ).update(page.overlay.id, request)
+
+    assert recovered.overlay.revision == 2
+    assert recovered.overlay.content_hash == canonical.content_hash
+    assert fixture.storage.replace_calls == 1
+    assert len(fresh_repository.revisions) == 2
+    _assert_revision_snapshot(fixture, fresh_repository.revisions[-1])
+
+
+@pytest.mark.asyncio
+async def test_started_update_rejects_changed_request_for_same_idempotency_key(
+    fixture,
+):
+    page = await fixture.service().create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="one")
+    )
+    fixture.repository.fail_commit_once = True
+    fixture.repository.fail_record_failure = True
+    first_request = UpdateOverlayNote(
+        title="Changed",
+        markdown="# Changed\n",
+        expected_revision=1,
+        idempotency_key="save-started",
+    )
+    with pytest.raises(OverlayRepositoryError, match="overlay_projection_pending"):
+        await fixture.service().update(page.overlay.id, first_request)
+    canonical = fixture.storage.read(page.overlay.relative_path)
+
+    fresh_repository = MemoryRepository(fixture.repository)
+    changed_request = first_request.model_copy(
+        update={"title": "Different", "markdown": "# Different\n"}
+    )
+    with pytest.raises(OverlayConflictError, match="overlay_hash_conflict"):
+        await OverlayService(
+            fresh_repository,
+            fixture.storage,
+            clock=fixture.clock,
+        ).update(page.overlay.id, changed_request)
+
+    assert fixture.storage.read(page.overlay.relative_path) == canonical
+    assert fixture.storage.replace_calls == 1
+    assert len(fresh_repository.revisions) == 1
 
 
 @pytest.mark.asyncio
