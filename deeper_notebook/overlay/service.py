@@ -378,7 +378,7 @@ class OverlayService:
         except OverlayConflictError:
             replay = await self.repository.get_replay(reservation)
             if replay is not None:
-                return replay
+                return await self.get_page(reservation.overlay_note_id)
             await self._record_failure(
                 reservation,
                 "overlay_projection_pending",

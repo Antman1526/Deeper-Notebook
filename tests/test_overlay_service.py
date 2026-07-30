@@ -38,6 +38,7 @@ class MemoryRepository:
         self.commit_calls = 0
         self.failure_codes: list[str] = []
         self.fail_commit_once = False
+        self.conflict_after_commit_once = False
         self.fail_record_failure = False
         self.staged_hashes: dict[str, str] = {}
 
@@ -272,6 +273,9 @@ class MemoryRepository:
                 "byte_size": byte_size,
             }
         )
+        if self.conflict_after_commit_once:
+            self.conflict_after_commit_once = False
+            raise OverlayConflictError("overlay_revision_conflict")
         return note
 
     async def record_failure(
@@ -361,6 +365,19 @@ async def test_daily_creation_is_idempotent_across_service_instances(fixture):
     assert list(fixture.layout.daily_root.glob("*.md")) == [
         fixture.layout.daily_root / "2026-07-29.md"
     ]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_commit_replay_hydrates_editable_markdown(fixture):
+    fixture.repository.conflict_after_commit_once = True
+
+    page = await fixture.service().create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="one")
+    )
+
+    assert page.editable_markdown == "# Research\n"
+    assert page.note["content"].startswith("---\n")
+    assert fixture.repository.commit_calls == 1
 
 
 @pytest.mark.asyncio
