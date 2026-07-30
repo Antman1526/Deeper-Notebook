@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import os
+import stat
 import unicodedata
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+import deeper_notebook.overlay.storage as storage_module
 from deeper_notebook.overlay.paths import OverlayLayout
 from deeper_notebook.overlay.storage import (
     OverlayConflictError,
@@ -50,6 +53,58 @@ def test_create_never_replaces_existing_file(tmp_path: Path) -> None:
     assert storage.read("Notes/one.md").markdown == "first\n"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX no-replace primitive")
+def test_create_publish_race_preserves_substituted_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage(tmp_path)
+    target = storage.layout.unique_root / "raced.md"
+    original_publish = storage._posix_publish_no_replace
+    injected = False
+
+    def substitute_inside_publish(
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        destination_name: str,
+    ) -> None:
+        nonlocal injected
+        if destination_name == "raced.md":
+            injected = True
+            target.write_bytes(b"substitute\n")
+        original_publish(
+            source_descriptor,
+            source_name,
+            destination_descriptor,
+            destination_name,
+        )
+
+    monkeypatch.setattr(storage, "_posix_publish_no_replace", substitute_inside_publish)
+
+    with pytest.raises(OverlayConflictError, match="overlay_file_exists"):
+        storage.create("Notes/raced.md", "created\n", operation_id="raced")
+
+    assert injected
+    assert target.read_bytes() == b"substitute\n"
+    assert b"created\n" in {
+        path.read_bytes() for path in storage.layout.recovery_root.iterdir()
+    }
+
+
+def test_windows_storage_statically_uses_fail_closed_no_replace_protocol() -> None:
+    publish_source = inspect.getsource(
+        storage_module.OverlayStorage._windows_publish_no_replace
+    )
+    storage_source = inspect.getsource(storage_module.OverlayStorage)
+
+    assert storage_module._MOVEFILE_WRITE_THROUGH == 0x8
+    assert "MoveFileExW" in publish_source
+    assert "REPLACE_EXISTING" not in publish_source
+    assert "os.replace" not in storage_source
+    assert "unlink(" not in storage_source
+
+
 def test_replace_requires_current_hash_and_preserves_on_failure(
     tmp_path: Path,
 ) -> None:
@@ -86,6 +141,36 @@ def test_replace_snapshots_previous_bytes_before_atomic_replacement(
     snapshots = list(storage.layout.revisions_root.glob("*.md"))
     assert len(snapshots) == 1
     assert snapshots[0].read_bytes() == b"first\n"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX recovery permissions")
+def test_replace_retains_old_bytes_in_random_private_recovery_artifact(
+    tmp_path: Path,
+) -> None:
+    storage = _storage(tmp_path)
+    first = storage.create("Notes/one.md", "first\n", operation_id="caller-path")
+
+    storage.replace(
+        "Notes/one.md",
+        "second\n",
+        expected_hash=first.content_hash,
+        revision=2,
+        operation_id="caller-operation",
+    )
+
+    recovered = [
+        path
+        for path in storage.layout.recovery_root.iterdir()
+        if path.read_bytes() == b"first\n"
+    ]
+    assert len(recovered) == 1
+    artifact = recovered[0]
+    random_segment = artifact.name.removeprefix(".recovery-").removesuffix(".dat")
+    assert len(random_segment) == 32
+    assert all(character in "0123456789abcdef" for character in random_segment)
+    assert stat.S_IMODE(artifact.stat().st_mode) == 0o600
+    assert "one" not in artifact.name
+    assert "caller" not in artifact.name
 
 
 def test_public_snapshot_is_content_hash_bound_and_create_only(
@@ -146,15 +231,17 @@ def test_incoherent_layout_is_rejected_before_mutation(tmp_path: Path) -> None:
     assert not (tmp_path / "overlay").exists()
 
 
-def test_injected_replace_failure_keeps_original_and_removes_owned_temp(
+@pytest.mark.skipif(os.name != "posix", reason="POSIX atomic exchange primitive")
+def test_injected_replace_failure_keeps_original_and_retains_owned_temp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     storage = _storage(tmp_path)
     first = storage.create("Notes/one.md", "first\n", operation_id="one")
     monkeypatch.setattr(
-        "deeper_notebook.overlay.storage.os.replace",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("injected")),
+        storage,
+        "_posix_exchange",
+        lambda *_args: (_ for _ in ()).throw(OSError("injected")),
     )
 
     with pytest.raises(OSError, match="injected"):
@@ -168,6 +255,216 @@ def test_injected_replace_failure_keeps_original_and_removes_owned_temp(
 
     assert storage.read("Notes/one.md").markdown == "first\n"
     assert not list(storage.layout.unique_root.glob(".*.tmp"))
+    assert b"second\n" in {
+        path.read_bytes() for path in storage.layout.recovery_root.iterdir()
+    }
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX atomic rename primitives")
+@pytest.mark.parametrize("kind", ["create", "snapshot"])
+def test_create_and_snapshot_publish_only_after_private_temp_is_fsynced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    storage = _storage(tmp_path)
+    fsynced: set[tuple[int, int]] = set()
+    original_fsync = os.fsync
+    publish_calls = 0
+
+    def record_fsync(descriptor: int) -> None:
+        status = os.fstat(descriptor)
+        if stat.S_ISREG(status.st_mode):
+            fsynced.add((status.st_dev, status.st_ino))
+        original_fsync(descriptor)
+
+    def inspect_publish(
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        destination_name: str,
+    ) -> None:
+        nonlocal publish_calls
+        publish_calls += 1
+        with os.fdopen(
+            os.open(source_name, os.O_RDONLY, dir_fd=source_descriptor),
+            "rb",
+        ) as source:
+            source_status = os.fstat(source.fileno())
+            assert (source_status.st_dev, source_status.st_ino) in fsynced
+            assert source.read() == b"content\n"
+        with pytest.raises(FileNotFoundError):
+            os.stat(
+                destination_name,
+                dir_fd=destination_descriptor,
+                follow_symlinks=False,
+            )
+        original_publish(
+            source_descriptor,
+            source_name,
+            destination_descriptor,
+            destination_name,
+        )
+
+    monkeypatch.setattr(os, "fsync", record_fsync)
+    original_publish = getattr(
+        storage,
+        "_posix_publish_no_replace",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        storage,
+        "_posix_publish_no_replace",
+        inspect_publish,
+        raising=False,
+    )
+
+    if kind == "create":
+        storage.create("Notes/atomic.md", "content\n", operation_id="atomic")
+        final = storage.layout.unique_root / "atomic.md"
+    else:
+        stored = storage.create("Notes/source.md", "content\n", operation_id="source")
+        publish_calls = 0
+        snapshot = storage.snapshot("overlay_note:source", 1, stored)
+        final = storage.layout.state_root / snapshot.relative_snapshot
+
+    assert publish_calls == 1
+    assert final.read_bytes() == b"content\n"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX atomic exchange primitive")
+def test_replace_swap_race_restores_and_preserves_substituted_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage(tmp_path)
+    first = storage.create("Notes/one.md", "first\n", operation_id="one")
+    target = storage.layout.unique_root / "one.md"
+    attacker_preserved = tmp_path / "attacker-preserved.md"
+    exchange_calls = 0
+
+    original_exchange = getattr(storage, "_posix_exchange", lambda *_args: None)
+
+    def substitute_inside_exchange(
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        destination_name: str,
+    ) -> None:
+        nonlocal exchange_calls
+        exchange_calls += 1
+        if exchange_calls == 1:
+            target.rename(attacker_preserved)
+            target.write_bytes(b"substitute\n")
+        original_exchange(
+            source_descriptor,
+            source_name,
+            destination_descriptor,
+            destination_name,
+        )
+
+    monkeypatch.setattr(
+        storage,
+        "_posix_exchange",
+        substitute_inside_exchange,
+        raising=False,
+    )
+
+    with pytest.raises(OverlayStorageError, match="overlay_file_changed"):
+        storage.replace(
+            "Notes/one.md",
+            "second\n",
+            expected_hash=first.content_hash,
+            revision=2,
+            operation_id="two",
+        )
+
+    assert exchange_calls == 2
+    assert target.read_bytes() == b"substitute\n"
+    assert attacker_preserved.read_bytes() == b"first\n"
+    assert b"second\n" in {
+        path.read_bytes() for path in storage.layout.recovery_root.iterdir()
+    }
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX recovery primitive")
+def test_cleanup_primitive_quarantines_a_substitution_instead_of_unlinking_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage(tmp_path)
+    retained_written = tmp_path / "retained-written.md"
+    cleanup_calls = 0
+    original_publish = storage._posix_publish_no_replace
+
+    def fail_publish(
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        destination_name: str,
+    ) -> None:
+        if destination_name == "one.md":
+            raise OSError("injected publish failure")
+        original_publish(
+            source_descriptor,
+            source_name,
+            destination_descriptor,
+            destination_name,
+        )
+
+    original_retain = getattr(storage, "_retain_posix_artifact", lambda *_args: None)
+
+    def substitute_inside_cleanup(
+        source_descriptor: int,
+        source_name: str,
+        recovery_descriptor: int,
+    ) -> str | None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        os.rename(
+            source_name,
+            retained_written,
+            src_dir_fd=source_descriptor,
+        )
+        descriptor = os.open(
+            source_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+            dir_fd=source_descriptor,
+        )
+        try:
+            os.write(descriptor, b"substitute\n")
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        return original_retain(
+            source_descriptor,
+            source_name,
+            recovery_descriptor,
+        )
+
+    monkeypatch.setattr(
+        storage,
+        "_posix_publish_no_replace",
+        fail_publish,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        storage,
+        "_retain_posix_artifact",
+        substitute_inside_cleanup,
+        raising=False,
+    )
+
+    with pytest.raises(OSError, match="injected publish failure"):
+        storage.create("Notes/one.md", "written\n", operation_id="one")
+
+    assert cleanup_calls == 1
+    assert not (storage.layout.unique_root / "one.md").exists()
+    assert retained_written.read_bytes() == b"written\n"
+    assert b"substitute\n" in {
+        path.read_bytes() for path in storage.layout.recovery_root.iterdir()
+    }
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX hard-link semantics")
@@ -338,38 +635,35 @@ def test_replace_rejects_target_substitution_after_hash_check(
     assert target.read_bytes() == b"substitute\n"
 
 
-def test_cleanup_never_unlinks_a_substituted_temp_path(
+@pytest.mark.skipif(os.name != "posix", reason="POSIX atomic exchange primitive")
+def test_exchange_failure_never_unlinks_a_substituted_temp_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     storage = _storage(tmp_path)
     first = storage.create("Notes/one.md", "first\n", operation_id="one")
-    original_replace = os.replace
     substituted: Path | None = None
 
     def substitute_then_fail(
-        source: str,
-        destination: str,
-        *,
-        src_dir_fd: int,
-        dst_dir_fd: int,
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        _destination_name: str,
     ) -> None:
         nonlocal substituted
-        assert src_dir_fd == dst_dir_fd
+        assert source_descriptor == destination_descriptor
         stolen = storage.layout.unique_root / ".stolen.tmp"
-        original_replace(
-            source,
+        os.rename(
+            source_name,
             stolen.name,
-            src_dir_fd=src_dir_fd,
-            dst_dir_fd=dst_dir_fd,
+            src_dir_fd=source_descriptor,
+            dst_dir_fd=destination_descriptor,
         )
-        substituted = storage.layout.unique_root / source
+        substituted = storage.layout.unique_root / source_name
         substituted.write_bytes(b"substitute\n")
         raise OSError("injected substitution")
 
-    monkeypatch.setattr(
-        "deeper_notebook.overlay.storage.os.replace", substitute_then_fail
-    )
+    monkeypatch.setattr(storage, "_posix_exchange", substitute_then_fail)
 
     with pytest.raises(OSError, match="injected substitution"):
         storage.replace(
@@ -381,5 +675,9 @@ def test_cleanup_never_unlinks_a_substituted_temp_path(
         )
 
     assert substituted is not None
-    assert substituted.read_bytes() == b"substitute\n"
+    assert not substituted.exists()
+    assert b"substitute\n" in {
+        path.read_bytes() for path in storage.layout.recovery_root.iterdir()
+    }
+    assert (storage.layout.unique_root / ".stolen.tmp").read_bytes() == b"second\n"
     assert storage.read("Notes/one.md") == first
