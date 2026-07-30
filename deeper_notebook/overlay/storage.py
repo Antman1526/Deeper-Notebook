@@ -210,7 +210,6 @@ class OverlayStorage:
                         parent.descriptor,
                         payload,
                     )
-                    exchanged = False
                     try:
                         self._posix_exchange(
                             parent.descriptor,
@@ -218,7 +217,14 @@ class OverlayStorage:
                             parent.descriptor,
                             parts[-1],
                         )
-                        exchanged = True
+                    except BaseException:
+                        self._retain_posix_artifact(
+                            parent.descriptor,
+                            temporary_name,
+                            opened.recovery.descriptor,
+                        )
+                        raise
+                    try:
                         displaced = self._named_identity(
                             parent.descriptor,
                             temporary_name,
@@ -233,53 +239,44 @@ class OverlayStorage:
                             displaced != current_identity
                             or published != temporary_identity
                         ):
-                            self._posix_exchange(
-                                parent.descriptor,
-                                temporary_name,
-                                parent.descriptor,
-                                parts[-1],
-                            )
-                            exchanged = False
-                            restored = self._named_identity(
-                                parent.descriptor,
-                                parts[-1],
-                                changed_code="overlay_recovery_required",
-                            )
-                            restored_temp = self._named_identity(
-                                parent.descriptor,
-                                temporary_name,
-                                changed_code="overlay_recovery_required",
-                            )
-                            self._retain_posix_artifact(
-                                parent.descriptor,
-                                temporary_name,
-                                opened.recovery.descriptor,
-                            )
-                            if restored != displaced or restored_temp != published:
-                                raise OverlayStorageError("overlay_recovery_required")
                             raise OverlayStorageError("overlay_file_changed")
-                        self._retain_posix_artifact(
+                    except BaseException as verification_error:
+                        self._recover_posix_exchange(
                             parent.descriptor,
                             temporary_name,
+                            parts[-1],
+                            current_identity,
                             opened.recovery.descriptor,
                         )
-                        self._fsync_directory(parent.descriptor)
-                        self._fsync_directory(opened.recovery.descriptor)
-                    except BaseException:
-                        if not exchanged:
-                            self._retain_posix_artifact(
-                                parent.descriptor,
-                                temporary_name,
-                                opened.recovery.descriptor,
-                            )
-                        raise
-                    result, result_identity = self._read_named_with_identity(
+                        raise OverlayStorageError("overlay_file_changed") from (
+                            verification_error
+                        )
+                    try:
+                        result, result_identity = self._read_named_with_identity(
+                            parent.descriptor,
+                            parts[-1],
+                            relative_path,
+                        )
+                        if result_identity != temporary_identity:
+                            raise OverlayStorageError("overlay_file_changed")
+                    except BaseException as verification_error:
+                        self._recover_posix_exchange(
+                            parent.descriptor,
+                            temporary_name,
+                            parts[-1],
+                            current_identity,
+                            opened.recovery.descriptor,
+                        )
+                        raise OverlayStorageError("overlay_file_changed") from (
+                            verification_error
+                        )
+                    self._retain_posix_artifact(
                         parent.descriptor,
-                        parts[-1],
-                        relative_path,
+                        temporary_name,
+                        opened.recovery.descriptor,
                     )
-                    if result_identity != temporary_identity:
-                        raise OverlayStorageError("overlay_file_changed")
+                    self._fsync_directory(parent.descriptor)
+                    self._fsync_directory(opened.recovery.descriptor)
                     return result
 
     def snapshot(
@@ -867,20 +864,28 @@ class OverlayStorage:
             )
             raise
 
-        self._verify_named_identity(
-            parent_descriptor,
-            name,
-            temporary_identity,
-            changed_code="overlay_file_changed",
-        )
-        self._fsync_directory(parent_descriptor)
-        result, result_identity = self._read_named_with_identity(
-            parent_descriptor,
-            name,
-            relative_path,
-        )
-        if result_identity != temporary_identity:
-            raise OverlayStorageError("overlay_file_changed")
+        try:
+            self._verify_named_identity(
+                parent_descriptor,
+                name,
+                temporary_identity,
+                changed_code="overlay_file_changed",
+            )
+            self._fsync_directory(parent_descriptor)
+            result, result_identity = self._read_named_with_identity(
+                parent_descriptor,
+                name,
+                relative_path,
+            )
+            if result_identity != temporary_identity:
+                raise OverlayStorageError("overlay_file_changed")
+        except BaseException as verification_error:
+            self._evacuate_posix_entry(
+                parent_descriptor,
+                name,
+                recovery_descriptor,
+            )
+            raise OverlayStorageError("overlay_file_changed") from verification_error
         return result
 
     @staticmethod
@@ -1055,7 +1060,7 @@ class OverlayStorage:
             exchange=True,
         )
 
-    def _retain_posix_artifact(
+    def _move_posix_artifact(
         self,
         source_descriptor: int,
         source_name: str,
@@ -1074,10 +1079,8 @@ class OverlayStorage:
                 return None
             except FileExistsError:
                 continue
-            except OverlayStorageError:
-                # Fail closed by leaving the source at its existing hidden,
-                # app-owned staging name.
-                return None
+            except OverlayStorageError as error:
+                raise OverlayStorageError("overlay_recovery_required") from error
             try:
                 descriptor = os.open(
                     recovery_name,
@@ -1096,7 +1099,101 @@ class OverlayStorage:
             except OSError:
                 pass
             return recovery_name
-        return None
+        raise OverlayStorageError("overlay_recovery_required")
+
+    def _retain_posix_artifact(
+        self,
+        source_descriptor: int,
+        source_name: str,
+        recovery_descriptor: int,
+    ) -> str | None:
+        try:
+            return self._move_posix_artifact(
+                source_descriptor,
+                source_name,
+                recovery_descriptor,
+            )
+        except OverlayStorageError:
+            # Non-destructive cleanup may leave the random hidden staging name
+            # in place. Mandatory canonical evacuation uses the strict helper.
+            return None
+
+    def _evacuate_posix_entry(
+        self,
+        source_descriptor: int,
+        source_name: str,
+        recovery_descriptor: int,
+    ) -> tuple[str, ...]:
+        recovered: list[str] = []
+        for _ in range(128):
+            recovery_name = self._move_posix_artifact(
+                source_descriptor,
+                source_name,
+                recovery_descriptor,
+            )
+            if recovery_name is None:
+                self._fsync_directory(source_descriptor)
+                self._fsync_directory(recovery_descriptor)
+                return tuple(recovered)
+            recovered.append(recovery_name)
+        raise OverlayStorageError("overlay_recovery_required")
+
+    def _recover_posix_exchange(
+        self,
+        parent_descriptor: int,
+        temporary_name: str,
+        destination_name: str,
+        prior_identity: tuple[int, int],
+        recovery_descriptor: int,
+    ) -> bool:
+        try:
+            self._posix_exchange(
+                parent_descriptor,
+                temporary_name,
+                parent_descriptor,
+                destination_name,
+            )
+        except BaseException as rollback_error:
+            recovery_error: BaseException | None = None
+            for name in (temporary_name, destination_name):
+                try:
+                    self._evacuate_posix_entry(
+                        parent_descriptor,
+                        name,
+                        recovery_descriptor,
+                    )
+                except BaseException as error:
+                    recovery_error = error
+            raise OverlayStorageError("overlay_recovery_required") from (
+                recovery_error or rollback_error
+            )
+
+        try:
+            restored_identity = self._named_identity(
+                parent_descriptor,
+                destination_name,
+                changed_code="overlay_recovery_required",
+            )
+        except BaseException as restore_error:
+            self._evacuate_posix_entry(
+                parent_descriptor,
+                destination_name,
+                recovery_descriptor,
+            )
+            self._evacuate_posix_entry(
+                parent_descriptor,
+                temporary_name,
+                recovery_descriptor,
+            )
+            raise OverlayStorageError("overlay_recovery_required") from restore_error
+
+        self._evacuate_posix_entry(
+            parent_descriptor,
+            temporary_name,
+            recovery_descriptor,
+        )
+        self._fsync_directory(parent_descriptor)
+        return restored_identity == prior_identity
 
     @staticmethod
     def _fsync_directory(directory_descriptor: int) -> None:
@@ -1277,12 +1374,21 @@ class OverlayStorage:
         except BaseException:
             self._retain_windows_artifact(temporary)
             raise
-        if self._identity(owned.path.lstat()) != identity:
-            raise OverlayStorageError("overlay_file_changed")
-        self._windows_verify_directories(owned)
-        content, published_identity = self._windows_read_owned(owned, relative_path)
-        if published_identity != identity:
-            raise OverlayStorageError("overlay_file_changed")
+        try:
+            published_status = owned.path.lstat()
+            self._require_regular(published_status)
+            if self._identity(published_status) != identity:
+                raise OverlayStorageError("overlay_file_changed")
+            self._windows_verify_directories(owned)
+            content, published_identity = self._windows_read_owned(
+                owned,
+                relative_path,
+            )
+            if published_identity != identity:
+                raise OverlayStorageError("overlay_file_changed")
+        except BaseException as verification_error:
+            self._evacuate_windows_entry(owned.path)
+            raise OverlayStorageError("overlay_file_changed") from verification_error
         return content
 
     def _windows_replace(
@@ -1305,30 +1411,43 @@ class OverlayStorage:
         try:
             self._windows_verify_directories(owned)
             self._windows_publish_no_replace(destination, backup)
-            displaced_identity = self._identity(backup.lstat())
-            if displaced_identity != current_identity:
-                try:
-                    self._windows_publish_no_replace(backup, destination)
-                except OSError:
-                    pass
-                raise OverlayStorageError("overlay_file_changed")
-            try:
-                self._windows_publish_no_replace(temporary, destination)
-            except BaseException:
-                try:
-                    self._windows_publish_no_replace(backup, destination)
-                except OSError:
-                    pass
-                raise
-            if self._identity(destination.lstat()) != identity:
-                raise OverlayStorageError("overlay_temp_changed")
-            self._windows_verify_directories(owned)
         except BaseException:
             self._retain_windows_artifact(temporary)
             raise
-        content, published_identity = self._windows_read_owned(owned, relative_path)
-        if published_identity != identity:
-            raise OverlayStorageError("overlay_file_changed")
+
+        try:
+            displaced_status = backup.lstat()
+            self._require_regular(displaced_status)
+            if self._identity(displaced_status) != current_identity:
+                raise OverlayStorageError("overlay_file_changed")
+        except BaseException as verification_error:
+            self._retain_windows_artifact(temporary)
+            self._restore_windows_backup(backup, destination, current_identity)
+            raise OverlayStorageError("overlay_file_changed") from verification_error
+
+        try:
+            self._windows_publish_no_replace(temporary, destination)
+        except BaseException:
+            self._retain_windows_artifact(temporary)
+            self._restore_windows_backup(backup, destination, current_identity)
+            raise
+
+        try:
+            published_status = destination.lstat()
+            self._require_regular(published_status)
+            if self._identity(published_status) != identity:
+                raise OverlayStorageError("overlay_temp_changed")
+            self._windows_verify_directories(owned)
+            content, published_identity = self._windows_read_owned(
+                owned,
+                relative_path,
+            )
+            if published_identity != identity:
+                raise OverlayStorageError("overlay_file_changed")
+        except BaseException as verification_error:
+            self._evacuate_windows_entry(destination)
+            self._restore_windows_backup(backup, destination, current_identity)
+            raise OverlayStorageError("overlay_file_changed") from verification_error
         return content
 
     def _windows_snapshot(self, filename: str, payload: bytes) -> None:
@@ -1359,9 +1478,21 @@ class OverlayStorage:
         except BaseException:
             self._retain_windows_artifact(temporary)
             raise
-        if self._identity(path.lstat()) != identity:
-            raise OverlayStorageError("overlay_file_changed")
-        self._windows_verify_directories(owned)
+        try:
+            published_status = path.lstat()
+            self._require_regular(published_status)
+            if self._identity(published_status) != identity:
+                raise OverlayStorageError("overlay_file_changed")
+            self._windows_verify_directories(owned)
+            _content, published_identity = self._windows_read_owned(
+                owned,
+                f"revisions/{filename}",
+            )
+            if published_identity != identity:
+                raise OverlayStorageError("overlay_file_changed")
+        except BaseException as verification_error:
+            self._evacuate_windows_entry(path)
+            raise OverlayStorageError("overlay_file_changed") from verification_error
 
     def _write_windows_temp(
         self,
@@ -1412,20 +1543,56 @@ class OverlayStorage:
     def _windows_recovery_path(self) -> Path:
         return self.layout.recovery_root / (f".recovery-{os.urandom(16).hex()}.dat")
 
-    def _retain_windows_artifact(self, source: Path) -> Path | None:
-        if not source.exists():
+    def _move_windows_artifact(self, source: Path) -> Path | None:
+        try:
+            source.lstat()
+        except FileNotFoundError:
             return None
+        except OSError as error:
+            raise OverlayStorageError("overlay_recovery_required") from error
         for _ in range(128):
             recovery = self._windows_recovery_path()
             try:
                 self._windows_publish_no_replace(source, recovery)
             except FileExistsError:
                 continue
-            except OSError:
-                return None
+            except OSError as error:
+                raise OverlayStorageError("overlay_recovery_required") from error
             try:
                 os.chmod(recovery, _FILE_MODE)
             except OSError:
                 pass
             return recovery
-        return None
+        raise OverlayStorageError("overlay_recovery_required")
+
+    def _retain_windows_artifact(self, source: Path) -> Path | None:
+        try:
+            return self._move_windows_artifact(source)
+        except OverlayStorageError:
+            return None
+
+    def _evacuate_windows_entry(self, source: Path) -> tuple[Path, ...]:
+        recovered: list[Path] = []
+        for _ in range(128):
+            recovery = self._move_windows_artifact(source)
+            if recovery is None:
+                return tuple(recovered)
+            recovered.append(recovery)
+        raise OverlayStorageError("overlay_recovery_required")
+
+    def _restore_windows_backup(
+        self,
+        backup: Path,
+        destination: Path,
+        prior_identity: tuple[int, int],
+    ) -> None:
+        self._evacuate_windows_entry(destination)
+        try:
+            self._windows_publish_no_replace(backup, destination)
+            restored = destination.lstat()
+            self._require_regular(restored)
+            if self._identity(restored) != prior_identity:
+                raise OverlayStorageError("overlay_recovery_required")
+        except BaseException as restore_error:
+            self._evacuate_windows_entry(destination)
+            raise OverlayStorageError("overlay_recovery_required") from restore_error
