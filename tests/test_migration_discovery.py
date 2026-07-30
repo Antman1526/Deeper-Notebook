@@ -113,6 +113,17 @@ def test_default_migration_discovery_includes_overlay_36_and_down():
     assert "REMOVE TABLE IF EXISTS overlay_note" in downs[35].sql
 
 
+def test_default_migration_discovery_includes_overlay_index_repair_37_and_down():
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 37
+    assert "REMOVE INDEX IF EXISTS idx_overlay_daily" in ups[36].sql
+    assert downs[36] is not None
+    assert "repaired_index_restored: false" in downs[36].sql
+    assert ups[36].version == 37
+    assert downs[36].version == 37
+
+
 def test_discover_ignores_non_numeric_files(tmp_path):
     """README.md / *.txt in the migrations dir must not break discovery."""
     _write_migration_files(tmp_path, ns=[1, 2])

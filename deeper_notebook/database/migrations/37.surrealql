@@ -1,0 +1,4 @@
+-- Daily overlay identities are already deterministic and transactionally
+-- reserved. SurrealDB 2.1 indexes NONE values in UNIQUE composite indexes,
+-- so the former (space_id, date_key) index allowed only one unique note.
+REMOVE INDEX IF EXISTS idx_overlay_daily ON TABLE overlay_note;

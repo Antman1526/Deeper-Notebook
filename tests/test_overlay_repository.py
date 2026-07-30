@@ -268,6 +268,10 @@ def test_reservation_outputs_exclude_internal_schema_fields():
     assert "operation_id" in update_statement
     assert "ELSE { IF" not in create_statement
     assert "ELSE { IF" not in update_statement
+    assert (
+        "LET $winner_receipt = IF $existing_receipt != NONE { "
+        "$existing_receipt } ELSE { RETURN IF $winner != NONE" in create_statement
+    )
 
 
 def test_native_overlay_page_query_wraps_let_return_in_transaction():

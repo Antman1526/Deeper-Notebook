@@ -408,14 +408,18 @@ class OverlayRepository:
         LET $winner_receipt = IF $existing_receipt != NONE {
             $existing_receipt
         } ELSE {
-            (
-                SELECT __OVERLAY_RECEIPT_FIELDS__
-                FROM overlay_mutation_receipt
-                WHERE overlay_note_id = $winner.id
-                AND operation = 'create-daily'
-                ORDER BY started_at
-                LIMIT 1
-            )[0]
+            RETURN IF $winner != NONE {
+                (
+                    SELECT __OVERLAY_RECEIPT_FIELDS__
+                    FROM overlay_mutation_receipt
+                    WHERE overlay_note_id = $winner.id
+                    AND operation = 'create-daily'
+                    ORDER BY started_at
+                    LIMIT 1
+                )[0]
+            } ELSE {
+                NONE
+            }
         };
         LET $idempotency_conflict = (
             $existing_receipt != NONE
