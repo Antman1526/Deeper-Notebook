@@ -2,6 +2,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { OverlayPage } from '@/lib/api/overlay'
+import {
+  resetOverlayDraftStore,
+  useOverlayDraftStore,
+} from '@/lib/stores/overlay-draft-store'
 
 const overlayMutation = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
@@ -161,10 +165,11 @@ function pageAt(
       created_at: '2026-07-29T12:00:00+00:00',
       updated_at: '2026-07-29T12:00:00+00:00',
     },
+    editable_markdown: markdown,
     note: {
       id: 'note:research',
       title: 'Research',
-      markdown,
+      content: `---\ntitle: Research\ndeeper_notebook:\n  id: overlay_note:research\n---\n${markdown}`,
       properties: { status: 'active' },
       tags: ['research'],
     },
@@ -184,6 +189,7 @@ function editMarkdown(markdown: string) {
 
 describe('OverlayDocumentView', () => {
   beforeEach(() => {
+    resetOverlayDraftStore()
     overlayMutation.mutateAsync.mockReset()
     linkViews.markdown = []
     linkViews.livePreview = []
@@ -206,6 +212,8 @@ describe('OverlayDocumentView', () => {
       />,
     )
 
+    expect(screen.getByRole('textbox', { name: 'Research source' }))
+      .toHaveValue('# Research\n')
     editMarkdown('# Changed\n')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -223,6 +231,33 @@ describe('OverlayDocumentView', () => {
     expect(await screen.findByText('Revision 4')).toBeInTheDocument()
     expect(screen.getByText('Saved')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(useOverlayDraftStore.getState().drafts).toEqual({})
+  })
+
+  it('restores a dirty draft after its overlay tab unmounts and remounts', () => {
+    const first = render(
+      <OverlayDocumentView
+        viewId="pane-1:tab-7"
+        page={pageAt(3)}
+        mode="source"
+        onNavigate={vi.fn()}
+      />,
+    )
+    editMarkdown('# Draft survives tab switch\n')
+    first.unmount()
+
+    render(
+      <OverlayDocumentView
+        viewId="pane-1:tab-7"
+        page={pageAt(3)}
+        mode="source"
+        onNavigate={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('textbox', { name: 'Research source' }))
+      .toHaveValue('# Draft survives tab switch\n')
+    expect(screen.getByText('Unsaved draft')).toBeInTheDocument()
   })
 
   it('uses a new idempotency key for each explicit failed save attempt', async () => {

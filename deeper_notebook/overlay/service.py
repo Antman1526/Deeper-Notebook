@@ -34,6 +34,7 @@ from deeper_notebook.overlay.storage import (
     StoredOverlayBytes,
 )
 from deeper_notebook.vault.parsers import parse_document
+from deeper_notebook.vault.parsers.common import decode_source
 
 
 def _now() -> datetime:
@@ -52,6 +53,18 @@ def _encoded_markdown(markdown: str, maximum: int) -> bytes:
     if len(payload) > maximum:
         raise OverlayStorageError("overlay_file_too_large")
     return payload
+
+
+def _reject_reserved_body_frontmatter(markdown: str, maximum: int) -> None:
+    try:
+        decoded = decode_source(
+            markdown.encode("utf-8"),
+            max_markdown_bytes=maximum,
+        )
+    except Exception:
+        return
+    if "deeper_notebook" in decoded.properties:
+        raise OverlayStorageError("overlay_request_invalid")
 
 
 class OverlayService:
@@ -162,7 +175,7 @@ class OverlayService:
     ) -> OverlayPage:
         replay = await self.repository.get_replay(reservation)
         if replay is not None:
-            return replay
+            return await self.get_page(reservation.overlay_note_id)
         note = await self.repository.get_note(reservation.overlay_note_id)
         markdown = overlay_frontmatter(note, body)
         payload = _encoded_markdown(markdown, self.storage.max_markdown_bytes)
@@ -180,7 +193,7 @@ class OverlayService:
         except OverlayStorageConflictError:
             replay = await self.repository.get_replay(reservation)
             if replay is not None:
-                return replay
+                return await self.get_page(reservation.overlay_note_id)
             try:
                 stored = self.storage.read(reservation.relative_path)
             except OverlayStorageError as error:
@@ -218,7 +231,14 @@ class OverlayService:
             raise OverlayRepositoryError(error.code) from None
         if stored.content_hash != page.overlay.content_hash:
             raise OverlayRepositoryError("overlay_projection_pending")
-        return page
+        try:
+            decoded = decode_source(
+                stored.markdown.encode("utf-8"),
+                max_markdown_bytes=self.storage.max_markdown_bytes,
+            )
+        except Exception:
+            raise OverlayRepositoryError("overlay_projection_pending") from None
+        return page.model_copy(update={"editable_markdown": decoded.body_markdown})
 
     async def list_notes(self, limit: int, offset: int) -> list[OverlayNote]:
         return await self.repository.list_notes(limit, offset)
@@ -228,6 +248,10 @@ class OverlayService:
         note_id: str,
         request: UpdateOverlayNote,
     ) -> OverlayPage:
+        _reject_reserved_body_frontmatter(
+            request.markdown,
+            self.storage.max_markdown_bytes,
+        )
         reservation = await self.repository.reserve_update(
             note_id=note_id,
             expected_revision=request.expected_revision,
@@ -235,7 +259,7 @@ class OverlayService:
         )
         replay = await self.repository.get_replay(reservation)
         if replay is not None:
-            return replay
+            return await self.get_page(note_id)
 
         current = await self.repository.get_note(note_id)
         try:
@@ -366,7 +390,7 @@ class OverlayService:
                 "overlay_projection_pending",
             )
             raise OverlayRepositoryError("overlay_projection_pending") from None
-        return await self.repository.get_page(reservation.overlay_note_id)
+        return await self.get_page(reservation.overlay_note_id)
 
     def _validate_reserved_bytes(
         self,

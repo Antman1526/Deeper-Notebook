@@ -302,6 +302,7 @@ def _build_overlay_local_graph(
 
 class OverlayPage(_Strict):
     overlay: OverlayNote
+    editable_markdown: str = Field(default="", max_length=10 * 1024 * 1024)
     note: dict[str, Any]
     blocks: list[dict[str, Any]] = Field(default_factory=list)
     tasks: list[dict[str, Any]] = Field(default_factory=list)

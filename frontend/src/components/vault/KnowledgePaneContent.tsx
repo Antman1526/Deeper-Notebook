@@ -325,6 +325,7 @@ export function KnowledgePaneContent({
           </p>
         ) : isOverlay && overlayPage.data ? (
           <OverlayDocumentView
+            key={`${pane.id}:${activeTab.id}`}
             viewId={`${pane.id}:${activeTab.id}`}
             mode={visibleMode}
             page={overlayPage.data}

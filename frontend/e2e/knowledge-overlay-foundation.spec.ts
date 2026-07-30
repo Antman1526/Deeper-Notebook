@@ -16,9 +16,10 @@ test.describe("knowledge overlay foundation", () => {
     await expect(
       page.getByText("Writable app-owned note").last(),
     ).toBeVisible();
-    await page
-      .getByRole("textbox", { name: /source/i })
-      .fill("# Today\n\nDraft");
+    const todaySource = page.getByRole("textbox", { name: /source/i });
+    await expect(todaySource).toHaveText(/^# \d{4}-\d{2}-\d{2}$/);
+    await expect(todaySource).not.toContainText("deeper_notebook:");
+    await todaySource.fill("# Today\n\nDraft");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Revision 2")).toBeVisible();
 
@@ -78,6 +79,14 @@ test.describe("knowledge overlay foundation", () => {
       name: "Collision Proof source",
     });
     await source.fill("# Collision Proof\n\nLocal draft survives");
+    await page
+      .locator('[role="tab"][title$="Collision Proof.md"]')
+      .click();
+    await page
+      .locator('[role="tab"][title$="Collision Proof-2.md"]')
+      .click();
+    await expect(source).toContainText("Local draft survives");
+
     fixture.injectNextSaveConflict();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(

@@ -38,6 +38,8 @@ _ERRORS = {
     "overlay_revision_conflict": (409, "overlay_revision_conflict"),
     "overlay_file_exists": (409, "overlay_file_exists"),
     "overlay_hash_conflict": (409, "overlay_revision_conflict"),
+    "overlay_file_changed": (409, "overlay_revision_conflict"),
+    "overlay_request_invalid": (422, "overlay_request_invalid"),
     "overlay_request_too_large": (413, "overlay_request_too_large"),
     "overlay_file_too_large": (413, "overlay_file_too_large"),
     "overlay_projection_pending": (503, "overlay_projection_pending"),

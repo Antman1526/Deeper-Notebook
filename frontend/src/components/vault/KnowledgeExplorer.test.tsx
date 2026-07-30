@@ -928,6 +928,7 @@ describe('KnowledgeExplorer overlay authority', () => {
         projection_state: 'current', encoding: 'utf-8', newline: 'lf',
         created_at: '2026-07-29T00:00:00.000Z', updated_at: '2026-07-29T00:00:00.000Z',
       },
+      editable_markdown: '# 2026-07-29\n',
       note: { id: 'projected:daily', title: '2026-07-29', content: '', properties: {}, tags: [] },
       blocks: [], tasks: [], outgoing_links: [], backlinks: [], graph: null,
     })
@@ -1001,6 +1002,7 @@ describe('KnowledgeExplorer overlay authority', () => {
     overlayQueries.pages = {
       [source.id]: {
         overlay: source,
+        editable_markdown: '# Source\n',
         note: {
           id: source.projected_note_id,
           title: source.title,
@@ -1016,6 +1018,7 @@ describe('KnowledgeExplorer overlay authority', () => {
       },
       [target.id]: {
         overlay: target,
+        editable_markdown: '# Target\n',
         note: {
           id: target.projected_note_id,
           title: target.title,
@@ -1110,6 +1113,7 @@ describe('KnowledgeExplorer overlay authority', () => {
     overlayQueries.pages = {
       [center.id]: {
         overlay: center,
+        editable_markdown: '# Center\n',
         note: {
           id: center.projected_note_id,
           title: center.title,
@@ -1137,6 +1141,7 @@ describe('KnowledgeExplorer overlay authority', () => {
       },
       [incoming.id]: {
         overlay: incoming,
+        editable_markdown: '# Incoming\n',
         note: {
           id: incoming.projected_note_id,
           title: incoming.title,

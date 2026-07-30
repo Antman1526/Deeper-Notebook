@@ -168,6 +168,7 @@ function overlayPageWithTarget(
       created_at: '2026-07-29T12:00:00+00:00',
       updated_at: '2026-07-29T12:00:00+00:00',
     },
+    editable_markdown: '# Research\n',
     note: {
       id: 'note:research',
       title: 'Research',
@@ -578,6 +579,7 @@ describe('KnowledgePaneContent', () => {
           created_at: '2026-07-29T12:00:00+00:00',
           updated_at: '2026-07-29T12:00:00+00:00',
         },
+        editable_markdown: '# Research\n',
         note: { id: 'note:research', title: 'Research', markdown: '# Research\n' },
         blocks: [],
         tasks: [],
@@ -624,6 +626,7 @@ describe('KnowledgePaneContent', () => {
         created_at: '2026-07-29T12:00:00+00:00',
         updated_at: '2026-07-29T12:00:00+00:00',
       },
+      editable_markdown: '# Research\n',
       note: { id: 'note:research', title: 'Research', markdown: '# Research\n' },
       blocks: [],
       tasks: [],

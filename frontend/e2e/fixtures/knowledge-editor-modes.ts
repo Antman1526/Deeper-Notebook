@@ -27,10 +27,11 @@ export interface StrictOverlayFixtureNote {
 
 interface StrictOverlayFixturePage {
   overlay: StrictOverlayFixtureNote;
+  editable_markdown: string;
   note: {
     id: string;
     title: string;
-    markdown: string;
+    content: string;
     properties: Record<string, unknown>;
     tags: string[];
   };
@@ -586,10 +587,11 @@ function strictOverlayPage(
 ): StrictOverlayFixturePage {
   return {
     overlay: note,
+    editable_markdown: markdown,
     note: {
       id: note.projected_note_id,
       title: note.title,
-      markdown,
+      content: `---\ntitle: ${note.title}\ndeeper_notebook:\n  id: ${note.id}\n---\n${markdown}`,
       properties: {},
       tags: [],
     },
@@ -809,7 +811,16 @@ export async function installStrictKnowledgeFixture(
           overlayPage.overlay.revision,
           overlayNotes.indexOf(overlayPage.overlay) + 1,
         );
-        overlayPage.note.markdown = `# ${overlayPage.overlay.title}\n\nServer revision\n`;
+        overlayPage.editable_markdown =
+          `# ${overlayPage.overlay.title}\n\nServer revision\n`;
+        overlayPage.note.content = [
+          "---",
+          `title: ${overlayPage.overlay.title}`,
+          "deeper_notebook:",
+          `  id: ${overlayPage.overlay.id}`,
+          "---",
+          overlayPage.editable_markdown,
+        ].join("\n");
         await fulfillFixtureJson(
           route,
           { detail: { code: "overlay_revision_conflict" } },
@@ -837,7 +848,8 @@ export async function installStrictKnowledgeFixture(
       );
       overlayPage.overlay.updated_at = "2026-07-30T17:01:00+00:00";
       overlayPage.note.title = overlayPage.overlay.title;
-      overlayPage.note.markdown = body.markdown;
+      overlayPage.editable_markdown = body.markdown;
+      overlayPage.note.content = `---\ntitle: ${overlayPage.overlay.title}\ndeeper_notebook:\n  id: ${overlayPage.overlay.id}\n---\n${body.markdown}`;
       await fulfillFixtureJson(route, overlayPage);
       return;
     }

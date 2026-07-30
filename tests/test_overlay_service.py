@@ -749,7 +749,30 @@ async def test_title_only_update_projects_title_from_exact_canonical_markdown(fi
     assert updated.overlay.title == "Renamed"
     assert updated.note["title"] == "Renamed"
     assert updated.note["content"] == canonical.markdown
+    assert updated.editable_markdown == original_body
     assert "title: Renamed\n" in canonical.markdown
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_canonical_markdown_as_an_editable_body(fixture):
+    page = await fixture.service().create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="one")
+    )
+    canonical = fixture.storage.read(page.overlay.relative_path)
+
+    with pytest.raises(OverlayStorageError, match="overlay_request_invalid"):
+        await fixture.service().update(
+            page.overlay.id,
+            UpdateOverlayNote(
+                title="Research",
+                markdown=canonical.markdown,
+                expected_revision=1,
+                idempotency_key="canonical-body",
+            ),
+        )
+
+    assert fixture.storage.read(page.overlay.relative_path) == canonical
+    assert ("update", "canonical-body") not in fixture.repository.reservations
 
 
 @pytest.mark.asyncio
