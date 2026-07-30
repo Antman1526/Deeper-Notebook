@@ -63,6 +63,7 @@ function remoteWorkspace(): KnowledgeWorkspaceDocument {
           id: 'tab-7',
           ...plan,
           viewMode: 'live-preview',
+          sourceAuthority: 'external-vault',
         }],
       },
     },
