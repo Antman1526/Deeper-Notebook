@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -43,6 +44,16 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
+def _encoded_markdown(markdown: str, maximum: int) -> bytes:
+    try:
+        payload = markdown.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+    except UnicodeEncodeError:
+        raise OverlayStorageError("overlay_invalid_markdown") from None
+    if len(payload) > maximum:
+        raise OverlayStorageError("overlay_file_too_large")
+    return payload
+
+
 class OverlayService:
     """Coordinate idempotent database reservations and canonical storage."""
 
@@ -75,30 +86,73 @@ class OverlayService:
     async def create_unique(self, request: CreateUniqueNote) -> OverlayPage:
         blocked_paths: set[str] = set()
         local_time = _aware(self.clock())
+        reservation: OverlayReservation | None = None
+        while True:
+            if reservation is None:
+                relative_path = self._next_available_unique_path(
+                    local_time,
+                    request.title,
+                    blocked_paths,
+                )
+                try:
+                    reservation = await self.repository.reserve_create(
+                        operation="create-unique",
+                        idempotency_key=request.idempotency_key,
+                        kind="unique",
+                        date_key=None,
+                        relative_path=relative_path,
+                        title=request.title,
+                    )
+                except OverlayConflictError as error:
+                    if str(error) != "overlay_path_conflict":
+                        raise
+                    blocked_paths.add(relative_path)
+                    continue
+            try:
+                return await self._create(
+                    reservation,
+                    body=f"# {request.title}\n",
+                )
+            except OverlayConflictError as error:
+                if str(error) != "overlay_disk_path_conflict":
+                    raise
+                blocked_paths.add(reservation.relative_path)
+                while True:
+                    next_path = self._next_available_unique_path(
+                        local_time,
+                        request.title,
+                        blocked_paths,
+                    )
+                    try:
+                        reservation = await self.repository.reassign_unique_path(
+                            reservation=reservation,
+                            relative_path=next_path,
+                        )
+                        break
+                    except OverlayConflictError as reassign_error:
+                        if str(reassign_error) != "overlay_path_conflict":
+                            raise
+                        blocked_paths.add(next_path)
+
+    def _next_available_unique_path(
+        self,
+        local_time: datetime,
+        title: str,
+        blocked_paths: set[str],
+    ) -> str:
         while True:
             relative_path = unique_relative_path(
                 local_time,
-                request.title,
+                title,
                 exists=blocked_paths.__contains__,
             )
             try:
-                reservation = await self.repository.reserve_create(
-                    operation="create-unique",
-                    idempotency_key=request.idempotency_key,
-                    kind="unique",
-                    date_key=None,
-                    relative_path=relative_path,
-                    title=request.title,
-                )
-                break
-            except OverlayConflictError as error:
-                if str(error) != "overlay_path_conflict":
-                    raise
-                blocked_paths.add(relative_path)
-        return await self._create(
-            reservation,
-            body=f"# {request.title}\n",
-        )
+                self.storage.read(relative_path)
+            except OverlayStorageError as error:
+                if error.code == "overlay_not_found":
+                    return relative_path
+                raise
+            blocked_paths.add(relative_path)
 
     async def _create(
         self,
@@ -111,6 +165,12 @@ class OverlayService:
             return replay
         note = await self.repository.get_note(reservation.overlay_note_id)
         markdown = overlay_frontmatter(note, body)
+        payload = _encoded_markdown(markdown, self.storage.max_markdown_bytes)
+        intended_hash = hashlib.sha256(payload).hexdigest()
+        await self.repository.prepare_revision(
+            reservation=reservation,
+            content_hash=intended_hash,
+        )
         try:
             stored = self.storage.create(
                 reservation.relative_path,
@@ -126,13 +186,28 @@ class OverlayService:
             except OverlayStorageError as error:
                 await self._record_failure(reservation, error.code)
                 raise
+            try:
+                self._validate_reserved_bytes(
+                    reservation,
+                    stored,
+                    expected_hash=intended_hash,
+                )
+            except OverlayConflictError as error:
+                await self._record_failure(reservation, str(error))
+                if reservation.kind == "unique":
+                    raise OverlayConflictError("overlay_disk_path_conflict") from None
+                raise
         except OverlayStorageError as error:
             await self._record_failure(reservation, error.code)
             raise
+        self._validate_reserved_bytes(
+            reservation,
+            stored,
+            expected_hash=intended_hash,
+        )
         return await self._parse_commit_or_mark_pending(
             reservation,
             stored,
-            relative_snapshot=None,
         )
 
     async def get_page(self, note_id: str) -> OverlayPage:
@@ -169,14 +244,34 @@ class OverlayService:
             await self._record_failure(reservation, error.code)
             raise
         receipt = await self.repository.get_receipt(reservation)
+        if receipt is None:
+            raise OverlayRepositoryError("overlay_receipt_unavailable")
+        candidate = current.model_copy(
+            update={
+                "title": request.title,
+                "updated_at": _aware(receipt.started_at),
+            }
+        )
+        markdown = overlay_frontmatter(candidate, request.markdown)
+        payload = _encoded_markdown(markdown, self.storage.max_markdown_bytes)
+        intended_hash = hashlib.sha256(payload).hexdigest()
         reconciling = bool(
-            receipt is not None
-            and receipt.status == "failed"
+            receipt.status in {"started", "failed"}
+            and receipt.after_hash is not None
             and receipt.after_hash == stored.content_hash
+            and receipt.after_hash == intended_hash
             and stored.content_hash != current.content_hash
         )
+        published_receipt_mismatch = bool(
+            receipt.status in {"started", "failed"}
+            and receipt.after_hash is not None
+            and receipt.after_hash == stored.content_hash
+            and receipt.after_hash != intended_hash
+        )
+        if published_receipt_mismatch:
+            await self._record_failure(reservation, "overlay_hash_conflict")
+            raise OverlayConflictError("overlay_hash_conflict")
         if stored.content_hash != current.content_hash and not reconciling:
-            self.repository.stage_failure_hash(reservation, stored.content_hash)
             await self._record_failure(
                 reservation,
                 "overlay_revision_conflict",
@@ -185,22 +280,18 @@ class OverlayService:
 
         updated_reservation = replace(reservation, title=request.title)
         if reconciling:
+            self._validate_reserved_bytes(
+                updated_reservation,
+                stored,
+                expected_hash=receipt.after_hash,
+            )
             published = stored
-            relative_snapshot = None
         else:
+            await self.repository.prepare_revision(
+                reservation=reservation,
+                content_hash=intended_hash,
+            )
             try:
-                snapshot = self.storage.snapshot(
-                    current.id,
-                    current.revision,
-                    stored,
-                )
-                candidate = current.model_copy(
-                    update={
-                        "title": request.title,
-                        "updated_at": _aware(self.clock()),
-                    }
-                )
-                markdown = overlay_frontmatter(candidate, request.markdown)
                 published = self.storage.replace(
                     current.relative_path,
                     markdown,
@@ -211,22 +302,37 @@ class OverlayService:
             except OverlayStorageError as error:
                 await self._record_failure(reservation, error.code)
                 raise
-            relative_snapshot = snapshot.relative_snapshot
 
         return await self._parse_commit_or_mark_pending(
             updated_reservation,
             published,
-            relative_snapshot=relative_snapshot,
         )
 
     async def _parse_commit_or_mark_pending(
         self,
         reservation: OverlayReservation,
         stored: StoredOverlayBytes,
-        *,
-        relative_snapshot: str | None,
     ) -> OverlayPage:
-        self.repository.stage_failure_hash(reservation, stored.content_hash)
+        target_revision = (
+            1
+            if reservation.expected_revision is None
+            else reservation.expected_revision + 1
+        )
+        try:
+            snapshot = self.storage.snapshot(
+                reservation.overlay_note_id,
+                target_revision,
+                stored,
+            )
+        except OverlayStorageError as error:
+            await self._record_failure(reservation, error.code)
+            raise
+        if (
+            snapshot.content_hash != stored.content_hash
+            or snapshot.byte_size != stored.byte_size
+        ):
+            await self._record_failure(reservation, "invalid_snapshot_content")
+            raise OverlayStorageError("invalid_snapshot_content")
         try:
             parsed = parse_document(
                 stored.relative_path,
@@ -240,9 +346,9 @@ class OverlayService:
         try:
             await self.repository.commit_revision(
                 reservation=reservation,
-                content_hash=stored.content_hash,
-                byte_size=stored.byte_size,
-                relative_snapshot=relative_snapshot,
+                content_hash=snapshot.content_hash,
+                byte_size=snapshot.byte_size,
+                relative_snapshot=snapshot.relative_snapshot,
                 parsed=parsed,
             )
         except OverlayConflictError:
@@ -261,6 +367,36 @@ class OverlayService:
             )
             raise OverlayRepositoryError("overlay_projection_pending") from None
         return await self.repository.get_page(reservation.overlay_note_id)
+
+    def _validate_reserved_bytes(
+        self,
+        reservation: OverlayReservation,
+        stored: StoredOverlayBytes,
+        *,
+        expected_hash: str,
+    ) -> None:
+        if stored.relative_path != reservation.relative_path:
+            raise OverlayConflictError("overlay_identity_conflict")
+        try:
+            parsed = parse_document(
+                stored.relative_path,
+                stored.markdown.encode("utf-8"),
+                format_mode="markdown",
+                max_markdown_bytes=self.storage.max_markdown_bytes,
+            )
+        except Exception:
+            raise OverlayConflictError("overlay_identity_conflict") from None
+        identity = parsed.properties.get("deeper_notebook")
+        expected_date = reservation.date_key if reservation.kind == "daily" else None
+        if (
+            not isinstance(identity, dict)
+            or identity.get("id") != reservation.overlay_note_id
+            or identity.get("kind") != reservation.kind
+            or identity.get("date_key") != expected_date
+        ):
+            raise OverlayConflictError("overlay_identity_conflict")
+        if stored.content_hash != expected_hash:
+            raise OverlayConflictError("overlay_hash_conflict")
 
     async def _record_failure(
         self,

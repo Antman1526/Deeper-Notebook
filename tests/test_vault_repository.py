@@ -20,6 +20,7 @@ from deeper_notebook.vault.contracts import (
     ParsedTask,
 )
 from deeper_notebook.vault.repository import (
+    OwnedProjectionUnitOfWork,
     ProjectionResult,
     VaultFile,
     VaultLink,
@@ -369,6 +370,43 @@ async def test_owned_projection_rejects_non_overlay_authority_before_query():
             overlay_space_id="overlay_space:default",
             overlay_note_id="overlay_note:owned",
             projected_note_id="note:owned",
+            parsed=_document(),
+            revision=1,
+        )
+
+    assert connection.calls == []
+
+
+def test_owned_projection_unit_of_work_is_typed_and_authority_scoped():
+    repository = VaultRepository(connection_factory=ConnectionSequence(QueryRecorder()))
+
+    unit = repository.owned_projection_unit_of_work(
+        source_authority="overlay",
+        overlay_space_id="overlay_space:default",
+        overlay_note_id="overlay_note:owned",
+        projected_note_id="note:owned",
+        parsed=_document(),
+        revision=1,
+    )
+
+    assert isinstance(unit, OwnedProjectionUnitOfWork)
+    assert unit.variables["projected_note"]["source_authority"] == "overlay"
+    assert "UPSERT $projected_note_id MERGE $projected_note" in (
+        unit.mutation_statement
+    )
+
+
+@pytest.mark.asyncio
+async def test_owned_projection_rejects_non_note_projected_identity_before_query():
+    connection = QueryRecorder()
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    with pytest.raises(ValueError, match="invalid_projected_note_id"):
+        await repository.project_owned_document(
+            source_authority="overlay",
+            overlay_space_id="overlay_space:default",
+            overlay_note_id="overlay_note:owned",
+            projected_note_id="vault_file:owned",
             parsed=_document(),
             revision=1,
         )

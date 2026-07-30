@@ -8,6 +8,7 @@ import re
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
@@ -51,6 +52,14 @@ from deeper_notebook.vault.watcher import VaultFileObservation, VaultWorkItem
 
 if TYPE_CHECKING:
     from deeper_notebook.overlay.contracts import OverlayPage
+
+
+@dataclass(frozen=True, slots=True)
+class OwnedProjectionUnitOfWork:
+    """Authority-scoped graph rows and mutations for one caller transaction."""
+
+    variables: dict[str, Any]
+    mutation_statement: str
 
 
 @contextmanager
@@ -800,11 +809,8 @@ class VaultRepository:
     ) -> OverlayPage:
         """Project app-owned Markdown without creating or mutating a vault mount."""
 
-        if source_authority != "overlay":
-            raise ValueError("invalid_source_authority")
-        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
-            raise ValueError("invalid_overlay_revision")
-        variables = self._owned_projection_variables(
+        unit = self.owned_projection_unit_of_work(
+            source_authority=source_authority,
             overlay_space_id=overlay_space_id,
             overlay_note_id=overlay_note_id,
             projected_note_id=projected_note_id,
@@ -814,8 +820,8 @@ class VaultRepository:
         async with self._connection_factory() as connection:
             rows = await self._query(
                 connection,
-                self._owned_projection_transaction(),
-                variables,
+                self._owned_projection_transaction(unit.mutation_statement),
+                unit.variables,
             )
         outcome = next(
             (
@@ -833,6 +839,60 @@ class VaultRepository:
             return OverlayPage.model_validate(outcome.get("page"))
         except ValidationError:
             raise RuntimeError("overlay_projection_invalid") from None
+
+    def owned_projection_unit_of_work(
+        self,
+        *,
+        source_authority: Literal["overlay"],
+        overlay_space_id: str,
+        overlay_note_id: str,
+        projected_note_id: str,
+        parsed: ParsedDocument,
+        revision: int,
+    ) -> OwnedProjectionUnitOfWork:
+        """Build the sole overlay graph unit for a caller-owned transaction."""
+        if source_authority != "overlay":
+            raise ValueError("invalid_source_authority")
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+            raise ValueError("invalid_overlay_revision")
+        self._owned_record_id(
+            overlay_space_id,
+            prefix="overlay_space:",
+            error_code="invalid_overlay_space_id",
+        )
+        self._owned_record_id(
+            overlay_note_id,
+            prefix="overlay_note:",
+            error_code="invalid_overlay_note_id",
+        )
+        self._owned_record_id(
+            projected_note_id,
+            prefix="note:",
+            error_code="invalid_projected_note_id",
+        )
+        return OwnedProjectionUnitOfWork(
+            variables=self._owned_projection_variables(
+                overlay_space_id=overlay_space_id,
+                overlay_note_id=overlay_note_id,
+                projected_note_id=projected_note_id,
+                parsed=parsed,
+                revision=revision,
+            ),
+            mutation_statement=self._owned_projection_mutations(),
+        )
+
+    @staticmethod
+    def _owned_record_id(value: str, *, prefix: str, error_code: str):
+        if (
+            not isinstance(value, str)
+            or not value.startswith(prefix)
+            or len(value) == len(prefix)
+        ):
+            raise ValueError(error_code)
+        try:
+            return _db_id(value)
+        except Exception:
+            raise ValueError(error_code) from None
 
     def _owned_projection_variables(
         self,
@@ -920,8 +980,10 @@ class VaultRepository:
         };
         """
 
-    @classmethod
-    def _owned_projection_transaction(cls) -> str:
+    @staticmethod
+    def _owned_projection_transaction(
+        mutation_statement: str,
+    ) -> str:
         return (
             """
             BEGIN TRANSACTION;
@@ -948,7 +1010,7 @@ class VaultRepository:
             );
             IF $valid_overlay {
             """
-            + cls._owned_projection_mutations()
+            + mutation_statement
             + """
             };
             LET $page = {
@@ -2389,6 +2451,7 @@ class VaultRepository:
 
 __all__ = [
     "FailureResult",
+    "OwnedProjectionUnitOfWork",
     "ProjectionResult",
     "TrustImportResult",
     "VaultFile",

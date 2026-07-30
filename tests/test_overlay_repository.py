@@ -17,6 +17,7 @@ from deeper_notebook.vault.contracts import (
     ParsedLink,
     ParsedTask,
 )
+from deeper_notebook.vault.repository import OwnedProjectionUnitOfWork
 
 NOW = datetime(2026, 7, 29, 20, 0, tzinfo=timezone.utc)
 
@@ -252,7 +253,7 @@ async def test_commit_writes_revision_projection_and_success_receipt_atomically(
         reservation=reservation,
         content_hash="a" * 64,
         byte_size=42,
-        relative_snapshot=None,
+        relative_snapshot="revisions/one-r1-aaaa.md",
         parsed=_parsed_document(),
     )
 
@@ -269,6 +270,10 @@ async def test_commit_writes_revision_projection_and_success_receipt_atomically(
     assert statement.endswith("COMMIT TRANSACTION;")
     assert variables["projected_note"]["source_authority"] == "overlay"
     assert variables["projected_note"]["canonical_external"] is False
+    assert variables["revision"]["relative_snapshot"] == "revisions/one-r1-aaaa.md"
+    assert variables["revision"]["content_hash"] == "a" * 64
+    assert variables["revision"]["byte_size"] == 42
+    assert "$receipt.after_hash = $content_hash" in statement
     assert all(block["data"]["vault_file_id"] is None for block in variables["blocks"])
     assert all(
         str(block["data"]["overlay_note_id"]) == "overlay_note:one"
@@ -278,6 +283,99 @@ async def test_commit_writes_revision_projection_and_success_receipt_atomically(
     assert "/Users/" not in serialized
     assert "vault_mount" not in serialized
     assert "vault_sync_receipt" not in statement
+
+
+@pytest.mark.asyncio
+async def test_prepare_revision_durably_binds_receipt_to_intended_hash():
+    connection = ScriptedConnection([{"outcome": "prepared"}])
+    repository = OverlayRepository(
+        connection_factory=ReusableFactory(connection),
+        clock=lambda: NOW,
+    )
+    reservation = OverlayReservation(
+        operation_id="op-one",
+        idempotency_key="daily:2026-07-29",
+        overlay_note_id="overlay_note:one",
+        projected_note_id="note:one",
+        relative_path="Daily/2026-07-29.md",
+        title="2026-07-29",
+        kind="daily",
+        date_key="2026-07-29",
+        expected_revision=None,
+    )
+
+    await repository.prepare_revision(
+        reservation=reservation,
+        content_hash="a" * 64,
+    )
+
+    statement, variables = connection.calls[0]
+    assert statement.startswith("BEGIN TRANSACTION;")
+    assert "after_hash = $content_hash" in statement
+    assert "$receipt.after_hash = NONE" in statement
+    assert statement.endswith("COMMIT TRANSACTION;")
+    assert variables["content_hash"] == "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_commit_uses_public_owned_projection_unit_of_work():
+    committed = _note_row(
+        content_hash="a" * 64,
+        projection_state="current",
+    )
+    connection = ScriptedConnection(
+        [{"outcome": "committed", "note": committed}],
+    )
+
+    class ProjectionSeam:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def owned_projection_unit_of_work(self, **kwargs):
+            self.calls.append(kwargs)
+            return OwnedProjectionUnitOfWork(
+                variables={
+                    "overlay_space_id": "overlay_space:default",
+                    "overlay_note_id": "overlay_note:one",
+                    "projected_note_id": "note:one",
+                    "revision": 1,
+                    "projected_note": {},
+                    "blocks": [],
+                    "links": [],
+                    "tasks": [],
+                },
+                mutation_statement="RETURN true;",
+            )
+
+    projection = ProjectionSeam()
+    repository = OverlayRepository(
+        connection_factory=ReusableFactory(connection),
+        clock=lambda: NOW,
+        projection_repository=projection,  # type: ignore[arg-type]
+    )
+    reservation = OverlayReservation(
+        operation_id="op-one",
+        idempotency_key="daily:2026-07-29",
+        overlay_note_id="overlay_note:one",
+        projected_note_id="note:one",
+        relative_path="Daily/2026-07-29.md",
+        title="2026-07-29",
+        kind="daily",
+        date_key="2026-07-29",
+        expected_revision=None,
+    )
+
+    await repository.commit_revision(
+        reservation=reservation,
+        content_hash="a" * 64,
+        byte_size=42,
+        relative_snapshot="revisions/one-r1-aaaa.md",
+        parsed=_parsed_document(),
+    )
+
+    assert len(projection.calls) == 1
+    assert projection.calls[0]["source_authority"] == "overlay"
+    assert "RETURN true;" in connection.calls[0][0]
 
 
 @pytest.mark.asyncio
@@ -328,6 +426,53 @@ async def test_unique_path_conflict_is_typed_and_creates_no_started_receipt():
 
 
 @pytest.mark.asyncio
+async def test_unpublished_unique_reservation_reassigns_path_transactionally():
+    note = _note_row(
+        kind="unique",
+        date_key=None,
+        relative_path="Notes/20260729-1542 Research-2.md",
+        title="Research",
+    )
+    receipt = _receipt_row(
+        operation="create-unique",
+    )
+    receipt["idempotency_key"] = "unique-two"
+    connection = ScriptedConnection(
+        [{"outcome": "reassigned", "note": note, "receipt": receipt}]
+    )
+    repository = OverlayRepository(
+        connection_factory=ReusableFactory(connection),
+        clock=lambda: NOW,
+    )
+    reservation = OverlayReservation(
+        operation_id="op-one",
+        idempotency_key="unique-two",
+        overlay_note_id="overlay_note:one",
+        projected_note_id="note:one",
+        relative_path="Notes/20260729-1542 Research.md",
+        title="Research",
+        kind="unique",
+        date_key=None,
+        expected_revision=None,
+    )
+
+    reassigned = await repository.reassign_unique_path(
+        reservation=reservation,
+        relative_path="Notes/20260729-1542 Research-2.md",
+    )
+
+    assert reassigned.relative_path.endswith("Research-2.md")
+    statement, variables = connection.calls[0]
+    assert statement.startswith("BEGIN TRANSACTION;")
+    assert "$note.content_hash = $zero_hash" in statement
+    assert "$revision = NONE" in statement
+    assert "projection_state = 'pending'" in statement
+    assert "after_hash = NONE" in statement
+    assert statement.endswith("COMMIT TRANSACTION;")
+    assert variables["relative_path"] == "Notes/20260729-1542 Research-2.md"
+
+
+@pytest.mark.asyncio
 async def test_failure_receipt_is_typed_and_never_contains_source_content_or_root():
     connection = ScriptedConnection([[]])
     repository = OverlayRepository(
@@ -355,5 +500,6 @@ async def test_failure_receipt_is_typed_and_never_contains_source_content_or_roo
     assert statement.startswith("BEGIN TRANSACTION;")
     assert set(variables).isdisjoint({"markdown", "absolute_path", "root_path"})
     assert variables["error_code"] == "overlay_storage_unavailable"
+    assert "after_hash =" not in statement
     assert "/Users/" not in repr(variables)
     assert statement.endswith("COMMIT TRANSACTION;")
