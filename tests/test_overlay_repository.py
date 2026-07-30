@@ -197,6 +197,87 @@ class ReusableFactory:
 
 
 @pytest.mark.asyncio
+async def test_strict_overlay_hydration_queries_project_only_public_fields():
+    space_row = {
+        "id": "overlay_space:default",
+        "slug": "default",
+        "display_name": "Deeper Notebook Overlay",
+        "root_version": 1,
+        "created_at": NOW,
+        "updated_at": NOW,
+    }
+    connection = ScriptedConnection(
+        [space_row],
+        [_note_row()],
+        [_note_row()],
+        [_note_row()],
+        [_receipt_row()],
+    )
+    repository = OverlayRepository(
+        connection_factory=ReusableFactory(connection),
+        clock=lambda: NOW,
+    )
+
+    await repository.ensure_default_space()
+    await repository.get_daily("2026-07-29")
+    await repository.get_note("overlay_note:one")
+    await repository.list_notes(10, 0)
+    await repository.get_receipt(
+        OverlayReservation(
+            operation_id="op-one",
+            idempotency_key="daily:2026-07-29",
+            overlay_note_id="overlay_note:one",
+            projected_note_id="note:one",
+            relative_path="Daily/2026-07-29.md",
+            title="2026-07-29",
+            kind="daily",
+            date_key="2026-07-29",
+            expected_revision=None,
+        )
+    )
+
+    statements = [statement for statement, _variables in connection.calls]
+    assert "RETURN AFTER" not in statements[0]
+    assert "SELECT id, slug, display_name, root_version" in statements[0]
+    for statement in statements[1:4]:
+        assert "SELECT *" not in statement
+        assert "schema_version" not in statement
+        assert "projected_note_id" in statement
+    assert "SELECT *" not in statements[4]
+    assert "schema_version" not in statements[4]
+    assert "operation_id" in statements[4]
+
+
+def test_reservation_outputs_exclude_internal_schema_fields():
+    create_statement = " ".join(
+        OverlayRepository._reserve_create_transaction().split()
+    )
+    update_statement = " ".join(
+        OverlayRepository._reserve_update_transaction().split()
+    )
+
+    assert "SELECT * FROM overlay_note" not in create_statement
+    assert "SELECT * FROM overlay_mutation_receipt" not in create_statement
+    assert "schema_version" not in create_statement
+    assert "projected_note_id" in create_statement
+    assert "operation_id" in create_statement
+    assert "SELECT * FROM $note_id" not in update_statement
+    assert "SELECT * FROM overlay_mutation_receipt" not in update_statement
+    assert "schema_version" not in update_statement
+    assert "projected_note_id" in update_statement
+    assert "operation_id" in update_statement
+    assert "ELSE { IF" not in create_statement
+    assert "ELSE { IF" not in update_statement
+
+
+def test_native_overlay_page_query_wraps_let_return_in_transaction():
+    statement = " ".join(OverlayRepository._page_query().split())
+
+    assert statement.startswith("BEGIN TRANSACTION; LET $overlay")
+    assert statement.endswith("COMMIT TRANSACTION;")
+
+
+@pytest.mark.asyncio
 async def test_overlay_page_query_preserves_both_identity_domains():
     link = _link_row()
     backlink = _link_row(
