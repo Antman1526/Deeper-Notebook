@@ -1,7 +1,7 @@
 'use client'
 
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react'
-import { X } from 'lucide-react'
+import { FilePenLine, ShieldCheck, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -120,6 +120,10 @@ export function KnowledgeTabStrip({
       {pane.tabs.map((tab, index) => {
         const isActive = tab.id === effectiveActiveTabId
         const closeLabel = t('knowledge.closeTab', { title: tab.title })
+        const isOverlay = tab.sourceAuthority === 'overlay'
+        const authorityLabel = isOverlay
+          ? t('knowledge.overlay.writable')
+          : t('knowledge.overlay.externalReadOnly')
 
         return (
           <div
@@ -137,6 +141,7 @@ export function KnowledgeTabStrip({
               id={getKnowledgeTabId(pane.id, tab.id)}
               type="button"
               role="tab"
+              aria-label={tab.title}
               aria-selected={isActive}
               aria-controls={panelId}
               tabIndex={isActive ? 0 : -1}
@@ -144,7 +149,7 @@ export function KnowledgeTabStrip({
               onClick={() => onActivateTab(pane.id, tab.id)}
               onKeyDown={(event) => moveSelection(event, index)}
               className={cn(
-                'relative min-w-0 flex-1 truncate px-3 py-2 text-left text-sm',
+                'relative flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm',
                 'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                 'after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-transparent',
                 isActive
@@ -152,7 +157,21 @@ export function KnowledgeTabStrip({
                   : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
               )}
             >
-              {tab.title}
+              <span className="min-w-0 flex-1 truncate">{tab.title}</span>
+              <span
+                className={cn(
+                  'dn-authority-badge',
+                  isOverlay
+                    ? 'dn-authority-badge--overlay'
+                    : 'dn-authority-badge--external',
+                )}
+                title={authorityLabel}
+              >
+                {isOverlay
+                  ? <FilePenLine aria-hidden="true" />
+                  : <ShieldCheck aria-hidden="true" />}
+                <span>{authorityLabel}</span>
+              </span>
             </button>
             <Tooltip>
               <TooltipTrigger asChild>
