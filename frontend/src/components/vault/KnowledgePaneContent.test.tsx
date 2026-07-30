@@ -104,6 +104,7 @@ function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'gra
           title: 'Stale Plan',
           relativePath: 'synthetic/stale.md',
           viewMode,
+          sourceAuthority: 'external-vault',
         }],
       },
     },
@@ -148,6 +149,7 @@ function replaceTwoPaneWorkspace() {
           title: 'Pane One',
           relativePath: 'pages/one.md',
           viewMode: 'source',
+          sourceAuthority: 'external-vault',
         }],
       },
       'pane-2': {
@@ -160,6 +162,7 @@ function replaceTwoPaneWorkspace() {
           title: 'Pane Two',
           relativePath: 'pages/two.md',
           viewMode: 'reading',
+          sourceAuthority: 'external-vault',
         }],
       },
     },

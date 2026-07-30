@@ -696,6 +696,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
             title: 'Persisted one',
             relativePath: 'archive/persisted-one.md',
             viewMode: 'reading',
+            sourceAuthority: 'external-vault',
           }],
         },
       },
