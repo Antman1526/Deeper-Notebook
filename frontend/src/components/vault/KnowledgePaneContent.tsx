@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type {
   KnowledgePane,
+  KnowledgeSourceAuthority,
   KnowledgeViewMode,
 } from '@/lib/api/knowledge-workspace'
 import {
@@ -37,10 +38,11 @@ import { VaultGraph } from './VaultGraph'
 export type KnowledgeNavigate = (
   vaultId: string,
   noteId: string,
-  relativePathHint?: string,
-  titleHint?: string,
-  paneId?: string,
-  targetText?: string,
+  relativePathHint: string | undefined,
+  titleHint: string | undefined,
+  paneId: string | undefined,
+  targetText: string | undefined,
+  sourceAuthority: KnowledgeSourceAuthority,
 ) => void
 
 interface KnowledgePaneContentProps {
@@ -169,6 +171,7 @@ export function KnowledgePaneContent({
       titleHint,
       pane.id,
       link?.target_text || targetNoteId,
+      activeTab.sourceAuthority,
     )
   }
 
@@ -191,6 +194,13 @@ export function KnowledgePaneContent({
         vaultPage.data.note.source_format || mount?.format_mode || 'markdown'
       } · ${t('knowledge.canonicalSource')}`
       : ''
+  const reloadOverlayPage = async () => {
+    const result = await overlayPage.refetch()
+    if (result.isError || !result.data) {
+      throw result.error ?? new Error('overlay_reload_failed')
+    }
+    return result.data
+  }
 
   return (
     <section
@@ -282,7 +292,7 @@ export function KnowledgePaneContent({
             mode={visibleMode}
             page={overlayPage.data}
             onNavigate={navigate}
-            onReload={async () => (await overlayPage.refetch()).data}
+            onReload={reloadOverlayPage}
           />
         ) : !isOverlay && vaultPage.data ? (
           visibleMode === 'graph' ? (

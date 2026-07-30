@@ -35,6 +35,8 @@ const overlayQueries = vi.hoisted(() => ({
     revision: number; projection_state: 'current'; encoding: 'utf-8'; newline: 'lf'; created_at: string; updated_at: string
   }>,
   today: vi.fn(),
+  page: vi.fn(),
+  pages: {} as Record<string, unknown>,
 }))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
@@ -214,6 +216,18 @@ vi.mock('@/lib/hooks/use-overlay', () => ({
   useOverlayNotes: () => ({ data: overlayQueries.notes, isLoading: false, isError: false }),
   useTodayOverlayNote: () => ({ mutateAsync: overlayQueries.today, isPending: false }),
   useCreateUniqueOverlayNote: () => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null }),
+  useUpdateOverlayNote: () => ({ mutateAsync: vi.fn() }),
+  useOverlayPage: (noteId?: string) => {
+    overlayQueries.page(noteId)
+    const data = noteId ? overlayQueries.pages[noteId] : undefined
+    return {
+      data,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn().mockResolvedValue({ data, isError: false, error: null }),
+    }
+  },
 }))
 
 vi.mock('@/lib/hooks/use-knowledge-workspace', () => ({
@@ -372,6 +386,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       state: 'ready-read-only', watch_enabled: true,
     }]
     overlayQueries.notes = []
+    overlayQueries.pages = {}
     resetKnowledgeCommandContextStore()
     resetCommandSurfaceStore()
     vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
@@ -819,6 +834,7 @@ describe('KnowledgeExplorer query states', () => {
       state: 'ready-read-only', watch_enabled: true,
     }]
     overlayQueries.notes = []
+    overlayQueries.pages = {}
     resetKnowledgeCommandContextStore()
     vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
       noteId === 'note:one'
@@ -875,6 +891,7 @@ describe('KnowledgeExplorer overlay authority', () => {
       state: 'ready-read-only', watch_enabled: true,
     }]
     overlayQueries.notes = []
+    overlayQueries.pages = {}
     overlayQueries.today.mockReset()
     vi.clearAllMocks()
     resetKnowledgeCommandContextStore()
@@ -928,5 +945,109 @@ describe('KnowledgeExplorer overlay authority', () => {
 
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs.at(-1))
       .toMatchObject({ sourceAuthority: 'overlay', vaultId: 'overlay_space:default' })
+  })
+
+  it('reuses overlay-authority link targets without enabling external vault paths', async () => {
+    const source = {
+      id: 'overlay_note:source',
+      source_authority: 'overlay' as const,
+      space_id: 'overlay_space:default',
+      projected_note_id: 'note:source',
+      stable_id: 'stable-overlay-source',
+      kind: 'unique' as const,
+      date_key: null,
+      relative_path: 'Unique/source.md',
+      title: 'Overlay Source',
+      content_hash: 'a'.repeat(64),
+      revision: 1,
+      projection_state: 'current' as const,
+      encoding: 'utf-8' as const,
+      newline: 'lf' as const,
+      created_at: '2026-07-29T00:00:00.000Z',
+      updated_at: '2026-07-29T00:00:00.000Z',
+    }
+    const target = {
+      ...source,
+      id: 'overlay_note:target',
+      projected_note_id: 'note:target',
+      stable_id: 'stable-overlay-target',
+      relative_path: 'Unique/target.md',
+      title: 'Overlay Target',
+      content_hash: 'b'.repeat(64),
+    }
+    const outgoing = {
+      ...resolvedLink,
+      source_note_id: source.id,
+      target_note_id: target.id,
+      target_note_title: target.title,
+      target_relative_path: target.relative_path,
+      target_text: 'Overlay mention',
+    }
+    overlayQueries.notes = [source, target]
+    overlayQueries.pages = {
+      [source.id]: {
+        overlay: source,
+        note: {
+          id: source.projected_note_id,
+          title: source.title,
+          markdown: '# Source\n',
+          properties: {},
+          tags: [],
+        },
+        blocks: [],
+        tasks: [],
+        outgoing_links: [outgoing],
+        backlinks: [],
+        graph: null,
+      },
+      [target.id]: {
+        overlay: target,
+        note: {
+          id: target.projected_note_id,
+          title: target.title,
+          markdown: '# Target\n',
+          properties: {},
+          tags: [],
+        },
+        blocks: [],
+        tasks: [],
+        outgoing_links: [],
+        backlinks: [],
+        graph: null,
+      },
+    }
+    render(<KnowledgeExplorer />)
+    fireEvent.change(screen.getByLabelText('knowledge.mounts'), {
+      target: { value: 'overlay:overlay_space:default' },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: target.title }))
+    fireEvent.click(screen.getByRole('button', { name: source.title }))
+
+    vaultQueries.page.mockClear()
+    vaultQueries.backlinks.mockClear()
+    vaultQueries.outgoing.mockClear()
+    const pane = screen.getByRole('region', {
+      name: 'knowledge.knowledgePane modes pane-1',
+    })
+    fireEvent.click(within(pane).getByRole('button', {
+      name: 'Navigate target Overlay mention',
+    }))
+
+    const workspacePane = useKnowledgeWorkspaceStore.getState().panes['pane-1']
+    expect(workspacePane.tabs).toHaveLength(2)
+    expect(workspacePane.tabs.find((tab) => tab.id === workspacePane.activeTabId))
+      .toMatchObject({
+        noteId: target.id,
+        sourceAuthority: 'overlay',
+      })
+    expect(vaultQueries.page.mock.calls.every(
+      ([vaultId, noteId]) => vaultId === undefined && noteId === undefined,
+    )).toBe(true)
+    expect(vaultQueries.backlinks.mock.calls.every(
+      ([vaultId, noteId]) => vaultId === undefined && noteId === undefined,
+    )).toBe(true)
+    expect(vaultQueries.outgoing.mock.calls.every(
+      ([vaultId, noteId]) => vaultId === undefined && noteId === undefined,
+    )).toBe(true)
   })
 })
