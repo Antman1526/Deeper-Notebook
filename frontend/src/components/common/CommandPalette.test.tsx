@@ -467,7 +467,7 @@ describe('CommandPalette', () => {
           status: 400,
           data: { detail: 'Vector search requires an embedding model' },
         },
-      } as Error,
+      } as unknown as Error,
     }
     renderPalette()
     fireEvent.keyDown(document, { key: 'k', metaKey: true })

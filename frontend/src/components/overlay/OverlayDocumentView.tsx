@@ -36,6 +36,7 @@ import type { KnowledgeViewMode } from '@/lib/api/knowledge-workspace'
 import type { OverlayPage } from '@/lib/api/overlay'
 import { useUpdateOverlayNote } from '@/lib/hooks/use-overlay'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useOverlayDraftStore } from '@/lib/stores/overlay-draft-store'
 import {
   buildMarkdownModel,
   type HeadingDescriptor,
@@ -59,7 +60,7 @@ interface Draft {
 }
 
 function pageMarkdown(page: OverlayPage): string {
-  return page.note.content ?? page.note.markdown ?? ''
+  return page.editable_markdown
 }
 
 function draftFromPage(page: OverlayPage): Draft {
@@ -119,8 +120,19 @@ export function OverlayDocumentView({
   const update = useUpdateOverlayNote()
   const containerRef = useRef<HTMLElement>(null)
   const reviewButtonRef = useRef<HTMLButtonElement>(null)
-  const [loadedPage, setLoadedPage] = useState(page)
-  const [draft, setDraft] = useState<Draft>(() => draftFromPage(page))
+  const saveStoredDraft = useOverlayDraftStore((state) => state.saveDraft)
+  const clearStoredDraft = useOverlayDraftStore((state) => state.clearDraft)
+  const [initialSnapshot] = useState(() => {
+    const stored = useOverlayDraftStore.getState().drafts[viewId]
+    return stored?.noteId === page.overlay.id ? stored : null
+  })
+  const [loadedPage, setLoadedPage] = useState(
+    () => initialSnapshot?.loadedPage ?? page,
+  )
+  const [draft, setDraft] = useState<Draft>(() => initialSnapshot
+    ? { title: initialSnapshot.title, markdown: initialSnapshot.markdown }
+    : draftFromPage(page))
+  const draftRef = useRef(draft)
   const [saving, setSaving] = useState(false)
   const [reloading, setReloading] = useState(false)
   const [reloadError, setReloadError] = useState(false)
@@ -161,9 +173,12 @@ export function OverlayDocumentView({
   const busy = saving || reloading
 
   const adoptPage = useCallback((nextPage: OverlayPage) => {
+    const nextDraft = draftFromPage(nextPage)
     setLoadedPage(nextPage)
-    setDraft(draftFromPage(nextPage))
-  }, [])
+    draftRef.current = nextDraft
+    setDraft(nextDraft)
+    clearStoredDraft(viewId)
+  }, [clearStoredDraft, viewId])
 
   useEffect(() => {
     if (loadedPage.overlay.id !== page.overlay.id) {
@@ -181,7 +196,19 @@ export function OverlayDocumentView({
   }, [adoptPage, isDirty, loadedPage, page])
 
   const changeDraft = (change: Partial<Draft>) => {
-    setDraft((current) => ({ ...current, ...change }))
+    const nextDraft = { ...draftRef.current, ...change }
+    draftRef.current = nextDraft
+    setDraft(nextDraft)
+    if (draftFingerprint(nextDraft) === draftFingerprint(loadedDraft)) {
+      clearStoredDraft(viewId)
+    } else {
+      saveStoredDraft(viewId, {
+        noteId: loadedPage.overlay.id,
+        loadedPage,
+        title: nextDraft.title,
+        markdown: nextDraft.markdown,
+      })
+    }
     setSaveStatus('idle')
     setReloadError(false)
   }

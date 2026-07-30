@@ -13,6 +13,11 @@ import {
   type OpenKnowledgeTab,
   type SplitDirection,
 } from '@/lib/api/knowledge-workspace'
+import {
+  clearOverlayDraft,
+  clearOverlayDrafts,
+  resetOverlayDraftStore,
+} from '@/lib/stores/overlay-draft-store'
 
 export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   hydrated: boolean
@@ -289,6 +294,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     const closedIndex = pane?.tabs.findIndex((tab) => tab.id === tabId) ?? -1
     if (!pane || closedIndex < 0) return
     const tabs = pane.tabs.filter((tab) => tab.id !== tabId)
+    clearOverlayDraft(`${paneId}:${tabId}`)
     let activeTabId = pane.activeTabId
     if (activeTabId === tabId) {
       activeTabId = tabs[closedIndex]?.id ?? tabs[closedIndex - 1]?.id ?? null
@@ -403,6 +409,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     const layout = collapsePane(state.layout, paneId)
     if (!layout) return
     const panes = { ...state.panes }
+    clearOverlayDrafts(state.panes[paneId].tabs.map((tab) => `${paneId}:${tab.id}`))
     delete panes[paneId]
     set({
       panes,
@@ -415,6 +422,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
   },
 
   resetWorkspace: () => {
+    resetOverlayDraftStore()
     const revision = get().revision + 1
     const document = defaultKnowledgeWorkspace()
     set({

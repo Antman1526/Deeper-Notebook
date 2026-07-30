@@ -11,6 +11,7 @@ import {
   selectPaneCount,
   useKnowledgeWorkspaceStore,
 } from './knowledge-workspace-store'
+import { useOverlayDraftStore } from './overlay-draft-store'
 
 const plan = {
   vaultId: 'vault:one',
@@ -111,6 +112,26 @@ describe('knowledge workspace store', () => {
     store.closeTab('pane-1', current.tabs[1].id)
     expect(selectActiveKnowledgeTab(useKnowledgeWorkspaceStore.getState())?.noteId)
       .toBe('note:plan')
+  })
+
+  it('clears ephemeral overlay drafts when their tab closes or the workspace resets', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab({ ...plan, sourceAuthority: 'overlay' })
+    const tabId = useKnowledgeWorkspaceStore
+      .getState().panes['pane-1'].activeTabId!
+    const viewId = `pane-1:${tabId}`
+    useOverlayDraftStore.setState({
+      drafts: { [viewId]: {} as never },
+    })
+
+    store.closeTab('pane-1', tabId)
+    expect(useOverlayDraftStore.getState().drafts).toEqual({})
+
+    useOverlayDraftStore.setState({
+      drafts: { 'pane-1:stale': {} as never },
+    })
+    useKnowledgeWorkspaceStore.getState().resetWorkspace()
+    expect(useOverlayDraftStore.getState().drafts).toEqual({})
   })
 
   it('stores view mode independently per tab', () => {

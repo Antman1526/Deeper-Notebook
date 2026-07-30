@@ -515,6 +515,16 @@ def test_multiframe_body_without_content_length_is_replayed_for_json_parsing():
             "overlay_revision_conflict",
         ),
         (
+            OverlayStorageError("overlay_file_changed"),
+            409,
+            "overlay_revision_conflict",
+        ),
+        (
+            OverlayStorageError("overlay_request_invalid"),
+            422,
+            "overlay_request_invalid",
+        ),
+        (
             OverlayStorageError("overlay_file_too_large"),
             413,
             "overlay_file_too_large",

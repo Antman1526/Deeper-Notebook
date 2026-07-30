@@ -44,6 +44,7 @@ const page = {
     encoding: 'utf-8' as const, newline: 'lf' as const,
     created_at: '2026-07-29T00:00:00.000Z', updated_at: '2026-07-29T00:00:00.000Z',
   },
+  editable_markdown: '# 2026-07-29\n',
   note: { id: 'note:daily', title: '2026-07-29', content: '', properties: {}, tags: [] },
   blocks: [], tasks: [], outgoing_links: [], backlinks: [], graph: null,
 }
