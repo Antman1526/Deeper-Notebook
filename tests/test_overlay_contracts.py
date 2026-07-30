@@ -225,6 +225,139 @@ def test_overlay_link_requires_explicit_nullable_overlay_identities():
     assert external.target_overlay_note_id is None
 
 
+def test_overlay_page_builds_a_deduplicated_overlay_only_local_graph():
+    now = datetime.now(timezone.utc)
+    overlay = OverlayNote(
+        id="overlay_note:center",
+        space_id="overlay_space:default",
+        projected_note_id="note:center",
+        stable_id="01JTESTOVERLAY000000CENTER",
+        kind="unique",
+        date_key=None,
+        relative_path="Notes/20260729-1542 Center.md",
+        title="Center",
+        content_hash="a" * 64,
+        revision=1,
+        projection_state="current",
+        created_at=now,
+        updated_at=now,
+    )
+    outgoing = {
+        "id": "note_link:outgoing",
+        "source_note_id": "note:center",
+        "source_note_title": "Center",
+        "source_overlay_note_id": "overlay_note:center",
+        "target_note_id": "note:target",
+        "target_note_title": "Target",
+        "target_overlay_note_id": "overlay_note:target",
+        "target_relative_path": "Notes/20260729-1543 Target.md",
+        "target_text": "Target",
+        "link_kind": "wikilink",
+        "resolved": True,
+        "source_start": 0,
+        "source_end": 10,
+    }
+    incoming = {
+        **outgoing,
+        "id": "note_link:incoming",
+        "source_note_id": "note:source",
+        "source_note_title": "Source",
+        "source_overlay_note_id": "overlay_note:source",
+        "target_note_id": "note:center",
+        "target_note_title": "Center",
+        "target_overlay_note_id": "overlay_note:center",
+        "target_relative_path": "Notes/20260729-1542 Center.md",
+    }
+    page = OverlayPage(
+        overlay=overlay,
+        note={"id": "note:center", "title": "Center"},
+        outgoing_links=[
+            outgoing,
+            {**outgoing, "id": "note_link:duplicate"},
+            {
+                **outgoing,
+                "id": "note_link:external-target",
+                "target_note_id": "note:external",
+                "target_note_title": "External",
+                "target_overlay_note_id": None,
+            },
+        ],
+        backlinks=[
+            incoming,
+            {**incoming, "id": "note_link:duplicate-incoming"},
+            {
+                **incoming,
+                "id": "note_link:external-source",
+                "source_note_id": "note:external",
+                "source_note_title": "External",
+                "source_overlay_note_id": None,
+            },
+        ],
+    )
+
+    assert page.graph is not None
+    assert {node["id"] for node in page.graph.nodes} == {
+        "note:center",
+        "note:source",
+        "note:target",
+    }
+    assert {
+        (edge["source"], edge["target"])
+        for edge in page.graph.edges
+    } == {
+        ("note:center", "note:target"),
+        ("note:source", "note:center"),
+    }
+
+
+def test_overlay_page_local_graph_is_bounded():
+    now = datetime.now(timezone.utc)
+    overlay = OverlayNote(
+        id="overlay_note:center",
+        space_id="overlay_space:default",
+        projected_note_id="note:center",
+        stable_id="01JTESTOVERLAY000000CENTER",
+        kind="unique",
+        date_key=None,
+        relative_path="Notes/20260729-1542 Center.md",
+        title="Center",
+        content_hash="a" * 64,
+        revision=1,
+        projection_state="current",
+        created_at=now,
+        updated_at=now,
+    )
+    outgoing = [
+        {
+            "id": f"note_link:{index}",
+            "source_note_id": "note:center",
+            "source_overlay_note_id": "overlay_note:center",
+            "target_note_id": f"note:target-{index}",
+            "target_note_title": f"Target {index}",
+            "target_overlay_note_id": f"overlay_note:target-{index}",
+            "target_relative_path": (
+                f"Notes/20260729-{1600 + index:04d} Target {index}.md"
+            ),
+            "target_text": f"Target {index}",
+            "link_kind": "wikilink",
+            "resolved": True,
+            "source_start": index,
+            "source_end": index + 1,
+        }
+        for index in range(200)
+    ]
+
+    page = OverlayPage(
+        overlay=overlay,
+        note={"id": "note:center", "title": "Center"},
+        outgoing_links=outgoing,
+    )
+
+    assert page.graph is not None
+    assert len(page.graph.nodes) <= 129
+    assert len(page.graph.edges) <= 128
+
+
 def test_receipt_has_no_content_or_absolute_path_fields():
     fields = set(OverlayMutationReceipt.model_fields)
     assert "markdown" not in fields

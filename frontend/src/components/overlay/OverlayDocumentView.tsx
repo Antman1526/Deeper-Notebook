@@ -138,7 +138,23 @@ export function OverlayDocumentView({
   const markdown = draft.markdown.replace(/\r(?!\n)/g, '\n')
   const model = useMemo(() => buildMarkdownModel(markdown), [markdown])
   const headingIdPrefix = useMemo(() => encodeIdPrefix(viewId), [viewId])
-  const unresolved = loadedPage.outgoing_links.filter((link) => !link.resolved)
+  const displayOutgoingLinks = useMemo(
+    () => loadedPage.outgoing_links.map((link) => (
+      link.target_overlay_note_id
+        ? link
+        : { ...link, resolved: false }
+    )),
+    [loadedPage.outgoing_links],
+  )
+  const displayBacklinks = useMemo(
+    () => loadedPage.backlinks.map((link) => (
+      link.source_overlay_note_id
+        ? link
+        : { ...link, resolved: false }
+    )),
+    [loadedPage.backlinks],
+  )
+  const unresolved = displayOutgoingLinks.filter((link) => !link.resolved)
   const title = draft.title.trim() || t('knowledge.untitledNote')
   const properties = Object.entries(loadedPage.note.properties || {})
   const tags = Array.from(new Set(loadedPage.note.tags || []))
@@ -280,7 +296,7 @@ export function OverlayDocumentView({
         noteId={loadedPage.note.id}
         headingIdPrefix={headingIdPrefix}
         markdown={markdown}
-        links={loadedPage.outgoing_links}
+        links={displayOutgoingLinks}
         onNavigate={onNavigate}
         footnoteLabel={t('knowledge.footnotes')}
       />
@@ -289,7 +305,7 @@ export function OverlayDocumentView({
     <VaultLivePreview
       title={title}
       markdown={markdown}
-      links={loadedPage.outgoing_links}
+      links={displayOutgoingLinks}
       onNavigate={onNavigate}
     />
   ) : (
@@ -437,14 +453,14 @@ export function OverlayDocumentView({
             </section>
             <VaultLinks
               title={t('knowledge.outgoing')}
-              links={loadedPage.outgoing_links}
+              links={displayOutgoingLinks}
               direction="target"
               unresolvedLabel={t('knowledge.unresolved')}
               onNavigate={onNavigate}
             />
             <VaultLinks
               title={t('knowledge.backlinks')}
-              links={loadedPage.backlinks}
+              links={displayBacklinks}
               direction="source"
               unresolvedLabel={t('knowledge.unresolved')}
               onNavigate={onNavigate}

@@ -49,6 +49,20 @@ export function KnowledgeLinksInspector({
   const currentOutgoing = isOverlay
     ? overlayPage.data?.outgoing_links ?? []
     : outgoing.data || page.data?.outgoing_links || []
+  const displayBacklinks = isOverlay
+    ? currentBacklinks.map((link) => (
+        link.source_overlay_note_id
+          ? link
+          : { ...link, resolved: false }
+      ))
+    : currentBacklinks
+  const displayOutgoing = isOverlay
+    ? currentOutgoing.map((link) => (
+        link.target_overlay_note_id
+          ? link
+          : { ...link, resolved: false }
+      ))
+    : currentOutgoing
   const linksLoading = Boolean(
     noteId && (
       isOverlay
@@ -136,14 +150,14 @@ export function KnowledgeLinksInspector({
         <>
           <VaultLinks
             title={t('knowledge.backlinks')}
-            links={currentBacklinks}
+            links={displayBacklinks}
             direction="source"
             unresolvedLabel={t('knowledge.unresolved')}
             onNavigate={navigateBacklink}
           />
           <VaultLinks
             title={t('knowledge.outgoing')}
-            links={currentOutgoing}
+            links={displayOutgoing}
             direction="target"
             unresolvedLabel={t('knowledge.unresolved')}
             onNavigate={navigateOutgoing}

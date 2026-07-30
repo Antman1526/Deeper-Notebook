@@ -181,6 +181,51 @@ function overlayPageWithTarget(
   }
 }
 
+function overlayGraphPage(): OverlayPage {
+  const page = overlayPageWithTarget('overlay_note:target')
+  return {
+    ...page,
+    backlinks: [{
+      id: 'note_link:source',
+      source_note_id: 'note:source',
+      source_overlay_note_id: 'overlay_note:source',
+      source_note_title: 'Source',
+      target_note_id: 'note:research',
+      target_overlay_note_id: 'overlay_note:research',
+      target_note_title: 'Research',
+      target_relative_path: 'Notes/20260729-1542 Research.md',
+      target_text: 'Research',
+      link_kind: 'wikilink',
+      resolved: true,
+      source_start: 0,
+      source_end: 10,
+    }],
+    graph: {
+      nodes: [
+        { id: 'note:research', title: 'Research' },
+        { id: 'note:target', title: 'Target' },
+        { id: 'note:source', title: 'Source' },
+      ],
+      edges: [
+        {
+          id: 'note_link:target',
+          source: 'note:research',
+          target: 'note:target',
+          kind: 'wikilink',
+          resolved: true,
+        },
+        {
+          id: 'note_link:source',
+          source: 'note:source',
+          target: 'note:research',
+          kind: 'wikilink',
+          resolved: true,
+        },
+      ],
+    },
+  }
+}
+
 function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'graph' = 'reading') {
   useKnowledgeWorkspaceStore.getState().replaceWorkspace({
     version: 1,
@@ -628,6 +673,65 @@ describe('KnowledgePaneContent', () => {
 
     expect(onNavigate).not.toHaveBeenCalled()
   })
+
+  it.each([
+    {
+      direction: 'outgoing',
+      projectedId: 'note:target',
+      overlayId: 'overlay_note:target',
+      relativePath: 'Notes/20260729-1543 Target.md',
+      title: 'Target',
+      targetText: 'Target',
+    },
+    {
+      direction: 'incoming',
+      projectedId: 'note:source',
+      overlayId: 'overlay_note:source',
+      relativePath: undefined,
+      title: 'Source',
+      targetText: 'Source',
+    },
+    {
+      direction: 'center',
+      projectedId: 'note:research',
+      overlayId: 'overlay_note:research',
+      relativePath: 'Notes/20260729-1542 Research.md',
+      title: 'Research',
+      targetText: 'Research',
+    },
+  ])(
+    'translates an overlay graph $direction node through explicit identities',
+    ({
+      projectedId,
+      overlayId,
+      relativePath,
+      title,
+      targetText,
+    }) => {
+      replaceOverlayWorkspace('graph')
+      queries.overlayPage = {
+        data: overlayGraphPage(),
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: vi.fn(),
+      }
+      const onNavigate = vi.fn()
+
+      renderPane(onNavigate)
+      overlayView.onNavigate?.(projectedId)
+
+      expect(onNavigate).toHaveBeenCalledWith(
+        'overlay_space:default',
+        overlayId,
+        relativePath,
+        title,
+        'pane-1',
+        targetText,
+        'overlay',
+      )
+    },
+  )
 
   it('shows Reading after editor failure without mutating the persisted mode', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
