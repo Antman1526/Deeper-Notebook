@@ -6,6 +6,8 @@ export interface KnowledgeCommandPageContext {
   activePaneElement?: HTMLElement | null
   linksElement?: HTMLElement | null
   scanSelectedVault?: () => Promise<void>
+  openTodayOverlay?: () => Promise<void>
+  openUniqueOverlayDialog?: () => void
 }
 
 interface KnowledgeCommandContextState {

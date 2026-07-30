@@ -13,8 +13,10 @@ import {
 import type { VaultMount } from '@/lib/api/vault'
 import {
   candidateToOpenTab,
+  overlayNotesToKnowledgeCandidates,
   rankKnowledgeCatalog,
 } from '@/lib/commands/knowledge-command-catalog'
+import { useOverlayNotes } from '@/lib/hooks/use-overlay'
 import {
   acknowledgeCommandSurface,
   useCommandSurfaceStore,
@@ -45,9 +47,14 @@ export function KnowledgeQuickSwitcher({ mounts }: KnowledgeQuickSwitcherProps) 
     [workspace.panes],
   )
   const catalog = useKnowledgeCatalog(mounts, openTabs, open)
+  const overlay = useOverlayNotes()
+  const allCandidates = useMemo(
+    () => [...catalog.candidates, ...overlayNotesToKnowledgeCandidates(overlay.data || [], openTabs)],
+    [catalog.candidates, openTabs, overlay.data],
+  )
   const candidates = useMemo(
-    () => rankKnowledgeCatalog(catalog.candidates, query, 50),
-    [catalog.candidates, query],
+    () => rankKnowledgeCatalog(allCandidates, query, 50),
+    [allCandidates, query],
   )
 
   useEffect(() => {
