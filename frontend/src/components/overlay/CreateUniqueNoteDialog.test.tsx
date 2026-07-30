@@ -1,11 +1,34 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const overlay = vi.hoisted(() => ({ create: vi.fn(), reset: vi.fn(), isPending: false, error: null as Error | null }))
-
-vi.mock('@/lib/hooks/use-overlay', () => ({
-  useCreateUniqueOverlayNote: () => ({ mutateAsync: overlay.create, reset: overlay.reset, isPending: overlay.isPending, error: overlay.error }),
+const overlay = vi.hoisted(() => ({
+  create: vi.fn(),
+  reset: vi.fn(),
+  isPending: false,
+  error: null as Error | null,
+  renderCount: 0,
+  resetRerendersRemaining: 0,
 }))
+
+vi.mock('@/lib/hooks/use-overlay', async () => {
+  const { useCallback, useReducer } = await import('react')
+
+  return {
+    useCreateUniqueOverlayNote: () => {
+      const [, forceRender] = useReducer((count: number) => count + 1, 0)
+      const reset = useCallback(() => {
+        overlay.reset()
+        if (overlay.resetRerendersRemaining > 0) {
+          overlay.resetRerendersRemaining -= 1
+          forceRender()
+        }
+      }, [forceRender])
+
+      overlay.renderCount += 1
+      return { mutateAsync: overlay.create, reset, isPending: overlay.isPending, error: overlay.error }
+    },
+  }
+})
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
     t: (key: string) => ({
@@ -42,6 +65,8 @@ describe('CreateUniqueNoteDialog', () => {
     overlay.reset.mockImplementation(() => { overlay.error = null })
     overlay.create.mockResolvedValue(page)
     overlay.error = null
+    overlay.renderCount = 0
+    overlay.resetRerendersRemaining = 0
   })
 
   it('trims the title, sends one idempotency key, and opens the result', async () => {
@@ -101,5 +126,19 @@ describe('CreateUniqueNoteDialog', () => {
     view.rerender(<CreateUniqueNoteDialog open onOpenChange={onOpenChange} onOpen={vi.fn()} />)
     expect(screen.queryByRole('alert')).toBeNull()
     expect(overlay.reset).toHaveBeenCalled()
+  })
+
+  it('settles mutation rerenders and resets once per open or close transition', async () => {
+    overlay.resetRerendersRemaining = 6
+    const view = render(<CreateUniqueNoteDialog open onOpenChange={vi.fn()} onOpen={vi.fn()} />)
+
+    await waitFor(() => expect(overlay.reset).toHaveBeenCalledTimes(1))
+    expect(overlay.renderCount).toBeGreaterThan(1)
+
+    view.rerender(<CreateUniqueNoteDialog open={false} onOpenChange={vi.fn()} onOpen={vi.fn()} />)
+    await waitFor(() => expect(overlay.reset).toHaveBeenCalledTimes(2))
+
+    view.rerender(<CreateUniqueNoteDialog open onOpenChange={vi.fn()} onOpen={vi.fn()} />)
+    await waitFor(() => expect(overlay.reset).toHaveBeenCalledTimes(3))
   })
 })
