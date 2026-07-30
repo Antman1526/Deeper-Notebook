@@ -78,6 +78,33 @@ def _receipt_row(
     }
 
 
+def _link_row(
+    *,
+    link_id: str = "note_link:one",
+    source_note_id: str = "note:one",
+    source_overlay_note_id: str | None = "overlay_note:one",
+    source_title: str = "2026-07-29",
+    target_note_id: str = "note:two",
+    target_overlay_note_id: str | None = "overlay_note:two",
+    target_title: str = "Target",
+) -> dict[str, Any]:
+    return {
+        "id": link_id,
+        "source_note_id": source_note_id,
+        "source_note_title": source_title,
+        "target_note_id": target_note_id,
+        "target_note_title": target_title,
+        "target_relative_path": "Notes/20260729-1542 Target.md",
+        "target_text": target_title,
+        "link_kind": "wikilink",
+        "resolved": True,
+        "source_start": 0,
+        "source_end": 10,
+        "source_overlay_note_id": source_overlay_note_id,
+        "target_overlay_note_id": target_overlay_note_id,
+    }
+
+
 def _parsed_document() -> ParsedDocument:
     markdown = "# 2026-07-29\n- [ ] Review [[Research]]"
     return ParsedDocument(
@@ -169,21 +196,16 @@ class ReusableFactory:
 
 @pytest.mark.asyncio
 async def test_overlay_page_query_preserves_both_identity_domains():
-    link = {
-        "id": "note_link:one",
-        "source_note_id": "note:one",
-        "source_note_title": "2026-07-29",
-        "target_note_id": "note:two",
-        "target_note_title": "Target",
-        "target_relative_path": "Notes/20260729-1542 Target.md",
-        "target_text": "Target",
-        "link_kind": "wikilink",
-        "resolved": True,
-        "source_start": 0,
-        "source_end": 10,
-        "source_overlay_note_id": "overlay_note:one",
-        "target_overlay_note_id": "overlay_note:two",
-    }
+    link = _link_row()
+    backlink = _link_row(
+        link_id="note_link:backlink",
+        source_note_id="note:source",
+        source_overlay_note_id="overlay_note:source",
+        source_title="Source",
+        target_note_id="note:one",
+        target_overlay_note_id="overlay_note:one",
+        target_title="2026-07-29",
+    )
     connection = ScriptedConnection([{
         "page": {
             "overlay": _note_row(projection_state="current"),
@@ -191,7 +213,7 @@ async def test_overlay_page_query_preserves_both_identity_domains():
             "blocks": [],
             "tasks": [],
             "outgoing_links": [link],
-            "backlinks": [],
+            "backlinks": [backlink],
             "graph": None,
         }
     }])
@@ -206,6 +228,19 @@ async def test_overlay_page_query_preserves_both_identity_domains():
     assert page.outgoing_links[0].target_note_id == "note:two"
     assert page.outgoing_links[0].source_overlay_note_id == "overlay_note:one"
     assert page.outgoing_links[0].target_overlay_note_id == "overlay_note:two"
+    assert page.graph is not None
+    assert {node["id"] for node in page.graph.nodes} == {
+        "note:one",
+        "note:source",
+        "note:two",
+    }
+    assert {
+        (edge["source"], edge["target"])
+        for edge in page.graph.edges
+    } == {
+        ("note:one", "note:two"),
+        ("note:source", "note:one"),
+    }
     query = connection.calls[0][0]
     assert query.count(
         "source_note_id.overlay_note_id AS source_overlay_note_id"
@@ -226,6 +261,61 @@ def test_owned_projection_page_query_preserves_both_identity_domains():
     assert query.count(
         "target_note_id.overlay_note_id AS target_overlay_note_id"
     ) == 2
+
+
+@pytest.mark.asyncio
+async def test_owned_projection_return_hydrates_the_same_overlay_local_graph():
+    link = _link_row()
+    backlink = _link_row(
+        link_id="note_link:backlink",
+        source_note_id="note:source",
+        source_overlay_note_id="overlay_note:source",
+        source_title="Source",
+        target_note_id="note:one",
+        target_overlay_note_id="overlay_note:one",
+        target_title="2026-07-29",
+    )
+    connection = ScriptedConnection([{
+        "outcome": "projected",
+        "page": {
+            "overlay": _note_row(
+                content_hash="a" * 64,
+                projection_state="current",
+            ),
+            "note": {"id": "note:one", "title": "2026-07-29"},
+            "blocks": [],
+            "tasks": [],
+            "outgoing_links": [link],
+            "backlinks": [backlink],
+            "graph": None,
+        },
+    }])
+    repository = VaultRepository(
+        connection_factory=ReusableFactory(connection),
+    )
+
+    page = await repository.project_owned_document(
+        source_authority="overlay",
+        overlay_space_id="overlay_space:default",
+        overlay_note_id="overlay_note:one",
+        projected_note_id="note:one",
+        parsed=_parsed_document(),
+        revision=1,
+    )
+
+    assert page.graph is not None
+    assert {node["id"] for node in page.graph.nodes} == {
+        "note:one",
+        "note:source",
+        "note:two",
+    }
+    assert {
+        (edge["source"], edge["target"])
+        for edge in page.graph.edges
+    } == {
+        ("note:one", "note:two"),
+        ("note:source", "note:one"),
+    }
 
 
 @pytest.mark.asyncio

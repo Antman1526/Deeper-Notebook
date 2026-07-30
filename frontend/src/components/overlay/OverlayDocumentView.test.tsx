@@ -6,6 +6,13 @@ import type { OverlayPage } from '@/lib/api/overlay'
 const overlayMutation = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
 }))
+const linkViews = vi.hoisted(() => ({
+  markdown: [] as Array<{ id: string; resolved: boolean }>,
+  livePreview: [] as Array<{ id: string; resolved: boolean }>,
+  graphUnresolved: [] as Array<{ id: string; resolved: boolean }>,
+  outgoing: [] as Array<{ id: string; resolved: boolean }>,
+  backlinks: [] as Array<{ id: string; resolved: boolean }>,
+}))
 
 vi.mock('@/lib/hooks/use-overlay', () => ({
   useUpdateOverlayNote: () => overlayMutation,
@@ -77,23 +84,55 @@ vi.mock('./OverlaySourceEditor', () => ({
 }))
 
 vi.mock('@/components/vault/VaultMarkdown', () => ({
-  VaultMarkdown: ({ markdown }: { markdown: string }) => (
-    <div data-testid="overlay-reading">{markdown}</div>
-  ),
+  VaultMarkdown: ({
+    markdown,
+    links,
+  }: {
+    markdown: string
+    links: Array<{ id: string; resolved: boolean }>
+  }) => {
+    linkViews.markdown = links
+    return <div data-testid="overlay-reading">{markdown}</div>
+  },
 }))
 
 vi.mock('@/components/vault/VaultLivePreview', () => ({
-  VaultLivePreview: ({ markdown }: { markdown: string }) => (
-    <div data-testid="overlay-live-preview">{markdown}</div>
-  ),
+  VaultLivePreview: ({
+    markdown,
+    links,
+  }: {
+    markdown: string
+    links: Array<{ id: string; resolved: boolean }>
+  }) => {
+    linkViews.livePreview = links
+    return <div data-testid="overlay-live-preview">{markdown}</div>
+  },
 }))
 
 vi.mock('@/components/vault/VaultGraph', () => ({
-  VaultGraph: () => <div data-testid="overlay-graph" />,
+  VaultGraph: ({
+    unresolved,
+  }: {
+    unresolved: Array<{ id: string; resolved: boolean }>
+  }) => {
+    linkViews.graphUnresolved = unresolved
+    return <div data-testid="overlay-graph" />
+  },
 }))
 
 vi.mock('@/components/vault/VaultLinks', () => ({
-  VaultLinks: ({ title }: { title: string }) => <div>{title}</div>,
+  VaultLinks: ({
+    title,
+    direction,
+    links,
+  }: {
+    title: string
+    direction: 'source' | 'target'
+    links: Array<{ id: string; resolved: boolean }>
+  }) => {
+    linkViews[direction === 'source' ? 'backlinks' : 'outgoing'] = links
+    return <div>{title}</div>
+  },
 }))
 
 import { OverlayDocumentView } from './OverlayDocumentView'
@@ -146,6 +185,11 @@ function editMarkdown(markdown: string) {
 describe('OverlayDocumentView', () => {
   beforeEach(() => {
     overlayMutation.mutateAsync.mockReset()
+    linkViews.markdown = []
+    linkViews.livePreview = []
+    linkViews.graphUnresolved = []
+    linkViews.outgoing = []
+    linkViews.backlinks = []
   })
 
   it('saves with the loaded revision and adopts only the successful page', async () => {
@@ -340,5 +384,98 @@ describe('OverlayDocumentView', () => {
       />,
     )
     expect(screen.getByTestId('overlay-graph')).toBeInTheDocument()
+  })
+
+  it('presents null-mapped overlay links as non-navigable in every overlay view', () => {
+    const page = pageAt(3)
+    page.outgoing_links = [
+      {
+        id: 'note_link:mapped',
+        source_note_id: 'note:research',
+        source_overlay_note_id: 'overlay_note:research',
+        target_note_id: 'note:target',
+        target_overlay_note_id: 'overlay_note:target',
+        target_note_title: 'Target',
+        target_relative_path: 'Notes/20260729-1543 Target.md',
+        target_text: 'Target',
+        link_kind: 'wikilink',
+        resolved: true,
+        source_start: 0,
+        source_end: 6,
+      },
+      {
+        id: 'note_link:external',
+        source_note_id: 'note:research',
+        source_overlay_note_id: 'overlay_note:research',
+        target_note_id: 'note:external',
+        target_overlay_note_id: null,
+        target_note_title: 'External',
+        target_relative_path: 'External.md',
+        target_text: 'External',
+        link_kind: 'wikilink',
+        resolved: true,
+        source_start: 7,
+        source_end: 15,
+      },
+    ]
+    page.backlinks = [
+      {
+        ...page.outgoing_links[0],
+        id: 'note_link:incoming',
+        source_note_id: 'note:source',
+        source_overlay_note_id: 'overlay_note:source',
+        target_note_id: 'note:research',
+        target_overlay_note_id: 'overlay_note:research',
+        target_note_title: 'Research',
+        target_relative_path: 'Notes/20260729-1542 Research.md',
+      },
+      {
+        ...page.outgoing_links[0],
+        id: 'note_link:external-source',
+        source_note_id: 'note:external',
+        source_overlay_note_id: null,
+        target_note_id: 'note:research',
+        target_overlay_note_id: 'overlay_note:research',
+        target_note_title: 'Research',
+        target_relative_path: 'Notes/20260729-1542 Research.md',
+      },
+    ]
+    const onNavigate = vi.fn()
+    const { rerender } = render(
+      <OverlayDocumentView
+        page={page}
+        mode="reading"
+        onNavigate={onNavigate}
+      />,
+    )
+
+    expect(linkViews.markdown.map((link) => [link.id, link.resolved])).toEqual([
+      ['note_link:mapped', true],
+      ['note_link:external', false],
+    ])
+    expect(linkViews.outgoing).toEqual(linkViews.markdown)
+    expect(linkViews.backlinks.map((link) => [link.id, link.resolved])).toEqual([
+      ['note_link:incoming', true],
+      ['note_link:external-source', false],
+    ])
+
+    rerender(
+      <OverlayDocumentView
+        page={page}
+        mode="live-preview"
+        onNavigate={onNavigate}
+      />,
+    )
+    expect(linkViews.livePreview).toEqual(linkViews.markdown)
+
+    rerender(
+      <OverlayDocumentView
+        page={page}
+        mode="graph"
+        onNavigate={onNavigate}
+      />,
+    )
+    expect(linkViews.graphUnresolved.map((link) => link.id))
+      .toContain('note_link:external')
   })
 })
