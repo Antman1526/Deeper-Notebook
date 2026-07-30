@@ -69,6 +69,7 @@ export const overlayLinkSchema = z.intersection(
 
 export const overlayPageSchema = z.object({
   overlay: overlayNoteSchema,
+  editable_markdown: z.string().max(10 * 1024 * 1024),
   note: vaultNoteSchema,
   blocks: z.array(vaultBlockSchema),
   tasks: z.array(vaultTaskSchema),
@@ -102,7 +103,7 @@ export type UpdateOverlayNote = z.input<typeof updateOverlayNoteSchema>
 
 function isAuthoredContentField(key: string): boolean {
   const normalized = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
-  return ['content', 'markdown', 'properties', 'tags', 'title', 'titles', 'alias', 'aliases', 'heading', 'headings', 'text', 'texts', 'description', 'descriptions'].includes(normalized)
+  return ['content', 'markdown', 'editable_markdown', 'properties', 'tags', 'title', 'titles', 'alias', 'aliases', 'heading', 'headings', 'text', 'texts', 'description', 'descriptions'].includes(normalized)
     || normalized.endsWith('_title') || normalized.endsWith('_titles')
     || normalized.endsWith('_alias') || normalized.endsWith('_aliases')
     || normalized.endsWith('_heading') || normalized.endsWith('_headings')

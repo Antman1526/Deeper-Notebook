@@ -59,6 +59,7 @@ const validOverlayPage = {
     created_at: '2026-07-29T12:00:00+00:00',
     updated_at: '2026-07-29T12:00:00+00:00',
   },
+  editable_markdown: '# Today\n',
   note: { id: 'note:overlay-one', title: 'Today', markdown: '# Today\n' },
   blocks: [],
   tasks: [],
@@ -93,6 +94,11 @@ describe('overlay API boundary', () => {
       data: { ...validOverlayPage, overlay: { ...validOverlayPage.overlay, vault_id: 'vault:forbidden' } },
     } as never)
 
+    await expect(overlayApi.page('overlay_note:one')).rejects.toThrow()
+
+    const missingEditableBody = { ...validOverlayPage }
+    delete (missingEditableBody as { editable_markdown?: string }).editable_markdown
+    mockGet.mockResolvedValueOnce({ data: missingEditableBody } as never)
     await expect(overlayApi.page('overlay_note:one')).rejects.toThrow()
   })
 

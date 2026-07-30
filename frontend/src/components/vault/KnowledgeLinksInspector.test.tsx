@@ -29,6 +29,7 @@ const overlayPage = {
     created_at: '2026-07-29T12:00:00+00:00',
     updated_at: '2026-07-29T12:00:00+00:00',
   },
+  editable_markdown: '# Source\n',
   note: { id: 'note:source', title: 'Source', markdown: '# Source\n' },
   blocks: [],
   tasks: [],
