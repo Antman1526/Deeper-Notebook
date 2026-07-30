@@ -8,11 +8,14 @@ descriptor on POSIX.
 
 from __future__ import annotations
 
+import ctypes
 import errno
 import hashlib
 import hmac
 import os
 import stat
+import sys
+import threading
 import unicodedata
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -30,6 +33,11 @@ _FILE_MODE = 0o600
 _READ_CHUNK_BYTES = 64 * 1024
 _HASH_HEX_LENGTH = 64
 _FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+_RENAME_EXCHANGE = 0x2
+_RENAME_EXCL = 0x4
+_RENAME_NOREPLACE = 0x1
+_MOVEFILE_WRITE_THROUGH = 0x8
+_MUTATION_LOCK = threading.RLock()
 
 
 class OverlayStorageError(OSError):
@@ -149,16 +157,18 @@ class OverlayStorage:
         parts = self._validated_parts(relative_path)
         payload = self._encode(markdown, self.max_markdown_bytes)
         self._accept_opaque_operation_id(operation_id)
-        if os.name == "nt":  # pragma: no cover - exercised on Windows
-            return self._windows_create(relative_path, parts, payload)
-        with self._posix_layout() as opened:
-            with self._posix_parent(opened, parts) as parent:
-                return self._create_named(
-                    parent.descriptor,
-                    parts[-1],
-                    relative_path,
-                    payload,
-                )
+        with _MUTATION_LOCK:
+            if os.name == "nt":  # pragma: no cover - exercised on Windows
+                return self._windows_create(relative_path, parts, payload)
+            with self._posix_layout() as opened:
+                with self._posix_parent(opened, parts) as parent:
+                    return self._create_named(
+                        parent.descriptor,
+                        parts[-1],
+                        relative_path,
+                        payload,
+                        opened.recovery.descriptor,
+                    )
 
     def replace(
         self,
@@ -175,68 +185,102 @@ class OverlayStorage:
         self._validate_hash(expected_hash)
         self._validate_revision(revision)
         self._accept_opaque_operation_id(operation_id)
-        if os.name == "nt":  # pragma: no cover - exercised on Windows
-            return self._windows_replace(
-                relative_path,
-                parts,
-                payload,
-                expected_hash,
-                revision,
-            )
-
-        with self._posix_layout() as opened:
-            with self._posix_parent(opened, parts) as parent:
-                current, current_identity = self._read_named_with_identity(
-                    parent.descriptor,
-                    parts[-1],
+        with _MUTATION_LOCK:
+            if os.name == "nt":  # pragma: no cover - exercised on Windows
+                return self._windows_replace(
                     relative_path,
-                )
-                if not hmac.compare_digest(current.content_hash, expected_hash):
-                    raise OverlayConflictError("overlay_hash_conflict")
-
-                self.snapshot(relative_path, max(revision - 1, 1), current)
-                temporary_name, temporary_identity = self._write_posix_temp(
-                    parent.descriptor,
+                    parts,
                     payload,
+                    expected_hash,
+                    revision,
                 )
-                try:
-                    self._verify_named_identity(
+
+            with self._posix_layout() as opened:
+                with self._posix_parent(opened, parts) as parent:
+                    current, current_identity = self._read_named_with_identity(
                         parent.descriptor,
                         parts[-1],
-                        current_identity,
-                        changed_code="overlay_file_changed",
+                        relative_path,
                     )
-                    self._verify_named_identity(
+                    if not hmac.compare_digest(current.content_hash, expected_hash):
+                        raise OverlayConflictError("overlay_hash_conflict")
+
+                    self.snapshot(relative_path, max(revision - 1, 1), current)
+                    temporary_name, temporary_identity = self._write_posix_temp(
                         parent.descriptor,
-                        temporary_name,
-                        temporary_identity,
-                        changed_code="overlay_temp_changed",
+                        payload,
                     )
-                    os.replace(
-                        temporary_name,
+                    exchanged = False
+                    try:
+                        self._posix_exchange(
+                            parent.descriptor,
+                            temporary_name,
+                            parent.descriptor,
+                            parts[-1],
+                        )
+                        exchanged = True
+                        displaced = self._named_identity(
+                            parent.descriptor,
+                            temporary_name,
+                            changed_code="overlay_file_changed",
+                        )
+                        published = self._named_identity(
+                            parent.descriptor,
+                            parts[-1],
+                            changed_code="overlay_temp_changed",
+                        )
+                        if (
+                            displaced != current_identity
+                            or published != temporary_identity
+                        ):
+                            self._posix_exchange(
+                                parent.descriptor,
+                                temporary_name,
+                                parent.descriptor,
+                                parts[-1],
+                            )
+                            exchanged = False
+                            restored = self._named_identity(
+                                parent.descriptor,
+                                parts[-1],
+                                changed_code="overlay_recovery_required",
+                            )
+                            restored_temp = self._named_identity(
+                                parent.descriptor,
+                                temporary_name,
+                                changed_code="overlay_recovery_required",
+                            )
+                            self._retain_posix_artifact(
+                                parent.descriptor,
+                                temporary_name,
+                                opened.recovery.descriptor,
+                            )
+                            if restored != displaced or restored_temp != published:
+                                raise OverlayStorageError("overlay_recovery_required")
+                            raise OverlayStorageError("overlay_file_changed")
+                        self._retain_posix_artifact(
+                            parent.descriptor,
+                            temporary_name,
+                            opened.recovery.descriptor,
+                        )
+                        self._fsync_directory(parent.descriptor)
+                        self._fsync_directory(opened.recovery.descriptor)
+                    except BaseException:
+                        if not exchanged:
+                            self._retain_posix_artifact(
+                                parent.descriptor,
+                                temporary_name,
+                                opened.recovery.descriptor,
+                            )
+                        raise
+                    result, result_identity = self._read_named_with_identity(
+                        parent.descriptor,
                         parts[-1],
-                        src_dir_fd=parent.descriptor,
-                        dst_dir_fd=parent.descriptor,
+                        relative_path,
                     )
-                    self._fsync_directory(parent.descriptor)
-                    self._verify_named_identity(
-                        parent.descriptor,
-                        parts[-1],
-                        temporary_identity,
-                        changed_code="overlay_temp_changed",
-                    )
-                except BaseException:
-                    self._unlink_if_identity(
-                        parent.descriptor,
-                        temporary_name,
-                        temporary_identity,
-                    )
-                    raise
-                return self._read_named(
-                    parent.descriptor,
-                    parts[-1],
-                    relative_path,
-                )
+                    if result_identity != temporary_identity:
+                        raise OverlayStorageError("overlay_file_changed")
+                    return result
 
     def snapshot(
         self,
@@ -256,30 +300,32 @@ class OverlayStorage:
         filename = f"{note_key}-r{revision}-{content.content_hash}.md"
         relative_snapshot = f"revisions/{filename}"
 
-        if os.name == "nt":  # pragma: no cover - exercised on Windows
-            self._windows_snapshot(filename, payload)
-        else:
-            with self._posix_layout() as opened:
-                try:
-                    self._create_named(
-                        opened.revisions.descriptor,
-                        filename,
-                        relative_snapshot,
-                        payload,
-                    )
-                except OverlayConflictError:
-                    replay = self._read_named(
-                        opened.revisions.descriptor,
-                        filename,
-                        relative_snapshot,
-                    )
-                    if not hmac.compare_digest(
-                        replay.content_hash,
-                        content.content_hash,
-                    ):
-                        raise OverlayConflictError(
-                            "overlay_snapshot_conflict"
-                        ) from None
+        with _MUTATION_LOCK:
+            if os.name == "nt":  # pragma: no cover - exercised on Windows
+                self._windows_snapshot(filename, payload)
+            else:
+                with self._posix_layout() as opened:
+                    try:
+                        self._create_named(
+                            opened.revisions.descriptor,
+                            filename,
+                            relative_snapshot,
+                            payload,
+                            opened.recovery.descriptor,
+                        )
+                    except OverlayConflictError:
+                        replay = self._read_named(
+                            opened.revisions.descriptor,
+                            filename,
+                            relative_snapshot,
+                        )
+                        if not hmac.compare_digest(
+                            replay.content_hash,
+                            content.content_hash,
+                        ):
+                            raise OverlayConflictError(
+                                "overlay_snapshot_conflict"
+                            ) from None
 
         return OverlaySnapshot(
             relative_snapshot=relative_snapshot,
@@ -778,16 +824,29 @@ class OverlayStorage:
         name: str,
         relative_path: str,
         payload: bytes,
+        recovery_descriptor: int,
     ) -> StoredOverlayBytes:
         self._reject_unicode_collision(parent_descriptor, name)
         try:
-            descriptor = os.open(
+            temporary_name, temporary_identity = self._write_posix_temp(
+                parent_descriptor,
+                payload,
+            )
+        except OverlayStorageError:
+            raise
+        try:
+            self._posix_publish_no_replace(
+                parent_descriptor,
+                temporary_name,
+                parent_descriptor,
                 name,
-                self._write_open_flags(),
-                _FILE_MODE,
-                dir_fd=parent_descriptor,
             )
         except FileExistsError as error:
+            self._retain_posix_artifact(
+                parent_descriptor,
+                temporary_name,
+                recovery_descriptor,
+            )
             try:
                 existing = os.stat(
                     name,
@@ -800,38 +859,29 @@ class OverlayStorage:
             except OSError:
                 pass
             raise OverlayConflictError("overlay_file_exists") from error
-        except OSError as error:
-            raise OverlayStorageError("overlay_storage_unavailable") from error
-
-        created_status = os.fstat(descriptor)
-        created_identity = self._identity(created_status)
-        completed = False
-        try:
-            self._require_regular(created_status)
-            try:
-                os.fchmod(descriptor, _FILE_MODE)
-            except (AttributeError, NotImplementedError):  # pragma: no cover
-                pass
-            self._write_all(descriptor, payload)
-            os.fsync(descriptor)
-            final_status = os.fstat(descriptor)
-            self._require_regular(final_status)
-            if self._identity(final_status) != created_identity:
-                raise OverlayStorageError("overlay_file_changed")
-            completed = True
-        finally:
-            os.close(descriptor)
-            if not completed:
-                self._unlink_if_identity(parent_descriptor, name, created_identity)
+        except BaseException:
+            self._retain_posix_artifact(
+                parent_descriptor,
+                temporary_name,
+                recovery_descriptor,
+            )
+            raise
 
         self._verify_named_identity(
             parent_descriptor,
             name,
-            created_identity,
+            temporary_identity,
             changed_code="overlay_file_changed",
         )
         self._fsync_directory(parent_descriptor)
-        return self._read_named(parent_descriptor, name, relative_path)
+        result, result_identity = self._read_named_with_identity(
+            parent_descriptor,
+            name,
+            relative_path,
+        )
+        if result_identity != temporary_identity:
+            raise OverlayStorageError("overlay_file_changed")
+        return result
 
     @staticmethod
     def _write_all(file_descriptor: int, payload: bytes) -> None:
@@ -866,7 +916,6 @@ class OverlayStorage:
             raise OverlayStorageError("overlay_temp_unavailable")
         created = os.fstat(descriptor)
         identity = self._identity(created)
-        completed = False
         try:
             self._require_regular(created)
             try:
@@ -879,11 +928,11 @@ class OverlayStorage:
             self._require_regular(after)
             if self._identity(after) != identity:
                 raise OverlayStorageError("overlay_temp_changed")
-            completed = True
         finally:
             os.close(descriptor)
-            if not completed:
-                self._unlink_if_identity(parent_descriptor, name, identity)
+            # A failed write is retained under its random private staging name.
+            # There is no pathname-based unlink because it cannot be bound to
+            # the inode verified above.
         return name, identity
 
     @classmethod
@@ -908,28 +957,146 @@ class OverlayStorage:
             raise OverlayStorageError(changed_code)
 
     @classmethod
-    def _unlink_if_identity(
+    def _named_identity(
         cls,
         parent_descriptor: int,
         name: str,
-        identity: tuple[int, int],
-    ) -> None:
+        *,
+        changed_code: str,
+    ) -> tuple[int, int]:
         try:
             status = os.stat(
                 name,
                 dir_fd=parent_descriptor,
                 follow_symlinks=False,
             )
-        except FileNotFoundError:
+        except OSError as error:
+            raise OverlayStorageError(changed_code) from error
+        cls._require_regular(status)
+        return cls._identity(status)
+
+    @staticmethod
+    def _posix_atomic_rename(
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        destination_name: str,
+        *,
+        exchange: bool,
+    ) -> None:
+        libc = ctypes.CDLL(None, use_errno=True)
+        source = os.fsencode(source_name)
+        destination = os.fsencode(destination_name)
+        if sys.platform == "darwin":
+            primitive = getattr(libc, "renameatx_np", None)
+            flag = _RENAME_EXCHANGE if exchange else _RENAME_EXCL
+        elif sys.platform.startswith("linux"):
+            primitive = getattr(libc, "renameat2", None)
+            flag = _RENAME_EXCHANGE if exchange else _RENAME_NOREPLACE
+        else:
+            primitive = None
+            flag = 0
+        if primitive is None:
+            raise OverlayStorageError("overlay_atomic_rename_unsupported")
+        primitive.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        primitive.restype = ctypes.c_int
+        ctypes.set_errno(0)
+        result = primitive(
+            source_descriptor,
+            source,
+            destination_descriptor,
+            destination,
+            flag,
+        )
+        if result == 0:
             return
-        except OSError:
-            return
-        if cls._identity(status) != identity or not stat.S_ISREG(status.st_mode):
-            return
-        try:
-            os.unlink(name, dir_fd=parent_descriptor)
-        except OSError:
-            return
+        error_number = ctypes.get_errno()
+        if error_number == errno.ENOENT:
+            raise FileNotFoundError(error_number, "source or destination missing")
+        if not exchange and error_number in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise FileExistsError(error_number, "destination exists")
+        if error_number in {errno.ENOSYS, errno.ENOTSUP, errno.EINVAL}:
+            raise OverlayStorageError("overlay_atomic_rename_unsupported")
+        raise OverlayStorageError("overlay_atomic_rename_failed")
+
+    def _posix_publish_no_replace(
+        self,
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        destination_name: str,
+    ) -> None:
+        self._posix_atomic_rename(
+            source_descriptor,
+            source_name,
+            destination_descriptor,
+            destination_name,
+            exchange=False,
+        )
+
+    def _posix_exchange(
+        self,
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        destination_name: str,
+    ) -> None:
+        self._posix_atomic_rename(
+            source_descriptor,
+            source_name,
+            destination_descriptor,
+            destination_name,
+            exchange=True,
+        )
+
+    def _retain_posix_artifact(
+        self,
+        source_descriptor: int,
+        source_name: str,
+        recovery_descriptor: int,
+    ) -> str | None:
+        for _ in range(128):
+            recovery_name = f".recovery-{os.urandom(16).hex()}.dat"
+            try:
+                self._posix_publish_no_replace(
+                    source_descriptor,
+                    source_name,
+                    recovery_descriptor,
+                    recovery_name,
+                )
+            except FileNotFoundError:
+                return None
+            except FileExistsError:
+                continue
+            except OverlayStorageError:
+                # Fail closed by leaving the source at its existing hidden,
+                # app-owned staging name.
+                return None
+            try:
+                descriptor = os.open(
+                    recovery_name,
+                    self._file_open_flags(),
+                    dir_fd=recovery_descriptor,
+                )
+                try:
+                    status = os.fstat(descriptor)
+                    self._require_regular(status)
+                    try:
+                        os.fchmod(descriptor, _FILE_MODE)
+                    except (AttributeError, NotImplementedError):
+                        pass
+                finally:
+                    os.close(descriptor)
+            except OSError:
+                pass
+            return recovery_name
+        return None
 
     @staticmethod
     def _fsync_directory(directory_descriptor: int) -> None:
@@ -1097,29 +1264,25 @@ class OverlayStorage:
         payload: bytes,
     ) -> StoredOverlayBytes:
         owned = self._windows_owned_path(parts)
-        path = owned.path
+        temporary, identity = self._write_windows_temp(owned.path.parent, payload)
         try:
-            descriptor = os.open(path, self._write_open_flags(), _FILE_MODE)
+            self._windows_publish_no_replace(temporary, owned.path)
         except FileExistsError as error:
+            self._retain_windows_artifact(temporary)
             try:
-                self._require_regular(path.lstat())
+                self._require_regular(owned.path.lstat())
             except OverlayStorageError:
                 raise
             raise OverlayConflictError("overlay_file_exists") from error
-        identity = self._identity(os.fstat(descriptor))
-        completed = False
-        try:
-            self._write_all(descriptor, payload)
-            os.fsync(descriptor)
-            completed = True
-        finally:
-            os.close(descriptor)
-            if not completed:
-                self._windows_unlink_if_identity(path, identity)
-        if self._identity(path.lstat()) != identity:
+        except BaseException:
+            self._retain_windows_artifact(temporary)
+            raise
+        if self._identity(owned.path.lstat()) != identity:
             raise OverlayStorageError("overlay_file_changed")
         self._windows_verify_directories(owned)
-        content, _identity = self._windows_read_owned(owned, relative_path)
+        content, published_identity = self._windows_read_owned(owned, relative_path)
+        if published_identity != identity:
+            raise OverlayStorageError("overlay_file_changed")
         return content
 
     def _windows_replace(
@@ -1137,38 +1300,35 @@ class OverlayStorage:
         self.snapshot(relative_path, max(revision - 1, 1), current)
         self._windows_verify_directories(owned)
         destination = owned.path
+        temporary, identity = self._write_windows_temp(destination.parent, payload)
+        backup = self._windows_recovery_path()
         try:
-            destination_status = destination.lstat()
-        except OSError as error:
-            raise OverlayStorageError("overlay_file_changed") from error
-        if self._identity(destination_status) != current_identity:
-            raise OverlayStorageError("overlay_file_changed")
-        temporary = destination.parent / f".overlay-{os.urandom(16).hex()}.tmp"
-        descriptor = os.open(temporary, self._write_open_flags(), _FILE_MODE)
-        identity = self._identity(os.fstat(descriptor))
-        completed = False
-        try:
-            self._write_all(descriptor, payload)
-            os.fsync(descriptor)
-            completed = True
-        finally:
-            os.close(descriptor)
-            if not completed:
-                self._windows_unlink_if_identity(temporary, identity)
-        try:
-            if self._identity(temporary.lstat()) != identity:
-                raise OverlayStorageError("overlay_temp_changed")
             self._windows_verify_directories(owned)
-            if self._identity(destination.lstat()) != current_identity:
+            self._windows_publish_no_replace(destination, backup)
+            displaced_identity = self._identity(backup.lstat())
+            if displaced_identity != current_identity:
+                try:
+                    self._windows_publish_no_replace(backup, destination)
+                except OSError:
+                    pass
                 raise OverlayStorageError("overlay_file_changed")
-            os.replace(temporary, destination)
+            try:
+                self._windows_publish_no_replace(temporary, destination)
+            except BaseException:
+                try:
+                    self._windows_publish_no_replace(backup, destination)
+                except OSError:
+                    pass
+                raise
             if self._identity(destination.lstat()) != identity:
                 raise OverlayStorageError("overlay_temp_changed")
             self._windows_verify_directories(owned)
         except BaseException:
-            self._windows_unlink_if_identity(temporary, identity)
+            self._retain_windows_artifact(temporary)
             raise
-        content, _identity = self._windows_read_owned(owned, relative_path)
+        content, published_identity = self._windows_read_owned(owned, relative_path)
+        if published_identity != identity:
+            raise OverlayStorageError("overlay_file_changed")
         return content
 
     def _windows_snapshot(self, filename: str, payload: bytes) -> None:
@@ -1180,9 +1340,11 @@ class OverlayStorage:
         )
         path = owned.path
         self._windows_verify_directories(owned)
+        temporary, identity = self._write_windows_temp(path.parent, payload)
         try:
-            descriptor = os.open(path, self._write_open_flags(), _FILE_MODE)
+            self._windows_publish_no_replace(temporary, path)
         except FileExistsError:
+            self._retain_windows_artifact(temporary)
             existing, _identity = self._windows_read_owned(
                 owned,
                 f"revisions/{filename}",
@@ -1194,33 +1356,76 @@ class OverlayStorage:
             ):
                 raise OverlayConflictError("overlay_snapshot_conflict") from None
             return
-        identity = self._identity(os.fstat(descriptor))
-        completed = False
-        try:
-            self._write_all(descriptor, payload)
-            os.fsync(descriptor)
-            completed = True
-        finally:
-            os.close(descriptor)
-            if not completed:
-                self._windows_unlink_if_identity(path, identity)
+        except BaseException:
+            self._retain_windows_artifact(temporary)
+            raise
         if self._identity(path.lstat()) != identity:
             raise OverlayStorageError("overlay_file_changed")
         self._windows_verify_directories(owned)
 
-    @classmethod
-    def _windows_unlink_if_identity(
-        cls,
-        path: Path,
-        identity: tuple[int, int],
-    ) -> None:
+    def _write_windows_temp(
+        self,
+        parent: Path,
+        payload: bytes,
+    ) -> tuple[Path, tuple[int, int]]:
+        descriptor = -1
+        temporary = parent / ".overlay-invalid.tmp"
+        for _ in range(128):
+            temporary = parent / f".overlay-{os.urandom(16).hex()}.tmp"
+            try:
+                descriptor = os.open(temporary, self._write_open_flags(), _FILE_MODE)
+                break
+            except FileExistsError:
+                continue
+        if descriptor < 0:
+            raise OverlayStorageError("overlay_temp_unavailable")
+        identity = self._identity(os.fstat(descriptor))
         try:
-            status = path.lstat()
-        except OSError:
+            self._write_all(descriptor, payload)
+            os.fsync(descriptor)
+            after = os.fstat(descriptor)
+            self._require_regular(after)
+            if self._identity(after) != identity:
+                raise OverlayStorageError("overlay_temp_changed")
+        finally:
+            os.close(descriptor)
+        return temporary, identity
+
+    @staticmethod
+    def _windows_publish_no_replace(source: Path, destination: Path) -> None:
+        if os.name != "nt":
+            raise OverlayStorageError("overlay_atomic_rename_unsupported")
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        primitive = kernel32.MoveFileExW
+        primitive.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32]
+        primitive.restype = ctypes.c_int
+        ctypes.set_last_error(0)
+        if primitive(str(source), str(destination), _MOVEFILE_WRITE_THROUGH):
             return
-        if cls._identity(status) != identity or not stat.S_ISREG(status.st_mode):
-            return
-        try:
-            path.unlink()
-        except OSError:
-            return
+        error_number = ctypes.get_last_error()
+        if error_number in {80, 183}:
+            raise FileExistsError(error_number, "destination exists")
+        if error_number in {1, 50, 120}:
+            raise OverlayStorageError("overlay_atomic_rename_unsupported")
+        raise OverlayStorageError("overlay_atomic_rename_failed")
+
+    def _windows_recovery_path(self) -> Path:
+        return self.layout.recovery_root / (f".recovery-{os.urandom(16).hex()}.dat")
+
+    def _retain_windows_artifact(self, source: Path) -> Path | None:
+        if not source.exists():
+            return None
+        for _ in range(128):
+            recovery = self._windows_recovery_path()
+            try:
+                self._windows_publish_no_replace(source, recovery)
+            except FileExistsError:
+                continue
+            except OSError:
+                return None
+            try:
+                os.chmod(recovery, _FILE_MODE)
+            except OSError:
+                pass
+            return recovery
+        return None
