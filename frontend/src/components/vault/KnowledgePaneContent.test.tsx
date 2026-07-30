@@ -12,6 +12,9 @@ const overlayView = vi.hoisted(() => ({
   onReload: undefined as undefined | (() => Promise<unknown>),
   onNavigate: undefined as undefined | ((noteId: string) => void),
 }))
+const vaultMarkdownView = vi.hoisted(() => ({
+  onNavigate: undefined as undefined | ((noteId: string) => void),
+}))
 const queries = vi.hoisted(() => ({
   page: {
     data: undefined as VaultPage | undefined,
@@ -30,6 +33,7 @@ const queries = vi.hoisted(() => ({
   vaultOutgoingArgs: vi.fn(),
   graph: vi.fn(),
   overlayPageArgs: vi.fn(),
+  outgoingLinks: [] as VaultPage['outgoing_links'],
 }))
 
 vi.mock('@/lib/hooks/use-vault', () => ({
@@ -39,7 +43,7 @@ vi.mock('@/lib/hooks/use-vault', () => ({
   },
   useVaultOutgoing: (vaultId?: string, noteId?: string) => {
     queries.vaultOutgoingArgs(vaultId, noteId)
-    return { data: [], isLoading: false, isError: false }
+    return { data: queries.outgoingLinks, isLoading: false, isError: false }
   },
   useVaultGraph: (vaultId?: string, noteId?: string, enabled?: boolean) => {
     queries.graph(vaultId, noteId, enabled)
@@ -95,7 +99,16 @@ vi.mock('./VaultSourceView', () => ({
 }))
 
 vi.mock('./VaultMarkdown', () => ({
-  VaultMarkdown: ({ markdown }: { markdown: string }) => <div>{markdown}</div>,
+  VaultMarkdown: ({
+    markdown,
+    onNavigate,
+  }: {
+    markdown: string
+    onNavigate: (noteId: string) => void
+  }) => {
+    vaultMarkdownView.onNavigate = onNavigate
+    return <div>{markdown}</div>
+  },
 }))
 
 vi.mock('./VaultGraph', () => ({
@@ -166,6 +179,7 @@ function overlayPageWithTarget(
       id: 'note_link:target',
       source_note_id: 'note:research',
       source_overlay_note_id: 'overlay_note:research',
+      source_relative_path: 'Notes/20260729-1542 Research.md',
       target_note_id: 'note:target',
       target_overlay_note_id: targetOverlayNoteId,
       target_note_title: 'Target',
@@ -189,6 +203,7 @@ function overlayGraphPage(): OverlayPage {
       id: 'note_link:source',
       source_note_id: 'note:source',
       source_overlay_note_id: 'overlay_note:source',
+      source_relative_path: 'Notes/20260729-1541 Source.md',
       source_note_title: 'Source',
       target_note_id: 'note:research',
       target_overlay_note_id: 'overlay_note:research',
@@ -369,8 +384,10 @@ describe('KnowledgePaneContent', () => {
     queries.vaultPageArgs.mockClear()
     queries.vaultOutgoingArgs.mockClear()
     queries.overlayPageArgs.mockClear()
+    queries.outgoingLinks = []
     overlayView.onReload = undefined
     overlayView.onNavigate = undefined
+    vaultMarkdownView.onNavigate = undefined
     queries.overlayPage = {
       data: undefined,
       isLoading: false,
@@ -687,7 +704,7 @@ describe('KnowledgePaneContent', () => {
       direction: 'incoming',
       projectedId: 'note:source',
       overlayId: 'overlay_note:source',
-      relativePath: undefined,
+      relativePath: 'Notes/20260729-1541 Source.md',
       title: 'Source',
       targetText: 'Source',
     },
@@ -732,6 +749,45 @@ describe('KnowledgePaneContent', () => {
       )
     },
   )
+
+  it('preserves external link text when navigating a vault note', () => {
+    const link: VaultPage['outgoing_links'][number] = {
+      id: 'note_link:external-target',
+      source_note_id: 'note:plan',
+      target_note_id: 'note:target',
+      target_note_title: 'Target',
+      target_relative_path: 'notes/target.md',
+      target_text: 'Human label',
+      link_kind: 'wikilink',
+      resolved: true,
+      source_start: 0,
+      source_end: 11,
+    }
+    queries.page = {
+      data: {
+        ...pageFixture,
+        outgoing_links: [link],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    }
+    queries.outgoingLinks = [link]
+    const onNavigate = vi.fn()
+
+    renderPane(onNavigate)
+    vaultMarkdownView.onNavigate?.('note:target')
+
+    expect(onNavigate).toHaveBeenCalledWith(
+      'vault:one',
+      'note:target',
+      'notes/target.md',
+      'Target',
+      'pane-1',
+      'Human label',
+      'external-vault',
+    )
+  })
 
   it('shows Reading after editor failure without mutating the persisted mode', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)

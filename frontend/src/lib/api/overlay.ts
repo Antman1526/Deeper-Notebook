@@ -58,6 +58,7 @@ export const overlayNoteSchema = z.object({
 
 const overlayLinkIdentitySchema = z.object({
   source_overlay_note_id: overlayNoteIdSchema.nullable(),
+  source_relative_path: canonicalVaultRelativePathSchema.nullable(),
   target_overlay_note_id: overlayNoteIdSchema.nullable(),
 }).passthrough()
 

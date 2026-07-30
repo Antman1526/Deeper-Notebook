@@ -269,6 +269,7 @@ def test_overlay_page_serializes_identity_aliases_and_local_graph(client):
         "id": "note_link:mapped",
         "source_note_id": note.projected_note_id,
         "source_overlay_note_id": note.id,
+        "source_relative_path": note.relative_path,
         "target_note_id": "note:target",
         "target_overlay_note_id": "overlay_note:target",
         "target_note_title": "Target",
@@ -300,6 +301,7 @@ def test_overlay_page_serializes_identity_aliases_and_local_graph(client):
     assert response.status_code == 200
     body = response.json()
     assert body["outgoing_links"][0]["source_overlay_note_id"] == note.id
+    assert body["outgoing_links"][0]["source_relative_path"] == note.relative_path
     assert (
         body["outgoing_links"][0]["target_overlay_note_id"]
         == "overlay_note:target"

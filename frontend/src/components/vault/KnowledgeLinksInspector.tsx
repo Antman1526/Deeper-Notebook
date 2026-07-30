@@ -51,7 +51,7 @@ export function KnowledgeLinksInspector({
     : outgoing.data || page.data?.outgoing_links || []
   const displayBacklinks = isOverlay
     ? currentBacklinks.map((link) => (
-        link.source_overlay_note_id
+        link.source_overlay_note_id && link.source_relative_path
           ? link
           : { ...link, resolved: false }
       ))
@@ -89,14 +89,18 @@ export function KnowledgeLinksInspector({
       (candidate) => candidate.source_note_id === targetNoteId,
     )
     const title = link?.source_note_title || targetNoteId
+    const mappedOverlayLink = overlayLink?.source_overlay_note_id
+      && overlayLink.source_relative_path
+      ? overlayLink
+      : undefined
     const navigationNoteId = isOverlay
-      ? overlayLink?.source_overlay_note_id
+      ? mappedOverlayLink?.source_overlay_note_id
       : targetNoteId
     if (!navigationNoteId) return
     onNavigate(
       activeTab.vaultId,
       navigationNoteId,
-      undefined,
+      isOverlay ? mappedOverlayLink?.source_relative_path ?? undefined : undefined,
       title,
       undefined,
       undefined,

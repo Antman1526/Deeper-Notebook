@@ -14,6 +14,7 @@ const validOverlayLink = {
   id: 'note_link:one',
   source_note_id: 'note:overlay-one',
   source_overlay_note_id: 'overlay_note:one',
+  source_relative_path: 'Daily/2026-07-29.md',
   target_note_id: 'note:overlay-two',
   target_overlay_note_id: 'overlay_note:two',
   target_note_title: 'Two',
@@ -107,6 +108,7 @@ describe('overlay API boundary', () => {
       outgoing_links: [{
         source_note_id: 'note:overlay-one',
         source_overlay_note_id: 'overlay_note:one',
+        source_relative_path: 'Daily/2026-07-29.md',
         target_note_id: 'note:overlay-two',
         target_overlay_note_id: 'overlay_note:two',
       }],
@@ -124,6 +126,7 @@ describe('overlay API boundary', () => {
 
     for (const missingField of [
       'source_overlay_note_id',
+      'source_relative_path',
       'target_overlay_note_id',
     ] as const) {
       const link: Partial<typeof validOverlayLink> = { ...validOverlayLink }
@@ -144,10 +147,24 @@ describe('overlay API boundary', () => {
           ...validOverlayLink,
           target_overlay_note_id: null,
         }],
+        backlinks: [{
+          ...validOverlayLink,
+          source_note_id: 'note:external',
+          source_overlay_note_id: null,
+          source_relative_path: null,
+          target_note_id: 'note:overlay-one',
+          target_overlay_note_id: 'overlay_note:one',
+          target_note_title: 'Today',
+          target_relative_path: 'Daily/2026-07-29.md',
+        }],
       },
     } as never)
     await expect(overlayApi.page('overlay_note:one')).resolves.toMatchObject({
       outgoing_links: [{ target_overlay_note_id: null }],
+      backlinks: [{
+        source_overlay_note_id: null,
+        source_relative_path: null,
+      }],
     })
   })
 
