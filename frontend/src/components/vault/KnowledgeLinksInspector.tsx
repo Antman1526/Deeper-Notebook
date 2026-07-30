@@ -5,6 +5,7 @@ import {
   useVaultOutgoing,
   useVaultPage,
 } from '@/lib/hooks/use-vault'
+import { useOverlayPage } from '@/lib/hooks/use-overlay'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   useKnowledgeWorkspaceStore,
@@ -28,16 +29,39 @@ export function KnowledgeLinksInspector({
   ) ?? activePane?.tabs[0]
   const vaultId = activeTab?.vaultId
   const noteId = activeTab?.noteId
-  const page = useVaultPage(vaultId, noteId)
-  const backlinks = useVaultBacklinks(vaultId, noteId)
-  const outgoing = useVaultOutgoing(vaultId, noteId)
-  const currentBacklinks = backlinks.data || page.data?.backlinks || []
-  const currentOutgoing = outgoing.data || page.data?.outgoing_links || []
+  const isOverlay = activeTab?.sourceAuthority === 'overlay'
+  const overlayPage = useOverlayPage(isOverlay ? noteId : undefined)
+  const page = useVaultPage(
+    isOverlay ? undefined : vaultId,
+    isOverlay ? undefined : noteId,
+  )
+  const backlinks = useVaultBacklinks(
+    isOverlay ? undefined : vaultId,
+    isOverlay ? undefined : noteId,
+  )
+  const outgoing = useVaultOutgoing(
+    isOverlay ? undefined : vaultId,
+    isOverlay ? undefined : noteId,
+  )
+  const currentBacklinks = isOverlay
+    ? overlayPage.data?.backlinks ?? []
+    : backlinks.data || page.data?.backlinks || []
+  const currentOutgoing = isOverlay
+    ? overlayPage.data?.outgoing_links ?? []
+    : outgoing.data || page.data?.outgoing_links || []
   const linksLoading = Boolean(
-    noteId && (backlinks.isLoading || outgoing.isLoading),
+    noteId && (
+      isOverlay
+        ? overlayPage.isLoading
+        : backlinks.isLoading || outgoing.isLoading
+    ),
   )
   const linksError = Boolean(
-    noteId && (backlinks.isError || outgoing.isError),
+    noteId && (
+      isOverlay
+        ? overlayPage.isError
+        : backlinks.isError || outgoing.isError
+    ),
   )
 
   const navigateBacklink = (targetNoteId: string) => {
@@ -46,7 +70,15 @@ export function KnowledgeLinksInspector({
       (candidate) => candidate.source_note_id === targetNoteId,
     )
     const title = link?.source_note_title || targetNoteId
-    onNavigate(activeTab.vaultId, targetNoteId, undefined, title)
+    onNavigate(
+      activeTab.vaultId,
+      targetNoteId,
+      undefined,
+      title,
+      undefined,
+      undefined,
+      activeTab.sourceAuthority,
+    )
   }
 
   const navigateOutgoing = (targetNoteId: string) => {
@@ -65,6 +97,7 @@ export function KnowledgeLinksInspector({
       titleHint,
       undefined,
       link?.target_text || targetNoteId,
+      activeTab.sourceAuthority,
     )
   }
 
