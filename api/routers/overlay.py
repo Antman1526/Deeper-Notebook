@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import secrets
 from collections.abc import Awaitable, Callable
 from datetime import date
+from pathlib import Path as FilePath
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
@@ -11,7 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from loguru import logger
-from pydantic import AfterValidator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from api.schemas.overlay import (
     CreateDailyNote,
@@ -21,11 +25,13 @@ from api.schemas.overlay import (
     OverlayRootResponse,
     UpdateOverlayNote,
 )
+from deeper_notebook.overlay.paths import OverlayLayout
 from deeper_notebook.overlay.repository import OverlayRepositoryError
 
 MAX_OVERLAY_JSON_BYTES = 10 * 1024 * 1024 + 64 * 1024
 # Bound database pagination work even for authenticated local clients.
 MAX_OVERLAY_OFFSET = 1_000_000
+_INSTANCE_NONCE = secrets.token_urlsafe(32)
 
 _ERRORS = {
     "overlay_not_found": (404, "overlay_not_found"),
@@ -96,6 +102,14 @@ class _BoundedOverlayRoute(APIRoute):
 router = APIRouter(route_class=_BoundedOverlayRoute)
 
 
+class _OverlayProofIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    instance_nonce: str = Field(min_length=43, max_length=128)
+    overlay_root_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    instance_pid: int = Field(gt=1)
+
+
 def _service(request: Request) -> Any:
     service = getattr(request.app.state, "overlay_service", None)
     if service is None:
@@ -104,6 +118,33 @@ def _service(request: Request) -> Any:
             "overlay_unavailable",
         )
     return service
+
+
+def _owned_overlay_root_digest(service: Any) -> str:
+    storage = getattr(service, "storage", None)
+    layout = getattr(storage, "layout", None)
+    canonical_root = getattr(layout, "canonical_root", None)
+    if not isinstance(layout, OverlayLayout) or not isinstance(
+        canonical_root,
+        FilePath,
+    ):
+        raise _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "overlay_unavailable",
+        )
+    try:
+        data_root = canonical_root.parent.parent.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "overlay_unavailable",
+        ) from None
+    if layout != OverlayLayout.from_data_root(data_root):
+        raise _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "overlay_unavailable",
+        )
+    return hashlib.sha256(str(data_root).encode("utf-8")).hexdigest()
 
 
 def _stable_exception_code(exc: Exception) -> str | None:
@@ -162,6 +203,18 @@ OverlayNoteId = Annotated[
 async def get_overlay(request: Request) -> OverlayRootResponse:
     _service(request)
     return OverlayRootResponse()
+
+
+@router.get("/overlay/proof-identity", response_model=_OverlayProofIdentity)
+async def get_overlay_proof_identity(request: Request) -> _OverlayProofIdentity:
+    """Bind a controlled proof to this process and its actual owned data root."""
+
+    service = _service(request)
+    return _OverlayProofIdentity(
+        instance_nonce=_INSTANCE_NONCE,
+        overlay_root_sha256=_owned_overlay_root_digest(service),
+        instance_pid=os.getpid(),
+    )
 
 
 @router.get("/overlay/notes", response_model=list[OverlayNote])
