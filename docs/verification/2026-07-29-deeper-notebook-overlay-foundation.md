@@ -25,7 +25,7 @@ is shown.
 | --- | --- | --- |
 | Focused backend and verifier | `uv run pytest -q tests/test_overlay_contracts.py tests/test_overlay_migration.py tests/test_overlay_paths.py tests/test_overlay_storage.py tests/test_overlay_repository.py tests/test_overlay_service.py tests/test_overlay_api.py tests/test_vault_security.py tests/test_vault_note_read_only.py tests/test_knowledge_workspace_persistence.py tests/test_knowledge_workspace_api.py tests/test_verify_overlay_foundation.py` | exit 0; 282 passed |
 | Focused frontend | `npx vitest run src/lib/api/overlay.test.ts src/lib/api/knowledge-workspace.test.ts src/lib/stores/knowledge-workspace-store.test.ts src/components/overlay src/components/vault/KnowledgeExplorer.test.tsx src/components/vault/KnowledgePaneContent.test.tsx src/components/vault/KnowledgeTabStrip.test.tsx src/components/vault/VaultCodeMirror.test.tsx src/lib/locales/index.test.ts --pool=forks --maxWorkers=1` | exit 0; 290 passed |
-| Full backend | `uv run pytest -q` | exit 0; 3,941 passed, 48 skipped |
+| Full backend | `uv run pytest -q` | exit 0; 3,945 passed, 48 skipped |
 | Full frontend unit | `npm test` | exit 0; 953 passed |
 | Frontend lint | `npm run lint` | exit 0 |
 | Production build | `npm run build` | exit 0; 22 static/dynamic routes built |
@@ -39,8 +39,31 @@ The two overlay browser cases proved:
 2. daily replay, deterministic `-2` collision suffixing, save conflict and
    draft preservation, restart hydration, and focus restoration.
 
+The strict browser fixture recorded every external-vault
+`POST`/`PUT`/`PATCH`/`DELETE`, including scan requests. Overlay mutations were
+observed while the external mutation ledger and unexpected-traffic ledger both
+remained empty. Actual filesystem fingerprint preservation was proved by the
+native verifier, not inferred from mocked browser state.
+
 The older command-navigation and editor-mode browser cases also passed after
 their strict fixture learned the new read-only overlay-list request.
+
+## Post-review verifier hardening
+
+Independent review found and closed four fail-closed evidence gaps:
+
+- malformed or empty OpenAPI inventories are rejected;
+- unrecognized mutating vault `POST` routes are unsafe by default, while the
+  three existing metadata/read-only projection routes are explicitly allowed;
+- report, token, marker, restart-state, overlay-root, and external-root
+  locations must be disjoint, and reports are published by private atomic
+  replacement;
+- authentication-token files must be owner-only.
+
+The four new adversarial regressions brought the verifier suite to 11 passing
+tests. The hardened audit was also run directly against the application's real
+generated OpenAPI inventory: 13 vault routes were observed, the only three
+`POST` routes matched the explicit allowlist, and zero unsafe routes remained.
 
 ## Native SurrealDB and migration evidence
 
