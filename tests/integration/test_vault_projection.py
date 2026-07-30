@@ -671,7 +671,9 @@ async def test_migration_33_note_batch_failure_rolls_back_row_and_field_definiti
 
     assert await get_latest_version() == 32
     assert (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0] == before
-    assert "VALUE $before OR time::now()" in await _updated_field_definition("note")
+    failed_schema = await _updated_field_definition("note")
+    assert "DEFAULT time::now()" in failed_schema
+    assert "VALUE" not in failed_schema
 
     await manager.run_migration_up()
     assert await get_latest_version() == 36
@@ -764,9 +766,9 @@ async def test_migration_33_link_batch_failure_rolls_back_row_and_field_definiti
 
     assert await get_latest_version() == 32
     assert (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0] == before
-    assert "VALUE $before OR time::now()" in await _updated_field_definition(
-        "note_link"
-    )
+    failed_schema = await _updated_field_definition("note_link")
+    assert "DEFAULT time::now()" in failed_schema
+    assert "VALUE" not in failed_schema
 
     await manager.run_migration_up()
     assert await get_latest_version() == 36
@@ -808,10 +810,12 @@ async def test_migration_33_final_restore_failure_rolls_back_both_field_definiti
             await manager.run_migration_up()
 
     assert await get_latest_version() == 32
-    assert "VALUE $before OR time::now()" in await _updated_field_definition("note")
-    assert "VALUE $before OR time::now()" in await _updated_field_definition(
-        "note_link"
-    )
+    failed_note_schema = await _updated_field_definition("note")
+    failed_link_schema = await _updated_field_definition("note_link")
+    assert "DEFAULT time::now()" in failed_note_schema
+    assert "VALUE" not in failed_note_schema
+    assert "DEFAULT time::now()" in failed_link_schema
+    assert "VALUE" not in failed_link_schema
 
     await manager.run_migration_up()
     assert await get_latest_version() == 36

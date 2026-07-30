@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Protocol
 
 from deeper_notebook.vault.normalization import canonical_title_key
@@ -12,7 +13,8 @@ MIGRATION_33_MAX_ROWS = 1_000_000
 _NOTE_KEY_BATCH_TRANSACTION = """
 BEGIN TRANSACTION;
 FOR $item IN $items {
-    UPDATE $item.record_id SET title_key = $item.title_key;
+    UPDATE $item.record_id SET title_key = $item.title_key,
+        updated = $item.updated;
 };
 RETURN { updated_preserved: true };
 COMMIT TRANSACTION;
@@ -21,7 +23,8 @@ COMMIT TRANSACTION;
 _LINK_KEY_BATCH_TRANSACTION = """
 BEGIN TRANSACTION;
 FOR $item IN $items {
-    UPDATE $item.record_id SET target_title_key = $item.target_title_key;
+    UPDATE $item.record_id SET target_title_key = $item.target_title_key,
+        updated = $item.updated;
 };
 RETURN { updated_preserved: true };
 COMMIT TRANSACTION;
@@ -32,17 +35,24 @@ BEGIN TRANSACTION;
 FOR $item IN $items {
     UPDATE $item.record_id SET
         target_note_id = $item.target_note_id,
-        resolved = $item.resolved;
+        resolved = $item.resolved,
+        updated = $item.updated;
 };
 RETURN { updated_preserved: true };
 COMMIT TRANSACTION;
 """
 
-_RESTORE_CANONICAL_UPDATED_FIELDS_TRANSACTION = """
+_RESTORE_CANONICAL_LINK_UPDATED_FIELD_TRANSACTION = """
 BEGIN TRANSACTION;
-DEFINE FIELD OVERWRITE updated ON note DEFAULT time::now() VALUE time::now();
 DEFINE FIELD OVERWRITE updated ON TABLE note_link TYPE datetime DEFAULT time::now() VALUE time::now();
 RETURN { canonical_updated_fields_restored: true };
+COMMIT TRANSACTION;
+"""
+
+_RESTORE_CANONICAL_NOTE_UPDATED_FIELD_TRANSACTION = """
+BEGIN TRANSACTION;
+DEFINE FIELD OVERWRITE updated ON note DEFAULT time::now() VALUE time::now();
+RETURN { canonical_note_updated_field_restored: true };
 COMMIT TRANSACTION;
 """
 
@@ -74,6 +84,19 @@ def _check_bound(processed: int) -> None:
         raise RuntimeError("migration_33_row_limit_exceeded")
 
 
+def _historical_updated(row: dict[str, Any], *, error_code: str) -> datetime:
+    updated = row.get("updated")
+    if not isinstance(updated, datetime) or updated.tzinfo is None:
+        raise RuntimeError(error_code)
+    try:
+        offset = updated.utcoffset()
+    except Exception as exc:
+        raise RuntimeError(error_code) from exc
+    if offset is None:
+        raise RuntimeError(error_code)
+    return updated
+
+
 async def _execute(
     connection: MigrationConnection,
     statement: str,
@@ -97,7 +120,7 @@ async def _backfill_note_keys(
         rows = _rows(
             await connection.query(
                 """
-                SELECT id, title FROM note
+                SELECT id, title, updated FROM note
                 WHERE vault_id != NONE
                 AND title_key = NONE
                 ORDER BY id LIMIT $batch_size;
@@ -116,6 +139,10 @@ async def _backfill_note_keys(
                 {
                     "record_id": row["id"],
                     "title_key": canonical_title_key(title),
+                    "updated": _historical_updated(
+                        row,
+                        error_code="migration_33_note_updated_invalid",
+                    ),
                 }
             )
         await _execute(
@@ -137,7 +164,7 @@ async def _backfill_link_keys(
         rows = _rows(
             await connection.query(
                 """
-                SELECT id, target_text FROM note_link
+                SELECT id, target_text, updated FROM note_link
                 WHERE target_title_key = NONE
                 ORDER BY id LIMIT $batch_size;
                 """,
@@ -155,6 +182,10 @@ async def _backfill_link_keys(
                 {
                     "record_id": row["id"],
                     "target_title_key": canonical_title_key(target_text),
+                    "updated": _historical_updated(
+                        row,
+                        error_code="migration_33_link_updated_invalid",
+                    ),
                 }
             )
         await _execute(
@@ -181,7 +212,8 @@ async def _reconcile_links(
                     source_note_id,
                     target_title_key,
                     target_note_id,
-                    resolved
+                    resolved,
+                    updated
                 FROM note_link
                 ORDER BY id LIMIT $batch_size START $offset;
                 """,
@@ -256,6 +288,10 @@ async def _reconcile_links(
                     "record_id": link["id"],
                     "target_note_id": target_note_id,
                     "resolved": resolved,
+                    "updated": _historical_updated(
+                        link,
+                        error_code="migration_33_link_updated_invalid",
+                    ),
                 }
             )
         if updates:
@@ -283,7 +319,7 @@ async def run_vault_migration_33_backfill(
     await _reconcile_links(connection, batch_size=batch_size)
     await _execute(
         connection,
-        _RESTORE_CANONICAL_UPDATED_FIELDS_TRANSACTION,
+        _RESTORE_CANONICAL_LINK_UPDATED_FIELD_TRANSACTION,
         {},
         proof_key="canonical_updated_fields_restored",
     )
@@ -295,6 +331,13 @@ async def run_python_migration_hook(
 ) -> None:
     if version == 33:
         await run_vault_migration_33_backfill(connection)
+    elif version == 36:
+        await _execute(
+            connection,
+            _RESTORE_CANONICAL_NOTE_UPDATED_FIELD_TRANSACTION,
+            {},
+            proof_key="canonical_note_updated_field_restored",
+        )
 
 
 __all__ = [
