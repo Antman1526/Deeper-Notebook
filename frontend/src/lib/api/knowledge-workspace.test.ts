@@ -10,6 +10,7 @@ import {
   knowledgeWorkspaceApi,
   knowledgeWorkspaceWireSchema,
   openKnowledgeTabSchema,
+  parseKnowledgeWorkspace,
   serializeKnowledgeWorkspace,
   type KnowledgeLayoutNode,
 } from './knowledge-workspace'
@@ -250,6 +251,7 @@ describe('knowledge workspace API boundary', () => {
         title: `Note ${index + 1}`,
         relativePath: `Notes/${index + 1}.md`,
         viewMode: 'reading' as const,
+        sourceAuthority: 'external-vault' as const,
       }),
     )
     document.panes['pane-1'].tabs[128].relativePath =
@@ -278,12 +280,29 @@ describe('knowledge workspace API boundary', () => {
             title: 'Plan',
             relativePath: 'Projects/Plan.md',
             viewMode: 'reading',
+            sourceAuthority: 'external-vault',
           }],
         },
       },
       layout: { type: 'pane', paneId: 'pane-1' },
     })
     expect(apiClient.get).toHaveBeenCalledWith('/deeper-notebook/workspace/knowledge')
+  })
+
+  it('loads legacy version-1 tabs as external-vault authority', () => {
+    const parsed = parseKnowledgeWorkspace(wireDocument)
+
+    expect(parsed.panes['pane-1'].tabs[0].sourceAuthority)
+      .toBe('external-vault')
+  })
+
+  it('always serializes explicit source authority for legacy workspace tabs', () => {
+    expect(serializeKnowledgeWorkspace(defaultKnowledgeWorkspace())).toMatchObject({
+      panes: { 'pane-1': { tabs: [] } },
+    })
+    const parsed = parseKnowledgeWorkspace(wireDocument)
+    expect(serializeKnowledgeWorkspace(parsed).panes['pane-1'].tabs[0])
+      .toMatchObject({ source_authority: 'external-vault' })
   })
 
   it('serializes only approved snake_case fields for PUT', async () => {
@@ -303,6 +322,7 @@ describe('knowledge workspace API boundary', () => {
             title: 'Plan',
             relativePath: 'Projects/Plan.md',
             viewMode: 'reading' as const,
+            sourceAuthority: 'external-vault' as const,
             ignoredTabField: 'not-on-the-wire',
           }],
           ignoredPaneField: true,
@@ -317,7 +337,18 @@ describe('knowledge workspace API boundary', () => {
 
     expect(apiClient.put).toHaveBeenCalledWith(
       '/deeper-notebook/workspace/knowledge',
-      wireDocument,
+      {
+        ...wireDocument,
+        panes: {
+          'pane-1': {
+            ...wireDocument.panes['pane-1'],
+            tabs: [{
+              ...wireDocument.panes['pane-1'].tabs[0],
+              source_authority: 'external-vault',
+            }],
+          },
+        },
+      },
     )
   })
 })

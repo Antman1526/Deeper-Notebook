@@ -105,6 +105,16 @@ def test_workspace_round_trips_through_atomic_file(tmp_path: Path):
     assert not path.with_suffix(".json.tmp").exists()
 
 
+def test_legacy_workspace_tabs_default_to_external_vault_authority():
+    workspace = populated()
+
+    assert workspace.panes["pane-1"].tabs[0].source_authority == "external-vault"
+    assert (
+        workspace.model_dump()["panes"]["pane-1"]["tabs"][0]["source_authority"]
+        == "external-vault"
+    )
+
+
 def test_stale_legacy_temporary_file_does_not_block_future_saves(
     tmp_path: Path,
 ):
@@ -168,9 +178,7 @@ def test_overlapping_saves_use_distinct_temporary_files(
 
 def test_absolute_or_parent_relative_paths_are_rejected():
     payload = populated().model_dump()
-    payload["panes"]["pane-1"]["tabs"][0]["relative_path"] = (
-        "/Users/me/secret.md"
-    )
+    payload["panes"]["pane-1"]["tabs"][0]["relative_path"] = "/Users/me/secret.md"
     with pytest.raises(ValidationError):
         KnowledgeWorkspaceDocument.model_validate(payload)
     payload["panes"]["pane-1"]["tabs"][0]["relative_path"] = "../secret.md"
@@ -218,8 +226,7 @@ def test_save_revalidates_mutated_documents_before_writing(
         document.version = 2
     elif mutation == "over-limit-tabs":
         document.panes["pane-1"].tabs.extend(
-            KnowledgeTabState.model_validate(tab(index))
-            for index in range(2, 130)
+            KnowledgeTabState.model_validate(tab(index)) for index in range(2, 130)
         )
     else:
         document.layout = PaneLayoutNode(pane_id="missing")
@@ -288,9 +295,7 @@ def test_save_rejects_encoded_state_larger_than_persistence_limit(
 def test_tab_limit_is_rejected_before_nested_tab_validation():
     payload = populated().model_dump()
     payload["panes"]["pane-1"]["active_tab_id"] = "tab-1"
-    payload["panes"]["pane-1"]["tabs"] = [
-        tab(index) for index in range(1, 130)
-    ]
+    payload["panes"]["pane-1"]["tabs"] = [tab(index) for index in range(1, 130)]
     payload["panes"]["pane-1"]["tabs"][-1]["relative_path"] = (
         "/must-not-be-deeply-validated.md"
     )

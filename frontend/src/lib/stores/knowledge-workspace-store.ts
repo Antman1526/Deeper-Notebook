@@ -205,7 +205,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     if (!pane) return
     const existing = pane.tabs.find(
       (candidate) =>
-        candidate.vaultId === validTab.vaultId && candidate.noteId === validTab.noteId,
+        candidate.vaultId === validTab.vaultId
+        && candidate.noteId === validTab.noteId
+        && candidate.sourceAuthority === (validTab.sourceAuthority ?? 'external-vault'),
     )
     if (existing) {
       if (state.activePaneId === paneId && pane.activeTabId === existing.id) return
@@ -226,6 +228,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       ...validTab,
       id: allocated.id,
       viewMode: validTab.viewMode ?? 'reading',
+      sourceAuthority: validTab.sourceAuthority ?? 'external-vault',
     }
     set({
       activePaneId: paneId,
@@ -253,6 +256,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       title: reference.title,
       relativePath: reference.relativePath,
       viewMode: tab.viewMode,
+      sourceAuthority: tab.sourceAuthority,
     })
     if (!parsed.success) return
     if (

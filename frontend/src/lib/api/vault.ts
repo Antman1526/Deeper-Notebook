@@ -71,11 +71,25 @@ export const vaultBlockSchema = z.object({
   properties: z.record(z.string(), z.unknown()).optional(),
 }).passthrough()
 
+export const vaultNoteSchema = z.object({
+  id: z.string(),
+  title: z.string().nullable().optional(),
+  markdown: z.string().optional(),
+  content: z.string().optional(),
+  source_format: z.string().optional(),
+  external_state: z.string().optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+  tags: z.array(z.string()).optional(),
+}).passthrough()
+
+// Task payloads are intentionally opaque until their source format is normalized.
+export const vaultTaskSchema = z.unknown()
+
 export const vaultPageSchema = z.object({
   file: vaultFileSchema,
-  note: z.object({ id: z.string(), title: z.string().nullable().optional(), markdown: z.string().optional(), content: z.string().optional(), source_format: z.string().optional(), external_state: z.string().optional(), properties: z.record(z.string(), z.unknown()).optional(), tags: z.array(z.string()).optional() }).passthrough(),
+  note: vaultNoteSchema,
   blocks: z.array(vaultBlockSchema),
-  tasks: z.array(z.unknown()), outgoing_links: z.array(vaultLinkSchema), backlinks: z.array(vaultLinkSchema),
+  tasks: z.array(vaultTaskSchema), outgoing_links: z.array(vaultLinkSchema), backlinks: z.array(vaultLinkSchema),
 }).passthrough()
 
 export const vaultGraphSchema = z.object({

@@ -30,7 +30,7 @@ def api_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
 
 
 @pytest.mark.asyncio
-async def test_get_returns_default_and_put_survives_new_client(
+async def test_legacy_put_defaults_authority_and_serializes_it_explicitly(
     api_app: FastAPI,
 ) -> None:
     workspace_path = api_app.state.workspace_path
@@ -59,7 +59,22 @@ async def test_get_returns_default_and_put_survives_new_client(
             json=payload,
         )
         assert saved.status_code == 200
-        assert saved.json() == payload
+        expected = {
+            **payload,
+            "panes": {
+                **payload["panes"],
+                "pane-1": {
+                    **payload["panes"]["pane-1"],
+                    "tabs": [
+                        {
+                            **payload["panes"]["pane-1"]["tabs"][0],
+                            "source_authority": "external-vault",
+                        }
+                    ],
+                },
+            },
+        }
+        assert saved.json() == expected
         assert str(workspace_path) not in saved.text
 
     async with AsyncClient(
@@ -72,6 +87,10 @@ async def test_get_returns_default_and_put_survives_new_client(
 
     assert restored.status_code == 200
     assert restored.json()["panes"]["pane-1"]["active_tab_id"] == "tab:one"
+    assert (
+        restored.json()["panes"]["pane-1"]["tabs"][0]["source_authority"]
+        == "external-vault"
+    )
     assert str(workspace_path) not in restored.text
 
 
@@ -119,9 +138,7 @@ async def test_put_rejects_oversized_content_length_before_json_parsing(
         )
 
     assert response.status_code == 413
-    assert response.json() == {
-        "detail": {"code": "workspace_request_too_large"}
-    }
+    assert response.json() == {"detail": {"code": "workspace_request_too_large"}}
 
 
 @pytest.mark.asyncio
@@ -145,9 +162,7 @@ async def test_put_rejects_oversized_chunked_body_while_streaming(
         )
 
     assert response.status_code == 413
-    assert response.json() == {
-        "detail": {"code": "workspace_request_too_large"}
-    }
+    assert response.json() == {"detail": {"code": "workspace_request_too_large"}}
 
 
 @pytest.mark.asyncio
@@ -256,9 +271,7 @@ async def test_encoded_write_over_limit_returns_stable_too_large(
         )
 
     assert response.status_code == 413
-    assert response.json() == {
-        "detail": {"code": "workspace_request_too_large"}
-    }
+    assert response.json() == {"detail": {"code": "workspace_request_too_large"}}
 
 
 @pytest.mark.asyncio
