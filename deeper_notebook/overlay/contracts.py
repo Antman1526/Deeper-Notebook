@@ -197,7 +197,13 @@ class OverlayLink(VaultLink):
     model_config = ConfigDict(extra="ignore", strict=True)
 
     source_overlay_note_id: str | None = Field(min_length=1, max_length=128)
+    source_relative_path: str | None = Field(min_length=1, max_length=4096)
     target_overlay_note_id: str | None = Field(min_length=1, max_length=128)
+
+    @field_validator("source_relative_path")
+    @classmethod
+    def source_path_is_canonical(cls, value: str | None) -> str | None:
+        return None if value is None else _canonical_relative_path(value)
 
 
 def _build_overlay_local_graph(
@@ -228,6 +234,7 @@ def _build_overlay_local_graph(
                 or link.target_overlay_note_id != overlay.id
                 or link.source_note_id == center_id
                 or link.source_overlay_note_id is None
+                or link.source_relative_path is None
             ):
                 return
             source_id = link.source_note_id

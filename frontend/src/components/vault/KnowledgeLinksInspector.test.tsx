@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
@@ -36,6 +36,7 @@ const overlayPage = {
     id: 'link:overlay',
     source_note_id: 'note:source',
     source_overlay_note_id: 'overlay_note:source',
+    source_relative_path: 'Notes/20260729-1542 Source.md',
     target_note_id: 'note:target',
     target_overlay_note_id: 'overlay_note:target' as string | null,
     target_note_title: 'Target',
@@ -50,6 +51,7 @@ const overlayPage = {
     id: 'link:backlink',
     source_note_id: 'note:backlink',
     source_overlay_note_id: 'overlay_note:backlink',
+    source_relative_path: 'Notes/20260729-1541 Backlink.md',
     source_note_title: 'Backlink',
     target_note_id: 'note:source',
     target_overlay_note_id: 'overlay_note:source',
@@ -92,41 +94,6 @@ vi.mock('@/lib/hooks/use-vault', () => ({
   },
 }))
 
-vi.mock('./VaultLinks', () => ({
-  VaultLinks: ({
-    title,
-    links,
-    direction,
-    onNavigate,
-  }: {
-    title: string
-    links: typeof overlayPage.outgoing_links
-    direction: 'source' | 'target'
-    onNavigate: (noteId: string) => void
-  }) => (
-    <section>
-      <h2>{title}</h2>
-      {links.map((link) => (
-        link.resolved ? (
-          <button
-            key={link.id}
-            type="button"
-            onClick={() => onNavigate(
-              direction === 'source'
-                ? link.source_note_id
-                : link.target_note_id!,
-            )}
-          >
-            Open {link.target_text}
-          </button>
-        ) : (
-          <span key={link.id}>Unresolved {link.target_text}</span>
-        )
-      ))}
-    </section>
-  ),
-}))
-
 import { KnowledgeLinksInspector } from './KnowledgeLinksInspector'
 
 describe('KnowledgeLinksInspector authority routing', () => {
@@ -165,7 +132,7 @@ describe('KnowledgeLinksInspector authority routing', () => {
     expect(queries.vaultBacklinks).toHaveBeenLastCalledWith(undefined, undefined)
     expect(queries.vaultOutgoing).toHaveBeenLastCalledWith(undefined, undefined)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Target' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Target' }))
     expect(onNavigate).toHaveBeenCalledWith(
       'overlay_space:default',
       'overlay_note:target',
@@ -176,11 +143,11 @@ describe('KnowledgeLinksInspector authority routing', () => {
       'overlay',
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Source' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Backlink' }))
     expect(onNavigate).toHaveBeenLastCalledWith(
       'overlay_space:default',
       'overlay_note:backlink',
-      undefined,
+      'Notes/20260729-1541 Backlink.md',
       'Backlink',
       undefined,
       undefined,
@@ -199,9 +166,13 @@ describe('KnowledgeLinksInspector authority routing', () => {
     const onNavigate = vi.fn()
     render(<KnowledgeLinksInspector onNavigate={onNavigate} />)
 
-    expect(screen.queryByRole('button', { name: 'Open Target' }))
+    expect(screen.queryByRole('button', { name: 'Target' }))
       .not.toBeInTheDocument()
-    expect(screen.getByText('Unresolved Target')).toBeInTheDocument()
+    const outgoing = screen.getByRole('heading', {
+      name: 'knowledge.outgoing',
+    }).closest('section')
+    expect(outgoing).not.toBeNull()
+    expect(within(outgoing!).getByRole('list')).toHaveTextContent('Target')
     expect(onNavigate).not.toHaveBeenCalled()
   })
 })

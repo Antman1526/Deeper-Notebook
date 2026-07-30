@@ -251,8 +251,10 @@ vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
 
 vi.mock('./VaultGraph', () => ({
   VaultGraph: ({
+    graph,
     onNavigate,
   }: {
+    graph?: { nodes: Array<{ id: string }> }
     onNavigate: (noteId: string) => void
   }) => (
     <div>
@@ -260,6 +262,15 @@ vi.mock('./VaultGraph', () => ({
       <button type="button" onClick={() => onNavigate('note:graph-linked')}>
         Navigate graph node
       </button>
+      {graph?.nodes.map((node) => (
+        <button
+          key={node.id}
+          type="button"
+          onClick={() => onNavigate(node.id)}
+        >
+          Navigate graph node {node.id}
+        </button>
+      ))}
     </div>
   ),
 }))
@@ -979,6 +990,7 @@ describe('KnowledgeExplorer overlay authority', () => {
       ...resolvedLink,
       source_note_id: source.projected_note_id,
       source_overlay_note_id: source.id,
+      source_relative_path: source.relative_path,
       target_note_id: target.projected_note_id,
       target_overlay_note_id: target.id,
       target_note_title: target.title,
@@ -1042,6 +1054,137 @@ describe('KnowledgeExplorer overlay authority', () => {
         noteId: target.id,
         sourceAuthority: 'overlay',
       })
+    expect(vaultQueries.page.mock.calls.every(
+      ([vaultId, noteId]) => vaultId === undefined && noteId === undefined,
+    )).toBe(true)
+    expect(vaultQueries.backlinks.mock.calls.every(
+      ([vaultId, noteId]) => vaultId === undefined && noteId === undefined,
+    )).toBe(true)
+    expect(vaultQueries.outgoing.mock.calls.every(
+      ([vaultId, noteId]) => vaultId === undefined && noteId === undefined,
+    )).toBe(true)
+  })
+
+  it('opens and reuses an unseen incoming overlay graph note by canonical source path', async () => {
+    const center = {
+      id: 'overlay_note:center',
+      source_authority: 'overlay' as const,
+      space_id: 'overlay_space:default',
+      projected_note_id: 'note:center',
+      stable_id: 'stable-overlay-center',
+      kind: 'unique' as const,
+      date_key: null,
+      relative_path: 'Notes/20260729-1600 Center.md',
+      title: 'Center',
+      content_hash: 'c'.repeat(64),
+      revision: 1,
+      projection_state: 'current' as const,
+      encoding: 'utf-8' as const,
+      newline: 'lf' as const,
+      created_at: '2026-07-30T00:00:00.000Z',
+      updated_at: '2026-07-30T00:00:00.000Z',
+    }
+    const incoming = {
+      ...center,
+      id: 'overlay_note:incoming',
+      projected_note_id: 'note:incoming',
+      stable_id: 'stable-overlay-incoming',
+      relative_path: 'Notes/20260729-1601 Incoming.md',
+      title: 'Incoming',
+      content_hash: 'd'.repeat(64),
+    }
+    const backlink = {
+      ...resolvedLink,
+      id: 'note_link:incoming',
+      source_note_id: incoming.projected_note_id,
+      source_overlay_note_id: incoming.id,
+      source_relative_path: incoming.relative_path,
+      source_note_title: incoming.title,
+      target_note_id: center.projected_note_id,
+      target_overlay_note_id: center.id,
+      target_note_title: center.title,
+      target_relative_path: center.relative_path,
+      target_text: center.title,
+    }
+    overlayQueries.notes = [center, incoming]
+    overlayQueries.pages = {
+      [center.id]: {
+        overlay: center,
+        note: {
+          id: center.projected_note_id,
+          title: center.title,
+          markdown: '# Center\n',
+          properties: {},
+          tags: [],
+        },
+        blocks: [],
+        tasks: [],
+        outgoing_links: [],
+        backlinks: [backlink],
+        graph: {
+          nodes: [
+            { id: center.projected_note_id, title: center.title },
+            { id: incoming.projected_note_id, title: incoming.title },
+          ],
+          edges: [{
+            id: backlink.id,
+            source: incoming.projected_note_id,
+            target: center.projected_note_id,
+            kind: 'wikilink',
+            resolved: true,
+          }],
+        },
+      },
+      [incoming.id]: {
+        overlay: incoming,
+        note: {
+          id: incoming.projected_note_id,
+          title: incoming.title,
+          markdown: '# Incoming\n',
+          properties: {},
+          tags: [],
+        },
+        blocks: [],
+        tasks: [],
+        outgoing_links: [],
+        backlinks: [],
+        graph: {
+          nodes: [{ id: incoming.projected_note_id, title: incoming.title }],
+          edges: [],
+        },
+      },
+    }
+    render(<KnowledgeExplorer />)
+    fireEvent.change(screen.getByLabelText('knowledge.mounts'), {
+      target: { value: 'overlay:overlay_space:default' },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: center.title }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.localGraph' }))
+
+    vaultQueries.page.mockClear()
+    vaultQueries.backlinks.mockClear()
+    vaultQueries.outgoing.mockClear()
+    const graphNodeName = `Navigate graph node ${incoming.projected_note_id}`
+    fireEvent.click(screen.getByRole('button', { name: graphNodeName }))
+
+    let workspacePane = useKnowledgeWorkspaceStore.getState().panes['pane-1']
+    expect(workspacePane.tabs).toHaveLength(2)
+    const incomingTab = workspacePane.tabs.find(
+      (tab) => tab.noteId === incoming.id,
+    )
+    expect(incomingTab).toMatchObject({
+      noteId: incoming.id,
+      relativePath: incoming.relative_path,
+      sourceAuthority: 'overlay',
+    })
+    expect(workspacePane.activeTabId).toBe(incomingTab?.id)
+
+    fireEvent.click(screen.getByRole('tab', { name: center.title }))
+    fireEvent.click(screen.getByRole('button', { name: graphNodeName }))
+
+    workspacePane = useKnowledgeWorkspaceStore.getState().panes['pane-1']
+    expect(workspacePane.tabs).toHaveLength(2)
+    expect(workspacePane.activeTabId).toBe(incomingTab?.id)
     expect(vaultQueries.page.mock.calls.every(
       ([vaultId, noteId]) => vaultId === undefined && noteId === undefined,
     )).toBe(true)
