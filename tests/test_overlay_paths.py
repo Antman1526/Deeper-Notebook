@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -126,13 +127,14 @@ def test_overlay_frontmatter_has_reserved_identity_and_leaves_body_unchanged():
 
     assert rendered_body == body
     assert yaml.safe_load(frontmatter) == {
+        "title": "2026-07-29",
         "deeper_notebook": {
             "id": "overlay_note:one",
             "kind": "daily",
             "created_at": "2026-07-29T20:00:00+00:00",
             "updated_at": "2026-07-29T21:30:15+00:00",
             "date_key": "2026-07-29",
-        }
+        },
     }
 
 
@@ -158,3 +160,59 @@ def test_overlay_frontmatter_omits_template_id_when_note_has_none():
     frontmatter = rendered.split("---\n", 2)[1]
 
     assert "template_id" not in yaml.safe_load(frontmatter)["deeper_notebook"]
+
+
+def test_overlay_frontmatter_safely_round_trips_title_deterministically():
+    now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+    note = OverlayNote(
+        id="overlay_note:three",
+        space_id="overlay_space:default",
+        projected_note_id="note:overlay-three",
+        stable_id="01JTESTOVERLAY000000000003",
+        kind="unique",
+        date_key=None,
+        relative_path='Notes/20260729-1542 Research_ "α" #1 [draft].md',
+        title='Research: "α" #1 [draft]',
+        content_hash="c" * 64,
+        revision=1,
+        projection_state="current",
+        created_at=now,
+        updated_at=now,
+    )
+    body = "---\n# Body stays byte-for-byte\n"
+
+    first = overlay_frontmatter(note, body)
+    second = overlay_frontmatter(note, body)
+    frontmatter, rendered_body = first.split("---\n", 2)[1:]
+
+    assert first == second
+    assert yaml.safe_load(frontmatter)["title"] == note.title
+    assert rendered_body == body
+
+
+def test_same_body_with_different_title_changes_canonical_sha256():
+    now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+    note = OverlayNote(
+        id="overlay_note:four",
+        space_id="overlay_space:default",
+        projected_note_id="note:overlay-four",
+        stable_id="01JTESTOVERLAY000000000004",
+        kind="unique",
+        date_key=None,
+        relative_path="Notes/20260729-1542 Research.md",
+        title="Research",
+        content_hash="d" * 64,
+        revision=1,
+        projection_state="current",
+        created_at=now,
+        updated_at=now,
+    )
+    body = "# Identical body\n"
+
+    first = overlay_frontmatter(note, body).encode("utf-8")
+    second = overlay_frontmatter(
+        note.model_copy(update={"title": "Renamed"}),
+        body,
+    ).encode("utf-8")
+
+    assert hashlib.sha256(first).hexdigest() != hashlib.sha256(second).hexdigest()
