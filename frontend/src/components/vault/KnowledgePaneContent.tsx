@@ -154,6 +154,11 @@ export function KnowledgePaneContent({
   }>
 
   const navigate = (targetNoteId: string) => {
+    const overlayLink = isOverlay
+      ? overlayPage.data?.outgoing_links.find(
+          (candidate) => candidate.target_note_id === targetNoteId,
+        )
+      : undefined
     const link = currentOutgoing.find(
       (candidate) => candidate.target_note_id === targetNoteId,
     )
@@ -164,9 +169,13 @@ export function KnowledgePaneContent({
       || link?.target_note_title === undefined
       ? graphNode?.title ?? undefined
       : link.target_note_title
+    const navigationNoteId = isOverlay
+      ? overlayLink?.target_overlay_note_id
+      : targetNoteId
+    if (!navigationNoteId) return
     onNavigate(
       activeTab.vaultId,
-      targetNoteId,
+      navigationNoteId,
       link?.target_relative_path ?? undefined,
       titleHint,
       pane.id,

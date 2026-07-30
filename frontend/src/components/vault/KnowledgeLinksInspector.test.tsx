@@ -19,7 +19,7 @@ const overlayPage = {
     stable_id: 'stable-overlay-source',
     kind: 'unique' as const,
     date_key: null,
-    relative_path: 'Unique/source.md',
+    relative_path: 'Notes/20260729-1542 Source.md',
     title: 'Source',
     content_hash: 'a'.repeat(64),
     revision: 1,
@@ -34,25 +34,43 @@ const overlayPage = {
   tasks: [],
   outgoing_links: [{
     id: 'link:overlay',
-    source_note_id: 'overlay_note:source',
-    target_note_id: 'overlay_note:target',
+    source_note_id: 'note:source',
+    source_overlay_note_id: 'overlay_note:source',
+    target_note_id: 'note:target',
+    target_overlay_note_id: 'overlay_note:target' as string | null,
     target_note_title: 'Target',
-    target_relative_path: 'Unique/target.md',
+    target_relative_path: 'Notes/20260729-1543 Target.md',
     target_text: 'Target',
     link_kind: 'wikilink',
     resolved: true,
     source_start: 0,
     source_end: 8,
   }],
-  backlinks: [],
+  backlinks: [{
+    id: 'link:backlink',
+    source_note_id: 'note:backlink',
+    source_overlay_note_id: 'overlay_note:backlink',
+    source_note_title: 'Backlink',
+    target_note_id: 'note:source',
+    target_overlay_note_id: 'overlay_note:source',
+    target_note_title: 'Source',
+    target_relative_path: 'Notes/20260729-1542 Source.md',
+    target_text: 'Source',
+    link_kind: 'wikilink',
+    resolved: true,
+    source_start: 0,
+    source_end: 8,
+  }],
   graph: null,
 }
+
+let currentOverlayPage = overlayPage
 
 vi.mock('@/lib/hooks/use-overlay', () => ({
   useOverlayPage: (noteId?: string) => {
     queries.overlayPage(noteId)
     return {
-      data: noteId ? overlayPage : undefined,
+      data: noteId ? currentOverlayPage : undefined,
       isLoading: false,
       isError: false,
     }
@@ -110,6 +128,7 @@ import { KnowledgeLinksInspector } from './KnowledgeLinksInspector'
 describe('KnowledgeLinksInspector authority routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    currentOverlayPage = overlayPage
     useKnowledgeWorkspaceStore.getState().replaceWorkspace({
       version: 1,
       activePaneId: 'pane-1',
@@ -123,7 +142,7 @@ describe('KnowledgeLinksInspector authority routing', () => {
             vaultId: 'overlay_space:default',
             noteId: 'overlay_note:source',
             title: 'Source',
-            relativePath: 'Unique/source.md',
+            relativePath: 'Notes/20260729-1542 Source.md',
             viewMode: 'source',
             sourceAuthority: 'overlay',
           }],
@@ -146,11 +165,38 @@ describe('KnowledgeLinksInspector authority routing', () => {
     expect(onNavigate).toHaveBeenCalledWith(
       'overlay_space:default',
       'overlay_note:target',
-      'Unique/target.md',
+      'Notes/20260729-1543 Target.md',
       'Target',
       undefined,
       'Target',
       'overlay',
     )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Source' }))
+    expect(onNavigate).toHaveBeenLastCalledWith(
+      'overlay_space:default',
+      'overlay_note:backlink',
+      undefined,
+      'Backlink',
+      undefined,
+      undefined,
+      'overlay',
+    )
+  })
+
+  it('does not open an overlay tab when the explicit overlay identity is absent', () => {
+    currentOverlayPage = {
+      ...overlayPage,
+      outgoing_links: [{
+        ...overlayPage.outgoing_links[0],
+        target_overlay_note_id: null,
+      }],
+    }
+    const onNavigate = vi.fn()
+    render(<KnowledgeLinksInspector onNavigate={onNavigate} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Target' }))
+
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 })

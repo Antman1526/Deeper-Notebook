@@ -56,13 +56,23 @@ export const overlayNoteSchema = z.object({
   }
 })
 
+const overlayLinkIdentitySchema = z.object({
+  source_overlay_note_id: overlayNoteIdSchema.nullable(),
+  target_overlay_note_id: overlayNoteIdSchema.nullable(),
+}).passthrough()
+
+export const overlayLinkSchema = z.intersection(
+  vaultLinkSchema,
+  overlayLinkIdentitySchema,
+)
+
 export const overlayPageSchema = z.object({
   overlay: overlayNoteSchema,
   note: vaultNoteSchema,
   blocks: z.array(vaultBlockSchema),
   tasks: z.array(vaultTaskSchema),
-  outgoing_links: z.array(vaultLinkSchema),
-  backlinks: z.array(vaultLinkSchema),
+  outgoing_links: z.array(overlayLinkSchema),
+  backlinks: z.array(overlayLinkSchema),
   graph: vaultGraphSchema.nullable(),
 }).strict()
 
@@ -84,6 +94,7 @@ const updateOverlayNoteSchema = z.object({
 })
 
 export type OverlayNote = z.infer<typeof overlayNoteSchema>
+export type OverlayLink = z.infer<typeof overlayLinkSchema>
 export type OverlayPage = z.infer<typeof overlayPageSchema>
 export type CreateUniqueOverlayNote = z.input<typeof createUniqueOverlayNoteSchema>
 export type UpdateOverlayNote = z.input<typeof updateOverlayNoteSchema>
