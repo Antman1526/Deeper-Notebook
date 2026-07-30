@@ -752,6 +752,8 @@ class OverlayRepository:
             or parsed.content_hash != content_hash
         ):
             raise ValueError("overlay_projection_input_mismatch")
+        if parsed.title != reservation.title:
+            raise ValueError("overlay_projection_title_mismatch")
         if relative_snapshot is None:
             raise ValueError("overlay_snapshot_required")
         relative_snapshot = validate_relative_path(relative_snapshot)

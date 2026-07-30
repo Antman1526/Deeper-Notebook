@@ -686,13 +686,15 @@ async def test_started_update_recovers_in_fresh_instance_after_both_db_calls_fai
 
     assert recovered.overlay.revision == 2
     assert recovered.overlay.content_hash == canonical.content_hash
+    assert recovered.overlay.title == request.title
+    assert recovered.note["title"] == request.title
     assert fixture.storage.replace_calls == 1
     assert len(fresh_repository.revisions) == 2
     _assert_revision_snapshot(fixture, fresh_repository.revisions[-1])
 
 
 @pytest.mark.asyncio
-async def test_started_update_rejects_changed_request_for_same_idempotency_key(
+async def test_started_update_rejects_title_only_change_for_same_idempotency_key(
     fixture,
 ):
     page = await fixture.service().create_unique(
@@ -711,9 +713,7 @@ async def test_started_update_rejects_changed_request_for_same_idempotency_key(
     canonical = fixture.storage.read(page.overlay.relative_path)
 
     fresh_repository = MemoryRepository(fixture.repository)
-    changed_request = first_request.model_copy(
-        update={"title": "Different", "markdown": "# Different\n"}
-    )
+    changed_request = first_request.model_copy(update={"title": "Different"})
     with pytest.raises(OverlayConflictError, match="overlay_hash_conflict"):
         await OverlayService(
             fresh_repository,
@@ -724,6 +724,32 @@ async def test_started_update_rejects_changed_request_for_same_idempotency_key(
     assert fixture.storage.read(page.overlay.relative_path) == canonical
     assert fixture.storage.replace_calls == 1
     assert len(fresh_repository.revisions) == 1
+    assert fresh_repository.notes[page.overlay.id].title == page.overlay.title
+    assert fresh_repository.notes[page.overlay.id].title != changed_request.title
+
+
+@pytest.mark.asyncio
+async def test_title_only_update_projects_title_from_exact_canonical_markdown(fixture):
+    page = await fixture.service().create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="one")
+    )
+    original_body = "# Research\n"
+
+    updated = await fixture.service().update(
+        page.overlay.id,
+        UpdateOverlayNote(
+            title="Renamed",
+            markdown=original_body,
+            expected_revision=1,
+            idempotency_key="title-only",
+        ),
+    )
+    canonical = fixture.storage.read(page.overlay.relative_path)
+
+    assert updated.overlay.title == "Renamed"
+    assert updated.note["title"] == "Renamed"
+    assert updated.note["content"] == canonical.markdown
+    assert "title: Renamed\n" in canonical.markdown
 
 
 @pytest.mark.asyncio
