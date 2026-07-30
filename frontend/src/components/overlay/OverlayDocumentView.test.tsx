@@ -1,0 +1,313 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { OverlayPage } from '@/lib/api/overlay'
+
+const overlayMutation = vi.hoisted(() => ({
+  mutateAsync: vi.fn(),
+}))
+
+vi.mock('@/lib/hooks/use-overlay', () => ({
+  useUpdateOverlayNote: () => overlayMutation,
+}))
+
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, string | number>) => {
+      const copy: Record<string, string> = {
+        'common.cancel': 'Cancel',
+        'common.title': 'Title',
+        'knowledge.overlay.save': 'Save',
+        'knowledge.overlay.saving': 'Saving…',
+        'knowledge.overlay.saved': 'Saved',
+        'knowledge.overlay.dirtyDraft': 'Unsaved draft',
+        'knowledge.overlay.revision': `Revision ${options?.revision}`,
+        'knowledge.overlay.projectionCurrent': 'Projection current',
+        'knowledge.overlay.projectionPending': 'Projection pending',
+        'knowledge.overlay.projectionFailed': 'Projection failed',
+        'knowledge.overlay.projectionConflict': 'Projection conflict',
+        'knowledge.overlay.writable': 'Writable app-owned note',
+        'knowledge.overlay.saveError': 'The draft could not be saved.',
+        'knowledge.overlay.conflict': 'This note changed elsewhere. Your draft is still safe.',
+        'knowledge.overlay.reload': 'Review server version',
+        'knowledge.overlay.reloadTitle': 'Discard local draft?',
+        'knowledge.overlay.reloadDescription': 'Reload the latest server revision and discard this local draft.',
+        'knowledge.overlay.discardAndReload': 'Discard and reload',
+        'knowledge.overlay.reloadError': 'The server revision could not be reloaded.',
+        'knowledge.source': 'Source',
+        'knowledge.reader': 'Reader',
+        'knowledge.livePreview': 'Live Preview',
+        'knowledge.localGraph': 'Local graph',
+        'knowledge.footnotes': 'Footnotes',
+        'knowledge.noProperties': 'No properties.',
+        'knowledge.noTags': 'No tags.',
+        'knowledge.outline': 'Outline',
+        'knowledge.properties': 'Properties',
+        'knowledge.tags': 'Tags',
+        'knowledge.outgoing': 'Outgoing links',
+        'knowledge.backlinks': 'Backlinks',
+        'knowledge.unresolved': 'Unresolved link',
+        'knowledge.overlay.noteDetails': 'Note details',
+        'knowledge.overlay.noHeadings': 'No headings',
+      }
+      return copy[key] ?? key
+    },
+  }),
+}))
+
+vi.mock('./OverlaySourceEditor', () => ({
+  OverlaySourceEditor: ({
+    ariaLabel,
+    markdown,
+    onChange,
+    disabled,
+  }: {
+    ariaLabel: string
+    markdown: string
+    onChange: (markdown: string) => void
+    disabled?: boolean
+  }) => (
+    <textarea
+      aria-label={ariaLabel}
+      value={markdown}
+      disabled={disabled}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
+}))
+
+vi.mock('@/components/vault/VaultMarkdown', () => ({
+  VaultMarkdown: ({ markdown }: { markdown: string }) => (
+    <div data-testid="overlay-reading">{markdown}</div>
+  ),
+}))
+
+vi.mock('@/components/vault/VaultLivePreview', () => ({
+  VaultLivePreview: ({ markdown }: { markdown: string }) => (
+    <div data-testid="overlay-live-preview">{markdown}</div>
+  ),
+}))
+
+vi.mock('@/components/vault/VaultGraph', () => ({
+  VaultGraph: () => <div data-testid="overlay-graph" />,
+}))
+
+vi.mock('@/components/vault/VaultLinks', () => ({
+  VaultLinks: ({ title }: { title: string }) => <div>{title}</div>,
+}))
+
+import { OverlayDocumentView } from './OverlayDocumentView'
+
+function pageAt(
+  revision: number,
+  markdown = '# Research\n',
+  contentHash = 'a'.repeat(64),
+): OverlayPage {
+  return {
+    overlay: {
+      id: 'overlay_note:research',
+      source_authority: 'overlay',
+      space_id: 'overlay_space:default',
+      projected_note_id: 'note:research',
+      stable_id: 'stable-research-note-1',
+      kind: 'unique',
+      date_key: null,
+      relative_path: 'Unique/research.md',
+      title: 'Research',
+      content_hash: contentHash,
+      revision,
+      projection_state: 'current',
+      encoding: 'utf-8',
+      newline: 'lf',
+      created_at: '2026-07-29T12:00:00+00:00',
+      updated_at: '2026-07-29T12:00:00+00:00',
+    },
+    note: {
+      id: 'note:research',
+      title: 'Research',
+      markdown,
+      properties: { status: 'active' },
+      tags: ['research'],
+    },
+    blocks: [],
+    tasks: [],
+    outgoing_links: [],
+    backlinks: [],
+    graph: { nodes: [], edges: [] },
+  }
+}
+
+function editMarkdown(markdown: string) {
+  fireEvent.change(screen.getByRole('textbox', { name: 'Research source' }), {
+    target: { value: markdown },
+  })
+}
+
+describe('OverlayDocumentView', () => {
+  beforeEach(() => {
+    overlayMutation.mutateAsync.mockReset()
+  })
+
+  it('saves with the loaded revision and adopts only the successful page', async () => {
+    let resolveSave!: (page: OverlayPage) => void
+    overlayMutation.mutateAsync.mockReturnValue(new Promise((resolve) => {
+      resolveSave = resolve
+    }))
+    render(
+      <OverlayDocumentView
+        viewId="pane-1:tab-1"
+        page={pageAt(3)}
+        mode="source"
+        onNavigate={vi.fn()}
+      />,
+    )
+
+    editMarkdown('# Changed\n')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(overlayMutation.mutateAsync).toHaveBeenCalledWith({
+      id: 'overlay_note:research',
+      title: 'Research',
+      markdown: '# Changed\n',
+      expectedRevision: 3,
+      idempotencyKey: expect.stringMatching(/^save-/),
+    })
+    expect(screen.getByText('Revision 3')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled()
+
+    resolveSave(pageAt(4, '# Changed\n', 'b'.repeat(64)))
+    expect(await screen.findByText('Revision 4')).toBeInTheDocument()
+    expect(screen.getByText('Saved')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('uses a new idempotency key for each explicit failed save attempt', async () => {
+    overlayMutation.mutateAsync.mockRejectedValue(new Error('offline'))
+    render(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="source"
+        onNavigate={vi.fn()}
+      />,
+    )
+    editMarkdown('# Local draft\n')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(overlayMutation.mutateAsync).toHaveBeenCalledTimes(2))
+
+    const firstKey = overlayMutation.mutateAsync.mock.calls[0][0].idempotencyKey
+    const secondKey = overlayMutation.mutateAsync.mock.calls[1][0].idempotencyKey
+    expect(secondKey).not.toBe(firstKey)
+    expect(screen.getByRole('textbox', { name: 'Research source' }))
+      .toHaveValue('# Local draft\n')
+  })
+
+  it('resets a clean draft from server updates but preserves a dirty draft', () => {
+    const { rerender } = render(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="source"
+        onNavigate={vi.fn()}
+      />,
+    )
+
+    rerender(
+      <OverlayDocumentView
+        page={pageAt(4, '# Server update\n', 'b'.repeat(64))}
+        mode="source"
+        onNavigate={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('textbox', { name: 'Research source' }))
+      .toHaveValue('# Server update\n')
+
+    editMarkdown('# Local draft\n')
+    rerender(
+      <OverlayDocumentView
+        page={pageAt(5, '# Newer server update\n', 'c'.repeat(64))}
+        mode="source"
+        onNavigate={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('textbox', { name: 'Research source' }))
+      .toHaveValue('# Local draft\n')
+    expect(screen.getByText('Revision 4')).toBeInTheDocument()
+  })
+
+  it('keeps a conflicting draft and reloads only after accessible confirmation', async () => {
+    overlayMutation.mutateAsync.mockRejectedValue({
+      response: { status: 409, data: { detail: { code: 'overlay_revision_conflict' } } },
+    })
+    const onReload = vi.fn().mockResolvedValue(
+      pageAt(4, '# Server version\n', 'b'.repeat(64)),
+    )
+    render(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="source"
+        onNavigate={vi.fn()}
+        onReload={onReload}
+      />,
+    )
+    editMarkdown('# Local draft\n')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('changed elsewhere')
+    expect(overlayMutation.mutateAsync).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('textbox', { name: 'Research source' }))
+      .toHaveValue('# Local draft\n')
+
+    const reviewButton = screen.getByRole('button', {
+      name: 'Review server version',
+    })
+    reviewButton.focus()
+    fireEvent.click(reviewButton)
+    expect(screen.getByRole('alertdialog', { name: 'Discard local draft?' }))
+      .toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('textbox', { name: 'Research source' }))
+      .toHaveValue('# Local draft\n')
+    await waitFor(() => expect(reviewButton).toHaveFocus())
+
+    fireEvent.click(reviewButton)
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and reload' }))
+    await waitFor(() => expect(onReload).toHaveBeenCalledOnce())
+    expect(await screen.findByRole('textbox', { name: 'Research source' }))
+      .toHaveValue('# Server version\n')
+    expect(screen.getByText('Revision 4')).toBeInTheDocument()
+    expect(overlayMutation.mutateAsync).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses pure renderers for overlay reading, live preview, and graph modes', () => {
+    const { rerender } = render(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="reading"
+        onNavigate={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('overlay-reading')).toHaveTextContent('# Research')
+
+    rerender(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="live-preview"
+        onNavigate={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('overlay-live-preview')).toBeInTheDocument()
+
+    rerender(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="graph"
+        onNavigate={vi.fn()}
+      />,
+    )
+    expect(screen.getByTestId('overlay-graph')).toBeInTheDocument()
+  })
+})

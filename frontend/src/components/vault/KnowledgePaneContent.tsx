@@ -1,8 +1,17 @@
 'use client'
 
 import { useEffect } from 'react'
-import { BookOpen, Code2, Eye, FileSearch, Network, ShieldCheck } from 'lucide-react'
+import {
+  BookOpen,
+  Code2,
+  Eye,
+  FilePenLine,
+  FileSearch,
+  Network,
+  ShieldCheck,
+} from 'lucide-react'
 
+import { OverlayDocumentView } from '@/components/overlay/OverlayDocumentView'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type {
@@ -13,6 +22,7 @@ import {
   VaultPageContractError,
   type VaultMount,
 } from '@/lib/api/vault'
+import { useOverlayPage } from '@/lib/hooks/use-overlay'
 import {
   useVaultGraph,
   useVaultOutgoing,
@@ -63,22 +73,46 @@ export function KnowledgePaneContent({
   const vaultId = activeTab?.vaultId
   const noteId = activeTab?.noteId
   const visibleMode = activeTab?.viewMode ?? 'reading'
-  const page = useVaultPage(vaultId, noteId)
-  const outgoing = useVaultOutgoing(vaultId, noteId)
-  const graph = useVaultGraph(vaultId, noteId, visibleMode === 'graph')
+  const isOverlay = activeTab?.sourceAuthority === 'overlay'
+  const overlayPage = useOverlayPage(isOverlay ? noteId : undefined)
+  const vaultPage = useVaultPage(
+    isOverlay ? undefined : vaultId,
+    isOverlay ? undefined : noteId,
+  )
+  const outgoing = useVaultOutgoing(
+    isOverlay ? undefined : vaultId,
+    isOverlay ? undefined : noteId,
+  )
+  const graph = useVaultGraph(
+    isOverlay ? undefined : vaultId,
+    isOverlay ? undefined : noteId,
+    !isOverlay && visibleMode === 'graph',
+  )
 
   useEffect(() => {
-    if (!activeTab || !page.data || page.isError) return
+    if (!activeTab) return
+    if (isOverlay) {
+      if (!overlayPage.data || overlayPage.isError) return
+      reconcileTabReference(pane.id, activeTab.id, {
+        title: overlayPage.data.overlay.title.trim() || activeTab.title,
+        relativePath: overlayPage.data.overlay.relative_path,
+      })
+      return
+    }
+    if (!vaultPage.data || vaultPage.isError) return
     reconcileTabReference(pane.id, activeTab.id, {
-      title: page.data.note.title?.trim() || activeTab.title,
-      relativePath: page.data.file.relative_path,
+      title: vaultPage.data.note.title?.trim() || activeTab.title,
+      relativePath: vaultPage.data.file.relative_path,
     })
   }, [
     activeTab,
-    page.data,
-    page.isError,
+    isOverlay,
+    overlayPage.data,
+    overlayPage.isError,
     pane.id,
     reconcileTabReference,
+    vaultPage.data,
+    vaultPage.isError,
   ])
 
   if (!activeTab) {
@@ -95,9 +129,17 @@ export function KnowledgePaneContent({
     )
   }
 
-  const mount = mounts.find((candidate) => candidate.id === vaultId)
-  const currentOutgoing = outgoing.data || page.data?.outgoing_links || []
+  const pageData = isOverlay ? overlayPage.data : vaultPage.data
+  const pageLoading = isOverlay ? overlayPage.isLoading : vaultPage.isLoading
+  const pageError = isOverlay ? overlayPage.isError : vaultPage.isError
+  const mount = isOverlay
+    ? undefined
+    : mounts.find((candidate) => candidate.id === vaultId)
+  const currentOutgoing = isOverlay
+    ? overlayPage.data?.outgoing_links ?? []
+    : outgoing.data || vaultPage.data?.outgoing_links || []
   const unresolved = currentOutgoing.filter((link) => !link.resolved)
+  const currentGraph = isOverlay ? overlayPage.data?.graph : graph.data
   const modeOptions = [
     { mode: 'reading', label: t('knowledge.reader'), icon: BookOpen },
     { mode: 'source', label: t('knowledge.source'), icon: Code2 },
@@ -113,7 +155,7 @@ export function KnowledgePaneContent({
     const link = currentOutgoing.find(
       (candidate) => candidate.target_note_id === targetNoteId,
     )
-    const graphNode = graph.data?.nodes.find(
+    const graphNode = currentGraph?.nodes.find(
       (candidate) => candidate.id === targetNoteId,
     )
     const titleHint = link?.target_note_title === null
@@ -130,11 +172,25 @@ export function KnowledgePaneContent({
     )
   }
 
-  const errorKey = page.error instanceof VaultPageContractError
-    ? page.error.code === 'canonical-path-unavailable'
+  const errorKey = !isOverlay && vaultPage.error instanceof VaultPageContractError
+    ? vaultPage.error.code === 'canonical-path-unavailable'
       ? 'knowledge.canonicalPathUnavailable'
       : 'knowledge.pageInvalid'
-    : 'knowledge.loadError'
+    : isOverlay
+      ? 'knowledge.overlay.loadError'
+      : 'knowledge.loadError'
+  const title = isOverlay && overlayPage.data
+    ? overlayPage.data.overlay.title || activeTab.title
+    : !isOverlay && vaultPage.data
+      ? vaultPage.data.note.title || activeTab.title
+      : activeTab.title
+  const sourceDescription = isOverlay && overlayPage.data
+    ? `${overlayPage.data.overlay.relative_path} · ${t('knowledge.overlay.writable')}`
+    : !isOverlay && vaultPage.data
+      ? `${mount?.name || activeTab.relativePath} · ${
+        vaultPage.data.note.source_format || mount?.format_mode || 'markdown'
+      } · ${t('knowledge.canonicalSource')}`
+      : ''
 
   return (
     <section
@@ -183,39 +239,53 @@ export function KnowledgePaneContent({
         ))}
       </div>
 
-      {page.data && !page.isError && (
+      {pageData && !pageError && (
         <div className="mt-5 border-b pb-4">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-2xl font-semibold">
-              {page.data.note.title || activeTab.title
-                || t('knowledge.untitledNote')}
+              {title || t('knowledge.untitledNote')}
             </h2>
-            <Badge variant="outline">
-              <ShieldCheck className="mr-1 h-3.5 w-3.5" />
-              {t('knowledge.readOnly')}
+            <Badge
+              variant={isOverlay ? 'secondary' : 'outline'}
+              className={`dn-authority-badge ${
+                isOverlay
+                  ? 'dn-authority-badge--overlay'
+                  : 'dn-authority-badge--external'
+              }`}
+            >
+              {isOverlay
+                ? <FilePenLine aria-hidden="true" />
+                : <ShieldCheck aria-hidden="true" />}
+              {isOverlay
+                ? t('knowledge.overlay.writable')
+                : t('knowledge.overlay.externalReadOnly')}
             </Badge>
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            {mount?.name || activeTab.relativePath}
-            {' · '}
-            {page.data.note.source_format || mount?.format_mode || 'markdown'}
-            {' · '}
-            {t('knowledge.canonicalSource')}
+            {sourceDescription}
           </p>
         </div>
       )}
 
       <div className="mt-5 min-h-0 flex-1">
-        {page.isLoading ? (
+        {pageLoading ? (
           <p className="py-12 text-center text-sm text-muted-foreground">
             {t('knowledge.noteLoading')}
           </p>
-        ) : page.isError ? (
+        ) : pageError ? (
           <p role="alert" className="py-12 text-center text-sm text-destructive">
             {t(errorKey)}
           </p>
-        ) : !page.data ? null
-          : visibleMode === 'graph' ? (
+        ) : isOverlay && overlayPage.data ? (
+          <OverlayDocumentView
+            viewId={`${pane.id}:${activeTab.id}`}
+            mode={visibleMode}
+            page={overlayPage.data}
+            onNavigate={navigate}
+            onReload={async () => (await overlayPage.refetch()).data}
+          />
+        ) : !isOverlay && vaultPage.data ? (
+          visibleMode === 'graph' ? (
             graph.isLoading ? (
               <p className="py-12 text-center text-sm text-muted-foreground">
                 {t('knowledge.graphLoading')}
@@ -236,12 +306,13 @@ export function KnowledgePaneContent({
               viewId={`${pane.id}:${activeTab.id}`}
               mode={visibleMode}
               page={{
-                ...page.data,
+                ...vaultPage.data,
                 outgoing_links: currentOutgoing,
               }}
               onNavigate={navigate}
             />
-          )}
+          )
+        ) : null}
       </div>
     </section>
   )

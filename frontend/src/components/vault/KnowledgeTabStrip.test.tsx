@@ -10,6 +10,8 @@ vi.mock('@/lib/hooks/use-translation', () => ({
     t: (key: string, options?: { title?: string }) => {
       if (key === 'knowledge.openTabs') return 'Open tabs'
       if (key === 'knowledge.closeTab') return `Close ${options?.title ?? ''}`.trim()
+      if (key === 'knowledge.overlay.writable') return 'Writable app-owned note'
+      if (key === 'knowledge.overlay.externalReadOnly') return 'External read-only'
       return key
     },
   }),
@@ -105,6 +107,36 @@ describe('KnowledgeTabStrip', () => {
     for (const tab of screen.getAllByRole('tab')) {
       expect(tab).toHaveAttribute('aria-controls', 'knowledge-panel-pane-1')
     }
+  })
+
+  it('shows text and icon authority badges for writable and read-only tabs', () => {
+    render(
+      <KnowledgeTabStrip
+        pane={{
+          ...pane,
+          tabs: [
+            pane.tabs[0],
+            {
+              ...pane.tabs[1],
+              sourceAuthority: 'overlay',
+              vaultId: 'overlay_space:default',
+              noteId: 'overlay_note:research',
+            },
+          ],
+        }}
+        onActivateTab={vi.fn()}
+        onCloseTab={vi.fn()}
+      />,
+    )
+
+    const externalBadge = screen.getByText('External read-only')
+      .closest('.dn-authority-badge')!
+    const overlayBadge = screen.getByText('Writable app-owned note')
+      .closest('.dn-authority-badge')!
+    expect(externalBadge.querySelector('svg')).not.toBeNull()
+    expect(overlayBadge.querySelector('svg')).not.toBeNull()
+    expect(externalBadge).toHaveClass('dn-authority-badge--external')
+    expect(overlayBadge).toHaveClass('dn-authority-badge--overlay')
   })
 
   it('keeps DOM tab IDs distinct when pane and tab delimiters are ambiguous', () => {

@@ -168,7 +168,11 @@ const knowledgeCommandLocaleKeys = [
 
 const overlayLocaleKeys = [
   'name', 'writable', 'today', 'newUnique', 'uniqueTitle', 'create', 'creating', 'daily', 'notes',
-  'empty', 'loadError', 'createError',
+  'empty', 'loadError', 'createError', 'save', 'saving', 'saved', 'saveError',
+  'dirtyDraft', 'revision', 'projectionCurrent', 'projectionPending',
+  'projectionFailed', 'projectionConflict', 'conflict', 'reload', 'reloadTitle',
+  'reloadDescription', 'discardAndReload', 'reloadError', 'externalReadOnly',
+  'noteDetails', 'noHeadings',
 ] as const
 
 const rawEnglishRuntimeLeafAllowlist = new Set([
@@ -273,6 +277,43 @@ describe('Overlay locale contracts', () => {
       expect(getTranslation(resource.translation as Record<string, unknown>, `knowledge.overlay.${key}`))
         .toEqual(expect.any(String))
     }
+  })
+
+  it.each(Object.entries(resources))(
+    '%s preserves the overlay revision interpolation token',
+    (code, resource) => {
+      expect(
+        getTranslation(
+          resource.translation as Record<string, unknown>,
+          'knowledge.overlay.revision',
+        ),
+        `${code} must interpolate the loaded revision`,
+      ).toContain('{{revision}}')
+    },
+  )
+
+  it('keeps exact English revision-safe editing copy', () => {
+    expect(enUS.knowledge.overlay).toMatchObject({
+      save: 'Save',
+      saving: 'Saving…',
+      saved: 'Saved',
+      saveError: 'The draft could not be saved.',
+      dirtyDraft: 'Unsaved draft',
+      revision: 'Revision {{revision}}',
+      projectionCurrent: 'Projection current',
+      projectionPending: 'Projection pending',
+      projectionFailed: 'Projection failed',
+      projectionConflict: 'Projection conflict',
+      conflict: 'This note changed elsewhere. Your draft is still safe.',
+      reload: 'Review server version',
+      reloadTitle: 'Discard local draft?',
+      reloadDescription: 'Reload the latest server revision and discard this local draft.',
+      discardAndReload: 'Discard and reload',
+      reloadError: 'The server revision could not be reloaded.',
+      externalReadOnly: 'External read-only',
+      noteDetails: 'Note details',
+      noHeadings: 'No headings',
+    })
   })
 })
 
