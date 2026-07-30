@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { OverlayPage } from '@/lib/api/overlay'
 import type { VaultPage } from '@/lib/api/vault'
 import { VaultPageContractError } from '@/lib/api/vault'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
@@ -8,6 +10,7 @@ import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-sto
 const editorState = vi.hoisted(() => ({ failLivePreview: false }))
 const overlayView = vi.hoisted(() => ({
   onReload: undefined as undefined | (() => Promise<unknown>),
+  onNavigate: undefined as undefined | ((noteId: string) => void),
 }))
 const queries = vi.hoisted(() => ({
   page: {
@@ -59,11 +62,14 @@ vi.mock('@/components/overlay/OverlayDocumentView', () => ({
   OverlayDocumentView: ({
     mode,
     onReload,
+    onNavigate,
   }: {
     mode: string
     onReload: () => Promise<unknown>
+    onNavigate: (noteId: string) => void
   }) => {
     overlayView.onReload = onReload
+    overlayView.onNavigate = onNavigate
     return <section aria-label={`Overlay document ${mode}`} />
   },
 }))
@@ -127,6 +133,54 @@ const pageFixture = {
   backlinks: [],
 } satisfies VaultPage
 
+function overlayPageWithTarget(
+  targetOverlayNoteId: string | null,
+): OverlayPage {
+  return {
+    overlay: {
+      id: 'overlay_note:research',
+      source_authority: 'overlay',
+      space_id: 'overlay_space:default',
+      projected_note_id: 'note:research',
+      stable_id: 'stable-overlay-research',
+      kind: 'unique',
+      date_key: null,
+      relative_path: 'Notes/20260729-1542 Research.md',
+      title: 'Research',
+      content_hash: 'b'.repeat(64),
+      revision: 2,
+      projection_state: 'current',
+      encoding: 'utf-8',
+      newline: 'lf',
+      created_at: '2026-07-29T12:00:00+00:00',
+      updated_at: '2026-07-29T12:00:00+00:00',
+    },
+    note: {
+      id: 'note:research',
+      title: 'Research',
+      markdown: '# Research\n',
+    },
+    blocks: [],
+    tasks: [],
+    outgoing_links: [{
+      id: 'note_link:target',
+      source_note_id: 'note:research',
+      source_overlay_note_id: 'overlay_note:research',
+      target_note_id: 'note:target',
+      target_overlay_note_id: targetOverlayNoteId,
+      target_note_title: 'Target',
+      target_relative_path: 'Notes/20260729-1543 Target.md',
+      target_text: 'Target',
+      link_kind: 'wikilink',
+      resolved: true,
+      source_start: 0,
+      source_end: 10,
+    }],
+    backlinks: [],
+    graph: null,
+  }
+}
+
 function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'graph' = 'reading') {
   useKnowledgeWorkspaceStore.getState().replaceWorkspace({
     version: 1,
@@ -177,7 +231,11 @@ function replaceOverlayWorkspace(
   })
 }
 
-function PaneHarness() {
+function PaneHarness({
+  onNavigate = vi.fn(),
+}: {
+  onNavigate?: ComponentProps<typeof KnowledgePaneContent>['onNavigate']
+}) {
   const pane = useKnowledgeWorkspaceStore((state) => state.panes['pane-1'])
   return (
     <KnowledgePaneContent
@@ -189,13 +247,15 @@ function PaneHarness() {
         state: 'ready-read-only',
         watch_enabled: true,
       }]}
-      onNavigate={vi.fn()}
+      onNavigate={onNavigate}
     />
   )
 }
 
-function renderPane() {
-  return render(<PaneHarness />)
+function renderPane(
+  onNavigate?: ComponentProps<typeof KnowledgePaneContent>['onNavigate'],
+) {
+  return render(<PaneHarness onNavigate={onNavigate} />)
 }
 
 function replaceTwoPaneWorkspace() {
@@ -265,6 +325,7 @@ describe('KnowledgePaneContent', () => {
     queries.vaultOutgoingArgs.mockClear()
     queries.overlayPageArgs.mockClear()
     overlayView.onReload = undefined
+    overlayView.onNavigate = undefined
     queries.overlayPage = {
       data: undefined,
       isLoading: false,
@@ -524,6 +585,48 @@ describe('KnowledgePaneContent', () => {
     renderPane()
 
     await expect(overlayView.onReload?.()).rejects.toBe(refetchError)
+  })
+
+  it('translates a projected overlay link target to its explicit overlay identity', () => {
+    replaceOverlayWorkspace()
+    queries.overlayPage = {
+      data: overlayPageWithTarget('overlay_note:target'),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }
+    const onNavigate = vi.fn()
+
+    renderPane(onNavigate)
+    overlayView.onNavigate?.('note:target')
+
+    expect(onNavigate).toHaveBeenCalledWith(
+      'overlay_space:default',
+      'overlay_note:target',
+      'Notes/20260729-1543 Target.md',
+      'Target',
+      'pane-1',
+      'Target',
+      'overlay',
+    )
+  })
+
+  it('does not navigate an overlay link without an explicit overlay target', () => {
+    replaceOverlayWorkspace()
+    queries.overlayPage = {
+      data: overlayPageWithTarget(null),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }
+    const onNavigate = vi.fn()
+
+    renderPane(onNavigate)
+    overlayView.onNavigate?.('note:target')
+
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 
   it('shows Reading after editor failure without mutating the persisted mode', () => {

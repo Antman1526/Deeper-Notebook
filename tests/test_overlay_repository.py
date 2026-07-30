@@ -17,7 +17,7 @@ from deeper_notebook.vault.contracts import (
     ParsedLink,
     ParsedTask,
 )
-from deeper_notebook.vault.repository import OwnedProjectionUnitOfWork
+from deeper_notebook.vault.repository import OwnedProjectionUnitOfWork, VaultRepository
 
 NOW = datetime(2026, 7, 29, 20, 0, tzinfo=timezone.utc)
 
@@ -165,6 +165,67 @@ class ReusableFactory:
     @asynccontextmanager
     async def __call__(self):
         yield self.connection
+
+
+@pytest.mark.asyncio
+async def test_overlay_page_query_preserves_both_identity_domains():
+    link = {
+        "id": "note_link:one",
+        "source_note_id": "note:one",
+        "source_note_title": "2026-07-29",
+        "target_note_id": "note:two",
+        "target_note_title": "Target",
+        "target_relative_path": "Notes/20260729-1542 Target.md",
+        "target_text": "Target",
+        "link_kind": "wikilink",
+        "resolved": True,
+        "source_start": 0,
+        "source_end": 10,
+        "source_overlay_note_id": "overlay_note:one",
+        "target_overlay_note_id": "overlay_note:two",
+    }
+    connection = ScriptedConnection([{
+        "page": {
+            "overlay": _note_row(projection_state="current"),
+            "note": {"id": "note:one", "title": "2026-07-29"},
+            "blocks": [],
+            "tasks": [],
+            "outgoing_links": [link],
+            "backlinks": [],
+            "graph": None,
+        }
+    }])
+    repository = OverlayRepository(
+        connection_factory=ReusableFactory(connection),
+        clock=lambda: NOW,
+    )
+
+    page = await repository.get_page("overlay_note:one")
+
+    assert page.outgoing_links[0].source_note_id == "note:one"
+    assert page.outgoing_links[0].target_note_id == "note:two"
+    assert page.outgoing_links[0].source_overlay_note_id == "overlay_note:one"
+    assert page.outgoing_links[0].target_overlay_note_id == "overlay_note:two"
+    query = connection.calls[0][0]
+    assert query.count(
+        "source_note_id.overlay_note_id AS source_overlay_note_id"
+    ) == 2
+    assert query.count(
+        "target_note_id.overlay_note_id AS target_overlay_note_id"
+    ) == 2
+
+
+def test_owned_projection_page_query_preserves_both_identity_domains():
+    query = " ".join(
+        VaultRepository._owned_projection_transaction("RETURN true;").split()
+    )
+
+    assert query.count(
+        "source_note_id.overlay_note_id AS source_overlay_note_id"
+    ) == 2
+    assert query.count(
+        "target_note_id.overlay_note_id AS target_overlay_note_id"
+    ) == 2
 
 
 @pytest.mark.asyncio

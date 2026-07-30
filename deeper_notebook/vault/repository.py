@@ -1028,7 +1028,11 @@ class VaultRepository:
                 outgoing_links: (
                     SELECT *,
                         source_note_id.title AS source_note_title,
+                        source_note_id.overlay_note_id
+                            AS source_overlay_note_id,
                         target_note_id.title AS target_note_title,
+                        target_note_id.overlay_note_id
+                            AS target_overlay_note_id,
                         target_note_id.overlay_note_id.relative_path
                             AS target_relative_path
                     FROM note_link
@@ -1037,7 +1041,11 @@ class VaultRepository:
                 backlinks: (
                     SELECT *,
                         source_note_id.title AS source_note_title,
+                        source_note_id.overlay_note_id
+                            AS source_overlay_note_id,
                         target_note_id.title AS target_note_title,
+                        target_note_id.overlay_note_id
+                            AS target_overlay_note_id,
                         target_note_id.overlay_note_id.relative_path
                             AS target_relative_path
                     FROM note_link

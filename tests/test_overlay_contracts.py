@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from deeper_notebook.overlay.contracts import (
     CreateDailyNote,
     CreateUniqueNote,
+    OverlayLink,
     OverlayMutationReceipt,
     OverlayNote,
     OverlayPage,
@@ -175,6 +176,53 @@ def test_overlay_page_rejects_a_note_from_another_projection():
     assert page.note["id"] == overlay.projected_note_id
     with pytest.raises(ValidationError):
         OverlayPage(overlay=overlay, note={"id": "note:external"})
+
+
+def test_overlay_link_requires_explicit_nullable_overlay_identities():
+    link = {
+        "id": "note_link:one",
+        "source_note_id": "note:source",
+        "source_note_title": "Source",
+        "target_note_id": "note:target",
+        "target_note_title": "Target",
+        "target_relative_path": "Notes/20260729-1542 Target.md",
+        "target_text": "Target",
+        "link_kind": "wikilink",
+        "resolved": True,
+        "source_start": 0,
+        "source_end": 10,
+        "source_overlay_note_id": "overlay_note:source",
+        "target_overlay_note_id": "overlay_note:target",
+        "schema_version": 1,
+        "target_title_key": "target",
+    }
+
+    parsed = OverlayLink.model_validate(link)
+    assert parsed.source_note_id == "note:source"
+    assert parsed.target_note_id == "note:target"
+    assert parsed.source_overlay_note_id == "overlay_note:source"
+    assert parsed.target_overlay_note_id == "overlay_note:target"
+    assert parsed.model_dump()["target_overlay_note_id"] == "overlay_note:target"
+    assert "schema_version" not in parsed.model_dump()
+    assert "target_title_key" not in parsed.model_dump()
+
+    for missing_field in (
+        "source_overlay_note_id",
+        "target_overlay_note_id",
+    ):
+        with pytest.raises(ValidationError):
+            OverlayLink.model_validate({
+                key: value
+                for key, value in link.items()
+                if key != missing_field
+            })
+
+    external = OverlayLink.model_validate({
+        **link,
+        "target_overlay_note_id": None,
+    })
+    assert external.target_note_id == "note:target"
+    assert external.target_overlay_note_id is None
 
 
 def test_receipt_has_no_content_or_absolute_path_fields():

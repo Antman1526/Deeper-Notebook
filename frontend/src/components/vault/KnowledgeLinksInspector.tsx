@@ -66,13 +66,22 @@ export function KnowledgeLinksInspector({
 
   const navigateBacklink = (targetNoteId: string) => {
     if (!activeTab) return
+    const overlayLink = isOverlay
+      ? overlayPage.data?.backlinks.find(
+          (candidate) => candidate.source_note_id === targetNoteId,
+        )
+      : undefined
     const link = currentBacklinks.find(
       (candidate) => candidate.source_note_id === targetNoteId,
     )
     const title = link?.source_note_title || targetNoteId
+    const navigationNoteId = isOverlay
+      ? overlayLink?.source_overlay_note_id
+      : targetNoteId
+    if (!navigationNoteId) return
     onNavigate(
       activeTab.vaultId,
-      targetNoteId,
+      navigationNoteId,
       undefined,
       title,
       undefined,
@@ -83,6 +92,11 @@ export function KnowledgeLinksInspector({
 
   const navigateOutgoing = (targetNoteId: string) => {
     if (!activeTab) return
+    const overlayLink = isOverlay
+      ? overlayPage.data?.outgoing_links.find(
+          (candidate) => candidate.target_note_id === targetNoteId,
+        )
+      : undefined
     const link = currentOutgoing.find(
       (candidate) => candidate.target_note_id === targetNoteId,
     )
@@ -90,9 +104,13 @@ export function KnowledgeLinksInspector({
       || link?.target_note_title === undefined
       ? undefined
       : link.target_note_title
+    const navigationNoteId = isOverlay
+      ? overlayLink?.target_overlay_note_id
+      : targetNoteId
+    if (!navigationNoteId) return
     onNavigate(
       activeTab.vaultId,
-      targetNoteId,
+      navigationNoteId,
       link?.target_relative_path ?? undefined,
       titleHint,
       undefined,
