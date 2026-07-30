@@ -22,6 +22,15 @@ from deeper_notebook.overlay.paths import (
     unique_relative_path,
     validate_relative_path,
 )
+from deeper_notebook.overlay.repository import (
+    OverlayConflictError as OverlayRepositoryConflictError,
+)
+from deeper_notebook.overlay.repository import (
+    OverlayRepository,
+    OverlayRepositoryError,
+    OverlayReservation,
+)
+from deeper_notebook.overlay.service import OverlayService
 from deeper_notebook.overlay.storage import (
     OverlayConflictError,
     OverlaySnapshot,
@@ -42,7 +51,12 @@ __all__ = [
     "OverlayPage",
     "OverlayProjectionState",
     "OverlayReceiptStatus",
+    "OverlayRepository",
+    "OverlayRepositoryConflictError",
+    "OverlayRepositoryError",
+    "OverlayReservation",
     "OverlayRevision",
+    "OverlayService",
     "OverlaySnapshot",
     "OverlaySourceAuthority",
     "OverlaySpace",
