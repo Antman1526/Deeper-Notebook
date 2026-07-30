@@ -18,6 +18,8 @@ function renderBridge() {
   const fileTreeRef = createRef<HTMLDivElement>()
   const linksRef = createRef<HTMLDivElement>()
   const scanSelectedVault = vi.fn(async () => undefined)
+  const openTodayOverlay = vi.fn(async () => undefined)
+  const openUniqueOverlayDialog = vi.fn()
   const activePaneElement = document.createElement('section')
   document.body.append(activePaneElement)
   const result = render(
@@ -35,10 +37,12 @@ function renderBridge() {
         linksRef={linksRef}
         selectedVaultId="vault:fixture"
         scanSelectedVault={scanSelectedVault}
+        openTodayOverlay={openTodayOverlay}
+        openUniqueOverlayDialog={openUniqueOverlayDialog}
       />
     </>,
   )
-  return { ...result, activePaneElement, scanSelectedVault }
+  return { ...result, activePaneElement, scanSelectedVault, openTodayOverlay, openUniqueOverlayDialog }
 }
 
 describe('KnowledgeCommandBridge', () => {
@@ -94,6 +98,8 @@ describe('KnowledgeCommandBridge', () => {
     expect(useKnowledgeCommandContextStore.getState().context).toMatchObject({
       selectedVaultId: 'vault:fixture',
       scanSelectedVault: expect.any(Function),
+      openTodayOverlay: expect.any(Function),
+      openUniqueOverlayDialog: expect.any(Function),
       activePaneElement,
     })
     unmount()

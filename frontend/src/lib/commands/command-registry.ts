@@ -13,6 +13,8 @@ export type KnowledgeCommandId =
   | 'knowledge.focus-files'
   | 'knowledge.focus-pane'
   | 'knowledge.focus-links'
+  | 'knowledge.overlay.today'
+  | 'knowledge.overlay.unique'
 
 export type CommandScope = 'global' | 'knowledge'
 export type CommandSafety = 'read' | 'workspace' | 'external-write'
@@ -28,6 +30,8 @@ export interface KnowledgeCommandExecutionContext {
   closePane: () => void
   closeTab: () => void
   scanSelectedVault: (() => Promise<void>) | null
+  openTodayOverlay: (() => Promise<void>) | null
+  openUniqueOverlayDialog: (() => void) | null
   focusFileTree: (() => void) | null
   focusActivePane: (() => void) | null
   focusLinks: (() => void) | null
@@ -177,6 +181,26 @@ export const knowledgeCommandDefinitions: CommandDefinition[] = [
     ),
     unavailableReasonKey: 'knowledge.commands.requiresSelectedVault',
     execute: context => context.scanSelectedVault!(),
+  },
+  {
+    id: 'knowledge.overlay.today',
+    scope: 'knowledge',
+    safety: 'workspace',
+    labelKey: 'knowledge.overlay.today',
+    aliases: ['today', 'daily note'],
+    keywords: ['overlay', 'today', 'daily', 'note'],
+    isAvailable: context => context.openTodayOverlay !== null,
+    execute: context => context.openTodayOverlay!(),
+  },
+  {
+    id: 'knowledge.overlay.unique',
+    scope: 'knowledge',
+    safety: 'workspace',
+    labelKey: 'knowledge.overlay.newUnique',
+    aliases: ['new unique note', 'unique note'],
+    keywords: ['overlay', 'new', 'unique', 'note'],
+    isAvailable: context => context.openUniqueOverlayDialog !== null,
+    execute: context => context.openUniqueOverlayDialog!(),
   },
   {
     id: 'knowledge.focus-files',

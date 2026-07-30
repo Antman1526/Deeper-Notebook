@@ -19,6 +19,8 @@ function context(): KnowledgeCommandExecutionContext {
     closePane: vi.fn(),
     closeTab: vi.fn(),
     scanSelectedVault: vi.fn(async () => undefined),
+    openTodayOverlay: vi.fn(async () => undefined),
+    openUniqueOverlayDialog: vi.fn(),
     focusFileTree: vi.fn(),
     focusActivePane: vi.fn(),
     focusLinks: vi.fn(),
@@ -31,6 +33,23 @@ describe('knowledge command registry', () => {
     const commands = availableKnowledgeCommands(context(), 'slash')
     expect(commands.length).toBeGreaterThan(0)
     expect(commands.every(command => command.safety !== 'external-write')).toBe(true)
+  })
+
+  it('executes the two app-owned overlay actions without exposing an external write', async () => {
+    const commandContext = context()
+    const slash = availableKnowledgeCommands(commandContext, 'slash')
+
+    expect(slash.find(command => command.id === 'knowledge.overlay.today')).toMatchObject({
+      safety: 'workspace', available: true,
+    })
+    expect(slash.find(command => command.id === 'knowledge.overlay.unique')).toMatchObject({
+      safety: 'workspace', available: true,
+    })
+    expect(slash.some(command => command.safety === 'external-write')).toBe(false)
+    await expect(executeKnowledgeCommand('knowledge.overlay.today', commandContext)).resolves.toBe(true)
+    await expect(executeKnowledgeCommand('knowledge.overlay.unique', commandContext)).resolves.toBe(true)
+    expect(commandContext.openTodayOverlay).toHaveBeenCalledOnce()
+    expect(commandContext.openUniqueOverlayDialog).toHaveBeenCalledOnce()
   })
 
   it('disables close-pane with one pane and executes view changes exactly once', async () => {
@@ -65,7 +84,7 @@ describe('knowledge command registry', () => {
   })
 
   it('declares the complete safe command set and rejects unknown commands', async () => {
-    expect(knowledgeCommandDefinitions).toHaveLength(14)
+    expect(knowledgeCommandDefinitions).toHaveLength(16)
     expect(knowledgeCommandDefinitions.every(command => (
       command.safety === 'read' || command.safety === 'workspace'
     ))).toBe(true)

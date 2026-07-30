@@ -235,6 +235,8 @@ export const zhCN = {
     knowledge: "知识",
   },
   knowledge: { mounts: "已挂载的知识库", scan: "扫描知识库", status: "状态", readOnly: "只读外部文件", backlinks: "反向链接", outgoing: "出站链接", properties: "属性", tags: "标签", unresolved: "未解析链接", loadError: "无法加载知识。", description: "读取本地 Obsidian 和 Logseq 笔记，不会更改原始文件。", files: "知识库文件", mountsLoading: "正在加载已挂载的知识库…", noMounts: "尚无可用的已挂载知识库。", filesLoading: "正在加载文件…", reader: "阅读器", localGraph: "本地图谱", selectNote: "选择一条笔记以浏览", externalReadOnly: "你的知识库保持外部且只读。", noteLoading: "正在加载笔记…", untitledNote: "无标题笔记", canonicalSource: "规范来源", noProperties: "没有属性。", noTags: "没有标签。", outline: "大纲", graphLoading: "正在加载图谱…", graphLoadError: "无法加载图谱。", noteLinks: "笔记链接", linksLoading: "正在加载链接…", linksLoadError: "无法加载链接。", filterFiles: "筛选文件", noMatchingFiles: "没有匹配的文件。", noGraphLinks: "尚无可绘制的笔记链接。", noLinks: "尚无链接。", openTabs: "打开的标签页", closeTab: "关闭 {{title}}", knowledgeWorkspace: "知识工作区", knowledgePane: "知识窗格", splitPaneRight: "向右拆分窗格", splitPaneDown: "向下拆分窗格", closePane: "关闭窗格", resizeHorizontalSplit: "调整水平拆分大小", resizeVerticalSplit: "调整垂直拆分大小", workspaceLoading: "正在加载已保存的工作区…", workspaceLoadError: "无法加载已保存的工作区。本地标签页仍可使用。", workspaceSaving: "正在保存工作区…", workspaceSaveError: "无法保存工作区。本地标签页仍保持打开。",
+    overlay: { name: "Deeper Notebook 覆盖层", writable: "可写的应用自有笔记", today: "今天", newUnique: "新建唯一笔记", uniqueTitle: "唯一笔记标题", create: "创建笔记", creating: "正在创建笔记…", empty: "尚无覆盖层笔记", loadError: "无法加载覆盖层笔记。", createError: "无法创建覆盖层笔记。" },
+
     quickSwitcher: "快速切换",
     quickSwitcherDescription: "打开已索引的知识库笔记",
     alreadyOpen: "已打开",

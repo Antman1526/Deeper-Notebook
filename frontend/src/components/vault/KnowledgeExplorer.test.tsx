@@ -22,6 +22,20 @@ const vaultQueries = vi.hoisted(() => ({
   outgoing: vi.fn(),
   scan: vi.fn(async (vaultId: string) => { void vaultId }),
 }))
+const vaultState = vi.hoisted(() => ({
+  mounts: [{
+    id: 'vault:one', name: 'Fixture', format_mode: 'markdown',
+    state: 'ready-read-only', watch_enabled: true,
+  }],
+}))
+const overlayQueries = vi.hoisted(() => ({
+  notes: [] as Array<{
+    id: string; source_authority: 'overlay'; space_id: string; projected_note_id: string; stable_id: string
+    kind: 'daily' | 'unique'; date_key: string | null; relative_path: string; title: string; content_hash: string
+    revision: number; projection_state: 'current'; encoding: 'utf-8'; newline: 'lf'; created_at: string; updated_at: string
+  }>,
+  today: vi.fn(),
+}))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/lib/hooks/use-create-dialogs', () => ({
@@ -142,13 +156,7 @@ function backlinkFor(noteId?: string) {
 
 vi.mock('@/lib/hooks/use-vault', () => ({
   useVaults: () => ({
-    data: [{
-      id: 'vault:one',
-      name: 'Fixture',
-      format_mode: 'markdown',
-      state: 'ready-read-only',
-      watch_enabled: true,
-    }],
+    data: vaultState.mounts,
     isLoading: false,
     isError: false,
   }),
@@ -200,6 +208,12 @@ vi.mock('@/lib/hooks/use-vault', () => ({
     }, [vaultId])
     return { mutateAsync, isPending, error }
   },
+}))
+
+vi.mock('@/lib/hooks/use-overlay', () => ({
+  useOverlayNotes: () => ({ data: overlayQueries.notes, isLoading: false, isError: false }),
+  useTodayOverlayNote: () => ({ mutateAsync: overlayQueries.today, isPending: false }),
+  useCreateUniqueOverlayNote: () => ({ mutateAsync: vi.fn(), isPending: false, error: null }),
 }))
 
 vi.mock('@/lib/hooks/use-knowledge-workspace', () => ({
@@ -353,6 +367,11 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
+    vaultState.mounts = [{
+      id: 'vault:one', name: 'Fixture', format_mode: 'markdown',
+      state: 'ready-read-only', watch_enabled: true,
+    }]
+    overlayQueries.notes = []
     resetKnowledgeCommandContextStore()
     resetCommandSurfaceStore()
     vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
@@ -795,6 +814,11 @@ describe('KnowledgeExplorer query states', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
+    vaultState.mounts = [{
+      id: 'vault:one', name: 'Fixture', format_mode: 'markdown',
+      state: 'ready-read-only', watch_enabled: true,
+    }]
+    overlayQueries.notes = []
     resetKnowledgeCommandContextStore()
     vaultQueries.outgoing.mockImplementation((_vaultId, noteId) => (
       noteId === 'note:one'
@@ -839,5 +863,70 @@ describe('KnowledgeExplorer query states', () => {
     await waitFor(() => {
       expect(screen.getByText('knowledge.graphLoadError')).toBeInTheDocument()
     })
+  })
+})
+
+describe('KnowledgeExplorer overlay authority', () => {
+  beforeEach(() => {
+    states.hydration = { isLoading: false, isError: false }
+    states.persistence = { isPending: false, isError: false, error: null }
+    vaultState.mounts = [{
+      id: 'vault:one', name: 'Fixture', format_mode: 'markdown',
+      state: 'ready-read-only', watch_enabled: true,
+    }]
+    overlayQueries.notes = []
+    overlayQueries.today.mockReset()
+    vi.clearAllMocks()
+    resetKnowledgeCommandContextStore()
+    resetCommandSurfaceStore()
+    useKnowledgeWorkspaceStore.getState().resetWorkspace()
+  })
+
+  it('renders the app-owned overlay even with no external mounts', async () => {
+    vaultState.mounts = []
+    render(<KnowledgeExplorer />)
+
+    expect(await screen.findByRole('heading', { name: 'knowledge.overlay.name' })).toBeInTheDocument()
+    expect(screen.getByText('knowledge.overlay.writable')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'knowledge.scan' })).toBeNull()
+  })
+
+  it('never renders or executes an external scan while the overlay root is selected', async () => {
+    overlayQueries.today.mockResolvedValue({
+      overlay: {
+        id: 'overlay_note:daily', source_authority: 'overlay', space_id: 'overlay_space:default',
+        projected_note_id: 'projected:daily', stable_id: 'a'.repeat(20), kind: 'daily', date_key: '2026-07-29',
+        relative_path: 'Daily/2026-07-29.md', title: '2026-07-29', content_hash: 'a'.repeat(64), revision: 1,
+        projection_state: 'current', encoding: 'utf-8', newline: 'lf',
+        created_at: '2026-07-29T00:00:00.000Z', updated_at: '2026-07-29T00:00:00.000Z',
+      },
+      note: { id: 'projected:daily', title: '2026-07-29', content: '', properties: {}, tags: [] },
+      blocks: [], tasks: [], outgoing_links: [], backlinks: [], graph: null,
+    })
+    render(<KnowledgeExplorer />)
+    fireEvent.change(screen.getByLabelText('knowledge.mounts'), {
+      target: { value: 'overlay:overlay_space:default' },
+    })
+
+    expect(screen.queryByRole('button', { name: 'knowledge.scan' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.overlay.today' }))
+    await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs.at(-1))
+      .toMatchObject({ sourceAuthority: 'overlay', noteId: 'overlay_note:daily' }))
+    expect(vaultQueries.scan).not.toHaveBeenCalled()
+  })
+
+  it('opens listed overlay notes with overlay authority', async () => {
+    overlayQueries.notes = [{
+      id: 'overlay_note:unique', source_authority: 'overlay', space_id: 'overlay_space:default',
+      projected_note_id: 'projected:unique', stable_id: 'a'.repeat(20), kind: 'unique', date_key: null,
+      relative_path: 'Notes/Research.md', title: 'Research', content_hash: 'a'.repeat(64), revision: 1,
+      projection_state: 'current', encoding: 'utf-8', newline: 'lf',
+      created_at: '2026-07-29T00:00:00.000Z', updated_at: '2026-07-29T00:00:00.000Z',
+    }]
+    render(<KnowledgeExplorer />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Research' }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs.at(-1))
+      .toMatchObject({ sourceAuthority: 'overlay', vaultId: 'overlay_space:default' })
   })
 })
