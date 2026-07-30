@@ -128,7 +128,6 @@ class OverlayRepository:
         self._projection_repository = projection_repository or VaultRepository(
             connection_factory=self._connection_factory
         )
-        self._failure_hashes: dict[str, str] = {}
 
     async def _query(
         self,
@@ -504,6 +503,162 @@ class OverlayRepository:
             raise OverlayRepositoryError("overlay_reservation_outcome_missing")
         return self._reservation(outcome)
 
+    async def prepare_revision(
+        self,
+        *,
+        reservation: OverlayReservation,
+        content_hash: str,
+    ) -> None:
+        """Durably bind a started receipt to the exact bytes to be published."""
+        if not isinstance(reservation, OverlayReservation):
+            raise ValueError("invalid_overlay_reservation")
+        content_hash = _safe_hash(content_hash)
+        receipt_id = _record_id(
+            "overlay_mutation_receipt",
+            "update"
+            if reservation.expected_revision is not None
+            else ("create-daily" if reservation.kind == "daily" else "create-unique"),
+            reservation.idempotency_key,
+        )
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                BEGIN TRANSACTION;
+                LET $receipt = (SELECT * FROM $receipt_id LIMIT 1)[0];
+                LET $identity_valid = (
+                    $receipt != NONE
+                    AND $receipt.operation_id = $operation_id
+                    AND $receipt.overlay_note_id = $overlay_note_id
+                    AND $receipt.status IN ['started', 'failed']
+                );
+                LET $hash_valid = (
+                    $receipt.after_hash = NONE
+                    OR $receipt.after_hash = $content_hash
+                );
+                IF $identity_valid AND $hash_valid {
+                    UPDATE $receipt_id SET
+                        after_hash = $content_hash,
+                        status = 'started',
+                        error_code = NONE,
+                        completed_at = NONE;
+                };
+                RETURN {
+                    outcome: IF !$identity_valid {
+                        'conflict'
+                    } ELSE {
+                        IF $hash_valid {
+                            'prepared'
+                        } ELSE {
+                            'hash-conflict'
+                        }
+                    }
+                };
+                COMMIT TRANSACTION;
+                """,
+                {
+                    "receipt_id": _db_id(receipt_id),
+                    "operation_id": reservation.operation_id,
+                    "overlay_note_id": _overlay_note_db_id(reservation.overlay_note_id),
+                    "content_hash": content_hash,
+                },
+            )
+        outcome = self._outcome(rows).get("outcome")
+        if outcome == "hash-conflict":
+            raise OverlayConflictError("overlay_hash_conflict")
+        if outcome != "prepared":
+            raise OverlayConflictError("overlay_revision_conflict")
+
+    async def reassign_unique_path(
+        self,
+        *,
+        reservation: OverlayReservation,
+        relative_path: str,
+    ) -> OverlayReservation:
+        """Move an unpublished unique reservation off a disk-only collision."""
+        if (
+            not isinstance(reservation, OverlayReservation)
+            or reservation.kind != "unique"
+            or reservation.expected_revision is not None
+        ):
+            raise ValueError("invalid_overlay_reservation")
+        relative_path = validate_relative_path(relative_path)
+        receipt_id = _record_id(
+            "overlay_mutation_receipt",
+            "create-unique",
+            reservation.idempotency_key,
+        )
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                BEGIN TRANSACTION;
+                LET $receipt = (SELECT * FROM $receipt_id LIMIT 1)[0];
+                LET $note = (SELECT * FROM $overlay_note_id LIMIT 1)[0];
+                LET $revision = (
+                    SELECT * FROM overlay_revision
+                    WHERE overlay_note_id = $overlay_note_id
+                    LIMIT 1
+                )[0];
+                LET $path_winner = (
+                    SELECT * FROM overlay_note
+                    WHERE space_id = $space_id
+                    AND relative_path = $relative_path
+                    LIMIT 1
+                )[0];
+                LET $valid = (
+                    $receipt != NONE
+                    AND $receipt.operation_id = $operation_id
+                    AND $receipt.overlay_note_id = $overlay_note_id
+                    AND $receipt.operation = 'create-unique'
+                    AND $receipt.status IN ['started', 'failed', 'conflict']
+                    AND $note != NONE
+                    AND $note.space_id = $space_id
+                    AND $note.kind = 'unique'
+                    AND $note.content_hash = $zero_hash
+                    AND $revision = NONE
+                );
+                IF $valid AND $path_winner = NONE {
+                    UPDATE $overlay_note_id SET
+                        relative_path = $relative_path,
+                        projection_state = 'pending';
+                    UPDATE $receipt_id SET
+                        after_hash = NONE,
+                        status = 'started',
+                        error_code = NONE,
+                        completed_at = NONE;
+                };
+                RETURN {
+                    outcome: IF !$valid {
+                        'conflict'
+                    } ELSE {
+                        IF $path_winner != NONE {
+                            'path-conflict'
+                        } ELSE {
+                            'reassigned'
+                        }
+                    },
+                    note: (SELECT * FROM $overlay_note_id LIMIT 1)[0],
+                    receipt: (SELECT * FROM $receipt_id LIMIT 1)[0]
+                };
+                COMMIT TRANSACTION;
+                """,
+                {
+                    "receipt_id": _db_id(receipt_id),
+                    "operation_id": reservation.operation_id,
+                    "overlay_note_id": _overlay_note_db_id(reservation.overlay_note_id),
+                    "space_id": _db_id("overlay_space:default"),
+                    "relative_path": relative_path,
+                    "zero_hash": _ZERO_HASH,
+                },
+            )
+        outcome = self._outcome(rows)
+        if outcome.get("outcome") == "path-conflict":
+            raise OverlayConflictError("overlay_path_conflict")
+        if outcome.get("outcome") != "reassigned":
+            raise OverlayConflictError("overlay_revision_conflict")
+        return self._reservation(outcome)
+
     @staticmethod
     def _reserve_update_transaction() -> str:
         return """
@@ -597,15 +752,18 @@ class OverlayRepository:
             or parsed.content_hash != content_hash
         ):
             raise ValueError("overlay_projection_input_mismatch")
-        if relative_snapshot is not None:
-            relative_snapshot = validate_relative_path(relative_snapshot)
-        self._failure_hashes[reservation.operation_id] = content_hash
+        if relative_snapshot is None:
+            raise ValueError("overlay_snapshot_required")
+        relative_snapshot = validate_relative_path(relative_snapshot)
+        if not relative_snapshot.startswith("revisions/"):
+            raise ValueError("overlay_snapshot_required")
         target_revision = (
             1
             if reservation.expected_revision is None
             else reservation.expected_revision + 1
         )
-        projection = self._projection_repository._owned_projection_variables(
+        projection = self._projection_repository.owned_projection_unit_of_work(
+            source_authority="overlay",
             overlay_space_id="overlay_space:default",
             overlay_note_id=reservation.overlay_note_id,
             projected_note_id=reservation.projected_note_id,
@@ -638,9 +796,7 @@ class OverlayRepository:
             "schema_version": 1,
             "overlay_note_id": overlay_note_db_id,
             "revision": target_revision,
-            "relative_snapshot": (
-                relative_snapshot or f"canonical/{reservation.relative_path}"
-            ),
+            "relative_snapshot": relative_snapshot,
             "content_hash": content_hash,
             "byte_size": byte_size,
             "created_at": now,
@@ -653,7 +809,7 @@ class OverlayRepository:
             "completed_at": now,
         }
         variables = {
-            **projection,
+            **projection.variables,
             "receipt_id": _db_id(receipt_id),
             "operation_id": reservation.operation_id,
             "expected_revision": reservation.expected_revision,
@@ -664,7 +820,7 @@ class OverlayRepository:
             "revision": revision,
             "success_receipt": success_receipt,
         }
-        statement = self._commit_transaction()
+        statement = self._commit_transaction(projection.mutation_statement)
         async with self._connection_factory() as connection:
             rows = await self._query(connection, statement, variables)
         outcome = self._outcome(rows)
@@ -677,10 +833,9 @@ class OverlayRepository:
             note = OverlayNote.model_validate(outcome.get("note"))
         except ValidationError:
             raise OverlayRepositoryError("overlay_note_invalid") from None
-        self._failure_hashes.pop(reservation.operation_id, None)
         return note
 
-    def _commit_transaction(self) -> str:
+    def _commit_transaction(self, projection_mutation: str) -> str:
         return (
             """
             BEGIN TRANSACTION;
@@ -732,13 +887,15 @@ class OverlayRepository:
             LET $valid = (
                 $receipt != NONE
                 AND $receipt.operation_id = $operation_id
+                AND $receipt.overlay_note_id = $overlay_note_id
                 AND $receipt.status IN ['started', 'failed']
+                AND $receipt.after_hash = $content_hash
                 AND $projection_valid
                 AND ($create_valid OR $update_valid)
             );
             IF $valid {
             """
-            + self._projection_repository._owned_projection_mutations()
+            + projection_mutation
             + """
                 UPSERT $overlay_note_id MERGE $overlay_note;
                 CREATE $revision_id CONTENT $revision;
@@ -761,15 +918,6 @@ class OverlayRepository:
             """
         )
 
-    def stage_failure_hash(
-        self,
-        reservation: OverlayReservation,
-        content_hash: str,
-    ) -> None:
-        if not isinstance(reservation, OverlayReservation):
-            raise ValueError("invalid_overlay_reservation")
-        self._failure_hashes[reservation.operation_id] = _safe_hash(content_hash)
-
     async def record_failure(
         self,
         *,
@@ -780,7 +928,6 @@ class OverlayRepository:
             raise ValueError("invalid_overlay_reservation")
         if not isinstance(error_code, str) or _SAFE_ERROR.fullmatch(error_code) is None:
             error_code = "overlay_error"
-        after_hash = self._failure_hashes.get(reservation.operation_id)
         receipt_id = _record_id(
             "overlay_mutation_receipt",
             "update"
@@ -791,20 +938,17 @@ class OverlayRepository:
         conflict = error_code in {
             "overlay_revision_conflict",
             "overlay_hash_conflict",
+            "overlay_identity_conflict",
             "overlay_file_changed",
         }
         failure_status = "conflict" if conflict else "failed"
-        if conflict and after_hash is not None:
+        if conflict:
             projection_state: str | None = "conflict"
-        elif (
-            error_code
-            in {
-                "overlay_projection_pending",
-                "overlay_parser_failed",
-                "overlay_repository_unavailable",
-            }
-            and after_hash is not None
-        ):
+        elif error_code in {
+            "overlay_projection_pending",
+            "overlay_parser_failed",
+            "overlay_repository_unavailable",
+        }:
             projection_state = "pending"
         elif reservation.expected_revision is None:
             projection_state = "failed"
@@ -820,7 +964,6 @@ class OverlayRepository:
                     UPDATE $receipt_id SET
                         status = $failure_status,
                         error_code = $error_code,
-                        after_hash = $after_hash,
                         completed_at = $completed_at;
                     IF $projection_state != NONE {
                         UPDATE $overlay_note_id SET
@@ -834,12 +977,10 @@ class OverlayRepository:
                     "overlay_note_id": _overlay_note_db_id(reservation.overlay_note_id),
                     "error_code": error_code,
                     "failure_status": failure_status,
-                    "after_hash": after_hash,
                     "projection_state": projection_state,
                     "completed_at": self._clock(),
                 },
             )
-        self._failure_hashes.pop(reservation.operation_id, None)
 
     async def get_receipt(
         self,
