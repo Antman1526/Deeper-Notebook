@@ -1033,7 +1033,23 @@ class OverlayRepository:
     def _page_query() -> str:
         return """
         LET $overlay = (
-            SELECT * FROM $overlay_note_id
+            SELECT
+                id,
+                space_id,
+                projected_note_id,
+                stable_id,
+                kind,
+                date_key,
+                relative_path,
+                title,
+                content_hash,
+                revision,
+                projection_state,
+                encoding,
+                newline,
+                created_at,
+                updated_at
+            FROM $overlay_note_id
             WHERE space_id = $overlay_space_id
             LIMIT 1
         )[0];
