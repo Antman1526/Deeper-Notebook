@@ -3,6 +3,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 UP = ROOT / "deeper_notebook/database/migrations/36.surrealql"
 DOWN = ROOT / "deeper_notebook/database/migrations/36_down.surrealql"
+INDEX_REPAIR = ROOT / "deeper_notebook/database/migrations/37.surrealql"
+INDEX_REPAIR_DOWN = ROOT / "deeper_notebook/database/migrations/37_down.surrealql"
 
 TABLES = (
     "overlay_space",
@@ -65,3 +67,17 @@ def test_migration_36_down_removes_only_overlay_schema():
     ) in sql
     for field in ("source_authority", "overlay_space_id", "overlay_note_id"):
         assert f"REMOVE FIELD IF EXISTS {field} ON TABLE note;" in sql
+
+
+def test_migration_37_removes_none_colliding_daily_index():
+    sql = INDEX_REPAIR.read_text(encoding="utf-8")
+    down_sql = INDEX_REPAIR_DOWN.read_text(encoding="utf-8")
+
+    assert (
+        "REMOVE INDEX IF EXISTS idx_overlay_daily ON TABLE overlay_note;" in sql
+    )
+    assert "DEFINE INDEX" not in sql
+    assert "idx_overlay_path" not in sql
+    assert "idx_overlay_daily" in down_sql
+    assert "DEFINE INDEX" not in down_sql
+    assert "repaired_index_restored: false" in down_sql
