@@ -300,6 +300,7 @@ describe('knowledge workspace store', () => {
             id: 'tab-2',
             ...plan,
             viewMode: 'reading',
+            sourceAuthority: 'external-vault',
           }],
         },
       },

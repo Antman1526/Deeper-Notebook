@@ -26,6 +26,7 @@ const pane: KnowledgePane = {
       title: 'Plan',
       relativePath: 'Projects/Plan.md',
       viewMode: 'reading',
+      sourceAuthority: 'external-vault',
     },
     {
       id: 'tab-2',
@@ -34,6 +35,7 @@ const pane: KnowledgePane = {
       title: 'Research',
       relativePath: 'Projects/Research.md',
       viewMode: 'reading',
+      sourceAuthority: 'external-vault',
     },
     {
       id: 'tab-3',
@@ -42,6 +44,7 @@ const pane: KnowledgePane = {
       title: 'Decisions',
       relativePath: 'Projects/Decisions.md',
       viewMode: 'graph',
+      sourceAuthority: 'external-vault',
     },
   ],
 }
