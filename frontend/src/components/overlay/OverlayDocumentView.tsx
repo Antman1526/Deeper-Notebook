@@ -51,7 +51,7 @@ interface OverlayDocumentViewProps {
   onReload?: () => Promise<OverlayPage | undefined>
 }
 
-type SaveStatus = 'idle' | 'saved' | 'error' | 'conflict' | 'reload-error'
+type SaveStatus = 'idle' | 'saved' | 'error' | 'conflict'
 
 interface Draft {
   title: string
@@ -120,10 +120,10 @@ export function OverlayDocumentView({
   const containerRef = useRef<HTMLElement>(null)
   const reviewButtonRef = useRef<HTMLButtonElement>(null)
   const [loadedPage, setLoadedPage] = useState(page)
-  const [latestServerPage, setLatestServerPage] = useState(page)
   const [draft, setDraft] = useState<Draft>(() => draftFromPage(page))
   const [saving, setSaving] = useState(false)
   const [reloading, setReloading] = useState(false)
+  const [reloadError, setReloadError] = useState(false)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [reloadDialogOpen, setReloadDialogOpen] = useState(false)
 
@@ -146,21 +146,14 @@ export function OverlayDocumentView({
 
   const adoptPage = useCallback((nextPage: OverlayPage) => {
     setLoadedPage(nextPage)
-    setLatestServerPage(nextPage)
     setDraft(draftFromPage(nextPage))
   }, [])
 
   useEffect(() => {
-    setLatestServerPage((current) => (
-      current.overlay.id !== page.overlay.id
-      || page.overlay.revision >= current.overlay.revision
-        ? page
-        : current
-    ))
-
     if (loadedPage.overlay.id !== page.overlay.id) {
       adoptPage(page)
       setSaveStatus('idle')
+      setReloadError(false)
       return
     }
     if (pageFingerprint(loadedPage) === pageFingerprint(page)) return
@@ -168,11 +161,13 @@ export function OverlayDocumentView({
 
     adoptPage(page)
     setSaveStatus('idle')
+    setReloadError(false)
   }, [adoptPage, isDirty, loadedPage, page])
 
   const changeDraft = (change: Partial<Draft>) => {
     setDraft((current) => ({ ...current, ...change }))
     setSaveStatus('idle')
+    setReloadError(false)
   }
 
   const save = async () => {
@@ -181,6 +176,7 @@ export function OverlayDocumentView({
 
     setSaving(true)
     setSaveStatus('idle')
+    setReloadError(false)
     try {
       const updated = await update.mutateAsync({
         id: loadedPage.overlay.id,
@@ -201,12 +197,21 @@ export function OverlayDocumentView({
   const reloadServer = async () => {
     if (reloading) return
     setReloading(true)
+    setReloadError(false)
     try {
-      const refreshed = await onReload?.()
-      adoptPage(refreshed ?? latestServerPage)
+      if (!onReload) throw new Error('overlay_reload_unavailable')
+      const refreshed = await onReload()
+      if (
+        !refreshed
+        || refreshed.overlay.id !== loadedPage.overlay.id
+        || refreshed.overlay.revision <= loadedPage.overlay.revision
+      ) {
+        throw new Error('overlay_reload_stale')
+      }
+      adoptPage(refreshed)
       setSaveStatus('idle')
     } catch {
-      setSaveStatus('reload-error')
+      setReloadError(true)
     } finally {
       setReloading(false)
     }
@@ -353,12 +358,16 @@ export function OverlayDocumentView({
             </Button>
           </div>
         )}
-        {(saveStatus === 'error' || saveStatus === 'reload-error') && (
+        {saveStatus === 'error' && (
           <p role="alert" className="dn-overlay-alert text-destructive">
             <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
-            {t(saveStatus === 'reload-error'
-              ? 'knowledge.overlay.reloadError'
-              : 'knowledge.overlay.saveError')}
+            {t('knowledge.overlay.saveError')}
+          </p>
+        )}
+        {reloadError && (
+          <p role="alert" className="dn-overlay-alert text-destructive">
+            <AlertTriangle aria-hidden="true" className="size-4 shrink-0" />
+            {t('knowledge.overlay.reloadError')}
           </p>
         )}
 

@@ -45,6 +45,7 @@ function tabFromFile(file: VaultFile): OpenKnowledgeTab {
     noteId: file.note_id,
     title: titleFromRelativePath(file.relative_path),
     relativePath: file.relative_path,
+    sourceAuthority: 'external-vault',
   }
 }
 
@@ -101,11 +102,14 @@ export function KnowledgeExplorer() {
     titleHint,
     paneId,
     targetText,
+    sourceAuthority,
   ) => {
-    const listedFile = files.data?.find(
-      (file) => file.vault_id === targetVaultId
-        && file.note_id === targetNoteId,
-    )
+    const listedFile = sourceAuthority === 'external-vault'
+      ? files.data?.find(
+          (file) => file.vault_id === targetVaultId
+            && file.note_id === targetNoteId,
+        )
+      : undefined
     if (listedFile) {
       openTab({
         vaultId: listedFile.vault_id,
@@ -114,6 +118,7 @@ export function KnowledgeExplorer() {
           || targetText
           || titleFromRelativePath(listedFile.relative_path),
         relativePath: listedFile.relative_path,
+        sourceAuthority,
       }, paneId)
       return
     }
@@ -123,7 +128,8 @@ export function KnowledgeExplorer() {
     )
       .flatMap((pane) => pane.tabs)
       .find((tab) => tab.vaultId === targetVaultId
-        && tab.noteId === targetNoteId)
+        && tab.noteId === targetNoteId
+        && tab.sourceAuthority === sourceAuthority)
     if (existingTab) {
       openTab({
         vaultId: existingTab.vaultId,
@@ -131,6 +137,7 @@ export function KnowledgeExplorer() {
         title: existingTab.title,
         relativePath: existingTab.relativePath,
         viewMode: existingTab.viewMode,
+        sourceAuthority,
       }, paneId)
       return
     }
@@ -141,6 +148,7 @@ export function KnowledgeExplorer() {
       noteId: targetNoteId,
       title: titleHint?.trim() || targetText || titleFromRelativePath(relativePathHint),
       relativePath: relativePathHint,
+      sourceAuthority,
     }, paneId)
   }
 

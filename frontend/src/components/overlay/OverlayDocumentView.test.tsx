@@ -282,6 +282,37 @@ describe('OverlayDocumentView', () => {
     expect(overlayMutation.mutateAsync).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the conflict and draft when reload resolves without a fresh page', async () => {
+    overlayMutation.mutateAsync.mockRejectedValue({
+      response: { status: 409, data: { detail: { code: 'overlay_revision_conflict' } } },
+    })
+    const onReload = vi.fn().mockResolvedValue(undefined)
+    render(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="source"
+        onNavigate={vi.fn()}
+        onReload={onReload}
+      />,
+    )
+    editMarkdown('# Local draft\n')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText(/changed elsewhere/i)
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Review server version',
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard and reload' }))
+
+    await waitFor(() => expect(onReload).toHaveBeenCalledOnce())
+    expect(screen.getByRole('textbox', { name: 'Research source' }))
+      .toHaveValue('# Local draft\n')
+    expect(screen.getByText('Revision 3')).toBeInTheDocument()
+    expect(screen.getByText(/changed elsewhere/i)).toBeInTheDocument()
+    expect(screen.getByText('The server revision could not be reloaded.'))
+      .toBeInTheDocument()
+  })
+
   it('reuses pure renderers for overlay reading, live preview, and graph modes', () => {
     const { rerender } = render(
       <OverlayDocumentView

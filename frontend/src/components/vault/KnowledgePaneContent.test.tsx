@@ -6,6 +6,9 @@ import { VaultPageContractError } from '@/lib/api/vault'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 
 const editorState = vi.hoisted(() => ({ failLivePreview: false }))
+const overlayView = vi.hoisted(() => ({
+  onReload: undefined as undefined | (() => Promise<unknown>),
+}))
 const queries = vi.hoisted(() => ({
   page: {
     data: undefined as VaultPage | undefined,
@@ -53,9 +56,16 @@ vi.mock('@/lib/hooks/use-overlay', () => ({
 }))
 
 vi.mock('@/components/overlay/OverlayDocumentView', () => ({
-  OverlayDocumentView: ({ mode }: { mode: string }) => (
-    <section aria-label={`Overlay document ${mode}`} />
-  ),
+  OverlayDocumentView: ({
+    mode,
+    onReload,
+  }: {
+    mode: string
+    onReload: () => Promise<unknown>
+  }) => {
+    overlayView.onReload = onReload
+    return <section aria-label={`Overlay document ${mode}`} />
+  },
 }))
 
 vi.mock('./VaultLivePreview', () => ({
@@ -254,6 +264,7 @@ describe('KnowledgePaneContent', () => {
     queries.vaultPageArgs.mockClear()
     queries.vaultOutgoingArgs.mockClear()
     queries.overlayPageArgs.mockClear()
+    overlayView.onReload = undefined
     queries.overlayPage = {
       data: undefined,
       isLoading: false,
@@ -467,6 +478,52 @@ describe('KnowledgePaneContent', () => {
     expect(queries.graph).toHaveBeenLastCalledWith(undefined, undefined, false)
     expect(screen.getByLabelText('Overlay document graph')).toBeInTheDocument()
     expect(screen.queryByLabelText(/source$/)).not.toBeInTheDocument()
+  })
+
+  it('rejects a resolved overlay refetch error instead of returning stale data', async () => {
+    replaceOverlayWorkspace()
+    const stalePage = {
+      overlay: {
+        id: 'overlay_note:research',
+        source_authority: 'overlay' as const,
+        space_id: 'overlay_space:default',
+        projected_note_id: 'note:research',
+        stable_id: 'stable-research-note-1',
+        kind: 'unique' as const,
+        date_key: null,
+        relative_path: 'Unique/research.md',
+        title: 'Research',
+        content_hash: 'b'.repeat(64),
+        revision: 2,
+        projection_state: 'current' as const,
+        encoding: 'utf-8' as const,
+        newline: 'lf' as const,
+        created_at: '2026-07-29T12:00:00+00:00',
+        updated_at: '2026-07-29T12:00:00+00:00',
+      },
+      note: { id: 'note:research', title: 'Research', markdown: '# Research\n' },
+      blocks: [],
+      tasks: [],
+      outgoing_links: [],
+      backlinks: [],
+      graph: { nodes: [], edges: [] },
+    }
+    const refetchError = new Error('refresh failed')
+    queries.overlayPage = {
+      data: stalePage,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn().mockResolvedValue({
+        data: stalePage,
+        isError: true,
+        error: refetchError,
+      }),
+    }
+
+    renderPane()
+
+    await expect(overlayView.onReload?.()).rejects.toBe(refetchError)
   })
 
   it('shows Reading after editor failure without mutating the persisted mode', () => {
