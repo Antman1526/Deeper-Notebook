@@ -96,13 +96,214 @@ def test_windows_storage_statically_uses_fail_closed_no_replace_protocol() -> No
     publish_source = inspect.getsource(
         storage_module.OverlayStorage._windows_publish_no_replace
     )
+    create_source = inspect.getsource(storage_module.OverlayStorage._windows_create)
+    replace_source = inspect.getsource(storage_module.OverlayStorage._windows_replace)
+    snapshot_source = inspect.getsource(storage_module.OverlayStorage._windows_snapshot)
+    temp_source = inspect.getsource(storage_module.OverlayStorage._write_windows_temp)
     storage_source = inspect.getsource(storage_module.OverlayStorage)
 
     assert storage_module._MOVEFILE_WRITE_THROUGH == 0x8
     assert "MoveFileExW" in publish_source
     assert "REPLACE_EXISTING" not in publish_source
+    assert "_evacuate_windows_entry" in create_source
+    assert "_evacuate_windows_entry" in snapshot_source
+    assert "_restore_windows_backup" in replace_source
+    assert "_evacuate_windows_entry" in replace_source
+    for mutation_source in (create_source, replace_source, snapshot_source):
+        assert ".lstat()" in mutation_source
+        assert "_require_regular" in mutation_source
+        assert "_windows_read_owned" in mutation_source
+    assert temp_source.index("os.fsync") < temp_source.index("_require_regular")
     assert "os.replace" not in storage_source
     assert "unlink(" not in storage_source
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX source substitution")
+@pytest.mark.parametrize("operation", ["create", "snapshot"])
+@pytest.mark.parametrize("substitution", ["regular", "symlink", "hardlink"])
+def test_create_and_snapshot_source_substitution_evacuates_final_and_preserves_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    substitution: str,
+) -> None:
+    storage = _storage(tmp_path)
+    authored_retained = tmp_path / f"authored-{operation}-{substitution}.md"
+    substitute_backing = tmp_path / f"substitute-{operation}-{substitution}.md"
+    substitute_backing.write_bytes(b"substitute\n")
+    original_publish = storage._posix_publish_no_replace
+
+    if operation == "create":
+        final_name = "source-raced.md"
+        final = storage.layout.unique_root / final_name
+
+        def invoke() -> None:
+            storage.create(
+                f"Notes/{final_name}",
+                "authored\n",
+                operation_id="source-raced",
+            )
+
+        expected_authored = b"authored\n"
+    else:
+        stored = storage.create(
+            "Notes/snapshot-source.md",
+            "authored\n",
+            operation_id="snapshot-source",
+        )
+        note_id = "overlay_note:source-raced"
+        note_key = hashlib.sha256(note_id.encode()).hexdigest()
+        final_name = f"{note_key}-r1-{stored.content_hash}.md"
+        final = storage.layout.revisions_root / final_name
+
+        def invoke() -> None:
+            storage.snapshot(note_id, 1, stored)
+
+        expected_authored = b"authored\n"
+
+    def substitute_inside_publish(
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        destination_name: str,
+    ) -> None:
+        if destination_name == final_name:
+            if substitution == "hardlink":
+                os.link(
+                    source_name,
+                    authored_retained,
+                    src_dir_fd=source_descriptor,
+                )
+            else:
+                os.rename(
+                    source_name,
+                    authored_retained,
+                    src_dir_fd=source_descriptor,
+                )
+                if substitution == "regular":
+                    descriptor = os.open(
+                        source_name,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                        0o600,
+                        dir_fd=source_descriptor,
+                    )
+                    try:
+                        os.write(descriptor, b"substitute\n")
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
+                else:
+                    os.symlink(
+                        substitute_backing,
+                        source_name,
+                        dir_fd=source_descriptor,
+                    )
+        original_publish(
+            source_descriptor,
+            source_name,
+            destination_descriptor,
+            destination_name,
+        )
+
+    monkeypatch.setattr(storage, "_posix_publish_no_replace", substitute_inside_publish)
+
+    with pytest.raises(OverlayStorageError):
+        invoke()
+
+    assert not final.exists()
+    assert authored_retained.read_bytes() == expected_authored
+    recovery_entries = list(storage.layout.recovery_root.iterdir())
+    if substitution == "regular":
+        assert b"substitute\n" in {path.read_bytes() for path in recovery_entries}
+    elif substitution == "symlink":
+        assert any(path.is_symlink() for path in recovery_entries)
+        assert substitute_backing.read_bytes() == b"substitute\n"
+    else:
+        assert expected_authored in {path.read_bytes() for path in recovery_entries}
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX source substitution")
+@pytest.mark.parametrize("substitution", ["regular", "symlink", "hardlink"])
+def test_replace_source_substitution_rolls_back_prior_and_preserves_all_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    substitution: str,
+) -> None:
+    storage = _storage(tmp_path)
+    first = storage.create("Notes/one.md", "first\n", operation_id="one")
+    authored_retained = tmp_path / f"authored-replace-{substitution}.md"
+    substitute_backing = tmp_path / f"substitute-replace-{substitution}.md"
+    substitute_backing.write_bytes(b"substitute\n")
+    original_exchange = storage._posix_exchange
+    injected = False
+
+    def substitute_inside_exchange(
+        source_descriptor: int,
+        source_name: str,
+        destination_descriptor: int,
+        destination_name: str,
+    ) -> None:
+        nonlocal injected
+        if not injected:
+            injected = True
+            if substitution == "hardlink":
+                os.link(
+                    source_name,
+                    authored_retained,
+                    src_dir_fd=source_descriptor,
+                )
+            else:
+                os.rename(
+                    source_name,
+                    authored_retained,
+                    src_dir_fd=source_descriptor,
+                )
+                if substitution == "regular":
+                    descriptor = os.open(
+                        source_name,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                        0o600,
+                        dir_fd=source_descriptor,
+                    )
+                    try:
+                        os.write(descriptor, b"substitute\n")
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
+                else:
+                    os.symlink(
+                        substitute_backing,
+                        source_name,
+                        dir_fd=source_descriptor,
+                    )
+        original_exchange(
+            source_descriptor,
+            source_name,
+            destination_descriptor,
+            destination_name,
+        )
+
+    monkeypatch.setattr(storage, "_posix_exchange", substitute_inside_exchange)
+
+    with pytest.raises(OverlayStorageError):
+        storage.replace(
+            "Notes/one.md",
+            "second\n",
+            expected_hash=first.content_hash,
+            revision=2,
+            operation_id="two",
+        )
+
+    assert storage.read("Notes/one.md") == first
+    assert authored_retained.read_bytes() == b"second\n"
+    recovery_entries = list(storage.layout.recovery_root.iterdir())
+    if substitution == "regular":
+        assert b"substitute\n" in {path.read_bytes() for path in recovery_entries}
+    elif substitution == "symlink":
+        assert any(path.is_symlink() for path in recovery_entries)
+        assert substitute_backing.read_bytes() == b"substitute\n"
+    else:
+        assert b"second\n" in {path.read_bytes() for path in recovery_entries}
 
 
 def test_replace_requires_current_hash_and_preserves_on_failure(
