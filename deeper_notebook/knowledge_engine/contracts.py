@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from hashlib import sha256
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from deeper_notebook.knowledge_engine.capabilities import (
     AuthorityKind,
     KnowledgeCapability,
+    capabilities_for,
 )
 from deeper_notebook.knowledge_engine.identity import (
     canonical_locator,
@@ -49,10 +50,27 @@ def _validate_unique_capabilities(
     return value
 
 
-def _validate_hashes(value: str) -> str:
+def _validate_hashes(value: str | None) -> str | None:
+    if value is None:
+        return None
     if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
         raise ValueError("content hashes must be lowercase SHA-256 values")
     return value
+
+
+def _validate_optional_locator(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return canonical_locator(value)
+
+
+def _validate_derived_capabilities(
+    value: list[KnowledgeCapability],
+    authority_kind: AuthorityKind,
+    resource_kind: str,
+) -> None:
+    if frozenset(value) != capabilities_for(authority_kind, resource_kind):
+        raise ValueError("capabilities must match server-derived capabilities")
 
 
 class _SourceSpan(_Strict):
@@ -64,6 +82,27 @@ class _SourceSpan(_Strict):
         if self.source_end < self.source_start:
             raise ValueError("source_end must be greater than or equal to source_start")
         return self
+
+
+class DocumentViewState(_Strict):
+    kind: Literal["document"]
+    mode: Literal["reading", "source", "live-preview"] = "reading"
+
+
+class CollectionViewState(_Strict):
+    kind: Literal["collection"]
+    sort_by: Literal["title", "created_at", "updated_at"] = "updated_at"
+
+
+class GraphViewState(_Strict):
+    kind: Literal["graph"]
+    depth: int = Field(default=1, ge=1, le=5)
+
+
+ViewState = Annotated[
+    DocumentViewState | CollectionViewState | GraphViewState,
+    Field(discriminator="kind"),
+]
 
 
 class AdapterDiagnostic(_Strict):
@@ -108,6 +147,13 @@ class KnowledgeSpace(_Strict):
         _validate_unique_capabilities
     )
 
+    @model_validator(mode="after")
+    def validate_capabilities(self) -> "KnowledgeSpace":
+        _validate_derived_capabilities(
+            self.capabilities, self.authority_kind, "space"
+        )
+        return self
+
 
 class KnowledgeDocument(_Strict):
     id: str = Field(min_length=1, max_length=128)
@@ -136,6 +182,13 @@ class KnowledgeDocument(_Strict):
     _capabilities_are_unique = field_validator("capabilities")(
         _validate_unique_capabilities
     )
+
+    @model_validator(mode="after")
+    def validate_capabilities(self) -> "KnowledgeDocument":
+        _validate_derived_capabilities(
+            self.capabilities, self.authority_kind, self.document_kind
+        )
+        return self
 
 
 class KnowledgeBlock(_SourceSpan):
@@ -211,21 +264,32 @@ class KnowledgeAsset(_Strict):
     metadata: dict[str, Any] = Field(default_factory=dict)
     provenance: str = Field(min_length=1, max_length=128)
     source_revision_id: str = Field(min_length=1, max_length=128)
+    capabilities: list[KnowledgeCapability] = Field(
+        default_factory=lambda: sorted(capabilities_for("external_read_only", "asset"))
+    )
 
     _canonical_locator = field_validator("relative_locator")(canonical_locator)
     _content_hash = field_validator("content_hash")(_validate_hashes)
+    _capabilities_are_unique = field_validator("capabilities")(
+        _validate_unique_capabilities
+    )
 
 
 class KnowledgeView(_Strict):
     id: str = Field(min_length=1, max_length=128)
     space_id: str = Field(min_length=1, max_length=128)
-    view_kind: str = Field(min_length=1, max_length=64)
+    authority_kind: AuthorityKind = "external_read_only"
+    view_kind: Literal["document", "collection", "graph"]
     name: str = Field(min_length=1, max_length=256)
     revision: int = Field(ge=1)
     target_ids: list[str] = Field(default_factory=list, max_length=50_000)
     definition: dict[str, Any] = Field(default_factory=dict)
-    view_state: dict[str, Any] = Field(default_factory=dict)
-    capabilities: list[KnowledgeCapability] = Field(default_factory=list)
+    view_state: ViewState
+    capabilities: list[KnowledgeCapability] = Field(
+        default_factory=lambda: sorted(
+            capabilities_for("external_read_only", "view")
+        )
+    )
     created_at: datetime
     updated_at: datetime
 
@@ -241,6 +305,19 @@ class KnowledgeView(_Strict):
         if any(not target.startswith("knowledge_engine_") for target in value):
             raise ValueError("view target IDs must be engine record IDs")
         return value
+
+    @model_validator(mode="after")
+    def validate_view_contract(self) -> "KnowledgeView":
+        _validate_derived_capabilities(
+            self.capabilities, self.authority_kind, "view"
+        )
+        if self.view_state.kind != self.view_kind:
+            raise ValueError("view_state kind must match view_kind")
+        if self.view_kind == "collection" and self.target_ids:
+            raise ValueError("collection views must not include target IDs")
+        if self.view_kind in {"document", "graph"} and len(self.target_ids) != 1:
+            raise ValueError("document and graph views require one target ID")
+        return self
 
 
 class SourceRevision(_Strict):
@@ -328,6 +405,8 @@ class KnowledgeSnapshot(_Strict):
     def validate_snapshot_ownership(self) -> "KnowledgeSnapshot":
         if self.document.space_id != self.space.id:
             raise ValueError("document space_id must match snapshot space")
+        if self.document.authority_kind != self.space.authority_kind:
+            raise ValueError("document authority_kind must match snapshot space")
         if self.revision.space_id != self.space.id:
             raise ValueError("revision space_id must match snapshot space")
         if self.revision.document_id != self.document.id:
@@ -337,6 +416,11 @@ class KnowledgeSnapshot(_Strict):
         for block in self.blocks:
             _validate_child_ownership(
                 block.space_id, block.document_id, block.source_revision_id, self
+            )
+            _validate_derived_capabilities(
+                block.capabilities,
+                self.space.authority_kind,
+                self.document.document_kind,
             )
         for relation in self.relations:
             _validate_child_ownership(
@@ -349,12 +433,22 @@ class KnowledgeSnapshot(_Strict):
             _validate_child_ownership(
                 task.space_id, task.document_id, task.source_revision_id, self
             )
+            _validate_derived_capabilities(
+                task.capabilities,
+                self.space.authority_kind,
+                self.document.document_kind,
+            )
         for asset in self.assets:
             _validate_child_ownership(
                 asset.space_id,
                 asset.source_document_id,
                 asset.source_revision_id,
                 self,
+            )
+            _validate_derived_capabilities(
+                asset.capabilities,
+                self.space.authority_kind,
+                self.document.document_kind,
             )
         for claim in self.identity_claims:
             if claim.source_revision_id != self.revision.id:
@@ -418,7 +512,9 @@ class BackfillCheckpoint(_Strict):
     failed: int = Field(ge=0)
     updated_at: datetime
 
-    _canonical_locator = field_validator("last_relative_locator")(canonical_locator)
+    _canonical_locator = field_validator("last_relative_locator")(
+        _validate_optional_locator
+    )
     _source_hash = field_validator("last_source_hash")(_validate_hashes)
 
 
