@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const overlay = vi.hoisted(() => ({ create: vi.fn(), isPending: false, error: null as Error | null }))
+const overlay = vi.hoisted(() => ({ create: vi.fn(), reset: vi.fn(), isPending: false, error: null as Error | null }))
 
 vi.mock('@/lib/hooks/use-overlay', () => ({
-  useCreateUniqueOverlayNote: () => ({ mutateAsync: overlay.create, isPending: overlay.isPending, error: overlay.error }),
+  useCreateUniqueOverlayNote: () => ({ mutateAsync: overlay.create, reset: overlay.reset, isPending: overlay.isPending, error: overlay.error }),
 }))
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
@@ -38,6 +38,8 @@ const page = {
 describe('CreateUniqueNoteDialog', () => {
   beforeEach(() => {
     overlay.create.mockReset()
+    overlay.reset.mockReset()
+    overlay.reset.mockImplementation(() => { overlay.error = null })
     overlay.create.mockResolvedValue(page)
     overlay.error = null
   })
@@ -84,5 +86,20 @@ describe('CreateUniqueNoteDialog', () => {
     expect(screen.getByLabelText('Unique note title')).toHaveFocus()
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+
+  it('clears a mutation error after close and reopen while preserving retry identity while open', async () => {
+    overlay.create.mockRejectedValueOnce(new Error('offline'))
+    const onOpenChange = vi.fn()
+    const view = render(<CreateUniqueNoteDialog open onOpenChange={onOpenChange} onOpen={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('Unique note title'), { target: { value: 'Retry me' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create note' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    overlay.error = new Error('stale mutation error')
+
+    view.rerender(<CreateUniqueNoteDialog open={false} onOpenChange={onOpenChange} onOpen={vi.fn()} />)
+    view.rerender(<CreateUniqueNoteDialog open onOpenChange={onOpenChange} onOpen={vi.fn()} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(overlay.reset).toHaveBeenCalled()
   })
 })

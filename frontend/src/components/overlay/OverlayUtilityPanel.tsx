@@ -1,18 +1,21 @@
 'use client'
 
+import { useState } from 'react'
 import { CalendarDays, FilePlus2, FileText } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { OverlayPage } from '@/lib/api/overlay'
 import type { OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
-import { useOverlayNotes, useTodayOverlayNote } from '@/lib/hooks/use-overlay'
+import { useOverlayNotes } from '@/lib/hooks/use-overlay'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface OverlayUtilityPanelProps {
   onOpen: (tab: OpenKnowledgeTab) => void
   onNewUnique: () => void
-  onToday?: () => Promise<void>
+  onToday: () => Promise<void>
+  todayPending?: boolean
+  todayError?: boolean
 }
 
 export function localDateKey(now = new Date()): string {
@@ -33,20 +36,26 @@ export function tabFromOverlay(page: OverlayPage): OpenKnowledgeTab {
   }
 }
 
-export function OverlayUtilityPanel({ onOpen, onNewUnique, onToday }: OverlayUtilityPanelProps) {
+export function OverlayUtilityPanel({
+  onOpen,
+  onNewUnique,
+  onToday,
+  todayPending = false,
+  todayError = false,
+}: OverlayUtilityPanelProps) {
   const { t } = useTranslation()
   const notes = useOverlayNotes()
-  const today = useTodayOverlayNote()
+  const [localTodayError, setLocalTodayError] = useState(false)
   const daily = notes.data?.filter(note => note.kind === 'daily') || []
   const unique = notes.data?.filter(note => note.kind === 'unique') || []
 
   const openToday = async () => {
-    if (onToday) {
+    setLocalTodayError(false)
+    try {
       await onToday()
-      return
+    } catch {
+      setLocalTodayError(true)
     }
-    const page = await today.mutateAsync(localDateKey())
-    onOpen(tabFromOverlay(page))
   }
 
   return (
@@ -60,7 +69,7 @@ export function OverlayUtilityPanel({ onOpen, onNewUnique, onToday }: OverlayUti
         </div>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
-        <Button type="button" className="min-h-11" onClick={() => void openToday()} disabled={today.isPending}>
+        <Button type="button" className="min-h-11" onClick={() => void openToday()} disabled={todayPending}>
           <CalendarDays className="mr-2 h-4 w-4" aria-hidden="true" />
           {t('knowledge.overlay.today')}
         </Button>
@@ -75,8 +84,9 @@ export function OverlayUtilityPanel({ onOpen, onNewUnique, onToday }: OverlayUti
         {!notes.isLoading && daily.length === 0 && unique.length === 0 && (
           <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">{t('knowledge.overlay.empty')}</p>
         )}
-        {daily.length > 0 && <OverlayNoteGroup heading="Daily" notes={daily} onOpen={onOpen} />}
-        {unique.length > 0 && <OverlayNoteGroup heading="Notes" notes={unique} onOpen={onOpen} />}
+        {(localTodayError || todayError) && <p role="alert" className="text-sm text-destructive">{t('knowledge.overlay.createError')}</p>}
+        {daily.length > 0 && <OverlayNoteGroup heading={t('knowledge.overlay.daily')} notes={daily} onOpen={onOpen} />}
+        {unique.length > 0 && <OverlayNoteGroup heading={t('knowledge.overlay.notes')} notes={unique} onOpen={onOpen} />}
       </div>
     </section>
   )
