@@ -5,12 +5,19 @@
 -- a fresh install without deleting projection data.
 -- The async migration runner then performs a bounded, idempotent Python data
 -- repair before recording version 33.
--- Enter timestamp-preservation mode before the hook mutates historical rows.
--- The hook restores both exact canonical definitions before version 33 can be
--- recorded; a failed startup remains at version 32 and safely retries.
+-- Converge databases left in the prior preservation mode, then remove the
+-- computed VALUE clause while the hook explicitly carries each row's exact
+-- historical timestamp. The hook restores note_link's canonical VALUE
+-- time::now() definition before version 33 is recorded and restores note's
+-- canonical definition after migration 36 finishes adding note fields. A
+-- failed startup safely retries in explicit-carriage mode.
 
 DEFINE FIELD OVERWRITE updated ON note DEFAULT time::now() VALUE $before OR time::now();
 DEFINE FIELD OVERWRITE updated ON TABLE note_link TYPE datetime DEFAULT time::now() VALUE $before OR time::now();
+REMOVE FIELD IF EXISTS updated ON note;
+REMOVE FIELD IF EXISTS updated ON TABLE note_link;
+DEFINE FIELD IF NOT EXISTS updated ON note DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE note_link TYPE datetime DEFAULT time::now();
 
 DEFINE FIELD IF NOT EXISTS title_key ON TABLE note TYPE option<string>;
 DEFINE INDEX IF NOT EXISTS idx_note_vault_title_key ON TABLE note COLUMNS vault_id, title_key;
