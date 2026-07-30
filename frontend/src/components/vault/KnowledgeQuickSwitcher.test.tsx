@@ -61,6 +61,18 @@ describe('KnowledgeQuickSwitcher', () => {
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
     catalog.isLoading = false
     catalog.failedVaultCount = 0
+    catalog.candidates = [
+      {
+        key: 'vault:fixture\\0note:evidence', sourceAuthority: 'external-vault',
+        vaultId: 'vault:fixture', noteId: 'note:evidence', vaultName: 'Fixture vault',
+        format: 'markdown', title: 'Evidence', relativePath: 'notes/evidence.md', isOpen: false,
+      },
+      {
+        key: 'vault:fixture\\0note:plan', sourceAuthority: 'external-vault',
+        vaultId: 'vault:fixture', noteId: 'note:plan', vaultName: 'Fixture vault',
+        format: 'markdown', title: 'Plan', relativePath: 'notes/plan.md', isOpen: true,
+      },
+    ]
     overlay.notes = []
     catalog.retryFailedVaults.mockClear()
   })
@@ -80,6 +92,28 @@ describe('KnowledgeQuickSwitcher', () => {
     fireEvent.click(within(dialog).getAllByRole('option', { name: /Evidence/ })[0])
     await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs.at(-1))
       .toMatchObject({ sourceAuthority: 'overlay', vaultId: 'overlay_space:default' }))
+  })
+
+  it('keeps healthy overlay results available for keyboard selection while external catalogs load', async () => {
+    catalog.candidates = []
+    catalog.isLoading = true
+    overlay.notes = [{
+      id: 'overlay_note:daily', source_authority: 'overlay', space_id: 'overlay_space:default',
+      projected_note_id: 'projected:daily', stable_id: 'a'.repeat(20), kind: 'daily', date_key: '2026-07-29',
+      relative_path: 'Daily/2026-07-29.md', title: '2026-07-29', content_hash: 'a'.repeat(64), revision: 1,
+      projection_state: 'current', encoding: 'utf-8', newline: 'lf',
+      created_at: '2026-07-29T00:00:00.000Z', updated_at: '2026-07-29T00:00:00.000Z',
+    }]
+    render(<KnowledgeQuickSwitcher mounts={[]} />)
+    act(() => requestCommandSurface('quick-switcher'))
+    const dialog = await screen.findByRole('dialog', { name: 'knowledge.quickSwitcher' })
+    const input = within(dialog).getByRole('combobox')
+
+    expect(within(dialog).getByRole('option', { name: /2026-07-29/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('status')).toHaveTextContent('knowledge.filesLoading')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs.at(-1))
+      .toMatchObject({ sourceAuthority: 'overlay', noteId: 'overlay_note:daily' }))
   })
 
   it('ranks notes and opens the selected note in the active pane', async () => {

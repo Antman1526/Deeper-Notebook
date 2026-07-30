@@ -213,7 +213,7 @@ vi.mock('@/lib/hooks/use-vault', () => ({
 vi.mock('@/lib/hooks/use-overlay', () => ({
   useOverlayNotes: () => ({ data: overlayQueries.notes, isLoading: false, isError: false }),
   useTodayOverlayNote: () => ({ mutateAsync: overlayQueries.today, isPending: false }),
-  useCreateUniqueOverlayNote: () => ({ mutateAsync: vi.fn(), isPending: false, error: null }),
+  useCreateUniqueOverlayNote: () => ({ mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null }),
 }))
 
 vi.mock('@/lib/hooks/use-knowledge-workspace', () => ({

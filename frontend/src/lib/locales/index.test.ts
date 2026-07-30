@@ -167,7 +167,7 @@ const knowledgeCommandLocaleKeys = [
 ] as const
 
 const overlayLocaleKeys = [
-  'name', 'writable', 'today', 'newUnique', 'uniqueTitle', 'create', 'creating',
+  'name', 'writable', 'today', 'newUnique', 'uniqueTitle', 'create', 'creating', 'daily', 'notes',
   'empty', 'loadError', 'createError',
 ] as const
 
