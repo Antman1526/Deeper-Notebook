@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from deeper_notebook.overlay.contracts import (
@@ -22,6 +25,8 @@ from deeper_notebook.overlay.repository import (
 from deeper_notebook.overlay.storage import OverlayStorageError
 
 _JSON_CEILING = 10 * 1024 * 1024 + 64 * 1024
+_MAX_OFFSET = 1_000_000
+_INVALID_REQUEST = {"detail": {"code": "overlay_request_invalid"}}
 
 
 def _note(
@@ -70,6 +75,7 @@ class _OverlayService:
         self.notes: dict[str, OverlayPage] = {}
         self.unique_keys: dict[str, str] = {}
         self.last_get_id: str | None = None
+        self.list_requests: list[tuple[int, int]] = []
 
     async def create_daily(self, request: CreateDailyNote) -> OverlayPage:
         note_id = f"overlay_note:daily-{request.date_key}"
@@ -107,6 +113,7 @@ class _OverlayService:
             raise LookupError("overlay_not_found") from None
 
     async def list_notes(self, limit: int, offset: int) -> list[OverlayNote]:
+        self.list_requests.append((limit, offset))
         return [page.overlay for page in self.notes.values()][offset : offset + limit]
 
     async def update(
@@ -140,6 +147,71 @@ def client():
     finally:
         test_client.close()
         app.state.overlay_service = None
+
+
+async def _asgi_json_request(
+    app: FastAPI,
+    *,
+    method: str,
+    path: str,
+    frames: list[bytes],
+) -> tuple[int, dict[str, Any]]:
+    receive_messages = [
+        {
+            "type": "http.request",
+            "body": frame,
+            "more_body": index < len(frames) - 1,
+        }
+        for index, frame in enumerate(frames)
+    ]
+    sent_messages: list[dict[str, Any]] = []
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode("ascii"),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"testserver"),
+            (b"content-type", b"application/json"),
+        ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+
+    async def receive() -> dict[str, Any]:
+        if receive_messages:
+            return receive_messages.pop(0)
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent_messages.append(message)
+
+    await app(scope, receive, send)
+    start = next(
+        message for message in sent_messages if message["type"] == "http.response.start"
+    )
+    body = b"".join(
+        message.get("body", b"")
+        for message in sent_messages
+        if message["type"] == "http.response.body"
+    )
+    return start["status"], json.loads(body)
+
+
+def _asgi_app() -> tuple[FastAPI, _OverlayService]:
+    from api.routers.overlay import router
+
+    app = FastAPI()
+    service = _OverlayService()
+    app.state.overlay_service = service
+    app.include_router(router, prefix="/api/deeper-notebook")
+    return app, service
 
 
 def test_overlay_routes_are_canonical_and_vault_routes_stay_read_only(client):
@@ -268,6 +340,53 @@ def test_overlay_requests_reject_unknown_and_non_strict_fields(client):
     )
 
 
+def test_invalid_overlay_body_path_and_query_are_typed_and_non_reflective(client):
+    test_client, _ = client
+    hostile_values = (
+        "/Users/owner/private.md",
+        "SECRET_BODY_CONTENT",
+        "SECRET_PATH_CONTENT!",
+        "SECRET_QUERY_CONTENT",
+    )
+    responses = (
+        test_client.post(
+            "/api/deeper-notebook/overlay/notes/unique",
+            json={
+                "title": "Research",
+                "idempotency_key": "create-1",
+                "external_vault_id": ("/Users/owner/private.md SECRET_BODY_CONTENT"),
+            },
+        ),
+        test_client.get(
+            "/api/deeper-notebook/overlay/notes/overlay_note:SECRET_PATH_CONTENT%21"
+        ),
+        test_client.get(
+            "/api/deeper-notebook/overlay/notes?offset=SECRET_QUERY_CONTENT"
+        ),
+    )
+    for response in responses:
+        assert response.status_code == 422
+        assert response.json() == _INVALID_REQUEST
+        for hostile in hostile_values:
+            assert hostile not in response.text
+
+
+def test_overlay_offset_is_bounded_before_service_calls(client):
+    test_client, service = client
+    boundary = test_client.get(
+        f"/api/deeper-notebook/overlay/notes?limit=1&offset={_MAX_OFFSET}"
+    )
+    assert boundary.status_code == 200
+    assert service.list_requests == [(1, _MAX_OFFSET)]
+
+    rejected = test_client.get(
+        f"/api/deeper-notebook/overlay/notes?limit=1&offset={_MAX_OFFSET + 1}"
+    )
+    assert rejected.status_code == 422
+    assert rejected.json() == _INVALID_REQUEST
+    assert service.list_requests == [(1, _MAX_OFFSET)]
+
+
 def test_overlay_rejects_body_above_exact_json_ceiling_before_parsing(client):
     test_client, _ = client
     too_large = test_client.put(
@@ -279,10 +398,44 @@ def test_overlay_rejects_body_above_exact_json_ceiling_before_parsing(client):
     assert too_large.json() == {"detail": {"code": "overlay_request_too_large"}}
     below_ceiling = test_client.put(
         "/api/deeper-notebook/overlay/notes/overlay_note:one",
-        content=b"x" * (_JSON_CEILING - 1),
+        content=b"SECRET_INVALID_JSON",
         headers={"content-type": "application/json"},
     )
     assert below_ceiling.status_code == 422
+    assert below_ceiling.json() == _INVALID_REQUEST
+    assert "SECRET_INVALID_JSON" not in below_ceiling.text
+
+
+def test_multiframe_body_without_content_length_rejects_ceiling_plus_one():
+    app, _ = _asgi_app()
+    status_code, body = asyncio.run(
+        _asgi_json_request(
+            app,
+            method="PUT",
+            path="/api/deeper-notebook/overlay/notes/overlay_note:one",
+            frames=[b"x" * _JSON_CEILING, b"x"],
+        )
+    )
+    assert status_code == 413
+    assert body == {"detail": {"code": "overlay_request_too_large"}}
+
+
+def test_multiframe_body_without_content_length_is_replayed_for_json_parsing():
+    app, service = _asgi_app()
+    payload = json.dumps(
+        {"title": "Research", "idempotency_key": "multiframe-create"}
+    ).encode()
+    status_code, body = asyncio.run(
+        _asgi_json_request(
+            app,
+            method="POST",
+            path="/api/deeper-notebook/overlay/notes/unique",
+            frames=[payload[:7], payload[7:31], payload[31:]],
+        )
+    )
+    assert status_code == 201
+    assert body["overlay"]["id"] == "overlay_note:unique-one"
+    assert service.unique_keys == {"multiframe-create": "overlay_note:unique-one"}
 
 
 @pytest.mark.parametrize(
@@ -347,6 +500,28 @@ def test_unknown_failures_and_unavailable_service_are_redacted(client):
     unavailable = test_client.get("/api/deeper-notebook/overlay/notes")
     assert unavailable.status_code == 503
     assert unavailable.json() == {"detail": {"code": "overlay_unavailable"}}
+
+
+def test_service_http_exception_is_fail_closed_and_non_reflective(client):
+    test_client, service = client
+
+    async def fail(_limit: int, _offset: int):
+        raise HTTPException(
+            status_code=418,
+            detail={
+                "path": "/Users/owner/private.md",
+                "secret": "SECRET_SERVICE_CONTENT",
+                "content": "# Private source content",
+            },
+        )
+
+    service.list_notes = fail
+    response = test_client.get("/api/deeper-notebook/overlay/notes")
+    assert response.status_code == 503
+    assert response.json() == {"detail": {"code": "overlay_unavailable"}}
+    assert "/Users/" not in response.text
+    assert "SECRET_SERVICE_CONTENT" not in response.text
+    assert "Private source content" not in response.text
 
 
 def test_overlay_routes_remain_behind_password_auth(monkeypatch):
