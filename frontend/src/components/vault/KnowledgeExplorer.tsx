@@ -84,7 +84,11 @@ export function KnowledgeExplorer() {
       ? activeTab.noteId
       : undefined,
   )
-  const { mutateAsync: createTodayOverlay } = useTodayOverlayNote()
+  const {
+    mutateAsync: createTodayOverlay,
+    isPending: todayOverlayPending,
+    isError: todayOverlayError,
+  } = useTodayOverlayNote()
 
   const openFile = (file: VaultFile, paneId?: string) => {
     openTab(tabFromFile(file), paneId)
@@ -257,6 +261,8 @@ export function KnowledgeExplorer() {
             onOpen={openTab}
             onNewUnique={openUniqueOverlayDialog}
             onToday={openTodayOverlay}
+            todayPending={todayOverlayPending}
+            todayError={todayOverlayError}
           />
           {selectedRoot.authority === 'external-vault' && (mounts.isLoading ? (
             <p className="text-sm text-muted-foreground">

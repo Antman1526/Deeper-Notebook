@@ -56,6 +56,7 @@ export function KnowledgeQuickSwitcher({ mounts }: KnowledgeQuickSwitcherProps) 
     () => rankKnowledgeCatalog(allCandidates, query, 50),
     [allCandidates, query],
   )
+  const showLoadingPlaceholder = catalog.isLoading && candidates.length === 0
 
   useEffect(() => {
     if (surfaceKind !== 'quick-switcher') return
@@ -100,7 +101,13 @@ export function KnowledgeQuickSwitcher({ mounts }: KnowledgeQuickSwitcherProps) 
         onValueChange={setQuery}
         autoComplete="off"
       />
-      <p role="status" aria-live="polite" className="sr-only">
+      <p
+        role="status"
+        aria-live="polite"
+        className={catalog.isLoading && candidates.length > 0
+          ? 'border-b px-3 py-2 text-sm text-muted-foreground'
+          : 'sr-only'}
+      >
         {statusMessage}
       </p>
       {catalog.failedVaultCount > 0 && (
@@ -116,7 +123,7 @@ export function KnowledgeQuickSwitcher({ mounts }: KnowledgeQuickSwitcherProps) 
         </div>
       )}
       <CommandList>
-        {catalog.isLoading ? (
+        {showLoadingPlaceholder ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
             {t('knowledge.filesLoading')}
           </p>

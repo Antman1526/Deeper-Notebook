@@ -27,13 +27,17 @@ export function CreateUniqueNoteDialog({ open, onOpenChange, onOpen }: CreateUni
   const [createError, setCreateError] = useState(false)
 
   useEffect(() => {
-    if (open && !requestKey.current) requestKey.current = newIdempotencyKey()
+    if (open && !requestKey.current) {
+      create.reset()
+      requestKey.current = newIdempotencyKey()
+    }
     if (!open) {
+      create.reset()
       requestKey.current = null
       setTitle('')
       setCreateError(false)
     }
-  }, [open])
+  }, [create, open])
 
   const createNote = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
