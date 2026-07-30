@@ -1,7 +1,8 @@
 # Deeper Notebook Overlay Foundation Verification
 
 Date: 2026-07-29 through 2026-07-30
-Implementation commit: `359dacd6`
+Tested implementation commit: `bacca6ad`
+Verification record parent: `bacca6ad`
 Branch: `codex/deeper-notebook-overlay-productivity`
 
 ## Result
@@ -16,6 +17,13 @@ Daily replay, same-minute unique collision suffixing, update, stale-revision
 conflict, restart hydration, backlinks/graph/search projection, and source
 fingerprint preservation were all exercised.
 
+The editor now receives an explicit body-only `editable_markdown` field while
+the canonical file and its reserved `deeper_notebook` frontmatter remain
+server-owned. Per-tab unsaved drafts survive editor unmounts and tab switches,
+and are cleared only after a successful page adoption, explicit tab/pane close,
+or workspace reset. A filesystem compare-and-swap drift is surfaced through
+the same recoverable HTTP 409 revision-conflict flow.
+
 ## Automated gates
 
 All commands ran from the feature worktree unless a frontend working directory
@@ -23,11 +31,13 @@ is shown.
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Focused backend and verifier | `uv run pytest -q tests/test_overlay_contracts.py tests/test_overlay_migration.py tests/test_overlay_paths.py tests/test_overlay_storage.py tests/test_overlay_repository.py tests/test_overlay_service.py tests/test_overlay_api.py tests/test_vault_security.py tests/test_vault_note_read_only.py tests/test_knowledge_workspace_persistence.py tests/test_knowledge_workspace_api.py tests/test_verify_overlay_foundation.py` | exit 0; 286 passed |
-| Focused frontend | `npx vitest run src/lib/api/overlay.test.ts src/lib/api/knowledge-workspace.test.ts src/lib/stores/knowledge-workspace-store.test.ts src/components/overlay src/components/vault/KnowledgeExplorer.test.tsx src/components/vault/KnowledgePaneContent.test.tsx src/components/vault/KnowledgeTabStrip.test.tsx src/components/vault/VaultCodeMirror.test.tsx src/lib/locales/index.test.ts --pool=forks --maxWorkers=1` | exit 0; 290 passed |
-| Full backend | `uv run pytest -q` | exit 0; 3,945 passed, 48 skipped |
-| Full frontend unit | `npm test` | exit 0; 953 passed |
+| Focused backend and verifier | `uv run pytest -q tests/test_overlay_contracts.py tests/test_overlay_migration.py tests/test_overlay_paths.py tests/test_overlay_storage.py tests/test_overlay_repository.py tests/test_overlay_service.py tests/test_overlay_api.py tests/test_vault_security.py tests/test_vault_note_read_only.py tests/test_knowledge_workspace_persistence.py tests/test_knowledge_workspace_api.py tests/test_verify_overlay_foundation.py` | exit 0; 290 passed |
+| Replay/body regression | `uv run pytest -q tests/test_overlay_service.py tests/test_overlay_api.py tests/test_overlay_contracts.py` | exit 0; 52 passed |
+| Focused frontend | `npx vitest run src/lib/api/overlay.test.ts src/lib/api/knowledge-workspace.test.ts src/lib/stores/knowledge-workspace-store.test.ts src/components/overlay src/components/vault/KnowledgeExplorer.test.tsx src/components/vault/KnowledgePaneContent.test.tsx src/components/vault/KnowledgeTabStrip.test.tsx src/components/vault/VaultCodeMirror.test.tsx src/lib/locales/index.test.ts --pool=forks --maxWorkers=1` | exit 0; 292 passed |
+| Full backend | `uv run pytest -q` | exit 0; 3,949 passed, 48 skipped |
+| Full frontend unit | `npm test` | exit 0; 955 passed |
 | Frontend lint | `npm run lint` | exit 0 |
+| Strict frontend types | `npx tsc --noEmit` | exit 0 |
 | Production build | `npm run build` | exit 0; 22 static/dynamic routes built |
 | Mocked browser | `npm run test:e2e:mocked` | exit 0; 9 passed |
 | Rebrand audit | `uv run python scripts/rebrand_audit.py --check` | exit 0; no unexpected or stale entries |
@@ -37,7 +47,15 @@ The two overlay browser cases proved:
 
 1. owned daily and unique creation/editing without external-vault mutation;
 2. daily replay, deterministic `-2` collision suffixing, save conflict and
-   draft preservation, restart hydration, and focus restoration.
+   draft preservation across a tab switch, restart hydration, and focus
+   restoration.
+
+The strict fixture exposes canonical `note.content` with reserved frontmatter
+separately from body-only `editable_markdown`. The source editor asserted that
+reserved frontmatter was absent, and update responses regenerated canonical
+content from the submitted editable body. Backend regressions also rejected a
+client attempt to submit reserved canonical frontmatter as an editable body
+before any update reservation or filesystem write.
 
 The strict browser fixture recorded every external-vault
 `POST`/`PUT`/`PATCH`/`DELETE`, including scan requests. Overlay mutations were
@@ -64,6 +82,26 @@ The four new adversarial regressions brought the verifier suite to 11 passing
 tests. The hardened audit was also run directly against the application's real
 generated OpenAPI inventory: 13 vault routes were observed, the only three
 `POST` routes matched the explicit allowlist, and zero unsafe routes remained.
+
+## Final integration review fixes
+
+Independent whole-branch review found two integration defects after the
+initial controlled proof: the editor consumed full canonical Markdown instead
+of body-only Markdown, and component-local drafts could be lost when a tab
+unmounted. Commit `33c6ffd5` closed both defects and added the recoverable 409
+mapping for filesystem CAS drift.
+
+A final adversarial pass found one narrow concurrent idempotency replay branch
+that returned a repository page before body hydration. Commit `bacca6ad`
+routes that branch through the same canonical storage read as every other page
+response and adds a regression that simulates the concurrent winning commit.
+The reviewer reported no Critical or Important findings at `bacca6ad`.
+
+Fresh validation at that exact implementation commit included the complete
+Python suite, replay/body regression suite, frontend unit, lint, strict-type,
+production-build, rebrand-audit, and mocked-browser gates listed above. The
+verification-record commit contains documentation only and has `bacca6ad` as
+its parent, so the tested code tree is unambiguous.
 
 ## Native SurrealDB and migration evidence
 
