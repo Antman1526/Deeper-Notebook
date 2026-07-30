@@ -148,7 +148,7 @@ export function OverlayDocumentView({
   )
   const displayBacklinks = useMemo(
     () => loadedPage.backlinks.map((link) => (
-      link.source_overlay_note_id
+      link.source_overlay_note_id && link.source_relative_path
         ? link
         : { ...link, resolved: false }
     )),

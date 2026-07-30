@@ -192,6 +192,7 @@ def test_overlay_link_requires_explicit_nullable_overlay_identities():
         "source_start": 0,
         "source_end": 10,
         "source_overlay_note_id": "overlay_note:source",
+        "source_relative_path": "Notes/20260729-1541 Source.md",
         "target_overlay_note_id": "overlay_note:target",
         "schema_version": 1,
         "target_title_key": "target",
@@ -201,6 +202,7 @@ def test_overlay_link_requires_explicit_nullable_overlay_identities():
     assert parsed.source_note_id == "note:source"
     assert parsed.target_note_id == "note:target"
     assert parsed.source_overlay_note_id == "overlay_note:source"
+    assert parsed.source_relative_path == "Notes/20260729-1541 Source.md"
     assert parsed.target_overlay_note_id == "overlay_note:target"
     assert parsed.model_dump()["target_overlay_note_id"] == "overlay_note:target"
     assert "schema_version" not in parsed.model_dump()
@@ -208,6 +210,7 @@ def test_overlay_link_requires_explicit_nullable_overlay_identities():
 
     for missing_field in (
         "source_overlay_note_id",
+        "source_relative_path",
         "target_overlay_note_id",
     ):
         with pytest.raises(ValidationError):
@@ -219,6 +222,8 @@ def test_overlay_link_requires_explicit_nullable_overlay_identities():
 
     external = OverlayLink.model_validate({
         **link,
+        "source_overlay_note_id": None,
+        "source_relative_path": None,
         "target_overlay_note_id": None,
     })
     assert external.target_note_id == "note:target"
@@ -247,6 +252,7 @@ def test_overlay_page_builds_a_deduplicated_overlay_only_local_graph():
         "source_note_id": "note:center",
         "source_note_title": "Center",
         "source_overlay_note_id": "overlay_note:center",
+        "source_relative_path": "Notes/20260729-1542 Center.md",
         "target_note_id": "note:target",
         "target_note_title": "Target",
         "target_overlay_note_id": "overlay_note:target",
@@ -263,6 +269,7 @@ def test_overlay_page_builds_a_deduplicated_overlay_only_local_graph():
         "source_note_id": "note:source",
         "source_note_title": "Source",
         "source_overlay_note_id": "overlay_note:source",
+        "source_relative_path": "Notes/20260729-1541 Source.md",
         "target_note_id": "note:center",
         "target_note_title": "Center",
         "target_overlay_note_id": "overlay_note:center",
@@ -291,6 +298,7 @@ def test_overlay_page_builds_a_deduplicated_overlay_only_local_graph():
                 "source_note_id": "note:external",
                 "source_note_title": "External",
                 "source_overlay_note_id": None,
+                "source_relative_path": None,
             },
         ],
     )
@@ -332,6 +340,7 @@ def test_overlay_page_local_graph_is_bounded():
             "id": f"note_link:{index}",
             "source_note_id": "note:center",
             "source_overlay_note_id": "overlay_note:center",
+            "source_relative_path": "Notes/20260729-1542 Center.md",
             "target_note_id": f"note:target-{index}",
             "target_note_title": f"Target {index}",
             "target_overlay_note_id": f"overlay_note:target-{index}",

@@ -1062,6 +1062,8 @@ class OverlayRepository:
                         source_note_id.title AS source_note_title,
                         source_note_id.overlay_note_id
                             AS source_overlay_note_id,
+                        source_note_id.overlay_note_id.relative_path
+                            AS source_relative_path,
                         target_note_id.title AS target_note_title,
                         target_note_id.overlay_note_id
                             AS target_overlay_note_id,
@@ -1075,6 +1077,8 @@ class OverlayRepository:
                         source_note_id.title AS source_note_title,
                         source_note_id.overlay_note_id
                             AS source_overlay_note_id,
+                        source_note_id.overlay_note_id.relative_path
+                            AS source_relative_path,
                         target_note_id.title AS target_note_title,
                         target_note_id.overlay_note_id
                             AS target_overlay_note_id,

@@ -83,6 +83,7 @@ def _link_row(
     link_id: str = "note_link:one",
     source_note_id: str = "note:one",
     source_overlay_note_id: str | None = "overlay_note:one",
+    source_relative_path: str | None = "Daily/2026-07-29.md",
     source_title: str = "2026-07-29",
     target_note_id: str = "note:two",
     target_overlay_note_id: str | None = "overlay_note:two",
@@ -101,6 +102,7 @@ def _link_row(
         "source_start": 0,
         "source_end": 10,
         "source_overlay_note_id": source_overlay_note_id,
+        "source_relative_path": source_relative_path,
         "target_overlay_note_id": target_overlay_note_id,
     }
 
@@ -201,6 +203,7 @@ async def test_overlay_page_query_preserves_both_identity_domains():
         link_id="note_link:backlink",
         source_note_id="note:source",
         source_overlay_note_id="overlay_note:source",
+        source_relative_path="Notes/20260729-1541 Source.md",
         source_title="Source",
         target_note_id="note:one",
         target_overlay_note_id="overlay_note:one",
@@ -227,6 +230,7 @@ async def test_overlay_page_query_preserves_both_identity_domains():
     assert page.outgoing_links[0].source_note_id == "note:one"
     assert page.outgoing_links[0].target_note_id == "note:two"
     assert page.outgoing_links[0].source_overlay_note_id == "overlay_note:one"
+    assert page.outgoing_links[0].source_relative_path == "Daily/2026-07-29.md"
     assert page.outgoing_links[0].target_overlay_note_id == "overlay_note:two"
     assert page.graph is not None
     assert {node["id"] for node in page.graph.nodes} == {
@@ -246,6 +250,9 @@ async def test_overlay_page_query_preserves_both_identity_domains():
         "source_note_id.overlay_note_id AS source_overlay_note_id"
     ) == 2
     assert query.count(
+        "source_note_id.overlay_note_id.relative_path AS source_relative_path"
+    ) == 2
+    assert query.count(
         "target_note_id.overlay_note_id AS target_overlay_note_id"
     ) == 2
 
@@ -259,6 +266,9 @@ def test_owned_projection_page_query_preserves_both_identity_domains():
         "source_note_id.overlay_note_id AS source_overlay_note_id"
     ) == 2
     assert query.count(
+        "source_note_id.overlay_note_id.relative_path AS source_relative_path"
+    ) == 2
+    assert query.count(
         "target_note_id.overlay_note_id AS target_overlay_note_id"
     ) == 2
 
@@ -270,6 +280,7 @@ async def test_owned_projection_return_hydrates_the_same_overlay_local_graph():
         link_id="note_link:backlink",
         source_note_id="note:source",
         source_overlay_note_id="overlay_note:source",
+        source_relative_path="Notes/20260729-1541 Source.md",
         source_title="Source",
         target_note_id="note:one",
         target_overlay_note_id="overlay_note:one",

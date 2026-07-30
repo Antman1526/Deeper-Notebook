@@ -166,6 +166,10 @@ export function KnowledgePaneContent({
           (candidate) => candidate.source_note_id === targetNoteId,
         )
       : undefined
+    const mappedOverlayBacklink = overlayBacklink?.source_overlay_note_id
+      && overlayBacklink.source_relative_path
+      ? overlayBacklink
+      : undefined
     const link = currentOutgoing.find(
       (candidate) => candidate.target_note_id === targetNoteId,
     )
@@ -182,16 +186,20 @@ export function KnowledgePaneContent({
       ? overlayPage.data?.overlay.id
       : isOverlay
         ? overlayLink?.target_overlay_note_id
-          ?? overlayBacklink?.source_overlay_note_id
+          ?? mappedOverlayBacklink?.source_overlay_note_id
         : targetNoteId
     const relativePathHint = isOverlayCenter
       ? overlayPage.data?.overlay.relative_path
-      : overlayLink?.target_relative_path ?? link?.target_relative_path
+      : overlayLink?.target_relative_path
+        ?? mappedOverlayBacklink?.source_relative_path
+        ?? link?.target_relative_path
     const targetText = isOverlayCenter
       ? overlayPage.data?.overlay.title
-      : overlayLink?.target_text
-        ?? overlayBacklink?.source_note_title
-        ?? targetNoteId
+      : isOverlay
+        ? overlayLink?.target_text
+          ?? mappedOverlayBacklink?.source_note_title
+          ?? targetNoteId
+        : link?.target_text || targetNoteId
     if (!navigationNoteId) return
     onNavigate(
       activeTab.vaultId,
