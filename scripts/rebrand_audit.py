@@ -750,7 +750,7 @@ _KIND_SCOPE_EXACT_PATHS = {
             "frontend/src/lib/api/onp.ts",
             "frontend/src/lib/task6-active-brand.test.ts",
             "tests/test_gmail_router.py",
-            "tests/test_task6_active_product.py", "tests/test_vault_api.py",
+            "tests/test_overlay_api.py", "tests/test_task6_active_product.py", "tests/test_vault_api.py",
         }
     ),
     "data_migration": frozenset(
@@ -790,7 +790,7 @@ _KIND_SCOPE_PREFIXES = {
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _PINNED_SELECTOR_INVENTORY_SHA256 = (
-    "54e9d4f8defee195168d400062590dd9f2f60c7e1ba8486de4b63bd7d786648a"
+    "9312b863eb2e52b0631b35fe593eba4ad523096d103026497e8507ae1b0d87c2"
 )
 _SEMANTIC_SELECTOR_PATHS = frozenset(
     {
