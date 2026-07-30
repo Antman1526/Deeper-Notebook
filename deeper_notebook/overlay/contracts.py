@@ -186,13 +186,22 @@ class UpdateOverlayNote(_Strict):
         return _visible_title(value)
 
 
+class OverlayLink(VaultLink):
+    """A projected link with explicit app-owned identities for navigation."""
+
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    source_overlay_note_id: str | None = Field(min_length=1, max_length=128)
+    target_overlay_note_id: str | None = Field(min_length=1, max_length=128)
+
+
 class OverlayPage(_Strict):
     overlay: OverlayNote
     note: dict[str, Any]
     blocks: list[dict[str, Any]] = Field(default_factory=list)
     tasks: list[dict[str, Any]] = Field(default_factory=list)
-    outgoing_links: list[VaultLink] = Field(default_factory=list)
-    backlinks: list[VaultLink] = Field(default_factory=list)
+    outgoing_links: list[OverlayLink] = Field(default_factory=list)
+    backlinks: list[OverlayLink] = Field(default_factory=list)
     graph: VaultGraph | None = None
 
     @model_validator(mode="after")

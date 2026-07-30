@@ -10,6 +10,21 @@ import { overlayApi } from './overlay'
 const mockGet = vi.mocked(apiClient.get)
 const mockPut = vi.mocked(apiClient.put)
 
+const validOverlayLink = {
+  id: 'note_link:one',
+  source_note_id: 'note:overlay-one',
+  source_overlay_note_id: 'overlay_note:one',
+  target_note_id: 'note:overlay-two',
+  target_overlay_note_id: 'overlay_note:two',
+  target_note_title: 'Two',
+  target_relative_path: 'Notes/20260729-1542 Two.md',
+  target_text: 'Two',
+  link_kind: 'wikilink',
+  resolved: true,
+  source_start: 0,
+  source_end: 5,
+} as const
+
 const validOverlayPage = {
   overlay: {
     id: 'overlay_note:one',
@@ -64,6 +79,51 @@ describe('overlay API boundary', () => {
     } as never)
 
     await expect(overlayApi.page('overlay_note:one')).rejects.toThrow()
+  })
+
+  it('requires explicit nullable overlay identity mappings on every overlay link', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: {
+        ...validOverlayPage,
+        outgoing_links: [validOverlayLink],
+      },
+    } as never)
+    await expect(overlayApi.page('overlay_note:one')).resolves.toMatchObject({
+      outgoing_links: [{
+        source_note_id: 'note:overlay-one',
+        source_overlay_note_id: 'overlay_note:one',
+        target_note_id: 'note:overlay-two',
+        target_overlay_note_id: 'overlay_note:two',
+      }],
+    })
+
+    for (const missingField of [
+      'source_overlay_note_id',
+      'target_overlay_note_id',
+    ] as const) {
+      const link: Partial<typeof validOverlayLink> = { ...validOverlayLink }
+      delete link[missingField]
+      mockGet.mockResolvedValueOnce({
+        data: {
+          ...validOverlayPage,
+          outgoing_links: [link],
+        },
+      } as never)
+      await expect(overlayApi.page('overlay_note:one')).rejects.toThrow()
+    }
+
+    mockGet.mockResolvedValueOnce({
+      data: {
+        ...validOverlayPage,
+        outgoing_links: [{
+          ...validOverlayLink,
+          target_overlay_note_id: null,
+        }],
+      },
+    } as never)
+    await expect(overlayApi.page('overlay_note:one')).resolves.toMatchObject({
+      outgoing_links: [{ target_overlay_note_id: null }],
+    })
   })
 
   it('encodes IDs and serializes only the strict update contract', async () => {
