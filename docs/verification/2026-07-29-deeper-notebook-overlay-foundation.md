@@ -23,7 +23,7 @@ is shown.
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Focused backend and verifier | `uv run pytest -q tests/test_overlay_contracts.py tests/test_overlay_migration.py tests/test_overlay_paths.py tests/test_overlay_storage.py tests/test_overlay_repository.py tests/test_overlay_service.py tests/test_overlay_api.py tests/test_vault_security.py tests/test_vault_note_read_only.py tests/test_knowledge_workspace_persistence.py tests/test_knowledge_workspace_api.py tests/test_verify_overlay_foundation.py` | exit 0; 282 passed |
+| Focused backend and verifier | `uv run pytest -q tests/test_overlay_contracts.py tests/test_overlay_migration.py tests/test_overlay_paths.py tests/test_overlay_storage.py tests/test_overlay_repository.py tests/test_overlay_service.py tests/test_overlay_api.py tests/test_vault_security.py tests/test_vault_note_read_only.py tests/test_knowledge_workspace_persistence.py tests/test_knowledge_workspace_api.py tests/test_verify_overlay_foundation.py` | exit 0; 286 passed |
 | Focused frontend | `npx vitest run src/lib/api/overlay.test.ts src/lib/api/knowledge-workspace.test.ts src/lib/stores/knowledge-workspace-store.test.ts src/components/overlay src/components/vault/KnowledgeExplorer.test.tsx src/components/vault/KnowledgePaneContent.test.tsx src/components/vault/KnowledgeTabStrip.test.tsx src/components/vault/VaultCodeMirror.test.tsx src/lib/locales/index.test.ts --pool=forks --maxWorkers=1` | exit 0; 290 passed |
 | Full backend | `uv run pytest -q` | exit 0; 3,945 passed, 48 skipped |
 | Full frontend unit | `npm test` | exit 0; 953 passed |
