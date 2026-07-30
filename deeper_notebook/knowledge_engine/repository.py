@@ -1,0 +1,478 @@
+"""Transactional persistence for unified knowledge-engine snapshots."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from hashlib import sha256
+from typing import Any, Protocol
+
+from pydantic import ValidationError
+
+from deeper_notebook.database.repository import (
+    db_connection,
+    ensure_record_id,
+    parse_record_ids,
+)
+from deeper_notebook.knowledge_engine.contracts import (
+    BackfillCheckpoint,
+    KnowledgeDocument,
+    KnowledgeSnapshot,
+    ProjectionReceipt,
+)
+from deeper_notebook.knowledge_engine.identity import canonical_locator
+
+_ID_PATTERNS = {
+    "space": re.compile(r"^knowledge_engine_space:[A-Za-z0-9_-]+$"),
+    "document": re.compile(r"^knowledge_engine_document:[A-Za-z0-9_-]+$"),
+    "block": re.compile(r"^knowledge_engine_block:[A-Za-z0-9_-]+$"),
+    "relation": re.compile(r"^knowledge_engine_relation:[A-Za-z0-9_-]+$"),
+    "task": re.compile(r"^knowledge_engine_task:[A-Za-z0-9_-]+$"),
+    "asset": re.compile(r"^knowledge_engine_asset:[A-Za-z0-9_-]+$"),
+    "revision": re.compile(r"^knowledge_engine_revision:[A-Za-z0-9_-]+$"),
+    "receipt": re.compile(
+        r"^knowledge_engine_projection_receipt:[A-Za-z0-9_-]+$"
+    ),
+    "checkpoint": re.compile(r"^knowledge_engine_backfill_checkpoint:[A-Za-z0-9_-]+$"),
+}
+_OPERATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
+_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
+_DOCUMENT_FIELDS = (
+    "id, space_id, source_native_id, authority_kind, relative_locator, "
+    "document_kind, title, normalized_body, properties, tags, content_hash, "
+    "source_revision_id, provenance, availability, parse_state, journal_date, "
+    "capabilities, created_at, observed_at, updated_at"
+)
+
+
+class _Connection(Protocol):
+    async def query(
+        self, statement: str, variables: dict[str, Any] | None = None
+    ) -> Any: ...
+
+
+ConnectionFactory = Callable[[], AbstractAsyncContextManager[_Connection]]
+
+
+class KnowledgeRepositoryError(RuntimeError):
+    """A stable, scrubbed knowledge-engine persistence failure."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
+@dataclass(frozen=True, slots=True)
+class EngineProjectionStatus:
+    projected: int
+    unchanged: int
+    failed: int
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _record_id(value: str, *, kind: str):
+    pattern = _ID_PATTERNS.get(kind)
+    if (
+        pattern is None
+        or not isinstance(value, str)
+        or pattern.fullmatch(value) is None
+    ):
+        raise ValueError(f"invalid_knowledge_engine_{kind}_id")
+    return ensure_record_id(value)
+
+
+def _operation(value: str) -> str:
+    if not isinstance(value, str) or _OPERATION_ID.fullmatch(value) is None:
+        raise ValueError("invalid_knowledge_engine_operation_id")
+    return value
+
+
+def _receipt_id(operation_id: str) -> str:
+    return (
+        "knowledge_engine_projection_receipt:"
+        f"{sha256(operation_id.encode()).hexdigest()}"
+    )
+
+
+def _checkpoint_id(space_id: str) -> str:
+    suffix = space_id.split(":", 1)[1]
+    return f"knowledge_engine_backfill_checkpoint:{suffix}"
+
+
+def _content(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if key != "id"}
+
+
+def _receipt_from(value: Any) -> ProjectionReceipt:
+    try:
+        return ProjectionReceipt.model_validate(value)
+    except ValidationError:
+        raise KnowledgeRepositoryError("knowledge_engine_receipt_invalid") from None
+
+
+class KnowledgeRepository:
+    """Commit complete engine projections in one SurrealQL transaction."""
+
+    def __init__(
+        self,
+        *,
+        connection_factory: ConnectionFactory | None = None,
+        clock: Callable[[], datetime] = _now,
+    ) -> None:
+        self._connection_factory = connection_factory or db_connection
+        self._clock = clock
+
+    async def _query(
+        self,
+        connection: _Connection,
+        statement: str,
+        variables: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        try:
+            result = await connection.query(statement, variables)
+        except KnowledgeRepositoryError:
+            raise
+        except Exception:
+            raise KnowledgeRepositoryError(
+                "knowledge_engine_repository_unavailable"
+            ) from None
+        if isinstance(result, str):
+            raise KnowledgeRepositoryError("knowledge_engine_repository_unavailable")
+        parsed = parse_record_ids(result)
+        return parsed if isinstance(parsed, list) else [parsed]
+
+    async def commit_snapshot(
+        self, snapshot: KnowledgeSnapshot, *, operation_id: str
+    ) -> ProjectionReceipt:
+        operation_id = _operation(operation_id)
+        variables = self._snapshot_variables(snapshot, operation_id)
+        async with self._connection_factory() as connection:
+            rows = await self._query(connection, self._snapshot_transaction(), variables)
+        result = next(
+            (row for row in reversed(rows) if isinstance(row, dict) and "receipt" in row),
+            None,
+        )
+        if result is None:
+            raise KnowledgeRepositoryError("knowledge_engine_commit_outcome_missing")
+        receipt = _receipt_from(result.get("receipt"))
+        prior_input_hash = result.get("prior_input_hash")
+        if prior_input_hash is not None and prior_input_hash != variables["input_hash"]:
+            raise KnowledgeRepositoryError("operation_conflict")
+        if prior_input_hash == variables["input_hash"]:
+            return receipt.model_copy(update={"status": "unchanged"})
+        return receipt
+
+    async def get_document(self, document_id: str) -> KnowledgeDocument:
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                f"SELECT {_DOCUMENT_FIELDS} FROM $document_id LIMIT 1;",
+                {"document_id": _record_id(document_id, kind="document")},
+            )
+        if not rows:
+            raise LookupError("knowledge_engine_document_not_found")
+        try:
+            return KnowledgeDocument.model_validate(rows[0])
+        except ValidationError:
+            raise KnowledgeRepositoryError("knowledge_engine_document_invalid") from None
+
+    async def list_documents(
+        self, *, space_id: str | None, limit: int, offset: int
+    ) -> list[KnowledgeDocument]:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 500
+            or isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or not 0 <= offset <= 1_000_000
+        ):
+            raise ValueError("invalid_pagination")
+        variables: dict[str, Any] = {"limit": limit, "offset": offset}
+        where = ""
+        if space_id is not None:
+            _record_id(space_id, kind="space")
+            variables["space_id"] = space_id
+            where = "WHERE space_id = $space_id"
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                f"""
+                SELECT {_DOCUMENT_FIELDS} FROM knowledge_engine_document
+                {where}
+                ORDER BY updated_at DESC, id
+                LIMIT $limit START $offset;
+                """,
+                variables,
+            )
+        try:
+            return [KnowledgeDocument.model_validate(row) for row in rows]
+        except ValidationError:
+            raise KnowledgeRepositoryError("knowledge_engine_document_invalid") from None
+
+    async def projection_status(self) -> EngineProjectionStatus:
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT
+                    count() AS projected
+                FROM knowledge_engine_projection_receipt
+                WHERE status = 'projected'
+                GROUP ALL;
+                """,
+            )
+            failed_rows = await self._query(
+                connection,
+                """
+                SELECT count() AS failed FROM knowledge_engine_projection_receipt
+                WHERE status = 'failed' GROUP ALL;
+                """,
+            )
+        return EngineProjectionStatus(
+            projected=int(rows[0]["projected"]) if rows else 0,
+            unchanged=0,
+            failed=int(failed_rows[0]["failed"]) if failed_rows else 0,
+        )
+
+    async def record_projection_failure(
+        self,
+        *,
+        operation_id: str,
+        space_id: str,
+        relative_locator: str,
+        input_hash: str,
+        error_code: str,
+    ) -> ProjectionReceipt:
+        operation_id = _operation(operation_id)
+        _record_id(space_id, kind="space")
+        if not _ERROR_CODE.fullmatch(error_code):
+            raise ValueError("invalid_knowledge_engine_error_code")
+        try:
+            relative_locator = canonical_locator(relative_locator)
+        except ValueError:
+            raise ValueError("invalid_knowledge_engine_relative_locator") from None
+        if not re.fullmatch(r"[0-9a-f]{64}", input_hash):
+            raise ValueError("invalid_knowledge_engine_input_hash")
+        now = self._clock()
+        receipt = {
+            "schema_version": 1,
+            "operation_id": operation_id,
+            "space_id": space_id,
+            "document_id": "knowledge_engine_document:unknown",
+            "source_revision_id": "knowledge_engine_revision:unknown",
+            "relative_locator": relative_locator,
+            "input_hash": input_hash,
+            "output_hash": None,
+            "adapter_version": "knowledge-repository-v1",
+            "status": "failed",
+            "error_code": error_code,
+            "started_at": now,
+            "completed_at": now,
+        }
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                BEGIN TRANSACTION;
+                LET $existing = (SELECT * FROM $receipt_id LIMIT 1)[0];
+                IF $existing = NONE {
+                    CREATE $receipt_id CONTENT $receipt;
+                };
+                RETURN { receipt: IF $existing = NONE { $receipt } ELSE { $existing } };
+                COMMIT TRANSACTION;
+                """,
+                {
+                    "receipt_id": _record_id(_receipt_id(operation_id), kind="receipt"),
+                    "receipt": receipt,
+                },
+            )
+        row = next((item for item in reversed(rows) if "receipt" in item), None)
+        if row is None:
+            raise KnowledgeRepositoryError("knowledge_engine_commit_outcome_missing")
+        return _receipt_from(row["receipt"])
+
+    async def get_checkpoint(self, space_id: str) -> BackfillCheckpoint | None:
+        _record_id(space_id, kind="space")
+        checkpoint_id = _checkpoint_id(space_id)
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "SELECT * FROM $checkpoint_id LIMIT 1;",
+                {"checkpoint_id": _record_id(checkpoint_id, kind="checkpoint")},
+            )
+        if not rows:
+            return None
+        try:
+            return BackfillCheckpoint.model_validate(rows[0])
+        except ValidationError:
+            raise KnowledgeRepositoryError("knowledge_engine_checkpoint_invalid") from None
+
+    async def save_checkpoint(
+        self, checkpoint: BackfillCheckpoint
+    ) -> BackfillCheckpoint:
+        _record_id(checkpoint.space_id, kind="space")
+        checkpoint_id = _checkpoint_id(checkpoint.space_id)
+        data = checkpoint.model_dump(mode="python")
+        data["schema_version"] = 1
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "UPSERT $checkpoint_id CONTENT $checkpoint RETURN AFTER;",
+                {
+                    "checkpoint_id": _record_id(checkpoint_id, kind="checkpoint"),
+                    "checkpoint": data,
+                },
+            )
+        if not rows:
+            raise KnowledgeRepositoryError("knowledge_engine_checkpoint_missing")
+        try:
+            return BackfillCheckpoint.model_validate(rows[0])
+        except ValidationError:
+            raise KnowledgeRepositoryError("knowledge_engine_checkpoint_invalid") from None
+
+    def _snapshot_variables(
+        self, snapshot: KnowledgeSnapshot, operation_id: str
+    ) -> dict[str, Any]:
+        data = snapshot.model_dump(mode="python")
+        space = _content(data["space"])
+        document = _content(data["document"])
+        revision = _content(data["revision"])
+        for value, kind in (
+            (snapshot.space.id, "space"),
+            (snapshot.document.id, "document"),
+            (snapshot.revision.id, "revision"),
+        ):
+            _record_id(value, kind=kind)
+        children: dict[str, list[dict[str, Any]]] = {}
+        for name, kind in (
+            ("blocks", "block"),
+            ("relations", "relation"),
+            ("tasks", "task"),
+            ("assets", "asset"),
+        ):
+            children[name] = [
+                {"record_id": _record_id(item["id"], kind=kind), "data": _content(item)}
+                for item in data[name]
+            ]
+        for block in data["blocks"]:
+            if block["parent_block_id"] is not None:
+                _record_id(block["parent_block_id"], kind="block")
+        for relation in data["relations"]:
+            _record_id(relation["source_document_id"], kind="document")
+            if relation["source_block_id"] is not None:
+                _record_id(relation["source_block_id"], kind="block")
+            if relation["target_document_id"] is not None:
+                _record_id(relation["target_document_id"], kind="document")
+            if relation["target_block_id"] is not None:
+                _record_id(relation["target_block_id"], kind="block")
+        for task in data["tasks"]:
+            _record_id(task["document_id"], kind="document")
+            if task["block_id"] is not None:
+                _record_id(task["block_id"], kind="block")
+        for asset in data["assets"]:
+            _record_id(asset["source_document_id"], kind="document")
+        for claim in data["identity_claims"]:
+            if claim["engine_kind"] not in _ID_PATTERNS:
+                raise ValueError("invalid_knowledge_engine_engine_id")
+            _record_id(claim["engine_id"], kind=claim["engine_kind"])
+            _record_id(claim["source_revision_id"], kind="revision")
+        receipt_id = _receipt_id(operation_id)
+        _record_id(receipt_id, kind="receipt")
+        now = self._clock()
+        success_receipt = {
+            "schema_version": 1,
+            "operation_id": operation_id,
+            "space_id": snapshot.space.id,
+            "document_id": snapshot.document.id,
+            "source_revision_id": snapshot.revision.id,
+            "relative_locator": snapshot.document.relative_locator,
+            "input_hash": snapshot.revision.content_hash,
+            "output_hash": snapshot.document.content_hash,
+            "adapter_version": snapshot.revision.adapter_version,
+            "status": "projected",
+            "error_code": None,
+            "started_at": now,
+            "completed_at": now,
+        }
+        return {
+            "operation_id": operation_id,
+            "input_hash": snapshot.revision.content_hash,
+            "space_id": snapshot.space.id,
+            "document_id": snapshot.document.id,
+            "revision_id": snapshot.revision.id,
+            "space_record_id": _record_id(snapshot.space.id, kind="space"),
+            "document_record_id": _record_id(snapshot.document.id, kind="document"),
+            "revision_record_id": _record_id(snapshot.revision.id, kind="revision"),
+            "receipt_id": _record_id(receipt_id, kind="receipt"),
+            "space": space,
+            "document": document,
+            "revision": revision,
+            **children,
+            "identity_claims": data["identity_claims"],
+            "success_receipt": success_receipt,
+        }
+
+    @staticmethod
+    def _snapshot_transaction() -> str:
+        return """
+        BEGIN TRANSACTION;
+        LET $existing_receipt = (
+            SELECT * FROM knowledge_engine_projection_receipt
+            WHERE operation_id = $operation_id LIMIT 1
+        )[0];
+        LET $existing_document = (
+            SELECT * FROM knowledge_engine_document
+            WHERE id = $document_record_id LIMIT 1
+        )[0];
+        IF $existing_receipt = NONE {
+            UPSERT $space_record_id CONTENT $space;
+            UPSERT $revision_record_id CONTENT $revision;
+            UPSERT $document_record_id CONTENT $document;
+            DELETE knowledge_engine_block WHERE document_id = $document_id;
+            DELETE knowledge_engine_relation WHERE source_document_id = $document_id;
+            DELETE knowledge_engine_task WHERE document_id = $document_id;
+            DELETE knowledge_engine_asset WHERE source_document_id = $document_id;
+            FOR $block IN $blocks { UPSERT $block.record_id CONTENT $block.data; };
+            FOR $relation IN $relations { UPSERT $relation.record_id CONTENT $relation.data; };
+            FOR $task IN $tasks { UPSERT $task.record_id CONTENT $task.data; };
+            FOR $asset IN $assets { UPSERT $asset.record_id CONTENT $asset.data; };
+            FOR $claim IN $identity_claims {
+                LET $mapped = (
+                    SELECT * FROM knowledge_engine_identity_map
+                    WHERE legacy_kind = $claim.legacy_kind
+                    AND legacy_id = $claim.legacy_id
+                    AND source_revision_id = $claim.source_revision_id
+                    LIMIT 1
+                )[0];
+                IF $mapped = NONE {
+                    CREATE knowledge_engine_identity_map CONTENT $claim;
+                } ELSE {
+                    IF $mapped.claim_hash != $claim.claim_hash
+                    OR $mapped.engine_kind != $claim.engine_kind
+                    OR $mapped.engine_id != $claim.engine_id {
+                        THROW 'identity_mapping_conflict';
+                    };
+                };
+            };
+            CREATE $receipt_id CONTENT $success_receipt;
+        };
+        RETURN {
+            prior_input_hash: $existing_receipt.input_hash,
+            receipt: $success_receipt
+        };
+        COMMIT TRANSACTION;
+        """
+
+
+__all__ = [
+    "EngineProjectionStatus",
+    "KnowledgeRepository",
+    "KnowledgeRepositoryError",
+]
