@@ -38,6 +38,16 @@ RESTART_STATE_VERSION = 1
 MAX_RESTART_STATE_BYTES = 128 * 1024
 MAX_EXTERNAL_FILES = 1_000
 MAX_EXTERNAL_BYTES = 32 * 1024 * 1024
+REQUIRED_VAULT_READ_ROUTE = (
+    "GET /api/deeper-notebook/vaults/{vault_id}/pages/{note_id}"
+)
+ALLOWED_VAULT_POST_ROUTES = frozenset(
+    {
+        "POST /api/deeper-notebook/vaults",
+        "POST /api/deeper-notebook/vaults/{vault_id}/scan",
+        "POST /api/deeper-notebook/vaults/{vault_id}/trust/import",
+    }
+)
 
 
 class ProofRefusal(RuntimeError):
@@ -153,11 +163,15 @@ def _validate_token_file(raw_path: Path) -> Path:
     if absolute.is_symlink() or not absolute.is_file():
         raise ProofRefusal("auth_token_file_invalid")
     info = absolute.stat()
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_uid != os.getuid()
+        or info.st_mode & 0o077
+    ):
         raise ProofRefusal("auth_token_file_invalid")
     if info.st_size < 1 or info.st_size > 4_096:
         raise ProofRefusal("auth_token_file_invalid")
-    return absolute
+    return absolute.resolve(strict=True)
 
 
 def _validate_report_path(raw_path: Path, temp_root: Path) -> Path:
@@ -171,7 +185,7 @@ def _validate_report_path(raw_path: Path, temp_root: Path) -> Path:
     if not _inside(resolved_parent, temp_root) or resolved_parent == temp_root:
         raise ProofRefusal("report_path_invalid")
     _reject_symlink_components(parent, temp_root)
-    return absolute
+    return resolved_parent / absolute.name
 
 
 def _validate_api_url(value: str) -> str:
@@ -201,13 +215,26 @@ def _inputs(namespace: argparse.Namespace) -> Inputs:
         EXTERNAL_MARKER,
         EXTERNAL_MARKER_VALUE,
     )
+    if _inside(overlay_root, external_root) or _inside(external_root, overlay_root):
+        raise ProofRefusal("proof_roots_must_be_disjoint")
     temp_root = Path(tempfile.gettempdir()).resolve()
     report_path = _validate_report_path(namespace.report_path, temp_root)
-    if _inside(report_path, external_root):
+    token_path = _validate_token_file(namespace.auth_token_file)
+    if _inside(report_path, external_root) or _inside(report_path, overlay_root):
+        raise ProofRefusal("report_path_invalid")
+    if _inside(token_path, external_root) or _inside(token_path, overlay_root):
+        raise ProofRefusal("auth_token_file_invalid")
+    reserved_paths = {
+        token_path,
+        overlay_root / OVERLAY_PARENT_MARKER,
+        external_root / EXTERNAL_MARKER,
+        overlay_root / RESTART_STATE_FILE,
+    }
+    if report_path in reserved_paths:
         raise ProofRefusal("report_path_invalid")
     return Inputs(
         api_url=_validate_api_url(namespace.api_url),
-        auth_token_file=_validate_token_file(namespace.auth_token_file),
+        auth_token_file=token_path,
         overlay_root=overlay_root,
         external_root=external_root,
         report_path=report_path,
@@ -302,21 +329,31 @@ def _request(
 
 
 def _route_audit(openapi: Any) -> dict[str, Any]:
+    if not isinstance(openapi, dict):
+        raise ProofRefusal("openapi_route_audit_failed")
+    paths = openapi.get("paths")
+    if not isinstance(paths, dict) or not paths:
+        raise ProofRefusal("openapi_route_audit_failed")
     unsafe: list[str] = []
     routes: list[str] = []
-    paths = openapi.get("paths", {}) if isinstance(openapi, dict) else {}
     for path, methods in sorted(paths.items()):
         if not isinstance(path, str) or not isinstance(methods, dict):
-            continue
-        for method in sorted(methods):
+            raise ProofRefusal("openapi_route_audit_failed")
+        for method, operation in sorted(methods.items()):
             lowered = method.lower()
             if lowered not in {"get", "head", "post", "put", "patch", "delete"}:
                 continue
+            if not isinstance(operation, dict):
+                raise ProofRefusal("openapi_route_audit_failed")
             label = f"{lowered.upper()} {path}"
             if "/vaults" in path:
                 routes.append(label)
-                if lowered in {"put", "patch", "delete"}:
+                if lowered in {"put", "patch", "delete"} or (
+                    lowered == "post" and label not in ALLOWED_VAULT_POST_ROUTES
+                ):
                     unsafe.append(label)
+    if REQUIRED_VAULT_READ_ROUTE not in routes:
+        raise ProofRefusal("openapi_route_audit_failed")
     return {"vault_routes": routes, "unsafe_vault_routes": unsafe}
 
 
@@ -580,6 +617,29 @@ def _require_same_identity(
         raise ProofRefusal("api_instance_changed_during_proof")
 
 
+def _write_private_report(path: Path, content: str) -> None:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise ProofRefusal("report_path_invalid")
+    if path.exists():
+        info = path.stat()
+        if info.st_uid != os.getuid() or not stat.S_ISREG(info.st_mode):
+            raise ProofRefusal("report_path_invalid")
+    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}-{secrets.token_hex(4)}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(temporary, flags, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
 def _report(
     inputs: Inputs,
     *,
@@ -642,7 +702,7 @@ def _report(
             "",
         ]
     )
-    inputs.report_path.write_text("\n".join(lines), encoding="utf-8")
+    _write_private_report(inputs.report_path, "\n".join(lines))
 
 
 def _prepare_restart_proof(

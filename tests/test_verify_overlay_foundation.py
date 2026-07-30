@@ -107,6 +107,41 @@ def test_check_refuses_broad_or_private_roots_without_scanning(tmp_path: Path):
     assert not inputs["report"].exists()
 
 
+def test_check_refuses_report_aliasing_token_without_overwriting_it(tmp_path: Path):
+    inputs = _proof_inputs(tmp_path)
+    original_token = inputs["token"].read_bytes()
+    inputs["report"] = inputs["token"]
+
+    result = subprocess.run(
+        _command(inputs, "http://127.0.0.1:9"),
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stderr.strip() == "report_path_invalid"
+    assert inputs["token"].read_bytes() == original_token
+
+
+def test_check_refuses_group_or_world_readable_token(tmp_path: Path):
+    inputs = _proof_inputs(tmp_path)
+    inputs["token"].chmod(0o644)
+
+    result = subprocess.run(
+        _command(inputs, "http://127.0.0.1:9"),
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stderr.strip() == "auth_token_file_invalid"
+    assert not inputs["report"].exists()
+
+
 class _NoNonceHandler(BaseHTTPRequestHandler):
     requests: list[tuple[str, str, str | None]] = []
 
@@ -133,6 +168,11 @@ class _ControlledProofHandler(BaseHTTPRequestHandler):
     requests: list[tuple[str, str, str | None]] = []
     pages: dict[str, dict[str, object]] = {}
     unique_count = 0
+    openapi_payload: object = {
+        "paths": {
+            "/api/deeper-notebook/vaults/{vault_id}/pages/{note_id}": {"get": {}}
+        }
+    }
 
     @classmethod
     def reset(cls, overlay_root: Path) -> None:
@@ -144,6 +184,13 @@ class _ControlledProofHandler(BaseHTTPRequestHandler):
         cls.requests = []
         cls.pages = {}
         cls.unique_count = 0
+        cls.openapi_payload = {
+            "paths": {
+                "/api/deeper-notebook/vaults/{vault_id}/pages/{note_id}": {
+                    "get": {}
+                }
+            }
+        }
 
     def _record(self) -> None:
         type(self).requests.append(
@@ -197,16 +244,7 @@ class _ControlledProofHandler(BaseHTTPRequestHandler):
             )
             return
         if self.path == "/openapi.json":
-            self._json(
-                200,
-                {
-                    "paths": {
-                        "/api/deeper-notebook/vaults/{vault_id}/notes/{note_id}": {
-                            "get": {}
-                        }
-                    }
-                },
-            )
+            self._json(200, type(self).openapi_payload)
             return
         note_prefix = "/api/deeper-notebook/overlay/notes/"
         if self.path.startswith(note_prefix):
@@ -353,6 +391,65 @@ def test_controlled_proof_refuses_root_digest_mismatch_before_mutation(
     assert not (
         inputs["overlay"] / ".deeper-notebook-overlay-proof-state.json"
     ).exists()
+
+
+def test_controlled_proof_refuses_malformed_openapi_before_mutation(
+    tmp_path: Path,
+):
+    inputs = _proof_inputs(tmp_path)
+    _ControlledProofHandler.reset(inputs["overlay"])
+    _ControlledProofHandler.openapi_payload = {"unexpected": "shape"}
+
+    with _serve(_ControlledProofHandler) as api_url:
+        result = subprocess.run(
+            [*_command(inputs, api_url), "--run-controlled-proof"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    assert result.returncode == 5
+    assert "openapi_route_audit_failed" in inputs["report"].read_text(
+        encoding="utf-8"
+    )
+    assert not [
+        request
+        for request in _ControlledProofHandler.requests
+        if request[0] in {"POST", "PUT", "PATCH", "DELETE"}
+    ]
+
+
+def test_controlled_proof_rejects_unapproved_post_vault_route_before_mutation(
+    tmp_path: Path,
+):
+    inputs = _proof_inputs(tmp_path)
+    _ControlledProofHandler.reset(inputs["overlay"])
+    _ControlledProofHandler.openapi_payload = {
+        "paths": {
+            "/api/deeper-notebook/vaults/{vault_id}/pages/{note_id}": {"get": {}},
+            "/api/deeper-notebook/vaults/{vault_id}/write": {"post": {}},
+        }
+    }
+
+    with _serve(_ControlledProofHandler) as api_url:
+        result = subprocess.run(
+            [*_command(inputs, api_url), "--run-controlled-proof"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    assert result.returncode == 5
+    report = inputs["report"].read_text(encoding="utf-8")
+    assert "unsafe_external_vault_mutation_route" in report
+    assert "POST /api/deeper-notebook/vaults/{vault_id}/write" in report
+    assert not [
+        request
+        for request in _ControlledProofHandler.requests
+        if request[0] in {"POST", "PUT", "PATCH", "DELETE"}
+    ]
 
 
 def test_controlled_proof_uses_exact_root_and_resumes_after_external_restart(

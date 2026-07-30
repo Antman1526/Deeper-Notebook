@@ -42,10 +42,8 @@ test.describe("knowledge overlay foundation", () => {
       page.getByRole("button", { name: "Save", exact: true }),
     ).toHaveCount(0);
 
+    expect(fixture.overlayMutationRequests.length).toBeGreaterThan(0);
     expect(fixture.externalMutationRequests).toEqual([]);
-    expect(fixture.externalFingerprintsAfter).toEqual(
-      fixture.externalFingerprintsBefore,
-    );
     expect(fixture.unexpectedRequests).toEqual([]);
   });
 
@@ -103,10 +101,8 @@ test.describe("knowledge overlay foundation", () => {
     ).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("Revision 2")).toBeVisible();
 
+    expect(fixture.overlayMutationRequests.length).toBeGreaterThan(0);
     expect(fixture.externalMutationRequests).toEqual([]);
-    expect(fixture.externalFingerprintsAfter).toEqual(
-      fixture.externalFingerprintsBefore,
-    );
     expect(fixture.unexpectedRequests).toEqual([]);
   });
 });

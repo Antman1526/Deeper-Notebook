@@ -48,8 +48,6 @@ export interface StrictKnowledgeFixture {
   overlayMutationRequests: string[];
   externalMutationRequests: string[];
   unexpectedRequests: string[];
-  externalFingerprintsBefore: Record<string, string>;
-  readonly externalFingerprintsAfter: Record<string, string>;
   injectNextSaveConflict: () => void;
 }
 
@@ -633,10 +631,6 @@ export async function installStrictKnowledgeFixture(
   const overlayMutationRequests: string[] = [];
   const externalMutationRequests: string[] = [];
   const unexpectedRequests: string[] = [];
-  const externalFingerprints = Object.freeze({
-    "pages/evidence.md": evidenceFile.content_hash,
-    "pages/plan.md": planFile.content_hash,
-  });
   let nextOrdinal = 1;
   let conflictNextSave = false;
 
@@ -683,7 +677,7 @@ export async function installStrictKnowledgeFixture(
 
     if (
       pathname.includes("/api/deeper-notebook/vaults") &&
-      ["PUT", "PATCH", "DELETE"].includes(method)
+      ["POST", "PUT", "PATCH", "DELETE"].includes(method)
     ) {
       externalMutationRequests.push(label);
       await fulfillFixtureJson(
@@ -861,10 +855,6 @@ export async function installStrictKnowledgeFixture(
     overlayMutationRequests,
     externalMutationRequests,
     unexpectedRequests,
-    externalFingerprintsBefore: { ...externalFingerprints },
-    get externalFingerprintsAfter() {
-      return { ...externalFingerprints };
-    },
     injectNextSaveConflict: () => {
       conflictNextSave = true;
     },
