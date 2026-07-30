@@ -987,7 +987,26 @@ class VaultRepository:
         return (
             """
             BEGIN TRANSACTION;
-            LET $overlay = (SELECT * FROM $overlay_note_id LIMIT 1)[0];
+            LET $overlay = (
+                SELECT
+                    id,
+                    space_id,
+                    projected_note_id,
+                    stable_id,
+                    kind,
+                    date_key,
+                    relative_path,
+                    title,
+                    content_hash,
+                    revision,
+                    projection_state,
+                    encoding,
+                    newline,
+                    created_at,
+                    updated_at
+                FROM $overlay_note_id
+                LIMIT 1
+            )[0];
             LET $prior_projected_note = (
                 SELECT * FROM $projected_note_id LIMIT 1
             )[0];
@@ -1014,7 +1033,7 @@ class VaultRepository:
             + """
             };
             LET $page = {
-                overlay: (SELECT * FROM $overlay_note_id LIMIT 1)[0],
+                overlay: $overlay,
                 note: (SELECT * FROM $projected_note_id LIMIT 1)[0],
                 blocks: (
                     SELECT * FROM note_block

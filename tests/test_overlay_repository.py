@@ -246,6 +246,12 @@ async def test_overlay_page_query_preserves_both_identity_domains():
         ("note:source", "note:one"),
     }
     query = connection.calls[0][0]
+    assert "SELECT * FROM $overlay_note_id" not in query
+    assert (
+        "SELECT id, space_id, projected_note_id, stable_id, kind, date_key,"
+        " relative_path, title, content_hash, revision, projection_state,"
+        " encoding, newline, created_at, updated_at FROM $overlay_note_id"
+    ) in query
     assert query.count(
         "source_note_id.overlay_note_id AS source_overlay_note_id"
     ) == 2
@@ -262,6 +268,13 @@ def test_owned_projection_page_query_preserves_both_identity_domains():
         VaultRepository._owned_projection_transaction("RETURN true;").split()
     )
 
+    assert "SELECT * FROM $overlay_note_id" not in query
+    assert (
+        "SELECT id, space_id, projected_note_id, stable_id, kind, date_key,"
+        " relative_path, title, content_hash, revision, projection_state,"
+        " encoding, newline, created_at, updated_at FROM $overlay_note_id"
+    ) in query
+    assert "overlay: $overlay" in query
     assert query.count(
         "source_note_id.overlay_note_id AS source_overlay_note_id"
     ) == 2
