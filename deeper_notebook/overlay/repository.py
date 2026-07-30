@@ -33,6 +33,19 @@ _HASH = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ERROR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _OVERLAY_NOTE_ID = re.compile(r"^overlay_note:[A-Za-z0-9_-]+$")
 _ZERO_HASH = "0" * 64
+_OVERLAY_SPACE_FIELDS = (
+    "id, slug, display_name, root_version, created_at, updated_at"
+)
+_OVERLAY_NOTE_FIELDS = (
+    "id, space_id, projected_note_id, stable_id, kind, date_key, "
+    "relative_path, title, content_hash, revision, projection_state, "
+    "encoding, newline, created_at, updated_at"
+)
+_OVERLAY_RECEIPT_FIELDS = (
+    "id, operation_id, idempotency_key, overlay_note_id, operation, "
+    "expected_revision, resulting_revision, before_hash, after_hash, "
+    "status, error_code, started_at, completed_at"
+)
 
 
 class _Connection(Protocol):
@@ -152,8 +165,16 @@ class OverlayRepository:
         async with self._connection_factory() as connection:
             rows = await self._query(
                 connection,
-                """
-                UPSERT $space_id MERGE $space RETURN AFTER;
+                f"""
+                BEGIN TRANSACTION;
+                UPSERT $space_id MERGE $space;
+                RETURN {{
+                    space: (
+                        SELECT {_OVERLAY_SPACE_FIELDS}
+                        FROM $space_id LIMIT 1
+                    )[0]
+                }};
+                COMMIT TRANSACTION;
                 """,
                 {
                     "space_id": _db_id(space_id),
@@ -169,15 +190,16 @@ class OverlayRepository:
             )
         if not rows:
             raise OverlayRepositoryError("overlay_space_unavailable")
-        return OverlaySpace.model_validate(rows[-1])
+        space = rows[-1].get("space", rows[-1])
+        return OverlaySpace.model_validate(space)
 
     async def get_daily(self, date_key: str) -> OverlayNote | None:
         validated_date = CreateDailyNote(date_key=date_key).date_key
         async with self._connection_factory() as connection:
             rows = await self._query(
                 connection,
-                """
-                SELECT * FROM overlay_note
+                f"""
+                SELECT {_OVERLAY_NOTE_FIELDS} FROM overlay_note
                 WHERE space_id = $space_id AND date_key = $date_key
                 LIMIT 1;
                 """,
@@ -192,7 +214,7 @@ class OverlayRepository:
         async with self._connection_factory() as connection:
             rows = await self._query(
                 connection,
-                "SELECT * FROM $note_id LIMIT 1;",
+                f"SELECT {_OVERLAY_NOTE_FIELDS} FROM $note_id LIMIT 1;",
                 {"note_id": _overlay_note_db_id(note_id)},
             )
         if not rows:
@@ -216,8 +238,8 @@ class OverlayRepository:
         async with self._connection_factory() as connection:
             rows = await self._query(
                 connection,
-                """
-                SELECT * FROM overlay_note
+                f"""
+                SELECT {_OVERLAY_NOTE_FIELDS} FROM overlay_note
                 WHERE space_id = $space_id
                 ORDER BY updated_at DESC, id
                 LIMIT $limit START $offset;
@@ -343,18 +365,19 @@ class OverlayRepository:
 
     @staticmethod
     def _reserve_create_transaction() -> str:
-        return """
+        return (
+            """
         BEGIN TRANSACTION;
         UPSERT $space_id MERGE $space;
         LET $existing_receipt = (
-            SELECT * FROM overlay_mutation_receipt
+            SELECT __OVERLAY_RECEIPT_FIELDS__ FROM overlay_mutation_receipt
             WHERE operation = $operation
             AND idempotency_key = $idempotency_key
             LIMIT 1
         )[0];
         LET $daily_winner = IF $kind = 'daily' {
             (
-                SELECT * FROM overlay_note
+                SELECT __OVERLAY_NOTE_FIELDS__ FROM overlay_note
                 WHERE space_id = $space_id
                 AND date_key = $date_key
                 LIMIT 1
@@ -363,13 +386,17 @@ class OverlayRepository:
             NONE
         };
         LET $path_winner = (
-            SELECT * FROM overlay_note
+            SELECT __OVERLAY_NOTE_FIELDS__ FROM overlay_note
             WHERE space_id = $space_id
             AND relative_path = $relative_path
             LIMIT 1
         )[0];
         LET $receipt_note = IF $existing_receipt != NONE {
-            (SELECT * FROM $existing_receipt.overlay_note_id LIMIT 1)[0]
+            (
+                SELECT __OVERLAY_NOTE_FIELDS__
+                FROM $existing_receipt.overlay_note_id
+                LIMIT 1
+            )[0]
         } ELSE {
             NONE
         };
@@ -382,7 +409,8 @@ class OverlayRepository:
             $existing_receipt
         } ELSE {
             (
-                SELECT * FROM overlay_mutation_receipt
+                SELECT __OVERLAY_RECEIPT_FIELDS__
+                FROM overlay_mutation_receipt
                 WHERE overlay_note_id = $winner.id
                 AND operation = 'create-daily'
                 ORDER BY started_at
@@ -411,25 +439,25 @@ class OverlayRepository:
             CREATE $receipt_id CONTENT $receipt;
         };
         LET $reserved_note = IF $can_reserve {
-            (SELECT * FROM $note_id LIMIT 1)[0]
+            (SELECT __OVERLAY_NOTE_FIELDS__ FROM $note_id LIMIT 1)[0]
         } ELSE {
             $winner
         };
         LET $reserved_receipt = IF $can_reserve {
-            (SELECT * FROM $receipt_id LIMIT 1)[0]
+            (SELECT __OVERLAY_RECEIPT_FIELDS__ FROM $receipt_id LIMIT 1)[0]
         } ELSE {
             $winner_receipt
         };
         LET $outcome = IF $idempotency_conflict {
             'idempotency-conflict'
         } ELSE {
-            IF $path_conflict {
+            RETURN IF $path_conflict {
                 'path-conflict'
             } ELSE {
-                IF $can_reserve {
+                RETURN IF $can_reserve {
                     'reserved'
                 } ELSE {
-                    IF $existing_receipt != NONE {
+                    RETURN IF $existing_receipt != NONE {
                         'replay'
                     } ELSE {
                         'daily-winner'
@@ -444,6 +472,9 @@ class OverlayRepository:
         };
         COMMIT TRANSACTION;
         """
+            .replace("__OVERLAY_NOTE_FIELDS__", _OVERLAY_NOTE_FIELDS)
+            .replace("__OVERLAY_RECEIPT_FIELDS__", _OVERLAY_RECEIPT_FIELDS)
+        )
 
     async def reserve_update(
         self,
@@ -547,7 +578,7 @@ class OverlayRepository:
                     outcome: IF !$identity_valid {
                         'conflict'
                     } ELSE {
-                        IF $hash_valid {
+                        RETURN IF $hash_valid {
                             'prepared'
                         } ELSE {
                             'hash-conflict'
@@ -632,14 +663,28 @@ class OverlayRepository:
                     outcome: IF !$valid {
                         'conflict'
                     } ELSE {
-                        IF $path_winner != NONE {
+                        RETURN IF $path_winner != NONE {
                             'path-conflict'
                         } ELSE {
                             'reassigned'
                         }
                     },
-                    note: (SELECT * FROM $overlay_note_id LIMIT 1)[0],
-                    receipt: (SELECT * FROM $receipt_id LIMIT 1)[0]
+                    note: (
+                        SELECT
+                            id, space_id, projected_note_id, stable_id, kind,
+                            date_key, relative_path, title, content_hash,
+                            revision, projection_state, encoding, newline,
+                            created_at, updated_at
+                        FROM $overlay_note_id LIMIT 1
+                    )[0],
+                    receipt: (
+                        SELECT
+                            id, operation_id, idempotency_key, overlay_note_id,
+                            operation, expected_revision, resulting_revision,
+                            before_hash, after_hash, status, error_code,
+                            started_at, completed_at
+                        FROM $receipt_id LIMIT 1
+                    )[0]
                 };
                 COMMIT TRANSACTION;
                 """,
@@ -661,9 +706,12 @@ class OverlayRepository:
 
     @staticmethod
     def _reserve_update_transaction() -> str:
-        return """
+        return (
+            """
         BEGIN TRANSACTION;
-        LET $note = (SELECT * FROM $note_id LIMIT 1)[0];
+        LET $note = (
+            SELECT __OVERLAY_NOTE_FIELDS__ FROM $note_id LIMIT 1
+        )[0];
         LET $latest_revision = (
             SELECT * FROM overlay_revision
             WHERE overlay_note_id = $note_id
@@ -671,7 +719,8 @@ class OverlayRepository:
             LIMIT 1
         )[0];
         LET $existing_receipt = (
-            SELECT * FROM overlay_mutation_receipt
+            SELECT __OVERLAY_RECEIPT_FIELDS__
+            FROM overlay_mutation_receipt
             WHERE operation = 'update'
             AND idempotency_key = $idempotency_key
             LIMIT 1
@@ -699,20 +748,20 @@ class OverlayRepository:
             UPDATE $receipt_id SET before_hash = $note.content_hash;
         };
         LET $reserved_receipt = IF $can_reserve {
-            (SELECT * FROM $receipt_id LIMIT 1)[0]
+            (SELECT __OVERLAY_RECEIPT_FIELDS__ FROM $receipt_id LIMIT 1)[0]
         } ELSE {
             $existing_receipt
         };
         LET $outcome = IF $note = NONE {
             'not-found'
         } ELSE {
-            IF $idempotency_conflict {
+            RETURN IF $idempotency_conflict {
                 'idempotency-conflict'
             } ELSE {
-                IF $existing_receipt != NONE {
+                RETURN IF $existing_receipt != NONE {
                     'replay'
                 } ELSE {
-                    IF $valid_revision {
+                    RETURN IF $valid_revision {
                         'reserved'
                     } ELSE {
                         'revision-conflict'
@@ -727,6 +776,9 @@ class OverlayRepository:
         };
         COMMIT TRANSACTION;
         """
+            .replace("__OVERLAY_NOTE_FIELDS__", _OVERLAY_NOTE_FIELDS)
+            .replace("__OVERLAY_RECEIPT_FIELDS__", _OVERLAY_RECEIPT_FIELDS)
+        )
 
     async def commit_revision(
         self,
@@ -906,7 +958,7 @@ class OverlayRepository:
             LET $outcome = IF $replay {
                 'replay'
             } ELSE {
-                IF $valid {
+                RETURN IF $valid {
                     'committed'
                 } ELSE {
                     'conflict'
@@ -914,7 +966,14 @@ class OverlayRepository:
             };
             RETURN {
                 outcome: $outcome,
-                note: (SELECT * FROM $overlay_note_id LIMIT 1)[0]
+                note: (
+                    SELECT
+                        id, space_id, projected_note_id, stable_id, kind,
+                        date_key, relative_path, title, content_hash, revision,
+                        projection_state, encoding, newline, created_at,
+                        updated_at
+                    FROM $overlay_note_id LIMIT 1
+                )[0]
             };
             COMMIT TRANSACTION;
             """
@@ -993,8 +1052,9 @@ class OverlayRepository:
         async with self._connection_factory() as connection:
             rows = await self._query(
                 connection,
-                """
-                SELECT * FROM overlay_mutation_receipt
+                f"""
+                SELECT {_OVERLAY_RECEIPT_FIELDS}
+                FROM overlay_mutation_receipt
                 WHERE operation_id = $operation_id
                 LIMIT 1;
                 """,
@@ -1032,6 +1092,7 @@ class OverlayRepository:
     @staticmethod
     def _page_query() -> str:
         return """
+        BEGIN TRANSACTION;
         LET $overlay = (
             SELECT
                 id,
@@ -1105,6 +1166,7 @@ class OverlayRepository:
                 )
             }
         };
+        COMMIT TRANSACTION;
         """
 
     @staticmethod
