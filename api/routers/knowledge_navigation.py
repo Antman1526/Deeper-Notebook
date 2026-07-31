@@ -138,6 +138,11 @@ def _map_exception(exc: Exception) -> HTTPException:
                 status.HTTP_409_CONFLICT,
                 "knowledge_workspace_revision_conflict",
             )
+        if exc.code == "workspace_limit_reached":
+            return _error(
+                status.HTTP_409_CONFLICT,
+                "knowledge_workspace_limit_reached",
+            )
         if exc.code in _NOT_FOUND_CODES:
             return _error(status.HTTP_404_NOT_FOUND, "knowledge_navigation_not_found")
         if exc.code in _CONFLICT_CODES or exc.code.endswith("_name_conflict"):

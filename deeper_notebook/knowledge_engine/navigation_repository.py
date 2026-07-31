@@ -46,6 +46,7 @@ _TABLES = {
     "folder": "knowledge_bookmark_folder",
     "workspace": "named_knowledge_workspace",
 }
+MAX_NAMED_WORKSPACES = 256
 _OPEN_DESCRIPTOR_FIELDS = (
     "id AS document_id, space_id, authority_kind, "
     "(SELECT VALUE source_kind FROM knowledge_engine_space "
@@ -113,6 +114,32 @@ def _content(model: BaseModel) -> dict[str, Any]:
     return model.model_dump(mode="python", exclude={"id"})
 
 
+def _workspace_create_transaction() -> str:
+    """Create a workspace only while the bounded collection has room."""
+    return """
+        BEGIN TRANSACTION;
+        LET $prior = (SELECT * FROM knowledge_navigation_operation_receipt
+            WHERE operation_id = $operation_id LIMIT 1);
+        IF array::len($prior) > 0 AND $prior[0].payload_hash != $payload_hash {
+            RETURN { code: 'operation_conflict' };
+        };
+        IF array::len($prior) > 0 {
+            RETURN { code: 'replayed', prior: $prior,
+                entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $prior[0] };
+        };
+        LET $workspaces = (SELECT id FROM named_knowledge_workspace
+            LIMIT $workspace_limit);
+        IF array::len($workspaces) >= $workspace_limit {
+            RETURN { code: 'workspace_limit_reached' };
+        };
+        CREATE $receipt_id CONTENT $receipt;
+        UPSERT $entity_id CONTENT $entity;
+        RETURN { code: 'succeeded', prior: $prior,
+            entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $receipt };
+        COMMIT TRANSACTION;
+    """
+
+
 def _folder_reparent_transaction() -> str:
     """Build fixed-depth, data-bound atomic checks for a folder reparent."""
     parents = ["LET $parent_0 = $new_parent_relation_id;"]
@@ -123,9 +150,7 @@ def _folder_reparent_transaction() -> str:
         + " LIMIT 1)[0];"
         for index in range(1, 16)
     )
-    cycle = " OR ".join(
-        f"$parent_{index} = $entity_relation_id" for index in range(16)
-    )
+    cycle = " OR ".join(f"$parent_{index} = $entity_relation_id" for index in range(16))
     depth = " ".join(
         "IF $subtree_height = "
         + str(height)
@@ -169,10 +194,10 @@ def _folder_reparent_transaction() -> str:
             WHERE type::string(id) = $new_parent_relation_id LIMIT 1)) = 0 {{
             RETURN {{ code: 'folder_parent_not_found' }};
         }};
-        {' '.join(parents)}
+        {" ".join(parents)}
         IF {cycle} {{ RETURN {{ code: 'folder_cycle' }}; }};
         {depth}
-        {' '.join(subtree)}
+        {" ".join(subtree)}
         {combined_depth}
         CREATE $receipt_id CONTENT $receipt;
         UPSERT $entity_id CONTENT $entity;
@@ -207,7 +232,7 @@ def _folder_create_transaction() -> str:
             WHERE type::string(id) = $new_parent_relation_id LIMIT 1)) = 0 {{
             RETURN {{ code: 'folder_parent_not_found' }};
         }};
-        {' '.join(parents)}
+        {" ".join(parents)}
         IF $parent_15 != NONE {{ RETURN {{ code: 'folder_depth_exceeded' }}; }};
         CREATE $receipt_id CONTENT $receipt;
         UPSERT $entity_id CONTENT $entity;
@@ -227,9 +252,7 @@ def _model(model: type[BaseModel], value: Any, *, code: str) -> Any:
 def _receipt_model(value: Any) -> NavigationReceipt:
     if isinstance(value, dict):
         value = {key: item for key, item in value.items() if key != "id"}
-    return _model(
-        NavigationReceipt, value, code="knowledge_navigation_receipt_invalid"
-    )
+    return _model(NavigationReceipt, value, code="knowledge_navigation_receipt_invalid")
 
 
 class KnowledgeNavigationRepository:
@@ -281,7 +304,12 @@ class KnowledgeNavigationRepository:
                     SELECT id, parent_folder_id FROM knowledge_bookmark_folder
                     WHERE id = $folder_id LIMIT 1;
                     """,
-                    {"read": "folder_parent", "folder_id": _record_id("knowledge_bookmark_folder", current_id)},
+                    {
+                        "read": "folder_parent",
+                        "folder_id": _record_id(
+                            "knowledge_bookmark_folder", current_id
+                        ),
+                    },
                 )
             row = rows[0] if rows else None
             if not isinstance(row, dict):
@@ -393,7 +421,9 @@ class KnowledgeNavigationRepository:
             revision=result_revision,
             code=result_code,
         )
-        transaction = statement or """
+        transaction = (
+            statement
+            or """
             BEGIN TRANSACTION;
             LET $prior = (SELECT * FROM knowledge_navigation_operation_receipt
                 WHERE operation_id = $operation_id LIMIT 1);
@@ -424,6 +454,7 @@ class KnowledgeNavigationRepository:
                 entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $receipt };
             COMMIT TRANSACTION;
         """
+        )
         variables = {
             "mutation": mutation,
             "table": table,
@@ -451,7 +482,9 @@ class KnowledgeNavigationRepository:
                 rows = await self._reconcile_operation(operation_id, payload_hash)
         result = next((row for row in reversed(rows) if isinstance(row, dict)), None)
         if result is None:
-            raise KnowledgeNavigationRepositoryError("knowledge_navigation_commit_outcome_missing")
+            raise KnowledgeNavigationRepositoryError(
+                "knowledge_navigation_commit_outcome_missing"
+            )
         outcome = result.get("code", result.get("error"))
         if outcome in {
             "operation_conflict",
@@ -460,6 +493,7 @@ class KnowledgeNavigationRepository:
             "folder_cycle",
             "folder_depth_exceeded",
             "folder_parent_not_found",
+            "workspace_limit_reached",
         }:
             raise KnowledgeNavigationRepositoryError(outcome)
         prior = result.get("prior")
@@ -471,7 +505,9 @@ class KnowledgeNavigationRepository:
         if isinstance(returned_receipt, list):
             returned_receipt = returned_receipt[0] if returned_receipt else None
         if returned_receipt is None:
-            raise KnowledgeNavigationRepositoryError("knowledge_navigation_receipt_missing")
+            raise KnowledgeNavigationRepositoryError(
+                "knowledge_navigation_receipt_missing"
+            )
         receipt = _receipt_model(returned_receipt)
         if replayed and mutation != "delete":
             if (
@@ -510,7 +546,13 @@ class KnowledgeNavigationRepository:
                     {"entity_id": _record_id(table, receipt.entity_id)},
                 )
             entity = entity_rows[0] if entity_rows else None
-        return [{"prior": [receipt.model_dump(mode="python")], "entity": entity, "receipt": receipt.model_dump(mode="python")}]
+        return [
+            {
+                "prior": [receipt.model_dump(mode="python")],
+                "entity": entity,
+                "receipt": receipt.model_dump(mode="python"),
+            }
+        ]
 
     async def _operation_receipt(self, operation_id: str) -> NavigationReceipt | None:
         async with self._connection_factory() as connection:
@@ -566,7 +608,9 @@ class KnowledgeNavigationRepository:
             raise KnowledgeNavigationRepositoryError("operation_conflict")
         return receipt
 
-    async def _existing(self, table: str, entity_id: str, model: type[BaseModel]) -> Any:
+    async def _existing(
+        self, table: str, entity_id: str, model: type[BaseModel]
+    ) -> Any:
         _record_id(table, entity_id)
         async with self._connection_factory() as connection:
             rows = await self._query(
@@ -581,8 +625,10 @@ class KnowledgeNavigationRepository:
     async def create_folder(self, command: CreateFolder) -> BookmarkFolder:
         entity_id = _generated_id("knowledge_bookmark_folder", command.operation_id)
         replay = await self._replay_entity(
-            table="knowledge_bookmark_folder", entity_id=entity_id,
-            command=command, model=BookmarkFolder,
+            table="knowledge_bookmark_folder",
+            entity_id=entity_id,
+            command=command,
+            model=BookmarkFolder,
         )
         if replay is not None:
             return replay
@@ -599,8 +645,12 @@ class KnowledgeNavigationRepository:
             updated_at=timestamp,
         )
         row, _, _ = await self._mutate(
-            table="knowledge_bookmark_folder", entity_kind="folder", entity_id=entity_id,
-            command=command, operation_kind="create_folder", entity=folder,
+            table="knowledge_bookmark_folder",
+            entity_kind="folder",
+            entity_id=entity_id,
+            command=command,
+            operation_kind="create_folder",
+            entity=folder,
             result_code="created",
             statement=_folder_create_transaction()
             if command.parent_folder_id is not None
@@ -614,14 +664,20 @@ class KnowledgeNavigationRepository:
         )
         return _model(BookmarkFolder, row, code="knowledge_navigation_folder_invalid")
 
-    async def update_folder(self, folder_id: str, command: UpdateFolder) -> BookmarkFolder:
+    async def update_folder(
+        self, folder_id: str, command: UpdateFolder
+    ) -> BookmarkFolder:
         replay = await self._replay_entity(
-            table="knowledge_bookmark_folder", entity_id=folder_id,
-            command=command, model=BookmarkFolder,
+            table="knowledge_bookmark_folder",
+            entity_id=folder_id,
+            command=command,
+            model=BookmarkFolder,
         )
         if replay is not None:
             return replay
-        existing = await self._existing("knowledge_bookmark_folder", folder_id, BookmarkFolder)
+        existing = await self._existing(
+            "knowledge_bookmark_folder", folder_id, BookmarkFolder
+        )
         if "parent_folder_id" in command.model_fields_set:
             subtree_height = await self._folder_subtree_height(folder_id)
             await self._validate_folder_parent(
@@ -637,9 +693,14 @@ class KnowledgeNavigationRepository:
         data.update(revision=existing.revision + 1, updated_at=self._clock())
         folder = BookmarkFolder.model_validate(data)
         row, _, _ = await self._mutate(
-            table="knowledge_bookmark_folder", entity_kind="folder", entity_id=folder_id,
-            command=command, operation_kind="update_folder", entity=folder,
-            expected_revision=command.expected_revision, result_code="updated",
+            table="knowledge_bookmark_folder",
+            entity_kind="folder",
+            entity_id=folder_id,
+            command=command,
+            operation_kind="update_folder",
+            entity=folder,
+            expected_revision=command.expected_revision,
+            result_code="updated",
             statement=_folder_reparent_transaction()
             if "parent_folder_id" in command.model_fields_set
             and command.parent_folder_id is not None
@@ -655,7 +716,9 @@ class KnowledgeNavigationRepository:
         )
         return _model(BookmarkFolder, row, code="knowledge_navigation_folder_invalid")
 
-    async def delete_folder(self, folder_id: str, command: DeleteFolder) -> NavigationReceipt:
+    async def delete_folder(
+        self, folder_id: str, command: DeleteFolder
+    ) -> NavigationReceipt:
         _record_id("knowledge_bookmark_folder", folder_id)
         replay = await self._replay_receipt(entity_id=folder_id, command=command)
         if replay is not None:
@@ -697,10 +760,20 @@ class KnowledgeNavigationRepository:
             COMMIT TRANSACTION;
         """
         _, receipt, _ = await self._mutate(
-            table="knowledge_bookmark_folder", entity_kind="folder", entity_id=folder_id,
-            command=command, operation_kind="delete_folder", entity=None,
-            expected_revision=command.expected_revision, mutation="delete", result_code="deleted",
-            statement=tree_sql, extra_variables={"child_disposition": command.child_disposition, "mutation_time": self._clock()},
+            table="knowledge_bookmark_folder",
+            entity_kind="folder",
+            entity_id=folder_id,
+            command=command,
+            operation_kind="delete_folder",
+            entity=None,
+            expected_revision=command.expected_revision,
+            mutation="delete",
+            result_code="deleted",
+            statement=tree_sql,
+            extra_variables={
+                "child_disposition": command.child_disposition,
+                "mutation_time": self._clock(),
+            },
         )
         return receipt
 
@@ -710,13 +783,18 @@ class KnowledgeNavigationRepository:
                 connection,
                 "SELECT * FROM knowledge_bookmark_folder ORDER BY parent_folder_id, position, name_key, id;",
             )
-        return [_model(BookmarkFolder, row, code="knowledge_navigation_folder_invalid") for row in rows]
+        return [
+            _model(BookmarkFolder, row, code="knowledge_navigation_folder_invalid")
+            for row in rows
+        ]
 
     async def create_bookmark(self, command: CreateBookmark) -> Bookmark:
         entity_id = _generated_id("knowledge_bookmark", command.operation_id)
         replay = await self._replay_entity(
-            table="knowledge_bookmark", entity_id=entity_id,
-            command=command, model=Bookmark,
+            table="knowledge_bookmark",
+            entity_id=entity_id,
+            command=command,
+            model=Bookmark,
         )
         if replay is not None:
             return replay
@@ -724,23 +802,39 @@ class KnowledgeNavigationRepository:
             await self._folder_ancestry(command.folder_id)
         timestamp = self._clock()
         bookmark = Bookmark(
-            id=entity_id, target_kind=command.target.kind, target=command.target,
-            display_label=command.display_label, authority_kind=command.authority_kind,
-            space_id=command.space_id, folder_id=command.folder_id, tags=command.tags,
-            position=command.position, revision=1, created_at=timestamp, updated_at=timestamp,
+            id=entity_id,
+            target_kind=command.target.kind,
+            target=command.target,
+            display_label=command.display_label,
+            authority_kind=command.authority_kind,
+            space_id=command.space_id,
+            folder_id=command.folder_id,
+            tags=command.tags,
+            position=command.position,
+            revision=1,
+            created_at=timestamp,
+            updated_at=timestamp,
         )
         row, _, _ = await self._mutate(
-            table="knowledge_bookmark", entity_kind="bookmark", entity_id=entity_id,
-            command=command, operation_kind="create_bookmark", entity=bookmark,
+            table="knowledge_bookmark",
+            entity_kind="bookmark",
+            entity_id=entity_id,
+            command=command,
+            operation_kind="create_bookmark",
+            entity=bookmark,
             result_code="created",
             extra_variables={"folder_relation_id": command.folder_id},
         )
         return _model(Bookmark, row, code="knowledge_navigation_bookmark_invalid")
 
-    async def update_bookmark(self, bookmark_id: str, command: UpdateBookmark) -> Bookmark:
+    async def update_bookmark(
+        self, bookmark_id: str, command: UpdateBookmark
+    ) -> Bookmark:
         replay = await self._replay_entity(
-            table="knowledge_bookmark", entity_id=bookmark_id,
-            command=command, model=Bookmark,
+            table="knowledge_bookmark",
+            entity_id=bookmark_id,
+            command=command,
+            model=Bookmark,
         )
         if replay is not None:
             return replay
@@ -755,32 +849,54 @@ class KnowledgeNavigationRepository:
         data.update(revision=existing.revision + 1, updated_at=self._clock())
         bookmark = Bookmark.model_validate(data)
         row, _, _ = await self._mutate(
-            table="knowledge_bookmark", entity_kind="bookmark", entity_id=bookmark_id,
-            command=command, operation_kind="update_bookmark", entity=bookmark,
-            expected_revision=command.expected_revision, result_code="updated",
+            table="knowledge_bookmark",
+            entity_kind="bookmark",
+            entity_id=bookmark_id,
+            command=command,
+            operation_kind="update_bookmark",
+            entity=bookmark,
+            expected_revision=command.expected_revision,
+            result_code="updated",
             extra_variables={"folder_relation_id": bookmark.folder_id},
         )
         return _model(Bookmark, row, code="knowledge_navigation_bookmark_invalid")
 
-    async def delete_bookmark(self, bookmark_id: str, command: DeleteBookmark) -> NavigationReceipt:
+    async def delete_bookmark(
+        self, bookmark_id: str, command: DeleteBookmark
+    ) -> NavigationReceipt:
         replay = await self._replay_receipt(entity_id=bookmark_id, command=command)
         if replay is not None:
             return replay
         _, receipt, _ = await self._mutate(
-            table="knowledge_bookmark", entity_kind="bookmark", entity_id=bookmark_id,
-            command=command, operation_kind="delete_bookmark", entity=None,
-            expected_revision=command.expected_revision, mutation="delete", result_code="deleted",
+            table="knowledge_bookmark",
+            entity_kind="bookmark",
+            entity_id=bookmark_id,
+            command=command,
+            operation_kind="delete_bookmark",
+            entity=None,
+            expected_revision=command.expected_revision,
+            mutation="delete",
+            result_code="deleted",
         )
         return receipt
 
-    async def list_bookmarks(self, filters: BookmarkFilters, cursor: str | None, limit: int) -> BookmarkPage:
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+    async def list_bookmarks(
+        self, filters: BookmarkFilters, cursor: str | None, limit: int
+    ) -> BookmarkPage:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 100
+        ):
             raise ValueError("invalid_bookmark_limit")
         parsed_cursor = BookmarkCursor.decode(cursor) if cursor is not None else None
         variables = {
-            "folder_id": filters.folder_id, "tags": filters.tags,
-            "target_kinds": filters.target_kinds, "space_ids": filters.space_ids,
-            "authority_kinds": filters.authority_kinds, "limit": limit + 1,
+            "folder_id": filters.folder_id,
+            "tags": filters.tags,
+            "target_kinds": filters.target_kinds,
+            "space_ids": filters.space_ids,
+            "authority_kinds": filters.authority_kinds,
+            "limit": limit + 1,
             "cursor_folder_id": parsed_cursor.folder_id if parsed_cursor else None,
             "cursor_position": parsed_cursor.position if parsed_cursor else None,
             "cursor_id": _record_id("knowledge_bookmark", parsed_cursor.id)
@@ -804,90 +920,222 @@ class KnowledgeNavigationRepository:
                 """,
                 variables,
             )
-        items = [_model(Bookmark, row, code="knowledge_navigation_bookmark_invalid") for row in rows[:limit]]
+        items = [
+            _model(Bookmark, row, code="knowledge_navigation_bookmark_invalid")
+            for row in rows[:limit]
+        ]
         next_cursor = None
         if len(rows) > limit and items:
             last = items[-1]
-            next_cursor = BookmarkCursor(folder_id=last.folder_id, position=last.position, id=last.id).encode()
+            next_cursor = BookmarkCursor(
+                folder_id=last.folder_id, position=last.position, id=last.id
+            ).encode()
         return BookmarkPage(items=items, next_cursor=next_cursor)
 
-    async def create_workspace(self, command: CreateWorkspace) -> NamedKnowledgeWorkspace:
+    async def create_workspace(
+        self, command: CreateWorkspace
+    ) -> NamedKnowledgeWorkspace:
         entity_id = _generated_id("named_knowledge_workspace", command.operation_id)
         replay = await self._replay_entity(
-            table="named_knowledge_workspace", entity_id=entity_id,
-            command=command, model=NamedKnowledgeWorkspace,
+            table="named_knowledge_workspace",
+            entity_id=entity_id,
+            command=command,
+            model=NamedKnowledgeWorkspace,
         )
         if replay is not None:
             return replay
         timestamp = self._clock()
-        workspace = NamedKnowledgeWorkspace(id=entity_id, name=command.name, name_key=command.name_key, snapshot=command.snapshot, revision=1, created_at=timestamp, updated_at=timestamp)
-        row, _, _ = await self._mutate(table="named_knowledge_workspace", entity_kind="workspace", entity_id=entity_id, command=command, operation_kind="create_workspace", entity=workspace, result_code="created")
-        return _model(NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid")
+        workspace = NamedKnowledgeWorkspace(
+            id=entity_id,
+            name=command.name,
+            name_key=command.name_key,
+            snapshot=command.snapshot,
+            revision=1,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        row, _, _ = await self._mutate(
+            table="named_knowledge_workspace",
+            entity_kind="workspace",
+            entity_id=entity_id,
+            command=command,
+            operation_kind="create_workspace",
+            entity=workspace,
+            result_code="created",
+            statement=_workspace_create_transaction(),
+            extra_variables={"workspace_limit": MAX_NAMED_WORKSPACES},
+        )
+        return _model(
+            NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid"
+        )
 
-    async def update_workspace(self, workspace_id: str, command: UpdateWorkspace) -> NamedKnowledgeWorkspace:
+    async def update_workspace(
+        self, workspace_id: str, command: UpdateWorkspace
+    ) -> NamedKnowledgeWorkspace:
         replay = await self._replay_entity(
-            table="named_knowledge_workspace", entity_id=workspace_id,
-            command=command, model=NamedKnowledgeWorkspace,
+            table="named_knowledge_workspace",
+            entity_id=workspace_id,
+            command=command,
+            model=NamedKnowledgeWorkspace,
         )
         if replay is not None:
             return replay
-        existing = await self._existing("named_knowledge_workspace", workspace_id, NamedKnowledgeWorkspace)
+        existing = await self._existing(
+            "named_knowledge_workspace", workspace_id, NamedKnowledgeWorkspace
+        )
+        has_name = "name" in command.model_fields_set
+        has_snapshot = "snapshot" in command.model_fields_set
+        if has_name == has_snapshot:
+            raise ValueError("workspace updates must rename or replace a snapshot")
         data = existing.model_dump(mode="python")
-        for field in command.model_fields_set - {"operation_id", "expected_revision"}:
-            data[field] = getattr(command, field)
+        if has_name:
+            data["name"] = command.name
+            data["name_key"] = command.name_key
+        else:
+            data["snapshot"] = command.snapshot
         data.update(revision=existing.revision + 1, updated_at=self._clock())
         workspace = NamedKnowledgeWorkspace.model_validate(data)
-        row, _, _ = await self._mutate(table="named_knowledge_workspace", entity_kind="workspace", entity_id=workspace_id, command=command, operation_kind="update_workspace", entity=workspace, expected_revision=command.expected_revision, result_code="updated")
-        return _model(NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid")
+        row, _, _ = await self._mutate(
+            table="named_knowledge_workspace",
+            entity_kind="workspace",
+            entity_id=workspace_id,
+            command=command,
+            operation_kind="update_workspace",
+            entity=workspace,
+            expected_revision=command.expected_revision,
+            result_code="updated",
+        )
+        return _model(
+            NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid"
+        )
 
-    async def duplicate_workspace(self, workspace_id: str, command: DuplicateWorkspace) -> NamedKnowledgeWorkspace:
+    async def duplicate_workspace(
+        self, workspace_id: str, command: DuplicateWorkspace
+    ) -> NamedKnowledgeWorkspace:
         entity_id = _generated_id("named_knowledge_workspace", command.operation_id)
         replay = await self._replay_entity(
-            table="named_knowledge_workspace", entity_id=entity_id,
-            command=command, model=NamedKnowledgeWorkspace,
+            table="named_knowledge_workspace",
+            entity_id=entity_id,
+            command=command,
+            model=NamedKnowledgeWorkspace,
             payload_context={"source_workspace_id": workspace_id},
         )
         if replay is not None:
             return replay
         source = await self.get_workspace(workspace_id)
         timestamp = self._clock()
-        workspace = NamedKnowledgeWorkspace(id=entity_id, name=command.name, name_key=command.name_key, snapshot=source.snapshot, revision=1, created_at=timestamp, updated_at=timestamp)
-        row, _, _ = await self._mutate(table="named_knowledge_workspace", entity_kind="workspace", entity_id=entity_id, command=command, operation_kind="duplicate_workspace", entity=workspace, result_code="created", payload_context={"source_workspace_id": workspace_id})
-        return _model(NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid")
+        workspace = NamedKnowledgeWorkspace(
+            id=entity_id,
+            name=command.name,
+            name_key=command.name_key,
+            snapshot=source.snapshot,
+            revision=1,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        row, _, _ = await self._mutate(
+            table="named_knowledge_workspace",
+            entity_kind="workspace",
+            entity_id=entity_id,
+            command=command,
+            operation_kind="duplicate_workspace",
+            entity=workspace,
+            result_code="created",
+            statement=_workspace_create_transaction(),
+            extra_variables={"workspace_limit": MAX_NAMED_WORKSPACES},
+            payload_context={"source_workspace_id": workspace_id},
+        )
+        return _model(
+            NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid"
+        )
 
-    async def delete_workspace(self, workspace_id: str, command: DeleteWorkspace) -> NavigationReceipt:
+    async def delete_workspace(
+        self, workspace_id: str, command: DeleteWorkspace
+    ) -> NavigationReceipt:
         replay = await self._replay_receipt(entity_id=workspace_id, command=command)
         if replay is not None:
             return replay
-        _, receipt, _ = await self._mutate(table="named_knowledge_workspace", entity_kind="workspace", entity_id=workspace_id, command=command, operation_kind="delete_workspace", entity=None, expected_revision=command.expected_revision, mutation="delete", result_code="deleted")
+        _, receipt, _ = await self._mutate(
+            table="named_knowledge_workspace",
+            entity_kind="workspace",
+            entity_id=workspace_id,
+            command=command,
+            operation_kind="delete_workspace",
+            entity=None,
+            expected_revision=command.expected_revision,
+            mutation="delete",
+            result_code="deleted",
+        )
         return receipt
 
     async def get_workspace(self, workspace_id: str) -> NamedKnowledgeWorkspace:
-        return await self._existing("named_knowledge_workspace", workspace_id, NamedKnowledgeWorkspace)
+        return await self._existing(
+            "named_knowledge_workspace", workspace_id, NamedKnowledgeWorkspace
+        )
 
     async def list_workspaces(self) -> list[NamedKnowledgeWorkspaceSummary]:
         async with self._connection_factory() as connection:
-            rows = await self._query(connection, "SELECT id, name, name_key, revision, updated_at FROM named_knowledge_workspace ORDER BY name_key, id;")
-        return [_model(NamedKnowledgeWorkspaceSummary, {key: value for key, value in row.items() if key != "name_key"}, code="knowledge_navigation_workspace_invalid") for row in rows]
+            rows = await self._query(
+                connection,
+                "SELECT id, name, name_key, revision, updated_at "
+                "FROM named_knowledge_workspace ORDER BY name_key, id "
+                "LIMIT $limit;",
+                {"limit": MAX_NAMED_WORKSPACES + 1},
+            )
+        if len(rows) > MAX_NAMED_WORKSPACES:
+            raise KnowledgeNavigationRepositoryError("workspace_collection_too_large")
+        return [
+            _model(
+                NamedKnowledgeWorkspaceSummary,
+                {key: value for key, value in row.items() if key != "name_key"},
+                code="knowledge_navigation_workspace_invalid",
+            )
+            for row in rows
+        ]
 
     async def random_candidate_count(self, filters: RandomNoteFilters) -> int:
-        variables = {"space_ids": filters.space_ids, "authority_kinds": filters.authority_kinds, "tags": filters.tags}
+        variables = {
+            "space_ids": filters.space_ids,
+            "authority_kinds": filters.authority_kinds,
+            "tags": filters.tags,
+        }
         async with self._connection_factory() as connection:
-            rows = await self._query(connection, self._random_where("count() AS count"), variables)
+            rows = await self._query(
+                connection, self._random_where("count() AS count"), variables
+            )
         return int(rows[0].get("count", 0)) if rows and isinstance(rows[0], dict) else 0
 
-    async def random_candidate_at(self, filters: RandomNoteFilters, offset: int) -> KnowledgeOpenDescriptor | None:
+    async def random_candidate_at(
+        self, filters: RandomNoteFilters, offset: int
+    ) -> KnowledgeOpenDescriptor | None:
         if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
             raise ValueError("invalid_random_candidate_offset")
-        variables = {"space_ids": filters.space_ids, "authority_kinds": filters.authority_kinds, "tags": filters.tags, "offset": offset}
+        variables = {
+            "space_ids": filters.space_ids,
+            "authority_kinds": filters.authority_kinds,
+            "tags": filters.tags,
+            "offset": offset,
+        }
         async with self._connection_factory() as connection:
-            rows = await self._query(connection, self._random_where(_OPEN_DESCRIPTOR_FIELDS) + " LIMIT 1 START $offset;", variables)
-        return _model(KnowledgeOpenDescriptor, rows[0], code="knowledge_navigation_descriptor_invalid") if rows else None
+            rows = await self._query(
+                connection,
+                self._random_where(_OPEN_DESCRIPTOR_FIELDS) + " LIMIT 1 START $offset;",
+                variables,
+            )
+        return (
+            _model(
+                KnowledgeOpenDescriptor,
+                rows[0],
+                code="knowledge_navigation_descriptor_invalid",
+            )
+            if rows
+            else None
+        )
 
     @staticmethod
     def _random_where(fields: str) -> str:
         suffix = " GROUP ALL" if fields == "count() AS count" else " ORDER BY id"
-        return f'''SELECT {fields} FROM knowledge_engine_document WHERE availability = "available" AND parse_state = "ready" AND document_kind IN ["note", "page", "journal"] AND "read" IN capabilities AND (array::len($space_ids) = 0 OR space_id IN $space_ids) AND (array::len($authority_kinds) = 0 OR authority_kind IN $authority_kinds) AND (array::len($tags) = 0 OR array::len(array::intersect(tags, $tags)) = array::len($tags)){suffix}'''
+        return f"""SELECT {fields} FROM knowledge_engine_document WHERE availability = "available" AND parse_state = "ready" AND document_kind IN ["note", "page", "journal"] AND "read" IN capabilities AND (array::len($space_ids) = 0 OR space_id IN $space_ids) AND (array::len($authority_kinds) = 0 OR authority_kind IN $authority_kinds) AND (array::len($tags) = 0 OR array::len(array::intersect(tags, $tags)) = array::len($tags)){suffix}"""
 
 
 __all__ = ["KnowledgeNavigationRepository", "KnowledgeNavigationRepositoryError"]

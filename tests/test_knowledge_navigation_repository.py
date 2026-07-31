@@ -28,6 +28,23 @@ from deeper_notebook.knowledge_engine.navigation_repository import (
 )
 
 
+async def seed_workspace_rows(database: AsyncSurreal, count: int) -> None:
+    """Insert synthetic metadata-only rows to exercise repository cap guards."""
+    statements = []
+    for index in range(count):
+        statements.append(
+            "CREATE named_knowledge_workspace:seed_"
+            + str(index)
+            + " CONTENT { schema_version: 1, name: 'Seed "
+            + str(index)
+            + "', name_key: 'seed "
+            + str(index)
+            + "', snapshot_version: 1, snapshot: {}, revision: 1, "
+            "created_at: time::now(), updated_at: time::now() };"
+        )
+    await database.query("\n".join(statements))
+
+
 def create_bookmark_command(*, operation_id: str = "bookmark-create") -> CreateBookmark:
     return CreateBookmark(
         operation_id=operation_id,
@@ -95,16 +112,20 @@ class FakeConnection:
         variables = variables or {}
         if variables.get("mutation"):
             return self._mutation(variables)
-        if "FROM knowledge_navigation_operation_receipt WHERE operation_id" in statement:
+        if (
+            "FROM knowledge_navigation_operation_receipt WHERE operation_id"
+            in statement
+        ):
             receipt = self.receipts.get(variables["operation_id"])
             return [deepcopy(receipt)] if receipt is not None else []
         if variables.get("read") == "folder_parent":
             return [
-                self.rows["knowledge_bookmark_folder"].get(
-                    str(variables["folder_id"])
-                )
+                self.rows["knowledge_bookmark_folder"].get(str(variables["folder_id"]))
             ]
-        if statement.strip() == "SELECT id, parent_folder_id FROM knowledge_bookmark_folder;":
+        if (
+            statement.strip()
+            == "SELECT id, parent_folder_id FROM knowledge_bookmark_folder;"
+        ):
             return list(self.rows["knowledge_bookmark_folder"].values())
         if "SELECT * FROM $entity_id LIMIT 1" in statement:
             entity_id = str(variables["entity_id"])
@@ -127,13 +148,28 @@ class FakeConnection:
         if prior is not None:
             if prior["payload_hash"] != variables["payload_hash"]:
                 return [{"error": "operation_conflict"}]
-            return [{"prior": prior, "entity": self._entity_for(prior, staged_rows), "receipt": prior}]
+            return [
+                {
+                    "prior": prior,
+                    "entity": self._entity_for(prior, staged_rows),
+                    "receipt": prior,
+                }
+            ]
 
         table = variables["table"]
         entity_id = str(variables["entity_id"])
+        workspace_limit = variables.get("workspace_limit")
+        if (
+            table == "named_knowledge_workspace"
+            and workspace_limit is not None
+            and len(staged_rows[table]) >= workspace_limit
+        ):
+            return [{"error": "workspace_limit_reached"}]
         current = staged_rows[table].get(entity_id)
         expected = variables.get("expected_revision")
-        if expected is not None and (current is None or current["revision"] != expected):
+        if expected is not None and (
+            current is None or current["revision"] != expected
+        ):
             return [{"error": "revision_conflict"}]
         folder_relation_id = variables.get("folder_relation_id")
         if (
@@ -265,7 +301,9 @@ async def migrated_memory_connection():
         yield database
 
     try:
-        yield type("MigratedMemoryConnection", (), {"factory": factory, "database": database})
+        yield type(
+            "MigratedMemoryConnection", (), {"factory": factory, "database": database}
+        )
     finally:
         await database.close()
 
@@ -274,7 +312,9 @@ async def migrated_memory_connection():
 async def test_create_bookmark_replays_same_operation_and_rejects_new_payload(
     fake_connection: FakeConnection,
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=fake_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=fake_connection.factory
+    )
     command = create_bookmark_command(operation_id="bookmark-create-1")
 
     first = await repository.create_bookmark(command)
@@ -297,13 +337,16 @@ async def test_create_bookmark_replays_same_operation_and_rejects_new_payload(
 async def test_update_requires_exact_revision_and_rolls_back_receipt(
     fake_connection: FakeConnection,
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=fake_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=fake_connection.factory
+    )
     existing = await repository.create_bookmark(create_bookmark_command())
     receipt_count = len(fake_connection.committed_receipts)
     fake_connection.fail_after_receipt = True
 
     with pytest.raises(
-        KnowledgeNavigationRepositoryError, match="knowledge_navigation_repository_unavailable"
+        KnowledgeNavigationRepositoryError,
+        match="knowledge_navigation_repository_unavailable",
     ):
         await repository.update_bookmark(
             existing.id,
@@ -318,7 +361,9 @@ async def test_update_requires_exact_revision_and_rolls_back_receipt(
 async def test_folder_reparent_rejects_cycle_and_depth_seventeen(
     fake_connection: FakeConnection,
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=fake_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=fake_connection.factory
+    )
     parent = None
     for index in range(16):
         parent = await repository.create_folder(
@@ -329,7 +374,9 @@ async def test_folder_reparent_rejects_cycle_and_depth_seventeen(
             )
         )
 
-    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_depth_exceeded"):
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="folder_depth_exceeded"
+    ):
         await repository.create_folder(
             create_folder_command(
                 operation_id="folder-create-16",
@@ -358,7 +405,9 @@ async def test_folder_reparent_rejects_cycle_and_depth_seventeen(
 async def test_real_surreal_mutation_returns_receipt_replays_and_conflicts(
     memory_connection,
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
     command = create_bookmark_command(operation_id="native-bookmark-create")
 
     created = await repository.create_bookmark(command)
@@ -380,7 +429,9 @@ async def test_real_surreal_mutation_returns_receipt_replays_and_conflicts(
 async def test_real_surreal_folder_move_and_keyset_cursor_use_string_relationships(
     memory_connection,
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
     parent = await repository.create_folder(
         create_folder_command(operation_id="native-parent", name="Parent")
     )
@@ -427,9 +478,7 @@ async def test_real_surreal_folder_move_and_keyset_cursor_use_string_relationshi
         )
     )
     first = await repository.list_bookmarks(BookmarkFilters(), None, 1)
-    second = await repository.list_bookmarks(
-        BookmarkFilters(), first.next_cursor, 1
-    )
+    second = await repository.list_bookmarks(BookmarkFilters(), first.next_cursor, 1)
     assert first.next_cursor is not None
     assert second.items[0].id != first.items[0].id
     assert BookmarkCursor.decode(first.next_cursor).id == first.items[0].id
@@ -487,8 +536,12 @@ async def test_real_surreal_random_note_filters_and_safe_descriptor(memory_conne
         };
         """
     )
-    repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
-    filters = RandomNoteFilters(space_ids=['knowledge_engine_space:research'], tags=['Research'])
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
+    filters = RandomNoteFilters(
+        space_ids=["knowledge_engine_space:research"], tags=["Research"]
+    )
 
     assert await repository.random_candidate_count(filters) == 2
     selected = await repository.random_candidate_at(filters, 0)
@@ -497,32 +550,45 @@ async def test_real_surreal_random_note_filters_and_safe_descriptor(memory_conne
     assert selected is not None
     assert second is not None
     assert {selected.document_id, second.document_id} == {
-        'knowledge_engine_document:eligible',
-        'knowledge_engine_document:later',
+        "knowledge_engine_document:eligible",
+        "knowledge_engine_document:later",
     }
     assert selected.document_id != second.document_id
-    assert '/Users/' not in selected.model_dump_json()
-    assert 'private body' not in selected.model_dump_json()
-    assert await repository.random_candidate_count(
-        RandomNoteFilters(
-            space_ids=['knowledge_engine_space:research'], tags=['Research', 'Project']
+    assert "/Users/" not in selected.model_dump_json()
+    assert "private body" not in selected.model_dump_json()
+    assert (
+        await repository.random_candidate_count(
+            RandomNoteFilters(
+                space_ids=["knowledge_engine_space:research"],
+                tags=["Research", "Project"],
+            )
         )
-    ) == 1
-    assert await repository.random_candidate_count(
-        RandomNoteFilters(authority_kinds=['app_owned'])
-    ) == 1
+        == 1
+    )
+    assert (
+        await repository.random_candidate_count(
+            RandomNoteFilters(authority_kinds=["app_owned"])
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
 async def test_real_surreal_workspace_duplicate_receipt_is_bound_to_source(
     memory_connection,
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
     first = await repository.create_workspace(
-        CreateWorkspace(operation_id="workspace-one", name="One", snapshot=workspace_snapshot())
+        CreateWorkspace(
+            operation_id="workspace-one", name="One", snapshot=workspace_snapshot()
+        )
     )
     second = await repository.create_workspace(
-        CreateWorkspace(operation_id="workspace-two", name="Two", snapshot=workspace_snapshot())
+        CreateWorkspace(
+            operation_id="workspace-two", name="Two", snapshot=workspace_snapshot()
+        )
     )
     duplicate = DuplicateWorkspace(operation_id="duplicate-once", name="Copy")
 
@@ -562,10 +628,123 @@ async def test_real_surreal_workspace_duplicate_receipt_is_bound_to_source(
 
 
 @pytest.mark.asyncio
+async def test_real_surreal_workspace_rename_and_replace_preserve_their_other_fields(
+    memory_connection,
+):
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
+    created = await repository.create_workspace(
+        CreateWorkspace(
+            operation_id="workspace-rename-create",
+            name="Desk",
+            snapshot=workspace_snapshot(),
+        )
+    )
+    original_snapshot = created.snapshot
+
+    renamed = await repository.update_workspace(
+        created.id,
+        UpdateWorkspace(
+            operation_id="workspace-rename-only",
+            expected_revision=created.revision,
+            name="  Research Desk  ",
+        ),
+    )
+
+    assert (renamed.name, renamed.name_key, renamed.revision) == (
+        "Research Desk",
+        "research desk",
+        2,
+    )
+    assert renamed.snapshot == original_snapshot
+
+    replacement = {**workspace_snapshot(), "next_id": 7}
+    replaced = await repository.update_workspace(
+        created.id,
+        UpdateWorkspace(
+            operation_id="workspace-replace-only",
+            expected_revision=renamed.revision,
+            snapshot=replacement,
+        ),
+    )
+
+    assert (replaced.name, replaced.name_key, replaced.revision) == (
+        "Research Desk",
+        "research desk",
+        3,
+    )
+    assert replaced.snapshot.next_id == 7
+    with pytest.raises(ValueError, match="rename or replace"):
+        await repository.update_workspace(
+            created.id,
+            UpdateWorkspace(
+                operation_id="workspace-rename-and-replace",
+                expected_revision=replaced.revision,
+                name="Both",
+                snapshot=workspace_snapshot(),
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_real_surreal_workspace_cap_is_atomic_for_create_and_duplicate(
+    memory_connection,
+):
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
+    source = await repository.create_workspace(
+        CreateWorkspace(
+            operation_id="workspace-cap-source",
+            name="Source",
+            snapshot=workspace_snapshot(),
+        )
+    )
+    await seed_workspace_rows(memory_connection.database, 255)
+
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="workspace_limit_reached"
+    ):
+        await repository.create_workspace(
+            CreateWorkspace(
+                operation_id="workspace-cap-create",
+                name="Overflow",
+                snapshot=workspace_snapshot(),
+            )
+        )
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="workspace_limit_reached"
+    ):
+        await repository.duplicate_workspace(
+            source.id,
+            DuplicateWorkspace(operation_id="workspace-cap-duplicate", name="Copy"),
+        )
+    assert len(await repository.list_workspaces()) == 256
+
+
+@pytest.mark.asyncio
+async def test_real_surreal_workspace_list_rejects_preexisting_overflow(
+    memory_connection,
+):
+    await seed_workspace_rows(memory_connection.database, 257)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
+
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="workspace_collection_too_large"
+    ):
+        await repository.list_workspaces()
+
+
+@pytest.mark.asyncio
 async def test_reparent_rejects_a_subtree_that_would_exceed_depth_sixteen(
     memory_connection, monkeypatch
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
     parent = None
     for index in range(15):
         parent = await repository.create_folder(
@@ -590,7 +769,9 @@ async def test_reparent_rejects_a_subtree_that_would_exceed_depth_sixteen(
     # The mutation's own SurrealQL guard must catch the real two-level tree.
     monkeypatch.setattr(repository, "_folder_subtree_height", understate_subtree_height)
 
-    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_depth_exceeded"):
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="folder_depth_exceeded"
+    ):
         await repository.update_folder(
             moving.id,
             UpdateFolder(
@@ -614,7 +795,9 @@ async def test_reparent_rejects_a_subtree_that_would_exceed_depth_sixteen(
 async def test_real_surreal_delete_tree_removes_navigation_rows_but_keeps_receipts(
     memory_connection,
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
     root = await repository.create_folder(
         create_folder_command(operation_id="tree-root", name="Tree root")
     )
@@ -648,8 +831,12 @@ async def test_real_surreal_delete_tree_removes_navigation_rows_but_keeps_receip
 
 
 @pytest.mark.asyncio
-async def test_real_surreal_bookmark_revision_conflict_and_delete_replay(memory_connection):
-    repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
+async def test_real_surreal_bookmark_revision_conflict_and_delete_replay(
+    memory_connection,
+):
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
     bookmark = await repository.create_bookmark(
         create_bookmark_command(operation_id="revision-bookmark")
     )
@@ -683,7 +870,9 @@ async def test_real_surreal_bookmark_revision_conflict_and_delete_replay(memory_
 async def test_replay_is_receipt_first_and_refuses_changed_or_missing_results(
     memory_connection,
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=memory_connection.factory
+    )
     create = create_bookmark_command(operation_id="replay-create")
     bookmark = await repository.create_bookmark(create)
     updated = await repository.update_bookmark(
@@ -722,9 +911,9 @@ async def test_replay_is_receipt_first_and_refuses_changed_or_missing_results(
     folder = await repository.create_folder(
         create_folder_command(operation_id="replay-folder", name="Replay folder")
     )
-    folder_bookmark_command = create_bookmark_command(operation_id="replay-folder-bookmark").model_copy(
-        update={"folder_id": folder.id}
-    )
+    folder_bookmark_command = create_bookmark_command(
+        operation_id="replay-folder-bookmark"
+    ).model_copy(update={"folder_id": folder.id})
     await repository.create_bookmark(folder_bookmark_command)
     await repository.delete_folder(
         folder.id,
@@ -745,12 +934,16 @@ async def test_replay_is_receipt_first_and_refuses_changed_or_missing_results(
 async def test_parent_removal_after_preflight_rolls_back_folder_and_bookmark_mutations(
     fake_connection: FakeConnection,
 ):
-    repository = KnowledgeNavigationRepository(connection_factory=fake_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=fake_connection.factory
+    )
     parent = await repository.create_folder(
         create_folder_command(operation_id="race-parent", name="Race parent")
     )
     fake_connection.remove_parent_before_mutation = parent.id
-    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_parent_not_found"):
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="folder_parent_not_found"
+    ):
         await repository.create_folder(
             create_folder_command(
                 operation_id="race-child", name="Race child", parent_folder_id=parent.id
@@ -765,7 +958,9 @@ async def test_parent_removal_after_preflight_rolls_back_folder_and_bookmark_mut
         create_folder_command(operation_id="race-moving", name="Moving")
     )
     fake_connection.remove_parent_before_mutation = replacement.id
-    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_parent_not_found"):
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="folder_parent_not_found"
+    ):
         await repository.update_folder(
             moving.id,
             UpdateFolder(
@@ -782,7 +977,9 @@ async def test_parent_removal_after_preflight_rolls_back_folder_and_bookmark_mut
         create_folder_command(operation_id="race-destination", name="Destination")
     )
     fake_connection.remove_parent_before_mutation = destination.id
-    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_parent_not_found"):
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="folder_parent_not_found"
+    ):
         await repository.update_bookmark(
             bookmark.id,
             UpdateBookmark(
@@ -856,7 +1053,9 @@ async def test_exact_schema_create_folder_checks_depth_inside_its_transaction(
         yield AncestorRaceConnection()
 
     racing_repository = KnowledgeNavigationRepository(connection_factory=factory)
-    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_depth_exceeded"):
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="folder_depth_exceeded"
+    ):
         await racing_repository.create_folder(
             create_folder_command(
                 operation_id="create-depth-race",
@@ -864,7 +1063,9 @@ async def test_exact_schema_create_folder_checks_depth_inside_its_transaction(
                 parent_folder_id=parent.id,
             )
         )
-    assert "Must not commit" not in [folder.name for folder in await repository.list_folders()]
+    assert "Must not commit" not in [
+        folder.name for folder in await repository.list_folders()
+    ]
     receipts = await migrated_memory_connection.database.query(
         "SELECT * FROM knowledge_navigation_operation_receipt WHERE operation_id = $operation_id;",
         {"operation_id": "create-depth-race"},

@@ -21,6 +21,7 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     HydratedBookmarkPage,
     NamedKnowledgeWorkspace,
     NamedKnowledgeWorkspaceSummary,
+    NavigationReceipt,
     WorkspaceRestorePlan,
 )
 from deeper_notebook.knowledge_engine.navigation_repository import (
@@ -60,6 +61,8 @@ class _NavigationService:
                 },
             }
         )
+        self.workspaces = {self.workspace.id: self.workspace}
+        self.collection_overflow = False
 
     async def create_bookmark(self, command):
         timestamp = datetime(2026, 7, 31, tzinfo=timezone.utc)
@@ -85,19 +88,95 @@ class _NavigationService:
         return HydratedBookmarkPage()
 
     async def list_workspaces(self) -> list[NamedKnowledgeWorkspaceSummary]:
+        if self.collection_overflow:
+            raise KnowledgeNavigationRepositoryError("workspace_collection_too_large")
         return [
             NamedKnowledgeWorkspaceSummary(
-                id=self.workspace.id,
-                name=self.workspace.name,
-                revision=self.workspace.revision,
-                updated_at=self.workspace.updated_at,
+                id=workspace.id,
+                name=workspace.name,
+                revision=workspace.revision,
+                updated_at=workspace.updated_at,
             )
+            for workspace in self.workspaces.values()
         ]
 
+    async def create_workspace(self, command) -> NamedKnowledgeWorkspace:
+        timestamp = datetime(2026, 7, 31, tzinfo=timezone.utc)
+        workspace = NamedKnowledgeWorkspace(
+            id=f"named_knowledge_workspace:created_{len(self.workspaces)}",
+            name=command.name,
+            name_key=command.name_key,
+            snapshot=command.snapshot,
+            revision=1,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        self.workspaces[workspace.id] = workspace
+        return workspace
+
     async def get_workspace(self, workspace_id: str) -> NamedKnowledgeWorkspace:
-        if workspace_id != self.workspace.id:
-            raise LookupError(workspace_id)
-        return self.workspace
+        try:
+            return self.workspaces[workspace_id]
+        except KeyError:
+            raise LookupError(workspace_id) from None
+
+    async def update_workspace(
+        self, workspace_id: str, command
+    ) -> NamedKnowledgeWorkspace:
+        existing = await self.get_workspace(workspace_id)
+        if command.expected_revision != existing.revision:
+            raise KnowledgeNavigationRepositoryError("revision_conflict")
+        has_name = "name" in command.model_fields_set
+        has_snapshot = "snapshot" in command.model_fields_set
+        if has_name == has_snapshot:
+            raise ValueError("workspace updates must rename or replace a snapshot")
+        data = existing.model_dump(mode="python")
+        if has_name:
+            data.update(name=command.name, name_key=command.name_key)
+        else:
+            data["snapshot"] = command.snapshot
+        data["revision"] = existing.revision + 1
+        workspace = NamedKnowledgeWorkspace.model_validate(data)
+        self.workspaces[workspace_id] = workspace
+        if workspace_id == self.workspace.id:
+            self.workspace = workspace
+        return workspace
+
+    async def duplicate_workspace(
+        self, workspace_id: str, command
+    ) -> NamedKnowledgeWorkspace:
+        source = await self.get_workspace(workspace_id)
+        timestamp = datetime(2026, 7, 31, tzinfo=timezone.utc)
+        workspace = NamedKnowledgeWorkspace(
+            id=f"named_knowledge_workspace:copy_{len(self.workspaces)}",
+            name=command.name,
+            name_key=command.name_key,
+            snapshot=source.snapshot,
+            revision=1,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        self.workspaces[workspace.id] = workspace
+        return workspace
+
+    async def delete_workspace(self, workspace_id: str, command) -> NavigationReceipt:
+        existing = await self.get_workspace(workspace_id)
+        if command.expected_revision != existing.revision:
+            raise KnowledgeNavigationRepositoryError("revision_conflict")
+        del self.workspaces[workspace_id]
+        timestamp = datetime(2026, 7, 31, tzinfo=timezone.utc)
+        return NavigationReceipt(
+            operation_id=command.operation_id,
+            operation_kind="delete_workspace",
+            entity_kind="workspace",
+            entity_id=workspace_id,
+            payload_hash="0" * 64,
+            result_status="succeeded",
+            result_revision=existing.revision,
+            result_code="deleted",
+            created_at=timestamp,
+            completed_at=timestamp,
+        )
 
     async def workspace_restore_plan(
         self, workspace_id: str, revision: int
@@ -276,6 +355,138 @@ async def test_restore_revision_conflict_returns_409_and_no_snapshot(
         "detail": {"code": "knowledge_workspace_revision_conflict"}
     }
     assert service.workspace.model_dump(mode="json") == before
+
+
+@pytest.mark.asyncio
+async def test_workspace_crud_preserves_snapshot_and_current_session(
+    api_client: AsyncClient, tmp_path
+) -> None:
+    current_session_path = tmp_path / "knowledge-workspace-v1.json"
+    current_session_path.write_bytes(b'{"synthetic":true}')
+    before = current_session_path.read_bytes()
+    snapshot = {
+        "active_pane_id": "pane-one",
+        "next_id": 2,
+        "panes": {
+            "pane-one": {
+                "id": "pane-one",
+                "active_tab_id": "tab-search",
+                "tabs": [
+                    {
+                        "id": "tab-search",
+                        "display_label": "Research",
+                        "target": {"kind": "search", "query": "research"},
+                    }
+                ],
+            }
+        },
+        "layout": {"type": "pane", "pane_id": "pane-one"},
+    }
+
+    async with api_client:
+        created = await api_client.post(
+            "/api/deeper-notebook/knowledge/workspaces",
+            json={
+                "operation_id": "api-workspace-create",
+                "name": "Desk",
+                "snapshot": snapshot,
+            },
+        )
+        workspace_id = created.json()["id"]
+        fetched = await api_client.get(
+            f"/api/deeper-notebook/knowledge/workspaces/{workspace_id}"
+        )
+        renamed = await api_client.patch(
+            f"/api/deeper-notebook/knowledge/workspaces/{workspace_id}",
+            json={
+                "operation_id": "api-workspace-rename",
+                "expected_revision": 1,
+                "name": "  Research Desk  ",
+            },
+        )
+        replaced = await api_client.patch(
+            f"/api/deeper-notebook/knowledge/workspaces/{workspace_id}",
+            json={
+                "operation_id": "api-workspace-replace",
+                "expected_revision": 2,
+                "snapshot": {**snapshot, "next_id": 7},
+            },
+        )
+        revision_conflict = await api_client.patch(
+            f"/api/deeper-notebook/knowledge/workspaces/{workspace_id}",
+            json={
+                "operation_id": "api-workspace-stale",
+                "expected_revision": 1,
+                "name": "Stale",
+            },
+        )
+        rejected = await api_client.patch(
+            f"/api/deeper-notebook/knowledge/workspaces/{workspace_id}",
+            json={
+                "operation_id": "api-workspace-both",
+                "expected_revision": 3,
+                "name": "Both",
+                "snapshot": snapshot,
+            },
+        )
+        copied = await api_client.post(
+            f"/api/deeper-notebook/knowledge/workspaces/{workspace_id}/duplicate",
+            json={"operation_id": "api-workspace-copy", "name": "Copy"},
+        )
+        deleted = await api_client.request(
+            "DELETE",
+            f"/api/deeper-notebook/knowledge/workspaces/{workspace_id}",
+            json={
+                "operation_id": "api-workspace-delete",
+                "expected_revision": 3,
+            },
+        )
+        missing = await api_client.get(
+            f"/api/deeper-notebook/knowledge/workspaces/{workspace_id}"
+        )
+
+    assert created.status_code == 201
+    fetched_snapshot = fetched.json()["snapshot"]
+    assert fetched.status_code == 200
+    assert (
+        renamed.status_code,
+        renamed.json()["name"],
+        renamed.json()["name_key"],
+    ) == (
+        200,
+        "Research Desk",
+        "research desk",
+    )
+    assert renamed.json()["snapshot"] == fetched_snapshot
+    assert replaced.status_code == 200
+    assert replaced.json()["name"] == "Research Desk"
+    assert replaced.json()["snapshot"]["next_id"] == 7
+    assert revision_conflict.status_code == 409
+    assert revision_conflict.json() == {
+        "detail": {"code": "knowledge_navigation_conflict"}
+    }
+    assert rejected.status_code == 422
+    assert copied.status_code == 201
+    assert copied.json()["id"] != workspace_id
+    assert copied.json()["revision"] == 1
+    assert deleted.status_code == 200
+    assert missing.status_code == 404
+    assert current_session_path.read_bytes() == before
+
+
+@pytest.mark.asyncio
+async def test_workspace_collection_overflow_is_a_scrubbed_server_failure(
+    api_client: AsyncClient,
+) -> None:
+    api_client._transport.app.state.knowledge_navigation_service.collection_overflow = (
+        True
+    )
+
+    async with api_client:
+        response = await api_client.get("/api/deeper-notebook/knowledge/workspaces")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": {"code": "knowledge_navigation_unavailable"}}
 
 
 @pytest.mark.asyncio
