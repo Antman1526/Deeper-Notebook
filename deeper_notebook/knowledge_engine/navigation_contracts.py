@@ -21,6 +21,7 @@ from deeper_notebook.workspace.contracts import (
 
 _ENGINE_ID = r"[A-Za-z0-9_-]+"
 _OPERATION_ID = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$"
+_NAVIGATION_LOCAL_ID = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
 _ABSOLUTE_PATH = re.compile(r"^(?:[\\/]|[A-Za-z]:[\\/])")
 
 KnowledgeDocumentId = Annotated[
@@ -78,6 +79,10 @@ BookmarkFolderId = Annotated[
         max_length=128,
         pattern=rf"^knowledge_bookmark_folder:{_ENGINE_ID}$",
     ),
+]
+NavigationLocalId = Annotated[
+    str,
+    Field(min_length=1, max_length=128, pattern=_NAVIGATION_LOCAL_ID),
 ]
 
 TargetKind = Literal["document", "block", "search", "graph", "workspace"]
@@ -184,7 +189,7 @@ KnowledgeTarget = Annotated[
 
 
 class NamedWorkspaceTab(_Strict):
-    id: str = Field(min_length=1, max_length=128)
+    id: NavigationLocalId
     target: KnowledgeTarget
     display_label: str = Field(min_length=1, max_length=512)
     view_mode: Literal["reading", "source", "live-preview", "graph"] = "reading"
@@ -196,8 +201,8 @@ class NamedWorkspaceTab(_Strict):
 
 
 class NamedWorkspacePane(_Strict):
-    id: str = Field(min_length=1, max_length=128)
-    active_tab_id: str | None = Field(default=None, min_length=1, max_length=128)
+    id: NavigationLocalId
+    active_tab_id: NavigationLocalId | None = None
     tabs: list[NamedWorkspaceTab] = Field(default_factory=list, max_length=128)
 
     @model_validator(mode="after")
@@ -218,7 +223,7 @@ class NamedWorkspaceNavigation(_Strict):
     bookmark_tags: list[str] = Field(default_factory=list, max_length=32)
     source_tree_query: str = Field(default="", max_length=256)
     search_query: str = Field(default="", max_length=512)
-    active_draft_id: str | None = Field(default=None, max_length=128)
+    active_draft_id: NavigationLocalId | None = None
     selected_space_ids: list[KnowledgeSpaceId] = Field(
         default_factory=list, max_length=32
     )
@@ -228,11 +233,76 @@ class NamedWorkspaceNavigation(_Strict):
     _bookmark_tags = field_validator("bookmark_tags")(normalize_tags)
 
 
+def _require_navigation_local_id(value: object) -> None:
+    if not isinstance(value, str) or re.fullmatch(_NAVIGATION_LOCAL_ID, value) is None:
+        raise ValueError("navigation identifiers must be bounded and path-free")
+
+
+def _validate_raw_layout_identifiers(node: object) -> None:
+    if not isinstance(node, dict):
+        return
+    node_type = node.get("type")
+    if node_type == "pane":
+        _require_navigation_local_id(node.get("pane_id"))
+        return
+    if node_type == "split":
+        _require_navigation_local_id(node.get("id"))
+        _validate_raw_layout_identifiers(node.get("first"))
+        _validate_raw_layout_identifiers(node.get("second"))
+
+
+def _validate_snapshot_navigation_identifiers(value: dict[object, object]) -> None:
+    _require_navigation_local_id(value.get("active_pane_id"))
+    panes = value.get("panes")
+    if isinstance(panes, dict):
+        for pane_key, pane in panes.items():
+            _require_navigation_local_id(pane_key)
+            if not isinstance(pane, dict):
+                continue
+            _require_navigation_local_id(pane.get("id"))
+            active_tab_id = pane.get("active_tab_id")
+            if active_tab_id is not None:
+                _require_navigation_local_id(active_tab_id)
+            tabs = pane.get("tabs")
+            if isinstance(tabs, list):
+                for tab in tabs:
+                    if isinstance(tab, dict):
+                        _require_navigation_local_id(tab.get("id"))
+    navigation = value.get("navigation")
+    if isinstance(navigation, dict) and navigation.get("active_draft_id") is not None:
+        _require_navigation_local_id(navigation["active_draft_id"])
+    _validate_raw_layout_identifiers(value.get("layout"))
+
+
+def _validate_layout_references(
+    layout: KnowledgeLayoutNode,
+    pane_ids: set[str],
+) -> None:
+    layout_panes: list[str] = []
+    split_ids: set[str] = set()
+    stack: list[KnowledgeLayoutNode] = [layout]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, PaneLayoutNode):
+            _require_navigation_local_id(node.pane_id)
+            layout_panes.append(node.pane_id)
+            continue
+        _require_navigation_local_id(node.id)
+        if node.id in split_ids:
+            raise ValueError("split IDs must be unique")
+        split_ids.add(node.id)
+        stack.extend((node.first, node.second))
+    if len(layout_panes) != len(set(layout_panes)):
+        raise ValueError("workspace layout cannot duplicate panes")
+    if set(layout_panes) != pane_ids:
+        raise ValueError("workspace layout must reference every pane exactly once")
+
+
 class NamedWorkspaceSnapshot(_Strict):
     version: Literal[1] = 1
-    active_pane_id: str = Field(min_length=1, max_length=128)
+    active_pane_id: NavigationLocalId
     next_id: int = Field(ge=1)
-    panes: dict[str, NamedWorkspacePane] = Field(max_length=32)
+    panes: dict[NavigationLocalId, NamedWorkspacePane] = Field(max_length=32)
     layout: KnowledgeLayoutNode
     navigation: NamedWorkspaceNavigation = Field(
         default_factory=NamedWorkspaceNavigation
@@ -246,6 +316,7 @@ class NamedWorkspaceSnapshot(_Strict):
         panes = value.get("panes")
         if isinstance(panes, dict) and len(panes) > 32:
             raise ValueError("workspace cannot contain more than 32 panes")
+        _validate_snapshot_navigation_identifiers(value)
         return value
 
     @model_validator(mode="after")
@@ -260,26 +331,12 @@ class NamedWorkspaceSnapshot(_Strict):
         if total_tabs > 128:
             raise ValueError("workspace cannot contain more than 128 tabs")
 
-        layout_panes: list[str] = []
-        split_ids: set[str] = set()
-        stack: list[KnowledgeLayoutNode] = [self.layout]
-        while stack:
-            node = stack.pop()
-            if isinstance(node, PaneLayoutNode):
-                layout_panes.append(node.pane_id)
-                continue
-            if node.id in split_ids:
-                raise ValueError("split IDs must be unique")
-            split_ids.add(node.id)
-            stack.extend((node.first, node.second))
-        if len(layout_panes) != len(set(layout_panes)):
-            raise ValueError("workspace layout cannot duplicate panes")
-        if set(layout_panes) != set(self.panes):
-            raise ValueError("workspace layout must reference every pane exactly once")
+        _validate_layout_references(self.layout, set(self.panes))
         return self
 
 
 class BookmarkFolder(_Strict):
+    schema_version: Literal[1] = 1
     id: BookmarkFolderId
     name: str = Field(min_length=1, max_length=256)
     name_key: str = Field(min_length=1, max_length=256)
@@ -291,7 +348,9 @@ class BookmarkFolder(_Strict):
 
 
 class Bookmark(_Strict):
+    schema_version: Literal[1] = 1
     id: BookmarkId
+    target_kind: TargetKind
     target: KnowledgeTarget
     display_label: str = Field(min_length=1, max_length=512)
     authority_kind: AuthorityKind | None = None
@@ -307,6 +366,12 @@ class Bookmark(_Strict):
         lambda value: _display_text(value, label="display label", limit=512)
     )
     _tags = field_validator("tags")(normalize_tags)
+
+    @model_validator(mode="after")
+    def target_kind_matches_target(self) -> "Bookmark":
+        if self.target_kind != self.target.kind:
+            raise ValueError("target_kind must match target.kind")
+        return self
 
 
 class CreateFolder(_Strict):
@@ -419,7 +484,12 @@ class BookmarkCursor(_Strict):
 
     @classmethod
     def decode(cls, value: str) -> "BookmarkCursor":
-        if not isinstance(value, str) or not value or len(value) > 512:
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > 512
+            or re.fullmatch(r"[A-Za-z0-9_-]+", value) is None
+        ):
             raise ValueError("invalid bookmark cursor")
         try:
             padding = "=" * (-len(value) % 4)
@@ -431,7 +501,10 @@ class BookmarkCursor(_Strict):
                 "position",
             }:
                 raise ValueError
-            return cls.model_validate(payload)
+            cursor = cls.model_validate(payload)
+            if cursor.encode() != value:
+                raise ValueError
+            return cursor
         except (
             UnicodeDecodeError,
             ValueError,
@@ -490,6 +563,13 @@ class HydratedBookmark(Bookmark):
 class HydratedBookmarkPage(_Strict):
     items: list[HydratedBookmark] = Field(default_factory=list, max_length=100)
     next_cursor: str | None = Field(default=None, max_length=512)
+
+    @field_validator("next_cursor")
+    @classmethod
+    def next_cursor_is_opaque_and_valid(cls, value: str | None) -> str | None:
+        if value is not None:
+            BookmarkCursor.decode(value)
+        return value
 
 
 class CreateWorkspace(_Strict):
@@ -550,6 +630,7 @@ class DeleteWorkspace(_Strict):
 
 
 class NamedKnowledgeWorkspace(_Strict):
+    schema_version: Literal[1] = 1
     id: NamedWorkspaceId
     name: str = Field(min_length=1, max_length=256)
     name_key: str = Field(min_length=1, max_length=256)
@@ -567,29 +648,74 @@ class NamedKnowledgeWorkspaceSummary(_Strict):
     updated_at: datetime
 
 
+class HydratedWorkspaceTab(_Strict):
+    id: NavigationLocalId
+    display_label: str = Field(min_length=1, max_length=512)
+    view_mode: Literal["reading", "source", "live-preview", "graph"]
+    target: KnowledgeTarget
+    target_state: TargetState
+    target_document: KnowledgeOpenDescriptor | None = None
+
+    _display_label = field_validator("display_label")(
+        lambda value: _display_text(value, label="display label", limit=512)
+    )
+
+
 class WorkspaceRestorePane(_Strict):
-    id: str = Field(min_length=1, max_length=128)
-    active_tab_id: str | None = Field(default=None, min_length=1, max_length=128)
-    tabs: list[HydratedKnowledgeTarget] = Field(default_factory=list, max_length=128)
+    id: NavigationLocalId
+    active_tab_id: NavigationLocalId | None = None
+    tabs: list[HydratedWorkspaceTab] = Field(default_factory=list, max_length=128)
+
+    @model_validator(mode="after")
+    def tab_selection_is_consistent(self) -> "WorkspaceRestorePane":
+        tab_ids = [tab.id for tab in self.tabs]
+        if len(tab_ids) != len(set(tab_ids)):
+            raise ValueError("tab IDs must be unique within each pane")
+        if self.active_tab_id is not None and self.active_tab_id not in tab_ids:
+            raise ValueError("active tab must exist in its pane")
+        return self
 
 
 class WorkspaceRestorePlan(_Strict):
     workspace_id: NamedWorkspaceId
     revision: int = Field(ge=1)
-    panes: dict[str, WorkspaceRestorePane] = Field(default_factory=dict, max_length=32)
+    active_pane_id: NavigationLocalId
+    next_id: int = Field(ge=1)
+    panes: dict[NavigationLocalId, WorkspaceRestorePane] = Field(max_length=32)
     layout: KnowledgeLayoutNode
     navigation: NamedWorkspaceNavigation = Field(
         default_factory=NamedWorkspaceNavigation
     )
-    summary: dict[TargetState, int] = Field(default_factory=dict)
+    summary: dict[TargetState, Annotated[int, Field(ge=0)]]
 
     @model_validator(mode="after")
     def summary_is_complete(self) -> "WorkspaceRestorePlan":
         expected = {"available", "stale", "unavailable", "missing"}
-        if set(self.summary) != expected or any(
-            count < 0 for count in self.summary.values()
-        ):
+        if set(self.summary) != expected:
             raise ValueError("restore summary must contain every target state")
+        if self.active_pane_id not in self.panes:
+            raise ValueError("active pane must exist in the workspace")
+
+        total_tabs = 0
+        target_state_counts = {
+            "available": 0,
+            "stale": 0,
+            "unavailable": 0,
+            "missing": 0,
+        }
+        for pane_key, pane in self.panes.items():
+            if pane_key != pane.id:
+                raise ValueError("pane dictionary keys must match pane IDs")
+            total_tabs += len(pane.tabs)
+            for tab in pane.tabs:
+                target_state_counts[tab.target_state] += 1
+        if total_tabs > 128:
+            raise ValueError("workspace cannot contain more than 128 tabs")
+        if sum(self.summary.values()) != total_tabs:
+            raise ValueError("restore summary total must match restored tabs")
+        if self.summary != target_state_counts:
+            raise ValueError("restore summary must match restored target states")
+        _validate_layout_references(self.layout, set(self.panes))
         return self
 
 
@@ -613,6 +739,7 @@ class RandomNoteResult(_Strict):
 
 
 class NavigationReceipt(_Strict):
+    schema_version: Literal[1] = 1
     operation_id: str = Field(pattern=_OPERATION_ID)
     operation_kind: str = Field(min_length=1, max_length=128)
     entity_kind: str = Field(min_length=1, max_length=128)
@@ -647,6 +774,7 @@ __all__ = [
     "HydratedBookmark",
     "HydratedBookmarkPage",
     "HydratedKnowledgeTarget",
+    "HydratedWorkspaceTab",
     "KnowledgeBlockId",
     "KnowledgeDocumentId",
     "KnowledgeOpenDescriptor",
@@ -660,6 +788,7 @@ __all__ = [
     "NamedWorkspacePane",
     "NamedWorkspaceSnapshot",
     "NamedWorkspaceTab",
+    "NavigationLocalId",
     "NavigationReceipt",
     "RandomNoteFilters",
     "RandomNoteResult",
