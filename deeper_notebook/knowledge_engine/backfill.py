@@ -337,7 +337,18 @@ class KnowledgeBackfillService:
                 resume_after = self._resume_after(checkpoint)
                 counts = self._checkpoint_counts(checkpoint)
                 for entry in sorted(entries[space_id], key=lambda item: item.relative_locator):
-                    if resume_after is not None and entry.relative_locator <= resume_after:
+                    if (
+                        resume_after is not None
+                        and entry.relative_locator < resume_after
+                    ):
+                        result = self._increment(result, "skipped")
+                        continue
+                    if (
+                        checkpoint is not None
+                        and resume_after is not None
+                        and entry.relative_locator == resume_after
+                        and entry.observed_content_hash == checkpoint.last_source_hash
+                    ):
                         result = self._increment(result, "skipped")
                         continue
                     if isinstance(entry, CatalogFailure):
@@ -459,7 +470,7 @@ class KnowledgeBackfillService:
         return validated
 
     async def _record_failure(self, failure: CatalogFailure) -> None:
-        await self.repository.record_projection_failure(
+        receipt = await self.repository.record_projection_failure(
             operation_id=self._operation_id(
                 failure.space_id,
                 failure.relative_locator,
@@ -470,6 +481,8 @@ class KnowledgeBackfillService:
             input_hash=failure.observed_content_hash,
             error_code=failure.error_code,
         )
+        if getattr(receipt, "status", None) != "failed":
+            raise RuntimeError("knowledge_failure_receipt_invalid")
 
     @staticmethod
     def _operation_id(
