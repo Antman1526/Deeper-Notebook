@@ -652,6 +652,7 @@
           "frontend/src/lib/api/onp.ts",
           "frontend/src/lib/task6-active-brand.test.ts",
           "tests/test_gmail_router.py",
+          "tests/test_knowledge_engine_api.py",
           "tests/test_overlay_api.py",
           "tests/test_task6_active_product.py",
           "tests/test_vault_api.py"
@@ -666,7 +667,7 @@
           "path"
         ]
       },
-      "coverage_sha256": "9496a7f5b82e2eb9276a59a11bae476e9bf3f442cceacf14f0d8c95995997e95"
+      "coverage_sha256": "dd7bc3dcccee1e101cfb9a23cf147dd3a9a3b9785518a29c2c4e0d7748c37d3c"
     },
     "legacy-artifact-probe-v1": {
       "kind": "legacy_artifact_probe",
@@ -3167,7 +3168,7 @@
       "path": "api/main.py",
       "pattern": "/api/onp",
       "source": "content",
-      "line": 689,
+      "line": 690,
       "column": 13,
       "context_sha256": "90c0a4a28b63af1967b88dfc5924f498e30786ed3c1d63f1868c5bc753012a9f",
       "category": "compatibility_alias",
@@ -3175,7 +3176,7 @@
         "path": "api/main.py",
         "pattern": "/api/onp",
         "source": "content",
-        "line": 689,
+        "line": 690,
         "column": 13,
         "context_sha256": "90c0a4a28b63af1967b88dfc5924f498e30786ed3c1d63f1868c5bc753012a9f",
         "category": "compatibility_alias",
@@ -3187,7 +3188,7 @@
       "path": "api/main.py",
       "pattern": "/onp/",
       "source": "content",
-      "line": 689,
+      "line": 690,
       "column": 17,
       "context_sha256": "90c0a4a28b63af1967b88dfc5924f498e30786ed3c1d63f1868c5bc753012a9f",
       "category": "compatibility_alias",
@@ -3195,7 +3196,7 @@
         "path": "api/main.py",
         "pattern": "/onp/",
         "source": "content",
-        "line": 689,
+        "line": 690,
         "column": 17,
         "context_sha256": "90c0a4a28b63af1967b88dfc5924f498e30786ed3c1d63f1868c5bc753012a9f",
         "category": "compatibility_alias",
@@ -3207,7 +3208,7 @@
       "path": "api/main.py",
       "pattern": "/api/onp",
       "source": "content",
-      "line": 1159,
+      "line": 1160,
       "column": 13,
       "context_sha256": "29eed5c889fd19705b672817fb7346b8e5ff358c7cb843a376e3066a1a928ce6",
       "category": "compatibility_alias",
@@ -3215,7 +3216,7 @@
         "path": "api/main.py",
         "pattern": "/api/onp",
         "source": "content",
-        "line": 1159,
+        "line": 1160,
         "column": 13,
         "context_sha256": "29eed5c889fd19705b672817fb7346b8e5ff358c7cb843a376e3066a1a928ce6",
         "category": "compatibility_alias",
@@ -3227,7 +3228,7 @@
       "path": "api/main.py",
       "pattern": "/api/onp",
       "source": "content",
-      "line": 1184,
+      "line": 1190,
       "column": 13,
       "context_sha256": "29eed5c889fd19705b672817fb7346b8e5ff358c7cb843a376e3066a1a928ce6",
       "category": "compatibility_alias",
@@ -3235,7 +3236,7 @@
         "path": "api/main.py",
         "pattern": "/api/onp",
         "source": "content",
-        "line": 1184,
+        "line": 1190,
         "column": 13,
         "context_sha256": "29eed5c889fd19705b672817fb7346b8e5ff358c7cb843a376e3066a1a928ce6",
         "category": "compatibility_alias",
@@ -60380,6 +60381,46 @@
         "context_sha256": "f0ad9e79b442a20c3f21bb080e83bc2fe13a5cd17f2c10a0bf8acb516973ee79",
         "category": "compatibility_alias",
         "explanation": "The test gmail router regression suite keeps the legacy behavior in the `test_v0824_oauth_callback_sanitizes_token_exchange_error` function because the statement uses that role while expressing \"/api current legacy API path segment gmail/callback\", while the preceding context concerns response = client.get; the following context concerns params= \"code\": \"irrelevant\", \"state\": state; the local example is introduced by post.",
+        "compatibility_contract": "legacy-api-route-v1"
+      }
+    },
+    {
+      "path": "tests/test_knowledge_engine_api.py",
+      "pattern": "/api/onp",
+      "source": "content",
+      "line": 304,
+      "column": 15,
+      "context_sha256": "b997e235227976954fb5d5d5071d15a8c065d99ce5d8e3a057af248a883c0d8e",
+      "category": "compatibility_alias",
+      "rationale": {
+        "path": "tests/test_knowledge_engine_api.py",
+        "pattern": "/api/onp",
+        "source": "content",
+        "line": 304,
+        "column": 15,
+        "context_sha256": "b997e235227976954fb5d5d5071d15a8c065d99ce5d8e3a057af248a883c0d8e",
+        "category": "compatibility_alias",
+        "explanation": "This regression assertion names the deprecated API prefix solely to prove the new knowledge-engine diagnostics are unavailable under that namespace; it preserves no routable alias.",
+        "compatibility_contract": "legacy-api-route-v1"
+      }
+    },
+    {
+      "path": "tests/test_knowledge_engine_api.py",
+      "pattern": "/onp/",
+      "source": "content",
+      "line": 304,
+      "column": 19,
+      "context_sha256": "b997e235227976954fb5d5d5071d15a8c065d99ce5d8e3a057af248a883c0d8e",
+      "category": "compatibility_alias",
+      "rationale": {
+        "path": "tests/test_knowledge_engine_api.py",
+        "pattern": "/onp/",
+        "source": "content",
+        "line": 304,
+        "column": 19,
+        "context_sha256": "b997e235227976954fb5d5d5071d15a8c065d99ce5d8e3a057af248a883c0d8e",
+        "category": "compatibility_alias",
+        "explanation": "This nested legacy-path occurrence is part of the same negative route assertion and exists only to prove canonical-only registration for the new diagnostic feature.",
         "compatibility_contract": "legacy-api-route-v1"
       }
     },
