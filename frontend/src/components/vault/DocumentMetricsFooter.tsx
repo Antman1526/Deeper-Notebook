@@ -1,62 +1,74 @@
-import { documentMetrics } from '@/lib/knowledge/document-metrics'
+import { useMemo } from 'react'
 
-export interface DocumentMetricsLabels {
-  words: string
-  characters: string
-  charactersWithoutWhitespace: string
-  readingMinutes: string
-  selection: string
+import {
+  documentMetrics,
+  type DocumentMetrics,
+} from '@/lib/knowledge/document-metrics'
+
+export interface DocumentMetricsFormatters {
+  words: (count: number) => string
+  characters: (count: number) => string
+  readingMinutes: (count: number) => string
+  selectionMetrics: (
+    metrics: Pick<DocumentMetrics, 'words' | 'characters'>,
+  ) => string
 }
 
 interface DocumentMetricsFooterProps {
   text: string
   selectionText: string
   visible: boolean
-  labels: DocumentMetricsLabels
-}
-
-function Metrics({
-  text,
-  labels,
-}: Pick<DocumentMetricsFooterProps, 'text' | 'labels'>) {
-  const metrics = documentMetrics(text)
-
-  return (
-    <>
-      <span>{labels.words}: {metrics.words}</span>
-      <span>{labels.characters}: {metrics.characters}</span>
-      <span>
-        {labels.charactersWithoutWhitespace}: {metrics.charactersWithoutWhitespace}
-      </span>
-      <span>{labels.readingMinutes}: {metrics.readingMinutes}</span>
-    </>
-  )
+  hasDocument: boolean
+  formatters: DocumentMetricsFormatters
+  emptyLabel: string
 }
 
 export function DocumentMetricsFooter({
   text,
   selectionText,
   visible,
-  labels,
+  hasDocument,
+  formatters,
+  emptyLabel,
 }: DocumentMetricsFooterProps) {
+  const metrics = useMemo(() => documentMetrics(text), [text])
+  const selectionMetrics = useMemo(
+    () => documentMetrics(selectionText),
+    [selectionText],
+  )
+  const documentSummary = useMemo(() => [
+    formatters.words(metrics.words),
+    formatters.characters(metrics.characters),
+    formatters.readingMinutes(metrics.readingMinutes),
+  ].join(', '), [formatters, metrics])
+
   if (!visible) return null
 
   return (
     <footer
       role="status"
       aria-live="polite"
+      aria-label={hasDocument ? documentSummary : emptyLabel}
+      tabIndex={0}
       className="mt-3 flex h-10 shrink-0 items-center gap-x-4 overflow-x-auto border-t px-1 text-xs text-muted-foreground"
     >
-      <div className="flex shrink-0 items-center gap-x-3">
-        <Metrics text={text} labels={labels} />
-      </div>
-      {selectionText && (
+      {hasDocument ? (
+        <div className="flex shrink-0 items-center gap-x-3">
+          <span>{formatters.words(metrics.words)}</span>
+          <span>{formatters.characters(metrics.characters)}</span>
+          <span>{formatters.readingMinutes(metrics.readingMinutes)}</span>
+        </div>
+      ) : (
+        <span>{emptyLabel}</span>
+      )}
+      {hasDocument && selectionText && (
         <div
           data-selection-metrics
           className="flex shrink-0 items-center gap-x-3 border-l pl-4"
         >
-          <span className="font-medium text-foreground">{labels.selection}</span>
-          <Metrics text={selectionText} labels={labels} />
+          <span className="font-medium text-foreground">
+            {formatters.selectionMetrics(selectionMetrics)}
+          </span>
         </div>
       )}
     </footer>

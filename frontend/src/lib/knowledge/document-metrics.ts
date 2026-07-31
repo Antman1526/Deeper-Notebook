@@ -14,7 +14,14 @@ export interface WordSegmenter {
 }
 
 function fallbackWordCount(text: string): number {
-  return (text.match(/[\p{Letter}\p{Number}\p{Mark}]+/gu) ?? []).length
+  // Offline fallback: preserve ordinary Letter/Number/Mark runs as one token,
+  // while approximating an unspaced Han run as two code points per word.
+  return (text.match(/[\p{Letter}\p{Number}\p{Mark}]+/gu) ?? []).reduce(
+    (words, token) => words + (/^\p{Script=Han}+$/u.test(token)
+      ? Math.ceil(Array.from(token).length / 2)
+      : 1),
+    0,
+  )
 }
 
 function runtimeWordSegmenter(): WordSegmenter | null {
@@ -34,7 +41,9 @@ export function documentMetrics(
   return {
     words,
     characters: characters.length,
-    charactersWithoutWhitespace: characters.filter((character) => !/\s/u.test(character)).length,
+    charactersWithoutWhitespace: characters.filter(
+      (character) => !/\p{White_Space}/u.test(character),
+    ).length,
     readingMinutes: words === 0 ? 0 : Math.ceil(words / 200),
   }
 }
