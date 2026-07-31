@@ -16,6 +16,7 @@ from api.routers.knowledge_navigation import (
     router,
 )
 from deeper_notebook.knowledge_engine.navigation_contracts import (
+    WORKSPACE_CAPACITY_ALLOCATOR_ID,
     Bookmark,
     BookmarkFolder,
     HydratedBookmarkPage,
@@ -490,6 +491,52 @@ async def test_workspace_collection_overflow_is_a_scrubbed_server_failure(
 
     assert response.status_code == 503
     assert response.json() == {"detail": {"code": "knowledge_navigation_unavailable"}}
+
+
+@pytest.mark.asyncio
+async def test_allocator_workspace_routes_are_scrubbed_not_found_and_read_only(
+    api_client: AsyncClient,
+) -> None:
+    service = api_client._transport.app.state.knowledge_navigation_service
+    before = {
+        key: value.model_dump(mode="json") for key, value in service.workspaces.items()
+    }
+    path = "/api/deeper-notebook/knowledge/workspaces/" + (
+        "named_knowledge_workspace%3Acapacity_allocator"
+    )
+
+    async with api_client:
+        responses = [
+            await api_client.get(path),
+            await api_client.patch(
+                path,
+                json={
+                    "operation_id": "api-allocator-update",
+                    "expected_revision": 1,
+                    "name": "Nope",
+                },
+            ),
+            await api_client.post(
+                path + "/duplicate",
+                json={"operation_id": "api-allocator-copy", "name": "Nope"},
+            ),
+            await api_client.request(
+                "DELETE",
+                path,
+                json={"operation_id": "api-allocator-delete", "expected_revision": 1},
+            ),
+            await api_client.post(path + "/restore-plan", json={"revision": 1}),
+        ]
+
+    assert WORKSPACE_CAPACITY_ALLOCATOR_ID.endswith(":capacity_allocator")
+    assert [response.status_code for response in responses] == [404, 404, 404, 404, 404]
+    assert all(
+        response.json() == {"detail": {"code": "knowledge_navigation_not_found"}}
+        for response in responses
+    )
+    assert {
+        key: value.model_dump(mode="json") for key, value in service.workspaces.items()
+    } == before
 
 
 @pytest.mark.asyncio

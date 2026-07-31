@@ -9,6 +9,7 @@ import pytest
 from surrealdb import AsyncSurreal, RecordID
 
 from deeper_notebook.knowledge_engine.navigation_contracts import (
+    WORKSPACE_CAPACITY_ALLOCATOR_ID,
     BookmarkCursor,
     BookmarkFilters,
     CreateBookmark,
@@ -290,8 +291,7 @@ async def memory_connection():
     await database.query(
         """
         CREATE named_knowledge_workspace:capacity_allocator CONTENT {
-            schema_version: 1, name: 'Workspace capacity allocator',
-            name_key: '__workspace_capacity_allocator__', snapshot_version: 1,
+            schema_version: 1, name: '', name_key: '', snapshot_version: 1,
             snapshot: {}, capacity_slot: 256, revision: 1,
             created_at: time::now(), updated_at: time::now()
         };
@@ -895,6 +895,62 @@ async def test_native_workspace_delete_releases_a_capacity_slot(
     assert replacement.revision == 1
     assert await workspace_row_count(migrated_memory_connection.database) == 256
     assert len(await repository.list_workspaces()) == 256
+
+
+@pytest.mark.asyncio
+async def test_native_allocator_sentinel_rejects_every_public_workspace_operation(
+    migrated_memory_connection,
+):
+    repository = KnowledgeNavigationRepository(
+        connection_factory=migrated_memory_connection.factory
+    )
+    before = await migrated_memory_connection.database.query(
+        "SELECT * FROM named_knowledge_workspace:capacity_allocator;"
+    )
+    receipt_count = await migrated_memory_connection.database.query(
+        "SELECT count() AS count FROM knowledge_navigation_operation_receipt GROUP ALL;"
+    )
+
+    with pytest.raises(LookupError):
+        await repository.get_workspace(WORKSPACE_CAPACITY_ALLOCATOR_ID)
+    with pytest.raises(LookupError):
+        await repository.update_workspace(
+            WORKSPACE_CAPACITY_ALLOCATOR_ID,
+            UpdateWorkspace(
+                operation_id="allocator-update", expected_revision=1, name="Nope"
+            ),
+        )
+    with pytest.raises(LookupError):
+        await repository.duplicate_workspace(
+            WORKSPACE_CAPACITY_ALLOCATOR_ID,
+            DuplicateWorkspace(operation_id="allocator-duplicate", name="Nope"),
+        )
+    with pytest.raises(LookupError):
+        await repository.delete_workspace(
+            WORKSPACE_CAPACITY_ALLOCATOR_ID,
+            DeleteWorkspace(operation_id="allocator-delete", expected_revision=1),
+        )
+
+    assert (
+        await migrated_memory_connection.database.query(
+            "SELECT * FROM named_knowledge_workspace:capacity_allocator;"
+        )
+        == before
+    )
+    assert (
+        await migrated_memory_connection.database.query(
+            "SELECT count() AS count FROM knowledge_navigation_operation_receipt GROUP ALL;"
+        )
+        == receipt_count
+    )
+    created = await repository.create_workspace(
+        CreateWorkspace(
+            operation_id="allocator-after-public-rejections",
+            name="Workspace capacity allocator",
+            snapshot=workspace_snapshot(),
+        )
+    )
+    assert created.name == "Workspace capacity allocator"
 
 
 @pytest.mark.asyncio
