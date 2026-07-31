@@ -478,6 +478,25 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(activeBefore)
   })
 
+  it('reruns semantic search when its saved descriptor changes or returns from text mode', async () => {
+    await renderExplorer()
+    act(() => useKnowledgeWorkspaceStore.getState().setActiveSearchContext({
+      query: 'plan', mode: 'semantic', spaceIds: ['knowledge_engine_space:research'], authorityKinds: [], tags: ['plans'],
+    }))
+    await waitFor(() => expect(searchView.semanticRun).toHaveBeenCalledTimes(1))
+    act(() => useKnowledgeWorkspaceStore.getState().setActiveSearchContext({
+      query: 'plan', mode: 'semantic', spaceIds: ['knowledge_engine_space:research'], authorityKinds: ['external_read_only'], tags: ['plans'],
+    }))
+    await waitFor(() => expect(searchView.semanticRun).toHaveBeenCalledTimes(2))
+    act(() => useKnowledgeWorkspaceStore.getState().setActiveSearchContext({
+      query: 'plan', mode: 'text', spaceIds: [], authorityKinds: [], tags: [],
+    }))
+    act(() => useKnowledgeWorkspaceStore.getState().setActiveSearchContext({
+      query: 'plan', mode: 'semantic', spaceIds: ['knowledge_engine_space:research'], authorityKinds: [], tags: ['plans'],
+    }))
+    await waitFor(() => expect(searchView.semanticRun).toHaveBeenCalledTimes(3))
+  })
+
   it('clears its command registration on unmount', async () => {
     const { unmount } = await renderExplorer()
     expect(useKnowledgeCommandContextStore.getState().context?.selectedVaultId)
