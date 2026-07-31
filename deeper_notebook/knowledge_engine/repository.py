@@ -115,6 +115,13 @@ def _receipt_id(operation_id: str) -> str:
     )
 
 
+def _source_revision_record_id(value: str):
+    _record_id(value, kind="revision")
+    return ensure_record_id(
+        value.replace("knowledge_engine_revision:", "knowledge_engine_source_revision:", 1)
+    )
+
+
 def _checkpoint_id(space_id: str) -> str:
     suffix = space_id.split(":", 1)[1]
     return f"knowledge_engine_backfill_checkpoint:{suffix}"
@@ -131,6 +138,19 @@ def _receipt_from(value: Any) -> ProjectionReceipt:
         return ProjectionReceipt.model_validate(value)
     except ValidationError:
         raise KnowledgeRepositoryError("knowledge_engine_receipt_invalid") from None
+
+
+def _checkpoint_from(value: Any) -> BackfillCheckpoint:
+    try:
+        if isinstance(value, dict):
+            value = {
+                key: item
+                for key, item in value.items()
+                if key not in {"id", "schema_version"}
+            }
+        return BackfillCheckpoint.model_validate(value)
+    except ValidationError:
+        raise KnowledgeRepositoryError("knowledge_engine_checkpoint_invalid") from None
 
 
 class KnowledgeRepository:
@@ -367,10 +387,7 @@ class KnowledgeRepository:
             )
         if not rows:
             return None
-        try:
-            return BackfillCheckpoint.model_validate(rows[0])
-        except ValidationError:
-            raise KnowledgeRepositoryError("knowledge_engine_checkpoint_invalid") from None
+        return _checkpoint_from(rows[0])
 
     async def save_checkpoint(
         self, checkpoint: BackfillCheckpoint
@@ -390,10 +407,7 @@ class KnowledgeRepository:
             )
         if not rows:
             raise KnowledgeRepositoryError("knowledge_engine_checkpoint_missing")
-        try:
-            return BackfillCheckpoint.model_validate(rows[0])
-        except ValidationError:
-            raise KnowledgeRepositoryError("knowledge_engine_checkpoint_invalid") from None
+        return _checkpoint_from(rows[0])
 
     def _snapshot_variables(
         self, snapshot: KnowledgeSnapshot, operation_id: str
@@ -468,7 +482,7 @@ class KnowledgeRepository:
             "revision_id": snapshot.revision.id,
             "space_record_id": _record_id(snapshot.space.id, kind="space"),
             "document_record_id": _record_id(snapshot.document.id, kind="document"),
-            "revision_record_id": _record_id(snapshot.revision.id, kind="revision"),
+            "revision_record_id": _source_revision_record_id(snapshot.revision.id),
             "receipt_id": _record_id(receipt_id, kind="receipt"),
             "space": space,
             "document": document,
