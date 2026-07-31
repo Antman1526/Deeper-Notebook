@@ -33,6 +33,8 @@ const metricFooter = vi.hoisted(() => ({
 const vaultGraphView = vi.hoisted(() => ({
   viewport: undefined as GraphViewport | undefined,
   relationKinds: undefined as string[] | undefined,
+  rootDocumentId: undefined as string | null | undefined,
+  spaceIds: undefined as string[] | undefined,
   onMoveEnd: undefined as undefined | ((viewport: GraphViewport) => void),
 }))
 const vaultMarkdownView = vi.hoisted(() => ({
@@ -172,14 +174,20 @@ vi.mock('./VaultGraph', () => ({
   VaultGraph: ({
     viewport,
     relationKinds,
+    rootDocumentId,
+    spaceIds,
     onMoveEnd,
   }: {
     viewport?: GraphViewport
     relationKinds?: string[]
+    rootDocumentId?: string | null
+    spaceIds?: string[]
     onMoveEnd?: (viewport: GraphViewport) => void
   }) => {
     vaultGraphView.viewport = viewport
     vaultGraphView.relationKinds = relationKinds
+    vaultGraphView.rootDocumentId = rootDocumentId
+    vaultGraphView.spaceIds = spaceIds
     vaultGraphView.onMoveEnd = onMoveEnd
     return <div>Local graph content</div>
   },
@@ -699,6 +707,30 @@ describe('KnowledgePaneContent', () => {
     useKnowledgeWorkspaceStore.getState().replaceWorkspace(restored)
     rerender(<PaneHarness />)
     expect(vaultGraphView.viewport).toEqual({ x: 20, y: 10, zoom: 2 })
+  })
+
+  it('renders a restored graph tab with its saved root and spaces instead of global navigation filters', () => {
+    replaceWorkspace('graph')
+    const state = useKnowledgeWorkspaceStore.getState()
+    const tabId = state.panes['pane-1'].activeTabId!
+    state.reconcileTabReference('pane-1', tabId, {
+      title: 'Canonical Plan', relativePath: 'pages/plan.md',
+      knowledgeDocumentId: 'knowledge_engine_document:plan',
+    })
+    state.setNavigation({ selectedSpaceIds: ['knowledge_engine_space:global'] })
+    state.setTabGraphViewport('pane-1', tabId, { x: 7, y: -3, zoom: 1.25 })
+    useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].graphBookmarkContext = {
+      rootDocumentId: 'knowledge_engine_document:restored-root',
+      spaceIds: ['knowledge_engine_space:restored'], relationKinds: ['embed'],
+      viewport: { x: 7, y: -3, zoom: 1.25 },
+    }
+
+    renderPane()
+
+    expect(vaultGraphView.rootDocumentId).toBe('knowledge_engine_document:restored-root')
+    expect(vaultGraphView.spaceIds).toEqual(['knowledge_engine_space:restored'])
+    expect(vaultGraphView.relationKinds).toEqual(['embed'])
+    expect(vaultGraphView.viewport).toEqual({ x: 7, y: -3, zoom: 1.25 })
   })
 
   it('persists an overlay controlled graph viewport through the workspace store', () => {
