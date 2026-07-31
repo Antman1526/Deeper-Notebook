@@ -50,6 +50,7 @@ interface OverlayDocumentViewProps {
   mode: KnowledgeViewMode
   page: OverlayPage
   onNavigate: (noteId: string) => void
+  onMarkdownChange?: (markdown: string) => void
   onReload?: () => Promise<OverlayPage | undefined>
   workspacePaneId?: string
   workspaceTabId?: string
@@ -119,6 +120,7 @@ export function OverlayDocumentView({
   mode,
   page,
   onNavigate,
+  onMarkdownChange,
   onReload,
   workspacePaneId,
   workspaceTabId,
@@ -186,8 +188,9 @@ export function OverlayDocumentView({
     setLoadedPage(nextPage)
     draftRef.current = nextDraft
     setDraft(nextDraft)
+    onMarkdownChange?.(nextDraft.markdown)
     clearStoredDraft(viewId)
-  }, [clearStoredDraft, viewId])
+  }, [clearStoredDraft, onMarkdownChange, viewId])
 
   useEffect(() => {
     if (loadedPage.overlay.id !== page.overlay.id) {
@@ -208,6 +211,7 @@ export function OverlayDocumentView({
     const nextDraft = { ...draftRef.current, ...change }
     draftRef.current = nextDraft
     setDraft(nextDraft)
+    onMarkdownChange?.(nextDraft.markdown)
     if (draftFingerprint(nextDraft) === draftFingerprint(loadedDraft)) {
       clearStoredDraft(viewId)
     } else {
