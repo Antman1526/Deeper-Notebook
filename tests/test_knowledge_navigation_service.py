@@ -235,6 +235,7 @@ async def test_random_note_uses_injected_selector_and_all_filters() -> None:
     repository = _RandomRepository()
     service = KnowledgeNavigationService(
         metadata_repository=repository,
+        engine_repository=object(),
         random_index=lambda count: count - 1,
     )
     filters = RandomNoteFilters(
@@ -273,6 +274,7 @@ async def test_random_note_rechecks_count_and_clamps_the_selected_offset() -> No
     repository.random_candidate_at = candidate_at  # type: ignore[method-assign]
     service = KnowledgeNavigationService(
         metadata_repository=repository,
+        engine_repository=object(),
         random_index=lambda _count: 1,
     )
 
@@ -283,17 +285,91 @@ async def test_random_note_rechecks_count_and_clamps_the_selected_offset() -> No
 
 
 @pytest.mark.asyncio
-async def test_random_note_rejects_an_invalid_injected_selector() -> None:
+@pytest.mark.parametrize(
+    "selector",
+    [
+        lambda _count: -1,
+        lambda count: count,
+        lambda _count: "1",
+        lambda _count: True,
+    ],
+)
+async def test_random_note_rejects_an_invalid_injected_selector(selector) -> None:
     repository = _RandomRepository()
     service = KnowledgeNavigationService(
         metadata_repository=repository,
-        random_index=lambda _count: True,
+        engine_repository=object(),
+        random_index=selector,
     )
 
     with pytest.raises(KnowledgeNavigationServiceError) as error:
         await service.random_note(RandomNoteFilters())
 
     assert error.value.code == "random_selector_invalid"
+
+
+@pytest.mark.asyncio
+async def test_random_note_fails_closed_before_any_metadata_read_when_engine_is_disabled() -> (
+    None
+):
+    repository = _RandomRepository()
+    service = KnowledgeNavigationService(metadata_repository=repository)
+
+    with pytest.raises(KnowledgeNavigationServiceError) as error:
+        await service.random_note(RandomNoteFilters())
+
+    assert error.value.code == "knowledge_engine_unavailable"
+    assert repository.filters == []
+
+
+@pytest.mark.asyncio
+async def test_random_note_returns_empty_when_candidates_disappear_after_count() -> (
+    None
+):
+    repository = _RandomRepository()
+    repository.counts = [2, 0]
+
+    async def candidate_at(_filters: RandomNoteFilters, offset: int):
+        repository.offsets.append(offset)
+        return None
+
+    repository.random_candidate_at = candidate_at  # type: ignore[method-assign]
+    service = KnowledgeNavigationService(
+        metadata_repository=repository,
+        engine_repository=object(),
+        random_index=lambda _count: 1,
+    )
+
+    result = await service.random_note(RandomNoteFilters())
+
+    assert result.state == "empty"
+    assert result.document is None
+    assert repository.offsets == [1]
+
+
+@pytest.mark.asyncio
+async def test_random_note_fails_closed_when_the_second_candidate_read_is_missing() -> (
+    None
+):
+    repository = _RandomRepository()
+    repository.counts = [2, 1]
+
+    async def candidate_at(_filters: RandomNoteFilters, offset: int):
+        repository.offsets.append(offset)
+        return None
+
+    repository.random_candidate_at = candidate_at  # type: ignore[method-assign]
+    service = KnowledgeNavigationService(
+        metadata_repository=repository,
+        engine_repository=object(),
+        random_index=lambda _count: 1,
+    )
+
+    with pytest.raises(KnowledgeNavigationServiceError) as error:
+        await service.random_note(RandomNoteFilters())
+
+    assert error.value.code == "knowledge_engine_unavailable"
+    assert repository.offsets == [1, 0]
 
 
 @pytest.mark.asyncio
