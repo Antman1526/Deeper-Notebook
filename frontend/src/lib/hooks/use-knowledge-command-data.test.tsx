@@ -163,4 +163,20 @@ describe('knowledge command data', () => {
       type: 'vector',
     }))
   })
+
+  it('forwards a bookmarked exact search mode and all saved filters to the request', async () => {
+    vi.useFakeTimers()
+    vi.mocked(searchApi.search).mockResolvedValue({ results: [], total_count: 0, search_type: 'text' })
+    renderHook(() => useKnowledgeIndexedSearch('research', true, {
+      mode: 'exact', spaceIds: ['knowledge_engine_space:research'],
+      authorityKinds: ['external_read_only'], tags: ['plans'],
+    }), { wrapper })
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+    expect(searchApi.search).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'research', type: 'text', match_mode: 'exact',
+      space_ids: ['knowledge_engine_space:research'],
+      authority_kinds: ['external_read_only'], tags: ['plans'],
+    }))
+  })
 })

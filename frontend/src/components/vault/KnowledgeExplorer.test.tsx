@@ -53,7 +53,7 @@ const pageIdentity = vi.hoisted(() => ({
   value: null as string | null,
 }))
 const searchView = vi.hoisted(() => ({
-  calls: [] as Array<[string, boolean]>,
+  calls: [] as Array<[string, boolean, { mode: string; spaceIds: string[]; authorityKinds: string[]; tags: string[] }]>,
   semanticRun: vi.fn(),
   results: [{ id: 'search:plan', title: 'Search plan' }],
 }))
@@ -274,8 +274,8 @@ vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
     failedVaultCount: 0,
     retryFailedVaults: vi.fn(async () => undefined),
   }),
-  useKnowledgeIndexedSearch: (query: string, enabled: boolean) => {
-    searchView.calls.push([query, enabled])
+  useKnowledgeIndexedSearch: (query: string, enabled: boolean, options: { mode: string; spaceIds: string[]; authorityKinds: string[]; tags: string[] }) => {
+    searchView.calls.push([query, enabled, options])
     return {
     runSemanticSearch: searchView.semanticRun,
     text: { data: { results: searchView.results }, isCurrent: true },
@@ -472,7 +472,9 @@ describe('KnowledgeExplorer durable workspace integration', () => {
 
     expect(screen.getByRole('region', { name: 'Active knowledge search' })).toHaveTextContent('text: plan')
     expect(screen.getByRole('list', { name: 'Knowledge search results' })).toHaveTextContent('Search plan')
-    expect(searchView.calls).toContainEqual(['plan', true])
+    expect(searchView.calls).toContainEqual(['plan', true, {
+      mode: 'text', spaceIds: ['knowledge_engine_space:research'], authorityKinds: ['external_read_only'], tags: ['plans'],
+    }])
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(activeBefore)
   })
 
