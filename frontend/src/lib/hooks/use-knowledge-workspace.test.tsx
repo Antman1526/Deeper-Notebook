@@ -64,10 +64,13 @@ function remoteWorkspace(): KnowledgeWorkspaceDocument {
           ...plan,
           viewMode: 'live-preview',
           sourceAuthority: 'external-vault',
+          knowledgeDocumentId: null,
+          graphViewport: { x: 0, y: 0, zoom: 1 },
         }],
       },
     },
     layout: { type: 'pane', paneId: 'pane-1' },
+    navigation: defaultKnowledgeWorkspace().navigation,
   }
 }
 

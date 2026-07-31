@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 vi.mock('./client', () => ({
   default: { get: vi.fn(), put: vi.fn() },
@@ -12,7 +12,11 @@ import {
   openKnowledgeTabSchema,
   parseKnowledgeWorkspace,
   serializeKnowledgeWorkspace,
+  type GraphViewport,
   type KnowledgeLayoutNode,
+  type KnowledgeTab,
+  type KnowledgeWorkspaceDocument,
+  type KnowledgeWorkspaceNavigation,
 } from './knowledge-workspace'
 
 const wireDocument = {
@@ -50,6 +54,16 @@ const noncanonicalRelativePaths = [
 ]
 
 describe('knowledge workspace API boundary', () => {
+  it('exposes only normalized required camel persistence fields to callers', () => {
+    expectTypeOf<KnowledgeTab['knowledgeDocumentId']>()
+      .toEqualTypeOf<string | null>()
+    expectTypeOf<KnowledgeTab['graphViewport']>()
+      .toEqualTypeOf<GraphViewport | null>()
+    expectTypeOf<KnowledgeWorkspaceDocument['navigation']>()
+      .toEqualTypeOf<KnowledgeWorkspaceNavigation>()
+    expectTypeOf<Extract<KnowledgeWorkspaceDocument['layout'], { type: 'split' }>['firstSize']>()
+      .toEqualTypeOf<number>()
+  })
   beforeEach(() => {
     vi.resetAllMocks()
   })
@@ -252,6 +266,8 @@ describe('knowledge workspace API boundary', () => {
         relativePath: `Notes/${index + 1}.md`,
         viewMode: 'reading' as const,
         sourceAuthority: 'external-vault' as const,
+        knowledgeDocumentId: null,
+        graphViewport: { x: 0, y: 0, zoom: 1 },
       }),
     )
     document.panes['pane-1'].tabs[128].relativePath =
@@ -335,6 +351,32 @@ describe('knowledge workspace API boundary', () => {
     })
   })
 
+  it('round-trips persisted split size and controlled graph viewport', () => {
+    const document = defaultKnowledgeWorkspace()
+    document.panes = {
+      'pane-1': {
+        id: 'pane-1', activeTabId: 'tab-1', tabs: [{
+          id: 'tab-1', vaultId: 'vault:one', noteId: 'note:plan', title: 'Plan',
+          relativePath: 'Projects/Plan.md', viewMode: 'graph',
+          sourceAuthority: 'external-vault', knowledgeDocumentId: null,
+          graphViewport: { x: 25, y: -10, zoom: 1.75 },
+        }],
+      },
+      'pane-2': { id: 'pane-2', activeTabId: null, tabs: [] },
+    }
+    document.layout = {
+      type: 'split', id: 'split-1', direction: 'horizontal', firstSize: 37,
+      first: { type: 'pane', paneId: 'pane-1' },
+      second: { type: 'pane', paneId: 'pane-2' },
+    }
+
+    const restored = parseKnowledgeWorkspace(serializeKnowledgeWorkspace(document))
+
+    expect(restored.layout).toMatchObject({ type: 'split', firstSize: 37 })
+    expect(restored.panes['pane-1'].tabs[0].graphViewport)
+      .toEqual({ x: 25, y: -10, zoom: 1.75 })
+  })
+
   it('serializes only approved snake_case fields for PUT', async () => {
     vi.mocked(apiClient.put).mockResolvedValue({ data: wireDocument } as never)
     const documentWithExtras = {
@@ -353,12 +395,15 @@ describe('knowledge workspace API boundary', () => {
             relativePath: 'Projects/Plan.md',
             viewMode: 'reading' as const,
             sourceAuthority: 'external-vault' as const,
+            knowledgeDocumentId: null,
+            graphViewport: { x: 0, y: 0, zoom: 1 },
             ignoredTabField: 'not-on-the-wire',
           }],
           ignoredPaneField: true,
         },
       },
       layout: { type: 'pane' as const, paneId: 'pane-1', ignoredLayoutField: true },
+      navigation: defaultKnowledgeWorkspace().navigation,
       hydrated: true,
       replaceWorkspace: vi.fn(),
     }
