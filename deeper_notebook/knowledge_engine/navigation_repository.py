@@ -182,6 +182,41 @@ def _folder_reparent_transaction() -> str:
     """
 
 
+def _folder_create_transaction() -> str:
+    """Build a receipt-first, transaction-local max-depth guard for creates."""
+    parents = ["LET $parent_0 = $new_parent_relation_id;"]
+    parents.extend(
+        "LET $parent_" + str(index) + " = (SELECT VALUE parent_folder_id "
+        "FROM knowledge_bookmark_folder WHERE type::string(id) = $parent_"
+        + str(index - 1)
+        + " LIMIT 1)[0];"
+        for index in range(1, 16)
+    )
+    return f"""
+        BEGIN TRANSACTION;
+        LET $prior = (SELECT * FROM knowledge_navigation_operation_receipt
+            WHERE operation_id = $operation_id LIMIT 1);
+        IF array::len($prior) > 0 AND $prior[0].payload_hash != $payload_hash {{
+            RETURN {{ code: 'operation_conflict' }};
+        }};
+        IF array::len($prior) > 0 {{
+            RETURN {{ code: 'replayed', prior: $prior,
+                entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $prior[0] }};
+        }};
+        IF array::len((SELECT id FROM knowledge_bookmark_folder
+            WHERE type::string(id) = $new_parent_relation_id LIMIT 1)) = 0 {{
+            RETURN {{ code: 'folder_parent_not_found' }};
+        }};
+        {' '.join(parents)}
+        IF $parent_15 != NONE {{ RETURN {{ code: 'folder_depth_exceeded' }}; }};
+        CREATE $receipt_id CONTENT $receipt;
+        UPSERT $entity_id CONTENT $entity;
+        RETURN {{ code: 'succeeded', prior: $prior,
+            entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $receipt }};
+        COMMIT TRANSACTION;
+    """
+
+
 def _model(model: type[BaseModel], value: Any, *, code: str) -> Any:
     try:
         return model.model_validate(value)
@@ -567,7 +602,15 @@ class KnowledgeNavigationRepository:
             table="knowledge_bookmark_folder", entity_kind="folder", entity_id=entity_id,
             command=command, operation_kind="create_folder", entity=folder,
             result_code="created",
-            extra_variables={"folder_relation_id": command.parent_folder_id},
+            statement=_folder_create_transaction()
+            if command.parent_folder_id is not None
+            else None,
+            extra_variables={
+                "folder_relation_id": command.parent_folder_id,
+                "new_parent_relation_id": command.parent_folder_id,
+            }
+            if command.parent_folder_id is not None
+            else {"folder_relation_id": None},
         )
         return _model(BookmarkFolder, row, code="knowledge_navigation_folder_invalid")
 
@@ -799,11 +842,6 @@ class KnowledgeNavigationRepository:
 
     async def duplicate_workspace(self, workspace_id: str, command: DuplicateWorkspace) -> NamedKnowledgeWorkspace:
         entity_id = _generated_id("named_knowledge_workspace", command.operation_id)
-        payload_hash = _payload_hash(
-            command,
-            entity_id=entity_id,
-            context={"source_workspace_id": workspace_id},
-        )
         replay = await self._replay_entity(
             table="named_knowledge_workspace", entity_id=entity_id,
             command=command, model=NamedKnowledgeWorkspace,
