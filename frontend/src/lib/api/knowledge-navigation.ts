@@ -87,7 +87,26 @@ function preflightFolderTree(value: unknown): void {
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T { structuralPathCheck(value); return schema.parse(value) }
 export function createKnowledgeNavigationOperationId(): string { return crypto.randomUUID() }
-function targetToWire(target: Record<string, unknown>): Record<string, unknown> {
+/** Creates a new immutable mutation variable at the UI event boundary. */
+export function prepareKnowledgeNavigationCommand<T extends object>(command: T): Readonly<T & { operationId: string }> {
+  const existing = (command as { operationId?: unknown }).operationId
+  if (typeof existing === 'string' && existing) return Object.freeze({ ...command, operationId: existing })
+  return Object.freeze({ ...command, operationId: createKnowledgeNavigationOperationId() })
+}
+export type KnowledgeTarget =
+  | { kind: 'document'; documentId: string }
+  | { kind: 'block'; documentId: string; blockId: string; sourceRevisionId: string | null }
+  | { kind: 'search'; query: string; searchMode: 'exact' | 'text' | 'semantic'; spaceIds: string[]; authorityKinds: z.infer<typeof authority>[]; tags: string[] }
+  | { kind: 'graph'; rootDocumentId: string | null; spaceIds: string[]; relationKinds: string[]; viewport: z.infer<typeof viewport> }
+  | { kind: 'workspace'; workspaceId: string }
+const camelTargetSchema: z.ZodType<KnowledgeTarget> = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('document'), documentId: id('knowledge_engine_document') }).strict(),
+  z.object({ kind: z.literal('block'), documentId: id('knowledge_engine_document'), blockId: id('knowledge_engine_block'), sourceRevisionId: id('knowledge_engine_(?:revision|source_revision)').nullable() }).strict(),
+  z.object({ kind: z.literal('search'), query: z.string().min(1).max(512), searchMode: z.enum(['exact', 'text', 'semantic']), spaceIds: z.array(id('knowledge_engine_space')).max(32), authorityKinds: z.array(authority).max(2), tags: z.array(z.string().min(1).max(128)).max(32) }).strict(),
+  z.object({ kind: z.literal('graph'), rootDocumentId: id('knowledge_engine_document').nullable(), spaceIds: z.array(id('knowledge_engine_space')).max(32), relationKinds: z.array(z.string().min(1).max(64)).max(32), viewport }).strict(),
+  z.object({ kind: z.literal('workspace'), workspaceId: id('named_knowledge_workspace') }).strict(),
+])
+function targetToWire(target: KnowledgeTarget): z.input<typeof knowledgeTargetSchema> {
   const kind = target.kind
   if (kind === 'document') return { kind, document_id: target.documentId }
   if (kind === 'block') return { kind, document_id: target.documentId, block_id: target.blockId, source_revision_id: target.sourceRevisionId ?? null }
@@ -95,29 +114,30 @@ function targetToWire(target: Record<string, unknown>): Record<string, unknown> 
   if (kind === 'graph') return { kind, root_document_id: target.rootDocumentId ?? null, space_ids: target.spaceIds ?? [], relation_kinds: target.relationKinds ?? [], viewport: target.viewport ?? { x: 0, y: 0, zoom: 1 } }
   return { kind, workspace_id: target.workspaceId }
 }
-function targetFromWire(target: z.infer<typeof knowledgeTargetSchema>): Record<string, unknown> {
+function targetFromWire(target: z.infer<typeof knowledgeTargetSchema>): KnowledgeTarget {
   if (target.kind === 'document') return { kind: target.kind, documentId: target.document_id }
   if (target.kind === 'block') return { kind: target.kind, documentId: target.document_id, blockId: target.block_id, sourceRevisionId: target.source_revision_id ?? null }
   if (target.kind === 'search') return { kind: target.kind, query: target.query, searchMode: target.search_mode, spaceIds: target.space_ids, authorityKinds: target.authority_kinds, tags: target.tags }
   if (target.kind === 'graph') return { kind: target.kind, rootDocumentId: target.root_document_id, spaceIds: target.space_ids, relationKinds: target.relation_kinds, viewport: target.viewport }
   return { kind: target.kind, workspaceId: target.workspace_id }
 }
-export interface KnowledgeBookmark { id: string; targetKind: z.infer<typeof targetKind>; target: Record<string, unknown>; displayLabel: string; targetState?: z.infer<typeof targetState> }
+export interface KnowledgeBookmark { schemaVersion: 1; id: string; targetKind: z.infer<typeof targetKind>; target: KnowledgeTarget; displayLabel: string; authorityKind: z.infer<typeof authority> | null; spaceId: string | null; folderId: string | null; tags: string[]; position: number; revision: number; createdAt: string; updatedAt: string; targetState?: z.infer<typeof targetState>; targetDocument?: { documentId: string; spaceId: string; authorityKind: z.infer<typeof authority>; sourceKind: 'overlay' | 'obsidian' | 'logseq' | 'markdown'; title: string; relativeLocator: string; legacyNoteId: string; legacyContainerId: string } | null }
+function descriptorFromWire(value: z.infer<typeof descriptorSchema>) { return { documentId: value.document_id, spaceId: value.space_id, authorityKind: value.authority_kind, sourceKind: value.source_kind, title: value.title, relativeLocator: value.relative_locator, legacyNoteId: value.legacy_note_id, legacyContainerId: value.legacy_container_id } }
 function bookmarkFromWire(value: z.infer<typeof bookmarkMutationWireSchema> | z.infer<typeof bookmarkWireSchema>): KnowledgeBookmark {
-  return { id: value.id, targetKind: value.target_kind, target: targetFromWire(value.target), displayLabel: value.display_label, ...('target_state' in value ? { targetState: value.target_state } : {}) }
+  return { schemaVersion: value.schema_version, id: value.id, targetKind: value.target_kind, target: targetFromWire(value.target), displayLabel: value.display_label, authorityKind: value.authority_kind, spaceId: value.space_id, folderId: value.folder_id, tags: value.tags, position: value.position, revision: value.revision, createdAt: value.created_at, updatedAt: value.updated_at, ...('target_state' in value ? { targetState: value.target_state, targetDocument: value.target_document ? descriptorFromWire(value.target_document) : null } : {}) }
 }
 export function parseBookmark(value: unknown): KnowledgeBookmark { return bookmarkFromWire(parse(bookmarkWireSchema, value)) }
 export function parseBookmarkFolder(value: unknown) { preflightFolderTree(value); return parse(bookmarkFolderWireSchema, value) }
 
-const bookmarkCommandSchema = z.object({ operationId: localId.optional(), target: z.object({ kind: targetKind }).passthrough(), displayLabel: z.string().min(1).max(512), authorityKind: authority.nullable(), spaceId: id('knowledge_engine_space').nullable(), folderId: id('knowledge_bookmark_folder').nullable(), tags: z.array(z.string().min(1).max(128)).max(32), position: z.number().int().nonnegative() }).strict()
-function bookmarkCommandToWire(command: unknown): Record<string, unknown> {
+const bookmarkCommandSchema = z.object({ operationId: localId, target: camelTargetSchema, displayLabel: z.string().min(1).max(512), authorityKind: authority.nullable(), spaceId: id('knowledge_engine_space').nullable(), folderId: id('knowledge_bookmark_folder').nullable(), tags: z.array(z.string().min(1).max(128)).max(32), position: z.number().int().nonnegative() }).strict()
+function bookmarkCommandToWire(command: unknown) {
   const parsed = bookmarkCommandSchema.parse(command)
-  return { operation_id: parsed.operationId ?? createKnowledgeNavigationOperationId(), target: targetToWire(parsed.target), display_label: parsed.displayLabel, authority_kind: parsed.authorityKind, space_id: parsed.spaceId, folder_id: parsed.folderId, tags: parsed.tags, position: parsed.position }
+  return { operation_id: parsed.operationId, target: targetToWire(parsed.target), display_label: parsed.displayLabel, authority_kind: parsed.authorityKind, space_id: parsed.spaceId, folder_id: parsed.folderId, tags: parsed.tags, position: parsed.position }
 }
-const bookmarkUpdateCommandSchema = z.object({ operationId: localId.optional(), expectedRevision: z.number().int().min(1), target: z.object({ kind: targetKind }).passthrough().optional(), displayLabel: z.string().min(1).max(512).optional(), authorityKind: authority.nullable().optional(), spaceId: id('knowledge_engine_space').nullable().optional(), folderId: id('knowledge_bookmark_folder').nullable().optional(), tags: z.array(z.string().min(1).max(128)).max(32).optional(), position: z.number().int().nonnegative().optional() }).strict()
-function bookmarkUpdateCommandToWire(command: unknown): Record<string, unknown> {
+const bookmarkUpdateCommandSchema = z.object({ operationId: localId, expectedRevision: z.number().int().min(1), target: camelTargetSchema.optional(), displayLabel: z.string().min(1).max(512).optional(), authorityKind: authority.nullable().optional(), spaceId: id('knowledge_engine_space').nullable().optional(), folderId: id('knowledge_bookmark_folder').nullable().optional(), tags: z.array(z.string().min(1).max(128)).max(32).optional(), position: z.number().int().nonnegative().optional() }).strict()
+function bookmarkUpdateCommandToWire(command: unknown) {
   const parsed = bookmarkUpdateCommandSchema.parse(command)
-  return { operation_id: parsed.operationId ?? createKnowledgeNavigationOperationId(), expected_revision: parsed.expectedRevision, ...(parsed.target ? { target: targetToWire(parsed.target) } : {}), ...(parsed.displayLabel !== undefined ? { display_label: parsed.displayLabel } : {}), ...(parsed.authorityKind !== undefined ? { authority_kind: parsed.authorityKind } : {}), ...(parsed.spaceId !== undefined ? { space_id: parsed.spaceId } : {}), ...(parsed.folderId !== undefined ? { folder_id: parsed.folderId } : {}), ...(parsed.tags !== undefined ? { tags: parsed.tags } : {}), ...(parsed.position !== undefined ? { position: parsed.position } : {}) }
+  return { operation_id: parsed.operationId, expected_revision: parsed.expectedRevision, ...(parsed.target ? { target: targetToWire(parsed.target) } : {}), ...(parsed.displayLabel !== undefined ? { display_label: parsed.displayLabel } : {}), ...(parsed.authorityKind !== undefined ? { authority_kind: parsed.authorityKind } : {}), ...(parsed.spaceId !== undefined ? { space_id: parsed.spaceId } : {}), ...(parsed.folderId !== undefined ? { folder_id: parsed.folderId } : {}), ...(parsed.tags !== undefined ? { tags: parsed.tags } : {}), ...(parsed.position !== undefined ? { position: parsed.position } : {}) }
 }
 // Legacy endpoints below are deliberately shallow until their individual DTOs are
 // consumed by UI.  Record maps (notably panes) stay intact rather than being
