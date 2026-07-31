@@ -29,6 +29,8 @@ const pane: KnowledgePane = {
       relativePath: 'Projects/Plan.md',
       viewMode: 'reading',
       sourceAuthority: 'external-vault',
+      knowledgeDocumentId: null,
+      graphViewport: { x: 0, y: 0, zoom: 1 },
     },
     {
       id: 'tab-2',
@@ -38,6 +40,8 @@ const pane: KnowledgePane = {
       relativePath: 'Projects/Research.md',
       viewMode: 'reading',
       sourceAuthority: 'external-vault',
+      knowledgeDocumentId: null,
+      graphViewport: { x: 0, y: 0, zoom: 1 },
     },
     {
       id: 'tab-3',
@@ -47,6 +51,8 @@ const pane: KnowledgePane = {
       relativePath: 'Projects/Decisions.md',
       viewMode: 'graph',
       sourceAuthority: 'external-vault',
+      knowledgeDocumentId: null,
+      graphViewport: { x: 0, y: 0, zoom: 1 },
     },
   ],
 }

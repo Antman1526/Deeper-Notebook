@@ -1,0 +1,72 @@
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+
+const flowProps = vi.hoisted(() => ({
+  viewport: undefined as undefined | { x: number; y: number; zoom: number },
+}))
+
+vi.mock('@xyflow/react/dist/style.css', () => ({}))
+vi.mock('./vault.css', () => ({}))
+
+vi.mock('@xyflow/react', () => ({
+  Background: () => null,
+  Controls: () => null,
+  ReactFlow: ({
+    children,
+    viewport,
+    fitView,
+    onMoveEnd,
+  }: {
+    children: React.ReactNode
+    viewport?: { x: number; y: number; zoom: number }
+    fitView: boolean
+    onMoveEnd: (
+      event: null,
+      viewport: { x: number; y: number; zoom: number },
+    ) => void
+  }) => {
+    flowProps.viewport = viewport
+    return (
+      <div data-fit-view={fitView}>
+        <button
+          type="button"
+          onClick={() => onMoveEnd(null, { x: 7, y: -2, zoom: 1.5 })}
+        >
+          Move graph
+        </button>
+        {children}
+      </div>
+    )
+  },
+}))
+
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}))
+
+import { VaultGraph } from './VaultGraph'
+
+describe('VaultGraph controlled viewport', () => {
+  it('passes a controlled viewport to React Flow and reports onMoveEnd', () => {
+    const onMoveEnd = vi.fn()
+    render(
+      <VaultGraph
+        graph={{
+          nodes: [{
+            id: 'note:one', title: 'One', source_format: 'markdown',
+          }],
+          edges: [],
+        }}
+        unresolved={[]}
+        onNavigate={vi.fn()}
+        viewport={{ x: 3, y: 6, zoom: 2 }}
+        onMoveEnd={onMoveEnd}
+      />,
+    )
+
+    expect(flowProps.viewport).toEqual({ x: 3, y: 6, zoom: 2 })
+    expect(screen.getByText('Move graph').parentElement).toHaveAttribute('data-fit-view', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Move graph' }))
+    expect(onMoveEnd).toHaveBeenCalledWith({ x: 7, y: -2, zoom: 1.5 })
+  })
+})

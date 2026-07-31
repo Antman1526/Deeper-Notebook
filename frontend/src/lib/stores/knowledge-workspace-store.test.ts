@@ -74,6 +74,7 @@ describe('knowledge workspace store', () => {
     invalid.panes['pane-1'].tabs = [{
       id: 'tab-1', vaultId: 'vault:one', noteId: 'note:one', title: 'One',
       relativePath: '/unsafe.md', viewMode: 'reading', sourceAuthority: 'external-vault',
+      knowledgeDocumentId: null, graphViewport: { x: 0, y: 0, zoom: 1 },
     }]
     invalid.panes['pane-1'].activeTabId = 'tab-1'
 
@@ -284,6 +285,7 @@ describe('knowledge workspace store', () => {
         type: 'split',
         id: `split-depth-${depth}`,
         direction: 'horizontal',
+        firstSize: 50,
         first: layout,
         second: { type: 'pane', paneId: 'pane-1' },
       }
@@ -348,6 +350,8 @@ describe('knowledge workspace store', () => {
             ...plan,
             viewMode: 'reading',
             sourceAuthority: 'external-vault',
+            knowledgeDocumentId: null,
+            graphViewport: { x: 0, y: 0, zoom: 1 },
           }],
         },
       },
@@ -375,9 +379,11 @@ describe('knowledge workspace store', () => {
         type: 'split',
         id: 'split-4',
         direction: 'horizontal',
+        firstSize: 50,
         first: { type: 'pane', paneId: 'pane-1' },
         second: { type: 'pane', paneId: 'pane-2' },
       },
+      navigation: defaultKnowledgeWorkspace().navigation,
     })
 
     const newPaneId = useKnowledgeWorkspaceStore

@@ -742,10 +742,13 @@ describe('KnowledgeExplorer durable workspace integration', () => {
             relativePath: 'archive/persisted-one.md',
             viewMode: 'reading',
             sourceAuthority: 'external-vault',
+            knowledgeDocumentId: null,
+            graphViewport: { x: 0, y: 0, zoom: 1 },
           }],
         },
       },
       layout: { type: 'pane', paneId: 'pane-1' },
+      navigation: useKnowledgeWorkspaceStore.getState().navigation,
     })
 
     await renderExplorer()

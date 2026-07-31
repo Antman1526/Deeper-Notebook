@@ -1,16 +1,27 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { OverlayPage } from '@/lib/api/overlay'
 import type { VaultPage } from '@/lib/api/vault'
 import { VaultPageContractError } from '@/lib/api/vault'
+import {
+  parseKnowledgeWorkspace,
+  serializeKnowledgeWorkspace,
+  type GraphViewport,
+} from '@/lib/api/knowledge-workspace'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 
 const editorState = vi.hoisted(() => ({ failLivePreview: false }))
 const overlayView = vi.hoisted(() => ({
   onReload: undefined as undefined | (() => Promise<unknown>),
   onNavigate: undefined as undefined | ((noteId: string) => void),
+  graphViewport: undefined as GraphViewport | undefined,
+  onGraphViewportChange: undefined as undefined | ((viewport: GraphViewport) => void),
+}))
+const vaultGraphView = vi.hoisted(() => ({
+  viewport: undefined as GraphViewport | undefined,
+  onMoveEnd: undefined as undefined | ((viewport: GraphViewport) => void),
 }))
 const vaultMarkdownView = vi.hoisted(() => ({
   onNavigate: undefined as undefined | ((noteId: string) => void),
@@ -67,13 +78,19 @@ vi.mock('@/components/overlay/OverlayDocumentView', () => ({
     mode,
     onReload,
     onNavigate,
+    graphViewport,
+    onGraphViewportChange,
   }: {
     mode: string
     onReload: () => Promise<unknown>
     onNavigate: (noteId: string) => void
+    graphViewport?: GraphViewport
+    onGraphViewportChange?: (viewport: GraphViewport) => void
   }) => {
     overlayView.onReload = onReload
     overlayView.onNavigate = onNavigate
+    overlayView.graphViewport = graphViewport
+    overlayView.onGraphViewportChange = onGraphViewportChange
     return <section aria-label={`Overlay document ${mode}`} />
   },
 }))
@@ -112,7 +129,17 @@ vi.mock('./VaultMarkdown', () => ({
 }))
 
 vi.mock('./VaultGraph', () => ({
-  VaultGraph: () => <div>Local graph content</div>,
+  VaultGraph: ({
+    viewport,
+    onMoveEnd,
+  }: {
+    viewport?: GraphViewport
+    onMoveEnd?: (viewport: GraphViewport) => void
+  }) => {
+    vaultGraphView.viewport = viewport
+    vaultGraphView.onMoveEnd = onMoveEnd
+    return <div>Local graph content</div>
+  },
 }))
 
 import { KnowledgePaneContent } from './KnowledgePaneContent'
@@ -259,10 +286,13 @@ function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'gra
           relativePath: 'synthetic/stale.md',
           viewMode,
           sourceAuthority: 'external-vault',
+          knowledgeDocumentId: null,
+          graphViewport: { x: 0, y: 0, zoom: 1 },
         }],
       },
     },
     layout: { type: 'pane', paneId: 'pane-1' },
+    navigation: useKnowledgeWorkspaceStore.getState().navigation,
   })
 }
 
@@ -285,10 +315,13 @@ function replaceOverlayWorkspace(
           relativePath: 'Unique/research.md',
           viewMode,
           sourceAuthority: 'overlay',
+          knowledgeDocumentId: null,
+          graphViewport: { x: 0, y: 0, zoom: 1 },
         }],
       },
     },
     layout: { type: 'pane', paneId: 'pane-1' },
+    navigation: useKnowledgeWorkspaceStore.getState().navigation,
   })
 }
 
@@ -336,6 +369,8 @@ function replaceTwoPaneWorkspace() {
           relativePath: 'pages/one.md',
           viewMode: 'source',
           sourceAuthority: 'external-vault',
+          knowledgeDocumentId: null,
+          graphViewport: { x: 0, y: 0, zoom: 1 },
         }],
       },
       'pane-2': {
@@ -349,6 +384,8 @@ function replaceTwoPaneWorkspace() {
           relativePath: 'pages/two.md',
           viewMode: 'reading',
           sourceAuthority: 'external-vault',
+          knowledgeDocumentId: null,
+          graphViewport: { x: 0, y: 0, zoom: 1 },
         }],
       },
     },
@@ -356,9 +393,11 @@ function replaceTwoPaneWorkspace() {
       type: 'split',
       id: 'split-1',
       direction: 'horizontal',
+      firstSize: 50,
       first: { type: 'pane', paneId: 'pane-1' },
       second: { type: 'pane', paneId: 'pane-2' },
     },
+    navigation: useKnowledgeWorkspaceStore.getState().navigation,
   })
 }
 
@@ -388,6 +427,10 @@ describe('KnowledgePaneContent', () => {
     queries.outgoingLinks = []
     overlayView.onReload = undefined
     overlayView.onNavigate = undefined
+    overlayView.graphViewport = undefined
+    overlayView.onGraphViewportChange = undefined
+    vaultGraphView.viewport = undefined
+    vaultGraphView.onMoveEnd = undefined
     vaultMarkdownView.onNavigate = undefined
     queries.overlayPage = {
       data: undefined,
@@ -538,6 +581,40 @@ describe('KnowledgePaneContent', () => {
       'note:plan',
       true,
     )
+  })
+
+  it('persists an external controlled graph viewport and restores it after serialization', () => {
+    replaceWorkspace('graph')
+    const original = useKnowledgeWorkspaceStore.getState()
+    const tabId = original.panes['pane-1'].activeTabId!
+    original.setTabGraphViewport('pane-1', tabId, { x: 12, y: -4, zoom: 1.5 })
+    const { rerender } = renderPane()
+
+    expect(vaultGraphView.viewport).toEqual({ x: 12, y: -4, zoom: 1.5 })
+    act(() => vaultGraphView.onMoveEnd?.({ x: 20, y: 10, zoom: 2 }))
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].graphViewport)
+      .toEqual({ x: 20, y: 10, zoom: 2 })
+
+    const restored = parseKnowledgeWorkspace(
+      serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState()),
+    )
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(restored)
+    rerender(<PaneHarness />)
+    expect(vaultGraphView.viewport).toEqual({ x: 20, y: 10, zoom: 2 })
+  })
+
+  it('persists an overlay controlled graph viewport through the workspace store', () => {
+    replaceOverlayWorkspace('graph')
+    queries.overlayPage = {
+      data: overlayGraphPage(), isLoading: false, isError: false, error: null, refetch: vi.fn(),
+    }
+    renderPane()
+
+    expect(overlayView.graphViewport).toEqual({ x: 0, y: 0, zoom: 1 })
+    act(() => overlayView.onGraphViewportChange?.({ x: -8, y: 16, zoom: 0.75 }))
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].graphViewport)
+      .toEqual({ x: -8, y: 16, zoom: 0.75 })
   })
 
   it('routes external authority only to vault data paths', () => {
