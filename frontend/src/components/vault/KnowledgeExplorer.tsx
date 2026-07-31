@@ -5,8 +5,10 @@ import { RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import type { OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
+import type { KnowledgeWorkspaceDocument, OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
 import type { VaultFile } from '@/lib/api/vault'
+import { vaultApi } from '@/lib/api/vault'
+import { overlayApi } from '@/lib/api/overlay'
 import {
   useHydrateKnowledgeWorkspace,
   usePersistKnowledgeWorkspace,
@@ -19,16 +21,27 @@ import {
 import { useTodayOverlayNote } from '@/lib/hooks/use-overlay'
 import {
   useCreateKnowledgeBookmark,
+  useCreateKnowledgeWorkspace,
   useDeleteKnowledgeBookmark,
   useDeleteKnowledgeFolder,
+  useDeleteKnowledgeWorkspace,
+  useDuplicateKnowledgeWorkspace,
   useKnowledgeBookmarks,
   useKnowledgeFolders,
   useKnowledgeWorkspaces,
   useRandomKnowledgeNote,
   useRestoreKnowledgeWorkspace,
   useUpdateKnowledgeBookmark,
+  useUpdateKnowledgeWorkspace,
 } from '@/lib/hooks/use-knowledge-navigation'
-import type { KnowledgeBookmark, KnowledgeOpenDescriptor } from '@/lib/api/knowledge-navigation'
+import type {
+  KnowledgeBookmark,
+  KnowledgeOpenDescriptor,
+  KnowledgeTarget,
+  NamedKnowledgeWorkspaceSummary,
+  NamedWorkspaceSnapshot,
+  WorkspaceRestorePlan,
+} from '@/lib/api/knowledge-navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
@@ -43,6 +56,8 @@ import { KnowledgeCommandBridge } from './KnowledgeCommandBridge'
 import { KnowledgeQuickSwitcher } from './KnowledgeQuickSwitcher'
 import { KnowledgeUtilityRail } from './KnowledgeUtilityRail'
 import { KnowledgeBookmarksPanel } from './KnowledgeBookmarksPanel'
+import { KnowledgeWorkspacesPanel } from './KnowledgeWorkspacesPanel'
+import { WorkspaceRestoreDialog } from './WorkspaceRestoreDialog'
 import { CreateUniqueNoteDialog } from '../overlay/CreateUniqueNoteDialog'
 import { OverlayUtilityPanel, localDateKey, tabFromOverlay } from '../overlay/OverlayUtilityPanel'
 
@@ -75,6 +90,106 @@ function tabFromDescriptor(document: KnowledgeOpenDescriptor): OpenKnowledgeTab 
   }
 }
 
+type GraphBookmarkContext = {
+  rootDocumentId: string
+  spaceIds: string[]
+  relationKinds: string[]
+  viewport: { x: number; y: number; zoom: number }
+} | null
+
+function namedTargetForTab(
+  tab: OpenKnowledgeTab & { id: string; knowledgeDocumentId: string | null },
+  documentId: string,
+  focusedBlock: { blockId: string; sourceRevisionId: string | null } | undefined,
+  graphContext: GraphBookmarkContext,
+): KnowledgeTarget {
+  if (focusedBlock) return { kind: 'block', documentId, ...focusedBlock }
+  if (tab.viewMode === 'graph') {
+    const context = graphContext?.rootDocumentId === documentId ? graphContext : null
+    return {
+      kind: 'graph', rootDocumentId: context?.rootDocumentId ?? documentId,
+      spaceIds: context?.spaceIds ?? [], relationKinds: context?.relationKinds ?? [],
+      viewport: context?.viewport ?? tab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+    }
+  }
+  return { kind: 'document', documentId }
+}
+
+async function namedSnapshotFromCurrentWorkspace(): Promise<NamedWorkspaceSnapshot> {
+  const state = useKnowledgeWorkspaceStore.getState()
+  const unresolved = new Map<string, Promise<string | null>>()
+  const resolveDocumentId = (tab: OpenKnowledgeTab & { knowledgeDocumentId: string | null }) => {
+    if (tab.knowledgeDocumentId) return Promise.resolve(tab.knowledgeDocumentId)
+    const key = `${tab.sourceAuthority}:${tab.vaultId}:${tab.noteId}`
+    let request = unresolved.get(key)
+    if (!request) {
+      request = tab.sourceAuthority === 'overlay'
+        ? overlayApi.page(tab.noteId).then((page) => page.knowledge_document_id ?? null)
+        : vaultApi.page(tab.vaultId, tab.noteId).then((page) => page.knowledge_document_id ?? null)
+      unresolved.set(key, request)
+    }
+    return request
+  }
+  const entries = await Promise.all(Object.values(state.panes).flatMap((pane) => pane.tabs.map(async (tab) => {
+    try {
+      return [tab.id, await resolveDocumentId(tab)] as const
+    } catch {
+      return [tab.id, null] as const
+    }
+  })))
+  const documentIds = new Map(entries)
+  if (entries.some(([, documentId]) => !documentId)) {
+    throw new Error('A tab could not be resolved to a stable knowledge document ID.')
+  }
+  return {
+    version: 1,
+    activePaneId: state.activePaneId,
+    nextId: state.nextId,
+    layout: state.layout,
+    navigation: state.navigation,
+    panes: Object.fromEntries(Object.entries(state.panes).map(([paneId, pane]) => [paneId, {
+      id: pane.id,
+      activeTabId: pane.activeTabId,
+      tabs: pane.tabs.map((tab) => ({
+        id: tab.id,
+        target: namedTargetForTab(tab, documentIds.get(tab.id)!, state.focusedBlocksByTab[tab.id], state.graphBookmarkContext),
+        displayLabel: tab.title,
+        viewMode: tab.viewMode,
+      })),
+    }])),
+  }
+}
+
+function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspaceDocument {
+  return {
+    version: 1,
+    activePaneId: plan.activePaneId,
+    nextId: plan.nextId,
+    layout: plan.layout,
+    navigation: plan.navigation,
+    panes: Object.fromEntries(Object.entries(plan.panes).map(([paneId, pane]) => {
+      const tabs = pane.tabs
+        .filter((tab) => tab.targetState === 'available' && tab.targetDocument)
+        .map((tab) => ({
+          id: tab.id,
+          vaultId: tab.targetDocument!.legacyContainerId,
+          noteId: tab.targetDocument!.legacyNoteId,
+          title: tab.targetDocument!.title,
+          relativePath: tab.targetDocument!.relativeLocator,
+          sourceAuthority: tab.targetDocument!.authorityKind === 'app_owned' ? 'overlay' as const : 'external-vault' as const,
+          knowledgeDocumentId: tab.targetDocument!.documentId,
+          viewMode: tab.viewMode,
+          graphViewport: tab.target.kind === 'graph' ? tab.target.viewport : null,
+        }))
+      return [paneId, {
+        id: pane.id,
+        activeTabId: tabs.some((tab) => tab.id === pane.activeTabId) ? pane.activeTabId : tabs[0]?.id ?? null,
+        tabs,
+      }]
+    })),
+  }
+}
+
 export function KnowledgeExplorer() {
   const { t } = useTranslation()
   const hydration = useHydrateKnowledgeWorkspace()
@@ -82,6 +197,8 @@ export function KnowledgeExplorer() {
   const mounts = useVaults()
   const [selectedRootState, setSelectedRootState] = useState<SelectedKnowledgeRoot | null>(null)
   const [uniqueDialogOpen, setUniqueDialogOpen] = useState(false)
+  const [restoreApplying, setRestoreApplying] = useState(false)
+  const [restoreError, setRestoreError] = useState<string | null>(null)
   const [activePaneElement, setActivePaneElement] = useState<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const fileTreeRef = useRef<HTMLElement>(null)
@@ -108,6 +225,7 @@ export function KnowledgeExplorer() {
   const setNavigation = useKnowledgeWorkspaceStore((state) => state.setNavigation)
   const setGraphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.setGraphBookmarkContext)
   const setPendingWorkspaceRestore = useKnowledgeWorkspaceStore((state) => state.setPendingWorkspaceRestore)
+  const pendingWorkspaceRestore = useKnowledgeWorkspaceStore((state) => state.pendingWorkspaceRestore)
   const activeSearchContext = useKnowledgeWorkspaceStore((state) => state.activeSearchContext)
   const setActiveSearchContext = useKnowledgeWorkspaceStore((state) => state.setActiveSearchContext)
   const semanticSearchDescriptorKey = activeSearchContext?.mode === 'semantic' && activeSearchContext.query
@@ -139,6 +257,10 @@ export function KnowledgeExplorer() {
   const { mutateAsync: deleteBookmark } = useDeleteKnowledgeBookmark()
   const { mutateAsync: deleteFolder } = useDeleteKnowledgeFolder()
   const { mutateAsync: restoreWorkspace } = useRestoreKnowledgeWorkspace()
+  const { mutateAsync: createWorkspace } = useCreateKnowledgeWorkspace()
+  const { mutateAsync: updateWorkspace } = useUpdateKnowledgeWorkspace()
+  const { mutateAsync: duplicateWorkspace } = useDuplicateKnowledgeWorkspace()
+  const { mutateAsync: deleteWorkspace } = useDeleteKnowledgeWorkspace()
   const {
     mutateAsync: scanVault,
     isPending: scanPending,
@@ -247,6 +369,49 @@ export function KnowledgeExplorer() {
   const openDescriptor = useCallback((document: KnowledgeOpenDescriptor) => {
     openTab(tabFromDescriptor(document))
   }, [openTab])
+  const applyRestorePlan = useCallback(async (plan: WorkspaceRestorePlan) => {
+    setRestoreApplying(true)
+    setRestoreError(null)
+    try {
+      const applied = useKnowledgeWorkspaceStore.getState().applyNamedWorkspace(workspaceFromRestorePlan(plan))
+      if (!applied) throw new Error('The restore plan is not a valid workspace.')
+      setPendingWorkspaceRestore(null)
+    } catch {
+      setRestoreError('Available targets could not be opened. Your current session was left unchanged.')
+    } finally {
+      setRestoreApplying(false)
+    }
+  }, [setPendingWorkspaceRestore])
+  const openNamedWorkspace = useCallback(async (workspace: NamedKnowledgeWorkspaceSummary) => {
+    const plan = await restoreWorkspace({ workspaceId: workspace.id, revision: workspace.revision })
+    const hasUnavailableTargets = plan.summary.stale > 0
+      || plan.summary.unavailable > 0
+      || plan.summary.missing > 0
+    if (hasUnavailableTargets) {
+      setRestoreError(null)
+      setPendingWorkspaceRestore(plan)
+      return
+    }
+    await applyRestorePlan(plan)
+  }, [applyRestorePlan, restoreWorkspace, setPendingWorkspaceRestore])
+  const saveCurrentWorkspaceAs = useCallback(async (name: string) => {
+    await createWorkspace({ name, snapshot: await namedSnapshotFromCurrentWorkspace() })
+  }, [createWorkspace])
+  const renameWorkspace = useCallback(async (workspace: NamedKnowledgeWorkspaceSummary, name: string) => {
+    await updateWorkspace({ workspaceId: workspace.id, command: { expectedRevision: workspace.revision, name } })
+  }, [updateWorkspace])
+  const duplicateNamedWorkspace = useCallback(async (workspace: NamedKnowledgeWorkspaceSummary, name: string) => {
+    await duplicateWorkspace({ workspaceId: workspace.id, command: { name } })
+  }, [duplicateWorkspace])
+  const replaceNamedWorkspace = useCallback(async (workspace: NamedKnowledgeWorkspaceSummary) => {
+    await updateWorkspace({
+      workspaceId: workspace.id,
+      command: { expectedRevision: workspace.revision, snapshot: await namedSnapshotFromCurrentWorkspace() },
+    })
+  }, [updateWorkspace])
+  const deleteNamedWorkspace = useCallback(async (workspace: NamedKnowledgeWorkspaceSummary) => {
+    await deleteWorkspace({ workspaceId: workspace.id, command: { expectedRevision: workspace.revision } })
+  }, [deleteWorkspace])
   const openRandomNote = useCallback(async () => {
     const result = await randomNote({
       spaceIds: navigation.selectedSpaceIds,
@@ -324,8 +489,7 @@ export function KnowledgeExplorer() {
       const workspaceId = bookmark.target.workspaceId
       const workspace = namedWorkspaces.data?.items.find((item) => item.id === workspaceId)
       if (workspace) {
-        const plan = await restoreWorkspace({ workspaceId: workspace.id, revision: workspace.revision })
-        setPendingWorkspaceRestore(plan)
+        await openNamedWorkspace(workspace)
         setNavigation({ utilityMode: 'workspaces' })
       }
       return
@@ -360,7 +524,7 @@ export function KnowledgeExplorer() {
         blockId: bookmark.target.blockId, sourceRevisionId: bookmark.target.sourceRevisionId,
       })
     }
-  }, [namedWorkspaces.data?.items, openDescriptor, openTab, restoreWorkspace, setActiveSearchContext, setGraphBookmarkContext, setNavigation, setPendingWorkspaceRestore, setTabGraphViewport, setTabViewMode])
+  }, [namedWorkspaces.data?.items, openDescriptor, openNamedWorkspace, openTab, setActiveSearchContext, setGraphBookmarkContext, setNavigation, setTabGraphViewport, setTabViewMode])
   const editBookmark = useCallback((_bookmark: KnowledgeBookmark, _editTarget: boolean) => undefined, [])
   const updateBookmarkMetadata = useCallback((
     bookmark: KnowledgeBookmark,
@@ -490,7 +654,16 @@ export function KnowledgeExplorer() {
               onDeleteFolder={removeFolder}
             />
           ) : navigation.utilityMode === 'workspaces' ? (
-            <p className="text-sm text-muted-foreground">Saved workspaces are available from the workspace controls.</p>
+            <KnowledgeWorkspacesPanel
+              workspaces={namedWorkspaces.data?.items || []}
+              onSaveCurrentAs={saveCurrentWorkspaceAs}
+              onOpen={openNamedWorkspace}
+              onRename={renameWorkspace}
+              onDuplicate={duplicateNamedWorkspace}
+              onReplaceWithCurrent={replaceNamedWorkspace}
+              onDelete={deleteNamedWorkspace}
+              onRefresh={async () => { await namedWorkspaces.refetch() }}
+            />
           ) : <>
           <label className="text-sm font-medium" htmlFor="vault-mount">
             {t('knowledge.mounts')}
@@ -640,6 +813,19 @@ export function KnowledgeExplorer() {
         open={uniqueDialogOpen}
         onOpenChange={setUniqueDialogOpen}
         onOpen={openTab}
+      />
+      <WorkspaceRestoreDialog
+        plan={pendingWorkspaceRestore}
+        applying={restoreApplying}
+        error={restoreError}
+        onOpenAvailable={() => {
+          if (pendingWorkspaceRestore) void applyRestorePlan(pendingWorkspaceRestore)
+        }}
+        onCancel={() => {
+          if (restoreApplying) return
+          setRestoreError(null)
+          setPendingWorkspaceRestore(null)
+        }}
       />
     </div>
   )
