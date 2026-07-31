@@ -15,6 +15,7 @@ import {
   type OpenKnowledgeTab,
   type SplitDirection,
 } from '@/lib/api/knowledge-workspace'
+import type { WorkspaceRestorePlan } from '@/lib/api/knowledge-navigation'
 import {
   clearOverlayDraft,
   clearOverlayDrafts,
@@ -32,6 +33,9 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
     relationKinds: string[]
     viewport: GraphViewport
   } | null
+  focusedBlocksByTab: Record<string, { blockId: string; sourceRevisionId: string | null }>
+  pendingWorkspaceRestore: WorkspaceRestorePlan | null
+  activeSearchContext: { query: string; mode: 'exact' | 'text' | 'semantic'; spaceIds: string[]; authorityKinds: ('app_owned' | 'external_read_only')[]; tags: string[] } | null
   replaceWorkspace: (document: KnowledgeWorkspaceDocument) => void
   applyNamedWorkspace: (document: KnowledgeWorkspaceDocument) => boolean
   hydrateWorkspace: (
@@ -53,6 +57,9 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   setSplitSize: (splitId: string, firstSize: number) => void
   setNavigation: (navigation: Partial<KnowledgeWorkspaceNavigation>) => void
   setGraphBookmarkContext: (context: KnowledgeWorkspaceState['graphBookmarkContext']) => void
+  setFocusedBlock: (paneId: string, tabId: string, block: { blockId: string; sourceRevisionId: string | null } | null) => void
+  setPendingWorkspaceRestore: (plan: WorkspaceRestorePlan | null) => void
+  setActiveSearchContext: (context: KnowledgeWorkspaceState['activeSearchContext']) => void
   splitPane: (paneId: string, direction: SplitDirection) => string
   closePane: (paneId: string) => void
   resetWorkspace: () => void
@@ -187,6 +194,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
   durableRevision: 0,
   durableFingerprint: workspaceFingerprint(defaultKnowledgeWorkspace()),
   graphBookmarkContext: null,
+  focusedBlocksByTab: {},
+  pendingWorkspaceRestore: null,
+  activeSearchContext: null,
 
   replaceWorkspace: (document) => {
     const fingerprint = workspaceFingerprint(document)
@@ -197,6 +207,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       hydrated: true,
       durableRevision: state.revision,
       durableFingerprint: fingerprint,
+      focusedBlocksByTab: {},
+      pendingWorkspaceRestore: null,
+      activeSearchContext: null,
     })
   },
 
@@ -213,6 +226,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       revision: state.revision + 1,
       durableRevision: state.durableRevision,
       durableFingerprint: state.durableFingerprint,
+      focusedBlocksByTab: {},
+      pendingWorkspaceRestore: null,
+      activeSearchContext: null,
     })
     return true
   },
@@ -227,6 +243,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
         hydrated: true,
         durableRevision: Math.max(state.durableRevision, requestStartRevision),
         durableFingerprint: fingerprint,
+        focusedBlocksByTab: {},
+        pendingWorkspaceRestore: null,
+        activeSearchContext: null,
       })
       return
     }
@@ -255,6 +274,17 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
   },
 
   setGraphBookmarkContext: (graphBookmarkContext) => set({ graphBookmarkContext }),
+  setPendingWorkspaceRestore: (pendingWorkspaceRestore) => set({ pendingWorkspaceRestore }),
+  setActiveSearchContext: (activeSearchContext) => set({ activeSearchContext }),
+  setFocusedBlock: (paneId, tabId, block) => {
+    const key = tabId
+    const state = get()
+    if (!state.panes[paneId]?.tabs.some((tab) => tab.id === tabId)) return
+    const focusedBlocksByTab = { ...state.focusedBlocksByTab }
+    if (block) focusedBlocksByTab[key] = block
+    else delete focusedBlocksByTab[key]
+    set({ focusedBlocksByTab })
+  },
 
   openTab: (tab, requestedPaneId) => {
     const parsed = openKnowledgeTabSchema.safeParse(tab)
@@ -275,6 +305,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       set({
         activePaneId: paneId,
         revision: state.revision + 1,
+        focusedBlocksByTab: {},
         panes: {
           ...state.panes,
           [paneId]: { ...pane, activeTabId: existing.id },
@@ -297,6 +328,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       activePaneId: paneId,
       nextId: allocated.nextId,
       revision: state.revision + 1,
+      focusedBlocksByTab: {},
+      pendingWorkspaceRestore: null,
+      activeSearchContext: null,
       panes: {
         ...state.panes,
         [paneId]: {
@@ -380,6 +414,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     set({
       activePaneId: paneId,
       revision: state.revision + 1,
+      focusedBlocksByTab: {},
       panes: {
         ...state.panes,
         [paneId]: { ...pane, activeTabId: tabId },
@@ -538,6 +573,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       durableRevision: revision,
       durableFingerprint: workspaceFingerprint(document),
       graphBookmarkContext: null,
+      focusedBlocksByTab: {},
+      pendingWorkspaceRestore: null,
+      activeSearchContext: null,
     })
   },
 }))

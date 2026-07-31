@@ -105,6 +105,11 @@ export function KnowledgeExplorer() {
   const navigation = useKnowledgeWorkspaceStore((state) => state.navigation)
   const setNavigation = useKnowledgeWorkspaceStore((state) => state.setNavigation)
   const setGraphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.setGraphBookmarkContext)
+  const setPendingWorkspaceRestore = useKnowledgeWorkspaceStore((state) => state.setPendingWorkspaceRestore)
+  const activeSearchContext = useKnowledgeWorkspaceStore((state) => state.activeSearchContext)
+  const setActiveSearchContext = useKnowledgeWorkspaceStore((state) => state.setActiveSearchContext)
+  const setTabViewMode = useKnowledgeWorkspaceStore((state) => state.setTabViewMode)
+  const setTabGraphViewport = useKnowledgeWorkspaceStore((state) => state.setTabGraphViewport)
   const bookmarks = useKnowledgeBookmarks({
     folderId: navigation.activeBookmarkFolderId ?? undefined,
     tags: navigation.bookmarkTags.length ? navigation.bookmarkTags : undefined,
@@ -228,14 +233,12 @@ export function KnowledgeExplorer() {
     const currentWorkspace = useKnowledgeWorkspaceStore.getState()
     const currentNavigation = currentWorkspace.navigation
     const currentGraphContext = currentWorkspace.graphBookmarkContext
-    const focusedBlockId = currentNavigation.activeDraftId?.match(/^knowledge_engine_block:[A-Za-z0-9_-]+$/)
-      ? currentNavigation.activeDraftId
-      : null
+    const focusedBlock = currentWorkspace.focusedBlocksByTab[activeTab.id] ?? null
     await createBookmark({
-      target: focusedBlockId
+      target: focusedBlock
         ? {
             kind: 'block', documentId: activeTab.knowledgeDocumentId,
-            blockId: focusedBlockId, sourceRevisionId: null,
+            blockId: focusedBlock.blockId, sourceRevisionId: focusedBlock.sourceRevisionId,
           }
         : activeTab.viewMode === 'graph'
         ? {
@@ -277,6 +280,10 @@ export function KnowledgeExplorer() {
   }, [createBookmark, navigation.activeBookmarkFolderId, navigation.authorityFilters, navigation.bookmarkTags, navigation.selectedSpaceIds])
   const openBookmark = useCallback(async (bookmark: KnowledgeBookmark) => {
     if (bookmark.target.kind === 'search') {
+      setActiveSearchContext({
+        query: bookmark.target.query, mode: bookmark.target.searchMode,
+        spaceIds: bookmark.target.spaceIds, authorityKinds: bookmark.target.authorityKinds, tags: bookmark.target.tags,
+      })
       setNavigation({
         searchQuery: bookmark.target.query,
         searchMode: bookmark.target.searchMode,
@@ -289,12 +296,23 @@ export function KnowledgeExplorer() {
     if (bookmark.target.kind === 'workspace') {
       const workspaceId = bookmark.target.workspaceId
       const workspace = namedWorkspaces.data?.items.find((item) => item.id === workspaceId)
-      if (workspace) await restoreWorkspace({ workspaceId: workspace.id, revision: workspace.revision })
+      if (workspace) {
+        const plan = await restoreWorkspace({ workspaceId: workspace.id, revision: workspace.revision })
+        setPendingWorkspaceRestore(plan)
+        setNavigation({ utilityMode: 'workspaces' })
+      }
       return
     }
     if (!bookmark.targetDocument) return
     if (bookmark.target.kind === 'graph') {
       openTab({ ...tabFromDescriptor(bookmark.targetDocument), viewMode: 'graph', graphViewport: bookmark.target.viewport })
+      const opened = Object.values(useKnowledgeWorkspaceStore.getState().panes)
+        .flatMap((pane) => pane.tabs.map((tab) => ({ pane, tab })))
+        .find(({ tab }) => tab.knowledgeDocumentId === bookmark.targetDocument?.documentId)
+      if (opened) {
+        setTabViewMode(opened.pane.id, opened.tab.id, 'graph')
+        setTabGraphViewport(opened.pane.id, opened.tab.id, bookmark.target.viewport)
+      }
       setNavigation({ selectedSpaceIds: bookmark.target.spaceIds })
       if (bookmark.target.rootDocumentId) {
         setGraphBookmarkContext({
@@ -307,8 +325,15 @@ export function KnowledgeExplorer() {
       return
     }
     openDescriptor(bookmark.targetDocument)
-    if (bookmark.target.kind === 'block') setNavigation({ activeDraftId: bookmark.target.blockId })
-  }, [namedWorkspaces.data?.items, openDescriptor, openTab, restoreWorkspace, setGraphBookmarkContext, setNavigation])
+    if (bookmark.target.kind === 'block') {
+      const state = useKnowledgeWorkspaceStore.getState()
+      const pane = state.panes[state.activePaneId]
+      const tabId = pane?.activeTabId
+      if (tabId) state.setFocusedBlock(state.activePaneId, tabId, {
+        blockId: bookmark.target.blockId, sourceRevisionId: bookmark.target.sourceRevisionId,
+      })
+    }
+  }, [namedWorkspaces.data?.items, openDescriptor, openTab, restoreWorkspace, setActiveSearchContext, setGraphBookmarkContext, setNavigation, setPendingWorkspaceRestore, setTabGraphViewport, setTabViewMode])
   const editBookmark = useCallback((_bookmark: KnowledgeBookmark, _editTarget: boolean) => undefined, [])
   const updateBookmarkMetadata = useCallback((
     bookmark: KnowledgeBookmark,
@@ -553,6 +578,9 @@ export function KnowledgeExplorer() {
           <span aria-hidden="true">›</span>
         </Button>}
         <main className="min-h-0 min-w-0 overflow-hidden">
+          {activeSearchContext && <section aria-label="Active knowledge search" className="border-b px-3 py-2 text-sm">
+            {activeSearchContext.mode}: {activeSearchContext.query}
+          </section>}
           <KnowledgeWorkspaceLayout
             onPaneElement={onPaneElement}
             renderPane={(pane) => (
