@@ -150,10 +150,9 @@ def _marked_manifest(tmp_path: Path, inputs: dict[str, Path]) -> Path:
                     "minimum_tasks": 1,
                     "minimum_graph_edges": 1,
                     "minimum_trust_records": 1,
-                    "checkpoint_space_ids": [
+                    "startup_checkpoint_space_ids": [
                         "knowledge_engine_space:overlay",
                         "knowledge_engine_space:parent",
-                        "knowledge_engine_space:child",
                     ],
                 },
             }
@@ -422,13 +421,6 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
                         "unchanged": 0,
                         "failed": 0,
                     },
-                    {
-                        "space_id": "knowledge_engine_space:child",
-                        "status": "completed",
-                        "projected": 2,
-                        "unchanged": 0,
-                        "failed": 0,
-                    },
                 ],
                 "external_after": {
                     name: {"fingerprints": {}, "git_status_sha256": None}
@@ -483,10 +475,11 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
         "_overlay_evidence",
         lambda *_args: overlay_snapshot,
     )
-    monkeypatch.setattr(
-        module,
-        "_wait_for_terminal_backfill",
-        lambda *_args: [
+    checkpoint_requests: list[tuple[str, ...]] = []
+
+    def terminal_checkpoints(_inputs, _token, space_ids):
+        checkpoint_requests.append(space_ids)
+        return [
             {
                 "space_id": space_id,
                 "status": "completed",
@@ -494,11 +487,10 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
                 "unchanged": 1,
                 "failed": 0,
             }
-            for space_id in sorted(
-                manifest_payload["expected"]["checkpoint_space_ids"]
-            )
-        ],
-    )
+            for space_id in sorted(space_ids)
+        ]
+
+    monkeypatch.setattr(module, "_wait_for_terminal_backfill", terminal_checkpoints)
 
     def read_only_run(run_inputs):
         module._write_report(
@@ -533,6 +525,29 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
     assert report["controlled_proof"]["restart_verified"] is True
     assert report["controlled_proof"]["prior_instance_pid"] == 12344
     assert report["controlled_proof"]["current_instance_pid"] == 12345
+    expected_child_space = (
+        "knowledge_engine_space:"
+        + hashlib.sha256(b"vault_mount:child").hexdigest()
+    )
+    assert checkpoint_requests == [
+        tuple(
+            sorted(
+                (
+                    "knowledge_engine_space:overlay",
+                    "knowledge_engine_space:parent",
+                    expected_child_space,
+                )
+            )
+        )
+    ]
+    assert {
+        item["space_id"]
+        for item in report["controlled_proof"]["backfill_after_restart"]
+    } == {
+        "knowledge_engine_space:overlay",
+        "knowledge_engine_space:parent",
+        expected_child_space,
+    }
 
 
 def test_controlled_proof_refuses_aliasing_its_restart_state_and_report(

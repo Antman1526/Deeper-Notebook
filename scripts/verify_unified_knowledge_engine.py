@@ -1060,7 +1060,7 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
         "minimum_tasks",
         "minimum_graph_edges",
         "minimum_trust_records",
-        "checkpoint_space_ids",
+        "startup_checkpoint_space_ids",
     }
     integer_fields = {
         "overlay_revision",
@@ -1074,21 +1074,23 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
         set(expected) != required
         or not all(
             isinstance(expected[key], str)
-            for key in required - integer_fields - {"checkpoint_space_ids"}
+            for key in required
+            - integer_fields
+            - {"startup_checkpoint_space_ids"}
         )
         or any(
             isinstance(expected[key], bool) or not isinstance(expected[key], int)
             for key in integer_fields
         )
-        or not isinstance(expected["checkpoint_space_ids"], list)
-        or not 1 <= len(expected["checkpoint_space_ids"]) <= 32
+        or not isinstance(expected["startup_checkpoint_space_ids"], list)
+        or not 1 <= len(expected["startup_checkpoint_space_ids"]) <= 32
         or any(
             not isinstance(space_id, str)
             or _SPACE_ID_PATTERN.fullmatch(space_id) is None
-            for space_id in expected["checkpoint_space_ids"]
+            for space_id in expected["startup_checkpoint_space_ids"]
         )
-        or len(set(expected["checkpoint_space_ids"]))
-        != len(expected["checkpoint_space_ids"])
+        or len(set(expected["startup_checkpoint_space_ids"]))
+        != len(expected["startup_checkpoint_space_ids"])
     ):
         raise VerificationRefusal("synthetic_manifest_invalid")
     relative_manifest = PurePosixPath(expected["manifest_relative_path"])
@@ -1125,7 +1127,7 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
     backfill_before_restart = _wait_for_terminal_backfill(
         inputs,
         token,
-        tuple(expected["checkpoint_space_ids"]),
+        tuple(expected["startup_checkpoint_space_ids"]),
     )
     overlay_status, overlay_payload = _json_request(
         inputs,
@@ -1273,13 +1275,29 @@ def _controlled_verify(inputs: Inputs, manifest: dict[str, Any], token: str) -> 
         != prior_identity.get("overlay_root_sha256")
     ):
         return 3
-    expected_checkpoint_space_ids = tuple(
-        manifest["expected"].get("checkpoint_space_ids", ())
+    parent_id = prior.get("parent_vault_id")
+    child_id = prior.get("child_vault_id")
+    if (
+        not isinstance(parent_id, str)
+        or not isinstance(child_id, str)
+        or _RECORD_ID_PATTERN.fullmatch(parent_id) is None
+        or _RECORD_ID_PATTERN.fullmatch(child_id) is None
+    ):
+        raise VerificationRefusal("synthetic_manifest_invalid")
+    startup_checkpoint_space_ids = tuple(
+        manifest["expected"].get("startup_checkpoint_space_ids", ())
+    )
+    child_space_id = (
+        "knowledge_engine_space:"
+        f"{hashlib.sha256(child_id.encode()).hexdigest()}"
+    )
+    restart_checkpoint_space_ids = tuple(
+        sorted({*startup_checkpoint_space_ids, child_space_id})
     )
     backfill_after_restart = _wait_for_terminal_backfill(
         inputs,
         token,
-        expected_checkpoint_space_ids,
+        restart_checkpoint_space_ids,
     )
     prior_checkpoints = prior.get("backfill_before_restart")
     if (
@@ -1289,7 +1307,7 @@ def _controlled_verify(inputs: Inputs, manifest: dict[str, Any], token: str) -> 
             for item in prior_checkpoints
             if isinstance(item, dict)
         }
-        != set(expected_checkpoint_space_ids)
+        != set(startup_checkpoint_space_ids)
         or any(
             not isinstance(item, dict) or item.get("status") != "completed"
             for item in prior_checkpoints
@@ -1306,15 +1324,6 @@ def _controlled_verify(inputs: Inputs, manifest: dict[str, Any], token: str) -> 
     }
     if current_evidence != prior.get("external_after"):
         return 3
-    parent_id = prior.get("parent_vault_id")
-    child_id = prior.get("child_vault_id")
-    if (
-        not isinstance(parent_id, str)
-        or not isinstance(child_id, str)
-        or _RECORD_ID_PATTERN.fullmatch(parent_id) is None
-        or _RECORD_ID_PATTERN.fullmatch(child_id) is None
-    ):
-        raise VerificationRefusal("synthetic_manifest_invalid")
     projection_snapshot = _capture_projection_snapshot(
         inputs,
         token,
