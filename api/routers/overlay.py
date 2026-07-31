@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import re
@@ -105,6 +106,7 @@ class _BoundedOverlayRoute(APIRoute):
 router = APIRouter(route_class=_BoundedOverlayRoute)
 _KNOWLEDGE_DOCUMENT_ID = re.compile(r"^knowledge_engine_document:[A-Za-z0-9_-]+$")
 _KNOWLEDGE_BLOCK_ID = re.compile(r"^knowledge_engine_block:[A-Za-z0-9_-]+$")
+_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS = 0.25
 
 
 class _OverlayProofIdentity(BaseModel):
@@ -190,8 +192,11 @@ async def _enrich_page_identity(request: Request, page: OverlayPage) -> OverlayP
                 if isinstance(key, str)
             )
         )
-        resolved = await service.resolve_legacy_page(
-            legacy_note_id=str(page.note["id"]), block_keys=keys
+        resolved = await asyncio.wait_for(
+            service.resolve_legacy_page(
+                legacy_note_id=str(page.note["id"]), block_keys=keys
+            ),
+            timeout=_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS,
         )
         document_id = getattr(resolved, "document_id", None)
         block_ids = getattr(resolved, "block_ids", None)

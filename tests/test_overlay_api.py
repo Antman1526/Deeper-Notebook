@@ -401,6 +401,37 @@ def test_overlay_identity_enrichment_fails_open_for_malformed_service_data(clien
     assert "knowledge_block_id" not in response.json()["blocks"][0]
 
 
+@pytest.mark.asyncio
+async def test_overlay_identity_enrichment_times_out_without_blocking_canonical_reads(
+    monkeypatch,
+):
+    from api.routers import overlay as overlay_router
+
+    class _NeverCompletes:
+        async def resolve_legacy_page(self, **_kwargs):
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        overlay_router, "_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS", 0.01, raising=False
+    )
+    page = _page(
+        _note(
+            "overlay_note:timeout", kind="unique", title="Timeout", date_key=None
+        )
+    )
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(knowledge_engine_service=_NeverCompletes())
+        )
+    )
+
+    result = await asyncio.wait_for(
+        overlay_router._enrich_page_identity(request, page), timeout=0.1
+    )
+
+    assert result == page
+
+
 def test_unique_and_update_require_strict_revision_contract(client):
     test_client, _ = client
     created = test_client.post(
