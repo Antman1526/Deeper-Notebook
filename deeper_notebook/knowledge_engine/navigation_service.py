@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+from collections.abc import Callable
 from typing import Any
 
 from deeper_notebook.knowledge_engine.navigation_contracts import (
@@ -26,6 +28,8 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     NamedKnowledgeWorkspace,
     NamedKnowledgeWorkspaceSummary,
     NavigationReceipt,
+    RandomNoteFilters,
+    RandomNoteResult,
     UpdateBookmark,
     UpdateFolder,
     UpdateWorkspace,
@@ -39,6 +43,14 @@ from deeper_notebook.knowledge_engine.navigation_repository import (
 from deeper_notebook.knowledge_engine.repository import KnowledgeRepositoryError
 
 
+class KnowledgeNavigationServiceError(RuntimeError):
+    """Stable, scrubbed service validation or availability failure."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
 class KnowledgeNavigationService:
     """Keep durable metadata useful when optional engine hydration is absent."""
 
@@ -47,9 +59,34 @@ class KnowledgeNavigationService:
         *,
         metadata_repository: KnowledgeNavigationRepository,
         engine_repository: Any | None = None,
+        random_index: Callable[[int], int] = secrets.randbelow,
     ) -> None:
         self.metadata_repository = metadata_repository
         self.engine_repository = engine_repository
+        self._random_index = random_index
+
+    async def random_note(self, filters: RandomNoteFilters) -> RandomNoteResult:
+        count = await self.metadata_repository.random_candidate_count(filters)
+        if count == 0:
+            return RandomNoteResult(state="empty", document=None)
+        offset = self._random_index(count)
+        if (
+            isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or not 0 <= offset < count
+        ):
+            raise KnowledgeNavigationServiceError("random_selector_invalid")
+        document = await self.metadata_repository.random_candidate_at(filters, offset)
+        if document is None:
+            count = await self.metadata_repository.random_candidate_count(filters)
+            if count == 0:
+                return RandomNoteResult(state="empty", document=None)
+            document = await self.metadata_repository.random_candidate_at(
+                filters, min(offset, count - 1)
+            )
+        if document is None:
+            raise KnowledgeNavigationServiceError("knowledge_engine_unavailable")
+        return RandomNoteResult(state="selected", document=document)
 
     async def _engine_call(self, method: str, *args: object, **kwargs: object) -> Any:
         repository = self.engine_repository
@@ -293,4 +330,4 @@ class KnowledgeNavigationService:
                     raise ValueError("workspace block target is required")
 
 
-__all__ = ["KnowledgeNavigationService"]
+__all__ = ["KnowledgeNavigationService", "KnowledgeNavigationServiceError"]

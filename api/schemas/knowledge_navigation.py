@@ -20,6 +20,8 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     NamedKnowledgeWorkspace,
     NamedKnowledgeWorkspaceSummary,
     NavigationReceipt,
+    RandomNoteFilters,
+    RandomNoteResult,
     UpdateBookmark,
     UpdateFolder,
     UpdateWorkspace,
@@ -73,6 +75,14 @@ class KnowledgeWorkspaceDeleteRequest(DeleteWorkspace):
 
 class KnowledgeWorkspaceRestorePlanRequest(_StrictResponse):
     revision: int = Field(ge=1)
+
+
+class RandomNoteRequest(RandomNoteFilters):
+    pass
+
+
+class RandomNoteResponse(RandomNoteResult):
+    pass
 
 
 class BookmarkResponse(Bookmark):
@@ -142,4 +152,6 @@ __all__ = [
     "KnowledgeWorkspaceRestorePlanResponse",
     "KnowledgeWorkspaceUpdateRequest",
     "NavigationReceiptResponse",
+    "RandomNoteRequest",
+    "RandomNoteResponse",
 ]
