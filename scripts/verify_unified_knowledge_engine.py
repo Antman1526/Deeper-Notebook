@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,9 +25,12 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_SYNTHETIC_FILES = 10_000
 MAX_SYNTHETIC_FILE_BYTES = 10 * 1024 * 1024
 MAX_SYNTHETIC_TOTAL_BYTES = 100 * 1024 * 1024
+SCAN_STABILIZATION_SECONDS = 2.1
 _SPACE_ID_PATTERN = re.compile(r"^knowledge_engine_space:[A-Za-z0-9_-]+$")
 _RECORD_ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*:[A-Za-z0-9_-]+$")
 _HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_FILE_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
+_EVIDENCE_PARSE_STATUSES = frozenset({"parsed", "unsupported", "invalid"})
 _KNOWN_MISMATCH_CODES = frozenset(
     {
         "space_id_mismatch",
@@ -234,7 +238,7 @@ def _safe_synthetic_root(path: Path, marker: str, protected: tuple[Path, ...]) -
 
 
 def _proof_path(value: Any, temporary_root: Path) -> Path:
-    if not isinstance(value, str):
+    if not isinstance(value, (str, Path)):
         raise ValueError
     candidate = Path(value).absolute()
     parent = candidate.parent.absolute()
@@ -301,6 +305,26 @@ def _synthetic_git_digest(root: Path) -> str | None:
     if result.returncode != 0:
         raise VerificationRefusal("synthetic_manifest_invalid")
     return hashlib.sha256(result.stdout).hexdigest()
+
+
+def _synthetic_root_evidence(
+    root_name: str,
+    root: Path,
+    marker: str,
+) -> dict[str, Any]:
+    if root_name not in {"overlay", "parent", "child"}:
+        raise VerificationRefusal("synthetic_manifest_invalid")
+    fingerprints = _synthetic_fingerprints(root, marker)
+    if root_name == "overlay":
+        fingerprints = {
+            relative_path: digest
+            for relative_path, digest in fingerprints.items()
+            if not relative_path.startswith("logs/")
+        }
+    return {
+        "fingerprints": fingerprints,
+        "git_status_sha256": _synthetic_git_digest(root),
+    }
 
 
 def _proof_manifest(inputs: Inputs) -> dict[str, Any]:
@@ -542,9 +566,13 @@ def _file_evidence(
             raise VerificationRefusal("api_response_invalid")
         file_id = _record_id(item.get("id"))
         note_id = _record_id(item.get("note_id"))
+        parse_status = item.get("parse_status")
+        file_kind = item.get("file_kind")
         if (
             _record_id(item.get("vault_id")) != vault_id
-            or item.get("parse_status") != "parsed"
+            or parse_status not in _EVIDENCE_PARSE_STATUSES
+            or not isinstance(file_kind, str)
+            or _FILE_KIND_PATTERN.fullmatch(file_kind) is None
             or item.get("deleted_state") != "present"
         ):
             raise VerificationRefusal("api_response_invalid")
@@ -558,10 +586,13 @@ def _file_evidence(
                     relative_path.encode()
                 ).hexdigest(),
                 "source_hash": source_hash,
-                "parse_status": "parsed",
+                "file_kind": file_kind,
+                "parse_status": parse_status,
                 "deleted_state": "present",
             }
         )
+        if parse_status != "parsed":
+            continue
         page_base = (
             f"/api/deeper-notebook/vaults/{urllib.parse.quote(vault_id, safe=':')}"
             f"/pages/{urllib.parse.quote(note_id, safe=':')}"
@@ -909,6 +940,47 @@ def _write_report(path: Path, report: dict[str, Any]) -> None:
             temporary.unlink()
 
 
+def _scan_vaults(inputs: Inputs, token: str, vault_ids: tuple[str, ...]) -> bool:
+    if not vault_ids or len(vault_ids) != len(set(vault_ids)):
+        raise VerificationRefusal("synthetic_manifest_invalid")
+    for vault_id in vault_ids:
+        _record_id(vault_id)
+    count_fields = (
+        "observed",
+        "parsed",
+        "unchanged",
+        "unsupported",
+        "invalid",
+        "missing",
+    )
+    for round_index in range(2):
+        for vault_id in vault_ids:
+            scan_status, scan = _json_request(
+                inputs,
+                token,
+                "POST",
+                f"/api/deeper-notebook/vaults/"
+                f"{urllib.parse.quote(vault_id, safe=':')}/scan",
+                {},
+            )
+            if (
+                scan_status != 200
+                or not isinstance(scan, dict)
+                or scan.get("state")
+                not in {"ready-read-only", "degraded", "conflict", "unavailable"}
+                or any(
+                    isinstance(scan.get(field), bool)
+                    or not isinstance(scan.get(field), int)
+                    or scan[field] < 0
+                    for field in count_fields
+                )
+            ):
+                return False
+        if round_index == 0:
+            time.sleep(SCAN_STABILIZATION_SECONDS)
+    return True
+
+
 def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) -> int:
     """Run the narrowly allowlisted synthetic mutations, then require restart."""
     expected = manifest["expected"]
@@ -966,10 +1038,11 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
 
     def root_evidence() -> dict[str, dict[str, Any]]:
         return {
-            name: {
-                "fingerprints": _synthetic_fingerprints(Path(root), manifest["marker"]),
-                "git_status_sha256": _synthetic_git_digest(Path(root)),
-            }
+            name: _synthetic_root_evidence(
+                name,
+                Path(root),
+                manifest["marker"],
+            )
             for name, root in manifest["roots"].items()
         }
 
@@ -1036,34 +1109,8 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
         or child.get("watch_enabled") is not False
     ):
         return 3
-    for vault_id in (parent_id, child["id"]):
-        scan_status, scan = _json_request(
-            inputs,
-            token,
-            "POST",
-            f"/api/deeper-notebook/vaults/{urllib.parse.quote(vault_id, safe=':')}/scan",
-            {},
-        )
-        if (
-            scan_status != 200
-            or not isinstance(scan, dict)
-            or scan.get("state")
-            not in {"ready-read-only", "degraded", "conflict", "unavailable"}
-            or any(
-                isinstance(scan.get(field), bool)
-                or not isinstance(scan.get(field), int)
-                or scan[field] < 0
-                for field in (
-                    "observed",
-                    "parsed",
-                    "unchanged",
-                    "unsupported",
-                    "invalid",
-                    "missing",
-                )
-            )
-        ):
-            return 3
+    if not _scan_vaults(inputs, token, (parent_id, child["id"])):
+        return 3
     trust_path = expected["manifest_relative_path"]
     imports = [
         _json_request(
@@ -1147,10 +1194,11 @@ def _controlled_verify(inputs: Inputs, manifest: dict[str, Any], token: str) -> 
     ):
         return 3
     current_evidence = {
-        name: {
-            "fingerprints": _synthetic_fingerprints(Path(root), manifest["marker"]),
-            "git_status_sha256": _synthetic_git_digest(Path(root)),
-        }
+        name: _synthetic_root_evidence(
+            name,
+            Path(root),
+            manifest["marker"],
+        )
         for name, root in manifest["roots"].items()
     }
     if current_evidence != prior.get("external_after"):

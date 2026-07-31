@@ -512,6 +512,92 @@ def test_controlled_proof_refuses_aliasing_its_restart_state_and_report(
     assert result.stderr.strip() == "synthetic_manifest_invalid"
 
 
+def test_controlled_manifest_accepts_the_argparse_path_object(tmp_path: Path) -> None:
+    module = _verifier_module()
+    inputs = _inputs(tmp_path)
+    manifest = _marked_manifest(tmp_path, inputs)
+    parsed_inputs = module.Inputs(
+        api_url="http://127.0.0.1:18181",
+        token_path=inputs["token"].resolve(),
+        report_path=inputs["report"],
+        space_ids=("knowledge_engine_space:fixture",),
+        exact_queries=("research",),
+        require_shadow_enabled=True,
+        proof_phase="prepare",
+        synthetic_manifest=manifest,
+        expected_prior_state=inputs["state"],
+    )
+
+    payload = module._proof_manifest(parsed_inputs)
+
+    assert payload["schema_version"] == 1
+    assert payload["expected"]["parent_vault_id"] == "vault_mount:parent"
+
+
+def test_controlled_scan_runs_two_rounds_across_the_stabilization_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _verifier_module()
+    inputs = module.Inputs(
+        api_url="http://127.0.0.1:18181",
+        token_path=tmp_path / "token",
+        report_path=tmp_path / "report.json",
+        space_ids=("knowledge_engine_space:fixture",),
+        exact_queries=("research",),
+        require_shadow_enabled=True,
+    )
+    calls: list[str] = []
+    sleeps: list[float] = []
+
+    def fake_request(_inputs, _token, _method, path, _payload):
+        calls.append(path)
+        return 200, {
+            "state": "ready-read-only",
+            "observed": 1,
+            "parsed": 0 if len(calls) <= 2 else 1,
+            "unchanged": 0,
+            "unsupported": 0,
+            "invalid": 0,
+            "missing": 0,
+        }
+
+    monkeypatch.setattr(module, "_json_request", fake_request)
+    monkeypatch.setattr(module.time, "sleep", sleeps.append)
+
+    assert module._scan_vaults(
+        inputs,
+        "test-token",
+        ("vault_mount:parent", "vault_mount:child"),
+    )
+    assert calls == [
+        "/api/deeper-notebook/vaults/vault_mount:parent/scan",
+        "/api/deeper-notebook/vaults/vault_mount:child/scan",
+        "/api/deeper-notebook/vaults/vault_mount:parent/scan",
+        "/api/deeper-notebook/vaults/vault_mount:child/scan",
+    ]
+    assert sleeps == [module.SCAN_STABILIZATION_SECONDS]
+
+
+def test_overlay_runtime_logs_are_excluded_from_source_fingerprints(
+    tmp_path: Path,
+) -> None:
+    module = _verifier_module()
+    marker = ".deeper-notebook-synthetic-proof-v1"
+    overlay = tmp_path / "overlay"
+    parent = tmp_path / "parent"
+    for root in (overlay, parent):
+        (root / "logs").mkdir(parents=True)
+        (root / marker).write_text("synthetic-proof-v1\n", encoding="utf-8")
+        (root / "Source.md").write_text("# Source\n", encoding="utf-8")
+        (root / "logs" / "api.log").write_text("runtime log\n", encoding="utf-8")
+
+    overlay_evidence = module._synthetic_root_evidence("overlay", overlay, marker)
+    parent_evidence = module._synthetic_root_evidence("parent", parent, marker)
+
+    assert set(overlay_evidence["fingerprints"]) == {"Source.md"}
+    assert set(parent_evidence["fingerprints"]) == {"Source.md", "logs/api.log"}
+
+
 def test_projection_capture_is_bounded_redacted_and_proves_required_membership(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -555,8 +641,19 @@ def test_projection_capture_is_bounded_redacted_and_proves_required_membership(
                 "note_id": "note:parent",
                 "vault_id": parent_id,
                 "relative_path": "Parent.md",
+                "file_kind": "markdown",
                 "content_hash": "a" * 64,
                 "parse_status": "parsed",
+                "deleted_state": "present",
+            },
+            {
+                "id": "vault_file:trust",
+                "note_id": "note:trust",
+                "vault_id": parent_id,
+                "relative_path": "brain-engine/trust.json",
+                "file_kind": "connector",
+                "content_hash": "d" * 64,
+                "parse_status": "unsupported",
                 "deleted_state": "present",
             }
         ],
@@ -566,6 +663,7 @@ def test_projection_capture_is_bounded_redacted_and_proves_required_membership(
                 "note_id": "note:child_a",
                 "vault_id": child_id,
                 "relative_path": "Child A.md",
+                "file_kind": "markdown",
                 "content_hash": "b" * 64,
                 "parse_status": "parsed",
                 "deleted_state": "present",
@@ -575,6 +673,7 @@ def test_projection_capture_is_bounded_redacted_and_proves_required_membership(
                 "note_id": "note:child_b",
                 "vault_id": child_id,
                 "relative_path": "Child B.md",
+                "file_kind": "markdown",
                 "content_hash": "c" * 64,
                 "parse_status": "parsed",
                 "deleted_state": "present",
@@ -703,6 +802,10 @@ def test_projection_capture_is_bounded_redacted_and_proves_required_membership(
     )
 
     rendered = json.dumps(snapshot, sort_keys=True)
+    assert snapshot["counts"]["parent_files"] == 2
+    assert {
+        (item["file_kind"], item["parse_status"]) for item in snapshot["files"]
+    } >= {("connector", "unsupported"), ("markdown", "parsed")}
     assert snapshot["counts"]["tasks"] == 1
     assert snapshot["counts"]["graph_edges"] >= 1
     assert snapshot["counts"]["trust_records"] == 1
