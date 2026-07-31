@@ -339,10 +339,11 @@ class Fixture:
         self.repository = MemoryRepository()
         self.clock = lambda: NOW
 
-    def service(self) -> OverlayService:
+    def service(self, *, shadow_projector=None) -> OverlayService:
         return OverlayService(
             self.repository,
             self.storage,
+            shadow_projector=shadow_projector,
             clock=self.clock,
         )
 
@@ -378,6 +379,28 @@ async def test_concurrent_commit_replay_hydrates_editable_markdown(fixture):
     assert page.editable_markdown == "# Research\n"
     assert page.note["content"].startswith("---\n")
     assert fixture.repository.commit_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_shadow_failure_does_not_undo_a_committed_overlay_revision(fixture):
+    class FailingShadowProjector:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def project_overlay(self, **kwargs) -> None:
+            self.calls.append(kwargs)
+            raise RuntimeError("knowledge_engine_repository_unavailable")
+
+    shadow = FailingShadowProjector()
+    page = await fixture.service(shadow_projector=shadow).create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="shadow-contained")
+    )
+
+    assert page.overlay.revision == 1
+    assert shadow.calls[0]["canonical_markdown"].startswith("---\n")
+    assert shadow.calls[0]["canonical_markdown"].encode("utf-8") == (
+        fixture.storage.read(page.overlay.relative_path).markdown.encode("utf-8")
+    )
 
 
 @pytest.mark.asyncio

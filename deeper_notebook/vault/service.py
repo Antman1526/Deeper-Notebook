@@ -16,6 +16,7 @@ from loguru import logger
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from deeper_notebook.knowledge_engine.shadow import KnowledgeShadowProjector
 from deeper_notebook.vault.contracts import VaultState
 from deeper_notebook.vault.parsers import VaultParseError, parse_document
 from deeper_notebook.vault.repository import VaultMount, VaultMountCreate
@@ -108,10 +109,12 @@ class VaultService:
         self,
         repository: _Repository,
         *,
+        shadow_projector: KnowledgeShadowProjector | None = None,
         stable_after_seconds: float = 2.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._repository = repository
+        self._shadow_projector = shadow_projector
         self._stable_after_seconds = max(2.0, stable_after_seconds)
         self._clock = clock
         self._watchers: dict[str, VaultWatcher] = {}
@@ -335,6 +338,27 @@ class VaultService:
             return VaultScanResult(
                 mount.id, "conflict", operation_id, reconciliation_required=True
             )
+        if (
+            self._shadow_projector is not None
+            and result.status in {"projected", "unchanged"}
+            and parsed.source_format in {"obsidian", "logseq", "markdown"}
+        ):
+            try:
+                await self._shadow_projector.project_external(
+                    legacy_operation_id=operation_id,
+                    mount=mount,
+                    observation=item,
+                    source_kind=parsed.source_format,
+                    vault_file_id=result.vault_file_id,
+                    projected_note_id=result.note_id,
+                )
+            except Exception:
+                logger.warning(
+                    "Knowledge shadow failed vault_id={} operation_id={} code={}",
+                    mount.id,
+                    operation_id,
+                    "knowledge_engine_shadow_failed",
+                )
         handoff = await watcher.acknowledge_projected(
             item.relative_path, item.content_hash
         )

@@ -6,6 +6,9 @@ import hashlib
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+from loguru import logger
 
 from deeper_notebook.overlay.contracts import (
     CreateDailyNote,
@@ -35,6 +38,9 @@ from deeper_notebook.overlay.storage import (
 )
 from deeper_notebook.vault.parsers import parse_document
 from deeper_notebook.vault.parsers.common import decode_source
+
+if TYPE_CHECKING:
+    from deeper_notebook.knowledge_engine.shadow import KnowledgeShadowProjector
 
 
 def _now() -> datetime:
@@ -75,10 +81,12 @@ class OverlayService:
         repository: OverlayRepository,
         storage: OverlayStorage,
         *,
+        shadow_projector: KnowledgeShadowProjector | None = None,
         clock: Callable[[], datetime] = _now,
     ) -> None:
         self.repository = repository
         self.storage = storage
+        self._shadow_projector = shadow_projector
         self.clock = clock
 
     async def create_daily(self, request: CreateDailyNote) -> OverlayPage:
@@ -368,7 +376,7 @@ class OverlayService:
             await self._record_failure(reservation, "overlay_parser_failed")
             raise OverlayRepositoryError("overlay_projection_pending") from None
         try:
-            await self.repository.commit_revision(
+            committed_note = await self.repository.commit_revision(
                 reservation=reservation,
                 content_hash=snapshot.content_hash,
                 byte_size=snapshot.byte_size,
@@ -390,7 +398,31 @@ class OverlayService:
                 "overlay_projection_pending",
             )
             raise OverlayRepositoryError("overlay_projection_pending") from None
+        await self._project_shadow(reservation, committed_note, stored)
         return await self.get_page(reservation.overlay_note_id)
+
+    async def _project_shadow(
+        self,
+        reservation: OverlayReservation,
+        overlay_note: OverlayNote,
+        stored: StoredOverlayBytes,
+    ) -> None:
+        if self._shadow_projector is None:
+            return
+        try:
+            await self._shadow_projector.project_overlay(
+                legacy_operation_id=reservation.operation_id,
+                overlay_note=overlay_note,
+                canonical_markdown=stored.markdown,
+                observed_modified_ns=stored.modified_ns,
+            )
+        except Exception:
+            logger.warning(
+                "Knowledge shadow failed space_id={} operation_id={} code={}",
+                overlay_note.space_id,
+                reservation.operation_id,
+                "knowledge_engine_shadow_failed",
+            )
 
     def _validate_reserved_bytes(
         self,
