@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 
-**Status:** Approved in design review; written-spec review pending
+**Status:** Approved in design and written-spec review
 
 **Baseline:** local `main` at `4d7ee247`
 
