@@ -127,6 +127,15 @@ class FakeRepository:
         )
 
 
+class FailingShadowProjector:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def project_external(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+        raise RuntimeError("knowledge_engine_repository_unavailable")
+
+
 def _mount(
     root: Path, *, name: str = "fixture", parent_vault_id: str | None = None
 ) -> VaultMount:
@@ -459,6 +468,33 @@ async def test_one_scan_operation_id_is_reused_for_every_projected_file(
     assert {operation for _, _, operation in repository.projections} == {
         result.operation_id
     }
+
+
+@pytest.mark.asyncio
+async def test_shadow_failure_does_not_undo_a_proven_vault_projection(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "shadow-contained"
+    root.mkdir()
+    source = b"# Research\n"
+    (root / "Research.md").write_bytes(source)
+    repository = FakeRepository([_mount(root)], [], [])
+    shadow = FailingShadowProjector()
+    moments = iter((1.0, 3.0))
+    service = VaultService(
+        repository,
+        shadow_projector=shadow,
+        stable_after_seconds=0,
+        clock=lambda: next(moments),
+    )
+
+    await service.scan("vault_mount:fixture")
+    result = await service.scan("vault_mount:fixture")
+
+    assert result.projected == 1
+    assert len(repository.projections) == 1
+    assert shadow.calls[0]["observation"].content == source
+    assert shadow.calls[0]["source_kind"] == "markdown"
 
 
 @pytest.mark.asyncio
