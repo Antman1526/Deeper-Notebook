@@ -23,6 +23,8 @@ def envelope(
     authority: str,
     *,
     raw: bytes | None = None,
+    format_mode: str | None = None,
+    relative_locator: str | None = None,
 ) -> SourceEnvelope:
     canonical_bytes = raw if raw is not None else (FIXTURES / name).read_bytes()
     return SourceEnvelope(
@@ -31,8 +33,12 @@ def envelope(
         source_ref=f"fixture:{source_kind}",
         authority_kind=authority,
         source_kind=source_kind,
-        format_mode="markdown" if source_kind == "overlay" else source_kind,
-        relative_locator=f"Pages/{name}",
+        format_mode=(
+            format_mode
+            if format_mode is not None
+            else ("markdown" if source_kind == "overlay" else source_kind)
+        ),
+        relative_locator=relative_locator or f"Pages/{name}",
         canonical_bytes=canonical_bytes,
         byte_size=len(canonical_bytes),
         declared_encoding=None,
@@ -67,6 +73,76 @@ def test_adapters_are_deterministic_and_authority_preserving(
     assert first.document.space_id == source.space_id
     assert first.document.authority_kind == authority
     assert first.revision.content_hash == source.observed_content_hash
+
+
+@pytest.mark.parametrize(
+    ("fixture", "source_kind", "relative_locator", "raw"),
+    [
+        ("obsidian-page.md", "obsidian", "Pages/obsidian-page.md", None),
+        ("logseq-journal.md", "logseq", "Pages/logseq-journal.md", None),
+        (
+            "markdown-page.md",
+            "markdown",
+            "Obsidian Brain/markdown-page.md",
+            b"# Portable Page\n\nParagraph ^markdown-only\n",
+        ),
+    ],
+)
+def test_external_adapters_accept_mixed_policy_without_redetecting_format(
+    fixture: str,
+    source_kind: str,
+    relative_locator: str,
+    raw: bytes | None,
+):
+    source = envelope(
+        fixture,
+        source_kind,
+        "external_read_only",
+        raw=raw,
+        format_mode="mixed",
+        relative_locator=relative_locator,
+    )
+
+    first = adapter_for(source_kind).project(source)
+    second = adapter_for(source_kind).project(source)
+
+    assert first == second
+    assert first.space.format_mode == "mixed"
+    assert "edit_body" not in first.document.capabilities
+    if source_kind == "obsidian":
+        assert "task-one" in {
+            claim.legacy_id for claim in first.identity_claims
+        }
+    elif source_kind == "logseq":
+        assert [task.raw_status for task in first.tasks] == ["TODO", "DONE"]
+    else:
+        assert "markdown-only" not in {
+            claim.legacy_id for claim in first.identity_claims
+        }
+
+
+@pytest.mark.parametrize(
+    ("fixture", "source_kind", "incompatible_format"),
+    [
+        ("obsidian-page.md", "obsidian", "logseq"),
+        ("logseq-journal.md", "logseq", "markdown"),
+        ("markdown-page.md", "markdown", "obsidian"),
+    ],
+)
+def test_external_adapters_reject_incompatible_non_mixed_format(
+    fixture: str,
+    source_kind: str,
+    incompatible_format: str,
+):
+    source = envelope(
+        fixture,
+        source_kind,
+        "external_read_only",
+        format_mode=incompatible_format,
+    )
+
+    with pytest.raises(ValueError, match="format mode mismatch"):
+        adapter_for(source_kind).project(source)
 
 
 def test_external_adapters_never_emit_mutation_capabilities():
