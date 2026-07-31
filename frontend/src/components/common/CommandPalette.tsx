@@ -272,6 +272,13 @@ export function CommandPalette() {
       focusLinks: page.context.linksElement?.isConnected
         ? () => page.context?.linksElement?.focus()
         : null,
+      bookmarkCurrentTarget: page.context.bookmarkCurrentTarget ?? null,
+      openBookmarks: page.context.openBookmarks ?? null,
+      randomNote: page.context.randomNote ?? null,
+      openWorkspaces: page.context.openWorkspaces ?? null,
+      saveWorkspaceAs: page.context.saveWorkspaceAs ?? null,
+      replaceWorkspace: page.context.replaceWorkspace ?? null,
+      toggleMetrics: page.context.toggleMetrics ?? null,
       moveTab: offset => {
         const current = useKnowledgeWorkspaceStore.getState()
         const currentPane = current.panes[current.activePaneId]

@@ -276,8 +276,9 @@ export const jaJP = {
       requiresSelectedVault: "先に保管庫を選択してください",
       requiresFileTree: "ファイルツリーを利用できません",
       requiresLinks: "ノートリンクを利用できません",
+      bookmarkCurrent: "現在の対象をブックマーク", openBookmarks: "ブックマークを開く", randomNote: "ランダムノート", openWorkspaces: "ワークスペースを開く", saveWorkspaceAs: "ワークスペースに名前を付けて保存", replaceWorkspace: "ワークスペースを置換", toggleMetrics: "文書メトリクスを切り替え",
     },
-
+    navigation: { sources: "ソース", bookmarks: "ブックマーク", randomNote: "ランダムノート", workspaces: "ワークスペース", currentSession: "現在のセッション", saveCurrentAs: "現在のセッションに名前を付けて保存", replaceWithCurrent: "現在のセッションで置換", openAvailable: "利用可能なものを開く", targetAvailable: "利用可能", targetStale: "古い", targetUnavailable: "利用不可", targetMissing: "見つかりません", appOwned: "アプリ所有", externalReadOnly: "外部読み取り専用", words: "{{count}} 語", characters: "{{count}} 文字", readingMinutes: "{{count}} 分で読めます", selectionMetrics: "選択範囲: {{words}} 語、{{characters}} 文字" },
   },
   notebooks: {
     title: "ノートブック",

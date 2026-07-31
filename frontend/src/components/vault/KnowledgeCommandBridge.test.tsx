@@ -20,6 +20,13 @@ function renderBridge() {
   const scanSelectedVault = vi.fn(async () => undefined)
   const openTodayOverlay = vi.fn(async () => undefined)
   const openUniqueOverlayDialog = vi.fn()
+  const bookmarkCurrentTarget = vi.fn(async () => undefined)
+  const openBookmarks = vi.fn()
+  const randomNote = vi.fn(async () => undefined)
+  const openWorkspaces = vi.fn()
+  const saveWorkspaceAs = vi.fn()
+  const replaceWorkspace = vi.fn()
+  const toggleMetrics = vi.fn()
   const activePaneElement = document.createElement('section')
   document.body.append(activePaneElement)
   const result = render(
@@ -39,10 +46,30 @@ function renderBridge() {
         scanSelectedVault={scanSelectedVault}
         openTodayOverlay={openTodayOverlay}
         openUniqueOverlayDialog={openUniqueOverlayDialog}
+        bookmarkCurrentTarget={bookmarkCurrentTarget}
+        openBookmarks={openBookmarks}
+        randomNote={randomNote}
+        openWorkspaces={openWorkspaces}
+        saveWorkspaceAs={saveWorkspaceAs}
+        replaceWorkspace={replaceWorkspace}
+        toggleMetrics={toggleMetrics}
       />
     </>,
   )
-  return { ...result, activePaneElement, scanSelectedVault, openTodayOverlay, openUniqueOverlayDialog }
+  return {
+    ...result,
+    activePaneElement,
+    scanSelectedVault,
+    openTodayOverlay,
+    openUniqueOverlayDialog,
+    bookmarkCurrentTarget,
+    openBookmarks,
+    randomNote,
+    openWorkspaces,
+    saveWorkspaceAs,
+    replaceWorkspace,
+    toggleMetrics,
+  }
 }
 
 describe('KnowledgeCommandBridge', () => {
@@ -100,6 +127,13 @@ describe('KnowledgeCommandBridge', () => {
       scanSelectedVault: expect.any(Function),
       openTodayOverlay: expect.any(Function),
       openUniqueOverlayDialog: expect.any(Function),
+      bookmarkCurrentTarget: expect.any(Function),
+      openBookmarks: expect.any(Function),
+      randomNote: expect.any(Function),
+      openWorkspaces: expect.any(Function),
+      saveWorkspaceAs: expect.any(Function),
+      replaceWorkspace: expect.any(Function),
+      toggleMetrics: expect.any(Function),
       activePaneElement,
     })
     unmount()

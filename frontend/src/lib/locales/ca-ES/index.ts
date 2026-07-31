@@ -281,8 +281,9 @@ export const caES = {
       requiresSelectedVault: "Selecciona primer una volta",
       requiresFileTree: "L'arbre de fitxers no està disponible",
       requiresLinks: "Els enllaços de la nota no estan disponibles",
+      bookmarkCurrent: "Afegeix la destinació actual a les adreces d'interès", openBookmarks: "Obre les adreces d'interès", randomNote: "Nota aleatòria", openWorkspaces: "Obre espais de treball", saveWorkspaceAs: "Desa l'espai de treball com a", replaceWorkspace: "Substitueix l'espai de treball", toggleMetrics: "Commuta les mètriques del document",
     },
-
+    navigation: { sources: "Fonts", bookmarks: "Adreces d'interès", randomNote: "Nota aleatòria", workspaces: "Espais de treball", currentSession: "Sessió actual", saveCurrentAs: "Desa la sessió actual com a", replaceWithCurrent: "Substitueix amb la sessió actual", openAvailable: "Obre els disponibles", targetAvailable: "Disponible", targetStale: "Obsolet", targetUnavailable: "No disponible", targetMissing: "Falta", appOwned: "Propietat de l'aplicació", externalReadOnly: "Extern de només lectura", words: "{{count}} paraules", characters: "{{count}} caràcters", readingMinutes: "{{count}} min de lectura", selectionMetrics: "Selecció: {{words}} paraules, {{characters}} caràcters" },
   },
   notebooks: {
     title: "Quaderns",

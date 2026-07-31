@@ -278,8 +278,9 @@ export const itIT = {
       requiresSelectedVault: "Seleziona prima una cassaforte",
       requiresFileTree: "Albero dei file non disponibile",
       requiresLinks: "Link della nota non disponibili",
+      bookmarkCurrent: "Aggiungi ai segnalibri la destinazione corrente", openBookmarks: "Apri segnalibri", randomNote: "Nota casuale", openWorkspaces: "Apri aree di lavoro", saveWorkspaceAs: "Salva area di lavoro con nome", replaceWorkspace: "Sostituisci area di lavoro", toggleMetrics: "Attiva/disattiva metriche del documento",
     },
-
+    navigation: { sources: "Fonti", bookmarks: "Segnalibri", randomNote: "Nota casuale", workspaces: "Aree di lavoro", currentSession: "Sessione corrente", saveCurrentAs: "Salva sessione corrente con nome", replaceWithCurrent: "Sostituisci con la sessione corrente", openAvailable: "Apri disponibili", targetAvailable: "Disponibile", targetStale: "Obsoleto", targetUnavailable: "Non disponibile", targetMissing: "Mancante", appOwned: "Di proprietà dell’app", externalReadOnly: "Esterno in sola lettura", words: "{{count}} parole", characters: "{{count}} caratteri", readingMinutes: "{{count}} min di lettura", selectionMetrics: "Selezione: {{words}} parole, {{characters}} caratteri" },
   },
   notebooks: {
     title: "Quaderni",

@@ -17,6 +17,13 @@ export interface KnowledgeCommandBridgeProps {
   scanSelectedVault: () => Promise<void>
   openTodayOverlay: () => Promise<void>
   openUniqueOverlayDialog: () => void
+  bookmarkCurrentTarget: () => Promise<void>
+  openBookmarks: () => void
+  randomNote: () => Promise<void>
+  openWorkspaces: () => void
+  saveWorkspaceAs: () => void
+  replaceWorkspace: () => void
+  toggleMetrics: () => void
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -35,6 +42,13 @@ export function KnowledgeCommandBridge({
   scanSelectedVault,
   openTodayOverlay,
   openUniqueOverlayDialog,
+  bookmarkCurrentTarget,
+  openBookmarks,
+  randomNote,
+  openWorkspaces,
+  saveWorkspaceAs,
+  replaceWorkspace,
+  toggleMetrics,
 }: KnowledgeCommandBridgeProps) {
   useEffect(() => {
     const generation = registerKnowledgeCommandContext({
@@ -45,9 +59,16 @@ export function KnowledgeCommandBridge({
       scanSelectedVault,
       openTodayOverlay,
       openUniqueOverlayDialog,
+      bookmarkCurrentTarget,
+      openBookmarks,
+      randomNote,
+      openWorkspaces,
+      saveWorkspaceAs,
+      replaceWorkspace,
+      toggleMetrics,
     })
     return () => clearKnowledgeCommandContext(generation)
-  }, [activePaneElement, fileTreeRef, linksRef, openTodayOverlay, openUniqueOverlayDialog, scanSelectedVault, selectedVaultId])
+  }, [activePaneElement, bookmarkCurrentTarget, fileTreeRef, linksRef, openBookmarks, openTodayOverlay, openUniqueOverlayDialog, openWorkspaces, randomNote, replaceWorkspace, saveWorkspaceAs, scanSelectedVault, selectedVaultId, toggleMetrics])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

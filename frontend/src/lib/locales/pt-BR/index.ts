@@ -277,8 +277,9 @@ export const ptBR = {
       requiresSelectedVault: "Selecione primeiro um cofre",
       requiresFileTree: "Árvore de arquivos indisponível",
       requiresLinks: "Links da nota indisponíveis",
+      bookmarkCurrent: "Favoritar destino atual", openBookmarks: "Abrir favoritos", randomNote: "Nota aleatória", openWorkspaces: "Abrir espaços de trabalho", saveWorkspaceAs: "Salvar espaço de trabalho como", replaceWorkspace: "Substituir espaço de trabalho", toggleMetrics: "Alternar métricas do documento",
     },
-
+    navigation: { sources: "Fontes", bookmarks: "Favoritos", randomNote: "Nota aleatória", workspaces: "Espaços de trabalho", currentSession: "Sessão atual", saveCurrentAs: "Salvar sessão atual como", replaceWithCurrent: "Substituir pela sessão atual", openAvailable: "Abrir disponíveis", targetAvailable: "Disponível", targetStale: "Desatualizado", targetUnavailable: "Indisponível", targetMissing: "Ausente", appOwned: "Pertencente ao aplicativo", externalReadOnly: "Externo somente leitura", words: "{{count}} palavras", characters: "{{count}} caracteres", readingMinutes: "{{count}} min de leitura", selectionMetrics: "Seleção: {{words}} palavras, {{characters}} caracteres" },
   },
   notebooks: {
     title: "Cadernos",

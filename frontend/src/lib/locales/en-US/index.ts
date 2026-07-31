@@ -280,8 +280,9 @@ export const enUS = {
       requiresSelectedVault: "Select a vault first",
       requiresFileTree: "File tree unavailable",
       requiresLinks: "Note links unavailable",
+      bookmarkCurrent: "Bookmark Current Target", openBookmarks: "Open Bookmarks", randomNote: "Random Note", openWorkspaces: "Open Workspaces", saveWorkspaceAs: "Save Workspace As", replaceWorkspace: "Replace Workspace", toggleMetrics: "Toggle Document Metrics",
     },
-
+    navigation: { sources: "Sources", bookmarks: "Bookmarks", randomNote: "Random Note", workspaces: "Workspaces", currentSession: "Current Session", saveCurrentAs: "Save Current As", replaceWithCurrent: "Replace With Current", openAvailable: "Open available", targetAvailable: "Available", targetStale: "Stale", targetUnavailable: "Unavailable", targetMissing: "Missing", appOwned: "App-owned", externalReadOnly: "External read-only", words: "{{count}} words", characters: "{{count}} characters", readingMinutes: "{{count}} min read", selectionMetrics: "Selection: {{words}} words, {{characters}} characters" },
   },
   notebooks: {
     title: "Notebooks",

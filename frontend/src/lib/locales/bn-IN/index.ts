@@ -276,8 +276,9 @@ export const bnIN = {
       requiresSelectedVault: "আগে একটি ভল্ট নির্বাচন করুন",
       requiresFileTree: "ফাইল ট্রি উপলব্ধ নয়",
       requiresLinks: "নোট লিঙ্ক উপলব্ধ নয়",
+      bookmarkCurrent: "বর্তমান লক্ষ্য বুকমার্ক করুন", openBookmarks: "বুকমার্ক খুলুন", randomNote: "এলোমেলো নোট", openWorkspaces: "কর্মক্ষেত্র খুলুন", saveWorkspaceAs: "কর্মক্ষেত্র নামে সংরক্ষণ করুন", replaceWorkspace: "কর্মক্ষেত্র প্রতিস্থাপন করুন", toggleMetrics: "নথির পরিমিতি বদলান",
     },
-
+    navigation: { sources: "উৎস", bookmarks: "বুকমার্ক", randomNote: "এলোমেলো নোট", workspaces: "কর্মক্ষেত্র", currentSession: "বর্তমান সেশন", saveCurrentAs: "বর্তমান সেশন নামে সংরক্ষণ করুন", replaceWithCurrent: "বর্তমান সেশন দিয়ে প্রতিস্থাপন করুন", openAvailable: "উপলব্ধগুলি খুলুন", targetAvailable: "উপলব্ধ", targetStale: "পুরোনো", targetUnavailable: "অনুপলব্ধ", targetMissing: "অনুপস্থিত", appOwned: "অ্যাপ-মালিকানাধীন", externalReadOnly: "বাহ্যিক শুধু-পঠন", words: "{{count}} শব্দ", characters: "{{count}} অক্ষর", readingMinutes: "{{count}} মিনিট পড়া", selectionMetrics: "নির্বাচন: {{words}} শব্দ, {{characters}} অক্ষর" },
   },
   notebooks: {
     title: "নোটবুকগুলি",

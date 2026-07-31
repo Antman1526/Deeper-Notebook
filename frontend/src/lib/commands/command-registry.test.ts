@@ -25,6 +25,13 @@ function context(): KnowledgeCommandExecutionContext {
     focusActivePane: vi.fn(),
     focusLinks: vi.fn(),
     moveTab: vi.fn(),
+    bookmarkCurrentTarget: vi.fn(async () => undefined),
+    openBookmarks: vi.fn(),
+    randomNote: vi.fn(async () => undefined),
+    openWorkspaces: vi.fn(),
+    saveWorkspaceAs: vi.fn(),
+    replaceWorkspace: vi.fn(),
+    toggleMetrics: vi.fn(),
   }
 }
 
@@ -84,12 +91,44 @@ describe('knowledge command registry', () => {
   })
 
   it('declares the complete safe command set and rejects unknown commands', async () => {
-    expect(knowledgeCommandDefinitions).toHaveLength(16)
+    expect(knowledgeCommandDefinitions).toHaveLength(23)
     expect(knowledgeCommandDefinitions.every(command => (
       command.safety === 'read' || command.safety === 'workspace'
     ))).toBe(true)
     await expect(executeKnowledgeCommand('knowledge.unknown' as never, context()))
       .resolves.toBe(false)
+  })
+
+  it.each([
+    'knowledge.bookmark-current',
+    'knowledge.open-bookmarks',
+    'knowledge.random-note',
+    'knowledge.open-workspaces',
+    'knowledge.save-workspace-as',
+    'knowledge.replace-workspace',
+    'knowledge.toggle-metrics',
+  ] as const)('registers %s as a non-external-write command', id => {
+    const command = knowledgeCommandDefinitions.find(candidate => candidate.id === id)
+    expect(command).toBeDefined()
+    expect(command?.safety).not.toBe('external-write')
+  })
+
+  it('executes every navigation-productivity command through its matching UI callback', async () => {
+    const commandContext = context()
+    const commands = [
+      ['knowledge.bookmark-current', 'bookmarkCurrentTarget'],
+      ['knowledge.open-bookmarks', 'openBookmarks'],
+      ['knowledge.random-note', 'randomNote'],
+      ['knowledge.open-workspaces', 'openWorkspaces'],
+      ['knowledge.save-workspace-as', 'saveWorkspaceAs'],
+      ['knowledge.replace-workspace', 'replaceWorkspace'],
+      ['knowledge.toggle-metrics', 'toggleMetrics'],
+    ] as const
+
+    for (const [id, callback] of commands) {
+      await expect(executeKnowledgeCommand(id, commandContext)).resolves.toBe(true)
+      expect(commandContext[callback]).toHaveBeenCalledOnce()
+    }
   })
 
   it('does not execute an external-write command if one is registered in future', async () => {
