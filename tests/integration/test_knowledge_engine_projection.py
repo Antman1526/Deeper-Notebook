@@ -15,7 +15,10 @@ from surrealdb import AsyncSurreal
 from deeper_notebook.database.async_migrate import AsyncMigrationManager
 from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.knowledge_engine.adapters import adapter_for
-from deeper_notebook.knowledge_engine.contracts import SourceEnvelope
+from deeper_notebook.knowledge_engine.contracts import (
+    BackfillCheckpoint,
+    SourceEnvelope,
+)
 from deeper_notebook.knowledge_engine.repository import (
     KnowledgeRepository,
     KnowledgeRepositoryError,
@@ -288,3 +291,162 @@ async def test_concurrent_identical_snapshot_commits_resolve_to_unchanged(
         {"operation_id": "native-concurrent"},
     )
     assert len(rows) == 1
+
+
+async def test_rich_snapshot_persists_every_record_class_with_engine_values(
+    clean_namespace,
+):
+    snapshot = _snapshot(
+        b"# Native Rich\n\n[[Target Note#Heading|Target Alias]]\n\n"
+        b"![Diagram](assets/diagram.png)\n\n- [ ] Persist all records\n"
+    )
+
+    receipt = await KnowledgeRepository().commit_snapshot(
+        snapshot, operation_id="native-rich-projection"
+    )
+
+    assert receipt.status == "projected"
+    counts = await repo_query(
+        """
+        RETURN {
+            spaces: count((SELECT * FROM knowledge_engine_space)),
+            documents: count((SELECT * FROM knowledge_engine_document)),
+            revisions: count((SELECT * FROM knowledge_engine_source_revision)),
+            blocks: count((SELECT * FROM knowledge_engine_block)),
+            relations: count((SELECT * FROM knowledge_engine_relation)),
+            tasks: count((SELECT * FROM knowledge_engine_task)),
+            assets: count((SELECT * FROM knowledge_engine_asset)),
+            identities: count((SELECT * FROM knowledge_engine_identity_map)),
+            receipts: count((SELECT * FROM knowledge_engine_projection_receipt))
+        };
+        """
+    )
+    assert counts == {
+        "spaces": 1,
+        "documents": 1,
+        "revisions": 1,
+        "blocks": len(snapshot.blocks),
+        "relations": len(snapshot.relations),
+        "tasks": len(snapshot.tasks),
+        "assets": len(snapshot.assets),
+        "identities": len(snapshot.identity_claims),
+        "receipts": 1,
+    }
+    relation = await repo_query(
+        "SELECT * FROM knowledge_engine_relation WHERE id = $relation_id;",
+        {"relation_id": ensure_record_id(snapshot.relations[0].id)},
+    )
+    asset = await repo_query(
+        "SELECT * FROM knowledge_engine_asset WHERE id = $asset_id;",
+        {"asset_id": ensure_record_id(snapshot.assets[0].id)},
+    )
+    identity = await repo_query(
+        """
+        SELECT * FROM knowledge_engine_identity_map
+        WHERE legacy_kind = $legacy_kind
+        AND legacy_id = $legacy_id
+        AND source_revision_id = $source_revision_id;
+        """,
+        snapshot.identity_claims[0].model_dump(),
+    )
+    assert len(relation) == 1
+    assert relation[0]["source_document_id"] == snapshot.document.id
+    assert relation[0]["source_block_id"] == snapshot.relations[0].source_block_id
+    assert relation[0]["target_text"] == "Target Note"
+    assert relation[0]["target_heading"] == "Heading"
+    assert relation[0]["alias"] == "Target Alias"
+    assert relation[0]["relation_kind"] == "wikilink"
+    assert len(asset) == 1
+    assert asset[0]["source_document_id"] == snapshot.document.id
+    assert asset[0]["relative_locator"] == "assets/diagram.png"
+    assert asset[0]["media_kind"] == "image"
+    assert len(identity) == 1
+    assert identity[0]["legacy_kind"] == snapshot.identity_claims[0].legacy_kind
+    assert identity[0]["legacy_id"] == snapshot.identity_claims[0].legacy_id
+    assert identity[0]["engine_kind"] == "document"
+    assert identity[0]["engine_id"] == snapshot.document.id
+    assert identity[0]["source_revision_id"] == snapshot.revision.id
+    assert identity[0]["claim_hash"] == snapshot.identity_claims[0].claim_hash
+
+
+async def test_identity_mapping_conflict_rolls_back_new_snapshot(clean_namespace):
+    repository = KnowledgeRepository()
+    original = _snapshot(b"# Native\n\nOriginal document\n")
+    replacement = _snapshot(b"# Native\n\nReplacement document\n")
+    await repository.commit_snapshot(original, operation_id="native-identity-original")
+    claim = replacement.identity_claims[0]
+    conflicting_mapping = {
+        **claim.model_dump(),
+        "engine_id": "knowledge_engine_document:legacy_conflict",
+        "claim_hash": "0" * 64,
+    }
+    await repo_query(
+        "CREATE knowledge_engine_identity_map CONTENT $mapping;",
+        {"mapping": conflicting_mapping},
+    )
+
+    with pytest.raises(KnowledgeRepositoryError, match="repository_unavailable"):
+        await repository.commit_snapshot(
+            replacement, operation_id="native-identity-conflict"
+        )
+
+    persisted = await repository.get_document(original.document.id)
+    mapping = await repo_query(
+        """
+        SELECT * FROM knowledge_engine_identity_map
+        WHERE legacy_kind = $legacy_kind
+        AND legacy_id = $legacy_id
+        AND source_revision_id = $source_revision_id;
+        """,
+        claim.model_dump(),
+    )
+    assert persisted.content_hash == original.document.content_hash
+    assert persisted.normalized_body == original.document.normalized_body
+    assert len(mapping) == 1
+    assert mapping[0]["engine_id"] == "knowledge_engine_document:legacy_conflict"
+    assert mapping[0]["claim_hash"] == "0" * 64
+    assert await repo_query(
+        "SELECT * FROM knowledge_engine_source_revision WHERE content_hash = $content_hash;",
+        {"content_hash": replacement.revision.content_hash},
+    ) == []
+
+
+async def test_checkpoint_and_document_reads_round_trip_with_pagination(clean_namespace):
+    snapshot = _snapshot(b"# Native\n\nRead round trip\n")
+    repository = KnowledgeRepository()
+    await repository.commit_snapshot(snapshot, operation_id="native-read-round-trip")
+    checkpoint = BackfillCheckpoint(
+        space_id=snapshot.space.id,
+        last_relative_locator=snapshot.document.relative_locator,
+        last_source_hash=snapshot.revision.content_hash,
+        status="completed",
+        projected=1,
+        unchanged=0,
+        failed=0,
+        updated_at=NOW,
+    )
+
+    saved = await repository.save_checkpoint(checkpoint)
+    restored = await repository.get_checkpoint(snapshot.space.id)
+    listed = await repository.list_documents(
+        space_id=snapshot.space.id, limit=1, offset=0
+    )
+    after_first_page = await repository.list_documents(
+        space_id=snapshot.space.id, limit=1, offset=1
+    )
+    document = await repository.get_document(snapshot.document.id)
+
+    assert restored == saved
+    assert saved.space_id == checkpoint.space_id
+    assert saved.last_relative_locator == checkpoint.last_relative_locator
+    assert saved.last_source_hash == checkpoint.last_source_hash
+    assert saved.status == checkpoint.status
+    assert (saved.projected, saved.unchanged, saved.failed) == (1, 0, 0)
+    assert listed == [document]
+    assert document.id == snapshot.document.id
+    assert document.space_id == snapshot.document.space_id
+    assert document.relative_locator == snapshot.document.relative_locator
+    assert document.content_hash == snapshot.document.content_hash
+    assert document.source_revision_id == snapshot.document.source_revision_id
+    assert document.normalized_body == snapshot.document.normalized_body
+    assert after_first_page == []
