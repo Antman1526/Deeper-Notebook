@@ -418,6 +418,11 @@ async def test_equivalence_never_relays_untrusted_difference_bodies(
             "/api/deeper-notebook/knowledge-engine/documents/"
             "knowledge_engine_document%3Aone",
         ),
+        (
+            "equivalence_result",
+            "/api/deeper-notebook/knowledge-engine/equivalence?"
+            "space_id=knowledge_engine_space%3Aprimary&exact_query=research",
+        ),
     ],
 )
 async def test_internal_service_value_error_is_unavailable_not_request_invalid(

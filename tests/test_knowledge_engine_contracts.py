@@ -237,6 +237,40 @@ def test_projection_digest_normalizes_redacted_membership_order() -> None:
     assert digest.backlink_membership == {"Pages/B.md": ["Pages/A.md", "Pages/C.md"]}
 
 
+@pytest.mark.parametrize("field", ["outgoing_membership", "backlink_membership"])
+@pytest.mark.parametrize("locator", ["/Users/Antman/private.md", "../private.md", "Pages\\private.md"])
+def test_projection_digest_rejects_noncanonical_membership_keys(
+    field: str, locator: str
+) -> None:
+    from deeper_notebook.knowledge_engine.contracts import ProjectionDigest
+
+    with pytest.raises(ValidationError):
+        ProjectionDigest(
+            space_id="knowledge_engine_space:test",
+            document_count=0,
+            block_count=0,
+            relation_count=0,
+            task_count=0,
+            asset_count=0,
+            **{field: {locator: ["Pages/Member.md"]}},
+        )
+
+
+def test_projection_digest_requires_sha256_exact_search_membership_keys() -> None:
+    from deeper_notebook.knowledge_engine.contracts import ProjectionDigest
+
+    with pytest.raises(ValidationError):
+        ProjectionDigest(
+            space_id="knowledge_engine_space:test",
+            document_count=0,
+            block_count=0,
+            relation_count=0,
+            task_count=0,
+            asset_count=0,
+            exact_search_membership={"research": ["Pages/Member.md"]},
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
