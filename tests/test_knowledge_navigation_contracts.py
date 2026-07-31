@@ -328,6 +328,22 @@ def test_named_snapshot_rejects_paths_in_all_navigation_identifiers(field: str):
         NamedWorkspaceSnapshot.model_validate(path_snapshot)
 
 
+def test_named_snapshot_rejects_deep_raw_layout_before_recursive_validation():
+    layout: dict[str, object] = {"type": "pane", "pane_id": "pane-1"}
+    for index in range(1_100):
+        layout = {
+            "type": "split",
+            "id": f"split-{index}",
+            "direction": "horizontal",
+            "first": layout,
+            "second": {"type": "pane", "pane_id": "pane-1"},
+        }
+    payload = _named_snapshot_payload() | {"layout": layout}
+
+    with pytest.raises(ValidationError, match="depth 64"):
+        NamedWorkspaceSnapshot.model_validate(payload)
+
+
 def test_cursors_must_be_canonical_and_hydrated_pages_use_the_same_decoder():
     cursor = BookmarkCursor(folder_id=None, position=0, id="knowledge_bookmark:plan")
     noncanonical = f"{cursor.encode()}=="

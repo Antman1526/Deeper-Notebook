@@ -239,16 +239,21 @@ def _require_navigation_local_id(value: object) -> None:
 
 
 def _validate_raw_layout_identifiers(node: object) -> None:
-    if not isinstance(node, dict):
-        return
-    node_type = node.get("type")
-    if node_type == "pane":
-        _require_navigation_local_id(node.get("pane_id"))
-        return
-    if node_type == "split":
-        _require_navigation_local_id(node.get("id"))
-        _validate_raw_layout_identifiers(node.get("first"))
-        _validate_raw_layout_identifiers(node.get("second"))
+    stack: list[tuple[object, int]] = [(node, 1)]
+    while stack:
+        current, depth = stack.pop()
+        if depth > 64:
+            raise ValueError("workspace layout cannot exceed depth 64")
+        if not isinstance(current, dict):
+            continue
+        node_type = current.get("type")
+        if node_type == "pane":
+            _require_navigation_local_id(current.get("pane_id"))
+            continue
+        if node_type == "split":
+            _require_navigation_local_id(current.get("id"))
+            stack.append((current.get("first"), depth + 1))
+            stack.append((current.get("second"), depth + 1))
 
 
 def _validate_snapshot_navigation_identifiers(value: dict[object, object]) -> None:
