@@ -8,19 +8,21 @@ interface VaultSourceViewProps {
   title: string
   markdown: string
   file: VaultFile
+  onSelectionChange?: (from: number, to: number) => void
 }
 
 function metadataValue(value: string | null) {
   return value || 'unknown'
 }
 
-export function VaultSourceView({ title, markdown, file }: VaultSourceViewProps) {
+export function VaultSourceView({ title, markdown, file, onSelectionChange }: VaultSourceViewProps) {
   return (
     <section className="dn-vault-source-view" aria-label={`${title} source`}>
       <VaultCodeMirror
         ariaLabel={`${title} source`}
         markdown={markdown}
         extensions={[]}
+        onSelectionChange={onSelectionChange}
       />
       <dl className="dn-vault-source-status" aria-label="Canonical file metadata">
         <div><dt>Path</dt><dd>{file.relative_path}</dd></div>

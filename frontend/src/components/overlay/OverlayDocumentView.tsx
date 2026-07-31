@@ -56,6 +56,7 @@ interface OverlayDocumentViewProps {
   workspaceTabId?: string
   graphViewport?: GraphViewport
   onGraphViewportChange?: (viewport: GraphViewport) => void
+  onFocusedBlockChange?: (block: { blockId: string; sourceRevisionId: string | null } | null) => void
 }
 
 type SaveStatus = 'idle' | 'saved' | 'error' | 'conflict'
@@ -126,6 +127,7 @@ export function OverlayDocumentView({
   workspaceTabId,
   graphViewport,
   onGraphViewportChange,
+  onFocusedBlockChange,
 }: OverlayDocumentViewProps) {
   const { t } = useTranslation()
   const update = useUpdateOverlayNote()
@@ -161,6 +163,19 @@ export function OverlayDocumentView({
   const markdown = draft.markdown.replace(/\r(?!\n)/g, '\n')
   const model = useMemo(() => buildMarkdownModel(markdown), [markdown])
   const headingIdPrefix = useMemo(() => encodeIdPrefix(viewId), [viewId])
+  const readableBlocks = loadedPage.blocks.filter((block) => block.knowledge_block_id && block.markdown)
+  const focusedBlockForRange = useCallback((from: number, to: number) => {
+    if (from === to) return onFocusedBlockChange?.(null)
+    let cursor = 0
+    for (const block of readableBlocks) {
+      const start = markdown.indexOf(block.markdown!, cursor)
+      if (start < 0) continue
+      const end = start + block.markdown!.length
+      cursor = end
+      if (from < end && to > start) return onFocusedBlockChange?.({ blockId: block.knowledge_block_id!, sourceRevisionId: block.source_revision_id ?? null })
+    }
+    onFocusedBlockChange?.(null)
+  }, [markdown, onFocusedBlockChange, readableBlocks])
   const displayOutgoingLinks = useMemo(
     () => loadedPage.outgoing_links.map((link) => (
       link.target_overlay_note_id
@@ -332,18 +347,21 @@ export function OverlayDocumentView({
         markdown={draft.markdown}
         disabled={busy}
         onChange={(nextMarkdown) => changeDraft({ markdown: nextMarkdown })}
+        onSelectionChange={focusedBlockForRange}
       />
     </div>
   ) : mode === 'reading' ? (
     <section aria-label={`${title} reading view`}>
-      <VaultMarkdown
+      {readableBlocks.length > 0 ? readableBlocks.map((block, index) => <section key={block.knowledge_block_id} data-knowledge-block-id={block.knowledge_block_id!} data-source-revision-id={block.source_revision_id ?? undefined}>
+        <VaultMarkdown noteId={loadedPage.note.id} headingIdPrefix={`${headingIdPrefix}-${index}`} markdown={block.markdown!} links={displayOutgoingLinks} onNavigate={onNavigate} footnoteLabel={t('knowledge.footnotes')} />
+      </section>) : <VaultMarkdown
         noteId={loadedPage.note.id}
         headingIdPrefix={headingIdPrefix}
         markdown={markdown}
         links={displayOutgoingLinks}
         onNavigate={onNavigate}
         footnoteLabel={t('knowledge.footnotes')}
-      />
+      />}
     </section>
   ) : mode === 'live-preview' ? (
     <VaultLivePreview
@@ -351,6 +369,7 @@ export function OverlayDocumentView({
       markdown={markdown}
       links={displayOutgoingLinks}
       onNavigate={onNavigate}
+      onSelectionChange={focusedBlockForRange}
     />
   ) : (
     <VaultGraph

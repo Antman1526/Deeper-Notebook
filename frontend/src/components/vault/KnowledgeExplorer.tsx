@@ -30,6 +30,7 @@ import {
 } from '@/lib/hooks/use-knowledge-navigation'
 import type { KnowledgeBookmark, KnowledgeOpenDescriptor } from '@/lib/api/knowledge-navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import { KnowledgeLinksInspector } from './KnowledgeLinksInspector'
 import {
@@ -88,6 +89,7 @@ export function KnowledgeExplorer() {
   const linksRef = useRef<HTMLDivElement>(null)
   const paneElementsRef = useRef<Record<string, HTMLElement | null>>({})
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null)
+  const semanticSearchKeyRef = useRef<string | null>(null)
   const selectedRoot = selectedRootState
     ?? (mounts.data?.[0]
       ? { authority: 'external-vault' as const, id: mounts.data[0].id }
@@ -108,6 +110,7 @@ export function KnowledgeExplorer() {
   const setPendingWorkspaceRestore = useKnowledgeWorkspaceStore((state) => state.setPendingWorkspaceRestore)
   const activeSearchContext = useKnowledgeWorkspaceStore((state) => state.activeSearchContext)
   const setActiveSearchContext = useKnowledgeWorkspaceStore((state) => state.setActiveSearchContext)
+  const indexedSearch = useKnowledgeIndexedSearch(activeSearchContext?.query || '', Boolean(activeSearchContext))
   const setTabViewMode = useKnowledgeWorkspaceStore((state) => state.setTabViewMode)
   const setTabGraphViewport = useKnowledgeWorkspaceStore((state) => state.setTabGraphViewport)
   const bookmarks = useKnowledgeBookmarks({
@@ -137,6 +140,13 @@ export function KnowledgeExplorer() {
     isPending: todayOverlayPending,
     isError: todayOverlayError,
   } = useTodayOverlayNote()
+
+  useEffect(() => {
+    const key = activeSearchContext?.mode === 'semantic' ? activeSearchContext.query : null
+    if (!key || semanticSearchKeyRef.current === key) return
+    semanticSearchKeyRef.current = key
+    indexedSearch.runSemanticSearch()
+  }, [activeSearchContext?.mode, activeSearchContext?.query, indexedSearch.runSemanticSearch])
 
   const openFile = (file: VaultFile, paneId?: string) => {
     openTab(tabFromFile(file), paneId)
@@ -306,12 +316,12 @@ export function KnowledgeExplorer() {
     if (!bookmark.targetDocument) return
     if (bookmark.target.kind === 'graph') {
       openTab({ ...tabFromDescriptor(bookmark.targetDocument), viewMode: 'graph', graphViewport: bookmark.target.viewport })
-      const opened = Object.values(useKnowledgeWorkspaceStore.getState().panes)
-        .flatMap((pane) => pane.tabs.map((tab) => ({ pane, tab })))
-        .find(({ tab }) => tab.knowledgeDocumentId === bookmark.targetDocument?.documentId)
-      if (opened) {
-        setTabViewMode(opened.pane.id, opened.tab.id, 'graph')
-        setTabGraphViewport(opened.pane.id, opened.tab.id, bookmark.target.viewport)
+      const openedWorkspace = useKnowledgeWorkspaceStore.getState()
+      const openedPane = openedWorkspace.panes[openedWorkspace.activePaneId]
+      const openedTabId = openedPane?.activeTabId
+      if (openedPane && openedTabId) {
+        setTabViewMode(openedPane.id, openedTabId, 'graph')
+        setTabGraphViewport(openedPane.id, openedTabId, bookmark.target.viewport)
       }
       setNavigation({ selectedSpaceIds: bookmark.target.spaceIds })
       if (bookmark.target.rootDocumentId) {
@@ -579,7 +589,9 @@ export function KnowledgeExplorer() {
         </Button>}
         <main className="min-h-0 min-w-0 overflow-hidden">
           {activeSearchContext && <section aria-label="Active knowledge search" className="border-b px-3 py-2 text-sm">
-            {activeSearchContext.mode}: {activeSearchContext.query}
+            <p>{activeSearchContext.mode}: {activeSearchContext.query}</p>
+            <p className="text-muted-foreground">Spaces: {activeSearchContext.spaceIds.join(', ') || 'all'} · Authorities: {activeSearchContext.authorityKinds.join(', ') || 'all'}</p>
+            <ul aria-label="Knowledge search results">{(activeSearchContext.mode === 'semantic' ? indexedSearch.semantic.data?.results : indexedSearch.text.data?.results)?.map((result) => <li key={result.id}>{result.title}</li>)}</ul>
           </section>}
           <KnowledgeWorkspaceLayout
             onPaneElement={onPaneElement}
