@@ -23,6 +23,7 @@ _ENGINE_ID = r"[A-Za-z0-9_-]+"
 _OPERATION_ID = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$"
 _NAVIGATION_LOCAL_ID = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
 _ABSOLUTE_PATH = re.compile(r"^(?:[\\/]|[A-Za-z]:[\\/])")
+WORKSPACE_CAPACITY_ALLOCATOR_ID = "named_knowledge_workspace:capacity_allocator"
 
 KnowledgeDocumentId = Annotated[
     str,
@@ -180,6 +181,13 @@ class GraphTarget(_Strict):
 class WorkspaceTarget(_Strict):
     kind: Literal["workspace"] = "workspace"
     workspace_id: NamedWorkspaceId
+
+    @field_validator("workspace_id")
+    @classmethod
+    def workspace_id_is_public(cls, value: str) -> str:
+        if value == WORKSPACE_CAPACITY_ALLOCATOR_ID:
+            raise ValueError("workspace target must reference a public workspace")
+        return value
 
 
 KnowledgeTarget = Annotated[
@@ -806,6 +814,7 @@ __all__ = [
     "WorkspaceRestorePane",
     "WorkspaceRestorePlan",
     "WorkspaceTarget",
+    "WORKSPACE_CAPACITY_ALLOCATOR_ID",
     "normalize_name",
     "normalize_tags",
 ]

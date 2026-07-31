@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from deeper_notebook.knowledge_engine.navigation_contracts import (
+    WORKSPACE_CAPACITY_ALLOCATOR_ID,
     BlockTarget,
     Bookmark,
     BookmarkCursor,
@@ -21,6 +22,7 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     NavigationReceipt,
     WorkspaceRestorePane,
     WorkspaceRestorePlan,
+    WorkspaceTarget,
     normalize_name,
     normalize_tags,
 )
@@ -39,6 +41,8 @@ def test_targets_accept_stable_ids_and_reject_paths():
             document_id="knowledge_engine_document:plan",
             block_id="../block",
         )
+    with pytest.raises(ValidationError):
+        WorkspaceTarget(workspace_id=WORKSPACE_CAPACITY_ALLOCATOR_ID)
 
 
 def test_name_and_tag_normalization_preserves_first_display_value():

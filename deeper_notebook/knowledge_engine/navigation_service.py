@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from deeper_notebook.knowledge_engine.navigation_contracts import (
+    WORKSPACE_CAPACITY_ALLOCATOR_ID,
     Bookmark,
     BookmarkFilters,
     BookmarkFolder,
@@ -129,6 +130,7 @@ class KnowledgeNavigationService:
         )
 
     async def _hydrate_workspace(self, target: Any) -> HydratedKnowledgeTarget:
+        self._require_public_workspace_id(target.workspace_id)
         await self.metadata_repository.get_workspace(target.workspace_id)
         return HydratedKnowledgeTarget(target=target, state="available")
 
@@ -205,11 +207,13 @@ class KnowledgeNavigationService:
         return await self.metadata_repository.create_workspace(command)
 
     async def get_workspace(self, workspace_id: str) -> NamedKnowledgeWorkspace:
+        self._require_public_workspace_id(workspace_id)
         return await self.metadata_repository.get_workspace(workspace_id)
 
     async def update_workspace(
         self, workspace_id: str, command: UpdateWorkspace
     ) -> NamedKnowledgeWorkspace:
+        self._require_public_workspace_id(workspace_id)
         has_name = "name" in command.model_fields_set
         has_snapshot = "snapshot" in command.model_fields_set
         if has_name == has_snapshot:
@@ -221,16 +225,19 @@ class KnowledgeNavigationService:
     async def duplicate_workspace(
         self, workspace_id: str, command: DuplicateWorkspace
     ) -> NamedKnowledgeWorkspace:
+        self._require_public_workspace_id(workspace_id)
         return await self.metadata_repository.duplicate_workspace(workspace_id, command)
 
     async def delete_workspace(
         self, workspace_id: str, command: DeleteWorkspace
     ) -> NavigationReceipt:
+        self._require_public_workspace_id(workspace_id)
         return await self.metadata_repository.delete_workspace(workspace_id, command)
 
     async def workspace_restore_plan(
         self, workspace_id: str, revision: int
     ) -> WorkspaceRestorePlan:
+        self._require_public_workspace_id(workspace_id)
         workspace = await self.metadata_repository.get_workspace(workspace_id)
         if workspace.revision != revision:
             raise KnowledgeNavigationRepositoryError("workspace_revision_conflict")
@@ -265,6 +272,11 @@ class KnowledgeNavigationService:
             navigation=workspace.snapshot.navigation,
             summary=summary,
         )
+
+    @staticmethod
+    def _require_public_workspace_id(workspace_id: str) -> None:
+        if workspace_id == WORKSPACE_CAPACITY_ALLOCATOR_ID:
+            raise LookupError("named_knowledge_workspace_not_found")
 
     @staticmethod
     def _validate_workspace_snapshot(snapshot: object) -> None:

@@ -39,8 +39,8 @@ DEFINE INDEX IF NOT EXISTS idx_kn_workspace_capacity_slot ON TABLE named_knowled
 
 CREATE ONLY named_knowledge_workspace:capacity_allocator CONTENT {
     schema_version: 1,
-    name: "Workspace capacity allocator",
-    name_key: "__workspace_capacity_allocator__",
+    name: "",
+    name_key: "",
     snapshot_version: 1,
     snapshot: {},
     capacity_slot: 256,
