@@ -75,6 +75,7 @@ export function KnowledgePaneContent({
     (state) => state.navigation.metricsVisible,
   )
   const setNavigation = useKnowledgeWorkspaceStore((state) => state.setNavigation)
+  const setFocusedBlock = useKnowledgeWorkspaceStore((state) => state.setFocusedBlock)
   const setGraphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.setGraphBookmarkContext)
   const graphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.graphBookmarkContext)
   const selectedSpaceIds = useKnowledgeWorkspaceStore((state) => state.navigation.selectedSpaceIds)
@@ -134,21 +135,21 @@ export function KnowledgePaneContent({
         || !paneElement.contains(selection.focusNode)
       ) {
         setSelectionText('')
+        if (activeTab) setFocusedBlock(pane.id, activeTab.id, null)
         return
       }
       const selected = selection.toString()
       setSelectionText(selected)
-      const blocks = isOverlay ? overlayPage.data?.blocks : vaultPage.data?.blocks
-      const focusedBlock = blocks?.find((block) => block.knowledge_block_id && (
-        block.markdown?.includes(selected) || block.heading_path?.includes(selected)
-      ))
-      setNavigation({ activeDraftId: focusedBlock?.knowledge_block_id ?? null })
+      const element = selection.anchorNode.parentElement?.closest<HTMLElement>('[data-knowledge-block-id]')
+      const blockId = element?.dataset.knowledgeBlockId
+      const sourceRevisionId = element?.dataset.sourceRevisionId ?? null
+      if (activeTab) setFocusedBlock(pane.id, activeTab.id, blockId ? { blockId, sourceRevisionId } : null)
     }
 
     document.addEventListener('selectionchange', updateSelection)
     updateSelection()
     return () => document.removeEventListener('selectionchange', updateSelection)
-  }, [activeTab?.id, isOverlay, overlayPage.data, setNavigation, vaultPage.data])
+  }, [activeTab, pane.id, setFocusedBlock])
 
   useEffect(() => {
     if (!activeTab) return

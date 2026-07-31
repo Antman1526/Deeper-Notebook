@@ -119,6 +119,7 @@ class KnowledgeWorkspaceNavigation(BaseModel):
     bookmark_tags: list[str] = Field(default_factory=list, max_length=32)
     source_tree_query: str = Field(default="", max_length=256)
     search_query: str = Field(default="", max_length=512)
+    search_mode: Literal["exact", "text", "semantic"] = "text"
     active_draft_id: str | None = Field(default=None, max_length=128)
     selected_space_ids: list[str] = Field(default_factory=list, max_length=32)
     authority_filters: list[Literal["app_owned", "external_read_only"]] = Field(

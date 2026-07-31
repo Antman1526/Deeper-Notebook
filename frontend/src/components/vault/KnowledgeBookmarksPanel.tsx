@@ -23,6 +23,10 @@ function TargetIcon({ kind }: { kind: KnowledgeBookmark['targetKind'] }) {
   return <Icon aria-hidden="true" className="h-4 w-4" />
 }
 
+function splitCsv(value: string): string[] {
+  return value.split(',').map((item) => item.trim()).filter(Boolean)
+}
+
 function FolderTree({ folders, onSelectFolder, onDeleteFolder, onRequestDelete }: Pick<KnowledgeBookmarksPanelProps, 'folders' | 'onSelectFolder' | 'onDeleteFolder'> & { onRequestDelete: (folder: KnowledgeBookmarkFolder) => void }) {
   return (
     <ul className="space-y-1" aria-label="Bookmark folders">
@@ -55,6 +59,7 @@ export function KnowledgeBookmarksPanel({
   const [label, setLabel] = useState('')
   const [tags, setTags] = useState('')
   const [targetDocumentId, setTargetDocumentId] = useState('')
+  const [targetDraft, setTargetDraft] = useState<KnowledgeBookmark['target'] | null>(null)
   const [updateError, setUpdateError] = useState('')
   const [folderToDelete, setFolderToDelete] = useState<KnowledgeBookmarkFolder | null>(null)
   const beginEdit = (bookmark: KnowledgeBookmark, target: boolean) => {
@@ -64,6 +69,7 @@ export function KnowledgeBookmarksPanel({
     setTargetDocumentId(bookmark.target.kind === 'document' || bookmark.target.kind === 'block'
       ? bookmark.target.documentId
       : bookmark.target.kind === 'graph' ? bookmark.target.rootDocumentId ?? '' : '')
+    setTargetDraft(bookmark.target)
     setUpdateError('')
     onEdit(bookmark, target)
   }
@@ -71,13 +77,13 @@ export function KnowledgeBookmarksPanel({
     if (!editing || !onUpdate) return
     const normalizedTags = tags.split(',').map((tag) => tag.trim()).filter(Boolean)
     try {
-      const target = editing.bookmark.target.kind === 'document'
+      const target = editing.target ? targetDraft ?? editing.bookmark.target : editing.bookmark.target.kind === 'document'
         ? { kind: 'document' as const, documentId: targetDocumentId }
         : editing.bookmark.target.kind === 'block'
           ? { ...editing.bookmark.target, documentId: targetDocumentId }
           : editing.bookmark.target.kind === 'graph'
             ? { ...editing.bookmark.target, rootDocumentId: targetDocumentId || null }
-            : editing.bookmark.target
+            : targetDraft ?? editing.bookmark.target
       await onUpdate(editing.bookmark, editing.target
         ? { target }
         : { displayLabel: label.trim(), tags: normalizedTags })
@@ -98,7 +104,11 @@ export function KnowledgeBookmarksPanel({
       </div>
       <ul className="space-y-2">
         {bookmarks.map((bookmark) => {
-          const available = bookmark.targetState === 'available' && Boolean(bookmark.targetDocument)
+          const requiresDescriptor = bookmark.target.kind === 'document'
+            || bookmark.target.kind === 'block'
+            || bookmark.target.kind === 'graph'
+          const available = bookmark.targetState === 'available'
+            && (!requiresDescriptor || Boolean(bookmark.targetDocument))
           const isExternal = bookmark.authorityKind === 'external_read_only'
           return (
             <li key={bookmark.id} className="rounded-md border p-3">
@@ -128,8 +138,35 @@ export function KnowledgeBookmarksPanel({
           <p className="mt-1 text-sm text-muted-foreground">This repair updates only the stored target reference; it never writes to the source document.</p>
           {(editing.bookmark.target.kind === 'document' || editing.bookmark.target.kind === 'block' || editing.bookmark.target.kind === 'graph') && <>
             <label className="mt-3 block text-sm" htmlFor="bookmark-target-document">Target document ID</label>
-            <input id="bookmark-target-document" value={targetDocumentId} onChange={(event) => setTargetDocumentId(event.target.value)} className="mt-1 h-9 w-full rounded-md border px-2" />
+            <input id="bookmark-target-document" value={targetDocumentId} onChange={(event) => { const value = event.target.value; setTargetDocumentId(value); setTargetDraft((current) => current?.kind === 'document' ? { ...current, documentId: value } : current?.kind === 'block' ? { ...current, documentId: value } : current?.kind === 'graph' ? { ...current, rootDocumentId: value || null } : current) }} className="mt-1 h-9 w-full rounded-md border px-2" />
           </>}
+          {editing.bookmark.target.kind === 'block' && <>
+            <label className="mt-3 block text-sm" htmlFor="bookmark-target-block">Target block ID</label>
+            <input id="bookmark-target-block" value={targetDraft?.kind === 'block' ? targetDraft.blockId : ''} onChange={(event) => setTargetDraft((current) => current?.kind === 'block' ? { ...current, blockId: event.target.value } : current)} className="mt-1 h-9 w-full rounded-md border px-2" />
+            <label className="mt-3 block text-sm" htmlFor="bookmark-target-revision">Source revision ID</label>
+            <input id="bookmark-target-revision" value={targetDraft?.kind === 'block' ? targetDraft.sourceRevisionId ?? '' : ''} onChange={(event) => setTargetDraft((current) => current?.kind === 'block' ? { ...current, sourceRevisionId: event.target.value || null } : current)} className="mt-1 h-9 w-full rounded-md border px-2" />
+          </>}
+          {editing.bookmark.target.kind === 'search' && <label className="mt-3 block text-sm" htmlFor="bookmark-target-query">Search query</label>}
+          {editing.bookmark.target.kind === 'search' && <input id="bookmark-target-query" value={targetDraft?.kind === 'search' ? targetDraft.query : ''} onChange={(event) => setTargetDraft((current) => current?.kind === 'search' ? { ...current, query: event.target.value } : current)} className="mt-1 h-9 w-full rounded-md border px-2" />}
+          {editing.bookmark.target.kind === 'search' && <>
+            <label className="mt-3 block text-sm" htmlFor="bookmark-target-search-mode">Search mode</label>
+            <select id="bookmark-target-search-mode" value={targetDraft?.kind === 'search' ? targetDraft.searchMode : 'text'} onChange={(event) => setTargetDraft((current) => current?.kind === 'search' ? { ...current, searchMode: event.target.value as 'exact' | 'text' | 'semantic' } : current)} className="mt-1 h-9 w-full rounded-md border px-2"><option value="exact">exact</option><option value="text">text</option><option value="semantic">semantic</option></select>
+            <label className="mt-3 block text-sm" htmlFor="bookmark-target-search-spaces">Search space IDs</label>
+            <input id="bookmark-target-search-spaces" value={targetDraft?.kind === 'search' ? targetDraft.spaceIds.join(', ') : ''} onChange={(event) => setTargetDraft((current) => current?.kind === 'search' ? { ...current, spaceIds: splitCsv(event.target.value) } : current)} className="mt-1 h-9 w-full rounded-md border px-2" />
+            <label className="mt-3 block text-sm" htmlFor="bookmark-target-search-authorities">Search authority filters</label>
+            <input id="bookmark-target-search-authorities" value={targetDraft?.kind === 'search' ? targetDraft.authorityKinds.join(', ') : ''} onChange={(event) => setTargetDraft((current) => current?.kind === 'search' ? { ...current, authorityKinds: splitCsv(event.target.value) as typeof current.authorityKinds } : current)} className="mt-1 h-9 w-full rounded-md border px-2" />
+            <label className="mt-3 block text-sm" htmlFor="bookmark-target-search-tags">Search tags</label>
+            <input id="bookmark-target-search-tags" value={targetDraft?.kind === 'search' ? targetDraft.tags.join(', ') : ''} onChange={(event) => setTargetDraft((current) => current?.kind === 'search' ? { ...current, tags: splitCsv(event.target.value) } : current)} className="mt-1 h-9 w-full rounded-md border px-2" />
+          </>}
+          {editing.bookmark.target.kind === 'graph' && <>
+            <label className="mt-3 block text-sm" htmlFor="bookmark-target-graph-spaces">Graph space IDs</label>
+            <input id="bookmark-target-graph-spaces" value={targetDraft?.kind === 'graph' ? targetDraft.spaceIds.join(', ') : ''} onChange={(event) => setTargetDraft((current) => current?.kind === 'graph' ? { ...current, spaceIds: splitCsv(event.target.value) } : current)} className="mt-1 h-9 w-full rounded-md border px-2" />
+            <label className="mt-3 block text-sm" htmlFor="bookmark-target-graph-relations">Graph relation kinds</label>
+            <input id="bookmark-target-graph-relations" value={targetDraft?.kind === 'graph' ? targetDraft.relationKinds.join(', ') : ''} onChange={(event) => setTargetDraft((current) => current?.kind === 'graph' ? { ...current, relationKinds: splitCsv(event.target.value) } : current)} className="mt-1 h-9 w-full rounded-md border px-2" />
+            <label className="mt-3 block text-sm" htmlFor="bookmark-target-graph-viewport">Graph viewport</label>
+            <input id="bookmark-target-graph-viewport" value={targetDraft?.kind === 'graph' ? `${targetDraft.viewport.x}, ${targetDraft.viewport.y}, ${targetDraft.viewport.zoom}` : ''} onChange={(event) => { const [x, y, zoom] = splitCsv(event.target.value).map(Number); setTargetDraft((current) => current?.kind === 'graph' && [x, y, zoom].every(Number.isFinite) ? { ...current, viewport: { x, y, zoom } } : current) }} className="mt-1 h-9 w-full rounded-md border px-2" />
+          </>}
+          {editing.bookmark.target.kind === 'workspace' && <><label className="mt-3 block text-sm" htmlFor="bookmark-target-workspace">Workspace ID</label><input id="bookmark-target-workspace" value={targetDraft?.kind === 'workspace' ? targetDraft.workspaceId : ''} onChange={(event) => setTargetDraft((current) => current?.kind === 'workspace' ? { ...current, workspaceId: event.target.value } : current)} className="mt-1 h-9 w-full rounded-md border px-2" /></>}
         </> : <>
           <label className="mt-3 block text-sm" htmlFor="bookmark-label">Bookmark label</label>
           <input id="bookmark-label" value={label} onChange={(event) => setLabel(event.target.value)} className="mt-1 h-9 w-full rounded-md border px-2" />
@@ -144,7 +181,7 @@ export function KnowledgeBookmarksPanel({
       </section>}
       {folderToDelete && <section aria-label="Confirm folder deletion" className="rounded-md border border-destructive/40 p-3">
         <p className="text-sm font-medium">Delete {folderToDelete.name}?</p>
-        <p className="mt-1 text-sm text-muted-foreground">Move children keeps descendant bookmarks and folders. Delete tree permanently removes this folder and every descendant bookmark folder.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Move children keeps descendant bookmarks and folders. Delete tree permanently deletes this folder, descendant folders, and their contained bookmark metadata; it never edits source documents.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="button" size="sm" variant="outline" onClick={() => { onDeleteFolder?.(folderToDelete, 'move_children'); setFolderToDelete(null) }}>Move children</Button>
           <Button type="button" size="sm" variant="destructive" onClick={() => { onDeleteFolder?.(folderToDelete, 'delete_tree'); setFolderToDelete(null) }}>Delete tree</Button>

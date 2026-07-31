@@ -71,6 +71,7 @@ export const vaultLinkSchema = z.object({
 
 export const vaultBlockSchema = z.object({
   knowledge_block_id: knowledgeBlockIdSchema.nullable().optional(),
+  source_revision_id: z.string().regex(/^knowledge_engine_(?:revision|source_revision):[A-Za-z0-9_-]+$/).nullable().optional(),
   markdown: z.string().optional(),
   heading_path: z.array(z.string()).optional(),
   block_kind: z.string().optional(),

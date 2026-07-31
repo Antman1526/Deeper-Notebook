@@ -69,6 +69,17 @@ function renderDocument(
 }
 
 describe('VaultDocumentView', () => {
+  it('emits the validated block identity on the readable block container', () => {
+    renderDocument('reading', pageFixtureWith({
+      blocks: [{ knowledge_block_id: 'knowledge_engine_block:plan', source_revision_id: 'knowledge_engine_revision:one', markdown: '# Plan' }],
+    }))
+
+    expect(screen.getByRole('region', { name: 'Plan reading view' }))
+      .toHaveAttribute('data-knowledge-block-id', 'knowledge_engine_block:plan')
+    expect(screen.getByRole('region', { name: 'Plan reading view' }))
+      .toHaveAttribute('data-source-revision-id', 'knowledge_engine_revision:one')
+  })
+
   it.each([
     ['reading', 'Plan reading view'],
     ['source', 'Plan source'],

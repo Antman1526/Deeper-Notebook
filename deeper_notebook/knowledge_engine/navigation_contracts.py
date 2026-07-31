@@ -231,6 +231,7 @@ class NamedWorkspaceNavigation(_Strict):
     bookmark_tags: list[str] = Field(default_factory=list, max_length=32)
     source_tree_query: str = Field(default="", max_length=256)
     search_query: str = Field(default="", max_length=512)
+    search_mode: Literal["exact", "text", "semantic"] = "text"
     active_draft_id: NavigationLocalId | None = None
     selected_space_ids: list[KnowledgeSpaceId] = Field(
         default_factory=list, max_length=32
