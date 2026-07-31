@@ -12,7 +12,10 @@ from typing import Any
 import pytest
 from surrealdb import AsyncSurreal
 
-from deeper_notebook.database.async_migrate import AsyncMigrationManager
+from deeper_notebook.database.async_migrate import (
+    AsyncMigrationManager,
+    get_latest_version,
+)
 from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.knowledge_engine.adapters import adapter_for
 from deeper_notebook.knowledge_engine.contracts import (
@@ -23,6 +26,7 @@ from deeper_notebook.knowledge_engine.repository import (
     KnowledgeRepository,
     KnowledgeRepositoryError,
 )
+from deeper_notebook.vault.repository import VaultMountCreate, VaultRepository
 
 pytestmark = pytest.mark.integration_surreal
 
@@ -31,15 +35,23 @@ MIGRATION_38_DOWN = ROOT / "deeper_notebook/database/migrations/38_down.surrealq
 NOW = datetime(2026, 7, 30, tzinfo=timezone.utc)
 
 
-def _snapshot(raw: bytes):
+def _snapshot(
+    raw: bytes,
+    *,
+    space_id: str = "knowledge_engine_space:native",
+    source_ref: str = "fixture:native",
+    authority_kind: str = "external_read_only",
+    source_kind: str = "markdown",
+    relative_locator: str = "Pages/Native.md",
+):
     envelope = SourceEnvelope(
-        space_id="knowledge_engine_space:native",
+        space_id=space_id,
         space_display_name="Native Repository Test Space",
-        source_ref="fixture:native",
-        authority_kind="external_read_only",
-        source_kind="markdown",
+        source_ref=source_ref,
+        authority_kind=authority_kind,
+        source_kind=source_kind,
         format_mode="markdown",
-        relative_locator="Pages/Native.md",
+        relative_locator=relative_locator,
         canonical_bytes=raw,
         byte_size=len(raw),
         declared_encoding=None,
@@ -49,7 +61,7 @@ def _snapshot(raw: bytes):
         observed_at=NOW,
         prior_revision=None,
     )
-    return adapter_for("markdown").project(envelope)
+    return adapter_for(source_kind).project(envelope)
 
 
 class _BarrierConnection:
@@ -69,7 +81,9 @@ def _barrier_factory(meta: dict[str, Any], barrier: asyncio.Barrier):
     @asynccontextmanager
     async def factory():
         connection = AsyncSurreal(meta["url"])
-        await connection.signin({"username": meta["user"], "password": meta["password"]})
+        await connection.signin(
+            {"username": meta["user"], "password": meta["password"]}
+        )
         await connection.use(meta["namespace"], meta["database"])
         try:
             yield _BarrierConnection(connection, barrier)
@@ -129,10 +143,14 @@ async def test_failed_child_insert_keeps_the_previous_valid_snapshot(clean_names
     duplicate = replacement.blocks[0].model_copy(
         update={"id": "knowledge_engine_block:duplicate", "position": 1}
     )
-    invalid = replacement.model_copy(update={"blocks": [replacement.blocks[0], duplicate]})
+    invalid = replacement.model_copy(
+        update={"blocks": [replacement.blocks[0], duplicate]}
+    )
 
     with pytest.raises(KnowledgeRepositoryError, match="repository_unavailable"):
-        await repository.commit_snapshot(invalid, operation_id="native-failed-replacement")
+        await repository.commit_snapshot(
+            invalid, operation_id="native-failed-replacement"
+        )
 
     persisted = await repository.get_document(original.document.id)
     children = await repo_query(
@@ -163,7 +181,9 @@ async def test_receipts_exclude_canonical_bytes_and_absolute_roots(clean_namespa
 
 async def test_migration_38_down_up_preserves_engine_records(clean_namespace):
     snapshot = _snapshot(b"# Native\n\nSticky migration proof\n")
-    await KnowledgeRepository().commit_snapshot(snapshot, operation_id="native-migration")
+    await KnowledgeRepository().commit_snapshot(
+        snapshot, operation_id="native-migration"
+    )
 
     await repo_query(MIGRATION_38_DOWN.read_text(encoding="utf-8"))
     await repo_query("DELETE type::thing('_sbl_migrations', 38);")
@@ -258,10 +278,14 @@ async def test_failure_recording_cannot_downgrade_a_success_receipt(clean_namesp
     assert rows == [{"status": "projected"}]
 
 
-async def test_absolute_space_source_ref_is_rejected_before_persistence(clean_namespace):
+async def test_absolute_space_source_ref_is_rejected_before_persistence(
+    clean_namespace,
+):
     snapshot = _snapshot(b"# Native\n\nSource ref boundary\n")
     unsafe = snapshot.model_copy(
-        update={"space": snapshot.space.model_copy(update={"source_ref": "/Users/Antman"})}
+        update={
+            "space": snapshot.space.model_copy(update={"source_ref": "/Users/Antman"})
+        }
     )
 
     with pytest.raises(ValueError, match="invalid_knowledge_engine_source_ref"):
@@ -277,8 +301,12 @@ async def test_concurrent_identical_snapshot_commits_resolve_to_unchanged(
 ):
     snapshot = _snapshot(b"# Native\n\nConcurrent transaction\n")
     barrier = asyncio.Barrier(2)
-    first = KnowledgeRepository(connection_factory=_barrier_factory(clean_namespace, barrier))
-    second = KnowledgeRepository(connection_factory=_barrier_factory(clean_namespace, barrier))
+    first = KnowledgeRepository(
+        connection_factory=_barrier_factory(clean_namespace, barrier)
+    )
+    second = KnowledgeRepository(
+        connection_factory=_barrier_factory(clean_namespace, barrier)
+    )
 
     receipts = await asyncio.gather(
         first.commit_snapshot(snapshot, operation_id="native-concurrent"),
@@ -405,13 +433,18 @@ async def test_identity_mapping_conflict_rolls_back_new_snapshot(clean_namespace
     assert len(mapping) == 1
     assert mapping[0]["engine_id"] == "knowledge_engine_document:legacy_conflict"
     assert mapping[0]["claim_hash"] == "0" * 64
-    assert await repo_query(
-        "SELECT * FROM knowledge_engine_source_revision WHERE content_hash = $content_hash;",
-        {"content_hash": replacement.revision.content_hash},
-    ) == []
+    assert (
+        await repo_query(
+            "SELECT * FROM knowledge_engine_source_revision WHERE content_hash = $content_hash;",
+            {"content_hash": replacement.revision.content_hash},
+        )
+        == []
+    )
 
 
-async def test_checkpoint_and_document_reads_round_trip_with_pagination(clean_namespace):
+async def test_checkpoint_and_document_reads_round_trip_with_pagination(
+    clean_namespace,
+):
     snapshot = _snapshot(b"# Native\n\nRead round trip\n")
     repository = KnowledgeRepository()
     await repository.commit_snapshot(snapshot, operation_id="native-read-round-trip")
@@ -450,3 +483,137 @@ async def test_checkpoint_and_document_reads_round_trip_with_pagination(clean_na
     assert document.source_revision_id == snapshot.document.source_revision_id
     assert document.normalized_body == snapshot.document.normalized_body
     assert after_first_page == []
+
+
+async def test_backfill_checkpoint_survives_repository_reconstruction(
+    clean_namespace,
+    tmp_path,
+):
+    """A restart retains legacy identities, dual projections, and exact cursors."""
+    assert await get_latest_version() == 38
+    parent_root = tmp_path / "synthetic-parent"
+    child_root = tmp_path / "synthetic-child"
+    parent_root.mkdir()
+    child_root.mkdir()
+    legacy = VaultRepository(embedding_submitter=lambda *_args: None)
+    parent = await legacy.create_mount(
+        VaultMountCreate(
+            name="Synthetic Parent",
+            root_path=str(parent_root),
+            format_mode="markdown",
+            parser_version="native-proof",
+        )
+    )
+    child = await legacy.create_mount(
+        VaultMountCreate(
+            name="Synthetic Child",
+            root_path=str(child_root),
+            format_mode="markdown",
+            parent_vault_id=parent.id,
+            parser_version="native-proof",
+        )
+    )
+    overlay_snapshot = _snapshot(
+        b"---\ndeeper_notebook:\n  id: overlay_note:restart\n"
+        b"  kind: unique\n  date_key: null\n---\n"
+        b"# Overlay\n\n- [ ] Restart-owned task\n",
+        space_id="knowledge_engine_space:overlay_restart",
+        source_ref="overlay:default",
+        authority_kind="app_owned",
+        source_kind="overlay",
+        relative_locator="Notes/Overlay Restart.md",
+    )
+    child_snapshot = _snapshot(
+        b"# Child\n\n[[Target]]\n",
+        space_id="knowledge_engine_space:child_restart",
+        source_ref=child.id,
+        relative_locator="Child.md",
+    )
+    first = KnowledgeRepository()
+    overlay_receipt = await first.commit_snapshot(
+        overlay_snapshot,
+        operation_id="native-restart-overlay",
+    )
+    child_receipt = await first.commit_snapshot(
+        child_snapshot,
+        operation_id="native-restart-child",
+    )
+    child_replay = await first.commit_snapshot(
+        child_snapshot,
+        operation_id="native-restart-child",
+    )
+    checkpoint = BackfillCheckpoint(
+        space_id=child_snapshot.space.id,
+        last_relative_locator=child_snapshot.document.relative_locator,
+        last_source_hash=child_snapshot.revision.content_hash,
+        status="completed",
+        projected=2,
+        unchanged=1,
+        failed=0,
+        updated_at=NOW,
+    )
+    saved_checkpoint = await first.save_checkpoint(checkpoint)
+
+    reconstructed = KnowledgeRepository()
+    restored = await reconstructed.get_checkpoint(child_snapshot.space.id)
+    documents = await reconstructed.list_documents(
+        space_id=None,
+        limit=10,
+        offset=0,
+    )
+    counts = await repo_query(
+        """
+        RETURN {
+            mounts: count((SELECT * FROM vault_mount)),
+            spaces: count((SELECT * FROM knowledge_engine_space)),
+            documents: count((SELECT * FROM knowledge_engine_document)),
+            revisions: count((SELECT * FROM knowledge_engine_source_revision)),
+            checkpoints: count((SELECT * FROM knowledge_engine_backfill_checkpoint)),
+            receipts: count((SELECT * FROM knowledge_engine_projection_receipt))
+        };
+        """
+    )
+
+    assert restored == saved_checkpoint
+    assert (
+        restored.space_id,
+        restored.last_relative_locator,
+        restored.last_source_hash,
+        restored.status,
+        restored.projected,
+        restored.unchanged,
+        restored.failed,
+    ) == (
+        checkpoint.space_id,
+        checkpoint.last_relative_locator,
+        checkpoint.last_source_hash,
+        checkpoint.status,
+        checkpoint.projected,
+        checkpoint.unchanged,
+        checkpoint.failed,
+    )
+    assert overlay_receipt.status == "projected"
+    assert child_receipt.status == "projected"
+    assert child_replay.status == "unchanged"
+    assert (await legacy.get_mount(child.id)).parent_vault_id == parent.id
+    assert {
+        document.id: (document.space_id, document.content_hash)
+        for document in documents
+    } == {
+        overlay_snapshot.document.id: (
+            overlay_snapshot.space.id,
+            overlay_snapshot.document.content_hash,
+        ),
+        child_snapshot.document.id: (
+            child_snapshot.space.id,
+            child_snapshot.document.content_hash,
+        ),
+    }
+    assert counts == {
+        "mounts": 2,
+        "spaces": 2,
+        "documents": 2,
+        "revisions": 2,
+        "checkpoints": 1,
+        "receipts": 2,
+    }
