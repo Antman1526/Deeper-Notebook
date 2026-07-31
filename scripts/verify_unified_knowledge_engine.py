@@ -26,6 +26,8 @@ MAX_SYNTHETIC_FILES = 10_000
 MAX_SYNTHETIC_FILE_BYTES = 10 * 1024 * 1024
 MAX_SYNTHETIC_TOTAL_BYTES = 100 * 1024 * 1024
 SCAN_STABILIZATION_SECONDS = 2.1
+BACKFILL_WAIT_SECONDS = 60.0
+BACKFILL_POLL_SECONDS = 0.1
 _SPACE_ID_PATTERN = re.compile(r"^knowledge_engine_space:[A-Za-z0-9_-]+$")
 _RECORD_ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*:[A-Za-z0-9_-]+$")
 _HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -462,6 +464,65 @@ def _proof_identity(inputs: Inputs, token: str) -> dict[str, Any]:
     ):
         raise VerificationRefusal("api_response_invalid")
     return payload
+
+
+def _wait_for_terminal_backfill(
+    inputs: Inputs,
+    token: str,
+    expected_space_ids: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    if (
+        not 1 <= len(expected_space_ids) <= 32
+        or len(set(expected_space_ids)) != len(expected_space_ids)
+        or any(_SPACE_ID_PATTERN.fullmatch(item) is None for item in expected_space_ids)
+    ):
+        raise VerificationRefusal("synthetic_manifest_invalid")
+    query = urllib.parse.urlencode(
+        [("space_id", space_id) for space_id in expected_space_ids]
+    )
+    deadline = time.monotonic() + BACKFILL_WAIT_SECONDS
+    expected = set(expected_space_ids)
+    while True:
+        response_status, payload = _get(
+            inputs,
+            token,
+            "/api/deeper-notebook/knowledge-engine/backfill-checkpoints?"
+            f"{query}",
+        )
+        if response_status != 200 or not isinstance(payload, list):
+            raise VerificationRefusal("api_response_invalid")
+        checkpoints: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in payload:
+            if (
+                not isinstance(item, dict)
+                or set(item)
+                != {"space_id", "status", "projected", "unchanged", "failed"}
+                or not isinstance(item.get("space_id"), str)
+                or item["space_id"] not in expected
+                or item["space_id"] in seen
+                or item.get("status")
+                not in {"pending", "running", "completed", "failed"}
+                or any(
+                    isinstance(item.get(field), bool)
+                    or not isinstance(item.get(field), int)
+                    or item[field] < 0
+                    for field in ("projected", "unchanged", "failed")
+                )
+            ):
+                raise VerificationRefusal("api_response_invalid")
+            seen.add(item["space_id"])
+            checkpoints.append(dict(item))
+        checkpoints.sort(key=lambda item: item["space_id"])
+        if any(item["status"] == "failed" for item in checkpoints):
+            raise VerificationUnavailable("backfill_not_terminal")
+        if seen == expected and all(
+            item["status"] == "completed" for item in checkpoints
+        ):
+            return checkpoints
+        if time.monotonic() >= deadline:
+            raise VerificationUnavailable("backfill_not_terminal")
+        time.sleep(BACKFILL_POLL_SECONDS)
 
 
 def _record_id(value: Any) -> str:
@@ -999,6 +1060,7 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
         "minimum_tasks",
         "minimum_graph_edges",
         "minimum_trust_records",
+        "checkpoint_space_ids",
     }
     integer_fields = {
         "overlay_revision",
@@ -1010,11 +1072,23 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
     }
     if (
         set(expected) != required
-        or not all(isinstance(expected[key], str) for key in required - integer_fields)
+        or not all(
+            isinstance(expected[key], str)
+            for key in required - integer_fields - {"checkpoint_space_ids"}
+        )
         or any(
             isinstance(expected[key], bool) or not isinstance(expected[key], int)
             for key in integer_fields
         )
+        or not isinstance(expected["checkpoint_space_ids"], list)
+        or not 1 <= len(expected["checkpoint_space_ids"]) <= 32
+        or any(
+            not isinstance(space_id, str)
+            or _SPACE_ID_PATTERN.fullmatch(space_id) is None
+            for space_id in expected["checkpoint_space_ids"]
+        )
+        or len(set(expected["checkpoint_space_ids"]))
+        != len(expected["checkpoint_space_ids"])
     ):
         raise VerificationRefusal("synthetic_manifest_invalid")
     relative_manifest = PurePosixPath(expected["manifest_relative_path"])
@@ -1048,6 +1122,11 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
 
     before_evidence = root_evidence()
     identity = _proof_identity(inputs, token)
+    backfill_before_restart = _wait_for_terminal_backfill(
+        inputs,
+        token,
+        tuple(expected["checkpoint_space_ids"]),
+    )
     overlay_status, overlay_payload = _json_request(
         inputs,
         token,
@@ -1158,6 +1237,7 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
         {
             "state": "knowledge_engine_restart_required",
             "proof_identity": identity,
+            "backfill_before_restart": backfill_before_restart,
             "synthetic_roots": manifest["roots"],
             "parent_vault_id": parent_id,
             "child_vault_id": child["id"],
@@ -1193,6 +1273,29 @@ def _controlled_verify(inputs: Inputs, manifest: dict[str, Any], token: str) -> 
         != prior_identity.get("overlay_root_sha256")
     ):
         return 3
+    expected_checkpoint_space_ids = tuple(
+        manifest["expected"].get("checkpoint_space_ids", ())
+    )
+    backfill_after_restart = _wait_for_terminal_backfill(
+        inputs,
+        token,
+        expected_checkpoint_space_ids,
+    )
+    prior_checkpoints = prior.get("backfill_before_restart")
+    if (
+        not isinstance(prior_checkpoints, list)
+        or {
+            item.get("space_id")
+            for item in prior_checkpoints
+            if isinstance(item, dict)
+        }
+        != set(expected_checkpoint_space_ids)
+        or any(
+            not isinstance(item, dict) or item.get("status") != "completed"
+            for item in prior_checkpoints
+        )
+    ):
+        raise VerificationRefusal("synthetic_manifest_invalid")
     current_evidence = {
         name: _synthetic_root_evidence(
             name,
@@ -1258,6 +1361,8 @@ def _controlled_verify(inputs: Inputs, manifest: dict[str, Any], token: str) -> 
         "trust_import_idempotent": (
             prior.get("trust_import_replay", {}).get("second", {}).get("changed") == 0
         ),
+        "backfill_before_restart": prior_checkpoints,
+        "backfill_after_restart": backfill_after_restart,
     }
     _write_report(inputs.report_path, report)
     return 0

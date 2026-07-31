@@ -13,6 +13,7 @@ from deeper_notebook.knowledge_engine.backfill import (
     KnowledgeBackfillService,
 )
 from deeper_notebook.knowledge_engine.contracts import (
+    BackfillCheckpoint,
     EquivalenceReport,
     KnowledgeDocument,
     ProjectionDigest,
@@ -79,6 +80,30 @@ class KnowledgeEngineService:
             limit=limit,
             offset=offset,
         )
+
+    async def backfill_checkpoints(
+        self, space_ids: tuple[str, ...]
+    ) -> list[BackfillCheckpoint]:
+        if (
+            not isinstance(space_ids, tuple)
+            or not 1 <= len(space_ids) <= 32
+            or len(set(space_ids)) != len(space_ids)
+            or any(
+                not isinstance(space_id, str)
+                or re.fullmatch(
+                    r"knowledge_engine_space:[A-Za-z0-9_-]+", space_id
+                )
+                is None
+                for space_id in space_ids
+            )
+        ):
+            raise ValueError("invalid_backfill_checkpoint_inventory")
+        checkpoints: list[BackfillCheckpoint] = []
+        for space_id in sorted(space_ids):
+            checkpoint = await self._repository.get_checkpoint(space_id)
+            if checkpoint is not None:
+                checkpoints.append(checkpoint)
+        return checkpoints
 
     async def run_backfill(self) -> BackfillResult:
         async with self._transition_lock:
