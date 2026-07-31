@@ -16,6 +16,7 @@ const editorState = vi.hoisted(() => ({ failLivePreview: false }))
 const overlayView = vi.hoisted(() => ({
   onReload: undefined as undefined | (() => Promise<unknown>),
   onNavigate: undefined as undefined | ((noteId: string) => void),
+  onMarkdownChange: undefined as undefined | ((markdown: string) => void),
   graphViewport: undefined as GraphViewport | undefined,
   onGraphViewportChange: undefined as undefined | ((viewport: GraphViewport) => void),
 }))
@@ -78,17 +79,20 @@ vi.mock('@/components/overlay/OverlayDocumentView', () => ({
     mode,
     onReload,
     onNavigate,
+    onMarkdownChange,
     graphViewport,
     onGraphViewportChange,
   }: {
     mode: string
     onReload: () => Promise<unknown>
     onNavigate: (noteId: string) => void
+    onMarkdownChange?: (markdown: string) => void
     graphViewport?: GraphViewport
     onGraphViewportChange?: (viewport: GraphViewport) => void
   }) => {
     overlayView.onReload = onReload
     overlayView.onNavigate = onNavigate
+    overlayView.onMarkdownChange = onMarkdownChange
     overlayView.graphViewport = graphViewport
     overlayView.onGraphViewportChange = onGraphViewportChange
     return <section aria-label={`Overlay document ${mode}`} />
@@ -427,6 +431,7 @@ describe('KnowledgePaneContent', () => {
     queries.outgoingLinks = []
     overlayView.onReload = undefined
     overlayView.onNavigate = undefined
+    overlayView.onMarkdownChange = undefined
     overlayView.graphViewport = undefined
     overlayView.onGraphViewportChange = undefined
     vaultGraphView.viewport = undefined
@@ -583,6 +588,45 @@ describe('KnowledgePaneContent', () => {
     )
   })
 
+  it('renders active document metrics and accepts selection only inside its pane', () => {
+    renderPane()
+    const pane = screen.getByRole('region', {
+      name: 'knowledge.knowledgePane modes pane-1',
+    })
+    const title = screen.getByRole('heading', { name: 'Canonical Plan' })
+    const titleText = title.firstChild
+    const outside = document.createElement('p')
+    outside.textContent = 'outside pane'
+    document.body.append(outside)
+
+    try {
+      const selection = window.getSelection()!
+      const insideRange = document.createRange()
+      insideRange.selectNodeContents(title)
+      selection.removeAllRanges()
+      selection.addRange(insideRange)
+      fireEvent(document, new Event('selectionchange'))
+
+      expect(within(pane).getByRole('status')).toBeInTheDocument()
+      expect(within(pane).getByText('knowledge.navigation.words: 1'))
+        .toBeInTheDocument()
+      expect(within(pane).getByText('knowledge.navigation.selection')).toBeInTheDocument()
+
+      const outsideRange = document.createRange()
+      outsideRange.setStart(titleText!, 0)
+      outsideRange.setEnd(outside.firstChild!, outside.textContent!.length)
+      selection.removeAllRanges()
+      selection.addRange(outsideRange)
+      fireEvent(document, new Event('selectionchange'))
+
+      expect(within(pane).queryByText('knowledge.navigation.selection'))
+        .not.toBeInTheDocument()
+    } finally {
+      window.getSelection()?.removeAllRanges()
+      outside.remove()
+    }
+  })
+
   it('persists an external controlled graph viewport and restores it after serialization', () => {
     replaceWorkspace('graph')
     const original = useKnowledgeWorkspaceStore.getState()
@@ -680,6 +724,23 @@ describe('KnowledgePaneContent', () => {
     expect(queries.graph).toHaveBeenLastCalledWith(undefined, undefined, false)
     expect(screen.getByLabelText('Overlay document graph')).toBeInTheDocument()
     expect(screen.queryByLabelText(/source$/)).not.toBeInTheDocument()
+  })
+
+  it('uses the overlay draft callback as the active metrics buffer', () => {
+    replaceOverlayWorkspace('source')
+    queries.overlayPage = {
+      data: overlayPageWithTarget('overlay_note:target'),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }
+
+    renderPane()
+    expect(screen.getByText('knowledge.navigation.characters: 11')).toBeInTheDocument()
+
+    act(() => overlayView.onMarkdownChange?.('🧠'))
+    expect(screen.getByText('knowledge.navigation.characters: 1')).toBeInTheDocument()
   })
 
   it('rejects a resolved overlay refetch error instead of returning stale data', async () => {

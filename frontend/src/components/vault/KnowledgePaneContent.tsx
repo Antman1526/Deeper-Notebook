@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   BookOpen,
   Code2,
@@ -33,6 +33,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 
 import { VaultDocumentView } from './VaultDocumentView'
+import { DocumentMetricsFooter } from './DocumentMetricsFooter'
 import { VaultGraph } from './VaultGraph'
 
 export type KnowledgeNavigate = (
@@ -64,6 +65,12 @@ export function KnowledgePaneContent({
   onNavigate,
 }: KnowledgePaneContentProps) {
   const { t } = useTranslation()
+  const paneRef = useRef<HTMLElement>(null)
+  const [selectionText, setSelectionText] = useState('')
+  const [overlayMarkdown, setOverlayMarkdown] = useState<string | undefined>()
+  const metricsVisible = useKnowledgeWorkspaceStore(
+    (state) => state.navigation.metricsVisible,
+  )
   const setTabViewMode = useKnowledgeWorkspaceStore(
     (state) => state.setTabViewMode,
   )
@@ -93,6 +100,34 @@ export function KnowledgePaneContent({
     isOverlay ? undefined : noteId,
     !isOverlay && visibleMode === 'graph',
   )
+
+  useEffect(() => {
+    setOverlayMarkdown(undefined)
+  }, [activeTab?.id])
+
+  useEffect(() => {
+    const updateSelection = () => {
+      const selection = document.getSelection()
+      const paneElement = paneRef.current
+      if (
+        !selection
+        || selection.isCollapsed
+        || !selection.anchorNode
+        || !selection.focusNode
+        || !paneElement
+        || !paneElement.contains(selection.anchorNode)
+        || !paneElement.contains(selection.focusNode)
+      ) {
+        setSelectionText('')
+        return
+      }
+      setSelectionText(selection.toString())
+    }
+
+    document.addEventListener('selectionchange', updateSelection)
+    updateSelection()
+    return () => document.removeEventListener('selectionchange', updateSelection)
+  }, [activeTab?.id])
 
   useEffect(() => {
     if (!activeTab) return
@@ -241,9 +276,20 @@ export function KnowledgePaneContent({
     }
     return result.data
   }
+  const documentText = isOverlay
+    ? overlayMarkdown ?? overlayPage.data?.editable_markdown ?? ''
+    : vaultPage.data?.note.content ?? vaultPage.data?.note.markdown ?? ''
+  const metricLabels = {
+    words: t('knowledge.navigation.words'),
+    characters: t('knowledge.navigation.characters'),
+    charactersWithoutWhitespace: t('knowledge.navigation.charactersWithoutWhitespace'),
+    readingMinutes: t('knowledge.navigation.readingMinutes'),
+    selection: t('knowledge.navigation.selection'),
+  }
 
   return (
     <section
+      ref={paneRef}
       role="region"
       aria-label={`${t('knowledge.knowledgePane')} modes ${pane.id}`}
       tabIndex={0}
@@ -338,6 +384,7 @@ export function KnowledgePaneContent({
             workspaceTabId={activeTab.id}
             graphViewport={activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 }}
             onGraphViewportChange={(viewport) => setTabGraphViewport(pane.id, activeTab.id, viewport)}
+            onMarkdownChange={setOverlayMarkdown}
           />
         ) : !isOverlay && vaultPage.data ? (
           visibleMode === 'graph' ? (
@@ -371,6 +418,12 @@ export function KnowledgePaneContent({
           )
         ) : null}
       </div>
+      <DocumentMetricsFooter
+        text={documentText}
+        selectionText={selectionText}
+        visible={metricsVisible && Boolean(pageData && !pageError)}
+        labels={metricLabels}
+      />
     </section>
   )
 }
