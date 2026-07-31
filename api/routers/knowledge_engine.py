@@ -201,11 +201,6 @@ async def get_equivalence_report(
         return KnowledgeEngineEquivalenceResponse.model_validate(report.model_dump())
     except HTTPException:
         raise
-    except ValueError:
-        raise _error(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "knowledge_engine_request_invalid",
-        ) from None
     except Exception as exc:
         raise _map_exception(exc) from None
 

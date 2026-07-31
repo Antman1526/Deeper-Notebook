@@ -11,6 +11,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Iterator
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/verify_unified_knowledge_engine.py"
 
@@ -133,6 +135,57 @@ def test_verifier_returns_mismatch_without_copying_difference_values(tmp_path: P
     assert "private note text" not in contents
     assert "test-only-token" not in contents
     assert "document_hash_mismatch" in contents
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "unreviewed_private_difference",
+        "document_hash_mismatch/private",
+        "document_hash_mismatch-token",
+        "document_hash_mismatch\x00",
+    ],
+)
+def test_verifier_refuses_unknown_or_unsafe_difference_codes_without_writing_report(
+    tmp_path: Path, code: str
+) -> None:
+    inputs = _inputs(tmp_path)
+    _Handler.status_code = 200
+    _Handler.payload = {
+        "passed": False,
+        "differences": [{"code": code}],
+    }
+
+    with _server() as api_url:
+        result = subprocess.run(
+            _command(inputs, api_url), cwd=ROOT, text=True, capture_output=True, check=False
+        )
+
+    assert result.returncode == 2
+    assert not inputs["report"].exists()
+
+
+@pytest.mark.parametrize(
+    "space_id",
+    [
+        "knowledge_engine_space:fixture/path",
+        "knowledge_engine_space:",
+        "knowledge_engine_space:fixture.token",
+    ],
+)
+def test_verifier_refuses_noncanonical_space_id_without_contacting_api(
+    tmp_path: Path, space_id: str
+) -> None:
+    inputs = _inputs(tmp_path)
+    command = _command(inputs, "http://127.0.0.1:9")
+    command[command.index("knowledge_engine_space:fixture")] = space_id
+
+    result = subprocess.run(
+        command, cwd=ROOT, text=True, capture_output=True, check=False
+    )
+
+    assert result.returncode == 2
+    assert not inputs["report"].exists()
 
 
 def test_verifier_refuses_unsafe_path_and_disabled_engine(tmp_path: Path) -> None:

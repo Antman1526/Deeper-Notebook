@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import stat
 import sys
 import urllib.error
@@ -17,6 +18,31 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_RESPONSE_BYTES = 1024 * 1024
+_SPACE_ID_PATTERN = re.compile(r"^knowledge_engine_space:[A-Za-z0-9_-]+$")
+_KNOWN_MISMATCH_CODES = frozenset(
+    {
+        "space_id_mismatch",
+        "document_count_mismatch",
+        "block_count_mismatch",
+        "relation_count_mismatch",
+        "task_count_mismatch",
+        "property_count_mismatch",
+        "tag_count_mismatch",
+        "asset_count_mismatch",
+        "document_hash_mismatch",
+        "identity_pair_mismatch",
+        "outgoing_membership_mismatch",
+        "backlink_membership_mismatch",
+        "graph_membership_mismatch",
+        "exact_search_membership_mismatch",
+        "authority_mismatch",
+        "source_kind_mismatch",
+        "format_mismatch",
+        "provenance_mismatch",
+        "capabilities_mismatch",
+        "overlay_revision_mapping_mismatch",
+    }
+)
 
 
 class VerificationRefusal(RuntimeError):
@@ -117,8 +143,7 @@ def _inputs(namespace: argparse.Namespace) -> Inputs:
         or len(set(space_ids)) != len(space_ids)
         or any(
             not isinstance(value, str)
-            or len(value) > 128
-            or not value.startswith("knowledge_engine_space:")
+            or _SPACE_ID_PATTERN.fullmatch(value) is None
             for value in space_ids
         )
         or not 1 <= len(exact_queries) <= 32
@@ -181,7 +206,7 @@ def _codes(payload: Any) -> list[str]:
     for difference in payload["differences"]:
         if not isinstance(difference, dict) or not isinstance(
             difference.get("code"), str
-        ):
+        ) or difference["code"] not in _KNOWN_MISMATCH_CODES:
             raise VerificationRefusal("verification_inventory_invalid")
         codes.append(difference["code"])
     return sorted(set(codes))
