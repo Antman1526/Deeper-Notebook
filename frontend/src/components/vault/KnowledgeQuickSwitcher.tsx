@@ -27,10 +27,11 @@ import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-sto
 
 interface KnowledgeQuickSwitcherProps {
   mounts: VaultMount[]
+  searchMode?: 'exact' | 'text' | 'semantic'
   onBookmarkSearch?: (query: string, mode: 'exact' | 'text' | 'semantic') => void
 }
 
-export function KnowledgeQuickSwitcher({ mounts, onBookmarkSearch }: KnowledgeQuickSwitcherProps) {
+export function KnowledgeQuickSwitcher({ mounts, searchMode = 'text', onBookmarkSearch }: KnowledgeQuickSwitcherProps) {
   const { t } = useTranslation()
   const surface = useCommandSurfaceStore()
   const {
@@ -135,7 +136,7 @@ export function KnowledgeQuickSwitcher({ mounts, onBookmarkSearch }: KnowledgeQu
               {query.trim() && onBookmarkSearch && (
                 <CommandItem
                   value={`Bookmark search for ${query}`}
-                  onSelect={() => { onBookmarkSearch(query.trim(), 'text'); close(false) }}
+                  onSelect={() => { onBookmarkSearch(query.trim(), searchMode); close(false) }}
                 >
                   Bookmark search for {query.trim()}
                 </CommandItem>

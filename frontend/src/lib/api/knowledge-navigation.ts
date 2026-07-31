@@ -765,7 +765,7 @@ function navigationFromWire(
     utilityMode: value.utility_mode, sidebarVisible: value.sidebar_visible,
     sidebarWidth: value.sidebar_width, activeBookmarkFolderId: value.active_bookmark_folder_id,
     bookmarkTags: value.bookmark_tags, sourceTreeQuery: value.source_tree_query,
-    searchQuery: value.search_query, activeDraftId: value.active_draft_id,
+    searchQuery: value.search_query, searchMode: value.search_mode, activeDraftId: value.active_draft_id,
     selectedSpaceIds: value.selected_space_ids, authorityFilters: value.authority_filters,
     metricsVisible: value.metrics_visible,
   }
@@ -777,7 +777,7 @@ function navigationToWire(value: KnowledgeWorkspaceNavigation) {
     sidebar_width: value.sidebarWidth,
     active_bookmark_folder_id: value.activeBookmarkFolderId,
     bookmark_tags: value.bookmarkTags, source_tree_query: value.sourceTreeQuery,
-    search_query: value.searchQuery, active_draft_id: value.activeDraftId,
+    search_query: value.searchQuery, search_mode: value.searchMode, active_draft_id: value.activeDraftId,
     selected_space_ids: value.selectedSpaceIds, authority_filters: value.authorityFilters,
     metrics_visible: value.metricsVisible,
   })
