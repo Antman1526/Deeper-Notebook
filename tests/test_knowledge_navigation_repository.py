@@ -815,3 +815,58 @@ async def test_repository_runs_against_exact_migrations_thirty_eight_and_thirty_
 
     assert bookmark.folder_id == folder.id
     assert "idx_kn_operation_id" in str(info)
+
+
+@pytest.mark.asyncio
+async def test_exact_schema_create_folder_checks_depth_inside_its_transaction(
+    migrated_memory_connection,
+):
+    repository = KnowledgeNavigationRepository(
+        connection_factory=migrated_memory_connection.factory
+    )
+    parent = None
+    root = None
+    for index in range(15):
+        parent = await repository.create_folder(
+            create_folder_command(
+                operation_id=f"create-depth-{index}",
+                name=f"Create depth {index}",
+                parent_folder_id=parent.id if parent else None,
+            )
+        )
+        root = root or parent
+    extra_root = await repository.create_folder(
+        create_folder_command(operation_id="create-depth-extra", name="Extra root")
+    )
+    armed = True
+
+    class AncestorRaceConnection:
+        async def query(self, statement, variables=None):
+            nonlocal armed
+            if armed and "BEGIN TRANSACTION;" in statement:
+                armed = False
+                await migrated_memory_connection.database.query(
+                    "UPDATE $id SET parent_folder_id = $parent;",
+                    {"id": RecordID.parse(root.id), "parent": extra_root.id},
+                )
+            return await migrated_memory_connection.database.query(statement, variables)
+
+    @asynccontextmanager
+    async def factory():
+        yield AncestorRaceConnection()
+
+    racing_repository = KnowledgeNavigationRepository(connection_factory=factory)
+    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_depth_exceeded"):
+        await racing_repository.create_folder(
+            create_folder_command(
+                operation_id="create-depth-race",
+                name="Must not commit",
+                parent_folder_id=parent.id,
+            )
+        )
+    assert "Must not commit" not in [folder.name for folder in await repository.list_folders()]
+    receipts = await migrated_memory_connection.database.query(
+        "SELECT * FROM knowledge_navigation_operation_receipt WHERE operation_id = $operation_id;",
+        {"operation_id": "create-depth-race"},
+    )
+    assert receipts == []
