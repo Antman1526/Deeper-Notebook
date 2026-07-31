@@ -280,6 +280,14 @@ export interface KnowledgeTab {
   sourceAuthority: KnowledgeSourceAuthority
   knowledgeDocumentId: string | null
   graphViewport: GraphViewport | null
+  // Restore-only stable graph metadata. It is intentionally not written to the
+  // Current Session wire payload, which remains compatible with the server API.
+  graphBookmarkContext?: {
+    rootDocumentId: string
+    spaceIds: string[]
+    relationKinds: string[]
+    viewport: GraphViewport
+  } | null
 }
 
 export interface OpenKnowledgeTab {
@@ -291,6 +299,7 @@ export interface OpenKnowledgeTab {
   sourceAuthority?: KnowledgeSourceAuthority
   knowledgeDocumentId?: string | null
   graphViewport?: GraphViewport | null
+  graphBookmarkContext?: KnowledgeTab['graphBookmarkContext']
 }
 
 export type GraphViewport = z.infer<typeof graphViewportSchema>

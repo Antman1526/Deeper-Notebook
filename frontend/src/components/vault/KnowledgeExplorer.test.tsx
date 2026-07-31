@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -16,6 +16,7 @@ const states = vi.hoisted(() => ({
   links: { isLoading: false, isError: false },
   hydration: { isLoading: false, isError: false },
   persistence: { isPending: false, isError: false, error: null as Error | null },
+  persistenceWrites: vi.fn(),
 }))
 const vaultQueries = vi.hoisted(() => ({
   page: vi.fn(),
@@ -257,7 +258,10 @@ vi.mock('@/lib/hooks/use-overlay', () => ({
 
 vi.mock('@/lib/hooks/use-knowledge-workspace', () => ({
   useHydrateKnowledgeWorkspace: () => states.hydration,
-  usePersistKnowledgeWorkspace: () => states.persistence,
+  usePersistKnowledgeWorkspace: () => {
+    useEffect(() => useKnowledgeWorkspaceStore.subscribe((state) => states.persistenceWrites(state)), [])
+    return states.persistence
+  },
 }))
 
 vi.mock('@/lib/hooks/use-knowledge-navigation', () => ({
@@ -434,6 +438,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     states.links = { isLoading: false, isError: false }
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
+    states.persistenceWrites.mockClear()
     vi.clearAllMocks()
     searchView.calls = []
     searchView.semanticRun.mockClear()
@@ -1341,6 +1346,10 @@ describe('KnowledgeExplorer utility rail', () => {
     await waitFor(() => expect(screen.getByRole('dialog', { name: 'Open workspace with unavailable targets' })).toBeVisible())
     expect(serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState())).toEqual(before)
     expect(applyNamedWorkspace).not.toHaveBeenCalled()
+    const revisionBeforeCancel = useKnowledgeWorkspaceStore.getState().revision
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState())).toEqual(before)
+    expect(useKnowledgeWorkspaceStore.getState().revision).toBe(revisionBeforeCancel)
   })
 
   it('applies available targets once and retains empty panes when stale targets are omitted', async () => {
@@ -1384,6 +1393,99 @@ describe('KnowledgeExplorer utility rail', () => {
     await waitFor(() => expect(applyNamedWorkspace).toHaveBeenCalledOnce())
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs).toHaveLength(1)
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-2']).toMatchObject({ activeTabId: null, tabs: [] })
+  })
+
+  it('restores stable block focus and active graph context only for available tab IDs', async () => {
+    pageIdentity.value = 'knowledge_engine_document:research'
+    navigationQueries.workspaces = { items: [{
+      id: 'named_knowledge_workspace:research', name: 'Research desk', revision: 5,
+      updatedAt: '2026-07-31T00:00:00.000Z',
+    }] }
+    const descriptor = {
+      documentId: 'knowledge_engine_document:research', spaceId: 'knowledge_engine_space:research',
+      authorityKind: 'external_read_only', sourceKind: 'markdown', title: 'Research note',
+      relativeLocator: 'research.md', legacyNoteId: 'note:research', legacyContainerId: 'vault:one',
+    }
+    navigationQueries.restoreWorkspace.mockResolvedValue({
+      workspaceId: 'named_knowledge_workspace:research', revision: 5,
+      activePaneId: 'pane-2', nextId: 5,
+      panes: {
+        'pane-1': { id: 'pane-1', activeTabId: 'tab-block', tabs: [
+          { id: 'tab-block', displayLabel: 'Focused block', viewMode: 'reading', target: {
+            kind: 'block', documentId: descriptor.documentId, blockId: 'knowledge_engine_block:one',
+            sourceRevisionId: 'knowledge_engine_revision:one',
+          }, targetState: 'available', targetDocument: descriptor },
+          { id: 'tab-stale-duplicate', displayLabel: 'Stale duplicate', viewMode: 'reading', target: {
+            kind: 'block', documentId: descriptor.documentId, blockId: 'knowledge_engine_block:two',
+            sourceRevisionId: 'knowledge_engine_revision:two',
+          }, targetState: 'missing', targetDocument: null },
+        ] },
+        'pane-2': { id: 'pane-2', activeTabId: 'tab-graph', tabs: [{
+          id: 'tab-graph', displayLabel: 'Research graph', viewMode: 'graph', target: {
+            kind: 'graph', rootDocumentId: descriptor.documentId,
+            spaceIds: ['knowledge_engine_space:research'], relationKinds: ['wikilink'],
+            viewport: { x: 4, y: 5, zoom: 2 },
+          }, targetState: 'available', targetDocument: descriptor,
+        }] },
+      },
+      layout: { type: 'split', id: 'split-4', direction: 'horizontal', firstSize: 50,
+        first: { type: 'pane', paneId: 'pane-1' }, second: { type: 'pane', paneId: 'pane-2' } },
+      navigation: useKnowledgeWorkspaceStore.getState().navigation,
+      summary: { available: 2, stale: 0, unavailable: 0, missing: 1 },
+    })
+    await renderExplorer()
+    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
+    states.persistenceWrites.mockClear()
+    const setFocusedBlock = vi.spyOn(useKnowledgeWorkspaceStore.getState(), 'setFocusedBlock')
+    fireEvent.click(screen.getByRole('button', { name: 'Open Research desk' }))
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Open workspace with unavailable targets' })).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: 'Open available' }))
+
+    await waitFor(() => expect(setFocusedBlock).toHaveBeenCalledWith('pane-1', 'tab-block', {
+      blockId: 'knowledge_engine_block:one', sourceRevisionId: 'knowledge_engine_revision:one',
+    }))
+    await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().focusedBlocksByTab).toEqual({
+      'tab-block': { blockId: 'knowledge_engine_block:one', sourceRevisionId: 'knowledge_engine_revision:one' },
+    }))
+    expect(useKnowledgeWorkspaceStore.getState().graphBookmarkContext).toEqual({
+      rootDocumentId: descriptor.documentId, spaceIds: ['knowledge_engine_space:research'],
+      relationKinds: ['wikilink'], viewport: { x: 4, y: 5, zoom: 2 },
+    })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-2'].tabs[0].graphBookmarkContext).toEqual({
+      rootDocumentId: descriptor.documentId, spaceIds: ['knowledge_engine_space:research'],
+      relationKinds: ['wikilink'], viewport: { x: 4, y: 5, zoom: 2 },
+    })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs.map((tab) => tab.id)).toEqual(['tab-block'])
+    expect(states.persistenceWrites).toHaveBeenCalled()
+  })
+
+  it('saves only stable target IDs and blocks the save when identity resolution fails', async () => {
+    pageIdentity.value = 'knowledge_engine_document:research'
+    const { unmount } = await renderExplorer()
+    await selectFile('notes/one.md')
+    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Current As' }))
+    fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'Stable desk' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save workspace' }))
+    await waitFor(() => expect(navigationQueries.createWorkspace).toHaveBeenCalledOnce())
+    const savedWorkspace = navigationQueries.createWorkspace.mock.calls.at(0) as unknown as [{ snapshot: unknown }]
+    const serialized = JSON.stringify(savedWorkspace[0].snapshot)
+    expect(serialized).toContain('knowledge_engine_document:research')
+    expect(serialized).not.toContain('note:one')
+    expect(serialized).not.toContain('notes/one.md')
+
+    unmount()
+    navigationQueries.createWorkspace.mockClear()
+    pageIdentity.value = null
+    act(() => useKnowledgeWorkspaceStore.getState().resetWorkspace())
+    await renderExplorer()
+    await selectFile('notes/one.md')
+    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Current As' }))
+    fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'Unavailable desk' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save workspace' }))
+    await waitFor(() => expect(screen.getByText('Workspace could not be saved. Check the knowledge engine and try again.')).toBeVisible())
+    expect(navigationQueries.createWorkspace).not.toHaveBeenCalled()
   })
 
   it('persists a keyboard-resized utility sidebar within its safe bounds', async () => {
