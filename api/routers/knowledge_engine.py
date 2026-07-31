@@ -13,6 +13,7 @@ from fastapi.routing import APIRoute
 from api.schemas.knowledge_engine import (
     KnowledgeDocumentDetailResponse,
     KnowledgeDocumentListResponse,
+    KnowledgeEngineEquivalenceResponse,
     KnowledgeEngineErrorResponse,
     KnowledgeEngineStatusResponse,
 )
@@ -167,6 +168,44 @@ async def get_document(
         )
     except HTTPException:
         raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.get(
+    "/knowledge-engine/equivalence",
+    response_model=KnowledgeEngineEquivalenceResponse,
+    responses=_ERROR_RESPONSES,
+)
+async def get_equivalence_report(
+    request: Request,
+    space_id: KnowledgeSpaceId,
+    exact_query: list[str] = Query(..., min_length=1, max_length=32),
+) -> KnowledgeEngineEquivalenceResponse:
+    if any(not query.strip() or len(query) > 256 for query in exact_query):
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "knowledge_engine_request_invalid",
+        )
+    try:
+        service = _service(request)
+        if not callable(getattr(service, "equivalence_report", None)):
+            raise _error(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "knowledge_engine_unavailable",
+            )
+        report = await service.equivalence_report(
+            space_id=space_id,
+            exact_queries=tuple(exact_query),
+        )
+        return KnowledgeEngineEquivalenceResponse.model_validate(report.model_dump())
+    except HTTPException:
+        raise
+    except ValueError:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "knowledge_engine_request_invalid",
+        ) from None
     except Exception as exc:
         raise _map_exception(exc) from None
 
