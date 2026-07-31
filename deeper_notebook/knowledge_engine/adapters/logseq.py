@@ -21,7 +21,7 @@ class LogseqKnowledgeAdapter:
             raise ValueError("logseq adapter source kind mismatch")
         if envelope.authority_kind != "external_read_only":
             raise ValueError("logseq adapter authority mismatch")
-        if envelope.format_mode != self.source_kind:
+        if envelope.format_mode not in {self.source_kind, "mixed"}:
             raise ValueError("logseq adapter format mode mismatch")
         parsed = parse_document(
             envelope.relative_locator,
