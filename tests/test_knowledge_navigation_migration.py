@@ -21,8 +21,17 @@ def test_migration_39_defines_only_navigation_metadata_tables():
 
 def test_migration_39_down_removes_only_navigation_metadata():
     sql = DOWN.read_text(encoding="utf-8")
-    assert "REMOVE TABLE IF EXISTS knowledge_bookmark;" in sql
-    assert "REMOVE TABLE IF EXISTS named_knowledge_workspace;" in sql
+    statements = [
+        line.strip()
+        for line in sql.splitlines()
+        if line.strip() and not line.lstrip().startswith("--")
+    ]
+    assert statements == [
+        "REMOVE TABLE IF EXISTS knowledge_bookmark;",
+        "REMOVE TABLE IF EXISTS knowledge_bookmark_folder;",
+        "REMOVE TABLE IF EXISTS named_knowledge_workspace;",
+        "REMOVE TABLE IF EXISTS knowledge_navigation_operation_receipt;",
+    ]
     assert "knowledge_engine_document" not in sql
     assert "overlay_note" not in sql
     assert "vault_file" not in sql
