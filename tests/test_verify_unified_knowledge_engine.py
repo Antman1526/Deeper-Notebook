@@ -22,6 +22,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/verify_unified_knowledge_engine.py"
 
 
+def _space_id(source_ref: str) -> str:
+    return "knowledge_engine_space:" + hashlib.sha256(source_ref.encode()).hexdigest()
+
+
 def _verifier_module():
     spec = importlib.util.spec_from_file_location(
         "verify_unified_knowledge_engine_test_module",
@@ -150,10 +154,6 @@ def _marked_manifest(tmp_path: Path, inputs: dict[str, Path]) -> Path:
                     "minimum_tasks": 1,
                     "minimum_graph_edges": 1,
                     "minimum_trust_records": 1,
-                    "startup_checkpoint_space_ids": [
-                        "knowledge_engine_space:overlay",
-                        "knowledge_engine_space:parent",
-                    ],
                 },
             }
         ),
@@ -408,14 +408,14 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
                 },
                 "backfill_before_restart": [
                     {
-                        "space_id": "knowledge_engine_space:overlay",
+                        "space_id": _space_id("overlay:default"),
                         "status": "completed",
                         "projected": 1,
                         "unchanged": 0,
                         "failed": 0,
                     },
                     {
-                        "space_id": "knowledge_engine_space:parent",
+                        "space_id": _space_id("vault_mount:parent"),
                         "status": "completed",
                         "projected": 1,
                         "unchanged": 0,
@@ -533,8 +533,8 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
         tuple(
             sorted(
                 (
-                    "knowledge_engine_space:overlay",
-                    "knowledge_engine_space:parent",
+                    _space_id("overlay:default"),
+                    _space_id("vault_mount:parent"),
                     expected_child_space,
                 )
             )
@@ -544,8 +544,8 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
         item["space_id"]
         for item in report["controlled_proof"]["backfill_after_restart"]
     } == {
-        "knowledge_engine_space:overlay",
-        "knowledge_engine_space:parent",
+        _space_id("overlay:default"),
+        _space_id("vault_mount:parent"),
         expected_child_space,
     }
 
@@ -591,6 +591,43 @@ def test_controlled_manifest_accepts_the_argparse_path_object(tmp_path: Path) ->
 
     assert payload["schema_version"] == 1
     assert payload["expected"]["parent_vault_id"] == "vault_mount:parent"
+
+
+def test_controlled_startup_checkpoint_ids_are_derived_from_actual_sources() -> None:
+    module = _verifier_module()
+
+    assert module._startup_checkpoint_space_ids("vault_mount:parent") == tuple(
+        sorted(
+            (
+                _space_id("overlay:default"),
+                _space_id("vault_mount:parent"),
+            )
+        )
+    )
+
+
+def test_controlled_manifest_rejects_supplied_startup_checkpoint_ids(
+    tmp_path: Path,
+) -> None:
+    inputs = _inputs(tmp_path)
+    manifest = _marked_manifest(tmp_path, inputs)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["expected"]["startup_checkpoint_space_ids"] = [
+        "knowledge_engine_space:" + "0" * 64,
+        "knowledge_engine_space:" + "1" * 64,
+    ]
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = subprocess.run(
+        _proof_command(inputs, "http://127.0.0.1:9", "prepare", manifest),
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stderr.strip() == "synthetic_manifest_invalid"
 
 
 def test_controlled_scan_runs_two_rounds_across_the_stabilization_window(
