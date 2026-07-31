@@ -22,6 +22,26 @@ class _StrictResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
+StableKnowledgeEngineErrorCode = Literal[
+    "knowledge_document_not_found",
+    "knowledge_engine_disabled",
+    "knowledge_engine_request_invalid",
+    "knowledge_engine_unavailable",
+]
+
+
+class KnowledgeEngineErrorDetail(_StrictResponse):
+    """Machine-readable, content-free diagnostic failure code."""
+
+    code: StableKnowledgeEngineErrorCode
+
+
+class KnowledgeEngineErrorResponse(_StrictResponse):
+    """The only public diagnostic API error envelope."""
+
+    detail: KnowledgeEngineErrorDetail
+
+
 class KnowledgeSpaceResponse(_StrictResponse):
     """Logical source identity without a filesystem root or source reference."""
 
@@ -67,6 +87,8 @@ class KnowledgeEngineStatusResponse(_StrictResponse):
 __all__ = [
     "KnowledgeDocumentDetailResponse",
     "KnowledgeDocumentListResponse",
+    "KnowledgeEngineErrorDetail",
+    "KnowledgeEngineErrorResponse",
     "KnowledgeEngineStatusResponse",
     "KnowledgeSpaceResponse",
 ]
