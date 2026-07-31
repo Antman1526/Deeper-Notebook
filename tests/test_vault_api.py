@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import nullcontext
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -346,6 +348,37 @@ def test_page_identity_enrichment_fails_open_for_malformed_service_data(client):
     assert response.status_code == 200
     assert response.json()["knowledge_document_id"] is None
     assert all("knowledge_block_id" not in block for block in response.json()["blocks"])
+
+
+@pytest.mark.asyncio
+async def test_page_identity_enrichment_times_out_without_blocking_canonical_reads(
+    monkeypatch,
+):
+    from api.routers import vault as vault_router
+
+    class _NeverCompletes:
+        async def resolve_legacy_page(self, **_kwargs):
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        vault_router, "_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS", 0.01, raising=False
+    )
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(knowledge_engine_service=_NeverCompletes())
+        )
+    )
+
+    result = await asyncio.wait_for(
+        vault_router._page_identity(
+            request,
+            legacy_note_id="note:one",
+            blocks=[{"parser_id": "heading", "markdown": "# One"}],
+        ),
+        timeout=0.1,
+    )
+
+    assert result == (None, [{"parser_id": "heading", "markdown": "# One"}])
 
 
 def test_unresolved_link_response_keeps_null_target_identity_and_spans(client):

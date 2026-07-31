@@ -44,6 +44,20 @@ _ID_PATTERNS = {
 }
 _OPERATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
 _ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
+_DESCRIPTOR_LEGACY_IDS = {
+    "overlay": (
+        re.compile(r"^overlay_note:[A-Za-z0-9_-]+$"),
+        re.compile(r"^overlay_space:[A-Za-z0-9_-]+$"),
+        "overlay_note",
+        "overlay_space",
+    ),
+    "external": (
+        re.compile(r"^note:[A-Za-z0-9_-]+$"),
+        re.compile(r"^vault_mount:[A-Za-z0-9_-]+$"),
+        "note",
+        "vault_mount",
+    ),
+}
 _LEGACY_DIGEST_IDENTITY_KINDS = frozenset(
     {"note", "overlay_note", "overlay_space", "vault_file", "vault_mount"}
 )
@@ -300,71 +314,97 @@ class KnowledgeRepository:
             rows = await self._query(
                 connection,
                 """
-                LET $document_claim = (
-                    SELECT engine_id, source_revision_id
-                    FROM knowledge_engine_identity_map
-                    WHERE legacy_kind IN $document_legacy_kinds
-                    AND legacy_id = $legacy_note_id
-                    AND engine_kind = 'document'
-                    ORDER BY created_at DESC
-                );
-                LET $current_claim = (
-                    SELECT engine_id, source_revision_id FROM $document_claim
-                    WHERE source_revision_id IN (
-                        SELECT VALUE source_revision_id
+                RETURN {
+                    document_claims: (
+                        SELECT engine_id, source_revision_id, created_at
+                        FROM knowledge_engine_identity_map
+                        WHERE (legacy_kind = 'note' OR legacy_kind = 'overlay_note')
+                        AND legacy_id = $legacy_note_id
+                        AND engine_kind = 'document'
+                        ORDER BY created_at DESC, engine_id
+                    ),
+                    documents: (
+                        SELECT id, source_revision_id, updated_at
                         FROM knowledge_engine_document
-                        WHERE type::string(id) = $parent.engine_id
-                    )
-                    LIMIT 1
-                )[0];
-                LET $current_document = (
-                    SELECT id, source_revision_id FROM knowledge_engine_document
-                    WHERE type::string(id) = $current_claim.engine_id
-                    AND source_revision_id = $current_claim.source_revision_id
-                    LIMIT 1
-                )[0];
-                RETURN IF $current_document = NONE {
-                    { document_id: NONE, resolved_block_ids: [] }
-                } ELSE {
-                    {
-                        document_id: type::string($current_document.id),
-                        resolved_block_ids: (
-                            SELECT legacy_id, engine_id
+                        WHERE source_revision_id IN (
+                            SELECT VALUE source_revision_id
+                            FROM knowledge_engine_identity_map
+                            WHERE (legacy_kind = 'note' OR legacy_kind = 'overlay_note')
+                            AND legacy_id = $legacy_note_id
+                            AND engine_kind = 'document'
+                        )
+                        ORDER BY updated_at DESC, id
+                    ),
+                    block_claims: (
+                        SELECT legacy_id, engine_id, source_revision_id, created_at
+                        FROM knowledge_engine_identity_map
+                        WHERE legacy_kind = 'source_native_block'
+                        AND legacy_id IN $block_keys
+                        AND engine_kind = 'block'
+                        ORDER BY legacy_id, created_at DESC, engine_id
+                    ),
+                    blocks: (
+                        SELECT id, document_id, source_revision_id
+                        FROM knowledge_engine_block
+                        WHERE source_revision_id IN (
+                            SELECT VALUE source_revision_id
                             FROM knowledge_engine_identity_map
                             WHERE legacy_kind = 'source_native_block'
                             AND legacy_id IN $block_keys
                             AND engine_kind = 'block'
-                            AND source_revision_id = $current_document.source_revision_id
-                            AND engine_id IN (
-                                SELECT VALUE type::string(id) FROM knowledge_engine_block
-                                WHERE document_id = type::string($current_document.id)
-                                AND source_revision_id = $current_document.source_revision_id
-                            )
                         )
-                    }
+                    )
                 };
                 """,
                 {
                     "legacy_note_id": legacy_note_id,
                     "block_keys": list(block_keys),
-                    "document_legacy_kinds": [
-                        "note",
-                        "overlay_note",
-                        "source_native_document",
-                    ],
                 },
             )
-        row = rows[0] if rows else {}
+        row = rows[0] if rows and isinstance(rows[0], dict) else {}
+        document_claims = {
+            (str(item["engine_id"]), str(item["source_revision_id"]))
+            for item in row.get("document_claims", [])
+            if isinstance(item, dict)
+            and isinstance(item.get("engine_id"), str)
+            and isinstance(item.get("source_revision_id"), str)
+        }
+        current_document = next(
+            (
+                item
+                for item in row.get("documents", [])
+                if isinstance(item, dict)
+                and isinstance(item.get("id"), str)
+                and isinstance(item.get("source_revision_id"), str)
+                and (str(item["id"]), str(item["source_revision_id"]))
+                in document_claims
+            ),
+            None,
+        )
+        if current_document is None:
+            return KnowledgePageIdentity()
+        current_document_id = str(current_document["id"])
+        current_revision_id = str(current_document["source_revision_id"])
+        current_block_ids = {
+            str(item["id"])
+            for item in row.get("blocks", [])
+            if isinstance(item, dict)
+            and isinstance(item.get("id"), str)
+            and item.get("document_id") == current_document_id
+            and item.get("source_revision_id") == current_revision_id
+        }
         block_ids = {
             str(item["legacy_id"]): str(item["engine_id"])
-            for item in row.get("resolved_block_ids", [])
+            for item in row.get("block_claims", [])
             if isinstance(item, dict)
             and isinstance(item.get("legacy_id"), str)
             and isinstance(item.get("engine_id"), str)
+            and item.get("source_revision_id") == current_revision_id
+            and str(item["engine_id"]) in current_block_ids
         }
         try:
             return KnowledgePageIdentity(
-                document_id=row.get("document_id"), block_ids=block_ids
+                document_id=current_document_id, block_ids=block_ids
             )
         except ValidationError:
             raise KnowledgeRepositoryError(
@@ -386,22 +426,75 @@ class KnowledgeRepository:
                         AS source_kind,
                     title,
                     relative_locator,
-                    source_native_id AS legacy_note_id,
-                    (SELECT VALUE source_ref FROM knowledge_engine_space
-                        WHERE type::string(id) = $parent.space_id LIMIT 1)[0]
-                        AS legacy_container_id
+                    (SELECT legacy_kind, legacy_id
+                        FROM knowledge_engine_identity_map
+                        WHERE (legacy_kind = 'note' OR legacy_kind = 'overlay_note')
+                        AND engine_kind = 'document'
+                        AND engine_id = type::string($parent.id)
+                        AND source_revision_id = $parent.source_revision_id
+                        ORDER BY legacy_kind, legacy_id) AS document_claims,
+                    (SELECT legacy_kind, legacy_id
+                        FROM knowledge_engine_identity_map
+                        WHERE (legacy_kind = 'vault_mount' OR legacy_kind = 'overlay_space')
+                        AND engine_kind = 'space'
+                        AND engine_id = $parent.space_id
+                        AND source_revision_id = $parent.source_revision_id
+                        ORDER BY legacy_kind, legacy_id) AS container_claims
                 FROM $document_id LIMIT 1;
                 """,
                 {"document_id": _record_id(document_id, kind="document")},
             )
-        if not rows:
+        if not rows or rows[0] is None:
             return None
+        row = rows[0]
+        if not isinstance(row, dict):
+            raise KnowledgeRepositoryError("knowledge_engine_descriptor_invalid")
+        source_kind = row.get("source_kind")
+        identity_rules = _DESCRIPTOR_LEGACY_IDS[
+            "overlay" if source_kind == "overlay" else "external"
+        ]
+        note_pattern, container_pattern, note_kind, container_kind = identity_rules
+        document_claim = next(
+            (
+                claim
+                for claim in row.get("document_claims", [])
+                if isinstance(claim, dict)
+                and claim.get("legacy_kind") == note_kind
+                and isinstance(claim.get("legacy_id"), str)
+            ),
+            None,
+        )
+        container_claim = next(
+            (
+                claim
+                for claim in row.get("container_claims", [])
+                if isinstance(claim, dict)
+                and claim.get("legacy_kind") == container_kind
+                and isinstance(claim.get("legacy_id"), str)
+            ),
+            None,
+        )
+        if document_claim is None or container_claim is None:
+            return None
+        row = {
+            key: value
+            for key, value in row.items()
+            if key not in {"document_claims", "container_claims"}
+        }
+        row["legacy_note_id"] = document_claim["legacy_id"]
+        row["legacy_container_id"] = container_claim["legacy_id"]
         try:
-            return KnowledgeOpenDescriptor.model_validate(rows[0])
+            descriptor = KnowledgeOpenDescriptor.model_validate(row)
         except ValidationError:
             raise KnowledgeRepositoryError(
                 "knowledge_engine_descriptor_invalid"
             ) from None
+        if (
+            note_pattern.fullmatch(descriptor.legacy_note_id) is None
+            or container_pattern.fullmatch(descriptor.legacy_container_id) is None
+        ):
+            return None
+        return descriptor
 
     async def list_documents(
         self, *, space_id: str | None, limit: int, offset: int
