@@ -86,6 +86,21 @@ def test_snapshot_layout_must_reference_every_pane_exactly_once():
         NamedWorkspaceSnapshot.model_validate(payload)
 
 
+def test_named_snapshot_round_trips_a_bounded_search_mode():
+    payload = _named_snapshot_payload()
+    navigation = payload["navigation"]
+    assert isinstance(navigation, dict)
+    navigation["search_mode"] = "exact"
+
+    snapshot = NamedWorkspaceSnapshot.model_validate(payload)
+
+    assert snapshot.navigation.search_mode == "exact"
+    assert NamedWorkspaceSnapshot.model_validate(snapshot.model_dump()) == snapshot
+    navigation["search_mode"] = "unsupported"
+    with pytest.raises(ValidationError):
+        NamedWorkspaceSnapshot.model_validate(payload)
+
+
 def test_bookmark_cursor_round_trips_only_the_stable_order_tuple():
     cursor = BookmarkCursor(
         folder_id="knowledge_bookmark_folder:research",

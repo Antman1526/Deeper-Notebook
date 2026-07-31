@@ -1324,8 +1324,10 @@ describe('KnowledgeExplorer utility rail', () => {
     await selectFile('notes/one.md')
     await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId)
       .toBe('knowledge_engine_document:research'))
-    act(() => useKnowledgeWorkspaceStore.getState().setNavigation({ activeDraftId: 'knowledge_engine_block:heading' }))
-    expect(useKnowledgeWorkspaceStore.getState().navigation.activeDraftId).toBe('knowledge_engine_block:heading')
+    const activeTabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+    act(() => useKnowledgeWorkspaceStore.getState().setFocusedBlock('pane-1', activeTabId, {
+      blockId: 'knowledge_engine_block:heading', sourceRevisionId: null,
+    }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Bookmark Current Target' }))
 

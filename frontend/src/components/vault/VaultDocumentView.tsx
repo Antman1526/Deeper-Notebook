@@ -63,8 +63,9 @@ export function VaultDocumentView({
   const title = page.note.title?.trim()
     || page.file.relative_path.split('/').at(-1)?.replace(/\.md$/i, '')
     || t('knowledge.untitledNote')
+  const readableBlock = page.blocks.find((block) => block.knowledge_block_id)
   const reading = (
-    <section aria-label={`${title} reading view`}>
+    <section aria-label={`${title} reading view`} data-knowledge-block-id={readableBlock?.knowledge_block_id ?? undefined} data-source-revision-id={readableBlock?.source_revision_id ?? undefined}>
       <VaultMarkdown
         vaultId={page.file.vault_id}
         noteId={page.note.id}

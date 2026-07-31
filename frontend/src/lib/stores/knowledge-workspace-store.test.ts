@@ -436,4 +436,20 @@ describe('knowledge workspace store', () => {
     expect(state.nextId).toBe(6)
     expect(() => serializeKnowledgeWorkspace(state)).not.toThrow()
   })
+
+  it('keeps focused block context transient and clears it when the tab changes', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    const firstTabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+    store.setFocusedBlock('pane-1', firstTabId, {
+      blockId: 'knowledge_engine_block:plan', sourceRevisionId: 'knowledge_engine_revision:one',
+    })
+    expect(useKnowledgeWorkspaceStore.getState().focusedBlocksByTab[firstTabId]).toEqual({
+      blockId: 'knowledge_engine_block:plan', sourceRevisionId: 'knowledge_engine_revision:one',
+    })
+    expect(serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState())).not.toHaveProperty('focusedBlocksByTab')
+
+    store.openTab(research)
+    expect(useKnowledgeWorkspaceStore.getState().focusedBlocksByTab[firstTabId]).toBeUndefined()
+  })
 })

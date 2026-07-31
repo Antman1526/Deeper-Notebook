@@ -130,6 +130,19 @@ def test_pre_navigation_current_session_loads_with_version_one_defaults():
     assert workspace.panes["pane-1"].tabs[0].graph_viewport is None
 
 
+def test_current_session_round_trips_a_bounded_search_mode():
+    payload = populated().model_dump()
+    payload["navigation"] = {"search_mode": "semantic"}
+
+    workspace = KnowledgeWorkspaceDocument.model_validate(payload)
+
+    assert workspace.navigation.search_mode == "semantic"
+    assert KnowledgeWorkspaceDocument.model_validate(workspace.model_dump()) == workspace
+    payload["navigation"] = {"search_mode": "unsupported"}
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocument.model_validate(payload)
+
+
 def test_split_first_size_defaults_without_storing_a_second_panel_size():
     split = SplitLayoutNode.model_validate(
         {
