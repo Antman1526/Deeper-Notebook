@@ -105,6 +105,13 @@ export function KnowledgePaneContent({
   const vaultId = activeTab?.vaultId
   const noteId = activeTab?.noteId
   const visibleMode = activeTab?.viewMode ?? 'reading'
+  const tabGraphContext = visibleMode === 'graph'
+    ? activeTab?.graphBookmarkContext ?? null
+    : null
+  const sharedGraphContext = graphBookmarkContext?.rootDocumentId === activeTab?.knowledgeDocumentId
+    ? graphBookmarkContext
+    : null
+  const graphContext = tabGraphContext ?? sharedGraphContext
   const isOverlay = activeTab?.sourceAuthority === 'overlay'
   const overlayPage = useOverlayPage(isOverlay ? noteId : undefined)
   const vaultPage = useVaultPage(
@@ -420,13 +427,11 @@ export function KnowledgePaneContent({
                 graph={graph.data}
                 unresolved={unresolved}
                 onNavigate={navigate}
-                viewport={activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 }}
+                viewport={activeTab.graphViewport ?? graphContext?.viewport ?? { x: 0, y: 0, zoom: 1 }}
                 onMoveEnd={(viewport) => setTabGraphViewport(pane.id, activeTab.id, viewport)}
-                rootDocumentId={activeTab.knowledgeDocumentId}
-                spaceIds={selectedSpaceIds}
-                relationKinds={graphBookmarkContext?.rootDocumentId === activeTab.knowledgeDocumentId
-                  ? graphBookmarkContext.relationKinds
-                  : undefined}
+                rootDocumentId={graphContext?.rootDocumentId ?? activeTab.knowledgeDocumentId}
+                spaceIds={graphContext?.spaceIds ?? selectedSpaceIds}
+                relationKinds={graphContext?.relationKinds}
                 onBookmarkContext={setGraphBookmarkContext}
               />
             )
