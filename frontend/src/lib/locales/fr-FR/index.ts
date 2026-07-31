@@ -278,8 +278,9 @@ export const frFR = {
       requiresSelectedVault: "Sélectionnez d'abord un coffre",
       requiresFileTree: "Arborescence des fichiers indisponible",
       requiresLinks: "Liens de la note indisponibles",
+      bookmarkCurrent: "Ajouter la cible actuelle aux signets", openBookmarks: "Ouvrir les signets", randomNote: "Note aléatoire", openWorkspaces: "Ouvrir les espaces de travail", saveWorkspaceAs: "Enregistrer l’espace de travail sous", replaceWorkspace: "Remplacer l’espace de travail", toggleMetrics: "Basculer les métriques du document",
     },
-
+    navigation: { sources: "Documents source", bookmarks: "Signets", randomNote: "Note aléatoire", workspaces: "Espaces de travail", currentSession: "Session actuelle", saveCurrentAs: "Enregistrer la session actuelle sous", replaceWithCurrent: "Remplacer par la session actuelle", openAvailable: "Ouvrir les éléments disponibles", targetAvailable: "Disponible", targetStale: "Obsolète", targetUnavailable: "Indisponible", targetMissing: "Manquant", appOwned: "Propriété de l’application", externalReadOnly: "Externe en lecture seule", words: "{{count}} mots", characters: "{{count}} caractères", readingMinutes: "{{count}} min de lecture", selectionMetrics: "Sélection : {{words}} mots, {{characters}} caractères" },
   },
   notebooks: {
     title: "Carnets",

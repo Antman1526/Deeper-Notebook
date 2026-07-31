@@ -280,8 +280,9 @@ export const deDE = {
       requiresSelectedVault: "Wählen Sie zuerst einen Tresor aus",
       requiresFileTree: "Dateibaum nicht verfügbar",
       requiresLinks: "Notizlinks nicht verfügbar",
+      bookmarkCurrent: "Aktuelles Ziel als Lesezeichen", openBookmarks: "Lesezeichen öffnen", randomNote: "Zufällige Notiz", openWorkspaces: "Arbeitsbereiche öffnen", saveWorkspaceAs: "Arbeitsbereich speichern unter", replaceWorkspace: "Arbeitsbereich ersetzen", toggleMetrics: "Dokumentmetriken umschalten",
     },
-
+    navigation: { sources: "Quellen", bookmarks: "Lesezeichen", randomNote: "Zufällige Notiz", workspaces: "Arbeitsbereiche", currentSession: "Aktuelle Sitzung", saveCurrentAs: "Aktuelle Sitzung speichern unter", replaceWithCurrent: "Durch aktuelle Sitzung ersetzen", openAvailable: "Verfügbare öffnen", targetAvailable: "Verfügbar", targetStale: "Veraltet", targetUnavailable: "Nicht verfügbar", targetMissing: "Fehlt", appOwned: "App-eigen", externalReadOnly: "Extern schreibgeschützt", words: "{{count}} Wörter", characters: "{{count}} Zeichen", readingMinutes: "{{count}} Min. Lesezeit", selectionMetrics: "Auswahl: {{words}} Wörter, {{characters}} Zeichen" },
   },
   notebooks: {
     title: "Notebooks",

@@ -37,4 +37,20 @@ describe('knowledge command context registration', () => {
     expect(useKnowledgeCommandContextStore.getState().context?.selectedVaultId)
       .toBe('vault:second')
   })
+
+  it('retains every navigation-productivity callback for the active page generation', () => {
+    const callbacks = {
+      bookmarkCurrentTarget: async () => undefined,
+      openBookmarks: () => undefined,
+      randomNote: async () => undefined,
+      openWorkspaces: () => undefined,
+      saveWorkspaceAs: () => undefined,
+      replaceWorkspace: () => undefined,
+      toggleMetrics: () => undefined,
+    }
+
+    registerKnowledgeCommandContext({ selectedVaultId: 'vault:one', ...callbacks })
+
+    expect(useKnowledgeCommandContextStore.getState().context).toMatchObject(callbacks)
+  })
 })

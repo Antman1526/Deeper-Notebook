@@ -276,8 +276,9 @@ export const ruRU = {
       requiresSelectedVault: "Сначала выберите хранилище",
       requiresFileTree: "Дерево файлов недоступно",
       requiresLinks: "Ссылки заметки недоступны",
+      bookmarkCurrent: "Добавить текущую цель в закладки", openBookmarks: "Открыть закладки", randomNote: "Случайная заметка", openWorkspaces: "Открыть рабочие области", saveWorkspaceAs: "Сохранить рабочую область как", replaceWorkspace: "Заменить рабочую область", toggleMetrics: "Переключить метрики документа",
     },
-
+    navigation: { sources: "Источники", bookmarks: "Закладки", randomNote: "Случайная заметка", workspaces: "Рабочие области", currentSession: "Текущий сеанс", saveCurrentAs: "Сохранить текущий сеанс как", replaceWithCurrent: "Заменить текущим сеансом", openAvailable: "Открыть доступные", targetAvailable: "Доступно", targetStale: "Устарело", targetUnavailable: "Недоступно", targetMissing: "Отсутствует", appOwned: "Принадлежит приложению", externalReadOnly: "Внешний только для чтения", words: "{{count}} слов", characters: "{{count}} символов", readingMinutes: "{{count}} мин чтения", selectionMetrics: "Выделение: {{words}} слов, {{characters}} символов" },
   },
   notebooks: {
     title: "Блокноты",

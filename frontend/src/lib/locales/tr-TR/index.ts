@@ -279,8 +279,9 @@ export const trTR = {
       requiresSelectedVault: "Önce bir kasa seçin",
       requiresFileTree: "Dosya ağacı kullanılamıyor",
       requiresLinks: "Not bağlantıları kullanılamıyor",
+      bookmarkCurrent: "Geçerli hedefi yer imlerine ekle", openBookmarks: "Yer imlerini aç", randomNote: "Rastgele not", openWorkspaces: "Çalışma alanlarını aç", saveWorkspaceAs: "Çalışma alanını farklı kaydet", replaceWorkspace: "Çalışma alanını değiştir", toggleMetrics: "Belge ölçümlerini değiştir",
     },
-
+    navigation: { sources: "Kaynaklar", bookmarks: "Yer imleri", randomNote: "Rastgele not", workspaces: "Çalışma alanları", currentSession: "Geçerli oturum", saveCurrentAs: "Geçerli oturumu farklı kaydet", replaceWithCurrent: "Geçerli oturumla değiştir", openAvailable: "Kullanılabilirleri aç", targetAvailable: "Kullanılabilir", targetStale: "Eski", targetUnavailable: "Kullanılamıyor", targetMissing: "Eksik", appOwned: "Uygulama sahipliğinde", externalReadOnly: "Harici salt okunur", words: "{{count}} kelime", characters: "{{count}} karakter", readingMinutes: "{{count}} dk okuma", selectionMetrics: "Seçim: {{words}} kelime, {{characters}} karakter" },
   },
   notebooks: {
     title: "Defterler",
