@@ -13,12 +13,18 @@ from fastapi.routing import APIRoute
 from api.schemas.knowledge_engine import (
     KnowledgeDocumentDetailResponse,
     KnowledgeDocumentListResponse,
+    KnowledgeEngineErrorResponse,
     KnowledgeEngineStatusResponse,
 )
 from deeper_notebook.knowledge_engine.contracts import KnowledgeDocument
 from deeper_notebook.knowledge_engine.repository import KnowledgeRepositoryError
 
 MAX_KNOWLEDGE_ENGINE_OFFSET = 1_000_000
+_ERROR_RESPONSES = {
+    status.HTTP_404_NOT_FOUND: {"model": KnowledgeEngineErrorResponse},
+    status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": KnowledgeEngineErrorResponse},
+    status.HTTP_503_SERVICE_UNAVAILABLE: {"model": KnowledgeEngineErrorResponse},
+}
 
 
 def _error(status_code: int, code: str) -> HTTPException:
@@ -56,11 +62,6 @@ def _service(request: Request) -> Any:
 
 
 def _map_exception(exc: Exception) -> HTTPException:
-    if isinstance(exc, (ValueError, RequestValidationError)):
-        return _error(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "knowledge_engine_request_invalid",
-        )
     if isinstance(exc, LookupError):
         return _error(status.HTTP_404_NOT_FOUND, "knowledge_document_not_found")
     if isinstance(exc, KnowledgeRepositoryError):
@@ -106,7 +107,11 @@ KnowledgeSpaceId = Annotated[
 ]
 
 
-@router.get("/knowledge-engine/status", response_model=KnowledgeEngineStatusResponse)
+@router.get(
+    "/knowledge-engine/status",
+    response_model=KnowledgeEngineStatusResponse,
+    responses=_ERROR_RESPONSES,
+)
 async def get_status(request: Request) -> KnowledgeEngineStatusResponse:
     try:
         projection = await _service(request).status()
@@ -124,6 +129,7 @@ async def get_status(request: Request) -> KnowledgeEngineStatusResponse:
 @router.get(
     "/knowledge-engine/documents",
     response_model=list[KnowledgeDocumentListResponse],
+    responses=_ERROR_RESPONSES,
 )
 async def list_documents(
     request: Request,
@@ -147,6 +153,7 @@ async def list_documents(
 @router.get(
     "/knowledge-engine/documents/{document_id}",
     response_model=KnowledgeDocumentDetailResponse,
+    responses=_ERROR_RESPONSES,
 )
 async def get_document(
     request: Request,
