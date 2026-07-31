@@ -8,6 +8,10 @@ from types import SimpleNamespace
 import pytest
 
 from api import main
+from deeper_notebook.knowledge_engine.navigation_contracts import RandomNoteFilters
+from deeper_notebook.knowledge_engine.navigation_service import (
+    KnowledgeNavigationServiceError,
+)
 
 
 class _Service:
@@ -50,6 +54,21 @@ async def test_navigation_service_is_owned_even_when_engine_is_disabled(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_disabled_lifespan_navigation_fails_random_note_before_database_access(
+    monkeypatch,
+):
+    app = _app()
+    monkeypatch.setattr(main, "enabled_setting", lambda _name: False)
+
+    await main._start_knowledge_navigation(app)
+
+    with pytest.raises(KnowledgeNavigationServiceError) as error:
+        await app.state.knowledge_navigation_service.random_note(RandomNoteFilters())
+
+    assert error.value.code == "knowledge_engine_unavailable"
+
+
+@pytest.mark.asyncio
 async def test_navigation_service_receives_the_enabled_engine_boundary():
     app = _app()
     engine = SimpleNamespace(_repository=object())
@@ -60,7 +79,9 @@ async def test_navigation_service_receives_the_enabled_engine_boundary():
 
 
 @pytest.mark.asyncio
-async def test_shadow_enabled_sets_service_and_returns_its_single_coordinator(monkeypatch):
+async def test_shadow_enabled_sets_service_and_returns_its_single_coordinator(
+    monkeypatch,
+):
     app = _app()
     coordinator = object()
     service = _Service(coordinator)
@@ -83,7 +104,9 @@ async def test_shadow_enabled_sets_service_and_returns_its_single_coordinator(mo
 
 
 @pytest.mark.asyncio
-async def test_backfill_without_shadow_logs_stable_configuration_code_and_keeps_legacy_mode(monkeypatch):
+async def test_backfill_without_shadow_logs_stable_configuration_code_and_keeps_legacy_mode(
+    monkeypatch,
+):
     app = _app()
     monkeypatch.setattr(
         main,
@@ -91,7 +114,9 @@ async def test_backfill_without_shadow_logs_stable_configuration_code_and_keeps_
         lambda name: name.endswith("BACKFILL_ENABLED"),
     )
     messages: list[str] = []
-    monkeypatch.setattr(main.logger, "warning", lambda message, *_args: messages.append(message))
+    monkeypatch.setattr(
+        main.logger, "warning", lambda message, *_args: messages.append(message)
+    )
 
     coordinator, task = await main._start_knowledge_engine(app)
 
@@ -130,7 +155,9 @@ async def test_shutdown_retrieves_completed_backfill_task_results(monkeypatch):
     app = _app()
     app.state.knowledge_engine_service = object()
     messages: list[str] = []
-    monkeypatch.setattr(main.logger, "warning", lambda message, *_args: messages.append(message))
+    monkeypatch.setattr(
+        main.logger, "warning", lambda message, *_args: messages.append(message)
+    )
 
     async def _failed_backfill() -> None:
         raise RuntimeError("private detail")
@@ -153,7 +180,9 @@ async def test_engine_startup_failure_is_contained_with_stable_code(monkeypatch)
     app = _app()
     monkeypatch.setattr(main, "enabled_setting", lambda _name: True)
     messages: list[str] = []
-    monkeypatch.setattr(main.logger, "warning", lambda message, *_args: messages.append(message))
+    monkeypatch.setattr(
+        main.logger, "warning", lambda message, *_args: messages.append(message)
+    )
 
     coordinator, task = await main._start_knowledge_engine(
         app,
