@@ -269,6 +269,55 @@ describe('OverlayDocumentView', () => {
     expect(screen.getByText('Unsaved draft')).toBeInTheDocument()
   })
 
+  it('reports markdown changes and retains a dirty draft during server updates', () => {
+    const onMarkdownChange = vi.fn()
+    const { rerender } = render(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="source"
+        onNavigate={vi.fn()}
+        onMarkdownChange={onMarkdownChange}
+      />,
+    )
+
+    editMarkdown('# Local draft\n')
+    expect(onMarkdownChange).toHaveBeenLastCalledWith('# Local draft\n')
+
+    rerender(
+      <OverlayDocumentView
+        page={pageAt(4, '# Server update\n', 'b'.repeat(64))}
+        mode="source"
+        onNavigate={vi.fn()}
+        onMarkdownChange={onMarkdownChange}
+      />,
+    )
+
+    expect(onMarkdownChange).toHaveBeenLastCalledWith('# Local draft\n')
+  })
+
+  it('reports an adopted clean server page to its owner', () => {
+    const onMarkdownChange = vi.fn()
+    const { rerender } = render(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="source"
+        onNavigate={vi.fn()}
+        onMarkdownChange={onMarkdownChange}
+      />,
+    )
+
+    rerender(
+      <OverlayDocumentView
+        page={pageAt(4, '# Server update\n', 'b'.repeat(64))}
+        mode="source"
+        onNavigate={vi.fn()}
+        onMarkdownChange={onMarkdownChange}
+      />,
+    )
+
+    expect(onMarkdownChange).toHaveBeenLastCalledWith('# Server update\n')
+  })
+
   it('uses a new idempotency key for each explicit failed save attempt', async () => {
     overlayMutation.mutateAsync.mockRejectedValue(new Error('offline'))
     render(
