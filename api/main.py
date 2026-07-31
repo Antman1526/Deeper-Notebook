@@ -236,6 +236,7 @@ def _create_knowledge_engine_runtime() -> KnowledgeEngineService:
         CanonicalSourceCatalog,
         KnowledgeBackfillService,
     )
+    from deeper_notebook.knowledge_engine.equivalence import legacy_projection_digest
     from deeper_notebook.knowledge_engine.repository import KnowledgeRepository
     from deeper_notebook.knowledge_engine.shadow import KnowledgeShadowCoordinator
     from deeper_notebook.overlay.paths import OverlayLayout
@@ -251,11 +252,28 @@ def _create_knowledge_engine_runtime() -> KnowledgeEngineService:
         vault_repository=VaultRepository(),
     )
     backfill = KnowledgeBackfillService(catalog=catalog, repository=repository)
+
+    async def legacy_digest_builder(
+        space_id: str, exact_queries: tuple[str, ...]
+    ):
+        return await legacy_projection_digest(
+            catalog,
+            space_id=space_id,
+            exact_queries=exact_queries,
+        )
+
+    async def unified_digest_builder(
+        space_id: str, exact_queries: tuple[str, ...]
+    ):
+        return await repository.projection_digest(space_id, exact_queries)
+
     return KnowledgeEngineService(
         repository=repository,
         coordinator=coordinator,
         catalog=catalog,
         backfill=backfill,
+        legacy_digest_builder=legacy_digest_builder,
+        unified_digest_builder=unified_digest_builder,
     )
 
 

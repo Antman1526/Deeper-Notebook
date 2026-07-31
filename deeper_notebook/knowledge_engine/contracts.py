@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from hashlib import sha256
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from deeper_notebook.knowledge_engine.capabilities import (
     AuthorityKind,
@@ -36,6 +44,13 @@ DiagnosticSeverity = Literal["info", "warning", "error"]
 AssetAvailability = Literal["available", "referenced", "missing", "unavailable"]
 
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
+_DIGEST_ID = r"^[a-z][a-z0-9_]*:[A-Za-z0-9:_-]+$"
+_ENGINE_ID = r"^knowledge_engine_[a-z0-9_]+:[A-Za-z0-9_-]+$"
+_OVERLAY_NOTE_ID = r"^overlay_note:[A-Za-z0-9_-]+$"
+_GRAPH_EDGE = (
+    r"^[a-z][a-z0-9_]*:[A-Za-z0-9_-]+->"
+    r"[a-z][a-z0-9_]*:[A-Za-z0-9_-]+:[a-z][a-z0-9_]*$"
+)
 
 
 class _Strict(BaseModel):
@@ -524,9 +539,13 @@ class ProjectionDigest(_Strict):
     block_count: int = Field(ge=0)
     relation_count: int = Field(ge=0)
     task_count: int = Field(ge=0)
+    property_count: int = Field(default=0, ge=0)
+    tag_count: int = Field(default=0, ge=0)
     asset_count: int = Field(ge=0)
     document_hashes: dict[str, str] = Field(default_factory=dict)
     identity_pairs: dict[str, str] = Field(default_factory=dict)
+    outgoing_membership: dict[str, list[str]] = Field(default_factory=dict)
+    backlink_membership: dict[str, list[str]] = Field(default_factory=dict)
     graph_edges: list[str] = Field(default_factory=list)
     exact_search_membership: dict[str, list[str]] = Field(default_factory=dict)
     authority_kind: AuthorityKind | None = None
@@ -534,6 +553,7 @@ class ProjectionDigest(_Strict):
     format_mode: VaultFormat | None = None
     provenance: str | None = Field(default=None, max_length=128)
     capabilities: list[KnowledgeCapability] = Field(default_factory=list)
+    overlay_revision_mappings: dict[str, str] = Field(default_factory=dict)
 
     _capabilities_are_unique = field_validator("capabilities")(
         _validate_unique_capabilities
@@ -542,16 +562,106 @@ class ProjectionDigest(_Strict):
     @field_validator("document_hashes")
     @classmethod
     def validate_document_hashes(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
         for locator, content_hash in value.items():
             canonical_locator(locator)
             _validate_hashes(content_hash)
-        return value
+            normalized[locator] = content_hash
+        return dict(sorted(normalized.items()))
+
+    @field_validator(
+        "identity_pairs",
+        "overlay_revision_mappings",
+    )
+    @classmethod
+    def validate_redacted_pairs(
+        cls, value: dict[str, str], info: ValidationInfo
+    ) -> dict[str, str]:
+        if any(
+            "/" in key or "\\" in key or any(ord(char) < 32 for char in key)
+            for key in value
+        ):
+            raise ValueError("digest mappings must be redacted stable identifiers")
+        if any(
+            "/" in item or "\\" in item or any(ord(char) < 32 for char in item)
+            for item in value.values()
+        ):
+            raise ValueError("digest mappings must be redacted stable identifiers")
+        for key, item in value.items():
+            if info.field_name == "overlay_revision_mappings":
+                valid = re.fullmatch(_OVERLAY_NOTE_ID, key) and re.fullmatch(
+                    r"^knowledge_engine_revision:[A-Za-z0-9_-]+$", item
+                )
+            else:
+                valid = re.fullmatch(_DIGEST_ID, key) and re.fullmatch(_ENGINE_ID, item)
+            if not valid:
+                raise ValueError("digest mappings must be redacted stable identifiers")
+        return dict(sorted(value.items()))
+
+    @field_validator(
+        "outgoing_membership",
+        "backlink_membership",
+        "exact_search_membership",
+    )
+    @classmethod
+    def validate_locator_membership(
+        cls, value: dict[str, list[str]], info: ValidationInfo
+    ) -> dict[str, list[str]]:
+        normalized: dict[str, list[str]] = {}
+        for key, members in value.items():
+            if len(key) > 256 or "\x00" in key:
+                raise ValueError("digest membership key is invalid")
+            if info.field_name == "exact_search_membership" and re.fullmatch(
+                _SHA256_PATTERN, key
+            ) is None:
+                raise ValueError("exact search digest keys must be query hashes")
+            for member in members:
+                canonical_locator(member)
+            normalized[key] = sorted(set(members))
+        return dict(sorted(normalized.items()))
+
+    @field_validator("graph_edges")
+    @classmethod
+    def validate_graph_edges(cls, value: list[str]) -> list[str]:
+        if any(
+            not edge
+            or len(edge) > 512
+            or "/" in edge
+            or "\\" in edge
+            or any(ord(char) < 32 for char in edge)
+            or re.fullmatch(_GRAPH_EDGE, edge) is None
+            for edge in value
+        ):
+            raise ValueError("digest graph edges must be redacted stable identifiers")
+        return sorted(set(value))
+
+    @field_validator("capabilities")
+    @classmethod
+    def normalize_capabilities(
+        cls, value: list[KnowledgeCapability]
+    ) -> list[KnowledgeCapability]:
+        return sorted(value)
 
 
 class EquivalenceDifference(_Strict):
     code: str = Field(min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_]*$")
     legacy_value: str | int | None = None
     unified_value: str | int | None = None
+
+    @field_validator("legacy_value", "unified_value")
+    @classmethod
+    def validate_redacted_value(cls, value: str | int | None) -> str | int | None:
+        if not isinstance(value, str):
+            return value
+        if (
+            not value
+            or any(ord(character) < 32 for character in value)
+            or "\\" in value
+            or "/Users/" in value
+            or "token" in value.casefold()
+        ):
+            raise ValueError("equivalence values must remain redacted")
+        return value
 
 
 class EquivalenceReport(_Strict):

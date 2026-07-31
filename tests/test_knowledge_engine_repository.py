@@ -127,6 +127,84 @@ async def test_commit_snapshot_uses_one_transaction(snapshot, fake_connection):
 
 
 @pytest.mark.asyncio
+async def test_projection_digest_is_bounded_and_never_returns_document_bodies(
+    fake_connection,
+):
+    repository = KnowledgeRepository(connection_factory=fake_connection.factory)
+
+    with pytest.raises(ValueError, match="invalid_equivalence_queries"):
+        await repository.projection_digest("knowledge_engine_space:repository", ())
+
+    digest = await repository.projection_digest(
+        "knowledge_engine_space:repository", ("research",)
+    )
+
+    assert digest.space_id == "knowledge_engine_space:repository"
+    assert "normalized_body" not in str(digest.model_dump())
+    assert "/Users/" not in digest.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_projection_digest_excludes_stale_identity_revisions(
+    fake_connection,
+):
+    original_query = fake_connection.query
+
+    async def query(statement: str, variables: dict[str, Any] | None = None):
+        if statement.startswith("SELECT authority_kind"):
+            return [
+                {
+                    "authority_kind": "app_owned",
+                    "source_kind": "overlay",
+                    "format_mode": "markdown",
+                    "capabilities": ["read"],
+                }
+            ]
+        if statement.startswith("SELECT id, relative_locator"):
+            return [
+                {
+                    "id": "knowledge_engine_document:one",
+                    "relative_locator": "Notes/One.md",
+                    "content_hash": "a" * 64,
+                    "source_revision_id": "knowledge_engine_revision:current",
+                    "properties": {},
+                    "tags": [],
+                    "provenance": "overlay",
+                }
+            ]
+        if statement.startswith("SELECT legacy_kind"):
+            return [
+                {
+                    "legacy_kind": "overlay_note",
+                    "legacy_id": "overlay_note:one",
+                    "engine_id": "knowledge_engine_document:one",
+                    "source_revision_id": "knowledge_engine_revision:current",
+                },
+                {
+                    "legacy_kind": "overlay_note",
+                    "legacy_id": "overlay_note:one",
+                    "engine_id": "knowledge_engine_document:stale",
+                    "source_revision_id": "knowledge_engine_revision:stale",
+                },
+            ]
+        return await original_query(statement, variables)
+
+    fake_connection.query = query  # type: ignore[method-assign]
+    repository = KnowledgeRepository(connection_factory=fake_connection.factory)
+
+    digest = await repository.projection_digest(
+        "knowledge_engine_space:repository", ("research",)
+    )
+
+    assert digest.identity_pairs == {
+        "overlay_note:overlay_note:one": "knowledge_engine_document:one"
+    }
+    assert digest.overlay_revision_mappings == {
+        "overlay_note:one": "knowledge_engine_revision:current"
+    }
+
+
+@pytest.mark.asyncio
 async def test_commit_snapshot_rejects_operation_replay_with_other_hash(
     snapshot, fake_connection
 ):

@@ -9,7 +9,10 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from deeper_notebook.knowledge_engine.capabilities import capabilities_for
-from deeper_notebook.knowledge_engine.contracts import KnowledgeDocument
+from deeper_notebook.knowledge_engine.contracts import (
+    EquivalenceReport,
+    KnowledgeDocument,
+)
 from deeper_notebook.knowledge_engine.repository import (
     EngineProjectionStatus,
     KnowledgeRepositoryError,
@@ -52,6 +55,17 @@ class _EngineService:
         self.document_result: KnowledgeDocument | Exception = self.document
         self.list_result: list[KnowledgeDocument] | Exception = [self.document]
         self.list_requests: list[tuple[str | None, int, int]] = []
+        self.equivalence_result: EquivalenceReport | Exception = EquivalenceReport(
+            passed=False,
+            differences=[
+                {
+                    "code": "document_hash_mismatch",
+                    "legacy_value": "Pages/A.md=" + "a" * 64,
+                    "unified_value": "Pages/A.md=" + "b" * 64,
+                }
+            ],
+        )
+        self.equivalence_requests: list[tuple[str, tuple[str, ...]]] = []
 
     async def status(self) -> EngineProjectionStatus:
         if isinstance(self.status_result, Exception):
@@ -72,6 +86,14 @@ class _EngineService:
         if isinstance(self.list_result, Exception):
             raise self.list_result
         return self.list_result[offset : offset + limit]
+
+    async def equivalence_report(
+        self, *, space_id: str, exact_queries: tuple[str, ...]
+    ) -> EquivalenceReport:
+        self.equivalence_requests.append((space_id, exact_queries))
+        if isinstance(self.equivalence_result, Exception):
+            raise self.equivalence_result
+        return self.equivalence_result
 
 
 @pytest.fixture()
@@ -309,6 +331,80 @@ async def test_main_registers_only_the_canonical_diagnostic_routes() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(legacy)
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_equivalence_is_get_only_redacted_and_allows_mismatch(
+    app_with_engine: FastAPI,
+) -> None:
+    path = (
+        "/api/deeper-notebook/knowledge-engine/equivalence?"
+        "space_id=knowledge_engine_space%3Aprimary&exact_query=research"
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_engine), base_url="http://test"
+    ) as client:
+        response = await client.get(path)
+
+    assert response.status_code == 200
+    assert response.json()["passed"] is False
+    assert "/Users/" not in response.text
+    service = app_with_engine.state.knowledge_engine_service
+    assert service.equivalence_requests == [
+        ("knowledge_engine_space:primary", ("research",))
+    ]
+    methods = app_with_engine.openapi()["paths"][
+        "/api/deeper-notebook/knowledge-engine/equivalence"
+    ]
+    assert set(methods) == {"get"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/deeper-notebook/knowledge-engine/equivalence",
+        "/api/deeper-notebook/knowledge-engine/equivalence?"
+        "space_id=knowledge_engine_space%3Aprimary&exact_query=",
+        "/api/deeper-notebook/knowledge-engine/equivalence?"
+        "space_id=knowledge_engine_space%3Ainvalid/path&exact_query=research",
+    ],
+)
+async def test_equivalence_invalid_request_uses_stable_error_envelope(
+    app_with_engine: FastAPI, path: str
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_engine), base_url="http://test"
+    ) as client:
+        response = await client.get(path)
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "knowledge_engine_request_invalid"}
+    }
+
+
+@pytest.mark.asyncio
+async def test_equivalence_never_relays_untrusted_difference_bodies(
+    app_with_engine: FastAPI,
+) -> None:
+    service = app_with_engine.state.knowledge_engine_service
+    service.equivalence_result = {  # type: ignore[assignment]
+        "passed": False,
+        "differences": [{"code": "document_hash_mismatch", "legacy_value": "test-only-token"}],
+    }
+    path = (
+        "/api/deeper-notebook/knowledge-engine/equivalence?"
+        "space_id=knowledge_engine_space%3Aprimary&exact_query=research"
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_engine), base_url="http://test"
+    ) as client:
+        response = await client.get(path)
+
+    assert response.status_code == 503
+    assert "test-only-token" not in response.text
 
 
 @pytest.mark.asyncio
