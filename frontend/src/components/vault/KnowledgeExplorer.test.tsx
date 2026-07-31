@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
+import { serializeKnowledgeWorkspace } from '@/lib/api/knowledge-workspace'
 import {
   resetKnowledgeCommandContextStore,
   useKnowledgeCommandContextStore,
@@ -47,7 +48,11 @@ const navigationQueries = vi.hoisted(() => ({
   deleteBookmark: vi.fn(async () => undefined),
   updateBookmark: vi.fn(async () => undefined),
   deleteFolder: vi.fn(async () => undefined),
-  restoreWorkspace: vi.fn(async () => undefined),
+  restoreWorkspace: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => undefined),
+  createWorkspace: vi.fn(async () => undefined),
+  updateWorkspace: vi.fn(async () => undefined),
+  duplicateWorkspace: vi.fn(async () => undefined),
+  deleteWorkspace: vi.fn(async () => undefined),
 }))
 const pageIdentity = vi.hoisted(() => ({
   value: null as string | null,
@@ -265,6 +270,10 @@ vi.mock('@/lib/hooks/use-knowledge-navigation', () => ({
   useDeleteKnowledgeBookmark: () => ({ mutateAsync: navigationQueries.deleteBookmark }),
   useDeleteKnowledgeFolder: () => ({ mutateAsync: navigationQueries.deleteFolder }),
   useRestoreKnowledgeWorkspace: () => ({ mutateAsync: navigationQueries.restoreWorkspace }),
+  useCreateKnowledgeWorkspace: () => ({ mutateAsync: navigationQueries.createWorkspace }),
+  useUpdateKnowledgeWorkspace: () => ({ mutateAsync: navigationQueries.updateWorkspace }),
+  useDuplicateKnowledgeWorkspace: () => ({ mutateAsync: navigationQueries.duplicateWorkspace }),
+  useDeleteKnowledgeWorkspace: () => ({ mutateAsync: navigationQueries.deleteWorkspace }),
 }))
 
 vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
@@ -1284,7 +1293,13 @@ describe('KnowledgeExplorer utility rail', () => {
     pageIdentity.value = null
     navigationQueries.create.mockReset()
     navigationQueries.random.mockReset()
+    navigationQueries.restoreWorkspace.mockReset()
+    navigationQueries.createWorkspace.mockReset()
+    navigationQueries.updateWorkspace.mockReset()
+    navigationQueries.duplicateWorkspace.mockReset()
+    navigationQueries.deleteWorkspace.mockReset()
     navigationQueries.random.mockResolvedValue({ state: 'empty', document: null })
+    navigationQueries.workspaces = { items: [] }
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
   })
 
@@ -1297,6 +1312,78 @@ describe('KnowledgeExplorer utility rail', () => {
 
     expect(screen.getByRole('navigation', { name: 'Bookmarks' })).toBeVisible()
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(activeBefore)
+  })
+
+  it('does not apply a stale named workspace before confirmation', async () => {
+    navigationQueries.workspaces = { items: [{
+      id: 'named_knowledge_workspace:research', name: 'Research desk', revision: 4,
+      updatedAt: '2026-07-31T00:00:00.000Z',
+    }] }
+    navigationQueries.restoreWorkspace.mockResolvedValue({
+      workspaceId: 'named_knowledge_workspace:research', revision: 4,
+      activePaneId: 'pane-1', nextId: 3,
+      panes: { 'pane-1': { id: 'pane-1', activeTabId: 'tab-1', tabs: [{
+        id: 'tab-1', displayLabel: 'Research note', viewMode: 'reading',
+        target: { kind: 'document', documentId: 'knowledge_engine_document:research' },
+        targetState: 'stale', targetDocument: null,
+      }] } },
+      layout: { type: 'pane', paneId: 'pane-1' },
+      navigation: useKnowledgeWorkspaceStore.getState().navigation,
+      summary: { available: 0, stale: 1, unavailable: 0, missing: 0 },
+    })
+    await renderExplorer()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
+    const before = serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState())
+    const applyNamedWorkspace = vi.spyOn(useKnowledgeWorkspaceStore.getState(), 'applyNamedWorkspace')
+    fireEvent.click(screen.getByRole('button', { name: 'Open Research desk' }))
+
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Open workspace with unavailable targets' })).toBeVisible())
+    expect(serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState())).toEqual(before)
+    expect(applyNamedWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('applies available targets once and retains empty panes when stale targets are omitted', async () => {
+    pageIdentity.value = 'knowledge_engine_document:research'
+    navigationQueries.workspaces = { items: [{
+      id: 'named_knowledge_workspace:research', name: 'Research desk', revision: 4,
+      updatedAt: '2026-07-31T00:00:00.000Z',
+    }] }
+    navigationQueries.restoreWorkspace.mockResolvedValue({
+      workspaceId: 'named_knowledge_workspace:research', revision: 4,
+      activePaneId: 'pane-1', nextId: 4,
+      panes: {
+        'pane-1': { id: 'pane-1', activeTabId: 'tab-1', tabs: [{
+          id: 'tab-1', displayLabel: 'Research note', viewMode: 'reading',
+          target: { kind: 'document', documentId: 'knowledge_engine_document:research' },
+          targetState: 'available', targetDocument: {
+            documentId: 'knowledge_engine_document:research', spaceId: 'knowledge_engine_space:research',
+            authorityKind: 'external_read_only', sourceKind: 'markdown', title: 'Research note',
+            relativeLocator: 'research.md', legacyNoteId: 'note:research', legacyContainerId: 'vault:one',
+          },
+        }] },
+        'pane-2': { id: 'pane-2', activeTabId: 'tab-2', tabs: [{
+          id: 'tab-2', displayLabel: 'Gone note', viewMode: 'reading',
+          target: { kind: 'document', documentId: 'knowledge_engine_document:gone' },
+          targetState: 'missing', targetDocument: null,
+        }] },
+      },
+      layout: { type: 'split', id: 'split-3', direction: 'horizontal', firstSize: 50,
+        first: { type: 'pane', paneId: 'pane-1' }, second: { type: 'pane', paneId: 'pane-2' } },
+      navigation: useKnowledgeWorkspaceStore.getState().navigation,
+      summary: { available: 1, stale: 0, unavailable: 0, missing: 1 },
+    })
+    await renderExplorer()
+    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
+    const applyNamedWorkspace = vi.spyOn(useKnowledgeWorkspaceStore.getState(), 'applyNamedWorkspace')
+    fireEvent.click(screen.getByRole('button', { name: 'Open Research desk' }))
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Open workspace with unavailable targets' })).toBeVisible())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open available' }))
+
+    await waitFor(() => expect(applyNamedWorkspace).toHaveBeenCalledOnce())
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs).toHaveLength(1)
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-2']).toMatchObject({ activeTabId: null, tabs: [] })
   })
 
   it('persists a keyboard-resized utility sidebar within its safe bounds', async () => {
