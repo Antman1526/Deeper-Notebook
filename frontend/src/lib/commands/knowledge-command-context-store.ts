@@ -8,6 +8,13 @@ export interface KnowledgeCommandPageContext {
   scanSelectedVault?: () => Promise<void>
   openTodayOverlay?: () => Promise<void>
   openUniqueOverlayDialog?: () => void
+  bookmarkCurrentTarget?: () => void | Promise<void>
+  openBookmarks?: () => void
+  randomNote?: () => void | Promise<void>
+  openWorkspaces?: () => void
+  saveWorkspaceAs?: () => void
+  replaceWorkspace?: () => void
+  toggleMetrics?: () => void
 }
 
 interface KnowledgeCommandContextState {

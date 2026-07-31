@@ -280,8 +280,9 @@ export const plPL = {
       requiresSelectedVault: "Najpierw wybierz skarbiec",
       requiresFileTree: "Drzewo plików jest niedostępne",
       requiresLinks: "Linki notatki są niedostępne",
+      bookmarkCurrent: "Dodaj bieżący cel do zakładek", openBookmarks: "Otwórz zakładki", randomNote: "Losowa notatka", openWorkspaces: "Otwórz obszary robocze", saveWorkspaceAs: "Zapisz obszar roboczy jako", replaceWorkspace: "Zastąp obszar roboczy", toggleMetrics: "Przełącz metryki dokumentu",
     },
-
+    navigation: { sources: "Źródła", bookmarks: "Zakładki", randomNote: "Losowa notatka", workspaces: "Obszary robocze", currentSession: "Bieżąca sesja", saveCurrentAs: "Zapisz bieżącą sesję jako", replaceWithCurrent: "Zastąp bieżącą sesją", openAvailable: "Otwórz dostępne", targetAvailable: "Dostępny", targetStale: "Nieaktualny", targetUnavailable: "Niedostępny", targetMissing: "Brakujący", appOwned: "Własność aplikacji", externalReadOnly: "Zewnętrzne tylko do odczytu", words: "{{count}} słów", characters: "{{count}} znaków", readingMinutes: "{{count}} min czytania", selectionMetrics: "Zaznaczenie: {{words}} słów, {{characters}} znaków" },
   },
   notebooks: {
     title: "Notatniki",

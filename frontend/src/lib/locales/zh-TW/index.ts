@@ -276,8 +276,9 @@ export const zhTW = {
       requiresSelectedVault: "請先選取知識庫",
       requiresFileTree: "檔案樹狀結構無法使用",
       requiresLinks: "筆記連結無法使用",
+      bookmarkCurrent: "加入目前目標書籤", openBookmarks: "開啟書籤", randomNote: "隨機筆記", openWorkspaces: "開啟工作區", saveWorkspaceAs: "工作區另存新檔", replaceWorkspace: "取代工作區", toggleMetrics: "切換文件指標",
     },
-
+    navigation: { sources: "來源", bookmarks: "書籤", randomNote: "隨機筆記", workspaces: "工作區", currentSession: "目前工作階段", saveCurrentAs: "目前工作階段另存新檔", replaceWithCurrent: "以目前工作階段取代", openAvailable: "開啟可用項目", targetAvailable: "可用", targetStale: "過期", targetUnavailable: "無法使用", targetMissing: "遺失", appOwned: "應用程式自有", externalReadOnly: "外部唯讀", words: "{{count}} 個字詞", characters: "{{count}} 個字元", readingMinutes: "{{count}} 分鐘閱讀", selectionMetrics: "選取範圍：{{words}} 個字詞，{{characters}} 個字元" },
   },
   notebooks: {
     title: "筆記本",

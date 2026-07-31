@@ -15,6 +15,13 @@ export type KnowledgeCommandId =
   | 'knowledge.focus-links'
   | 'knowledge.overlay.today'
   | 'knowledge.overlay.unique'
+  | 'knowledge.bookmark-current'
+  | 'knowledge.open-bookmarks'
+  | 'knowledge.random-note'
+  | 'knowledge.open-workspaces'
+  | 'knowledge.save-workspace-as'
+  | 'knowledge.replace-workspace'
+  | 'knowledge.toggle-metrics'
 
 export type CommandScope = 'global' | 'knowledge'
 export type CommandSafety = 'read' | 'workspace' | 'external-write'
@@ -36,6 +43,13 @@ export interface KnowledgeCommandExecutionContext {
   focusActivePane: (() => void) | null
   focusLinks: (() => void) | null
   moveTab: (offset: -1 | 1) => void
+  bookmarkCurrentTarget: (() => void | Promise<void>) | null
+  openBookmarks: (() => void) | null
+  randomNote: (() => void | Promise<void>) | null
+  openWorkspaces: (() => void) | null
+  saveWorkspaceAs: (() => void) | null
+  replaceWorkspace: (() => void) | null
+  toggleMetrics: (() => void) | null
 }
 
 export interface CommandDefinition {
@@ -236,6 +250,77 @@ export const knowledgeCommandDefinitions: CommandDefinition[] = [
     isAvailable: context => context.focusLinks !== null,
     unavailableReasonKey: 'knowledge.commands.requiresLinks',
     execute: context => context.focusLinks!(),
+  },
+  {
+    id: 'knowledge.bookmark-current',
+    scope: 'knowledge',
+    safety: 'workspace',
+    labelKey: 'knowledge.commands.bookmarkCurrent',
+    aliases: ['bookmark current', 'bookmark target'],
+    keywords: ['bookmark', 'current', 'target'],
+    isAvailable: context => hasActiveTab(context) && context.bookmarkCurrentTarget !== null,
+    unavailableReasonKey: 'knowledge.commands.requiresActiveTab',
+    execute: context => context.bookmarkCurrentTarget!(),
+  },
+  {
+    id: 'knowledge.open-bookmarks',
+    scope: 'knowledge',
+    safety: 'workspace',
+    labelKey: 'knowledge.commands.openBookmarks',
+    aliases: ['bookmarks'],
+    keywords: ['open', 'bookmarks'],
+    isAvailable: context => context.openBookmarks !== null,
+    execute: context => context.openBookmarks!(),
+  },
+  {
+    id: 'knowledge.random-note',
+    scope: 'knowledge',
+    safety: 'read',
+    labelKey: 'knowledge.commands.randomNote',
+    aliases: ['random note'],
+    keywords: ['random', 'note'],
+    isAvailable: context => context.randomNote !== null,
+    execute: context => context.randomNote!(),
+  },
+  {
+    id: 'knowledge.open-workspaces',
+    scope: 'knowledge',
+    safety: 'workspace',
+    labelKey: 'knowledge.commands.openWorkspaces',
+    aliases: ['workspaces'],
+    keywords: ['open', 'workspaces'],
+    isAvailable: context => context.openWorkspaces !== null,
+    execute: context => context.openWorkspaces!(),
+  },
+  {
+    id: 'knowledge.save-workspace-as',
+    scope: 'knowledge',
+    safety: 'workspace',
+    labelKey: 'knowledge.commands.saveWorkspaceAs',
+    aliases: ['save workspace'],
+    keywords: ['save', 'workspace', 'as'],
+    isAvailable: context => context.saveWorkspaceAs !== null,
+    execute: context => context.saveWorkspaceAs!(),
+  },
+  {
+    id: 'knowledge.replace-workspace',
+    scope: 'knowledge',
+    safety: 'workspace',
+    labelKey: 'knowledge.commands.replaceWorkspace',
+    aliases: ['replace workspace'],
+    keywords: ['replace', 'workspace'],
+    isAvailable: context => context.replaceWorkspace !== null,
+    execute: context => context.replaceWorkspace!(),
+  },
+  {
+    id: 'knowledge.toggle-metrics',
+    scope: 'knowledge',
+    safety: 'workspace',
+    labelKey: 'knowledge.commands.toggleMetrics',
+    aliases: ['metrics'],
+    keywords: ['toggle', 'metrics', 'words', 'characters'],
+    isAvailable: context => context.toggleMetrics !== null,
+    execute: context => context.toggleMetrics!(),
   },
 ]
 

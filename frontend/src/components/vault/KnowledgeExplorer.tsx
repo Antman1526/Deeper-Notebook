@@ -484,6 +484,15 @@ export function KnowledgeExplorer() {
     })
     if (result.state === 'selected') openDescriptor(result.document)
   }, [navigation.authorityFilters, navigation.bookmarkTags, navigation.selectedSpaceIds, openDescriptor, randomNote])
+  const openBookmarks = useCallback(() => {
+    setNavigation({ utilityMode: 'bookmarks' })
+  }, [setNavigation])
+  const openWorkspaces = useCallback(() => {
+    setNavigation({ utilityMode: 'workspaces' })
+  }, [setNavigation])
+  const toggleMetrics = useCallback(() => {
+    setNavigation({ metricsVisible: !useKnowledgeWorkspaceStore.getState().navigation.metricsVisible })
+  }, [setNavigation])
   const bookmarkCurrentTarget = useCallback(async () => {
     if (!activeTab?.knowledgeDocumentId) return
     const currentWorkspace = useKnowledgeWorkspaceStore.getState()
@@ -871,6 +880,13 @@ export function KnowledgeExplorer() {
         scanSelectedVault={scanSelectedVault}
         openTodayOverlay={openTodayOverlay}
         openUniqueOverlayDialog={openUniqueOverlayDialog}
+        bookmarkCurrentTarget={bookmarkCurrentTarget}
+        openBookmarks={openBookmarks}
+        randomNote={openRandomNote}
+        openWorkspaces={openWorkspaces}
+        saveWorkspaceAs={openWorkspaces}
+        replaceWorkspace={openWorkspaces}
+        toggleMetrics={toggleMetrics}
       />
       <KnowledgeQuickSwitcher mounts={mounts.data || []} searchMode={navigation.searchMode} onBookmarkSearch={(query, mode) => { void bookmarkSearch(query, mode) }} />
       <CreateUniqueNoteDialog

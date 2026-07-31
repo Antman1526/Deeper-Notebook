@@ -278,8 +278,9 @@ export const esES = {
       requiresSelectedVault: "Selecciona primero una bóveda",
       requiresFileTree: "Árbol de archivos no disponible",
       requiresLinks: "Enlaces de la nota no disponibles",
+      bookmarkCurrent: "Marcar objetivo actual", openBookmarks: "Abrir marcadores", randomNote: "Nota aleatoria", openWorkspaces: "Abrir espacios de trabajo", saveWorkspaceAs: "Guardar espacio de trabajo como", replaceWorkspace: "Reemplazar espacio de trabajo", toggleMetrics: "Alternar métricas del documento",
     },
-
+    navigation: { sources: "Fuentes", bookmarks: "Marcadores", randomNote: "Nota aleatoria", workspaces: "Espacios de trabajo", currentSession: "Sesión actual", saveCurrentAs: "Guardar actual como", replaceWithCurrent: "Reemplazar con actual", openAvailable: "Abrir disponibles", targetAvailable: "Disponible", targetStale: "Desactualizado", targetUnavailable: "No disponible", targetMissing: "Falta", appOwned: "Propiedad de la aplicación", externalReadOnly: "Externo de solo lectura", words: "{{count}} palabras", characters: "{{count}} caracteres", readingMinutes: "{{count}} min de lectura", selectionMetrics: "Selección: {{words}} palabras, {{characters}} caracteres" },
   },
   notebooks: {
     title: "Cuadernos",

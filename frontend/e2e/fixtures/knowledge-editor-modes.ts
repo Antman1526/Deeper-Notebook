@@ -4,6 +4,10 @@ export interface KnowledgeFixtureState {
   workspace: Record<string, unknown>;
   searchRequests: Array<Record<string, unknown>>;
   embeddingAvailable: boolean;
+  bookmarks: Array<Record<string, unknown>>;
+  namedWorkspaces: Array<Record<string, unknown>>;
+  operationReceipts: Array<Record<string, unknown>>;
+  randomSelections: string[];
 }
 
 export interface StrictOverlayFixtureNote {
@@ -173,6 +177,10 @@ export function initialKnowledgeFixtureState(): KnowledgeFixtureState {
   return {
     searchRequests: [],
     embeddingAvailable: true,
+    bookmarks: [],
+    namedWorkspaces: [],
+    operationReceipts: [],
+    randomSelections: [],
     workspace: {
       version: 1,
       active_pane_id: "pane-1",
@@ -401,7 +409,85 @@ export async function fulfillKnowledgeRequest(
   const pageRoute = matchFixturePageRoute(path);
   let payload: unknown;
 
-  if (path.endsWith("/deeper-notebook/workspace/knowledge")) {
+  if (path.endsWith("/deeper-notebook/knowledge/bookmarks")) {
+    if (!(await allowRequestMethod(route, ["GET", "HEAD", "POST"], unexpectedApiTraffic))) return;
+    if (method === "POST") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      const ordinal = state.bookmarks.length + 1;
+      const now = "2026-07-31T00:00:00+00:00";
+      const bookmark = {
+        schema_version: 1,
+        id: `knowledge_bookmark:fixture_${ordinal}`,
+        target_kind: (body.target as Record<string, unknown>).kind,
+        target: body.target,
+        display_label: body.display_label,
+        authority_kind: body.authority_kind,
+        space_id: body.space_id,
+        folder_id: body.folder_id,
+        tags: body.tags,
+        position: body.position,
+        revision: 1,
+        created_at: now,
+        updated_at: now,
+        target_state: "available",
+        target_document: {
+          document_id: "knowledge_engine_document:evidence",
+          space_id: "knowledge_engine_space:fixture",
+          authority_kind: "external_read_only",
+          source_kind: "obsidian",
+          title: "Evidence",
+          relative_locator: "pages/evidence.md",
+          legacy_note_id: "note:evidence",
+          legacy_container_id: "vault:fixture",
+        },
+      };
+      state.bookmarks.push(bookmark);
+      state.operationReceipts.push({ operation_id: body.operation_id, entity_id: bookmark.id });
+      payload = bookmark;
+    } else payload = { items: state.bookmarks, next_cursor: null };
+  } else if (path.endsWith("/deeper-notebook/knowledge/bookmark-folders")) {
+    if (!(await allowRequestMethod(route, ["GET", "HEAD"], unexpectedApiTraffic))) return;
+    payload = { items: [] };
+  } else if (path.endsWith("/deeper-notebook/knowledge/random-note")) {
+    if (!(await allowRequestMethod(route, ["POST"], unexpectedApiTraffic))) return;
+    state.randomSelections.push("note:evidence");
+    payload = {
+      state: "selected",
+      document: {
+        document_id: "knowledge_engine_document:evidence",
+        space_id: "knowledge_engine_space:fixture",
+        authority_kind: "external_read_only",
+        source_kind: "obsidian",
+        title: "Evidence",
+        relative_locator: "pages/evidence.md",
+        legacy_note_id: "note:evidence",
+        legacy_container_id: "vault:fixture",
+      },
+    };
+  } else if (path.endsWith("/deeper-notebook/knowledge/workspaces")) {
+    if (!(await allowRequestMethod(route, ["GET", "HEAD", "POST"], unexpectedApiTraffic))) return;
+    if (method === "POST") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      const ordinal = state.namedWorkspaces.length + 1;
+      const workspace = {
+        schema_version: 1,
+        id: `named_knowledge_workspace:fixture_${ordinal}`,
+        name: body.name,
+        name_key: String(body.name).toLocaleLowerCase(),
+        snapshot_version: 1,
+        snapshot: body.snapshot,
+        capacity_slot: ordinal,
+        revision: 1,
+        created_at: "2026-07-31T00:00:00+00:00",
+        updated_at: "2026-07-31T00:00:00+00:00",
+      };
+      state.namedWorkspaces.push(workspace);
+      state.operationReceipts.push({ operation_id: body.operation_id, entity_id: workspace.id });
+      payload = workspace;
+    } else payload = { items: state.namedWorkspaces.map((workspace) => ({
+      id: workspace.id, name: workspace.name, revision: workspace.revision, updated_at: workspace.updated_at,
+    })) };
+  } else if (path.endsWith("/deeper-notebook/workspace/knowledge")) {
     if (
       !(await allowRequestMethod(
         route,

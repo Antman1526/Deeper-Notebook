@@ -110,6 +110,20 @@ const sharedVaultSurfaceLocaleKeys = new Set([
   'knowledge.noProperties',
   'knowledge.noTags',
   'knowledge.outline',
+  'knowledge.navigation.sources',
+  'knowledge.navigation.bookmarks',
+  'knowledge.navigation.randomNote',
+  'knowledge.navigation.workspaces',
+  'knowledge.navigation.currentSession',
+  'knowledge.navigation.saveCurrentAs',
+  'knowledge.navigation.replaceWithCurrent',
+  'knowledge.navigation.openAvailable',
+  'knowledge.navigation.targetAvailable',
+  'knowledge.navigation.targetStale',
+  'knowledge.navigation.targetUnavailable',
+  'knowledge.navigation.targetMissing',
+  'knowledge.navigation.appOwned',
+  'knowledge.navigation.externalReadOnly',
 ])
 
 describe('Read-only editor mode locale contracts', () => {
@@ -166,6 +180,13 @@ const knowledgeCommandLocaleKeys = [
   'requiresFileTree', 'requiresLinks',
 ] as const
 
+const knowledgeNavigationLocaleKeys = [
+  'sources', 'bookmarks', 'randomNote', 'workspaces', 'currentSession',
+  'saveCurrentAs', 'replaceWithCurrent', 'openAvailable', 'targetAvailable',
+  'targetStale', 'targetUnavailable', 'targetMissing', 'appOwned',
+  'externalReadOnly', 'words', 'characters', 'readingMinutes', 'selectionMetrics',
+] as const
+
 const overlayLocaleKeys = [
   'name', 'writable', 'today', 'newUnique', 'uniqueTitle', 'create', 'creating', 'daily', 'notes',
   'empty', 'loadError', 'createError', 'save', 'saving', 'saved', 'saveError',
@@ -209,6 +230,12 @@ describe('Command-navigation locale contracts', () => {
       expect(value, `${code} is missing knowledge.commands.${key}`).toEqual(expect.any(String))
       expect((value as string).trim()).not.toBe('')
     }
+    for (const key of knowledgeNavigationLocaleKeys) {
+      const value = getTranslation(translation, `knowledge.navigation.${key}`)
+      expect(value, `${code} is missing knowledge.navigation.${key}`).toEqual(expect.any(String))
+      expect((value as string).trim(), `${code} has an empty knowledge.navigation.${key}`)
+        .not.toBe('')
+    }
   })
 
   it('keeps exact English command-navigation copy', () => {
@@ -230,6 +257,29 @@ describe('Command-navigation locale contracts', () => {
         requiresMultiplePanes: 'Requires multiple panes', requiresSelectedVault: 'Select a vault first',
         requiresFileTree: 'File tree unavailable', requiresLinks: 'Note links unavailable',
       },
+    })
+  })
+
+  it('keeps exact English navigation-productivity copy', () => {
+    expect(enUS.knowledge.navigation).toEqual({
+      sources: 'Sources',
+      bookmarks: 'Bookmarks',
+      randomNote: 'Random Note',
+      workspaces: 'Workspaces',
+      currentSession: 'Current Session',
+      saveCurrentAs: 'Save Current As',
+      replaceWithCurrent: 'Replace With Current',
+      openAvailable: 'Open available',
+      targetAvailable: 'Available',
+      targetStale: 'Stale',
+      targetUnavailable: 'Unavailable',
+      targetMissing: 'Missing',
+      appOwned: 'App-owned',
+      externalReadOnly: 'External read-only',
+      words: '{{count}} words',
+      characters: '{{count}} characters',
+      readingMinutes: '{{count}} min read',
+      selectionMetrics: 'Selection: {{words}} words, {{characters}} characters',
     })
   })
 
@@ -266,6 +316,28 @@ describe('Command-navigation locale contracts', () => {
     expect(getTranslation(translation, 'knowledge.partialCatalogFailure')).toContain('{{count}}')
     expect(getTranslation(translation, 'knowledge.semanticSearchFor')).toContain('{{query}}')
   })
+
+  it.each(Object.entries(resources))('%s preserves navigation-productivity interpolation tokens', (code, resource) => {
+    const translation = resource.translation as Record<string, unknown>
+    expect(getTranslation(translation, 'knowledge.navigation.words')).toContain('{{count}}')
+    expect(getTranslation(translation, 'knowledge.navigation.characters')).toContain('{{count}}')
+    expect(getTranslation(translation, 'knowledge.navigation.readingMinutes')).toContain('{{count}}')
+    const selection = getTranslation(translation, 'knowledge.navigation.selectionMetrics') as string
+    expect(selection).toContain('{{words}}')
+    expect(selection).toContain('{{characters}}')
+  })
+
+  it.each(Object.entries(resources).filter(([code]) => code !== 'en-US'))(
+    '%s does not fall back to raw English navigation-productivity copy',
+    (code, resource) => {
+      const translation = resource.translation as Record<string, unknown>
+      for (const key of knowledgeNavigationLocaleKeys) {
+        expect(getTranslation(translation, `knowledge.navigation.${key}`)).not.toBe(
+          getTranslation(enUS as unknown as Record<string, unknown>, `knowledge.navigation.${key}`),
+        )
+      }
+    },
+  )
 })
 
 describe('Overlay locale contracts', () => {

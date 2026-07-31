@@ -276,8 +276,9 @@ export const zhCN = {
       requiresSelectedVault: "请先选择知识库",
       requiresFileTree: "文件树不可用",
       requiresLinks: "笔记链接不可用",
+      bookmarkCurrent: "收藏当前目标", openBookmarks: "打开书签", randomNote: "随机笔记", openWorkspaces: "打开工作区", saveWorkspaceAs: "工作区另存为", replaceWorkspace: "替换工作区", toggleMetrics: "切换文档指标",
     },
-
+    navigation: { sources: "来源", bookmarks: "书签", randomNote: "随机笔记", workspaces: "工作区", currentSession: "当前会话", saveCurrentAs: "当前会话另存为", replaceWithCurrent: "用当前会话替换", openAvailable: "打开可用项", targetAvailable: "可用", targetStale: "已过期", targetUnavailable: "不可用", targetMissing: "缺失", appOwned: "应用所有", externalReadOnly: "外部只读", words: "{{count}} 个词", characters: "{{count}} 个字符", readingMinutes: "{{count}} 分钟阅读", selectionMetrics: "选区：{{words}} 个词，{{characters}} 个字符" },
   },
   notebooks: {
     title: "笔记本",

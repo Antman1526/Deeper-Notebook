@@ -95,6 +95,13 @@ vi.mock('@/lib/hooks/use-translation', () => ({
       'knowledge.commands.focusFiles': 'Focus vault files',
       'knowledge.commands.focusPane': 'Focus active pane',
       'knowledge.commands.focusLinks': 'Focus note links',
+      'knowledge.commands.bookmarkCurrent': 'Bookmark current target',
+      'knowledge.commands.openBookmarks': 'Open bookmarks',
+      'knowledge.commands.randomNote': 'Random Note',
+      'knowledge.commands.openWorkspaces': 'Open workspaces',
+      'knowledge.commands.saveWorkspaceAs': 'Save workspace as',
+      'knowledge.commands.replaceWorkspace': 'Replace workspace',
+      'knowledge.commands.toggleMetrics': 'Toggle document metrics',
       'knowledge.overlay.today': 'Today',
       'knowledge.overlay.newUnique': 'New unique note',
       'knowledge.commands.splitRight': 'Split pane right',
@@ -133,6 +140,13 @@ function registerKnowledgeContext(options: {
   scanSelectedVault?: () => Promise<void>
   openTodayOverlay?: () => Promise<void>
   openUniqueOverlayDialog?: () => void
+  bookmarkCurrentTarget?: () => Promise<void>
+  openBookmarks?: () => void
+  randomNote?: () => Promise<void>
+  openWorkspaces?: () => void
+  saveWorkspaceAs?: () => void
+  replaceWorkspace?: () => void
+  toggleMetrics?: () => void
 } = {}) {
   const activePane = document.createElement('section')
   const fileTree = document.createElement('aside')
@@ -146,6 +160,13 @@ function registerKnowledgeContext(options: {
     scanSelectedVault: options.scanSelectedVault ?? vi.fn(async () => undefined),
     openTodayOverlay: options.openTodayOverlay ?? vi.fn(async () => undefined),
     openUniqueOverlayDialog: options.openUniqueOverlayDialog ?? vi.fn(),
+    bookmarkCurrentTarget: options.bookmarkCurrentTarget ?? vi.fn(async () => undefined),
+    openBookmarks: options.openBookmarks ?? vi.fn(),
+    randomNote: options.randomNote ?? vi.fn(async () => undefined),
+    openWorkspaces: options.openWorkspaces ?? vi.fn(),
+    saveWorkspaceAs: options.saveWorkspaceAs ?? vi.fn(),
+    replaceWorkspace: options.replaceWorkspace ?? vi.fn(),
+    toggleMetrics: options.toggleMetrics ?? vi.fn(),
   })
   return { activePane, fileTree, links }
 }
@@ -245,6 +266,36 @@ describe('CommandPalette', () => {
     elements.activePane.remove()
     elements.fileTree.remove()
     elements.links.remove()
+  })
+
+  it.each([
+    ['Bookmark current target', 'bookmarkCurrentTarget'],
+    ['Open bookmarks', 'openBookmarks'],
+    ['Random Note', 'randomNote'],
+    ['Open workspaces', 'openWorkspaces'],
+    ['Save workspace as', 'saveWorkspaceAs'],
+    ['Replace workspace', 'replaceWorkspace'],
+    ['Toggle document metrics', 'toggleMetrics'],
+  ] as const)('executes %s through the registered UI callback', async (label, callback) => {
+    const callbacks = {
+      bookmarkCurrentTarget: vi.fn(async () => undefined),
+      openBookmarks: vi.fn(),
+      randomNote: vi.fn(async () => undefined),
+      openWorkspaces: vi.fn(),
+      saveWorkspaceAs: vi.fn(),
+      replaceWorkspace: vi.fn(),
+      toggleMetrics: vi.fn(),
+    }
+    const elements = registerKnowledgeContext(callbacks)
+    useKnowledgeWorkspaceStore.getState().openTab({
+      vaultId: 'vault:one', noteId: 'note:one', title: 'One', relativePath: 'One.md',
+    })
+    renderPalette()
+    act(() => requestCommandSurface('slash', '/'))
+
+    fireEvent.click(await screen.findByRole('option', { name: label }))
+    await waitFor(() => expect(callbacks[callback]).toHaveBeenCalledOnce())
+    Object.values(elements).forEach(element => element.remove())
   })
 
   it('executes a safe command in the active pane without closing for unavailable context', async () => {
