@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 from surrealdb import AsyncSurreal, RecordID
@@ -78,6 +79,7 @@ class FakeConnection:
         }
         self.receipts: dict[str, dict] = {}
         self.fail_after_receipt = False
+        self.remove_parent_before_mutation: str | None = None
         self.statements: list[str] = []
 
     @property
@@ -93,6 +95,9 @@ class FakeConnection:
         variables = variables or {}
         if variables.get("mutation"):
             return self._mutation(variables)
+        if "FROM knowledge_navigation_operation_receipt WHERE operation_id" in statement:
+            receipt = self.receipts.get(variables["operation_id"])
+            return [deepcopy(receipt)] if receipt is not None else []
         if variables.get("read") == "folder_parent":
             return [
                 self.rows["knowledge_bookmark_folder"].get(
@@ -112,6 +117,11 @@ class FakeConnection:
     def _mutation(self, variables: dict):
         staged_rows = deepcopy(self.rows)
         staged_receipts = deepcopy(self.receipts)
+        if self.remove_parent_before_mutation is not None:
+            staged_rows["knowledge_bookmark_folder"].pop(
+                self.remove_parent_before_mutation, None
+            )
+            self.remove_parent_before_mutation = None
         operation_id = variables["operation_id"]
         prior = staged_receipts.get(operation_id)
         if prior is not None:
@@ -125,6 +135,12 @@ class FakeConnection:
         expected = variables.get("expected_revision")
         if expected is not None and (current is None or current["revision"] != expected):
             return [{"error": "revision_conflict"}]
+        folder_relation_id = variables.get("folder_relation_id")
+        if (
+            folder_relation_id is not None
+            and folder_relation_id not in staged_rows["knowledge_bookmark_folder"]
+        ):
+            return [{"error": "folder_parent_not_found"}]
 
         entity = deepcopy(variables.get("entity") or current)
         if variables["mutation"] == "delete":
@@ -231,6 +247,29 @@ async def memory_connection():
         await database.close()
 
 
+@pytest.fixture
+async def migrated_memory_connection():
+    database = AsyncSurreal("mem://")
+    await database.connect()
+    await database.use("navigation_migrated", "navigation_migrated")
+    root = Path(__file__).resolve().parents[1]
+    await database.query(
+        (root / "deeper_notebook/database/migrations/38.surrealql").read_text()
+    )
+    await database.query(
+        (root / "deeper_notebook/database/migrations/39.surrealql").read_text()
+    )
+
+    @asynccontextmanager
+    async def factory():
+        yield database
+
+    try:
+        yield type("MigratedMemoryConnection", (), {"factory": factory, "database": database})
+    finally:
+        await database.close()
+
+
 @pytest.mark.asyncio
 async def test_create_bookmark_replays_same_operation_and_rejects_new_payload(
     fake_connection: FakeConnection,
@@ -246,8 +285,12 @@ async def test_create_bookmark_replays_same_operation_and_rejects_new_payload(
         await repository.create_bookmark(
             command.model_copy(update={"display_label": "Changed"})
         )
-    assert "BEGIN TRANSACTION;" in fake_connection.statements[0]
-    assert "$display_label" not in fake_connection.statements[0]
+    transaction = next(
+        statement
+        for statement in fake_connection.statements
+        if "BEGIN TRANSACTION;" in statement
+    )
+    assert "$display_label" not in transaction
 
 
 @pytest.mark.asyncio
@@ -367,10 +410,10 @@ async def test_real_surreal_folder_move_and_keyset_cursor_use_string_relationshi
     )
     moved = await repository.list_bookmarks(BookmarkFilters(), None, 10)
 
-    assert moved.items == [
-        direct_bookmark.model_copy(update={"folder_id": None}),
-        bookmark,
-    ]
+    assert [item.id for item in moved.items] == [direct_bookmark.id, bookmark.id]
+    assert moved.items[0].folder_id is None
+    assert moved.items[0].revision == direct_bookmark.revision + 1
+    assert moved.items[1] == bookmark
     assert (
         await memory_connection.database.query(
             "SELECT parent_folder_id FROM knowledge_bookmark_folder WHERE id = $id;",
@@ -403,6 +446,13 @@ async def test_real_surreal_random_note_filters_and_safe_descriptor(memory_conne
             space_id: 'knowledge_engine_space:research', authority_kind: 'external_read_only',
             relative_locator: 'pages/eligible.md', source_native_id: 'note:eligible',
             document_kind: 'note', title: 'Eligible', availability: 'available',
+            parse_state: 'ready', capabilities: ['read'], tags: ['Research', 'Project'],
+            normalized_body: 'private body must never be projected'
+        };
+        CREATE knowledge_engine_document:later CONTENT {
+            space_id: 'knowledge_engine_space:research', authority_kind: 'external_read_only',
+            relative_locator: 'pages/later.md', source_native_id: 'note:later',
+            document_kind: 'journal', title: 'Later', availability: 'available',
             parse_state: 'ready', capabilities: ['read'], tags: ['Research']
         };
         CREATE knowledge_engine_document:unreadable CONTENT {
@@ -411,20 +461,56 @@ async def test_real_surreal_random_note_filters_and_safe_descriptor(memory_conne
             document_kind: 'page', title: 'Unreadable', availability: 'available',
             parse_state: 'ready', capabilities: [], tags: ['Research']
         };
+        CREATE knowledge_engine_document:stale CONTENT {
+            space_id: 'knowledge_engine_space:research', authority_kind: 'external_read_only',
+            relative_locator: 'pages/stale.md', source_native_id: 'note:stale',
+            document_kind: 'note', title: 'Stale', availability: 'missing',
+            parse_state: 'ready', capabilities: ['read'], tags: ['Research', 'Project']
+        };
+        CREATE knowledge_engine_document:pending CONTENT {
+            space_id: 'knowledge_engine_space:research', authority_kind: 'external_read_only',
+            relative_locator: 'pages/pending.md', source_native_id: 'note:pending',
+            document_kind: 'note', title: 'Pending', availability: 'available',
+            parse_state: 'pending', capabilities: ['read'], tags: ['Research', 'Project']
+        };
+        CREATE knowledge_engine_document:unsupported CONTENT {
+            space_id: 'knowledge_engine_space:research', authority_kind: 'external_read_only',
+            relative_locator: 'pages/unsupported.md', source_native_id: 'note:unsupported',
+            document_kind: 'book', title: 'Unsupported', availability: 'available',
+            parse_state: 'ready', capabilities: ['read'], tags: ['Research', 'Project']
+        };
+        CREATE knowledge_engine_document:other_space CONTENT {
+            space_id: 'knowledge_engine_space:elsewhere', authority_kind: 'app_owned',
+            relative_locator: 'pages/elsewhere.md', source_native_id: 'note:elsewhere',
+            document_kind: 'note', title: 'Elsewhere', availability: 'available',
+            parse_state: 'ready', capabilities: ['read'], tags: ['Research', 'Project']
+        };
         """
     )
     repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
-    filters = RandomNoteFilters(
-        space_ids=['knowledge_engine_space:research'], tags=['Research']
-    )
+    filters = RandomNoteFilters(space_ids=['knowledge_engine_space:research'], tags=['Research'])
 
-    assert await repository.random_candidate_count(filters) == 1
+    assert await repository.random_candidate_count(filters) == 2
     selected = await repository.random_candidate_at(filters, 0)
+    second = await repository.random_candidate_at(filters, 1)
 
     assert selected is not None
-    assert selected.document_id == 'knowledge_engine_document:eligible'
-    assert selected.relative_locator == 'pages/eligible.md'
+    assert second is not None
+    assert {selected.document_id, second.document_id} == {
+        'knowledge_engine_document:eligible',
+        'knowledge_engine_document:later',
+    }
+    assert selected.document_id != second.document_id
     assert '/Users/' not in selected.model_dump_json()
+    assert 'private body' not in selected.model_dump_json()
+    assert await repository.random_candidate_count(
+        RandomNoteFilters(
+            space_ids=['knowledge_engine_space:research'], tags=['Research', 'Project']
+        )
+    ) == 1
+    assert await repository.random_candidate_count(
+        RandomNoteFilters(authority_kinds=['app_owned'])
+    ) == 1
 
 
 @pytest.mark.asyncio
@@ -591,3 +677,141 @@ async def test_real_surreal_bookmark_revision_conflict_and_delete_replay(memory_
     first = await repository.delete_bookmark(bookmark.id, delete)
     replay = await repository.delete_bookmark(bookmark.id, delete)
     assert replay == first
+
+
+@pytest.mark.asyncio
+async def test_replay_is_receipt_first_and_refuses_changed_or_missing_results(
+    memory_connection,
+):
+    repository = KnowledgeNavigationRepository(connection_factory=memory_connection.factory)
+    create = create_bookmark_command(operation_id="replay-create")
+    bookmark = await repository.create_bookmark(create)
+    updated = await repository.update_bookmark(
+        bookmark.id,
+        UpdateBookmark(
+            operation_id="replay-update",
+            expected_revision=bookmark.revision,
+            display_label="Changed after create",
+        ),
+    )
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError,
+        match="knowledge_navigation_replay_result_unavailable",
+    ):
+        await repository.create_bookmark(create)
+
+    await repository.delete_bookmark(
+        bookmark.id,
+        DeleteBookmark(
+            operation_id="replay-delete", expected_revision=updated.revision
+        ),
+    )
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError,
+        match="knowledge_navigation_replay_result_unavailable",
+    ):
+        await repository.update_bookmark(
+            bookmark.id,
+            UpdateBookmark(
+                operation_id="replay-update",
+                expected_revision=bookmark.revision,
+                display_label="Changed after create",
+            ),
+        )
+
+    folder = await repository.create_folder(
+        create_folder_command(operation_id="replay-folder", name="Replay folder")
+    )
+    folder_bookmark_command = create_bookmark_command(operation_id="replay-folder-bookmark").model_copy(
+        update={"folder_id": folder.id}
+    )
+    await repository.create_bookmark(folder_bookmark_command)
+    await repository.delete_folder(
+        folder.id,
+        DeleteFolder(
+            operation_id="replay-folder-delete",
+            expected_revision=folder.revision,
+            child_disposition="move_children",
+        ),
+    )
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError,
+        match="knowledge_navigation_replay_result_unavailable",
+    ):
+        await repository.create_bookmark(folder_bookmark_command)
+
+
+@pytest.mark.asyncio
+async def test_parent_removal_after_preflight_rolls_back_folder_and_bookmark_mutations(
+    fake_connection: FakeConnection,
+):
+    repository = KnowledgeNavigationRepository(connection_factory=fake_connection.factory)
+    parent = await repository.create_folder(
+        create_folder_command(operation_id="race-parent", name="Race parent")
+    )
+    fake_connection.remove_parent_before_mutation = parent.id
+    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_parent_not_found"):
+        await repository.create_folder(
+            create_folder_command(
+                operation_id="race-child", name="Race child", parent_folder_id=parent.id
+            )
+        )
+    assert "race-child" not in str(fake_connection.committed_receipts)
+
+    replacement = await repository.create_folder(
+        create_folder_command(operation_id="race-replacement", name="Replacement")
+    )
+    moving = await repository.create_folder(
+        create_folder_command(operation_id="race-moving", name="Moving")
+    )
+    fake_connection.remove_parent_before_mutation = replacement.id
+    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_parent_not_found"):
+        await repository.update_folder(
+            moving.id,
+            UpdateFolder(
+                operation_id="race-reparent",
+                expected_revision=moving.revision,
+                parent_folder_id=replacement.id,
+            ),
+        )
+
+    bookmark = await repository.create_bookmark(
+        create_bookmark_command(operation_id="race-bookmark")
+    )
+    destination = await repository.create_folder(
+        create_folder_command(operation_id="race-destination", name="Destination")
+    )
+    fake_connection.remove_parent_before_mutation = destination.id
+    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_parent_not_found"):
+        await repository.update_bookmark(
+            bookmark.id,
+            UpdateBookmark(
+                operation_id="race-bookmark-move",
+                expected_revision=bookmark.revision,
+                folder_id=destination.id,
+            ),
+        )
+    assert fake_connection.rows["knowledge_bookmark"][bookmark.id]["folder_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_repository_runs_against_exact_migrations_thirty_eight_and_thirty_nine(
+    migrated_memory_connection,
+):
+    repository = KnowledgeNavigationRepository(
+        connection_factory=migrated_memory_connection.factory
+    )
+    folder = await repository.create_folder(
+        create_folder_command(operation_id="migrated-folder", name="Migrated folder")
+    )
+    bookmark = await repository.create_bookmark(
+        create_bookmark_command(operation_id="migrated-bookmark").model_copy(
+            update={"folder_id": folder.id}
+        )
+    )
+    info = await migrated_memory_connection.database.query(
+        "INFO FOR TABLE knowledge_navigation_operation_receipt;"
+    )
+
+    assert bookmark.folder_id == folder.id
+    assert "idx_kn_operation_id" in str(info)
