@@ -110,7 +110,12 @@ export function KnowledgeExplorer() {
   const setPendingWorkspaceRestore = useKnowledgeWorkspaceStore((state) => state.setPendingWorkspaceRestore)
   const activeSearchContext = useKnowledgeWorkspaceStore((state) => state.activeSearchContext)
   const setActiveSearchContext = useKnowledgeWorkspaceStore((state) => state.setActiveSearchContext)
-  const indexedSearch = useKnowledgeIndexedSearch(activeSearchContext?.query || '', Boolean(activeSearchContext))
+  const indexedSearch = useKnowledgeIndexedSearch(activeSearchContext?.query || '', Boolean(activeSearchContext), {
+    mode: activeSearchContext?.mode || 'text',
+    spaceIds: activeSearchContext?.spaceIds || [],
+    authorityKinds: activeSearchContext?.authorityKinds || [],
+    tags: activeSearchContext?.tags || [],
+  })
   const setTabViewMode = useKnowledgeWorkspaceStore((state) => state.setTabViewMode)
   const setTabGraphViewport = useKnowledgeWorkspaceStore((state) => state.setTabGraphViewport)
   const bookmarks = useKnowledgeBookmarks({

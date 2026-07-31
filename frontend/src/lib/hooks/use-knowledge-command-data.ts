@@ -10,20 +10,35 @@ import { useDebounce } from 'use-debounce'
 import type { OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
 import { searchApi } from '@/lib/api/search'
 import { vaultApi, type VaultMount } from '@/lib/api/vault'
-import type { SearchResponse } from '@/lib/types/search'
+import type { SearchRequest, SearchResponse } from '@/lib/types/search'
 import {
   buildKnowledgeCatalog,
   type KnowledgeCatalogCandidate,
 } from '@/lib/commands/knowledge-command-catalog'
 import { vaultKeys } from '@/lib/hooks/use-vault'
 
-const searchRequest = (query: string, type: 'text' | 'vector') => ({
+export interface KnowledgeIndexedSearchOptions {
+  mode: 'exact' | 'text' | 'semantic'
+  spaceIds: string[]
+  authorityKinds: ('app_owned' | 'external_read_only')[]
+  tags: string[]
+}
+
+const defaultSearchOptions: KnowledgeIndexedSearchOptions = {
+  mode: 'text', spaceIds: [], authorityKinds: [], tags: [],
+}
+
+const searchRequest = (query: string, type: 'text' | 'vector', options: KnowledgeIndexedSearchOptions): SearchRequest => ({
   query,
   type,
   limit: 25,
   search_sources: false,
   search_notes: true,
   minimum_score: 0.3,
+  match_mode: options.mode,
+  space_ids: options.spaceIds,
+  authority_kinds: options.authorityKinds,
+  tags: options.tags,
 })
 
 /**
@@ -77,7 +92,7 @@ export function useKnowledgeCatalog(
   }
 }
 
-export function useKnowledgeIndexedSearch(query: string, enabled: boolean) {
+export function useKnowledgeIndexedSearch(query: string, enabled: boolean, options: KnowledgeIndexedSearchOptions = defaultSearchOptions) {
   const liveQuery = query.trim()
   const [input, setInput] = useState('')
   useEffect(() => {
@@ -85,9 +100,9 @@ export function useKnowledgeIndexedSearch(query: string, enabled: boolean) {
   }, [liveQuery])
   const [debounced] = useDebounce(input, 250)
   const textQuery = useQuery({
-    queryKey: ['knowledge-command-search', 'text', debounced],
-    queryFn: () => searchApi.search(searchRequest(debounced, 'text')),
-    enabled: enabled && debounced.length >= 2,
+    queryKey: ['knowledge-command-search', options.mode, debounced, options.spaceIds, options.authorityKinds, options.tags],
+    queryFn: () => searchApi.search(searchRequest(debounced, 'text', options)),
+    enabled: enabled && options.mode !== 'semantic' && debounced.length >= 2,
     staleTime: 10_000,
   })
   const text: KnowledgeIndexedTextSearch = liveQuery === debounced
@@ -95,7 +110,7 @@ export function useKnowledgeIndexedSearch(query: string, enabled: boolean) {
     : { ...textQuery, data: undefined, isCurrent: false, query: liveQuery }
   const semantic = useMutation({
     mutationFn: (value: string) =>
-      searchApi.search(searchRequest(value.trim(), 'vector')),
+      searchApi.search(searchRequest(value.trim(), 'vector', options)),
   })
   return {
     text,

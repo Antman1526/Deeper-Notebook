@@ -6,6 +6,10 @@ export interface SearchRequest {
   search_sources: boolean
   search_notes: boolean
   minimum_score: number
+  match_mode?: 'exact' | 'text' | 'semantic'
+  space_ids?: string[]
+  authority_kinds?: ('app_owned' | 'external_read_only')[]
+  tags?: string[]
 }
 
 export interface SearchResult {
