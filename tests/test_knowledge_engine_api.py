@@ -309,3 +309,71 @@ async def test_main_registers_only_the_canonical_diagnostic_routes() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(legacy)
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("result_attribute", "path"),
+    [
+        ("status_result", "/api/deeper-notebook/knowledge-engine/status"),
+        ("list_result", "/api/deeper-notebook/knowledge-engine/documents"),
+        (
+            "document_result",
+            "/api/deeper-notebook/knowledge-engine/documents/"
+            "knowledge_engine_document%3Aone",
+        ),
+    ],
+)
+async def test_internal_service_value_error_is_unavailable_not_request_invalid(
+    app_with_engine: FastAPI,
+    result_attribute: str,
+    path: str,
+) -> None:
+    service = app_with_engine.state.knowledge_engine_service
+    setattr(service, result_attribute, ValueError("private service detail"))
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(path)
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {"code": "knowledge_engine_unavailable"}
+    }
+    assert "private service detail" not in response.text
+
+
+def test_engine_openapi_uses_only_the_stable_error_response_schema(
+    app_with_engine: FastAPI,
+) -> None:
+    schema = app_with_engine.openapi()
+    paths = schema["paths"]
+    error_schema = {"$ref": "#/components/schemas/KnowledgeEngineErrorResponse"}
+    expected_errors = {
+        "/api/deeper-notebook/knowledge-engine/status": {"404", "422", "503"},
+        "/api/deeper-notebook/knowledge-engine/documents": {"404", "422", "503"},
+        "/api/deeper-notebook/knowledge-engine/documents/{document_id}": {
+            "404",
+            "422",
+            "503",
+        },
+    }
+
+    for path, error_codes in expected_errors.items():
+        responses = paths[path]["get"]["responses"]
+        assert error_codes <= set(responses)
+        for code in error_codes:
+            assert responses[code]["content"]["application/json"]["schema"] == (
+                error_schema
+            )
+        assert "HTTPValidationError" not in str(responses)
+        assert "ValidationError" not in str(responses)
+
+    stable_error = schema["components"]["schemas"]["KnowledgeEngineErrorResponse"]
+    assert stable_error["additionalProperties"] is False
+    assert stable_error["properties"] == {
+        "detail": {"$ref": "#/components/schemas/KnowledgeEngineErrorDetail"}
+    }
+    assert stable_error["required"] == ["detail"]
