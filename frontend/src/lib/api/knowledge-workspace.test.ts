@@ -269,6 +269,12 @@ describe('knowledge workspace API boundary', () => {
       version: 1,
       activePaneId: 'pane-1',
       nextId: 2,
+      navigation: {
+        utilityMode: 'sources', sidebarVisible: true, sidebarWidth: 320,
+        activeBookmarkFolderId: null, bookmarkTags: [], sourceTreeQuery: '',
+        searchQuery: '', activeDraftId: null, selectedSpaceIds: [],
+        authorityFilters: [], metricsVisible: true,
+      },
       panes: {
         'pane-1': {
           id: 'pane-1',
@@ -281,6 +287,8 @@ describe('knowledge workspace API boundary', () => {
             relativePath: 'Projects/Plan.md',
             viewMode: 'reading',
             sourceAuthority: 'external-vault',
+            knowledgeDocumentId: null,
+            graphViewport: { x: 0, y: 0, zoom: 1 },
           }],
         },
       },
@@ -303,6 +311,28 @@ describe('knowledge workspace API boundary', () => {
     const parsed = parseKnowledgeWorkspace(wireDocument)
     expect(serializeKnowledgeWorkspace(parsed).panes['pane-1'].tabs[0])
       .toMatchObject({ source_authority: 'external-vault' })
+  })
+
+  it('loads missing navigation and graph state using version-one defaults', () => {
+    const parsed = parseKnowledgeWorkspace(wireDocument)
+
+    expect(parsed.navigation).toEqual({
+      utilityMode: 'sources',
+      sidebarVisible: true,
+      sidebarWidth: 320,
+      activeBookmarkFolderId: null,
+      bookmarkTags: [],
+      sourceTreeQuery: '',
+      searchQuery: '',
+      activeDraftId: null,
+      selectedSpaceIds: [],
+      authorityFilters: [],
+      metricsVisible: true,
+    })
+    expect(parsed.panes['pane-1'].tabs[0]).toMatchObject({
+      knowledgeDocumentId: null,
+      graphViewport: { x: 0, y: 0, zoom: 1 },
+    })
   })
 
   it('serializes only approved snake_case fields for PUT', async () => {
@@ -339,12 +369,20 @@ describe('knowledge workspace API boundary', () => {
       '/deeper-notebook/workspace/knowledge',
       {
         ...wireDocument,
+        navigation: {
+          utility_mode: 'sources', sidebar_visible: true, sidebar_width: 320,
+          active_bookmark_folder_id: null, bookmark_tags: [], source_tree_query: '',
+          search_query: '', active_draft_id: null, selected_space_ids: [],
+          authority_filters: [], metrics_visible: true,
+        },
         panes: {
           'pane-1': {
             ...wireDocument.panes['pane-1'],
             tabs: [{
               ...wireDocument.panes['pane-1'].tabs[0],
               source_authority: 'external-vault',
+              knowledge_document_id: null,
+              graph_viewport: { x: 0, y: 0, zoom: 1 },
             }],
           },
         },
