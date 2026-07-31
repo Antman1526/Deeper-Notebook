@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import PurePosixPath
 from typing import Any
@@ -27,6 +28,7 @@ from deeper_notebook.vault.trust import TrustManifestError
 router = APIRouter()
 _KNOWLEDGE_DOCUMENT_ID = re.compile(r"^knowledge_engine_document:[A-Za-z0-9_-]+$")
 _KNOWLEDGE_BLOCK_ID = re.compile(r"^knowledge_engine_block:[A-Za-z0-9_-]+$")
+_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS = 0.25
 
 
 def _service(request: Request) -> Any:
@@ -129,8 +131,11 @@ async def _page_identity(
                 if isinstance(key, str)
             )
         )
-        resolved = await service.resolve_legacy_page(
-            legacy_note_id=legacy_note_id, block_keys=keys
+        resolved = await asyncio.wait_for(
+            service.resolve_legacy_page(
+                legacy_note_id=legacy_note_id, block_keys=keys
+            ),
+            timeout=_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS,
         )
         document_id = getattr(resolved, "document_id", None)
         block_ids = getattr(resolved, "block_ids", None)
