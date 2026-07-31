@@ -210,12 +210,9 @@ class KnowledgeNavigationService:
     async def update_workspace(
         self, workspace_id: str, command: UpdateWorkspace
     ) -> NamedKnowledgeWorkspace:
-        changed = command.model_fields_set - {
-            "operation_id",
-            "expected_revision",
-            "name_key",
-        }
-        if changed not in ({"name"}, {"snapshot"}):
+        has_name = "name" in command.model_fields_set
+        has_snapshot = "snapshot" in command.model_fields_set
+        if has_name == has_snapshot:
             raise ValueError("workspace updates must rename or replace a snapshot")
         if command.snapshot is not None:
             self._validate_workspace_snapshot(command.snapshot)
