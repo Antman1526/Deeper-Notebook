@@ -23,6 +23,14 @@ from api.schemas.knowledge_navigation import (
     BookmarkResponse,
     BookmarkUpdateRequest,
     KnowledgeNavigationErrorResponse,
+    KnowledgeWorkspaceCreateRequest,
+    KnowledgeWorkspaceDeleteRequest,
+    KnowledgeWorkspaceDuplicateRequest,
+    KnowledgeWorkspaceListResponse,
+    KnowledgeWorkspaceResponse,
+    KnowledgeWorkspaceRestorePlanRequest,
+    KnowledgeWorkspaceRestorePlanResponse,
+    KnowledgeWorkspaceUpdateRequest,
     NavigationReceiptResponse,
 )
 from deeper_notebook.knowledge_engine.navigation_contracts import (
@@ -38,12 +46,8 @@ MAX_FOLDER_TREE_ITEMS = 256
 _ERROR_RESPONSES = {
     status.HTTP_404_NOT_FOUND: {"model": KnowledgeNavigationErrorResponse},
     status.HTTP_409_CONFLICT: {"model": KnowledgeNavigationErrorResponse},
-    status.HTTP_422_UNPROCESSABLE_CONTENT: {
-        "model": KnowledgeNavigationErrorResponse
-    },
-    status.HTTP_503_SERVICE_UNAVAILABLE: {
-        "model": KnowledgeNavigationErrorResponse
-    },
+    status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": KnowledgeNavigationErrorResponse},
+    status.HTTP_503_SERVICE_UNAVAILABLE: {"model": KnowledgeNavigationErrorResponse},
 }
 _CONFLICT_CODES = frozenset(
     {
@@ -99,7 +103,9 @@ class _BoundedNavigationRoute(APIRoute):
             except RequestValidationError:
                 return JSONResponse(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    content={"detail": {"code": "knowledge_navigation_request_invalid"}},
+                    content={
+                        "detail": {"code": "knowledge_navigation_request_invalid"}
+                    },
                 )
 
         return route_handler
@@ -127,6 +133,11 @@ def _map_exception(exc: Exception) -> HTTPException:
             "knowledge_navigation_request_invalid",
         )
     if isinstance(exc, KnowledgeNavigationRepositoryError):
+        if exc.code == "workspace_revision_conflict":
+            return _error(
+                status.HTTP_409_CONFLICT,
+                "knowledge_workspace_revision_conflict",
+            )
         if exc.code in _NOT_FOUND_CODES:
             return _error(status.HTTP_404_NOT_FOUND, "knowledge_navigation_not_found")
         if exc.code in _CONFLICT_CODES or exc.code.endswith("_name_conflict"):
@@ -135,17 +146,26 @@ def _map_exception(exc: Exception) -> HTTPException:
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "knowledge_navigation_unavailable",
         )
-    return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "knowledge_navigation_unavailable")
+    return _error(
+        status.HTTP_503_SERVICE_UNAVAILABLE, "knowledge_navigation_unavailable"
+    )
 
 
 def _folder_tree(folders: list[Any]) -> BookmarkFolderTreeResponse:
     if len(folders) > MAX_FOLDER_TREE_ITEMS:
-        raise KnowledgeNavigationRepositoryError("knowledge_navigation_repository_unavailable")
+        raise KnowledgeNavigationRepositoryError(
+            "knowledge_navigation_repository_unavailable"
+        )
     children: dict[str | None, list[Any]] = {}
     known_ids = {folder.id for folder in folders}
     for folder in folders:
-        if folder.parent_folder_id is not None and folder.parent_folder_id not in known_ids:
-            raise KnowledgeNavigationRepositoryError("knowledge_navigation_repository_unavailable")
+        if (
+            folder.parent_folder_id is not None
+            and folder.parent_folder_id not in known_ids
+        ):
+            raise KnowledgeNavigationRepositoryError(
+                "knowledge_navigation_repository_unavailable"
+            )
         children.setdefault(folder.parent_folder_id, []).append(folder)
 
     visited: set[str] = set()
@@ -172,11 +192,15 @@ def _folder_tree(folders: list[Any]) -> BookmarkFolderTreeResponse:
 
     tree = BookmarkFolderTreeResponse(items=build(None, 0))
     if len(visited) != len(folders):
-        raise KnowledgeNavigationRepositoryError("knowledge_navigation_repository_unavailable")
+        raise KnowledgeNavigationRepositoryError(
+            "knowledge_navigation_repository_unavailable"
+        )
     return tree
 
 
-@router.get("/bookmarks", response_model=BookmarkListResponse, responses=_ERROR_RESPONSES)
+@router.get(
+    "/bookmarks", response_model=BookmarkListResponse, responses=_ERROR_RESPONSES
+)
 async def list_bookmarks(
     request: Request,
     cursor: str | None = Query(default=None, max_length=512),
@@ -330,6 +354,141 @@ async def delete_bookmark_folder(
 ) -> NavigationReceiptResponse:
     try:
         return await _service(request).delete_folder(folder_id, command)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.get(
+    "/workspaces",
+    response_model=KnowledgeWorkspaceListResponse,
+    responses=_ERROR_RESPONSES,
+)
+async def list_workspaces(request: Request) -> KnowledgeWorkspaceListResponse:
+    try:
+        return KnowledgeWorkspaceListResponse(
+            items=await _service(request).list_workspaces()
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.post(
+    "/workspaces",
+    status_code=status.HTTP_201_CREATED,
+    response_model=KnowledgeWorkspaceResponse,
+    responses=_ERROR_RESPONSES,
+)
+async def create_workspace(
+    request: Request, command: KnowledgeWorkspaceCreateRequest
+) -> KnowledgeWorkspaceResponse:
+    try:
+        return await _service(request).create_workspace(command)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.post(
+    "/workspaces/{workspace_id}/restore-plan",
+    response_model=KnowledgeWorkspaceRestorePlanResponse,
+    responses=_ERROR_RESPONSES,
+)
+async def workspace_restore_plan(
+    request: Request,
+    command: KnowledgeWorkspaceRestorePlanRequest,
+    workspace_id: str = Path(
+        pattern=r"^named_knowledge_workspace:[A-Za-z0-9_-]+$", max_length=128
+    ),
+) -> KnowledgeWorkspaceRestorePlanResponse:
+    try:
+        return await _service(request).workspace_restore_plan(
+            workspace_id, command.revision
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.get(
+    "/workspaces/{workspace_id}",
+    response_model=KnowledgeWorkspaceResponse,
+    responses=_ERROR_RESPONSES,
+)
+async def get_workspace(
+    request: Request,
+    workspace_id: str = Path(
+        pattern=r"^named_knowledge_workspace:[A-Za-z0-9_-]+$", max_length=128
+    ),
+) -> KnowledgeWorkspaceResponse:
+    try:
+        return await _service(request).get_workspace(workspace_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.patch(
+    "/workspaces/{workspace_id}",
+    response_model=KnowledgeWorkspaceResponse,
+    responses=_ERROR_RESPONSES,
+)
+async def update_workspace(
+    request: Request,
+    command: KnowledgeWorkspaceUpdateRequest,
+    workspace_id: str = Path(
+        pattern=r"^named_knowledge_workspace:[A-Za-z0-9_-]+$", max_length=128
+    ),
+) -> KnowledgeWorkspaceResponse:
+    try:
+        return await _service(request).update_workspace(workspace_id, command)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.post(
+    "/workspaces/{workspace_id}/duplicate",
+    status_code=status.HTTP_201_CREATED,
+    response_model=KnowledgeWorkspaceResponse,
+    responses=_ERROR_RESPONSES,
+)
+async def duplicate_workspace(
+    request: Request,
+    command: KnowledgeWorkspaceDuplicateRequest,
+    workspace_id: str = Path(
+        pattern=r"^named_knowledge_workspace:[A-Za-z0-9_-]+$", max_length=128
+    ),
+) -> KnowledgeWorkspaceResponse:
+    try:
+        return await _service(request).duplicate_workspace(workspace_id, command)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.delete(
+    "/workspaces/{workspace_id}",
+    response_model=NavigationReceiptResponse,
+    responses=_ERROR_RESPONSES,
+)
+async def delete_workspace(
+    request: Request,
+    command: KnowledgeWorkspaceDeleteRequest,
+    workspace_id: str = Path(
+        pattern=r"^named_knowledge_workspace:[A-Za-z0-9_-]+$", max_length=128
+    ),
+) -> NavigationReceiptResponse:
+    try:
+        return await _service(request).delete_workspace(workspace_id, command)
     except HTTPException:
         raise
     except Exception as exc:

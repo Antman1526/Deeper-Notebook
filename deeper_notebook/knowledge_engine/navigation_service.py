@@ -11,16 +11,25 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     BookmarkPage,
     CreateBookmark,
     CreateFolder,
+    CreateWorkspace,
     DeleteBookmark,
     DeleteFolder,
+    DeleteWorkspace,
     DocumentTarget,
+    DuplicateWorkspace,
     HydratedBookmark,
     HydratedBookmarkPage,
     HydratedKnowledgeTarget,
+    HydratedWorkspaceTab,
     KnowledgeTarget,
+    NamedKnowledgeWorkspace,
+    NamedKnowledgeWorkspaceSummary,
     NavigationReceipt,
     UpdateBookmark,
     UpdateFolder,
+    UpdateWorkspace,
+    WorkspaceRestorePane,
+    WorkspaceRestorePlan,
 )
 from deeper_notebook.knowledge_engine.navigation_repository import (
     KnowledgeNavigationRepository,
@@ -41,9 +50,7 @@ class KnowledgeNavigationService:
         self.metadata_repository = metadata_repository
         self.engine_repository = engine_repository
 
-    async def _engine_call(
-        self, method: str, *args: object, **kwargs: object
-    ) -> Any:
+    async def _engine_call(self, method: str, *args: object, **kwargs: object) -> Any:
         repository = self.engine_repository
         function = getattr(repository, method, None)
         if not callable(function):
@@ -53,9 +60,13 @@ class KnowledgeNavigationService:
         except LookupError:
             raise
         except (KnowledgeNavigationRepositoryError, KnowledgeRepositoryError):
-            raise KnowledgeNavigationRepositoryError("knowledge_engine_unavailable") from None
+            raise KnowledgeNavigationRepositoryError(
+                "knowledge_engine_unavailable"
+            ) from None
         except Exception:
-            raise KnowledgeNavigationRepositoryError("knowledge_engine_unavailable") from None
+            raise KnowledgeNavigationRepositoryError(
+                "knowledge_engine_unavailable"
+            ) from None
 
     async def _hydrate_document(self, target: Any) -> HydratedKnowledgeTarget:
         document = await self._engine_call("get_document", target.document_id)
@@ -183,6 +194,94 @@ class KnowledgeNavigationService:
         self, folder_id: str, command: DeleteFolder
     ) -> NavigationReceipt:
         return await self.metadata_repository.delete_folder(folder_id, command)
+
+    async def list_workspaces(self) -> list[NamedKnowledgeWorkspaceSummary]:
+        return await self.metadata_repository.list_workspaces()
+
+    async def create_workspace(
+        self, command: CreateWorkspace
+    ) -> NamedKnowledgeWorkspace:
+        self._validate_workspace_snapshot(command.snapshot)
+        return await self.metadata_repository.create_workspace(command)
+
+    async def get_workspace(self, workspace_id: str) -> NamedKnowledgeWorkspace:
+        return await self.metadata_repository.get_workspace(workspace_id)
+
+    async def update_workspace(
+        self, workspace_id: str, command: UpdateWorkspace
+    ) -> NamedKnowledgeWorkspace:
+        changed = command.model_fields_set - {
+            "operation_id",
+            "expected_revision",
+            "name_key",
+        }
+        if changed not in ({"name"}, {"snapshot"}):
+            raise ValueError("workspace updates must rename or replace a snapshot")
+        if command.snapshot is not None:
+            self._validate_workspace_snapshot(command.snapshot)
+        return await self.metadata_repository.update_workspace(workspace_id, command)
+
+    async def duplicate_workspace(
+        self, workspace_id: str, command: DuplicateWorkspace
+    ) -> NamedKnowledgeWorkspace:
+        return await self.metadata_repository.duplicate_workspace(workspace_id, command)
+
+    async def delete_workspace(
+        self, workspace_id: str, command: DeleteWorkspace
+    ) -> NavigationReceipt:
+        return await self.metadata_repository.delete_workspace(workspace_id, command)
+
+    async def workspace_restore_plan(
+        self, workspace_id: str, revision: int
+    ) -> WorkspaceRestorePlan:
+        workspace = await self.metadata_repository.get_workspace(workspace_id)
+        if workspace.revision != revision:
+            raise KnowledgeNavigationRepositoryError("workspace_revision_conflict")
+
+        summary = {"available": 0, "stale": 0, "unavailable": 0, "missing": 0}
+        panes: dict[str, WorkspaceRestorePane] = {}
+        for pane_id, pane in workspace.snapshot.panes.items():
+            tabs: list[HydratedWorkspaceTab] = []
+            for tab in pane.tabs:
+                hydrated = await self.hydrate_target(tab.target)
+                summary[hydrated.state] += 1
+                tabs.append(
+                    HydratedWorkspaceTab(
+                        id=tab.id,
+                        display_label=tab.display_label,
+                        view_mode=tab.view_mode,
+                        target=tab.target,
+                        target_state=hydrated.state,
+                        target_document=hydrated.document,
+                    )
+                )
+            panes[pane_id] = WorkspaceRestorePane(
+                id=pane.id, active_tab_id=pane.active_tab_id, tabs=tabs
+            )
+        return WorkspaceRestorePlan(
+            workspace_id=workspace.id,
+            revision=workspace.revision,
+            active_pane_id=workspace.snapshot.active_pane_id,
+            next_id=workspace.snapshot.next_id,
+            panes=panes,
+            layout=workspace.snapshot.layout,
+            navigation=workspace.snapshot.navigation,
+            summary=summary,
+        )
+
+    @staticmethod
+    def _validate_workspace_snapshot(snapshot: object) -> None:
+        """Assert document and block tabs retain strict, unified targets."""
+        panes = getattr(snapshot, "panes", {})
+        for pane in panes.values():
+            for tab in pane.tabs:
+                target = tab.target
+                if target.kind == "document" and not target.document_id:
+                    raise ValueError("workspace document target is required")
+                if target.kind == "block" and (
+                    not target.document_id or not target.block_id
+                ):
+                    raise ValueError("workspace block target is required")
 
 
 __all__ = ["KnowledgeNavigationService"]
