@@ -219,6 +219,31 @@ describe('knowledge workspace store', () => {
       .toMatchObject(plan)
   })
 
+  it('reconciles only a valid page unified document ID without activating another tab', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    const before = useKnowledgeWorkspaceStore.getState()
+    const tabId = before.panes['pane-1'].activeTabId!
+
+    before.reconcileTabReference('pane-1', tabId, {
+      title: plan.title,
+      relativePath: plan.relativePath,
+      knowledgeDocumentId: 'knowledge_engine_document:research',
+    })
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1']).toMatchObject({
+      activeTabId: tabId,
+      tabs: [{ id: tabId, knowledgeDocumentId: 'knowledge_engine_document:research' }],
+    })
+    useKnowledgeWorkspaceStore.getState().reconcileTabReference('pane-1', tabId, {
+      title: plan.title,
+      relativePath: plan.relativePath,
+      knowledgeDocumentId: 'not-a-unified-id',
+    })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId)
+      .toBe('knowledge_engine_document:research')
+  })
+
   it.each([
     { ...plan, vaultId: '' },
     { ...plan, vaultId: 'v'.repeat(129) },

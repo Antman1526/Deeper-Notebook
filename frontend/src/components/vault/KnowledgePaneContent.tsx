@@ -154,6 +154,7 @@ export function KnowledgePaneContent({
     reconcileTabReference(pane.id, activeTab.id, {
       title: vaultPage.data.note.title?.trim() || activeTab.title,
       relativePath: vaultPage.data.file.relative_path,
+      knowledgeDocumentId: vaultPage.data.knowledge_document_id ?? null,
     })
   }, [
     activeTab,
