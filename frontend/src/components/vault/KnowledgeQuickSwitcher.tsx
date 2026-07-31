@@ -27,9 +27,10 @@ import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-sto
 
 interface KnowledgeQuickSwitcherProps {
   mounts: VaultMount[]
+  onBookmarkSearch?: (query: string, mode: 'exact' | 'text' | 'semantic') => void
 }
 
-export function KnowledgeQuickSwitcher({ mounts }: KnowledgeQuickSwitcherProps) {
+export function KnowledgeQuickSwitcher({ mounts, onBookmarkSearch }: KnowledgeQuickSwitcherProps) {
   const { t } = useTranslation()
   const surface = useCommandSurfaceStore()
   const {
@@ -131,6 +132,14 @@ export function KnowledgeQuickSwitcher({ mounts }: KnowledgeQuickSwitcherProps) 
           <>
             <CommandEmpty>{t('knowledge.noMatchingFiles')}</CommandEmpty>
             <CommandGroup>
+              {query.trim() && onBookmarkSearch && (
+                <CommandItem
+                  value={`Bookmark search for ${query}`}
+                  onSelect={() => { onBookmarkSearch(query.trim(), 'text'); close(false) }}
+                >
+                  Bookmark search for {query.trim()}
+                </CommandItem>
+              )}
               {candidates.map(candidate => (
                 <CommandItem
                   key={candidate.key}

@@ -38,6 +38,17 @@ const overlayQueries = vi.hoisted(() => ({
   page: vi.fn(),
   pages: {} as Record<string, unknown>,
 }))
+const navigationQueries = vi.hoisted(() => ({
+  bookmarks: { items: [] as unknown[], nextCursor: null },
+  folders: { items: [] as unknown[] },
+  random: vi.fn(async () => ({ state: 'empty' as const, document: null })),
+  create: vi.fn(async () => undefined),
+  deleteBookmark: vi.fn(async () => undefined),
+  deleteFolder: vi.fn(async () => undefined),
+}))
+const pageIdentity = vi.hoisted(() => ({
+  value: null as string | null,
+}))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/lib/hooks/use-create-dialogs', () => ({
@@ -114,6 +125,7 @@ function pageFor(noteId?: string) {
     },
   }[resolvedNoteId] ?? { title: 'One', relativePath: 'notes/one.md' }
   return {
+    knowledge_document_id: pageIdentity.value,
     file: {
       id: `vault_file:${resolvedNoteId}`,
       note_id: resolvedNoteId,
@@ -233,6 +245,15 @@ vi.mock('@/lib/hooks/use-overlay', () => ({
 vi.mock('@/lib/hooks/use-knowledge-workspace', () => ({
   useHydrateKnowledgeWorkspace: () => states.hydration,
   usePersistKnowledgeWorkspace: () => states.persistence,
+}))
+
+vi.mock('@/lib/hooks/use-knowledge-navigation', () => ({
+  useKnowledgeBookmarks: () => ({ data: navigationQueries.bookmarks, isLoading: false, isError: false }),
+  useKnowledgeFolders: () => ({ data: navigationQueries.folders, isLoading: false, isError: false }),
+  useRandomKnowledgeNote: () => ({ mutateAsync: navigationQueries.random, isPending: false }),
+  useCreateKnowledgeBookmark: () => ({ mutateAsync: navigationQueries.create }),
+  useDeleteKnowledgeBookmark: () => ({ mutateAsync: navigationQueries.deleteBookmark }),
+  useDeleteKnowledgeFolder: () => ({ mutateAsync: navigationQueries.deleteFolder }),
 }))
 
 vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
@@ -1202,5 +1223,58 @@ describe('KnowledgeExplorer overlay authority', () => {
     expect(vaultQueries.outgoing.mock.calls.every(
       ([vaultId, noteId]) => vaultId === undefined && noteId === undefined,
     )).toBe(true)
+  })
+})
+
+describe('KnowledgeExplorer utility rail', () => {
+  beforeEach(() => {
+    states.hydration = { isLoading: false, isError: false }
+    states.persistence = { isPending: false, isError: false, error: null }
+    pageIdentity.value = null
+    useKnowledgeWorkspaceStore.getState().resetWorkspace()
+  })
+
+  it('switches to bookmarks without replacing the active document', async () => {
+    await renderExplorer()
+    await selectFile('notes/one.md')
+    const activeBefore = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bookmarks' }))
+
+    expect(screen.getByRole('navigation', { name: 'Bookmarks' })).toBeVisible()
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(activeBefore)
+  })
+
+  it('persists a keyboard-resized utility sidebar within its safe bounds', async () => {
+    await renderExplorer()
+    const width = useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth
+
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize utility sidebar' }), { key: 'ArrowRight' })
+
+    expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(Math.min(640, width + 16))
+  })
+
+  it('hydrates a valid page unified ID without replacing the active tab or focus', async () => {
+    pageIdentity.value = 'knowledge_engine_document:research'
+    await renderExplorer()
+    await selectFile('notes/one.md')
+    const pane = screen.getByRole('region', { name: 'knowledge.knowledgePane modes pane-1' })
+    pane.focus()
+    const activeBefore = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId
+
+    await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0])
+      .toMatchObject({ knowledgeDocumentId: 'knowledge_engine_document:research' }))
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(activeBefore)
+    expect(document.activeElement).toBe(pane)
+    expect(screen.getByRole('button', { name: 'Bookmark Current Target' })).toBeEnabled()
+  })
+
+  it('keeps Bookmark Current Target disabled for an absent or malformed page ID', async () => {
+    pageIdentity.value = 'not-a-unified-id'
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Bookmark Current Target' })).toBeDisabled())
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId).toBeNull()
   })
 })

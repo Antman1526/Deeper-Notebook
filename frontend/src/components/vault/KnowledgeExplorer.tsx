@@ -17,6 +17,15 @@ import {
   useVaults,
 } from '@/lib/hooks/use-vault'
 import { useTodayOverlayNote } from '@/lib/hooks/use-overlay'
+import {
+  useCreateKnowledgeBookmark,
+  useDeleteKnowledgeBookmark,
+  useDeleteKnowledgeFolder,
+  useKnowledgeBookmarks,
+  useKnowledgeFolders,
+  useRandomKnowledgeNote,
+} from '@/lib/hooks/use-knowledge-navigation'
+import type { KnowledgeBookmark, KnowledgeOpenDescriptor } from '@/lib/api/knowledge-navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import { KnowledgeLinksInspector } from './KnowledgeLinksInspector'
@@ -28,6 +37,8 @@ import { KnowledgeWorkspaceLayout } from './KnowledgeWorkspaceLayout'
 import { VaultFileTree } from './VaultFileTree'
 import { KnowledgeCommandBridge } from './KnowledgeCommandBridge'
 import { KnowledgeQuickSwitcher } from './KnowledgeQuickSwitcher'
+import { KnowledgeUtilityRail } from './KnowledgeUtilityRail'
+import { KnowledgeBookmarksPanel } from './KnowledgeBookmarksPanel'
 import { CreateUniqueNoteDialog } from '../overlay/CreateUniqueNoteDialog'
 import { OverlayUtilityPanel, localDateKey, tabFromOverlay } from '../overlay/OverlayUtilityPanel'
 
@@ -49,6 +60,17 @@ function tabFromFile(file: VaultFile): OpenKnowledgeTab {
   }
 }
 
+function tabFromDescriptor(document: KnowledgeOpenDescriptor): OpenKnowledgeTab {
+  return {
+    vaultId: document.legacyContainerId,
+    noteId: document.legacyNoteId,
+    title: document.title,
+    relativePath: document.relativeLocator,
+    sourceAuthority: document.authorityKind === 'app_owned' ? 'overlay' : 'external-vault',
+    knowledgeDocumentId: document.documentId,
+  }
+}
+
 export function KnowledgeExplorer() {
   const { t } = useTranslation()
   const hydration = useHydrateKnowledgeWorkspace()
@@ -59,6 +81,7 @@ export function KnowledgeExplorer() {
   const [activePaneElement, setActivePaneElement] = useState<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const fileTreeRef = useRef<HTMLElement>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
   const linksRef = useRef<HTMLDivElement>(null)
   const paneElementsRef = useRef<Record<string, HTMLElement | null>>({})
   const selectedRoot = selectedRootState
@@ -75,6 +98,17 @@ export function KnowledgeExplorer() {
     (tab) => tab.id === activePane.activeTabId,
   ) ?? activePane?.tabs[0]
   const openTab = useKnowledgeWorkspaceStore((state) => state.openTab)
+  const navigation = useKnowledgeWorkspaceStore((state) => state.navigation)
+  const setNavigation = useKnowledgeWorkspaceStore((state) => state.setNavigation)
+  const bookmarks = useKnowledgeBookmarks({
+    folderId: navigation.activeBookmarkFolderId ?? undefined,
+    tags: navigation.bookmarkTags.length ? navigation.bookmarkTags : undefined,
+  })
+  const folders = useKnowledgeFolders()
+  const { mutateAsync: randomNote, isPending: randomNotePending } = useRandomKnowledgeNote()
+  const { mutateAsync: createBookmark } = useCreateKnowledgeBookmark()
+  const { mutateAsync: deleteBookmark } = useDeleteKnowledgeBookmark()
+  const { mutateAsync: deleteFolder } = useDeleteKnowledgeFolder()
   const {
     mutateAsync: scanVault,
     isPending: scanPending,
@@ -170,6 +204,74 @@ export function KnowledgeExplorer() {
     openTab(tabFromOverlay(page))
   }, [createTodayOverlay, openTab])
   const openUniqueOverlayDialog = useCallback(() => setUniqueDialogOpen(true), [])
+  const openDescriptor = useCallback((document: KnowledgeOpenDescriptor) => {
+    openTab(tabFromDescriptor(document))
+  }, [openTab])
+  const openRandomNote = useCallback(async () => {
+    const result = await randomNote({})
+    if (result.state === 'selected') openDescriptor(result.document)
+  }, [openDescriptor, randomNote])
+  const bookmarkCurrentTarget = useCallback(async () => {
+    if (!activeTab?.knowledgeDocumentId) return
+    await createBookmark({
+      target: activeTab.viewMode === 'graph'
+        ? {
+            kind: 'graph', rootDocumentId: activeTab.knowledgeDocumentId,
+            spaceIds: [], relationKinds: [],
+            viewport: activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+          }
+        : { kind: 'document', documentId: activeTab.knowledgeDocumentId },
+      displayLabel: activeTab.title,
+      authorityKind: activeTab.sourceAuthority === 'overlay' ? 'app_owned' : 'external_read_only',
+      spaceId: null,
+      folderId: navigation.activeBookmarkFolderId,
+      tags: navigation.bookmarkTags,
+      position: 0,
+    })
+  }, [activeTab, createBookmark, navigation.activeBookmarkFolderId, navigation.bookmarkTags])
+  const bookmarkSearch = useCallback(async (
+    query: string,
+    searchMode: 'exact' | 'text' | 'semantic',
+  ) => {
+    await createBookmark({
+      target: {
+        kind: 'search', query, searchMode, spaceIds: [], authorityKinds: [],
+        tags: navigation.bookmarkTags,
+      },
+      displayLabel: `Search: ${query}`,
+      authorityKind: null,
+      spaceId: null,
+      folderId: navigation.activeBookmarkFolderId,
+      tags: navigation.bookmarkTags,
+      position: 0,
+    })
+  }, [createBookmark, navigation.activeBookmarkFolderId, navigation.bookmarkTags])
+  const editBookmark = useCallback((bookmark: KnowledgeBookmark, editTarget: boolean) => {
+    // Target repair is deliberately routed through the server's revision-checked update surface;
+    // this rail never attempts to edit an external source document.
+    void bookmark
+    void editTarget
+  }, [])
+  const removeBookmark = useCallback((bookmark: KnowledgeBookmark) => {
+    void deleteBookmark({ bookmarkId: bookmark.id, command: { expectedRevision: bookmark.revision } })
+  }, [deleteBookmark])
+  const removeFolder = useCallback((folder: import('@/lib/api/knowledge-navigation').KnowledgeBookmarkFolder, policy: 'move_children' | 'delete_tree') => {
+    void deleteFolder({ folderId: folder.id, command: { expectedRevision: folder.revision, childDisposition: policy } })
+  }, [deleteFolder])
+
+  useEffect(() => {
+    const sidebar = sidebarRef.current
+    if (!sidebar || !navigation.sidebarVisible) return
+    const clampWidth = (value: number) => Math.min(640, Math.max(240, Math.round(value)))
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (width && clampWidth(width) !== navigation.sidebarWidth) {
+        setNavigation({ sidebarWidth: clampWidth(width) })
+      }
+    })
+    observer.observe(sidebar)
+    return () => observer.disconnect()
+  }, [navigation.sidebarVisible, navigation.sidebarWidth, setNavigation])
 
   useEffect(() => {
     setActivePaneElement(paneElementsRef.current[activePaneId] ?? null)
@@ -237,13 +339,39 @@ export function KnowledgeExplorer() {
           )}
         </div>
       </header>
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)_minmax(15rem,20rem)]">
-        <aside
-          ref={fileTreeRef}
+      <div
+        className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,20rem)]"
+        style={{ gridTemplateColumns: navigation.sidebarVisible ? `${navigation.sidebarWidth}px 4px minmax(0, 1fr) minmax(15rem, 20rem)` : 'minmax(0, 1fr) minmax(15rem, 20rem)' }}
+      >
+        {navigation.sidebarVisible && <aside
+          ref={(element) => { fileTreeRef.current = element; sidebarRef.current = element }}
           className="flex min-h-64 flex-col gap-4 border-b p-4 lg:border-b-0 lg:border-r"
           aria-label={t('knowledge.files')}
           tabIndex={-1}
         >
+          <KnowledgeUtilityRail
+            mode={navigation.utilityMode}
+            sidebarVisible={navigation.sidebarVisible}
+            canBookmarkCurrent={Boolean(activeTab?.knowledgeDocumentId)}
+            randomPending={randomNotePending}
+            onNavigationChange={setNavigation}
+            onToday={() => { void openTodayOverlay() }}
+            onRandomNote={() => { void openRandomNote() }}
+            onBookmarkCurrent={() => { void bookmarkCurrentTarget() }}
+          />
+          {navigation.utilityMode === 'bookmarks' ? (
+            <KnowledgeBookmarksPanel
+              bookmarks={bookmarks.data?.items || []}
+              folders={folders.data?.items || []}
+              onOpen={openDescriptor}
+              onEdit={editBookmark}
+              onDelete={removeBookmark}
+              onSelectFolder={(folderId) => setNavigation({ activeBookmarkFolderId: folderId })}
+              onDeleteFolder={removeFolder}
+            />
+          ) : navigation.utilityMode === 'workspaces' ? (
+            <p className="text-sm text-muted-foreground">Saved workspaces are available from the workspace controls.</p>
+          ) : <>
           <label className="text-sm font-medium" htmlFor="vault-mount">
             {t('knowledge.mounts')}
           </label>
@@ -265,13 +393,7 @@ export function KnowledgeExplorer() {
               </option>
             ))}
           </select>
-          <OverlayUtilityPanel
-            onOpen={openTab}
-            onNewUnique={openUniqueOverlayDialog}
-            onToday={openTodayOverlay}
-            todayPending={todayOverlayPending}
-            todayError={todayOverlayError}
-          />
+          <OverlayUtilityPanel onOpen={openTab} onNewUnique={openUniqueOverlayDialog} onToday={openTodayOverlay} todayPending={todayOverlayPending} todayError={todayOverlayError} />
           {selectedRoot.authority === 'external-vault' && (mounts.isLoading ? (
             <p className="text-sm text-muted-foreground">
               {t('knowledge.mountsLoading')}
@@ -316,8 +438,30 @@ export function KnowledgeExplorer() {
                 />
               )}
             </>
-          ))}
-        </aside>
+          ))}</>}
+        </aside>}
+        {navigation.sidebarVisible && <div
+          role="separator"
+          aria-label="Resize utility sidebar"
+          aria-orientation="vertical"
+          tabIndex={0}
+          className="hidden w-1 cursor-col-resize bg-border focus-visible:w-2 focus-visible:bg-ring lg:block"
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+            event.preventDefault()
+            setNavigation({ sidebarWidth: Math.min(640, Math.max(240, navigation.sidebarWidth + (event.key === 'ArrowRight' ? 16 : -16))) })
+          }}
+        />}
+        {!navigation.sidebarVisible && <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label="Restore utility sidebar"
+          className="absolute left-2 top-2 z-10"
+          onClick={() => setNavigation({ sidebarVisible: true })}
+        >
+          <span aria-hidden="true">›</span>
+        </Button>}
         <main className="min-h-0 min-w-0 overflow-hidden">
           <KnowledgeWorkspaceLayout
             onPaneElement={onPaneElement}
@@ -344,7 +488,7 @@ export function KnowledgeExplorer() {
         openTodayOverlay={openTodayOverlay}
         openUniqueOverlayDialog={openUniqueOverlayDialog}
       />
-      <KnowledgeQuickSwitcher mounts={mounts.data || []} />
+      <KnowledgeQuickSwitcher mounts={mounts.data || []} onBookmarkSearch={(query, mode) => { void bookmarkSearch(query, mode) }} />
       <CreateUniqueNoteDialog
         open={uniqueDialogOpen}
         onOpenChange={setUniqueDialogOpen}

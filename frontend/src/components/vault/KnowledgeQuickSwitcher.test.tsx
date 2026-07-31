@@ -185,6 +185,18 @@ describe('KnowledgeQuickSwitcher', () => {
       .toHaveTextContent('knowledge.alreadyOpen')
   })
 
+  it('offers a keyboard-reachable bookmark search action without opening a tab', async () => {
+    const onBookmarkSearch = vi.fn()
+    render(<KnowledgeQuickSwitcher mounts={[]} onBookmarkSearch={onBookmarkSearch} />)
+    act(() => requestCommandSurface('quick-switcher', 'evidence'))
+    const dialog = await screen.findByRole('dialog', { name: 'knowledge.quickSwitcher' })
+
+    fireEvent.click(within(dialog).getByRole('option', { name: 'Bookmark search for evidence' }))
+
+    expect(onBookmarkSearch).toHaveBeenCalledWith('evidence', 'text')
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs).toHaveLength(0)
+  })
+
   it('consumes its request without losing local invoker restoration or replaying on remount', async () => {
     const invoker = document.createElement('button')
     document.body.append(invoker)
