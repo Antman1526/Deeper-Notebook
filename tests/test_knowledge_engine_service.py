@@ -33,6 +33,12 @@ class _Repository:
             "block_ids": {key: f"knowledge_engine_block:{key}" for key in block_keys},
         }
 
+    async def open_descriptor(self, document_id: str):
+        return {"document_id": document_id}
+
+    async def get_current_block(self, **kwargs):
+        return kwargs
+
     async def get_checkpoint(self, space_id: str):
         if space_id.endswith(":missing"):
             return None
@@ -101,6 +107,18 @@ async def test_service_owns_and_delegates_the_safe_engine_boundary():
             "first": "knowledge_engine_block:first",
             "second": "knowledge_engine_block:second",
         },
+    }
+    assert await service.open_descriptor("knowledge_engine_document:fixture") == {
+        "document_id": "knowledge_engine_document:fixture"
+    }
+    assert await service.get_current_block(
+        document_id="knowledge_engine_document:fixture",
+        block_id="knowledge_engine_block:fixture",
+        source_revision_id="knowledge_engine_revision:fixture",
+    ) == {
+        "document_id": "knowledge_engine_document:fixture",
+        "block_id": "knowledge_engine_block:fixture",
+        "source_revision_id": "knowledge_engine_revision:fixture",
     }
     assert service.coordinator is coordinator
 

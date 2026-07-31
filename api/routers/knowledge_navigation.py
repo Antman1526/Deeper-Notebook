@@ -25,7 +25,10 @@ from api.schemas.knowledge_navigation import (
     KnowledgeNavigationErrorResponse,
     NavigationReceiptResponse,
 )
-from deeper_notebook.knowledge_engine.navigation_contracts import BookmarkFilters
+from deeper_notebook.knowledge_engine.navigation_contracts import (
+    BookmarkCursor,
+    BookmarkFilters,
+)
 from deeper_notebook.knowledge_engine.navigation_repository import (
     KnowledgeNavigationRepositoryError,
 )
@@ -48,9 +51,9 @@ _CONFLICT_CODES = frozenset(
         "revision_conflict",
         "folder_cycle",
         "folder_depth_exceeded",
-        "folder_parent_not_found",
     }
 )
+_NOT_FOUND_CODES = frozenset({"not_found", "folder_parent_not_found"})
 
 
 def _error(status_code: int, code: str) -> HTTPException:
@@ -124,6 +127,8 @@ def _map_exception(exc: Exception) -> HTTPException:
             "knowledge_navigation_request_invalid",
         )
     if isinstance(exc, KnowledgeNavigationRepositoryError):
+        if exc.code in _NOT_FOUND_CODES:
+            return _error(status.HTTP_404_NOT_FOUND, "knowledge_navigation_not_found")
         if exc.code in _CONFLICT_CODES or exc.code.endswith("_name_conflict"):
             return _error(status.HTTP_409_CONFLICT, "knowledge_navigation_conflict")
         return _error(
@@ -146,10 +151,12 @@ def _folder_tree(folders: list[Any]) -> BookmarkFolderTreeResponse:
     visited: set[str] = set()
 
     def build(parent_id: str | None, depth: int) -> list[BookmarkFolderNode]:
-        if depth > 16:
-            raise KnowledgeNavigationRepositoryError("knowledge_navigation_repository_unavailable")
         nodes: list[BookmarkFolderNode] = []
         for folder in children.get(parent_id, []):
+            if depth >= 16:
+                raise KnowledgeNavigationRepositoryError(
+                    "knowledge_navigation_repository_unavailable"
+                )
             if folder.id in visited:
                 raise KnowledgeNavigationRepositoryError(
                     "knowledge_navigation_repository_unavailable"
@@ -163,7 +170,7 @@ def _folder_tree(folders: list[Any]) -> BookmarkFolderTreeResponse:
             )
         return nodes
 
-    tree = BookmarkFolderTreeResponse(items=build(None, 1))
+    tree = BookmarkFolderTreeResponse(items=build(None, 0))
     if len(visited) != len(folders):
         raise KnowledgeNavigationRepositoryError("knowledge_navigation_repository_unavailable")
     return tree
@@ -188,6 +195,8 @@ async def list_bookmarks(
             space_ids=space_id,
             authority_kinds=authority_kind,
         )
+        if cursor is not None:
+            BookmarkCursor.decode(cursor)
         return await _service(request).list_bookmarks(filters, cursor, limit)
     except HTTPException:
         raise
