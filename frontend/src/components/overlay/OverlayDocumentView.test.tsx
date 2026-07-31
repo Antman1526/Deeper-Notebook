@@ -269,6 +269,32 @@ describe('OverlayDocumentView', () => {
     expect(screen.getByText('Unsaved draft')).toBeInTheDocument()
   })
 
+  it.each(['reading', 'source', 'live-preview', 'graph'] as const)(
+    'reports a restored draft on mount in %s mode',
+    (mode) => {
+      const page = pageAt(3)
+      useOverlayDraftStore.getState().saveDraft('pane-1:tab-1', {
+        noteId: page.overlay.id,
+        loadedPage: page,
+        title: page.overlay.title,
+        markdown: '# Restored draft 🧠\n',
+      })
+      const onMarkdownChange = vi.fn()
+
+      render(
+        <OverlayDocumentView
+          viewId="pane-1:tab-1"
+          page={page}
+          mode={mode}
+          onNavigate={vi.fn()}
+          onMarkdownChange={onMarkdownChange}
+        />,
+      )
+
+      expect(onMarkdownChange).toHaveBeenLastCalledWith('# Restored draft 🧠\n')
+    },
+  )
+
   it('reports markdown changes and retains a dirty draft during server updates', () => {
     const onMarkdownChange = vi.fn()
     const { rerender } = render(

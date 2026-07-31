@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { ComponentProps } from 'react'
+import { useEffect, type ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { OverlayPage } from '@/lib/api/overlay'
@@ -17,8 +17,18 @@ const overlayView = vi.hoisted(() => ({
   onReload: undefined as undefined | (() => Promise<unknown>),
   onNavigate: undefined as undefined | ((noteId: string) => void),
   onMarkdownChange: undefined as undefined | ((markdown: string) => void),
+  restoredMarkdown: undefined as string | undefined,
   graphViewport: undefined as GraphViewport | undefined,
   onGraphViewportChange: undefined as undefined | ((viewport: GraphViewport) => void),
+}))
+const metricFooter = vi.hoisted(() => ({
+  props: undefined as undefined | {
+    text: string
+    selectionText: string
+    visible: boolean
+    hasDocument: boolean
+    emptyLabel: string
+  },
 }))
 const vaultGraphView = vi.hoisted(() => ({
   viewport: undefined as GraphViewport | undefined,
@@ -95,7 +105,32 @@ vi.mock('@/components/overlay/OverlayDocumentView', () => ({
     overlayView.onMarkdownChange = onMarkdownChange
     overlayView.graphViewport = graphViewport
     overlayView.onGraphViewportChange = onGraphViewportChange
+    useEffect(() => {
+      if (overlayView.restoredMarkdown !== undefined) {
+        onMarkdownChange?.(overlayView.restoredMarkdown)
+      }
+    }, [onMarkdownChange])
     return <section aria-label={`Overlay document ${mode}`} />
+  },
+}))
+
+vi.mock('./DocumentMetricsFooter', () => ({
+  DocumentMetricsFooter: ({
+    text,
+    selectionText,
+    visible,
+    hasDocument,
+    emptyLabel,
+  }: {
+    text: string
+    selectionText: string
+    visible: boolean
+    hasDocument: boolean
+    emptyLabel: string
+  }) => {
+    metricFooter.props = { text, selectionText, visible, hasDocument, emptyLabel }
+    if (!visible) return null
+    return <footer role="status">{hasDocument ? text : emptyLabel}</footer>
   },
 }))
 
@@ -432,11 +467,13 @@ describe('KnowledgePaneContent', () => {
     overlayView.onReload = undefined
     overlayView.onNavigate = undefined
     overlayView.onMarkdownChange = undefined
+    overlayView.restoredMarkdown = undefined
     overlayView.graphViewport = undefined
     overlayView.onGraphViewportChange = undefined
     vaultGraphView.viewport = undefined
     vaultGraphView.onMoveEnd = undefined
     vaultMarkdownView.onNavigate = undefined
+    metricFooter.props = undefined
     queries.overlayPage = {
       data: undefined,
       isLoading: false,
@@ -608,9 +645,10 @@ describe('KnowledgePaneContent', () => {
       fireEvent(document, new Event('selectionchange'))
 
       expect(within(pane).getByRole('status')).toBeInTheDocument()
-      expect(within(pane).getByText('knowledge.navigation.words: 1'))
-        .toBeInTheDocument()
-      expect(within(pane).getByText('knowledge.navigation.selection')).toBeInTheDocument()
+      expect(metricFooter.props).toMatchObject({
+        text: '# Plan',
+        selectionText: 'Canonical Plan',
+      })
 
       const outsideRange = document.createRange()
       outsideRange.setStart(titleText!, 0)
@@ -619,8 +657,7 @@ describe('KnowledgePaneContent', () => {
       selection.addRange(outsideRange)
       fireEvent(document, new Event('selectionchange'))
 
-      expect(within(pane).queryByText('knowledge.navigation.selection'))
-        .not.toBeInTheDocument()
+      expect(metricFooter.props?.selectionText).toBe('')
     } finally {
       window.getSelection()?.removeAllRanges()
       outside.remove()
@@ -737,10 +774,49 @@ describe('KnowledgePaneContent', () => {
     }
 
     renderPane()
-    expect(screen.getByText('knowledge.navigation.characters: 11')).toBeInTheDocument()
+    expect(metricFooter.props?.text).toBe('# Research\n')
 
     act(() => overlayView.onMarkdownChange?.('🧠'))
-    expect(screen.getByText('knowledge.navigation.characters: 1')).toBeInTheDocument()
+    expect(metricFooter.props?.text).toBe('🧠')
+  })
+
+  it.each(['reading', 'source', 'live-preview', 'graph'] as const)(
+    'keeps a restored overlay draft as the metrics buffer in %s mode',
+    async (mode) => {
+      replaceOverlayWorkspace(mode)
+      queries.overlayPage = {
+        data: overlayPageWithTarget('overlay_note:target'),
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: vi.fn(),
+      }
+
+      overlayView.restoredMarkdown = 'restored 🧠 draft'
+      renderPane()
+
+      await waitFor(() => expect(metricFooter.props?.text).toBe('restored 🧠 draft'))
+    },
+  )
+
+  it('keeps an empty metrics footer for a loaded rootless global graph', () => {
+    replaceWorkspace('graph')
+    queries.page = {
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+    }
+
+    renderPane()
+
+    expect(screen.getByRole('status')).toBeInTheDocument()
+    expect(screen.getByText('knowledge.selectNote')).toBeInTheDocument()
+    expect(metricFooter.props).toMatchObject({
+      text: '',
+      hasDocument: false,
+      visible: true,
+    })
   })
 
   it('rejects a resolved overlay refetch error instead of returning stale data', async () => {

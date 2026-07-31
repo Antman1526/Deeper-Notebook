@@ -21,6 +21,33 @@ describe('documentMetrics', () => {
     expect(documentMetrics('🧠').characters).toBe(1)
   })
 
+  it.each([
+    ['hello world', 2, 11, 10],
+    ['你好世界', 2, 4, 4],
+    ['cafe\u0301 ☕', 1, 7, 6],
+    ['', 0, 0, 0],
+  ])('uses the deterministic offline fallback for %s', (
+    text,
+    words,
+    characters,
+    charactersWithoutWhitespace,
+  ) => {
+    expect(documentMetrics(text, null)).toMatchObject({
+      words,
+      characters,
+      charactersWithoutWhitespace,
+      readingMinutes: words === 0 ? 0 : 1,
+    })
+  })
+
+  it.each([
+    ['U+0085', 'a\u0085b', 2],
+    ['U+FEFF', 'a\uFEFFb', 3],
+  ])('uses the Unicode White_Space property for %s', (_name, text, noWhitespace) => {
+    expect(documentMetrics(text, null).charactersWithoutWhitespace)
+      .toBe(noWhitespace)
+  })
+
   it('uses an injected segmenter for deterministic caller-provided counts', () => {
     const segmenter = {
       segment: () => [
