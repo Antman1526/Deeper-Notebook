@@ -32,8 +32,29 @@ class FakeConnection:
         variables = variables or {}
         self.queries.append((statement, variables))
         if "BEGIN TRANSACTION;" in statement:
+            if "success_receipt" not in variables:
+                existing = self.receipts.get(variables["receipt"]["operation_id"])
+                if existing is not None:
+                    return [{"receipt": existing}]
+                receipt = dict(variables["receipt"])
+                self.receipts[receipt["operation_id"]] = receipt
+                return [{"receipt": receipt}]
             existing = self.receipts.get(variables["operation_id"])
             if existing is not None:
+                if (
+                    existing["status"] == "failed"
+                    and existing["input_hash"] == variables["input_hash"]
+                ):
+                    receipt = dict(variables["success_receipt"])
+                    self.receipts[receipt["operation_id"]] = receipt
+                    return [
+                        {
+                            "outcome": "projected",
+                            "prior_input_hash": existing["input_hash"],
+                            "existing_status": "failed",
+                            "receipt": receipt,
+                        }
+                    ]
                 outcome = (
                     "unchanged"
                     if existing["input_hash"] == variables["input_hash"]
@@ -43,13 +64,19 @@ class FakeConnection:
                     {
                         "outcome": outcome,
                         "prior_input_hash": existing["input_hash"],
+                        "existing_status": existing["status"],
                         "receipt": existing,
                     }
                 ]
             receipt = dict(variables["success_receipt"])
             self.receipts[receipt["operation_id"]] = receipt
             return [
-                {"outcome": "projected", "prior_input_hash": None, "receipt": receipt}
+                {
+                    "outcome": "projected",
+                    "prior_input_hash": None,
+                    "existing_status": "missing",
+                    "receipt": receipt,
+                }
             ]
         return []
 
@@ -170,5 +197,106 @@ async def test_commit_snapshot_rejects_unknown_identity_engine_kinds(
 
     with pytest.raises(ValueError, match="invalid_knowledge_engine_engine_id"):
         await repository.commit_snapshot(invalid, operation_id="unsafe-identity-kind")
+
+    assert fake_connection.queries == []
+
+
+@pytest.mark.asyncio
+async def test_failed_receipt_retries_the_same_snapshot_to_success(
+    snapshot, fake_connection
+):
+    repository = KnowledgeRepository(connection_factory=fake_connection.factory)
+    await repository.record_projection_failure(
+        operation_id="retry-failed-snapshot",
+        space_id=snapshot.space.id,
+        relative_locator=snapshot.document.relative_locator,
+        input_hash=snapshot.revision.content_hash,
+        error_code="parser_failed",
+    )
+
+    receipt = await repository.commit_snapshot(
+        snapshot, operation_id="retry-failed-snapshot"
+    )
+
+    assert receipt.status == "projected"
+    assert fake_connection.receipts["retry-failed-snapshot"]["status"] == "projected"
+
+
+@pytest.mark.asyncio
+async def test_failure_receipt_replay_is_exactly_idempotent(snapshot, fake_connection):
+    repository = KnowledgeRepository(connection_factory=fake_connection.factory)
+    first = await repository.record_projection_failure(
+        operation_id="exact-failure-replay",
+        space_id=snapshot.space.id,
+        relative_locator=snapshot.document.relative_locator,
+        input_hash=snapshot.revision.content_hash,
+        error_code="parser_failed",
+    )
+    replay = await repository.record_projection_failure(
+        operation_id="exact-failure-replay",
+        space_id=snapshot.space.id,
+        relative_locator=snapshot.document.relative_locator,
+        input_hash=snapshot.revision.content_hash,
+        error_code="parser_failed",
+    )
+
+    assert replay == first
+
+
+@pytest.mark.asyncio
+async def test_failure_receipt_rejects_a_different_input_hash(snapshot, fake_connection):
+    repository = KnowledgeRepository(connection_factory=fake_connection.factory)
+    await repository.record_projection_failure(
+        operation_id="failure-hash-conflict",
+        space_id=snapshot.space.id,
+        relative_locator=snapshot.document.relative_locator,
+        input_hash=snapshot.revision.content_hash,
+        error_code="parser_failed",
+    )
+
+    with pytest.raises(KnowledgeRepositoryError, match="operation_conflict"):
+        await repository.record_projection_failure(
+            operation_id="failure-hash-conflict",
+            space_id=snapshot.space.id,
+            relative_locator=snapshot.document.relative_locator,
+            input_hash="b" * 64,
+            error_code="parser_failed",
+        )
+
+
+@pytest.mark.asyncio
+async def test_failure_recording_never_downgrades_a_successful_receipt(
+    snapshot, fake_connection
+):
+    repository = KnowledgeRepository(connection_factory=fake_connection.factory)
+    projected = await repository.commit_snapshot(
+        snapshot, operation_id="preserve-success-receipt"
+    )
+
+    receipt = await repository.record_projection_failure(
+        operation_id="preserve-success-receipt",
+        space_id=snapshot.space.id,
+        relative_locator=snapshot.document.relative_locator,
+        input_hash=snapshot.revision.content_hash,
+        error_code="parser_failed",
+    )
+
+    assert receipt == projected
+    assert fake_connection.receipts["preserve-success-receipt"]["status"] == "projected"
+
+
+@pytest.mark.asyncio
+async def test_commit_snapshot_rejects_an_absolute_space_source_ref_before_query(
+    snapshot, fake_connection
+):
+    repository = KnowledgeRepository(connection_factory=fake_connection.factory)
+    unsafe = snapshot.model_copy(
+        update={
+            "space": snapshot.space.model_copy(update={"source_ref": "/Users/Antman"})
+        }
+    )
+
+    with pytest.raises(ValueError, match="invalid_knowledge_engine_source_ref"):
+        await repository.commit_snapshot(unsafe, operation_id="unsafe-source-ref")
 
     assert fake_connection.queries == []
