@@ -33,6 +33,7 @@ import { VaultLinks } from '@/components/vault/VaultLinks'
 import { VaultLivePreview } from '@/components/vault/VaultLivePreview'
 import { VaultMarkdown } from '@/components/vault/VaultMarkdown'
 import type { KnowledgeViewMode } from '@/lib/api/knowledge-workspace'
+import type { GraphViewport } from '@/lib/api/knowledge-workspace'
 import type { OverlayPage } from '@/lib/api/overlay'
 import { useUpdateOverlayNote } from '@/lib/hooks/use-overlay'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -50,6 +51,10 @@ interface OverlayDocumentViewProps {
   page: OverlayPage
   onNavigate: (noteId: string) => void
   onReload?: () => Promise<OverlayPage | undefined>
+  workspacePaneId?: string
+  workspaceTabId?: string
+  graphViewport?: GraphViewport
+  onGraphViewportChange?: (viewport: GraphViewport) => void
 }
 
 type SaveStatus = 'idle' | 'saved' | 'error' | 'conflict'
@@ -115,6 +120,10 @@ export function OverlayDocumentView({
   page,
   onNavigate,
   onReload,
+  workspacePaneId,
+  workspaceTabId,
+  graphViewport,
+  onGraphViewportChange,
 }: OverlayDocumentViewProps) {
   const { t } = useTranslation()
   const update = useUpdateOverlayNote()
@@ -340,6 +349,10 @@ export function OverlayDocumentView({
       graph={loadedPage.graph ?? undefined}
       unresolved={unresolved}
       onNavigate={onNavigate}
+      viewport={graphViewport}
+      onMoveEnd={(viewport) => {
+        if (workspacePaneId && workspaceTabId) onGraphViewportChange?.(viewport)
+      }}
     />
   )
 

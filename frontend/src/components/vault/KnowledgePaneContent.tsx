@@ -70,6 +70,9 @@ export function KnowledgePaneContent({
   const reconcileTabReference = useKnowledgeWorkspaceStore(
     (state) => state.reconcileTabReference,
   )
+  const setTabGraphViewport = useKnowledgeWorkspaceStore(
+    (state) => state.setTabGraphViewport,
+  )
   const activeTab = pane.tabs.find((tab) => tab.id === pane.activeTabId)
     ?? pane.tabs[0]
   const vaultId = activeTab?.vaultId
@@ -331,6 +334,10 @@ export function KnowledgePaneContent({
             page={overlayPage.data}
             onNavigate={navigate}
             onReload={reloadOverlayPage}
+            workspacePaneId={pane.id}
+            workspaceTabId={activeTab.id}
+            graphViewport={activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 }}
+            onGraphViewportChange={(viewport) => setTabGraphViewport(pane.id, activeTab.id, viewport)}
           />
         ) : !isOverlay && vaultPage.data ? (
           visibleMode === 'graph' ? (
@@ -347,6 +354,8 @@ export function KnowledgePaneContent({
                 graph={graph.data}
                 unresolved={unresolved}
                 onNavigate={navigate}
+                viewport={activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 }}
+                onMoveEnd={(viewport) => setTabGraphViewport(pane.id, activeTab.id, viewport)}
               />
             )
           ) : (
