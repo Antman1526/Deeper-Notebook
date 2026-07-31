@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
@@ -13,6 +14,7 @@ from fastapi.routing import APIRoute
 from api.schemas.knowledge_engine import (
     KnowledgeDocumentDetailResponse,
     KnowledgeDocumentListResponse,
+    KnowledgeEngineBackfillCheckpointResponse,
     KnowledgeEngineEquivalenceResponse,
     KnowledgeEngineErrorResponse,
     KnowledgeEngineStatusResponse,
@@ -121,6 +123,47 @@ async def get_status(request: Request) -> KnowledgeEngineStatusResponse:
             unchanged=projection.unchanged,
             failed=projection.failed,
         )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.get(
+    "/knowledge-engine/backfill-checkpoints",
+    response_model=list[KnowledgeEngineBackfillCheckpointResponse],
+    responses=_ERROR_RESPONSES,
+)
+async def list_backfill_checkpoints(
+    request: Request,
+    space_id: list[str] = Query(..., min_length=1, max_length=32),
+) -> list[KnowledgeEngineBackfillCheckpointResponse]:
+    if len(set(space_id)) != len(space_id) or any(
+        re.fullmatch(r"knowledge_engine_space:[A-Za-z0-9_-]+", item) is None
+        for item in space_id
+    ):
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "knowledge_engine_request_invalid",
+        )
+    try:
+        service = _service(request)
+        if not callable(getattr(service, "backfill_checkpoints", None)):
+            raise _error(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "knowledge_engine_unavailable",
+            )
+        checkpoints = await service.backfill_checkpoints(tuple(space_id))
+        return [
+            KnowledgeEngineBackfillCheckpointResponse(
+                space_id=checkpoint.space_id,
+                status=checkpoint.status,
+                projected=checkpoint.projected,
+                unchanged=checkpoint.unchanged,
+                failed=checkpoint.failed,
+            )
+            for checkpoint in checkpoints
+        ]
     except HTTPException:
         raise
     except Exception as exc:

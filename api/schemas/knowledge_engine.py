@@ -84,6 +84,20 @@ class KnowledgeEngineStatusResponse(_StrictResponse):
     failed: int = Field(ge=0)
 
 
+class KnowledgeEngineBackfillCheckpointResponse(_StrictResponse):
+    """Persisted terminal-progress evidence without locators, hashes, or time."""
+
+    space_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^knowledge_engine_space:[A-Za-z0-9_-]+$",
+    )
+    status: Literal["pending", "running", "completed", "failed"]
+    projected: int = Field(ge=0)
+    unchanged: int = Field(ge=0)
+    failed: int = Field(ge=0)
+
+
 class KnowledgeEngineEquivalenceDifferenceResponse(_StrictResponse):
     """A redacted stable discrepancy: counts, identifiers, hashes, or locators."""
 
@@ -102,6 +116,7 @@ class KnowledgeEngineEquivalenceResponse(_StrictResponse):
 
 
 __all__ = [
+    "KnowledgeEngineBackfillCheckpointResponse",
     "KnowledgeDocumentDetailResponse",
     "KnowledgeDocumentListResponse",
     "KnowledgeEngineErrorDetail",
