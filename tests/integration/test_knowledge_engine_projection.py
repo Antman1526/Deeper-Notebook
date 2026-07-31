@@ -18,6 +18,7 @@ from deeper_notebook.database.async_migrate import (
 )
 from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.knowledge_engine.adapters import adapter_for
+from deeper_notebook.knowledge_engine.backfill import _claim
 from deeper_notebook.knowledge_engine.contracts import (
     BackfillCheckpoint,
     SourceEnvelope,
@@ -119,6 +120,150 @@ async def test_snapshot_commit_replays_without_rewriting_and_creates_children(
         "blocks": len(snapshot.blocks),
         "tasks": len(snapshot.tasks),
         "receipts": 1,
+    }
+
+
+async def test_new_revision_replaces_stable_snapshot_records_with_schema_versions(
+    clean_namespace,
+):
+    original = _snapshot(
+        b"# Native Rich\n\n[[Target Note#Heading|Target Alias]]\n\n"
+        b"![Diagram](assets/diagram.png)\n\n- [ ] Persist version one\n"
+    )
+    parsed_replacement = _snapshot(
+        b"# Native Rich\n\n[[Target Note#Heading|Target Alias]]\n\n"
+        b"![Diagram](assets/diagram.png)\n\n- [ ] Persist version two\n"
+    )
+    replacement = parsed_replacement.model_copy(
+        update={
+            record_class: [
+                item.model_copy(
+                    update={"source_revision_id": parsed_replacement.revision.id}
+                )
+                for item in getattr(original, record_class)
+            ]
+            for record_class in ("blocks", "relations", "tasks", "assets")
+        }
+        | {"identity_claims": []}
+    )
+    assert replacement.document.id == original.document.id
+
+    repository = KnowledgeRepository()
+    await repository.commit_snapshot(original, operation_id="native-revision-one")
+    receipt = await repository.commit_snapshot(
+        replacement,
+        operation_id="native-revision-two",
+    )
+
+    persisted = await repository.get_document(replacement.document.id)
+    rows = await repo_query(
+        """
+        RETURN {
+            spaces: (SELECT schema_version FROM knowledge_engine_space),
+            documents: (SELECT schema_version, source_revision_id
+                FROM knowledge_engine_document),
+            blocks: (SELECT schema_version, source_revision_id
+                FROM knowledge_engine_block),
+            relations: (SELECT schema_version, source_revision_id
+                FROM knowledge_engine_relation),
+            tasks: (SELECT schema_version, source_revision_id
+                FROM knowledge_engine_task),
+            assets: (SELECT schema_version, source_revision_id
+                FROM knowledge_engine_asset),
+            revisions: (SELECT schema_version, content_hash
+                FROM knowledge_engine_source_revision ORDER BY content_hash)
+        };
+        """
+    )
+
+    assert receipt.status == "projected"
+    assert persisted.content_hash == replacement.document.content_hash
+    assert persisted.normalized_body == replacement.document.normalized_body
+    assert rows["spaces"] == [{"schema_version": 1}]
+    for record_class in ("documents", "blocks", "relations", "tasks", "assets"):
+        assert rows[record_class]
+        assert all(row["schema_version"] == 1 for row in rows[record_class])
+        assert all(
+            row["source_revision_id"] == replacement.revision.id
+            for row in rows[record_class]
+        )
+    assert rows["revisions"] == sorted(
+        [
+            {
+                "schema_version": 1,
+                "content_hash": original.revision.content_hash,
+            },
+            {
+                "schema_version": 1,
+                "content_hash": replacement.revision.content_hash,
+            },
+        ],
+        key=lambda row: row["content_hash"],
+    )
+
+
+async def test_projection_digest_uses_current_legacy_document_identities(
+    clean_namespace,
+):
+    space_id = "knowledge_engine_space:overlay_identity"
+
+    def with_legacy_identities(raw: bytes):
+        snapshot = _snapshot(
+            raw,
+            space_id=space_id,
+            source_ref="overlay:default",
+            authority_kind="app_owned",
+            source_kind="overlay",
+            relative_locator="Notes/Identity.md",
+        )
+        legacy_claims = [
+            _claim(
+                "overlay_space",
+                "overlay_space:default",
+                "space",
+                snapshot.space.id,
+                snapshot.revision.id,
+            ),
+            _claim(
+                "overlay_note",
+                "overlay_note:identity",
+                "document",
+                snapshot.document.id,
+                snapshot.revision.id,
+            ),
+            _claim(
+                "note",
+                "note:identity",
+                "document",
+                snapshot.document.id,
+                snapshot.revision.id,
+            ),
+        ]
+        return snapshot.model_copy(
+            update={"identity_claims": [*snapshot.identity_claims, *legacy_claims]}
+        )
+
+    frontmatter = (
+        b"---\ndeeper_notebook:\n  id: overlay_note:identity\n"
+        b"  kind: unique\n  date_key: null\n---\n"
+    )
+    original = with_legacy_identities(frontmatter + b"# Identity\n\nRevision one\n")
+    replacement = with_legacy_identities(
+        frontmatter + b"# Identity\n\nRevision two\n"
+    )
+    repository = KnowledgeRepository()
+    await repository.commit_snapshot(original, operation_id="native-identity-one")
+    await repository.commit_snapshot(replacement, operation_id="native-identity-two")
+
+    digest = await repository.projection_digest(space_id, ("Revision",))
+
+    assert digest.identity_pairs == {
+        "note:note:identity": replacement.document.id,
+        "overlay_note:overlay_note:identity": replacement.document.id,
+        "overlay_space:overlay_space:default": space_id,
+    }
+    assert digest.overlay_revision_mappings == {
+        "overlay_note:identity": replacement.revision.id
     }
 
 

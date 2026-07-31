@@ -41,6 +41,9 @@ _ID_PATTERNS = {
 }
 _OPERATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
 _ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
+_LEGACY_DIGEST_IDENTITY_KINDS = frozenset(
+    {"note", "overlay_note", "overlay_space", "vault_file", "vault_mount"}
+)
 _DOCUMENT_FIELDS = (
     "id, space_id, source_native_id, authority_kind, relative_locator, "
     "document_kind, title, normalized_body, properties, tags, content_hash, "
@@ -129,7 +132,10 @@ def _checkpoint_id(space_id: str) -> str:
 
 
 def _content(value: dict[str, Any]) -> dict[str, Any]:
-    return {key: item for key, item in value.items() if key != "id"}
+    return {
+        "schema_version": 1,
+        **{key: item for key, item in value.items() if key != "id"},
+    }
 
 
 def _receipt_from(value: Any) -> ProjectionReceipt:
@@ -367,9 +373,9 @@ class KnowledgeRepository:
             identities = await self._query(
                 connection,
                 "SELECT legacy_kind, legacy_id, engine_id, source_revision_id "
-                "FROM knowledge_engine_identity_map WHERE engine_id IN "
-                "(SELECT VALUE id FROM knowledge_engine_document WHERE space_id = $space_id) "
-                "OR engine_id = $space_id "
+                "FROM knowledge_engine_identity_map WHERE source_revision_id IN "
+                "(SELECT VALUE source_revision_id FROM knowledge_engine_document "
+                "WHERE space_id = $space_id) "
                 "ORDER BY legacy_kind, legacy_id, source_revision_id, engine_id;",
                 {"space_id": space_id},
             )
@@ -400,7 +406,8 @@ class KnowledgeRepository:
         current_identities = [
             row
             for row in identities
-            if isinstance(row.get("engine_id"), str)
+            if row.get("legacy_kind") in _LEGACY_DIGEST_IDENTITY_KINDS
+            and isinstance(row.get("engine_id"), str)
             and isinstance(row.get("source_revision_id"), str)
             and (
                 current_revisions.get(str(row["engine_id"]))
