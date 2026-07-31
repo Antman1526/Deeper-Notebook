@@ -641,6 +641,7 @@ class NamedKnowledgeWorkspace(_Strict):
     name_key: str = Field(min_length=1, max_length=256)
     snapshot_version: Literal[1] = 1
     snapshot: NamedWorkspaceSnapshot
+    capacity_slot: int = Field(ge=0, le=255)
     revision: int = Field(ge=1)
     created_at: datetime
     updated_at: datetime
