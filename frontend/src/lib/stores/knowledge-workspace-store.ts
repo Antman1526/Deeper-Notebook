@@ -8,6 +8,8 @@ import {
   splitDirectionSchema,
   type KnowledgeLayoutNode,
   type KnowledgePane,
+  type GraphViewport,
+  type KnowledgeWorkspaceNavigation,
   type KnowledgeViewMode,
   type KnowledgeWorkspaceDocument,
   type OpenKnowledgeTab,
@@ -25,6 +27,7 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   durableRevision: number
   durableFingerprint: string | null
   replaceWorkspace: (document: KnowledgeWorkspaceDocument) => void
+  applyNamedWorkspace: (document: KnowledgeWorkspaceDocument) => boolean
   hydrateWorkspace: (
     document: KnowledgeWorkspaceDocument,
     requestStartRevision: number,
@@ -40,6 +43,9 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   activateTab: (paneId: string, tabId: string) => void
   setActivePane: (paneId: string) => void
   setTabViewMode: (paneId: string, tabId: string, mode: KnowledgeViewMode) => void
+  setTabGraphViewport: (paneId: string, tabId: string, viewport: GraphViewport) => void
+  setSplitSize: (splitId: string, firstSize: number) => void
+  setNavigation: (navigation: Partial<KnowledgeWorkspaceNavigation>) => void
   splitPane: (paneId: string, direction: SplitDirection) => string
   closePane: (paneId: string) => void
   resetWorkspace: () => void
@@ -81,6 +87,29 @@ function collapsePane(
 
 function firstPaneId(node: KnowledgeLayoutNode): string {
   return node.type === 'pane' ? node.paneId : firstPaneId(node.first)
+}
+
+function setSplitSizeInLayout(
+  node: KnowledgeLayoutNode,
+  splitId: string,
+  firstSize: number,
+): KnowledgeLayoutNode {
+  if (node.type === 'pane') return node
+  if (node.id === splitId) return { ...node, firstSize }
+  const first = setSplitSizeInLayout(node.first, splitId, firstSize)
+  const second = setSplitSizeInLayout(node.second, splitId, firstSize)
+  return first === node.first && second === node.second ? node : { ...node, first, second }
+}
+
+function hasSplit(layout: KnowledgeLayoutNode, splitId: string): boolean {
+  const stack = [layout]
+  while (stack.length) {
+    const node = stack.pop()!
+    if (node.type === 'pane') continue
+    if (node.id === splitId) return true
+    stack.push(node.first, node.second)
+  }
+  return false
 }
 
 function totalTabCount(panes: Record<string, KnowledgePane>): number {
@@ -163,6 +192,23 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     })
   },
 
+  applyNamedWorkspace: (document) => {
+    try {
+      serializeKnowledgeWorkspace(document)
+    } catch {
+      return false
+    }
+    const state = get()
+    set({
+      ...document,
+      hydrated: true,
+      revision: state.revision + 1,
+      durableRevision: state.durableRevision,
+      durableFingerprint: state.durableFingerprint,
+    })
+    return true
+  },
+
   hydrateWorkspace: (document, requestStartRevision) => {
     const fingerprint = workspaceFingerprint(document)
     if (!fingerprint) return
@@ -234,6 +280,8 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       id: allocated.id,
       viewMode: validTab.viewMode ?? 'reading',
       sourceAuthority: validTab.sourceAuthority ?? 'external-vault',
+      knowledgeDocumentId: validTab.knowledgeDocumentId ?? null,
+      graphViewport: validTab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
     }
     set({
       activePaneId: paneId,
@@ -351,6 +399,47 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     })
   },
 
+  setTabGraphViewport: (paneId, tabId, viewport) => {
+    const parsed = viewport
+    if (
+      !Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)
+      || !Number.isFinite(parsed.zoom) || parsed.zoom < 0.1 || parsed.zoom > 10
+    ) return
+    const state = get()
+    const pane = state.panes[paneId]
+    const tab = pane?.tabs.find((candidate) => candidate.id === tabId)
+    if (!pane || !tab || (
+      tab.graphViewport?.x === parsed.x && tab.graphViewport?.y === parsed.y
+      && tab.graphViewport?.zoom === parsed.zoom
+    )) return
+    set({ revision: state.revision + 1, panes: { ...state.panes, [paneId]: {
+      ...pane, tabs: pane.tabs.map((candidate) => candidate.id === tabId
+        ? { ...candidate, graphViewport: { ...parsed } } : candidate),
+    } } })
+  },
+
+  setSplitSize: (splitId, firstSize) => {
+    if (!Number.isFinite(firstSize) || firstSize < 10 || firstSize > 90) return
+    const state = get()
+    if (!hasSplit(state.layout, splitId)) return
+    const layout = setSplitSizeInLayout(state.layout, splitId, firstSize)
+    if (layout === state.layout) return
+    set({ layout, revision: state.revision + 1 })
+  },
+
+  setNavigation: (navigation) => {
+    const state = get()
+    const next = { ...defaultKnowledgeWorkspace().navigation!, ...state.navigation, ...navigation }
+    try {
+      serializeKnowledgeWorkspace({
+        version: state.version, activePaneId: state.activePaneId, nextId: state.nextId,
+        panes: state.panes, layout: state.layout, navigation: next,
+      })
+    } catch { return }
+    if (JSON.stringify(next) === JSON.stringify(state.navigation)) return
+    set({ navigation: next, revision: state.revision + 1 })
+  },
+
   splitPane: (paneId, direction) => {
     const parsedDirection = splitDirectionSchema.safeParse(direction)
     if (!parsedDirection.success) return paneId
@@ -390,6 +479,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       type: 'split',
       id: splitId,
       direction: parsedDirection.data,
+      firstSize: 50,
       first: { type: 'pane', paneId },
       second: { type: 'pane', paneId: newPaneId },
     }

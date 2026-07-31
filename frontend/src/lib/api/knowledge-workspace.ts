@@ -15,6 +15,33 @@ export const knowledgeSourceAuthoritySchema = z.enum([
   'external-vault',
   'overlay',
 ])
+export const knowledgeAuthorityFilterSchema = z.enum([
+  'app_owned',
+  'external_read_only',
+])
+export const graphViewportSchema = z.object({
+  x: z.number().finite(),
+  y: z.number().finite(),
+  zoom: z.number().finite().min(0.1).max(10),
+}).strict()
+export const knowledgeWorkspaceNavigationWireSchema = z.object({
+  utility_mode: z.enum(['sources', 'bookmarks', 'workspaces']).default('sources'),
+  sidebar_visible: z.boolean().default(true),
+  sidebar_width: z.number().int().min(240).max(640).default(320),
+  active_bookmark_folder_id: z.string().min(1).max(128).nullable().default(null),
+  bookmark_tags: z.array(z.string().min(1).max(128)).max(32).default([]),
+  source_tree_query: z.string().max(256).default(''),
+  search_query: z.string().max(512).default(''),
+  active_draft_id: z.string().min(1).max(128).nullable().default(null),
+  selected_space_ids: z.array(z.string().regex(/^knowledge_engine_space:[A-Za-z0-9_-]+$/)).max(32).default([]),
+  authority_filters: z.array(knowledgeAuthorityFilterSchema).max(2).default([]),
+  metrics_visible: z.boolean().default(true),
+}).strict().default({
+  utility_mode: 'sources', sidebar_visible: true, sidebar_width: 320,
+  active_bookmark_folder_id: null, bookmark_tags: [], source_tree_query: '',
+  search_query: '', active_draft_id: null, selected_space_ids: [],
+  authority_filters: [], metrics_visible: true,
+})
 
 export const canonicalVaultRelativePathSchema = z.string()
   .min(1)
@@ -45,6 +72,8 @@ export const openKnowledgeTabSchema = z.object({
   relativePath: canonicalVaultRelativePathSchema,
   viewMode: knowledgeViewModeSchema.optional(),
   sourceAuthority: knowledgeSourceAuthoritySchema.optional(),
+  knowledgeDocumentId: z.string().regex(/^knowledge_engine_document:[A-Za-z0-9_-]+$/).nullable().optional(),
+  graphViewport: graphViewportSchema.nullable().optional(),
 }).strict()
 
 export const knowledgeTabWireSchema = z.object({
@@ -55,6 +84,8 @@ export const knowledgeTabWireSchema = z.object({
   relative_path: canonicalVaultRelativePathSchema,
   view_mode: knowledgeViewModeSchema,
   source_authority: knowledgeSourceAuthoritySchema.default('external-vault'),
+  knowledge_document_id: z.string().regex(/^knowledge_engine_document:[A-Za-z0-9_-]+$/).nullable().default(null),
+  graph_viewport: graphViewportSchema.nullable().default({ x: 0, y: 0, zoom: 1 }),
 }).strict()
 
 export const knowledgePaneWireSchema = z.object({
@@ -69,6 +100,7 @@ export type KnowledgeLayoutWire =
       type: 'split'
       id: string
       direction: SplitDirection
+      first_size: number
       first: KnowledgeLayoutWire
       second: KnowledgeLayoutWire
     }
@@ -83,6 +115,7 @@ export const knowledgeLayoutWireSchema: z.ZodType<KnowledgeLayoutWire> = z.lazy(
       type: z.literal('split'),
       id: z.string().min(1).max(128),
       direction: splitDirectionSchema,
+      first_size: z.number().finite().min(10).max(90).default(50),
       first: knowledgeLayoutWireSchema,
       second: knowledgeLayoutWireSchema,
     }).strict(),
@@ -95,6 +128,7 @@ const rawKnowledgeWorkspaceWireSchema = z.object({
   next_id: z.number().int().min(1),
   panes: z.record(z.string(), knowledgePaneWireSchema),
   layout: knowledgeLayoutWireSchema,
+  navigation: knowledgeWorkspaceNavigationWireSchema,
 }).strict().superRefine((document, context) => {
   const paneIds = Object.keys(document.panes)
   let totalTabs = 0
@@ -243,6 +277,8 @@ export interface KnowledgeTab {
   relativePath: string
   viewMode: KnowledgeViewMode
   sourceAuthority: KnowledgeSourceAuthority
+  knowledgeDocumentId?: string | null
+  graphViewport?: GraphViewport | null
 }
 
 export interface OpenKnowledgeTab {
@@ -252,6 +288,23 @@ export interface OpenKnowledgeTab {
   relativePath: string
   viewMode?: KnowledgeViewMode
   sourceAuthority?: KnowledgeSourceAuthority
+  knowledgeDocumentId?: string | null
+  graphViewport?: GraphViewport | null
+}
+
+export type GraphViewport = z.infer<typeof graphViewportSchema>
+export interface KnowledgeWorkspaceNavigation {
+  utilityMode: 'sources' | 'bookmarks' | 'workspaces'
+  sidebarVisible: boolean
+  sidebarWidth: number
+  activeBookmarkFolderId: string | null
+  bookmarkTags: string[]
+  sourceTreeQuery: string
+  searchQuery: string
+  activeDraftId: string | null
+  selectedSpaceIds: string[]
+  authorityFilters: z.infer<typeof knowledgeAuthorityFilterSchema>[]
+  metricsVisible: boolean
 }
 
 export interface KnowledgePane {
@@ -269,6 +322,7 @@ export interface SplitLayoutNode {
   type: 'split'
   id: string
   direction: SplitDirection
+  firstSize?: number
   first: KnowledgeLayoutNode
   second: KnowledgeLayoutNode
 }
@@ -281,6 +335,7 @@ export interface KnowledgeWorkspaceDocument {
   nextId: number
   panes: Record<string, KnowledgePane>
   layout: KnowledgeLayoutNode
+  navigation?: KnowledgeWorkspaceNavigation
 }
 
 export function defaultKnowledgeWorkspace(): KnowledgeWorkspaceDocument {
@@ -296,6 +351,12 @@ export function defaultKnowledgeWorkspace(): KnowledgeWorkspaceDocument {
       },
     },
     layout: { type: 'pane', paneId: 'pane-1' },
+    navigation: {
+      utilityMode: 'sources', sidebarVisible: true, sidebarWidth: 320,
+      activeBookmarkFolderId: null, bookmarkTags: [], sourceTreeQuery: '',
+      searchQuery: '', activeDraftId: null, selectedSpaceIds: [],
+      authorityFilters: [], metricsVisible: true,
+    },
   }
 }
 
@@ -329,6 +390,7 @@ function fromWireLayout(layout: KnowledgeLayoutWire): KnowledgeLayoutNode {
     type: 'split',
     id: layout.id,
     direction: layout.direction,
+    firstSize: layout.first_size,
     first: fromWireLayout(layout.first),
     second: fromWireLayout(layout.second),
   }
@@ -342,6 +404,7 @@ function toWireLayout(layout: KnowledgeLayoutNode): KnowledgeLayoutWire {
     type: 'split',
     id: layout.id,
     direction: layout.direction,
+    first_size: layout.firstSize ?? 50,
     first: toWireLayout(layout.first),
     second: toWireLayout(layout.second),
   }
@@ -397,6 +460,19 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
     version: wire.version,
     activePaneId: wire.active_pane_id,
     nextId: wire.next_id,
+    navigation: {
+      utilityMode: wire.navigation.utility_mode,
+      sidebarVisible: wire.navigation.sidebar_visible,
+      sidebarWidth: wire.navigation.sidebar_width,
+      activeBookmarkFolderId: wire.navigation.active_bookmark_folder_id,
+      bookmarkTags: wire.navigation.bookmark_tags,
+      sourceTreeQuery: wire.navigation.source_tree_query,
+      searchQuery: wire.navigation.search_query,
+      activeDraftId: wire.navigation.active_draft_id,
+      selectedSpaceIds: wire.navigation.selected_space_ids,
+      authorityFilters: wire.navigation.authority_filters,
+      metricsVisible: wire.navigation.metrics_visible,
+    },
     panes: Object.fromEntries(
       Object.entries(wire.panes).map(([paneId, pane]) => [
         paneId,
@@ -411,6 +487,8 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
             relativePath: tab.relative_path,
             viewMode: tab.view_mode,
             sourceAuthority: tab.source_authority,
+            knowledgeDocumentId: tab.knowledge_document_id,
+            graphViewport: tab.graph_viewport,
           })),
         },
       ]),
@@ -426,10 +504,29 @@ export function parseKnowledgeWorkspace(data: unknown): KnowledgeWorkspaceDocume
 export function serializeKnowledgeWorkspace(document: KnowledgeWorkspaceDocument) {
   preflightCamelWorkspace(document)
   preflightCamelLayout(document.layout)
+  const navigation: KnowledgeWorkspaceNavigation = document.navigation ?? {
+    utilityMode: 'sources', sidebarVisible: true, sidebarWidth: 320,
+    activeBookmarkFolderId: null, bookmarkTags: [], sourceTreeQuery: '',
+    searchQuery: '', activeDraftId: null, selectedSpaceIds: [],
+    authorityFilters: [], metricsVisible: true,
+  }
   const wire = {
     version: document.version,
     active_pane_id: document.activePaneId,
     next_id: document.nextId,
+    navigation: {
+      utility_mode: navigation.utilityMode,
+      sidebar_visible: navigation.sidebarVisible,
+      sidebar_width: navigation.sidebarWidth,
+      active_bookmark_folder_id: navigation.activeBookmarkFolderId,
+      bookmark_tags: navigation.bookmarkTags,
+      source_tree_query: navigation.sourceTreeQuery,
+      search_query: navigation.searchQuery,
+      active_draft_id: navigation.activeDraftId,
+      selected_space_ids: navigation.selectedSpaceIds,
+      authority_filters: navigation.authorityFilters,
+      metrics_visible: navigation.metricsVisible,
+    },
     panes: Object.fromEntries(
       Object.entries(document.panes).map(([paneId, pane]) => [
         paneId,
@@ -444,6 +541,10 @@ export function serializeKnowledgeWorkspace(document: KnowledgeWorkspaceDocument
             relative_path: tab.relativePath,
             view_mode: tab.viewMode,
             source_authority: tab.sourceAuthority,
+            knowledge_document_id: tab.knowledgeDocumentId ?? null,
+            graph_viewport: tab.graphViewport === undefined
+              ? { x: 0, y: 0, zoom: 1 }
+              : tab.graphViewport,
           })),
         },
       ]),
