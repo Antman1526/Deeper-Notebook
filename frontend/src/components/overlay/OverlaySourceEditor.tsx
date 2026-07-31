@@ -24,6 +24,7 @@ export interface OverlaySourceEditorProps {
   markdown: string
   onChange: (markdown: string) => void
   disabled?: boolean
+  onSelectionChange?: (from: number, to: number) => void
 }
 
 const externalUpdate = Annotation.define<boolean>()
@@ -50,15 +51,18 @@ export function OverlaySourceEditor({
   markdown: source,
   onChange,
   disabled = false,
+  onSelectionChange,
 }: OverlaySourceEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
+  const onSelectionChangeRef = useRef(onSelectionChange)
   const stateCompartment = useMemo(() => new Compartment(), [])
 
   useLayoutEffect(() => {
     onChangeRef.current = onChange
-  }, [onChange])
+    onSelectionChangeRef.current = onSelectionChange
+  }, [onChange, onSelectionChange])
 
   useLayoutEffect(() => {
     const host = hostRef.current
@@ -85,6 +89,10 @@ export function OverlaySourceEditor({
             ...foldKeymap,
           ]),
           EditorView.updateListener.of((update) => {
+            if (update.selectionSet) {
+              const selection = update.state.selection.main
+              onSelectionChangeRef.current?.(selection.from, selection.to)
+            }
             if (
               update.docChanged
               && !update.transactions.some(

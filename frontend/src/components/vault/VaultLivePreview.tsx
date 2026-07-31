@@ -12,6 +12,7 @@ interface VaultLivePreviewProps {
   markdown: string
   links: VaultLink[]
   onNavigate: (noteId: string) => void
+  onSelectionChange?: (from: number, to: number) => void
 }
 
 export function VaultLivePreview({
@@ -19,6 +20,7 @@ export function VaultLivePreview({
   markdown,
   links,
   onNavigate,
+  onSelectionChange,
 }: VaultLivePreviewProps) {
   const extensions = useMemo(
     () => [livePreviewExtension({ links, onNavigate, source: markdown })],
@@ -31,6 +33,7 @@ export function VaultLivePreview({
         ariaLabel={`${title} live preview`}
         markdown={markdown}
         extensions={extensions}
+        onSelectionChange={onSelectionChange}
       />
     </section>
   )

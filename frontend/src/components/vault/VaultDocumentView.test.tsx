@@ -74,10 +74,21 @@ describe('VaultDocumentView', () => {
       blocks: [{ knowledge_block_id: 'knowledge_engine_block:plan', source_revision_id: 'knowledge_engine_revision:one', markdown: '# Plan' }],
     }))
 
-    expect(screen.getByRole('region', { name: 'Plan reading view' }))
-      .toHaveAttribute('data-knowledge-block-id', 'knowledge_engine_block:plan')
-    expect(screen.getByRole('region', { name: 'Plan reading view' }))
-      .toHaveAttribute('data-source-revision-id', 'knowledge_engine_revision:one')
+    const block = document.querySelector('[data-knowledge-block-id="knowledge_engine_block:plan"]')
+    expect(block).toHaveAttribute('data-source-revision-id', 'knowledge_engine_revision:one')
+  })
+
+  it('keeps duplicate readable text in distinct validated block containers', () => {
+    renderDocument('reading', pageFixtureWith({
+      blocks: [
+        { knowledge_block_id: 'knowledge_engine_block:first', source_revision_id: 'knowledge_engine_revision:one', markdown: 'Repeated' },
+        { knowledge_block_id: 'knowledge_engine_block:second', source_revision_id: 'knowledge_engine_revision:two', markdown: 'Repeated' },
+      ],
+    }))
+
+    expect(document.querySelectorAll('[data-knowledge-block-id]').length).toBe(2)
+    expect(document.querySelector('[data-knowledge-block-id="knowledge_engine_block:second"]'))
+      .toHaveAttribute('data-source-revision-id', 'knowledge_engine_revision:two')
   })
 
   it.each([
@@ -199,6 +210,24 @@ describe('VaultDocumentView', () => {
       expect(view.state.selection.main.head).toBe(editorOffset)
     },
   )
+
+  it.each(['source', 'live-preview'] as const)('maps %s editor selection to its owned duplicate block range', (mode) => {
+    const onFocusedBlockChange = vi.fn()
+    const page = pageFixtureWith({
+      note: { content: 'Repeated\nRepeated' },
+      blocks: [
+        { knowledge_block_id: 'knowledge_engine_block:first', source_revision_id: 'knowledge_engine_revision:one', markdown: 'Repeated' },
+        { knowledge_block_id: 'knowledge_engine_block:second', source_revision_id: 'knowledge_engine_revision:two', markdown: 'Repeated' },
+      ],
+    })
+    render(<VaultDocumentView viewId="pane-1:tab-1" mode={mode} page={page} onNavigate={vi.fn()} onFocusedBlockChange={onFocusedBlockChange} />)
+    const view = EditorView.findFromDOM(screen.getByRole('textbox'))!
+
+    act(() => view.dispatch({ selection: { anchor: 9, head: 10 } }))
+    expect(onFocusedBlockChange).toHaveBeenLastCalledWith({ blockId: 'knowledge_engine_block:second', sourceRevisionId: 'knowledge_engine_revision:two' })
+    act(() => view.dispatch({ selection: { anchor: 9 } }))
+    expect(onFocusedBlockChange).toHaveBeenLastCalledWith(null)
+  })
 
   it.each([
     ['pane:a', 'pane-a'],
