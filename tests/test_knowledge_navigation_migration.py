@@ -31,6 +31,8 @@ def test_migration_39_gives_named_workspaces_unique_bounded_capacity_slots():
         "named_knowledge_workspace COLUMNS capacity_slot UNIQUE;"
     ) in sql
     assert "CREATE ONLY named_knowledge_workspace:capacity_allocator CONTENT" in sql
+    assert 'name: "",' in sql
+    assert 'name_key: "",' in sql
 
 
 def test_migration_39_down_removes_only_navigation_metadata():

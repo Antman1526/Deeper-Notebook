@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from deeper_notebook.knowledge_engine.navigation_contracts import (
+    WORKSPACE_CAPACITY_ALLOCATOR_ID,
     BlockTarget,
     Bookmark,
     BookmarkFilters,
@@ -22,6 +23,7 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     NamedKnowledgeWorkspaceSummary,
     NamedWorkspaceSnapshot,
     UpdateWorkspace,
+    WorkspaceTarget,
 )
 from deeper_notebook.knowledge_engine.navigation_repository import (
     KnowledgeNavigationRepositoryError,
@@ -466,3 +468,41 @@ async def test_workspace_service_enforces_rename_replace_boundaries_without_curr
     assert copied.revision == 1
     assert metadata.deleted == [created.id]
     assert current_session_path.read_bytes() == before
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_fails_closed_for_the_capacity_allocator() -> None:
+    service = KnowledgeNavigationService(metadata_repository=_MetadataRepository())
+    snapshot = _workspace_snapshot()
+
+    with pytest.raises(LookupError):
+        await service.get_workspace(WORKSPACE_CAPACITY_ALLOCATOR_ID)
+    with pytest.raises(LookupError):
+        await service.update_workspace(
+            WORKSPACE_CAPACITY_ALLOCATOR_ID,
+            UpdateWorkspace(
+                operation_id="service-allocator-update",
+                expected_revision=1,
+                name="Nope",
+            ),
+        )
+    with pytest.raises(LookupError):
+        await service.duplicate_workspace(
+            WORKSPACE_CAPACITY_ALLOCATOR_ID,
+            DuplicateWorkspace(operation_id="service-allocator-copy", name="Nope"),
+        )
+    with pytest.raises(LookupError):
+        await service.delete_workspace(
+            WORKSPACE_CAPACITY_ALLOCATOR_ID,
+            DeleteWorkspace(
+                operation_id="service-allocator-delete", expected_revision=1
+            ),
+        )
+    with pytest.raises(LookupError):
+        await service.workspace_restore_plan(WORKSPACE_CAPACITY_ALLOCATOR_ID, 1)
+
+    target = WorkspaceTarget.model_construct(
+        kind="workspace", workspace_id=WORKSPACE_CAPACITY_ALLOCATOR_ID
+    )
+    assert (await service.hydrate_target(target)).state == "missing"
+    assert snapshot.next_id == 4

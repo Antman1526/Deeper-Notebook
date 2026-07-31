@@ -18,6 +18,7 @@ from deeper_notebook.database.repository import (
     parse_record_ids,
 )
 from deeper_notebook.knowledge_engine.navigation_contracts import (
+    WORKSPACE_CAPACITY_ALLOCATOR_ID,
     Bookmark,
     BookmarkCursor,
     BookmarkFilters,
@@ -47,7 +48,7 @@ _TABLES = {
     "workspace": "named_knowledge_workspace",
 }
 MAX_NAMED_WORKSPACES = 256
-_WORKSPACE_ALLOCATOR_ID = "named_knowledge_workspace:capacity_allocator"
+_WORKSPACE_ALLOCATOR_ID = WORKSPACE_CAPACITY_ALLOCATOR_ID
 _OPEN_DESCRIPTOR_FIELDS = (
     "id AS document_id, space_id, authority_kind, "
     "(SELECT VALUE source_kind FROM knowledge_engine_space "
@@ -302,6 +303,11 @@ class KnowledgeNavigationRepository:
     ) -> None:
         self._connection_factory = connection_factory or db_connection
         self._clock = clock
+
+    @staticmethod
+    def _require_public_workspace_id(workspace_id: str) -> None:
+        if workspace_id == WORKSPACE_CAPACITY_ALLOCATOR_ID:
+            raise LookupError("named_knowledge_workspace_not_found")
 
     async def _query(
         self,
@@ -992,6 +998,7 @@ class KnowledgeNavigationRepository:
     async def update_workspace(
         self, workspace_id: str, command: UpdateWorkspace
     ) -> NamedKnowledgeWorkspace:
+        self._require_public_workspace_id(workspace_id)
         replay = await self._replay_entity(
             table="named_knowledge_workspace",
             entity_id=workspace_id,
@@ -1032,6 +1039,7 @@ class KnowledgeNavigationRepository:
     async def duplicate_workspace(
         self, workspace_id: str, command: DuplicateWorkspace
     ) -> NamedKnowledgeWorkspace:
+        self._require_public_workspace_id(workspace_id)
         entity_id = _generated_id("named_knowledge_workspace", command.operation_id)
         replay = await self._replay_entity(
             table="named_knowledge_workspace",
@@ -1054,6 +1062,7 @@ class KnowledgeNavigationRepository:
     async def delete_workspace(
         self, workspace_id: str, command: DeleteWorkspace
     ) -> NavigationReceipt:
+        self._require_public_workspace_id(workspace_id)
         replay = await self._replay_receipt(entity_id=workspace_id, command=command)
         if replay is not None:
             return replay
@@ -1077,6 +1086,7 @@ class KnowledgeNavigationRepository:
         return receipt
 
     async def get_workspace(self, workspace_id: str) -> NamedKnowledgeWorkspace:
+        self._require_public_workspace_id(workspace_id)
         return await self._existing(
             "named_knowledge_workspace", workspace_id, NamedKnowledgeWorkspace
         )
