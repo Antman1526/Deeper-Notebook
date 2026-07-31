@@ -47,6 +47,7 @@ _TABLES = {
     "workspace": "named_knowledge_workspace",
 }
 MAX_NAMED_WORKSPACES = 256
+_WORKSPACE_ALLOCATOR_ID = "named_knowledge_workspace:capacity_allocator"
 _OPEN_DESCRIPTOR_FIELDS = (
     "id AS document_id, space_id, authority_kind, "
     "(SELECT VALUE source_kind FROM knowledge_engine_space "
@@ -115,7 +116,7 @@ def _content(model: BaseModel) -> dict[str, Any]:
 
 
 def _workspace_create_transaction() -> str:
-    """Create a workspace only while the bounded collection has room."""
+    """Create a workspace only when its unique capacity slot is free."""
     return """
         BEGIN TRANSACTION;
         LET $prior = (SELECT * FROM knowledge_navigation_operation_receipt
@@ -127,15 +128,50 @@ def _workspace_create_transaction() -> str:
             RETURN { code: 'replayed', prior: $prior,
                 entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $prior[0] };
         };
-        LET $workspaces = (SELECT id FROM named_knowledge_workspace
-            LIMIT $workspace_limit);
-        IF array::len($workspaces) >= $workspace_limit {
-            RETURN { code: 'workspace_limit_reached' };
+        LET $allocator = (SELECT id FROM $workspace_allocator_id LIMIT 1);
+        IF array::len($allocator) = 0 {
+            RETURN { code: 'workspace_allocator_unavailable' };
+        };
+        UPDATE $workspace_allocator_id SET revision = revision + 1,
+            updated_at = time::now();
+        LET $slot = (SELECT id FROM named_knowledge_workspace
+            WHERE capacity_slot = $capacity_slot LIMIT 1);
+        IF array::len($slot) > 0 {
+            RETURN { code: 'workspace_slot_taken' };
         };
         CREATE $receipt_id CONTENT $receipt;
         UPSERT $entity_id CONTENT $entity;
         RETURN { code: 'succeeded', prior: $prior,
             entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $receipt };
+        COMMIT TRANSACTION;
+    """
+
+
+def _workspace_delete_transaction() -> str:
+    """Delete a workspace while contending on the shared capacity allocator."""
+    return """
+        BEGIN TRANSACTION;
+        LET $prior = (SELECT * FROM knowledge_navigation_operation_receipt
+            WHERE operation_id = $operation_id LIMIT 1);
+        IF array::len($prior) > 0 AND $prior[0].payload_hash != $payload_hash {
+            RETURN { code: 'operation_conflict' };
+        };
+        IF array::len($prior) > 0 {
+            RETURN { code: 'replayed', prior: $prior, receipt: $prior[0] };
+        };
+        LET $current = (SELECT * FROM $entity_id LIMIT 1);
+        IF array::len($current) = 0 OR $current[0].revision != $expected_revision {
+            RETURN { code: 'revision_conflict' };
+        };
+        LET $allocator = (SELECT id FROM $workspace_allocator_id LIMIT 1);
+        IF array::len($allocator) = 0 {
+            RETURN { code: 'workspace_allocator_unavailable' };
+        };
+        UPDATE $workspace_allocator_id SET revision = revision + 1,
+            updated_at = time::now();
+        CREATE $receipt_id CONTENT $receipt;
+        DELETE $entity_id;
+        RETURN { code: 'succeeded', prior: $prior, receipt: $receipt };
         COMMIT TRANSACTION;
     """
 
@@ -494,6 +530,8 @@ class KnowledgeNavigationRepository:
             "folder_depth_exceeded",
             "folder_parent_not_found",
             "workspace_limit_reached",
+            "workspace_slot_taken",
+            "workspace_allocator_unavailable",
         }:
             raise KnowledgeNavigationRepositoryError(outcome)
         prior = result.get("prior")
@@ -944,29 +982,11 @@ class KnowledgeNavigationRepository:
         )
         if replay is not None:
             return replay
-        timestamp = self._clock()
-        workspace = NamedKnowledgeWorkspace(
-            id=entity_id,
-            name=command.name,
-            name_key=command.name_key,
-            snapshot=command.snapshot,
-            revision=1,
-            created_at=timestamp,
-            updated_at=timestamp,
-        )
-        row, _, _ = await self._mutate(
-            table="named_knowledge_workspace",
-            entity_kind="workspace",
+        return await self._create_workspace_with_capacity(
             entity_id=entity_id,
             command=command,
             operation_kind="create_workspace",
-            entity=workspace,
-            result_code="created",
-            statement=_workspace_create_transaction(),
-            extra_variables={"workspace_limit": MAX_NAMED_WORKSPACES},
-        )
-        return _model(
-            NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid"
+            snapshot=command.snapshot,
         )
 
     async def update_workspace(
@@ -1023,30 +1043,12 @@ class KnowledgeNavigationRepository:
         if replay is not None:
             return replay
         source = await self.get_workspace(workspace_id)
-        timestamp = self._clock()
-        workspace = NamedKnowledgeWorkspace(
-            id=entity_id,
-            name=command.name,
-            name_key=command.name_key,
-            snapshot=source.snapshot,
-            revision=1,
-            created_at=timestamp,
-            updated_at=timestamp,
-        )
-        row, _, _ = await self._mutate(
-            table="named_knowledge_workspace",
-            entity_kind="workspace",
+        return await self._create_workspace_with_capacity(
             entity_id=entity_id,
             command=command,
             operation_kind="duplicate_workspace",
-            entity=workspace,
-            result_code="created",
-            statement=_workspace_create_transaction(),
-            extra_variables={"workspace_limit": MAX_NAMED_WORKSPACES},
+            snapshot=source.snapshot,
             payload_context={"source_workspace_id": workspace_id},
-        )
-        return _model(
-            NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid"
         )
 
     async def delete_workspace(
@@ -1065,6 +1067,12 @@ class KnowledgeNavigationRepository:
             expected_revision=command.expected_revision,
             mutation="delete",
             result_code="deleted",
+            statement=_workspace_delete_transaction(),
+            extra_variables={
+                "workspace_allocator_id": _record_id(
+                    "named_knowledge_workspace", _WORKSPACE_ALLOCATOR_ID
+                ),
+            },
         )
         return receipt
 
@@ -1078,9 +1086,15 @@ class KnowledgeNavigationRepository:
             rows = await self._query(
                 connection,
                 "SELECT id, name, name_key, revision, updated_at "
-                "FROM named_knowledge_workspace ORDER BY name_key, id "
+                "FROM named_knowledge_workspace "
+                "WHERE id != $workspace_allocator_id ORDER BY name_key, id "
                 "LIMIT $limit;",
-                {"limit": MAX_NAMED_WORKSPACES + 1},
+                {
+                    "limit": MAX_NAMED_WORKSPACES + 1,
+                    "workspace_allocator_id": _record_id(
+                        "named_knowledge_workspace", _WORKSPACE_ALLOCATOR_ID
+                    ),
+                },
             )
         if len(rows) > MAX_NAMED_WORKSPACES:
             raise KnowledgeNavigationRepositoryError("workspace_collection_too_large")
@@ -1092,6 +1106,105 @@ class KnowledgeNavigationRepository:
             )
             for row in rows
         ]
+
+    async def _next_workspace_slot(self) -> int | None:
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "SELECT id, capacity_slot FROM named_knowledge_workspace "
+                "WHERE id != $workspace_allocator_id ORDER BY capacity_slot "
+                "LIMIT $limit;",
+                {
+                    "limit": MAX_NAMED_WORKSPACES + 1,
+                    "workspace_allocator_id": _record_id(
+                        "named_knowledge_workspace", _WORKSPACE_ALLOCATOR_ID
+                    ),
+                },
+            )
+        if len(rows) > MAX_NAMED_WORKSPACES:
+            raise KnowledgeNavigationRepositoryError("workspace_collection_too_large")
+        occupied: set[int] = set()
+        for row in rows:
+            slot = row.get("capacity_slot") if isinstance(row, dict) else None
+            if (
+                isinstance(slot, bool)
+                or not isinstance(slot, int)
+                or not 0 <= slot < MAX_NAMED_WORKSPACES
+            ):
+                raise KnowledgeNavigationRepositoryError("workspace_collection_invalid")
+            occupied.add(slot)
+        if len(occupied) != len(rows):
+            raise KnowledgeNavigationRepositoryError("workspace_collection_invalid")
+        return next(
+            (slot for slot in range(MAX_NAMED_WORKSPACES) if slot not in occupied),
+            None,
+        )
+
+    async def _create_workspace_with_capacity(
+        self,
+        *,
+        entity_id: str,
+        command: CreateWorkspace | DuplicateWorkspace,
+        operation_kind: str,
+        snapshot: Any,
+        payload_context: dict[str, Any] | None = None,
+    ) -> NamedKnowledgeWorkspace:
+        for _ in range(MAX_NAMED_WORKSPACES):
+            slot = await self._next_workspace_slot()
+            if slot is None:
+                raise KnowledgeNavigationRepositoryError("workspace_limit_reached")
+            timestamp = self._clock()
+            workspace = NamedKnowledgeWorkspace(
+                id=entity_id,
+                name=command.name,
+                name_key=command.name_key,
+                snapshot=snapshot,
+                capacity_slot=slot,
+                revision=1,
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            try:
+                row, _, _ = await self._mutate(
+                    table="named_knowledge_workspace",
+                    entity_kind="workspace",
+                    entity_id=entity_id,
+                    command=command,
+                    operation_kind=operation_kind,
+                    entity=workspace,
+                    result_code="created",
+                    statement=_workspace_create_transaction(),
+                    extra_variables={
+                        "capacity_slot": slot,
+                        "workspace_allocator_id": _record_id(
+                            "named_knowledge_workspace",
+                            _WORKSPACE_ALLOCATOR_ID,
+                        ),
+                    },
+                    payload_context=payload_context,
+                )
+            except KnowledgeNavigationRepositoryError as error:
+                if error.code not in {
+                    "workspace_slot_taken",
+                    "knowledge_navigation_repository_unavailable",
+                }:
+                    raise
+                replay = await self._replay_entity(
+                    table="named_knowledge_workspace",
+                    entity_id=entity_id,
+                    command=command,
+                    model=NamedKnowledgeWorkspace,
+                    payload_context=payload_context,
+                )
+                if replay is not None:
+                    return replay
+                continue
+            return _model(
+                NamedKnowledgeWorkspace,
+                row,
+                code="knowledge_navigation_workspace_invalid",
+            )
+        raise KnowledgeNavigationRepositoryError("workspace_limit_reached")
 
     async def random_candidate_count(self, filters: RandomNoteFilters) -> int:
         variables = {

@@ -214,6 +214,7 @@ def test_persistence_rows_match_migration_39_fields_and_target_kind():
         id="named_knowledge_workspace:desk",
         name="Desk",
         name_key="desk",
+        capacity_slot=0,
         snapshot={
             "version": 1,
             "active_pane_id": "pane-1",

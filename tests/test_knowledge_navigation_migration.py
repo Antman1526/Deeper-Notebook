@@ -19,6 +19,20 @@ def test_migration_39_defines_only_navigation_metadata_tables():
     assert "canonical_bytes" not in sql
 
 
+def test_migration_39_gives_named_workspaces_unique_bounded_capacity_slots():
+    sql = UP.read_text(encoding="utf-8")
+
+    assert (
+        "DEFINE FIELD IF NOT EXISTS capacity_slot ON TABLE "
+        "named_knowledge_workspace TYPE int ASSERT $value >= 0 AND $value <= 256;"
+    ) in sql
+    assert (
+        "DEFINE INDEX IF NOT EXISTS idx_kn_workspace_capacity_slot ON TABLE "
+        "named_knowledge_workspace COLUMNS capacity_slot UNIQUE;"
+    ) in sql
+    assert "CREATE ONLY named_knowledge_workspace:capacity_allocator CONTENT" in sql
+
+
 def test_migration_39_down_removes_only_navigation_metadata():
     sql = DOWN.read_text(encoding="utf-8")
     statements = [

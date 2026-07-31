@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -28,7 +29,9 @@ from deeper_notebook.knowledge_engine.navigation_repository import (
 )
 
 
-async def seed_workspace_rows(database: AsyncSurreal, count: int) -> None:
+async def seed_workspace_rows(
+    database: AsyncSurreal, count: int, *, start_slot: int = 0
+) -> None:
     """Insert synthetic metadata-only rows to exercise repository cap guards."""
     statements = []
     for index in range(count):
@@ -40,6 +43,7 @@ async def seed_workspace_rows(database: AsyncSurreal, count: int) -> None:
             + "', name_key: 'seed "
             + str(index)
             + "', snapshot_version: 1, snapshot: {}, revision: 1, "
+            "capacity_slot: " + str(start_slot + index) + ", "
             "created_at: time::now(), updated_at: time::now() };"
         )
     await database.query("\n".join(statements))
@@ -127,6 +131,11 @@ class FakeConnection:
             == "SELECT id, parent_folder_id FROM knowledge_bookmark_folder;"
         ):
             return list(self.rows["knowledge_bookmark_folder"].values())
+        if "SELECT capacity_slot FROM named_knowledge_workspace" in statement:
+            return [
+                {"capacity_slot": row["capacity_slot"]}
+                for row in self.rows["named_knowledge_workspace"].values()
+            ]
         if "SELECT * FROM $entity_id LIMIT 1" in statement:
             entity_id = str(variables["entity_id"])
             for table in self.rows.values():
@@ -165,6 +174,11 @@ class FakeConnection:
             and len(staged_rows[table]) >= workspace_limit
         ):
             return [{"error": "workspace_limit_reached"}]
+        if table == "named_knowledge_workspace" and any(
+            row.get("capacity_slot") == variables.get("capacity_slot")
+            for row in staged_rows[table].values()
+        ):
+            return [{"error": "workspace_slot_taken"}]
         current = staged_rows[table].get(entity_id)
         expected = variables.get("expected_revision")
         if expected is not None and (
@@ -255,6 +269,7 @@ async def memory_connection():
         DEFINE FIELD name_key ON TABLE named_knowledge_workspace TYPE string;
         DEFINE FIELD snapshot_version ON TABLE named_knowledge_workspace TYPE int;
         DEFINE FIELD snapshot ON TABLE named_knowledge_workspace FLEXIBLE TYPE object;
+        DEFINE FIELD capacity_slot ON TABLE named_knowledge_workspace TYPE int;
         DEFINE FIELD revision ON TABLE named_knowledge_workspace TYPE int;
         DEFINE FIELD created_at ON TABLE named_knowledge_workspace TYPE datetime;
         DEFINE FIELD updated_at ON TABLE named_knowledge_workspace TYPE datetime;
@@ -270,6 +285,16 @@ async def memory_connection():
         DEFINE FIELD result_code ON TABLE knowledge_navigation_operation_receipt TYPE string;
         DEFINE FIELD created_at ON TABLE knowledge_navigation_operation_receipt TYPE datetime;
         DEFINE FIELD completed_at ON TABLE knowledge_navigation_operation_receipt TYPE datetime;
+        """
+    )
+    await database.query(
+        """
+        CREATE named_knowledge_workspace:capacity_allocator CONTENT {
+            schema_version: 1, name: 'Workspace capacity allocator',
+            name_key: '__workspace_capacity_allocator__', snapshot_version: 1,
+            snapshot: {}, capacity_slot: 256, revision: 1,
+            created_at: time::now(), updated_at: time::now()
+        };
         """
     )
 
@@ -701,7 +726,7 @@ async def test_real_surreal_workspace_cap_is_atomic_for_create_and_duplicate(
             snapshot=workspace_snapshot(),
         )
     )
-    await seed_workspace_rows(memory_connection.database, 255)
+    await seed_workspace_rows(memory_connection.database, 255, start_slot=1)
 
     with pytest.raises(
         KnowledgeNavigationRepositoryError, match="workspace_limit_reached"
@@ -736,6 +761,140 @@ async def test_real_surreal_workspace_list_rejects_preexisting_overflow(
         KnowledgeNavigationRepositoryError, match="workspace_collection_too_large"
     ):
         await repository.list_workspaces()
+
+
+async def workspace_row_count(database: AsyncSurreal) -> int:
+    rows = await database.query(
+        "SELECT count() AS count FROM named_knowledge_workspace "
+        "WHERE id != named_knowledge_workspace:capacity_allocator GROUP ALL;"
+    )
+    return int(rows[0]["count"])
+
+
+@pytest.mark.asyncio
+async def test_native_workspace_slot_allocation_allows_only_one_concurrent_create(
+    migrated_memory_connection,
+):
+    await seed_workspace_rows(migrated_memory_connection.database, 255)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=migrated_memory_connection.factory
+    )
+
+    first, second = await asyncio.gather(
+        repository.create_workspace(
+            CreateWorkspace(
+                operation_id="workspace-race-create-one",
+                name="Race one",
+                snapshot=workspace_snapshot(),
+            )
+        ),
+        repository.create_workspace(
+            CreateWorkspace(
+                operation_id="workspace-race-create-two",
+                name="Race two",
+                snapshot=workspace_snapshot(),
+            )
+        ),
+        return_exceptions=True,
+    )
+
+    outcomes = [first, second]
+    assert sum(not isinstance(outcome, Exception) for outcome in outcomes) == 1
+    errors = [outcome for outcome in outcomes if isinstance(outcome, Exception)]
+    assert len(errors) == 1
+    assert isinstance(errors[0], KnowledgeNavigationRepositoryError)
+    assert errors[0].code == "workspace_limit_reached"
+    assert await workspace_row_count(migrated_memory_connection.database) == 256
+    assert len(await repository.list_workspaces()) == 256
+    rejected_operation = (
+        "workspace-race-create-one"
+        if isinstance(first, Exception)
+        else "workspace-race-create-two"
+    )
+    receipts = await migrated_memory_connection.database.query(
+        "SELECT operation_id FROM knowledge_navigation_operation_receipt "
+        "WHERE operation_id = $operation_id;",
+        {"operation_id": rejected_operation},
+    )
+    assert receipts == []
+
+
+@pytest.mark.asyncio
+async def test_native_workspace_slot_allocation_allows_only_one_create_or_duplicate(
+    migrated_memory_connection,
+):
+    repository = KnowledgeNavigationRepository(
+        connection_factory=migrated_memory_connection.factory
+    )
+    source = await repository.create_workspace(
+        CreateWorkspace(
+            operation_id="workspace-race-source",
+            name="Source",
+            snapshot=workspace_snapshot(),
+        )
+    )
+    await seed_workspace_rows(migrated_memory_connection.database, 254, start_slot=1)
+
+    created, duplicated = await asyncio.gather(
+        repository.create_workspace(
+            CreateWorkspace(
+                operation_id="workspace-race-mixed-create",
+                name="Created",
+                snapshot=workspace_snapshot(),
+            )
+        ),
+        repository.duplicate_workspace(
+            source.id,
+            DuplicateWorkspace(
+                operation_id="workspace-race-mixed-duplicate", name="Copied"
+            ),
+        ),
+        return_exceptions=True,
+    )
+
+    outcomes = [created, duplicated]
+    assert sum(not isinstance(outcome, Exception) for outcome in outcomes) == 1
+    errors = [outcome for outcome in outcomes if isinstance(outcome, Exception)]
+    assert len(errors) == 1
+    assert isinstance(errors[0], KnowledgeNavigationRepositoryError)
+    assert errors[0].code == "workspace_limit_reached"
+    assert await workspace_row_count(migrated_memory_connection.database) == 256
+    assert len(await repository.list_workspaces()) == 256
+
+
+@pytest.mark.asyncio
+async def test_native_workspace_delete_releases_a_capacity_slot(
+    migrated_memory_connection,
+):
+    repository = KnowledgeNavigationRepository(
+        connection_factory=migrated_memory_connection.factory
+    )
+    source = await repository.create_workspace(
+        CreateWorkspace(
+            operation_id="workspace-slot-source",
+            name="Source",
+            snapshot=workspace_snapshot(),
+        )
+    )
+    await seed_workspace_rows(migrated_memory_connection.database, 255, start_slot=1)
+    await repository.delete_workspace(
+        source.id,
+        DeleteWorkspace(
+            operation_id="workspace-slot-delete", expected_revision=source.revision
+        ),
+    )
+
+    replacement = await repository.create_workspace(
+        CreateWorkspace(
+            operation_id="workspace-slot-replacement",
+            name="Replacement",
+            snapshot=workspace_snapshot(),
+        )
+    )
+
+    assert replacement.revision == 1
+    assert await workspace_row_count(migrated_memory_connection.database) == 256
+    assert len(await repository.list_workspaces()) == 256
 
 
 @pytest.mark.asyncio
