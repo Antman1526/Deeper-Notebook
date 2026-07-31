@@ -2,10 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import {
-  createKnowledgeNavigationOperationId,
-  knowledgeNavigationApi,
-} from '@/lib/api/knowledge-navigation'
+import { knowledgeNavigationApi } from '@/lib/api/knowledge-navigation'
 
 export const knowledgeNavigationKeys = {
   root: ['knowledge-navigation'] as const,
@@ -36,20 +33,12 @@ function useCollectionMutation<T>(
   return useMutation({
     mutationFn,
     retry: false,
-    onMutate: (input) => {
-      const command = input && typeof input === 'object' && 'command' in input
-        ? (input as { command: Record<string, unknown> }).command
-        : input as Record<string, unknown>
-      if (command && typeof command === 'object' && !command.operationId) {
-        command.operationId = createKnowledgeNavigationOperationId()
-      }
-    },
     onSuccess: () => client.invalidateQueries({ queryKey: invalidate }),
   })
 }
 export function useCreateKnowledgeBookmark() { return useCollectionMutation(knowledgeNavigationApi.createBookmark, ['knowledge-navigation', 'bookmarks']) }
 export function useUpdateKnowledgeBookmark() {
-  return useCollectionMutation(({ bookmarkId, command }: { bookmarkId: string; command: Record<string, unknown> }) => knowledgeNavigationApi.updateBookmark(bookmarkId, command), ['knowledge-navigation', 'bookmarks'])
+  return useCollectionMutation(({ bookmarkId, command }: { bookmarkId: string; command: Record<string, unknown> }) => knowledgeNavigationApi.updateBookmark(bookmarkId, command as never), ['knowledge-navigation', 'bookmarks'])
 }
 export function useDeleteKnowledgeBookmark() {
   return useCollectionMutation(({ bookmarkId, command }: { bookmarkId: string; command: Record<string, unknown> }) => knowledgeNavigationApi.deleteBookmark(bookmarkId, command), ['knowledge-navigation', 'bookmarks'])
