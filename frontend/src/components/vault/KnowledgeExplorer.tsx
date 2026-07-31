@@ -110,6 +110,15 @@ export function KnowledgeExplorer() {
   const setPendingWorkspaceRestore = useKnowledgeWorkspaceStore((state) => state.setPendingWorkspaceRestore)
   const activeSearchContext = useKnowledgeWorkspaceStore((state) => state.activeSearchContext)
   const setActiveSearchContext = useKnowledgeWorkspaceStore((state) => state.setActiveSearchContext)
+  const semanticSearchDescriptorKey = activeSearchContext?.mode === 'semantic' && activeSearchContext.query
+    ? JSON.stringify({
+      mode: activeSearchContext.mode,
+      query: activeSearchContext.query,
+      spaceIds: [...activeSearchContext.spaceIds].sort(),
+      authorityKinds: [...activeSearchContext.authorityKinds].sort(),
+      tags: [...activeSearchContext.tags].sort(),
+    })
+    : null
   const indexedSearch = useKnowledgeIndexedSearch(activeSearchContext?.query || '', Boolean(activeSearchContext), {
     mode: activeSearchContext?.mode || 'text',
     spaceIds: activeSearchContext?.spaceIds || [],
@@ -147,11 +156,14 @@ export function KnowledgeExplorer() {
   } = useTodayOverlayNote()
 
   useEffect(() => {
-    const key = activeSearchContext?.mode === 'semantic' ? activeSearchContext.query : null
-    if (!key || semanticSearchKeyRef.current === key) return
-    semanticSearchKeyRef.current = key
+    if (!semanticSearchDescriptorKey) {
+      semanticSearchKeyRef.current = null
+      return
+    }
+    if (semanticSearchKeyRef.current === semanticSearchDescriptorKey) return
+    semanticSearchKeyRef.current = semanticSearchDescriptorKey
     indexedSearch.runSemanticSearch()
-  }, [activeSearchContext?.mode, activeSearchContext?.query, indexedSearch.runSemanticSearch])
+  }, [indexedSearch.runSemanticSearch, semanticSearchDescriptorKey])
 
   const openFile = (file: VaultFile, paneId?: string) => {
     openTab(tabFromFile(file), paneId)
