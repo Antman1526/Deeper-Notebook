@@ -212,6 +212,68 @@ def test_optional_contract_fields_accept_explicit_null():
     assert checkpoint.last_source_hash is None
 
 
+def test_projection_digest_normalizes_redacted_membership_order() -> None:
+    from deeper_notebook.knowledge_engine.contracts import ProjectionDigest
+
+    digest = ProjectionDigest(
+        space_id="knowledge_engine_space:test",
+        document_count=0,
+        block_count=0,
+        relation_count=0,
+        task_count=0,
+        asset_count=0,
+        property_count=0,
+        tag_count=0,
+        document_hashes={"Pages/B.md": "b" * 64, "Pages/A.md": "a" * 64},
+        outgoing_membership={"Pages/B.md": ["Pages/C.md", "Pages/A.md"]},
+        backlink_membership={"Pages/B.md": ["Pages/C.md", "Pages/A.md"]},
+        overlay_revision_mappings={
+            "overlay_note:b": "knowledge_engine_revision:b"
+        },
+    )
+
+    assert list(digest.document_hashes) == ["Pages/A.md", "Pages/B.md"]
+    assert digest.outgoing_membership == {"Pages/B.md": ["Pages/A.md", "Pages/C.md"]}
+    assert digest.backlink_membership == {"Pages/B.md": ["Pages/A.md", "Pages/C.md"]}
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("identity_pairs", {"note:/Users/Antman/private": "knowledge_engine_document:one"}),
+        ("overlay_revision_mappings", {"overlay_note:one": "C:\\secrets"}),
+        ("graph_edges", ["note:one->note:/Users/Antman/private:wikilink"]),
+    ],
+)
+def test_projection_digest_rejects_absolute_or_token_like_redacted_fields(
+    field: str, value: object
+) -> None:
+    from deeper_notebook.knowledge_engine.contracts import ProjectionDigest
+
+    with pytest.raises(ValidationError):
+        ProjectionDigest(
+            space_id="knowledge_engine_space:test",
+            document_count=0,
+            block_count=0,
+            relation_count=0,
+            task_count=0,
+            asset_count=0,
+            **{field: value},
+        )
+
+
+@pytest.mark.parametrize("value", ["/Users/Antman/secret", "test-only-token"])
+def test_equivalence_difference_cannot_retain_paths_or_tokens(value: str) -> None:
+    from deeper_notebook.knowledge_engine.contracts import EquivalenceDifference
+
+    with pytest.raises(ValidationError):
+        EquivalenceDifference(
+            code="document_hash_mismatch",
+            legacy_value=value,
+            unified_value="a" * 64,
+        )
+
+
 @pytest.mark.parametrize(
     ("view_kind", "target_ids", "view_state"),
     [

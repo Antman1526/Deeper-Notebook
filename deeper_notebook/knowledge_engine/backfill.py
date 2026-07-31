@@ -34,6 +34,7 @@ from deeper_notebook.vault.security import (
 )
 
 _PAGE_SIZE = 500
+_MAX_EQUIVALENCE_SOURCES = 10_000
 _EXTERNAL_FORMATS = frozenset({"obsidian", "logseq", "markdown"})
 _BACKFILL_LOCK = asyncio.Lock()
 
@@ -140,7 +141,29 @@ class CanonicalSourceCatalog:
         ):
             yield source
 
-    async def _overlay_sources(self) -> list[CanonicalSource]:
+    async def iter_sources_for_space(
+        self, space_id: str
+    ) -> AsyncIterator[CanonicalSource]:
+        """Read one selected legacy space with a hard, fail-closed inventory cap."""
+        self.failures = []
+        overlay_sources: list[CanonicalSource] = []
+        if space_id == _space_id("overlay:default"):
+            overlay_sources = await self._overlay_sources(
+                max_sources=_MAX_EQUIVALENCE_SOURCES
+            )
+        vault_sources = await self._vault_sources(
+            space_id=space_id,
+            max_sources=_MAX_EQUIVALENCE_SOURCES - len(overlay_sources),
+        )
+        sources = [*overlay_sources, *vault_sources]
+        if len(sources) > _MAX_EQUIVALENCE_SOURCES:
+            raise RuntimeError("knowledge_engine_equivalence_inventory_too_large")
+        for source in sorted(sources, key=lambda value: value.relative_locator):
+            yield source
+
+    async def _overlay_sources(
+        self, *, max_sources: int | None = None
+    ) -> list[CanonicalSource]:
         sources: list[CanonicalSource] = []
         offset = 0
         while True:
@@ -150,6 +173,8 @@ class CanonicalSourceCatalog:
             for note in notes:
                 source = self._read_overlay(note)
                 if source is not None:
+                    if max_sources is not None and len(sources) >= max_sources:
+                        raise RuntimeError("knowledge_engine_equivalence_inventory_too_large")
                     sources.append(source)
             offset += len(notes)
             if len(notes) < _PAGE_SIZE:
@@ -210,9 +235,16 @@ class CanonicalSourceCatalog:
             legacy_identities=claims,
         )
 
-    async def _vault_sources(self) -> list[CanonicalSource]:
+    async def _vault_sources(
+        self,
+        *,
+        space_id: str | None = None,
+        max_sources: int | None = None,
+    ) -> list[CanonicalSource]:
         sources: list[CanonicalSource] = []
         for mount in await self._vault_repository.list_mounts():
+            if space_id is not None and _space_id(mount.id) != space_id:
+                continue
             files = await self._vault_files(mount.id)
             relevant = [
                 file
@@ -227,6 +259,10 @@ class CanonicalSourceCatalog:
                     for file in relevant:
                         source = self._read_vault_file(mount, file, root)
                         if source is not None:
+                            if max_sources is not None and len(sources) >= max_sources:
+                                raise RuntimeError(
+                                    "knowledge_engine_equivalence_inventory_too_large"
+                                )
                             sources.append(source)
             except VaultSecurityError as error:
                 for file in relevant:

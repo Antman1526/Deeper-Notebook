@@ -84,11 +84,30 @@ class KnowledgeEngineStatusResponse(_StrictResponse):
     failed: int = Field(ge=0)
 
 
+class KnowledgeEngineEquivalenceDifferenceResponse(_StrictResponse):
+    """A redacted stable discrepancy: counts, identifiers, hashes, or locators."""
+
+    code: str = Field(min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_]*$")
+    legacy_value: str | int | None = None
+    unified_value: str | int | None = None
+
+
+class KnowledgeEngineEquivalenceResponse(_StrictResponse):
+    """Server-built comparison with no canonical source material."""
+
+    passed: bool
+    differences: list[KnowledgeEngineEquivalenceDifferenceResponse] = Field(
+        default_factory=list, max_length=10_000
+    )
+
+
 __all__ = [
     "KnowledgeDocumentDetailResponse",
     "KnowledgeDocumentListResponse",
     "KnowledgeEngineErrorDetail",
     "KnowledgeEngineErrorResponse",
+    "KnowledgeEngineEquivalenceDifferenceResponse",
+    "KnowledgeEngineEquivalenceResponse",
     "KnowledgeEngineStatusResponse",
     "KnowledgeSpaceResponse",
 ]

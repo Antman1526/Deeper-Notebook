@@ -21,6 +21,7 @@ from deeper_notebook.knowledge_engine.contracts import (
     BackfillCheckpoint,
     KnowledgeDocument,
     KnowledgeSnapshot,
+    ProjectionDigest,
     ProjectionReceipt,
 )
 from deeper_notebook.knowledge_engine.identity import canonical_locator
@@ -310,6 +311,179 @@ class KnowledgeRepository:
             projected=int(rows[0]["projected"]) if rows else 0,
             unchanged=0,
             failed=int(failed_rows[0]["failed"]) if failed_rows else 0,
+        )
+
+    async def projection_digest(
+        self, space_id: str, exact_queries: tuple[str, ...]
+    ) -> ProjectionDigest:
+        """Read one bounded, redacted digest without returning canonical bodies."""
+        _record_id(space_id, kind="space")
+        if (
+            not isinstance(exact_queries, tuple)
+            or not 1 <= len(exact_queries) <= 32
+            or any(
+                not isinstance(query, str)
+                or not query.strip()
+                or len(query) > 256
+                for query in exact_queries
+            )
+        ):
+            raise ValueError("invalid_equivalence_queries")
+        async with self._connection_factory() as connection:
+            spaces = await self._query(
+                connection,
+                "SELECT authority_kind, source_kind, format_mode, capabilities "
+                "FROM $space_id LIMIT 1;",
+                {"space_id": _record_id(space_id, kind="space")},
+            )
+            documents = await self._query(
+                connection,
+                "SELECT id, relative_locator, content_hash, source_revision_id, properties, tags, provenance "
+                "FROM knowledge_engine_document WHERE space_id = $space_id "
+                "ORDER BY relative_locator;",
+                {"space_id": space_id},
+            )
+            blocks = await self._query(
+                connection,
+                "SELECT properties FROM knowledge_engine_block WHERE space_id = $space_id;",
+                {"space_id": space_id},
+            )
+            relations = await self._query(
+                connection,
+                "SELECT source_document_id, target_document_id, relation_kind "
+                "FROM knowledge_engine_relation WHERE space_id = $space_id;",
+                {"space_id": space_id},
+            )
+            tasks = await self._query(
+                connection,
+                "SELECT properties, tags FROM knowledge_engine_task WHERE space_id = $space_id;",
+                {"space_id": space_id},
+            )
+            assets = await self._query(
+                connection,
+                "SELECT id FROM knowledge_engine_asset WHERE space_id = $space_id;",
+                {"space_id": space_id},
+            )
+            identities = await self._query(
+                connection,
+                "SELECT legacy_kind, legacy_id, engine_id, source_revision_id "
+                "FROM knowledge_engine_identity_map WHERE engine_id IN "
+                "(SELECT VALUE id FROM knowledge_engine_document WHERE space_id = $space_id) "
+                "OR engine_id = $space_id "
+                "ORDER BY legacy_kind, legacy_id, source_revision_id, engine_id;",
+                {"space_id": space_id},
+            )
+            searches = {
+                query: await self._query(
+                    connection,
+                    "SELECT relative_locator FROM knowledge_engine_document "
+                    "WHERE space_id = $space_id "
+                    "AND string::contains(normalized_body, $query) "
+                    "ORDER BY relative_locator;",
+                    {"space_id": space_id, "query": query},
+                )
+                for query in exact_queries
+            }
+        locator_by_id = {
+            str(row.get("id")): str(row["relative_locator"])
+            for row in documents
+            if isinstance(row.get("relative_locator"), str)
+            and isinstance(row.get("content_hash"), str)
+        }
+        current_revisions = {
+            str(row["id"]): str(row["source_revision_id"])
+            for row in documents
+            if isinstance(row.get("id"), str)
+            and isinstance(row.get("source_revision_id"), str)
+        }
+        active_revisions = set(current_revisions.values())
+        current_identities = [
+            row
+            for row in identities
+            if isinstance(row.get("engine_id"), str)
+            and isinstance(row.get("source_revision_id"), str)
+            and (
+                current_revisions.get(str(row["engine_id"]))
+                == row["source_revision_id"]
+                or (
+                    row["engine_id"] == space_id
+                    and row["source_revision_id"] in active_revisions
+                )
+            )
+        ]
+        outgoing: dict[str, list[str]] = {}
+        backlinks: dict[str, list[str]] = {}
+        graph_edges: list[str] = []
+        for relation in relations:
+            source_id = str(relation.get("source_document_id") or "")
+            target_id = str(relation.get("target_document_id") or "")
+            source = locator_by_id.get(source_id)
+            target = locator_by_id.get(target_id)
+            if source is None or target is None:
+                continue
+            outgoing.setdefault(source, []).append(target)
+            backlinks.setdefault(target, []).append(source)
+            graph_edges.append(
+                f"{source_id}->{target_id}:{str(relation.get('relation_kind') or '')}"
+            )
+        space = spaces[0] if spaces else {}
+        return ProjectionDigest(
+            space_id=space_id,
+            document_count=len(documents),
+            block_count=len(blocks),
+            relation_count=len(relations),
+            task_count=len(tasks),
+            property_count=sum(
+                len(row.get("properties") or {})
+                for row in [*documents, *blocks, *tasks]
+                if isinstance(row.get("properties") or {}, dict)
+            ),
+            tag_count=sum(
+                len(row.get("tags") or [])
+                for row in [*documents, *tasks]
+                if isinstance(row.get("tags") or [], list)
+            ),
+            asset_count=len(assets),
+            document_hashes={
+                locator: str(row["content_hash"])
+                for row in documents
+                if (locator := locator_by_id.get(str(row.get("id")))) is not None
+            },
+            identity_pairs={
+                f"{row['legacy_kind']}:{row['legacy_id']}": str(row["engine_id"])
+                for row in current_identities
+                if all(
+                    isinstance(row.get(key), str)
+                    for key in ("legacy_kind", "legacy_id", "engine_id")
+                )
+            },
+            outgoing_membership=outgoing,
+            backlink_membership=backlinks,
+            graph_edges=graph_edges,
+            exact_search_membership={
+                sha256(query.encode("utf-8")).hexdigest(): [
+                    str(row["relative_locator"])
+                    for row in rows
+                    if isinstance(row.get("relative_locator"), str)
+                ]
+                for query, rows in searches.items()
+            },
+            authority_kind=space.get("authority_kind"),
+            source_kind=space.get("source_kind"),
+            format_mode=space.get("format_mode"),
+            provenance=(
+                str(documents[0]["provenance"])
+                if documents and isinstance(documents[0].get("provenance"), str)
+                else None
+            ),
+            capabilities=space.get("capabilities") or [],
+            overlay_revision_mappings={
+                str(row["legacy_id"]): str(row["source_revision_id"])
+                for row in current_identities
+                if row.get("legacy_kind") == "overlay_note"
+                and isinstance(row.get("legacy_id"), str)
+                and isinstance(row.get("source_revision_id"), str)
+            },
         )
 
     async def record_projection_failure(

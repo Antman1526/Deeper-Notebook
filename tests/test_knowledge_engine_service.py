@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from deeper_notebook.knowledge_engine.backfill import BackfillResult
+from deeper_notebook.knowledge_engine.contracts import ProjectionDigest
 from deeper_notebook.knowledge_engine.service import (
     KnowledgeEngineService,
     enabled_setting,
@@ -23,6 +24,17 @@ class _Repository:
 class _Backfill:
     async def run(self):
         return BackfillResult(projected=1)
+
+
+def _digest() -> ProjectionDigest:
+    return ProjectionDigest(
+        space_id="knowledge_engine_space:fixture",
+        document_count=0,
+        block_count=0,
+        relation_count=0,
+        task_count=0,
+        asset_count=0,
+    )
 
 
 @pytest.mark.asyncio
@@ -46,6 +58,44 @@ async def test_service_owns_and_delegates_the_safe_engine_boundary():
     ]
     assert await service.run_backfill() == BackfillResult(projected=1)
     assert service.coordinator is coordinator
+
+
+@pytest.mark.asyncio
+async def test_service_builds_both_digests_and_rejects_unbounded_queries():
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    async def legacy(space_id: str, queries: tuple[str, ...]) -> ProjectionDigest:
+        calls.append((space_id, queries))
+        return _digest()
+
+    async def unified(space_id: str, queries: tuple[str, ...]) -> ProjectionDigest:
+        calls.append((space_id, queries))
+        return _digest()
+
+    service = KnowledgeEngineService(
+        repository=_Repository(),
+        coordinator=object(),
+        catalog=object(),
+        backfill=_Backfill(),
+        legacy_digest_builder=legacy,
+        unified_digest_builder=unified,
+    )
+
+    report = await service.equivalence_report(
+        space_id="knowledge_engine_space:fixture",
+        exact_queries=("research",),
+    )
+
+    assert report.passed is True
+    assert calls == [
+        ("knowledge_engine_space:fixture", ("research",)),
+        ("knowledge_engine_space:fixture", ("research",)),
+    ]
+    with pytest.raises(ValueError, match="invalid_equivalence_queries"):
+        await service.equivalence_report(
+            space_id="knowledge_engine_space:fixture",
+            exact_queries=(),
+        )
 
 
 @pytest.mark.parametrize(
