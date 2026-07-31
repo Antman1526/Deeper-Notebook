@@ -25,6 +25,8 @@ from deeper_notebook.vault.security import VaultSecurityError, approve_vault_roo
 from deeper_notebook.vault.trust import TrustManifestError
 
 router = APIRouter()
+_KNOWLEDGE_DOCUMENT_ID = re.compile(r"^knowledge_engine_document:[A-Za-z0-9_-]+$")
+_KNOWLEDGE_BLOCK_ID = re.compile(r"^knowledge_engine_block:[A-Za-z0-9_-]+$")
 
 
 def _service(request: Request) -> Any:
@@ -107,6 +109,48 @@ def _mount_detail(mount: Any) -> VaultMountDetail:
     return VaultMountDetail(
         **_mount_summary(mount).model_dump(), root_path=mount.root_path
     )
+
+
+async def _page_identity(
+    request: Request, *, legacy_note_id: str, blocks: list[dict[str, Any]]
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """Optionally enrich a canonical page; engine failures must never block reads."""
+    service = getattr(request.app.state, "knowledge_engine_service", None)
+    copied_blocks = [dict(block) for block in blocks]
+    if service is None:
+        return None, copied_blocks
+    try:
+        keys = tuple(
+            dict.fromkeys(
+                key
+                for block in copied_blocks
+                if isinstance(block, dict)
+                for key in [block.get("stable_source_id") or block.get("parser_id")]
+                if isinstance(key, str)
+            )
+        )
+        resolved = await service.resolve_legacy_page(
+            legacy_note_id=legacy_note_id, block_keys=keys
+        )
+        document_id = getattr(resolved, "document_id", None)
+        block_ids = getattr(resolved, "block_ids", None)
+        if isinstance(resolved, dict):
+            document_id = resolved.get("document_id")
+            block_ids = resolved.get("block_ids")
+        if (
+            not isinstance(document_id, str)
+            or _KNOWLEDGE_DOCUMENT_ID.fullmatch(document_id) is None
+            or not isinstance(block_ids, dict)
+        ):
+            return None, copied_blocks
+        for block in copied_blocks:
+            key = block.get("stable_source_id") or block.get("parser_id")
+            block_id = block_ids.get(key) if isinstance(key, str) else None
+            if isinstance(block_id, str) and _KNOWLEDGE_BLOCK_ID.fullmatch(block_id):
+                block["knowledge_block_id"] = block_id
+        return document_id, copied_blocks
+    except Exception:
+        return None, copied_blocks
 
 
 @router.post(
@@ -211,10 +255,14 @@ async def get_page(request: Request, vault_id: str, note_id: str) -> VaultPageRe
         page = await _repository(request).get_page(vault_id, note_id)
         if re.fullmatch(r"[0-9a-fA-F]{64}", page.file.content_hash or "") is None:
             raise LookupError("vault_page_content_hash_unavailable")
+        document_id, blocks = await _page_identity(
+            request, legacy_note_id=note_id, blocks=page.blocks
+        )
         return VaultPageResponse(
+            knowledge_document_id=document_id,
             file=VaultFileResponse.model_validate(page.file.model_dump()),
             note=page.note,
-            blocks=page.blocks,
+            blocks=blocks,
             tasks=page.tasks,
             outgoing_links=[
                 VaultLinkResponse.model_validate(item.model_dump())

@@ -258,10 +258,7 @@ def _build_overlay_local_graph(
         edge_key = (source_id, target_id, link.link_kind)
         if edge_key in edge_keys:
             return
-        if (
-            neighbor_id not in nodes
-            and len(nodes) - 1 >= _OVERLAY_GRAPH_MAX_NEIGHBORS
-        ):
+        if neighbor_id not in nodes and len(nodes) - 1 >= _OVERLAY_GRAPH_MAX_NEIGHBORS:
             return
         nodes.setdefault(
             neighbor_id,
@@ -273,13 +270,15 @@ def _build_overlay_local_graph(
             },
         )
         edge_keys.add(edge_key)
-        edges.append({
-            "id": link.id,
-            "source": source_id,
-            "target": target_id,
-            "kind": link.link_kind,
-            "resolved": True,
-        })
+        edges.append(
+            {
+                "id": link.id,
+                "source": source_id,
+                "target": target_id,
+                "kind": link.link_kind,
+                "resolved": True,
+            }
+        )
 
     outgoing = islice(
         outgoing_links,
@@ -301,6 +300,10 @@ def _build_overlay_local_graph(
 
 
 class OverlayPage(_Strict):
+    knowledge_document_id: str | None = Field(
+        default=None,
+        pattern=r"^knowledge_engine_document:[A-Za-z0-9_-]+$",
+    )
     overlay: OverlayNote
     editable_markdown: str = Field(default="", max_length=10 * 1024 * 1024)
     note: dict[str, Any]

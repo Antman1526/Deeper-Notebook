@@ -306,22 +306,21 @@ def test_overlay_page_serializes_identity_aliases_and_local_graph(client):
     body = response.json()
     assert body["outgoing_links"][0]["source_overlay_note_id"] == note.id
     assert body["outgoing_links"][0]["source_relative_path"] == note.relative_path
-    assert (
-        body["outgoing_links"][0]["target_overlay_note_id"]
-        == "overlay_note:target"
-    )
+    assert body["outgoing_links"][0]["target_overlay_note_id"] == "overlay_note:target"
     assert body["outgoing_links"][1]["target_overlay_note_id"] is None
     assert {node["id"] for node in body["graph"]["nodes"]} == {
         note.projected_note_id,
         "note:target",
     }
-    assert body["graph"]["edges"] == [{
-        "id": "note_link:mapped",
-        "source": note.projected_note_id,
-        "target": "note:target",
-        "kind": "wikilink",
-        "resolved": True,
-    }]
+    assert body["graph"]["edges"] == [
+        {
+            "id": "note_link:mapped",
+            "source": note.projected_note_id,
+            "target": "note:target",
+            "kind": "wikilink",
+            "resolved": True,
+        }
+    ]
 
 
 def test_daily_create_is_idempotent_and_contains_no_absolute_path(client):
@@ -331,6 +330,75 @@ def test_daily_create_is_idempotent_and_contains_no_absolute_path(client):
     assert first.status_code == second.status_code == 200
     assert first.json()["overlay"]["id"] == second.json()["overlay"]["id"]
     assert "/Users/" not in first.text
+
+
+def test_overlay_page_enriches_identity_without_mutating_overlay_content(client):
+    test_client, service = client
+    note = _note(
+        "overlay_note:identity", kind="unique", title="Identity", date_key=None
+    )
+    service.notes[note.id] = OverlayPage(
+        overlay=note,
+        note={"id": note.projected_note_id, "title": note.title},
+        blocks=[{"stable_source_id": "block-one", "markdown": "# Identity"}],
+    )
+
+    class _IdentityService:
+        calls: list[tuple[str, tuple[str, ...]]] = []
+
+        async def resolve_legacy_page(self, *, legacy_note_id, block_keys):
+            self.calls.append((legacy_note_id, block_keys))
+            return {
+                "document_id": "knowledge_engine_document:current",
+                "block_ids": {"block-one": "knowledge_engine_block:one"},
+            }
+
+    identity = _IdentityService()
+    test_client.app.state.knowledge_engine_service = identity
+    try:
+        response = test_client.get(
+            "/api/deeper-notebook/overlay/notes/overlay_note:identity"
+        )
+    finally:
+        del test_client.app.state.knowledge_engine_service
+
+    assert response.status_code == 200
+    assert (
+        response.json()["knowledge_document_id"] == "knowledge_engine_document:current"
+    )
+    assert response.json()["blocks"][0]["knowledge_block_id"] == (
+        "knowledge_engine_block:one"
+    )
+    assert response.json()["overlay"]["revision"] == 1
+    assert identity.calls == [(note.projected_note_id, ("block-one",))]
+
+
+def test_overlay_identity_enrichment_fails_open_for_malformed_service_data(client):
+    test_client, service = client
+    note = _note(
+        "overlay_note:malformed", kind="unique", title="Malformed", date_key=None
+    )
+    service.notes[note.id] = OverlayPage(
+        overlay=note,
+        note={"id": note.projected_note_id, "title": note.title},
+        blocks=[{"stable_source_id": "block-one", "markdown": "# Malformed"}],
+    )
+
+    class _MalformedIdentityService:
+        async def resolve_legacy_page(self, **_kwargs):
+            return {"document_id": "knowledge_engine_document:bad/id", "block_ids": {}}
+
+    test_client.app.state.knowledge_engine_service = _MalformedIdentityService()
+    try:
+        response = test_client.get(
+            "/api/deeper-notebook/overlay/notes/overlay_note:malformed"
+        )
+    finally:
+        del test_client.app.state.knowledge_engine_service
+
+    assert response.status_code == 200
+    assert response.json()["knowledge_document_id"] is None
+    assert "knowledge_block_id" not in response.json()["blocks"][0]
 
 
 def test_unique_and_update_require_strict_revision_contract(client):
@@ -600,9 +668,10 @@ def test_proof_identity_reports_stable_process_and_actual_overlay_root(
     assert payload["instance_pid"] == os.getpid()
     assert payload["instance_nonce"] == second.json()["instance_nonce"]
     assert len(payload["instance_nonce"]) >= 43
-    assert payload["overlay_root_sha256"] == hashlib.sha256(
-        str(data_root.resolve()).encode("utf-8")
-    ).hexdigest()
+    assert (
+        payload["overlay_root_sha256"]
+        == hashlib.sha256(str(data_root.resolve()).encode("utf-8")).hexdigest()
+    )
     assert str(data_root) not in first.text
 
 

@@ -49,10 +49,12 @@ class KnowledgeEngineService:
         backfill: KnowledgeBackfillService,
         legacy_digest_builder: Callable[
             [str, tuple[str, ...]], Awaitable[ProjectionDigest]
-        ] | None = None,
+        ]
+        | None = None,
         unified_digest_builder: Callable[
             [str, tuple[str, ...]], Awaitable[ProjectionDigest]
-        ] | None = None,
+        ]
+        | None = None,
     ) -> None:
         self._repository = repository
         self.coordinator = coordinator
@@ -81,6 +83,14 @@ class KnowledgeEngineService:
             offset=offset,
         )
 
+    async def resolve_legacy_page(
+        self, *, legacy_note_id: str, block_keys: tuple[str, ...]
+    ):
+        return await self._repository.resolve_legacy_page(
+            legacy_note_id=legacy_note_id,
+            block_keys=block_keys,
+        )
+
     async def backfill_checkpoints(
         self, space_ids: tuple[str, ...]
     ) -> list[BackfillCheckpoint]:
@@ -90,9 +100,7 @@ class KnowledgeEngineService:
             or len(set(space_ids)) != len(space_ids)
             or any(
                 not isinstance(space_id, str)
-                or re.fullmatch(
-                    r"knowledge_engine_space:[A-Za-z0-9_-]+", space_id
-                )
+                or re.fullmatch(r"knowledge_engine_space:[A-Za-z0-9_-]+", space_id)
                 is None
                 for space_id in space_ids
             )
@@ -114,14 +122,11 @@ class KnowledgeEngineService:
     ) -> EquivalenceReport:
         if (
             not isinstance(space_id, str)
-            or re.fullmatch(r"knowledge_engine_space:[A-Za-z0-9_-]+", space_id)
-            is None
+            or re.fullmatch(r"knowledge_engine_space:[A-Za-z0-9_-]+", space_id) is None
             or not isinstance(exact_queries, tuple)
             or not 1 <= len(exact_queries) <= 32
             or any(
-                not isinstance(query, str)
-                or not query.strip()
-                or len(query) > 256
+                not isinstance(query, str) or not query.strip() or len(query) > 256
                 for query in exact_queries
             )
         ):

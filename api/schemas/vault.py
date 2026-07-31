@@ -114,6 +114,10 @@ class VaultLinkResponse(_VaultSchema):
 
 
 class VaultPageResponse(_VaultSchema):
+    knowledge_document_id: str | None = Field(
+        default=None,
+        pattern=r"^knowledge_engine_document:[A-Za-z0-9_-]+$",
+    )
     file: VaultFileResponse
     note: dict[str, Any]
     blocks: list[dict[str, Any]] = Field(default_factory=list)

@@ -25,6 +25,14 @@ class _Repository:
     async def list_documents(self, *, space_id: str | None, limit: int, offset: int):
         return [{"space_id": space_id, "limit": limit, "offset": offset}]
 
+    async def resolve_legacy_page(
+        self, *, legacy_note_id: str, block_keys: tuple[str, ...]
+    ):
+        return {
+            "document_id": "knowledge_engine_document:fixture",
+            "block_ids": {key: f"knowledge_engine_block:{key}" for key in block_keys},
+        }
+
     async def get_checkpoint(self, space_id: str):
         if space_id.endswith(":missing"):
             return None
@@ -85,6 +93,15 @@ async def test_service_owns_and_delegates_the_safe_engine_boundary():
         )
     ] == ["knowledge_engine_space:fixture"]
     assert await service.run_backfill() == BackfillResult(projected=1)
+    assert await service.resolve_legacy_page(
+        legacy_note_id="note:fixture", block_keys=("first", "second")
+    ) == {
+        "document_id": "knowledge_engine_document:fixture",
+        "block_ids": {
+            "first": "knowledge_engine_block:first",
+            "second": "knowledge_engine_block:second",
+        },
+    }
     assert service.coordinator is coordinator
 
 
@@ -128,7 +145,16 @@ async def test_service_builds_both_digests_and_rejects_unbounded_queries():
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    (("1", True), (" TRUE ", True), ("yes", True), ("on", True), ("0", False), (" false ", False), ("NO", False), ("off", False)),
+    (
+        ("1", True),
+        (" TRUE ", True),
+        ("yes", True),
+        ("on", True),
+        ("0", False),
+        (" false ", False),
+        ("NO", False),
+        ("off", False),
+    ),
 )
 def test_enabled_setting_uses_a_strict_boolean_parser(monkeypatch, value, expected):
     monkeypatch.setattr(
@@ -136,7 +162,9 @@ def test_enabled_setting_uses_a_strict_boolean_parser(monkeypatch, value, expect
         lambda *_args, **_kwargs: value,
     )
 
-    assert enabled_setting("DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED") is expected
+    assert (
+        enabled_setting("DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED") is expected
+    )
 
 
 def test_enabled_setting_rejects_an_unknown_boolean(monkeypatch):
