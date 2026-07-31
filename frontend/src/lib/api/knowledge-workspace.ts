@@ -277,8 +277,8 @@ export interface KnowledgeTab {
   relativePath: string
   viewMode: KnowledgeViewMode
   sourceAuthority: KnowledgeSourceAuthority
-  knowledgeDocumentId?: string | null
-  graphViewport?: GraphViewport | null
+  knowledgeDocumentId: string | null
+  graphViewport: GraphViewport | null
 }
 
 export interface OpenKnowledgeTab {
@@ -322,7 +322,7 @@ export interface SplitLayoutNode {
   type: 'split'
   id: string
   direction: SplitDirection
-  firstSize?: number
+  firstSize: number
   first: KnowledgeLayoutNode
   second: KnowledgeLayoutNode
 }
@@ -335,7 +335,7 @@ export interface KnowledgeWorkspaceDocument {
   nextId: number
   panes: Record<string, KnowledgePane>
   layout: KnowledgeLayoutNode
-  navigation?: KnowledgeWorkspaceNavigation
+  navigation: KnowledgeWorkspaceNavigation
 }
 
 export function defaultKnowledgeWorkspace(): KnowledgeWorkspaceDocument {

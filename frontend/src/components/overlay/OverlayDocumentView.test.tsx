@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { OverlayPage } from '@/lib/api/overlay'
+import type { GraphViewport } from '@/lib/api/knowledge-workspace'
 import {
   resetOverlayDraftStore,
   useOverlayDraftStore,
@@ -16,6 +17,8 @@ const linkViews = vi.hoisted(() => ({
   graphUnresolved: [] as Array<{ id: string; resolved: boolean }>,
   outgoing: [] as Array<{ id: string; resolved: boolean }>,
   backlinks: [] as Array<{ id: string; resolved: boolean }>,
+  graphViewport: undefined as GraphViewport | undefined,
+  graphMoveEnd: undefined as undefined | ((viewport: GraphViewport) => void),
 }))
 
 vi.mock('@/lib/hooks/use-overlay', () => ({
@@ -116,10 +119,16 @@ vi.mock('@/components/vault/VaultLivePreview', () => ({
 vi.mock('@/components/vault/VaultGraph', () => ({
   VaultGraph: ({
     unresolved,
+    viewport,
+    onMoveEnd,
   }: {
     unresolved: Array<{ id: string; resolved: boolean }>
+    viewport?: GraphViewport
+    onMoveEnd?: (viewport: GraphViewport) => void
   }) => {
     linkViews.graphUnresolved = unresolved
+    linkViews.graphViewport = viewport
+    linkViews.graphMoveEnd = onMoveEnd
     return <div data-testid="overlay-graph" />
   },
 }))
@@ -419,6 +428,25 @@ describe('OverlayDocumentView', () => {
       />,
     )
     expect(screen.getByTestId('overlay-graph')).toBeInTheDocument()
+  })
+
+  it('forwards a controlled graph viewport and reports move-end changes', () => {
+    const onGraphViewportChange = vi.fn()
+    render(
+      <OverlayDocumentView
+        page={pageAt(3)}
+        mode="graph"
+        onNavigate={vi.fn()}
+        workspacePaneId="pane-1"
+        workspaceTabId="tab-1"
+        graphViewport={{ x: 4, y: 8, zoom: 1.25 }}
+        onGraphViewportChange={onGraphViewportChange}
+      />,
+    )
+
+    expect(linkViews.graphViewport).toEqual({ x: 4, y: 8, zoom: 1.25 })
+    act(() => linkViews.graphMoveEnd?.({ x: 9, y: -3, zoom: 2 }))
+    expect(onGraphViewportChange).toHaveBeenCalledWith({ x: 9, y: -3, zoom: 2 })
   })
 
   it('presents null-mapped overlay links as non-navigable in every overlay view', () => {

@@ -117,10 +117,13 @@ describe('KnowledgeLinksInspector authority routing', () => {
             relativePath: 'Notes/20260729-1542 Source.md',
             viewMode: 'source',
             sourceAuthority: 'overlay',
+            knowledgeDocumentId: null,
+            graphViewport: { x: 0, y: 0, zoom: 1 },
           }],
         },
       },
       layout: { type: 'pane', paneId: 'pane-1' },
+      navigation: useKnowledgeWorkspaceStore.getState().navigation,
     })
   })
 

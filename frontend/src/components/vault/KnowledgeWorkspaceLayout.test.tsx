@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { defaultKnowledgeWorkspace } from '@/lib/api/knowledge-workspace'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import { KnowledgeWorkspaceLayout } from './KnowledgeWorkspaceLayout'
 
@@ -102,6 +103,7 @@ describe('KnowledgeWorkspaceLayout', () => {
       activeTabId: null,
     }
     current.replaceWorkspace({
+      ...defaultKnowledgeWorkspace(),
       version: 1,
       activePaneId: 'pane-1',
       nextId: current.nextId,
