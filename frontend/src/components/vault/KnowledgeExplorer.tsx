@@ -97,6 +97,19 @@ type GraphBookmarkContext = {
   viewport: { x: number; y: number; zoom: number }
 } | null
 
+interface PostRestoreState {
+  blocks: Array<{
+    paneId: string
+    tabId: string
+    block: { blockId: string; sourceRevisionId: string | null }
+  }>
+  activeGraphContext: GraphBookmarkContext
+}
+
+function graphContextsEqual(left: GraphBookmarkContext, right: GraphBookmarkContext): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 function namedTargetForTab(
   tab: OpenKnowledgeTab & { id: string; knowledgeDocumentId: string | null },
   documentId: string,
@@ -180,6 +193,12 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
           knowledgeDocumentId: tab.targetDocument!.documentId,
           viewMode: tab.viewMode,
           graphViewport: tab.target.kind === 'graph' ? tab.target.viewport : null,
+          graphBookmarkContext: tab.target.kind === 'graph' ? {
+            rootDocumentId: tab.target.rootDocumentId ?? tab.targetDocument!.documentId,
+            spaceIds: tab.target.spaceIds,
+            relationKinds: tab.target.relationKinds,
+            viewport: tab.target.viewport,
+          } : null,
         }))
       return [paneId, {
         id: pane.id,
@@ -199,6 +218,7 @@ export function KnowledgeExplorer() {
   const [uniqueDialogOpen, setUniqueDialogOpen] = useState(false)
   const [restoreApplying, setRestoreApplying] = useState(false)
   const [restoreError, setRestoreError] = useState<string | null>(null)
+  const [postRestoreState, setPostRestoreState] = useState<PostRestoreState | null>(null)
   const [activePaneElement, setActivePaneElement] = useState<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const fileTreeRef = useRef<HTMLElement>(null)
@@ -287,6 +307,32 @@ export function KnowledgeExplorer() {
     indexedSearch.runSemanticSearch()
   }, [indexedSearch.runSemanticSearch, semanticSearchDescriptorKey])
 
+  useEffect(() => {
+    const context = activeTab?.viewMode === 'graph'
+      ? activeTab.graphBookmarkContext ?? null
+      : null
+    if (!context) return
+    const current = useKnowledgeWorkspaceStore.getState().graphBookmarkContext
+    if (!graphContextsEqual(current, context)) setGraphBookmarkContext(context)
+  }, [activeTab?.graphBookmarkContext, activeTab?.viewMode, setGraphBookmarkContext])
+
+  useEffect(() => {
+    if (!postRestoreState) return
+    // Pane selection effects clear their old focus during the restore commit.
+    // Run after that commit so only confirmed, still-present tab IDs are restored.
+    const timer = window.setTimeout(() => {
+      const state = useKnowledgeWorkspaceStore.getState()
+      postRestoreState.blocks.forEach(({ paneId, tabId, block }) => {
+        state.setFocusedBlock(paneId, tabId, block)
+      })
+      if (postRestoreState.activeGraphContext) {
+        state.setGraphBookmarkContext(postRestoreState.activeGraphContext)
+      }
+      setPostRestoreState(null)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [postRestoreState])
+
   const openFile = (file: VaultFile, paneId?: string) => {
     openTab(tabFromFile(file), paneId)
   }
@@ -373,8 +419,26 @@ export function KnowledgeExplorer() {
     setRestoreApplying(true)
     setRestoreError(null)
     try {
-      const applied = useKnowledgeWorkspaceStore.getState().applyNamedWorkspace(workspaceFromRestorePlan(plan))
+      const workspace = workspaceFromRestorePlan(plan)
+      const restoredBlocks = Object.values(plan.panes).flatMap((pane) => pane.tabs.flatMap((tab) => {
+        if (tab.targetState !== 'available' || tab.target.kind !== 'block') return []
+        return [{ paneId: pane.id, tabId: tab.id, block: {
+          blockId: tab.target.blockId, sourceRevisionId: tab.target.sourceRevisionId,
+        } }]
+      }))
+      const applied = useKnowledgeWorkspaceStore.getState().applyNamedWorkspace(workspace)
       if (!applied) throw new Error('The restore plan is not a valid workspace.')
+      const activePane = plan.panes[plan.activePaneId]
+      const activeTab = activePane?.tabs.find((tab) => tab.id === activePane.activeTabId)
+      const activeGraphContext = activeTab?.targetState === 'available' && activeTab.target.kind === 'graph'
+        ? {
+          rootDocumentId: activeTab.target.rootDocumentId ?? activeTab.targetDocument?.documentId ?? '',
+          spaceIds: activeTab.target.spaceIds,
+          relationKinds: activeTab.target.relationKinds,
+          viewport: activeTab.target.viewport,
+        }
+        : null
+      setPostRestoreState({ blocks: restoredBlocks, activeGraphContext })
       setPendingWorkspaceRestore(null)
     } catch {
       setRestoreError('Available targets could not be opened. Your current session was left unchanged.')
