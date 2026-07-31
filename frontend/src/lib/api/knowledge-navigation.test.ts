@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('./client', () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }))
 
 import apiClient from './client'
-import { knowledgeNavigationApi, parseBookmark } from './knowledge-navigation'
+import { knowledgeNavigationApi, parseBookmark, prepareKnowledgeNavigationCommand } from './knowledge-navigation'
 
 const plainBookmark = {
   schema_version: 1, id: 'knowledge_bookmark:one', target_kind: 'document',
@@ -64,5 +64,14 @@ describe('knowledge navigation API contracts', () => {
     await expect(knowledgeNavigationApi.updateBookmark('knowledge_bookmark:one', {
       operationId: 'operation:two', expectedRevision: 1, extra: true,
     } as never)).rejects.toThrow()
+  })
+
+  it('prepares an immutable operation ID without mutating the caller command', () => {
+    const command = { target: { kind: 'document' as const, documentId: 'knowledge_engine_document:one' } }
+    const prepared = prepareKnowledgeNavigationCommand(command)
+    expect(prepared.operationId).toBeTruthy()
+    expect(Object.isFrozen(prepared)).toBe(true)
+    expect(command).not.toHaveProperty('operationId')
+    expect(prepareKnowledgeNavigationCommand(prepared)).toMatchObject({ operationId: prepared.operationId })
   })
 })
