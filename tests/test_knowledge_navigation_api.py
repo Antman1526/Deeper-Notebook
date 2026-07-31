@@ -19,7 +19,9 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     WORKSPACE_CAPACITY_ALLOCATOR_ID,
     Bookmark,
     BookmarkFolder,
+    BookmarkPage,
     HydratedBookmarkPage,
+    KnowledgeOpenDescriptor,
     NamedKnowledgeWorkspace,
     NamedKnowledgeWorkspaceSummary,
     NavigationReceipt,
@@ -30,6 +32,7 @@ from deeper_notebook.knowledge_engine.navigation_repository import (
     KnowledgeNavigationRepositoryError,
 )
 from deeper_notebook.knowledge_engine.navigation_service import (
+    KnowledgeNavigationService,
     KnowledgeNavigationServiceError,
 )
 
@@ -70,6 +73,7 @@ class _NavigationService:
         self.workspaces = {self.workspace.id: self.workspace}
         self.collection_overflow = False
         self.random_note_error: Exception | None = None
+        self.random_note_result = RandomNoteResult(state="empty", document=None)
 
     async def create_bookmark(self, command):
         timestamp = datetime(2026, 7, 31, tzinfo=timezone.utc)
@@ -97,7 +101,7 @@ class _NavigationService:
     async def random_note(self, _filters) -> RandomNoteResult:
         if self.random_note_error is not None:
             raise self.random_note_error
-        return RandomNoteResult(state="empty", document=None)
+        return self.random_note_result
 
     async def list_workspaces(self) -> list[NamedKnowledgeWorkspaceSummary]:
         if self.collection_overflow:
@@ -233,6 +237,21 @@ class _NavigationService:
         )
 
 
+class _DisabledEngineMetadataRepository:
+    def __init__(self) -> None:
+        self.random_count_calls = 0
+
+    async def random_candidate_count(self, _filters):
+        self.random_count_calls += 1
+        raise AssertionError("disabled engine must not query random candidates")
+
+    async def list_bookmarks(self, *_args) -> BookmarkPage:
+        return BookmarkPage()
+
+    async def list_workspaces(self) -> list[NamedKnowledgeWorkspaceSummary]:
+        return []
+
+
 @pytest.fixture()
 def api_client() -> AsyncClient:
     app = FastAPI()
@@ -329,13 +348,101 @@ async def test_random_note_empty_is_200_and_no_store(api_client: AsyncClient) ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["seed", "offset"])
 async def test_random_note_rejects_public_selector_input_without_detail(
     api_client: AsyncClient,
+    field: str,
 ) -> None:
     async with api_client:
         response = await api_client.post(
             "/api/deeper-notebook/knowledge/random-note",
-            json={"seed": 42},
+            json={field: 42},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "knowledge_navigation_request_invalid"}
+    }
+
+
+@pytest.mark.asyncio
+async def test_random_note_is_unavailable_without_engine_while_metadata_lists_work(
+    api_client: AsyncClient,
+) -> None:
+    repository = _DisabledEngineMetadataRepository()
+    api_client._transport.app.state.knowledge_navigation_service = (
+        KnowledgeNavigationService(metadata_repository=repository)
+    )
+
+    async with api_client:
+        random_note = await api_client.post(
+            "/api/deeper-notebook/knowledge/random-note", json={}
+        )
+        bookmarks = await api_client.get("/api/deeper-notebook/knowledge/bookmarks")
+        workspaces = await api_client.get("/api/deeper-notebook/knowledge/workspaces")
+
+    assert random_note.status_code == 503
+    assert random_note.json() == {
+        "detail": {"code": "knowledge_navigation_unavailable"}
+    }
+    assert bookmarks.json() == {"items": [], "next_cursor": None}
+    assert workspaces.json() == {"items": []}
+    assert repository.random_count_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_random_note_selected_response_is_safe_and_not_cached(
+    api_client: AsyncClient,
+) -> None:
+    service = api_client._transport.app.state.knowledge_navigation_service
+    service.random_note_result = RandomNoteResult(
+        state="selected",
+        document=KnowledgeOpenDescriptor(
+            document_id="knowledge_engine_document:plan",
+            space_id="knowledge_engine_space:research",
+            authority_kind="external_read_only",
+            source_kind="markdown",
+            title="Plan",
+            relative_locator="Research/Plan.md",
+            legacy_note_id="note:plan",
+            legacy_container_id="vault_mount:research",
+        ),
+    )
+
+    async with api_client:
+        response = await api_client.post(
+            "/api/deeper-notebook/knowledge/random-note", json={}
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {
+        "state": "selected",
+        "document": {
+            "document_id": "knowledge_engine_document:plan",
+            "space_id": "knowledge_engine_space:research",
+            "authority_kind": "external_read_only",
+            "source_kind": "markdown",
+            "title": "Plan",
+            "relative_locator": "Research/Plan.md",
+            "legacy_note_id": "note:plan",
+            "legacy_container_id": "vault_mount:research",
+        },
+    }
+    assert "normalized_body" not in response.text
+    assert "/Users/" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_random_note_reuses_the_locked_one_mib_body_limit(
+    api_client: AsyncClient,
+) -> None:
+    content = b"{" + b" " * MAX_NAVIGATION_JSON_BYTES
+    async with api_client:
+        response = await api_client.post(
+            "/api/deeper-notebook/knowledge/random-note",
+            content=content,
+            headers={"content-type": "application/json"},
         )
 
     assert response.status_code == 422

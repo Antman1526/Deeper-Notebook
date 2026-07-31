@@ -66,6 +66,8 @@ class KnowledgeNavigationService:
         self._random_index = random_index
 
     async def random_note(self, filters: RandomNoteFilters) -> RandomNoteResult:
+        if self.engine_repository is None:
+            raise KnowledgeNavigationServiceError("knowledge_engine_unavailable")
         count = await self.metadata_repository.random_candidate_count(filters)
         if count == 0:
             return RandomNoteResult(state="empty", document=None)
