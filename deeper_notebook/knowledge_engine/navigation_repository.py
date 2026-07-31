@@ -49,10 +49,10 @@ _TABLES = {
 _OPEN_DESCRIPTOR_FIELDS = (
     "id AS document_id, space_id, authority_kind, "
     "(SELECT VALUE source_kind FROM knowledge_engine_space "
-    "WHERE id = $parent.space_id LIMIT 1)[0] AS source_kind, title, "
+    "WHERE type::string(id) = $parent.space_id LIMIT 1)[0] AS source_kind, title, "
     "relative_locator, source_native_id AS legacy_note_id, "
     "(SELECT VALUE source_ref FROM knowledge_engine_space "
-    "WHERE id = $parent.space_id LIMIT 1)[0] AS legacy_container_id"
+    "WHERE type::string(id) = $parent.space_id LIMIT 1)[0] AS legacy_container_id"
 )
 
 
@@ -90,10 +90,17 @@ def _operation(value: str) -> str:
     return value
 
 
-def _payload_hash(command: BaseModel, *, entity_id: str | None = None) -> str:
+def _payload_hash(
+    command: BaseModel,
+    *,
+    entity_id: str | None = None,
+    context: dict[str, Any] | None = None,
+) -> str:
     payload = command.model_dump(mode="json", exclude={"operation_id"})
     if entity_id is not None:
         payload["entity_id"] = entity_id
+    if context:
+        payload.update(context)
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return sha256(encoded).hexdigest()
 
@@ -106,11 +113,84 @@ def _content(model: BaseModel) -> dict[str, Any]:
     return model.model_dump(mode="python", exclude={"id"})
 
 
+def _folder_reparent_transaction() -> str:
+    """Build fixed-depth, data-bound atomic checks for a folder reparent."""
+    parents = ["LET $parent_0 = $new_parent_relation_id;"]
+    parents.extend(
+        "LET $parent_" + str(index) + " = (SELECT VALUE parent_folder_id "
+        "FROM knowledge_bookmark_folder WHERE type::string(id) = $parent_"
+        + str(index - 1)
+        + " LIMIT 1)[0];"
+        for index in range(1, 16)
+    )
+    cycle = " OR ".join(
+        f"$parent_{index} = $entity_relation_id" for index in range(16)
+    )
+    depth = " ".join(
+        "IF $subtree_height = "
+        + str(height)
+        + " AND $parent_"
+        + str(16 - height)
+        + " != NONE { RETURN { code: 'folder_depth_exceeded' }; };"
+        for height in range(1, 17)
+    )
+    subtree = ["LET $subtree_0 = [$entity_relation_id];"]
+    subtree.extend(
+        "LET $subtree_" + str(index) + " = (SELECT VALUE type::string(id) "
+        "FROM knowledge_bookmark_folder WHERE parent_folder_id IN $subtree_"
+        + str(index - 1)
+        + ");"
+        for index in range(1, 16)
+    )
+    combined_depth = " ".join(
+        "IF array::len($subtree_"
+        + str(level)
+        + ") > 0 AND $parent_"
+        + str(15 - level)
+        + " != NONE { RETURN { code: 'folder_depth_exceeded' }; };"
+        for level in range(16)
+    )
+    return f"""
+        BEGIN TRANSACTION;
+        LET $prior = (SELECT * FROM knowledge_navigation_operation_receipt
+            WHERE operation_id = $operation_id LIMIT 1);
+        IF array::len($prior) > 0 AND $prior[0].payload_hash != $payload_hash {{
+            RETURN {{ code: 'operation_conflict' }};
+        }};
+        IF array::len($prior) > 0 {{
+            RETURN {{ code: 'replayed', prior: $prior,
+                entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $prior[0] }};
+        }};
+        LET $current = (SELECT * FROM $entity_id LIMIT 1);
+        IF array::len($current) = 0 OR $current[0].revision != $expected_revision {{
+            RETURN {{ code: 'revision_conflict' }};
+        }};
+        {' '.join(parents)}
+        IF {cycle} {{ RETURN {{ code: 'folder_cycle' }}; }};
+        {depth}
+        {' '.join(subtree)}
+        {combined_depth}
+        CREATE $receipt_id CONTENT $receipt;
+        UPSERT $entity_id CONTENT $entity;
+        RETURN {{ code: 'succeeded', prior: $prior,
+            entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $receipt }};
+        COMMIT TRANSACTION;
+    """
+
+
 def _model(model: type[BaseModel], value: Any, *, code: str) -> Any:
     try:
         return model.model_validate(value)
     except ValidationError:
         raise KnowledgeNavigationRepositoryError(code) from None
+
+
+def _receipt_model(value: Any) -> NavigationReceipt:
+    if isinstance(value, dict):
+        value = {key: item for key, item in value.items() if key != "id"}
+    return _model(
+        NavigationReceipt, value, code="knowledge_navigation_receipt_invalid"
+    )
 
 
 class KnowledgeNavigationRepository:
@@ -171,7 +251,11 @@ class KnowledgeNavigationRepository:
         return ancestry
 
     async def _validate_folder_parent(
-        self, parent_folder_id: str | None, *, moving_folder_id: str | None = None
+        self,
+        parent_folder_id: str | None,
+        *,
+        moving_folder_id: str | None = None,
+        moving_subtree_height: int = 1,
     ) -> None:
         if parent_folder_id is None:
             return
@@ -179,8 +263,40 @@ class KnowledgeNavigationRepository:
         ancestry = await self._folder_ancestry(parent_folder_id)
         if moving_folder_id is not None and moving_folder_id in ancestry:
             raise KnowledgeNavigationRepositoryError("folder_cycle")
-        if len(ancestry) >= 16:
+        if len(ancestry) + moving_subtree_height > 16:
             raise KnowledgeNavigationRepositoryError("folder_depth_exceeded")
+
+    async def _folder_subtree_height(self, folder_id: str) -> int:
+        """Return the bounded height of a folder subtree using string relations."""
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "SELECT id, parent_folder_id FROM knowledge_bookmark_folder;",
+            )
+        children: dict[str, list[str]] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            child_id = row.get("id")
+            parent_id = row.get("parent_folder_id")
+            if isinstance(child_id, str) and isinstance(parent_id, str):
+                children.setdefault(parent_id, []).append(child_id)
+        height = 1
+        stack = [(folder_id, 1)]
+        visited: set[str] = set()
+        while stack:
+            current_id, current_height = stack.pop()
+            if current_id in visited:
+                raise KnowledgeNavigationRepositoryError("folder_cycle")
+            visited.add(current_id)
+            height = max(height, current_height)
+            if height > 16:
+                raise KnowledgeNavigationRepositoryError("folder_depth_exceeded")
+            stack.extend(
+                (child_id, current_height + 1)
+                for child_id in children.get(current_id, [])
+            )
+        return height
 
     def _receipt(
         self,
@@ -221,10 +337,13 @@ class KnowledgeNavigationRepository:
         result_code: str,
         statement: str | None = None,
         extra_variables: dict[str, Any] | None = None,
+        payload_context: dict[str, Any] | None = None,
     ) -> tuple[Any, NavigationReceipt, bool]:
         operation_id = _operation(command.operation_id)
         _record_id(table, entity_id)
-        payload_hash = _payload_hash(command, entity_id=entity_id)
+        payload_hash = _payload_hash(
+            command, entity_id=entity_id, context=payload_context
+        )
         result_revision = getattr(entity, "revision", expected_revision)
         receipt = self._receipt(
             operation_id=operation_id,
@@ -240,29 +359,32 @@ class KnowledgeNavigationRepository:
             LET $prior = (SELECT * FROM knowledge_navigation_operation_receipt
                 WHERE operation_id = $operation_id LIMIT 1);
             IF array::len($prior) > 0 AND $prior[0].payload_hash != $payload_hash {
-                THROW 'operation_conflict';
+                RETURN { code: 'operation_conflict' };
+            };
+            IF array::len($prior) > 0 {
+                RETURN { code: 'replayed', prior: $prior,
+                    entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $prior[0] };
             };
             LET $current = (SELECT * FROM $entity_id LIMIT 1);
             IF $expected_revision != NONE AND
                 (array::len($current) = 0 OR $current[0].revision != $expected_revision) {
-                THROW 'revision_conflict';
+                RETURN { code: 'revision_conflict' };
             };
-            IF array::len($prior) = 0 {
-                CREATE $receipt_id CONTENT $receipt;
-                IF $mutation = 'delete' {
-                    DELETE $entity_id;
-                } ELSE {
-                    UPSERT $entity_id CONTENT $entity;
-                };
+            CREATE $receipt_id CONTENT $receipt;
+            IF $mutation = 'delete' {
+                DELETE $entity_id;
+            } ELSE {
+                UPSERT $entity_id CONTENT $entity;
             };
+            RETURN { code: 'succeeded', prior: $prior,
+                entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $receipt };
             COMMIT TRANSACTION;
-            RETURN { prior: $prior, entity: (SELECT * FROM $entity_id LIMIT 1),
-                receipt: (SELECT * FROM $receipt_id LIMIT 1) };
         """
         variables = {
             "mutation": mutation,
             "table": table,
             "entity_id": _record_id(table, entity_id),
+            "entity_relation_id": entity_id,
             "receipt_id": _record_id(
                 "knowledge_navigation_operation_receipt",
                 _generated_id("knowledge_navigation_operation_receipt", operation_id),
@@ -285,9 +407,15 @@ class KnowledgeNavigationRepository:
         result = next((row for row in reversed(rows) if isinstance(row, dict)), None)
         if result is None:
             raise KnowledgeNavigationRepositoryError("knowledge_navigation_commit_outcome_missing")
-        error = result.get("error")
-        if error in {"operation_conflict", "revision_conflict", "not_found"}:
-            raise KnowledgeNavigationRepositoryError(error)
+        outcome = result.get("code", result.get("error"))
+        if outcome in {
+            "operation_conflict",
+            "revision_conflict",
+            "not_found",
+            "folder_cycle",
+            "folder_depth_exceeded",
+        }:
+            raise KnowledgeNavigationRepositoryError(outcome)
         prior = result.get("prior")
         replayed = bool(prior)
         returned_entity = result.get("entity")
@@ -298,9 +426,7 @@ class KnowledgeNavigationRepository:
             returned_receipt = returned_receipt[0] if returned_receipt else None
         if returned_receipt is None:
             raise KnowledgeNavigationRepositoryError("knowledge_navigation_receipt_missing")
-        return returned_entity, _model(
-            NavigationReceipt, returned_receipt, code="knowledge_navigation_receipt_invalid"
-        ), replayed
+        return returned_entity, _receipt_model(returned_receipt), replayed
 
     async def _reconcile_operation(
         self, operation_id: str, payload_hash: str
@@ -316,11 +442,7 @@ class KnowledgeNavigationRepository:
             raise KnowledgeNavigationRepositoryError(
                 "knowledge_navigation_repository_unavailable"
             )
-        receipt = _model(
-            NavigationReceipt,
-            rows[0],
-            code="knowledge_navigation_receipt_invalid",
-        )
+        receipt = _receipt_model(rows[0])
         if receipt.payload_hash != payload_hash:
             raise KnowledgeNavigationRepositoryError("operation_conflict")
         table = _TABLES.get(receipt.entity_kind)
@@ -334,6 +456,15 @@ class KnowledgeNavigationRepository:
                 )
             entity = entity_rows[0] if entity_rows else None
         return [{"prior": [receipt.model_dump(mode="python")], "entity": entity, "receipt": receipt.model_dump(mode="python")}]
+
+    async def _operation_receipt(self, operation_id: str) -> NavigationReceipt | None:
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "SELECT * FROM knowledge_navigation_operation_receipt WHERE operation_id = $operation_id LIMIT 1;",
+                {"operation_id": operation_id},
+            )
+        return _receipt_model(rows[0]) if rows and isinstance(rows[0], dict) else None
 
     async def _existing(self, table: str, entity_id: str, model: type[BaseModel]) -> Any:
         _record_id(table, entity_id)
@@ -371,7 +502,14 @@ class KnowledgeNavigationRepository:
     async def update_folder(self, folder_id: str, command: UpdateFolder) -> BookmarkFolder:
         existing = await self._existing("knowledge_bookmark_folder", folder_id, BookmarkFolder)
         if "parent_folder_id" in command.model_fields_set:
-            await self._validate_folder_parent(command.parent_folder_id, moving_folder_id=folder_id)
+            subtree_height = await self._folder_subtree_height(folder_id)
+            await self._validate_folder_parent(
+                command.parent_folder_id,
+                moving_folder_id=folder_id,
+                moving_subtree_height=subtree_height,
+            )
+        else:
+            subtree_height = 1
         data = existing.model_dump(mode="python")
         for field in command.model_fields_set - {"operation_id", "expected_revision"}:
             data[field] = getattr(command, field)
@@ -381,6 +519,17 @@ class KnowledgeNavigationRepository:
             table="knowledge_bookmark_folder", entity_kind="folder", entity_id=folder_id,
             command=command, operation_kind="update_folder", entity=folder,
             expected_revision=command.expected_revision, result_code="updated",
+            statement=_folder_reparent_transaction()
+            if "parent_folder_id" in command.model_fields_set
+            and command.parent_folder_id is not None
+            else None,
+            extra_variables={
+                "new_parent_relation_id": command.parent_folder_id,
+                "subtree_height": subtree_height,
+            }
+            if "parent_folder_id" in command.model_fields_set
+            and command.parent_folder_id is not None
+            else None,
         )
         return _model(BookmarkFolder, row, code="knowledge_navigation_folder_invalid")
 
@@ -389,39 +538,38 @@ class KnowledgeNavigationRepository:
         tree_sql = """
             BEGIN TRANSACTION;
             LET $prior = (SELECT * FROM knowledge_navigation_operation_receipt WHERE operation_id = $operation_id LIMIT 1);
-            IF array::len($prior) > 0 AND $prior[0].payload_hash != $payload_hash { THROW 'operation_conflict'; };
+            IF array::len($prior) > 0 AND $prior[0].payload_hash != $payload_hash { RETURN { code: 'operation_conflict' }; };
+            IF array::len($prior) > 0 { RETURN { code: 'replayed', prior: $prior, receipt: $prior[0] }; };
             LET $current = (SELECT * FROM $entity_id LIMIT 1);
-            IF array::len($current) = 0 OR $current[0].revision != $expected_revision { THROW 'revision_conflict'; };
-            IF array::len($prior) = 0 {
-                CREATE $receipt_id CONTENT $receipt;
-                IF $child_disposition = 'move_children' {
-                    UPDATE knowledge_bookmark_folder SET parent_folder_id = $current[0].parent_folder_id WHERE parent_folder_id = $entity_id;
-                    UPDATE knowledge_bookmark SET folder_id = $current[0].parent_folder_id WHERE folder_id = $entity_id;
+            IF array::len($current) = 0 OR $current[0].revision != $expected_revision { RETURN { code: 'revision_conflict' }; };
+            CREATE $receipt_id CONTENT $receipt;
+            IF $child_disposition = 'move_children' {
+                    UPDATE knowledge_bookmark_folder SET parent_folder_id = $current[0].parent_folder_id WHERE parent_folder_id = $entity_relation_id;
+                    UPDATE knowledge_bookmark SET folder_id = $current[0].parent_folder_id WHERE folder_id = $entity_relation_id;
                     DELETE $entity_id;
-                } ELSE {
-                    LET $level_0 = [$entity_id];
-                    LET $level_1 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_0);
-                    LET $level_2 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_1);
-                    LET $level_3 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_2);
-                    LET $level_4 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_3);
-                    LET $level_5 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_4);
-                    LET $level_6 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_5);
-                    LET $level_7 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_6);
-                    LET $level_8 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_7);
-                    LET $level_9 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_8);
-                    LET $level_10 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_9);
-                    LET $level_11 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_10);
-                    LET $level_12 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_11);
-                    LET $level_13 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_12);
-                    LET $level_14 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_13);
-                    LET $level_15 = (SELECT VALUE id FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_14);
+            } ELSE {
+                    LET $level_0 = [$entity_relation_id];
+                    LET $level_1 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_0);
+                    LET $level_2 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_1);
+                    LET $level_3 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_2);
+                    LET $level_4 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_3);
+                    LET $level_5 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_4);
+                    LET $level_6 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_5);
+                    LET $level_7 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_6);
+                    LET $level_8 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_7);
+                    LET $level_9 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_8);
+                    LET $level_10 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_9);
+                    LET $level_11 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_10);
+                    LET $level_12 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_11);
+                    LET $level_13 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_12);
+                    LET $level_14 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_13);
+                    LET $level_15 = (SELECT VALUE type::string(id) FROM knowledge_bookmark_folder WHERE parent_folder_id IN $level_14);
                     LET $tree = array::flatten([$level_0, $level_1, $level_2, $level_3, $level_4, $level_5, $level_6, $level_7, $level_8, $level_9, $level_10, $level_11, $level_12, $level_13, $level_14, $level_15]);
-                    DELETE knowledge_bookmark WHERE folder_id = $entity_id OR folder_id IN $tree;
-                    DELETE knowledge_bookmark_folder WHERE id IN $tree;
-                };
+                    DELETE knowledge_bookmark WHERE folder_id IN $tree;
+                    DELETE knowledge_bookmark_folder WHERE type::string(id) IN $tree;
             };
+            RETURN { code: 'succeeded', prior: $prior, receipt: $receipt };
             COMMIT TRANSACTION;
-            RETURN { prior: $prior, receipt: (SELECT * FROM $receipt_id LIMIT 1) };
         """
         _, receipt, _ = await self._mutate(
             table="knowledge_bookmark_folder", entity_kind="folder", entity_id=folder_id,
@@ -493,7 +641,9 @@ class KnowledgeNavigationRepository:
             "authority_kinds": filters.authority_kinds, "limit": limit + 1,
             "cursor_folder_id": parsed_cursor.folder_id if parsed_cursor else None,
             "cursor_position": parsed_cursor.position if parsed_cursor else None,
-            "cursor_id": parsed_cursor.id if parsed_cursor else None,
+            "cursor_id": _record_id("knowledge_bookmark", parsed_cursor.id)
+            if parsed_cursor
+            else None,
         }
         async with self._connection_factory() as connection:
             rows = await self._query(
@@ -537,11 +687,23 @@ class KnowledgeNavigationRepository:
         return _model(NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid")
 
     async def duplicate_workspace(self, workspace_id: str, command: DuplicateWorkspace) -> NamedKnowledgeWorkspace:
-        source = await self.get_workspace(workspace_id)
         entity_id = _generated_id("named_knowledge_workspace", command.operation_id)
+        payload_hash = _payload_hash(
+            command,
+            entity_id=entity_id,
+            context={"source_workspace_id": workspace_id},
+        )
+        prior = await self._operation_receipt(command.operation_id)
+        if prior is not None:
+            if prior.payload_hash != payload_hash:
+                raise KnowledgeNavigationRepositoryError("operation_conflict")
+            return await self._existing(
+                "named_knowledge_workspace", entity_id, NamedKnowledgeWorkspace
+            )
+        source = await self.get_workspace(workspace_id)
         timestamp = self._clock()
         workspace = NamedKnowledgeWorkspace(id=entity_id, name=command.name, name_key=command.name_key, snapshot=source.snapshot, revision=1, created_at=timestamp, updated_at=timestamp)
-        row, _, _ = await self._mutate(table="named_knowledge_workspace", entity_kind="workspace", entity_id=entity_id, command=command, operation_kind="duplicate_workspace", entity=workspace, result_code="created")
+        row, _, _ = await self._mutate(table="named_knowledge_workspace", entity_kind="workspace", entity_id=entity_id, command=command, operation_kind="duplicate_workspace", entity=workspace, result_code="created", payload_context={"source_workspace_id": workspace_id})
         return _model(NamedKnowledgeWorkspace, row, code="knowledge_navigation_workspace_invalid")
 
     async def delete_workspace(self, workspace_id: str, command: DeleteWorkspace) -> NavigationReceipt:
@@ -553,8 +715,8 @@ class KnowledgeNavigationRepository:
 
     async def list_workspaces(self) -> list[NamedKnowledgeWorkspaceSummary]:
         async with self._connection_factory() as connection:
-            rows = await self._query(connection, "SELECT id, name, revision, updated_at FROM named_knowledge_workspace ORDER BY name_key, id;")
-        return [_model(NamedKnowledgeWorkspaceSummary, row, code="knowledge_navigation_workspace_invalid") for row in rows]
+            rows = await self._query(connection, "SELECT id, name, name_key, revision, updated_at FROM named_knowledge_workspace ORDER BY name_key, id;")
+        return [_model(NamedKnowledgeWorkspaceSummary, {key: value for key, value in row.items() if key != "name_key"}, code="knowledge_navigation_workspace_invalid") for row in rows]
 
     async def random_candidate_count(self, filters: RandomNoteFilters) -> int:
         variables = {"space_ids": filters.space_ids, "authority_kinds": filters.authority_kinds, "tags": filters.tags}
@@ -572,7 +734,8 @@ class KnowledgeNavigationRepository:
 
     @staticmethod
     def _random_where(fields: str) -> str:
-        return f'''SELECT {fields} FROM knowledge_engine_document WHERE availability = "available" AND parse_state = "ready" AND document_kind IN ["note", "page", "journal"] AND "read" IN capabilities AND (array::len($space_ids) = 0 OR space_id IN $space_ids) AND (array::len($authority_kinds) = 0 OR authority_kind IN $authority_kinds) AND (array::len($tags) = 0 OR array::len(array::intersect(tags, $tags)) = array::len($tags))'''
+        suffix = " GROUP ALL" if fields == "count() AS count" else " ORDER BY id"
+        return f'''SELECT {fields} FROM knowledge_engine_document WHERE availability = "available" AND parse_state = "ready" AND document_kind IN ["note", "page", "journal"] AND "read" IN capabilities AND (array::len($space_ids) = 0 OR space_id IN $space_ids) AND (array::len($authority_kinds) = 0 OR authority_kind IN $authority_kinds) AND (array::len($tags) = 0 OR array::len(array::intersect(tags, $tags)) = array::len($tags)){suffix}'''
 
 
 __all__ = ["KnowledgeNavigationRepository", "KnowledgeNavigationRepositoryError"]
