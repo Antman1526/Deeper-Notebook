@@ -30,10 +30,24 @@ DEFINE FIELD IF NOT EXISTS name ON TABLE named_knowledge_workspace TYPE string;
 DEFINE FIELD IF NOT EXISTS name_key ON TABLE named_knowledge_workspace TYPE string;
 DEFINE FIELD IF NOT EXISTS snapshot_version ON TABLE named_knowledge_workspace TYPE int DEFAULT 1;
 DEFINE FIELD IF NOT EXISTS snapshot ON TABLE named_knowledge_workspace FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS capacity_slot ON TABLE named_knowledge_workspace TYPE int ASSERT $value >= 0 AND $value <= 256;
 DEFINE FIELD IF NOT EXISTS revision ON TABLE named_knowledge_workspace TYPE int ASSERT $value >= 1;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE named_knowledge_workspace TYPE datetime;
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE named_knowledge_workspace TYPE datetime;
 DEFINE INDEX IF NOT EXISTS idx_kn_workspace_name ON TABLE named_knowledge_workspace COLUMNS name_key UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_kn_workspace_capacity_slot ON TABLE named_knowledge_workspace COLUMNS capacity_slot UNIQUE;
+
+CREATE ONLY named_knowledge_workspace:capacity_allocator CONTENT {
+    schema_version: 1,
+    name: "Workspace capacity allocator",
+    name_key: "__workspace_capacity_allocator__",
+    snapshot_version: 1,
+    snapshot: {},
+    capacity_slot: 256,
+    revision: 1,
+    created_at: time::now(),
+    updated_at: time::now()
+};
 
 DEFINE TABLE IF NOT EXISTS knowledge_navigation_operation_receipt SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS schema_version ON TABLE knowledge_navigation_operation_receipt TYPE int DEFAULT 1;

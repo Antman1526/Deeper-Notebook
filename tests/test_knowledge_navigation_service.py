@@ -147,6 +147,7 @@ def _named_workspace(revision: int = 3) -> NamedKnowledgeWorkspace:
         name="Desk",
         name_key="desk",
         snapshot=_workspace_snapshot(),
+        capacity_slot=0,
         revision=revision,
         created_at=timestamp,
         updated_at=timestamp,
