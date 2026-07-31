@@ -21,7 +21,7 @@ class MarkdownKnowledgeAdapter:
             raise ValueError("markdown adapter source kind mismatch")
         if envelope.authority_kind != "external_read_only":
             raise ValueError("markdown adapter authority mismatch")
-        if envelope.format_mode != self.source_kind:
+        if envelope.format_mode not in {self.source_kind, "mixed"}:
             raise ValueError("markdown adapter format mode mismatch")
         parsed = parse_document(
             envelope.relative_locator,

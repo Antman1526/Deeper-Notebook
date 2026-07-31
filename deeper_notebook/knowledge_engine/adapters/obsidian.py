@@ -21,7 +21,7 @@ class ObsidianKnowledgeAdapter:
             raise ValueError("obsidian adapter source kind mismatch")
         if envelope.authority_kind != "external_read_only":
             raise ValueError("obsidian adapter authority mismatch")
-        if envelope.format_mode != self.source_kind:
+        if envelope.format_mode not in {self.source_kind, "mixed"}:
             raise ValueError("obsidian adapter format mode mismatch")
         parsed = parse_document(
             envelope.relative_locator,
