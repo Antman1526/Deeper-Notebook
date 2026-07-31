@@ -70,6 +70,22 @@ class KnowledgeEngineService:
     async def get_document(self, document_id: str) -> KnowledgeDocument:
         return await self._repository.get_document(document_id)
 
+    async def open_descriptor(self, document_id: str):
+        return await self._repository.open_descriptor(document_id)
+
+    async def get_current_block(
+        self,
+        *,
+        document_id: str,
+        block_id: str,
+        source_revision_id: str,
+    ):
+        return await self._repository.get_current_block(
+            document_id=document_id,
+            block_id=block_id,
+            source_revision_id=source_revision_id,
+        )
+
     async def list_documents(
         self,
         *,

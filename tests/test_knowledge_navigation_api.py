@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from httpx import ASGITransport, AsyncClient
 
-from api.routers.knowledge_navigation import router
+from api.routers.knowledge_navigation import (
+    MAX_NAVIGATION_JSON_BYTES,
+    _BoundedNavigationRequest,
+    _map_exception,
+    router,
+)
 from deeper_notebook.knowledge_engine.navigation_contracts import (
     Bookmark,
     BookmarkFolder,
+    HydratedBookmarkPage,
+)
+from deeper_notebook.knowledge_engine.navigation_repository import (
+    KnowledgeNavigationRepositoryError,
 )
 
 
@@ -38,6 +48,9 @@ class _NavigationService:
 
     async def list_folders(self) -> list[BookmarkFolder]:
         return self.folders
+
+    async def list_bookmarks(self, *_args) -> HydratedBookmarkPage:
+        return HydratedBookmarkPage()
 
 
 @pytest.fixture()
@@ -149,3 +162,159 @@ async def test_corrupt_folder_cycle_is_not_silently_omitted(
 
     assert response.status_code == 503
     assert response.json() == {"detail": {"code": "knowledge_navigation_unavailable"}}
+
+
+def _folder_chain(depth: int) -> list[BookmarkFolder]:
+    timestamp = datetime(2026, 7, 31, tzinfo=timezone.utc)
+    folders: list[BookmarkFolder] = []
+    for index in range(1, depth + 1):
+        folder_id = f"knowledge_bookmark_folder:level{index}"
+        folders.append(
+            BookmarkFolder(
+                id=folder_id,
+                name=f"Level {index}",
+                name_key=f"level {index}",
+                parent_folder_id=(
+                    None
+                    if index == 1
+                    else f"knowledge_bookmark_folder:level{index - 1}"
+                ),
+                position=0,
+                revision=1,
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+        )
+    return folders
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("depth", "expected_status"), [(15, 200), (16, 200), (17, 503)])
+async def test_folder_tree_has_an_inclusive_sixteen_level_bound(
+    api_client: AsyncClient, depth: int, expected_status: int
+) -> None:
+    api_client._transport.app.state.knowledge_navigation_service.folders = _folder_chain(depth)
+
+    async with api_client:
+        response = await api_client.get(
+            "/api/deeper-notebook/knowledge/bookmark-folders"
+        )
+
+    assert response.status_code == expected_status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        (
+            "/api/deeper-notebook/knowledge/bookmarks",
+            {
+                "operation_id": "book-create-limit",
+                "target": {"kind": "search", "query": "research"},
+                "display_label": "Research",
+            },
+        ),
+        (
+            "/api/deeper-notebook/knowledge/bookmarks/knowledge_bookmark:one",
+            {"operation_id": "book-update-limit", "expected_revision": 1},
+        ),
+        (
+            "/api/deeper-notebook/knowledge/bookmarks/knowledge_bookmark:one",
+            {"operation_id": "book-delete-limit", "expected_revision": 1},
+        ),
+        (
+            "/api/deeper-notebook/knowledge/bookmark-folders",
+            {"operation_id": "folder-create-limit", "name": "Research"},
+        ),
+        (
+            "/api/deeper-notebook/knowledge/bookmark-folders/knowledge_bookmark_folder:one",
+            {"operation_id": "folder-update-limit", "expected_revision": 1},
+        ),
+        (
+            "/api/deeper-notebook/knowledge/bookmark-folders/knowledge_bookmark_folder:one",
+            {"operation_id": "folder-delete-limit", "expected_revision": 1},
+        ),
+    ],
+)
+async def test_all_mutation_routes_reject_json_larger_than_one_mib(
+    api_client: AsyncClient, path: str, payload: dict[str, object]
+) -> None:
+    method = (
+        "post"
+        if path.endswith(("/bookmarks", "/bookmark-folders"))
+        else "patch"
+        if "update" in payload["operation_id"]
+        else "delete"
+    )
+    content = json.dumps(payload) + " " * MAX_NAVIGATION_JSON_BYTES
+    async with api_client:
+        response = await api_client.request(
+            method,
+            path,
+            content=content,
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "knowledge_navigation_request_invalid"}
+    }
+
+
+@pytest.mark.asyncio
+async def test_chunked_body_limit_is_enforced_without_a_content_length() -> None:
+    chunks = iter([b"{", b" " * MAX_NAVIGATION_JSON_BYTES])
+
+    async def receive():
+        try:
+            return {"type": "http.request", "body": next(chunks), "more_body": True}
+        except StopIteration:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+    request = _BoundedNavigationRequest(
+        {"type": "http", "method": "POST", "path": "/", "headers": []}, receive
+    )
+    with pytest.raises(HTTPException) as error:
+        await request.body()
+
+    assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["limit=0", "limit=101", "cursor=not-a-cursor"])
+async def test_bookmark_pagination_validation_is_strict_and_scrubbed(
+    api_client: AsyncClient, query: str
+) -> None:
+    async with api_client:
+        response = await api_client.get(
+            f"/api/deeper-notebook/knowledge/bookmarks?{query}"
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "knowledge_navigation_request_invalid"}
+    }
+
+
+@pytest.mark.parametrize(
+    ("exception", "expected_status"),
+    [
+        (LookupError("private"), status.HTTP_404_NOT_FOUND),
+        (KnowledgeNavigationRepositoryError("not_found"), status.HTTP_404_NOT_FOUND),
+        (KnowledgeNavigationRepositoryError("folder_parent_not_found"), status.HTTP_404_NOT_FOUND),
+        (KnowledgeNavigationRepositoryError("operation_conflict"), status.HTTP_409_CONFLICT),
+        (KnowledgeNavigationRepositoryError("revision_conflict"), status.HTTP_409_CONFLICT),
+        (KnowledgeNavigationRepositoryError("folder_cycle"), status.HTTP_409_CONFLICT),
+        (KnowledgeNavigationRepositoryError("folder_depth_exceeded"), status.HTTP_409_CONFLICT),
+        (ValueError("private"), status.HTTP_422_UNPROCESSABLE_CONTENT),
+        (KnowledgeNavigationRepositoryError("knowledge_navigation_repository_unavailable"), status.HTTP_503_SERVICE_UNAVAILABLE),
+    ],
+)
+def test_declared_navigation_error_mapping_matrix_is_stable(
+    exception: Exception, expected_status: int
+) -> None:
+    error = _map_exception(exception)
+
+    assert error.status_code == expected_status
+    assert "private" not in str(error.detail)
