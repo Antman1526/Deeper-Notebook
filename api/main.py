@@ -45,6 +45,7 @@ from api.routers import (
     exports,  # v0.7.90 — notebook/note export to host filesystem
     filesystem,  # v0.7.90 — host filesystem listing/mkdir for picker UI
     insights,
+    knowledge_engine,
     knowledge_workspace,
     languages,
     models,
@@ -1168,6 +1169,11 @@ app.include_router(
     overlay.router,
     prefix="/api/deeper-notebook",
     tags=["deeper-notebook-overlay"],
+)
+app.include_router(
+    knowledge_engine.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook-knowledge-engine"],
 )
 app.include_router(
     knowledge_workspace.router,
