@@ -69,6 +69,7 @@ class Repository:
         self.operations: dict[str, str] = {}
         self.cancel_on: str | None = None
         self.fail_receipts = False
+        self.failure_status = "failed"
 
     async def get_checkpoint(self, space_id: str):
         return self.checkpoints.get(space_id)
@@ -93,7 +94,7 @@ class Repository:
         if self.fail_receipts:
             raise RuntimeError("receipt store unavailable")
         self.failure_codes.append(kwargs["error_code"])
-        return SimpleNamespace(status="failed")
+        return SimpleNamespace(status=self.failure_status)
 
 
 def service(catalog: Catalog, repository: Repository) -> KnowledgeBackfillService:
@@ -189,6 +190,52 @@ async def test_cancellation_resumes_after_last_durable_item():
 
 
 @pytest.mark.asyncio
+async def test_resume_reprojects_changed_checkpoint_locator_before_continuing():
+    repository = Repository()
+    repository.cancel_on = "Pages/B.md"
+    catalog = Catalog(
+        [
+            source("knowledge_engine_space:a", "Pages/A.md", b"# Original\n"),
+            source("knowledge_engine_space:a", "Pages/B.md", b"# B\n"),
+        ]
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await service(catalog, repository).run()
+
+    original_revision = repository.committed_snapshots[-1].revision.id
+    catalog.sources[0] = replace(
+        catalog.sources[0],
+        canonical_bytes=b"# Changed\n",
+        byte_size=len(b"# Changed\n"),
+        observed_content_hash=sha256(b"# Changed\n").hexdigest(),
+    )
+    repository.cancel_on = None
+
+    result = await service(catalog, repository).run()
+
+    assert result.projected == 2
+    assert repository.projected_locators == [
+        ("knowledge_engine_space:a", "Pages/A.md"),
+        ("knowledge_engine_space:a", "Pages/A.md"),
+        ("knowledge_engine_space:a", "Pages/B.md"),
+    ]
+    assert repository.committed_snapshots[-2].revision.id != original_revision
+
+
+@pytest.mark.asyncio
+async def test_failure_receipt_with_nonfailed_status_stops_without_checkpointing():
+    repository = Repository()
+    repository.failure_status = "projected"
+    catalog = Catalog([source("knowledge_engine_space:a", "Bad.md", b"\xff")])
+
+    with pytest.raises(RuntimeError, match="knowledge_failure_receipt_invalid"):
+        await service(catalog, repository).run()
+
+    assert repository.checkpoints == {}
+
+
+@pytest.mark.asyncio
 async def test_completed_run_replays_idempotently_and_new_hash_creates_revision():
     repository = Repository()
     catalog = Catalog([source("knowledge_engine_space:a", "Pages/A.md")])
@@ -237,6 +284,23 @@ async def test_backfill_distinguishes_identical_bytes_at_different_locators():
     assert repository.committed_snapshots[-1].document.relative_locator == "Pages/B.md"
     assert repository.committed_snapshots[-1].revision.id != first_revisions["Pages/B.md"]
     assert len(repository.operations) == 3
+
+
+def test_operation_id_hashes_relative_locator_without_exposing_it():
+    canonical = source(
+        "knowledge_engine_space:a",
+        "Private Pages/Exact Locator.md",
+        b"# Page\n",
+    )
+
+    operation_id = KnowledgeBackfillService._operation_id(canonical)
+
+    assert operation_id == (
+        "backfill-v1:knowledge_engine_space:a:"
+        f"{sha256(canonical.relative_locator.encode('utf-8')).hexdigest()}:"
+        f"{canonical.observed_content_hash}"
+    )
+    assert canonical.relative_locator not in operation_id
 
 
 class OverlayRepository:
@@ -403,3 +467,52 @@ async def test_catalog_maps_root_drift_to_stable_failure_code(monkeypatch: pytes
 
     assert [item async for item in catalog.iter_sources()] == []
     assert catalog.failures[0].error_code == "root_changed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source_kind", ["markdown", "obsidian", "logseq"])
+async def test_catalog_to_backfill_preserves_mixed_mount_format(
+    approved_vault_root: Path, source_kind: str
+):
+    raw = b"# Mixed mount\n"
+    relative_path = f"Pages/{source_kind}.md"
+    path = approved_vault_root / relative_path
+    path.parent.mkdir()
+    path.write_bytes(raw)
+    observed = path.stat()
+    mount = VaultMount(
+        id=f"vault_mount:{source_kind}",
+        name="Mixed",
+        root_path=str(approved_vault_root),
+        format_mode="mixed",
+        status="ready-read-only",
+        parser_version="vault-parser-v1",
+    )
+    file = VaultFile(
+        id=f"vault_file:{source_kind}",
+        note_id=f"note:{source_kind}",
+        vault_id=mount.id,
+        relative_path=relative_path,
+        file_kind="markdown",
+        format=source_kind,
+        content_hash=sha256(raw).hexdigest(),
+        size_bytes=len(raw),
+        modified_ns=observed.st_mtime_ns,
+        encoding="utf-8",
+        newline="lf",
+        parse_status="parsed",
+        deleted_state="present",
+    )
+    catalog = CanonicalSourceCatalog(
+        overlay_repository=EmptyOverlayRepository(),
+        overlay_storage=SimpleNamespace(),
+        vault_repository=VaultRepository([mount], {mount.id: [file]}),
+    )
+    repository = Repository()
+
+    result = await KnowledgeBackfillService(
+        catalog=catalog, repository=repository, clock=lambda: NOW
+    ).run()
+
+    assert result.projected == 1
+    assert repository.committed_snapshots[0].document.relative_locator == relative_path
