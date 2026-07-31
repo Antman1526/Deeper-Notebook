@@ -19,6 +19,15 @@ from deeper_notebook.graphs.ask import graph as ask_graph
 router = APIRouter()
 
 
+def _exact_results(results: list[dict], query: str) -> list[dict]:
+    needle = query.casefold()
+    return [
+        result for result in results
+        if str(result.get("title", "")).casefold() == needle
+        or any(str(match).casefold() == needle for match in result.get("matches", []))
+    ]
+
+
 @router.post("/search", response_model=SearchResponse)
 async def search_knowledge_base(search_request: SearchRequest):
     """Search the knowledge base using text or vector search."""
@@ -34,8 +43,14 @@ async def search_knowledge_base(search_request: SearchRequest):
     _search_timeout = float(
         resolve_env("DEEPER_NOTEBOOK_SEARCH_TIMEOUT_SEC", "60").strip() or 60
     )
+    if search_request.space_ids or search_request.authority_kinds or search_request.tags:
+        raise HTTPException(
+            status_code=422,
+            detail="Search filters are not supported by the current search index.",
+        )
+    effective_type = "vector" if search_request.match_mode == "semantic" else search_request.type
     try:
-        if search_request.type == "vector":
+        if effective_type == "vector":
             # Check if embedding model is available for vector search
             if not await model_manager.get_embedding_model():
                 raise HTTPException(
@@ -85,10 +100,13 @@ async def search_knowledge_base(search_request: SearchRequest):
                     ),
                 )
 
+        normalized_results = results or []
+        if search_request.match_mode == "exact":
+            normalized_results = _exact_results(normalized_results, search_request.query)
         return SearchResponse(
-            results=results or [],
-            total_count=len(results) if results else 0,
-            search_type=search_request.type,
+            results=normalized_results,
+            total_count=len(normalized_results),
+            search_type=effective_type,
         )
 
     except HTTPException:

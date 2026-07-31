@@ -40,6 +40,34 @@ class TestSearchLimitValidation:
         assert response.status_code == 200
         mock_text_search.assert_awaited_once()
 
+    def test_bookmark_filters_are_not_silently_dropped(self, client):
+        response = client.post(
+            "/api/search",
+            json={
+                "query": "plan", "type": "text", "match_mode": "exact",
+                "space_ids": ["knowledge_engine_space:research"],
+                "authority_kinds": ["external_read_only"], "tags": ["plans"],
+            },
+        )
+
+        assert response.status_code == 422
+        assert "filters" in response.json()["detail"].lower()
+
+    @patch("api.routers.search.text_search", new_callable=AsyncMock)
+    def test_exact_mode_filters_text_results_to_exact_query_matches(self, mock_text_search, client):
+        mock_text_search.return_value = [
+            {"id": "note:exact", "title": "Plan", "matches": ["Plan"]},
+            {"id": "note:partial", "title": "Planning", "matches": ["Planning"]},
+        ]
+
+        response = client.post(
+            "/api/search",
+            json={"query": "Plan", "type": "text", "match_mode": "exact"},
+        )
+
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["results"]] == ["note:exact"]
+
 
 class TestTextSearchHighlightOverflowFallback:
     """text_search() must fall back to vector search on a highlight position overflow (#648)."""
