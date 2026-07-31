@@ -84,6 +84,8 @@ class VaultProvenance(BaseModel):
 
 
 class SearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str = Field(..., description="Search query")
     type: Literal["text", "vector"] = Field("text", description="Search type")
     limit: int = Field(100, description="Maximum number of results", ge=1, le=1000)
@@ -97,6 +99,12 @@ class SearchRequest(BaseModel):
         ge=0,
         le=1,
     )
+    match_mode: Literal["exact", "text", "semantic"] = "text"
+    space_ids: list[str] = Field(default_factory=list, max_length=32)
+    authority_kinds: list[Literal["app_owned", "external_read_only"]] = Field(
+        default_factory=list, max_length=2
+    )
+    tags: list[str] = Field(default_factory=list, max_length=32)
 
 
 class SearchResponse(BaseModel):

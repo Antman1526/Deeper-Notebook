@@ -109,6 +109,7 @@ export function useKnowledgeIndexedSearch(query: string, enabled: boolean, optio
     ? { ...textQuery, isCurrent: true, query: liveQuery }
     : { ...textQuery, data: undefined, isCurrent: false, query: liveQuery }
   const semantic = useMutation({
+    mutationKey: ['knowledge-command-search', 'semantic', query, options.spaceIds, options.authorityKinds, options.tags],
     mutationFn: (value: string) =>
       searchApi.search(searchRequest(value.trim(), 'vector', options)),
   })
