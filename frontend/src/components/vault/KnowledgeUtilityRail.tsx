@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Bookmark, CalendarDays, Dices, FolderKanban, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -30,11 +30,16 @@ export function KnowledgeUtilityRail({
   onBookmarkCurrent,
 }: KnowledgeUtilityRailProps) {
   const [displayMode, setDisplayMode] = useState(mode)
+  const pointerFocusRef = useRef<HTMLElement | null>(null)
   useEffect(() => setDisplayMode(mode), [mode])
   const selectMode = (utilityMode: UtilityMode) => {
     setDisplayMode(utilityMode)
     onNavigationChange({ utilityMode })
+    const focus = pointerFocusRef.current
+    pointerFocusRef.current = null
+    if (focus?.isConnected) requestAnimationFrame(() => focus.focus())
   }
+  const capturePointerFocus = () => { pointerFocusRef.current = document.activeElement as HTMLElement | null }
   const modes: Array<{ id: UtilityMode; label: string }> = [
     { id: 'sources', label: 'Sources' },
     { id: 'bookmarks', label: 'Bookmarks' },
@@ -48,7 +53,7 @@ export function KnowledgeUtilityRail({
           <CalendarDays aria-hidden="true" className="mr-1.5 h-4 w-4" />
           Today
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => selectMode('bookmarks')}>
+        <Button type="button" size="sm" variant="outline" onPointerDown={capturePointerFocus} onClick={() => selectMode('bookmarks')}>
           <Bookmark aria-hidden="true" className="mr-1.5 h-4 w-4" />
           Bookmarks
         </Button>
@@ -56,7 +61,7 @@ export function KnowledgeUtilityRail({
           <Dices aria-hidden="true" className="mr-1.5 h-4 w-4" />
           Random Note
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => selectMode('workspaces')}>
+        <Button type="button" size="sm" variant="outline" onPointerDown={capturePointerFocus} onClick={() => selectMode('workspaces')}>
           <FolderKanban aria-hidden="true" className="mr-1.5 h-4 w-4" />
           Workspaces
         </Button>
@@ -70,6 +75,7 @@ export function KnowledgeUtilityRail({
             size="sm"
             variant={displayMode === id ? 'secondary' : 'ghost'}
             aria-selected={displayMode === id}
+            onPointerDown={capturePointerFocus}
             onClick={() => selectMode(id)}
             className="min-w-0 flex-1"
           >

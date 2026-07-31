@@ -288,7 +288,7 @@ describe('knowledge workspace API boundary', () => {
       navigation: {
         utilityMode: 'sources', sidebarVisible: true, sidebarWidth: 320,
         activeBookmarkFolderId: null, bookmarkTags: [], sourceTreeQuery: '',
-        searchQuery: '', activeDraftId: null, selectedSpaceIds: [],
+        searchQuery: '', searchMode: 'text', activeDraftId: null, selectedSpaceIds: [],
         authorityFilters: [], metricsVisible: true,
       },
       panes: {
@@ -340,6 +340,7 @@ describe('knowledge workspace API boundary', () => {
       bookmarkTags: [],
       sourceTreeQuery: '',
       searchQuery: '',
+      searchMode: 'text',
       activeDraftId: null,
       selectedSpaceIds: [],
       authorityFilters: [],
@@ -417,7 +418,7 @@ describe('knowledge workspace API boundary', () => {
         navigation: {
           utility_mode: 'sources', sidebar_visible: true, sidebar_width: 320,
           active_bookmark_folder_id: null, bookmark_tags: [], source_tree_query: '',
-          search_query: '', active_draft_id: null, selected_space_ids: [],
+          search_query: '', search_mode: 'text', active_draft_id: null, selected_space_ids: [],
           authority_filters: [], metrics_visible: true,
         },
         panes: {

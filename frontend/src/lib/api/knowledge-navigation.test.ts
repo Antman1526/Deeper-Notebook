@@ -310,7 +310,7 @@ describe('knowledge navigation API contracts', () => {
       navigation: {
         utilityMode: 'bookmarks' as const, sidebarVisible: true, sidebarWidth: 360,
         activeBookmarkFolderId: 'knowledge_bookmark_folder:research', bookmarkTags: ['Evidence'],
-        sourceTreeQuery: 'source', searchQuery: 'search', activeDraftId: 'draft-one',
+        sourceTreeQuery: 'source', searchQuery: 'search', searchMode: 'text' as const, activeDraftId: 'draft-one',
         selectedSpaceIds: ['knowledge_engine_space:research'],
         authorityFilters: ['external_read_only' as const], metricsVisible: false,
       },
@@ -363,7 +363,10 @@ describe('knowledge navigation API contracts', () => {
     expect(apiClient.get).toHaveBeenNthCalledWith(1, '/deeper-notebook/knowledge/workspaces')
     expect(apiClient.get).toHaveBeenNthCalledWith(2, '/deeper-notebook/knowledge/workspaces/named_knowledge_workspace%3Adesk')
     expect(apiClient.post).toHaveBeenNthCalledWith(1, '/deeper-notebook/knowledge/workspaces', {
-      operation_id: 'operation-create-workspace', name: 'Desk', snapshot: snapshotWire,
+      operation_id: 'operation-create-workspace', name: 'Desk', snapshot: {
+        ...snapshotWire,
+        navigation: { ...snapshotWire.navigation, search_mode: 'text' },
+      },
     })
     expect(apiClient.patch).toHaveBeenCalledWith(
       '/deeper-notebook/knowledge/workspaces/named_knowledge_workspace%3Adesk',

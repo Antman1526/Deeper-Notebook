@@ -197,6 +197,17 @@ describe('KnowledgeQuickSwitcher', () => {
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs).toHaveLength(0)
   })
 
+  it('preserves the active semantic search mode in a bookmark action', async () => {
+    const onBookmarkSearch = vi.fn()
+    render(<KnowledgeQuickSwitcher mounts={[]} searchMode="semantic" onBookmarkSearch={onBookmarkSearch} />)
+    act(() => requestCommandSurface('quick-switcher', 'evidence'))
+    const dialog = await screen.findByRole('dialog', { name: 'knowledge.quickSwitcher' })
+
+    fireEvent.click(within(dialog).getByRole('option', { name: 'Bookmark search for evidence' }))
+
+    expect(onBookmarkSearch).toHaveBeenCalledWith('evidence', 'semantic')
+  })
+
   it('consumes its request without losing local invoker restoration or replaying on remount', async () => {
     const invoker = document.createElement('button')
     document.body.append(invoker)

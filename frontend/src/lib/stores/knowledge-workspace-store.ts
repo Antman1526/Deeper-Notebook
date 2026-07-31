@@ -26,6 +26,12 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   revision: number
   durableRevision: number
   durableFingerprint: string | null
+  graphBookmarkContext: {
+    rootDocumentId: string
+    spaceIds: string[]
+    relationKinds: string[]
+    viewport: GraphViewport
+  } | null
   replaceWorkspace: (document: KnowledgeWorkspaceDocument) => void
   applyNamedWorkspace: (document: KnowledgeWorkspaceDocument) => boolean
   hydrateWorkspace: (
@@ -46,6 +52,7 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   setTabGraphViewport: (paneId: string, tabId: string, viewport: GraphViewport) => void
   setSplitSize: (splitId: string, firstSize: number) => void
   setNavigation: (navigation: Partial<KnowledgeWorkspaceNavigation>) => void
+  setGraphBookmarkContext: (context: KnowledgeWorkspaceState['graphBookmarkContext']) => void
   splitPane: (paneId: string, direction: SplitDirection) => string
   closePane: (paneId: string) => void
   resetWorkspace: () => void
@@ -179,6 +186,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
   revision: 0,
   durableRevision: 0,
   durableFingerprint: workspaceFingerprint(defaultKnowledgeWorkspace()),
+  graphBookmarkContext: null,
 
   replaceWorkspace: (document) => {
     const fingerprint = workspaceFingerprint(document)
@@ -246,6 +254,8 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     set({ durableRevision, durableFingerprint: fingerprint })
   },
 
+  setGraphBookmarkContext: (graphBookmarkContext) => set({ graphBookmarkContext }),
+
   openTab: (tab, requestedPaneId) => {
     const parsed = openKnowledgeTabSchema.safeParse(tab)
     if (!parsed.success) return
@@ -303,6 +313,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     const pane = state.panes[paneId]
     const tab = pane?.tabs.find((candidate) => candidate.id === tabId)
     if (!pane || !tab) return
+    const knowledgeDocumentId = Object.hasOwn(reference, 'knowledgeDocumentId')
+      ? reference.knowledgeDocumentId
+      : tab.knowledgeDocumentId
     const parsed = openKnowledgeTabSchema.safeParse({
       vaultId: tab.vaultId,
       noteId: tab.noteId,
@@ -310,7 +323,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       relativePath: reference.relativePath,
       viewMode: tab.viewMode,
       sourceAuthority: tab.sourceAuthority,
-      knowledgeDocumentId: reference.knowledgeDocumentId ?? tab.knowledgeDocumentId,
+      knowledgeDocumentId,
     })
     if (!parsed.success) return
     if (
@@ -524,6 +537,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       revision,
       durableRevision: revision,
       durableFingerprint: workspaceFingerprint(document),
+      graphBookmarkContext: null,
     })
   },
 }))

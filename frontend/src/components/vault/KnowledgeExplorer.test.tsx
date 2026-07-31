@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
@@ -41,10 +41,13 @@ const overlayQueries = vi.hoisted(() => ({
 const navigationQueries = vi.hoisted(() => ({
   bookmarks: { items: [] as unknown[], nextCursor: null },
   folders: { items: [] as unknown[] },
+  workspaces: { items: [] as unknown[] },
   random: vi.fn(async () => ({ state: 'empty' as const, document: null })),
   create: vi.fn(async () => undefined),
   deleteBookmark: vi.fn(async () => undefined),
+  updateBookmark: vi.fn(async () => undefined),
   deleteFolder: vi.fn(async () => undefined),
+  restoreWorkspace: vi.fn(async () => undefined),
 }))
 const pageIdentity = vi.hoisted(() => ({
   value: null as string | null,
@@ -250,10 +253,13 @@ vi.mock('@/lib/hooks/use-knowledge-workspace', () => ({
 vi.mock('@/lib/hooks/use-knowledge-navigation', () => ({
   useKnowledgeBookmarks: () => ({ data: navigationQueries.bookmarks, isLoading: false, isError: false }),
   useKnowledgeFolders: () => ({ data: navigationQueries.folders, isLoading: false, isError: false }),
+  useKnowledgeWorkspaces: () => ({ data: navigationQueries.workspaces, isLoading: false, isError: false }),
   useRandomKnowledgeNote: () => ({ mutateAsync: navigationQueries.random, isPending: false }),
   useCreateKnowledgeBookmark: () => ({ mutateAsync: navigationQueries.create }),
+  useUpdateKnowledgeBookmark: () => ({ mutateAsync: navigationQueries.updateBookmark }),
   useDeleteKnowledgeBookmark: () => ({ mutateAsync: navigationQueries.deleteBookmark }),
   useDeleteKnowledgeFolder: () => ({ mutateAsync: navigationQueries.deleteFolder }),
+  useRestoreKnowledgeWorkspace: () => ({ mutateAsync: navigationQueries.restoreWorkspace }),
 }))
 
 vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
@@ -1231,6 +1237,9 @@ describe('KnowledgeExplorer utility rail', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     pageIdentity.value = null
+    navigationQueries.create.mockReset()
+    navigationQueries.random.mockReset()
+    navigationQueries.random.mockResolvedValue({ state: 'empty', document: null })
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
   })
 
@@ -1252,6 +1261,18 @@ describe('KnowledgeExplorer utility rail', () => {
     fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize utility sidebar' }), { key: 'ArrowRight' })
 
     expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(Math.min(640, width + 16))
+  })
+
+  it('clamps pointer sidebar resizing and exposes its accessible value', async () => {
+    await renderExplorer()
+    const handle = screen.getByRole('separator', { name: 'Resize utility sidebar' })
+
+    fireEvent.mouseDown(handle, { clientX: 100 })
+    fireEvent.mouseMove(handle, { clientX: 9_000 })
+    fireEvent.mouseUp(handle)
+
+    expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(640)
+    expect(handle).toHaveAttribute('aria-valuenow', '640')
   })
 
   it('hydrates a valid page unified ID without replacing the active tab or focus', async () => {
@@ -1276,5 +1297,102 @@ describe('KnowledgeExplorer utility rail', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Bookmark Current Target' })).toBeDisabled())
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId).toBeNull()
+  })
+
+  it('sends persisted filters to Random Note and leaves the active tab unchanged for an empty result', async () => {
+    navigationQueries.random.mockResolvedValueOnce({ state: 'empty', document: null })
+    useKnowledgeWorkspaceStore.getState().setNavigation({
+      selectedSpaceIds: ['knowledge_engine_space:research'],
+      authorityFilters: ['external_read_only'],
+      bookmarkTags: ['plans'],
+    })
+    await renderExplorer()
+    await selectFile('notes/one.md')
+    const activeBefore = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId
+
+    fireEvent.click(screen.getByRole('button', { name: 'Random Note' }))
+
+    await waitFor(() => expect(navigationQueries.random).toHaveBeenCalledWith({
+      spaceIds: ['knowledge_engine_space:research'], authorityKinds: ['external_read_only'], tags: ['plans'],
+    }))
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(activeBefore)
+  })
+
+  it('creates a stable block target for the focused unified block rather than a path target', async () => {
+    pageIdentity.value = 'knowledge_engine_document:research'
+    await renderExplorer()
+    await selectFile('notes/one.md')
+    await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId)
+      .toBe('knowledge_engine_document:research'))
+    act(() => useKnowledgeWorkspaceStore.getState().setNavigation({ activeDraftId: 'knowledge_engine_block:heading' }))
+    expect(useKnowledgeWorkspaceStore.getState().navigation.activeDraftId).toBe('knowledge_engine_block:heading')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bookmark Current Target' }))
+
+    await waitFor(() => expect(navigationQueries.create).toHaveBeenCalledWith(expect.objectContaining({
+      target: {
+        kind: 'block', documentId: 'knowledge_engine_document:research',
+        blockId: 'knowledge_engine_block:heading', sourceRevisionId: null,
+      },
+    })))
+    expect(JSON.stringify(navigationQueries.create.mock.calls.at(-1))).not.toContain('/Users/')
+  })
+
+  it('uses live graph root, filters, and controlled viewport for a graph bookmark', async () => {
+    pageIdentity.value = 'knowledge_engine_document:graph-root'
+    useKnowledgeWorkspaceStore.getState().openTab({
+      vaultId: 'vault:one', noteId: 'note:one', title: 'One', relativePath: 'notes/one.md',
+      knowledgeDocumentId: 'knowledge_engine_document:graph-root', viewMode: 'graph',
+      graphViewport: { x: 1, y: 2, zoom: 1.5 },
+    })
+    useKnowledgeWorkspaceStore.getState().setGraphBookmarkContext({
+      rootDocumentId: 'knowledge_engine_document:graph-root',
+      spaceIds: ['knowledge_engine_space:research'], relationKinds: ['wikilink'],
+      viewport: { x: 4, y: 5, zoom: 2 },
+    })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0]).toMatchObject({
+      viewMode: 'graph', knowledgeDocumentId: 'knowledge_engine_document:graph-root',
+    })
+    await renderExplorer()
+    await act(async () => undefined)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bookmark Current Target' }))
+
+    await waitFor(() => expect(navigationQueries.create).toHaveBeenCalledWith(expect.objectContaining({
+      target: {
+        kind: 'graph', rootDocumentId: 'knowledge_engine_document:graph-root',
+        spaceIds: ['knowledge_engine_space:research'], relationKinds: ['wikilink'],
+        viewport: { x: 4, y: 5, zoom: 2 },
+      },
+    })))
+  })
+
+  it('hydrates a safe Overlay page unified ID without replacing the active tab', async () => {
+    const overlayId = 'overlay_note:unique'
+    overlayQueries.pages = {
+      [overlayId]: {
+        knowledge_document_id: 'knowledge_engine_document:overlay',
+        overlay: {
+          id: overlayId, source_authority: 'overlay', space_id: 'overlay_space:default',
+          projected_note_id: 'projected:unique', stable_id: 'a'.repeat(20), kind: 'unique', date_key: null,
+          relative_path: 'Notes/Overlay.md', title: 'Overlay', content_hash: 'a'.repeat(64), revision: 1,
+          projection_state: 'current', encoding: 'utf-8', newline: 'lf',
+          created_at: '2026-07-31T00:00:00.000Z', updated_at: '2026-07-31T00:00:00.000Z',
+        },
+        editable_markdown: '# Overlay', note: { id: 'projected:unique', title: 'Overlay', content: '# Overlay', properties: {}, tags: [] },
+        blocks: [], tasks: [], outgoing_links: [], backlinks: [], graph: null,
+      },
+    }
+    useKnowledgeWorkspaceStore.getState().openTab({
+      vaultId: 'overlay_space:default', noteId: overlayId, title: 'Overlay', relativePath: 'Notes/Overlay.md', sourceAuthority: 'overlay',
+    })
+    const tabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId
+    await renderExplorer()
+
+    await waitFor(() => expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0]).toMatchObject({
+      knowledgeDocumentId: 'knowledge_engine_document:overlay',
+    }))
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(tabId)
+    expect(screen.getByRole('button', { name: 'Bookmark Current Target' })).toBeEnabled()
   })
 })
