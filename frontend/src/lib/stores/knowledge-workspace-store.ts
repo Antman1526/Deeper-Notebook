@@ -37,7 +37,7 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   reconcileTabReference: (
     paneId: string,
     tabId: string,
-    reference: Pick<OpenKnowledgeTab, 'title' | 'relativePath'>,
+    reference: Pick<OpenKnowledgeTab, 'title' | 'relativePath' | 'knowledgeDocumentId'>,
   ) => void
   closeTab: (paneId: string, tabId: string) => void
   activateTab: (paneId: string, tabId: string) => void
@@ -310,11 +310,13 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       relativePath: reference.relativePath,
       viewMode: tab.viewMode,
       sourceAuthority: tab.sourceAuthority,
+      knowledgeDocumentId: reference.knowledgeDocumentId ?? tab.knowledgeDocumentId,
     })
     if (!parsed.success) return
     if (
       tab.title === parsed.data.title
       && tab.relativePath === parsed.data.relativePath
+      && tab.knowledgeDocumentId === (parsed.data.knowledgeDocumentId ?? null)
     ) {
       return
     }
@@ -329,6 +331,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
                 ...candidate,
                 title: parsed.data.title,
                 relativePath: parsed.data.relativePath,
+                knowledgeDocumentId: parsed.data.knowledgeDocumentId ?? null,
               }
             : candidate),
         },
