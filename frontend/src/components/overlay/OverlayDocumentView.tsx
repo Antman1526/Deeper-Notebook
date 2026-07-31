@@ -183,6 +183,10 @@ export function OverlayDocumentView({
   const tags = Array.from(new Set(loadedPage.note.tags || []))
   const busy = saving || reloading
 
+  useEffect(() => {
+    onMarkdownChange?.(draftRef.current.markdown)
+  }, [onMarkdownChange])
+
   const adoptPage = useCallback((nextPage: OverlayPage) => {
     const nextDraft = draftFromPage(nextPage)
     setLoadedPage(nextPage)

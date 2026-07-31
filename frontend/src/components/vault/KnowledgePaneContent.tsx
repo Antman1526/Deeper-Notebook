@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
   Code2,
@@ -67,10 +67,21 @@ export function KnowledgePaneContent({
   const { t } = useTranslation()
   const paneRef = useRef<HTMLElement>(null)
   const [selectionText, setSelectionText] = useState('')
-  const [overlayMarkdown, setOverlayMarkdown] = useState<string | undefined>()
+  const [overlayDraft, setOverlayDraft] = useState<{
+    tabId: string
+    markdown: string
+  } | null>(null)
   const metricsVisible = useKnowledgeWorkspaceStore(
     (state) => state.navigation.metricsVisible,
   )
+  const metricFormatters = useMemo(() => ({
+    words: (count: number) => t('knowledge.navigation.words', { count }),
+    characters: (count: number) => t('knowledge.navigation.characters', { count }),
+    readingMinutes: (count: number) => t('knowledge.navigation.readingMinutes', { count }),
+    selectionMetrics: ({ words, characters }: { words: number; characters: number }) => (
+      t('knowledge.navigation.selectionMetrics', { words, characters })
+    ),
+  }), [t])
   const setTabViewMode = useKnowledgeWorkspaceStore(
     (state) => state.setTabViewMode,
   )
@@ -82,6 +93,10 @@ export function KnowledgePaneContent({
   )
   const activeTab = pane.tabs.find((tab) => tab.id === pane.activeTabId)
     ?? pane.tabs[0]
+  const handleOverlayMarkdownChange = useCallback((markdown: string) => {
+    if (!activeTab) return
+    setOverlayDraft({ tabId: activeTab.id, markdown })
+  }, [activeTab])
   const vaultId = activeTab?.vaultId
   const noteId = activeTab?.noteId
   const visibleMode = activeTab?.viewMode ?? 'reading'
@@ -100,10 +115,6 @@ export function KnowledgePaneContent({
     isOverlay ? undefined : noteId,
     !isOverlay && visibleMode === 'graph',
   )
-
-  useEffect(() => {
-    setOverlayMarkdown(undefined)
-  }, [activeTab?.id])
 
   useEffect(() => {
     const updateSelection = () => {
@@ -277,16 +288,10 @@ export function KnowledgePaneContent({
     return result.data
   }
   const documentText = isOverlay
-    ? overlayMarkdown ?? overlayPage.data?.editable_markdown ?? ''
+    ? overlayDraft?.tabId === activeTab.id
+      ? overlayDraft.markdown
+      : overlayPage.data?.editable_markdown ?? ''
     : vaultPage.data?.note.content ?? vaultPage.data?.note.markdown ?? ''
-  const metricLabels = {
-    words: t('knowledge.navigation.words'),
-    characters: t('knowledge.navigation.characters'),
-    charactersWithoutWhitespace: t('knowledge.navigation.charactersWithoutWhitespace'),
-    readingMinutes: t('knowledge.navigation.readingMinutes'),
-    selection: t('knowledge.navigation.selection'),
-  }
-
   return (
     <section
       ref={paneRef}
@@ -384,7 +389,7 @@ export function KnowledgePaneContent({
             workspaceTabId={activeTab.id}
             graphViewport={activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 }}
             onGraphViewportChange={(viewport) => setTabGraphViewport(pane.id, activeTab.id, viewport)}
-            onMarkdownChange={setOverlayMarkdown}
+            onMarkdownChange={handleOverlayMarkdownChange}
           />
         ) : !isOverlay && vaultPage.data ? (
           visibleMode === 'graph' ? (
@@ -421,8 +426,10 @@ export function KnowledgePaneContent({
       <DocumentMetricsFooter
         text={documentText}
         selectionText={selectionText}
-        visible={metricsVisible && Boolean(pageData && !pageError)}
-        labels={metricLabels}
+        visible={metricsVisible && !pageLoading && !pageError}
+        hasDocument={Boolean(pageData)}
+        formatters={metricFormatters}
+        emptyLabel={t('knowledge.selectNote')}
       />
     </section>
   )
