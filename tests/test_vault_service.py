@@ -130,10 +130,14 @@ class FakeRepository:
 class FailingShadowProjector:
     def __init__(self) -> None:
         self.calls = []
+        self.failure_reports = []
 
     async def project_external(self, **kwargs) -> None:
         self.calls.append(kwargs)
         raise RuntimeError("knowledge_engine_repository_unavailable")
+
+    async def record_external_failure(self, **kwargs) -> None:
+        self.failure_reports.append(kwargs)
 
 
 def _mount(
@@ -495,6 +499,47 @@ async def test_shadow_failure_does_not_undo_a_proven_vault_projection(
     assert len(repository.projections) == 1
     assert shadow.calls[0]["observation"].content == source
     assert shadow.calls[0]["source_kind"] == "markdown"
+    assert isinstance(shadow.failure_reports[0]["error"], RuntimeError)
+
+
+@pytest.mark.asyncio
+async def test_unavailable_shadow_reporter_uses_only_a_hashed_fallback(
+    synthetic_root: Path,
+    monkeypatch,
+):
+    class MissingReporter:
+        async def project_external(self, **_kwargs) -> None:
+            raise RuntimeError("private failure")
+
+    root = synthetic_root / "shadow-fallback"
+    root.mkdir()
+    (root / "Research.md").write_text("# Research\n")
+    messages = []
+    monkeypatch.setattr(
+        "deeper_notebook.vault.service.logger.warning",
+        lambda message, *arguments: messages.append((message, arguments)),
+    )
+    moments = iter((1.0, 3.0))
+    service = VaultService(
+        FakeRepository([_mount(root)], [], []),
+        shadow_projector=MissingReporter(),
+        stable_after_seconds=0,
+        clock=lambda: next(moments),
+    )
+
+    await service.scan("vault_mount:fixture")
+    result = await service.scan("vault_mount:fixture")
+
+    assert result.projected == 1
+    assert messages == [
+        (
+            "Knowledge shadow failure receipt unavailable operation_id={} code={}",
+            (messages[0][1][0], "knowledge_engine_failure_receipt_unavailable"),
+        )
+    ]
+    assert messages[0][1][0].startswith("shadow-diagnostic-v1:")
+    assert "vault-scan-" not in str(messages)
+    assert "Research.md" not in str(messages)
 
 
 @pytest.mark.asyncio

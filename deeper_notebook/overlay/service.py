@@ -47,6 +47,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _shadow_diagnostic_operation_id(
+    legacy_operation_id: str, relative_locator: str
+) -> str:
+    return (
+        "shadow-diagnostic-v1:"
+        f"{hashlib.sha256(legacy_operation_id.encode()).hexdigest()}:"
+        f"{hashlib.sha256(relative_locator.encode()).hexdigest()}"
+    )
+
+
 def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
@@ -416,11 +426,28 @@ class OverlayService:
                 canonical_markdown=stored.markdown,
                 observed_modified_ns=stored.modified_ns,
             )
-        except Exception:
+        except Exception as error:
+            try:
+                await self._shadow_projector.record_overlay_failure(
+                    legacy_operation_id=reservation.operation_id,
+                    overlay_note=overlay_note,
+                    canonical_markdown=stored.markdown,
+                    error=error,
+                )
+            except Exception:
+                logger.warning(
+                    "Knowledge shadow failure receipt unavailable operation_id={} code={}",
+                    _shadow_diagnostic_operation_id(
+                        reservation.operation_id, overlay_note.relative_path
+                    ),
+                    "knowledge_engine_failure_receipt_unavailable",
+                )
+                return
             logger.warning(
-                "Knowledge shadow failed space_id={} operation_id={} code={}",
-                overlay_note.space_id,
-                reservation.operation_id,
+                "Knowledge shadow failed operation_id={} code={}",
+                _shadow_diagnostic_operation_id(
+                    reservation.operation_id, overlay_note.relative_path
+                ),
                 "knowledge_engine_shadow_failed",
             )
 

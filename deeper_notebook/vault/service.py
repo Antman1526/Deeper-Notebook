@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -41,6 +42,16 @@ class VaultScanResult:
     unchanged: int = 0
     failed: int = 0
     reconciliation_required: bool = False
+
+
+def _shadow_diagnostic_operation_id(
+    legacy_operation_id: str, relative_locator: str
+) -> str:
+    return (
+        "shadow-diagnostic-v1:"
+        f"{sha256(legacy_operation_id.encode()).hexdigest()}:"
+        f"{sha256(relative_locator.encode()).hexdigest()}"
+    )
 
 
 class _Repository(Protocol):
@@ -352,13 +363,30 @@ class VaultService:
                     vault_file_id=result.vault_file_id,
                     projected_note_id=result.note_id,
                 )
-            except Exception:
-                logger.warning(
-                    "Knowledge shadow failed vault_id={} operation_id={} code={}",
-                    mount.id,
-                    operation_id,
-                    "knowledge_engine_shadow_failed",
-                )
+            except Exception as error:
+                try:
+                    await self._shadow_projector.record_external_failure(
+                        legacy_operation_id=operation_id,
+                        mount=mount,
+                        observation=item,
+                        error=error,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Knowledge shadow failure receipt unavailable operation_id={} code={}",
+                        _shadow_diagnostic_operation_id(
+                            operation_id, item.relative_path
+                        ),
+                        "knowledge_engine_failure_receipt_unavailable",
+                    )
+                else:
+                    logger.warning(
+                        "Knowledge shadow failed operation_id={} code={}",
+                        _shadow_diagnostic_operation_id(
+                            operation_id, item.relative_path
+                        ),
+                        "knowledge_engine_shadow_failed",
+                    )
         handoff = await watcher.acknowledge_projected(
             item.relative_path, item.content_hash
         )
