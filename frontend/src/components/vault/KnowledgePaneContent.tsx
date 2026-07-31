@@ -401,7 +401,8 @@ export function KnowledgePaneContent({
             workspacePaneId={pane.id}
             workspaceTabId={activeTab.id}
             graphViewport={activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 }}
-            onGraphViewportChange={(viewport) => setTabGraphViewport(pane.id, activeTab.id, viewport)}
+              onGraphViewportChange={(viewport) => setTabGraphViewport(pane.id, activeTab.id, viewport)}
+              onFocusedBlockChange={(block) => setFocusedBlock(pane.id, activeTab.id, block)}
             onMarkdownChange={handleOverlayMarkdownChange}
           />
         ) : !isOverlay && vaultPage.data ? (
@@ -430,15 +431,16 @@ export function KnowledgePaneContent({
               />
             )
           ) : (
-            <VaultDocumentView
+              <VaultDocumentView
               viewId={`${pane.id}:${activeTab.id}`}
               mode={visibleMode}
               page={{
                 ...vaultPage.data,
                 outgoing_links: currentOutgoing,
               }}
-              onNavigate={navigate}
-            />
+                onNavigate={navigate}
+                onFocusedBlockChange={(block) => setFocusedBlock(pane.id, activeTab.id, block)}
+              />
           )
         ) : null}
       </div>

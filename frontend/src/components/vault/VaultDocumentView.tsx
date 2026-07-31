@@ -25,6 +25,7 @@ interface VaultDocumentViewProps {
   page: VaultPage
   onNavigate: (noteId: string) => void
   onPreview?: (link: VaultLink) => void
+  onFocusedBlockChange?: (block: { blockId: string; sourceRevisionId: string | null } | null) => void
 }
 
 function encodeIdPrefix(value: string): string {
@@ -47,6 +48,7 @@ export function VaultDocumentView({
   page,
   onNavigate,
   onPreview,
+  onFocusedBlockChange,
 }: VaultDocumentViewProps) {
   const { t } = useTranslation()
   const containerRef = useRef<HTMLElement>(null)
@@ -63,10 +65,32 @@ export function VaultDocumentView({
   const title = page.note.title?.trim()
     || page.file.relative_path.split('/').at(-1)?.replace(/\.md$/i, '')
     || t('knowledge.untitledNote')
-  const readableBlock = page.blocks.find((block) => block.knowledge_block_id)
+  const readableBlocks = page.blocks.filter((block) => block.knowledge_block_id && block.markdown)
+  const focusedBlockForRange = useCallback((from: number, to: number) => {
+    if (from === to) {
+      onFocusedBlockChange?.(null)
+      return
+    }
+    let cursor = 0
+    for (const block of readableBlocks) {
+      const start = parserMarkdown.indexOf(block.markdown!, cursor)
+      if (start < 0) continue
+      const end = start + block.markdown!.length
+      cursor = end
+      if (from < end && to > start) {
+        onFocusedBlockChange?.({ blockId: block.knowledge_block_id!, sourceRevisionId: block.source_revision_id ?? null })
+        return
+      }
+    }
+    onFocusedBlockChange?.(null)
+  }, [onFocusedBlockChange, parserMarkdown, readableBlocks])
   const reading = (
-    <section aria-label={`${title} reading view`} data-knowledge-block-id={readableBlock?.knowledge_block_id ?? undefined} data-source-revision-id={readableBlock?.source_revision_id ?? undefined}>
-      <VaultMarkdown
+    <section aria-label={`${title} reading view`}>
+      {readableBlocks.length > 0 ? readableBlocks.map((block, index) => (
+        <section key={block.knowledge_block_id} data-knowledge-block-id={block.knowledge_block_id!} data-source-revision-id={block.source_revision_id ?? undefined}>
+          <VaultMarkdown vaultId={page.file.vault_id} noteId={page.note.id} headingIdPrefix={`${headingIdPrefix}-${index}`} markdown={block.markdown!} links={page.outgoing_links} onNavigate={onNavigate} onPreview={onPreview} footnoteLabel={t('knowledge.footnotes')} />
+        </section>
+      )) : <VaultMarkdown
         vaultId={page.file.vault_id}
         noteId={page.note.id}
         headingIdPrefix={headingIdPrefix}
@@ -75,7 +99,7 @@ export function VaultDocumentView({
         onNavigate={onNavigate}
         onPreview={onPreview}
         footnoteLabel={t('knowledge.footnotes')}
-      />
+      />}
     </section>
   )
 
@@ -129,6 +153,7 @@ export function VaultDocumentView({
             title={title}
             markdown={markdown}
             file={page.file}
+            onSelectionChange={focusedBlockForRange}
           />
         ) : (
           <VaultLivePreview
@@ -136,6 +161,7 @@ export function VaultDocumentView({
             markdown={markdown}
             links={page.outgoing_links}
             onNavigate={onNavigate}
+            onSelectionChange={focusedBlockForRange}
           />
         )}
       </VaultEditorBoundary>

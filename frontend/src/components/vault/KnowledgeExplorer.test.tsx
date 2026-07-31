@@ -52,6 +52,11 @@ const navigationQueries = vi.hoisted(() => ({
 const pageIdentity = vi.hoisted(() => ({
   value: null as string | null,
 }))
+const searchView = vi.hoisted(() => ({
+  calls: [] as Array<[string, boolean]>,
+  semanticRun: vi.fn(),
+  results: [{ id: 'search:plan', title: 'Search plan' }],
+}))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/lib/hooks/use-create-dialogs', () => ({
@@ -269,11 +274,13 @@ vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
     failedVaultCount: 0,
     retryFailedVaults: vi.fn(async () => undefined),
   }),
-  useKnowledgeIndexedSearch: () => ({
-    runSemanticSearch: vi.fn(),
-    text: { data: { results: [] }, isCurrent: true },
+  useKnowledgeIndexedSearch: (query: string, enabled: boolean) => {
+    searchView.calls.push([query, enabled])
+    return {
+    runSemanticSearch: searchView.semanticRun,
+    text: { data: { results: searchView.results }, isCurrent: true },
     semantic: { data: undefined, variables: undefined, error: null },
-  }),
+  }},
 }))
 
 vi.mock('./VaultGraph', () => ({
@@ -419,6 +426,8 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     states.hydration = { isLoading: false, isError: false }
     states.persistence = { isPending: false, isError: false, error: null }
     vi.clearAllMocks()
+    searchView.calls = []
+    searchView.semanticRun.mockClear()
     vaultState.mounts = [{
       id: 'vault:one', name: 'Fixture', format_mode: 'markdown',
       state: 'ready-read-only', watch_enabled: true,
@@ -450,6 +459,21 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     ])
     expect(pane.tabs.find((tab) => tab.id === pane.activeTabId)?.noteId)
       .toBe('note:one')
+  })
+
+  it('activates the indexed search result surface without replacing the active document', async () => {
+    await renderExplorer()
+    await selectFile('notes/one.md')
+    const activeBefore = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId
+    act(() => useKnowledgeWorkspaceStore.getState().setActiveSearchContext({
+      query: 'plan', mode: 'text', spaceIds: ['knowledge_engine_space:research'],
+      authorityKinds: ['external_read_only'], tags: ['plans'],
+    }))
+
+    expect(screen.getByRole('region', { name: 'Active knowledge search' })).toHaveTextContent('text: plan')
+    expect(screen.getByRole('list', { name: 'Knowledge search results' })).toHaveTextContent('Search plan')
+    expect(searchView.calls).toContainEqual(['plan', true])
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(activeBefore)
   })
 
   it('clears its command registration on unmount', async () => {
