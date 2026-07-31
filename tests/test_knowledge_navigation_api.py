@@ -19,6 +19,9 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     Bookmark,
     BookmarkFolder,
     HydratedBookmarkPage,
+    NamedKnowledgeWorkspace,
+    NamedKnowledgeWorkspaceSummary,
+    WorkspaceRestorePlan,
 )
 from deeper_notebook.knowledge_engine.navigation_repository import (
     KnowledgeNavigationRepositoryError,
@@ -28,6 +31,35 @@ from deeper_notebook.knowledge_engine.navigation_repository import (
 class _NavigationService:
     def __init__(self) -> None:
         self.folders: list[BookmarkFolder] = []
+        timestamp = datetime(2026, 7, 31, tzinfo=timezone.utc)
+        self.workspace = NamedKnowledgeWorkspace.model_validate(
+            {
+                "id": "named_knowledge_workspace:desk",
+                "name": "Desk",
+                "name_key": "desk",
+                "revision": 3,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+                "snapshot": {
+                    "active_pane_id": "pane-one",
+                    "next_id": 2,
+                    "panes": {
+                        "pane-one": {
+                            "id": "pane-one",
+                            "active_tab_id": "tab-search",
+                            "tabs": [
+                                {
+                                    "id": "tab-search",
+                                    "display_label": "Research",
+                                    "target": {"kind": "search", "query": "research"},
+                                }
+                            ],
+                        }
+                    },
+                    "layout": {"type": "pane", "pane_id": "pane-one"},
+                },
+            }
+        )
 
     async def create_bookmark(self, command):
         timestamp = datetime(2026, 7, 31, tzinfo=timezone.utc)
@@ -51,6 +83,61 @@ class _NavigationService:
 
     async def list_bookmarks(self, *_args) -> HydratedBookmarkPage:
         return HydratedBookmarkPage()
+
+    async def list_workspaces(self) -> list[NamedKnowledgeWorkspaceSummary]:
+        return [
+            NamedKnowledgeWorkspaceSummary(
+                id=self.workspace.id,
+                name=self.workspace.name,
+                revision=self.workspace.revision,
+                updated_at=self.workspace.updated_at,
+            )
+        ]
+
+    async def get_workspace(self, workspace_id: str) -> NamedKnowledgeWorkspace:
+        if workspace_id != self.workspace.id:
+            raise LookupError(workspace_id)
+        return self.workspace
+
+    async def workspace_restore_plan(
+        self, workspace_id: str, revision: int
+    ) -> WorkspaceRestorePlan:
+        if workspace_id != self.workspace.id:
+            raise LookupError(workspace_id)
+        if revision != self.workspace.revision:
+            raise KnowledgeNavigationRepositoryError("workspace_revision_conflict")
+        snapshot = self.workspace.snapshot
+        return WorkspaceRestorePlan.model_validate(
+            {
+                "workspace_id": self.workspace.id,
+                "revision": self.workspace.revision,
+                "active_pane_id": snapshot.active_pane_id,
+                "next_id": snapshot.next_id,
+                "panes": {
+                    "pane-one": {
+                        "id": "pane-one",
+                        "active_tab_id": "tab-search",
+                        "tabs": [
+                            {
+                                "id": "tab-search",
+                                "display_label": "Research",
+                                "view_mode": "reading",
+                                "target": {"kind": "search", "query": "research"},
+                                "target_state": "available",
+                            }
+                        ],
+                    }
+                },
+                "layout": snapshot.layout.model_dump(),
+                "navigation": snapshot.navigation.model_dump(),
+                "summary": {
+                    "available": 1,
+                    "stale": 0,
+                    "unavailable": 0,
+                    "missing": 0,
+                },
+            }
+        )
 
 
 @pytest.fixture()
@@ -107,9 +194,7 @@ def test_openapi_uses_only_canonical_deeper_notebook_navigation_paths(
 ) -> None:
     paths = api_client._transport.app.openapi()["paths"]
     navigation_paths = {
-        path: set(methods)
-        for path, methods in paths.items()
-        if "/knowledge/" in path
+        path: set(methods) for path, methods in paths.items() if "/knowledge/" in path
     }
 
     assert navigation_paths == {
@@ -123,7 +208,74 @@ def test_openapi_uses_only_canonical_deeper_notebook_navigation_paths(
             "patch",
             "delete",
         },
+        "/api/deeper-notebook/knowledge/workspaces": {"get", "post"},
+        "/api/deeper-notebook/knowledge/workspaces/{workspace_id}": {
+            "get",
+            "patch",
+            "delete",
+        },
+        "/api/deeper-notebook/knowledge/workspaces/{workspace_id}/restore-plan": {
+            "post"
+        },
+        "/api/deeper-notebook/knowledge/workspaces/{workspace_id}/duplicate": {"post"},
     }
+
+
+@pytest.mark.asyncio
+async def test_workspace_list_excludes_snapshot_and_restore_plan_is_read_only(
+    api_client: AsyncClient,
+) -> None:
+    service = api_client._transport.app.state.knowledge_navigation_service
+    before = service.workspace.model_dump(mode="json")
+
+    async with api_client:
+        listed = await api_client.get("/api/deeper-notebook/knowledge/workspaces")
+        restored = await api_client.post(
+            "/api/deeper-notebook/knowledge/workspaces/"
+            "named_knowledge_workspace%3Adesk/restore-plan",
+            json={"revision": 3},
+        )
+
+    assert listed.status_code == 200
+    assert listed.json() == {
+        "items": [
+            {
+                "id": "named_knowledge_workspace:desk",
+                "name": "Desk",
+                "revision": 3,
+                "updated_at": "2026-07-31T00:00:00Z",
+            }
+        ]
+    }
+    assert restored.status_code == 200
+    assert restored.json()["summary"] == {
+        "available": 1,
+        "stale": 0,
+        "unavailable": 0,
+        "missing": 0,
+    }
+    assert service.workspace.model_dump(mode="json") == before
+
+
+@pytest.mark.asyncio
+async def test_restore_revision_conflict_returns_409_and_no_snapshot(
+    api_client: AsyncClient,
+) -> None:
+    service = api_client._transport.app.state.knowledge_navigation_service
+    before = service.workspace.model_dump(mode="json")
+
+    async with api_client:
+        response = await api_client.post(
+            "/api/deeper-notebook/knowledge/workspaces/"
+            "named_knowledge_workspace%3Adesk/restore-plan",
+            json={"revision": 2},
+        )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "knowledge_workspace_revision_conflict"}
+    }
+    assert service.workspace.model_dump(mode="json") == before
 
 
 @pytest.mark.asyncio
@@ -189,11 +341,15 @@ def _folder_chain(depth: int) -> list[BookmarkFolder]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("depth", "expected_status"), [(15, 200), (16, 200), (17, 503)])
+@pytest.mark.parametrize(
+    ("depth", "expected_status"), [(15, 200), (16, 200), (17, 503)]
+)
 async def test_folder_tree_has_an_inclusive_sixteen_level_bound(
     api_client: AsyncClient, depth: int, expected_status: int
 ) -> None:
-    api_client._transport.app.state.knowledge_navigation_service.folders = _folder_chain(depth)
+    api_client._transport.app.state.knowledge_navigation_service.folders = (
+        _folder_chain(depth)
+    )
 
     async with api_client:
         response = await api_client.get(
@@ -302,13 +458,30 @@ async def test_bookmark_pagination_validation_is_strict_and_scrubbed(
     [
         (LookupError("private"), status.HTTP_404_NOT_FOUND),
         (KnowledgeNavigationRepositoryError("not_found"), status.HTTP_404_NOT_FOUND),
-        (KnowledgeNavigationRepositoryError("folder_parent_not_found"), status.HTTP_404_NOT_FOUND),
-        (KnowledgeNavigationRepositoryError("operation_conflict"), status.HTTP_409_CONFLICT),
-        (KnowledgeNavigationRepositoryError("revision_conflict"), status.HTTP_409_CONFLICT),
+        (
+            KnowledgeNavigationRepositoryError("folder_parent_not_found"),
+            status.HTTP_404_NOT_FOUND,
+        ),
+        (
+            KnowledgeNavigationRepositoryError("operation_conflict"),
+            status.HTTP_409_CONFLICT,
+        ),
+        (
+            KnowledgeNavigationRepositoryError("revision_conflict"),
+            status.HTTP_409_CONFLICT,
+        ),
         (KnowledgeNavigationRepositoryError("folder_cycle"), status.HTTP_409_CONFLICT),
-        (KnowledgeNavigationRepositoryError("folder_depth_exceeded"), status.HTTP_409_CONFLICT),
+        (
+            KnowledgeNavigationRepositoryError("folder_depth_exceeded"),
+            status.HTTP_409_CONFLICT,
+        ),
         (ValueError("private"), status.HTTP_422_UNPROCESSABLE_CONTENT),
-        (KnowledgeNavigationRepositoryError("knowledge_navigation_repository_unavailable"), status.HTTP_503_SERVICE_UNAVAILABLE),
+        (
+            KnowledgeNavigationRepositoryError(
+                "knowledge_navigation_repository_unavailable"
+            ),
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+        ),
     ],
 )
 def test_declared_navigation_error_mapping_matrix_is_stable(

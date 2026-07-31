@@ -24,6 +24,8 @@ class KnowledgeTabState(BaseModel):
     relative_path: str = Field(min_length=1, max_length=4096)
     view_mode: KnowledgeViewMode
     source_authority: KnowledgeSourceAuthority = "external-vault"
+    knowledge_document_id: str | None = Field(default=None, max_length=128)
+    graph_viewport: "GraphViewport | None" = None
 
     @field_validator("relative_path")
     @classmethod
@@ -74,6 +76,7 @@ class SplitLayoutNode(BaseModel):
     direction: SplitDirection
     first: "KnowledgeLayoutNode"
     second: "KnowledgeLayoutNode"
+    first_size: float = Field(default=50.0, ge=10.0, le=90.0)
 
     @model_validator(mode="after")
     def layout_depth_is_bounded(self) -> "SplitLayoutNode":
@@ -94,6 +97,36 @@ KnowledgeLayoutNode = Annotated[
 ]
 
 
+class GraphViewport(BaseModel):
+    """Persisted viewport state for an optional local graph tab."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = 0.0
+    y: float = 0.0
+    zoom: float = Field(default=1.0, ge=0.1, le=10.0)
+
+
+class KnowledgeWorkspaceNavigation(BaseModel):
+    """Version-one-compatible navigation preferences for Current Session."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    utility_mode: Literal["sources", "bookmarks", "workspaces"] = "sources"
+    sidebar_visible: bool = True
+    sidebar_width: int = Field(default=320, ge=240, le=640)
+    active_bookmark_folder_id: str | None = Field(default=None, max_length=128)
+    bookmark_tags: list[str] = Field(default_factory=list, max_length=32)
+    source_tree_query: str = Field(default="", max_length=256)
+    search_query: str = Field(default="", max_length=512)
+    active_draft_id: str | None = Field(default=None, max_length=128)
+    selected_space_ids: list[str] = Field(default_factory=list, max_length=32)
+    authority_filters: list[Literal["app_owned", "external_read_only"]] = Field(
+        default_factory=list, max_length=2
+    )
+    metrics_visible: bool = True
+
+
 class KnowledgeWorkspaceDocument(BaseModel):
     """The complete, validated local knowledge-workspace state."""
 
@@ -104,6 +137,9 @@ class KnowledgeWorkspaceDocument(BaseModel):
     next_id: int = Field(ge=1)
     panes: dict[str, KnowledgePaneState] = Field(max_length=32)
     layout: KnowledgeLayoutNode
+    navigation: KnowledgeWorkspaceNavigation = Field(
+        default_factory=KnowledgeWorkspaceNavigation
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -203,5 +239,8 @@ def default_knowledge_workspace() -> KnowledgeWorkspaceDocument:
 
 
 SplitLayoutNode.model_rebuild(
-    _types_namespace={"KnowledgeLayoutNode": KnowledgeLayoutNode}
+    _types_namespace={
+        "GraphViewport": GraphViewport,
+        "KnowledgeLayoutNode": KnowledgeLayoutNode,
+    }
 )

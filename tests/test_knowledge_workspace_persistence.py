@@ -115,6 +115,36 @@ def test_legacy_workspace_tabs_default_to_external_vault_authority():
     )
 
 
+def test_pre_navigation_current_session_loads_with_version_one_defaults():
+    payload = populated().model_dump()
+    payload.pop("navigation", None)
+    payload["panes"]["pane-1"]["tabs"][0].pop("knowledge_document_id", None)
+    payload["panes"]["pane-1"]["tabs"][0].pop("graph_viewport", None)
+
+    workspace = KnowledgeWorkspaceDocument.model_validate(payload)
+
+    assert workspace.version == 1
+    assert workspace.navigation.utility_mode == "sources"
+    assert workspace.navigation.sidebar_width == 320
+    assert workspace.panes["pane-1"].tabs[0].knowledge_document_id is None
+    assert workspace.panes["pane-1"].tabs[0].graph_viewport is None
+
+
+def test_split_first_size_defaults_without_storing_a_second_panel_size():
+    split = SplitLayoutNode.model_validate(
+        {
+            "type": "split",
+            "id": "split-one",
+            "direction": "horizontal",
+            "first": {"type": "pane", "pane_id": "pane-1"},
+            "second": {"type": "pane", "pane_id": "pane-2"},
+        }
+    )
+
+    assert split.first_size == 50.0
+    assert "second_size" not in split.model_dump()
+
+
 def test_stale_legacy_temporary_file_does_not_block_future_saves(
     tmp_path: Path,
 ):
