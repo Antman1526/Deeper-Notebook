@@ -77,6 +77,7 @@ interface PaneNodeProps {
   setActivePane: (paneId: string) => void
   splitPane: (paneId: string, direction: SplitDirection) => string
   closePane: (paneId: string) => void
+  setSplitSize: (splitId: string, firstSize: number) => void
   registerPane: (paneId: string, element: HTMLElement | null) => void
 }
 
@@ -194,8 +195,11 @@ function LayoutNode({
       : t('knowledge.resizeVerticalSplit')
 
     return (
-      <ResizablePanelGroup direction={node.direction}>
-        <ResizablePanel defaultSize={50}>
+      <ResizablePanelGroup
+        direction={node.direction}
+        onLayout={(sizes) => paneProps.setSplitSize(node.id, sizes[0])}
+      >
+        <ResizablePanel defaultSize={node.firstSize ?? 50}>
           <LayoutNode
             node={node.first}
             panes={panes}
@@ -204,7 +208,7 @@ function LayoutNode({
           />
         </ResizablePanel>
         <ResizableHandle withHandle aria-label={separatorLabel} />
-        <ResizablePanel defaultSize={50}>
+        <ResizablePanel defaultSize={100 - (node.firstSize ?? 50)}>
           <LayoutNode
             node={node.second}
             panes={panes}
@@ -241,6 +245,7 @@ export function KnowledgeWorkspaceLayout({
   const setActivePane = useKnowledgeWorkspaceStore((state) => state.setActivePane)
   const splitPane = useKnowledgeWorkspaceStore((state) => state.splitPane)
   const closePane = useKnowledgeWorkspaceStore((state) => state.closePane)
+  const setSplitSize = useKnowledgeWorkspaceStore((state) => state.setSplitSize)
   const paneRefs = useRef<Record<string, HTMLElement | null>>({})
   const pendingPaneFocus = useRef(false)
   const canClose = Object.keys(panes).length > 1
@@ -279,6 +284,7 @@ export function KnowledgeWorkspaceLayout({
         setActivePane={setActivePane}
         splitPane={splitPane}
         closePane={closePaneWithFocus}
+        setSplitSize={setSplitSize}
         registerPane={registerPane}
       />
     </section>

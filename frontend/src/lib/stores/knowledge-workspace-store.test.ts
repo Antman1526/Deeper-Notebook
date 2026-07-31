@@ -55,6 +55,32 @@ describe('knowledge workspace store', () => {
     persistSpy.mockRestore()
   })
 
+  it('applies a named workspace in one revision and preserves drafts', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab({ ...plan, sourceAuthority: 'overlay' })
+    const tabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+    useOverlayDraftStore.setState({ drafts: { [`pane-1:${tabId}`]: {} as never } })
+    const before = useKnowledgeWorkspaceStore.getState().revision
+
+    expect(store.applyNamedWorkspace(defaultKnowledgeWorkspace())).toBe(true)
+    expect(useKnowledgeWorkspaceStore.getState().revision).toBe(before + 1)
+    expect(useOverlayDraftStore.getState().drafts).toHaveProperty(`pane-1:${tabId}`)
+  })
+
+  it('leaves current state unchanged when named workspace validation fails', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    const before = useKnowledgeWorkspaceStore.getState()
+    const invalid = defaultKnowledgeWorkspace()
+    invalid.panes['pane-1'].tabs = [{
+      id: 'tab-1', vaultId: 'vault:one', noteId: 'note:one', title: 'One',
+      relativePath: '/unsafe.md', viewMode: 'reading', sourceAuthority: 'external-vault',
+    }]
+    invalid.panes['pane-1'].activeTabId = 'tab-1'
+
+    expect(store.applyNamedWorkspace(invalid)).toBe(false)
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(before)
+  })
+
   it('deduplicates an open note inside the active pane', () => {
     const store = useKnowledgeWorkspaceStore.getState()
     store.openTab(plan)
