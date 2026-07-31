@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import secrets
 from collections.abc import Awaitable, Callable
 from datetime import date
@@ -102,6 +103,8 @@ class _BoundedOverlayRoute(APIRoute):
 
 
 router = APIRouter(route_class=_BoundedOverlayRoute)
+_KNOWLEDGE_DOCUMENT_ID = re.compile(r"^knowledge_engine_document:[A-Za-z0-9_-]+$")
+_KNOWLEDGE_BLOCK_ID = re.compile(r"^knowledge_engine_block:[A-Za-z0-9_-]+$")
 
 
 class _OverlayProofIdentity(BaseModel):
@@ -172,6 +175,47 @@ def _map_exception(exc: Exception) -> HTTPException:
     )
 
 
+async def _enrich_page_identity(request: Request, page: OverlayPage) -> OverlayPage:
+    """Attach optional unified IDs without changing overlay persistence semantics."""
+    service = getattr(request.app.state, "knowledge_engine_service", None)
+    if service is None:
+        return page
+    blocks = [dict(block) for block in page.blocks]
+    try:
+        keys = tuple(
+            dict.fromkeys(
+                key
+                for block in blocks
+                for key in [block.get("stable_source_id") or block.get("parser_id")]
+                if isinstance(key, str)
+            )
+        )
+        resolved = await service.resolve_legacy_page(
+            legacy_note_id=str(page.note["id"]), block_keys=keys
+        )
+        document_id = getattr(resolved, "document_id", None)
+        block_ids = getattr(resolved, "block_ids", None)
+        if isinstance(resolved, dict):
+            document_id = resolved.get("document_id")
+            block_ids = resolved.get("block_ids")
+        if (
+            not isinstance(document_id, str)
+            or _KNOWLEDGE_DOCUMENT_ID.fullmatch(document_id) is None
+            or not isinstance(block_ids, dict)
+        ):
+            return page
+        for block in blocks:
+            key = block.get("stable_source_id") or block.get("parser_id")
+            block_id = block_ids.get(key) if isinstance(key, str) else None
+            if isinstance(block_id, str) and _KNOWLEDGE_BLOCK_ID.fullmatch(block_id):
+                block["knowledge_block_id"] = block_id
+        return page.model_copy(
+            update={"knowledge_document_id": document_id, "blocks": blocks}
+        )
+    except Exception:
+        return page
+
+
 def _calendar_date_key(value: str) -> str:
     try:
         parsed = date.fromisoformat(value)
@@ -237,7 +281,10 @@ async def create_daily_overlay_note(
     date_key: OverlayDateKey,
 ) -> OverlayPage:
     try:
-        return await _service(request).create_daily(CreateDailyNote(date_key=date_key))
+        return await _enrich_page_identity(
+            request,
+            await _service(request).create_daily(CreateDailyNote(date_key=date_key)),
+        )
     except Exception as exc:
         raise _map_exception(exc) from None
 
@@ -252,7 +299,9 @@ async def create_unique_overlay_note(
     payload: CreateUniqueNote,
 ) -> OverlayPage:
     try:
-        return await _service(request).create_unique(payload)
+        return await _enrich_page_identity(
+            request, await _service(request).create_unique(payload)
+        )
     except Exception as exc:
         raise _map_exception(exc) from None
 
@@ -263,7 +312,9 @@ async def get_overlay_note(
     note_id: OverlayNoteId,
 ) -> OverlayPage:
     try:
-        return await _service(request).get_page(note_id)
+        return await _enrich_page_identity(
+            request, await _service(request).get_page(note_id)
+        )
     except Exception as exc:
         raise _map_exception(exc) from None
 
@@ -275,7 +326,9 @@ async def update_overlay_note(
     payload: UpdateOverlayNote,
 ) -> OverlayPage:
     try:
-        return await _service(request).update(note_id, payload)
+        return await _enrich_page_identity(
+            request, await _service(request).update(note_id, payload)
+        )
     except Exception as exc:
         raise _map_exception(exc) from None
 

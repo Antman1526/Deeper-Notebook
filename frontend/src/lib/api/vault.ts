@@ -6,6 +6,11 @@ import { canonicalVaultRelativePathSchema } from './knowledge-workspace'
 
 const vaultPrefix = '/deeper-notebook/vaults'
 
+const knowledgeDocumentIdSchema = z.string()
+  .regex(/^knowledge_engine_document:[A-Za-z0-9_-]+$/)
+const knowledgeBlockIdSchema = z.string()
+  .regex(/^knowledge_engine_block:[A-Za-z0-9_-]+$/)
+
 export const vaultFileSchema = z.object({
   id: z.string(),
   note_id: z.string(),
@@ -65,6 +70,7 @@ export const vaultLinkSchema = z.object({
 })
 
 export const vaultBlockSchema = z.object({
+  knowledge_block_id: knowledgeBlockIdSchema.nullable().optional(),
   markdown: z.string().optional(),
   heading_path: z.array(z.string()).optional(),
   block_kind: z.string().optional(),
@@ -86,6 +92,7 @@ export const vaultNoteSchema = z.object({
 export const vaultTaskSchema = z.unknown()
 
 export const vaultPageSchema = z.object({
+  knowledge_document_id: knowledgeDocumentIdSchema.nullable().optional(),
   file: vaultFileSchema,
   note: vaultNoteSchema,
   blocks: z.array(vaultBlockSchema),

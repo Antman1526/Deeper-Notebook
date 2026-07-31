@@ -40,6 +40,7 @@ const linkFixture = {
 
 function pageFixture(overrides: Record<string, unknown> = {}) {
   return {
+    knowledge_document_id: null,
     file: fileFixture,
     note: { id: 'note:one', title: 'One', markdown: '# One' },
     blocks: [],
@@ -232,6 +233,24 @@ describe('vault API boundary', () => {
         file: fileFixture,
         note: { id: 'note:one' },
       })
+  })
+
+  it('accepts only strict unified identity IDs on a page and its blocks', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({
+        knowledge_document_id: 'knowledge_engine_document:current',
+        blocks: [{ knowledge_block_id: 'knowledge_engine_block:heading' }],
+      }),
+    } as never)
+    await expect(vaultApi.page('vault:one', 'note:one')).resolves.toMatchObject({
+      knowledge_document_id: 'knowledge_engine_document:current',
+      blocks: [{ knowledge_block_id: 'knowledge_engine_block:heading' }],
+    })
+
+    mockedGet.mockResolvedValueOnce({
+      data: pageFixture({ knowledge_document_id: 'knowledge_engine_document:stale/id' }),
+    } as never)
+    await expect(vaultApi.page('vault:one', 'note:one')).rejects.toMatchObject({ code: 'page-invalid' })
   })
 
   it.each([
