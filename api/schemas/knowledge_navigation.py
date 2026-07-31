@@ -11,12 +11,19 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     BookmarkFolder,
     CreateBookmark,
     CreateFolder,
+    CreateWorkspace,
     DeleteBookmark,
     DeleteFolder,
+    DeleteWorkspace,
+    DuplicateWorkspace,
     HydratedBookmarkPage,
+    NamedKnowledgeWorkspace,
+    NamedKnowledgeWorkspaceSummary,
     NavigationReceipt,
     UpdateBookmark,
     UpdateFolder,
+    UpdateWorkspace,
+    WorkspaceRestorePlan,
 )
 
 
@@ -48,6 +55,26 @@ class BookmarkFolderDeleteRequest(DeleteFolder):
     pass
 
 
+class KnowledgeWorkspaceCreateRequest(CreateWorkspace):
+    pass
+
+
+class KnowledgeWorkspaceUpdateRequest(UpdateWorkspace):
+    pass
+
+
+class KnowledgeWorkspaceDuplicateRequest(DuplicateWorkspace):
+    pass
+
+
+class KnowledgeWorkspaceDeleteRequest(DeleteWorkspace):
+    pass
+
+
+class KnowledgeWorkspaceRestorePlanRequest(_StrictResponse):
+    revision: int = Field(ge=1)
+
+
 class BookmarkResponse(Bookmark):
     pass
 
@@ -62,6 +89,20 @@ class BookmarkFolderNode(BookmarkFolder):
 
 class BookmarkFolderTreeResponse(_StrictResponse):
     items: list[BookmarkFolderNode] = Field(default_factory=list, max_length=256)
+
+
+class KnowledgeWorkspaceResponse(NamedKnowledgeWorkspace):
+    pass
+
+
+class KnowledgeWorkspaceListResponse(_StrictResponse):
+    items: list[NamedKnowledgeWorkspaceSummary] = Field(
+        default_factory=list, max_length=256
+    )
+
+
+class KnowledgeWorkspaceRestorePlanResponse(WorkspaceRestorePlan):
+    pass
 
 
 class NavigationReceiptResponse(NavigationReceipt):
@@ -92,5 +133,13 @@ __all__ = [
     "BookmarkResponse",
     "BookmarkUpdateRequest",
     "KnowledgeNavigationErrorResponse",
+    "KnowledgeWorkspaceCreateRequest",
+    "KnowledgeWorkspaceDeleteRequest",
+    "KnowledgeWorkspaceDuplicateRequest",
+    "KnowledgeWorkspaceListResponse",
+    "KnowledgeWorkspaceResponse",
+    "KnowledgeWorkspaceRestorePlanRequest",
+    "KnowledgeWorkspaceRestorePlanResponse",
+    "KnowledgeWorkspaceUpdateRequest",
     "NavigationReceiptResponse",
 ]

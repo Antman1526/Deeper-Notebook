@@ -69,6 +69,8 @@ async def test_legacy_put_defaults_authority_and_serializes_it_explicitly(
                         {
                             **payload["panes"]["pane-1"]["tabs"][0],
                             "source_authority": "external-vault",
+                            "knowledge_document_id": None,
+                            "graph_viewport": None,
                         }
                     ],
                 },

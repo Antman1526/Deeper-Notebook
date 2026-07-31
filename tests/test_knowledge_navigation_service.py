@@ -15,6 +15,8 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     DocumentTarget,
     GraphTarget,
     KnowledgeOpenDescriptor,
+    NamedKnowledgeWorkspace,
+    NamedWorkspaceSnapshot,
 )
 from deeper_notebook.knowledge_engine.navigation_repository import (
     KnowledgeNavigationRepositoryError,
@@ -45,6 +47,70 @@ class _MetadataRepository:
                 )
             ]
         )
+
+
+class _WorkspaceMetadataRepository:
+    def __init__(self, workspace: NamedKnowledgeWorkspace) -> None:
+        self.workspace = workspace
+
+    async def get_workspace(self, workspace_id: str) -> NamedKnowledgeWorkspace:
+        if workspace_id != self.workspace.id:
+            raise LookupError(workspace_id)
+        return self.workspace
+
+
+def _workspace_snapshot() -> NamedWorkspaceSnapshot:
+    return NamedWorkspaceSnapshot.model_validate(
+        {
+            "active_pane_id": "pane-one",
+            "next_id": 4,
+            "panes": {
+                "pane-one": {
+                    "id": "pane-one",
+                    "active_tab_id": "tab-document",
+                    "tabs": [
+                        {
+                            "id": "tab-document",
+                            "display_label": "Plan",
+                            "target": {
+                                "kind": "document",
+                                "document_id": "knowledge_engine_document:plan",
+                            },
+                        },
+                        {
+                            "id": "tab-block",
+                            "display_label": "Stale block",
+                            "target": {
+                                "kind": "block",
+                                "document_id": "knowledge_engine_document:plan",
+                                "block_id": "knowledge_engine_block:plan",
+                                "source_revision_id": "knowledge_engine_revision:stale",
+                            },
+                        },
+                        {
+                            "id": "tab-search",
+                            "display_label": "Research",
+                            "target": {"kind": "search", "query": "research"},
+                        },
+                    ],
+                }
+            },
+            "layout": {"type": "pane", "pane_id": "pane-one"},
+        }
+    )
+
+
+def _named_workspace(revision: int = 3) -> NamedKnowledgeWorkspace:
+    timestamp = datetime(2026, 7, 31, tzinfo=timezone.utc)
+    return NamedKnowledgeWorkspace(
+        id="named_knowledge_workspace:desk",
+        name="Desk",
+        name_key="desk",
+        snapshot=_workspace_snapshot(),
+        revision=revision,
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
 
 
 class UnavailableEngineRepository:
@@ -131,10 +197,10 @@ async def test_block_hydration_has_a_complete_current_revision_state_matrix(
     if document == "missing":
         engine.document = LookupError("private document detail")
     elif document == "unavailable":
-        engine.document = KnowledgeNavigationRepositoryError("private repository detail")
-    engine.current_block = (
-        engine.current_block if current_block == "matching" else None
-    )
+        engine.document = KnowledgeNavigationRepositoryError(
+            "private repository detail"
+        )
+    engine.current_block = engine.current_block if current_block == "matching" else None
     if current_block == "wrong-document":
         engine.current_block = SimpleNamespace(
             document_id="knowledge_engine_document:other",
@@ -179,7 +245,9 @@ async def test_rooted_graph_hydration_preserves_the_graph_target_and_root_state(
     if document == "missing":
         engine.document = LookupError("private document detail")
     elif document == "unavailable":
-        engine.document = KnowledgeNavigationRepositoryError("private repository detail")
+        engine.document = KnowledgeNavigationRepositoryError(
+            "private repository detail"
+        )
     service.engine_repository = engine
 
     graph = GraphTarget(root_document_id="knowledge_engine_document:plan")
@@ -224,7 +292,10 @@ async def test_one_hydration_failure_does_not_poison_other_bookmark_metadata(
                 Bookmark(
                     id="knowledge_bookmark:unavailable",
                     target_kind="document",
-                    target={"kind": "document", "document_id": "knowledge_engine_document:plan"},
+                    target={
+                        "kind": "document",
+                        "document_id": "knowledge_engine_document:plan",
+                    },
                     display_label="Unavailable",
                     position=0,
                     revision=1,
@@ -250,3 +321,37 @@ async def test_one_hydration_failure_does_not_poison_other_bookmark_metadata(
     page = await service.list_bookmarks(BookmarkFilters(), cursor=None, limit=50)
 
     assert [item.target_state for item in page.items] == ["unavailable", "available"]
+
+
+@pytest.mark.asyncio
+async def test_restore_plan_hydrates_every_target_without_mutating_current_session(
+    tmp_path,
+) -> None:
+    current_session_path = tmp_path / "knowledge-workspace-v1.json"
+    current_session_path.write_bytes(b'{"synthetic":true}')
+    before = current_session_path.read_bytes()
+    service = KnowledgeNavigationService(
+        metadata_repository=_WorkspaceMetadataRepository(_named_workspace()),
+        engine_repository=_Engine(),
+    )
+
+    plan = await service.workspace_restore_plan("named_knowledge_workspace:desk", 3)
+
+    assert plan.workspace_id == "named_knowledge_workspace:desk"
+    assert plan.revision == 3
+    assert plan.summary == {
+        "available": 2,
+        "stale": 1,
+        "unavailable": 0,
+        "missing": 0,
+    }
+    assert [tab.id for tab in plan.panes["pane-one"].tabs] == [
+        "tab-document",
+        "tab-block",
+        "tab-search",
+    ]
+    assert (
+        plan.panes["pane-one"].tabs[0].target_document.relative_locator
+        == "Plans/Research.md"
+    )
+    assert current_session_path.read_bytes() == before
