@@ -609,15 +609,15 @@ class ProjectionDigest(_Strict):
     ) -> dict[str, list[str]]:
         normalized: dict[str, list[str]] = {}
         for key, members in value.items():
-            if len(key) > 256 or "\x00" in key:
-                raise ValueError("digest membership key is invalid")
-            if info.field_name == "exact_search_membership" and re.fullmatch(
-                _SHA256_PATTERN, key
-            ) is None:
-                raise ValueError("exact search digest keys must be query hashes")
-            for member in members:
-                canonical_locator(member)
-            normalized[key] = sorted(set(members))
+            if info.field_name == "exact_search_membership":
+                if re.fullmatch(_SHA256_PATTERN, key) is None:
+                    raise ValueError("exact search digest keys must be query hashes")
+                normalized_key = key
+            else:
+                normalized_key = canonical_locator(key)
+            normalized[normalized_key] = sorted(
+                {canonical_locator(member) for member in members}
+            )
         return dict(sorted(normalized.items()))
 
     @field_validator("graph_edges")
