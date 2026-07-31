@@ -150,6 +150,11 @@ def _marked_manifest(tmp_path: Path, inputs: dict[str, Path]) -> Path:
                     "minimum_tasks": 1,
                     "minimum_graph_edges": 1,
                     "minimum_trust_records": 1,
+                    "checkpoint_space_ids": [
+                        "knowledge_engine_space:overlay",
+                        "knowledge_engine_space:parent",
+                        "knowledge_engine_space:child",
+                    ],
                 },
             }
         ),
@@ -402,6 +407,29 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
                     "instance_pid": 12344,
                     "overlay_root_sha256": "a" * 64,
                 },
+                "backfill_before_restart": [
+                    {
+                        "space_id": "knowledge_engine_space:overlay",
+                        "status": "completed",
+                        "projected": 1,
+                        "unchanged": 0,
+                        "failed": 0,
+                    },
+                    {
+                        "space_id": "knowledge_engine_space:parent",
+                        "status": "completed",
+                        "projected": 1,
+                        "unchanged": 0,
+                        "failed": 0,
+                    },
+                    {
+                        "space_id": "knowledge_engine_space:child",
+                        "status": "completed",
+                        "projected": 2,
+                        "unchanged": 0,
+                        "failed": 0,
+                    },
+                ],
                 "external_after": {
                     name: {"fingerprints": {}, "git_status_sha256": None}
                     for name in ("overlay", "parent", "child")
@@ -454,6 +482,22 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
         module,
         "_overlay_evidence",
         lambda *_args: overlay_snapshot,
+    )
+    monkeypatch.setattr(
+        module,
+        "_wait_for_terminal_backfill",
+        lambda *_args: [
+            {
+                "space_id": space_id,
+                "status": "completed",
+                "projected": 0,
+                "unchanged": 1,
+                "failed": 0,
+            }
+            for space_id in sorted(
+                manifest_payload["expected"]["checkpoint_space_ids"]
+            )
+        ],
     )
 
     def read_only_run(run_inputs):
@@ -576,6 +620,138 @@ def test_controlled_scan_runs_two_rounds_across_the_stabilization_window(
         "/api/deeper-notebook/vaults/vault_mount:child/scan",
     ]
     assert sleeps == [module.SCAN_STABILIZATION_SECONDS]
+
+
+def test_controlled_proof_waits_for_every_persisted_checkpoint_before_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _verifier_module()
+    inputs = module.Inputs(
+        api_url="http://127.0.0.1:18181",
+        token_path=tmp_path / "token",
+        report_path=tmp_path / "report.json",
+        space_ids=("knowledge_engine_space:overlay",),
+        exact_queries=("research",),
+        require_shadow_enabled=True,
+    )
+    expected_space_ids = (
+        "knowledge_engine_space:overlay",
+        "knowledge_engine_space:parent",
+    )
+    responses = iter(
+        [
+            (
+                200,
+                [
+                    {
+                        "space_id": "knowledge_engine_space:overlay",
+                        "status": "running",
+                        "projected": 1,
+                        "unchanged": 0,
+                        "failed": 0,
+                    }
+                ],
+            ),
+            (
+                200,
+                [
+                    {
+                        "space_id": "knowledge_engine_space:parent",
+                        "status": "completed",
+                        "projected": 1,
+                        "unchanged": 0,
+                        "failed": 0,
+                    },
+                    {
+                        "space_id": "knowledge_engine_space:overlay",
+                        "status": "completed",
+                        "projected": 1,
+                        "unchanged": 0,
+                        "failed": 0,
+                    },
+                ],
+            ),
+        ]
+    )
+    paths: list[str] = []
+    sleeps: list[float] = []
+
+    def fake_get(_inputs, _token, path):
+        paths.append(path)
+        return next(responses)
+
+    monotonic_values = iter((0.0, 0.1, 0.2))
+    monkeypatch.setattr(module, "_get", fake_get)
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(module.time, "sleep", sleeps.append)
+
+    checkpoints = module._wait_for_terminal_backfill(
+        inputs,
+        "test-token",
+        expected_space_ids,
+    )
+
+    assert [item["space_id"] for item in checkpoints] == sorted(expected_space_ids)
+    assert all(item["status"] == "completed" for item in checkpoints)
+    assert len(paths) == 2
+    assert all(
+        path.startswith(
+            "/api/deeper-notebook/knowledge-engine/backfill-checkpoints?"
+        )
+        for path in paths
+    )
+    assert sleeps == [module.BACKFILL_POLL_SECONDS]
+
+
+def test_controlled_prepare_never_mutates_when_backfill_is_not_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _verifier_module()
+    inputs = _inputs(tmp_path)
+    manifest_path = _marked_manifest(tmp_path, inputs)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    parsed_inputs = module.Inputs(
+        api_url="http://127.0.0.1:18181",
+        token_path=inputs["token"],
+        report_path=inputs["report"],
+        space_ids=("knowledge_engine_space:overlay",),
+        exact_queries=("research",),
+        require_shadow_enabled=True,
+        proof_phase="prepare",
+        synthetic_manifest=manifest_path,
+        expected_prior_state=inputs["state"],
+    )
+    monkeypatch.setattr(
+        module,
+        "_synthetic_root_evidence",
+        lambda *_args: {"fingerprints": {}, "git_status_sha256": None},
+    )
+    monkeypatch.setattr(
+        module,
+        "_proof_identity",
+        lambda *_args: {
+            "instance_nonce": "n" * 43,
+            "instance_pid": 12345,
+            "overlay_root_sha256": "a" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "_wait_for_terminal_backfill",
+        lambda *_args: (_ for _ in ()).throw(
+            module.VerificationUnavailable("backfill_not_terminal")
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_json_request",
+        lambda *_args, **_kwargs: pytest.fail(
+            "prepare must not mutate before terminal backfill"
+        ),
+    )
+
+    with pytest.raises(module.VerificationUnavailable, match="backfill_not_terminal"):
+        module._controlled_prepare(parsed_inputs, manifest, "test-token")
 
 
 def test_overlay_runtime_logs_are_excluded_from_source_fingerprints(

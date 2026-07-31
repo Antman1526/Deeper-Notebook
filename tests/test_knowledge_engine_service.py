@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from deeper_notebook.knowledge_engine.backfill import BackfillResult
-from deeper_notebook.knowledge_engine.contracts import ProjectionDigest
+from deeper_notebook.knowledge_engine.contracts import (
+    BackfillCheckpoint,
+    ProjectionDigest,
+)
 from deeper_notebook.knowledge_engine.service import (
     KnowledgeEngineService,
     enabled_setting,
@@ -19,6 +24,20 @@ class _Repository:
 
     async def list_documents(self, *, space_id: str | None, limit: int, offset: int):
         return [{"space_id": space_id, "limit": limit, "offset": offset}]
+
+    async def get_checkpoint(self, space_id: str):
+        if space_id.endswith(":missing"):
+            return None
+        return BackfillCheckpoint(
+            space_id=space_id,
+            last_relative_locator="Pages/Plan.md",
+            last_source_hash="a" * 64,
+            status="completed",
+            projected=1,
+            unchanged=0,
+            failed=0,
+            updated_at=datetime(2026, 7, 31, tzinfo=timezone.utc),
+        )
 
 
 class _Backfill:
@@ -56,6 +75,15 @@ async def test_service_owns_and_delegates_the_safe_engine_boundary():
     assert await service.list_documents(space_id=None, limit=3, offset=2) == [
         {"space_id": None, "limit": 3, "offset": 2}
     ]
+    assert [
+        checkpoint.space_id
+        for checkpoint in await service.backfill_checkpoints(
+            (
+                "knowledge_engine_space:fixture",
+                "knowledge_engine_space:missing",
+            )
+        )
+    ] == ["knowledge_engine_space:fixture"]
     assert await service.run_backfill() == BackfillResult(projected=1)
     assert service.coordinator is coordinator
 

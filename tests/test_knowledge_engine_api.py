@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 
 from deeper_notebook.knowledge_engine.capabilities import capabilities_for
 from deeper_notebook.knowledge_engine.contracts import (
+    BackfillCheckpoint,
     EquivalenceReport,
     KnowledgeDocument,
 )
@@ -66,11 +67,31 @@ class _EngineService:
             ],
         )
         self.equivalence_requests: list[tuple[str, tuple[str, ...]]] = []
+        self.checkpoint_requests: list[tuple[str, ...]] = []
 
     async def status(self) -> EngineProjectionStatus:
         if isinstance(self.status_result, Exception):
             raise self.status_result
         return self.status_result
+
+    async def backfill_checkpoints(
+        self, space_ids: tuple[str, ...]
+    ) -> list[BackfillCheckpoint]:
+        self.checkpoint_requests.append(space_ids)
+        return [
+            BackfillCheckpoint(
+                space_id=space_id,
+                last_relative_locator="Private/Plan.md",
+                last_source_hash="f" * 64,
+                status="completed",
+                projected=1,
+                unchanged=2,
+                failed=0,
+                updated_at=datetime(2026, 7, 31, tzinfo=timezone.utc),
+            )
+            for space_id in space_ids
+            if not space_id.endswith(":missing")
+        ]
 
     async def get_document(self, document_id: str) -> KnowledgeDocument:
         if isinstance(self.document_result, Exception):
@@ -212,6 +233,45 @@ async def test_status_exposes_stable_counts_only(app_with_engine: FastAPI) -> No
 
     assert response.status_code == 200
     assert response.json() == {"projected": 3, "unchanged": 2, "failed": 1}
+
+
+@pytest.mark.asyncio
+async def test_backfill_checkpoints_are_get_only_and_redacted(
+    app_with_engine: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/api/deeper-notebook/knowledge-engine/backfill-checkpoints",
+            params=[
+                ("space_id", "knowledge_engine_space:primary"),
+                ("space_id", "knowledge_engine_space:missing"),
+            ],
+        )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "space_id": "knowledge_engine_space:primary",
+            "status": "completed",
+            "projected": 1,
+            "unchanged": 2,
+            "failed": 0,
+        }
+    ]
+    serialized = response.text
+    assert "last_relative_locator" not in serialized
+    assert "last_source_hash" not in serialized
+    assert "updated_at" not in serialized
+    assert "Private/Plan.md" not in serialized
+    assert app_with_engine.state.knowledge_engine_service.checkpoint_requests == [
+        (
+            "knowledge_engine_space:primary",
+            "knowledge_engine_space:missing",
+        )
+    ]
 
 
 @pytest.mark.asyncio
