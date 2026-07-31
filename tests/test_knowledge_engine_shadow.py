@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -196,6 +197,80 @@ async def test_shadow_preserves_a_stable_repository_failure_code_in_its_receipt(
     assert repository.failure_receipts[0]["error_code"] == (
         "knowledge_engine_repository_unavailable"
     )
+
+
+@pytest.mark.asyncio
+async def test_explicit_external_failure_report_records_a_sanitized_receipt():
+    repository = CapturingKnowledgeRepository()
+    coordinator = KnowledgeShadowCoordinator(repository=repository, clock=lambda: NOW)
+    work = _work()
+
+    result = await coordinator.record_external_failure(
+        legacy_operation_id="vault-scan-fixture",
+        mount=_mount(),
+        observation=work,
+        error=KnowledgeRepositoryError("knowledge_engine_repository_unavailable"),
+    )
+
+    assert result is None
+    assert repository.failure_receipts[0]["input_hash"] == work.content_hash
+    assert repository.failure_receipts[0]["error_code"] == (
+        "knowledge_engine_repository_unavailable"
+    )
+
+
+@pytest.mark.asyncio
+async def test_failure_report_logs_only_stable_fallback_when_receipt_repo_unavailable(
+    monkeypatch,
+):
+    repository = CapturingKnowledgeRepository()
+    repository.fail_failure_receipt = True
+    coordinator = KnowledgeShadowCoordinator(repository=repository, clock=lambda: NOW)
+    messages = []
+    monkeypatch.setattr(
+        "deeper_notebook.knowledge_engine.shadow.logger.warning",
+        lambda message, *arguments: messages.append((message, arguments)),
+    )
+
+    await coordinator.record_external_failure(
+        legacy_operation_id="private-legacy-operation",
+        mount=_mount(),
+        observation=_work(),
+        error=RuntimeError("private repository detail"),
+    )
+
+    assert messages == [
+        (
+            "Knowledge shadow failure receipt unavailable space_id={} operation_id={} code={}",
+            (
+                "knowledge_engine_space:3fa3b72207fa9acfd40dfc454ee97bd91c4a56574d27d230e1a4276b67a7c9a7",
+                messages[0][1][1],
+                "knowledge_engine_failure_receipt_unavailable",
+            ),
+        )
+    ]
+    assert "private-legacy-operation" not in str(messages)
+    assert "Research/Exact.md" not in str(messages)
+
+
+@pytest.mark.asyncio
+async def test_failure_report_propagates_cancellation():
+    class CancelledReceiptRepository(CapturingKnowledgeRepository):
+        async def record_projection_failure(self, **kwargs):
+            raise asyncio.CancelledError
+
+    coordinator = KnowledgeShadowCoordinator(
+        repository=CancelledReceiptRepository(),
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await coordinator.record_external_failure(
+            legacy_operation_id="vault-scan-fixture",
+            mount=_mount(),
+            observation=_work(),
+            error=RuntimeError("private repository detail"),
+        )
 
 
 @pytest.mark.asyncio

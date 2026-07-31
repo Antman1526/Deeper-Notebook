@@ -7,7 +7,7 @@ import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Literal, Protocol
+from typing import Protocol
 
 from loguru import logger
 
@@ -21,7 +21,6 @@ from deeper_notebook.knowledge_engine.contracts import (
 )
 from deeper_notebook.knowledge_engine.identity import engine_record_id
 from deeper_notebook.overlay.contracts import OverlayNote
-from deeper_notebook.vault.contracts import VaultFormat
 from deeper_notebook.vault.repository import VaultMount
 from deeper_notebook.vault.watcher import VaultWorkItem
 
@@ -63,6 +62,24 @@ class KnowledgeShadowProjector(Protocol):
         overlay_note: OverlayNote,
         canonical_markdown: str,
         observed_modified_ns: int,
+    ) -> None: ...
+
+    async def record_external_failure(
+        self,
+        *,
+        legacy_operation_id: str,
+        mount: VaultMount,
+        observation: VaultWorkItem,
+        error: Exception,
+    ) -> None: ...
+
+    async def record_overlay_failure(
+        self,
+        *,
+        legacy_operation_id: str,
+        overlay_note: OverlayNote,
+        canonical_markdown: str,
+        error: Exception,
     ) -> None: ...
 
 
@@ -226,6 +243,48 @@ class KnowledgeShadowCoordinator:
             ),
         )
 
+    async def record_external_failure(
+        self,
+        *,
+        legacy_operation_id: str,
+        mount: VaultMount,
+        observation: VaultWorkItem,
+        error: Exception,
+    ) -> None:
+        await self._record_failure(
+            space_id=_space_id(mount.id),
+            relative_locator=observation.relative_path,
+            input_hash=observation.content_hash,
+            operation_id=_operation_id(
+                legacy_operation_id,
+                observation.relative_path,
+                observation.content_hash,
+            ),
+            error_code=_failure_code(error),
+        )
+
+    async def record_overlay_failure(
+        self,
+        *,
+        legacy_operation_id: str,
+        overlay_note: OverlayNote,
+        canonical_markdown: str,
+        error: Exception,
+    ) -> None:
+        canonical_bytes = canonical_markdown.encode("utf-8")
+        content_hash = sha256(canonical_bytes).hexdigest()
+        await self._record_failure(
+            space_id=_space_id("overlay:default"),
+            relative_locator=overlay_note.relative_path,
+            input_hash=content_hash,
+            operation_id=_operation_id(
+                legacy_operation_id,
+                overlay_note.relative_path,
+                content_hash,
+            ),
+            error_code=_failure_code(error),
+        )
+
     async def _submit(
         self,
         *,
@@ -251,24 +310,28 @@ class KnowledgeShadowCoordinator:
             raise
         except Exception as error:
             await self._record_failure(
-                envelope,
-                operation_id,
+                space_id=envelope.space_id,
+                relative_locator=envelope.relative_locator,
+                input_hash=envelope.observed_content_hash,
+                operation_id=operation_id,
                 error_code=_failure_code(error),
             )
 
     async def _record_failure(
         self,
-        envelope: SourceEnvelope,
-        operation_id: str,
         *,
+        space_id: str,
+        relative_locator: str,
+        input_hash: str,
+        operation_id: str,
         error_code: str,
     ) -> None:
         try:
             receipt = await self._repository.record_projection_failure(
                 operation_id=operation_id,
-                space_id=envelope.space_id,
-                relative_locator=envelope.relative_locator,
-                input_hash=envelope.observed_content_hash,
+                space_id=space_id,
+                relative_locator=relative_locator,
+                input_hash=input_hash,
                 error_code=error_code,
             )
             if getattr(receipt, "status", None) != "failed":
@@ -278,14 +341,14 @@ class KnowledgeShadowCoordinator:
         except Exception:
             logger.warning(
                 "Knowledge shadow failure receipt unavailable space_id={} operation_id={} code={}",
-                envelope.space_id,
+                space_id,
                 operation_id,
                 "knowledge_engine_failure_receipt_unavailable",
             )
             return
         logger.warning(
             "Knowledge shadow projection failed space_id={} operation_id={} code={}",
-            envelope.space_id,
+            space_id,
             operation_id,
             error_code,
         )

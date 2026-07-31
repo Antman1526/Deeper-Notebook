@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -386,10 +387,14 @@ async def test_shadow_failure_does_not_undo_a_committed_overlay_revision(fixture
     class FailingShadowProjector:
         def __init__(self) -> None:
             self.calls = []
+            self.failure_reports = []
 
         async def project_overlay(self, **kwargs) -> None:
             self.calls.append(kwargs)
             raise RuntimeError("knowledge_engine_repository_unavailable")
+
+        async def record_overlay_failure(self, **kwargs) -> None:
+            self.failure_reports.append(kwargs)
 
     shadow = FailingShadowProjector()
     page = await fixture.service(shadow_projector=shadow).create_unique(
@@ -401,6 +406,58 @@ async def test_shadow_failure_does_not_undo_a_committed_overlay_revision(fixture
     assert shadow.calls[0]["canonical_markdown"].encode("utf-8") == (
         fixture.storage.read(page.overlay.relative_path).markdown.encode("utf-8")
     )
+    assert isinstance(shadow.failure_reports[0]["error"], RuntimeError)
+
+    replayed = await fixture.service(shadow_projector=shadow).create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="shadow-contained")
+    )
+    assert replayed.overlay.id == page.overlay.id
+    assert len(shadow.calls) == len(shadow.failure_reports) == 1
+
+
+@pytest.mark.asyncio
+async def test_unavailable_overlay_reporter_uses_only_a_hashed_fallback(
+    fixture,
+    monkeypatch,
+):
+    class MissingReporter:
+        async def project_overlay(self, **_kwargs) -> None:
+            raise RuntimeError("private failure")
+
+    messages = []
+    monkeypatch.setattr(
+        "deeper_notebook.overlay.service.logger.warning",
+        lambda message, *arguments: messages.append((message, arguments)),
+    )
+
+    page = await fixture.service(shadow_projector=MissingReporter()).create_unique(
+        CreateUniqueNote(title="Research", idempotency_key="shadow-fallback")
+    )
+
+    assert page.overlay.revision == 1
+    assert messages == [
+        (
+            "Knowledge shadow failure receipt unavailable operation_id={} code={}",
+            (messages[0][1][0], "knowledge_engine_failure_receipt_unavailable"),
+        )
+    ]
+    assert messages[0][1][0].startswith("shadow-diagnostic-v1:")
+    assert "operation-1" not in str(messages)
+    assert page.overlay.relative_path not in str(messages)
+
+
+@pytest.mark.asyncio
+async def test_shadow_cancellation_propagates_after_overlay_commit(fixture):
+    class CancellingShadowProjector:
+        async def project_overlay(self, **_kwargs) -> None:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await fixture.service(shadow_projector=CancellingShadowProjector()).create_unique(
+            CreateUniqueNote(title="Research", idempotency_key="shadow-cancelled")
+        )
+
+    assert fixture.repository.commit_calls == 1
 
 
 @pytest.mark.asyncio
