@@ -46,6 +46,7 @@ from api.routers import (
     filesystem,  # v0.7.90 — host filesystem listing/mkdir for picker UI
     insights,
     knowledge_engine,
+    knowledge_navigation,
     knowledge_workspace,
     languages,
     models,
@@ -230,6 +231,37 @@ def _clear_knowledge_engine_service(app: FastAPI) -> None:
         delattr(app.state, "knowledge_engine_service")
 
 
+def _clear_knowledge_navigation_service(app: FastAPI) -> None:
+    """Remove navigation state at lifespan exit without a disabled sentinel."""
+    if hasattr(app.state, "knowledge_navigation_service"):
+        delattr(app.state, "knowledge_navigation_service")
+
+
+async def _start_knowledge_navigation(
+    app: FastAPI,
+    *,
+    engine_service: KnowledgeEngineService | None = None,
+) -> None:
+    """Own metadata navigation independently of optional engine hydration."""
+    from deeper_notebook.knowledge_engine.navigation_repository import (
+        KnowledgeNavigationRepository,
+    )
+    from deeper_notebook.knowledge_engine.navigation_service import (
+        KnowledgeNavigationService,
+    )
+
+    _clear_knowledge_navigation_service(app)
+    engine_repository = (
+        getattr(engine_service, "_repository", None)
+        if engine_service is not None
+        else None
+    )
+    app.state.knowledge_navigation_service = KnowledgeNavigationService(
+        metadata_repository=KnowledgeNavigationRepository(),
+        engine_repository=engine_repository,
+    )
+
+
 def _create_knowledge_engine_runtime() -> KnowledgeEngineService:
     """Build the optional engine without exposing its storage dependencies."""
     from deeper_notebook.knowledge_engine.backfill import (
@@ -407,6 +439,10 @@ async def lifespan(app: FastAPI):
     # into both legacy projection paths without altering their availability.
     knowledge_shadow_coordinator, knowledge_backfill_task = (
         await _start_knowledge_engine(app)
+    )
+    await _start_knowledge_navigation(
+        app,
+        engine_service=getattr(app.state, "knowledge_engine_service", None),
     )
 
     # App-owned overlay startup is isolated from the rest of the API. The
@@ -748,6 +784,7 @@ async def lifespan(app: FastAPI):
     # Yield control to the application
     yield
 
+    _clear_knowledge_navigation_service(app)
     await _stop_knowledge_engine(app, knowledge_backfill_task)
 
     if overlay_service is not None:
@@ -1192,6 +1229,11 @@ app.include_router(
     knowledge_engine.router,
     prefix="/api/deeper-notebook",
     tags=["deeper-notebook-knowledge-engine"],
+)
+app.include_router(
+    knowledge_navigation.router,
+    prefix="/api/deeper-notebook/knowledge",
+    tags=["deeper-notebook-knowledge-navigation"],
 )
 app.include_router(
     knowledge_workspace.router,

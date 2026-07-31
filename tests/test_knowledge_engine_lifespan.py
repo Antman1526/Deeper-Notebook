@@ -37,6 +37,19 @@ async def test_disabled_flags_create_no_engine_service_or_backfill_task(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_navigation_service_is_owned_even_when_engine_is_disabled(monkeypatch):
+    app = _app()
+    monkeypatch.setattr(main, "enabled_setting", lambda _name: False)
+
+    await main._start_knowledge_navigation(app)
+
+    assert hasattr(app.state, "knowledge_navigation_service")
+    assert app.state.knowledge_navigation_service.engine_repository is None
+    main._clear_knowledge_navigation_service(app)
+    assert not hasattr(app.state, "knowledge_navigation_service")
+
+
+@pytest.mark.asyncio
 async def test_shadow_enabled_sets_service_and_returns_its_single_coordinator(monkeypatch):
     app = _app()
     coordinator = object()
