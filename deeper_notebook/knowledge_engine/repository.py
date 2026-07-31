@@ -93,6 +93,21 @@ def _operation(value: str) -> str:
     return value
 
 
+def _source_ref(value: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 128
+        or "/" in value
+        or "\\" in value
+        or value in {".", ".."}
+        or value.startswith(".")
+        or re.match(r"^[A-Za-z]:", value)
+    ):
+        raise ValueError("invalid_knowledge_engine_source_ref")
+    return value
+
+
 def _receipt_id(operation_id: str) -> str:
     return (
         "knowledge_engine_projection_receipt:"
@@ -111,6 +126,8 @@ def _content(value: dict[str, Any]) -> dict[str, Any]:
 
 def _receipt_from(value: Any) -> ProjectionReceipt:
     try:
+        if isinstance(value, dict):
+            value = {key: item for key, item in value.items() if key != "id"}
         return ProjectionReceipt.model_validate(value)
     except ValidationError:
         raise KnowledgeRepositoryError("knowledge_engine_receipt_invalid") from None
@@ -152,8 +169,18 @@ class KnowledgeRepository:
     ) -> ProjectionReceipt:
         operation_id = _operation(operation_id)
         variables = self._snapshot_variables(snapshot, operation_id)
-        async with self._connection_factory() as connection:
-            rows = await self._query(connection, self._snapshot_transaction(), variables)
+        try:
+            async with self._connection_factory() as connection:
+                rows = await self._query(
+                    connection, self._snapshot_transaction(), variables
+                )
+        except KnowledgeRepositoryError as error:
+            if error.code != "knowledge_engine_repository_unavailable":
+                raise
+            return await self._reconcile_transaction_conflict(
+                operation_id=operation_id,
+                input_hash=variables["input_hash"],
+            )
         result = next(
             (row for row in reversed(rows) if isinstance(row, dict) and "receipt" in row),
             None,
@@ -164,9 +191,33 @@ class KnowledgeRepository:
         prior_input_hash = result.get("prior_input_hash")
         if prior_input_hash is not None and prior_input_hash != variables["input_hash"]:
             raise KnowledgeRepositoryError("operation_conflict")
+        existing_status = result.get("existing_status")
+        if existing_status == "failed":
+            return receipt
         if prior_input_hash == variables["input_hash"]:
             return receipt.model_copy(update={"status": "unchanged"})
         return receipt
+
+    async def _reconcile_transaction_conflict(
+        self, *, operation_id: str, input_hash: str
+    ) -> ProjectionReceipt:
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT * FROM knowledge_engine_projection_receipt
+                WHERE operation_id = $operation_id LIMIT 1;
+                """,
+                {"operation_id": operation_id},
+            )
+        if not rows:
+            raise KnowledgeRepositoryError("knowledge_engine_repository_unavailable")
+        receipt = _receipt_from(rows[0])
+        if receipt.input_hash != input_hash:
+            raise KnowledgeRepositoryError("operation_conflict")
+        if receipt.status != "projected":
+            raise KnowledgeRepositoryError("knowledge_engine_repository_unavailable")
+        return receipt.model_copy(update={"status": "unchanged"})
 
     async def get_document(self, document_id: str) -> KnowledgeDocument:
         async with self._connection_factory() as connection:
@@ -281,7 +332,10 @@ class KnowledgeRepository:
                 connection,
                 """
                 BEGIN TRANSACTION;
-                LET $existing = (SELECT * FROM $receipt_id LIMIT 1)[0];
+                LET $existing = (
+                    SELECT * FROM knowledge_engine_projection_receipt
+                    WHERE operation_id = $operation_id LIMIT 1
+                )[0];
                 IF $existing = NONE {
                     CREATE $receipt_id CONTENT $receipt;
                 };
@@ -290,13 +344,17 @@ class KnowledgeRepository:
                 """,
                 {
                     "receipt_id": _record_id(_receipt_id(operation_id), kind="receipt"),
+                    "operation_id": operation_id,
                     "receipt": receipt,
                 },
             )
         row = next((item for item in reversed(rows) if "receipt" in item), None)
         if row is None:
             raise KnowledgeRepositoryError("knowledge_engine_commit_outcome_missing")
-        return _receipt_from(row["receipt"])
+        receipt = _receipt_from(row["receipt"])
+        if receipt.input_hash != input_hash:
+            raise KnowledgeRepositoryError("operation_conflict")
+        return receipt
 
     async def get_checkpoint(self, space_id: str) -> BackfillCheckpoint | None:
         _record_id(space_id, kind="space")
@@ -341,6 +399,7 @@ class KnowledgeRepository:
         self, snapshot: KnowledgeSnapshot, operation_id: str
     ) -> dict[str, Any]:
         data = snapshot.model_dump(mode="python")
+        _source_ref(snapshot.space.source_ref)
         space = _content(data["space"])
         document = _content(data["document"])
         revision = _content(data["revision"])
@@ -431,7 +490,23 @@ class KnowledgeRepository:
             SELECT * FROM knowledge_engine_document
             WHERE id = $document_record_id LIMIT 1
         )[0];
-        IF $existing_receipt = NONE {
+        LET $existing_status = IF $existing_receipt = NONE {
+            'missing'
+        } ELSE {
+            $existing_receipt.status
+        };
+        LET $retry_failed = IF $existing_receipt = NONE {
+            false
+        } ELSE {
+            $existing_receipt.status = 'failed'
+            AND $existing_receipt.input_hash = $input_hash
+        };
+        LET $write_snapshot = IF $existing_receipt = NONE {
+            true
+        } ELSE {
+            $retry_failed
+        };
+        IF $write_snapshot {
             UPSERT $space_record_id CONTENT $space;
             UPSERT $revision_record_id CONTENT $revision;
             UPSERT $document_record_id CONTENT $document;
@@ -461,11 +536,16 @@ class KnowledgeRepository:
                     };
                 };
             };
-            CREATE $receipt_id CONTENT $success_receipt;
+            IF $existing_receipt = NONE {
+                CREATE $receipt_id CONTENT $success_receipt;
+            } ELSE {
+                UPDATE $receipt_id CONTENT $success_receipt;
+            };
         };
         RETURN {
+            existing_status: $existing_status,
             prior_input_hash: $existing_receipt.input_hash,
-            receipt: $success_receipt
+            receipt: IF $write_snapshot { $success_receipt } ELSE { $existing_receipt }
         };
         COMMIT TRANSACTION;
         """
