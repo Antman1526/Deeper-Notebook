@@ -32,6 +32,7 @@ const metricFooter = vi.hoisted(() => ({
 }))
 const vaultGraphView = vi.hoisted(() => ({
   viewport: undefined as GraphViewport | undefined,
+  relationKinds: undefined as string[] | undefined,
   onMoveEnd: undefined as undefined | ((viewport: GraphViewport) => void),
 }))
 const vaultMarkdownView = vi.hoisted(() => ({
@@ -170,12 +171,15 @@ vi.mock('./VaultMarkdown', () => ({
 vi.mock('./VaultGraph', () => ({
   VaultGraph: ({
     viewport,
+    relationKinds,
     onMoveEnd,
   }: {
     viewport?: GraphViewport
+    relationKinds?: string[]
     onMoveEnd?: (viewport: GraphViewport) => void
   }) => {
     vaultGraphView.viewport = viewport
+    vaultGraphView.relationKinds = relationKinds
     vaultGraphView.onMoveEnd = onMoveEnd
     return <div>Local graph content</div>
   },
@@ -471,6 +475,7 @@ describe('KnowledgePaneContent', () => {
     overlayView.graphViewport = undefined
     overlayView.onGraphViewportChange = undefined
     vaultGraphView.viewport = undefined
+    vaultGraphView.relationKinds = undefined
     vaultGraphView.onMoveEnd = undefined
     vaultMarkdownView.onNavigate = undefined
     metricFooter.props = undefined
@@ -666,12 +671,24 @@ describe('KnowledgePaneContent', () => {
 
   it('persists an external controlled graph viewport and restores it after serialization', () => {
     replaceWorkspace('graph')
+    queries.page.data = { ...pageFixture, knowledge_document_id: 'knowledge_engine_document:plan' }
     const original = useKnowledgeWorkspaceStore.getState()
     const tabId = original.panes['pane-1'].activeTabId!
     original.setTabGraphViewport('pane-1', tabId, { x: 12, y: -4, zoom: 1.5 })
+    original.reconcileTabReference('pane-1', tabId, {
+      title: 'Canonical Plan', relativePath: 'pages/plan.md',
+      knowledgeDocumentId: 'knowledge_engine_document:plan',
+    })
+    original.setGraphBookmarkContext({
+      rootDocumentId: 'knowledge_engine_document:plan',
+      spaceIds: ['knowledge_engine_space:research'],
+      relationKinds: ['wikilink'],
+      viewport: { x: 12, y: -4, zoom: 1.5 },
+    })
     const { rerender } = renderPane()
 
     expect(vaultGraphView.viewport).toEqual({ x: 12, y: -4, zoom: 1.5 })
+    expect(vaultGraphView.relationKinds).toEqual(['wikilink'])
     act(() => vaultGraphView.onMoveEnd?.({ x: 20, y: 10, zoom: 2 }))
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].graphViewport)
       .toEqual({ x: 20, y: 10, zoom: 2 })

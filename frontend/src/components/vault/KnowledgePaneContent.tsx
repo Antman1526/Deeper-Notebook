@@ -74,6 +74,10 @@ export function KnowledgePaneContent({
   const metricsVisible = useKnowledgeWorkspaceStore(
     (state) => state.navigation.metricsVisible,
   )
+  const setNavigation = useKnowledgeWorkspaceStore((state) => state.setNavigation)
+  const setGraphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.setGraphBookmarkContext)
+  const graphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.graphBookmarkContext)
+  const selectedSpaceIds = useKnowledgeWorkspaceStore((state) => state.navigation.selectedSpaceIds)
   const metricFormatters = useMemo(() => ({
     words: (count: number) => t('knowledge.navigation.words', { count }),
     characters: (count: number) => t('knowledge.navigation.characters', { count }),
@@ -132,13 +136,19 @@ export function KnowledgePaneContent({
         setSelectionText('')
         return
       }
-      setSelectionText(selection.toString())
+      const selected = selection.toString()
+      setSelectionText(selected)
+      const blocks = isOverlay ? overlayPage.data?.blocks : vaultPage.data?.blocks
+      const focusedBlock = blocks?.find((block) => block.knowledge_block_id && (
+        block.markdown?.includes(selected) || block.heading_path?.includes(selected)
+      ))
+      setNavigation({ activeDraftId: focusedBlock?.knowledge_block_id ?? null })
     }
 
     document.addEventListener('selectionchange', updateSelection)
     updateSelection()
     return () => document.removeEventListener('selectionchange', updateSelection)
-  }, [activeTab?.id])
+  }, [activeTab?.id, isOverlay, overlayPage.data, setNavigation, vaultPage.data])
 
   useEffect(() => {
     if (!activeTab) return
@@ -147,6 +157,7 @@ export function KnowledgePaneContent({
       reconcileTabReference(pane.id, activeTab.id, {
         title: overlayPage.data.overlay.title.trim() || activeTab.title,
         relativePath: overlayPage.data.overlay.relative_path,
+        knowledgeDocumentId: overlayPage.data.knowledge_document_id ?? null,
       })
       return
     }
@@ -409,6 +420,12 @@ export function KnowledgePaneContent({
                 onNavigate={navigate}
                 viewport={activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 }}
                 onMoveEnd={(viewport) => setTabGraphViewport(pane.id, activeTab.id, viewport)}
+                rootDocumentId={activeTab.knowledgeDocumentId}
+                spaceIds={selectedSpaceIds}
+                relationKinds={graphBookmarkContext?.rootDocumentId === activeTab.knowledgeDocumentId
+                  ? graphBookmarkContext.relationKinds
+                  : undefined}
+                onBookmarkContext={setGraphBookmarkContext}
               />
             )
           ) : (

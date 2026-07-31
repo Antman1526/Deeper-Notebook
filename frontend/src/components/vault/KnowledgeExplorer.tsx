@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,10 @@ import {
   useDeleteKnowledgeFolder,
   useKnowledgeBookmarks,
   useKnowledgeFolders,
+  useKnowledgeWorkspaces,
   useRandomKnowledgeNote,
+  useRestoreKnowledgeWorkspace,
+  useUpdateKnowledgeBookmark,
 } from '@/lib/hooks/use-knowledge-navigation'
 import type { KnowledgeBookmark, KnowledgeOpenDescriptor } from '@/lib/api/knowledge-navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -84,6 +87,7 @@ export function KnowledgeExplorer() {
   const sidebarRef = useRef<HTMLElement>(null)
   const linksRef = useRef<HTMLDivElement>(null)
   const paneElementsRef = useRef<Record<string, HTMLElement | null>>({})
+  const resizeStartRef = useRef<{ x: number; width: number } | null>(null)
   const selectedRoot = selectedRootState
     ?? (mounts.data?.[0]
       ? { authority: 'external-vault' as const, id: mounts.data[0].id }
@@ -100,15 +104,19 @@ export function KnowledgeExplorer() {
   const openTab = useKnowledgeWorkspaceStore((state) => state.openTab)
   const navigation = useKnowledgeWorkspaceStore((state) => state.navigation)
   const setNavigation = useKnowledgeWorkspaceStore((state) => state.setNavigation)
+  const setGraphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.setGraphBookmarkContext)
   const bookmarks = useKnowledgeBookmarks({
     folderId: navigation.activeBookmarkFolderId ?? undefined,
     tags: navigation.bookmarkTags.length ? navigation.bookmarkTags : undefined,
   })
   const folders = useKnowledgeFolders()
+  const namedWorkspaces = useKnowledgeWorkspaces()
   const { mutateAsync: randomNote, isPending: randomNotePending } = useRandomKnowledgeNote()
   const { mutateAsync: createBookmark } = useCreateKnowledgeBookmark()
+  const { mutateAsync: updateBookmark } = useUpdateKnowledgeBookmark()
   const { mutateAsync: deleteBookmark } = useDeleteKnowledgeBookmark()
   const { mutateAsync: deleteFolder } = useDeleteKnowledgeFolder()
+  const { mutateAsync: restoreWorkspace } = useRestoreKnowledgeWorkspace()
   const {
     mutateAsync: scanVault,
     isPending: scanPending,
@@ -208,34 +216,55 @@ export function KnowledgeExplorer() {
     openTab(tabFromDescriptor(document))
   }, [openTab])
   const openRandomNote = useCallback(async () => {
-    const result = await randomNote({})
+    const result = await randomNote({
+      spaceIds: navigation.selectedSpaceIds,
+      authorityKinds: navigation.authorityFilters,
+      tags: navigation.bookmarkTags,
+    })
     if (result.state === 'selected') openDescriptor(result.document)
-  }, [openDescriptor, randomNote])
+  }, [navigation.authorityFilters, navigation.bookmarkTags, navigation.selectedSpaceIds, openDescriptor, randomNote])
   const bookmarkCurrentTarget = useCallback(async () => {
     if (!activeTab?.knowledgeDocumentId) return
+    const currentWorkspace = useKnowledgeWorkspaceStore.getState()
+    const currentNavigation = currentWorkspace.navigation
+    const currentGraphContext = currentWorkspace.graphBookmarkContext
+    const focusedBlockId = currentNavigation.activeDraftId?.match(/^knowledge_engine_block:[A-Za-z0-9_-]+$/)
+      ? currentNavigation.activeDraftId
+      : null
     await createBookmark({
-      target: activeTab.viewMode === 'graph'
+      target: focusedBlockId
+        ? {
+            kind: 'block', documentId: activeTab.knowledgeDocumentId,
+            blockId: focusedBlockId, sourceRevisionId: null,
+          }
+        : activeTab.viewMode === 'graph'
         ? {
             kind: 'graph', rootDocumentId: activeTab.knowledgeDocumentId,
-            spaceIds: [], relationKinds: [],
-            viewport: activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+            spaceIds: currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
+              ? currentGraphContext.spaceIds : currentNavigation.selectedSpaceIds,
+            relationKinds: currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
+              ? currentGraphContext.relationKinds : [],
+            viewport: currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
+              ? currentGraphContext.viewport
+              : activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
           }
         : { kind: 'document', documentId: activeTab.knowledgeDocumentId },
       displayLabel: activeTab.title,
       authorityKind: activeTab.sourceAuthority === 'overlay' ? 'app_owned' : 'external_read_only',
       spaceId: null,
-      folderId: navigation.activeBookmarkFolderId,
-      tags: navigation.bookmarkTags,
+      folderId: currentNavigation.activeBookmarkFolderId,
+      tags: currentNavigation.bookmarkTags,
       position: 0,
     })
-  }, [activeTab, createBookmark, navigation.activeBookmarkFolderId, navigation.bookmarkTags])
+  }, [activeTab, createBookmark])
   const bookmarkSearch = useCallback(async (
     query: string,
     searchMode: 'exact' | 'text' | 'semantic',
   ) => {
     await createBookmark({
       target: {
-        kind: 'search', query, searchMode, spaceIds: [], authorityKinds: [],
+        kind: 'search', query, searchMode, spaceIds: navigation.selectedSpaceIds,
+        authorityKinds: navigation.authorityFilters,
         tags: navigation.bookmarkTags,
       },
       displayLabel: `Search: ${query}`,
@@ -245,13 +274,49 @@ export function KnowledgeExplorer() {
       tags: navigation.bookmarkTags,
       position: 0,
     })
-  }, [createBookmark, navigation.activeBookmarkFolderId, navigation.bookmarkTags])
-  const editBookmark = useCallback((bookmark: KnowledgeBookmark, editTarget: boolean) => {
-    // Target repair is deliberately routed through the server's revision-checked update surface;
-    // this rail never attempts to edit an external source document.
-    void bookmark
-    void editTarget
-  }, [])
+  }, [createBookmark, navigation.activeBookmarkFolderId, navigation.authorityFilters, navigation.bookmarkTags, navigation.selectedSpaceIds])
+  const openBookmark = useCallback(async (bookmark: KnowledgeBookmark) => {
+    if (bookmark.target.kind === 'search') {
+      setNavigation({
+        searchQuery: bookmark.target.query,
+        searchMode: bookmark.target.searchMode,
+        selectedSpaceIds: bookmark.target.spaceIds,
+        authorityFilters: bookmark.target.authorityKinds,
+        bookmarkTags: bookmark.target.tags,
+      })
+      return
+    }
+    if (bookmark.target.kind === 'workspace') {
+      const workspaceId = bookmark.target.workspaceId
+      const workspace = namedWorkspaces.data?.items.find((item) => item.id === workspaceId)
+      if (workspace) await restoreWorkspace({ workspaceId: workspace.id, revision: workspace.revision })
+      return
+    }
+    if (!bookmark.targetDocument) return
+    if (bookmark.target.kind === 'graph') {
+      openTab({ ...tabFromDescriptor(bookmark.targetDocument), viewMode: 'graph', graphViewport: bookmark.target.viewport })
+      setNavigation({ selectedSpaceIds: bookmark.target.spaceIds })
+      if (bookmark.target.rootDocumentId) {
+        setGraphBookmarkContext({
+          rootDocumentId: bookmark.target.rootDocumentId,
+          spaceIds: bookmark.target.spaceIds,
+          relationKinds: bookmark.target.relationKinds,
+          viewport: bookmark.target.viewport,
+        })
+      }
+      return
+    }
+    openDescriptor(bookmark.targetDocument)
+    if (bookmark.target.kind === 'block') setNavigation({ activeDraftId: bookmark.target.blockId })
+  }, [namedWorkspaces.data?.items, openDescriptor, openTab, restoreWorkspace, setGraphBookmarkContext, setNavigation])
+  const editBookmark = useCallback((_bookmark: KnowledgeBookmark, _editTarget: boolean) => undefined, [])
+  const updateBookmarkMetadata = useCallback((
+    bookmark: KnowledgeBookmark,
+    patch: Pick<import('@/lib/api/knowledge-navigation').UpdateBookmarkCommand, 'displayLabel' | 'tags' | 'target'>,
+  ) => updateBookmark({
+    bookmarkId: bookmark.id,
+    command: { expectedRevision: bookmark.revision, ...patch },
+  }).then(() => undefined), [updateBookmark])
   const removeBookmark = useCallback((bookmark: KnowledgeBookmark) => {
     void deleteBookmark({ bookmarkId: bookmark.id, command: { expectedRevision: bookmark.revision } })
   }, [deleteBookmark])
@@ -340,8 +405,10 @@ export function KnowledgeExplorer() {
         </div>
       </header>
       <div
-        className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,20rem)]"
-        style={{ gridTemplateColumns: navigation.sidebarVisible ? `${navigation.sidebarWidth}px 4px minmax(0, 1fr) minmax(15rem, 20rem)` : 'minmax(0, 1fr) minmax(15rem, 20rem)' }}
+        className={`grid min-h-0 flex-1 grid-cols-1 ${navigation.sidebarVisible
+          ? 'lg:grid-cols-[var(--knowledge-sidebar-width)_4px_minmax(0,1fr)_minmax(15rem,20rem)]'
+          : 'lg:grid-cols-[minmax(0,1fr)_minmax(15rem,20rem)]'}`}
+        style={{ '--knowledge-sidebar-width': `${navigation.sidebarWidth}px` } as CSSProperties}
       >
         {navigation.sidebarVisible && <aside
           ref={(element) => { fileTreeRef.current = element; sidebarRef.current = element }}
@@ -363,8 +430,9 @@ export function KnowledgeExplorer() {
             <KnowledgeBookmarksPanel
               bookmarks={bookmarks.data?.items || []}
               folders={folders.data?.items || []}
-              onOpen={openDescriptor}
+              onOpen={openBookmark}
               onEdit={editBookmark}
+              onUpdate={updateBookmarkMetadata}
               onDelete={removeBookmark}
               onSelectFolder={(folderId) => setNavigation({ activeBookmarkFolderId: folderId })}
               onDeleteFolder={removeFolder}
@@ -444,6 +512,9 @@ export function KnowledgeExplorer() {
           role="separator"
           aria-label="Resize utility sidebar"
           aria-orientation="vertical"
+          aria-valuemin={240}
+          aria-valuemax={640}
+          aria-valuenow={navigation.sidebarWidth}
           tabIndex={0}
           className="hidden w-1 cursor-col-resize bg-border focus-visible:w-2 focus-visible:bg-ring lg:block"
           onKeyDown={(event) => {
@@ -451,6 +522,25 @@ export function KnowledgeExplorer() {
             event.preventDefault()
             setNavigation({ sidebarWidth: Math.min(640, Math.max(240, navigation.sidebarWidth + (event.key === 'ArrowRight' ? 16 : -16))) })
           }}
+          onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
+            resizeStartRef.current = { x: event.clientX, width: navigation.sidebarWidth }
+            if (typeof event.currentTarget.setPointerCapture === 'function') {
+              event.currentTarget.setPointerCapture(event.pointerId)
+            }
+          }}
+          onPointerMove={(event: PointerEvent<HTMLDivElement>) => {
+            const start = resizeStartRef.current
+            if (!start) return
+            setNavigation({ sidebarWidth: Math.min(640, Math.max(240, start.width + event.clientX - start.x)) })
+          }}
+          onPointerUp={() => { resizeStartRef.current = null }}
+          onMouseDown={(event) => { resizeStartRef.current = { x: event.clientX, width: navigation.sidebarWidth } }}
+          onMouseMove={(event) => {
+            const start = resizeStartRef.current
+            if (!start) return
+            setNavigation({ sidebarWidth: Math.min(640, Math.max(240, start.width + event.clientX - start.x)) })
+          }}
+          onMouseUp={() => { resizeStartRef.current = null }}
         />}
         {!navigation.sidebarVisible && <Button
           type="button"
@@ -488,7 +578,7 @@ export function KnowledgeExplorer() {
         openTodayOverlay={openTodayOverlay}
         openUniqueOverlayDialog={openUniqueOverlayDialog}
       />
-      <KnowledgeQuickSwitcher mounts={mounts.data || []} onBookmarkSearch={(query, mode) => { void bookmarkSearch(query, mode) }} />
+      <KnowledgeQuickSwitcher mounts={mounts.data || []} searchMode={navigation.searchMode} onBookmarkSearch={(query, mode) => { void bookmarkSearch(query, mode) }} />
       <CreateUniqueNoteDialog
         open={uniqueDialogOpen}
         onOpenChange={setUniqueDialogOpen}

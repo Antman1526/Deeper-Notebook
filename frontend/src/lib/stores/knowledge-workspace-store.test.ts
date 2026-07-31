@@ -244,6 +244,21 @@ describe('knowledge workspace store', () => {
       .toBe('knowledge_engine_document:research')
   })
 
+  it('preserves an omitted unified ID but clears an explicitly absent page ID', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab({ ...plan, knowledgeDocumentId: 'knowledge_engine_document:research' })
+    const tabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+
+    store.reconcileTabReference('pane-1', tabId, { title: plan.title, relativePath: plan.relativePath })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId)
+      .toBe('knowledge_engine_document:research')
+
+    store.reconcileTabReference('pane-1', tabId, {
+      title: plan.title, relativePath: plan.relativePath, knowledgeDocumentId: null,
+    })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId).toBeNull()
+  })
+
   it.each([
     { ...plan, vaultId: '' },
     { ...plan, vaultId: 'v'.repeat(129) },

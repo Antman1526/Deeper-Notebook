@@ -32,6 +32,7 @@ export const knowledgeWorkspaceNavigationWireSchema = z.object({
   bookmark_tags: z.array(z.string().min(1).max(128)).max(32).default([]),
   source_tree_query: z.string().max(256).default(''),
   search_query: z.string().max(512).default(''),
+  search_mode: z.enum(['exact', 'text', 'semantic']).default('text'),
   active_draft_id: z.string().min(1).max(128).nullable().default(null),
   selected_space_ids: z.array(z.string().regex(/^knowledge_engine_space:[A-Za-z0-9_-]+$/)).max(32).default([]),
   authority_filters: z.array(knowledgeAuthorityFilterSchema).max(2).default([]),
@@ -39,7 +40,7 @@ export const knowledgeWorkspaceNavigationWireSchema = z.object({
 }).strict().default({
   utility_mode: 'sources', sidebar_visible: true, sidebar_width: 320,
   active_bookmark_folder_id: null, bookmark_tags: [], source_tree_query: '',
-  search_query: '', active_draft_id: null, selected_space_ids: [],
+  search_query: '', search_mode: 'text', active_draft_id: null, selected_space_ids: [],
   authority_filters: [], metrics_visible: true,
 })
 
@@ -301,6 +302,7 @@ export interface KnowledgeWorkspaceNavigation {
   bookmarkTags: string[]
   sourceTreeQuery: string
   searchQuery: string
+  searchMode: 'exact' | 'text' | 'semantic'
   activeDraftId: string | null
   selectedSpaceIds: string[]
   authorityFilters: z.infer<typeof knowledgeAuthorityFilterSchema>[]
@@ -354,7 +356,7 @@ export function defaultKnowledgeWorkspace(): KnowledgeWorkspaceDocument {
     navigation: {
       utilityMode: 'sources', sidebarVisible: true, sidebarWidth: 320,
       activeBookmarkFolderId: null, bookmarkTags: [], sourceTreeQuery: '',
-      searchQuery: '', activeDraftId: null, selectedSpaceIds: [],
+      searchQuery: '', searchMode: 'text', activeDraftId: null, selectedSpaceIds: [],
       authorityFilters: [], metricsVisible: true,
     },
   }
@@ -468,6 +470,7 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
       bookmarkTags: wire.navigation.bookmark_tags,
       sourceTreeQuery: wire.navigation.source_tree_query,
       searchQuery: wire.navigation.search_query,
+      searchMode: wire.navigation.search_mode,
       activeDraftId: wire.navigation.active_draft_id,
       selectedSpaceIds: wire.navigation.selected_space_ids,
       authorityFilters: wire.navigation.authority_filters,
@@ -507,7 +510,7 @@ export function serializeKnowledgeWorkspace(document: KnowledgeWorkspaceDocument
   const navigation: KnowledgeWorkspaceNavigation = document.navigation ?? {
     utilityMode: 'sources', sidebarVisible: true, sidebarWidth: 320,
     activeBookmarkFolderId: null, bookmarkTags: [], sourceTreeQuery: '',
-    searchQuery: '', activeDraftId: null, selectedSpaceIds: [],
+    searchQuery: '', searchMode: 'text', activeDraftId: null, selectedSpaceIds: [],
     authorityFilters: [], metricsVisible: true,
   }
   const wire = {
@@ -522,6 +525,7 @@ export function serializeKnowledgeWorkspace(document: KnowledgeWorkspaceDocument
       bookmark_tags: navigation.bookmarkTags,
       source_tree_query: navigation.sourceTreeQuery,
       search_query: navigation.searchQuery,
+      search_mode: navigation.searchMode,
       active_draft_id: navigation.activeDraftId,
       selected_space_ids: navigation.selectedSpaceIds,
       authority_filters: navigation.authorityFilters,

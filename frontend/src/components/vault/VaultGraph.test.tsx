@@ -49,6 +49,7 @@ import { VaultGraph } from './VaultGraph'
 describe('VaultGraph controlled viewport', () => {
   it('passes a controlled viewport to React Flow and reports onMoveEnd', () => {
     const onMoveEnd = vi.fn()
+    const onBookmarkContext = vi.fn()
     render(
       <VaultGraph
         graph={{
@@ -61,6 +62,9 @@ describe('VaultGraph controlled viewport', () => {
         onNavigate={vi.fn()}
         viewport={{ x: 3, y: 6, zoom: 2 }}
         onMoveEnd={onMoveEnd}
+        rootDocumentId="knowledge_engine_document:one"
+        spaceIds={['knowledge_engine_space:research']}
+        onBookmarkContext={onBookmarkContext}
       />,
     )
 
@@ -68,5 +72,11 @@ describe('VaultGraph controlled viewport', () => {
     expect(screen.getByText('Move graph').parentElement).toHaveAttribute('data-fit-view', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Move graph' }))
     expect(onMoveEnd).toHaveBeenCalledWith({ x: 7, y: -2, zoom: 1.5 })
+    expect(onBookmarkContext).toHaveBeenCalledWith({
+      rootDocumentId: 'knowledge_engine_document:one',
+      spaceIds: ['knowledge_engine_space:research'],
+      relationKinds: [],
+      viewport: { x: 3, y: 6, zoom: 2 },
+    })
   })
 })
