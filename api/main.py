@@ -251,11 +251,7 @@ async def _start_knowledge_navigation(
     )
 
     _clear_knowledge_navigation_service(app)
-    engine_repository = (
-        getattr(engine_service, "_repository", None)
-        if engine_service is not None
-        else None
-    )
+    engine_repository = engine_service
     app.state.knowledge_navigation_service = KnowledgeNavigationService(
         metadata_repository=KnowledgeNavigationRepository(),
         engine_repository=engine_repository,

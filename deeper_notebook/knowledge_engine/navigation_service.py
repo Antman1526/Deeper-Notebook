@@ -13,6 +13,7 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     CreateFolder,
     DeleteBookmark,
     DeleteFolder,
+    DocumentTarget,
     HydratedBookmark,
     HydratedBookmarkPage,
     HydratedKnowledgeTarget,
@@ -40,13 +41,15 @@ class KnowledgeNavigationService:
         self.metadata_repository = metadata_repository
         self.engine_repository = engine_repository
 
-    async def _engine_call(self, method: str, *args: object) -> Any:
+    async def _engine_call(
+        self, method: str, *args: object, **kwargs: object
+    ) -> Any:
         repository = self.engine_repository
         function = getattr(repository, method, None)
         if not callable(function):
             raise KnowledgeNavigationRepositoryError("knowledge_engine_unavailable")
         try:
-            return await function(*args)
+            return await function(*args, **kwargs)
         except LookupError:
             raise
         except (KnowledgeNavigationRepositoryError, KnowledgeRepositoryError):
@@ -70,16 +73,26 @@ class KnowledgeNavigationService:
         descriptor = await self._engine_call("open_descriptor", target.document_id)
         if descriptor is None:
             return HydratedKnowledgeTarget(target=target, state="stale")
-        block = await self._engine_call("get_block", target.block_id)
         if (
-            getattr(block, "document_id", None) != target.document_id
+            target.source_revision_id is not None
+            and target.source_revision_id != document.source_revision_id
+        ):
+            return HydratedKnowledgeTarget(
+                target=target,
+                state="stale",
+                document=descriptor,
+            )
+        block = await self._engine_call(
+            "get_current_block",
+            document_id=target.document_id,
+            block_id=target.block_id,
+            source_revision_id=document.source_revision_id,
+        )
+        if (
+            block is None
+            or getattr(block, "document_id", None) != target.document_id
             or getattr(block, "source_revision_id", None)
             != getattr(document, "source_revision_id", None)
-            or (
-                target.source_revision_id is not None
-                and target.source_revision_id
-                != getattr(document, "source_revision_id", None)
-            )
         ):
             return HydratedKnowledgeTarget(
                 target=target,
@@ -96,7 +109,7 @@ class KnowledgeNavigationService:
         if target.root_document_id is None:
             return HydratedKnowledgeTarget(target=target, state="available")
         root = await self._hydrate_document(
-            type("RootTarget", (), {"document_id": target.root_document_id})()
+            DocumentTarget(document_id=target.root_document_id)
         )
         return HydratedKnowledgeTarget(
             target=target,

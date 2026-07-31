@@ -50,6 +50,16 @@ async def test_navigation_service_is_owned_even_when_engine_is_disabled(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_navigation_service_receives_the_enabled_engine_boundary():
+    app = _app()
+    engine = SimpleNamespace(_repository=object())
+
+    await main._start_knowledge_navigation(app, engine_service=engine)
+
+    assert app.state.knowledge_navigation_service.engine_repository is engine
+
+
+@pytest.mark.asyncio
 async def test_shadow_enabled_sets_service_and_returns_its_single_coordinator(monkeypatch):
     app = _app()
     coordinator = object()

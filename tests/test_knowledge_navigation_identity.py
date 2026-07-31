@@ -397,3 +397,48 @@ async def test_open_descriptor_uses_current_stable_identity_claims_only(
     assert "/Users/" not in payload
     assert "source_ref" not in payload
     assert "normalized_body" not in payload
+
+
+@pytest.mark.asyncio
+async def test_current_block_lookup_is_bounded_to_document_and_revision(
+    migrated_memory_connection,
+):
+    space_id = "knowledge_engine_space:blocks"
+    document_id = "knowledge_engine_document:blocks"
+    revision_id = "knowledge_engine_revision:current"
+    await _seed_page_identity(
+        migrated_memory_connection.database,
+        space_id=space_id,
+        document_id=document_id,
+        revision_id=revision_id,
+        authority_kind="external_read_only",
+        source_kind="markdown",
+        relative_locator="pages/blocks.md",
+        source_native_id="unsafe-native",
+        source_ref="/Users/unsafe/source-root",
+    )
+    repository = KnowledgeRepository(
+        connection_factory=migrated_memory_connection.factory
+    )
+
+    current = await repository.get_current_block(
+        document_id=document_id,
+        block_id="knowledge_engine_block:current",
+        source_revision_id=revision_id,
+    )
+    wrong_document = await repository.get_current_block(
+        document_id="knowledge_engine_document:other",
+        block_id="knowledge_engine_block:current",
+        source_revision_id=revision_id,
+    )
+    wrong_revision = await repository.get_current_block(
+        document_id=document_id,
+        block_id="knowledge_engine_block:current",
+        source_revision_id="knowledge_engine_revision:other",
+    )
+
+    assert current is not None
+    assert current.document_id == document_id
+    assert wrong_document is None
+    assert wrong_revision is None
+    assert all("markdown" not in str(result) for result in migrated_memory_connection.results)
