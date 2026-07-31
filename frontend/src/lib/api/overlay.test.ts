@@ -41,6 +41,7 @@ const validOverlayGraph = {
 } as const
 
 const validOverlayPage = {
+  knowledge_document_id: null,
   overlay: {
     id: 'overlay_note:one',
     source_authority: 'overlay',
@@ -171,6 +172,20 @@ describe('overlay API boundary', () => {
         source_overlay_note_id: null,
         source_relative_path: null,
       }],
+    })
+  })
+
+  it('accepts optional strict unified identity IDs', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: {
+        ...validOverlayPage,
+        knowledge_document_id: 'knowledge_engine_document:current',
+        blocks: [{ knowledge_block_id: 'knowledge_engine_block:heading' }],
+      },
+    } as never)
+    await expect(overlayApi.page('overlay_note:one')).resolves.toMatchObject({
+      knowledge_document_id: 'knowledge_engine_document:current',
+      blocks: [{ knowledge_block_id: 'knowledge_engine_block:heading' }],
     })
   })
 

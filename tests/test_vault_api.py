@@ -69,6 +69,14 @@ class _Repository:
                 deleted_state="present",
             ),
             note={"id": note_id, "title": "One", "content": "# One\n"},
+            blocks=[
+                {
+                    "parser_id": "parser-one",
+                    "stable_source_id": "block-one",
+                    "markdown": "# One",
+                },
+                {"parser_id": "parser-two", "markdown": "Two"},
+            ],
         )
 
     async def backlinks(self, vault_id: str, note_id: str):
@@ -279,6 +287,65 @@ def test_read_only_vault_resources_return_relative_data_only(client):
     receipts = test_client.get(f"{root}/receipts")
     assert receipts.status_code == 200
     assert "/Users/owner" not in receipts.text
+
+
+def test_page_enriches_unified_identity_in_one_batched_lookup(client):
+    test_client, _, _ = client
+
+    class _IdentityService:
+        calls: list[tuple[str, tuple[str, ...]]] = []
+
+        async def resolve_legacy_page(self, *, legacy_note_id, block_keys):
+            self.calls.append((legacy_note_id, block_keys))
+            return {
+                "document_id": "knowledge_engine_document:current",
+                "block_ids": {
+                    "block-one": "knowledge_engine_block:one",
+                    "parser-two": "knowledge_engine_block:two",
+                },
+            }
+
+    service = _IdentityService()
+    test_client.app.state.knowledge_engine_service = service
+    try:
+        response = test_client.get(
+            "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one"
+        )
+    finally:
+        del test_client.app.state.knowledge_engine_service
+
+    assert response.status_code == 200
+    assert (
+        response.json()["knowledge_document_id"] == "knowledge_engine_document:current"
+    )
+    assert [block["knowledge_block_id"] for block in response.json()["blocks"]] == [
+        "knowledge_engine_block:one",
+        "knowledge_engine_block:two",
+    ]
+    assert service.calls == [("note:one", ("block-one", "parser-two"))]
+
+
+def test_page_identity_enrichment_fails_open_for_malformed_service_data(client):
+    test_client, _, _ = client
+
+    class _MalformedIdentityService:
+        async def resolve_legacy_page(self, **_kwargs):
+            return {
+                "document_id": "knowledge_engine_document:bad/id",
+                "block_ids": {"block-one": "knowledge_engine_block:bad/id"},
+            }
+
+    test_client.app.state.knowledge_engine_service = _MalformedIdentityService()
+    try:
+        response = test_client.get(
+            "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one"
+        )
+    finally:
+        del test_client.app.state.knowledge_engine_service
+
+    assert response.status_code == 200
+    assert response.json()["knowledge_document_id"] is None
+    assert all("knowledge_block_id" not in block for block in response.json()["blocks"])
 
 
 def test_unresolved_link_response_keeps_null_target_identity_and_spans(client):

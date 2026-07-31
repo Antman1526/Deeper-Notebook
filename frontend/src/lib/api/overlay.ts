@@ -28,6 +28,8 @@ const visibleTitleSchema = z.string().min(1).max(512)
 
 const overlayNoteIdSchema = z.string().min(1).max(128)
 const idempotencyKeySchema = z.string().min(1).max(128)
+const knowledgeDocumentIdSchema = z.string()
+  .regex(/^knowledge_engine_document:[A-Za-z0-9_-]+$/)
 
 export const overlayNoteSchema = z.object({
   id: overlayNoteIdSchema,
@@ -68,6 +70,7 @@ export const overlayLinkSchema = z.intersection(
 )
 
 export const overlayPageSchema = z.object({
+  knowledge_document_id: knowledgeDocumentIdSchema.nullable().optional(),
   overlay: overlayNoteSchema,
   editable_markdown: z.string().max(10 * 1024 * 1024),
   note: vaultNoteSchema,

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any, Protocol
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from deeper_notebook.database.repository import (
     db_connection,
@@ -25,6 +25,11 @@ from deeper_notebook.knowledge_engine.contracts import (
     ProjectionReceipt,
 )
 from deeper_notebook.knowledge_engine.identity import canonical_locator
+from deeper_notebook.knowledge_engine.navigation_contracts import (
+    KnowledgeBlockId,
+    KnowledgeDocumentId,
+    KnowledgeOpenDescriptor,
+)
 
 _ID_PATTERNS = {
     "space": re.compile(r"^knowledge_engine_space:[A-Za-z0-9_-]+$"),
@@ -34,9 +39,7 @@ _ID_PATTERNS = {
     "task": re.compile(r"^knowledge_engine_task:[A-Za-z0-9_-]+$"),
     "asset": re.compile(r"^knowledge_engine_asset:[A-Za-z0-9_-]+$"),
     "revision": re.compile(r"^knowledge_engine_revision:[A-Za-z0-9_-]+$"),
-    "receipt": re.compile(
-        r"^knowledge_engine_projection_receipt:[A-Za-z0-9_-]+$"
-    ),
+    "receipt": re.compile(r"^knowledge_engine_projection_receipt:[A-Za-z0-9_-]+$"),
     "checkpoint": re.compile(r"^knowledge_engine_backfill_checkpoint:[A-Za-z0-9_-]+$"),
 }
 _OPERATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
@@ -67,6 +70,15 @@ class KnowledgeRepositoryError(RuntimeError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+class KnowledgePageIdentity(BaseModel):
+    """Current unified IDs that may safely enrich an existing legacy page."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    document_id: KnowledgeDocumentId | None = None
+    block_ids: dict[str, KnowledgeBlockId] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,7 +134,9 @@ def _receipt_id(operation_id: str) -> str:
 def _source_revision_record_id(value: str):
     _record_id(value, kind="revision")
     return ensure_record_id(
-        value.replace("knowledge_engine_revision:", "knowledge_engine_source_revision:", 1)
+        value.replace(
+            "knowledge_engine_revision:", "knowledge_engine_source_revision:", 1
+        )
     )
 
 
@@ -209,7 +223,11 @@ class KnowledgeRepository:
                 input_hash=variables["input_hash"],
             )
         result = next(
-            (row for row in reversed(rows) if isinstance(row, dict) and "receipt" in row),
+            (
+                row
+                for row in reversed(rows)
+                if isinstance(row, dict) and "receipt" in row
+            ),
             None,
         )
         if result is None:
@@ -258,7 +276,132 @@ class KnowledgeRepository:
         try:
             return KnowledgeDocument.model_validate(rows[0])
         except ValidationError:
-            raise KnowledgeRepositoryError("knowledge_engine_document_invalid") from None
+            raise KnowledgeRepositoryError(
+                "knowledge_engine_document_invalid"
+            ) from None
+
+    async def resolve_legacy_page(
+        self, *, legacy_note_id: str, block_keys: tuple[str, ...]
+    ) -> KnowledgePageIdentity:
+        """Resolve one legacy page against only its document's current revision."""
+        if (
+            not isinstance(legacy_note_id, str)
+            or not 1 <= len(legacy_note_id) <= 128
+            or not isinstance(block_keys, tuple)
+            or len(block_keys) > 10_000
+            or len(set(block_keys)) != len(block_keys)
+            or any(
+                not isinstance(key, str) or not 1 <= len(key) <= 256
+                for key in block_keys
+            )
+        ):
+            raise ValueError("invalid_knowledge_engine_legacy_page_identity")
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                LET $document_claim = (
+                    SELECT engine_id, source_revision_id
+                    FROM knowledge_engine_identity_map
+                    WHERE legacy_kind IN $document_legacy_kinds
+                    AND legacy_id = $legacy_note_id
+                    AND engine_kind = 'document'
+                    ORDER BY created_at DESC
+                );
+                LET $current_claim = (
+                    SELECT engine_id, source_revision_id FROM $document_claim
+                    WHERE source_revision_id IN (
+                        SELECT VALUE source_revision_id
+                        FROM knowledge_engine_document
+                        WHERE type::string(id) = $parent.engine_id
+                    )
+                    LIMIT 1
+                )[0];
+                LET $current_document = (
+                    SELECT id, source_revision_id FROM knowledge_engine_document
+                    WHERE type::string(id) = $current_claim.engine_id
+                    AND source_revision_id = $current_claim.source_revision_id
+                    LIMIT 1
+                )[0];
+                RETURN IF $current_document = NONE {
+                    { document_id: NONE, resolved_block_ids: [] }
+                } ELSE {
+                    {
+                        document_id: type::string($current_document.id),
+                        resolved_block_ids: (
+                            SELECT legacy_id, engine_id
+                            FROM knowledge_engine_identity_map
+                            WHERE legacy_kind = 'source_native_block'
+                            AND legacy_id IN $block_keys
+                            AND engine_kind = 'block'
+                            AND source_revision_id = $current_document.source_revision_id
+                            AND engine_id IN (
+                                SELECT VALUE type::string(id) FROM knowledge_engine_block
+                                WHERE document_id = type::string($current_document.id)
+                                AND source_revision_id = $current_document.source_revision_id
+                            )
+                        )
+                    }
+                };
+                """,
+                {
+                    "legacy_note_id": legacy_note_id,
+                    "block_keys": list(block_keys),
+                    "document_legacy_kinds": [
+                        "note",
+                        "overlay_note",
+                        "source_native_document",
+                    ],
+                },
+            )
+        row = rows[0] if rows else {}
+        block_ids = {
+            str(item["legacy_id"]): str(item["engine_id"])
+            for item in row.get("resolved_block_ids", [])
+            if isinstance(item, dict)
+            and isinstance(item.get("legacy_id"), str)
+            and isinstance(item.get("engine_id"), str)
+        }
+        try:
+            return KnowledgePageIdentity(
+                document_id=row.get("document_id"), block_ids=block_ids
+            )
+        except ValidationError:
+            raise KnowledgeRepositoryError(
+                "knowledge_engine_identity_invalid"
+            ) from None
+
+    async def open_descriptor(self, document_id: str) -> KnowledgeOpenDescriptor | None:
+        """Read safe logical open metadata without exposing source content or roots."""
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT
+                    id AS document_id,
+                    space_id,
+                    authority_kind,
+                    (SELECT VALUE source_kind FROM knowledge_engine_space
+                        WHERE type::string(id) = $parent.space_id LIMIT 1)[0]
+                        AS source_kind,
+                    title,
+                    relative_locator,
+                    source_native_id AS legacy_note_id,
+                    (SELECT VALUE source_ref FROM knowledge_engine_space
+                        WHERE type::string(id) = $parent.space_id LIMIT 1)[0]
+                        AS legacy_container_id
+                FROM $document_id LIMIT 1;
+                """,
+                {"document_id": _record_id(document_id, kind="document")},
+            )
+        if not rows:
+            return None
+        try:
+            return KnowledgeOpenDescriptor.model_validate(rows[0])
+        except ValidationError:
+            raise KnowledgeRepositoryError(
+                "knowledge_engine_descriptor_invalid"
+            ) from None
 
     async def list_documents(
         self, *, space_id: str | None, limit: int, offset: int
@@ -292,7 +435,9 @@ class KnowledgeRepository:
         try:
             return [KnowledgeDocument.model_validate(row) for row in rows]
         except ValidationError:
-            raise KnowledgeRepositoryError("knowledge_engine_document_invalid") from None
+            raise KnowledgeRepositoryError(
+                "knowledge_engine_document_invalid"
+            ) from None
 
     async def projection_status(self) -> EngineProjectionStatus:
         async with self._connection_factory() as connection:
@@ -328,9 +473,7 @@ class KnowledgeRepository:
             not isinstance(exact_queries, tuple)
             or not 1 <= len(exact_queries) <= 32
             or any(
-                not isinstance(query, str)
-                or not query.strip()
-                or len(query) > 256
+                not isinstance(query, str) or not query.strip() or len(query) > 256
                 for query in exact_queries
             )
         ):
@@ -748,6 +891,7 @@ class KnowledgeRepository:
 
 __all__ = [
     "EngineProjectionStatus",
+    "KnowledgePageIdentity",
     "KnowledgeRepository",
     "KnowledgeRepositoryError",
 ]
