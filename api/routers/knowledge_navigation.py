@@ -32,6 +32,8 @@ from api.schemas.knowledge_navigation import (
     KnowledgeWorkspaceRestorePlanResponse,
     KnowledgeWorkspaceUpdateRequest,
     NavigationReceiptResponse,
+    RandomNoteRequest,
+    RandomNoteResponse,
 )
 from deeper_notebook.knowledge_engine.navigation_contracts import (
     BookmarkCursor,
@@ -39,6 +41,9 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
 )
 from deeper_notebook.knowledge_engine.navigation_repository import (
     KnowledgeNavigationRepositoryError,
+)
+from deeper_notebook.knowledge_engine.navigation_service import (
+    KnowledgeNavigationServiceError,
 )
 
 MAX_NAVIGATION_JSON_BYTES = 1024 * 1024
@@ -127,6 +132,16 @@ def _service(request: Request) -> Any:
 def _map_exception(exc: Exception) -> HTTPException:
     if isinstance(exc, LookupError):
         return _error(status.HTTP_404_NOT_FOUND, "knowledge_navigation_not_found")
+    if isinstance(exc, KnowledgeNavigationServiceError):
+        if exc.code == "random_selector_invalid":
+            return _error(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "knowledge_navigation_request_invalid",
+            )
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "knowledge_navigation_unavailable",
+        )
     if isinstance(exc, (ValidationError, ValueError)):
         return _error(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -227,6 +242,24 @@ async def list_bookmarks(
         if cursor is not None:
             BookmarkCursor.decode(cursor)
         return await _service(request).list_bookmarks(filters, cursor, limit)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.post(
+    "/random-note",
+    response_model=RandomNoteResponse,
+    responses=_ERROR_RESPONSES,
+)
+async def random_note(request: Request, filters: RandomNoteRequest) -> Response:
+    try:
+        result = await _service(request).random_note(filters)
+        return JSONResponse(
+            content=result.model_dump(mode="json"),
+            headers={"Cache-Control": "no-store"},
+        )
     except HTTPException:
         raise
     except Exception as exc:

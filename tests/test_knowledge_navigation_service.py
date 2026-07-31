@@ -22,6 +22,7 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     NamedKnowledgeWorkspace,
     NamedKnowledgeWorkspaceSummary,
     NamedWorkspaceSnapshot,
+    RandomNoteFilters,
     UpdateWorkspace,
     WorkspaceTarget,
 )
@@ -30,6 +31,7 @@ from deeper_notebook.knowledge_engine.navigation_repository import (
 )
 from deeper_notebook.knowledge_engine.navigation_service import (
     KnowledgeNavigationService,
+    KnowledgeNavigationServiceError,
 )
 
 
@@ -198,9 +200,100 @@ class _Engine:
         return self.current_block
 
 
+class _RandomRepository:
+    def __init__(self) -> None:
+        self.counts = [2]
+        self.offsets: list[int] = []
+        self.filters: list[RandomNoteFilters] = []
+
+    async def random_candidate_count(self, filters: RandomNoteFilters) -> int:
+        self.filters.append(filters)
+        return self.counts.pop(0)
+
+    async def random_candidate_at(self, filters: RandomNoteFilters, offset: int):
+        self.filters.append(filters)
+        self.offsets.append(offset)
+        return KnowledgeOpenDescriptor(
+            document_id="knowledge_engine_document:last",
+            space_id="knowledge_engine_space:research",
+            authority_kind="external_read_only",
+            source_kind="markdown",
+            title="Last",
+            relative_locator="Research/Last.md",
+            legacy_note_id="note:last",
+            legacy_container_id="vault_mount:research",
+        )
+
+
 @pytest.fixture()
 def service() -> KnowledgeNavigationService:
     return KnowledgeNavigationService(metadata_repository=_MetadataRepository())
+
+
+@pytest.mark.asyncio
+async def test_random_note_uses_injected_selector_and_all_filters() -> None:
+    repository = _RandomRepository()
+    service = KnowledgeNavigationService(
+        metadata_repository=repository,
+        random_index=lambda count: count - 1,
+    )
+    filters = RandomNoteFilters(
+        space_ids=["knowledge_engine_space:research"],
+        authority_kinds=["external_read_only"],
+        tags=["Evidence"],
+    )
+
+    result = await service.random_note(filters)
+
+    assert result.state == "selected"
+    assert result.document.document_id == "knowledge_engine_document:last"
+    assert repository.offsets == [1]
+    assert repository.filters == [filters, filters]
+
+
+@pytest.mark.asyncio
+async def test_random_note_rechecks_count_and_clamps_the_selected_offset() -> None:
+    repository = _RandomRepository()
+    repository.counts = [2, 1]
+    selected = KnowledgeOpenDescriptor(
+        document_id="knowledge_engine_document:last",
+        space_id="knowledge_engine_space:research",
+        authority_kind="external_read_only",
+        source_kind="markdown",
+        title="Last",
+        relative_locator="Research/Last.md",
+        legacy_note_id="note:last",
+        legacy_container_id="vault_mount:research",
+    )
+
+    async def candidate_at(_filters: RandomNoteFilters, offset: int):
+        repository.offsets.append(offset)
+        return None if len(repository.offsets) == 1 else selected
+
+    repository.random_candidate_at = candidate_at  # type: ignore[method-assign]
+    service = KnowledgeNavigationService(
+        metadata_repository=repository,
+        random_index=lambda _count: 1,
+    )
+
+    result = await service.random_note(RandomNoteFilters())
+
+    assert result == result.model_copy(update={"document": selected})
+    assert repository.offsets == [1, 0]
+
+
+@pytest.mark.asyncio
+async def test_random_note_rejects_an_invalid_injected_selector() -> None:
+    repository = _RandomRepository()
+    service = KnowledgeNavigationService(
+        metadata_repository=repository,
+        random_index=lambda _count: True,
+    )
+
+    with pytest.raises(KnowledgeNavigationServiceError) as error:
+        await service.random_note(RandomNoteFilters())
+
+    assert error.value.code == "random_selector_invalid"
 
 
 @pytest.mark.asyncio
