@@ -1,3 +1,5 @@
+import type { ResearchMode } from '@/lib/knowledge/research-modes'
+
 export type KnowledgeCommandId =
   | 'knowledge.view-reading'
   | 'knowledge.view-source'
@@ -22,6 +24,12 @@ export type KnowledgeCommandId =
   | 'knowledge.save-workspace-as'
   | 'knowledge.replace-workspace'
   | 'knowledge.toggle-metrics'
+  | 'knowledge.mode.read'
+  | 'knowledge.mode.write'
+  | 'knowledge.mode.ask'
+  | 'knowledge.mode.search'
+  | 'knowledge.mode.graph'
+  | 'knowledge.mode.podcast'
 
 export type CommandScope = 'global' | 'knowledge'
 export type CommandSafety = 'read' | 'workspace' | 'external-write'
@@ -50,6 +58,8 @@ export interface KnowledgeCommandExecutionContext {
   saveWorkspaceAs: (() => void) | null
   replaceWorkspace: (() => void) | null
   toggleMetrics: (() => void) | null
+  researchModeAvailability: Record<ResearchMode, { available: boolean; reason: string | null }>
+  openResearchMode: ((mode: ResearchMode) => void) | null
 }
 
 export interface CommandDefinition {
@@ -61,6 +71,7 @@ export interface CommandDefinition {
   keywords: string[]
   isAvailable: (context: KnowledgeCommandExecutionContext) => boolean
   unavailableReasonKey?: string
+  unavailableReason?: (context: KnowledgeCommandExecutionContext) => string | null
   execute: (context: KnowledgeCommandExecutionContext) => void | Promise<void>
 }
 
@@ -71,6 +82,14 @@ const hasActiveTab = (context: KnowledgeCommandExecutionContext): boolean => (
 const hasActivePane = (context: KnowledgeCommandExecutionContext): boolean => (
   context.activePaneId !== null
 )
+
+function isResearchModeAvailable(mode: ResearchMode, context: KnowledgeCommandExecutionContext): boolean {
+  return context.openResearchMode !== null && context.researchModeAvailability[mode].available
+}
+
+function researchModeUnavailableReason(mode: ResearchMode, context: KnowledgeCommandExecutionContext): string | null {
+  return context.researchModeAvailability[mode].reason
+}
 
 export const knowledgeCommandDefinitions: CommandDefinition[] = [
   {
@@ -322,17 +341,38 @@ export const knowledgeCommandDefinitions: CommandDefinition[] = [
     isAvailable: context => context.toggleMetrics !== null,
     execute: context => context.toggleMetrics!(),
   },
+  ...([
+    ['read', 'knowledge.commands.modeRead', ['read'], ['mode', 'read']],
+    ['write', 'knowledge.commands.modeWrite', ['write'], ['mode', 'write', 'overlay']],
+    ['ask', 'knowledge.commands.modeAsk', ['ask'], ['mode', 'ask', 'research']],
+    ['search', 'knowledge.commands.modeSearch', ['search'], ['mode', 'search']],
+    ['graph', 'knowledge.commands.modeGraph', ['graph'], ['mode', 'graph', 'connections']],
+    ['podcast', 'knowledge.commands.modePodcast', ['podcast'], ['mode', 'podcast', 'audio']],
+  ] as const).map(([mode, labelKey, aliases, keywords]): CommandDefinition => ({
+    id: `knowledge.mode.${mode}` as KnowledgeCommandId,
+    scope: 'knowledge',
+    // A mode switch changes only the app-owned workspace document.  It never
+    // grants an external source mutation capability.
+    safety: 'workspace',
+    labelKey,
+    aliases: [...aliases],
+    keywords: [...keywords],
+    isAvailable: context => isResearchModeAvailable(mode, context),
+    unavailableReason: context => researchModeUnavailableReason(mode, context),
+    execute: context => context.openResearchMode!(mode),
+  })),
 ]
 
 export function availableKnowledgeCommands(
   context: KnowledgeCommandExecutionContext,
   mode: KnowledgeCommandMode,
-): Array<Omit<CommandDefinition, 'isAvailable'> & { available: boolean }> {
+): Array<Omit<CommandDefinition, 'isAvailable' | 'unavailableReason'> & { available: boolean; unavailableReason: string | null }> {
   return knowledgeCommandDefinitions
     .filter(command => mode !== 'slash' || command.safety !== 'external-write')
-    .map(({ isAvailable, ...command }) => ({
+    .map(({ isAvailable, unavailableReason, ...command }) => ({
       ...command,
       available: isAvailable(context),
+      unavailableReason: unavailableReason?.(context) ?? null,
     }))
 }
 

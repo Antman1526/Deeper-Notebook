@@ -260,6 +260,7 @@ export const ruRU = {
       viewSource: "Исходник",
       viewLivePreview: "Предварительный просмотр",
       viewGraph: "Граф",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Разделить панель справа",
       splitDown: "Разделить панель вниз",
       closePane: "Закрыть панель",

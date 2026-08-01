@@ -315,6 +315,8 @@ vi.mock('@/lib/hooks/use-local-models', () => ({
       }],
     },
   }),
+  useLocalModelSettings: () => ({ data: null, isError: false, isLoading: false }),
+  useModelRoutePlan: () => ({ data: undefined, isError: false, isLoading: false }),
 }))
 
 vi.mock('./VaultGraph', () => ({
@@ -512,6 +514,11 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(activePane.tabs.find((tab) => tab.id === activePane.activeTabId))
       .toMatchObject({ mode: 'search', target: { kind: 'search' } })
     expect(screen.getByRole('tab', { name: 'Search: Search' })).toBeInTheDocument()
+
+    useKnowledgeCommandContextStore.getState().context?.openResearchMode?.('read')
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs
+      .find((tab) => tab.id === useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId))
+      .toMatchObject({ mode: 'read', title: 'One' })
   })
 
   it('exposes labeled utility and intelligence drawers that restore focus to their triggers', async () => {

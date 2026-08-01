@@ -262,6 +262,7 @@ export const itIT = {
       viewSource: "Sorgente",
       viewLivePreview: "Anteprima dal vivo",
       viewGraph: "Grafo",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Dividi il riquadro a destra",
       splitDown: "Dividi il riquadro in basso",
       closePane: "Chiudi riquadro",

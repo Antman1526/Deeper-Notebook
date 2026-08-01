@@ -261,6 +261,7 @@ export const ptBR = {
       viewSource: "Fonte",
       viewLivePreview: "Pré-visualização ao vivo",
       viewGraph: "Grafo",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Dividir painel à direita",
       splitDown: "Dividir painel abaixo",
       closePane: "Fechar painel",

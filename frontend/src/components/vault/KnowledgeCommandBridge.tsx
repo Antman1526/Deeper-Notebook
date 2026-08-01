@@ -7,6 +7,7 @@ import {
   registerKnowledgeCommandContext,
 } from '@/lib/commands/knowledge-command-context-store'
 import { requestCommandSurface } from '@/lib/commands/command-surface-store'
+import type { ResearchMode } from '@/lib/knowledge/research-modes'
 
 export interface KnowledgeCommandBridgeProps {
   workspaceRef: React.RefObject<HTMLElement | null>
@@ -24,6 +25,8 @@ export interface KnowledgeCommandBridgeProps {
   saveWorkspaceAs: () => void
   replaceWorkspace: () => void
   toggleMetrics: () => void
+  researchModeAvailability: Record<ResearchMode, { available: boolean; reason: string | null }>
+  openResearchMode: (mode: ResearchMode) => void
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -49,6 +52,8 @@ export function KnowledgeCommandBridge({
   saveWorkspaceAs,
   replaceWorkspace,
   toggleMetrics,
+  researchModeAvailability,
+  openResearchMode,
 }: KnowledgeCommandBridgeProps) {
   useEffect(() => {
     const generation = registerKnowledgeCommandContext({
@@ -66,9 +71,11 @@ export function KnowledgeCommandBridge({
       saveWorkspaceAs,
       replaceWorkspace,
       toggleMetrics,
+      researchModeAvailability,
+      openResearchMode,
     })
     return () => clearKnowledgeCommandContext(generation)
-  }, [activePaneElement, bookmarkCurrentTarget, fileTreeRef, linksRef, openBookmarks, openTodayOverlay, openUniqueOverlayDialog, openWorkspaces, randomNote, replaceWorkspace, saveWorkspaceAs, scanSelectedVault, selectedVaultId, toggleMetrics])
+  }, [activePaneElement, bookmarkCurrentTarget, fileTreeRef, linksRef, openBookmarks, openResearchMode, openTodayOverlay, openUniqueOverlayDialog, openWorkspaces, randomNote, replaceWorkspace, researchModeAvailability, saveWorkspaceAs, scanSelectedVault, selectedVaultId, toggleMetrics])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
