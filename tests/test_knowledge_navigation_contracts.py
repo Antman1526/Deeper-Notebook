@@ -207,14 +207,14 @@ def test_legacy_named_workspace_tab_derives_its_research_mode():
 
     assert document.mode == "read"
     assert graph.mode == "graph"
-    incompatible = NamedWorkspaceTab(
-        id="tab-incompatible",
-        display_label="Plan",
-        view_mode="reading",
-        mode="podcast",
-        target={"kind": "document", "document_id": "knowledge_engine_document:plan"},
-    )
-    assert incompatible.mode == "read"
+    with pytest.raises(ValidationError, match="workspace mode"):
+        NamedWorkspaceTab(
+            id="tab-incompatible",
+            display_label="Plan",
+            view_mode="reading",
+            mode="podcast",
+            target={"kind": "document", "document_id": "knowledge_engine_document:plan"},
+        )
 
 
 def test_persistence_rows_match_migration_39_fields_and_target_kind():

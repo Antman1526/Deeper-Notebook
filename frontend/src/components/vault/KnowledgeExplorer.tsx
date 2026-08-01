@@ -44,7 +44,7 @@ import type {
 } from '@/lib/api/knowledge-navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
-import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
+import { createKnowledgeWorkspaceTab, useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import { KnowledgeLinksInspector } from './KnowledgeLinksInspector'
 import {
   KnowledgePaneContent,
@@ -178,7 +178,7 @@ async function namedSnapshotFromCurrentWorkspace(): Promise<NamedWorkspaceSnapsh
 
 function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspaceDocument {
   return {
-    version: 1,
+    version: 2,
     activePaneId: plan.activePaneId,
     nextId: plan.nextId,
     layout: plan.layout,
@@ -186,8 +186,7 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
     panes: Object.fromEntries(Object.entries(plan.panes).map(([paneId, pane]) => {
       const tabs = pane.tabs
         .filter((tab) => tab.targetState === 'available' && tab.targetDocument)
-        .map((tab) => ({
-          id: tab.id,
+        .map((tab) => createKnowledgeWorkspaceTab({
           vaultId: tab.targetDocument!.legacyContainerId,
           noteId: tab.targetDocument!.legacyNoteId,
           title: tab.targetDocument!.title,
@@ -202,7 +201,7 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
             relationKinds: tab.target.relationKinds,
             viewport: tab.target.viewport,
           } : null,
-        }))
+        }, tab.id))
       return [paneId, {
         id: pane.id,
         activeTabId: tabs.some((tab) => tab.id === pane.activeTabId) ? pane.activeTabId : tabs[0]?.id ?? null,
