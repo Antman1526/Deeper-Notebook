@@ -16,6 +16,7 @@ from deeper_notebook.podcasts.selection_contracts import (
     AppSourceSelection,
     GraphSelection,
     KnowledgeBlockSelection,
+    KnowledgeCollectionSelection,
     KnowledgeDocumentSelection,
     NotebookSelection,
     PodcastSelection,
@@ -385,6 +386,63 @@ class KnowledgeEnginePodcastSelectionResolver:
         raise ValueError("podcast_selection_kind_unavailable")
 
 
+class KnowledgeNavigationReader(Protocol):
+    """Narrow durable-navigation read used for a saved bookmark selection."""
+
+    async def get_bookmark(self, bookmark_id: str): ...
+
+
+class KnowledgeNavigationPodcastSelectionResolver:
+    """Resolve a saved bookmark through its current unified target only."""
+
+    def __init__(
+        self,
+        *,
+        navigation: KnowledgeNavigationReader,
+        engine_resolver: KnowledgeEnginePodcastSelectionResolver,
+    ) -> None:
+        self._navigation = navigation
+        self._engine_resolver = engine_resolver
+
+    @staticmethod
+    def _unavailable_bookmark(
+        selection: KnowledgeCollectionSelection, reason: str
+    ) -> list[ResolvedSelectionItem]:
+        return [
+            ResolvedSelectionItem(
+                stable_id=selection.collection_id,
+                title="Saved bookmark",
+                authority_kind="app_owned",
+                state="unavailable",
+                reason=reason,
+            )
+        ]
+
+    async def resolve(self, selection: PodcastSelection) -> list[ResolvedSelectionItem]:
+        if not isinstance(selection, KnowledgeCollectionSelection):
+            raise ValueError("podcast_selection_kind_unavailable")
+        if selection.collection_kind != "bookmark":
+            raise ValueError("podcast_selection_kind_unavailable")
+        bookmark = await self._navigation.get_bookmark(selection.collection_id)
+        target = getattr(bookmark, "target", None)
+        target_kind = getattr(target, "kind", None)
+        if target_kind == "document":
+            return await self._engine_resolver.resolve(
+                KnowledgeDocumentSelection(document_id=target.document_id)
+            )
+        if target_kind == "block":
+            return await self._engine_resolver.resolve(
+                KnowledgeBlockSelection(
+                    document_id=target.document_id,
+                    block_id=target.block_id,
+                    expected_revision_id=getattr(target, "source_revision_id", None),
+                )
+            )
+        return self._unavailable_bookmark(
+            selection, "bookmark_target_kind_unavailable"
+        )
+
+
 class PodcastSelectionService:
     """Normalize references and project resolver results without source mutation."""
 
@@ -511,6 +569,8 @@ __all__ = [
     "CompositePodcastSelectionResolver",
     "KnowledgeDocumentProjectionReader",
     "KnowledgeEnginePodcastSelectionResolver",
+    "KnowledgeNavigationPodcastSelectionResolver",
+    "KnowledgeNavigationReader",
     "NotebookLoader",
     "NoteLoader",
     "SourceLoader",

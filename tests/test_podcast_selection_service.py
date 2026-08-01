@@ -9,6 +9,7 @@ from deeper_notebook.podcasts.selection_contracts import (
     AppSourceSelection,
     GraphSelection,
     KnowledgeBlockSelection,
+    KnowledgeCollectionSelection,
     KnowledgeDocumentSelection,
     NotebookSelection,
 )
@@ -17,6 +18,7 @@ from deeper_notebook.podcasts.selection_service import (
     AppNotePodcastSelectionResolver,
     AppSourcePodcastSelectionResolver,
     KnowledgeEnginePodcastSelectionResolver,
+    KnowledgeNavigationPodcastSelectionResolver,
     PodcastSelectionService,
     ResolvedSelectionItem,
 )
@@ -258,6 +260,57 @@ async def test_engine_block_range_fails_closed_without_a_range_projection():
     assert items[0].state == "unavailable"
     assert items[0].reason == "block_range_projection_unavailable"
     assert items[0].content == ""
+
+
+@pytest.mark.asyncio
+async def test_bookmark_collection_delegates_to_the_current_unified_target():
+    class Engine:
+        async def get_document(self, document_id):
+            assert document_id == "knowledge_engine_document:research"
+            return type(
+                "Document",
+                (),
+                {
+                    "id": document_id,
+                    "title": "Research note",
+                    "authority_kind": "external_read_only",
+                    "relative_locator": "Research/Note.md",
+                    "source_revision_id": "knowledge_engine_revision:current",
+                    "content_hash": "d" * 64,
+                    "normalized_body": "The canonical selection body",
+                },
+            )()
+
+    class Navigation:
+        async def get_bookmark(self, bookmark_id):
+            assert bookmark_id == "knowledge_bookmark:research"
+            return type(
+                "Bookmark",
+                (),
+                {
+                    "target": type(
+                        "DocumentTarget",
+                        (),
+                        {
+                            "kind": "document",
+                            "document_id": "knowledge_engine_document:research",
+                        },
+                    )(),
+                },
+            )()
+
+    engine_resolver = KnowledgeEnginePodcastSelectionResolver(engine=Engine())
+    items = await KnowledgeNavigationPodcastSelectionResolver(
+        navigation=Navigation(), engine_resolver=engine_resolver
+    ).resolve(
+        KnowledgeCollectionSelection(
+            collection_kind="bookmark",
+            collection_id="knowledge_bookmark:research",
+        )
+    )
+
+    assert items[0].authority_kind == "external_read_only"
+    assert items[0].content == "The canonical selection body"
 
 
 @pytest.mark.asyncio

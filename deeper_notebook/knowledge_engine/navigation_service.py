@@ -222,6 +222,9 @@ class KnowledgeNavigationService:
     ) -> NavigationReceipt:
         return await self.metadata_repository.delete_bookmark(bookmark_id, command)
 
+    async def get_bookmark(self, bookmark_id: str) -> Bookmark:
+        return await self.metadata_repository.get_bookmark(bookmark_id)
+
     async def list_folders(self) -> list[BookmarkFolder]:
         return await self.metadata_repository.list_folders()
 
