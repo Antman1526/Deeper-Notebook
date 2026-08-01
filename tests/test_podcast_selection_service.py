@@ -12,6 +12,7 @@ from deeper_notebook.podcasts.selection_contracts import (
     KnowledgeCollectionSelection,
     KnowledgeDocumentSelection,
     NotebookSelection,
+    SearchSelection,
 )
 from deeper_notebook.podcasts.selection_service import (
     AppNotebookPodcastSelectionResolver,
@@ -471,6 +472,23 @@ async def test_workspace_collection_resolves_only_explicit_document_and_block_ta
         "named_knowledge_workspace:research",
     ]
     assert items[-1].state == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_exact_saved_search_uses_unified_documents_and_authority_filters():
+    class Engine:
+        async def list_documents(self, *, space_id, limit, offset):
+            assert (space_id, limit, offset) == ("knowledge_engine_space:research", 500, 0)
+            return [
+                type("Document", (), {"id": "knowledge_engine_document:external", "title": "Research", "authority_kind": "external_read_only", "relative_locator": "Research.md", "source_revision_id": "knowledge_engine_revision:one", "content_hash": "a" * 64, "normalized_body": "A body"})(),
+                type("Document", (), {"id": "knowledge_engine_document:owned", "title": "Research", "authority_kind": "app_owned", "relative_locator": "Owned.md", "source_revision_id": "knowledge_engine_revision:two", "content_hash": "b" * 64, "normalized_body": "Another body"})(),
+            ]
+
+    items = await KnowledgeEnginePodcastSelectionResolver(engine=Engine()).resolve(
+        SearchSelection(query="Research", search_mode="exact", space_ids=["knowledge_engine_space:research"], authority_kinds=["external_read_only"])
+    )
+
+    assert [item.stable_id for item in items] == ["knowledge_engine_document:external"]
 
 
 @pytest.mark.asyncio
