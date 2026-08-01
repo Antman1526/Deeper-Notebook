@@ -11,6 +11,30 @@ UPSTREAM_PACKAGE_TREES = (
 )
 
 
+def standalone_frontend_root(standalone_root: Path) -> Path:
+    """Return the one Next standalone application directory.
+
+    Next can preserve a workspace-relative path below ``.next/standalone``.
+    PyInstaller must package the directory that directly owns the application
+    ``server.js`` as ``frontend/``; copying the standalone root leaves the
+    launcher looking for a non-existent top-level server entry point.
+    """
+    candidates = sorted(
+        {
+            server.parent
+            for server in standalone_root.rglob("server.js")
+            if (server.parent / ".next").is_dir()
+            and (server.parent / "package.json").is_file()
+        }
+    )
+    if len(candidates) != 1:
+        raise RuntimeError(
+            "expected exactly one Next standalone frontend root under "
+            f"{standalone_root}, found {len(candidates)}"
+        )
+    return candidates[0]
+
+
 def pyinstaller_upstream_package_datas(
     project_root: Path,
 ) -> list[tuple[str, str]]:
