@@ -86,6 +86,19 @@ class KnowledgeEngineService:
             source_revision_id=source_revision_id,
         )
 
+    async def get_current_block_content(
+        self,
+        *,
+        document_id: str,
+        block_id: str,
+        source_revision_id: str,
+    ):
+        return await self._repository.get_current_block_content(
+            document_id=document_id,
+            block_id=block_id,
+            source_revision_id=source_revision_id,
+        )
+
     async def list_documents(
         self,
         *,
