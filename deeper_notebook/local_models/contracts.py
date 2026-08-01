@@ -4,6 +4,7 @@ This module deliberately performs no filesystem or runtime I/O.  Discovery
 supplies facts and callers can make routing decisions from the returned,
 serializable assessment without treating a curated manifest as proof.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -36,6 +37,8 @@ ResourceTier = Literal["light", "standard", "heavyweight"]
 ExecutionPolicy = Literal["strict_local", "local_preferred", "custom"]
 ComputeProfile = Literal["efficient", "balanced", "maximum_quality"]
 ManifestState = Literal["installed", "planned", "removed"]
+SelectionSource = Literal["automatic", "role_override", "production_override"]
+RouteOutcome = Literal["ready", "blocked", "approval_required"]
 
 # The existing local sidecar probe applies a nine-second per-sidecar bound.
 MAX_BOUNDED_HEALTH_LATENCY_MS = 9_000
@@ -76,6 +79,89 @@ class ModelReadinessAssessment:
     route_eligible: bool
 
 
+@dataclass(frozen=True)
+class LocalModelRouteCandidate:
+    """Redacted facts a pure local planner needs about one model.
+
+    Inventory and benchmark collection own discovery and measurement.  This
+    contract deliberately contains neither a canonical path nor any provider
+    configuration, prompt, source, or generated response.
+    """
+
+    model_id: str
+    provider: str
+    fingerprint: str
+    modalities: tuple[Literal["text", "image", "audio"], ...]
+    accepted_roles: tuple[ModelRole, ...]
+    context_tokens: int
+    supports_structured_output: bool
+    readiness: Readiness
+    health_healthy: bool
+    accepted_quality: float
+    benchmarked_at: float | None
+    peak_memory_bytes: int
+    latency_ms: int
+    is_local: bool = True
+
+
+@dataclass(frozen=True)
+class RouteRequest:
+    """A bounded, local-only request for a model route."""
+
+    role: ModelRole
+    required_context_tokens: int = 0
+    modalities: tuple[Literal["text", "image", "audio"], ...] = ("text",)
+    requires_structured_output: bool = False
+    execution_policy: ExecutionPolicy = "strict_local"
+    compute_profile: ComputeProfile = "balanced"
+    role_override_model_id: str | None = None
+    production_override_model_id: str | None = None
+    memory_reservation_bytes: int = 0
+
+
+@dataclass(frozen=True)
+class ModelRoutePlan:
+    """Explainable route result with only redacted selection facts."""
+
+    role: ModelRole
+    outcome: RouteOutcome
+    selected_model_id: str | None
+    selected_provider: str | None
+    resource_tier: ResourceTier | None
+    selection_source: SelectionSource | None
+    route_reason: str
+    escalation_model_ids: tuple[str, ...] = ()
+    blocked_reason: str | None = None
+    selected_fingerprint: str | None = None
+    selected_measurements: tuple[tuple[str, int | float], ...] = ()
+
+    def receipt(self) -> dict[str, object]:
+        """Return the redacted, serializable route evidence for UI/audit use."""
+        return {
+            "role": self.role,
+            "outcome": self.outcome,
+            "selected_model_id": self.selected_model_id,
+            "selected_provider": self.selected_provider,
+            "resource_tier": self.resource_tier,
+            "selection_source": self.selection_source,
+            "route_reason": self.route_reason,
+            "escalation_model_ids": list(self.escalation_model_ids),
+            "blocked_reason": self.blocked_reason,
+            "selected_fingerprint": self.selected_fingerprint,
+            "selected_measurements": dict(self.selected_measurements),
+        }
+
+
+@dataclass(frozen=True)
+class EscalationPlan:
+    """A bounded higher-tier retry plan with a privacy-safe first-pass receipt."""
+
+    allowed: bool
+    model_ids: tuple[str, ...]
+    reason: str
+    receipt: dict[str, object]
+
+
 def classify_model_readiness(
     evidence: ModelReadinessEvidence,
 ) -> ModelReadinessAssessment:
@@ -90,7 +176,9 @@ def classify_model_readiness(
     if evidence.manifest_state == "removed":
         return _blocked("removed", "Model is marked removed and cannot be routed.")
     if not evidence.file_complete:
-        return _blocked("incomplete", "Model files are incomplete or missing required assets.")
+        return _blocked(
+            "incomplete", "Model files are incomplete or missing required assets."
+        )
     if not evidence.supported_runtime:
         return _blocked(
             "installed_unsupported",
