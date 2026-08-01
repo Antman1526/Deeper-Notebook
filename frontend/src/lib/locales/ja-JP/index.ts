@@ -260,6 +260,7 @@ export const jaJP = {
       viewSource: "ソース",
       viewLivePreview: "ライブプレビュー",
       viewGraph: "グラフ",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "ペインを右に分割",
       splitDown: "ペインを下に分割",
       closePane: "ペインを閉じる",

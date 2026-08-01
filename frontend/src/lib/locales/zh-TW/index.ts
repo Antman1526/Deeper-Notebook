@@ -260,6 +260,7 @@ export const zhTW = {
       viewSource: "原始碼",
       viewLivePreview: "即時預覽",
       viewGraph: "圖譜",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "向右分割窗格",
       splitDown: "向下分割窗格",
       closePane: "關閉窗格",

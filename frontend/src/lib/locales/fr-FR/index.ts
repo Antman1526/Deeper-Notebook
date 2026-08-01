@@ -262,6 +262,7 @@ export const frFR = {
       viewSource: "Source",
       viewLivePreview: "Aperçu en direct",
       viewGraph: "Graphe",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Scinder le volet à droite",
       splitDown: "Scinder le volet vers le bas",
       closePane: "Fermer le volet",

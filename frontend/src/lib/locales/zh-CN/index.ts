@@ -260,6 +260,7 @@ export const zhCN = {
       viewSource: "源代码",
       viewLivePreview: "实时预览",
       viewGraph: "图谱",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "向右拆分窗格",
       splitDown: "向下拆分窗格",
       closePane: "关闭窗格",

@@ -263,6 +263,7 @@ export const trTR = {
       viewSource: "Kaynak",
       viewLivePreview: "Canlı önizleme",
       viewGraph: "Grafik",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Bölmeyi sağa ayır",
       splitDown: "Bölmeyi aşağı ayır",
       closePane: "Bölmeyi kapat",

@@ -265,6 +265,7 @@ export const caES = {
       viewSource: "Font",
       viewLivePreview: "Previsualització en viu",
       viewGraph: "Graf",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Divideix el panell a la dreta",
       splitDown: "Divideix el panell avall",
       closePane: "Tanca el panell",

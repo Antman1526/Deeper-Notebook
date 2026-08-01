@@ -262,6 +262,7 @@ export const esES = {
       viewSource: "Fuente",
       viewLivePreview: "Vista previa en vivo",
       viewGraph: "Grafo",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Dividir panel a la derecha",
       splitDown: "Dividir panel hacia abajo",
       closePane: "Cerrar panel",

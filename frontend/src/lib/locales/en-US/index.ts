@@ -264,6 +264,7 @@ export const enUS = {
       viewSource: "Source",
       viewLivePreview: "Live Preview",
       viewGraph: "Graph",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Split pane right",
       splitDown: "Split pane down",
       closePane: "Close pane",
