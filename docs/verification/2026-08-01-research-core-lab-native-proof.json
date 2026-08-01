@@ -1,0 +1,78 @@
+{
+  "checks": {
+    "focused_gates": {
+      "build": {
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "error": "not_requested",
+        "exit_code": null,
+        "status": "not_run"
+      },
+      "status": "not_run",
+      "tests": {
+        "command": [
+          ".venv/bin/python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/test_verify_research_core_lab.py"
+        ],
+        "error": "not_requested",
+        "exit_code": null,
+        "status": "not_run"
+      }
+    },
+    "heavyweight_mlx": {
+      "active_heavyweight_count": 1,
+      "first_reservation": "reserved",
+      "queued_swaps": 1,
+      "second_reservation": "queued",
+      "status": "passed"
+    },
+    "local_library": {
+      "after_fingerprint": "a00cf7f42c9bf118f5fe920ed1aa8dddf42da73cf3a818510b070dc9a4868f13",
+      "before_fingerprint": "a00cf7f42c9bf118f5fe920ed1aa8dddf42da73cf3a818510b070dc9a4868f13",
+      "unchanged": true
+    },
+    "strict_local": {
+      "outcome": "ready",
+      "proof_boundary": "synthetic_contract_fixture",
+      "status": "passed",
+      "transport_calls": 0,
+      "transport_instrumented": true
+    },
+    "workspace_migration": {
+      "pane_count": 1,
+      "status": "passed",
+      "workspace_version": 2
+    }
+  },
+  "external_writes": 0,
+  "fixture": {
+    "file_count": 4,
+    "inventory_hash": "dba772cdaacaff6fff54b0b56186f1feaf5cb945db2eb0fac48172bcc845bd77",
+    "kind": "synthetic"
+  },
+  "gates": {
+    "native_runtime": {
+      "reason": null,
+      "route_status": 200,
+      "status": "passed"
+    },
+    "playwright_native": {
+      "reason": "requires persistent native-runtime Playwright proof",
+      "status": "blocked"
+    },
+    "production_build": {
+      "reason": "not_requested",
+      "status": "not_run"
+    }
+  },
+  "schema_version": 1,
+  "source_hashes_unchanged": true,
+  "status": "blocked",
+  "synthetic_passed": true
+}
