@@ -5,7 +5,7 @@ import { RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import type { KnowledgeTab, KnowledgeWorkspaceDocument, OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
+import type { KnowledgePane, KnowledgeTab, KnowledgeWorkspaceDocument, OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
 import type { VaultFile } from '@/lib/api/vault'
 import { vaultApi } from '@/lib/api/vault'
 import { overlayApi } from '@/lib/api/overlay'
@@ -39,6 +39,7 @@ import type {
   KnowledgeOpenDescriptor,
   KnowledgeTarget,
   NamedKnowledgeWorkspaceSummary,
+  NamedWorkspaceTab,
   NamedWorkspaceSnapshot,
   WorkspaceRestorePlan,
 } from '@/lib/api/knowledge-navigation'
@@ -162,11 +163,40 @@ function createResearchModeTab(
 
 function namedTargetForTab(
   tab: KnowledgeTab,
-  documentId: string,
+  documentId: string | null,
   focusedBlock: { blockId: string; sourceRevisionId: string | null } | undefined,
   graphContext: GraphBookmarkContext,
-): KnowledgeTarget {
-  if (focusedBlock) return { kind: 'block', documentId, ...focusedBlock }
+): KnowledgeTarget | null {
+  // Named workspaces retain V2 research targets directly. This keeps
+  // non-document modes durable without fabricating document identities.
+  if (tab.target?.kind === 'search') {
+    const query = tab.target.query.trim()
+    return query
+      ? {
+          kind: 'search',
+          query,
+          searchMode: tab.target.search_mode,
+          spaceIds: tab.target.space_ids,
+          authorityKinds: tab.target.authority_kinds,
+          tags: [],
+        }
+      : null
+  }
+  if (tab.target?.kind === 'ask') {
+    return {
+      kind: 'ask',
+      threadId: tab.target.thread_id,
+      selectedDocumentIds: tab.target.selected_document_ids,
+    }
+  }
+  if (tab.target?.kind === 'podcast') {
+    return {
+      kind: 'podcast',
+      productionId: tab.target.production_id,
+      seedDocumentIds: tab.target.seed_document_ids,
+    }
+  }
+  if (focusedBlock && documentId) return { kind: 'block', documentId, ...focusedBlock }
   const persistedGraphTarget = tab.mode === 'graph' && tab.target?.kind === 'graph'
     ? tab.target
     : null
@@ -182,7 +212,7 @@ function namedTargetForTab(
       viewport: context?.viewport ?? tab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
     }
   }
-  return { kind: 'document', documentId }
+  return documentId ? { kind: 'document', documentId } : null
 }
 
 async function namedSnapshotFromCurrentWorkspace(): Promise<NamedWorkspaceSnapshot> {
@@ -200,16 +230,21 @@ async function namedSnapshotFromCurrentWorkspace(): Promise<NamedWorkspaceSnapsh
     }
     return request
   }
-  const entries = await Promise.all(Object.values(state.panes).flatMap((pane) => pane.tabs.map(async (tab) => {
+  const documentBackedTabs = Object.values(state.panes).flatMap((pane) => pane.tabs)
+    .filter((tab) => tab.target?.kind !== 'search' && tab.target?.kind !== 'ask' && tab.target?.kind !== 'podcast' && tab.target?.kind !== 'graph')
+  const entries = await Promise.all(documentBackedTabs.map(async (tab) => {
     try {
       return [tab.id, await resolveDocumentId(tab)] as const
     } catch {
       return [tab.id, null] as const
     }
-  })))
+  }))
   const documentIds = new Map(entries)
   if (entries.some(([, documentId]) => !documentId)) {
-    throw new Error('A tab could not be resolved to a stable knowledge document ID.')
+    const unresolvedTabs = documentBackedTabs
+      .filter((tab) => !documentIds.get(tab.id))
+      .map((tab) => `${tab.id}:${tab.sourceAuthority}:${tab.vaultId}:${tab.noteId}`)
+    throw new Error(`A tab could not be resolved to a stable knowledge document ID: ${unresolvedTabs.join(', ')}`)
   }
   return {
     version: 1,
@@ -217,16 +252,42 @@ async function namedSnapshotFromCurrentWorkspace(): Promise<NamedWorkspaceSnapsh
     nextId: state.nextId,
     layout: state.layout,
     navigation: state.navigation,
-    panes: Object.fromEntries(Object.entries(state.panes).map(([paneId, pane]) => [paneId, {
-      id: pane.id,
-      activeTabId: pane.activeTabId,
-      tabs: pane.tabs.map((tab) => ({
-        id: tab.id,
-        target: namedTargetForTab(tab, documentIds.get(tab.id)!, state.focusedBlocksByTab[tab.id], state.graphBookmarkContext),
-        displayLabel: tab.title,
-        viewMode: tab.viewMode,
-      })),
-    }])),
+    panes: Object.fromEntries(Object.entries(state.panes).map(([paneId, pane]) => {
+      const tabs = pane.tabs.map((tab): NamedWorkspaceTab | null => {
+        const target = namedTargetForTab(
+          tab,
+          tab.target?.kind === 'graph'
+            ? tab.target.root_document_id ?? tab.knowledgeDocumentId
+            : documentIds.get(tab.id) ?? null,
+          state.focusedBlocksByTab[tab.id],
+          state.graphBookmarkContext,
+        )
+        if (!target) return null
+        const mode: NamedWorkspaceTab['mode'] = target.kind === 'search'
+          ? 'search'
+          : target.kind === 'graph'
+            ? 'graph'
+            : target.kind === 'ask'
+              ? 'ask'
+              : target.kind === 'podcast'
+                ? 'podcast'
+            : tab.mode === 'write' ? 'write' : 'read'
+        return {
+          id: tab.id,
+          target,
+          displayLabel: tab.title,
+          viewMode: tab.viewMode,
+          mode,
+        }
+      }).filter((tab): tab is NamedWorkspaceTab => tab !== null)
+      return [paneId, {
+        id: pane.id,
+        activeTabId: tabs.some((tab) => tab.id === pane.activeTabId)
+          ? pane.activeTabId
+          : tabs[0]?.id ?? null,
+        tabs,
+      }]
+    })),
   }
 }
 
@@ -238,9 +299,63 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
     layout: plan.layout,
     navigation: plan.navigation,
     panes: Object.fromEntries(Object.entries(plan.panes).map(([paneId, pane]) => {
-      const tabs = pane.tabs
-        .filter((tab) => tab.targetState === 'available' && tab.targetDocument)
-        .map((tab) => createKnowledgeWorkspaceTab({
+      const tabs: KnowledgeTab[] = pane.tabs.flatMap<KnowledgeTab>((tab) => {
+        if (tab.targetState !== 'available') return []
+        if (tab.target.kind === 'search') return [{
+          id: tab.id,
+          vaultId: '',
+          noteId: '',
+          title: tab.displayLabel,
+          relativePath: '',
+          viewMode: 'reading' as const,
+          sourceAuthority: 'external-vault' as const,
+          knowledgeDocumentId: null,
+          graphViewport: null,
+          mode: 'search' as const,
+          target: {
+            kind: 'search' as const,
+            query: tab.target.query,
+            search_mode: tab.target.searchMode,
+            space_ids: tab.target.spaceIds,
+            authority_kinds: tab.target.authorityKinds,
+          },
+        }]
+        if (tab.target.kind === 'ask') return [{
+          id: tab.id,
+          vaultId: '',
+          noteId: '',
+          title: tab.displayLabel,
+          relativePath: '',
+          viewMode: 'reading' as const,
+          sourceAuthority: 'external-vault' as const,
+          knowledgeDocumentId: null,
+          graphViewport: null,
+          mode: 'ask' as const,
+          target: {
+            kind: 'ask' as const,
+            thread_id: tab.target.threadId,
+            selected_document_ids: tab.target.selectedDocumentIds,
+          },
+        }]
+        if (tab.target.kind === 'podcast') return [{
+          id: tab.id,
+          vaultId: '',
+          noteId: '',
+          title: tab.displayLabel,
+          relativePath: '',
+          viewMode: 'reading' as const,
+          sourceAuthority: 'external-vault' as const,
+          knowledgeDocumentId: null,
+          graphViewport: null,
+          mode: 'podcast' as const,
+          target: {
+            kind: 'podcast' as const,
+            production_id: tab.target.productionId,
+            seed_document_ids: tab.target.seedDocumentIds,
+          },
+        }]
+        if (!tab.targetDocument) return []
+        return [createKnowledgeWorkspaceTab({
           vaultId: tab.targetDocument!.legacyContainerId,
           noteId: tab.targetDocument!.legacyNoteId,
           title: tab.targetDocument!.title,
@@ -255,12 +370,13 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
             relationKinds: tab.target.relationKinds,
             viewport: tab.target.viewport,
           } : null,
-        }, tab.id))
+        }, tab.id)]
+      })
       return [paneId, {
         id: pane.id,
         activeTabId: tabs.some((tab) => tab.id === pane.activeTabId) ? pane.activeTabId : tabs[0]?.id ?? null,
         tabs,
-      }]
+      }] as [string, KnowledgePane]
     })),
   }
 }
@@ -301,6 +417,7 @@ export function KnowledgeExplorer() {
   )
   const activePaneId = useKnowledgeWorkspaceStore((state) => state.activePaneId)
   const panes = useKnowledgeWorkspaceStore((state) => state.panes)
+  const workspaceHydrated = useKnowledgeWorkspaceStore((state) => state.hydrated)
   const activeTab = activePane?.tabs.find(
     (tab) => tab.id === activePane.activeTabId,
   ) ?? activePane?.tabs[0]
@@ -784,6 +901,11 @@ export function KnowledgeExplorer() {
   }, [deleteFolder])
 
   useEffect(() => {
+    // The measured rail width is a local layout effect, not a user edit.  Do
+    // not let it advance the workspace revision before Current Session has
+    // hydrated, or the late GET is correctly treated as stale and its V2
+    // split/overlay state is discarded.
+    if (!workspaceHydrated) return
     const sidebar = sidebarRef.current
     if (!sidebar || !navigation.sidebarVisible) return
     const clampWidth = (value: number) => Math.min(640, Math.max(240, Math.round(value)))
@@ -795,7 +917,7 @@ export function KnowledgeExplorer() {
     })
     observer.observe(sidebar)
     return () => observer.disconnect()
-  }, [navigation.sidebarVisible, navigation.sidebarWidth, setNavigation])
+  }, [navigation.sidebarVisible, navigation.sidebarWidth, setNavigation, workspaceHydrated])
 
   useEffect(() => {
     setActivePaneElement(paneElementsRef.current[activePaneId] ?? null)

@@ -54,6 +54,7 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   activateTab: (paneId: string, tabId: string) => void
   setActivePane: (paneId: string) => void
   setTabViewMode: (paneId: string, tabId: string, mode: KnowledgeViewMode) => void
+  setSearchTabQuery: (paneId: string, tabId: string, query: string) => void
   setTabGraphViewport: (paneId: string, tabId: string, viewport: GraphViewport) => void
   setSplitSize: (splitId: string, firstSize: number) => void
   setNavigation: (navigation: Partial<KnowledgeWorkspaceNavigation>) => void
@@ -496,6 +497,25 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
               }
             })()
               : candidate),
+        },
+      },
+    })
+  },
+
+  setSearchTabQuery: (paneId, tabId, query) => {
+    const state = get()
+    const pane = state.panes[paneId]
+    const tab = pane?.tabs.find((candidate) => candidate.id === tabId)
+    if (!pane || !tab || tab.target?.kind !== 'search' || tab.target.query === query) return
+    set({
+      revision: state.revision + 1,
+      panes: {
+        ...state.panes,
+        [paneId]: {
+          ...pane,
+          tabs: pane.tabs.map((candidate): KnowledgeTab => candidate.id === tabId
+            ? { ...candidate, target: { ...candidate.target!, query } } as KnowledgeTab
+            : candidate),
         },
       },
     })

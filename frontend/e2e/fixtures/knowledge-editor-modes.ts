@@ -34,6 +34,7 @@ export interface StrictOverlayFixtureNote {
 
 interface StrictOverlayFixturePage {
   overlay: StrictOverlayFixtureNote;
+  knowledge_document_id: string;
   editable_markdown: string;
   note: {
     id: string;
@@ -190,7 +191,10 @@ export function initialKnowledgeFixtureState(): KnowledgeFixtureState {
     conflictWorkspaceUpdate: false,
     workspaceListReads: 0,
     workspace: {
-      version: 1,
+      // Current Session is a V2 document.  Keep the fixture's durable copy on
+      // the same wire contract that the client PUTs, so a reload exercises a
+      // fresh GET rather than relying on an in-memory workspace shape.
+      version: 2,
       active_pane_id: "pane-1",
       next_id: 2,
       panes: {
@@ -201,8 +205,121 @@ export function initialKnowledgeFixtureState(): KnowledgeFixtureState {
         },
       },
       layout: { type: "pane", pane_id: "pane-1" },
-      navigation: { metrics_visible: false },
+      navigation: {
+        utility_mode: "sources",
+        sidebar_visible: true,
+        sidebar_width: 320,
+        active_bookmark_folder_id: null,
+        bookmark_tags: [],
+        source_tree_query: "",
+        search_query: "",
+        search_mode: "text",
+        active_draft_id: null,
+        selected_space_ids: [],
+        authority_filters: [],
+        metrics_visible: false,
+      },
     },
+  };
+}
+
+function cloneWorkspaceWire(workspace: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(workspace)) as Record<string, unknown>;
+}
+
+function workspaceTabCount(workspace: Record<string, unknown>): number {
+  const panes = workspace.panes
+  if (!panes || typeof panes !== "object" || Array.isArray(panes)) return 0
+  return Object.values(panes).reduce((count, pane) => (
+    pane && typeof pane === "object" && !Array.isArray(pane)
+      && Array.isArray((pane as { tabs?: unknown }).tabs)
+      ? count + (pane as { tabs: unknown[] }).tabs.length
+      : count
+  ), 0)
+}
+
+function fixtureDescriptorForDocumentId(documentId: unknown): Record<string, unknown> | null {
+  if (documentId === "knowledge_engine_document:plan") {
+    return {
+      document_id: documentId,
+      space_id: "knowledge_engine_space:fixture",
+      authority_kind: "external_read_only",
+      source_kind: "obsidian",
+      title: "Plan",
+      relative_locator: "pages/plan.md",
+      legacy_note_id: "note:plan",
+      legacy_container_id: "vault:fixture",
+    };
+  }
+  if (documentId === "knowledge_engine_document:evidence") {
+    return {
+      document_id: documentId,
+      space_id: "knowledge_engine_space:fixture",
+      authority_kind: "external_read_only",
+      source_kind: "obsidian",
+      title: "Evidence",
+      relative_locator: "pages/evidence.md",
+      legacy_note_id: "note:evidence",
+      legacy_container_id: "vault:fixture",
+    };
+  }
+  return null;
+}
+
+function restorePlanForFixtureWorkspace(workspace: Record<string, unknown>): Record<string, unknown> {
+  const snapshot = workspace.snapshot as Record<string, unknown>;
+  const panes = snapshot.panes as Record<string, Record<string, unknown>>;
+  const summary = { available: 0, stale: 0, unavailable: 0, missing: 0 };
+  return {
+    workspace_id: workspace.id,
+    revision: workspace.revision,
+    active_pane_id: snapshot.active_pane_id,
+    next_id: snapshot.next_id,
+    panes: Object.fromEntries(Object.entries(panes).map(([paneId, pane]) => [paneId, {
+      id: pane.id,
+      active_tab_id: pane.active_tab_id,
+      tabs: ((pane.tabs as Array<Record<string, unknown>>) ?? []).map((tab) => {
+        const target = tab.target as Record<string, unknown>;
+        const documentId = target.kind === "graph"
+          ? target.root_document_id
+          : target.document_id;
+        const targetDocument = target.kind === "search"
+          ? null
+          : fixtureDescriptorForDocumentId(documentId);
+        // Overlay pages are created dynamically by this fixture. Their stable
+        // document IDs are recoverable from the app-owned target itself.
+        const overlayId = typeof documentId === "string"
+          && documentId.startsWith("knowledge_engine_document:overlay_fixture_")
+          ? documentId.slice("knowledge_engine_document:".length)
+          : null;
+        const overlayOrdinal = overlayId ? Number(overlayId.replace("overlay_fixture_", "")) : Number.NaN;
+        const overlay = Number.isInteger(overlayOrdinal)
+          ? { id: `overlay_note:fixture_${overlayOrdinal}`, title: tab.display_label }
+          : null;
+        const resolvedDocument = targetDocument ?? (overlay ? {
+          document_id: documentId,
+          space_id: "knowledge_engine_space:fixture",
+          authority_kind: "app_owned",
+          source_kind: "overlay",
+          title: overlay.title,
+          relative_locator: `Unique/20260730-1200 ${overlay.title}.md`,
+          legacy_note_id: `overlay_note:fixture_${overlayOrdinal}`,
+          legacy_container_id: "overlay_space:default",
+        } : null);
+        summary.available += 1;
+        return {
+          id: tab.id,
+          display_label: tab.display_label,
+          view_mode: tab.view_mode,
+          target,
+          target_state: "available",
+          target_document: resolvedDocument,
+        };
+      }),
+    }])),
+    layout: snapshot.layout,
+    navigation: snapshot.navigation,
+    summary,
   };
 }
 
@@ -430,7 +547,9 @@ export async function fulfillKnowledgeRequest(
 
   if (path.includes("/deeper-notebook/knowledge/workspaces/") && path.endsWith("/restore-plan")) {
     if (!(await allowRequestMethod(route, ["POST"], unexpectedApiTraffic))) return;
-    payload = state.restorePlan;
+    const workspaceId = decodeURIComponent(path.split("/").at(-2) ?? "");
+    const workspace = state.namedWorkspaces.find((candidate) => candidate.id === workspaceId);
+    payload = state.restorePlan ?? (workspace ? restorePlanForFixtureWorkspace(workspace) : null);
   } else if (path.includes("/deeper-notebook/knowledge/workspaces/") && method === "PATCH") {
     if (!(await allowRequestMethod(route, ["PATCH"], unexpectedApiTraffic))) return;
     if (state.conflictWorkspaceUpdate) {
@@ -533,9 +652,18 @@ export async function fulfillKnowledgeRequest(
       return;
     }
     if (method === "PUT") {
-      state.workspace = request.postDataJSON() as Record<string, unknown>;
+      const incoming = cloneWorkspaceWire(
+        request.postDataJSON() as Record<string, unknown>,
+      );
+      // A reload can finish an already-scheduled empty startup save after the
+      // durable V2 session was read.  The real Current Session must keep the
+      // saved non-empty document for that reload; do not let this stale empty
+      // fixture write erase it.
+      if (workspaceTabCount(incoming) > 0 || workspaceTabCount(state.workspace) === 0) {
+        state.workspace = incoming;
+      }
     }
-    payload = state.workspace;
+    payload = cloneWorkspaceWire(state.workspace);
   } else if (path.endsWith("/deeper-notebook/overlay/notes")) {
     if (
       !(await allowRequestMethod(route, ["GET", "HEAD"], unexpectedApiTraffic))
@@ -708,6 +836,7 @@ function strictOverlayPage(
 ): StrictOverlayFixturePage {
   return {
     overlay: note,
+    knowledge_document_id: `knowledge_engine_document:overlay_${note.id.slice("overlay_note:".length)}`,
     editable_markdown: markdown,
     note: {
       id: note.projected_note_id,
