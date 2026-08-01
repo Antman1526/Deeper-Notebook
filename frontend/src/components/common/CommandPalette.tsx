@@ -54,6 +54,7 @@ import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useVaults } from '@/lib/hooks/use-vault'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import { useTheme } from '@/lib/stores/theme-store'
 
 const getNavigationItems = (t: TFunction) => [
@@ -110,6 +111,7 @@ export function CommandPalette() {
   const mounts = useVaults()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
   const { setTheme } = useTheme()
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const { data: notebooks, isLoading: notebooksLoading } = useNotebooks(false)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -288,6 +290,12 @@ export function CommandPalette() {
         podcast: { available: false, reason: 'Research modes are unavailable' },
       },
       openResearchMode: page.context.openResearchMode ?? null,
+      openPodcastFromSelection: activeTab?.knowledgeDocumentId
+        ? destination => openPodcastReview([{
+            kind: 'knowledge_document',
+            documentId: activeTab.knowledgeDocumentId!,
+          }], destination)
+        : null,
       moveTab: offset => {
         const current = useKnowledgeWorkspaceStore.getState()
         const currentPane = current.panes[current.activePaneId]
@@ -297,7 +305,7 @@ export function CommandPalette() {
         current.activateTab(currentPane.id, target.id)
       },
     }
-  }, [pageContext.generation])
+  }, [openPodcastReview, pageContext.generation])
 
   const knowledgeContext = buildKnowledgeContext()
   const knowledgeCommands = knowledgeContext

@@ -7,8 +7,10 @@ import type { PodcastDestination, PodcastSelection } from '@/lib/podcasts/select
 import { Button } from '@/components/ui/button'
 
 interface TurnIntoPodcastActionProps {
-  selection: PodcastSelection
+  selection?: PodcastSelection
+  selections?: PodcastSelection[]
   destination: PodcastDestination
+  label?: string
   disabledReason?: string
   onOpen: (selections: PodcastSelection[], destination: PodcastDestination) => void
 }
@@ -19,12 +21,18 @@ interface TurnIntoPodcastActionProps {
  */
 export function TurnIntoPodcastAction({
   selection,
+  selections,
   destination,
+  label = 'Turn into podcast',
   disabledReason,
   onOpen,
 }: TurnIntoPodcastActionProps) {
   const actionId = useId()
-  const reasonId = disabledReason ? `podcast-unavailable-${actionId}` : undefined
+  const resolvedSelections = selections ?? (selection ? [selection] : [])
+  const unavailableReason = disabledReason ?? (
+    resolvedSelections.length === 0 ? 'No readable content is available' : undefined
+  )
+  const reasonId = unavailableReason ? `podcast-unavailable-${actionId}` : undefined
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -32,19 +40,19 @@ export function TurnIntoPodcastAction({
         type="button"
         variant="outline"
         size="sm"
-        disabled={Boolean(disabledReason)}
+        disabled={Boolean(unavailableReason)}
         aria-describedby={reasonId}
         onClick={(event) => {
           event.stopPropagation()
-          onOpen([selection], destination)
+          onOpen(resolvedSelections, destination)
         }}
       >
         <Podcast aria-hidden="true" />
-        Turn into podcast
+        {label}
       </Button>
-      {disabledReason ? (
-        <p id={reasonId} className="text-xs text-muted-foreground" role="status">
-          {disabledReason}
+      {unavailableReason ? (
+        <p id={reasonId} className="text-xs text-muted-foreground">
+          {unavailableReason}
         </p>
       ) : null}
     </div>

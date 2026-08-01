@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { KnowledgeBookmark } from '@/lib/api/knowledge-navigation'
 import { KnowledgeBookmarksPanel } from './KnowledgeBookmarksPanel'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 const externalBookmark = (): KnowledgeBookmark => ({
   schemaVersion: 1,
@@ -21,6 +22,22 @@ const externalBookmark = (): KnowledgeBookmark => ({
 })
 
 describe('KnowledgeBookmarksPanel', () => {
+  it('opens an available bookmark through the transient podcast review state', () => {
+    usePodcastStudioStore.getState().dismiss()
+    const bookmark = externalBookmark()
+    render(<KnowledgeBookmarksPanel bookmarks={[bookmark]} folders={[]} onOpen={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn into podcast' }))
+
+    expect(usePodcastStudioStore.getState()).toMatchObject({
+      isOpen: true,
+      destination: 'quick',
+      selections: [{
+        kind: 'knowledge_collection', collectionKind: 'bookmark', collectionId: bookmark.id,
+      }],
+    })
+  })
+
   it('shows external target authority while keeping bookmark metadata editable', () => {
     render(<KnowledgeBookmarksPanel bookmarks={[externalBookmark()]} folders={[]} onOpen={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />)
 
@@ -152,5 +169,21 @@ describe('KnowledgeBookmarksPanel', () => {
     expect(onDeleteFolder).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Move children' }))
     expect(onDeleteFolder).toHaveBeenCalledWith(folder, 'move_children')
+  })
+
+  it('opens a folder collection through transient podcast review state', () => {
+    usePodcastStudioStore.getState().dismiss()
+    const folder = {
+      schemaVersion: 1 as const, id: 'knowledge_bookmark_folder:plans', name: 'Plans', nameKey: 'plans',
+      parentFolderId: null, position: 0, revision: 2,
+      createdAt: '2026-07-31T00:00:00.000Z', updatedAt: '2026-07-31T00:00:00.000Z', children: [],
+    }
+    render(<KnowledgeBookmarksPanel bookmarks={[]} folders={[folder]} onOpen={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn folder into podcast' }))
+
+    expect(usePodcastStudioStore.getState().selections).toEqual([{
+      kind: 'knowledge_collection', collectionKind: 'folder', collectionId: folder.id,
+    }])
   })
 })

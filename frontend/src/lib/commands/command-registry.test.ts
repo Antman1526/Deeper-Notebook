@@ -41,6 +41,7 @@ function context(): KnowledgeCommandExecutionContext {
       podcast: { available: true, reason: null },
     },
     openResearchMode: vi.fn(),
+    openPodcastFromSelection: vi.fn(),
   }
 }
 
@@ -100,7 +101,7 @@ describe('knowledge command registry', () => {
   })
 
   it('declares the complete safe command set and rejects unknown commands', async () => {
-    expect(knowledgeCommandDefinitions).toHaveLength(29)
+    expect(knowledgeCommandDefinitions).toHaveLength(31)
     expect(knowledgeCommandDefinitions.every(command => (
       command.safety === 'read' || command.safety === 'workspace'
     ))).toBe(true)
@@ -119,6 +120,18 @@ describe('knowledge command registry', () => {
     expect(command?.safety).not.toBe('external-write')
     await expect(executeKnowledgeCommand(id, commandContext)).resolves.toBe(true)
     expect(commandContext.openResearchMode).toHaveBeenCalledWith(mode)
+  })
+
+  it.each([
+    ['podcast.quick_from_selection', 'quick'],
+    ['podcast.open_studio_from_selection', 'studio'],
+  ] as const)('opens %s as a review-only workspace command', async (id, destination) => {
+    const commandContext = context()
+    const command = knowledgeCommandDefinitions.find(candidate => candidate.id === id)
+
+    expect(command).toMatchObject({ id, safety: 'workspace' })
+    await expect(executeKnowledgeCommand(id, commandContext)).resolves.toBe(true)
+    expect(commandContext.openPodcastFromSelection).toHaveBeenCalledWith(destination)
   })
 
   it('uses per-mode availability predicates without falling back to a different mode', async () => {

@@ -101,7 +101,7 @@ export const vaultPageSchema = z.object({
 }).passthrough()
 
 export const vaultGraphSchema = z.object({
-  nodes: z.array(z.object({ id: z.string(), title: z.string().nullable().optional(), source_format: z.string().nullable().optional(), external_state: z.string().nullable().optional() }).passthrough()),
+  nodes: z.array(z.object({ id: z.string(), title: z.string().nullable().optional(), source_format: z.string().nullable().optional(), external_state: z.string().nullable().optional(), knowledge_document_id: knowledgeDocumentIdSchema.nullable().optional() }).passthrough()),
   edges: z.array(z.object({ id: z.string(), source: z.string(), target: z.string(), kind: z.string().optional(), resolved: z.boolean().optional() }).passthrough()),
 })
 

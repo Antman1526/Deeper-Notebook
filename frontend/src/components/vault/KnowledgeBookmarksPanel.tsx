@@ -5,7 +5,9 @@ import { FileText, Folder, Hash, Network, Search } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import type { KnowledgeBookmark, KnowledgeBookmarkFolder, UpdateBookmarkCommand } from '@/lib/api/knowledge-navigation'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface KnowledgeBookmarksPanelProps {
   bookmarks: KnowledgeBookmark[]
@@ -27,7 +29,7 @@ function splitCsv(value: string): string[] {
   return value.split(',').map((item) => item.trim()).filter(Boolean)
 }
 
-function FolderTree({ folders, onSelectFolder, onDeleteFolder, onRequestDelete }: Pick<KnowledgeBookmarksPanelProps, 'folders' | 'onSelectFolder' | 'onDeleteFolder'> & { onRequestDelete: (folder: KnowledgeBookmarkFolder) => void }) {
+function FolderTree({ folders, onSelectFolder, onDeleteFolder, onRequestDelete, onOpenPodcast }: Pick<KnowledgeBookmarksPanelProps, 'folders' | 'onSelectFolder' | 'onDeleteFolder'> & { onRequestDelete: (folder: KnowledgeBookmarkFolder) => void; onOpenPodcast: ReturnType<typeof usePodcastStudioStore.getState>['open'] }) {
   return (
     <ul className="space-y-1" aria-label="Bookmark folders">
       {folders.map((folder) => (
@@ -36,9 +38,19 @@ function FolderTree({ folders, onSelectFolder, onDeleteFolder, onRequestDelete }
             <Button type="button" size="sm" variant="ghost" className="justify-start" onClick={() => onSelectFolder?.(folder.id)}>
               <Folder aria-hidden="true" className="mr-1.5 h-4 w-4" />{folder.name}
             </Button>
+            <TurnIntoPodcastAction
+              selection={{
+                kind: 'knowledge_collection',
+                collectionKind: 'folder',
+                collectionId: folder.id,
+              }}
+              destination="quick"
+              label="Turn folder into podcast"
+              onOpen={onOpenPodcast}
+            />
             {onDeleteFolder && <Button type="button" size="sm" variant="ghost" onClick={() => onRequestDelete(folder)}>Delete folder</Button>}
           </div>
-          {folder.children.length > 0 && <div className="ml-3 border-l pl-2"><FolderTree folders={folder.children} onSelectFolder={onSelectFolder} onDeleteFolder={onDeleteFolder} onRequestDelete={onRequestDelete} /></div>}
+          {folder.children.length > 0 && <div className="ml-3 border-l pl-2"><FolderTree folders={folder.children} onSelectFolder={onSelectFolder} onDeleteFolder={onDeleteFolder} onRequestDelete={onRequestDelete} onOpenPodcast={onOpenPodcast} /></div>}
         </li>
       ))}
     </ul>
@@ -55,6 +67,7 @@ export function KnowledgeBookmarksPanel({
   onSelectFolder,
   onDeleteFolder,
 }: KnowledgeBookmarksPanelProps) {
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const [editing, setEditing] = useState<{ bookmark: KnowledgeBookmark; target: boolean } | null>(null)
   const [label, setLabel] = useState('')
   const [tags, setTags] = useState('')
@@ -98,7 +111,7 @@ export function KnowledgeBookmarksPanel({
         <h2 className="text-sm font-semibold">Bookmark library</h2>
         <Button type="button" size="sm" variant="ghost" onClick={() => onSelectFolder?.(null)}>All bookmarks</Button>
       </div>
-      {folders.length > 0 && <FolderTree folders={folders} onSelectFolder={onSelectFolder} onDeleteFolder={onDeleteFolder} onRequestDelete={setFolderToDelete} />}
+      {folders.length > 0 && <FolderTree folders={folders} onSelectFolder={onSelectFolder} onDeleteFolder={onDeleteFolder} onRequestDelete={setFolderToDelete} onOpenPodcast={openPodcastReview} />}
       <div className="flex flex-wrap gap-1" aria-label="Bookmark tags">
         {[...new Set(bookmarks.flatMap((bookmark) => bookmark.tags))].map((tag) => <Badge key={tag} variant="outline"><Hash aria-hidden="true" className="mr-1 h-3 w-3" />{tag}</Badge>)}
       </div>
@@ -124,6 +137,16 @@ export function KnowledgeBookmarksPanel({
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {available && <Button type="button" size="sm" onClick={() => void onOpen(bookmark)}>Open {bookmark.displayLabel}</Button>}
+                <TurnIntoPodcastAction
+                  selection={{
+                    kind: 'knowledge_collection',
+                    collectionKind: 'bookmark',
+                    collectionId: bookmark.id,
+                  }}
+                  destination="quick"
+                  disabledReason={available ? undefined : `Bookmark target is ${bookmark.targetState || 'unavailable'}.`}
+                  onOpen={openPodcastReview}
+                />
                 {!available && <Button type="button" size="sm" variant="outline" onClick={() => beginEdit(bookmark, true)}>Edit Target {bookmark.displayLabel}</Button>}
                 {available && <Button type="button" size="sm" variant="outline" aria-label={`Edit bookmark ${bookmark.displayLabel}`} onClick={() => beginEdit(bookmark, false)}>Edit bookmark</Button>}
                 <Button type="button" size="sm" variant="ghost" aria-label={`Delete bookmark ${bookmark.displayLabel}`} onClick={() => onDelete(bookmark)}>Delete</Button>
