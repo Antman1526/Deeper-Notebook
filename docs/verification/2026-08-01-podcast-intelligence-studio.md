@@ -1,6 +1,6 @@
 # Podcast Intelligence Studio verification record
 
-Status: **partially verified; native-runtime proof blocked**
+Status: **partially verified; controlled native-runtime safe-entry proof passed**
 
 This record distinguishes the implemented Studio and Episode Lab behavior from
 the still-unavailable persistent local runtime. It contains no external vault
@@ -22,8 +22,8 @@ paths, source bodies, credentials, or model paths.
 | Studio frontend focused slice | passed: 27 tests | Studio, Quick Podcast, selection store, Episode Lab, library, player, transcript, and podcast components |
 | Episode Lab/library slice | passed: 8 tests | Library groups and filters; route-persistent player handoff; transcript/citation status; retry/cancel eligibility; global player and synced transcript |
 | TypeScript | passed | `npx tsc --noEmit` after Episode Lab and library changes |
-| Production frontend build | passed | Next.js production build after Episode Lab and library changes |
-| Browser safe-entry check | blocked by native API | The native-runtime spec is collected and requires the app shell's persistent local API; it refuses a partial stubbed proof |
+| Production frontend build | passed | Next.js production build completed as the native browser test's web-server precondition after Episode Lab and library changes |
+| Browser safe-entry check | passed: 1 test | A live isolated API + SurrealDB runtime on loopback; completed-onboarding state; mobile Studio route; no selection and zero Studio submission |
 | Synthetic protected-source proof | passed with blocked native gates | [JSON record](2026-08-01-podcast-intelligence-studio-synthetic-proof.json) |
 
 The synthetic proof created two owned temporary fixture notes. Its inventory
@@ -45,15 +45,17 @@ uv run python scripts/verify_podcast_studio.py --output docs/verification/2026-0
 
 ## Open gates
 
-1. Start a persistent native API plus SurrealDB runtime and verify its loopback
-   `/health` route. At this record time, `http://localhost:65060/health`
-   returned HTTP 000.
-2. Repeat the protected-source proof through that native runtime and browser
-   environment, including whole-notebook preview, oversize fail-closed state,
-   outline approval/reorder, cancellation, retry, and Episode Lab playback.
-3. Run the final browser suite after the persistent runtime is available. The
-   current browser spec is intentionally blocked without that API rather than
-   substituting partial route stubs for a live desktop/database proof.
+1. The prior application port `http://localhost:65060/health` remains
+   unavailable. A separate isolated development runtime did pass
+   `http://127.0.0.1:5055/health` after applying all 40 migrations, but it is
+   not a packaged desktop-app proof.
+2. Repeat the protected-source proof through a supported native application
+   runtime against the designated external read-only mounts, including
+   whole-notebook preview, oversize fail-closed state, outline
+   approval/reorder, cancellation, retry, and Episode Lab playback.
+3. The controlled database has no local model routes or worker. Production
+   submission, audio generation, and model-plan readiness are therefore not
+   proven and were not attempted.
 
 ## Safety boundary
 
