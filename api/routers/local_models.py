@@ -63,6 +63,7 @@ async def _load_local_credentials() -> list[dict]:
     creds = await Credential.get_all()
     return [
         {
+            "credential_id": c.id,
             "name": c.name,
             "kind": c.provider,
             "base_url": c.base_url or "",
