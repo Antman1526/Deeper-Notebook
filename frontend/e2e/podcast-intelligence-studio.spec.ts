@@ -11,6 +11,14 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
       await route.fulfill({ status: 500, body: 'unexpected submission' })
     })
 
+    // Studio acceptance starts from the documented returning-user state. Setup
+    // Wizard navigation is separately covered; coupling to its home redirect
+    // would make this test depend on an unrelated first-run workflow.
+    await page.context().addCookies([{
+      name: 'wizard_completed',
+      value: '1',
+      url: 'http://127.0.0.1:3117',
+    }])
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/podcasts/studio')
 
