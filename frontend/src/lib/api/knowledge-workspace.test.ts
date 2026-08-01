@@ -431,6 +431,66 @@ describe('knowledge workspace API boundary', () => {
     })
   })
 
+  it('preserves a rootless V2 graph and rejects unsafe Ask and Podcast IDs', () => {
+    const base = serializeKnowledgeWorkspace(defaultKnowledgeWorkspace())
+    const wire = {
+      ...base,
+      active_pane_id: 'pane-1',
+      next_id: 4,
+      panes: {
+        'pane-1': {
+          id: 'pane-1', active_tab_id: 'tab-graph', tabs: [
+            {
+              id: 'tab-graph', mode: 'graph', title: 'Whole graph',
+              target: {
+                kind: 'graph', root_document_id: null, space_ids: [], relation_kinds: [],
+                viewport: { x: 0, y: 0, zoom: 1 }, origin: null,
+              },
+            },
+            {
+              id: 'tab-ask', mode: 'ask', title: 'Ask',
+              target: { kind: 'ask', thread_id: 'thread:one', selected_document_ids: [] },
+            },
+            {
+              id: 'tab-podcast', mode: 'podcast', title: 'Podcast',
+              target: { kind: 'podcast', production_id: 'production:one', seed_document_ids: [] },
+            },
+          ],
+        },
+      },
+      layout: { type: 'pane', pane_id: 'pane-1' },
+    }
+
+    expect(parseKnowledgeWorkspace(wire).panes['pane-1'].tabs[0].graphBookmarkContext)
+      .toMatchObject({ rootDocumentId: null })
+    expect(knowledgeWorkspaceWireSchema.safeParse({
+      ...wire,
+      panes: {
+        ...wire.panes,
+        'pane-1': {
+          ...wire.panes['pane-1'],
+          tabs: [{
+            ...wire.panes['pane-1'].tabs[1],
+            target: { kind: 'ask', thread_id: '/private/thread', selected_document_ids: [] },
+          }],
+        },
+      },
+    }).success).toBe(false)
+    expect(knowledgeWorkspaceWireSchema.safeParse({
+      ...wire,
+      panes: {
+        ...wire.panes,
+        'pane-1': {
+          ...wire.panes['pane-1'],
+          tabs: [{
+            ...wire.panes['pane-1'].tabs[2],
+            target: { kind: 'podcast', production_id: 'episode\nraw', seed_document_ids: [] },
+          }],
+        },
+      },
+    }).success).toBe(false)
+  })
+
   it('serializes only approved snake_case fields for PUT', async () => {
     vi.mocked(apiClient.put).mockResolvedValue({ data: wireDocument } as never)
     const documentWithExtras = {

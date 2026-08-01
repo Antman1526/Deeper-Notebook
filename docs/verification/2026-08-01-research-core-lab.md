@@ -258,3 +258,39 @@ uv run pytest tests/test_knowledge_navigation_contracts.py \
 
 This remains fixture-backed browser acceptance, not a packaged-app launch or
 live persistence-server proof.
+
+## P1 restore and authority hardening — 2026-08-01
+
+Current Session V2 preserves a rootless Graph target as
+`root_document_id: null`; neither parsing nor named-workspace restore replaces
+that value with an empty string. Ask thread and Podcast production IDs use the
+same path-free opaque identifier contract in the backend and browser schema.
+
+Named document Write snapshots are now authorized at the service boundary:
+the engine descriptor must report `app_owned` authority before create or
+replace reaches the metadata repository. The restore plan also carries each
+tab's explicit mode, so an app-owned Read tab remains Read instead of being
+silently reclassified as Write. The strict fixture mirrors this authority and
+mode validation, including mutable PATCH replacement state.
+
+```sh
+uv run pytest tests/test_knowledge_navigation_contracts.py \
+  tests/test_knowledge_navigation_service.py \
+  tests/test_knowledge_navigation_api.py \
+  tests/test_knowledge_workspace_persistence.py -q
+# 129 passed
+
+(cd frontend && npx vitest run src/lib/api/knowledge-workspace.test.ts \
+  src/lib/api/knowledge-navigation.test.ts \
+  src/components/vault/KnowledgeExplorer.test.tsx --pool=forks --maxWorkers=1 \
+  && npx tsc --noEmit)
+# 100 tests passed; TypeScript passed
+
+(cd frontend && npx playwright test e2e/research-core-lab.spec.ts --project=native-runtime)
+# 4 passed
+```
+
+The browser result is fixture-bound acceptance only: it verifies the client
+payload/restore boundary and does not prove a packaged desktop launch or a
+live persistence server. The backend pytest result is the direct evidence for
+the real contract and service authorization behavior.

@@ -921,7 +921,7 @@ function restorePlanFromWire(value: z.infer<typeof restorePlanWireSchema>): Work
         id: pane.id, activeTabId: pane.active_tab_id,
         tabs: pane.tabs.map((tab) => ({
           id: tab.id, target: targetFromWire(tab.target), displayLabel: tab.display_label,
-          viewMode: tab.view_mode, targetState: tab.target_state,
+          viewMode: tab.view_mode, mode: tab.mode, targetState: tab.target_state,
           targetDocument: tab.target_document ? descriptorFromWire(tab.target_document) : null,
         })),
       },

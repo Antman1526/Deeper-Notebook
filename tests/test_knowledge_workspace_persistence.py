@@ -113,6 +113,49 @@ def test_workspace_v2_document_targets_require_canonical_relative_locators(locat
         KnowledgeWorkspaceDocumentV2.model_validate(payload)
 
 
+def test_workspace_v2_content_free_targets_preserve_null_graph_and_reject_unsafe_ids():
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(mode="json")
+    payload["panes"]["pane-1"]["tabs"] = [
+        {
+            "id": "tab-graph",
+            "mode": "graph",
+            "title": "Rootless graph",
+            "target": {
+                "kind": "graph",
+                "root_document_id": None,
+                "space_ids": [],
+                "relation_kinds": [],
+                "viewport": {"x": 0, "y": 0, "zoom": 1},
+                "origin": None,
+            },
+        },
+        {
+            "id": "tab-ask",
+            "mode": "ask",
+            "title": "Ask",
+            "target": {"kind": "ask", "thread_id": "thread:one", "selected_document_ids": []},
+        },
+        {
+            "id": "tab-podcast",
+            "mode": "podcast",
+            "title": "Podcast",
+            "target": {"kind": "podcast", "production_id": "production:one", "seed_document_ids": []},
+        },
+    ]
+    payload["panes"]["pane-1"]["active_tab_id"] = "tab-graph"
+
+    parsed = KnowledgeWorkspaceDocumentV2.model_validate(payload)
+    assert parsed.panes["pane-1"].tabs[0].target.root_document_id is None
+
+    payload["panes"]["pane-1"]["tabs"][1]["target"]["thread_id"] = "/private/thread"
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+    payload["panes"]["pane-1"]["tabs"][1]["target"]["thread_id"] = "thread:one"
+    payload["panes"]["pane-1"]["tabs"][2]["target"]["production_id"] = "episode\nraw"
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+
+
 def test_migrate_workspace_v1_canonicalizes_windows_relative_locators():
     payload = populated().model_dump(mode="json")
     payload["panes"]["pane-1"]["tabs"][0]["relative_path"] = "Notes\\One.md"

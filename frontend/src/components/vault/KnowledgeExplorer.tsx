@@ -101,7 +101,7 @@ function tabFromDescriptor(document: KnowledgeOpenDescriptor): OpenKnowledgeTab 
 }
 
 type GraphBookmarkContext = {
-  rootDocumentId: string
+  rootDocumentId: string | null
   spaceIds: string[]
   relationKinds: string[]
   viewport: { x: number; y: number; zoom: number }
@@ -362,7 +362,7 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
           knowledgeDocumentId: tab.target.rootDocumentId,
           graphViewport: tab.target.viewport,
           graphBookmarkContext: {
-            rootDocumentId: tab.target.rootDocumentId ?? '',
+            rootDocumentId: tab.target.rootDocumentId,
             spaceIds: tab.target.spaceIds,
             relationKinds: tab.target.relationKinds,
             viewport: tab.target.viewport,
@@ -386,6 +386,7 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
           sourceAuthority: tab.targetDocument!.authorityKind === 'app_owned' ? 'overlay' as const : 'external-vault' as const,
           knowledgeDocumentId: tab.targetDocument!.documentId,
           viewMode: tab.viewMode,
+          mode: tab.mode,
           graphViewport: tab.target.kind === 'graph' ? tab.target.viewport : null,
           graphBookmarkContext: tab.target.kind === 'graph' ? {
             rootDocumentId: tab.target.rootDocumentId ?? tab.targetDocument!.documentId,
@@ -723,7 +724,7 @@ export function KnowledgeExplorer() {
       const activeTab = activePane?.tabs.find((tab) => tab.id === activePane.activeTabId)
       const activeGraphContext = activeTab?.targetState === 'available' && activeTab.target.kind === 'graph'
         ? {
-          rootDocumentId: activeTab.target.rootDocumentId ?? activeTab.targetDocument?.documentId ?? '',
+          rootDocumentId: activeTab.target.rootDocumentId ?? activeTab.targetDocument?.documentId ?? null,
           spaceIds: activeTab.target.spaceIds,
           relationKinds: activeTab.target.relationKinds,
           viewport: activeTab.target.viewport,

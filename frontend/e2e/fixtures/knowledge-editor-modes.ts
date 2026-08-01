@@ -273,6 +273,19 @@ function validFixtureOpaqueId(value: unknown): boolean {
   return value === null || (typeof value === "string" && fixtureNavigationId.test(value));
 }
 
+function fixtureWorkspaceAuthorityForDocumentId(
+  documentId: unknown,
+): "app_owned" | "external_read_only" | null {
+  const descriptor = fixtureDescriptorForDocumentId(documentId);
+  if (descriptor?.authority_kind === "external_read_only") {
+    return "external_read_only";
+  }
+  return typeof documentId === "string"
+    && documentId.startsWith("knowledge_engine_document:overlay_")
+    ? "app_owned"
+    : null;
+}
+
 function validateNamedWorkspaceSnapshot(snapshot: unknown): string | null {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return "snapshot_invalid";
   const value = snapshot as Record<string, unknown>;
@@ -293,6 +306,7 @@ function validateNamedWorkspaceSnapshot(snapshot: unknown): string | null {
       if (kind === "document") {
         if (!fixtureDocumentId.test(String(targetValue.document_id)) || !["read", "write"].includes(String(mode))) return "document_mode_invalid";
         if (mode === "write" && viewMode !== "source") return "document_write_invalid";
+        if (mode === "write" && fixtureWorkspaceAuthorityForDocumentId(targetValue.document_id) !== "app_owned") return "document_write_authority_invalid";
         continue;
       }
       if (kind === "search") {
@@ -363,6 +377,7 @@ function restorePlanForFixtureWorkspace(workspace: Record<string, unknown>): Rec
           id: tab.id,
           display_label: tab.display_label,
           view_mode: tab.view_mode,
+          mode: tab.mode,
           target,
           target_state: "available",
           target_document: resolvedDocument,
@@ -609,7 +624,31 @@ export async function fulfillKnowledgeRequest(
       await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: "conflict" }) });
       return;
     }
-    payload = state.namedWorkspaces[0];
+    const workspaceId = decodeURIComponent(path.split("/").at(-1) ?? "");
+    const workspace = state.namedWorkspaces.find((candidate) => candidate.id === workspaceId);
+    const body = request.postDataJSON() as Record<string, unknown>;
+    if (!workspace || body.expected_revision !== workspace.revision) {
+      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: "conflict" }) });
+      return;
+    }
+    if ("snapshot" in body) {
+      const invalidSnapshot = validateNamedWorkspaceSnapshot(body.snapshot);
+      if (invalidSnapshot) {
+        await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: { code: invalidSnapshot } }) });
+        return;
+      }
+      workspace.snapshot = body.snapshot;
+    } else if (typeof body.name === "string" && body.name.trim()) {
+      const name = body.name.trim();
+      workspace.name = name;
+      workspace.name_key = name.toLocaleLowerCase();
+    } else {
+      await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: { code: "workspace_update_invalid" } }) });
+      return;
+    }
+    workspace.revision = Number(workspace.revision) + 1;
+    workspace.updated_at = "2026-08-01T00:00:00Z";
+    payload = workspace;
   } else if (path.endsWith("/deeper-notebook/knowledge/bookmarks")) {
     if (!(await allowRequestMethod(route, ["GET", "HEAD", "POST"], unexpectedApiTraffic))) return;
     if (method === "POST") {
