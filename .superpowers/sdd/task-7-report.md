@@ -36,6 +36,33 @@ git diff --check
 # passed
 ```
 
+## Re-review repair — confirmed sidecar shutdown
+
+### Red
+
+The new restart regression held an old embed child live, made its graceful wait
+time out, and made process-group SIGKILL lookup fail. The prior restart path
+still dropped its tracker and reservation and attempted a replacement.
+
+### Repair and verification
+
+Restart now requires a successful wait or a confirmed dead poll result after
+escalation before it removes the old child or releases its reservation. An
+unconfirmed stop returns a failure without starting a replacement, preserving
+the existing tracker and tight-limit reservation. The existing successful
+embed and heavyweight replacement regressions remain green.
+
+```sh
+PYTHONPATH="$PWD" uv run --no-sync pytest -q tests/test_local_model_settings.py tests/test_research_core_local_models_api.py desktop/tests/test_config.py desktop/tests/test_launcher.py desktop/tests/test_launcher_adaptive_nctx.py
+# 78 passed; one existing FastAPI/TestClient deprecation warning
+
+PYTHONPATH="$PWD" uv run --no-sync ruff check deeper_notebook/local_models/settings.py desktop/config.py desktop/launcher.py api/routers/local_models.py tests/test_local_model_settings.py tests/test_research_core_local_models_api.py desktop/tests/test_config.py desktop/tests/test_launcher.py
+# all checks passed
+
+git diff --check
+# passed
+```
+
 ## Final review repair — restart reservation replacement
 
 ### Red
