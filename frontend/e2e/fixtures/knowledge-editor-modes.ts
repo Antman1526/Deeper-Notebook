@@ -299,6 +299,21 @@ function fixtureWorkspaceAuthorityForDocumentId(
     : null;
 }
 
+const namedWorkspaceNavigationDefaults = Object.freeze({
+  utility_mode: "sources",
+  sidebar_visible: true,
+  sidebar_width: 320,
+  active_bookmark_folder_id: null,
+  bookmark_tags: [],
+  source_tree_query: "",
+  search_query: "",
+  search_mode: "text",
+  active_draft_id: null,
+  selected_space_ids: [],
+  authority_filters: [],
+  metrics_visible: true,
+});
+
 function validateNamedWorkspaceSnapshot(snapshot: unknown): string | null {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return "snapshot_invalid";
   const value = snapshot as Record<string, unknown>;
@@ -354,6 +369,16 @@ function validateNamedWorkspaceSnapshot(snapshot: unknown): string | null {
     }
   }
   return null;
+}
+
+function normalizeNamedWorkspaceSnapshot(snapshot: unknown): Record<string, unknown> {
+  const value = snapshot as Record<string, unknown>;
+  return {
+    ...value,
+    navigation: value.navigation === undefined
+      ? { ...namedWorkspaceNavigationDefaults }
+      : value.navigation,
+  };
 }
 
 function restorePlanForFixtureWorkspace(workspace: Record<string, unknown>): Record<string, unknown> {
@@ -661,7 +686,7 @@ export async function fulfillKnowledgeRequest(
         await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: { code: invalidSnapshot } }) });
         return;
       }
-      workspace.snapshot = body.snapshot;
+      workspace.snapshot = normalizeNamedWorkspaceSnapshot(body.snapshot);
     } else if (typeof body.name === "string" && body.name.trim()) {
       const name = body.name.trim();
       workspace.name = name;
@@ -739,6 +764,7 @@ export async function fulfillKnowledgeRequest(
         await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: { code: invalidSnapshot } }) });
         return;
       }
+      const snapshot = normalizeNamedWorkspaceSnapshot(body.snapshot);
       const ordinal = state.namedWorkspaces.length + 1;
       const workspace = {
         schema_version: 1,
@@ -746,7 +772,7 @@ export async function fulfillKnowledgeRequest(
         name: body.name,
         name_key: String(body.name).toLocaleLowerCase(),
         snapshot_version: 1,
-        snapshot: body.snapshot,
+        snapshot,
         capacity_slot: ordinal,
         revision: 1,
         created_at: "2026-07-31T00:00:00Z",
