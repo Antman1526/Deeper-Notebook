@@ -11,7 +11,10 @@ from pydantic import ValidationError
 
 from deeper_notebook.workspace.contracts import (
     KnowledgeWorkspaceDocument,
+    KnowledgeWorkspaceDocumentV2,
     default_knowledge_workspace,
+    migrate_workspace_v1,
+    parse_workspace_document,
 )
 from desktop.data_root import active_data_root
 
@@ -30,12 +33,12 @@ def knowledge_workspace_path() -> Path:
 
 def load_knowledge_workspace(
     path: Path | None = None,
-) -> KnowledgeWorkspaceDocument:
+) -> KnowledgeWorkspaceDocumentV2:
     """Load validated workspace state without modifying its source file."""
 
     target = path if path is not None else knowledge_workspace_path()
     if not target.exists():
-        return default_knowledge_workspace()
+        return migrate_workspace_v1(default_knowledge_workspace())
 
     try:
         with target.open("rb") as stream:
@@ -45,7 +48,12 @@ def load_knowledge_workspace(
                 f"invalid workspace state in {target}"
             )
         payload = json.loads(encoded.decode("utf-8"))
-        return KnowledgeWorkspaceDocument.model_validate(payload)
+        document = parse_workspace_document(payload)
+        return (
+            migrate_workspace_v1(document)
+            if isinstance(document, KnowledgeWorkspaceDocument)
+            else document
+        )
     except (
         UnicodeDecodeError,
         json.JSONDecodeError,
@@ -73,13 +81,16 @@ def _fsync_parent_directory(parent: Path) -> None:
 
 
 def save_knowledge_workspace(
-    document: KnowledgeWorkspaceDocument,
+    document: KnowledgeWorkspaceDocument | KnowledgeWorkspaceDocumentV2,
     path: Path | None = None,
-) -> None:
+) -> KnowledgeWorkspaceDocumentV2:
     """Atomically save a validated workspace document."""
 
-    validated_document = KnowledgeWorkspaceDocument.model_validate(
-        document.model_dump(warnings=False)
+    parsed_document = parse_workspace_document(document.model_dump(warnings=False))
+    validated_document = (
+        migrate_workspace_v1(parsed_document)
+        if isinstance(parsed_document, KnowledgeWorkspaceDocument)
+        else parsed_document
     )
     target = path if path is not None else knowledge_workspace_path()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -117,3 +128,4 @@ def save_knowledge_workspace(
             except FileNotFoundError:
                 pass
         raise
+    return validated_document

@@ -42,7 +42,7 @@ async def test_legacy_put_defaults_authority_and_serializes_it_explicitly(
         assert initial.status_code == 200
         assert str(workspace_path) not in initial.text
 
-        payload = initial.json()
+        payload = default_knowledge_workspace().model_dump(mode="json")
         payload["panes"]["pane-1"]["tabs"] = [
             {
                 "id": "tab:one",
@@ -59,23 +59,11 @@ async def test_legacy_put_defaults_authority_and_serializes_it_explicitly(
             json=payload,
         )
         assert saved.status_code == 200
-        expected = {
-            **payload,
-            "panes": {
-                **payload["panes"],
-                "pane-1": {
-                    **payload["panes"]["pane-1"],
-                    "tabs": [
-                        {
-                            **payload["panes"]["pane-1"]["tabs"][0],
-                            "source_authority": "external-vault",
-                            "knowledge_document_id": None,
-                            "graph_viewport": None,
-                        }
-                    ],
-                },
-            },
-        }
+        from deeper_notebook.workspace.contracts import KnowledgeWorkspaceDocument, migrate_workspace_v1
+
+        expected = migrate_workspace_v1(
+            KnowledgeWorkspaceDocument.model_validate(payload)
+        ).model_dump(mode="json")
         assert saved.json() == expected
         assert str(workspace_path) not in saved.text
 
@@ -90,7 +78,7 @@ async def test_legacy_put_defaults_authority_and_serializes_it_explicitly(
     assert restored.status_code == 200
     assert restored.json()["panes"]["pane-1"]["active_tab_id"] == "tab:one"
     assert (
-        restored.json()["panes"]["pane-1"]["tabs"][0]["source_authority"]
+        restored.json()["panes"]["pane-1"]["tabs"][0]["target"]["authority"]
         == "external-vault"
     )
     assert str(workspace_path) not in restored.text

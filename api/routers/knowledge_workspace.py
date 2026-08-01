@@ -9,6 +9,7 @@ from fastapi.routing import APIRoute
 from deeper_notebook.workspace import (
     MAX_KNOWLEDGE_WORKSPACE_BYTES,
     KnowledgeWorkspaceDocument,
+    KnowledgeWorkspaceDocumentV2,
     WorkspaceStateError,
     knowledge_workspace_path,
     load_knowledge_workspace,
@@ -73,8 +74,8 @@ def _error(status_code: int, code: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code})
 
 
-@router.get("/workspace/knowledge", response_model=KnowledgeWorkspaceDocument)
-def get_knowledge_workspace() -> KnowledgeWorkspaceDocument:
+@router.get("/workspace/knowledge", response_model=KnowledgeWorkspaceDocumentV2)
+def get_knowledge_workspace() -> KnowledgeWorkspaceDocumentV2:
     try:
         return load_knowledge_workspace(path=_workspace_path())
     except WorkspaceStateError:
@@ -89,12 +90,12 @@ def get_knowledge_workspace() -> KnowledgeWorkspaceDocument:
         ) from None
 
 
-@router.put("/workspace/knowledge", response_model=KnowledgeWorkspaceDocument)
+@router.put("/workspace/knowledge", response_model=KnowledgeWorkspaceDocumentV2)
 def put_knowledge_workspace(
-    document: KnowledgeWorkspaceDocument,
-) -> KnowledgeWorkspaceDocument:
+    document: KnowledgeWorkspaceDocument | KnowledgeWorkspaceDocumentV2,
+) -> KnowledgeWorkspaceDocumentV2:
     try:
-        save_knowledge_workspace(document, path=_workspace_path())
+        return save_knowledge_workspace(document, path=_workspace_path())
     except WorkspaceStateError:
         raise _error(
             status.HTTP_413_CONTENT_TOO_LARGE,
@@ -105,4 +106,3 @@ def put_knowledge_workspace(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "workspace_state_unavailable",
         ) from None
-    return document
