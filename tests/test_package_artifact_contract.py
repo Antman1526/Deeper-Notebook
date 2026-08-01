@@ -89,6 +89,18 @@ def test_standalone_frontend_root_handles_workspace_relative_build_output(
     assert layout.standalone_frontend_root(standalone) == frontend
 
 
+def test_standalone_frontend_node_modules_handles_workspace_relative_output(
+    tmp_path: Path,
+) -> None:
+    layout = _load_module(LAYOUT_PATH, "package_layout")
+    standalone = tmp_path / "standalone"
+    dependencies = standalone / "frontend" / "node_modules"
+    (dependencies / "next").mkdir(parents=True)
+    (standalone / "other" / "node_modules").mkdir(parents=True)
+
+    assert layout.standalone_frontend_node_modules(standalone) == dependencies
+
+
 def test_ci_inspects_the_actual_pyinstaller_output() -> None:
     workflow = (ROOT / ".github/workflows/build-desktop.yml").read_text(
         encoding="utf-8"
