@@ -56,7 +56,19 @@ export function KnowledgeUtilityRail({
 
   if (!sidebarVisible) {
     return (
-      <nav aria-label="Knowledge utilities" className="p-2">
+      <nav aria-label="Knowledge utilities" className="flex items-center justify-between p-2">
+        {onCloseDrawer && drawerCloseLabel ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-label={drawerCloseLabel}
+            onClick={onCloseDrawer}
+            className="research-core-drawer-close"
+          >
+            {drawerCloseLabel}
+          </Button>
+        ) : <span />}
         <Button
           ref={collapseButtonRef}
           type="button"

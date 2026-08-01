@@ -535,6 +535,41 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     await waitFor(() => expect(openIntelligence).toHaveFocus())
   })
 
+  it('keeps a narrow Sources drawer closable after its desktop rail is collapsed', async () => {
+    const matchMedia = vi.mocked(window.matchMedia)
+    const createMediaQuery = (query: string, matches: boolean) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }) as unknown as MediaQueryList
+    matchMedia.mockImplementation((query) => createMediaQuery(
+      query,
+      query === '(max-width: 1023px)',
+    ))
+
+    try {
+      render(<KnowledgeExplorer />)
+      await waitFor(() => {
+        expect(screen.getAllByRole('treeitem', { hidden: true })).toHaveLength(2)
+      })
+
+      const openSources = screen.getByRole('button', { name: 'knowledge.openUtilityDrawer' })
+      fireEvent.click(openSources)
+      fireEvent.click(screen.getByRole('button', { name: 'Collapse utility sidebar' }))
+
+      const closeSources = screen.getByRole('button', { name: 'knowledge.closeUtilityDrawer' })
+      fireEvent.click(closeSources)
+      await waitFor(() => expect(openSources).toHaveFocus())
+    } finally {
+      matchMedia.mockImplementation((query) => createMediaQuery(query, false))
+    }
+  })
+
   it('activates the indexed search result surface without replacing the active document', async () => {
     await renderExplorer()
     await selectFile('notes/one.md')
