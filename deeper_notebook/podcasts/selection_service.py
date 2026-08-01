@@ -13,6 +13,7 @@ from deeper_notebook.knowledge_engine.capabilities import AuthorityKind
 from deeper_notebook.knowledge_engine.contracts import KnowledgeDocument
 from deeper_notebook.podcasts.selection_contracts import (
     AppNoteSelection,
+    AppSourceSelection,
     GraphSelection,
     KnowledgeDocumentSelection,
     NotebookSelection,
@@ -127,6 +128,21 @@ class AppNoteContext(Protocol):
 NoteLoader = Callable[[str], Awaitable[AppNoteContext | None]]
 
 
+class AppSourceInsight(Protocol):
+    content: str
+
+
+class AppSourceContext(Protocol):
+    id: str
+    title: str | None
+    full_text: str | None
+
+    async def get_insights(self) -> list[AppSourceInsight]: ...
+
+
+SourceLoader = Callable[[str], Awaitable[AppSourceContext | None]]
+
+
 class AppNotePodcastSelectionResolver:
     """Resolve only app-owned notes; canonical external notes stay federated."""
 
@@ -159,6 +175,41 @@ class AppNotePodcastSelectionResolver:
                 content=content,
                 state="included" if content else "empty",
                 reason="included" if content else "note_content_empty",
+            )
+        ]
+
+
+class AppSourcePodcastSelectionResolver:
+    """Resolve app-owned source text or stored insights without asset access."""
+
+    def __init__(self, *, source_loader: SourceLoader) -> None:
+        self._source_loader = source_loader
+
+    async def resolve(self, selection: PodcastSelection) -> list[ResolvedSelectionItem]:
+        if not isinstance(selection, AppSourceSelection):
+            raise ValueError("podcast_selection_kind_unavailable")
+        source = await self._source_loader(selection.source_id)
+        if source is None:
+            raise LookupError("podcast_source_not_found")
+        if selection.inclusion_mode == "insights":
+            content = "\n\n".join(
+                insight.content.strip()
+                for insight in await source.get_insights()
+                if isinstance(insight.content, str) and insight.content.strip()
+            )
+            empty_reason = "source_insights_empty"
+        else:
+            content = (source.full_text or "").strip()
+            empty_reason = "source_text_empty"
+        return [
+            ResolvedSelectionItem(
+                stable_id=source.id,
+                title=source.title or "Untitled source",
+                authority_kind="app_owned",
+                fingerprint=hashlib.sha256(content.encode()).hexdigest(),
+                content=content,
+                state="included" if content else "empty",
+                reason="included" if content else empty_reason,
             )
         ]
 
@@ -363,11 +414,15 @@ __all__ = [
     "AppNotebookPodcastSelectionResolver",
     "AppNoteContext",
     "AppNotePodcastSelectionResolver",
+    "AppSourceContext",
+    "AppSourceInsight",
+    "AppSourcePodcastSelectionResolver",
     "CompositePodcastSelectionResolver",
     "KnowledgeDocumentProjectionReader",
     "KnowledgeEnginePodcastSelectionResolver",
     "NotebookLoader",
     "NoteLoader",
+    "SourceLoader",
     "PodcastSelectionPreparation",
     "PodcastSelectionPreview",
     "PodcastSelectionResolver",
