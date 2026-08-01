@@ -124,7 +124,7 @@ export const knowledgeLayoutWireSchema: z.ZodType<KnowledgeLayoutWire> = z.lazy(
   ]),
 )
 
-const rawKnowledgeWorkspaceWireSchema = z.object({
+const rawKnowledgeWorkspaceV1WireSchema = z.object({
   version: z.literal(1),
   active_pane_id: z.string().min(1).max(128),
   next_id: z.number().int().min(1),
@@ -200,6 +200,34 @@ const rawKnowledgeWorkspaceWireSchema = z.object({
   }
 })
 
+export const researchModeSchema = z.enum(['read', 'write', 'ask', 'search', 'graph', 'podcast'])
+const documentTabTargetWireSchema = z.object({
+  kind: z.literal('document'), container_id: z.string().min(1).max(128),
+  note_id: z.string().min(1).max(128), title: z.string().min(1).max(512),
+  relative_locator: canonicalVaultRelativePathSchema,
+  authority: knowledgeSourceAuthoritySchema,
+  knowledge_document_id: z.string().max(128).nullable().default(null),
+  render_mode: z.enum(['reading', 'source', 'live-preview', 'canvas']).default('reading'),
+}).strict()
+const workspaceTabTargetWireSchema = z.discriminatedUnion('kind', [
+  documentTabTargetWireSchema,
+  z.object({ kind: z.literal('ask'), thread_id: z.string().max(128).nullable().default(null), selected_document_ids: z.array(z.string()).max(128).default([]) }).strict(),
+  z.object({ kind: z.literal('search'), query: z.string().max(512).default(''), search_mode: z.enum(['exact', 'text', 'semantic']).default('text'), space_ids: z.array(z.string()).max(32).default([]), authority_kinds: z.array(knowledgeAuthorityFilterSchema).max(2).default([]) }).strict(),
+  z.object({ kind: z.literal('graph'), root_document_id: z.string().max(128).nullable().default(null), space_ids: z.array(z.string()).max(32).default([]), relation_kinds: z.array(z.string()).max(32).default([]), viewport: graphViewportSchema.default({ x: 0, y: 0, zoom: 1 }), origin: documentTabTargetWireSchema.nullable().default(null) }).strict(),
+  z.object({ kind: z.literal('podcast'), production_id: z.string().max(128).nullable().default(null), seed_document_ids: z.array(z.string()).max(128).default([]) }).strict(),
+])
+const knowledgeTabV2WireSchema = z.object({ id: z.string().min(1).max(128), mode: researchModeSchema, title: z.string().min(1).max(512), target: workspaceTabTargetWireSchema }).strict()
+const rawKnowledgeWorkspaceV2WireSchema = z.object({
+  version: z.literal(2), active_pane_id: z.string().min(1).max(128), next_id: z.number().int().min(1),
+  panes: z.record(z.string(), z.object({ id: z.string().min(1).max(128), active_tab_id: z.string().min(1).max(128).nullable(), tabs: z.array(knowledgeTabV2WireSchema) }).strict()),
+  layout: knowledgeLayoutWireSchema, navigation: knowledgeWorkspaceNavigationWireSchema,
+}).strict().superRefine((document, context) => {
+  for (const pane of Object.values(document.panes)) for (const tab of pane.tabs) {
+    const expected = { read: 'document', write: 'document', ask: 'ask', search: 'search', graph: 'graph', podcast: 'podcast' }[tab.mode]
+    if (tab.target.kind !== expected || (tab.mode === 'write' && (tab.target.kind !== 'document' || tab.target.authority !== 'overlay'))) context.addIssue({ code: 'custom', message: 'workspace_mode_target_mismatch' })
+  }
+})
+
 function preflightWorkspaceBounds(value: unknown, context: z.RefinementCtx): void {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return
   const document = value as Record<string, unknown>
@@ -265,7 +293,7 @@ const knowledgeWorkspacePreflightSchema = z.unknown()
   .superRefine(preflightWorkspaceBounds)
 
 export const knowledgeWorkspaceWireSchema = knowledgeWorkspacePreflightSchema
-  .pipe(rawKnowledgeWorkspaceWireSchema)
+  .pipe(z.union([rawKnowledgeWorkspaceV1WireSchema, rawKnowledgeWorkspaceV2WireSchema]))
 
 export type KnowledgeViewMode = z.infer<typeof knowledgeViewModeSchema>
 export type SplitDirection = z.infer<typeof splitDirectionSchema>
@@ -281,6 +309,8 @@ export interface KnowledgeTab {
   sourceAuthority: KnowledgeSourceAuthority
   knowledgeDocumentId: string | null
   graphViewport: GraphViewport | null
+  mode: z.infer<typeof researchModeSchema>
+  target: z.infer<typeof workspaceTabTargetWireSchema>
   // Restore-only stable graph metadata. It is intentionally not written to the
   // Current Session wire payload, which remains compatible with the server API.
   graphBookmarkContext?: {
@@ -342,7 +372,7 @@ export interface SplitLayoutNode {
 export type KnowledgeLayoutNode = PaneLayoutNode | SplitLayoutNode
 
 export interface KnowledgeWorkspaceDocument {
-  version: 1
+  version: 2
   activePaneId: string
   nextId: number
   panes: Record<string, KnowledgePane>
@@ -352,7 +382,7 @@ export interface KnowledgeWorkspaceDocument {
 
 export function defaultKnowledgeWorkspace(): KnowledgeWorkspaceDocument {
   return {
-    version: 1,
+    version: 2,
     activePaneId: 'pane-1',
     nextId: 2,
     panes: {
@@ -464,12 +494,12 @@ function preflightCamelWorkspace(document: KnowledgeWorkspaceDocument): void {
   }
 }
 
-function fromWire(data: unknown): KnowledgeWorkspaceDocument {
+export function migrateKnowledgeWorkspaceV1(data: unknown): KnowledgeWorkspaceDocument {
   knowledgeWorkspacePreflightSchema.parse(data)
   assertNoAbsolutePath(data)
-  const wire = rawKnowledgeWorkspaceWireSchema.parse(data)
+  const wire = rawKnowledgeWorkspaceV1WireSchema.parse(data)
   return {
-    version: wire.version,
+    version: 2,
     activePaneId: wire.active_pane_id,
     nextId: wire.next_id,
     navigation: {
@@ -502,11 +532,31 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
             sourceAuthority: tab.source_authority,
             knowledgeDocumentId: tab.knowledge_document_id,
             graphViewport: tab.graph_viewport,
+            mode: tab.view_mode === 'graph' ? 'graph' : tab.source_authority === 'overlay' ? 'write' : 'read',
+            target: tab.view_mode === 'graph'
+              ? { kind: 'graph', root_document_id: tab.knowledge_document_id, space_ids: [], relation_kinds: [], viewport: tab.graph_viewport ?? { x: 0, y: 0, zoom: 1 }, origin: { kind: 'document', container_id: tab.vault_id, note_id: tab.note_id, title: tab.title, relative_locator: tab.relative_path, authority: tab.source_authority, knowledge_document_id: tab.knowledge_document_id, render_mode: 'reading' } }
+              : { kind: 'document', container_id: tab.vault_id, note_id: tab.note_id, title: tab.title, relative_locator: tab.relative_path, authority: tab.source_authority, knowledge_document_id: tab.knowledge_document_id, render_mode: tab.view_mode },
           })),
         },
       ]),
     ),
     layout: fromWireLayout(wire.layout),
+  }
+}
+
+function fromWire(data: unknown): KnowledgeWorkspaceDocument {
+  knowledgeWorkspacePreflightSchema.parse(data)
+  assertNoAbsolutePath(data)
+  if ((data as { version?: unknown }).version === 1) return migrateKnowledgeWorkspaceV1(data)
+  const wire = rawKnowledgeWorkspaceV2WireSchema.parse(data)
+  return {
+    version: 2, activePaneId: wire.active_pane_id, nextId: wire.next_id,
+    navigation: { utilityMode: wire.navigation.utility_mode, sidebarVisible: wire.navigation.sidebar_visible, sidebarWidth: wire.navigation.sidebar_width, activeBookmarkFolderId: wire.navigation.active_bookmark_folder_id, bookmarkTags: wire.navigation.bookmark_tags, sourceTreeQuery: wire.navigation.source_tree_query, searchQuery: wire.navigation.search_query, searchMode: wire.navigation.search_mode, activeDraftId: wire.navigation.active_draft_id, selectedSpaceIds: wire.navigation.selected_space_ids, authorityFilters: wire.navigation.authority_filters, metricsVisible: wire.navigation.metrics_visible },
+    panes: Object.fromEntries(Object.entries(wire.panes).map(([paneId, pane]) => [paneId, { id: pane.id, activeTabId: pane.active_tab_id, tabs: pane.tabs.map((tab) => {
+      const target = tab.target
+      const document = target.kind === 'document' ? target : null
+      return { id: tab.id, mode: tab.mode, target, title: tab.title, vaultId: document?.container_id ?? '', noteId: document?.note_id ?? '', relativePath: document?.relative_locator ?? '', viewMode: document?.render_mode ?? 'reading', sourceAuthority: document?.authority ?? 'external-vault', knowledgeDocumentId: document?.knowledge_document_id ?? (target.kind === 'graph' ? target.root_document_id : null), graphViewport: target.kind === 'graph' ? target.viewport : null }
+    }) }])), layout: fromWireLayout(wire.layout),
   }
 }
 
@@ -547,19 +597,35 @@ export function serializeKnowledgeWorkspace(document: KnowledgeWorkspaceDocument
         {
           id: pane.id,
           active_tab_id: pane.activeTabId,
-          tabs: pane.tabs.map((tab) => ({
-            id: tab.id,
-            vault_id: tab.vaultId,
-            note_id: tab.noteId,
-            title: tab.title,
-            relative_path: tab.relativePath,
-            view_mode: tab.viewMode,
-            source_authority: tab.sourceAuthority,
-            knowledge_document_id: tab.knowledgeDocumentId ?? null,
-            graph_viewport: tab.graphViewport === undefined
-              ? { x: 0, y: 0, zoom: 1 }
-              : tab.graphViewport,
-          })),
+          tabs: pane.tabs.map((tab) => {
+            const legacyMode = tab.viewMode === 'graph'
+              ? 'graph' as const
+              : tab.sourceAuthority === 'overlay' ? 'write' as const : 'read' as const
+            const target = tab.target ?? (legacyMode === 'graph'
+              ? {
+                  kind: 'graph' as const,
+                  root_document_id: tab.knowledgeDocumentId ?? null,
+                  space_ids: [], relation_kinds: [],
+                  viewport: tab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+                  origin: {
+                    kind: 'document' as const, container_id: tab.vaultId,
+                    note_id: tab.noteId, title: tab.title,
+                    relative_locator: tab.relativePath,
+                    authority: tab.sourceAuthority,
+                    knowledge_document_id: tab.knowledgeDocumentId ?? null,
+                    render_mode: 'reading' as const,
+                  },
+                }
+              : {
+                  kind: 'document' as const, container_id: tab.vaultId,
+                  note_id: tab.noteId, title: tab.title,
+                  relative_locator: tab.relativePath,
+                  authority: tab.sourceAuthority,
+                  knowledge_document_id: tab.knowledgeDocumentId ?? null,
+                  render_mode: tab.viewMode === 'graph' ? 'reading' as const : tab.viewMode,
+                })
+            return { id: tab.id, mode: tab.mode ?? legacyMode, title: tab.title, target }
+          }),
         },
       ]),
     ),

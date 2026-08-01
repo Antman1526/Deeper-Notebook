@@ -185,6 +185,7 @@ export interface NamedWorkspaceTab {
   target: KnowledgeTarget
   displayLabel: string
   viewMode: KnowledgeViewMode
+  mode?: 'read' | 'write' | 'ask' | 'search' | 'graph' | 'podcast'
 }
 
 export interface NamedWorkspacePane {
@@ -387,6 +388,7 @@ const namedTabWireSchema = z.object({
   id: navigationId, target: wireTargetSchema,
   display_label: z.string().min(1).max(512),
   view_mode: knowledgeViewModeSchema.default('reading'),
+  mode: z.enum(['read', 'write', 'ask', 'search', 'graph', 'podcast']).optional(),
 }).strict()
 const namedPaneWireSchema = z.object({
   id: navigationId, active_tab_id: navigationId.nullable(),
@@ -475,6 +477,7 @@ const deleteFolderSchema: z.ZodType<DeleteFolderCommand> = z.object({
 const namedTabSchema: z.ZodType<NamedWorkspaceTab> = z.object({
   id: navigationId, target: camelTargetSchema, displayLabel: z.string().min(1).max(512),
   viewMode: knowledgeViewModeSchema,
+  mode: z.enum(['read', 'write', 'ask', 'search', 'graph', 'podcast']).optional(),
 }).strict()
 const namedPaneSchema: z.ZodType<NamedWorkspacePane> = z.object({
   id: navigationId, activeTabId: navigationId.nullable(), tabs: z.array(namedTabSchema).max(128),
@@ -811,6 +814,7 @@ function snapshotFromWire(value: z.infer<typeof snapshotWireSchema>): NamedWorks
         tabs: pane.tabs.map((tab) => ({
           id: tab.id, target: targetFromWire(tab.target),
           displayLabel: tab.display_label, viewMode: tab.view_mode,
+          mode: tab.mode,
         })),
       },
     ])),
@@ -831,6 +835,7 @@ function snapshotToWire(value: NamedWorkspaceSnapshot): z.infer<typeof snapshotW
         tabs: pane.tabs.map((tab) => ({
           id: tab.id, target: targetToWire(tab.target),
           display_label: tab.displayLabel, view_mode: tab.viewMode,
+          ...(tab.mode === undefined ? {} : { mode: tab.mode }),
         })),
       },
     ])),
