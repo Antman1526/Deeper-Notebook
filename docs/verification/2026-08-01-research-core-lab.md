@@ -166,3 +166,29 @@ behavior are unchanged.
 
 The native-runtime and packaged-app gates remain separate and are not claimed
 by this frontend build repair.
+
+## Worktree standalone-start repair — 2026-08-01
+
+The portable checkout root is now explicit for both `turbopack.root` and
+`outputFileTracingRoot`. In a nested worktree, Next writes the standalone
+server beneath `.next/standalone/<path-from-tracing-root>/server.js`. The
+start helper reads its own `required-server-files.json`, verifies that its
+`appDir` is the current frontend, derives that traced server path safely, and
+uses it only when it exists. The direct nested and packaged flattened server
+paths remain supported.
+
+```sh
+(cd frontend && npx vitest run start-server-utils.test.ts --pool=forks --maxWorkers=1)
+# 1 file, 3 tests passed, including a nested tracing-root server
+
+(cd frontend && npm run build)
+# passed: Next.js 16.2.12 Turbopack production build
+
+(cd frontend && PORT=8519 npm run start)
+# resolved this worktree's .next/standalone/.worktrees/.../frontend/server.js
+# server reported Ready; GET http://127.0.0.1:8519/ returned HTTP 307
+```
+
+The temporary local smoke server was stopped after the response. This proves
+the worktree-local standalone startup path only; it does not prove a native
+app, Playwright execution, or packaged release.

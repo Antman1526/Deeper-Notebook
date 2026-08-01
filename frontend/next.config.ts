@@ -25,12 +25,19 @@ export function resolveTurbopackRoot(
   }
 }
 
+const projectRoot = resolveTurbopackRoot(__dirname)
+
 const nextConfig: NextConfig = {
   // Resolve from the actual dependency target so both a normal checkout and a
   // worktree with shared dependencies stay within Turbopack's filesystem root.
   turbopack: {
-    root: resolveTurbopackRoot(__dirname),
+    root: projectRoot,
   },
+
+  // Keep tracing portable for the same checkout boundary. Next records this
+  // root in required-server-files.json, which the local start helper uses to
+  // locate its own standalone server in a nested worktree.
+  outputFileTracingRoot: projectRoot,
 
   // Enable standalone output for optimized Docker deployment
   output: "standalone",
