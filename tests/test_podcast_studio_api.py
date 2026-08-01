@@ -41,12 +41,26 @@ class _Engine:
         return _document()
 
 
+class _Notebook:
+    id = "notebook:research"
+    name = "Research notebook"
+
+    async def get_context(self) -> str:
+        return "Private app-owned notebook material"
+
+
+async def _load_notebook(notebook_id: str) -> _Notebook | None:
+    assert notebook_id == "notebook:research"
+    return _Notebook()
+
+
 @pytest.fixture()
 def app_with_knowledge_engine() -> FastAPI:
     from api.routers.podcasts import router
 
     app = FastAPI()
     app.state.knowledge_engine_service = _Engine()
+    app.state.podcast_notebook_loader = _load_notebook
     app.include_router(router, prefix="/api")
     return app
 
@@ -80,6 +94,26 @@ async def test_preview_resolves_a_read_only_document_without_exposing_body(
     assert "This body is server-resolved only." not in response.text
     assert "source_native_id" not in response.text
     assert "/Users/" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_preview_resolves_an_app_notebook_without_exposing_context(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/selection/preview",
+            json={
+                "selections": [{"kind": "notebook", "notebook_id": "notebook:research"}]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["entries"][0]["authority_kind"] == "app_owned"
+    assert "Private app-owned notebook material" not in response.text
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,7 @@ from api.schemas.podcast_studio import (
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from deeper_notebook.config import DATA_FOLDER
 from deeper_notebook.database.repository import repo_query
+from deeper_notebook.domain.notebook import Notebook
 from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 from deeper_notebook.podcasts import file_uri_to_local_path
 from deeper_notebook.podcasts.models import (
@@ -31,7 +32,10 @@ from deeper_notebook.podcasts.profile_names import (
     CANONICAL_LOCAL_EPISODE_PROFILE,
     select_existing_episode_profile_name,
 )
+from deeper_notebook.podcasts.selection_contracts import NotebookSelection
 from deeper_notebook.podcasts.selection_service import (
+    AppNotebookPodcastSelectionResolver,
+    CompositePodcastSelectionResolver,
     KnowledgeEnginePodcastSelectionResolver,
     PodcastSelectionService,
 )
@@ -55,6 +59,12 @@ def _podcast_selection_engine(request: Request):
     return engine
 
 
+def _podcast_notebook_loader(request: Request):
+    """Use the app context boundary, with an app-state hook for isolated tests."""
+    configured_loader = getattr(request.app.state, "podcast_notebook_loader", None)
+    return configured_loader if callable(configured_loader) else Notebook.get
+
+
 @router.post(
     "/podcasts/selection/preview",
     response_model=PodcastSelectionPreviewResponse,
@@ -65,10 +75,22 @@ async def preview_podcast_selection(
 ) -> PodcastSelectionPreviewResponse:
     """Resolve references for review without starting a model or source mutation."""
     try:
-        preview = await PodcastSelectionService(
-            resolver=KnowledgeEnginePodcastSelectionResolver(
-                engine=_podcast_selection_engine(request)
+        resolvers = [
+            AppNotebookPodcastSelectionResolver(
+                notebook_loader=_podcast_notebook_loader(request)
             )
+        ]
+        if any(
+            not isinstance(selection, NotebookSelection)
+            for selection in payload.selections
+        ):
+            resolvers.append(
+                KnowledgeEnginePodcastSelectionResolver(
+                    engine=_podcast_selection_engine(request)
+                )
+            )
+        preview = await PodcastSelectionService(
+            resolver=CompositePodcastSelectionResolver(resolvers=tuple(resolvers))
         ).preview(payload.selections)
         return PodcastSelectionPreviewResponse.model_validate(preview.model_dump())
     except HTTPException:
