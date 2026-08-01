@@ -61,3 +61,17 @@ uv run python scripts/verify_podcast_studio.py --output docs/verification/2026-0
 
 The canonical Obsidian and Logseq folders remain external read-only inputs.
 This verification run did not mount, scan, alter, or hash either user folder.
+
+## Native protected-source containment update
+
+The rebuilt native application was started locally with both designated external
+mounts still read-only and watcher-disabled. A controlled Obsidian scan returned
+`409 vault_unavailable` after 15.016 seconds, and a follow-up vault-list request
+returned `200`; this proves a macOS filesystem stall is contained rather than
+freezing the API. The Markdown inventory fingerprints before and after remained:
+
+- Obsidian: `7e471f9e0b1694f5bb7b454178f0e66842f877f542031af36a6caffeb341a8e2`
+- Logseq: `4bd3b904ead8cf13a7d62b6945a76e3dd9f5c5d08444fec502a102175ddcd02c`
+
+The scan did not reach projection because the packaged process lacks the required
+macOS filesystem permission. No external source write occurred.
