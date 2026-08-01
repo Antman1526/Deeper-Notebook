@@ -1,5 +1,9 @@
 'use client'
 
+import { useRef, useState } from 'react'
+
+import { Button } from '@/components/ui/button'
+
 interface PodcastStudioProps {
   seedDocumentIds: string[]
   modelPlans?: Array<{
@@ -21,6 +25,22 @@ const timeline = [
  * production stages and makes the later evidence engine boundary explicit.
  */
 export function PodcastStudio({ seedDocumentIds, modelPlans = [] }: PodcastStudioProps) {
+  const [centralQuestion, setCentralQuestion] = useState('')
+  const [audience, setAudience] = useState('practitioner')
+  const [outline, setOutline] = useState(['Introduction', 'Findings', 'Takeaway'])
+  const [announcement, setAnnouncement] = useState('')
+  const moveRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const moveOutline = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= outline.length) return
+    const moved = outline[index]
+    const next = [...outline]
+    next.splice(index, 1)
+    next.splice(targetIndex, 0, moved)
+    moveRefs.current[`${moved}:${direction}`]?.focus()
+    setOutline(next)
+    setAnnouncement(`${moved} moved to position ${targetIndex + 1}`)
+  }
   return (
     <section aria-label="Podcast Intelligence Studio" className="space-y-5">
       <header>
@@ -35,8 +55,16 @@ export function PodcastStudio({ seedDocumentIds, modelPlans = [] }: PodcastStudi
         <section className="rounded-md border p-4" aria-labelledby="podcast-studio-brief">
           <h3 id="podcast-studio-brief" className="font-semibold">Editorial Brief</h3>
           <p className="mt-1 text-sm text-muted-foreground">Briefing and model choices are reviewed before any production job is submitted.</p>
+          <label className="mt-3 grid gap-1 text-sm" htmlFor="podcast-central-question">Central question<textarea id="podcast-central-question" value={centralQuestion} onChange={event => setCentralQuestion(event.target.value)} className="min-h-20 rounded-md border bg-background p-2" /></label>
+          <label className="mt-3 grid gap-1 text-sm" htmlFor="podcast-audience">Audience<select id="podcast-audience" value={audience} onChange={event => setAudience(event.target.value)} className="h-9 rounded-md border bg-background px-2"><option value="foundation">Foundation</option><option value="practitioner">Practitioner</option><option value="expert">Expert</option></select></label>
         </section>
       </div>
+      <section className="rounded-md border p-4" aria-labelledby="podcast-studio-storyboard">
+        <h3 id="podcast-studio-storyboard" className="font-semibold">Outline Storyboard</h3>
+        <p className="mt-1 text-sm text-muted-foreground">Outline storyboard review is the current production gate.</p>
+        <ol className="mt-3 space-y-2">{outline.map((segment, index) => <li key={segment} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm"><span>{segment}</span><span className="flex gap-2"><Button ref={element => { moveRefs.current[`${segment}:-1`] = element }} type="button" size="sm" variant="outline" disabled={index === 0} aria-label={`Move ${segment} earlier`} onClick={() => moveOutline(index, -1)}>Move earlier</Button><Button ref={element => { moveRefs.current[`${segment}:1`] = element }} type="button" size="sm" variant="outline" disabled={index === outline.length - 1} aria-label={`Move ${segment} later`} onClick={() => moveOutline(index, 1)}>Move later</Button></span></li>)}</ol>
+        <p className="sr-only" role="status">{announcement}</p>
+      </section>
       <section className="rounded-md border p-4" aria-labelledby="podcast-studio-timeline">
         <h3 id="podcast-studio-timeline" className="font-semibold">Production Timeline</h3>
         <ol className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
@@ -47,6 +75,7 @@ export function PodcastStudio({ seedDocumentIds, modelPlans = [] }: PodcastStudi
         </div>
       </section>
       {modelPlans.length > 0 && <section className="rounded-md border p-4" aria-label="Model plan"><h3 className="font-semibold">Model Plan</h3><ul className="mt-2 grid gap-2 sm:grid-cols-2">{modelPlans.map(({ label, plan }) => <li key={label} className="text-sm"><span className="font-medium">{label}</span><span className="text-muted-foreground"> · {plan?.outcome ?? 'blocked'} · {plan?.reason ?? 'Route plan unavailable.'}</span></li>)}</ul></section>}
+      <p className="text-sm text-muted-foreground">No production job is submitted from this planning surface.</p>
     </section>
   )
 }
