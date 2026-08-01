@@ -26,7 +26,7 @@ from api.schemas.podcast_studio import (
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from deeper_notebook.config import DATA_FOLDER
 from deeper_notebook.database.repository import repo_query
-from deeper_notebook.domain.notebook import Notebook
+from deeper_notebook.domain.notebook import Note, Notebook
 from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 from deeper_notebook.podcasts import file_uri_to_local_path
 from deeper_notebook.podcasts.models import (
@@ -39,9 +39,13 @@ from deeper_notebook.podcasts.profile_names import (
     CANONICAL_LOCAL_EPISODE_PROFILE,
     select_existing_episode_profile_name,
 )
-from deeper_notebook.podcasts.selection_contracts import NotebookSelection
+from deeper_notebook.podcasts.selection_contracts import (
+    AppNoteSelection,
+    NotebookSelection,
+)
 from deeper_notebook.podcasts.selection_service import (
     AppNotebookPodcastSelectionResolver,
+    AppNotePodcastSelectionResolver,
     CompositePodcastSelectionResolver,
     KnowledgeEnginePodcastSelectionResolver,
     PodcastSelectionPreparation,
@@ -95,16 +99,23 @@ def _podcast_notebook_loader(request: Request):
     return configured_loader if callable(configured_loader) else Notebook.get
 
 
+def _podcast_note_loader(request: Request):
+    configured_loader = getattr(request.app.state, "podcast_note_loader", None)
+    return configured_loader if callable(configured_loader) else Note.get
+
+
 def _podcast_selection_service(
     request: Request, payload: PodcastSelectionPreviewRequest
 ) -> PodcastSelectionService:
     resolvers = [
         AppNotebookPodcastSelectionResolver(
             notebook_loader=_podcast_notebook_loader(request)
-        )
+        ),
+        AppNotePodcastSelectionResolver(note_loader=_podcast_note_loader(request)),
     ]
     if any(
-        not isinstance(selection, NotebookSelection) for selection in payload.selections
+        not isinstance(selection, (NotebookSelection, AppNoteSelection))
+        for selection in payload.selections
     ):
         resolvers.append(
             KnowledgeEnginePodcastSelectionResolver(

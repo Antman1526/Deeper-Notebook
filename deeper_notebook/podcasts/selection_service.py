@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from deeper_notebook.knowledge_engine.capabilities import AuthorityKind
 from deeper_notebook.knowledge_engine.contracts import KnowledgeDocument
 from deeper_notebook.podcasts.selection_contracts import (
+    AppNoteSelection,
     GraphSelection,
     KnowledgeDocumentSelection,
     NotebookSelection,
@@ -114,6 +115,52 @@ class AppNotebookContext(Protocol):
 
 
 NotebookLoader = Callable[[str], Awaitable[AppNotebookContext | None]]
+
+
+class AppNoteContext(Protocol):
+    id: str
+    title: str | None
+    content: str | None
+    canonical_external: bool | None
+
+
+NoteLoader = Callable[[str], Awaitable[AppNoteContext | None]]
+
+
+class AppNotePodcastSelectionResolver:
+    """Resolve only app-owned notes; canonical external notes stay federated."""
+
+    def __init__(self, *, note_loader: NoteLoader) -> None:
+        self._note_loader = note_loader
+
+    async def resolve(self, selection: PodcastSelection) -> list[ResolvedSelectionItem]:
+        if not isinstance(selection, AppNoteSelection):
+            raise ValueError("podcast_selection_kind_unavailable")
+        note = await self._note_loader(selection.note_id)
+        if note is None:
+            raise LookupError("podcast_note_not_found")
+        if note.canonical_external:
+            return [
+                ResolvedSelectionItem(
+                    stable_id=note.id,
+                    title=note.title or "External note",
+                    authority_kind="external_read_only",
+                    state="unavailable",
+                    reason="external_note_requires_knowledge_selection",
+                )
+            ]
+        content = (note.content or "").strip()
+        return [
+            ResolvedSelectionItem(
+                stable_id=note.id,
+                title=note.title or "Untitled note",
+                authority_kind="app_owned",
+                fingerprint=hashlib.sha256(content.encode()).hexdigest(),
+                content=content,
+                state="included" if content else "empty",
+                reason="included" if content else "note_content_empty",
+            )
+        ]
 
 
 class AppNotebookPodcastSelectionResolver:
@@ -314,10 +361,13 @@ class PodcastSelectionService:
 __all__ = [
     "AppNotebookContext",
     "AppNotebookPodcastSelectionResolver",
+    "AppNoteContext",
+    "AppNotePodcastSelectionResolver",
     "CompositePodcastSelectionResolver",
     "KnowledgeDocumentProjectionReader",
     "KnowledgeEnginePodcastSelectionResolver",
     "NotebookLoader",
+    "NoteLoader",
     "PodcastSelectionPreparation",
     "PodcastSelectionPreview",
     "PodcastSelectionResolver",
