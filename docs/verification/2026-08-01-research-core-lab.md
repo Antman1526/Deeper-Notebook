@@ -390,3 +390,33 @@ they are not a packaged desktop launch, a live persistence-server proof, or a
 SurrealDB runtime proof. The controlled native runtime cannot be launched from
 this checkout because it does not contain the packaged desktop runtime binaries
 and no installed desktop instance is listening on `http://localhost:65060`.
+
+## Controlled native service-tree proof — 2026-08-01
+
+The final controlled proof uses a new guarded `DEEPER_NOTEBOOK_DATA_DIR` under
+the system's real temporary directory. The override rejects filesystem roots
+and symlink traversal, so it cannot redirect a verification launch into the
+user's normal application data. It starts the bundled SurrealDB binary with the
+current-worktree API and a production Next standalone server under the existing
+desktop `Supervisor`; no external mount, watcher, local-model library, model
+sidecar, or user-owned data root participates.
+
+```text
+supervised frontend GET /setup-wizard: 200
+supervised API GET /readyz: 200
+database: online; migrations applied: true
+
+scripts/verify_research_core_lab.py --native-url http://127.0.0.1:65060
+native_runtime: passed (HTTP 200)
+synthetic checks: passed
+external_writes: 0
+source_hashes_unchanged: true
+```
+
+The machine-readable verifier result is
+`docs/verification/2026-08-01-research-core-lab-native-proof.json`. Its overall
+status stays `blocked` by design because the verifier does not itself run the
+separate browser fixture gate. That browser gate and the production build are
+recorded in the final contract-and-fixture audit above. This controlled proof
+establishes the previously missing live API + SurrealDB runtime evidence; it
+does not assert a signed, installed `.app` or a pywebview-window launch.

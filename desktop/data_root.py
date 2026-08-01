@@ -89,6 +89,7 @@ _CRITICAL_FILES = (
     Path("update_state.json"),
     Path("venv/.lock-hash"),
 )
+_CONTROLLED_DATA_ROOT_ENV = "DEEPER_NOTEBOOK_DATA_DIR"
 
 
 def _now() -> str:
@@ -1864,6 +1865,32 @@ def resolve_data_root(
 
 def active_data_root(*, home: Path | None = None) -> Path:
     """Return the writable root, blocking only unsafe/uncertain states."""
+    if home is None:
+        raw_controlled_root = os.environ.get(_CONTROLLED_DATA_ROOT_ENV, "").strip()
+        if raw_controlled_root:
+            controlled_root = Path(raw_controlled_root).expanduser()
+            if not controlled_root.is_absolute():
+                raise ValueError(
+                    f"{_CONTROLLED_DATA_ROOT_ENV} must be an absolute path"
+                )
+            controlled_root = Path(os.path.abspath(controlled_root))
+            if controlled_root == Path(controlled_root.anchor):
+                raise ValueError(
+                    f"{_CONTROLLED_DATA_ROOT_ENV} must not be a filesystem root"
+                )
+            current = Path(controlled_root.anchor)
+            for part in controlled_root.parts[1:]:
+                current = current / part
+                if current.is_symlink():
+                    raise ValueError(
+                        f"{_CONTROLLED_DATA_ROOT_ENV} must not traverse a symlink"
+                    )
+            controlled_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            try:
+                os.chmod(controlled_root, 0o700)
+            except OSError:
+                pass
+            return controlled_root
     decision = resolve_data_root(home=home)
     safe_deferred_reasons = {
         "cross-device-atomic-rename-unavailable",
