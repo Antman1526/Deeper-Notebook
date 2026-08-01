@@ -21,6 +21,7 @@ const localModelsHealth = vi.hoisted(() => ({
   isError: false,
   error: null as Error | null,
 }))
+const routePlan = vi.hoisted(() => ({ data: undefined as any, isError: false, isLoading: false }))
 
 vi.mock('@/lib/hooks/use-ask', () => ({ useAsk: () => ask }))
 vi.mock('@/lib/hooks/use-models', () => ({
@@ -29,12 +30,16 @@ vi.mock('@/lib/hooks/use-models', () => ({
 }))
 vi.mock('@/lib/hooks/use-local-models', () => ({
   useLocalModelsHealth: () => localModelsHealth,
+  useModelRoutePlan: () => routePlan,
 }))
 
 import { KnowledgeAskPane } from './KnowledgeAskPane'
 
 describe('KnowledgeAskPane', () => {
   beforeEach(() => {
+    routePlan.data = undefined
+    routePlan.isError = false
+    routePlan.isLoading = false
     ask.sendAsk.mockReset()
     modelDefaults.default_chat_model = 'local-research-chat'
     configuredModels.data = [{
@@ -55,6 +60,14 @@ describe('KnowledgeAskPane', () => {
 
     expect(ask.sendAsk).not.toHaveBeenCalled()
     expect(screen.getByText('1 selected document')).toBeInTheDocument()
+  })
+
+  it('shows the active Research Chat route without executing it', () => {
+    routePlan.data = { role: 'research_chat', outcome: 'ready', selected_model_id: 'qwen-local', selected_provider: 'mlx', resource_tier: 'standard', selection_source: 'automatic', route_reason: 'Verified local route.', escalation_model_ids: [], blocked_reason: null, selected_fingerprint: 'fingerprint', selected_measurements: {} }
+    render(<KnowledgeAskPane selectedDocumentIds={[]} />)
+    expect(screen.getByText('Research Chat route')).toBeInTheDocument()
+    expect(screen.getByText('qwen-local')).toBeInTheDocument()
+    expect(ask.sendAsk).not.toHaveBeenCalled()
   })
 
   it('fails closed instead of sending a selected-source question through global Ask', () => {

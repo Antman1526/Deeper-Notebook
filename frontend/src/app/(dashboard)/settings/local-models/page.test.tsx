@@ -32,7 +32,8 @@ const testState = vi.hoisted(() => ({
     benchmarks: {} as QueryState,
     inventory: {} as QueryState,
     receipts: {} as QueryState,
-    routing: {} as QueryState,
+    readiness: {} as QueryState,
+    settings: {} as QueryState,
   },
   queryCalls: [] as Array<{ enabled?: boolean; key: string }>,
   mutationCalls: 0,
@@ -41,6 +42,7 @@ const testState = vi.hoisted(() => ({
     isPending: false,
     mutate: vi.fn(),
   },
+  saveSettingsMutation: { data: undefined as unknown, isPending: false, mutate: vi.fn() },
 }))
 
 vi.mock('@/components/layout/AppShell', () => ({
@@ -93,6 +95,7 @@ vi.mock('@/components/local-models/RouteReceiptPanel', () => ({
 
 vi.mock('@/lib/hooks/use-local-models', () => ({
   useLocalModelsHealth: () => testState.health,
+  useModelRoutePlan: () => ({ data: undefined, isError: false, isLoading: false }),
 }))
 
 vi.mock('@/lib/api/client', () => ({ default: testState.api }))
@@ -100,14 +103,15 @@ vi.mock('@/lib/api/client', () => ({ default: testState.api }))
 vi.mock('@tanstack/react-query', () => ({
   // React may render the workspace more than once in development; retain the
   // benchmark/cancel/reset call order for each render pass.
-  useMutation: () => [testState.benchmarkMutation, testState.cancelMutation, testState.resetMutation][testState.mutationCalls++ % 3]!,
+  useMutation: () => [testState.benchmarkMutation, testState.cancelMutation, testState.resetMutation, testState.saveSettingsMutation][testState.mutationCalls++ % 4]!,
   useQuery: (options: { enabled?: boolean; queryKey: [string, string] }) => {
     const key = options.queryKey[1]
     testState.queryCalls.push({ enabled: options.enabled, key })
     const stateKey = {
       benchmarks: 'benchmarks',
       inventory: 'inventory',
-      'role-routing': 'routing',
+      readiness: 'readiness',
+      settings: 'settings',
       'route-receipts': 'receipts',
     }[key] as keyof typeof testState.queries
     return testState.queries[stateKey]
@@ -130,6 +134,8 @@ function resetState() {
   testState.resetMutation.data = undefined
   testState.resetMutation.isPending = false
   testState.resetMutation.mutate.mockReset()
+  testState.saveSettingsMutation.isPending = false
+  testState.saveSettingsMutation.mutate.mockReset()
   testState.health = { data: undefined, isLoading: false }
   testState.mutationCalls = 0
   testState.queryCalls = []
@@ -140,7 +146,8 @@ function resetState() {
       models: [{ name: 'qwen-local', path: '/models/qwen.gguf', runnable: true, runtime: 'gguf' }],
     },
   }
-  testState.queries.routing = { data: { routes: [{ model: { name: 'qwen-local' }, role: 'chat' }] } }
+  testState.queries.settings = { data: { model_dir: '/models', execution_policy: 'strict_local', compute_profile: 'balanced', local_model_memory_limit_bytes: 0, role_overrides: {}, trusted_external_model_roots: [] } }
+  testState.queries.readiness = { data: { available: true, models: [{ model_id: 'qwen-local', format: 'gguf', modality: 'text', readiness: 'ready_verified', readiness_reason: 'verified', measured_tier: 'standard', accepted_roles: ['research_chat'], route_eligible: true }] } }
   testState.queries.benchmarks = { data: { benchmarks: [{ job_id: 'benchmark-1', results: [], status: 'completed' }] } }
   testState.queries.receipts = { data: { receipts: [{ outcome: 'selected', role: 'chat', selected_model_id: 'qwen-local' }] } }
 }
@@ -153,7 +160,7 @@ describe('LocalModelsPage', () => {
 
     expect(screen.getByTestId('app-shell')).toHaveTextContent('Local model roles')
     expect(screen.getByTestId('model-inventory')).toHaveAttribute('data-models', '1')
-    expect(screen.getByTestId('role-benchmark-panel')).toHaveAttribute('data-routes', '1')
+    expect(screen.getByTestId('role-benchmark-panel')).toHaveAttribute('data-routes', '0')
     expect(screen.getByTestId('role-benchmark-panel')).toHaveAttribute('data-benchmark', 'benchmark-1')
     expect(screen.getByTestId('route-receipt-panel')).toHaveAttribute('data-receipts', '1')
     expect(screen.getByTestId('download-panel')).toBeInTheDocument()
@@ -181,12 +188,12 @@ describe('LocalModelsPage', () => {
   it('preserves disabled benchmark controls and isolates routing and inventory failures', () => {
     testState.benchmarkMutation.isPending = true
     testState.queries.inventory = { isError: true }
-    testState.queries.routing = { isError: true }
+    testState.queries.readiness = { isError: true }
     testState.queries.receipts = { isError: true }
 
     render(<LocalModelsPage />)
 
-    expect(screen.getByText('Role recommendations are unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Local readiness is unavailable')).toBeInTheDocument()
     expect(screen.getByTestId('model-inventory')).toHaveAttribute('data-error', 'true')
     expect(screen.getByTestId('route-receipt-panel')).toHaveAttribute('data-error', 'true')
     expect(screen.getByRole('button', { name: 'Benchmark every role' })).toBeDisabled()
@@ -195,7 +202,7 @@ describe('LocalModelsPage', () => {
     expect(testState.api.delete).not.toHaveBeenCalled()
   })
 
-  it('does not enable role, benchmark, or receipt queries until an installed model is runnable', () => {
+  it('does not enable readiness, benchmark, or receipt queries until an installed model is runnable', () => {
     testState.queries.inventory = {
       data: {
         available: true,
@@ -206,13 +213,20 @@ describe('LocalModelsPage', () => {
 
     render(<LocalModelsPage />)
 
-    const dependentQueries = testState.queryCalls.filter(call => ['role-routing', 'benchmarks', 'route-receipts'].includes(call.key))
+    const dependentQueries = testState.queryCalls.filter(call => ['readiness', 'benchmarks', 'route-receipts'].includes(call.key))
     expect(dependentQueries).toHaveLength(3)
     expect(dependentQueries).toEqual(expect.arrayContaining([
-      { enabled: false, key: 'role-routing' },
+      { enabled: false, key: 'readiness' },
       { enabled: false, key: 'benchmarks' },
       { enabled: false, key: 'route-receipts' },
     ]))
     expect(testState.api.get).not.toHaveBeenCalled()
+  })
+
+  it('keeps a degraded library visible but blocks automatic routes', () => {
+    testState.queries.readiness = { data: { available: true, models: [{ model_id: 'planned', format: 'mlx', modality: 'text', readiness: 'planned', readiness_reason: 'not installed', measured_tier: null, accepted_roles: [], route_eligible: false }] } }
+    render(<LocalModelsPage />)
+    expect(screen.getByText('planned: 1')).toBeInTheDocument()
+    expect(screen.getByText('No verified local route is currently available.')).toBeInTheDocument()
   })
 })

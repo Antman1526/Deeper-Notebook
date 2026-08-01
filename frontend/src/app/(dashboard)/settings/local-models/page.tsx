@@ -6,6 +6,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { DownloadPanel } from './DownloadPanel'
+import { LocalExecutionPolicyPanel } from '@/components/local-models/LocalExecutionPolicyPanel'
+import { ModelRoutePlanPanel } from '@/components/local-models/ModelRoutePlanPanel'
 import { ModelInventory } from '@/components/local-models/ModelInventory'
 import { RoleBenchmarkPanel } from '@/components/local-models/RoleBenchmarkPanel'
 import { RouteReceiptPanel } from '@/components/local-models/RouteReceiptPanel'
@@ -19,12 +21,20 @@ import type {
   BenchmarkJob,
   BenchmarkListResponse,
   InventoryResponse,
+  LocalModelSettings,
   LocalModel,
-  RoleRoutingResponse,
+  ReadinessResponse,
   RouteReceiptResponse,
 } from '@/lib/api/local-models'
+import {
+  getLocalModelInventory,
+  getLocalModelReadiness,
+  getLocalModelSettings,
+  getRouteReceipts,
+  updateLocalModelSettings,
+} from '@/lib/api/local-models'
 import apiClient from '@/lib/api/client'
-import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
+import { useLocalModelsHealth, useModelRoutePlan } from '@/lib/hooks/use-local-models'
 
 const BENCHMARK_ROLES = ['chat', 'source_synthesis', 'coding_research', 'study_fast']
 
@@ -54,17 +64,22 @@ function LocalModelsWorkspace() {
   const queryClient = useQueryClient()
   const inventory = useQuery<InventoryResponse>({
     queryKey: ['local-models', 'inventory'],
-    queryFn: async () => (await apiClient.get<InventoryResponse>('/local-models/inventory')).data,
+    queryFn: getLocalModelInventory,
     refetchOnWindowFocus: true,
     staleTime: 30_000,
   })
   const health = useLocalModelsHealth()
   const hasRunnableModels = inventory.data?.models.some(model => model.runnable ?? ['gguf', 'mlx'].includes(model.runtime ?? '')) ?? false
-  const routing = useQuery<RoleRoutingResponse>({
-    queryKey: ['local-models', 'role-routing'],
-    queryFn: async () => (await apiClient.get<RoleRoutingResponse>('/local-models/role-routing')).data,
-    enabled: hasRunnableModels,
-  })
+  const settings = useQuery<LocalModelSettings>({ queryKey: ['local-models', 'settings'], queryFn: getLocalModelSettings })
+  const readiness = useQuery<ReadinessResponse>({ queryKey: ['local-models', 'readiness'], queryFn: getLocalModelReadiness, enabled: hasRunnableModels })
+  const researchChatPlan = useModelRoutePlan(settings.data ? {
+    role: 'research_chat', execution_policy: settings.data.execution_policy, compute_profile: settings.data.compute_profile,
+    role_override_model_id: settings.data.role_overrides.research_chat ?? null, modalities: ['text'],
+  } : null)
+  const embeddingPlan = useModelRoutePlan(settings.data ? {
+    role: 'embedding_retrieval', execution_policy: settings.data.execution_policy, compute_profile: settings.data.compute_profile,
+    role_override_model_id: settings.data.role_overrides.embedding_retrieval ?? null, modalities: ['text'],
+  } : null)
   const benchmarks = useQuery<BenchmarkListResponse>({
     queryKey: ['local-models', 'benchmarks'],
     queryFn: async () => (await apiClient.get<BenchmarkListResponse>('/local-models/benchmarks')).data,
@@ -72,7 +87,7 @@ function LocalModelsWorkspace() {
   })
   const receipts = useQuery<RouteReceiptResponse>({
     queryKey: ['local-models', 'route-receipts'],
-    queryFn: async () => (await apiClient.get<RouteReceiptResponse>('/local-models/route-receipts')).data,
+    queryFn: getRouteReceipts,
     enabled: hasRunnableModels,
     retry: false,
   })
@@ -87,6 +102,14 @@ function LocalModelsWorkspace() {
   const reset = useMutation({
     mutationFn: async () => apiClient.delete('/local-models/benchmarks'),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
+  })
+  const saveSettings = useMutation({
+    mutationFn: updateLocalModelSettings,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['local-models', 'settings'] })
+      void queryClient.invalidateQueries({ queryKey: ['local-models', 'inventory'] })
+      void queryClient.invalidateQueries({ queryKey: ['local-models', 'readiness'] })
+    },
   })
   const [activatingPath, setActivatingPath] = React.useState<string | null>(null)
   const [launchDefaultRef, setLaunchDefaultRef] = React.useState<string | null>(null)
@@ -130,7 +153,20 @@ function LocalModelsWorkspace() {
     </header>
 
     <ConnectionChecks />
-    {routing.isError && <Alert><AlertCircle className="h-4 w-4" /><AlertTitle>Role recommendations are unavailable</AlertTitle><AlertDescription>The inventory remains available. Benchmarking will resume when the local routing service is reachable.</AlertDescription></Alert>}
+    {readiness.isError && <Alert><AlertCircle className="h-4 w-4" /><AlertTitle>Local readiness is unavailable</AlertTitle><AlertDescription>The inventory remains available. Automatic routing stays fail-closed until readiness can be read.</AlertDescription></Alert>}
+    <SettingsReadinessPanels
+      inventory={inventory.data}
+      readiness={readiness.data}
+      readinessError={readiness.isError}
+      settings={settings.data}
+      settingsError={settings.isError}
+      onRescan={() => { void inventory.refetch(); void readiness.refetch() }}
+      onSave={next => settings.data && saveSettings.mutate({ ...settings.data, ...next }, { onError: () => toast.error('Could not save local execution settings.') })}
+      isSaving={saveSettings.isPending}
+      researchPlan={researchChatPlan.data}
+      embeddingPlan={embeddingPlan.data}
+      routePlansError={researchChatPlan.isError || embeddingPlan.isError}
+    />
     <RoleBenchmarkPanel
       benchmark={currentBenchmark}
       isCancelling={cancel.isPending}
@@ -140,7 +176,7 @@ function LocalModelsWorkspace() {
       onBenchmarkRole={role => benchmark.mutate([role])}
       onCancel={() => currentBenchmark && cancel.mutate(currentBenchmark.job_id, { onError: () => toast.error('This desktop runtime cannot cancel the running benchmark.') })}
       onReset={() => reset.mutate(undefined, { onError: () => toast.error('This desktop runtime cannot reset benchmark history.') })}
-      routes={routing.data?.routes}
+      routes={[]}
     />
     <RouteReceiptPanel isError={receipts.isError} isLoading={receipts.isLoading} receipts={receipts.data?.receipts ?? []} />
     <ModelInventory
@@ -156,6 +192,28 @@ function LocalModelsWorkspace() {
     />
     <DownloadPanel />
   </div>
+}
+
+function SettingsReadinessPanels({ inventory, readiness, readinessError, settings, settingsError, onRescan, onSave, isSaving, researchPlan, embeddingPlan, routePlansError }: {
+  inventory?: InventoryResponse; readiness?: ReadinessResponse; readinessError: boolean; settings?: LocalModelSettings; settingsError: boolean
+  onRescan: () => void; onSave: (next: Pick<LocalModelSettings, 'execution_policy' | 'compute_profile' | 'local_model_memory_limit_bytes'>) => void; isSaving: boolean
+  researchPlan?: import('@/lib/api/local-models').ModelRoutePlan; embeddingPlan?: import('@/lib/api/local-models').ModelRoutePlan; routePlansError: boolean
+}) {
+  const models = readiness?.models ?? []
+  const grouped = models.reduce<Record<string, number>>((result, model) => ({ ...result, [model.readiness]: (result[model.readiness] ?? 0) + 1 }), {})
+  const accepted = models.filter(model => model.route_eligible)
+  const tiers = accepted.reduce<Record<string, number>>((result, model) => ({ ...result, [model.measured_tier ?? 'unmeasured']: (result[model.measured_tier ?? 'unmeasured'] ?? 0) + 1 }), {})
+  return <>
+    <Card data-testid="local-model-library"><CardHeader className="pb-3"><CardTitle className="text-base">Model library and rescan</CardTitle><CardDescription>Inventory is read-only. Canonical paths are shown only in the dedicated inventory below.</CardDescription></CardHeader><CardContent className="space-y-2 text-sm"><p>{inventory?.available ? 'Library available' : 'Library unavailable'}</p><Button onClick={onRescan} size="sm" type="button" variant="outline">Rescan local library</Button></CardContent></Card>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card data-testid="local-model-readiness"><CardHeader className="pb-3"><CardTitle className="text-base">Readiness and runtime compatibility</CardTitle><CardDescription>Only ready verified models are eligible for automatic routes.</CardDescription></CardHeader><CardContent>{readinessError ? <p role="status">Readiness unavailable — automatic routing is blocked.</p> : models.length ? <ul className="space-y-1 text-sm">{Object.entries(grouped).map(([state, count]) => <li key={state}>{state.replace(/_/g, ' ')}: {count}</li>)}</ul> : <p className="text-sm text-muted-foreground">No route-safe readiness facts are available.</p>}</CardContent></Card>
+      <Card data-testid="local-model-route-overrides"><CardHeader className="pb-3"><CardTitle className="text-base">Role routes and overrides</CardTitle><CardDescription>Overrides are explicit and rejected when a model fails readiness, quality, context, or memory gates.</CardDescription></CardHeader><CardContent className="space-y-2 text-sm"><p>{Object.keys(settings?.role_overrides ?? {}).length} configured role override(s)</p>{accepted.length ? <ul>{accepted.slice(0, 8).map(model => <li key={model.model_id}><code>{model.model_id}</code> · {model.accepted_roles.join(', ') || 'no accepted role'}</li>)}</ul> : <p className="text-muted-foreground">No verified local route is currently available.</p>}</CardContent></Card>
+      <Card data-testid="local-model-tiers"><CardHeader className="pb-3"><CardTitle className="text-base">Measured tiers and memory</CardTitle><CardDescription>Balanced selects the smallest accepted model that clears all gates.</CardDescription></CardHeader><CardContent className="text-sm">{Object.entries(tiers).length ? Object.entries(tiers).map(([tier, count]) => <p key={tier}>{tier}: {count}</p>) : <p className="text-muted-foreground">No accepted benchmark tier yet.</p>}</CardContent></Card>
+      <ModelRoutePlanPanel title="Research Chat route" plan={researchPlan} isError={readinessError || settingsError || routePlansError} />
+      <ModelRoutePlanPanel title="Embedding route" plan={embeddingPlan} isError={readinessError || settingsError || routePlansError} />
+    </div>
+    {settings ? <LocalExecutionPolicyPanel policy={settings.execution_policy} computeProfile={settings.compute_profile} memoryLimitBytes={settings.local_model_memory_limit_bytes} isSaving={isSaving} onSave={onSave} /> : <Card><CardContent className="py-5 text-sm text-muted-foreground">Loading local execution settings…</CardContent></Card>}
+  </>
 }
 
 export default function LocalModelsPage() {

@@ -4,7 +4,8 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
+import { ModelRoutePlanPanel } from '@/components/local-models/ModelRoutePlanPanel'
+import { useLocalModelsHealth, useModelRoutePlan } from '@/lib/hooks/use-local-models'
 import { useModelDefaults, useModels } from '@/lib/hooks/use-models'
 import {
   getLocalResearchReadinessReason,
@@ -38,6 +39,9 @@ export function KnowledgeAskPane({
     target: { kind: 'ask' },
     askReadinessReason: readinessReason ?? localReadinessReason,
   })
+  const researchRoute = useModelRoutePlan({
+    role: 'research_chat', execution_policy: 'strict_local', compute_profile: 'balanced', modalities: ['text'],
+  })
   const scopeReason = selectedDocumentIds.length > 0
     ? 'Scoped Ask is unavailable until selection-aware chat is available.'
     : 'Select one or more documents before starting a scoped Ask.'
@@ -49,6 +53,7 @@ export function KnowledgeAskPane({
         <p className="text-sm text-muted-foreground">{selectionLabel}</p>
       </div>
       {readiness.reason && <p role="status" className="text-sm text-muted-foreground">{readiness.reason}</p>}
+      <ModelRoutePlanPanel title="Research Chat route" plan={researchRoute.data} isError={researchRoute.isError} isLoading={researchRoute.isLoading} />
       <p className="text-sm text-muted-foreground">{scopeReason}</p>
       <Textarea
         aria-label="Question for selected knowledge"

@@ -7,6 +7,7 @@ const indexedSearch = vi.hoisted(() => ({
   text: { data: undefined, isLoading: false, isError: false },
   semantic: { data: undefined, isPending: false, isError: false },
 }))
+const routePlan = vi.hoisted(() => ({ data: undefined as any, isError: false, isLoading: false }))
 
 vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
   useKnowledgeIndexedSearch: (...args: unknown[]) => {
@@ -14,11 +15,15 @@ vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
     return indexedSearch
   },
 }))
+vi.mock('@/lib/hooks/use-local-models', () => ({ useModelRoutePlan: () => routePlan }))
 
 import { KnowledgeSearchPane } from './KnowledgeSearchPane'
 
 describe('KnowledgeSearchPane', () => {
   beforeEach(() => {
+    routePlan.data = undefined
+    routePlan.isError = false
+    routePlan.isLoading = false
     indexedSearch.calls = []
     indexedSearch.runSemanticSearch.mockReset()
   })
@@ -38,5 +43,12 @@ describe('KnowledgeSearchPane', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search knowledge' }))
 
     expect(indexedSearch.runSemanticSearch).toHaveBeenCalledOnce()
+  })
+
+  it('shows the active Embedding route without starting semantic search', () => {
+    routePlan.data = { role: 'embedding_retrieval', outcome: 'ready', selected_model_id: 'nomic-local', selected_provider: 'ollama', resource_tier: 'light', selection_source: 'automatic', route_reason: 'Verified local route.', escalation_model_ids: [], blocked_reason: null, selected_fingerprint: 'fingerprint', selected_measurements: {} }
+    render(<KnowledgeSearchPane query="" searchMode="text" spaceIds={[]} authorityKinds={[]} />)
+    expect(screen.getByText('Embedding route')).toBeInTheDocument()
+    expect(indexedSearch.runSemanticSearch).not.toHaveBeenCalled()
   })
 })

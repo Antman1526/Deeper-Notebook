@@ -5,6 +5,8 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
+import { ModelRoutePlanPanel } from '@/components/local-models/ModelRoutePlanPanel'
+import { useModelRoutePlan } from '@/lib/hooks/use-local-models'
 
 interface KnowledgeSearchPaneProps {
   query: string
@@ -30,6 +32,9 @@ export function KnowledgeSearchPane({
   const results = searchMode === 'semantic'
     ? indexedSearch.semantic.data?.results
     : indexedSearch.text.data?.results
+  const embeddingRoute = useModelRoutePlan({
+    role: 'embedding_retrieval', execution_policy: 'strict_local', compute_profile: 'balanced', modalities: ['text'],
+  })
 
   const submit = () => {
     if (query.trim().length < 2) return
@@ -43,6 +48,7 @@ export function KnowledgeSearchPane({
         <h2 className="text-xl font-semibold">Search</h2>
         <p className="text-sm text-muted-foreground">Search is available without a current document selection.</p>
       </div>
+      <ModelRoutePlanPanel title="Embedding route" plan={embeddingRoute.data} isError={embeddingRoute.isError} isLoading={embeddingRoute.isLoading} />
       <Input
         aria-label="Search knowledge"
         value={query}

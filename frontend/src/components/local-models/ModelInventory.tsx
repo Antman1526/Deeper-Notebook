@@ -82,6 +82,8 @@ function ModelRow({
           <div className="flex flex-wrap gap-1.5">
             <ModelFleetBadge runtime={model.runtime} />
             <Badge variant={runnerReady ? 'secondary' : 'outline'}>{runnerReady ? 'Available' : 'Setup needed'}</Badge>
+            {model.readiness && <Badge variant={model.route_eligible ? 'secondary' : 'outline'}>{model.readiness.replace(/_/g, ' ')}</Badge>}
+            {model.measured_tier && <Badge variant="outline">{model.measured_tier} tier</Badge>}
             {runtimeHealth && <Badge variant={runtimeHealth.status === 'healthy' ? 'secondary' : 'outline'}>{runtimeHealth.status}</Badge>}
             {model.is_live_active && <Badge>Active</Badge>}
             {model.is_launch_default && <Badge variant="secondary">Launch default</Badge>}
@@ -97,6 +99,8 @@ function ModelRow({
           <Metric label="Capability" value={runnerReady ? 'Runnable' : 'Inventory only'} />
         </dl>
         {!runnerReady && <p className="border-l-2 border-muted-foreground/30 pl-3 text-xs text-muted-foreground">{model.runtime_note ?? 'This asset is visible for curation, but no compatible local runtime is registered.'}</p>}
+        {model.readiness_reason && <p className="text-xs text-muted-foreground">{model.readiness_reason}</p>}
+        {model.accepted_roles?.length ? <p className="text-xs text-muted-foreground">Accepted roles: {model.accepted_roles.join(', ')}</p> : null}
         {(canActivate || canSetDefault) && <div className="flex flex-wrap justify-end gap-2">
           {canSetDefault && <Button disabled={Boolean(model.is_launch_default) || settingLaunchDefaultRef === model.launcher_model_ref} onClick={() => onSetLaunchDefault?.(model)} size="sm" variant="outline">Set launch default</Button>}
           {canActivate && <Button data-testid={`set-active-${model.name}`} disabled={activatingPath === model.path} onClick={() => onSetActive?.(model)} size="sm" variant="outline">{activatingPath === model.path ? 'Switching...' : 'Switch live chat model'}</Button>}
