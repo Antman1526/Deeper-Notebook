@@ -66,7 +66,7 @@ export function KnowledgeModeLauncher({
   }
 
   return (
-    <div role="toolbar" aria-label="Research modes" onKeyDown={onKeyDown} className="flex flex-wrap gap-1">
+    <div role="toolbar" aria-label="Research modes" onKeyDown={onKeyDown} className="research-core-mode-surfaces flex flex-wrap gap-1">
       {MODES.map((descriptor, index) => {
         const modeAvailability = availability[descriptor.id]
         const isDisabled = modeAvailability?.available === false

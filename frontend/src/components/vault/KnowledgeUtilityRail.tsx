@@ -13,6 +13,8 @@ interface KnowledgeUtilityRailProps {
   sidebarVisible: boolean
   canBookmarkCurrent: boolean
   randomPending?: boolean
+  drawerCloseLabel?: string
+  onCloseDrawer?: () => void
   onNavigationChange: (change: Partial<KnowledgeWorkspaceNavigation>) => void
   onToday: () => void
   onRandomNote: () => void
@@ -24,6 +26,8 @@ export function KnowledgeUtilityRail({
   sidebarVisible,
   canBookmarkCurrent,
   randomPending = false,
+  drawerCloseLabel,
+  onCloseDrawer,
   onNavigationChange,
   onToday,
   onRandomNote,
@@ -69,6 +73,20 @@ export function KnowledgeUtilityRail({
 
   return (
     <nav aria-label={displayMode === 'bookmarks' ? 'Bookmarks' : 'Knowledge utilities'} className="space-y-3">
+      {onCloseDrawer && drawerCloseLabel ? (
+        <div className="flex items-center justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-label={drawerCloseLabel}
+            onClick={onCloseDrawer}
+            className="research-core-drawer-close"
+          >
+            {drawerCloseLabel}
+          </Button>
+        </div>
+      ) : null}
       <div className="grid grid-cols-2 gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onToday}>
           <CalendarDays aria-hidden="true" className="mr-1.5 h-4 w-4" />
