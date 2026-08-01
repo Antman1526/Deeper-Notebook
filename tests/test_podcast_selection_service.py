@@ -7,8 +7,10 @@ import pytest
 from deeper_notebook.podcasts.selection_contracts import (
     GraphSelection,
     KnowledgeDocumentSelection,
+    NotebookSelection,
 )
 from deeper_notebook.podcasts.selection_service import (
+    AppNotebookPodcastSelectionResolver,
     KnowledgeEnginePodcastSelectionResolver,
     PodcastSelectionService,
     ResolvedSelectionItem,
@@ -223,3 +225,25 @@ async def test_prepare_keeps_only_current_non_duplicate_content_server_side():
     assert preparation.content == "app-owned context"
     assert "content" not in preparation.model_dump()
     assert preparation.preview.entries[1].state == "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_app_notebook_resolver_uses_context_api_without_external_path_access():
+    class Notebook:
+        id = "notebook:research"
+        name = "Research notebook"
+
+        async def get_context(self):
+            return "app-owned notebook context"
+
+    async def load_notebook(notebook_id: str):
+        assert notebook_id == "notebook:research"
+        return Notebook()
+
+    items = await AppNotebookPodcastSelectionResolver(
+        notebook_loader=load_notebook
+    ).resolve(NotebookSelection(notebook_id="notebook:research"))
+
+    assert items[0].authority_kind == "app_owned"
+    assert items[0].relative_locator is None
+    assert items[0].content == "app-owned notebook context"
