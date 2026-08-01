@@ -457,6 +457,7 @@ def migrate_workspace_v1(
     for pane_id, pane in document.panes.items():
         tabs: list[KnowledgeTabStateV2] = []
         for tab in pane.tabs:
+            relative_locator = tab.relative_path.replace("\\", "/")
             if tab.view_mode == "graph":
                 target: KnowledgeTabTarget = GraphTabTarget(
                     root_document_id=tab.knowledge_document_id,
@@ -465,7 +466,7 @@ def migrate_workspace_v1(
                         container_id=tab.vault_id,
                         note_id=tab.note_id,
                         title=tab.title,
-                        relative_locator=tab.relative_path,
+                        relative_locator=relative_locator,
                         authority=tab.source_authority,
                         knowledge_document_id=tab.knowledge_document_id,
                         render_mode="reading",
@@ -477,7 +478,7 @@ def migrate_workspace_v1(
                     container_id=tab.vault_id,
                     note_id=tab.note_id,
                     title=tab.title,
-                    relative_locator=tab.relative_path,
+                    relative_locator=relative_locator,
                     authority=tab.source_authority,
                     knowledge_document_id=tab.knowledge_document_id,
                     render_mode=tab.view_mode,

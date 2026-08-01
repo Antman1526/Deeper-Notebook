@@ -113,6 +113,16 @@ def test_workspace_v2_document_targets_require_canonical_relative_locators(locat
         KnowledgeWorkspaceDocumentV2.model_validate(payload)
 
 
+def test_migrate_workspace_v1_canonicalizes_windows_relative_locators():
+    payload = populated().model_dump(mode="json")
+    payload["panes"]["pane-1"]["tabs"][0]["relative_path"] = "Notes\\One.md"
+    legacy = KnowledgeWorkspaceDocument.model_validate(payload)
+
+    migrated = workspace_contracts.migrate_workspace_v1(legacy)
+
+    assert migrated.panes["pane-1"].tabs[0].target.relative_locator == "Notes/One.md"
+
+
 def split_layout_payload(depth: int) -> dict:
     node: dict = {"type": "pane", "pane_id": "pane-1"}
     for level in range(2, depth + 1):
