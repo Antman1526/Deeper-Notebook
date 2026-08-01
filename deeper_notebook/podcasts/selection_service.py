@@ -396,6 +396,8 @@ class KnowledgeNavigationReader(Protocol):
 
     async def list_bookmarks(self, filters: BookmarkFilters, cursor: str | None, limit: int): ...
 
+    async def get_workspace(self, workspace_id: str): ...
+
 
 class KnowledgeNavigationPodcastSelectionResolver:
     """Resolve a saved bookmark through its current unified target only."""
@@ -500,11 +502,42 @@ class KnowledgeNavigationPodcastSelectionResolver:
             )
         ]
 
+    async def _resolve_workspace(
+        self, selection: KnowledgeCollectionSelection
+    ) -> list[ResolvedSelectionItem]:
+        workspace = await self._navigation.get_workspace(selection.collection_id)
+        panes = getattr(getattr(workspace, "snapshot", None), "panes", {})
+        if not isinstance(panes, dict):
+            return self._unavailable_bookmark(selection, "workspace_snapshot_unavailable")
+        results: list[ResolvedSelectionItem] = []
+        for pane_id in sorted(panes):
+            for tab in getattr(panes[pane_id], "tabs", []):
+                results.extend(
+                    await self._resolve_target(selection, getattr(tab, "target", None))
+                )
+                if len(results) > self._MAX_COLLECTION_ITEMS:
+                    return self._unavailable_bookmark(
+                        selection, "workspace_collection_item_limit_exceeded"
+                    )
+        if results:
+            return results
+        return [
+            ResolvedSelectionItem(
+                stable_id=selection.collection_id,
+                title="Saved workspace",
+                authority_kind="app_owned",
+                state="empty",
+                reason="workspace_empty",
+            )
+        ]
+
     async def resolve(self, selection: PodcastSelection) -> list[ResolvedSelectionItem]:
         if not isinstance(selection, KnowledgeCollectionSelection):
             raise ValueError("podcast_selection_kind_unavailable")
         if selection.collection_kind == "folder":
             return await self._resolve_folder(selection)
+        if selection.collection_kind == "workspace":
+            return await self._resolve_workspace(selection)
         if selection.collection_kind != "bookmark":
             raise ValueError("podcast_selection_kind_unavailable")
         bookmark = await self._navigation.get_bookmark(selection.collection_id)

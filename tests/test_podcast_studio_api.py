@@ -120,6 +120,45 @@ class _Navigation:
             },
         )()
 
+    async def get_workspace(self, workspace_id):
+        assert workspace_id == "named_knowledge_workspace:research"
+        return type(
+            "Workspace",
+            (),
+            {
+                "snapshot": type(
+                    "Snapshot",
+                    (),
+                    {
+                        "panes": {
+                            "pane": type(
+                                "Pane",
+                                (),
+                                {
+                                    "tabs": [
+                                        type(
+                                            "Tab",
+                                            (),
+                                            {
+                                                "target": type(
+                                                    "DocumentTarget",
+                                                    (),
+                                                    {
+                                                        "kind": "document",
+                                                        "document_id": "knowledge_engine_document:external",
+                                                    },
+                                                )(),
+                                            },
+                                        )()
+                                    ]
+                                },
+                            )()
+                        }
+                    },
+                )()
+            },
+        )()
+
 
 class _Notebook:
     id = "notebook:research"
@@ -312,6 +351,32 @@ async def test_preview_resolves_a_saved_folder_without_exposing_target_body(
                         "kind": "knowledge_collection",
                         "collection_kind": "folder",
                         "collection_id": "knowledge_bookmark_folder:research",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"
+    assert "This body is server-resolved only." not in response.text
+
+
+@pytest.mark.asyncio
+async def test_preview_resolves_a_saved_workspace_without_exposing_target_body(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/selection/preview",
+            json={
+                "selections": [
+                    {
+                        "kind": "knowledge_collection",
+                        "collection_kind": "workspace",
+                        "collection_id": "named_knowledge_workspace:research",
                     }
                 ]
             },
