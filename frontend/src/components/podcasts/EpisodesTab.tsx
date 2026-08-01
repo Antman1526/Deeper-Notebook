@@ -4,41 +4,12 @@ import { useCallback, useState } from 'react'
 import { AlertCircle, Loader2, RefreshCcw } from 'lucide-react'
 
 import { useDeletePodcastEpisode, usePodcastEpisodes, useRetryPodcastEpisode } from '@/lib/hooks/use-podcasts'
-import { EpisodeCard } from '@/components/podcasts/EpisodeCard'
+import { PodcastLibrary } from '@/components/podcasts/PodcastLibrary'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { GeneratePodcastDialog } from '@/components/podcasts/GeneratePodcastDialog'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import type { TFunction } from 'i18next'
-
-const getSTATUS_ORDER = (t: TFunction): Array<{
-  key: 'running' | 'completed' | 'failed' | 'pending'
-  title: string
-  description?: string
-}> => [
-  {
-    key: 'running',
-    title: t('podcasts.statusRunningTitle'),
-    description: t('podcasts.statusRunningDesc'),
-  },
-  {
-    key: 'pending',
-    title: t('podcasts.statusPendingTitle'),
-    description: t('podcasts.statusPendingDesc'),
-  },
-  {
-    key: 'completed',
-    title: t('podcasts.statusCompletedTitle'),
-    description: t('podcasts.statusCompletedDesc'),
-  },
-  {
-    key: 'failed',
-    title: t('podcasts.statusFailedTitle'),
-    description: t('podcasts.statusFailedDesc'),
-  },
-]
 
 function SummaryBadge({ label, value }: { label: string; value: number }) {
   return (
@@ -142,36 +113,9 @@ export function EpisodesTab() {
         </div>
       ) : null}
 
-      {getSTATUS_ORDER(t).map(({ key, title, description }) => {
-        const data = statusGroups[key]
-        if (!data || data.length === 0) {
-          return null
-        }
-
-        return (
-          <section key={key} className="space-y-4">
-            <div>
-              <h3 className="text-lg font-semibold leading-tight">{title}</h3>
-              {description ? (
-                <p className="text-sm text-muted-foreground">{description}</p>
-              ) : null}
-            </div>
-            <Separator />
-            <div className="space-y-4">
-              {data.map((episode) => (
-                <EpisodeCard
-                  key={episode.id}
-                  episode={episode}
-                  onDelete={handleDelete}
-                  deleting={deleteEpisode.isPending}
-                  onRetry={handleRetry}
-                  retrying={retryEpisode.isPending}
-                />
-              ))}
-            </div>
-          </section>
-        )
-      })}
+      {!isLoading && !isError && episodes.length > 0 && (
+        <PodcastLibrary episodes={episodes} onDelete={handleDelete} onRetry={handleRetry} />
+      )}
 
       <GeneratePodcastDialog
         open={showGenerateDialog}
