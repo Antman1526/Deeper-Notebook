@@ -25,10 +25,12 @@ import {
   AlertTriangle,
   Loader2,
   Unlink,
-  Share2
+  Share2,
+  Podcast
 } from 'lucide-react'
 import { useSourceStatus } from '@/lib/hooks/use-sources'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import type { TFunction } from 'i18next'
 import { cn } from '@/lib/utils'
 import { ContextToggle } from '@/components/common/ContextToggle'
@@ -193,6 +195,7 @@ export function SourceCard({
   onContextModeChange
 }: SourceCardProps) {
   const { t } = useTranslation()
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const statusConfigMap = getStatusConfig(t)
   
   // Only fetch status for sources that might have async processing
@@ -280,6 +283,13 @@ export function SourceCard({
   const hasNoExtractedText = isCompleted && source.extraction_quality === 'no_text'
   const hasLowExtractedText = isCompleted && source.extraction_quality === 'low_text'
   const canRetry = !isFileUnavailable
+  const podcastDisabledReason = !isCompleted
+    ? 'Source processing must finish before it can become a podcast.'
+    : isFileUnavailable
+      ? 'The original source file is unavailable.'
+      : hasNoExtractedText
+        ? 'No readable source content is available.'
+        : undefined
   const progressPercent = getProgressPercent(statusData?.processing_info ?? source.processing_info)
   const notebookCount = source.notebook_count ?? 0
   const isShared = source.is_shared || notebookCount > 1
@@ -462,6 +472,7 @@ export function SourceCard({
                 <Button
                   variant="ghost"
                   size="sm"
+                  aria-label="Source actions"
                   className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -500,6 +511,24 @@ export function SourceCard({
                   <DropdownMenuSeparator />
                 </>
               )}
+
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openPodcastReview(
+                    [{ kind: 'app_source', sourceId: source.id, inclusionMode: 'full' }],
+                    'quick'
+                  )
+                }}
+                disabled={Boolean(podcastDisabledReason)}
+              >
+                <Podcast className="h-4 w-4 mr-2" />
+                {podcastDisabledReason
+                  ? `Turn source into podcast — ${podcastDisabledReason}`
+                  : 'Turn source into podcast'}
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
 
               <DropdownMenuItem
                 onClick={(e) => {
