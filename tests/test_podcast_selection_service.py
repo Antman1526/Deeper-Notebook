@@ -164,3 +164,41 @@ async def test_engine_resolver_marks_stale_revision_changed_before_preview():
     assert preview.entries[0].reason == "source_revision_changed"
     assert preview.included_characters == 0
     assert preview.current_worker_eligible is False
+
+
+@pytest.mark.asyncio
+async def test_preview_fingerprint_includes_resolved_revision_without_source_body():
+    @dataclass
+    class RevisionResolver:
+        revision_id: str
+        content_hash: str
+
+        async def resolve(self, selection):
+            return [
+                ResolvedSelectionItem(
+                    stable_id=selection.document_id,
+                    title="Revisioned note",
+                    authority_kind="external_read_only",
+                    relative_locator="Research/Revisioned.md",
+                    revision_id=self.revision_id,
+                    fingerprint=self.content_hash,
+                    content="content that must not be fingerprint input",
+                )
+            ]
+
+    selection = KnowledgeDocumentSelection(
+        document_id="knowledge_engine_document:revisioned"
+    )
+    initial = await PodcastSelectionService(
+        resolver=RevisionResolver(
+            revision_id="knowledge_engine_revision:one", content_hash="1" * 64
+        )
+    ).preview([selection])
+    changed = await PodcastSelectionService(
+        resolver=RevisionResolver(
+            revision_id="knowledge_engine_revision:two", content_hash="2" * 64
+        )
+    ).preview([selection])
+
+    assert initial.selection_fingerprint != changed.selection_fingerprint
+    assert "content that must not be fingerprint input" not in initial.model_dump_json()
