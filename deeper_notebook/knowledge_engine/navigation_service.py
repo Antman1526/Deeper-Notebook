@@ -181,6 +181,8 @@ class KnowledgeNavigationService:
                 return await self._hydrate_block(target)
             if target.kind == "search":
                 return HydratedKnowledgeTarget(target=target, state="available")
+            if target.kind in {"ask", "podcast"}:
+                return HydratedKnowledgeTarget(target=target, state="available")
             if target.kind == "graph":
                 return await self._hydrate_graph(target)
             return await self._hydrate_workspace(target)

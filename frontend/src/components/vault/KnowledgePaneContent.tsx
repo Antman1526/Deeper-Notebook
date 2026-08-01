@@ -98,6 +98,9 @@ export function KnowledgePaneContent({
   const setTabViewMode = useKnowledgeWorkspaceStore(
     (state) => state.setTabViewMode,
   )
+  const setSearchTabQuery = useKnowledgeWorkspaceStore(
+    (state) => state.setSearchTabQuery,
+  )
   const reconcileTabReference = useKnowledgeWorkspaceStore(
     (state) => state.reconcileTabReference,
   )
@@ -271,6 +274,7 @@ export function KnowledgePaneContent({
             searchMode={activeTarget.search_mode}
             spaceIds={activeTarget.space_ids}
             authorityKinds={activeTarget.authority_kinds}
+            onQueryChange={(query) => setSearchTabQuery(pane.id, activeTab.id, query)}
           />
         )}
         {activeTarget?.kind === 'podcast' && (

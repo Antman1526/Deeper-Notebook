@@ -1029,6 +1029,30 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       .toHaveLength(1)
   })
 
+  it('waits for Current Session hydration before measuring and persisting the utility rail', async () => {
+    const observe = vi.fn()
+    const disconnect = vi.fn()
+    const ResizeObserverMock = vi.fn(function ResizeObserverMock() {
+      return { observe, disconnect }
+    })
+    const originalResizeObserver = globalThis.ResizeObserver
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+
+    try {
+      await renderExplorer()
+      expect(ResizeObserverMock).not.toHaveBeenCalled()
+
+      act(() => {
+        useKnowledgeWorkspaceStore.setState({ hydrated: true })
+      })
+      await waitFor(() => expect(ResizeObserverMock).toHaveBeenCalledTimes(1))
+      expect(observe).toHaveBeenCalled()
+    } finally {
+      if (originalResizeObserver) vi.stubGlobal('ResizeObserver', originalResizeObserver)
+      else vi.unstubAllGlobals()
+    }
+  })
+
   it('shows a durable-save failure without discarding local tabs', async () => {
     states.persistence = {
       isPending: false,

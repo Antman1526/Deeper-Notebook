@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from deeper_notebook.knowledge_engine.navigation_contracts import (
     WORKSPACE_CAPACITY_ALLOCATOR_ID,
+    AskTarget,
     BlockTarget,
     Bookmark,
     BookmarkCursor,
@@ -20,6 +21,7 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     NamedKnowledgeWorkspace,
     NamedWorkspaceTab,
     NamedWorkspaceSnapshot,
+    PodcastTarget,
     NavigationReceipt,
     WorkspaceRestorePane,
     WorkspaceRestorePlan,
@@ -204,9 +206,25 @@ def test_legacy_named_workspace_tab_derives_its_research_mode():
         view_mode="graph",
         target={"kind": "graph"},
     )
+    ask = NamedWorkspaceTab(
+        id="tab-ask",
+        display_label="Ask",
+        view_mode="reading",
+        target={"kind": "ask", "thread_id": None, "selected_document_ids": []},
+    )
+    podcast = NamedWorkspaceTab(
+        id="tab-podcast",
+        display_label="Podcast",
+        view_mode="reading",
+        target={"kind": "podcast", "production_id": None, "seed_document_ids": []},
+    )
 
     assert document.mode == "read"
     assert graph.mode == "graph"
+    assert ask.mode == "ask"
+    assert podcast.mode == "podcast"
+    assert AskTarget().kind == "ask"
+    assert PodcastTarget().kind == "podcast"
     with pytest.raises(ValidationError, match="workspace mode"):
         NamedWorkspaceTab(
             id="tab-incompatible",

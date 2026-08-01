@@ -32,7 +32,7 @@ const publicWorkspaceId = workspaceId.refine(
 )
 const authoritySchema = z.enum(['app_owned', 'external_read_only'])
 const targetStateSchema = z.enum(['available', 'stale', 'unavailable', 'missing'])
-const targetKindSchema = z.enum(['document', 'block', 'search', 'graph', 'workspace'])
+const targetKindSchema = z.enum(['document', 'block', 'search', 'graph', 'workspace', 'ask', 'podcast'])
 const dateTimeSchema = z.string().datetime({ offset: true })
 
 type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject
@@ -68,6 +68,16 @@ export type KnowledgeTarget =
       spaceIds: string[]
       authorityKinds: KnowledgeAuthority[]
       tags: string[]
+    }
+  | {
+      kind: 'ask'
+      threadId: string | null
+      selectedDocumentIds: string[]
+    }
+  | {
+      kind: 'podcast'
+      productionId: string | null
+      seedDocumentIds: string[]
     }
   | {
       kind: 'graph'
@@ -288,6 +298,14 @@ const wireTargetSchema = z.discriminatedUnion('kind', [
     tags: z.array(z.string().min(1).max(128)).max(32).default([]),
   }).strict(),
   z.object({
+    kind: z.literal('ask'), thread_id: z.string().min(1).max(128).nullable().default(null),
+    selected_document_ids: z.array(documentId).max(128).default([]),
+  }).strict(),
+  z.object({
+    kind: z.literal('podcast'), production_id: z.string().min(1).max(128).nullable().default(null),
+    seed_document_ids: z.array(documentId).max(128).default([]),
+  }).strict(),
+  z.object({
     kind: z.literal('graph'), root_document_id: documentId.nullable().default(null),
     space_ids: z.array(spaceId).max(32).default([]),
     relation_kinds: z.array(z.string().min(1).max(64)).max(32).default([]),
@@ -307,6 +325,14 @@ const camelTargetSchema: z.ZodType<KnowledgeTarget> = z.discriminatedUnion('kind
     searchMode: z.enum(['exact', 'text', 'semantic']),
     spaceIds: z.array(spaceId).max(32), authorityKinds: z.array(authoritySchema).max(2),
     tags: z.array(z.string().min(1).max(128)).max(32),
+  }).strict(),
+  z.object({
+    kind: z.literal('ask'), threadId: z.string().min(1).max(128).nullable(),
+    selectedDocumentIds: z.array(documentId).max(128),
+  }).strict(),
+  z.object({
+    kind: z.literal('podcast'), productionId: z.string().min(1).max(128).nullable(),
+    seedDocumentIds: z.array(documentId).max(128),
   }).strict(),
   z.object({
     kind: z.literal('graph'), rootDocumentId: documentId.nullable(),
@@ -439,7 +465,7 @@ const bookmarkFiltersSchema = z.object({
   cursor: z.string().min(1).max(512).regex(/^[A-Za-z0-9_-]+$/).optional(),
   limit: z.number().int().min(1).max(100).optional(), folderId: folderId.optional(),
   tags: z.array(z.string().min(1).max(128)).max(32).optional(),
-  targetKinds: z.array(targetKindSchema).max(5).optional(),
+  targetKinds: z.array(targetKindSchema).max(7).optional(),
   spaceIds: z.array(spaceId).max(32).optional(),
   authorityKinds: z.array(authoritySchema).max(2).optional(),
 }).strict()
@@ -679,6 +705,18 @@ function targetFromWire(target: z.infer<typeof wireTargetSchema>): KnowledgeTarg
       spaceIds: target.space_ids, authorityKinds: target.authority_kinds, tags: target.tags,
     }
   }
+  if (target.kind === 'ask') {
+    return {
+      kind: 'ask', threadId: target.thread_id,
+      selectedDocumentIds: target.selected_document_ids,
+    }
+  }
+  if (target.kind === 'podcast') {
+    return {
+      kind: 'podcast', productionId: target.production_id,
+      seedDocumentIds: target.seed_document_ids,
+    }
+  }
   if (target.kind === 'graph') {
     return {
       kind: 'graph', rootDocumentId: target.root_document_id,
@@ -702,6 +740,18 @@ function targetToWire(target: KnowledgeTarget): z.input<typeof wireTargetSchema>
     return {
       kind: 'search', query: parsed.query, search_mode: parsed.searchMode,
       space_ids: parsed.spaceIds, authority_kinds: parsed.authorityKinds, tags: parsed.tags,
+    }
+  }
+  if (parsed.kind === 'ask') {
+    return {
+      kind: 'ask', thread_id: parsed.threadId,
+      selected_document_ids: parsed.selectedDocumentIds,
+    }
+  }
+  if (parsed.kind === 'podcast') {
+    return {
+      kind: 'podcast', production_id: parsed.productionId,
+      seed_document_ids: parsed.seedDocumentIds,
     }
   }
   if (parsed.kind === 'graph') {
