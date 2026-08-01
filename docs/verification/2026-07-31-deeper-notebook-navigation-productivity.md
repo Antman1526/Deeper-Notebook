@@ -121,3 +121,12 @@ routes performed no external-file writes.
   path, but the issue was not characterized further. Repeating the proof with
   a separately owned, safe home-directory fixture succeeded; do not treat the
   worktree-root behavior as resolved.
+
+## 2026-07-31 legacy data-root upgrade regression
+
+The focused legacy upgrade and recovery suite passed: 96 tests covering
+same-volume atomic migration, durable pre-move receipts, critical-file hashes,
+rollback safety, non-equivalent-root recovery with zero writes, and reversible
+macOS app replacement logic. This is strong code-level evidence only; a native
+legacy-profile upgrade smoke and the Windows installer lifecycle remain release
+gates.
