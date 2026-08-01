@@ -22,14 +22,14 @@ Worktree: `codex/research-core-lab-phase-1`
 
 - Python `3.12.13`; Ruff `0.14.13`
 - Node `v24.17.0`; npm `11.13.0`; Next.js `16.2.12`; Playwright CLI `1.62.1`
-- Native command collection: `npx playwright test e2e/research-core-lab.spec.ts --project=native-runtime --list` collected **3 tests**.
+- Current native command collection: `npx playwright test e2e/research-core-lab.spec.ts --project=native-runtime --list` collected **4 tests**.
 
 ## Recorded artifact hashes
 
 ```text
-e73ddaadaaa9bcd5544b38fcb515010d03d40965901345828030cd12d0b0bdd9  frontend/e2e/research-core-lab.spec.ts
-2ed8d0c6a86fc3ad3be3ba78dc64c57c679aeeca7c17bb3491b917c15370f5d9  scripts/verify_research_core_lab.py
-d3dcc6abd11866aa5a034e19f1ce9f6dae76ec010fabf0cbc28839eed93426a9  tests/test_verify_research_core_lab.py
+1276c176a72b1d0df6626bc103336bb6e57d4c70df77ab95d8137e0c00627e14  frontend/e2e/research-core-lab.spec.ts
+6c005557ba7b1def22844831f172c0529a3008dd5f4f01e857de89ba9123b131  scripts/verify_research_core_lab.py
+72c7267c38317a8e594b555c0a850c097acdbb9e851281392caddcb19caab3fb  tests/test_verify_research_core_lab.py
 eed20f040cea2aa0772028ca791dc006294b7cb23e797571274a00ec5d67388e  frontend/playwright.config.ts
 ```
 
@@ -102,7 +102,9 @@ disabled before the app-owned Overlay draft is created.
 
 The verifier now records separate synthetic local-library before/after
 fingerprints, an instrumented Strict Local transport boundary with zero calls,
-and an observable one-heavyweight reservation/queue result. With
+and an observable one-heavyweight reservation/queue result. The transport
+recorder is a synthetic planner-contract fixture only; it is not production
+provider, native-runtime, or packaged-app request evidence. With
 `--run-focused-gates`, it records command, exit status, error class, and an
 output digest without persisting command output.
 

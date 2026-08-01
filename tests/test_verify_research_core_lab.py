@@ -39,6 +39,7 @@ def test_verifier_records_the_phase_one_contract_proofs_without_paths(tmp_path: 
     assert checks["local_library"]["unchanged"] is True  # type: ignore[index]
     assert checks["strict_local"]["transport_calls"] == 0  # type: ignore[index]
     assert checks["strict_local"]["transport_instrumented"] is True  # type: ignore[index]
+    assert checks["strict_local"]["proof_boundary"] == "synthetic_contract_fixture"  # type: ignore[index]
     assert checks["heavyweight_mlx"]["second_reservation"] == "queued"  # type: ignore[index]
     assert checks["heavyweight_mlx"]["active_heavyweight_count"] == 1  # type: ignore[index]
     assert checks["focused_gates"]["status"] == "not_run"  # type: ignore[index]

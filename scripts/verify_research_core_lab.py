@@ -159,6 +159,9 @@ def _workspace_migration_check() -> dict[str, object]:
 
 
 def _strict_local_check() -> dict[str, object]:
+    # This is a synthetic contract fixture for the planner boundary. It is not
+    # a production provider transport, native-runtime request trace, or proof
+    # that a packaged application made zero cloud requests.
     class TransportRecorder:
         def __init__(self) -> None:
             self.calls = 0
@@ -202,6 +205,7 @@ def _strict_local_check() -> dict[str, object]:
     return {
         "status": "passed" if plan.outcome == "ready" and recorder.calls == 0 else "failed",
         "outcome": plan.outcome,
+        "proof_boundary": "synthetic_contract_fixture",
         "transport_instrumented": True,
         "transport_calls": recorder.calls,
     }
