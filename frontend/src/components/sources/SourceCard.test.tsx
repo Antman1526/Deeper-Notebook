@@ -264,6 +264,31 @@ describe('SourceCard', () => {
     expect(usePodcastStudioStore.getState().isOpen).toBe(false)
   })
 
+  it('offers a separate review for stored source insights', () => {
+    mockUseSourceStatus.mockReturnValue({ data: undefined, isLoading: false })
+
+    render(
+      <SourceCard
+        source={source({
+          id: 'source:podcast-insights',
+          command_id: undefined,
+          status: 'completed',
+          insights_count: 2,
+        })}
+      />
+    )
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Source actions' }), {
+      key: 'ArrowDown',
+      code: 'ArrowDown',
+    })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Turn source insights into podcast' }))
+
+    expect(usePodcastStudioStore.getState().selections).toEqual([
+      { kind: 'app_source', sourceId: 'source:podcast-insights', inclusionMode: 'insights' },
+    ])
+  })
+
   it('does not retry a failed upload when the original file is unavailable', () => {
     mockUseSourceStatus.mockReturnValue({
       data: {

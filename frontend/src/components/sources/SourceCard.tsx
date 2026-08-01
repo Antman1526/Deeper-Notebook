@@ -290,6 +290,11 @@ export function SourceCard({
       : hasNoExtractedText
         ? 'No readable source content is available.'
         : undefined
+  const insightsPodcastDisabledReason = !isCompleted
+    ? 'Source processing must finish before its insights can become a podcast.'
+    : source.insights_count <= 0
+      ? 'No source insights are available.'
+      : undefined
   const progressPercent = getProgressPercent(statusData?.processing_info ?? source.processing_info)
   const notebookCount = source.notebook_count ?? 0
   const isShared = source.is_shared || notebookCount > 1
@@ -526,6 +531,22 @@ export function SourceCard({
                 {podcastDisabledReason
                   ? `Turn source into podcast — ${podcastDisabledReason}`
                   : 'Turn source into podcast'}
+              </DropdownMenuItem>
+
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openPodcastReview(
+                    [{ kind: 'app_source', sourceId: source.id, inclusionMode: 'insights' }],
+                    'quick'
+                  )
+                }}
+                disabled={Boolean(insightsPodcastDisabledReason)}
+              >
+                <Podcast className="h-4 w-4 mr-2" />
+                {insightsPodcastDisabledReason
+                  ? `Turn source insights into podcast — ${insightsPodcastDisabledReason}`
+                  : 'Turn source insights into podcast'}
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />
