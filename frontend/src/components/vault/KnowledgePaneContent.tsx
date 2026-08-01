@@ -38,6 +38,9 @@ import { VaultDocumentView } from './VaultDocumentView'
 import { DocumentMetricsFooter } from './DocumentMetricsFooter'
 import { VaultGraph } from './VaultGraph'
 import { CanvasViewer } from './CanvasViewer'
+import { KnowledgeAskPane } from './KnowledgeAskPane'
+import { KnowledgeSearchPane } from './KnowledgeSearchPane'
+import { KnowledgePodcastPane } from './KnowledgePodcastPane'
 
 export type KnowledgeNavigate = (
   vaultId: string,
@@ -103,41 +106,71 @@ export function KnowledgePaneContent({
   )
   const activeTab = pane.tabs.find((tab) => tab.id === pane.activeTabId)
     ?? pane.tabs[0]
+  const activeTarget = activeTab?.target
+  const documentTarget = activeTarget?.kind === 'document'
+    ? activeTarget
+    : activeTarget?.kind === 'graph'
+      ? activeTarget.origin
+      : null
+  const isResearchShell = activeTarget?.kind === 'ask'
+    || activeTarget?.kind === 'search'
+    || activeTarget?.kind === 'podcast'
   const handleOverlayMarkdownChange = useCallback((markdown: string) => {
     if (!activeTab) return
     setOverlayDraft({ tabId: activeTab.id, markdown })
   }, [activeTab])
-  const vaultId = activeTab?.vaultId
-  const noteId = activeTab?.noteId
-  const visibleMode = activeTab?.viewMode ?? 'reading'
-  const tabGraphContext = visibleMode === 'graph'
-    ? activeTab?.graphBookmarkContext ?? null
-    : null
-  const sharedGraphContext = graphBookmarkContext?.rootDocumentId === activeTab?.knowledgeDocumentId
-    ? graphBookmarkContext
-    : null
-  const graphContext = tabGraphContext ?? sharedGraphContext
-  const isOverlay = activeTab?.sourceAuthority === 'overlay'
+  const vaultId = documentTarget?.container_id ?? activeTab?.vaultId
+  const noteId = documentTarget?.note_id ?? activeTab?.noteId
+  const visibleMode = activeTarget?.kind === 'graph'
+    ? 'graph'
+    : documentTarget?.render_mode ?? activeTab?.viewMode ?? 'reading'
+  const sourceAuthority = documentTarget?.authority ?? activeTab?.sourceAuthority ?? 'external-vault'
+  const persistedKnowledgeDocumentId = documentTarget?.knowledge_document_id
+    ?? activeTab?.knowledgeDocumentId
+    ?? null
+  const isOverlay = sourceAuthority === 'overlay'
   const isCanvas = !isOverlay && visibleMode === 'canvas'
   const overlayPage = useOverlayPage(isOverlay ? noteId : undefined)
   const vaultPage = useVaultPage(
-    isOverlay || isCanvas ? undefined : vaultId,
-    isOverlay || isCanvas ? undefined : noteId,
+    isOverlay || isCanvas || !documentTarget ? undefined : vaultId,
+    isOverlay || isCanvas || !documentTarget ? undefined : noteId,
   )
   const outgoing = useVaultOutgoing(
-    isOverlay || isCanvas ? undefined : vaultId,
-    isOverlay || isCanvas ? undefined : noteId,
+    isOverlay || isCanvas || !documentTarget ? undefined : vaultId,
+    isOverlay || isCanvas || !documentTarget ? undefined : noteId,
   )
   const graph = useVaultGraph(
-    isOverlay || isCanvas ? undefined : vaultId,
-    isOverlay || isCanvas ? undefined : noteId,
-    !isOverlay && !isCanvas && visibleMode === 'graph',
+    isOverlay || isCanvas || !documentTarget ? undefined : vaultId,
+    isOverlay || isCanvas || !documentTarget ? undefined : noteId,
+    !isOverlay && !isCanvas && Boolean(documentTarget) && visibleMode === 'graph',
   )
   const canvas = useVaultCanvas(
     isCanvas ? vaultId : undefined,
     isCanvas ? activeTab?.relativePath : undefined,
     isCanvas,
   )
+  // A restored V2 graph can intentionally omit duplicated legacy tab fields.
+  // Use the already-read page identity only as render context; do not write it
+  // back through the document reconciliation path.
+  const knowledgeDocumentId = persistedKnowledgeDocumentId
+    ?? (isOverlay
+      ? overlayPage.data?.knowledge_document_id
+      : vaultPage.data?.knowledge_document_id)
+    ?? null
+  const tabGraphContext = visibleMode === 'graph'
+    ? activeTab?.graphBookmarkContext ?? (activeTarget?.kind === 'graph'
+      ? {
+          rootDocumentId: activeTarget.root_document_id ?? knowledgeDocumentId ?? '',
+          spaceIds: activeTarget.space_ids,
+          relationKinds: activeTarget.relation_kinds,
+          viewport: activeTarget.viewport,
+        }
+      : null)
+    : null
+  const sharedGraphContext = graphBookmarkContext?.rootDocumentId === knowledgeDocumentId
+    ? graphBookmarkContext
+    : null
+  const graphContext = activeTab?.graphBookmarkContext ?? sharedGraphContext ?? tabGraphContext
 
   useEffect(() => {
     const updateSelection = () => {
@@ -171,6 +204,11 @@ export function KnowledgePaneContent({
 
   useEffect(() => {
     if (!activeTab) return
+    // V2 graph targets retain their document origin independently of the
+    // compatibility fields. The graph dispatcher reads that origin directly;
+    // reconciling through the document branch would replace it with empty
+    // legacy fields after a restore.
+    if (activeTarget?.kind === 'graph') return
     if (isOverlay) {
       if (!overlayPage.data || overlayPage.isError) return
       reconcileTabReference(pane.id, activeTab.id, {
@@ -188,6 +226,7 @@ export function KnowledgePaneContent({
     })
   }, [
     activeTab,
+    activeTarget?.kind,
     isOverlay,
     overlayPage.data,
     overlayPage.isError,
@@ -208,6 +247,32 @@ export function KnowledgePaneContent({
           </p>
         </div>
       </div>
+    )
+  }
+
+  if (isResearchShell) {
+    return (
+      <section
+        ref={paneRef}
+        role="region"
+        aria-label={`${t('knowledge.knowledgePane')} modes ${pane.id}`}
+        className="flex min-h-full flex-col p-4 sm:p-6"
+      >
+        {activeTarget?.kind === 'ask' && (
+          <KnowledgeAskPane selectedDocumentIds={activeTarget.selected_document_ids} />
+        )}
+        {activeTarget?.kind === 'search' && (
+          <KnowledgeSearchPane
+            query={activeTarget.query}
+            searchMode={activeTarget.search_mode}
+            spaceIds={activeTarget.space_ids}
+            authorityKinds={activeTarget.authority_kinds}
+          />
+        )}
+        {activeTarget?.kind === 'podcast' && (
+          <KnowledgePodcastPane seedDocumentIds={activeTarget.seed_document_ids} />
+        )}
+      </section>
     )
   }
 
@@ -297,13 +362,13 @@ export function KnowledgePaneContent({
         : link?.target_text || targetNoteId
     if (!navigationNoteId) return
     onNavigate(
-      activeTab.vaultId,
+      vaultId ?? activeTab.vaultId,
       navigationNoteId,
       relativePathHint ?? undefined,
       titleHint,
       pane.id,
       targetText,
-      activeTab.sourceAuthority,
+      sourceAuthority,
     )
   }
 
@@ -455,7 +520,7 @@ export function KnowledgePaneContent({
                 onNavigate={navigate}
                 viewport={activeTab.graphViewport ?? graphContext?.viewport ?? { x: 0, y: 0, zoom: 1 }}
                 onMoveEnd={(viewport) => setTabGraphViewport(pane.id, activeTab.id, viewport)}
-                rootDocumentId={graphContext?.rootDocumentId ?? activeTab.knowledgeDocumentId}
+                rootDocumentId={graphContext?.rootDocumentId || knowledgeDocumentId}
                 spaceIds={graphContext?.spaceIds ?? selectedSpaceIds}
                 relationKinds={graphContext?.relationKinds}
                 onBookmarkContext={setGraphBookmarkContext}
