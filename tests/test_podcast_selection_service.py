@@ -5,12 +5,14 @@ from dataclasses import dataclass
 import pytest
 
 from deeper_notebook.podcasts.selection_contracts import (
+    AppNoteSelection,
     GraphSelection,
     KnowledgeDocumentSelection,
     NotebookSelection,
 )
 from deeper_notebook.podcasts.selection_service import (
     AppNotebookPodcastSelectionResolver,
+    AppNotePodcastSelectionResolver,
     KnowledgeEnginePodcastSelectionResolver,
     PodcastSelectionService,
     ResolvedSelectionItem,
@@ -247,3 +249,25 @@ async def test_app_notebook_resolver_uses_context_api_without_external_path_acce
     assert items[0].authority_kind == "app_owned"
     assert items[0].relative_locator is None
     assert items[0].content == "app-owned notebook context"
+
+
+@pytest.mark.asyncio
+async def test_app_note_resolver_keeps_canonical_external_notes_out_of_app_owned_input():
+    class Note:
+        id = "note:external"
+        title = "External note"
+        content = "must remain in the unified external path"
+        canonical_external = True
+
+    async def load_note(note_id: str):
+        assert note_id == "note:external"
+        return Note()
+
+    items = await AppNotePodcastSelectionResolver(note_loader=load_note).resolve(
+        AppNoteSelection(note_id="note:external")
+    )
+
+    assert items[0].authority_kind == "external_read_only"
+    assert items[0].state == "unavailable"
+    assert items[0].reason == "external_note_requires_knowledge_selection"
+    assert items[0].content == ""
