@@ -73,7 +73,10 @@ python_standalone_tarball = bin_dir / f"python-{arch}.tar.gz"
 frontend_dir = PROJECT_ROOT / "frontend"
 standalone_root = frontend_dir / ".next" / "standalone"
 standalone_frontend_dir = standalone_frontend_root(standalone_root)
-standalone_frontend_node_modules_dir = standalone_frontend_node_modules(standalone_root)
+standalone_frontend_node_modules_dir = standalone_frontend_node_modules(
+    standalone_root,
+    standalone_frontend_dir,
+)
 
 # ---------------------------------------------------------------------------
 # Hidden imports — only what the launcher's OWN modules need.
