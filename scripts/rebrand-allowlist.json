@@ -667,7 +667,7 @@
           "path"
         ]
       },
-      "coverage_sha256": "22edcfe9a82cf20dedcab23215df2fb8e01598a69c63f7dceeeb9b20f5ef0ebd"
+      "coverage_sha256": "da736c409b6d40a8ca483672d360bbdf55b9815f8a6a64f8d10aa378f7de77de"
     },
     "legacy-artifact-probe-v1": {
       "kind": "legacy_artifact_probe",
@@ -52025,6 +52025,46 @@
       }
     },
     {
+      "path": "docs/verification/2026-07-31-deeper-notebook-navigation-productivity.md",
+      "pattern": "open-notebook-plus",
+      "source": "content",
+      "line": 139,
+      "column": 3,
+      "context_sha256": "f8c8587b543ebd667683447d3c4dfaaf3c9b557473e19e9a7ad53da8fc1126fe",
+      "category": "migration_documentation",
+      "rationale": {
+        "path": "docs/verification/2026-07-31-deeper-notebook-navigation-productivity.md",
+        "pattern": "open-notebook-plus",
+        "source": "content",
+        "line": 139,
+        "column": 3,
+        "context_sha256": "f8c8587b543ebd667683447d3c4dfaaf3c9b557473e19e9a7ad53da8fc1126fe",
+        "category": "migration_documentation",
+        "explanation": "The verification 2026 07 31 navigation-productivity record preserves the former lowercase profile path solely as evidence for the isolated same-volume migration; the packaged app then restored the canonical data root.",
+        "compatibility_contract": null
+      }
+    },
+    {
+      "path": "docs/verification/2026-07-31-deeper-notebook-navigation-productivity.md",
+      "pattern": "Open Notebook Plus",
+      "source": "content",
+      "line": 156,
+      "column": 1,
+      "context_sha256": "d44496446c21a93bdeee69a68f2d00c176102d7f38ffae49a2336de037c6a8df",
+      "category": "migration_documentation",
+      "rationale": {
+        "path": "docs/verification/2026-07-31-deeper-notebook-navigation-productivity.md",
+        "pattern": "Open Notebook Plus",
+        "source": "content",
+        "line": 156,
+        "column": 1,
+        "context_sha256": "d44496446c21a93bdeee69a68f2d00c176102d7f38ffae49a2336de037c6a8df",
+        "category": "migration_documentation",
+        "explanation": "The verification record names the former desktop product only to distinguish the still-required historical-binary upgrade proof from the disposable packaged migration smoke.",
+        "compatibility_contract": null
+      }
+    },
+    {
       "path": "examples/README.md",
       "pattern": "open_notebook",
       "source": "content",
@@ -65508,7 +65548,7 @@
       "path": "tests/test_vault_api.py",
       "pattern": "/api/onp",
       "source": "content",
-      "line": 225,
+      "line": 261,
       "column": 29,
       "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
       "category": "compatibility_alias",
@@ -65516,7 +65556,7 @@
         "path": "tests/test_vault_api.py",
         "pattern": "/api/onp",
         "source": "content",
-        "line": 225,
+        "line": 261,
         "column": 29,
         "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
         "category": "compatibility_alias",
@@ -65528,7 +65568,7 @@
       "path": "tests/test_vault_api.py",
       "pattern": "/onp/",
       "source": "content",
-      "line": 225,
+      "line": 261,
       "column": 33,
       "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
       "category": "compatibility_alias",
@@ -65536,7 +65576,7 @@
         "path": "tests/test_vault_api.py",
         "pattern": "/onp/",
         "source": "content",
-        "line": 225,
+        "line": 261,
         "column": 33,
         "context_sha256": "91f990083709629a0999d204a061acc284ac78a1a14c48229ac90878277089ae",
         "category": "compatibility_alias",

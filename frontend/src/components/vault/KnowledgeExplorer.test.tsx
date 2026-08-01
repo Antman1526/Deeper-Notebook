@@ -216,6 +216,13 @@ vi.mock('@/lib/hooks/use-vault', () => ({
     data: { nodes: [{ id: 'note:one', title: 'One' }], edges: [] },
     ...states.graph,
   }),
+  useVaultCanvas: () => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
   useScanVault: (vaultId: string) => {
     const [isPending, setIsPending] = useState(false)
     const [error, setError] = useState<Error | null>(null)
