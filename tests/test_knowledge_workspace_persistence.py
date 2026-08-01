@@ -4,9 +4,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+import deeper_notebook.workspace.contracts as workspace_contracts
+
 from deeper_notebook.workspace.contracts import (
     KnowledgeTabState,
     KnowledgeWorkspaceDocument,
+    KnowledgeWorkspaceDocumentV2,
     PaneLayoutNode,
     SplitLayoutNode,
     default_knowledge_workspace,
@@ -43,6 +46,62 @@ def populated() -> KnowledgeWorkspaceDocument:
             "layout": {"type": "pane", "pane_id": "pane-1"},
         }
     )
+
+
+@pytest.mark.parametrize(
+    ("view_mode", "source_authority", "expected_mode", "expected_kind", "expected_render"),
+    [
+        ("reading", "external-vault", "read", "document", "reading"),
+        ("source", "external-vault", "read", "document", "source"),
+        ("live-preview", "external-vault", "read", "document", "live-preview"),
+        ("canvas", "external-vault", "read", "document", "canvas"),
+        ("reading", "overlay", "write", "document", "reading"),
+        ("graph", "external-vault", "graph", "graph", None),
+    ],
+)
+def test_migrate_workspace_v1_preserves_session_identity_and_maps_modes(
+    view_mode: str,
+    source_authority: str,
+    expected_mode: str,
+    expected_kind: str,
+    expected_render: str | None,
+):
+    payload = populated().model_dump(mode="json")
+    tab_payload = payload["panes"]["pane-1"]["tabs"][0]
+    tab_payload["view_mode"] = view_mode
+    tab_payload["source_authority"] = source_authority
+    tab_payload["knowledge_document_id"] = "knowledge_engine_document:one"
+    tab_payload["graph_viewport"] = {"x": 2.0, "y": 3.0, "zoom": 1.5}
+    payload["navigation"] = {"utility_mode": "workspaces", "sidebar_width": 400}
+
+    migrated = workspace_contracts.migrate_workspace_v1(
+        KnowledgeWorkspaceDocument.model_validate(payload)
+    )
+
+    tab = migrated.panes["pane-1"].tabs[0]
+    assert migrated.version == 2
+    assert migrated.active_pane_id == "pane-1"
+    assert migrated.next_id == 2
+    assert migrated.layout == PaneLayoutNode(pane_id="pane-1")
+    assert migrated.navigation.utility_mode == "workspaces"
+    assert tab.id == "tab:one"
+    assert tab.mode == expected_mode
+    assert tab.target.kind == expected_kind
+    if expected_kind == "document":
+        assert tab.target.relative_locator == "Projects/One.md"
+        assert tab.target.render_mode == expected_render
+    else:
+        assert tab.target.viewport.zoom == 1.5
+        assert tab.target.origin is not None
+        assert tab.target.origin.relative_locator == "Projects/One.md"
+
+
+def test_workspace_v2_rejects_a_mode_target_mismatch():
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(mode="json")
+    payload["panes"]["pane-1"]["tabs"][0]["mode"] = "ask"
+
+    with pytest.raises(ValidationError, match="workspace_mode_target_mismatch"):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
 
 
 def split_layout_payload(depth: int) -> dict:
@@ -95,13 +154,13 @@ def attempt_temporary_files(path: Path) -> list[Path]:
 
 def test_missing_workspace_returns_default(tmp_path: Path):
     state = load_knowledge_workspace(path=tmp_path / "knowledge.json")
-    assert state == default_knowledge_workspace()
+    assert state == workspace_contracts.migrate_workspace_v1(default_knowledge_workspace())
 
 
 def test_workspace_round_trips_through_atomic_file(tmp_path: Path):
     path = tmp_path / "workspaces" / "knowledge.json"
     save_knowledge_workspace(populated(), path=path)
-    assert load_knowledge_workspace(path=path) == populated()
+    assert load_knowledge_workspace(path=path) == workspace_contracts.migrate_workspace_v1(populated())
     assert not path.with_suffix(".json.tmp").exists()
 
 
@@ -167,7 +226,7 @@ def test_stale_legacy_temporary_file_does_not_block_future_saves(
 
     save_knowledge_workspace(populated(), path=path)
 
-    assert load_knowledge_workspace(path=path) == populated()
+    assert load_knowledge_workspace(path=path) == workspace_contracts.migrate_workspace_v1(populated())
     assert stale.read_bytes() == b"interrupted older save"
     assert attempt_temporary_files(path) == []
 
@@ -215,7 +274,10 @@ def test_overlapping_saves_use_distinct_temporary_files(
     assert replacement_sources[0] != replacement_sources[1]
     assert all(source.parent == path.parent for source in replacement_sources)
     restored = load_knowledge_workspace(path=path)
-    assert restored == first or restored == second
+    assert (
+        restored == workspace_contracts.migrate_workspace_v1(first)
+        or restored == workspace_contracts.migrate_workspace_v1(second)
+    )
     assert attempt_temporary_files(path) == []
 
 

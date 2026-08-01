@@ -45,7 +45,7 @@ describe('knowledge workspace store', () => {
     useKnowledgeWorkspaceStore.getState().openTab(plan)
 
     expect(useKnowledgeWorkspaceStore.getState()).toMatchObject({
-      version: 1,
+      version: 2,
       activePaneId: 'pane-1',
       nextId: 3,
       hydrated: false,

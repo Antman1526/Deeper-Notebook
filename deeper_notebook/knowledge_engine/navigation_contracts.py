@@ -201,11 +201,24 @@ class NamedWorkspaceTab(_Strict):
     target: KnowledgeTarget
     display_label: str = Field(min_length=1, max_length=512)
     view_mode: Literal["reading", "source", "live-preview", "graph"] = "reading"
+    mode: Literal["read", "write", "ask", "search", "graph", "podcast"] | None = None
 
     @field_validator("display_label")
     @classmethod
     def display_label_is_safe(cls, value: str) -> str:
         return _display_text(value, label="display label", limit=512)
+
+    @model_validator(mode="after")
+    def legacy_mode_is_derived(self) -> "NamedWorkspaceTab":
+        if self.mode is None:
+            object.__setattr__(
+                self,
+                "mode",
+                {"document": "read", "graph": "graph", "search": "search"}.get(
+                    self.target.kind, "read"
+                ),
+            )
+        return self
 
 
 class NamedWorkspacePane(_Strict):

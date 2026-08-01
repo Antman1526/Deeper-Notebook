@@ -286,8 +286,8 @@ describe('knowledge workspace API boundary', () => {
   it('converts snake_case responses to the camelCase store document', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: wireDocument } as never)
 
-    await expect(knowledgeWorkspaceApi.get()).resolves.toEqual({
-      version: 1,
+    await expect(knowledgeWorkspaceApi.get()).resolves.toMatchObject({
+      version: 2,
       activePaneId: 'pane-1',
       nextId: 2,
       navigation: {
@@ -331,7 +331,10 @@ describe('knowledge workspace API boundary', () => {
     })
     const parsed = parseKnowledgeWorkspace(wireDocument)
     expect(serializeKnowledgeWorkspace(parsed).panes['pane-1'].tabs[0])
-      .toMatchObject({ source_authority: 'external-vault' })
+      .toMatchObject({
+        mode: 'read',
+        target: { kind: 'document', authority: 'external-vault' },
+      })
   })
 
   it('loads missing navigation and graph state using version-one defaults', () => {
@@ -386,7 +389,7 @@ describe('knowledge workspace API boundary', () => {
   it('serializes only approved snake_case fields for PUT', async () => {
     vi.mocked(apiClient.put).mockResolvedValue({ data: wireDocument } as never)
     const documentWithExtras = {
-      version: 1 as const,
+      version: 2 as const,
       activePaneId: 'pane-1',
       nextId: 2,
       panes: {
@@ -419,7 +422,10 @@ describe('knowledge workspace API boundary', () => {
     expect(apiClient.put).toHaveBeenCalledWith(
       '/deeper-notebook/workspace/knowledge',
       {
-        ...wireDocument,
+        version: 2,
+        active_pane_id: 'pane-1',
+        next_id: 2,
+        layout: { type: 'pane', pane_id: 'pane-1' },
         navigation: {
           utility_mode: 'sources', sidebar_visible: true, sidebar_width: 320,
           active_bookmark_folder_id: null, bookmark_tags: [], source_tree_query: '',
@@ -428,12 +434,15 @@ describe('knowledge workspace API boundary', () => {
         },
         panes: {
           'pane-1': {
-            ...wireDocument.panes['pane-1'],
+            id: 'pane-1', active_tab_id: 'tab-1',
             tabs: [{
-              ...wireDocument.panes['pane-1'].tabs[0],
-              source_authority: 'external-vault',
-              knowledge_document_id: null,
-              graph_viewport: { x: 0, y: 0, zoom: 1 },
+              id: 'tab-1', mode: 'read', title: 'Plan',
+              target: {
+                kind: 'document', container_id: 'vault:one', note_id: 'note:plan',
+                title: 'Plan', relative_locator: 'Projects/Plan.md',
+                authority: 'external-vault', knowledge_document_id: null,
+                render_mode: 'reading',
+              },
             }],
           },
         },

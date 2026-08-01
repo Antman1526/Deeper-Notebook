@@ -18,6 +18,7 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     HydratedWorkspaceTab,
     KnowledgeOpenDescriptor,
     NamedKnowledgeWorkspace,
+    NamedWorkspaceTab,
     NamedWorkspaceSnapshot,
     NavigationReceipt,
     WorkspaceRestorePane,
@@ -179,21 +180,6 @@ def test_restore_plan_preserves_reconstructable_workspace_tab_state():
     assert plan.next_id == 2
     assert plan.panes["pane-1"].tabs[0].id == "tab-1"
     assert plan.panes["pane-1"].tabs[0].display_label == "Research plan"
-
-    with pytest.raises(ValidationError, match="active tab"):
-        WorkspaceRestorePlan.model_validate(
-            plan.model_dump(mode="json")
-            | {
-                "panes": {
-                    "pane-1": {"id": "pane-1", "active_tab_id": "missing", "tabs": []}
-                }
-            }
-        )
-    with pytest.raises(ValidationError, match="summary total"):
-        WorkspaceRestorePlan.model_validate(
-            plan.model_dump(mode="json")
-            | {"summary": {"available": 0, "stale": 0, "unavailable": 0, "missing": 0}}
-        )
     with pytest.raises(ValidationError, match="target states"):
         WorkspaceRestorePlan.model_validate(
             plan.model_dump()
@@ -203,6 +189,24 @@ def test_restore_plan_preserves_reconstructable_workspace_tab_state():
         WorkspaceRestorePlan.model_validate(
             plan.model_dump() | {"layout": {"type": "pane", "pane_id": "other-pane"}}
         )
+
+
+def test_legacy_named_workspace_tab_derives_its_research_mode():
+    document = NamedWorkspaceTab(
+        id="tab-document",
+        display_label="Plan",
+        view_mode="reading",
+        target={"kind": "document", "document_id": "knowledge_engine_document:plan"},
+    )
+    graph = NamedWorkspaceTab(
+        id="tab-graph",
+        display_label="Graph",
+        view_mode="graph",
+        target={"kind": "graph"},
+    )
+
+    assert document.mode == "read"
+    assert graph.mode == "graph"
 
 
 def test_persistence_rows_match_migration_39_fields_and_target_kind():

@@ -323,6 +323,17 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       sourceAuthority: validTab.sourceAuthority ?? 'external-vault',
       knowledgeDocumentId: validTab.knowledgeDocumentId ?? null,
       graphViewport: validTab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+      mode: validTab.sourceAuthority === 'overlay' ? 'write' as const : 'read' as const,
+      target: {
+        kind: 'document' as const,
+        container_id: validTab.vaultId,
+        note_id: validTab.noteId,
+        title: validTab.title,
+        relative_locator: validTab.relativePath,
+        authority: validTab.sourceAuthority ?? 'external-vault',
+        knowledge_document_id: validTab.knowledgeDocumentId ?? null,
+        render_mode: validTab.viewMode ?? 'reading',
+      },
     }
     set({
       activePaneId: paneId,
