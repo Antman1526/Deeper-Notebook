@@ -205,6 +205,122 @@ async def test_readiness_fails_closed_when_required_local_stage_roles_are_missin
 
 
 @pytest.mark.asyncio
+async def test_confirmed_submit_uses_server_resolved_content_once_per_idempotency_key(
+    app_with_knowledge_engine: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from api.podcast_service import PodcastService
+
+    calls: list[dict[str, object]] = []
+
+    async def submit_generation_job(**kwargs) -> str:
+        calls.append(kwargs)
+        return "command:podcast-one"
+
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        selection = {"kind": "notebook", "notebook_id": "notebook:research"}
+        preview = await client.post(
+            "/api/podcasts/selection/preview", json={"selections": [selection]}
+        )
+        payload = {
+            "selections": [selection],
+            "selection_fingerprint": preview.json()["selection_fingerprint"],
+            "idempotency_key": "podcast-submit-1",
+            "confirmed": True,
+            "episode_profile": "Local Episode",
+            "speaker_profile": "Local Voice",
+            "episode_name": "Research synthesis",
+            "mode": "deep_dive",
+            "review_outline": True,
+        }
+        first = await client.post("/api/podcasts/studio/submit", json=payload)
+        second = await client.post("/api/podcasts/studio/submit", json=payload)
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["job_id"] == "command:podcast-one"
+    assert len(calls) == 1
+    assert calls[0]["content"] == "Private app-owned notebook material"
+    assert "Private app-owned notebook material" not in first.text
+
+
+@pytest.mark.asyncio
+async def test_submit_rejects_a_stale_preview_fingerprint_before_worker_submission(
+    app_with_knowledge_engine: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from api.podcast_service import PodcastService
+
+    async def should_not_submit(**kwargs) -> str:
+        raise AssertionError(f"unexpected submission: {kwargs}")
+
+    monkeypatch.setattr(PodcastService, "submit_generation_job", should_not_submit)
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/studio/submit",
+            json={
+                "selections": [
+                    {"kind": "notebook", "notebook_id": "notebook:research"}
+                ],
+                "selection_fingerprint": "0" * 64,
+                "idempotency_key": "podcast-submit-stale",
+                "confirmed": True,
+                "episode_profile": "Local Episode",
+                "speaker_profile": "Local Voice",
+                "episode_name": "Research synthesis",
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "podcast_selection_changed"}}
+
+
+@pytest.mark.asyncio
+async def test_submit_rejects_reusing_an_idempotency_key_for_a_different_request(
+    app_with_knowledge_engine: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from api.podcast_service import PodcastService
+
+    async def submit_generation_job(**kwargs) -> str:
+        return "command:podcast-conflict"
+
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        selection = {"kind": "notebook", "notebook_id": "notebook:research"}
+        preview = await client.post(
+            "/api/podcasts/selection/preview", json={"selections": [selection]}
+        )
+        payload = {
+            "selections": [selection],
+            "selection_fingerprint": preview.json()["selection_fingerprint"],
+            "idempotency_key": "podcast-submit-conflict",
+            "confirmed": True,
+            "episode_profile": "Local Episode",
+            "speaker_profile": "Local Voice",
+            "episode_name": "Research synthesis",
+        }
+        accepted = await client.post("/api/podcasts/studio/submit", json=payload)
+        conflict = await client.post(
+            "/api/podcasts/studio/submit",
+            json={**payload, "episode_name": "Changed title"},
+        )
+
+    assert accepted.status_code == 200
+    assert conflict.status_code == 409
+    assert conflict.json() == {"detail": {"code": "podcast_idempotency_conflict"}}
+
+
+@pytest.mark.asyncio
 async def test_preview_has_a_stable_no_engine_failure_without_source_details() -> None:
     from api.routers.podcasts import router
 
