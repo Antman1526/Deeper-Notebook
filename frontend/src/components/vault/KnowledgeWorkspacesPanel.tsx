@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import type { NamedKnowledgeWorkspaceSummary } from '@/lib/api/knowledge-navigation'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface KnowledgeWorkspacesPanelProps {
   workspaces: NamedKnowledgeWorkspaceSummary[]
@@ -39,6 +41,7 @@ export function KnowledgeWorkspacesPanel({
   onRefresh,
   commandIntent = null,
 }: KnowledgeWorkspacesPanelProps) {
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const [editMode, setEditMode] = useState<EditMode>(null)
   const [editing, setEditing] = useState<NamedKnowledgeWorkspaceSummary | null>(null)
   const [name, setName] = useState('')
@@ -128,6 +131,16 @@ export function KnowledgeWorkspacesPanel({
           <p className="text-xs text-muted-foreground">Revision {workspace.revision}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button type="button" size="sm" onClick={() => void perform(() => onOpen(workspace))} disabled={pending}>Open {workspace.name}</Button>
+            <TurnIntoPodcastAction
+              selection={{
+                kind: 'knowledge_collection',
+                collectionKind: 'workspace',
+                collectionId: workspace.id,
+              }}
+              destination="quick"
+              disabledReason={pending ? 'Workspace action is still in progress.' : undefined}
+              onOpen={openPodcastReview}
+            />
             <Button type="button" size="sm" variant="outline" onClick={() => begin('rename', workspace)} disabled={pending}>Rename {workspace.name}</Button>
             <Button type="button" size="sm" variant="outline" onClick={() => begin('duplicate', workspace)} disabled={pending}>Duplicate {workspace.name}</Button>
             <Button type="button" size="sm" variant="outline" onClick={() => { setSelectingReplacement(false); void perform(() => onReplaceWithCurrent(workspace)) }} disabled={pending}>Replace With Current</Button>

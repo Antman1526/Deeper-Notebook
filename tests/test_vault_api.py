@@ -377,6 +377,38 @@ def test_page_enriches_unified_identity_in_one_batched_lookup(client):
     assert service.calls == [("note:one", ("block-one", "parser-two"))]
 
 
+def test_graph_exposes_only_bounded_unified_document_identities(client):
+    test_client, _, _ = client
+
+    class _IdentityService:
+        calls: list[tuple[str, tuple[str, ...]]] = []
+
+        async def resolve_legacy_page(self, *, legacy_note_id, block_keys):
+            self.calls.append((legacy_note_id, block_keys))
+            return {
+                "document_id": "knowledge_engine_document:current",
+                "block_ids": {},
+            }
+
+    service = _IdentityService()
+    test_client.app.state.knowledge_engine_service = service
+    try:
+        response = test_client.get(
+            "/api/deeper-notebook/vaults/vault_mount:fixture/graph?center_note_id=note:one"
+        )
+    finally:
+        del test_client.app.state.knowledge_engine_service
+
+    assert response.status_code == 200
+    assert response.json()["nodes"] == [{
+        "id": "note:one",
+        "title": "One",
+        "knowledge_document_id": "knowledge_engine_document:current",
+    }]
+    assert service.calls == [("note:one", ())]
+    assert "/Users/" not in response.text
+
+
 def test_page_identity_enrichment_fails_open_for_malformed_service_data(client):
     test_client, _, _ = client
 

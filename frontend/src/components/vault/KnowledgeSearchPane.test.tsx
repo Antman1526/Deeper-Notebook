@@ -23,6 +23,7 @@ vi.mock('@/lib/hooks/use-local-models', () => ({
 }))
 
 import { KnowledgeSearchPane } from './KnowledgeSearchPane'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 describe('KnowledgeSearchPane', () => {
   beforeEach(() => {
@@ -33,6 +34,7 @@ describe('KnowledgeSearchPane', () => {
     savedSettings.data = { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} }
     indexedSearch.calls = []
     indexedSearch.runSemanticSearch.mockReset()
+    usePodcastStudioStore.getState().dismiss()
   })
 
   it('permits an empty current selection and does not start a search when opened', () => {
@@ -63,5 +65,27 @@ describe('KnowledgeSearchPane', () => {
     savedSettings.data = { execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_overrides: { embedding_retrieval: 'embed-override' } }
     render(<KnowledgeSearchPane query="" searchMode="text" spaceIds={[]} authorityKinds={[]} />)
     expect(routePlanCalls).toContainEqual([{ role: 'embedding_retrieval', execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_override_model_id: 'embed-override', modalities: ['text'] }])
+  })
+
+  it('opens a text search as a review-only saved-search selection', () => {
+    render(<KnowledgeSearchPane query="research plan" searchMode="text" spaceIds={['knowledge_engine_space:research']} authorityKinds={['external_read_only']} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn into podcast' }))
+
+    expect(usePodcastStudioStore.getState()).toMatchObject({
+      isOpen: true,
+      destination: 'quick',
+      selections: [{
+        kind: 'saved_search', query: 'research plan', searchMode: 'text',
+        spaceIds: ['knowledge_engine_space:research'], authorityKinds: ['external_read_only'],
+      }],
+    })
+  })
+
+  it('keeps a semantic search action visible but disabled until its unified embedding index is verified', () => {
+    render(<KnowledgeSearchPane query="research" searchMode="semantic" spaceIds={[]} authorityKinds={[]} />)
+
+    expect(screen.getByRole('button', { name: 'Turn into podcast' })).toBeDisabled()
+    expect(screen.getByText('Semantic podcast selection needs a verified unified embedding index.')).toBeVisible()
   })
 })

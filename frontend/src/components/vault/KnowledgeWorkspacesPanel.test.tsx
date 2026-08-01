@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { NamedKnowledgeWorkspaceSummary } from '@/lib/api/knowledge-navigation'
 import { KnowledgeWorkspacesPanel } from './KnowledgeWorkspacesPanel'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 const researchDesk: NamedKnowledgeWorkspaceSummary = {
   id: 'named_knowledge_workspace:research', name: 'Research desk', revision: 7,
@@ -26,6 +27,21 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof KnowledgeWor
 }
 
 describe('KnowledgeWorkspacesPanel', () => {
+  it('opens a named workspace through transient podcast review state', () => {
+    usePodcastStudioStore.getState().dismiss()
+    renderPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn into podcast' }))
+
+    expect(usePodcastStudioStore.getState()).toMatchObject({
+      isOpen: true,
+      destination: 'quick',
+      selections: [{
+        kind: 'knowledge_collection', collectionKind: 'workspace', collectionId: researchDesk.id,
+      }],
+    })
+  })
+
   it('opens Save Current As from command intent', () => {
     renderPanel({ commandIntent: { id: 1, kind: 'save' } })
     expect(screen.getByRole('form', { name: 'Workspace editor' })).toBeVisible()

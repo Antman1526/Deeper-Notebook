@@ -3,10 +3,12 @@
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import { Input } from '@/components/ui/input'
 import { useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
 import { ModelRoutePlanPanel } from '@/components/local-models/ModelRoutePlanPanel'
 import { useLocalModelSettings, useModelRoutePlan } from '@/lib/hooks/use-local-models'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface KnowledgeSearchPaneProps {
   query: string
@@ -25,6 +27,7 @@ export function KnowledgeSearchPane({
 }: KnowledgeSearchPaneProps) {
   const [query, setQuery] = useState(initialQuery)
   const [submitted, setSubmitted] = useState(false)
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const indexedSearch = useKnowledgeIndexedSearch(query, submitted, {
     mode: searchMode,
     spaceIds,
@@ -69,6 +72,22 @@ export function KnowledgeSearchPane({
       <Button type="button" onClick={submit} disabled={query.trim().length < 2}>
         Search knowledge
       </Button>
+      <TurnIntoPodcastAction
+        selection={{
+          kind: 'saved_search',
+          query: query.trim() || 'search',
+          searchMode,
+          spaceIds,
+          authorityKinds,
+        }}
+        destination="quick"
+        disabledReason={searchMode === 'semantic'
+          ? 'Semantic podcast selection needs a verified unified embedding index.'
+          : query.trim().length < 2
+            ? 'Enter at least two characters to create a podcast from search results.'
+            : undefined}
+        onOpen={openPodcastReview}
+      />
       {results && (
         <ul aria-label="Knowledge search results">
           {results.map((result) => <li key={result.id}>{result.title}</li>)}
