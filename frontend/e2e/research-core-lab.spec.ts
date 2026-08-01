@@ -136,6 +136,74 @@ test.describe('Research Core Lab browser acceptance', () => {
     expect(fixture.state.namedWorkspaces).toHaveLength(1)
   })
 
+  test('strict fixture materializes partial named-workspace navigation before restore', async ({ page }) => {
+    const fixture = await installStrictKnowledgeFixture(page)
+    await openCleanKnowledgeWorkspace(page)
+
+    const result = await page.evaluate(async () => {
+      const create = await fetch('/api/deeper-notebook/knowledge/workspaces', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          operation_id: 'fixture-navigation-partial',
+          name: 'Partial navigation',
+          snapshot: {
+            version: 1,
+            active_pane_id: 'pane-1',
+            next_id: 2,
+            panes: {
+              'pane-1': {
+                id: 'pane-1', active_tab_id: 'tab-search',
+                tabs: [{
+                  id: 'tab-search', display_label: 'Search',
+                  view_mode: 'reading', mode: 'search',
+                  target: {
+                    kind: 'search', query: '', search_mode: 'text',
+                    space_ids: [], authority_kinds: [],
+                  },
+                }],
+              },
+            },
+            layout: { type: 'pane', pane_id: 'pane-1' },
+            navigation: {
+              utility_mode: 'workspaces', sidebar_width: 400,
+              bookmark_tags: ['  Research  ', 'research'],
+              selected_space_ids: ['knowledge_engine_space:primary'],
+              metrics_visible: false,
+            },
+          },
+        }),
+      })
+      const workspace = await create.json()
+      const restore = await fetch(
+        `/api/deeper-notebook/knowledge/workspaces/${encodeURIComponent(workspace.id)}/restore-plan`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ revision: workspace.revision }),
+        },
+      )
+      return {
+        createStatus: create.status,
+        restoreStatus: restore.status,
+        snapshotNavigation: workspace.snapshot.navigation,
+        restoreNavigation: (await restore.json()).navigation,
+      }
+    })
+
+    const expectedNavigation = {
+      utility_mode: 'workspaces', sidebar_visible: true, sidebar_width: 400,
+      active_bookmark_folder_id: null, bookmark_tags: ['Research'], source_tree_query: '',
+      search_query: '', search_mode: 'text', active_draft_id: null,
+      selected_space_ids: ['knowledge_engine_space:primary'], authority_filters: [], metrics_visible: false,
+    }
+    expect(result.createStatus).toBe(200)
+    expect(result.restoreStatus).toBe(200)
+    expect(result.snapshotNavigation).toEqual(expectedNavigation)
+    expect(result.restoreNavigation).toEqual(expectedNavigation)
+    expect(fixture.state.namedWorkspaces).toHaveLength(1)
+  })
+
   test('strict fixture rejects unsafe named-workspace navigation spaces', async ({ page }) => {
     const fixture = await installStrictKnowledgeFixture(page)
     await openCleanKnowledgeWorkspace(page)
