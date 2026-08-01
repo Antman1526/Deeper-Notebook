@@ -123,22 +123,16 @@ function namedTargetForTab(
   const persistedGraphTarget = tab.mode === 'graph' && tab.target?.kind === 'graph'
     ? tab.target
     : null
-  const hasPersistedGraphFilters = Boolean(
-    persistedGraphTarget
-    && (persistedGraphTarget.space_ids.length > 0 || persistedGraphTarget.relation_kinds.length > 0),
-  )
+  const persistedGraphContext = tab.graphBookmarkContext ?? null
   if (persistedGraphTarget || tab.viewMode === 'graph') {
-    const context = graphContext?.rootDocumentId === documentId ? graphContext : null
+    const context = persistedGraphContext
+      ?? (graphContext?.rootDocumentId === documentId ? graphContext : null)
     return {
       kind: 'graph',
-      rootDocumentId: hasPersistedGraphFilters
-        ? persistedGraphTarget?.root_document_id ?? documentId
-        : context?.rootDocumentId ?? documentId,
-      spaceIds: hasPersistedGraphFilters ? persistedGraphTarget!.space_ids : context?.spaceIds ?? [],
-      relationKinds: hasPersistedGraphFilters ? persistedGraphTarget!.relation_kinds : context?.relationKinds ?? [],
-      viewport: hasPersistedGraphFilters
-        ? persistedGraphTarget!.viewport
-        : context?.viewport ?? tab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+      rootDocumentId: context?.rootDocumentId ?? documentId,
+      spaceIds: context?.spaceIds ?? [],
+      relationKinds: context?.relationKinds ?? [],
+      viewport: context?.viewport ?? tab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
     }
   }
   return { kind: 'document', documentId }
@@ -526,10 +520,7 @@ export function KnowledgeExplorer() {
     const persistedGraphTarget = activeTab.mode === 'graph' && activeTab.target?.kind === 'graph'
       ? activeTab.target
       : null
-    const hasPersistedGraphFilters = Boolean(
-      persistedGraphTarget
-      && (persistedGraphTarget.space_ids.length > 0 || persistedGraphTarget.relation_kinds.length > 0),
-    )
+    const persistedGraphContext = activeTab.graphBookmarkContext ?? null
     await createBookmark({
       target: focusedBlock
         ? {
@@ -538,19 +529,19 @@ export function KnowledgeExplorer() {
           }
         : (activeTab.mode === 'graph' && activeTab.target?.kind === 'graph') || activeTab.viewMode === 'graph'
         ? {
-            kind: 'graph', rootDocumentId: hasPersistedGraphFilters
-              ? persistedGraphTarget!.root_document_id ?? activeTab.knowledgeDocumentId
-              : activeTab.knowledgeDocumentId,
-            spaceIds: hasPersistedGraphFilters
-              ? persistedGraphTarget!.space_ids
+            kind: 'graph', rootDocumentId: persistedGraphContext?.rootDocumentId
+              ?? persistedGraphTarget?.root_document_id
+              ?? activeTab.knowledgeDocumentId,
+            spaceIds: persistedGraphContext
+              ? persistedGraphContext.spaceIds
               : currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
               ? currentGraphContext.spaceIds : currentNavigation.selectedSpaceIds,
-            relationKinds: hasPersistedGraphFilters
-              ? persistedGraphTarget!.relation_kinds
+            relationKinds: persistedGraphContext
+              ? persistedGraphContext.relationKinds
               : currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
               ? currentGraphContext.relationKinds : [],
-            viewport: hasPersistedGraphFilters
-              ? persistedGraphTarget!.viewport
+            viewport: persistedGraphContext
+              ? persistedGraphContext.viewport
               : currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
               ? currentGraphContext.viewport
               : activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 },

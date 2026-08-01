@@ -170,10 +170,9 @@ export function KnowledgePaneContent({
   const sharedGraphContext = graphBookmarkContext?.rootDocumentId === knowledgeDocumentId
     ? graphBookmarkContext
     : null
-  const targetHasPersistedGraphFilters = activeTarget?.kind === 'graph'
-    && (activeTarget.space_ids.length > 0 || activeTarget.relation_kinds.length > 0)
   const graphContext = activeTab?.graphBookmarkContext
-    ?? (targetHasPersistedGraphFilters ? tabGraphContext : sharedGraphContext ?? tabGraphContext)
+    ?? sharedGraphContext
+    ?? tabGraphContext
 
   useEffect(() => {
     const updateSelection = () => {
