@@ -41,6 +41,59 @@ from desktop.ports import find_free_ports
 log = logging.getLogger(__name__)
 
 
+class ResourceGovernor:
+    """Bounded, in-memory resource ledger for local sidecars.
+
+    It records reservations only; it never probes or modifies a model library.
+    """
+
+    def __init__(self, memory_limit_bytes: int | None = None) -> None:
+        self.memory_limit_bytes = memory_limit_bytes
+        self._reservations: dict[str, int] = {}
+        self._heavyweight_mlx: str | None = None
+        self._queued_heavyweight_swaps: list[str] = []
+
+    def reserve(self, name: str, bytes_needed: int, *, heavyweight_mlx: bool = False) -> str:
+        required = max(0, int(bytes_needed))
+        if heavyweight_mlx and self._heavyweight_mlx not in {None, name}:
+            if name not in self._queued_heavyweight_swaps:
+                self._queued_heavyweight_swaps.append(name)
+            return "queued"
+        if self.memory_limit_bytes is not None and sum(self._reservations.values()) + required > self.memory_limit_bytes:
+            return "blocked"
+        self._reservations[name] = required
+        if heavyweight_mlx:
+            self._heavyweight_mlx = name
+        return "reserved"
+
+    def release(self, name: str) -> None:
+        self._reservations.pop(name, None)
+        if self._heavyweight_mlx == name:
+            self._heavyweight_mlx = None
+
+    def start_provider(self, name: str, *, reservation_bytes: int, spawn, health_check, heavyweight_mlx: bool = False) -> bool:
+        if self.reserve(name, reservation_bytes, heavyweight_mlx=heavyweight_mlx) != "reserved":
+            return False
+        proc = spawn()
+        if health_check(proc):
+            return True
+        try:
+            proc.terminate()
+        finally:
+            self.release(name)
+        return False
+
+    def snapshot(self) -> dict[str, object]:
+        reserved = sum(self._reservations.values())
+        return {
+            "memory_limit_bytes": self.memory_limit_bytes,
+            "reserved_bytes": reserved,
+            "memory_pressure": "limited" if self.memory_limit_bytes is not None and reserved >= self.memory_limit_bytes else "normal",
+            "reservations": dict(self._reservations),
+            "queued_heavyweight_swaps": list(self._queued_heavyweight_swaps),
+        }
+
+
 def _n_gpu_layers(env_key: str, *, mac_default: int = -1) -> str:
     """v0.8.67c — resolve llama.cpp `--n_gpu_layers` for a sidecar.
 
@@ -189,6 +242,7 @@ class Supervisor:
         progress: "ProgressBus | None" = None,
     ) -> None:
         self.cfg = cfg
+        self.resource_governor = ResourceGovernor(cfg.local_model_memory_limit_bytes)
         self.repo_root = repo_root
         self.bin_dir = bin_dir
         self.surreal_arch = surreal_arch
@@ -416,6 +470,12 @@ class Supervisor:
             "NEXT_PUBLIC_API_URL": api_url,
             "NEXT_PUBLIC_API_BASE": api_url,  # legacy, kept for safety
             "DEEPER_NOTEBOOK_ENCRYPTION_KEY": self.cfg.encryption_key,
+            "DEEPER_NOTEBOOK_MODEL_DIR": str(self.cfg.model_dir),
+            "DEEPER_NOTEBOOK_EXECUTION_POLICY": self.cfg.execution_policy,
+            "DEEPER_NOTEBOOK_COMPUTE_PROFILE": self.cfg.compute_profile,
+            "DEEPER_NOTEBOOK_LOCAL_MODEL_MEMORY_LIMIT_BYTES": str(
+                self.cfg.local_model_memory_limit_bytes or 0
+            ),
             # v0.4 memory layer: predeclare URLs so the surreal-commands worker
             # (spawned before these servers actually bind) sees them in its env.
             # The real servers come up later in start_all; worker connects

@@ -17,7 +17,7 @@ import tomllib
 from dataclasses import replace
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from deeper_notebook.environment import normalize_product_environment, resolve_env
 from deeper_notebook.local_models import (
@@ -30,6 +30,87 @@ from deeper_notebook.local_models import (
 from desktop.data_root import active_data_root
 
 router = APIRouter()
+
+
+def _local_settings_response(cfg) -> dict[str, object]:
+    """Serialize only non-secret local-routing preferences."""
+    return {
+        "model_dir": str(cfg.model_dir),
+        "execution_policy": cfg.execution_policy,
+        "compute_profile": cfg.compute_profile,
+        "local_model_memory_limit_bytes": cfg.local_model_memory_limit_bytes,
+        "role_overrides": cfg.role_overrides,
+        "trusted_external_model_roots": list(cfg.trusted_external_model_roots),
+    }
+
+
+@router.get("/api/local-models/settings")
+async def local_models_settings_get():
+    from desktop.config import default_config_path, load_or_create
+
+    return _local_settings_response(load_or_create(default_config_path()))
+
+
+@router.put("/api/local-models/settings")
+async def local_models_settings_put(body: dict):
+    from deeper_notebook.local_models.settings import validate_model_root
+    from desktop.config import default_config_path, load_or_create
+
+    path = default_config_path()
+    cfg = load_or_create(path)
+    try:
+        model_dir = validate_model_root(Path(body.get("model_dir", cfg.model_dir)))
+        execution_policy = body.get("execution_policy", cfg.execution_policy)
+        compute_profile = body.get("compute_profile", cfg.compute_profile)
+        if execution_policy not in {"strict_local", "local_preferred", "custom"}:
+            raise ValueError("Unsupported execution policy.")
+        if compute_profile not in {"efficient", "balanced", "maximum_quality"}:
+            raise ValueError("Unsupported compute profile.")
+        memory_limit = body.get("local_model_memory_limit_bytes", cfg.local_model_memory_limit_bytes)
+        if memory_limit is not None and (not isinstance(memory_limit, int) or memory_limit < 0):
+            raise ValueError("Memory limit must be non-negative.")
+        role_overrides = body.get("role_overrides", cfg.role_overrides)
+        trusted_roots = body.get("trusted_external_model_roots", cfg.trusted_external_model_roots)
+        if not isinstance(role_overrides, dict) or not isinstance(trusted_roots, list | tuple):
+            raise ValueError("Invalid local model settings.")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    updated = replace(
+        cfg,
+        model_dir=model_dir,
+        execution_policy=execution_policy,
+        compute_profile=compute_profile,
+        local_model_memory_limit_bytes=memory_limit,
+        role_overrides={str(key): str(value) for key, value in role_overrides.items()},
+        trusted_external_model_roots=tuple(str(item) for item in trusted_roots),
+    )
+    updated.save(path)
+    return _local_settings_response(updated)
+
+
+@router.post("/api/local-models/route-plan")
+async def local_models_route_plan(body: dict, request: Request):
+    """Plan from injected, already-redacted local facts without transport I/O."""
+    from deeper_notebook.local_models.contracts import RouteRequest
+    from deeper_notebook.local_models.planner import plan_model_route
+
+    try:
+        route_request = RouteRequest(
+            role=body["role"],
+            required_context_tokens=int(body.get("required_context_tokens", 0)),
+            modalities=tuple(body.get("modalities", ["text"])),
+            requires_structured_output=bool(body.get("requires_structured_output", False)),
+            execution_policy=body.get("execution_policy", "strict_local"),
+            compute_profile=body.get("compute_profile", "balanced"),
+            role_override_model_id=body.get("role_override_model_id"),
+            production_override_model_id=body.get("production_override_model_id"),
+            memory_reservation_bytes=int(body.get("memory_reservation_bytes", 0)),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid route-plan request.") from exc
+    candidates = getattr(request.app.state, "local_model_route_candidates", ())
+    plan = plan_model_route(list(candidates), route_request)
+    return plan.receipt()
 
 
 # v0.8.38 — the launcher's supervisor names map to user-facing "kinds"
