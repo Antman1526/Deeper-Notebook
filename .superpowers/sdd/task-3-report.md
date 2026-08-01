@@ -47,3 +47,19 @@ Result: `2` files passed, `5` tests passed.
 ## Boundaries
 
 No backend, provider, external-vault, model-library, or external-write behavior was changed. The worktree-local `node_modules/` symlink/cache remains untracked and was not committed.
+
+## Review repair: live Explorer integration
+
+- Mounted the header, launcher, and intelligence rail in `KnowledgeExplorer`, using the selected workspace tab, its authority, persisted panes, overlay-draft store, scan action, and local-model-health hook as the live data/action sources.
+- The Explorer no longer supplies a separate links inspector. The intelligence rail opens on Connections in the Explorer so existing link navigation remains available, while the rail itself remains the sole `aside` landmark.
+- Replaced the Explorer content `main` with a structural `div`; `KnowledgeWorkspaceLayout` remains the single live `main` landmark.
+- Added the red-first Explorer integration assertion for the Research Core shell, one-main contract, and `Alt+4` Search tab creation. It initially failed because the components were not yet mounted in the Explorer.
+- Updated an existing interaction assertion from `Write: Center` to `Graph: Center`, matching the fixture's actual graph-mode state without changing that flow's behavior.
+
+Final verification:
+
+```sh
+(cd frontend && npx vitest run src/components/vault/ResearchCoreHeader.test.tsx src/components/vault/KnowledgeModeLauncher.test.tsx src/components/vault/KnowledgeIntelligenceRail.test.tsx src/components/vault/KnowledgeWorkspaceLayout.test.tsx src/components/vault/KnowledgeTabStrip.test.tsx src/components/vault/KnowledgeExplorer.test.tsx --pool=forks --maxWorkers=1 && npx tsc --noEmit)
+```
+
+Result: `6` files passed, `70` tests passed, with zero TypeScript errors. The dedicated Explorer suite also passed `45` tests.

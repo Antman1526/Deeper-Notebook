@@ -10,6 +10,7 @@ type IntelligencePanel = 'evidence' | 'connections' | 'properties' | 'production
 interface KnowledgeIntelligenceRailProps {
   activeContext: { evidence: string; properties: string; production: string }
   onNavigate: KnowledgeNavigate
+  initialPanel?: IntelligencePanel
 }
 
 const PANELS: Array<{ id: IntelligencePanel; label: string }> = [
@@ -22,8 +23,9 @@ const PANELS: Array<{ id: IntelligencePanel; label: string }> = [
 export function KnowledgeIntelligenceRail({
   activeContext,
   onNavigate,
+  initialPanel = 'evidence',
 }: KnowledgeIntelligenceRailProps) {
-  const [panel, setPanel] = useState<IntelligencePanel>('evidence')
+  const [panel, setPanel] = useState<IntelligencePanel>(initialPanel)
   const [collapsed, setCollapsed] = useState(false)
   const toggleRef = useRef<HTMLButtonElement>(null)
 

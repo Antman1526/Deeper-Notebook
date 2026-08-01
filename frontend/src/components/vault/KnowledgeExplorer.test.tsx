@@ -303,6 +303,20 @@ vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
   }},
 }))
 
+vi.mock('@/lib/hooks/use-local-models', () => ({
+  useLocalModelsHealth: () => ({
+    isLoading: false,
+    isError: false,
+    data: {
+      overall: 'healthy',
+      models: [{
+        name: 'research-local', credential_id: 'credential:local', status: 'healthy',
+        detail: null, latency_ms: 10, runtime: 'MLX', endpoint: null, probe_path: null,
+      }],
+    },
+  }),
+}))
+
 vi.mock('./VaultGraph', () => ({
   VaultGraph: ({
     graph,
@@ -480,6 +494,24 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     ])
     expect(pane.tabs.find((tab) => tab.id === pane.activeTabId)?.noteId)
       .toBe('note:one')
+  })
+
+  it('mounts the Research Core shell with one main landmark and opens a Search mode tab', async () => {
+    await renderExplorer()
+    await selectFile('notes/one.md')
+
+    expect(screen.getByRole('banner', { name: 'Research Core workspace' })).toBeInTheDocument()
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getByRole('complementary', { name: 'Research intelligence' })).toBeInTheDocument()
+    const launcher = screen.getByRole('toolbar', { name: 'Research modes' })
+    expect(screen.getByRole('tab', { name: 'Read: One' })).toBeInTheDocument()
+
+    fireEvent.keyDown(launcher, { key: '4', altKey: true })
+
+    const activePane = useKnowledgeWorkspaceStore.getState().panes['pane-1']
+    expect(activePane.tabs.find((tab) => tab.id === activePane.activeTabId))
+      .toMatchObject({ mode: 'search', target: { kind: 'search' } })
+    expect(screen.getByRole('tab', { name: 'Search: Search' })).toBeInTheDocument()
   })
 
   it('activates the indexed search result surface without replacing the active document', async () => {
@@ -870,7 +902,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
 
     await renderExplorer()
 
-    expect(screen.getByRole('tab', { name: 'Persisted one' }))
+    expect(screen.getByRole('tab', { name: 'Read: Persisted one' }))
       .toBeInTheDocument()
     expect(screen.getByText('Backlink for One')).toBeInTheDocument()
     expect(vaultQueries.page).toHaveBeenCalledWith(
@@ -1304,7 +1336,7 @@ describe('KnowledgeExplorer overlay authority', () => {
     })
     expect(workspacePane.activeTabId).toBe(incomingTab?.id)
 
-    fireEvent.click(screen.getByRole('tab', { name: center.title }))
+    fireEvent.click(screen.getByRole('tab', { name: `Graph: ${center.title}` }))
     fireEvent.click(screen.getByRole('button', { name: graphNodeName }))
 
     workspacePane = useKnowledgeWorkspaceStore.getState().panes['pane-1']

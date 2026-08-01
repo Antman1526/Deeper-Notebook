@@ -44,8 +44,10 @@ import type {
 } from '@/lib/api/knowledge-navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
+import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
+import type { ResearchMode } from '@/lib/knowledge/research-modes'
 import { createKnowledgeWorkspaceTab, useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
-import { KnowledgeLinksInspector } from './KnowledgeLinksInspector'
+import { useOverlayDraftStore } from '@/lib/stores/overlay-draft-store'
 import {
   KnowledgePaneContent,
   type KnowledgeNavigate,
@@ -55,6 +57,9 @@ import { VaultFileTree } from './VaultFileTree'
 import { KnowledgeCommandBridge } from './KnowledgeCommandBridge'
 import { KnowledgeQuickSwitcher } from './KnowledgeQuickSwitcher'
 import { KnowledgeUtilityRail } from './KnowledgeUtilityRail'
+import { KnowledgeModeLauncher } from './KnowledgeModeLauncher'
+import { KnowledgeIntelligenceRail } from './KnowledgeIntelligenceRail'
+import { ResearchCoreHeader } from './ResearchCoreHeader'
 import { KnowledgeBookmarksPanel } from './KnowledgeBookmarksPanel'
 import { KnowledgeWorkspacesPanel } from './KnowledgeWorkspacesPanel'
 import { WorkspaceRestoreDialog } from './WorkspaceRestoreDialog'
@@ -111,6 +116,47 @@ interface PostRestoreState {
 
 function graphContextsEqual(left: GraphBookmarkContext, right: GraphBookmarkContext): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function createResearchModeTab(
+  mode: ResearchMode,
+  id: string,
+  activeTab: KnowledgeTab | undefined,
+  navigation: ReturnType<typeof useKnowledgeWorkspaceStore.getState>['navigation'],
+): KnowledgeTab | null {
+  const base = {
+    id, vaultId: '', noteId: '', relativePath: '', viewMode: 'reading' as const,
+    sourceAuthority: 'external-vault' as const, knowledgeDocumentId: null, graphViewport: null,
+  }
+  const document = activeTab?.target?.kind === 'document' ? activeTab.target : null
+  if (mode === 'read' || mode === 'write') {
+    if (!document || (mode === 'write' && document.authority !== 'overlay')) return null
+    return {
+      id, vaultId: activeTab?.vaultId ?? '', noteId: activeTab?.noteId ?? '',
+      title: activeTab?.title ?? document.title,
+      relativePath: activeTab?.relativePath ?? document.relative_locator,
+      mode,
+      viewMode: mode === 'write' ? 'source' : 'reading',
+      sourceAuthority: document.authority,
+      knowledgeDocumentId: document.knowledge_document_id,
+      graphViewport: activeTab?.graphViewport ?? null,
+      target: { ...document, render_mode: mode === 'write' ? 'source' : 'reading' },
+    }
+  }
+  if (mode === 'graph') {
+    return {
+      ...(activeTab ?? base), id, title: activeTab?.title ?? 'Graph', mode,
+      viewMode: 'graph', graphViewport: activeTab?.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+      target: {
+        kind: 'graph', root_document_id: document?.knowledge_document_id ?? activeTab?.knowledgeDocumentId ?? null,
+        space_ids: navigation.selectedSpaceIds, relation_kinds: [],
+        viewport: activeTab?.graphViewport ?? { x: 0, y: 0, zoom: 1 }, origin: document,
+      },
+    }
+  }
+  if (mode === 'ask') return { ...base, title: 'Ask', mode, target: { kind: 'ask', thread_id: null, selected_document_ids: document?.knowledge_document_id ? [document.knowledge_document_id] : [] } }
+  if (mode === 'search') return { ...base, title: 'Search', mode, target: { kind: 'search', query: navigation.searchQuery, search_mode: navigation.searchMode, space_ids: navigation.selectedSpaceIds, authority_kinds: navigation.authorityFilters } }
+  return { ...base, title: 'Podcast', mode, target: { kind: 'podcast', production_id: null, seed_document_ids: document?.knowledge_document_id ? [document.knowledge_document_id] : [] } }
 }
 
 function namedTargetForTab(
@@ -248,10 +294,12 @@ export function KnowledgeExplorer() {
     (state) => state.panes[state.activePaneId],
   )
   const activePaneId = useKnowledgeWorkspaceStore((state) => state.activePaneId)
+  const panes = useKnowledgeWorkspaceStore((state) => state.panes)
   const activeTab = activePane?.tabs.find(
     (tab) => tab.id === activePane.activeTabId,
   ) ?? activePane?.tabs[0]
   const openTab = useKnowledgeWorkspaceStore((state) => state.openTab)
+  const activateTab = useKnowledgeWorkspaceStore((state) => state.activateTab)
   const navigation = useKnowledgeWorkspaceStore((state) => state.navigation)
   const setNavigation = useKnowledgeWorkspaceStore((state) => state.setNavigation)
   const setGraphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.setGraphBookmarkContext)
@@ -259,6 +307,8 @@ export function KnowledgeExplorer() {
   const pendingWorkspaceRestore = useKnowledgeWorkspaceStore((state) => state.pendingWorkspaceRestore)
   const activeSearchContext = useKnowledgeWorkspaceStore((state) => state.activeSearchContext)
   const setActiveSearchContext = useKnowledgeWorkspaceStore((state) => state.setActiveSearchContext)
+  const overlayDrafts = useOverlayDraftStore((state) => state.drafts)
+  const localModelsHealth = useLocalModelsHealth()
   const semanticSearchDescriptorKey = activeSearchContext?.mode === 'semantic' && activeSearchContext.query
     ? JSON.stringify({
       mode: activeSearchContext.mode,
@@ -347,6 +397,67 @@ export function KnowledgeExplorer() {
   const openFile = (file: VaultFile, paneId?: string) => {
     openTab(tabFromFile(file), paneId)
   }
+
+  const openResearchMode = useCallback((mode: ResearchMode, paneId: string) => {
+    const state = useKnowledgeWorkspaceStore.getState()
+    const pane = state.panes[paneId]
+    if (!pane || pane.tabs.length >= 128) return
+    const active = pane.tabs.find((tab) => tab.id === pane.activeTabId) ?? pane.tabs[0]
+    let nextId = state.nextId
+    const usedIds = new Set(Object.values(state.panes).flatMap((candidate) => candidate.tabs.map((tab) => tab.id)))
+    while (usedIds.has(`tab-${nextId}`)) nextId += 1
+    const created = createResearchModeTab(mode, `tab-${nextId}`, active, state.navigation)
+    if (!created) return
+    useKnowledgeWorkspaceStore.setState({
+      activePaneId: paneId,
+      nextId: nextId + 1,
+      revision: state.revision + 1,
+      focusedBlocksByTab: {},
+      pendingWorkspaceRestore: null,
+      activeSearchContext: mode === 'search' && created.target?.kind === 'search'
+        ? {
+            query: created.target.query,
+            mode: created.target.search_mode,
+            spaceIds: created.target.space_ids,
+            authorityKinds: created.target.authority_kinds,
+            tags: state.navigation.bookmarkTags,
+          }
+        : null,
+      panes: {
+        ...state.panes,
+        [paneId]: { ...pane, activeTabId: created.id, tabs: [...pane.tabs, created] },
+      },
+    })
+  }, [])
+
+  const authoritySummary = Object.values(panes).flatMap((pane) => pane.tabs)
+    .reduce((summary, tab) => ({
+      appOwned: summary.appOwned + (tab.sourceAuthority === 'overlay' ? 1 : 0),
+      externalReadOnly: summary.externalReadOnly + (tab.sourceAuthority === 'external-vault' ? 1 : 0),
+    }), { appOwned: 0, externalReadOnly: 0 })
+  const healthyLocalModels = localModelsHealth.data?.models.filter(
+    (model) => model.status === 'healthy',
+  ) ?? []
+  const localReadiness = localModelsHealth.isLoading
+    ? { state: 'loading' as const, detail: 'Checking local model readiness', models: [] }
+    : localModelsHealth.isError || localModelsHealth.data?.overall !== 'healthy'
+      ? { state: 'unavailable' as const, detail: 'Local model readiness is unavailable', models: [] }
+      : {
+          state: 'ready' as const,
+          detail: `${healthyLocalModels.length} local model${healthyLocalModels.length === 1 ? '' : 's'} ready`,
+          models: healthyLocalModels.map((model) => ({ id: model.name, provider: model.runtime ?? 'Local' })),
+        }
+  const modeAvailability = {
+    write: activeTab?.target?.kind === 'document' && activeTab.target.authority === 'overlay'
+      ? { available: true, reason: null }
+      : { available: false, reason: 'External source — read only' },
+    ask: localReadiness.state === 'ready'
+      ? { available: true, reason: null }
+      : { available: false, reason: localReadiness.detail },
+  }
+  const hasUnsavedOverlayDraft = Boolean(
+    activeTab?.sourceAuthority === 'overlay' && overlayDrafts[`${activePaneId}:${activeTab.id}`],
+  )
 
   const navigate: KnowledgeNavigate = (
     targetVaultId,
@@ -673,28 +784,35 @@ export function KnowledgeExplorer() {
       data-testid="knowledge-workspace"
       tabIndex={-1}
     >
-      <header className="border-b px-4 py-4 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold">
-              {t('navigation.knowledge')}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t('knowledge.description')}
-            </p>
-          </div>
-          {selectedRoot.authority === 'external-vault' && <Button
-            type="button"
-            variant="outline"
-            onClick={() => { void scanVault().catch(() => undefined) }}
-            disabled={scanPending}
-          >
-            <RefreshCw
-              className={`mr-2 h-4 w-4 ${scanPending ? 'animate-spin' : ''}`}
-            />
-            {t('knowledge.scan')}
-          </Button>}
-        </div>
+      <ResearchCoreHeader
+        workspaceTitle={t('navigation.knowledge')}
+        authoritySummary={authoritySummary}
+        saveState={persistence.isPending ? 'Saving locally' : persistence.isError ? 'Save needs attention' : 'Saved locally'}
+        readiness={localReadiness}
+        memoryPressure={{ state: 'normal', detail: 'Memory pressure not reported' }}
+        queuedWorkCount={Number(persistence.isPending) + Number(scanPending)}
+        actions={selectedRoot.authority === 'external-vault' ? <Button
+          type="button"
+          variant="outline"
+          onClick={() => { void scanVault().catch(() => undefined) }}
+          disabled={scanPending}
+        >
+          <RefreshCw
+            className={`mr-2 h-4 w-4 ${scanPending ? 'animate-spin' : ''}`}
+          />
+          {t('knowledge.scan')}
+        </Button> : null}
+      />
+      <div className="border-b px-4 py-2 sm:px-6">
+        <KnowledgeModeLauncher
+          activePaneId={activePaneId}
+          tabs={activePane?.tabs ?? []}
+          activeTabId={activeTab?.id ?? null}
+          hasUnsavedOverlayDraft={hasUnsavedOverlayDraft}
+          availability={modeAvailability}
+          onActivateTab={activateTab}
+          onOpenMode={openResearchMode}
+        />
         <div className="mt-3 space-y-1" aria-live="polite">
           {hydration.isLoading && (
             <p role="status" className="text-sm text-muted-foreground">
@@ -722,7 +840,7 @@ export function KnowledgeExplorer() {
             </p>
           )}
         </div>
-      </header>
+      </div>
       <div
         className={`grid min-h-0 flex-1 grid-cols-1 ${navigation.sidebarVisible
           ? 'lg:grid-cols-[var(--knowledge-sidebar-width)_4px_minmax(0,1fr)_minmax(15rem,20rem)]'
@@ -881,7 +999,7 @@ export function KnowledgeExplorer() {
         >
           <span aria-hidden="true">›</span>
         </Button>}
-        <main className="min-h-0 min-w-0 overflow-hidden">
+        <div className="min-h-0 min-w-0 overflow-hidden">
           {activeSearchContext && <section aria-label="Active knowledge search" className="border-b px-3 py-2 text-sm">
             <p>{activeSearchContext.mode}: {activeSearchContext.query}</p>
             <p className="text-muted-foreground">Spaces: {activeSearchContext.spaceIds.join(', ') || 'all'} · Authorities: {activeSearchContext.authorityKinds.join(', ') || 'all'}</p>
@@ -898,9 +1016,19 @@ export function KnowledgeExplorer() {
               />
             )}
           />
-        </main>
+        </div>
         <div ref={linksRef} tabIndex={-1}>
-          <KnowledgeLinksInspector onNavigate={navigate} />
+          <KnowledgeIntelligenceRail
+            activeContext={{
+              evidence: activeTab?.knowledgeDocumentId
+                ? 'Active document is ready for evidence review'
+                : 'Select a document to review evidence',
+              properties: activeTab ? `${activeTab.sourceAuthority === 'overlay' ? 'App-owned' : 'External read-only'} source` : 'No active source',
+              production: 'No production queued',
+            }}
+            initialPanel="connections"
+            onNavigate={navigate}
+          />
         </div>
       </div>
       <KnowledgeCommandBridge
