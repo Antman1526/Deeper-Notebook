@@ -35,6 +35,28 @@ def standalone_frontend_root(standalone_root: Path) -> Path:
     return candidates[0]
 
 
+def standalone_frontend_node_modules(standalone_root: Path) -> Path:
+    """Return the one standalone dependency directory that contains Next.
+
+    With a workspace build, Next can place the application ``server.js``
+    below the workspace-relative path while leaving its traced dependencies
+    below the package-relative path.  Both locations must be flattened into
+    the packaged ``frontend/`` root or the writable runtime copy cannot
+    resolve ``require('next')``.
+    """
+    candidates = sorted(
+        node_modules
+        for node_modules in standalone_root.rglob("node_modules")
+        if (node_modules / "next").is_dir()
+    )
+    if len(candidates) != 1:
+        raise RuntimeError(
+            "expected exactly one Next standalone node_modules directory under "
+            f"{standalone_root}, found {len(candidates)}"
+        )
+    return candidates[0]
+
+
 def pyinstaller_upstream_package_datas(
     project_root: Path,
 ) -> list[tuple[str, str]]:

@@ -24,6 +24,7 @@ PROJECT_ROOT = ROOT.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from desktop.build.package_layout import (
+    standalone_frontend_node_modules,
     pyinstaller_upstream_package_datas,
     standalone_frontend_root,
 )
@@ -70,9 +71,9 @@ uv_bin = bin_dir / ("uv.exe" if is_win else "uv")
 # bootstrap to BadZipFile on first launch.
 python_standalone_tarball = bin_dir / f"python-{arch}.tar.gz"
 frontend_dir = PROJECT_ROOT / "frontend"
-standalone_frontend_dir = standalone_frontend_root(
-    frontend_dir / ".next" / "standalone"
-)
+standalone_root = frontend_dir / ".next" / "standalone"
+standalone_frontend_dir = standalone_frontend_root(standalone_root)
+standalone_frontend_node_modules_dir = standalone_frontend_node_modules(standalone_root)
 
 # ---------------------------------------------------------------------------
 # Hidden imports — only what the launcher's OWN modules need.
@@ -127,6 +128,7 @@ datas = [
 
     # Frontend standalone build.
     (str(standalone_frontend_dir), "frontend"),
+    (str(standalone_frontend_node_modules_dir), "frontend/node_modules"),
     (str(frontend_dir / ".next" / "static"),     "frontend/.next/static"),
     (str(frontend_dir / "public"),               "frontend/public"),
 
