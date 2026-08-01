@@ -553,6 +553,11 @@ async def test_confirmed_submit_uses_server_resolved_content_once_per_idempotenc
             "episode_name": "Research synthesis",
             "mode": "deep_dive",
             "review_outline": True,
+            "editorial_brief": {
+                "central_question": "What does the research change?",
+                "audience": "Research team",
+                "outline": ["Context", "Finding", "Implication"],
+            },
         }
         first = await client.post("/api/podcasts/studio/submit", json=payload)
         second = await client.post("/api/podcasts/studio/submit", json=payload)
@@ -561,6 +566,45 @@ async def test_confirmed_submit_uses_server_resolved_content_once_per_idempotenc
     assert first.json()["job_id"] == "command:podcast-one"
     assert len(calls) == 1
     assert calls[0]["content"] == "Private app-owned notebook material"
+    assert calls[0]["selection_fingerprint"] == preview.json()["selection_fingerprint"]
+    assert calls[0]["selection_summary"] == {
+        "authority_counts": {"app_owned": 1},
+        "included_count": 1,
+        "total_count": 1,
+        "version": 1,
+    }
+    assert calls[0]["editorial_brief"] == payload["editorial_brief"]
+    receipts = calls[0]["model_plan_receipts"]
+    assert [receipt["role"] for receipt in receipts] == [
+        "podcast_outline",
+        "podcast_script",
+        "text_to_speech",
+    ]
+    assert all(receipt["outcome"] == "ready" for receipt in receipts)
+    assert all(receipt["version"] == 1 for receipt in receipts)
+    assert all(
+        set(receipt).issubset(
+            {
+                "outcome",
+                "provider",
+                "reason",
+                "resource_tier",
+                "role",
+                "selection_source",
+                "version",
+            }
+        )
+        for receipt in receipts
+    )
+    for metadata_key in (
+        "selection_summary",
+        "editorial_brief",
+        "model_plan_receipts",
+    ):
+        serialized = str(calls[0][metadata_key])
+        assert "Private app-owned notebook material" not in serialized
+        assert "relative_locator" not in serialized
+        assert "model_id" not in serialized
     assert "Private app-owned notebook material" not in first.text
 
 

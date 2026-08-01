@@ -81,6 +81,44 @@ def _submission_request_digest(payload: PodcastStudioSubmitRequest) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _selection_summary(preview: PodcastSelectionPreviewResponse) -> dict[str, object]:
+    """Persist source-body-free selection counts, never titles or locators."""
+    included_entries = [entry for entry in preview.entries if entry.state == "included"]
+    authority_counts: dict[str, int] = {}
+    for entry in included_entries:
+        authority_counts[entry.authority_kind] = (
+            authority_counts.get(entry.authority_kind, 0) + 1
+        )
+    return {
+        "version": 1,
+        "total_count": len(preview.entries),
+        "included_count": len(included_entries),
+        "authority_counts": authority_counts,
+    }
+
+
+def _redacted_model_plan_receipts(
+    stage_plans: list[PodcastStageModelPlanResponse],
+) -> list[dict[str, object]]:
+    """Keep planner decisions without persisting model identifiers or paths."""
+    receipts: list[dict[str, object]] = []
+    for plan in stage_plans:
+        receipt: dict[str, object] = {
+            "version": 1,
+            "role": plan.role,
+            "outcome": plan.outcome,
+            "reason": plan.reason,
+        }
+        if plan.provider is not None:
+            receipt["provider"] = plan.provider
+        if plan.resource_tier is not None:
+            receipt["resource_tier"] = plan.resource_tier
+        if plan.selection_source is not None:
+            receipt["selection_source"] = plan.selection_source
+        receipts.append(receipt)
+    return receipts
+
+
 def _podcast_selection_engine(request: Request):
     """Return only the read projection required for a podcast preview."""
     engine = getattr(request.app.state, "knowledge_engine_service", None)
@@ -359,6 +397,16 @@ async def submit_podcast_studio(
                 custom_prompt=payload.custom_prompt,
                 episode_length=payload.episode_length,
                 review_outline=payload.review_outline,
+                selection_summary=_selection_summary(
+                    PodcastSelectionPreviewResponse.model_validate(preview.model_dump())
+                ),
+                selection_fingerprint=preview.selection_fingerprint,
+                editorial_brief=(
+                    payload.editorial_brief.model_dump(mode="json")
+                    if payload.editorial_brief is not None
+                    else None
+                ),
+                model_plan_receipts=_redacted_model_plan_receipts(stage_plans),
             )
             response = PodcastStudioSubmitResponse(
                 job_id=job_id,
@@ -919,6 +967,10 @@ async def _retry_podcast_episode_locked(episode_id: str):
                 getattr(episode, "custom_prompt", None)
                 or getattr(episode, "briefing_suffix", None)
             ),
+            selection_summary=getattr(episode, "selection_summary", None),
+            selection_fingerprint=getattr(episode, "selection_fingerprint", None),
+            editorial_brief=getattr(episode, "editorial_brief", None),
+            model_plan_receipts=getattr(episode, "model_plan_receipts", []),
         )
 
         return {"job_id": job_id, "message": "Retry submitted successfully"}
