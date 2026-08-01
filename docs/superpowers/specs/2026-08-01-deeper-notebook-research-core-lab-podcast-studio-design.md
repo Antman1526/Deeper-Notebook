@@ -132,6 +132,8 @@ parallel replacements.
     language, vision, embedding, speech-to-text, and text-to-speech models.
 15. Per-role and per-production model overrides, strict-local execution, memory
     governance, health proof, and explicit fallback behavior.
+16. A small-model fast lane with measured runtime tiers, smallest-capable
+    routing, adaptive escalation, compute profiles, and escalation provenance.
 
 ### Out of scope
 
@@ -406,6 +408,79 @@ provider, route reason, and selection source (`automatic`, `role_override`, or
 credentials or expose the absolute model path in artifact API payloads. The
 dedicated local Settings surface may display the user-selected library root.
 
+### Small-model fast lane
+
+Automatic routing follows a **smallest capable model first** policy. The router
+does not equate model size with quality and does not load a heavyweight model
+for routine work when a smaller accepted model satisfies the measured role
+contract.
+
+Runtime tiers are derived from measured peak memory, time to first token,
+throughput, context cost, and provider overhead:
+
+- `light` for fast background and interactive utility work;
+- `standard` for normal research, writing, and synthesis; and
+- `heavyweight` for difficult reasoning, contested evidence, and final
+  synthesis or verification.
+
+Parameter count, active MoE parameters, quantization, and weight-file size are
+inputs to the estimate, not the final tier. A model moves between tiers only
+through a new measured resource record; marketing names such as `Mini`, `Air`,
+or `Small` do not determine runtime policy.
+
+Accepted light or small models may perform:
+
+- query rewriting and search expansion;
+- source classification and deduplication;
+- title, tag, property, and metadata suggestions;
+- bounded chunk summaries and first-pass claim extraction;
+- citation normalization and transcript alignment;
+- podcast chapter markers and timing estimates;
+- simple storyboard or outline drafts;
+- background indexing assistance;
+- fast study questions and flashcards; and
+- task-complexity and route estimation.
+
+Small models may not perform final strict-evidence verification, resolve
+contested claims, or approve their own uncertain output unless a role-specific
+benchmark and acceptance record explicitly proves that capability.
+
+### Adaptive escalation
+
+For a cascade-enabled task, the router:
+
+1. chooses the smallest verified model that satisfies the role contract;
+2. measures schema validity, confidence, evidence coverage, contradiction
+   handling, and task complexity;
+3. accepts the result when every role threshold passes;
+4. escalates only the uncertain unit or difficult stage to the next accepted
+   tier; and
+5. records the initial model, measurements, escalation reason, replacement
+   model, and final decision.
+
+The first model's result is retained as production provenance. It is not
+silently discarded. Escalation cannot weaken Strict Local, source authority,
+or evidence policy. When no accepted higher local tier is available, the task
+stops with a reviewable reason rather than silently contacting a cloud model.
+
+Podcast production may use a light model for extraction, deduplication,
+alignment, and timing; a standard model for Storyboard and Script; and a
+heavyweight reasoning model only for contested evidence, complex synthesis, or
+final Verification. The production Model Plan shows this stage allocation
+before generation.
+
+Three compute profiles influence routing without changing safety gates:
+
+1. **Efficient:** prefer light models and short contexts; escalate when required
+   by validity, evidence, or explicit quality thresholds.
+2. **Balanced:** use the smallest capable model with normal escalation. This is
+   the default.
+3. **Maximum Quality:** permit earlier use of standard or heavyweight models
+   while preserving resource and concurrency limits.
+
+A compute profile never authorizes cloud fallback, external writes, or a lower
+evidence standard.
+
 ### Overrides and execution policies
 
 Before execution, the interface shows the selected model and the reason it was
@@ -462,6 +537,8 @@ Settings → Local Models exposes:
 - format and runtime compatibility;
 - verification and manifest-alignment state;
 - role recommendations and overrides;
+- measured runtime tier, benchmark coverage, and escalation eligibility;
+- Efficient, Balanced, and Maximum Quality profile defaults;
 - local execution policy; and
 - memory and concurrency limits.
 
@@ -715,8 +792,7 @@ Recovery rules are:
 - segment regeneration affects only that segment and final assembly;
 - cancellation preserves completed artifacts as a draft;
 - missing source records remain visible rather than being silently removed;
-- changed sources offer Refresh Evidence or Continue with Recorded Revision;
-  and
+- changed sources offer Refresh Evidence or Continue with Recorded Revision; and
 - every episode exposes its manifest, versions, approvals, and failure history.
 
 ## Source Authority and Security
@@ -791,7 +867,8 @@ Implementation budgets include:
 - loading only one heavyweight MLX language model by default;
 - reusing a compatible loaded model across adjacent stages;
 - reserving memory before starting embedding, transcription, or voice sidecars;
-  and
+- preferring an accepted light model for background work;
+- escalating only failed units rather than re-running an entire large job; and
 - queuing model swaps rather than starting competing heavyweight runtimes.
 
 ## Delivery Phases
@@ -804,9 +881,11 @@ Implementation budgets include:
 - typography, surface, focus, and authority improvements;
 - responsive and accessible behavior;
 - preservation of current commands, workspaces, document modes, graph,
-  backlinks, bookmarks, and persistence; and
+  backlinks, bookmarks, and persistence;
 - local-library selection, verified inventory, role-routing status, and the
-  Research-header local readiness surface.
+  Research-header local readiness surface;
+- measured light, standard, and heavyweight runtime tiers; and
+- configurable Efficient, Balanced, and Maximum Quality profiles.
 
 Phase 1 does not require the new podcast evidence pipeline.
 
@@ -838,9 +917,12 @@ Phase 2 may adapt current backend contracts but must not pretend that the Phase
 - resumable stage and segment generation;
 - Episode Lab evidence inspection;
 - independent local routes for Evidence, Script, and Verification where the
-  accepted library and Mac memory budget permit them; and
+  accepted library and Mac memory budget permit them;
 - artifact receipts recording model identity, revision, provider, and route
-  reason without exposing canonical model paths.
+  reason without exposing canonical model paths;
+- adaptive small-to-large escalation for bounded evidence and production
+  units; and
+- escalation receipts that retain first-pass output and decision measurements.
 
 Each phase requires its own implementation plan and verification record. The
 application must remain usable at the end of every phase.
@@ -863,6 +945,11 @@ application must remain usable at the end of every phase.
 - accessible names, roles, focus, and reduced motion;
 - model-role scoring and deterministic tie-breakers;
 - role and production override precedence;
+- measured runtime-tier classification;
+- smallest-capable deterministic selection;
+- compute-profile influence without safety-policy changes;
+- adaptive escalation threshold and bounded-unit behavior;
+- provenance retention across escalation;
 - planned, removed, incomplete, unverified, and unsupported model states;
 - Strict Local and Local Preferred policy presentation; and
 - model-plan receipts that redact canonical paths.
@@ -886,6 +973,8 @@ application must remain usable at the end of every phase.
 - live runtime identity mismatch and health-probe failure;
 - memory-budget rejection and queued model swaps;
 - one-heavyweight-MLX default enforcement;
+- light-model background routing and heavyweight avoidance;
+- partial-unit escalation without full-job regeneration;
 - zero network requests to cloud-model endpoints in Strict Local mode; and
 - exact model-library fingerprint preservation after discovery and execution.
 
@@ -902,6 +991,8 @@ application must remain usable at the end of every phase.
 - recover a failed Voice stage without regenerating Research or Script;
 - use Episode Lab transcript, citation, and segment regeneration;
 - inspect and override automatic local routes;
+- select Efficient, Balanced, and Maximum Quality compute profiles;
+- inspect a small-to-large escalation receipt;
 - reject an incompatible model without losing the current research task;
 - view Podcast Model Plan and production model receipts;
 - complete a Strict Local podcast run without cloud fallback;
@@ -950,6 +1041,10 @@ The program is complete only when:
     back after a local failure.
 16. The Mac resource governor prevents competing heavyweight MLX loads and
     preserves application responsiveness during queued model changes.
+17. Routine eligible work routes to the smallest accepted model that passes its
+    role contract instead of defaulting to the largest installed model.
+18. Escalation affects only uncertain units, records why it happened, retains
+    first-pass provenance, and never weakens Strict Local or evidence policy.
 
 ## Approved Defaults
 
@@ -967,6 +1062,10 @@ The program is complete only when:
   setting rather than a portable source constant.
 - Local models use automatic role routing with visible per-role and
   per-production overrides.
+- Balanced is the default compute profile, using the smallest capable accepted
+  model with adaptive escalation.
+- Efficient and Maximum Quality remain explicit user-selectable profiles and
+  cannot weaken privacy, authority, evidence, or memory gates.
 - Strict Local is available and fails closed; cloud fallback is never silent.
 - One heavyweight MLX language model is loaded at a time by default.
 - The work ships in three independently verifiable phases.
