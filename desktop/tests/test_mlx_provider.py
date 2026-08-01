@@ -123,6 +123,25 @@ def test_start_can_defer_configured_model_validation(mlx_model_root, monkeypatch
     provider.stop()
 
 
+def test_start_can_return_before_a_configured_worker_is_ready(mlx_model_root, monkeypatch):
+    fake_proc = MagicMock(spec=subprocess.Popen)
+    fake_proc.poll.return_value = None
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake_proc)
+    monkeypatch.setattr("desktop.providers.mlx.find_free_port", lambda: 51233)
+
+    provider = MlxProvider(
+        model_dir=mlx_model_root,
+        ready_probe=lambda _port: False,
+    )
+    result = provider.start(
+        "MLX/mlx-community__North-Mini-Code-1.0-6bit",
+        wait_for_ready=False,
+    )
+
+    assert result["OPENAI_COMPATIBLE_BASE_URL"] == "http://127.0.0.1:51233/v1"
+    provider.stop()
+
+
 def test_start_raises_if_server_never_ready(mlx_model_root, monkeypatch):
     fake_proc = MagicMock(spec=subprocess.Popen)
     fake_proc.poll.return_value = None

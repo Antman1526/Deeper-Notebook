@@ -13,6 +13,7 @@ from desktop.providers import ProviderEnv
 
 class FakeMlxProvider:
     started: list[str] = []
+    start_options: list[dict[str, object]] = []
     stopped = False
 
     def __init__(self, **kwargs):
@@ -24,8 +25,9 @@ class FakeMlxProvider:
     def pick_default_model(self):
         return "MLX/default-model"
 
-    def start(self, model: str, **_kwargs):
+    def start(self, model: str, **kwargs):
         self.started.append(model)
+        self.start_options.append(kwargs)
         return ProviderEnv(
             OPENAI_COMPATIBLE_BASE_URL="http://127.0.0.1:51231/v1",
             OPENAI_COMPATIBLE_API_KEY="sk-no-key",
@@ -39,6 +41,7 @@ def test_phase_select_provider_starts_mlx_and_stashes_runtime(monkeypatch, tmp_p
     import desktop.providers.mlx as mlx_mod
 
     FakeMlxProvider.started = []
+    FakeMlxProvider.start_options = []
     FakeMlxProvider.stopped = False
     monkeypatch.setattr(mlx_mod, "MlxProvider", FakeMlxProvider)
 
@@ -56,6 +59,7 @@ def test_phase_select_provider_starts_mlx_and_stashes_runtime(monkeypatch, tmp_p
     _phase_select_provider(ctx)
 
     assert FakeMlxProvider.started == ["MLX/mlx-community__North-Mini-Code-1.0-6bit"]
+    assert FakeMlxProvider.start_options == [{"validate": False, "wait_for_ready": False}]
     assert ctx.extra_env["OPENAI_COMPATIBLE_BASE_URL"] == "http://127.0.0.1:51231/v1"
     assert ctx.extra_env["OPENAI_COMPATIBLE_API_KEY"] == "sk-no-key"
     assert (
@@ -78,6 +82,7 @@ def test_phase_select_provider_uses_configured_mlx_default_without_inventory_sca
             raise AssertionError("configured launch default must not scan inventory")
 
     ConfiguredMlxProvider.started = []
+    ConfiguredMlxProvider.start_options = []
     monkeypatch.setattr(mlx_mod, "MlxProvider", ConfiguredMlxProvider)
 
     ctx = _new_context()
@@ -94,6 +99,7 @@ def test_phase_select_provider_uses_configured_mlx_default_without_inventory_sca
     _phase_select_provider(ctx)
 
     assert ConfiguredMlxProvider.started == ["MLX/configured-model"]
+    assert ConfiguredMlxProvider.start_options == [{"validate": False, "wait_for_ready": False}]
 
 
 def test_phase_select_provider_uses_default_mlx_model_when_config_blank(
