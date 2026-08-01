@@ -442,3 +442,40 @@ async def test_current_block_lookup_is_bounded_to_document_and_revision(
     assert wrong_document is None
     assert wrong_revision is None
     assert all("markdown" not in str(result) for result in migrated_memory_connection.results)
+
+
+@pytest.mark.asyncio
+async def test_current_block_content_projection_is_bounded_and_excludes_source_metadata(
+    migrated_memory_connection,
+):
+    space_id = "knowledge_engine_space:block_content"
+    document_id = "knowledge_engine_document:block_content"
+    revision_id = "knowledge_engine_revision:current"
+    await _seed_page_identity(
+        migrated_memory_connection.database,
+        space_id=space_id,
+        document_id=document_id,
+        revision_id=revision_id,
+        authority_kind="external_read_only",
+        source_kind="markdown",
+        relative_locator="pages/block-content.md",
+        source_native_id="unsafe-native",
+        source_ref="/Users/unsafe/source-root",
+    )
+    repository = KnowledgeRepository(
+        connection_factory=migrated_memory_connection.factory
+    )
+
+    block = await repository.get_current_block_content(
+        document_id=document_id,
+        block_id="knowledge_engine_block:current",
+        source_revision_id=revision_id,
+    )
+
+    assert block is not None
+    assert block.block_id == "knowledge_engine_block:current"
+    assert block.plain_text == "Plan"
+    payload = block.model_dump_json()
+    assert "source_key" not in payload
+    assert "markdown" not in payload
+    assert "/Users/" not in payload

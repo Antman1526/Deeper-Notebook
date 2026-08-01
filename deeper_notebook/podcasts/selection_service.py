@@ -15,6 +15,7 @@ from deeper_notebook.podcasts.selection_contracts import (
     AppNoteSelection,
     AppSourceSelection,
     GraphSelection,
+    KnowledgeBlockSelection,
     KnowledgeDocumentSelection,
     NotebookSelection,
     PodcastSelection,
@@ -246,6 +247,14 @@ class KnowledgeDocumentProjectionReader(Protocol):
 
     async def get_document(self, document_id: str) -> KnowledgeDocument: ...
 
+    async def get_current_block_content(
+        self,
+        *,
+        document_id: str,
+        block_id: str,
+        source_revision_id: str,
+    ): ...
+
 
 class KnowledgeEnginePodcastSelectionResolver:
     """Resolve unified document references through the engine projection only.
@@ -278,12 +287,94 @@ class KnowledgeEnginePodcastSelectionResolver:
             reason="source_revision_changed" if revision_changed else "included",
         )
 
+    @staticmethod
+    def _block_title(document: KnowledgeDocument) -> str:
+        return f"{document.title[:480]} — selected block"
+
+    @classmethod
+    def _unavailable_block(
+        cls,
+        *,
+        selection: KnowledgeBlockSelection,
+        document: KnowledgeDocument,
+        reason: str,
+    ) -> ResolvedSelectionItem:
+        return ResolvedSelectionItem(
+            stable_id=selection.block_id,
+            title=cls._block_title(document),
+            authority_kind=document.authority_kind,
+            relative_locator=document.relative_locator,
+            revision_id=document.source_revision_id,
+            fingerprint=document.content_hash,
+            state="unavailable",
+            reason=reason,
+        )
+
     async def resolve(self, selection: PodcastSelection) -> list[ResolvedSelectionItem]:
         if isinstance(selection, KnowledgeDocumentSelection):
             return [
                 self._resolved_document(
                     await self._engine.get_document(selection.document_id),
                     expected_revision_id=selection.expected_revision_id,
+                )
+            ]
+        if isinstance(selection, KnowledgeBlockSelection):
+            document = await self._engine.get_document(selection.document_id)
+            if (
+                selection.expected_revision_id is not None
+                and document.source_revision_id != selection.expected_revision_id
+            ):
+                return [
+                    ResolvedSelectionItem(
+                        stable_id=selection.block_id,
+                        title=self._block_title(document),
+                        authority_kind=document.authority_kind,
+                        relative_locator=document.relative_locator,
+                        revision_id=document.source_revision_id,
+                        fingerprint=document.content_hash,
+                        state="changed",
+                        reason="source_revision_changed",
+                    )
+                ]
+            if selection.source_start is not None:
+                return [
+                    self._unavailable_block(
+                        selection=selection,
+                        document=document,
+                        reason="block_range_projection_unavailable",
+                    )
+                ]
+            block = await self._engine.get_current_block_content(
+                document_id=selection.document_id,
+                block_id=selection.block_id,
+                source_revision_id=document.source_revision_id,
+            )
+            if (
+                block is None
+                or getattr(block, "block_id", None) != selection.block_id
+                or getattr(block, "document_id", None) != selection.document_id
+                or getattr(block, "source_revision_id", None)
+                != document.source_revision_id
+            ):
+                return [
+                    self._unavailable_block(
+                        selection=selection,
+                        document=document,
+                        reason="block_not_current",
+                    )
+                ]
+            content = str(getattr(block, "plain_text", "")).strip()
+            return [
+                ResolvedSelectionItem(
+                    stable_id=selection.block_id,
+                    title=self._block_title(document),
+                    authority_kind=document.authority_kind,
+                    relative_locator=document.relative_locator,
+                    revision_id=document.source_revision_id,
+                    fingerprint=hashlib.sha256(content.encode()).hexdigest(),
+                    content=content,
+                    state="included" if content else "empty",
+                    reason="included" if content else "block_content_empty",
                 )
             ]
         if isinstance(selection, GraphSelection):

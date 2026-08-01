@@ -42,6 +42,25 @@ class _Engine:
         assert document_id == "knowledge_engine_document:external"
         return _document()
 
+    async def get_current_block_content(
+        self, *, document_id: str, block_id: str, source_revision_id: str
+    ):
+        assert (document_id, block_id, source_revision_id) == (
+            "knowledge_engine_document:external",
+            "knowledge_engine_block:research",
+            "knowledge_engine_revision:one",
+        )
+        return type(
+            "Block",
+            (),
+            {
+                "block_id": block_id,
+                "document_id": document_id,
+                "source_revision_id": source_revision_id,
+                "plain_text": "Selected research block stays server-side.",
+            },
+        )()
+
 
 class _Notebook:
     id = "notebook:research"
@@ -128,6 +147,34 @@ async def test_preview_resolves_a_read_only_document_without_exposing_body(
     assert "This body is server-resolved only." not in response.text
     assert "source_native_id" not in response.text
     assert "/Users/" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_preview_resolves_a_current_block_without_exposing_its_text(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/selection/preview",
+            json={
+                "selections": [
+                    {
+                        "kind": "knowledge_block",
+                        "document_id": "knowledge_engine_document:external",
+                        "block_id": "knowledge_engine_block:research",
+                        "expected_revision_id": "knowledge_engine_revision:one",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_block:research"
+    assert response.json()["entries"][0]["state"] == "included"
+    assert "Selected research block stays server-side." not in response.text
 
 
 @pytest.mark.asyncio

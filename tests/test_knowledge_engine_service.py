@@ -39,6 +39,9 @@ class _Repository:
     async def get_current_block(self, **kwargs):
         return kwargs
 
+    async def get_current_block_content(self, **kwargs):
+        return {"content": kwargs}
+
     async def get_checkpoint(self, space_id: str):
         if space_id.endswith(":missing"):
             return None
@@ -119,6 +122,17 @@ async def test_service_owns_and_delegates_the_safe_engine_boundary():
         "document_id": "knowledge_engine_document:fixture",
         "block_id": "knowledge_engine_block:fixture",
         "source_revision_id": "knowledge_engine_revision:fixture",
+    }
+    assert await service.get_current_block_content(
+        document_id="knowledge_engine_document:fixture",
+        block_id="knowledge_engine_block:fixture",
+        source_revision_id="knowledge_engine_revision:fixture",
+    ) == {
+        "content": {
+            "document_id": "knowledge_engine_document:fixture",
+            "block_id": "knowledge_engine_block:fixture",
+            "source_revision_id": "knowledge_engine_revision:fixture",
+        }
     }
     assert service.coordinator is coordinator
 

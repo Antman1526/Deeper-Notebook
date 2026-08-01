@@ -8,6 +8,7 @@ from deeper_notebook.podcasts.selection_contracts import (
     AppNoteSelection,
     AppSourceSelection,
     GraphSelection,
+    KnowledgeBlockSelection,
     KnowledgeDocumentSelection,
     NotebookSelection,
 )
@@ -170,6 +171,93 @@ async def test_engine_resolver_marks_stale_revision_changed_before_preview():
     assert preview.entries[0].reason == "source_revision_changed"
     assert preview.included_characters == 0
     assert preview.current_worker_eligible is False
+
+
+@pytest.mark.asyncio
+async def test_engine_resolver_reads_only_a_current_block_projection():
+    class Engine:
+        async def get_document(self, document_id):
+            assert document_id == "knowledge_engine_document:research"
+            return type(
+                "Document",
+                (),
+                {
+                    "id": document_id,
+                    "title": "Research note",
+                    "authority_kind": "external_read_only",
+                    "relative_locator": "Research/Note.md",
+                    "source_revision_id": "knowledge_engine_revision:current",
+                    "content_hash": "e" * 64,
+                    "normalized_body": "Document body must not be selected",
+                },
+            )()
+
+        async def get_current_block_content(
+            self, *, document_id, block_id, source_revision_id
+        ):
+            assert (document_id, block_id, source_revision_id) == (
+                "knowledge_engine_document:research",
+                "knowledge_engine_block:research",
+                "knowledge_engine_revision:current",
+            )
+            return type(
+                "Block",
+                (),
+                {
+                    "block_id": block_id,
+                    "document_id": document_id,
+                    "source_revision_id": source_revision_id,
+                    "plain_text": "Only the selected block is server-side input",
+                },
+            )()
+
+    items = await KnowledgeEnginePodcastSelectionResolver(engine=Engine()).resolve(
+        KnowledgeBlockSelection(
+            document_id="knowledge_engine_document:research",
+            block_id="knowledge_engine_block:research",
+            expected_revision_id="knowledge_engine_revision:current",
+        )
+    )
+
+    assert items[0].stable_id == "knowledge_engine_block:research"
+    assert items[0].authority_kind == "external_read_only"
+    assert items[0].content == "Only the selected block is server-side input"
+    assert items[0].fingerprint != "e" * 64
+
+
+@pytest.mark.asyncio
+async def test_engine_block_range_fails_closed_without_a_range_projection():
+    class Engine:
+        async def get_document(self, document_id):
+            return type(
+                "Document",
+                (),
+                {
+                    "id": document_id,
+                    "title": "Research note",
+                    "authority_kind": "external_read_only",
+                    "relative_locator": "Research/Note.md",
+                    "source_revision_id": "knowledge_engine_revision:current",
+                    "content_hash": "e" * 64,
+                    "normalized_body": "must not be read for a range",
+                },
+            )()
+
+        async def get_current_block_content(self, **_kwargs):
+            raise AssertionError("range selection must not widen to the full block")
+
+    items = await KnowledgeEnginePodcastSelectionResolver(engine=Engine()).resolve(
+        KnowledgeBlockSelection(
+            document_id="knowledge_engine_document:research",
+            block_id="knowledge_engine_block:research",
+            source_start=4,
+            source_end=16,
+        )
+    )
+
+    assert items[0].state == "unavailable"
+    assert items[0].reason == "block_range_projection_unavailable"
+    assert items[0].content == ""
 
 
 @pytest.mark.asyncio
