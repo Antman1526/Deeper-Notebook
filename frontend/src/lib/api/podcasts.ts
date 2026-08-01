@@ -9,6 +9,8 @@ import {
   PodcastGenerationResponse,
   PodcastReadiness,
   PodcastSelectionPreview,
+  PodcastSelectionPreviewEntry,
+  PodcastStageModelPlan,
 } from '@/lib/types/podcasts'
 import {
   normalizePodcastSelections,
@@ -18,6 +20,80 @@ import {
 
 export type EpisodeProfileInput = Omit<EpisodeProfile, 'id'>
 export type SpeakerProfileInput = Omit<SpeakerProfile, 'id'>
+
+interface PodcastSelectionPreviewWire {
+  selection_fingerprint: string
+  entries: Array<{
+    stable_id: string
+    title: string
+    authority_kind: PodcastSelectionPreviewEntry['authorityKind']
+    relative_locator: string | null
+    revision_id: string | null
+    fingerprint: string | null
+    state: PodcastSelectionPreviewEntry['state']
+    reason: string
+    estimated_characters: number
+  }>
+  included_characters: number
+  requires_batch_engine: boolean
+  current_worker_eligible: boolean
+  blocked_reasons: string[]
+}
+
+interface PodcastReadinessWire {
+  preview: PodcastSelectionPreviewWire
+  stage_plans: Array<{
+    role: PodcastStageModelPlan['role']
+    outcome: PodcastStageModelPlan['outcome']
+    model_id: string | null
+    provider: string | null
+    resource_tier: PodcastStageModelPlan['resourceTier']
+    selection_source: PodcastStageModelPlan['selectionSource']
+    reason: string
+    blocked_reason: string | null
+  }>
+  ready: boolean
+  blocked_reasons: string[]
+}
+
+function toPodcastSelectionPreview(wire: PodcastSelectionPreviewWire): PodcastSelectionPreview {
+  return {
+    selectionFingerprint: wire.selection_fingerprint,
+    entries: wire.entries.map((entry) => ({
+      stableId: entry.stable_id,
+      title: entry.title,
+      authorityKind: entry.authority_kind,
+      relativeLocator: entry.relative_locator,
+      revisionId: entry.revision_id,
+      fingerprint: entry.fingerprint,
+      state: entry.state,
+      reason: entry.reason,
+      estimatedCharacters: entry.estimated_characters,
+    })),
+    includedCharacters: wire.included_characters,
+    requiresBatchEngine: wire.requires_batch_engine,
+    currentWorkerEligible: wire.current_worker_eligible,
+    blockedReasons: wire.blocked_reasons,
+  }
+}
+
+function toPodcastReadiness(wire: PodcastReadinessWire): PodcastReadiness {
+  return {
+    preview: toPodcastSelectionPreview(wire.preview),
+    stagePlans: wire.stage_plans.map((plan) => ({
+      role: plan.role,
+      outcome: plan.outcome,
+      modelId: plan.model_id,
+      provider: plan.provider,
+      resourceTier: plan.resource_tier,
+      selectionSource: plan.selection_source,
+      reason: plan.reason,
+      blockedReason: plan.blocked_reason,
+    })),
+    ready: wire.ready,
+    blockedReasons: wire.blocked_reasons,
+  }
+}
 
 export async function resolvePodcastAssetUrl(path?: string | null): Promise<string | undefined> {
   if (!path) {
@@ -39,11 +115,11 @@ export async function resolvePodcastAssetUrl(path?: string | null): Promise<stri
 
 export const podcastsApi = {
   previewPodcastSelection: async (selections: PodcastSelection[]) => {
-    const response = await apiClient.post<PodcastSelectionPreview>(
+    const response = await apiClient.post<PodcastSelectionPreviewWire>(
       '/podcasts/selection/preview',
       { selections: normalizePodcastSelections(selections).map(toPodcastSelectionWire) },
     )
-    return response.data
+    return toPodcastSelectionPreview(response.data)
   },
 
   getPodcastReadiness: async (
@@ -54,13 +130,13 @@ export const podcastsApi = {
       includeTranscription?: boolean
     } = {},
   ) => {
-    const response = await apiClient.post<PodcastReadiness>('/podcasts/readiness', {
+    const response = await apiClient.post<PodcastReadinessWire>('/podcasts/readiness', {
       selections: normalizePodcastSelections(selections).map(toPodcastSelectionWire),
       execution_policy: options.executionPolicy ?? 'strict_local',
       compute_profile: options.computeProfile ?? 'balanced',
       include_transcription: options.includeTranscription ?? false,
     })
-    return response.data
+    return toPodcastReadiness(response.data)
   },
 
   listEpisodes: async () => {
