@@ -33,6 +33,7 @@ pytestmark = pytest.mark.integration_surreal
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_38_DOWN = ROOT / "deeper_notebook/database/migrations/38_down.surrealql"
+MIGRATION_39_DOWN = ROOT / "deeper_notebook/database/migrations/39_down.surrealql"
 NOW = datetime(2026, 7, 30, tzinfo=timezone.utc)
 
 
@@ -330,6 +331,8 @@ async def test_migration_38_down_up_preserves_engine_records(clean_namespace):
         snapshot, operation_id="native-migration"
     )
 
+    await repo_query(MIGRATION_39_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 39);")
     await repo_query(MIGRATION_38_DOWN.read_text(encoding="utf-8"))
     await repo_query("DELETE type::thing('_sbl_migrations', 38);")
     await AsyncMigrationManager().run_migration_up()
@@ -635,7 +638,7 @@ async def test_backfill_checkpoint_survives_repository_reconstruction(
     tmp_path,
 ):
     """A restart retains legacy identities, dual projections, and exact cursors."""
-    assert await get_latest_version() == 38
+    assert await get_latest_version() == 39
     parent_root = tmp_path / "synthetic-parent"
     child_root = tmp_path / "synthetic-child"
     parent_root.mkdir()

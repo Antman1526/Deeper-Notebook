@@ -103,7 +103,7 @@ def _create_synthetic_fixture(root: Path) -> None:
 
 def _api_health(api_url: str) -> tuple[bool, int | None]:
     try:
-        with urlopen(f"{api_url}/api/health", timeout=2) as response:  # nosec B310: caller URL only
+        with urlopen(f"{api_url}/health", timeout=2) as response:  # nosec B310: caller URL only
             return 200 <= response.status < 300, response.status
     except (URLError, OSError):
         return False, None
