@@ -150,8 +150,25 @@ class PodcastSelectionService:
         return selection
 
     @staticmethod
-    def _fingerprint(selections: Sequence[PodcastSelection]) -> str:
-        payload = [selection.model_dump(mode="json") for selection in selections]
+    def _fingerprint(
+        selections: Sequence[PodcastSelection],
+        entries: Sequence[SelectionPreviewEntry],
+    ) -> str:
+        payload = {
+            "selections": [
+                selection.model_dump(mode="json") for selection in selections
+            ],
+            "resolved": [
+                {
+                    "stable_id": entry.stable_id,
+                    "revision_id": entry.revision_id,
+                    "fingerprint": entry.fingerprint,
+                    "state": entry.state,
+                    "reason": entry.reason,
+                }
+                for entry in entries
+            ],
+        }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         return hashlib.sha256(encoded).hexdigest()
 
@@ -208,7 +225,7 @@ class PodcastSelectionService:
         if has_non_current_entry:
             blocked_reasons.append("podcast_selection_requires_refresh")
         return PodcastSelectionPreview(
-            selection_fingerprint=self._fingerprint(normalized),
+            selection_fingerprint=self._fingerprint(normalized, entries),
             entries=entries,
             included_characters=included_characters,
             requires_batch_engine=requires_batch_engine,
