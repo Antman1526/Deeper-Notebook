@@ -4,13 +4,21 @@ import {
   cancelBenchmark,
   getBenchmarkJobs,
   getLocalModelInventory,
+  getLocalModelReadiness,
+  getLocalModelSettings,
+  getModelRoutePlan,
   getRoleRouting,
   getRouteReceipts,
   resetBenchmarks,
   startBenchmark,
+  updateLocalModelSettings,
   type BenchmarkJob,
   type BenchmarkListResponse,
   type InventoryResponse,
+  type LocalModelSettings,
+  type ModelRoutePlan,
+  type ReadinessResponse,
+  type RoutePlanRequest,
   type RoleRoutingResponse,
   type RouteReceiptResponse,
 } from '@/lib/api/local-models'
@@ -48,6 +56,40 @@ export function useLocalModelInventory() {
     queryFn: getLocalModelInventory,
     refetchOnWindowFocus: true,
     staleTime: 30_000,
+  })
+}
+
+export function useLocalModelSettings() {
+  return useQuery<LocalModelSettings>({
+    queryKey: ['local-models', 'settings'], queryFn: getLocalModelSettings, staleTime: 30_000,
+  })
+}
+
+export function useUpdateLocalModelSettings() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: updateLocalModelSettings,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['local-models', 'settings'] })
+      void queryClient.invalidateQueries({ queryKey: ['local-models', 'inventory'] })
+      void queryClient.invalidateQueries({ queryKey: ['local-models', 'readiness'] })
+    },
+  })
+}
+
+export function useLocalModelReadiness(enabled = true) {
+  return useQuery<ReadinessResponse>({
+    queryKey: ['local-models', 'readiness'], queryFn: getLocalModelReadiness, enabled, staleTime: 30_000,
+  })
+}
+
+export function useModelRoutePlan(request: RoutePlanRequest | null, enabled = true) {
+  return useQuery<ModelRoutePlan>({
+    queryKey: ['local-models', 'route-plan', request],
+    queryFn: () => getModelRoutePlan(request!),
+    enabled: enabled && request !== null,
+    retry: false,
+    staleTime: 10_000,
   })
 }
 
