@@ -421,6 +421,9 @@ function replaceOverlayWorkspace(
 
 function replaceResearchWorkspace(
   mode: 'ask' | 'graph' | 'podcast',
+  graphFilters: { spaceIds: string[]; relationKinds: string[] } = {
+    spaceIds: ['knowledge_engine_space:target'], relationKinds: ['target-link'],
+  },
 ) {
   const documentTarget = {
     kind: 'document' as const,
@@ -438,8 +441,8 @@ function replaceResearchWorkspace(
         ? {
             kind: 'graph' as const,
             root_document_id: 'knowledge_engine_document:plan',
-            space_ids: ['knowledge_engine_space:target'],
-            relation_kinds: ['target-link'],
+            space_ids: graphFilters.spaceIds,
+            relation_kinds: graphFilters.relationKinds,
             viewport: { x: 0, y: 0, zoom: 1 },
             origin: documentTarget,
           }
@@ -651,6 +654,21 @@ describe('KnowledgePaneContent', () => {
     expect(vaultGraphView.relationKinds).toEqual(['target-link'])
   })
 
+  it('keeps intentionally empty V2 graph filters ahead of a same-root global graph context', () => {
+    replaceResearchWorkspace('graph', { spaceIds: [], relationKinds: [] })
+    useKnowledgeWorkspaceStore.getState().setGraphBookmarkContext({
+      rootDocumentId: 'knowledge_engine_document:plan',
+      spaceIds: ['knowledge_engine_space:global'],
+      relationKinds: ['global-link'],
+      viewport: { x: 40, y: 40, zoom: 2 },
+    })
+
+    renderPane()
+
+    expect(vaultGraphView.spaceIds).toEqual([])
+    expect(vaultGraphView.relationKinds).toEqual([])
+  })
+
   it('renders a Canvas tab without loading a Markdown page', () => {
     replaceWorkspace('canvas')
 
@@ -828,6 +846,7 @@ describe('KnowledgePaneContent', () => {
     queries.page.data = { ...pageFixture, knowledge_document_id: 'knowledge_engine_document:plan' }
     const original = useKnowledgeWorkspaceStore.getState()
     const tabId = original.panes['pane-1'].activeTabId!
+    original.panes['pane-1'].tabs[0].graphBookmarkContext = null
     original.setTabGraphViewport('pane-1', tabId, { x: 12, y: -4, zoom: 1.5 })
     original.reconcileTabReference('pane-1', tabId, {
       title: 'Canonical Plan', relativePath: 'pages/plan.md',

@@ -7,7 +7,7 @@ const ask = vi.hoisted(() => ({ sendAsk: vi.fn(), isStreaming: false }))
 const localModelsHealth = vi.hoisted(() => ({
   data: {
     overall: 'healthy',
-    models: [{ name: 'local-research', status: 'healthy', detail: null, latency_ms: 1 }],
+    models: [{ name: 'local-research-chat', status: 'healthy', detail: null, latency_ms: 1 }],
   } as LocalModelsHealthPayload,
   isLoading: false,
   isError: false,
@@ -29,7 +29,7 @@ describe('KnowledgeAskPane', () => {
     ask.sendAsk.mockReset()
     localModelsHealth.data = {
       overall: 'healthy',
-      models: [{ name: 'local-research', status: 'healthy', detail: null, latency_ms: 1 }],
+      models: [{ name: 'local-research-chat', status: 'healthy', detail: null, latency_ms: 1 }],
     }
     localModelsHealth.isLoading = false
     localModelsHealth.isError = false
@@ -65,12 +65,27 @@ describe('KnowledgeAskPane', () => {
   it('uses the existing local health detail as the rendered disable reason', () => {
     localModelsHealth.data = {
       overall: 'degraded',
-      models: [{ name: 'local-research', status: 'unhealthy', detail: 'Configured local research model is unavailable', latency_ms: null }],
+      models: [{ name: 'local-research-chat', status: 'unhealthy', detail: 'Configured local research model is unavailable', latency_ms: null }],
     }
 
     render(<KnowledgeAskPane selectedDocumentIds={['knowledge_engine_document:plan']} />)
 
     expect(screen.getByText('Configured local research model is unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ask selected knowledge' })).toBeDisabled()
+  })
+
+  it('does not treat a healthy embedding model as readiness for the configured chat model', () => {
+    localModelsHealth.data = {
+      overall: 'degraded',
+      models: [
+        { name: 'local-research-embeddings', status: 'healthy', detail: null, latency_ms: 1 },
+        { name: 'local-research-chat', status: 'unhealthy', detail: 'Configured chat model is unavailable', latency_ms: null },
+      ],
+    }
+
+    render(<KnowledgeAskPane selectedDocumentIds={['knowledge_engine_document:plan']} />)
+
+    expect(screen.getByText('Configured chat model is unavailable')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ask selected knowledge' })).toBeDisabled()
   })
 })

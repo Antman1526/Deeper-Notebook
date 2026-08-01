@@ -334,8 +334,9 @@ export interface KnowledgeTab {
   graphViewport: GraphViewport | null
   mode?: z.infer<typeof researchModeSchema>
   target?: z.infer<typeof workspaceTabTargetWireSchema>
-  // Restore-only stable graph metadata. It is intentionally not written to the
-  // Current Session wire payload, which remains compatible with the server API.
+  // A non-null value explicitly marks a restored V2 graph target. It is not
+  // written as a separate wire field: its values are derived from that target
+  // so intentionally empty saved filters remain distinguishable from new tabs.
   graphBookmarkContext?: {
     rootDocumentId: string
     spaceIds: string[]
@@ -582,7 +583,15 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
         : target.kind === 'graph'
           ? target.origin
           : null
-      return { id: tab.id, mode: tab.mode, target, title: tab.title, vaultId: document?.container_id ?? '', noteId: document?.note_id ?? '', relativePath: document?.relative_locator ?? '', viewMode: target.kind === 'graph' ? 'graph' : document?.render_mode ?? 'reading', sourceAuthority: document?.authority ?? 'external-vault', knowledgeDocumentId: document?.knowledge_document_id ?? (target.kind === 'graph' ? target.root_document_id : null), graphViewport: target.kind === 'graph' ? target.viewport : null }
+      const graphBookmarkContext = target.kind === 'graph'
+        ? {
+            rootDocumentId: target.root_document_id ?? document?.knowledge_document_id ?? '',
+            spaceIds: target.space_ids,
+            relationKinds: target.relation_kinds,
+            viewport: target.viewport,
+          }
+        : null
+      return { id: tab.id, mode: tab.mode, target, title: tab.title, vaultId: document?.container_id ?? '', noteId: document?.note_id ?? '', relativePath: document?.relative_locator ?? '', viewMode: target.kind === 'graph' ? 'graph' : document?.render_mode ?? 'reading', sourceAuthority: document?.authority ?? 'external-vault', knowledgeDocumentId: document?.knowledge_document_id ?? (target.kind === 'graph' ? target.root_document_id : null), graphViewport: target.kind === 'graph' ? target.viewport : null, graphBookmarkContext }
     }) }])), layout: fromWireLayout(wire.layout),
   }
 }
