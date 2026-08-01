@@ -68,6 +68,34 @@ export interface PodcastEpisode {
   error_message?: string | null
   // v0.8.68 — per-stage progress / outline-review state.
   generation_stage?: string | null
+  // Phase 2 Studio receipts. Aggregate provenance and planner decisions only.
+  selection_summary?: PodcastSelectionSummary | null
+  selection_fingerprint?: string | null
+  editorial_brief?: PodcastEditorialBrief | null
+  model_plan_receipts?: PodcastModelPlanReceipt[]
+}
+
+export interface PodcastSelectionSummary {
+  version?: number
+  total_count?: number
+  included_count?: number
+  authority_counts?: Record<string, number>
+}
+
+export interface PodcastEditorialBrief {
+  central_question?: string | null
+  audience?: string | null
+  outline?: string[]
+}
+
+export interface PodcastModelPlanReceipt {
+  version?: number
+  role?: string
+  outcome?: string
+  provider?: string
+  resource_tier?: string
+  selection_source?: string
+  reason?: string
 }
 
 export type PodcastOverviewMode = 'deep_dive' | 'brief' | 'critique' | 'debate'
