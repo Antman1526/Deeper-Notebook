@@ -1,0 +1,143 @@
+"""Read-only, bounded preview assembly for Phase-2 podcast selections."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Sequence
+from typing import Literal, Protocol
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from deeper_notebook.knowledge_engine.capabilities import AuthorityKind
+from deeper_notebook.podcasts.selection_contracts import (
+    GraphSelection,
+    PodcastSelection,
+)
+
+
+class _Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class ResolvedSelectionItem(_Strict):
+    """Internal resolver result; source content is never serialized to a preview."""
+
+    stable_id: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=512)
+    authority_kind: AuthorityKind
+    relative_locator: str | None = Field(default=None, max_length=1024)
+    revision_id: str | None = Field(default=None, max_length=128)
+    fingerprint: str | None = Field(default=None, max_length=128)
+    content: str = Field(min_length=1, exclude=True, repr=False)
+
+
+class SelectionPreviewEntry(_Strict):
+    stable_id: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=512)
+    authority_kind: AuthorityKind
+    relative_locator: str | None = Field(default=None, max_length=1024)
+    revision_id: str | None = Field(default=None, max_length=128)
+    fingerprint: str | None = Field(default=None, max_length=128)
+    state: Literal[
+        "included",
+        "duplicate",
+        "unavailable",
+        "changed",
+        "empty",
+        "failed_parse",
+        "oversize",
+    ]
+    reason: str = Field(min_length=1, max_length=128)
+    estimated_characters: int = Field(ge=0)
+
+
+class PodcastSelectionPreview(_Strict):
+    selection_fingerprint: str = Field(min_length=64, max_length=64)
+    entries: list[SelectionPreviewEntry] = Field(max_length=10_000)
+    included_characters: int = Field(ge=0)
+    requires_batch_engine: bool
+    current_worker_eligible: bool
+    blocked_reasons: list[str] = Field(default_factory=list, max_length=128)
+
+
+class PodcastSelectionResolver(Protocol):
+    async def resolve(
+        self, selection: PodcastSelection
+    ) -> list[ResolvedSelectionItem]: ...
+
+
+class PodcastSelectionService:
+    """Normalize references and project resolver results without source mutation."""
+
+    _CURRENT_WORKER_MAX_CHARACTERS = 500_000
+
+    def __init__(self, *, resolver: PodcastSelectionResolver) -> None:
+        self._resolver = resolver
+
+    @staticmethod
+    def _normalize_selection(selection: PodcastSelection) -> PodcastSelection:
+        if isinstance(selection, GraphSelection):
+            return selection.model_copy(
+                update={"document_ids": sorted(set(selection.document_ids))}
+            )
+        return selection
+
+    @staticmethod
+    def _fingerprint(selections: Sequence[PodcastSelection]) -> str:
+        payload = [selection.model_dump(mode="json") for selection in selections]
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
+    async def preview(
+        self, selections: Sequence[PodcastSelection]
+    ) -> PodcastSelectionPreview:
+        if not isinstance(selections, Sequence) or not 1 <= len(selections) <= 128:
+            raise ValueError("podcast_selection_count_invalid")
+
+        normalized = [self._normalize_selection(selection) for selection in selections]
+        entries: list[SelectionPreviewEntry] = []
+        seen_fingerprints: set[str] = set()
+        included_characters = 0
+        for selection in normalized:
+            for item in await self._resolver.resolve(selection):
+                duplicate = bool(item.fingerprint and item.fingerprint in seen_fingerprints)
+                if item.fingerprint:
+                    seen_fingerprints.add(item.fingerprint)
+                state = "duplicate" if duplicate else "included"
+                reason = "duplicate_content_fingerprint" if duplicate else "included"
+                if not duplicate:
+                    included_characters += len(item.content)
+                entries.append(
+                    SelectionPreviewEntry(
+                        stable_id=item.stable_id,
+                        title=item.title,
+                        authority_kind=item.authority_kind,
+                        relative_locator=item.relative_locator,
+                        revision_id=item.revision_id,
+                        fingerprint=item.fingerprint,
+                        state=state,
+                        reason=reason,
+                        estimated_characters=len(item.content),
+                    )
+                )
+
+        requires_batch_engine = included_characters > self._CURRENT_WORKER_MAX_CHARACTERS
+        blocked_reasons = ["podcast_batch_engine_required"] if requires_batch_engine else []
+        return PodcastSelectionPreview(
+            selection_fingerprint=self._fingerprint(normalized),
+            entries=entries,
+            included_characters=included_characters,
+            requires_batch_engine=requires_batch_engine,
+            current_worker_eligible=bool(entries) and not requires_batch_engine,
+            blocked_reasons=blocked_reasons,
+        )
+
+
+__all__ = [
+    "PodcastSelectionPreview",
+    "PodcastSelectionResolver",
+    "PodcastSelectionService",
+    "ResolvedSelectionItem",
+    "SelectionPreviewEntry",
+]
