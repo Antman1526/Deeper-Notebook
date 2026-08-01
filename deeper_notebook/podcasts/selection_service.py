@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from deeper_notebook.knowledge_engine.capabilities import AuthorityKind
 from deeper_notebook.knowledge_engine.contracts import KnowledgeDocument
+from deeper_notebook.knowledge_engine.navigation_contracts import BookmarkFilters
 from deeper_notebook.podcasts.selection_contracts import (
     AppNoteSelection,
     AppSourceSelection,
@@ -391,9 +392,16 @@ class KnowledgeNavigationReader(Protocol):
 
     async def get_bookmark(self, bookmark_id: str): ...
 
+    async def list_folders(self): ...
+
+    async def list_bookmarks(self, filters: BookmarkFilters, cursor: str | None, limit: int): ...
+
 
 class KnowledgeNavigationPodcastSelectionResolver:
     """Resolve a saved bookmark through its current unified target only."""
+
+    _PAGE_SIZE = 100
+    _MAX_COLLECTION_ITEMS = 10_000
 
     def __init__(
         self,
@@ -418,13 +426,9 @@ class KnowledgeNavigationPodcastSelectionResolver:
             )
         ]
 
-    async def resolve(self, selection: PodcastSelection) -> list[ResolvedSelectionItem]:
-        if not isinstance(selection, KnowledgeCollectionSelection):
-            raise ValueError("podcast_selection_kind_unavailable")
-        if selection.collection_kind != "bookmark":
-            raise ValueError("podcast_selection_kind_unavailable")
-        bookmark = await self._navigation.get_bookmark(selection.collection_id)
-        target = getattr(bookmark, "target", None)
+    async def _resolve_target(
+        self, selection: KnowledgeCollectionSelection, target: object
+    ) -> list[ResolvedSelectionItem]:
         target_kind = getattr(target, "kind", None)
         if target_kind == "document":
             return await self._engine_resolver.resolve(
@@ -441,6 +445,70 @@ class KnowledgeNavigationPodcastSelectionResolver:
         return self._unavailable_bookmark(
             selection, "bookmark_target_kind_unavailable"
         )
+
+    async def _resolve_folder(
+        self, selection: KnowledgeCollectionSelection
+    ) -> list[ResolvedSelectionItem]:
+        folders = await self._navigation.list_folders()
+        folder_ids = {getattr(folder, "id", None) for folder in folders}
+        if selection.collection_id not in folder_ids:
+            raise LookupError("knowledge_bookmark_folder_not_found")
+        child_folders: dict[str, list[str]] = {}
+        for folder in folders:
+            folder_id = getattr(folder, "id", None)
+            parent_id = getattr(folder, "parent_folder_id", None)
+            if isinstance(folder_id, str) and isinstance(parent_id, str):
+                child_folders.setdefault(parent_id, []).append(folder_id)
+        folder_queue = [selection.collection_id]
+        visited: set[str] = set()
+        results: list[ResolvedSelectionItem] = []
+        while folder_queue:
+            folder_id = folder_queue.pop(0)
+            if folder_id in visited:
+                continue
+            visited.add(folder_id)
+            if len(visited) > 256:
+                return self._unavailable_bookmark(
+                    selection, "bookmark_folder_collection_too_large"
+                )
+            cursor: str | None = None
+            while True:
+                page = await self._navigation.list_bookmarks(
+                    BookmarkFilters(folder_id=folder_id), cursor, self._PAGE_SIZE
+                )
+                for bookmark in page.items:
+                    results.extend(
+                        await self._resolve_target(selection, getattr(bookmark, "target", None))
+                    )
+                    if len(results) > self._MAX_COLLECTION_ITEMS:
+                        return self._unavailable_bookmark(
+                            selection, "bookmark_collection_item_limit_exceeded"
+                        )
+                cursor = page.next_cursor
+                if cursor is None:
+                    break
+            folder_queue.extend(sorted(child_folders.get(folder_id, [])))
+        if results:
+            return results
+        return [
+            ResolvedSelectionItem(
+                stable_id=selection.collection_id,
+                title="Saved folder",
+                authority_kind="app_owned",
+                state="empty",
+                reason="bookmark_folder_empty",
+            )
+        ]
+
+    async def resolve(self, selection: PodcastSelection) -> list[ResolvedSelectionItem]:
+        if not isinstance(selection, KnowledgeCollectionSelection):
+            raise ValueError("podcast_selection_kind_unavailable")
+        if selection.collection_kind == "folder":
+            return await self._resolve_folder(selection)
+        if selection.collection_kind != "bookmark":
+            raise ValueError("podcast_selection_kind_unavailable")
+        bookmark = await self._navigation.get_bookmark(selection.collection_id)
+        return await self._resolve_target(selection, getattr(bookmark, "target", None))
 
 
 class PodcastSelectionService:

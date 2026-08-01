@@ -314,6 +314,93 @@ async def test_bookmark_collection_delegates_to_the_current_unified_target():
 
 
 @pytest.mark.asyncio
+async def test_folder_collection_traverses_nested_folders_without_truncating_targets():
+    class Engine:
+        async def get_document(self, document_id):
+            return type(
+                "Document",
+                (),
+                {
+                    "id": document_id,
+                    "title": document_id.rsplit(":", 1)[1],
+                    "authority_kind": "external_read_only",
+                    "relative_locator": "Research/Note.md",
+                    "source_revision_id": "knowledge_engine_revision:current",
+                    "content_hash": "c" * 64,
+                    "normalized_body": f"body for {document_id}",
+                },
+            )()
+
+    class Navigation:
+        async def list_folders(self):
+            return [
+                type(
+                    "Folder",
+                    (),
+                    {
+                        "id": "knowledge_bookmark_folder:research",
+                        "parent_folder_id": None,
+                    },
+                )(),
+                type(
+                    "Folder",
+                    (),
+                    {
+                        "id": "knowledge_bookmark_folder:child",
+                        "parent_folder_id": "knowledge_bookmark_folder:research",
+                    },
+                )(),
+            ]
+
+        async def list_bookmarks(self, filters, cursor, limit):
+            assert cursor is None
+            assert limit == 100
+            document_id = {
+                "knowledge_bookmark_folder:research": "knowledge_engine_document:root",
+                "knowledge_bookmark_folder:child": "knowledge_engine_document:child",
+            }[filters.folder_id]
+            return type(
+                "BookmarkPage",
+                (),
+                {
+                    "items": [
+                        type(
+                            "Bookmark",
+                            (),
+                            {
+                                "target": type(
+                                    "DocumentTarget",
+                                    (),
+                                    {"kind": "document", "document_id": document_id},
+                                )(),
+                            },
+                        )()
+                    ],
+                    "next_cursor": None,
+                },
+            )()
+
+    engine_resolver = KnowledgeEnginePodcastSelectionResolver(engine=Engine())
+    items = await KnowledgeNavigationPodcastSelectionResolver(
+        navigation=Navigation(), engine_resolver=engine_resolver
+    ).resolve(
+        KnowledgeCollectionSelection(
+            collection_kind="folder",
+            collection_id="knowledge_bookmark_folder:research",
+        )
+    )
+
+    assert [item.stable_id for item in items] == [
+        "knowledge_engine_document:root",
+        "knowledge_engine_document:child",
+    ]
+    assert [item.content for item in items] == [
+        "body for knowledge_engine_document:root",
+        "body for knowledge_engine_document:child",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_preview_fingerprint_includes_resolved_revision_without_source_body():
     @dataclass
     class RevisionResolver:
