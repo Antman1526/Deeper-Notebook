@@ -7,7 +7,14 @@ import {
   Language,
   PodcastGenerationRequest,
   PodcastGenerationResponse,
+  PodcastReadiness,
+  PodcastSelectionPreview,
 } from '@/lib/types/podcasts'
+import {
+  normalizePodcastSelections,
+  toPodcastSelectionWire,
+  type PodcastSelection,
+} from '@/lib/podcasts/selection'
 
 export type EpisodeProfileInput = Omit<EpisodeProfile, 'id'>
 export type SpeakerProfileInput = Omit<SpeakerProfile, 'id'>
@@ -31,6 +38,31 @@ export async function resolvePodcastAssetUrl(path?: string | null): Promise<stri
 }
 
 export const podcastsApi = {
+  previewPodcastSelection: async (selections: PodcastSelection[]) => {
+    const response = await apiClient.post<PodcastSelectionPreview>(
+      '/podcasts/selection/preview',
+      { selections: normalizePodcastSelections(selections).map(toPodcastSelectionWire) },
+    )
+    return response.data
+  },
+
+  getPodcastReadiness: async (
+    selections: PodcastSelection[],
+    options: {
+      executionPolicy?: 'strict_local' | 'local_preferred' | 'custom'
+      computeProfile?: 'efficient' | 'balanced' | 'maximum_quality'
+      includeTranscription?: boolean
+    } = {},
+  ) => {
+    const response = await apiClient.post<PodcastReadiness>('/podcasts/readiness', {
+      selections: normalizePodcastSelections(selections).map(toPodcastSelectionWire),
+      execution_policy: options.executionPolicy ?? 'strict_local',
+      compute_profile: options.computeProfile ?? 'balanced',
+      include_transcription: options.includeTranscription ?? false,
+    })
+    return response.data
+  },
+
   listEpisodes: async () => {
     const response = await apiClient.get<PodcastEpisode[]>('/podcasts/episodes')
     return response.data

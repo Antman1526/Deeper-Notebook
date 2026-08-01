@@ -18,6 +18,8 @@ import { NotebookDeleteDialog } from './NotebookDeleteDialog'
 import { useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getDateLocale } from '@/lib/utils/date-locale'
+import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface NotebookRowProps {
   notebook: NotebookResponse
@@ -28,6 +30,8 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const router = useRouter()
   const updateNotebook = useUpdateNotebook()
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
+  const noReadableContent = notebook.source_count + notebook.note_count === 0
 
   const handleArchiveToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -74,6 +78,12 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          <TurnIntoPodcastAction
+            selection={{ kind: 'notebook', notebookId: notebook.id }}
+            destination="quick"
+            disabledReason={noReadableContent ? 'No readable content is available' : undefined}
+            onOpen={openPodcastReview}
+          />
           <Badge variant="outline" className="text-xs flex items-center gap-1 px-1.5 py-0.5 text-primary border-primary/50">
             <FileText className="h-3 w-3" />
             <span>{notebook.source_count}</span>
