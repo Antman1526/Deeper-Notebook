@@ -138,11 +138,16 @@ class LocalModelPlanner:
         request = self._plan_requests.get(id(first_pass))
         selected = self._by_id.get(first_pass.selected_model_id or "")
         safe_unit_id = _safe_bounded_unit_id(bounded_unit_id)
+        receipt_reason = (
+            reason
+            if reason in _ALLOWED_ESCALATION_REASONS
+            else "rejected_unrecognized_reason"
+        )
         receipt = {
             "first_pass_model_id": first_pass.selected_model_id,
             "first_pass_fingerprint": first_pass.selected_fingerprint,
             "first_pass_measurements": dict(first_pass.selected_measurements),
-            "reason": reason,
+            "reason": receipt_reason,
             "bounded_unit_id": safe_unit_id,
         }
         if reason not in _ALLOWED_ESCALATION_REASONS:

@@ -88,3 +88,20 @@ in escalation receipts.
 PYTHONPATH="$PWD" /Users/Antman/Documents/Open\ Notebook/Deeper-Notebook/.venv/bin/pytest -q tests/test_local_model_planner.py
 # 24 passed
 ```
+
+## Final review repair — rejected-reason redaction
+
+### Red
+
+The escalation receipt was constructed before the reason allowlist rejection,
+so a malicious invalid reason could be recorded verbatim despite the returned
+escalation being blocked.
+
+### Repair and verification
+
+- Valid allowlisted reasons remain receipt-safe enum values.
+- Every rejected reason is replaced in the receipt with the static
+  `rejected_unrecognized_reason` code; no caller-provided reason text is
+  retained. The escalation remains blocked.
+- A malicious multiline source/output-looking reason regression first failed,
+  then passed with the planner suite (`25 passed`).
