@@ -72,9 +72,9 @@ class MlxProvider:
                     models.append(repo.relative_to(self.model_dir).as_posix())
         return sorted(models)
 
-    def start(self, model: str) -> ProviderEnv:
+    def start(self, model: str, *, validate: bool = True) -> ProviderEnv:
         path = self._resolve_model_path(model)
-        if not _is_complete_mlx_repo(path):
+        if validate and not _is_complete_mlx_repo(path):
             raise FileNotFoundError(f"Not a complete MLX model repo: {path}")
         if self._proc is not None:
             self.stop()

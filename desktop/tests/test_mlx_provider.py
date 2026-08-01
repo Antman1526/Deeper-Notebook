@@ -104,6 +104,25 @@ def test_start_raises_for_incomplete_model(mlx_model_root):
         provider.start("MLX/mlx-community__Incomplete")
 
 
+def test_start_can_defer_configured_model_validation(mlx_model_root, monkeypatch):
+    incomplete = mlx_model_root / "MLX" / "mlx-community__Deferred"
+    incomplete.mkdir()
+    fake_proc = MagicMock(spec=subprocess.Popen)
+    fake_proc.poll.return_value = None
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake_proc)
+    monkeypatch.setattr("desktop.providers.mlx.find_free_port", lambda: 51232)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+    provider = MlxProvider(
+        model_dir=mlx_model_root,
+        ready_probe=lambda _port: True,
+    )
+    result = provider.start("MLX/mlx-community__Deferred", validate=False)
+
+    assert result["OPENAI_COMPATIBLE_BASE_URL"] == "http://127.0.0.1:51232/v1"
+    provider.stop()
+
+
 def test_start_raises_if_server_never_ready(mlx_model_root, monkeypatch):
     fake_proc = MagicMock(spec=subprocess.Popen)
     fake_proc.poll.return_value = None
