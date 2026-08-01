@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -11,6 +11,10 @@ from api.podcast_service import (
     PodcastGenerationRequest,
     PodcastGenerationResponse,
     PodcastService,
+)
+from api.schemas.podcast_studio import (
+    PodcastSelectionPreviewRequest,
+    PodcastSelectionPreviewResponse,
 )
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from deeper_notebook.config import DATA_FOLDER
@@ -27,8 +31,64 @@ from deeper_notebook.podcasts.profile_names import (
     CANONICAL_LOCAL_EPISODE_PROFILE,
     select_existing_episode_profile_name,
 )
+from deeper_notebook.podcasts.selection_service import (
+    KnowledgeEnginePodcastSelectionResolver,
+    PodcastSelectionService,
+)
 
 router = APIRouter()
+
+
+def _podcast_selection_engine(request: Request):
+    """Return only the read projection required for a podcast preview."""
+    engine = getattr(request.app.state, "knowledge_engine_service", None)
+    if engine is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "podcast_selection_unavailable"},
+        )
+    if not callable(getattr(engine, "get_document", None)):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "podcast_selection_unavailable"},
+        )
+    return engine
+
+
+@router.post(
+    "/podcasts/selection/preview",
+    response_model=PodcastSelectionPreviewResponse,
+)
+async def preview_podcast_selection(
+    request: Request,
+    payload: PodcastSelectionPreviewRequest,
+) -> PodcastSelectionPreviewResponse:
+    """Resolve references for review without starting a model or source mutation."""
+    try:
+        preview = await PodcastSelectionService(
+            resolver=KnowledgeEnginePodcastSelectionResolver(
+                engine=_podcast_selection_engine(request)
+            )
+        ).preview(payload.selections)
+        return PodcastSelectionPreviewResponse.model_validate(preview.model_dump())
+    except HTTPException:
+        raise
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "podcast_selection_not_found"},
+        ) from None
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "podcast_selection_unavailable"},
+        ) from None
+    except Exception as exc:
+        logger.warning("Podcast selection preview unavailable ({})", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "podcast_selection_unavailable"},
+        ) from None
 
 
 # v0.8.70 — per-episode retry serialization. The retry handler reads the
