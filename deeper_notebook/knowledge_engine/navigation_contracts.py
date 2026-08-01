@@ -86,7 +86,7 @@ NavigationLocalId = Annotated[
     Field(min_length=1, max_length=128, pattern=_NAVIGATION_LOCAL_ID),
 ]
 
-TargetKind = Literal["document", "block", "search", "graph", "workspace"]
+TargetKind = Literal["document", "block", "search", "graph", "workspace", "ask", "podcast"]
 TargetState = Literal["available", "stale", "unavailable", "missing"]
 
 
@@ -165,6 +165,18 @@ class SearchTarget(_Strict):
         return normalize_tags(value)
 
 
+class AskTarget(_Strict):
+    kind: Literal["ask"] = "ask"
+    thread_id: str | None = Field(default=None, max_length=128)
+    selected_document_ids: list[KnowledgeDocumentId] = Field(default_factory=list, max_length=128)
+
+
+class PodcastTarget(_Strict):
+    kind: Literal["podcast"] = "podcast"
+    production_id: str | None = Field(default=None, max_length=128)
+    seed_document_ids: list[KnowledgeDocumentId] = Field(default_factory=list, max_length=128)
+
+
 class GraphTarget(_Strict):
     kind: Literal["graph"] = "graph"
     root_document_id: KnowledgeDocumentId | None = None
@@ -191,7 +203,7 @@ class WorkspaceTarget(_Strict):
 
 
 KnowledgeTarget = Annotated[
-    DocumentTarget | BlockTarget | SearchTarget | GraphTarget | WorkspaceTarget,
+    DocumentTarget | BlockTarget | SearchTarget | AskTarget | PodcastTarget | GraphTarget | WorkspaceTarget,
     Field(discriminator="kind"),
 ]
 
@@ -210,7 +222,10 @@ class NamedWorkspaceTab(_Strict):
 
     @model_validator(mode="after")
     def legacy_mode_is_derived(self) -> "NamedWorkspaceTab":
-        derived = {"document": "read", "graph": "graph", "search": "search"}.get(
+        derived = {
+            "document": "read", "graph": "graph", "search": "search",
+            "ask": "ask", "podcast": "podcast",
+        }.get(
             self.target.kind, "read"
         )
         if self.mode is None:
@@ -490,7 +505,7 @@ class DeleteBookmark(_Strict):
 class BookmarkFilters(_Strict):
     folder_id: BookmarkFolderId | None = None
     tags: list[str] = Field(default_factory=list, max_length=32)
-    target_kinds: list[TargetKind] = Field(default_factory=list, max_length=5)
+    target_kinds: list[TargetKind] = Field(default_factory=list, max_length=7)
     space_ids: list[KnowledgeSpaceId] = Field(default_factory=list, max_length=32)
     authority_kinds: list[AuthorityKind] = Field(default_factory=list, max_length=2)
 
@@ -798,6 +813,7 @@ __all__ = [
     "DuplicateWorkspace",
     "GraphTarget",
     "GraphViewport",
+    "AskTarget",
     "HydratedBookmark",
     "HydratedBookmarkPage",
     "HydratedKnowledgeTarget",
@@ -820,6 +836,7 @@ __all__ = [
     "RandomNoteFilters",
     "RandomNoteResult",
     "SearchTarget",
+    "PodcastTarget",
     "TargetState",
     "UpdateBookmark",
     "UpdateFolder",

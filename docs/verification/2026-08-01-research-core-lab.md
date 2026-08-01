@@ -192,3 +192,37 @@ paths remain supported.
 The temporary local smoke server was stopped after the response. This proves
 the worktree-local standalone startup path only; it does not prove a native
 app, Playwright execution, or packaged release.
+
+## Native browser persistence repair — 2026-08-01
+
+The exact browser project now executes successfully. The strict fixture
+exercises the supported Overlay save path, then proves the saved app-owned
+content and every V2 research mode survive both Current Session reload and a
+named-workspace restore. The named target contract was extended additively for
+content-free `ask` and `podcast` targets; Search and Graph retain their stable
+target fields. No document ID is synthesized for non-document modes.
+
+```sh
+(cd frontend && npx playwright test e2e/research-core-lab.spec.ts --project=native-runtime)
+# 4 passed
+
+(cd frontend && npx vitest run src/components/vault/KnowledgeExplorer.test.tsx \
+  --pool=forks --maxWorkers=1)
+# 1 file, 48 tests passed
+
+(cd frontend && npx tsc --noEmit)
+# passed
+
+uv run pytest tests/test_knowledge_navigation_contracts.py \
+  tests/test_knowledge_navigation_service.py -q
+# 47 passed
+
+git diff --check
+# passed
+```
+
+The `native-runtime` Playwright project is a browser/runtime acceptance
+surface with synthetic API fixtures; it is not evidence of a packaged desktop
+launch or a user-owned persistent native application. External vault writes,
+provider execution, model-library mutation, and credentials remain out of
+scope.

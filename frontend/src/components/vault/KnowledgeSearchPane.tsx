@@ -13,6 +13,7 @@ interface KnowledgeSearchPaneProps {
   searchMode: 'exact' | 'text' | 'semantic'
   spaceIds: string[]
   authorityKinds: ('app_owned' | 'external_read_only')[]
+  onQueryChange?: (query: string) => void
 }
 
 export function KnowledgeSearchPane({
@@ -20,6 +21,7 @@ export function KnowledgeSearchPane({
   searchMode,
   spaceIds,
   authorityKinds,
+  onQueryChange,
 }: KnowledgeSearchPaneProps) {
   const [query, setQuery] = useState(initialQuery)
   const [submitted, setSubmitted] = useState(false)
@@ -55,7 +57,9 @@ export function KnowledgeSearchPane({
         aria-label="Search knowledge"
         value={query}
         onChange={(event) => {
-          setQuery(event.target.value)
+          const nextQuery = event.target.value
+          setQuery(nextQuery)
+          onQueryChange?.(nextQuery)
           setSubmitted(false)
         }}
         onKeyDown={(event) => {
