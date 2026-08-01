@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { NamedKnowledgeWorkspaceSummary } from '@/lib/api/knowledge-navigation'
@@ -14,6 +14,7 @@ interface KnowledgeWorkspacesPanelProps {
   onReplaceWithCurrent: (workspace: NamedKnowledgeWorkspaceSummary) => Promise<void>
   onDelete: (workspace: NamedKnowledgeWorkspaceSummary) => Promise<void>
   onRefresh: () => Promise<unknown>
+  commandIntent?: { id: number; kind: 'save' | 'replace' } | null
 }
 
 type EditMode = 'save' | 'rename' | 'duplicate' | null
@@ -36,12 +37,20 @@ export function KnowledgeWorkspacesPanel({
   onReplaceWithCurrent,
   onDelete,
   onRefresh,
+  commandIntent = null,
 }: KnowledgeWorkspacesPanelProps) {
   const [editMode, setEditMode] = useState<EditMode>(null)
   const [editing, setEditing] = useState<NamedKnowledgeWorkspaceSummary | null>(null)
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
+  const [selectingReplacement, setSelectingReplacement] = useState(false)
+
+  useEffect(() => {
+    if (!commandIntent) return
+    if (commandIntent.kind === 'save') begin('save')
+    else setSelectingReplacement(true)
+  }, [commandIntent?.id])
 
   const begin = (mode: Exclude<EditMode, null>, workspace?: NamedKnowledgeWorkspaceSummary) => {
     setEditMode(mode)
@@ -101,6 +110,7 @@ export function KnowledgeWorkspacesPanel({
         <p className="mt-1 text-sm text-muted-foreground">Autosaved locally in this knowledge workspace.</p>
         <Button type="button" size="sm" className="mt-3" onClick={() => begin('save')}>Save Current As</Button>
       </div>
+      {selectingReplacement && <p role="status" className="text-sm text-muted-foreground">Select a saved workspace to replace with the current session.</p>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {editMode && <form aria-label="Workspace editor" className="rounded-md border p-3" onSubmit={(event) => { event.preventDefault(); void submit() }}>
         <label className="block text-sm font-medium" htmlFor="workspace-name">Workspace name</label>
@@ -120,7 +130,7 @@ export function KnowledgeWorkspacesPanel({
             <Button type="button" size="sm" onClick={() => void perform(() => onOpen(workspace))} disabled={pending}>Open {workspace.name}</Button>
             <Button type="button" size="sm" variant="outline" onClick={() => begin('rename', workspace)} disabled={pending}>Rename {workspace.name}</Button>
             <Button type="button" size="sm" variant="outline" onClick={() => begin('duplicate', workspace)} disabled={pending}>Duplicate {workspace.name}</Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => void perform(() => onReplaceWithCurrent(workspace))} disabled={pending}>Replace With Current</Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => { setSelectingReplacement(false); void perform(() => onReplaceWithCurrent(workspace)) }} disabled={pending}>Replace With Current</Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => void perform(() => onDelete(workspace))} disabled={pending}>Delete {workspace.name}</Button>
           </div>
         </li>)}

@@ -8,6 +8,9 @@ export interface KnowledgeFixtureState {
   namedWorkspaces: Array<Record<string, unknown>>;
   operationReceipts: Array<Record<string, unknown>>;
   randomSelections: string[];
+  restorePlan: Record<string, unknown> | null;
+  conflictWorkspaceUpdate: boolean;
+  workspaceListReads: number;
 }
 
 export interface StrictOverlayFixtureNote {
@@ -83,6 +86,7 @@ const evidenceFile = {
 const files = [planFile, evidenceFile];
 
 const planPage = {
+  knowledge_document_id: "knowledge_engine_document:plan",
   file: planFile,
   note: {
     id: "note:plan",
@@ -119,6 +123,7 @@ const planPage = {
 };
 
 const evidencePage = {
+  knowledge_document_id: "knowledge_engine_document:evidence",
   file: evidenceFile,
   note: {
     id: "note:evidence",
@@ -181,6 +186,9 @@ export function initialKnowledgeFixtureState(): KnowledgeFixtureState {
     namedWorkspaces: [],
     operationReceipts: [],
     randomSelections: [],
+    restorePlan: null,
+    conflictWorkspaceUpdate: false,
+    workspaceListReads: 0,
     workspace: {
       version: 1,
       active_pane_id: "pane-1",
@@ -193,6 +201,7 @@ export function initialKnowledgeFixtureState(): KnowledgeFixtureState {
         },
       },
       layout: { type: "pane", pane_id: "pane-1" },
+      navigation: { metrics_visible: false },
     },
   };
 }
@@ -257,6 +266,12 @@ export async function installKnowledgeShellMocks(
       domain: "127.0.0.1",
       path: "/",
     },
+    {
+      name: "onp_intro_seen",
+      value: "1",
+      domain: "127.0.0.1",
+      path: "/",
+    },
   ]);
 
   await page.route("**/api/**", async (route) => {
@@ -280,6 +295,10 @@ export async function installKnowledgeShellMocks(
     },
     unexpectedApiTraffic,
   );
+  await fulfillJson(page, "/api/health", { status: "healthy" }, unexpectedApiTraffic);
+  await fulfillJson(page, "/api/adapters", [], unexpectedApiTraffic);
+  await fulfillJson(page, "/api/auth/get-session", null, unexpectedApiTraffic);
+  await fulfillJson(page, "/api/companies", [], unexpectedApiTraffic);
   await fulfillJson(
     page,
     "/api/auth/status",
@@ -409,12 +428,23 @@ export async function fulfillKnowledgeRequest(
   const pageRoute = matchFixturePageRoute(path);
   let payload: unknown;
 
-  if (path.endsWith("/deeper-notebook/knowledge/bookmarks")) {
+  if (path.includes("/deeper-notebook/knowledge/workspaces/") && path.endsWith("/restore-plan")) {
+    if (!(await allowRequestMethod(route, ["POST"], unexpectedApiTraffic))) return;
+    payload = state.restorePlan;
+  } else if (path.includes("/deeper-notebook/knowledge/workspaces/") && method === "PATCH") {
+    if (!(await allowRequestMethod(route, ["PATCH"], unexpectedApiTraffic))) return;
+    if (state.conflictWorkspaceUpdate) {
+      state.conflictWorkspaceUpdate = false;
+      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: "conflict" }) });
+      return;
+    }
+    payload = state.namedWorkspaces[0];
+  } else if (path.endsWith("/deeper-notebook/knowledge/bookmarks")) {
     if (!(await allowRequestMethod(route, ["GET", "HEAD", "POST"], unexpectedApiTraffic))) return;
     if (method === "POST") {
       const body = request.postDataJSON() as Record<string, unknown>;
       const ordinal = state.bookmarks.length + 1;
-      const now = "2026-07-31T00:00:00+00:00";
+      const now = "2026-07-31T00:00:00Z";
       const bookmark = {
         schema_version: 1,
         id: `knowledge_bookmark:fixture_${ordinal}`,
@@ -429,6 +459,9 @@ export async function fulfillKnowledgeRequest(
         revision: 1,
         created_at: now,
         updated_at: now,
+      };
+      state.bookmarks.push({
+        ...bookmark,
         target_state: "available",
         target_document: {
           document_id: "knowledge_engine_document:evidence",
@@ -440,8 +473,7 @@ export async function fulfillKnowledgeRequest(
           legacy_note_id: "note:evidence",
           legacy_container_id: "vault:fixture",
         },
-      };
-      state.bookmarks.push(bookmark);
+      });
       state.operationReceipts.push({ operation_id: body.operation_id, entity_id: bookmark.id });
       payload = bookmark;
     } else payload = { items: state.bookmarks, next_cursor: null };
@@ -478,15 +510,18 @@ export async function fulfillKnowledgeRequest(
         snapshot: body.snapshot,
         capacity_slot: ordinal,
         revision: 1,
-        created_at: "2026-07-31T00:00:00+00:00",
-        updated_at: "2026-07-31T00:00:00+00:00",
+        created_at: "2026-07-31T00:00:00Z",
+        updated_at: "2026-07-31T00:00:00Z",
       };
       state.namedWorkspaces.push(workspace);
       state.operationReceipts.push({ operation_id: body.operation_id, entity_id: workspace.id });
       payload = workspace;
-    } else payload = { items: state.namedWorkspaces.map((workspace) => ({
+    } else {
+      state.workspaceListReads += 1;
+      payload = { items: state.namedWorkspaces.map((workspace) => ({
       id: workspace.id, name: workspace.name, revision: workspace.revision, updated_at: workspace.updated_at,
-    })) };
+      })) };
+    }
   } else if (path.endsWith("/deeper-notebook/workspace/knowledge")) {
     if (
       !(await allowRequestMethod(
