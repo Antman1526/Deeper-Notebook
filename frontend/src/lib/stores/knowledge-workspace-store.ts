@@ -8,6 +8,7 @@ import {
   splitDirectionSchema,
   type KnowledgeLayoutNode,
   type KnowledgePane,
+  type KnowledgeTab,
   type GraphViewport,
   type KnowledgeWorkspaceNavigation,
   type KnowledgeViewMode,
@@ -196,6 +197,30 @@ function documentTarget(tab: KnowledgePane['tabs'][number], renderMode = tab.vie
   }
 }
 
+export function createKnowledgeWorkspaceTab(tab: OpenKnowledgeTab, id: string) {
+  const viewMode = tab.viewMode ?? 'reading'
+  const sourceAuthority = tab.sourceAuthority ?? 'external-vault'
+  const base = {
+    ...tab, id, viewMode, sourceAuthority,
+    knowledgeDocumentId: tab.knowledgeDocumentId ?? null,
+    graphViewport: tab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+  }
+  if (viewMode === 'graph') {
+    return {
+      ...base, mode: 'graph' as const,
+      target: {
+        kind: 'graph' as const, root_document_id: base.knowledgeDocumentId,
+        space_ids: [], relation_kinds: [], viewport: base.graphViewport,
+        origin: documentTarget(base, 'reading'),
+      },
+    }
+  }
+  return {
+    ...base, mode: sourceAuthority === 'overlay' ? 'write' as const : 'read' as const,
+    target: documentTarget(base),
+  }
+}
+
 export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set, get) => ({
   ...defaultKnowledgeWorkspace(),
   hydrated: false,
@@ -325,25 +350,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     if (totalTabCount(state.panes) >= 128) return
 
     const allocated = allocateId('tab', state.nextId, collectTabIds(state.panes))
-    const created = {
-      ...validTab,
-      id: allocated.id,
-      viewMode: validTab.viewMode ?? 'reading',
-      sourceAuthority: validTab.sourceAuthority ?? 'external-vault',
-      knowledgeDocumentId: validTab.knowledgeDocumentId ?? null,
-      graphViewport: validTab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
-      mode: validTab.sourceAuthority === 'overlay' ? 'write' as const : 'read' as const,
-      target: {
-        kind: 'document' as const,
-        container_id: validTab.vaultId,
-        note_id: validTab.noteId,
-        title: validTab.title,
-        relative_locator: validTab.relativePath,
-        authority: validTab.sourceAuthority ?? 'external-vault',
-        knowledge_document_id: validTab.knowledgeDocumentId ?? null,
-        render_mode: validTab.viewMode ?? 'reading',
-      },
-    }
+    const created = createKnowledgeWorkspaceTab(validTab, allocated.id)
     set({
       activePaneId: paneId,
       nextId: allocated.nextId,
@@ -393,13 +400,19 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
         ...state.panes,
         [paneId]: {
           ...pane,
-          tabs: pane.tabs.map((candidate) => candidate.id === tabId
-            ? {
-                ...candidate,
+          tabs: pane.tabs.map((candidate): KnowledgeTab => candidate.id === tabId
+            ? (() => {
+                const updated = {
+                  ...candidate,
                 title: parsed.data.title,
                 relativePath: parsed.data.relativePath,
                 knowledgeDocumentId: parsed.data.knowledgeDocumentId ?? null,
-              }
+                }
+                if (updated.mode === 'graph' && updated.target?.kind === 'graph') {
+                  return { ...updated, target: { ...updated.target, root_document_id: updated.knowledgeDocumentId, origin: documentTarget(updated, 'reading') } } as KnowledgeTab
+                }
+                return { ...updated, target: documentTarget(updated) } as KnowledgeTab
+              })()
             : candidate),
         },
       },
@@ -502,13 +515,13 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       && tab.graphViewport?.zoom === parsed.zoom
     )) return
     set({ revision: state.revision + 1, panes: { ...state.panes, [paneId]: {
-      ...pane, tabs: pane.tabs.map((candidate) => candidate.id === tabId
+      ...pane, tabs: pane.tabs.map((candidate): KnowledgeTab => candidate.id === tabId
         ? {
             ...candidate, graphViewport: { ...parsed },
-            target: candidate.mode === 'graph' && candidate.target.kind === 'graph'
+            target: candidate.mode === 'graph' && candidate.target?.kind === 'graph'
               ? { ...candidate.target, viewport: { ...parsed } }
               : candidate.target,
-          } : candidate),
+          } as KnowledgeTab : candidate),
     } } })
   },
 

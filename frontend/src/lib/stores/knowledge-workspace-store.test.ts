@@ -71,6 +71,22 @@ describe('knowledge workspace store', () => {
     expect(tab).toMatchObject({ mode: 'read', target: { kind: 'document', render_mode: 'source' } })
   })
 
+  it('opens graph tabs with a V2 graph target and reconciles its origin', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab({ ...plan, viewMode: 'graph' })
+    const tabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+    store.reconcileTabReference('pane-1', tabId, {
+      title: 'Renamed', relativePath: 'Projects/Renamed.md',
+      knowledgeDocumentId: 'knowledge_engine_document:renamed',
+    })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0]).toMatchObject({
+      mode: 'graph', target: {
+        kind: 'graph', root_document_id: 'knowledge_engine_document:renamed',
+        origin: { title: 'Renamed', relative_locator: 'Projects/Renamed.md' },
+      },
+    })
+  })
+
   it('applies a named workspace in one revision and preserves drafts', () => {
     const store = useKnowledgeWorkspaceStore.getState()
     store.openTab({ ...plan, sourceAuthority: 'overlay' })
