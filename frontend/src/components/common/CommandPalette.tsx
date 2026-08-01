@@ -279,6 +279,15 @@ export function CommandPalette() {
       saveWorkspaceAs: page.context.saveWorkspaceAs ?? null,
       replaceWorkspace: page.context.replaceWorkspace ?? null,
       toggleMetrics: page.context.toggleMetrics ?? null,
+      researchModeAvailability: page.context.researchModeAvailability ?? {
+        read: { available: false, reason: 'Research modes are unavailable' },
+        write: { available: false, reason: 'Research modes are unavailable' },
+        ask: { available: false, reason: 'Research modes are unavailable' },
+        search: { available: false, reason: 'Research modes are unavailable' },
+        graph: { available: false, reason: 'Research modes are unavailable' },
+        podcast: { available: false, reason: 'Research modes are unavailable' },
+      },
+      openResearchMode: page.context.openResearchMode ?? null,
       moveTab: offset => {
         const current = useKnowledgeWorkspaceStore.getState()
         const currentPane = current.panes[current.activePaneId]
@@ -409,9 +418,9 @@ export function CommandPalette() {
                 onSelect={() => void executeKnowledge(command.id)}
               >
                 <span>{t(command.labelKey)}</span>
-                {!command.available && command.unavailableReasonKey && (
+                {!command.available && (command.unavailableReason || command.unavailableReasonKey) && (
                   <span className="ml-auto text-xs text-muted-foreground">
-                    {t(command.unavailableReasonKey)}
+                    {command.unavailableReason || t(command.unavailableReasonKey!)}
                   </span>
                 )}
               </CommandItem>

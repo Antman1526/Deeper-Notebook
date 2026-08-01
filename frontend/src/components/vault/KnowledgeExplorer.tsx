@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -46,7 +46,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useMediaQuery } from '@/lib/hooks/use-media-query'
 import { useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
 import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
-import type { ResearchMode } from '@/lib/knowledge/research-modes'
+import { RESEARCH_MODE_DESCRIPTORS, type ResearchMode } from '@/lib/knowledge/research-modes'
 import { createKnowledgeWorkspaceTab, useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import { useOverlayDraftStore } from '@/lib/stores/overlay-draft-store'
 import {
@@ -407,7 +407,15 @@ export function KnowledgeExplorer() {
   const openResearchMode = useCallback((mode: ResearchMode, paneId: string) => {
     const state = useKnowledgeWorkspaceStore.getState()
     const pane = state.panes[paneId]
-    if (!pane || pane.tabs.length >= 128) return
+    if (!pane) return
+    const existing = pane.tabs.find((tab) => (
+      tab.mode === mode && tab.target?.kind === RESEARCH_MODE_DESCRIPTORS[mode].targetKind
+    ))
+    if (existing) {
+      state.activateTab(paneId, existing.id)
+      return
+    }
+    if (pane.tabs.length >= 128) return
     const active = pane.tabs.find((tab) => tab.id === pane.activeTabId) ?? pane.tabs[0]
     let nextId = state.nextId
     const usedIds = new Set(Object.values(state.panes).flatMap((candidate) => candidate.tabs.map((tab) => tab.id)))
@@ -453,16 +461,31 @@ export function KnowledgeExplorer() {
           detail: `${healthyLocalModels.length} local model${healthyLocalModels.length === 1 ? '' : 's'} ready`,
           models: healthyLocalModels.map((model) => ({ id: model.name, provider: model.runtime ?? 'Local' })),
         }
-  const modeAvailability = {
-    write: activeTab?.target?.kind === 'document' && activeTab.target.authority === 'overlay'
+  const modeAvailability = useMemo(() => {
+    const hasOpenMode = (mode: ResearchMode) => activePane?.tabs.some((tab) => (
+      tab.mode === mode && tab.target?.kind === RESEARCH_MODE_DESCRIPTORS[mode].targetKind
+    )) ?? false
+    return {
+    read: activeTab?.target?.kind === 'document' || hasOpenMode('read')
+      ? { available: true, reason: null }
+      : { available: false, reason: 'Requires a document target' },
+    write: (activeTab?.target?.kind === 'document' && activeTab.target.authority === 'overlay') || hasOpenMode('write')
       ? { available: true, reason: null }
       : { available: false, reason: 'External source — read only' },
     ask: localReadiness.state === 'ready'
       ? { available: true, reason: null }
       : { available: false, reason: localReadiness.detail },
+    search: { available: true, reason: null },
+    graph: { available: true, reason: null },
+    podcast: { available: true, reason: null },
   }
+  }, [activePane?.tabs, activeTab?.target, localReadiness.detail, localReadiness.state])
   const hasUnsavedOverlayDraft = Boolean(
     activeTab?.sourceAuthority === 'overlay' && overlayDrafts[`${activePaneId}:${activeTab.id}`],
+  )
+  const openResearchModeForActivePane = useCallback(
+    (mode: ResearchMode) => openResearchMode(mode, activePaneId),
+    [activePaneId, openResearchMode],
   )
 
   const navigate: KnowledgeNavigate = (
@@ -1101,6 +1124,8 @@ export function KnowledgeExplorer() {
         saveWorkspaceAs={requestSaveWorkspaceAs}
         replaceWorkspace={requestReplaceWorkspace}
         toggleMetrics={toggleMetrics}
+        researchModeAvailability={modeAvailability}
+        openResearchMode={openResearchModeForActivePane}
       />
       <KnowledgeQuickSwitcher mounts={mounts.data || []} searchMode={navigation.searchMode} onBookmarkSearch={(query, mode) => { void bookmarkSearch(query, mode) }} />
       <CreateUniqueNoteDialog

@@ -31,7 +31,16 @@ function context(): KnowledgeCommandExecutionContext {
     openWorkspaces: vi.fn(),
     saveWorkspaceAs: vi.fn(),
     replaceWorkspace: vi.fn(),
-    toggleMetrics: vi.fn(),
+  toggleMetrics: vi.fn(),
+    researchModeAvailability: {
+      read: { available: true, reason: null },
+      write: { available: true, reason: null },
+      ask: { available: true, reason: null },
+      search: { available: true, reason: null },
+      graph: { available: true, reason: null },
+      podcast: { available: true, reason: null },
+    },
+    openResearchMode: vi.fn(),
   }
 }
 
@@ -91,12 +100,39 @@ describe('knowledge command registry', () => {
   })
 
   it('declares the complete safe command set and rejects unknown commands', async () => {
-    expect(knowledgeCommandDefinitions).toHaveLength(23)
+    expect(knowledgeCommandDefinitions).toHaveLength(29)
     expect(knowledgeCommandDefinitions.every(command => (
       command.safety === 'read' || command.safety === 'workspace'
     ))).toBe(true)
     await expect(executeKnowledgeCommand('knowledge.unknown' as never, context()))
       .resolves.toBe(false)
+  })
+
+  it.each([
+    'read', 'write', 'ask', 'search', 'graph', 'podcast',
+  ] as const)('registers knowledge.mode.%s as a safe mode command', async mode => {
+    const commandContext = context()
+    const id = `knowledge.mode.${mode}` as const
+    const command = knowledgeCommandDefinitions.find(candidate => candidate.id === id)
+
+    expect(command).toMatchObject({ id, safety: 'workspace' })
+    expect(command?.safety).not.toBe('external-write')
+    await expect(executeKnowledgeCommand(id, commandContext)).resolves.toBe(true)
+    expect(commandContext.openResearchMode).toHaveBeenCalledWith(mode)
+  })
+
+  it('uses per-mode availability predicates without falling back to a different mode', async () => {
+    const commandContext = context()
+    commandContext.researchModeAvailability.write = {
+      available: false,
+      reason: 'External source — read only',
+    }
+
+    expect(availableKnowledgeCommands(commandContext, 'global')
+      .find(command => command.id === 'knowledge.mode.write'))
+      .toMatchObject({ available: false, unavailableReason: 'External source — read only' })
+    await expect(executeKnowledgeCommand('knowledge.mode.write', commandContext)).resolves.toBe(false)
+    expect(commandContext.openResearchMode).not.toHaveBeenCalled()
   })
 
   it.each([

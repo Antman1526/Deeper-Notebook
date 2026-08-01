@@ -260,6 +260,7 @@ export const bnIN = {
       viewSource: "উৎস",
       viewLivePreview: "লাইভ প্রিভিউ",
       viewGraph: "গ্রাফ",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "ডানদিকে পেন ভাগ করুন",
       splitDown: "নিচে পেন ভাগ করুন",
       closePane: "পেন বন্ধ করুন",

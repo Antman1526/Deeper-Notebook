@@ -264,6 +264,7 @@ export const plPL = {
       viewSource: "Źródło",
       viewLivePreview: "Podgląd na żywo",
       viewGraph: "Graf",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Podziel panel w prawo",
       splitDown: "Podziel panel w dół",
       closePane: "Zamknij panel",

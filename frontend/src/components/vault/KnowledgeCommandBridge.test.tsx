@@ -27,6 +27,15 @@ function renderBridge() {
   const saveWorkspaceAs = vi.fn()
   const replaceWorkspace = vi.fn()
   const toggleMetrics = vi.fn()
+  const openResearchMode = vi.fn()
+  const researchModeAvailability = {
+    read: { available: true, reason: null },
+    write: { available: false, reason: 'External source — read only' },
+    ask: { available: true, reason: null },
+    search: { available: true, reason: null },
+    graph: { available: true, reason: null },
+    podcast: { available: true, reason: null },
+  }
   const activePaneElement = document.createElement('section')
   document.body.append(activePaneElement)
   const result = render(
@@ -53,6 +62,8 @@ function renderBridge() {
         saveWorkspaceAs={saveWorkspaceAs}
         replaceWorkspace={replaceWorkspace}
         toggleMetrics={toggleMetrics}
+        researchModeAvailability={researchModeAvailability}
+        openResearchMode={openResearchMode}
       />
     </>,
   )
@@ -69,6 +80,8 @@ function renderBridge() {
     saveWorkspaceAs,
     replaceWorkspace,
     toggleMetrics,
+    openResearchMode,
+    researchModeAvailability,
   }
 }
 
@@ -134,6 +147,10 @@ describe('KnowledgeCommandBridge', () => {
       saveWorkspaceAs: expect.any(Function),
       replaceWorkspace: expect.any(Function),
       toggleMetrics: expect.any(Function),
+      researchModeAvailability: {
+        write: { available: false, reason: 'External source — read only' },
+      },
+      openResearchMode: expect.any(Function),
       activePaneElement,
     })
     unmount()

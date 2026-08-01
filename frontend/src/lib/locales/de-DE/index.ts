@@ -264,6 +264,7 @@ export const deDE = {
       viewSource: "Quelle",
       viewLivePreview: "Live-Vorschau",
       viewGraph: "Graph",
+      modeRead: "Read", modeWrite: "Write", modeAsk: "Ask", modeSearch: "Search", modeGraph: "Graph", modePodcast: "Podcast",
       splitRight: "Bereich rechts teilen",
       splitDown: "Bereich nach unten teilen",
       closePane: "Bereich schließen",

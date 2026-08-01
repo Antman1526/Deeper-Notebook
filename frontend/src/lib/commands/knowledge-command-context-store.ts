@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+import type { ResearchMode } from '@/lib/knowledge/research-modes'
+
 export interface KnowledgeCommandPageContext {
   selectedVaultId: string | null
   fileTreeElement?: HTMLElement | null
@@ -15,6 +17,8 @@ export interface KnowledgeCommandPageContext {
   saveWorkspaceAs?: () => void
   replaceWorkspace?: () => void
   toggleMetrics?: () => void
+  researchModeAvailability?: Record<ResearchMode, { available: boolean; reason: string | null }>
+  openResearchMode?: (mode: ResearchMode) => void
 }
 
 interface KnowledgeCommandContextState {
