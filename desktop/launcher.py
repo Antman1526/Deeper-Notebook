@@ -1619,6 +1619,10 @@ class Supervisor:
         self._sidecar_procs.pop(kind, None)
         if old in self._procs:
             self._procs.remove(old)
+        # The old child is no longer running, so its reservation must not
+        # count against its own replacement. `_try_spawn` acquires a fresh
+        # reservation and releases it again if no healthy replacement appears.
+        self.resource_governor.release(kind)
 
         # Respawn via the same _try_spawn path used at boot — preserves
         # progress events + the v0.8.40 _sidecar_procs/spawn_args
