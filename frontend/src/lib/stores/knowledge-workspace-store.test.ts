@@ -55,6 +55,22 @@ describe('knowledge workspace store', () => {
     persistSpy.mockRestore()
   })
 
+  it('persists render-mode transitions as matching V2 targets', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    const tabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+
+    store.setTabViewMode('pane-1', tabId, 'graph')
+    let tab = useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0]
+    expect(tab).toMatchObject({ mode: 'graph', target: { kind: 'graph', origin: { relative_locator: 'Projects/Plan.md' } } })
+    expect(serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState()).panes['pane-1'].tabs[0])
+      .toMatchObject({ mode: 'graph', target: { kind: 'graph' } })
+
+    store.setTabViewMode('pane-1', tabId, 'source')
+    tab = useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0]
+    expect(tab).toMatchObject({ mode: 'read', target: { kind: 'document', render_mode: 'source' } })
+  })
+
   it('applies a named workspace in one revision and preserves drafts', () => {
     const store = useKnowledgeWorkspaceStore.getState()
     store.openTab({ ...plan, sourceAuthority: 'overlay' })

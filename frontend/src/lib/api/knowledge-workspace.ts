@@ -222,6 +222,29 @@ const rawKnowledgeWorkspaceV2WireSchema = z.object({
   panes: z.record(z.string(), z.object({ id: z.string().min(1).max(128), active_tab_id: z.string().min(1).max(128).nullable(), tabs: z.array(knowledgeTabV2WireSchema) }).strict()),
   layout: knowledgeLayoutWireSchema, navigation: knowledgeWorkspaceNavigationWireSchema,
 }).strict().superRefine((document, context) => {
+  const paneIds = Object.keys(document.panes)
+  let totalTabs = 0
+  for (const [paneId, pane] of Object.entries(document.panes)) {
+    if (pane.id !== paneId) context.addIssue({ code: 'custom', message: 'pane dictionary keys must match pane IDs' })
+    const tabIds = pane.tabs.map((tab) => tab.id)
+    totalTabs += tabIds.length
+    if (new Set(tabIds).size !== tabIds.length) context.addIssue({ code: 'custom', message: 'tab IDs must be unique within each pane' })
+    if (pane.active_tab_id !== null && !tabIds.includes(pane.active_tab_id)) context.addIssue({ code: 'custom', message: 'active tab must exist in its pane' })
+  }
+  if (totalTabs > 128) context.addIssue({ code: 'custom', message: 'workspace cannot contain more than 128 tabs' })
+  if (!paneIds.includes(document.active_pane_id)) context.addIssue({ code: 'custom', message: 'active pane must exist in the workspace' })
+  const layoutPanes: string[] = []
+  const splitIds = new Set<string>()
+  const stack: KnowledgeLayoutWire[] = [document.layout]
+  while (stack.length) {
+    const node = stack.pop()!
+    if (node.type === 'pane') layoutPanes.push(node.pane_id)
+    else {
+      if (splitIds.has(node.id)) context.addIssue({ code: 'custom', message: 'split IDs must be unique' })
+      splitIds.add(node.id); stack.push(node.first, node.second)
+    }
+  }
+  if (new Set(layoutPanes).size !== layoutPanes.length || layoutPanes.length !== paneIds.length || layoutPanes.some((id) => !paneIds.includes(id))) context.addIssue({ code: 'custom', message: 'workspace layout must reference every pane exactly once' })
   for (const pane of Object.values(document.panes)) for (const tab of pane.tabs) {
     const expected = { read: 'document', write: 'document', ask: 'ask', search: 'search', graph: 'graph', podcast: 'podcast' }[tab.mode]
     if (tab.target.kind !== expected || (tab.mode === 'write' && (tab.target.kind !== 'document' || tab.target.authority !== 'overlay'))) context.addIssue({ code: 'custom', message: 'workspace_mode_target_mismatch' })
