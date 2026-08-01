@@ -214,3 +214,17 @@ def test_escalation_omits_unsafe_bounded_unit_ids(unsafe_unit_id):
     assert escalation.allowed is True
     assert escalation.receipt["bounded_unit_id"] is None
     assert unsafe_unit_id not in repr(escalation.receipt)
+
+
+def test_escalation_receipt_redacts_an_invalid_reason():
+    malicious_reason = "raw source:\nprivate output payload"
+    first = _candidate("first", tier_memory=4 * 1024**3, latency_ms=100)
+    second = _candidate("second", tier_memory=10 * 1024**3, latency_ms=100)
+    planner = LocalModelPlanner([first, second], now=1_100.0)
+    plan = planner.plan(RouteRequest(role="research_chat"))
+
+    escalation = planner.escalation_plan(plan, reason=malicious_reason)
+
+    assert escalation.allowed is False
+    assert escalation.receipt["reason"] == "rejected_unrecognized_reason"
+    assert malicious_reason not in repr(escalation.receipt)
