@@ -13,8 +13,11 @@ from api.podcast_service import (
     PodcastService,
 )
 from api.schemas.podcast_studio import (
+    PodcastReadinessRequest,
+    PodcastReadinessResponse,
     PodcastSelectionPreviewRequest,
     PodcastSelectionPreviewResponse,
+    PodcastStageModelPlanResponse,
 )
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from deeper_notebook.config import DATA_FOLDER
@@ -37,6 +40,7 @@ from deeper_notebook.podcasts.selection_service import (
     AppNotebookPodcastSelectionResolver,
     CompositePodcastSelectionResolver,
     KnowledgeEnginePodcastSelectionResolver,
+    PodcastSelectionPreparation,
     PodcastSelectionService,
 )
 
@@ -65,6 +69,88 @@ def _podcast_notebook_loader(request: Request):
     return configured_loader if callable(configured_loader) else Notebook.get
 
 
+def _podcast_selection_service(
+    request: Request, payload: PodcastSelectionPreviewRequest
+) -> PodcastSelectionService:
+    resolvers = [
+        AppNotebookPodcastSelectionResolver(
+            notebook_loader=_podcast_notebook_loader(request)
+        )
+    ]
+    if any(
+        not isinstance(selection, NotebookSelection) for selection in payload.selections
+    ):
+        resolvers.append(
+            KnowledgeEnginePodcastSelectionResolver(
+                engine=_podcast_selection_engine(request)
+            )
+        )
+    return PodcastSelectionService(
+        resolver=CompositePodcastSelectionResolver(resolvers=tuple(resolvers))
+    )
+
+
+async def _podcast_selection_preparation(
+    request: Request, payload: PodcastSelectionPreviewRequest
+) -> PodcastSelectionPreparation:
+    return await _podcast_selection_service(request, payload).prepare(
+        payload.selections
+    )
+
+
+def _stage_plan_response(plan) -> PodcastStageModelPlanResponse:
+    return PodcastStageModelPlanResponse(
+        role=plan.role,
+        outcome=plan.outcome,
+        model_id=plan.selected_model_id,
+        provider=plan.selected_provider,
+        resource_tier=plan.resource_tier,
+        selection_source=plan.selection_source,
+        reason=plan.route_reason,
+        blocked_reason=plan.blocked_reason,
+    )
+
+
+def _podcast_stage_plans(
+    request: Request,
+    *,
+    included_characters: int,
+    execution_policy: str,
+    compute_profile: str,
+    include_transcription: bool,
+) -> list[PodcastStageModelPlanResponse]:
+    from deeper_notebook.local_models.contracts import RouteRequest
+    from deeper_notebook.local_models.planner import plan_model_route
+
+    candidates = list(getattr(request.app.state, "local_model_route_candidates", ()))
+    text_context_tokens = max(1, (included_characters + 3) // 4)
+    roles: list[tuple[str, tuple[str, ...], bool]] = [
+        ("podcast_outline", ("text",), True),
+        ("podcast_script", ("text",), False),
+        ("text_to_speech", ("audio",), False),
+    ]
+    if include_transcription:
+        roles.append(("speech_to_text", ("audio",), False))
+    return [
+        _stage_plan_response(
+            plan_model_route(
+                candidates,
+                RouteRequest(
+                    role=role,
+                    required_context_tokens=(
+                        text_context_tokens if role != "text_to_speech" else 0
+                    ),
+                    modalities=modalities,
+                    requires_structured_output=requires_structured_output,
+                    execution_policy=execution_policy,
+                    compute_profile=compute_profile,
+                ),
+            )
+        )
+        for role, modalities, requires_structured_output in roles
+    ]
+
+
 @router.post(
     "/podcasts/selection/preview",
     response_model=PodcastSelectionPreviewResponse,
@@ -75,23 +161,7 @@ async def preview_podcast_selection(
 ) -> PodcastSelectionPreviewResponse:
     """Resolve references for review without starting a model or source mutation."""
     try:
-        resolvers = [
-            AppNotebookPodcastSelectionResolver(
-                notebook_loader=_podcast_notebook_loader(request)
-            )
-        ]
-        if any(
-            not isinstance(selection, NotebookSelection)
-            for selection in payload.selections
-        ):
-            resolvers.append(
-                KnowledgeEnginePodcastSelectionResolver(
-                    engine=_podcast_selection_engine(request)
-                )
-            )
-        preview = await PodcastSelectionService(
-            resolver=CompositePodcastSelectionResolver(resolvers=tuple(resolvers))
-        ).preview(payload.selections)
+        preview = (await _podcast_selection_preparation(request, payload)).preview
         return PodcastSelectionPreviewResponse.model_validate(preview.model_dump())
     except HTTPException:
         raise
@@ -110,6 +180,54 @@ async def preview_podcast_selection(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "podcast_selection_unavailable"},
+        ) from None
+
+
+@router.post("/podcasts/readiness", response_model=PodcastReadinessResponse)
+async def podcast_readiness(
+    request: Request,
+    payload: PodcastReadinessRequest,
+) -> PodcastReadinessResponse:
+    """Inspect selection and local planner readiness without starting production."""
+    try:
+        preparation = await _podcast_selection_preparation(request, payload)
+        preview = PodcastSelectionPreviewResponse.model_validate(
+            preparation.preview.model_dump()
+        )
+        stage_plans = _podcast_stage_plans(
+            request,
+            included_characters=preparation.preview.included_characters,
+            execution_policy=payload.execution_policy,
+            compute_profile=payload.compute_profile,
+            include_transcription=payload.include_transcription,
+        )
+        planner_blocked = any(plan.outcome != "ready" for plan in stage_plans)
+        blocked_reasons = list(preparation.preview.blocked_reasons)
+        if planner_blocked:
+            blocked_reasons.append("podcast_stage_route_blocked")
+        return PodcastReadinessResponse(
+            preview=preview,
+            stage_plans=stage_plans,
+            ready=preview.current_worker_eligible and not planner_blocked,
+            blocked_reasons=blocked_reasons,
+        )
+    except HTTPException:
+        raise
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "podcast_selection_not_found"},
+        ) from None
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "podcast_readiness_unavailable"},
+        ) from None
+    except Exception as exc:
+        logger.warning("Podcast readiness unavailable ({})", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "podcast_readiness_unavailable"},
         ) from None
 
 

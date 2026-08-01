@@ -49,8 +49,41 @@ class PodcastSelectionPreviewResponse(_Strict):
     blocked_reasons: list[str] = Field(default_factory=list, max_length=128)
 
 
+class PodcastReadinessRequest(PodcastSelectionPreviewRequest):
+    execution_policy: Literal["strict_local", "local_preferred", "custom"] = (
+        "strict_local"
+    )
+    compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced"
+    include_transcription: bool = False
+
+
+class PodcastStageModelPlanResponse(_Strict):
+    role: Literal[
+        "podcast_outline", "podcast_script", "text_to_speech", "speech_to_text"
+    ]
+    outcome: Literal["ready", "blocked", "approval_required"]
+    model_id: str | None = Field(default=None, max_length=512)
+    provider: str | None = Field(default=None, max_length=128)
+    resource_tier: Literal["light", "standard", "heavyweight"] | None = None
+    selection_source: (
+        Literal["automatic", "role_override", "production_override"] | None
+    ) = None
+    reason: str = Field(min_length=1, max_length=1024)
+    blocked_reason: str | None = Field(default=None, max_length=1024)
+
+
+class PodcastReadinessResponse(_Strict):
+    preview: PodcastSelectionPreviewResponse
+    stage_plans: list[PodcastStageModelPlanResponse] = Field(min_length=3, max_length=4)
+    ready: bool
+    blocked_reasons: list[str] = Field(default_factory=list, max_length=128)
+
+
 __all__ = [
+    "PodcastReadinessRequest",
+    "PodcastReadinessResponse",
     "PodcastSelectionPreviewEntryResponse",
     "PodcastSelectionPreviewRequest",
     "PodcastSelectionPreviewResponse",
+    "PodcastStageModelPlanResponse",
 ]
