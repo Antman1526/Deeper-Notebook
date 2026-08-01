@@ -23,7 +23,7 @@ function rejectPathFields(value: unknown): void {
   }
 }
 
-function parseRedacted<T>(schema: z.ZodType<T>, value: unknown): T {
+export function parseRedactedLocalModelResponse<T>(schema: z.ZodType<T>, value: unknown): T {
   rejectPathFields(value)
   return schema.parse(value)
 }
@@ -225,23 +225,23 @@ export async function getLocalModelInventory(): Promise<InventoryResponse> {
 }
 
 export async function getLocalModelSettings(): Promise<LocalModelSettings> {
-  return parseRedacted(localModelSettingsSchema, (await apiClient.get('/local-models/settings')).data)
+  return parseRedactedLocalModelResponse(localModelSettingsSchema, (await apiClient.get('/local-models/settings')).data)
 }
 
 export async function updateLocalModelSettings(settings: LocalModelSettings): Promise<LocalModelSettings> {
-  return parseRedacted(localModelSettingsSchema, (await apiClient.put('/local-models/settings', settings)).data)
+  return parseRedactedLocalModelResponse(localModelSettingsSchema, (await apiClient.put('/local-models/settings', settings)).data)
 }
 
 export async function getLocalModelReadiness(): Promise<ReadinessResponse> {
-  return parseRedacted(readinessResponseSchema, (await apiClient.get('/local-models/readiness')).data)
+  return parseRedactedLocalModelResponse(readinessResponseSchema, (await apiClient.get('/local-models/readiness')).data)
 }
 
 export async function getModelRoutePlan(request: RoutePlanRequest): Promise<ModelRoutePlan> {
-  return parseRedacted(modelRoutePlanSchema, (await apiClient.post('/local-models/route-plan', request)).data)
+  return parseRedactedLocalModelResponse(modelRoutePlanSchema, (await apiClient.post('/local-models/route-plan', request)).data)
 }
 
 export async function getRoleRouting(): Promise<RoleRoutingResponse> {
-  return parseRedacted(roleRoutingResponseSchema, (await apiClient.get('/local-models/role-routing')).data)
+  return parseRedactedLocalModelResponse(roleRoutingResponseSchema, (await apiClient.get('/local-models/role-routing')).data)
 }
 
 export async function getBenchmarkJobs(): Promise<BenchmarkListResponse> {
@@ -263,5 +263,5 @@ export async function resetBenchmarks(): Promise<void> {
 }
 
 export async function getRouteReceipts(): Promise<RouteReceiptResponse> {
-  return parseRedacted(routeReceiptResponseSchema, (await apiClient.get('/local-models/route-receipts')).data)
+  return parseRedactedLocalModelResponse(routeReceiptResponseSchema, (await apiClient.get('/local-models/route-receipts')).data)
 }

@@ -80,6 +80,16 @@ function LocalModelsWorkspace() {
     role: 'embedding_retrieval', execution_policy: settings.data.execution_policy, compute_profile: settings.data.compute_profile,
     role_override_model_id: settings.data.role_overrides.embedding_retrieval ?? null, modalities: ['text'],
   } : null)
+  const [approvedCloudContinuation, setApprovedCloudContinuation] = React.useState<string | null>(null)
+  const cloudFallback = settings.data?.execution_policy === 'local_preferred'
+    ? researchChatPlan.data?.outcome === 'approval_required'
+      ? { stage: 'Research Chat', contentClass: 'Selected knowledge' }
+      : embeddingPlan.data?.outcome === 'approval_required'
+        ? { stage: 'Embedding Retrieval', contentClass: 'Knowledge index' }
+        : null
+    : null
+  const cloudFallbackKey = cloudFallback ? `${cloudFallback.stage}:${cloudFallback.contentClass}` : null
+  const pendingCloudRoute = cloudFallback && cloudFallbackKey !== approvedCloudContinuation ? cloudFallback : null
   const benchmarks = useQuery<BenchmarkListResponse>({
     queryKey: ['local-models', 'benchmarks'],
     queryFn: async () => (await apiClient.get<BenchmarkListResponse>('/local-models/benchmarks')).data,
@@ -166,6 +176,9 @@ function LocalModelsWorkspace() {
       researchPlan={researchChatPlan.data}
       embeddingPlan={embeddingPlan.data}
       routePlansError={researchChatPlan.isError || embeddingPlan.isError}
+      pendingCloudRoute={pendingCloudRoute}
+      cloudContinuationRecorded={Boolean(cloudFallbackKey && cloudFallbackKey === approvedCloudContinuation)}
+      onConfirmCloudRoute={route => setApprovedCloudContinuation(`${route.stage}:${route.contentClass}`)}
     />
     <RoleBenchmarkPanel
       benchmark={currentBenchmark}
@@ -194,10 +207,11 @@ function LocalModelsWorkspace() {
   </div>
 }
 
-function SettingsReadinessPanels({ inventory, readiness, readinessError, settings, settingsError, onRescan, onSave, isSaving, researchPlan, embeddingPlan, routePlansError }: {
+function SettingsReadinessPanels({ inventory, readiness, readinessError, settings, settingsError, onRescan, onSave, isSaving, researchPlan, embeddingPlan, routePlansError, pendingCloudRoute, cloudContinuationRecorded, onConfirmCloudRoute }: {
   inventory?: InventoryResponse; readiness?: ReadinessResponse; readinessError: boolean; settings?: LocalModelSettings; settingsError: boolean
   onRescan: () => void; onSave: (next: Pick<LocalModelSettings, 'execution_policy' | 'compute_profile' | 'local_model_memory_limit_bytes'>) => void; isSaving: boolean
   researchPlan?: import('@/lib/api/local-models').ModelRoutePlan; embeddingPlan?: import('@/lib/api/local-models').ModelRoutePlan; routePlansError: boolean
+  pendingCloudRoute: { stage: string; contentClass: string } | null; cloudContinuationRecorded: boolean; onConfirmCloudRoute: (route: { stage: string; contentClass: string }) => void
 }) {
   const models = readiness?.models ?? []
   const grouped = models.reduce<Record<string, number>>((result, model) => ({ ...result, [model.readiness]: (result[model.readiness] ?? 0) + 1 }), {})
@@ -212,7 +226,7 @@ function SettingsReadinessPanels({ inventory, readiness, readinessError, setting
       <ModelRoutePlanPanel title="Research Chat route" plan={researchPlan} isError={readinessError || settingsError || routePlansError} />
       <ModelRoutePlanPanel title="Embedding route" plan={embeddingPlan} isError={readinessError || settingsError || routePlansError} />
     </div>
-    {settings ? <LocalExecutionPolicyPanel policy={settings.execution_policy} computeProfile={settings.compute_profile} memoryLimitBytes={settings.local_model_memory_limit_bytes} isSaving={isSaving} onSave={onSave} /> : <Card><CardContent className="py-5 text-sm text-muted-foreground">Loading local execution settings…</CardContent></Card>}
+    {settings ? <><LocalExecutionPolicyPanel policy={settings.execution_policy} computeProfile={settings.compute_profile} memoryLimitBytes={settings.local_model_memory_limit_bytes} pendingCloudRoute={pendingCloudRoute} onConfirmCloudRoute={onConfirmCloudRoute} isSaving={isSaving} onSave={onSave} />{cloudContinuationRecorded && <p role="status" className="text-sm text-muted-foreground">Cloud continuation recorded for this exact route. No task has been executed.</p>}</> : <Card><CardContent className="py-5 text-sm text-muted-foreground">Loading local execution settings…</CardContent></Card>}
   </>
 }
 

@@ -1,5 +1,5 @@
 import { ModelRoutePlanPanel } from '@/components/local-models/ModelRoutePlanPanel'
-import { useModelRoutePlan } from '@/lib/hooks/use-local-models'
+import { useLocalModelSettings, useModelRoutePlan } from '@/lib/hooks/use-local-models'
 
 interface KnowledgePodcastPaneProps {
   seedDocumentIds: string[]
@@ -7,11 +7,16 @@ interface KnowledgePodcastPaneProps {
 
 export function KnowledgePodcastPane({ seedDocumentIds }: KnowledgePodcastPaneProps) {
   const selectionLabel = `${seedDocumentIds.length} selected document${seedDocumentIds.length === 1 ? '' : 's'}`
-  const evidence = useModelRoutePlan({ role: 'evidence_extraction', execution_policy: 'strict_local', compute_profile: 'balanced', modalities: ['text'] })
-  const storyboard = useModelRoutePlan({ role: 'podcast_outline', execution_policy: 'strict_local', compute_profile: 'balanced', modalities: ['text'] })
-  const script = useModelRoutePlan({ role: 'podcast_script', execution_policy: 'strict_local', compute_profile: 'balanced', modalities: ['text'] })
-  const verification = useModelRoutePlan({ role: 'claim_verification', execution_policy: 'strict_local', compute_profile: 'balanced', modalities: ['text'] })
-  const voice = useModelRoutePlan({ role: 'text_to_speech', execution_policy: 'strict_local', compute_profile: 'balanced', modalities: ['audio'] })
+  const settings = useLocalModelSettings()
+  const routeRequest = (role: 'evidence_extraction' | 'podcast_outline' | 'podcast_script' | 'claim_verification' | 'text_to_speech', modalities: Array<'text' | 'audio'>) => settings.data ? ({
+    role, modalities, execution_policy: settings.data.execution_policy, compute_profile: settings.data.compute_profile,
+    role_override_model_id: settings.data.role_overrides[role] ?? null,
+  }) : null
+  const evidence = useModelRoutePlan(routeRequest('evidence_extraction', ['text']))
+  const storyboard = useModelRoutePlan(routeRequest('podcast_outline', ['text']))
+  const script = useModelRoutePlan(routeRequest('podcast_script', ['text']))
+  const verification = useModelRoutePlan(routeRequest('claim_verification', ['text']))
+  const voice = useModelRoutePlan(routeRequest('text_to_speech', ['audio']))
   const plans = [
     ['Evidence route', evidence], ['Storyboard route', storyboard], ['Script route', script], ['Verification route', verification], ['Voice route', voice],
   ] as const
@@ -24,7 +29,7 @@ export function KnowledgePodcastPane({ seedDocumentIds }: KnowledgePodcastPanePr
       </div>
       <p className="text-sm text-muted-foreground">Podcast generation opens in Phase 2.</p>
       <div className="grid gap-3 lg:grid-cols-2">
-        {plans.map(([title, route]) => <ModelRoutePlanPanel key={title} title={title} plan={route.data} isError={route.isError} isLoading={route.isLoading} />)}
+        {plans.map(([title, route]) => <ModelRoutePlanPanel key={title} title={title} plan={route.data} isError={settings.isError || route.isError} isLoading={settings.isLoading || route.isLoading} />)}
       </div>
     </section>
   )
