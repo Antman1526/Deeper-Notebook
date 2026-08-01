@@ -1,5 +1,7 @@
 'use client'
 
+import type { ReactNode } from 'react'
+
 export interface ResearchCoreReadiness {
   state: 'ready' | 'loading' | 'unavailable'
   detail: string
@@ -13,6 +15,7 @@ interface ResearchCoreHeaderProps {
   readiness: ResearchCoreReadiness
   memoryPressure: { state: 'normal' | 'elevated' | 'high'; detail: string }
   queuedWorkCount: number
+  actions?: ReactNode
 }
 
 function redactModelPaths(value: string): string {
@@ -28,6 +31,7 @@ export function ResearchCoreHeader({
   readiness,
   memoryPressure,
   queuedWorkCount,
+  actions,
 }: ResearchCoreHeaderProps) {
   const readinessDetail = redactModelPaths(readiness.detail)
   const readinessLabel = {
@@ -48,6 +52,7 @@ export function ResearchCoreHeader({
         <div><dt className="sr-only">Memory pressure</dt><dd data-state={memoryPressure.state}>{memoryPressure.detail}</dd></div>
         <div><dt className="sr-only">Queued work</dt><dd>{queuedWorkCount} queued</dd></div>
       </dl>
+      {actions ? <div className="shrink-0">{actions}</div> : null}
       <details className="basis-full text-sm">
         <summary>{readinessLabel} — {readinessDetail}</summary>
         {readiness.models?.length ? (
