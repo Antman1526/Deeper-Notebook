@@ -405,6 +405,12 @@ def _relative_parts(relative_path: str) -> tuple[str, ...]:
     return tuple(raw_parts)
 
 
+def canonical_vault_relative_path(relative_path: str) -> str:
+    """Validate and return one canonical vault-relative path."""
+
+    return "/".join(_relative_parts(relative_path))
+
+
 def _is_temporary_name(name: str) -> bool:
     lower = name.casefold()
     return (
@@ -684,6 +690,7 @@ __all__ = [
     "VaultPathClassification",
     "VaultSecurityError",
     "approve_vault_root",
+    "canonical_vault_relative_path",
     "classify_vault_path",
     "list_secure_candidates",
     "secure_read",
