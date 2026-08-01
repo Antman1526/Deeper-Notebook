@@ -522,12 +522,16 @@ def _phase_select_provider(ctx: AppContext) -> None:
             model_dir=Path(cfg.model_dir),
             python_executable=ctx.venv_py,
         )
-        if provider.is_available():
-            model = cfg.default_model or provider.pick_default_model()
-            if model:
-                extra_env = provider.start(model)
-                extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
-                ctx.model_provider_runtime = provider
+        # A configured launch default is already the owner's explicit model
+        # choice. Validate that exact repo in ``start`` rather than first
+        # enumerating every MLX directory; model libraries on Desktop/iCloud
+        # volumes can make that broad scan block the native app before its UI
+        # opens.
+        model = cfg.default_model or provider.pick_default_model()
+        if model:
+            extra_env = provider.start(model)
+            extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
+            ctx.model_provider_runtime = provider
 
     ctx.extra_env = extra_env
 
