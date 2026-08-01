@@ -74,6 +74,49 @@ async function installRoutePlanMocks(page: Page) {
 }
 
 test.describe('Research Core Lab browser acceptance', () => {
+  test('strict fixture rejects unsafe named-workspace navigation spaces', async ({ page }) => {
+    const fixture = await installStrictKnowledgeFixture(page)
+    await openCleanKnowledgeWorkspace(page)
+
+    const status = await page.evaluate(async () => {
+      const response = await fetch('/api/deeper-notebook/knowledge/workspaces', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          operation_id: 'fixture-navigation-space-reject',
+          name: 'Unsafe navigation space',
+          snapshot: {
+            version: 1,
+            active_pane_id: 'pane-1',
+            next_id: 2,
+            panes: {
+              'pane-1': {
+                id: 'pane-1',
+                active_tab_id: 'tab-search',
+                tabs: [{
+                  id: 'tab-search',
+                  display_label: 'Search',
+                  view_mode: 'reading',
+                  mode: 'search',
+                  target: {
+                    kind: 'search', query: '', search_mode: 'text',
+                    space_ids: [], authority_kinds: [],
+                  },
+                }],
+              },
+            },
+            layout: { type: 'pane', pane_id: 'pane-1' },
+            navigation: { selected_space_ids: ['../private-space'] },
+          },
+        }),
+      })
+      return response.status
+    })
+
+    expect(status).toBe(422)
+    expect(fixture.state.namedWorkspaces).toEqual([])
+  })
+
   test('opens every research mode through its launcher and command palette without external writes', async ({ page }) => {
     const fixture = await installStrictKnowledgeFixture(page)
     await installRoutePlanMocks(page)
