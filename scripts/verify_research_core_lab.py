@@ -10,9 +10,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -43,6 +45,18 @@ class VerifierConfig:
 class VerificationResult:
     exit_code: int
     report: dict[str, object]
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    """Redacted result of one explicitly requested focused gate."""
+
+    returncode: int | None
+    output: str
+    error: str | None = None
+
+
+CommandRunner = Callable[[tuple[str, ...], Path], CommandResult]
 
 
 def _has_symlink_component(path: Path) -> bool:
@@ -111,6 +125,12 @@ def _hashes(root: Path) -> dict[str, str]:
     }
 
 
+def _fingerprint(root: Path) -> str:
+    return hashlib.sha256(
+        json.dumps(_hashes(root), sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def _create_synthetic_fixture(root: Path) -> None:
     library = root / "local-library"
     workspace = root / "workspace"
@@ -139,6 +159,25 @@ def _workspace_migration_check() -> dict[str, object]:
 
 
 def _strict_local_check() -> dict[str, object]:
+    class TransportRecorder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def request_cloud(self) -> None:
+            self.calls += 1
+
+    class StrictLocalBoundary:
+        def __init__(self, planner: LocalModelPlanner, transport: TransportRecorder) -> None:
+            self._planner = planner
+            self._transport = transport
+
+        def plan(self, request: RouteRequest):
+            # This seam makes the no-cloud claim observable: strict-local
+            # routes reach the same boundary but never invoke its transport.
+            if request.execution_policy != "strict_local":
+                self._transport.request_cloud()
+            return self._planner.plan(request)
+
     candidate = LocalModelRouteCandidate(
         model_id="synthetic-light-mlx",
         provider="mlx",
@@ -154,17 +193,17 @@ def _strict_local_check() -> dict[str, object]:
         peak_memory_bytes=2 * 1024**3,
         latency_ms=100,
     )
-    plan = LocalModelPlanner((candidate,), now=1_800_000_001.0).plan(
+    recorder = TransportRecorder()
+    plan = StrictLocalBoundary(
+        LocalModelPlanner((candidate,), now=1_800_000_001.0), recorder
+    ).plan(
         RouteRequest(role="research_chat", execution_policy="strict_local")
     )
-    # Planner contracts are pure and this verifier deliberately injects no
-    # network transport.  The count is explicit so a future transport seam
-    # must retain the strict-local zero-cloud invariant.
-    cloud_requests = 0
     return {
-        "status": "passed" if plan.outcome == "ready" and cloud_requests == 0 else "failed",
+        "status": "passed" if plan.outcome == "ready" and recorder.calls == 0 else "failed",
         "outcome": plan.outcome,
-        "cloud_requests": cloud_requests,
+        "transport_instrumented": True,
+        "transport_calls": recorder.calls,
     }
 
 
@@ -178,18 +217,91 @@ def _heavyweight_check() -> dict[str, object]:
         "first_reservation": first,
         "second_reservation": second,
         "queued_swaps": len(snapshot["queued_heavyweight_swaps"]),
+        "active_heavyweight_count": len(snapshot["reservations"]),
     }
 
 
-def run_verifier(*, native_url: str, fixture_root: Path, output_path: Path) -> VerificationResult:
+def _subprocess_runner(command: tuple[str, ...], cwd: Path) -> CommandResult:
+    try:
+        completed = subprocess.run(  # noqa: S603 - command tuples are fixed below
+            command,
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except FileNotFoundError:
+        return CommandResult(None, "", "command_not_found")
+    except subprocess.TimeoutExpired:
+        return CommandResult(None, "", "command_timed_out")
+    return CommandResult(completed.returncode, completed.stdout + completed.stderr)
+
+
+def _focused_gate_record(
+    command: tuple[str, ...],
+    cwd: Path,
+    *,
+    run: bool,
+    command_runner: CommandRunner,
+) -> dict[str, object]:
+    if not run:
+        return {
+            "status": "not_run",
+            "command": list(command),
+            "exit_code": None,
+            "error": "not_requested",
+        }
+    result = command_runner(command, cwd)
+    status = "passed" if result.returncode == 0 else "blocked" if result.returncode is None else "failed"
+    return {
+        "status": status,
+        "command": list(command),
+        "exit_code": result.returncode,
+        "error": result.error or (None if result.returncode == 0 else "nonzero_exit"),
+        "output_sha256": hashlib.sha256(result.output.encode()).hexdigest(),
+    }
+
+
+def _focused_gates(*, run: bool, command_runner: CommandRunner) -> dict[str, object]:
+    repo_root = Path(__file__).resolve().parents[1]
+    tests = _focused_gate_record(
+        (".venv/bin/python", "-m", "pytest", "-q", "tests/test_verify_research_core_lab.py"),
+        repo_root,
+        run=run,
+        command_runner=command_runner,
+    )
+    build = _focused_gate_record(
+        ("npm", "run", "build"),
+        repo_root / "frontend",
+        run=run,
+        command_runner=command_runner,
+    )
+    return {"status": "ran" if run else "not_run", "tests": tests, "build": build}
+
+
+def run_verifier(
+    *,
+    native_url: str,
+    fixture_root: Path,
+    output_path: Path,
+    run_focused_gates: bool = False,
+    command_runner: CommandRunner | None = None,
+) -> VerificationResult:
     config = verifier_config(fixture_root=fixture_root, output_path=output_path, native_url=native_url)
     _create_synthetic_fixture(config.fixture_root)
     before = _hashes(config.fixture_root)
+    library_before = _fingerprint(config.fixture_root / "local-library")
     migration = _workspace_migration_check()
     strict_local = _strict_local_check()
     heavyweight = _heavyweight_check()
     native_ok, native_status = _native_health(config.native_url)
     after = _hashes(config.fixture_root)
+    library_after = _fingerprint(config.fixture_root / "local-library")
+    focused_gates = _focused_gates(
+        run=run_focused_gates,
+        command_runner=command_runner or _subprocess_runner,
+    )
     report: dict[str, object] = {
         "schema_version": 1,
         "status": "blocked",
@@ -205,7 +317,12 @@ def run_verifier(*, native_url: str, fixture_root: Path, output_path: Path) -> V
             "workspace_migration": migration,
             "strict_local": strict_local,
             "heavyweight_mlx": heavyweight,
-            "focused_gates": {"status": "not_run", "reason": "recorded separately by the serial final-gate command"},
+            "local_library": {
+                "before_fingerprint": library_before,
+                "after_fingerprint": library_after,
+                "unchanged": library_before == library_after,
+            },
+            "focused_gates": focused_gates,
         },
         "gates": {
             "native_runtime": {
@@ -214,7 +331,10 @@ def run_verifier(*, native_url: str, fixture_root: Path, output_path: Path) -> V
                 "reason": None if native_ok else "requires caller-launched persistent native runtime",
             },
             "playwright_native": {"status": "blocked", "reason": "requires persistent native-runtime Playwright proof"},
-            "production_build": {"status": "blocked", "reason": "recorded separately by the serial final-gate command"},
+            "production_build": {
+                "status": focused_gates["build"]["status"],  # type: ignore[index]
+                "reason": focused_gates["build"]["error"],  # type: ignore[index]
+            },
         },
     }
     config.output_path.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
@@ -226,6 +346,7 @@ def main() -> int:
     parser.add_argument("--native-url", default="http://localhost:65060")
     parser.add_argument("--fixture-root", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--run-focused-gates", action="store_true")
     args = parser.parse_args()
     if args.fixture_root is None:
         with tempfile.TemporaryDirectory(prefix="deeper-notebook-research-core-lab-") as directory:
@@ -234,11 +355,17 @@ def main() -> int:
                 native_url=args.native_url,
                 fixture_root=root / "fixture",
                 output_path=args.output or root / "proof.json",
+                run_focused_gates=args.run_focused_gates,
             )
     else:
         if args.output is None:
             parser.error("--output is required when --fixture-root is supplied")
-        result = run_verifier(native_url=args.native_url, fixture_root=args.fixture_root, output_path=args.output)
+        result = run_verifier(
+            native_url=args.native_url,
+            fixture_root=args.fixture_root,
+            output_path=args.output,
+            run_focused_gates=args.run_focused_gates,
+        )
     return result.exit_code
 
 

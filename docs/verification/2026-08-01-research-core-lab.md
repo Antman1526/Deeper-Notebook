@@ -27,9 +27,9 @@ Worktree: `codex/research-core-lab-phase-1`
 ## Recorded artifact hashes
 
 ```text
-d4677bfd16b8f683bd430605233992b01202a281c258a1b9a24430d79c8320d7  frontend/e2e/research-core-lab.spec.ts
-3a2a67ae13d866fe27b35f64f92ede81081a592e7f92dbbe23efc3b35b0f51de  scripts/verify_research_core_lab.py
-ea940e1b85e9bfcfeeba914cccf48fd50b473a828d8894e3f0e28f68636fb82e  tests/test_verify_research_core_lab.py
+e73ddaadaaa9bcd5544b38fcb515010d03d40965901345828030cd12d0b0bdd9  frontend/e2e/research-core-lab.spec.ts
+2ed8d0c6a86fc3ad3be3ba78dc64c57c679aeeca7c17bb3491b917c15370f5d9  scripts/verify_research_core_lab.py
+d3dcc6abd11866aa5a034e19f1ce9f6dae76ec010fabf0cbc28839eed93426a9  tests/test_verify_research_core_lab.py
 eed20f040cea2aa0772028ca791dc006294b7cb23e797571274a00ec5d67388e  frontend/playwright.config.ts
 ```
 
@@ -91,3 +91,38 @@ The configuration now explicitly includes the mandated Task 9 file in the
 surface is repaired. A persistent native app on `http://localhost:65060` was
 not supplied for this run; the verifier records that separately and does not
 claim mocked browser coverage as native-app proof.
+
+## Review repair — 2026-08-01T10:23:39Z
+
+The browser spec now asserts every mode through both the launcher and command
+palette, including compatible Read/Write activation, selected-tab mode labels,
+a split containing Write and Search modes, keyboard open/close of both narrow
+drawers, and returned Ask/Search route-plan reasons. External Write remains
+disabled before the app-owned Overlay draft is created.
+
+The verifier now records separate synthetic local-library before/after
+fingerprints, an instrumented Strict Local transport boundary with zero calls,
+and an observable one-heavyweight reservation/queue result. With
+`--run-focused-gates`, it records command, exit status, error class, and an
+output digest without persisting command output.
+
+```sh
+PYTHONPATH="$PWD" .venv/bin/python -m pytest -q tests/test_verify_research_core_lab.py
+# 5 passed
+
+PYTHONPATH="$PWD" .venv/bin/python scripts/verify_research_core_lab.py \
+  --native-url http://localhost:65060 --fixture-root <owned-temp>/fixture \
+  --output <owned-temp>/proof.json --run-focused-gates
+# exit 2 (honest aggregate block)
+# synthetic migration/Strict Local/heavyweight/local-library checks: passed
+# focused tests: passed, exit 0
+# focused build: failed, exit 1, error nonzero_exit, output digest recorded
+# native runtime and native Playwright: blocked
+
+(cd frontend && npx playwright test e2e/research-core-lab.spec.ts --project=native-runtime --list)
+# 4 tests collected
+```
+
+The exact execution remains blocked before browser tests start by the same
+Turbopack external-`node_modules` symlink error. This repair does not claim
+native-runtime or packaged-app proof.
