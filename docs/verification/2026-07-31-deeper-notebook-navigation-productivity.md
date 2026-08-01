@@ -80,6 +80,44 @@ remained on either proof port.
 
 ### Still required
 
-- A genuinely isolated packaged macOS restart/mount/index/search proof.
 - Windows installer build, install, upgrade, repair, and uninstall proof on a
   Windows runtime.
+
+## 2026-07-31 isolated packaged-macOS vault proof
+
+### Result
+
+The packaged `Deeper Notebook.app` passed the isolated read-only vault
+restart/mount/index/graph/search proof using an app-owned synthetic fixture.
+The fixture was created outside every real Second Brain root; the exercised
+routes performed no external-file writes.
+
+### Packaged restart evidence
+
+- The application was launched with a fresh disposable `HOME` and
+  `USERPROFILE`. Its readiness receipt reported a local API, online SurrealDB,
+  and applied/no-pending migrations.
+- A two-file synthetic Obsidian fixture mounted with `watch_enabled: false`.
+  The first scan records pending observations by design; the stable follow-up
+  scan parsed both files, and a repeated scan projected no additional changes.
+- The page route retained each SHA-256 source fingerprint, resolved both
+  wikilinks, and exposed the expected task and front-matter metadata.
+- The graph route returned the two expected nodes and two wikilink edges.
+  Text search for the known fixture token returned `Linked Note` with
+  `canonical_external: true`, its vault ID, relative path, and source hash.
+- The proof-owned app process received a graceful `SIGTERM`; no packaged API
+  or SurrealDB child process or listener remained. A second native launch with
+  the same isolated profile restored the read-only mount, both parsed files,
+  hashes, graph, and provenance-bearing search result.
+
+### Observed caveats
+
+- On the first cold packaged launch, the renderer displayed its load-error
+  page until an explicit Reload, after which the dashboard loaded. This is a
+  release-quality issue to reproduce and repair separately; it does not
+  invalidate the API persistence evidence above.
+- An earlier registration attempt rooted in the worktree timed out and left
+  that API instance unresponsive. The same packaged validator approved the
+  path, but the issue was not characterized further. Repeating the proof with
+  a separately owned, safe home-directory fixture succeeded; do not treat the
+  worktree-root behavior as resolved.
