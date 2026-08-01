@@ -61,6 +61,10 @@ class _Engine:
             },
         )()
 
+    async def list_documents(self, *, space_id, limit, offset):
+        assert (space_id, limit, offset) == ("knowledge_engine_space:second_brain", 500, 0)
+        return [_document()]
+
 
 class _Navigation:
     async def get_bookmark(self, bookmark_id: str):
@@ -381,6 +385,18 @@ async def test_preview_resolves_a_saved_workspace_without_exposing_target_body(
                 ]
             },
         )
+
+    assert response.status_code == 200
+    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"
+    assert "This body is server-resolved only." not in response.text
+
+
+@pytest.mark.asyncio
+async def test_preview_resolves_a_unified_text_search_without_exposing_body(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app_with_knowledge_engine), base_url="http://test") as client:
+        response = await client.post("/api/podcasts/selection/preview", json={"selections": [{"kind": "saved_search", "query": "server-resolved", "search_mode": "text", "space_ids": ["knowledge_engine_space:second_brain"], "authority_kinds": ["external_read_only"]}]})
 
     assert response.status_code == 200
     assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"

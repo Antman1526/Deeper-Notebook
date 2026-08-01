@@ -21,6 +21,7 @@ from deeper_notebook.podcasts.selection_contracts import (
     KnowledgeDocumentSelection,
     NotebookSelection,
     PodcastSelection,
+    SearchSelection,
 )
 
 
@@ -249,6 +250,10 @@ class KnowledgeDocumentProjectionReader(Protocol):
 
     async def get_document(self, document_id: str) -> KnowledgeDocument: ...
 
+    async def list_documents(
+        self, *, space_id: str | None, limit: int, offset: int
+    ) -> list[KnowledgeDocument]: ...
+
     async def get_current_block_content(
         self,
         *,
@@ -268,6 +273,9 @@ class KnowledgeEnginePodcastSelectionResolver:
 
     def __init__(self, *, engine: KnowledgeDocumentProjectionReader) -> None:
         self._engine = engine
+
+    _SEARCH_PAGE_SIZE = 500
+    _MAX_SEARCHED_DOCUMENTS = 10_000
 
     @staticmethod
     def _resolved_document(
@@ -377,6 +385,60 @@ class KnowledgeEnginePodcastSelectionResolver:
                     content=content,
                     state="included" if content else "empty",
                     reason="included" if content else "block_content_empty",
+                )
+            ]
+        if isinstance(selection, SearchSelection):
+            if selection.search_mode == "semantic":
+                raise ValueError("podcast_semantic_search_unavailable")
+            space_ids = selection.space_ids or [None]
+            needle = selection.query.casefold()
+            results: list[ResolvedSelectionItem] = []
+            searched = 0
+            for space_id in sorted(space_ids, key=lambda value: value or ""):
+                offset = 0
+                while True:
+                    documents = await self._engine.list_documents(
+                        space_id=space_id,
+                        limit=self._SEARCH_PAGE_SIZE,
+                        offset=offset,
+                    )
+                    searched += len(documents)
+                    if searched > self._MAX_SEARCHED_DOCUMENTS:
+                        return [
+                            ResolvedSelectionItem(
+                                stable_id="podcast_search:bounded",
+                                title="Saved search",
+                                authority_kind="app_owned",
+                                state="unavailable",
+                                reason="search_scan_limit_exceeded",
+                            )
+                        ]
+                    for document in documents:
+                        if (
+                            selection.authority_kinds
+                            and document.authority_kind not in selection.authority_kinds
+                        ):
+                            continue
+                        haystack = f"{document.title}\n{document.normalized_body}".casefold()
+                        matched = (
+                            document.title.casefold() == needle
+                            if selection.search_mode == "exact"
+                            else needle in haystack
+                        )
+                        if matched:
+                            results.append(self._resolved_document(document))
+                    if len(documents) < self._SEARCH_PAGE_SIZE:
+                        break
+                    offset += len(documents)
+            if results:
+                return results
+            return [
+                ResolvedSelectionItem(
+                    stable_id="podcast_search:empty",
+                    title="Saved search",
+                    authority_kind="app_owned",
+                    state="empty",
+                    reason="search_no_results",
                 )
             ]
         if isinstance(selection, GraphSelection):
