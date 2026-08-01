@@ -130,3 +130,28 @@ rollback safety, non-equivalent-root recovery with zero writes, and reversible
 macOS app replacement logic. This is strong code-level evidence only; a native
 legacy-profile upgrade smoke and the Windows installer lifecycle remain release
 gates.
+
+## 2026-07-31 packaged legacy-profile migration smoke
+
+The native app completed an isolated, same-volume legacy-path migration using
+the disposable proof profile (never a real user or Second Brain profile).
+Before launch, the existing canonical profile was renamed to the legacy
+`.open-notebook-plus` path while the app was fully stopped. The packaged app
+then started successfully and migrated the root back to `.deeper-notebook`.
+
+- The migration receipt status was `completed`; its critical hashes before and
+  after migration matched for the configuration, update state, SQLite
+  checkpoints, and cached tokenizer data.
+- The post-migration canonical root retained the pre-migration inode, proving
+  the migration used the expected same-volume atomic rename. The legacy path
+  was recreated as a compatibility symlink to the canonical root.
+- The migrated package returned a ready API with online/no-pending-migration
+  database checks and retained the known indexed search result and its
+  external-vault provenance.
+- The proof-owned desktop parent, API, and SurrealDB all stopped cleanly with
+  no listener left behind.
+
+This proves the guarded root-path migration in a packaged app. It is not a
+substitute for an upgrade run from an independently installed historical
+Open Notebook Plus binary, which remains a release gate alongside the Windows
+installer lifecycle.
