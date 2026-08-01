@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
-from typing import Literal, Protocol
+from typing import Awaitable, Callable, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,6 +14,7 @@ from deeper_notebook.knowledge_engine.contracts import KnowledgeDocument
 from deeper_notebook.podcasts.selection_contracts import (
     GraphSelection,
     KnowledgeDocumentSelection,
+    NotebookSelection,
     PodcastSelection,
 )
 
@@ -85,6 +86,61 @@ class PodcastSelectionResolver(Protocol):
     async def resolve(
         self, selection: PodcastSelection
     ) -> list[ResolvedSelectionItem]: ...
+
+
+class CompositePodcastSelectionResolver:
+    """Dispatch a stable reference to the first capable read-only resolver."""
+
+    def __init__(self, *, resolvers: tuple[PodcastSelectionResolver, ...]) -> None:
+        if not resolvers:
+            raise ValueError("podcast_selection_resolvers_required")
+        self._resolvers = resolvers
+
+    async def resolve(self, selection: PodcastSelection) -> list[ResolvedSelectionItem]:
+        for resolver in self._resolvers:
+            try:
+                return await resolver.resolve(selection)
+            except ValueError as exc:
+                if str(exc) != "podcast_selection_kind_unavailable":
+                    raise
+        raise ValueError("podcast_selection_kind_unavailable")
+
+
+class AppNotebookContext(Protocol):
+    id: str
+    name: str
+
+    async def get_context(self) -> str: ...
+
+
+NotebookLoader = Callable[[str], Awaitable[AppNotebookContext | None]]
+
+
+class AppNotebookPodcastSelectionResolver:
+    """Resolve app-owned notebooks through their existing context API only."""
+
+    def __init__(self, *, notebook_loader: NotebookLoader) -> None:
+        self._notebook_loader = notebook_loader
+
+    async def resolve(self, selection: PodcastSelection) -> list[ResolvedSelectionItem]:
+        if not isinstance(selection, NotebookSelection):
+            raise ValueError("podcast_selection_kind_unavailable")
+        notebook = await self._notebook_loader(selection.notebook_id)
+        if notebook is None:
+            raise LookupError("podcast_notebook_not_found")
+        content = await notebook.get_context()
+        normalized_content = content.strip()
+        return [
+            ResolvedSelectionItem(
+                stable_id=notebook.id,
+                title=notebook.name,
+                authority_kind="app_owned",
+                fingerprint=hashlib.sha256(normalized_content.encode()).hexdigest(),
+                content=normalized_content,
+                state="included" if normalized_content else "empty",
+                reason="included" if normalized_content else "notebook_context_empty",
+            )
+        ]
 
 
 class KnowledgeDocumentProjectionReader(Protocol):
@@ -256,8 +312,12 @@ class PodcastSelectionService:
 
 
 __all__ = [
+    "AppNotebookContext",
+    "AppNotebookPodcastSelectionResolver",
+    "CompositePodcastSelectionResolver",
     "KnowledgeDocumentProjectionReader",
     "KnowledgeEnginePodcastSelectionResolver",
+    "NotebookLoader",
     "PodcastSelectionPreparation",
     "PodcastSelectionPreview",
     "PodcastSelectionResolver",
