@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import bundleAnalyzer from "@next/bundle-analyzer";
 
@@ -12,12 +13,23 @@ const withBundleAnalyzer = bundleAnalyzer({
   openAnalyzer: false,
 });
 
+export function resolveTurbopackRoot(
+  frontendDir: string,
+  resolveRealPath: (path: string) => string = realpathSync,
+) {
+  try {
+    const nodeModulesTarget = resolveRealPath(path.join(frontendDir, "node_modules"));
+    return path.dirname(path.dirname(nodeModulesTarget));
+  } catch {
+    return path.dirname(frontendDir);
+  }
+}
+
 const nextConfig: NextConfig = {
-  // The worktree's node_modules is intentionally shared from the repository
-  // checkout. Allow Turbopack to resolve that existing in-repository target
-  // without changing the worktree symlink.
+  // Resolve from the actual dependency target so both a normal checkout and a
+  // worktree with shared dependencies stay within Turbopack's filesystem root.
   turbopack: {
-    root: path.resolve(__dirname, "..", "..", ".."),
+    root: resolveTurbopackRoot(__dirname),
   },
 
   // Enable standalone output for optimized Docker deployment

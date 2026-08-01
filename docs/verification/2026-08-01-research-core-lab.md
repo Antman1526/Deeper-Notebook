@@ -133,8 +133,11 @@ native-runtime or packaged-app proof.
 
 The worktree-local `frontend/node_modules` symlink intentionally points to
 the repository checkout's existing dependency directory. `next.config.ts`
-sets `turbopack.root` to that enclosing checkout so Turbopack can resolve the
-in-repository target without changing the symlink or its target.
+derives `turbopack.root` from the real `node_modules` target: the target's
+`frontend` parent and then its checkout parent. This yields the right checkout
+for both a nested worktree and a normal, non-symlink checkout without changing
+the symlink or its target. If dependencies are absent, it falls back only to
+the direct parent of the configured frontend directory.
 
 The setup-wizard completion key is intentionally module-local: Next.js pages
 may not export arbitrary named values. Its focused test retains the same
@@ -146,11 +149,16 @@ behavior are unchanged.
 # passed: Next.js 16.2.12 Turbopack production build
 
 (cd frontend && npx next build --webpack)
-# passed: webpack production build and Next page-module validation
+# completed with exit 0 and Next page-module validation; emitted a nonfatal
+# standalone trace-copy ENOENT for page_client-reference-manifest.js. This is
+# not a clean standalone trace/package proof.
 
 (cd frontend && npx vitest run 'src/app/(dashboard)/setup-wizard/page.test.tsx' \
   --pool=forks --maxWorkers=1)
 # 1 file, 9 tests passed
+
+(cd frontend && npx vitest run next.config.test.ts --pool=forks --maxWorkers=1)
+# 1 file, 3 tests passed: current worktree, nested worktree, normal checkout
 
 (cd frontend && npx tsc --noEmit)
 # passed
