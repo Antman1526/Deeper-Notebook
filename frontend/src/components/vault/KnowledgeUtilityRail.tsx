@@ -31,7 +31,11 @@ export function KnowledgeUtilityRail({
 }: KnowledgeUtilityRailProps) {
   const [displayMode, setDisplayMode] = useState(mode)
   const pointerFocusRef = useRef<HTMLElement | null>(null)
+  const collapseButtonRef = useRef<HTMLButtonElement>(null)
   useEffect(() => setDisplayMode(mode), [mode])
+  useEffect(() => {
+    if (!sidebarVisible) collapseButtonRef.current?.focus()
+  }, [sidebarVisible])
   const selectMode = (utilityMode: UtilityMode) => {
     setDisplayMode(utilityMode)
     onNavigationChange({ utilityMode })
@@ -45,6 +49,23 @@ export function KnowledgeUtilityRail({
     { id: 'bookmarks', label: 'Bookmarks' },
     { id: 'workspaces', label: 'Workspaces' },
   ]
+
+  if (!sidebarVisible) {
+    return (
+      <nav aria-label="Knowledge utilities" className="p-2">
+        <Button
+          ref={collapseButtonRef}
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label="Restore utility sidebar"
+          onClick={() => onNavigationChange({ sidebarVisible: true })}
+        >
+          <PanelLeftOpen aria-hidden="true" className="h-4 w-4" />
+        </Button>
+      </nav>
+    )
+  }
 
   return (
     <nav aria-label={displayMode === 'bookmarks' ? 'Bookmarks' : 'Knowledge utilities'} className="space-y-3">
@@ -99,7 +120,8 @@ export function KnowledgeUtilityRail({
           size="icon"
           variant="ghost"
           aria-label={sidebarVisible ? 'Collapse utility sidebar' : 'Restore utility sidebar'}
-          onClick={() => onNavigationChange({ sidebarVisible: !sidebarVisible })}
+          ref={collapseButtonRef}
+          onClick={() => onNavigationChange({ sidebarVisible: false })}
         >
           {sidebarVisible ? <PanelLeftClose aria-hidden="true" className="h-4 w-4" /> : <PanelLeftOpen aria-hidden="true" className="h-4 w-4" />}
         </Button>
