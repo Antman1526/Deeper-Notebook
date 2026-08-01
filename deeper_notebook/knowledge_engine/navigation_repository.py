@@ -924,6 +924,9 @@ class KnowledgeNavigationRepository:
         )
         return receipt
 
+    async def get_bookmark(self, bookmark_id: str) -> Bookmark:
+        return await self._existing("knowledge_bookmark", bookmark_id, Bookmark)
+
     async def list_bookmarks(
         self, filters: BookmarkFilters, cursor: str | None, limit: int
     ) -> BookmarkPage:

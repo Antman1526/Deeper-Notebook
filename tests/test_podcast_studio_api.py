@@ -62,6 +62,25 @@ class _Engine:
         )()
 
 
+class _Navigation:
+    async def get_bookmark(self, bookmark_id: str):
+        assert bookmark_id == "knowledge_bookmark:research"
+        return type(
+            "Bookmark",
+            (),
+            {
+                "target": type(
+                    "DocumentTarget",
+                    (),
+                    {
+                        "kind": "document",
+                        "document_id": "knowledge_engine_document:external",
+                    },
+                )(),
+            },
+        )()
+
+
 class _Notebook:
     id = "notebook:research"
     name = "Research notebook"
@@ -111,6 +130,7 @@ def app_with_knowledge_engine() -> FastAPI:
 
     app = FastAPI()
     app.state.knowledge_engine_service = _Engine()
+    app.state.knowledge_navigation_service = _Navigation()
     app.state.podcast_notebook_loader = _load_notebook
     app.state.podcast_note_loader = _load_note
     app.state.podcast_source_loader = _load_source
@@ -207,6 +227,33 @@ async def test_preview_resolves_a_current_block_without_exposing_its_text(
     assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_block:research"
     assert response.json()["entries"][0]["state"] == "included"
     assert "Selected research block stays server-side." not in response.text
+
+
+@pytest.mark.asyncio
+async def test_preview_resolves_a_saved_bookmark_without_exposing_target_body(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/selection/preview",
+            json={
+                "selections": [
+                    {
+                        "kind": "knowledge_collection",
+                        "collection_kind": "bookmark",
+                        "collection_id": "knowledge_bookmark:research",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"
+    assert response.json()["entries"][0]["authority_kind"] == "external_read_only"
+    assert "This body is server-resolved only." not in response.text
 
 
 @pytest.mark.asyncio
