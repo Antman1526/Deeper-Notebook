@@ -91,6 +91,20 @@ class ManifestRowError(ValueError):
     """Raised when a manifest draft row cannot be safely applied."""
 
 
+def manifest_lifecycle_state(entry: ManifestModelEntry) -> str:
+    """Return curation lifecycle only; a Markdown claim is never proof.
+
+    Readiness still requires file, runtime identity, health, benchmark, and
+    symlink evidence from the inventory classifier.
+    """
+    status = str(entry.estimated_status or "").lower()
+    if "removed" in status or "retired" in status:
+        return "removed"
+    if "planned" in status:
+        return "planned"
+    return "installed"
+
+
 def model_manifest_path(model_dir: Path | str) -> Path:
     return Path(model_dir) / "manifests" / "model_inventory.md"
 
