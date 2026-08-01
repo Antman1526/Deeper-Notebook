@@ -74,6 +74,13 @@ class PodcastSelectionPreview(_Strict):
     blocked_reasons: list[str] = Field(default_factory=list, max_length=128)
 
 
+class PodcastSelectionPreparation(_Strict):
+    """Ephemeral server-side input assembled from a confirmed selection."""
+
+    preview: PodcastSelectionPreview
+    content: str = Field(default="", exclude=True, repr=False)
+
+
 class PodcastSelectionResolver(Protocol):
     async def resolve(
         self, selection: PodcastSelection
@@ -172,14 +179,15 @@ class PodcastSelectionService:
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         return hashlib.sha256(encoded).hexdigest()
 
-    async def preview(
+    async def prepare(
         self, selections: Sequence[PodcastSelection]
-    ) -> PodcastSelectionPreview:
+    ) -> PodcastSelectionPreparation:
         if not isinstance(selections, Sequence) or not 1 <= len(selections) <= 128:
             raise ValueError("podcast_selection_count_invalid")
 
         normalized = [self._normalize_selection(selection) for selection in selections]
         entries: list[SelectionPreviewEntry] = []
+        included_content: list[str] = []
         seen_fingerprints: set[str] = set()
         included_characters = 0
         for selection in normalized:
@@ -196,6 +204,7 @@ class PodcastSelectionService:
                     )
                     if not duplicate:
                         included_characters += len(item.content)
+                        included_content.append(item.content)
                 else:
                     state = item.state
                     reason = item.reason
@@ -224,23 +233,32 @@ class PodcastSelectionService:
         )
         if has_non_current_entry:
             blocked_reasons.append("podcast_selection_requires_refresh")
-        return PodcastSelectionPreview(
-            selection_fingerprint=self._fingerprint(normalized, entries),
-            entries=entries,
-            included_characters=included_characters,
-            requires_batch_engine=requires_batch_engine,
-            current_worker_eligible=(
-                bool(entries)
-                and not requires_batch_engine
-                and not has_non_current_entry
+        return PodcastSelectionPreparation(
+            preview=PodcastSelectionPreview(
+                selection_fingerprint=self._fingerprint(normalized, entries),
+                entries=entries,
+                included_characters=included_characters,
+                requires_batch_engine=requires_batch_engine,
+                current_worker_eligible=(
+                    bool(entries)
+                    and not requires_batch_engine
+                    and not has_non_current_entry
+                ),
+                blocked_reasons=blocked_reasons,
             ),
-            blocked_reasons=blocked_reasons,
+            content="\n\n".join(included_content),
         )
+
+    async def preview(
+        self, selections: Sequence[PodcastSelection]
+    ) -> PodcastSelectionPreview:
+        return (await self.prepare(selections)).preview
 
 
 __all__ = [
     "KnowledgeDocumentProjectionReader",
     "KnowledgeEnginePodcastSelectionResolver",
+    "PodcastSelectionPreparation",
     "PodcastSelectionPreview",
     "PodcastSelectionResolver",
     "PodcastSelectionService",

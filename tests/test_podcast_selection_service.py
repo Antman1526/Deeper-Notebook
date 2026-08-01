@@ -202,3 +202,24 @@ async def test_preview_fingerprint_includes_resolved_revision_without_source_bod
 
     assert initial.selection_fingerprint != changed.selection_fingerprint
     assert "content that must not be fingerprint input" not in initial.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_prepare_keeps_only_current_non_duplicate_content_server_side():
+    resolver = FakeResolver(calls=[])
+    service = PodcastSelectionService(resolver=resolver)
+
+    preparation = await service.prepare(
+        [
+            GraphSelection(
+                document_ids=[
+                    "knowledge_engine_document:alpha",
+                    "knowledge_engine_document:zeta",
+                ]
+            )
+        ]
+    )
+
+    assert preparation.content == "app-owned context"
+    assert "content" not in preparation.model_dump()
+    assert preparation.preview.entries[1].state == "duplicate"
