@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SourceCard } from './SourceCard'
 import type { SourceListResponse } from '@/lib/types/api'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 const mockUseSourceStatus = vi.hoisted(() => vi.fn())
 
@@ -29,6 +30,7 @@ function source(overrides: Partial<SourceListResponse> = {}): SourceListResponse
 describe('SourceCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    usePodcastStudioStore.getState().dismiss()
     mockUseSourceStatus.mockReturnValue({
       data: {
         status: 'failed',
@@ -208,6 +210,58 @@ describe('SourceCard', () => {
     expect(screen.getByText('academy.example.com')).toBeInTheDocument()
     expect(screen.getByText('training')).toBeInTheDocument()
     expect(screen.getByText('policy')).toBeInTheDocument()
+  })
+
+  it('opens an optional podcast review for a completed readable source', () => {
+    mockUseSourceStatus.mockReturnValue({ data: undefined, isLoading: false })
+
+    render(
+      <SourceCard
+        source={source({
+          id: 'source:podcast-ready',
+          command_id: undefined,
+          status: 'completed',
+          embedded: true,
+        })}
+      />
+    )
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Source actions' }), {
+      key: 'ArrowDown',
+      code: 'ArrowDown',
+    })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Turn source into podcast' }))
+
+    expect(usePodcastStudioStore.getState()).toMatchObject({
+      isOpen: true,
+      destination: 'quick',
+      selections: [{ kind: 'app_source', sourceId: 'source:podcast-ready', inclusionMode: 'full' }],
+    })
+  })
+
+  it('keeps the podcast action disabled when no readable content is available', () => {
+    mockUseSourceStatus.mockReturnValue({ data: undefined, isLoading: false })
+
+    render(
+      <SourceCard
+        source={source({
+          id: 'source:podcast-empty',
+          command_id: undefined,
+          status: 'completed',
+          extraction_quality: 'no_text',
+        })}
+      />
+    )
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Source actions' }), {
+      key: 'ArrowDown',
+      code: 'ArrowDown',
+    })
+
+    expect(
+      screen.getByRole('menuitem', { name: 'Turn source into podcast — No readable source content is available.' })
+    ).toHaveAttribute('data-disabled')
+    expect(usePodcastStudioStore.getState().isOpen).toBe(false)
   })
 
   it('does not retry a failed upload when the original file is unavailable', () => {
