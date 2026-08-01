@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
@@ -494,6 +494,12 @@ class PodcastEpisodeResponse(BaseModel):
     # v0.8.68 — per-stage progress / outline-review state (see
     # GENERATION_STAGES in deeper_notebook/podcasts/models.py).
     generation_stage: Optional[str] = None
+    # Phase 2 Studio receipt. It contains aggregate counts and planner
+    # decisions only; canonical selected source content is never returned here.
+    selection_summary: Optional[dict[str, Any]] = None
+    selection_fingerprint: Optional[str] = None
+    editorial_brief: Optional[dict[str, Any]] = None
+    model_plan_receipts: list[dict[str, Any]] = Field(default_factory=list)
 
 
 def _resolve_audio_path(audio_file: str) -> Optional[Path]:
@@ -695,6 +701,10 @@ async def list_podcast_episodes(
                     job_status=job_status,
                     error_message=error_message,
                     generation_stage=getattr(episode, "generation_stage", None),
+                    selection_summary=getattr(episode, "selection_summary", None),
+                    selection_fingerprint=getattr(episode, "selection_fingerprint", None),
+                    editorial_brief=getattr(episode, "editorial_brief", None),
+                    model_plan_receipts=getattr(episode, "model_plan_receipts", []),
                 )
             )
 
@@ -771,6 +781,10 @@ async def get_podcast_episode(episode_id: str):
             job_status=job_status,
             error_message=error_message,
             generation_stage=getattr(episode, "generation_stage", None),
+            selection_summary=getattr(episode, "selection_summary", None),
+            selection_fingerprint=getattr(episode, "selection_fingerprint", None),
+            editorial_brief=getattr(episode, "editorial_brief", None),
+            model_plan_receipts=getattr(episode, "model_plan_receipts", []),
         )
 
     except HTTPException:

@@ -17,7 +17,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------- #
 # Studio observability counters
 # ---------------------------------------------------------------------- #
@@ -133,6 +132,26 @@ class _FakeEpisode:
         self.outline = None
         self.created = "2026-05-19T03:00:00Z"
         self.command = f"command:fake{idx}" if with_audio else None
+        self.selection_summary = {
+            "version": 1,
+            "total_count": 2,
+            "included_count": 2,
+            "authority_counts": {"external_read_only": 2},
+        }
+        self.selection_fingerprint = "a" * 64
+        self.editorial_brief = {
+            "central_question": "What changes after the research is connected?",
+            "audience": "Research team",
+            "outline": ["Context", "Decision"],
+        }
+        self.model_plan_receipts = [
+            {
+                "version": 1,
+                "role": "podcast_outline",
+                "outcome": "ready",
+                "reason": "automatic selected the standard verified local candidate after all route gates.",
+            }
+        ]
 
     async def get_job_detail(self):
         return {"status": "completed", "error_message": None}
@@ -181,6 +200,26 @@ class TestPodcastsPagination:
         finally:
             for p in stoppers:
                 p.stop()
+
+    def test_episode_list_returns_only_the_redacted_studio_receipt(self):
+        client, stoppers = self._make_client(episode_count=1)
+        try:
+            response = client.get("/podcasts/episodes")
+
+            assert response.status_code == 200
+            episode = response.json()[0]
+            assert episode["selection_summary"]["authority_counts"] == {
+                "external_read_only": 2
+            }
+            assert episode["selection_fingerprint"] == "a" * 64
+            assert episode["editorial_brief"]["audience"] == "Research team"
+            assert episode["model_plan_receipts"][0]["role"] == "podcast_outline"
+            assert "content" not in str(episode)
+            assert "relative_locator" not in str(episode)
+            assert "model_id" not in str(episode)
+        finally:
+            for patcher in stoppers:
+                patcher.stop()
 
     def test_offset_skips_first_n(self):
         client, stoppers = self._make_client(episode_count=75)
