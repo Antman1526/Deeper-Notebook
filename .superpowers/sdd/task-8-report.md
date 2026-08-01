@@ -86,3 +86,12 @@ pre-filled its contextual fields. Parser coverage did not exercise nested
 (cd frontend && npx tsc --noEmit)
 # passed after removing stale generated frontend/.next types from the prior failed build
 ```
+
+## Re-review repair — clear closed confirmation fields
+
+The new regression entered a valid pending-cloud stage and content class,
+cancelled, reopened the dialog, and proved confirmation remained enabled from
+stale state. `AlertDialog.onOpenChange` now clears both fields whenever the
+dialog closes, including cancel, dismissal, and successful confirmation. The
+pending route remains unexecuted and successful confirmation still records
+only the existing continuation state.
