@@ -33,6 +33,7 @@ router = APIRouter()
 _KNOWLEDGE_DOCUMENT_ID = re.compile(r"^knowledge_engine_document:[A-Za-z0-9_-]+$")
 _KNOWLEDGE_BLOCK_ID = re.compile(r"^knowledge_engine_block:[A-Za-z0-9_-]+$")
 _IDENTITY_ENRICHMENT_TIMEOUT_SECONDS = 0.25
+_GRAPH_PODCAST_SELECTION_LIMIT = 128
 
 
 def _service(request: Request) -> Any:
@@ -166,6 +167,52 @@ async def _page_identity(
         return document_id, copied_blocks
     except Exception:
         return None, copied_blocks
+
+
+async def _graph_document_identities(
+    request: Request, note_ids: list[str],
+) -> dict[str, str]:
+    """Read-only bounded legacy-to-unified identities for graph actions.
+
+    A vault graph is intentionally keyed by legacy note IDs. UI actions that
+    cross into the unified knowledge engine must not infer or pass source
+    paths, so expose only already-projected document IDs. Enrichment is best
+    effort and failure leaves the graph itself fully readable.
+    """
+    service = getattr(request.app.state, "knowledge_engine_service", None)
+    if service is None:
+        return {}
+    unique_note_ids = tuple(dict.fromkeys(note_ids))[:_GRAPH_PODCAST_SELECTION_LIMIT]
+    if not unique_note_ids:
+        return {}
+    try:
+        resolved = await asyncio.wait_for(
+            asyncio.gather(
+                *(
+                    service.resolve_legacy_page(
+                        legacy_note_id=note_id,
+                        block_keys=(),
+                    )
+                    for note_id in unique_note_ids
+                ),
+                return_exceptions=True,
+            ),
+            timeout=_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        return {}
+    identities: dict[str, str] = {}
+    for note_id, item in zip(unique_note_ids, resolved, strict=True):
+        if isinstance(item, Exception):
+            continue
+        document_id = (
+            item.get("document_id")
+            if isinstance(item, dict)
+            else getattr(item, "document_id", None)
+        )
+        if isinstance(document_id, str) and _KNOWLEDGE_DOCUMENT_ID.fullmatch(document_id):
+            identities[note_id] = document_id
+    return identities
 
 
 @router.post(
@@ -380,7 +427,16 @@ async def graph(
         result = await _repository(request).graph(
             vault_id, center_note_id, depth, limit
         )
-        return result.model_dump()
+        payload = result.model_dump()
+        document_ids = await _graph_document_identities(
+            request,
+            [node["id"] for node in payload["nodes"] if isinstance(node.get("id"), str)],
+        )
+        for node in payload["nodes"]:
+            note_id = node.get("id")
+            if isinstance(note_id, str) and note_id in document_ids:
+                node["knowledge_document_id"] = document_ids[note_id]
+        return payload
     except Exception as exc:
         raise _map_exception(exc) from None
 

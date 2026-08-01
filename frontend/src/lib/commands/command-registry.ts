@@ -1,4 +1,5 @@
 import type { ResearchMode } from '@/lib/knowledge/research-modes'
+import type { PodcastDestination } from '@/lib/podcasts/selection'
 
 export type KnowledgeCommandId =
   | 'knowledge.view-reading'
@@ -30,6 +31,8 @@ export type KnowledgeCommandId =
   | 'knowledge.mode.search'
   | 'knowledge.mode.graph'
   | 'knowledge.mode.podcast'
+  | 'podcast.quick_from_selection'
+  | 'podcast.open_studio_from_selection'
 
 export type CommandScope = 'global' | 'knowledge'
 export type CommandSafety = 'read' | 'workspace' | 'external-write'
@@ -60,6 +63,8 @@ export interface KnowledgeCommandExecutionContext {
   toggleMetrics: (() => void) | null
   researchModeAvailability: Record<ResearchMode, { available: boolean; reason: string | null }>
   openResearchMode: ((mode: ResearchMode) => void) | null
+  /** Opens a transient review surface only; it cannot submit or mutate an external source. */
+  openPodcastFromSelection: ((destination: PodcastDestination) => void) | null
 }
 
 export interface CommandDefinition {
@@ -340,6 +345,30 @@ export const knowledgeCommandDefinitions: CommandDefinition[] = [
     keywords: ['toggle', 'metrics', 'words', 'characters'],
     isAvailable: context => context.toggleMetrics !== null,
     execute: context => context.toggleMetrics!(),
+  },
+  {
+    id: 'podcast.quick_from_selection',
+    scope: 'knowledge',
+    // This changes only ephemeral app UI state. Selection resolution may read
+    // external evidence later, but it grants no external mutation capability.
+    safety: 'workspace',
+    labelKey: 'podcasts.generateBtn',
+    aliases: ['quick podcast', 'turn note into podcast'],
+    keywords: ['podcast', 'quick', 'audio', 'current note'],
+    isAvailable: context => context.openPodcastFromSelection !== null,
+    unavailableReasonKey: 'knowledge.commands.requiresActiveTab',
+    execute: context => context.openPodcastFromSelection!('quick'),
+  },
+  {
+    id: 'podcast.open_studio_from_selection',
+    scope: 'knowledge',
+    safety: 'workspace',
+    labelKey: 'knowledge.commands.modePodcast',
+    aliases: ['podcast studio', 'open studio from current note'],
+    keywords: ['podcast', 'studio', 'audio', 'current note'],
+    isAvailable: context => context.openPodcastFromSelection !== null,
+    unavailableReasonKey: 'knowledge.commands.requiresActiveTab',
+    execute: context => context.openPodcastFromSelection!('studio'),
   },
   ...([
     ['read', 'knowledge.commands.modeRead', ['read'], ['mode', 'read']],

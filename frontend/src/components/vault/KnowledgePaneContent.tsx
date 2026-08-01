@@ -41,6 +41,8 @@ import { CanvasViewer } from './CanvasViewer'
 import { KnowledgeAskPane } from './KnowledgeAskPane'
 import { KnowledgeSearchPane } from './KnowledgeSearchPane'
 import { KnowledgePodcastPane } from './KnowledgePodcastPane'
+import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 export type KnowledgeNavigate = (
   vaultId: string,
@@ -85,6 +87,7 @@ export function KnowledgePaneContent({
   const setNavigation = useKnowledgeWorkspaceStore((state) => state.setNavigation)
   const setFocusedBlock = useKnowledgeWorkspaceStore((state) => state.setFocusedBlock)
   const setGraphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.setGraphBookmarkContext)
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const graphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.graphBookmarkContext)
   const selectedSpaceIds = useKnowledgeWorkspaceStore((state) => state.navigation.selectedSpaceIds)
   const metricFormatters = useMemo(() => ({
@@ -109,6 +112,9 @@ export function KnowledgePaneContent({
   )
   const activeTab = pane.tabs.find((tab) => tab.id === pane.activeTabId)
     ?? pane.tabs[0]
+  const focusedBlock = useKnowledgeWorkspaceStore((state) => activeTab
+    ? state.focusedBlocksByTab[activeTab.id] ?? null
+    : null)
   const activeTarget = activeTab?.target
   const documentTarget = activeTarget?.kind === 'document'
     ? activeTarget
@@ -484,6 +490,27 @@ export function KnowledgePaneContent({
           <p className="mt-2 text-sm text-muted-foreground">
             {sourceDescription}
           </p>
+          <div className="mt-3">
+            <TurnIntoPodcastAction
+              selection={knowledgeDocumentId
+                ? focusedBlock
+                  ? {
+                      kind: 'knowledge_block',
+                      documentId: knowledgeDocumentId,
+                      blockId: focusedBlock.blockId,
+                      expectedRevisionId: focusedBlock.sourceRevisionId,
+                    }
+                  : {
+                      kind: 'knowledge_document',
+                      documentId: knowledgeDocumentId,
+                    }
+                : undefined}
+              destination="quick"
+              label={focusedBlock ? 'Turn selected block into podcast' : 'Turn note into podcast'}
+              disabledReason={knowledgeDocumentId ? undefined : 'This note is not available in the unified knowledge engine.'}
+              onOpen={openPodcastReview}
+            />
+          </div>
         </div>
       )}
 

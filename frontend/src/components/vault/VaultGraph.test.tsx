@@ -45,6 +45,7 @@ vi.mock('@/lib/hooks/use-translation', () => ({
 }))
 
 import { VaultGraph } from './VaultGraph'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 describe('VaultGraph controlled viewport', () => {
   it('passes a controlled viewport to React Flow and reports onMoveEnd', () => {
@@ -77,6 +78,33 @@ describe('VaultGraph controlled viewport', () => {
       spaceIds: ['knowledge_engine_space:research'],
       relationKinds: [],
       viewport: { x: 3, y: 6, zoom: 2 },
+    })
+  })
+
+  it('opens a bounded unified graph selection through review-only podcast state', () => {
+    usePodcastStudioStore.getState().dismiss()
+    render(
+      <VaultGraph
+        graph={{
+          nodes: [{
+            id: 'note:one', title: 'One', source_format: 'markdown',
+            knowledge_document_id: 'knowledge_engine_document:one',
+          }],
+          edges: [],
+        }}
+        unresolved={[]}
+        onNavigate={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Turn graph into podcast' }))
+
+    expect(usePodcastStudioStore.getState()).toMatchObject({
+      isOpen: true,
+      destination: 'quick',
+      selections: [{
+        kind: 'graph_selection', documentIds: ['knowledge_engine_document:one'],
+      }],
     })
   })
 })

@@ -64,6 +64,7 @@ import {
   Database,
   AlertCircle,
   MessageSquare,
+  Podcast,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { formatDateTime, getDateLocale } from '@/lib/utils/date-locale'
@@ -71,6 +72,7 @@ import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { SourceInsightDialog } from '@/components/source/SourceInsightDialog'
 import { NotebookAssociations } from '@/components/source/NotebookAssociations'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface SourceDetailContentProps {
   sourceId: string
@@ -130,6 +132,7 @@ export function SourceDetailContent({
 }: SourceDetailContentProps) {
   const { t, language } = useTranslation()
   const queryClient = useQueryClient()
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const [source, setSource] = useState<SourceDetailResponse | null>(null)
   // v0.8.78 — located cited passage (from highlightQuery). Best-effort.
   const [citedPassage, setCitedPassage] = useState<{ snippet: string; score: number } | null>(null)
@@ -639,6 +642,15 @@ export function SourceDetailContent({
                 >
                   <Database className="mr-2 h-4 w-4" />
                   {isEmbedding ? t('sources.embedding') : source.embedded ? t('sources.alreadyEmbedded') : t('sources.embedContent')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => openPodcastReview([{
+                    kind: 'app_source', sourceId: source.id, inclusionMode: 'full',
+                  }], 'quick')}
+                  disabled={hasNoExtractedText}
+                >
+                  <Podcast className="mr-2 h-4 w-4" />
+                  {hasNoExtractedText ? 'Podcast unavailable: no readable content' : 'Turn into podcast'}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

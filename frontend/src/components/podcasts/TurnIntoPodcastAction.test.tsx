@@ -38,4 +38,24 @@ describe('TurnIntoPodcastAction', () => {
     expect(screen.getByRole('button', { name: 'Turn into podcast' })).toBeDisabled()
     expect(screen.getByText('No readable content is available')).toBeVisible()
   })
+
+  it('forwards an explicit multi-selection without starting production', () => {
+    const onOpen = vi.fn()
+    const selections = [selection, {
+      kind: 'knowledge_document' as const,
+      documentId: 'knowledge_engine_document:second',
+    }]
+    render(
+      <TurnIntoPodcastAction
+        selections={selections}
+        destination="studio"
+        label="Open in Podcast Studio"
+        onOpen={onOpen}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Podcast Studio' }))
+
+    expect(onOpen).toHaveBeenCalledWith(selections, 'studio')
+  })
 })
