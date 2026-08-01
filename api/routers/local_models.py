@@ -198,6 +198,47 @@ async def local_models_inventory():
     }
 
 
+@router.get("/api/local-models/readiness")
+async def local_models_readiness():
+    """Return redacted, route-safe readiness facts for Research Core.
+
+    Paths remain exclusive to the Settings inventory endpoint.  This endpoint
+    deliberately exposes no provider URL, model-root path, manifest locator,
+    prompt, or source material.
+    """
+    from deeper_notebook.local_models import (
+        build_readiness_inventory,
+        load_model_manifest,
+    )
+
+    model_dir = _configured_model_dir()
+    if model_dir is None:
+        return {"available": False, "models": []}
+    manifest_entries = await asyncio.to_thread(load_model_manifest, model_dir)
+    rows = await asyncio.to_thread(
+        build_readiness_inventory,
+        model_dir,
+        manifest_entries=manifest_entries,
+        active_model_path=resolve_env("DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL", "").strip(),
+    )
+    return {
+        "available": True,
+        "models": [
+            {
+                "model_id": row.model_id,
+                "format": row.format,
+                "modality": row.modality,
+                "readiness": row.readiness,
+                "readiness_reason": row.readiness_reason,
+                "measured_tier": row.measured_tier,
+                "accepted_roles": list(row.accepted_roles),
+                "route_eligible": row.route_eligible,
+            }
+            for row in rows
+        ],
+    }
+
+
 @router.get("/api/local-models/role-routing")
 async def local_models_role_routing():
     """Recommend installed local models for each product role.
