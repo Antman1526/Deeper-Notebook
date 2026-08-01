@@ -1,6 +1,7 @@
 """Config persistence for the desktop launcher and first-run wizard."""
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import sys
@@ -20,10 +21,7 @@ def _toml_string(v: str) -> str:
     string with backslash and double-quote escapes. Sufficient for the values
     we serialize: paths, provider names, model identifiers, surreal credentials.
     """
-    if "'" not in v and "\n" not in v:
-        return f"'{v}'"
-    escaped = v.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+    return json.dumps(v, ensure_ascii=True)
 
 
 def _toml_value(value: object) -> str:
