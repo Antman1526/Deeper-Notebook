@@ -170,7 +170,10 @@ export function KnowledgePaneContent({
   const sharedGraphContext = graphBookmarkContext?.rootDocumentId === knowledgeDocumentId
     ? graphBookmarkContext
     : null
-  const graphContext = activeTab?.graphBookmarkContext ?? sharedGraphContext ?? tabGraphContext
+  const targetHasPersistedGraphFilters = activeTarget?.kind === 'graph'
+    && (activeTarget.space_ids.length > 0 || activeTarget.relation_kinds.length > 0)
+  const graphContext = activeTab?.graphBookmarkContext
+    ?? (targetHasPersistedGraphFilters ? tabGraphContext : sharedGraphContext ?? tabGraphContext)
 
   useEffect(() => {
     const updateSelection = () => {
@@ -259,7 +262,9 @@ export function KnowledgePaneContent({
         className="flex min-h-full flex-col p-4 sm:p-6"
       >
         {activeTarget?.kind === 'ask' && (
-          <KnowledgeAskPane selectedDocumentIds={activeTarget.selected_document_ids} />
+          <KnowledgeAskPane
+            selectedDocumentIds={activeTarget.selected_document_ids}
+          />
         )}
         {activeTarget?.kind === 'search' && (
           <KnowledgeSearchPane

@@ -99,6 +99,7 @@ vi.mock('@/lib/hooks/use-overlay', () => ({
   },
 }))
 
+
 vi.mock('@/components/overlay/OverlayDocumentView', () => ({
   OverlayDocumentView: ({
     mode,
@@ -437,8 +438,8 @@ function replaceResearchWorkspace(
         ? {
             kind: 'graph' as const,
             root_document_id: 'knowledge_engine_document:plan',
-            space_ids: [],
-            relation_kinds: [],
+            space_ids: ['knowledge_engine_space:target'],
+            relation_kinds: ['target-link'],
             viewport: { x: 0, y: 0, zoom: 1 },
             origin: documentTarget,
           }
@@ -633,6 +634,21 @@ describe('KnowledgePaneContent', () => {
 
     expect(queries.graph).toHaveBeenLastCalledWith('vault:one', 'note:plan', true)
     expect(screen.getByText('Local graph content')).toBeInTheDocument()
+  })
+
+  it('keeps persisted graph filters ahead of a same-root global graph context', () => {
+    replaceResearchWorkspace('graph')
+    useKnowledgeWorkspaceStore.getState().setGraphBookmarkContext({
+      rootDocumentId: 'knowledge_engine_document:plan',
+      spaceIds: ['knowledge_engine_space:global'],
+      relationKinds: ['global-link'],
+      viewport: { x: 40, y: 40, zoom: 2 },
+    })
+
+    renderPane()
+
+    expect(vaultGraphView.spaceIds).toEqual(['knowledge_engine_space:target'])
+    expect(vaultGraphView.relationKinds).toEqual(['target-link'])
   })
 
   it('renders a Canvas tab without loading a Markdown page', () => {
