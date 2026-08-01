@@ -268,9 +268,22 @@ function fixtureDescriptorForDocumentId(documentId: unknown): Record<string, unk
 
 const fixtureNavigationId = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const fixtureDocumentId = /^knowledge_engine_document:[A-Za-z0-9_-]+$/;
+const fixtureSpaceId = /^knowledge_engine_space:[A-Za-z0-9_-]+$/;
 
 function validFixtureOpaqueId(value: unknown): boolean {
   return value === null || (typeof value === "string" && fixtureNavigationId.test(value));
+}
+
+function validFixtureDocumentIds(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length <= 128
+    && value.every((documentId) => typeof documentId === "string" && fixtureDocumentId.test(documentId));
+}
+
+function validFixtureSpaceIds(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length <= 32
+    && value.every((spaceId) => typeof spaceId === "string" && fixtureSpaceId.test(spaceId));
 }
 
 function fixtureWorkspaceAuthorityForDocumentId(
@@ -311,19 +324,19 @@ function validateNamedWorkspaceSnapshot(snapshot: unknown): string | null {
       }
       if (kind === "search") {
         const query = targetValue.query;
-        if (mode !== "search" || typeof query !== "string" || query.length > 512 || (query !== "" && query.trim() === "")) return "search_invalid";
+        if (mode !== "search" || typeof query !== "string" || query.length > 512 || (query !== "" && query.trim() === "") || !validFixtureSpaceIds(targetValue.space_ids)) return "search_invalid";
         continue;
       }
       if (kind === "graph") {
-        if (mode !== "graph" || (targetValue.root_document_id !== null && !fixtureDocumentId.test(String(targetValue.root_document_id)))) return "graph_invalid";
+        if (mode !== "graph" || (targetValue.root_document_id !== null && !fixtureDocumentId.test(String(targetValue.root_document_id))) || !validFixtureSpaceIds(targetValue.space_ids)) return "graph_invalid";
         continue;
       }
       if (kind === "ask") {
-        if (mode !== "ask" || !validFixtureOpaqueId(targetValue.thread_id)) return "ask_invalid";
+        if (mode !== "ask" || !validFixtureOpaqueId(targetValue.thread_id) || !validFixtureDocumentIds(targetValue.selected_document_ids)) return "ask_invalid";
         continue;
       }
       if (kind === "podcast") {
-        if (mode !== "podcast" || !validFixtureOpaqueId(targetValue.production_id)) return "podcast_invalid";
+        if (mode !== "podcast" || !validFixtureOpaqueId(targetValue.production_id) || !validFixtureDocumentIds(targetValue.seed_document_ids)) return "podcast_invalid";
         continue;
       }
       return "target_kind_invalid";

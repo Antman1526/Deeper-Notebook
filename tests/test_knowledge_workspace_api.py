@@ -59,7 +59,10 @@ async def test_legacy_put_defaults_authority_and_serializes_it_explicitly(
             json=payload,
         )
         assert saved.status_code == 200
-        from deeper_notebook.workspace.contracts import KnowledgeWorkspaceDocument, migrate_workspace_v1
+        from deeper_notebook.workspace.contracts import (
+            KnowledgeWorkspaceDocument,
+            migrate_workspace_v1,
+        )
 
         expected = migrate_workspace_v1(
             KnowledgeWorkspaceDocument.model_validate(payload)
@@ -110,6 +113,87 @@ async def test_put_rejects_absolute_relative_path(api_app: FastAPI) -> None:
 
     assert response.status_code == 422
     assert str(api_app.state.workspace_path) not in response.text
+
+
+@pytest.mark.asyncio
+async def test_v2_put_persists_canonical_target_ids_and_rejects_path_bearing_ids(
+    api_app: FastAPI,
+) -> None:
+    from deeper_notebook.workspace import default_knowledge_workspace_v2
+
+    payload = default_knowledge_workspace_v2().model_dump(mode="json")
+    payload["panes"]["pane-1"]["tabs"] = [
+        {
+            "id": "tab-graph",
+            "mode": "graph",
+            "title": "Graph",
+            "target": {
+                "kind": "graph",
+                "root_document_id": "knowledge_engine_document:root",
+                "space_ids": ["knowledge_engine_space:primary"],
+                "relation_kinds": [],
+                "viewport": {"x": 0, "y": 0, "zoom": 1},
+                "origin": None,
+            },
+        },
+        {
+            "id": "tab-ask",
+            "mode": "ask",
+            "title": "Ask",
+            "target": {
+                "kind": "ask",
+                "thread_id": "thread:one",
+                "selected_document_ids": ["knowledge_engine_document:one"],
+            },
+        },
+        {
+            "id": "tab-podcast",
+            "mode": "podcast",
+            "title": "Podcast",
+            "target": {
+                "kind": "podcast",
+                "production_id": "production:one",
+                "seed_document_ids": ["knowledge_engine_document:two"],
+            },
+        },
+    ]
+    payload["panes"]["pane-1"]["active_tab_id"] = "tab-graph"
+    payload["navigation"]["selected_space_ids"] = ["knowledge_engine_space:primary"]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app), base_url="http://test"
+    ) as client:
+        saved = await client.put(
+            "/api/deeper-notebook/workspace/knowledge", json=payload
+        )
+        assert saved.status_code == 200
+        assert (
+            saved.json()["panes"]["pane-1"]["tabs"][0]["target"]["root_document_id"]
+            == "knowledge_engine_document:root"
+        )
+
+        for tab_index, field, value in (
+            (0, "root_document_id", "/private/document"),
+            (0, "space_ids", ["../private-space"]),
+            (1, "selected_document_ids", ["/private/document"]),
+            (2, "seed_document_ids", ["/private/document"]),
+        ):
+            unsafe = saved.json()
+            unsafe["panes"]["pane-1"]["tabs"][tab_index]["target"][field] = value
+            rejected = await client.put(
+                "/api/deeper-notebook/workspace/knowledge", json=unsafe
+            )
+            assert rejected.status_code == 422
+
+        unsafe_navigation = saved.json()
+        unsafe_navigation["navigation"]["selected_space_ids"] = ["../private-space"]
+        rejected_navigation = await client.put(
+            "/api/deeper-notebook/workspace/knowledge", json=unsafe_navigation
+        )
+        assert rejected_navigation.status_code == 422
+
+        restored = await client.get("/api/deeper-notebook/workspace/knowledge")
+    assert restored.json() == saved.json()
 
 
 @pytest.mark.asyncio
