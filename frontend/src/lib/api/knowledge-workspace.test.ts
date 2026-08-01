@@ -386,6 +386,46 @@ describe('knowledge workspace API boundary', () => {
       .toEqual({ x: 25, y: -10, zoom: 1.75 })
   })
 
+  it('projects a V2 graph origin into compatibility fields without changing its target', () => {
+    const base = serializeKnowledgeWorkspace(defaultKnowledgeWorkspace())
+    const wire = {
+      ...base,
+      active_pane_id: 'pane-1',
+      next_id: 2,
+      panes: {
+        'pane-1': {
+          id: 'pane-1', active_tab_id: 'tab-graph', tabs: [{
+            id: 'tab-graph', mode: 'graph', title: 'Plan graph',
+            target: {
+              kind: 'graph', root_document_id: 'knowledge_engine_document:plan',
+              space_ids: ['knowledge_engine_space:target'], relation_kinds: ['target-link'],
+              viewport: { x: 5, y: -3, zoom: 1.25 },
+              origin: {
+                kind: 'document', container_id: 'overlay_space:default',
+                note_id: 'overlay_note:plan', title: 'Plan', relative_locator: 'Notes/Plan.md',
+                authority: 'overlay', knowledge_document_id: 'knowledge_engine_document:plan',
+                render_mode: 'reading',
+              },
+            },
+          }],
+        },
+      },
+      layout: { type: 'pane', pane_id: 'pane-1' },
+    }
+
+    const parsed = parseKnowledgeWorkspace(wire)
+    const tab = parsed.panes['pane-1'].tabs[0]
+
+    expect(tab).toMatchObject({
+      mode: 'graph', vaultId: 'overlay_space:default', noteId: 'overlay_note:plan',
+      relativePath: 'Notes/Plan.md', viewMode: 'graph', sourceAuthority: 'overlay',
+      knowledgeDocumentId: 'knowledge_engine_document:plan',
+    })
+    expect(tab.target).toMatchObject({
+      kind: 'graph', space_ids: ['knowledge_engine_space:target'], relation_kinds: ['target-link'],
+    })
+  })
+
   it('serializes only approved snake_case fields for PUT', async () => {
     vi.mocked(apiClient.put).mockResolvedValue({ data: wireDocument } as never)
     const documentWithExtras = {

@@ -4,8 +4,11 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { useAsk } from '@/lib/hooks/use-ask'
-import { useModelDefaults } from '@/lib/hooks/use-models'
+import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
+import {
+  getLocalResearchReadinessReason,
+  getResearchModeAvailability,
+} from '@/lib/knowledge/research-modes'
 
 interface KnowledgeAskPaneProps {
   selectedDocumentIds: string[]
@@ -17,21 +20,16 @@ export function KnowledgeAskPane({
   readinessReason = null,
 }: KnowledgeAskPaneProps) {
   const [question, setQuestion] = useState('')
-  const ask = useAsk()
-  const { data: modelDefaults } = useModelDefaults()
-  const modelId = modelDefaults?.default_chat_model ?? null
-  const unavailableReason = readinessReason ?? (modelId ? null : 'No local research model is ready')
-  const disabled = Boolean(unavailableReason) || ask.isStreaming || !question.trim()
+  const localModelsHealth = useLocalModelsHealth()
+  const localReadinessReason = getLocalResearchReadinessReason(localModelsHealth)
   const selectionLabel = `${selectedDocumentIds.length} selected document${selectedDocumentIds.length === 1 ? '' : 's'}`
-
-  const submit = () => {
-    if (disabled || !modelId) return
-    ask.sendAsk(question, {
-      strategy: modelId,
-      answer: modelId,
-      finalAnswer: modelId,
-    })
-  }
+  const readiness = getResearchModeAvailability('ask', {
+    target: { kind: 'ask' },
+    askReadinessReason: readinessReason ?? localReadinessReason,
+  })
+  const scopeReason = selectedDocumentIds.length > 0
+    ? 'Scoped Ask is unavailable until selection-aware chat is available.'
+    : 'Select one or more documents before starting a scoped Ask.'
 
   return (
     <section aria-label="Knowledge Ask" className="space-y-4">
@@ -39,19 +37,17 @@ export function KnowledgeAskPane({
         <h2 className="text-xl font-semibold">Ask</h2>
         <p className="text-sm text-muted-foreground">{selectionLabel}</p>
       </div>
-      {unavailableReason && <p role="status" className="text-sm text-muted-foreground">{unavailableReason}</p>}
+      {readiness.reason && <p role="status" className="text-sm text-muted-foreground">{readiness.reason}</p>}
+      <p className="text-sm text-muted-foreground">{scopeReason}</p>
       <Textarea
         aria-label="Question for selected knowledge"
         value={question}
         onChange={(event) => setQuestion(event.target.value)}
-        disabled={ask.isStreaming || Boolean(unavailableReason)}
         placeholder="Ask about the selected knowledge"
       />
-      <Button type="button" onClick={submit} disabled={disabled}>
+      <Button type="button" disabled>
         Ask selected knowledge
       </Button>
-      {ask.error && <p role="alert" className="text-sm text-destructive">{ask.error}</p>}
-      {ask.finalAnswer && <div className="whitespace-pre-wrap text-sm">{ask.finalAnswer}</div>}
     </section>
   )
 }
