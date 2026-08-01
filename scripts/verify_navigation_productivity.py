@@ -17,6 +17,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 _FORBIDDEN_ROOT_PARTS = {"2nd Brains", "BrainPulse Ventures LLC"}
+_FIXTURE_SENTINEL = ".deeper-notebook-navigation-productivity-fixture"
 
 
 @dataclass(frozen=True)
@@ -32,14 +33,52 @@ class VerificationResult:
     report: dict[str, object]
 
 
+def _has_symlink_component(path: Path) -> bool:
+    current = Path(path.anchor)
+    for part in path.parts[1:]:
+        current /= part
+        if current.exists() and current.is_symlink():
+            return True
+    return False
+
+
+def _inside(parent: Path, child: Path) -> bool:
+    try:
+        child.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
 def verifier_config(*, fixture_root: Path, output_path: Path, api_url: str = "http://127.0.0.1:8000") -> VerifierConfig:
-    root = fixture_root.expanduser().resolve()
-    if (root.exists() and not root.is_dir()) or not root.parent.is_dir() or any(part in _FORBIDDEN_ROOT_PARTS for part in root.parts):
+    requested_root = fixture_root.expanduser().absolute()
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    root = requested_root.resolve()
+    if (
+        _has_symlink_component(requested_root)
+        or not _inside(temp_root, root)
+        or root == temp_root
+        or any(part in _FORBIDDEN_ROOT_PARTS for part in root.parts)
+        or (root.exists() and not root.is_dir())
+        or not root.parent.is_dir()
+    ):
         raise ValueError("temporary synthetic fixture root required")
-    if root == Path("/"):
-        raise ValueError("temporary synthetic fixture root required")
-    output = output_path.expanduser().resolve()
-    if output == root or output.is_dir():
+    if root.exists():
+        entries = list(root.iterdir())
+        if entries != [root / _FIXTURE_SENTINEL] or not (root / _FIXTURE_SENTINEL).is_file():
+            raise ValueError("empty verifier-owned fixture root required")
+    else:
+        root.mkdir(mode=0o700)
+        (root / _FIXTURE_SENTINEL).write_text("synthetic fixture only\n", encoding="utf-8")
+    requested_output = output_path.expanduser().absolute()
+    output = requested_output.resolve(strict=False)
+    if (
+        _has_symlink_component(requested_output.parent)
+        or output.exists()
+        or output.is_symlink()
+        or not output.parent.is_dir()
+        or _inside(root, output)
+    ):
         raise ValueError("new proof output file required")
     return VerifierConfig(root, output, api_url.rstrip("/"))
 
@@ -51,7 +90,7 @@ def _hashes(root: Path) -> dict[str, str]:
     }
 
 
-def _create_synthetic_fixture(root: Path) -> dict[str, str]:
+def _create_synthetic_fixture(root: Path) -> None:
     obsidian = root / "obsidian" / "Pages"
     logseq = root / "logseq" / "pages"
     overlay = root / "overlay"
@@ -60,7 +99,6 @@ def _create_synthetic_fixture(root: Path) -> dict[str, str]:
     (obsidian / "Plan.md").write_text("# Plan\n\nSynthetic only.\n", encoding="utf-8")
     (logseq / "Evidence.md").write_text("- synthetic evidence\n", encoding="utf-8")
     (overlay / "today.md").write_text("# App-owned synthetic overlay\n", encoding="utf-8")
-    return _hashes(root)
 
 
 def _api_health(api_url: str) -> tuple[bool, int | None]:
@@ -73,12 +111,18 @@ def _api_health(api_url: str) -> tuple[bool, int | None]:
 
 def run_verifier(*, api_url: str, fixture_root: Path, output_path: Path) -> VerificationResult:
     config = verifier_config(fixture_root=fixture_root, output_path=output_path, api_url=api_url)
-    before = _create_synthetic_fixture(config.fixture_root)
+    _create_synthetic_fixture(config.fixture_root)
+    # This baseline is deliberately captured after fixture construction and
+    # before the first proof action (including the health request).
+    before = _hashes(config.fixture_root)
     api_ok, route_status = _api_health(config.api_url)
     after = _hashes(config.fixture_root)
     report: dict[str, object] = {
         "schema_version": 1,
-        "status": "passed" if api_ok else "blocked",
+        # A health response alone is not persistent-runtime proof: SurrealDB
+        # and native gates are deliberately separate and required.
+        "status": "blocked",
+        "synthetic_passed": True,
         "fixture": {"kind": "synthetic", "file_count": len(before), "inventory_hash": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest()},
         "source_hashes_unchanged": before == after,
         "external_writes": 0,
@@ -89,9 +133,8 @@ def run_verifier(*, api_url: str, fixture_root: Path, output_path: Path) -> Veri
             "native_macos": {"status": "blocked", "reason": "requires caller-launched native app smoke"},
         },
     }
-    config.output_path.parent.mkdir(parents=True, exist_ok=True)
     config.output_path.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-    return VerificationResult(0 if api_ok else 2, report)
+    return VerificationResult(2, report)
 
 
 def main() -> int:
