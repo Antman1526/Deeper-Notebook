@@ -61,6 +61,16 @@
   --dn-cyan: #38BDF8;
   --dn-light: #CCFBF1;
 
+  /* Research Core surfaces stay semantic so user themes can preserve the
+     deep-teal/cyan hierarchy without components reaching for palette values. */
+  --research-canvas: var(--dn-deep);
+  --research-panel: color-mix(in oklab, var(--dn-deep) 86%, var(--dn-dark-teal));
+  --research-line: color-mix(in oklab, var(--dn-light) 22%, transparent);
+  --research-accent: var(--dn-teal);
+  --research-accent-strong: var(--dn-cyan);
+  --research-warning: oklch(0.75 0.15 70);
+  --research-glow: color-mix(in oklab, var(--dn-cyan) 28%, transparent);
+
   --radius: 0.65rem;
   --background: var(--dn-deep);
   --foreground: var(--dn-light);

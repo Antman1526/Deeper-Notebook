@@ -43,6 +43,7 @@ import type {
   WorkspaceRestorePlan,
 } from '@/lib/api/knowledge-navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useMediaQuery } from '@/lib/hooks/use-media-query'
 import { useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
 import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
 import type { ResearchMode } from '@/lib/knowledge/research-modes'
@@ -276,7 +277,12 @@ export function KnowledgeExplorer() {
   const [workspaceCommandIntent, setWorkspaceCommandIntent] = useState<{ id: number; kind: 'save' | 'replace' } | null>(null)
   const [postRestoreState, setPostRestoreState] = useState<PostRestoreState | null>(null)
   const [activePaneElement, setActivePaneElement] = useState<HTMLElement | null>(null)
+  const isNarrowLayout = useMediaQuery('(max-width: 1023px)')
+  const [utilityDrawerOpen, setUtilityDrawerOpen] = useState(false)
+  const [intelligenceDrawerOpen, setIntelligenceDrawerOpen] = useState(false)
   const workspaceRef = useRef<HTMLDivElement>(null)
+  const utilityDrawerTriggerRef = useRef<HTMLButtonElement>(null)
+  const intelligenceDrawerTriggerRef = useRef<HTMLButtonElement>(null)
   const fileTreeRef = useRef<HTMLElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
   const linksRef = useRef<HTMLDivElement>(null)
@@ -777,10 +783,20 @@ export function KnowledgeExplorer() {
     if (paneId === activePaneId) setActivePaneElement(element)
   }, [activePaneId])
 
+  const closeUtilityDrawer = useCallback(() => {
+    setUtilityDrawerOpen(false)
+    requestAnimationFrame(() => utilityDrawerTriggerRef.current?.focus())
+  }, [])
+
+  const closeIntelligenceDrawer = useCallback(() => {
+    setIntelligenceDrawerOpen(false)
+    requestAnimationFrame(() => intelligenceDrawerTriggerRef.current?.focus())
+  }, [])
+
   return (
     <div
       ref={workspaceRef}
-      className="flex min-h-0 flex-1 flex-col"
+      className="research-core-canvas flex min-h-0 flex-1 flex-col"
       data-testid="knowledge-workspace"
       tabIndex={-1}
     >
@@ -803,7 +819,7 @@ export function KnowledgeExplorer() {
           {t('knowledge.scan')}
         </Button> : null}
       />
-      <div className="border-b px-4 py-2 sm:px-6">
+      <div className="research-core-mode-toolbar border-b px-4 py-2 sm:px-6">
         <KnowledgeModeLauncher
           activePaneId={activePaneId}
           tabs={activePane?.tabs ?? []}
@@ -813,6 +829,34 @@ export function KnowledgeExplorer() {
           onActivateTab={activateTab}
           onOpenMode={openResearchMode}
         />
+        <div className="research-core-drawer-triggers" aria-label={t('knowledge.researchDrawers')}>
+          <Button
+            ref={utilityDrawerTriggerRef}
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-controls="research-core-utility-drawer"
+            aria-expanded={utilityDrawerOpen}
+            aria-label={t('knowledge.openUtilityDrawer')}
+            onClick={() => setUtilityDrawerOpen(true)}
+            className="research-core-drawer-trigger"
+          >
+            {t('knowledge.utilityDrawer')}
+          </Button>
+          <Button
+            ref={intelligenceDrawerTriggerRef}
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-controls="research-core-intelligence-drawer"
+            aria-expanded={intelligenceDrawerOpen}
+            aria-label={t('knowledge.openIntelligenceDrawer')}
+            onClick={() => setIntelligenceDrawerOpen(true)}
+            className="research-core-drawer-trigger"
+          >
+            {t('knowledge.intelligenceDrawer')}
+          </Button>
+        </div>
         <div className="mt-3 space-y-1" aria-live="polite">
           {hydration.isLoading && (
             <p role="status" className="text-sm text-muted-foreground">
@@ -842,15 +886,18 @@ export function KnowledgeExplorer() {
         </div>
       </div>
       <div
-        className={`grid min-h-0 flex-1 grid-cols-1 ${navigation.sidebarVisible
+        className={`research-core-layout grid min-h-0 flex-1 grid-cols-1 ${navigation.sidebarVisible
           ? 'lg:grid-cols-[var(--knowledge-sidebar-width)_4px_minmax(0,1fr)_minmax(15rem,20rem)]'
           : 'lg:grid-cols-[minmax(0,1fr)_minmax(15rem,20rem)]'}`}
         style={{ '--knowledge-sidebar-width': `${navigation.sidebarWidth}px` } as CSSProperties}
       >
-        {navigation.sidebarVisible && <aside
+        {(navigation.sidebarVisible || isNarrowLayout) && <aside
+          id="research-core-utility-drawer"
           ref={(element) => { fileTreeRef.current = element; sidebarRef.current = element }}
-          className="flex min-h-64 flex-col gap-4 border-b p-4 lg:border-b-0 lg:border-r"
-          aria-label={t('knowledge.files')}
+          className="research-core-utility-drawer flex min-h-64 flex-col gap-4 border-b p-4 lg:border-b-0 lg:border-r"
+          aria-label={t('knowledge.utilityDrawer')}
+          aria-hidden={isNarrowLayout && !utilityDrawerOpen}
+          data-drawer-open={utilityDrawerOpen ? 'true' : 'false'}
           tabIndex={-1}
         >
           <KnowledgeUtilityRail
@@ -858,6 +905,8 @@ export function KnowledgeExplorer() {
             sidebarVisible={navigation.sidebarVisible}
             canBookmarkCurrent={Boolean(activeTab?.knowledgeDocumentId)}
             randomPending={randomNotePending}
+            drawerCloseLabel={t('knowledge.closeUtilityDrawer')}
+            onCloseDrawer={closeUtilityDrawer}
             onNavigationChange={setNavigation}
             onToday={() => { void openTodayOverlay() }}
             onRandomNote={() => { void openRandomNote() }}
@@ -989,7 +1038,7 @@ export function KnowledgeExplorer() {
           }}
           onMouseUp={() => { resizeStartRef.current = null }}
         />}
-        {!navigation.sidebarVisible && <Button
+        {!navigation.sidebarVisible && !isNarrowLayout && <Button
           type="button"
           size="icon"
           variant="ghost"
@@ -999,7 +1048,7 @@ export function KnowledgeExplorer() {
         >
           <span aria-hidden="true">›</span>
         </Button>}
-        <div className="min-h-0 min-w-0 overflow-hidden">
+        <div className="research-core-main min-h-0 min-w-0 overflow-hidden">
           {activeSearchContext && <section aria-label="Active knowledge search" className="border-b px-3 py-2 text-sm">
             <p>{activeSearchContext.mode}: {activeSearchContext.query}</p>
             <p className="text-muted-foreground">Spaces: {activeSearchContext.spaceIds.join(', ') || 'all'} · Authorities: {activeSearchContext.authorityKinds.join(', ') || 'all'}</p>
@@ -1019,6 +1068,11 @@ export function KnowledgeExplorer() {
         </div>
         <div ref={linksRef} tabIndex={-1}>
           <KnowledgeIntelligenceRail
+            drawerId="research-core-intelligence-drawer"
+            drawerLabel={t('knowledge.intelligenceDrawer')}
+            drawerOpen={!isNarrowLayout || intelligenceDrawerOpen}
+            drawerCloseLabel={t('knowledge.closeIntelligenceDrawer')}
+            onCloseDrawer={closeIntelligenceDrawer}
             activeContext={{
               evidence: activeTab?.knowledgeDocumentId
                 ? 'Active document is ready for evidence review'

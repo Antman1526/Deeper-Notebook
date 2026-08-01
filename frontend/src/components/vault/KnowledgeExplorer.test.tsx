@@ -502,7 +502,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
 
     expect(screen.getByRole('banner', { name: 'Research Core workspace' })).toBeInTheDocument()
     expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getByRole('complementary', { name: 'Research intelligence' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'knowledge.intelligenceDrawer' })).toBeInTheDocument()
     const launcher = screen.getByRole('toolbar', { name: 'Research modes' })
     expect(screen.getByRole('tab', { name: 'Read: One' })).toBeInTheDocument()
 
@@ -512,6 +512,27 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(activePane.tabs.find((tab) => tab.id === activePane.activeTabId))
       .toMatchObject({ mode: 'search', target: { kind: 'search' } })
     expect(screen.getByRole('tab', { name: 'Search: Search' })).toBeInTheDocument()
+  })
+
+  it('exposes labeled utility and intelligence drawers that restore focus to their triggers', async () => {
+    await renderExplorer()
+
+    const openSources = screen.getByRole('button', { name: 'knowledge.openUtilityDrawer' })
+    const openIntelligence = screen.getByRole('button', { name: 'knowledge.openIntelligenceDrawer' })
+    expect(openSources).toHaveAttribute('aria-controls', 'research-core-utility-drawer')
+    expect(openIntelligence).toHaveAttribute('aria-controls', 'research-core-intelligence-drawer')
+
+    fireEvent.click(openSources)
+    const utilityDrawer = screen.getByRole('complementary', { name: 'knowledge.utilityDrawer' })
+    expect(utilityDrawer).toHaveAttribute('data-drawer-open', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.closeUtilityDrawer' }))
+    await waitFor(() => expect(openSources).toHaveFocus())
+
+    fireEvent.click(openIntelligence)
+    const intelligenceDrawer = screen.getByRole('complementary', { name: 'knowledge.intelligenceDrawer' })
+    expect(intelligenceDrawer).toHaveAttribute('data-drawer-open', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.closeIntelligenceDrawer' }))
+    await waitFor(() => expect(openIntelligence).toHaveFocus())
   })
 
   it('activates the indexed search result surface without replacing the active document', async () => {
