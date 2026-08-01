@@ -155,3 +155,10 @@ This proves the guarded root-path migration in a packaged app. It is not a
 substitute for an upgrade run from an independently installed historical
 Open Notebook Plus binary, which remains a release gate alongside the Windows
 installer lifecycle.
+
+## 2026-07-31 Windows installer preflight regression
+
+The local Windows verifier, data-root handle, compatibility, and DB-repair
+script tests passed (`20 passed, 2 skipped`). This validates the platform-
+independent release checks, but does not prove a Windows build, installer,
+upgrade, repair, or uninstall: those require a native Windows runtime.
