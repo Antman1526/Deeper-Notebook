@@ -106,6 +106,17 @@ class KnowledgeBlockIdentity(BaseModel):
     source_revision_id: KnowledgeRevisionId
 
 
+class KnowledgeBlockContent(BaseModel):
+    """Current block content only, without source metadata or locators."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    block_id: KnowledgeBlockId
+    document_id: KnowledgeDocumentId
+    source_revision_id: KnowledgeRevisionId
+    plain_text: str = Field(max_length=10 * 1024 * 1024)
+
+
 @dataclass(frozen=True, slots=True)
 class EngineProjectionStatus:
     projected: int
@@ -335,6 +346,42 @@ class KnowledgeRepository:
             return None
         try:
             return KnowledgeBlockIdentity.model_validate(rows[0])
+        except ValidationError:
+            raise KnowledgeRepositoryError(
+                "knowledge_engine_block_invalid"
+            ) from None
+
+    async def get_current_block_content(
+        self,
+        *,
+        document_id: str,
+        block_id: str,
+        source_revision_id: str,
+    ) -> KnowledgeBlockContent | None:
+        """Return current plain block text without reading a canonical source."""
+        _record_id(document_id, kind="document")
+        _record_id(block_id, kind="block")
+        _record_id(source_revision_id, kind="revision")
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT id AS block_id, document_id, source_revision_id, plain_text
+                FROM $block_id
+                WHERE document_id = $document_id
+                    AND source_revision_id = $source_revision_id
+                LIMIT 1;
+                """,
+                {
+                    "block_id": _record_id(block_id, kind="block"),
+                    "document_id": document_id,
+                    "source_revision_id": source_revision_id,
+                },
+            )
+        if not rows:
+            return None
+        try:
+            return KnowledgeBlockContent.model_validate(rows[0])
         except ValidationError:
             raise KnowledgeRepositoryError(
                 "knowledge_engine_block_invalid"
@@ -1030,6 +1077,7 @@ class KnowledgeRepository:
 
 __all__ = [
     "EngineProjectionStatus",
+    "KnowledgeBlockContent",
     "KnowledgePageIdentity",
     "KnowledgeRepository",
     "KnowledgeRepositoryError",
