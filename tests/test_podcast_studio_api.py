@@ -75,6 +75,36 @@ async def _load_notebook(notebook_id: str) -> _Notebook | None:
     return _Notebook()
 
 
+class _Note:
+    id = "note:research"
+    title = "Research note"
+    content = "Private app-owned note material"
+    canonical_external = False
+
+
+async def _load_note(note_id: str) -> _Note | None:
+    assert note_id == "note:research"
+    return _Note()
+
+
+class _Insight:
+    content = "Stored source insight"
+
+
+class _Source:
+    id = "source:research"
+    title = "Research source"
+    full_text = "Private app-owned source material"
+
+    async def get_insights(self) -> list[_Insight]:
+        return [_Insight()]
+
+
+async def _load_source(source_id: str) -> _Source | None:
+    assert source_id == "source:research"
+    return _Source()
+
+
 @pytest.fixture()
 def app_with_knowledge_engine() -> FastAPI:
     from api.routers.podcasts import router
@@ -82,6 +112,8 @@ def app_with_knowledge_engine() -> FastAPI:
     app = FastAPI()
     app.state.knowledge_engine_service = _Engine()
     app.state.podcast_notebook_loader = _load_notebook
+    app.state.podcast_note_loader = _load_note
+    app.state.podcast_source_loader = _load_source
     app.state.local_model_route_candidates = (
         LocalModelRouteCandidate(
             model_id="local-podcast",
@@ -195,6 +227,50 @@ async def test_preview_resolves_an_app_notebook_without_exposing_context(
     assert response.status_code == 200
     assert response.json()["entries"][0]["authority_kind"] == "app_owned"
     assert "Private app-owned notebook material" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_preview_resolves_an_app_note_without_exposing_content(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/selection/preview",
+            json={"selections": [{"kind": "app_note", "note_id": "note:research"}]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["entries"][0]["authority_kind"] == "app_owned"
+    assert "Private app-owned note material" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_preview_resolves_source_insights_without_exposing_content(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/selection/preview",
+            json={
+                "selections": [
+                    {
+                        "kind": "app_source",
+                        "source_id": "source:research",
+                        "inclusion_mode": "insights",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["entries"][0]["authority_kind"] == "app_owned"
+    assert "Stored source insight" not in response.text
 
 
 @pytest.mark.asyncio
