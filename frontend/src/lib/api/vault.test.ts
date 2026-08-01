@@ -5,7 +5,7 @@ vi.mock('./client', () => ({
 }))
 
 import apiClient from './client'
-import { vaultApi, vaultFileSchema } from './vault'
+import { vaultApi, vaultCanvasSchema, vaultFileSchema } from './vault'
 
 const mockedGet = vi.mocked(apiClient.get)
 
@@ -60,6 +60,46 @@ describe('vault API boundary', () => {
     expect(vaultFileSchema.parse(fileFixture)).toMatchObject(fileFixture)
     expect(() => vaultFileSchema.parse({ ...fileFixture, note_id: undefined })).toThrow()
     expect(() => vaultFileSchema.parse({ ...fileFixture, parse_status: 'unknown' })).toThrow()
+  })
+
+  it('accepts a hash-bound Canvas response without a host path', async () => {
+    const canvasFile = {
+      ...fileFixture,
+      relative_path: 'maps/plan.canvas',
+      file_kind: 'metadata',
+    }
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        file: canvasFile,
+        source_hash: 'a'.repeat(64),
+        nodes: [{
+          id: 'idea', type: 'text', x: 0, y: 0, width: 100, height: 80,
+          text: 'Idea', file_path: null, label: null,
+        }],
+        edges: [],
+      },
+    } as never)
+
+    await expect(vaultApi.canvas('vault:one', 'maps/plan.canvas'))
+      .resolves.toMatchObject({ source_hash: 'a'.repeat(64) })
+    expect(vaultCanvasSchema.parse({
+      file: canvasFile,
+      source_hash: 'a'.repeat(64),
+      nodes: [],
+      edges: [],
+    }).source_hash).toBe('a'.repeat(64))
+  })
+
+  it('rejects an absolute Canvas file node path', () => {
+    expect(() => vaultCanvasSchema.parse({
+      file: { ...fileFixture, relative_path: 'maps/plan.canvas' },
+      source_hash: 'a'.repeat(64),
+      nodes: [{
+        id: 'private', type: 'file', x: 0, y: 0, width: 100, height: 80,
+        text: null, file_path: '/Users/owner/private.md', label: null,
+      }],
+      edges: [],
+    })).toThrow(/canonical vault-relative path/i)
   })
 
   it.each([

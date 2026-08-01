@@ -9,6 +9,7 @@ export const knowledgeViewModeSchema = z.enum([
   'source',
   'live-preview',
   'graph',
+  'canvas',
 ])
 export const splitDirectionSchema = z.enum(['horizontal', 'vertical'])
 export const knowledgeSourceAuthoritySchema = z.enum([
