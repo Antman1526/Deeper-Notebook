@@ -35,4 +35,25 @@ describe('podcast Studio API', () => {
       stagePlans: [expect.objectContaining({ modelId: 'local-outline' })],
     }))
   })
+
+  it('sends a confirmed Studio submission without source text or filesystem paths', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ data: {
+      job_id: 'command:podcast-one', status: 'submitted', message: 'accepted',
+      episode_profile: 'Local Episode', episode_name: 'Research synthesis', mode: 'deep_dive',
+    } } as never)
+
+    await expect(podcastsApi.submitStudioPodcast({
+      selections: [{ kind: 'notebook', notebookId: 'notebook:research' }],
+      selectionFingerprint: 'a'.repeat(64),
+      idempotencyKey: 'podcast-submit-ui-1',
+      episodeProfile: 'Local Episode', speakerProfile: 'Local Voice',
+      episodeName: 'Research synthesis',
+    })).resolves.toMatchObject({ jobId: 'command:podcast-one' })
+
+    expect(apiClient.post).toHaveBeenCalledWith('/podcasts/studio/submit', expect.objectContaining({
+      selections: [{ kind: 'notebook', notebook_id: 'notebook:research' }],
+      selection_fingerprint: 'a'.repeat(64), confirmed: true,
+    }))
+    expect(JSON.stringify(vi.mocked(apiClient.post).mock.calls[0][1])).not.toContain('/Users/')
+  })
 })

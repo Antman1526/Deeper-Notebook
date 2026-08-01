@@ -160,6 +160,15 @@ export interface PodcastReadiness {
   blockedReasons: string[]
 }
 
+export interface PodcastStudioSubmitResponse {
+  jobId: string
+  status: 'submitted'
+  message: string
+  episodeProfile: string
+  episodeName: string
+  mode: PodcastOverviewMode
+}
+
 export type EpisodeStatusGroup = 'running' | 'completed' | 'failed' | 'pending'
 
 export type EpisodeStatusGroups = Record<EpisodeStatusGroup, PodcastEpisode[]>
