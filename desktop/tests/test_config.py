@@ -208,3 +208,22 @@ def test_config_save_is_atomic(tmp_path):
     assert cfg_path.exists()
     leftover = cfg_path.with_suffix(cfg_path.suffix + ".tmp")
     assert not leftover.exists(), "atomic-replace should leave no .tmp file"
+
+
+def test_old_config_receives_safe_local_routing_defaults(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        'model_dir = "/tmp/AI Models"\n'
+        'provider = "none"\n'
+        'default_model = ""\n'
+        'surreal_user = "root"\n'
+        'surreal_password = "supersecretsupersecretXX"\n'
+    )
+
+    cfg = load_or_create(cfg_path)
+
+    assert cfg.compute_profile == "balanced"
+    assert cfg.execution_policy == "strict_local"
+    assert cfg.local_model_memory_limit_bytes is None
+    assert cfg.role_overrides == {}
+    assert cfg.trusted_external_model_roots == ()
