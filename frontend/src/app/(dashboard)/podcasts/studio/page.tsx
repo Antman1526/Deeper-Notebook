@@ -16,7 +16,7 @@ export default function PodcastStudioPage() {
   return (
     <AppShell>
       <main className="flex-1 overflow-y-auto px-6 py-10 sm:px-8">
-        <PodcastStudio seedDocumentIds={[...new Set(seedDocumentIds)]} />
+        <PodcastStudio seedDocumentIds={[...new Set(seedDocumentIds)]} selections={selections} />
       </main>
     </AppShell>
   )
