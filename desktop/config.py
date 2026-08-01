@@ -26,6 +26,16 @@ def _toml_string(v: str) -> str:
     return f'"{escaped}"'
 
 
+def _toml_value(value: object) -> str:
+    if isinstance(value, str):
+        return _toml_string(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, tuple):
+        return "[" + ", ".join(_toml_string(str(item)) for item in value) + "]"
+    raise TypeError(f"Unsupported config value: {type(value)!r}")
+
+
 Provider = Literal["ollama", "llamacpp", "mlx", "none"]
 _VALID_PROVIDERS: set[str] = {"ollama", "llamacpp", "mlx", "none"}
 
@@ -40,6 +50,11 @@ class Config:
     theme: str = "light-blue"
     openchronicle_choice: str = "skip"
     encryption_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+    execution_policy: Literal["strict_local", "local_preferred", "custom"] = "strict_local"
+    compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced"
+    local_model_memory_limit_bytes: int | None = None
+    role_overrides: dict[str, str] = field(default_factory=dict)
+    trusted_external_model_roots: tuple[str, ...] = ()
 
     def save(self, path: Path) -> None:
         # v0.6.8 — config.toml stores both the SurrealDB password and the
@@ -55,7 +70,18 @@ class Config:
             pass  # non-fatal (read-only fs, Windows ACL, etc.)
         data = asdict(self)
         data["model_dir"] = str(self.model_dir)
-        toml = "".join(f"{k} = {_toml_string(v)}\n" for k, v in data.items())
+        role_overrides = data.pop("role_overrides", {})
+        toml = "".join(
+            f"{key} = {_toml_value(value)}\n"
+            for key, value in data.items()
+            if value is not None
+        )
+        if role_overrides:
+            toml += "[role_overrides]\n"
+            toml += "".join(
+                f"{_toml_string(str(key))} = {_toml_string(str(value))}\n"
+                for key, value in role_overrides.items()
+            )
         # Write atomically via temp file + replace, so a crashed write
         # never leaves a half-written world-readable file behind.
         tmp = path.with_suffix(path.suffix + ".tmp")
@@ -107,6 +133,11 @@ def load_or_create(path: Path) -> Config:
         theme=raw.get("theme", "light-blue"),
         openchronicle_choice=raw.get("openchronicle_choice", "skip"),
         encryption_key=encryption_key if encryption_key else secrets.token_urlsafe(32),
+        execution_policy=raw.get("execution_policy", "strict_local"),
+        compute_profile=raw.get("compute_profile", "balanced"),
+        local_model_memory_limit_bytes=raw.get("local_model_memory_limit_bytes"),
+        role_overrides=dict(raw.get("role_overrides", {})),
+        trusted_external_model_roots=tuple(raw.get("trusted_external_model_roots", ())),
     )
     # If the key was missing or blank in the file, persist the freshly-generated one.
     if not encryption_key:

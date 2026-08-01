@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from desktop.config import Config
-from desktop.launcher import Supervisor
+from desktop.launcher import ResourceGovernor, Supervisor
 
 
 def make_config(tmp_path: Path) -> Config:
@@ -102,6 +102,34 @@ def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
         assert sv.frontend_url.startswith("http://127.0.0.1:")
     finally:
         sv.stop_all()
+
+
+def test_resource_governor_queues_second_heavyweight_and_releases_sidecar_reservation():
+    governor = ResourceGovernor(memory_limit_bytes=10)
+
+    assert governor.reserve("mlx-first", 6, heavyweight_mlx=True) == "reserved"
+    assert governor.reserve("speech", 2) == "reserved"
+    assert governor.reserve("mlx-second", 6, heavyweight_mlx=True) == "queued"
+    governor.release("speech")
+
+    assert governor.snapshot()["reservations"] == {"mlx-first": 6}
+    assert governor.snapshot()["queued_heavyweight_swaps"] == ["mlx-second"]
+
+
+def test_resource_governor_stops_partial_provider_after_failed_health_check():
+    governor = ResourceGovernor(memory_limit_bytes=10)
+    proc = MagicMock()
+
+    started = governor.start_provider(
+        "embed",
+        reservation_bytes=2,
+        spawn=lambda: proc,
+        health_check=lambda _proc: False,
+    )
+
+    assert started is False
+    proc.terminate.assert_called_once()
+    assert governor.snapshot()["reservations"] == {}
 
 
 def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
@@ -285,6 +313,8 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
         assert sv.session_env["SURREAL_URL"].startswith("ws://127.0.0.1:")
         assert sv.session_env["SURREAL_USER"] == "root"
         assert sv.session_env["SURREAL_PASSWORD"] == "A" * 24
+        assert sv.session_env["DEEPER_NOTEBOOK_MODEL_DIR"] == str(cfg.model_dir)
+        assert sv.session_env["DEEPER_NOTEBOOK_COMPUTE_PROFILE"] == "balanced"
         # v0.8.4 — CRITICAL: DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL must be
         # in session_env so the API child can probe llama.cpp sidecar
         # health. Without this, v0.8.0 Phase 3 smart routing's
