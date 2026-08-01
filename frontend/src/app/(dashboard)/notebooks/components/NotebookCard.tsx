@@ -18,6 +18,8 @@ import { NotebookDeleteDialog } from './NotebookDeleteDialog'
 import { useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getDateLocale } from '@/lib/utils/date-locale'
+import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 interface NotebookCardProps {
   notebook: NotebookResponse
 }
@@ -27,6 +29,8 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const router = useRouter()
   const updateNotebook = useUpdateNotebook()
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
+  const noReadableContent = notebook.source_count + notebook.note_count === 0
 
   const handleArchiveToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -110,6 +114,15 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                 addSuffix: true,
                 locale: getDateLocale(language)
               }))}
+            </div>
+
+            <div className="mt-3" onClick={(event) => event.stopPropagation()}>
+              <TurnIntoPodcastAction
+                selection={{ kind: 'notebook', notebookId: notebook.id }}
+                destination="quick"
+                disabledReason={noReadableContent ? 'No readable content is available' : undefined}
+                onOpen={openPodcastReview}
+              />
             </div>
 
             {/* Item counts footer */}
