@@ -7,10 +7,12 @@ import {
   Language,
   PodcastGenerationRequest,
   PodcastGenerationResponse,
+  PodcastOverviewMode,
   PodcastReadiness,
   PodcastSelectionPreview,
   PodcastSelectionPreviewEntry,
   PodcastStageModelPlan,
+  PodcastStudioSubmitResponse,
 } from '@/lib/types/podcasts'
 import {
   normalizePodcastSelections,
@@ -54,6 +56,15 @@ interface PodcastReadinessWire {
   }>
   ready: boolean
   blocked_reasons: string[]
+}
+
+interface PodcastStudioSubmitWire {
+  job_id: string
+  status: 'submitted'
+  message: string
+  episode_profile: string
+  episode_name: string
+  mode: PodcastOverviewMode
 }
 
 function toPodcastSelectionPreview(wire: PodcastSelectionPreviewWire): PodcastSelectionPreview {
@@ -137,6 +148,47 @@ export const podcastsApi = {
       include_transcription: options.includeTranscription ?? false,
     })
     return toPodcastReadiness(response.data)
+  },
+
+  submitStudioPodcast: async (payload: {
+    selections: PodcastSelection[]
+    selectionFingerprint: string
+    idempotencyKey: string
+    episodeProfile: string
+    speakerProfile: string
+    episodeName: string
+    mode?: PodcastOverviewMode
+    customPrompt?: string | null
+    episodeLength?: 'short' | 'medium' | 'long' | null
+    reviewOutline?: boolean
+    executionPolicy?: 'strict_local' | 'local_preferred' | 'custom'
+    computeProfile?: 'efficient' | 'balanced' | 'maximum_quality'
+    includeTranscription?: boolean
+  }): Promise<PodcastStudioSubmitResponse> => {
+    const response = await apiClient.post<PodcastStudioSubmitWire>('/podcasts/studio/submit', {
+      selections: normalizePodcastSelections(payload.selections).map(toPodcastSelectionWire),
+      selection_fingerprint: payload.selectionFingerprint,
+      idempotency_key: payload.idempotencyKey,
+      confirmed: true,
+      episode_profile: payload.episodeProfile,
+      speaker_profile: payload.speakerProfile,
+      episode_name: payload.episodeName,
+      mode: payload.mode ?? 'deep_dive',
+      custom_prompt: payload.customPrompt ?? null,
+      episode_length: payload.episodeLength ?? null,
+      review_outline: payload.reviewOutline ?? true,
+      execution_policy: payload.executionPolicy ?? 'strict_local',
+      compute_profile: payload.computeProfile ?? 'balanced',
+      include_transcription: payload.includeTranscription ?? false,
+    })
+    return {
+      jobId: response.data.job_id,
+      status: response.data.status,
+      message: response.data.message,
+      episodeProfile: response.data.episode_profile,
+      episodeName: response.data.episode_name,
+      mode: response.data.mode,
+    }
   },
 
   listEpisodes: async () => {
