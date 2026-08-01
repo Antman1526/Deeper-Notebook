@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react'
 import { AlertCircle, Loader2, RefreshCcw } from 'lucide-react'
 
-import { useDeletePodcastEpisode, usePodcastEpisodes, useRetryPodcastEpisode } from '@/lib/hooks/use-podcasts'
+import { useCancelPodcastEpisode, useDeletePodcastEpisode, usePodcastEpisodes, useRetryPodcastEpisode } from '@/lib/hooks/use-podcasts'
 import { PodcastLibrary } from '@/components/podcasts/PodcastLibrary'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +34,7 @@ export function EpisodesTab() {
   } = usePodcastEpisodes()
   const deleteEpisode = useDeletePodcastEpisode()
   const retryEpisode = useRetryPodcastEpisode()
+  const cancelEpisode = useCancelPodcastEpisode()
 
   const handleRefresh = useCallback(() => {
     void refetch()
@@ -47,6 +48,11 @@ export function EpisodesTab() {
   const handleRetry = useCallback(
     async (episodeId: string) => { await retryEpisode.mutateAsync(episodeId) },
     [retryEpisode]
+  )
+
+  const handleCancel = useCallback(
+    async (episodeId: string) => { await cancelEpisode.mutateAsync(episodeId) },
+    [cancelEpisode]
   )
 
   const emptyState = !isLoading && episodes.length === 0
@@ -114,7 +120,7 @@ export function EpisodesTab() {
       ) : null}
 
       {!isLoading && !isError && episodes.length > 0 && (
-        <PodcastLibrary episodes={episodes} onDelete={handleDelete} onRetry={handleRetry} />
+        <PodcastLibrary episodes={episodes} onDelete={handleDelete} onRetry={handleRetry} onCancel={handleCancel} />
       )}
 
       <GeneratePodcastDialog
