@@ -72,7 +72,13 @@ class MlxProvider:
                     models.append(repo.relative_to(self.model_dir).as_posix())
         return sorted(models)
 
-    def start(self, model: str, *, validate: bool = True) -> ProviderEnv:
+    def start(
+        self,
+        model: str,
+        *,
+        validate: bool = True,
+        wait_for_ready: bool = True,
+    ) -> ProviderEnv:
         path = self._resolve_model_path(model)
         if validate and not _is_complete_mlx_repo(path):
             raise FileNotFoundError(f"Not a complete MLX model repo: {path}")
@@ -98,6 +104,18 @@ class MlxProvider:
         )
         self._port = port
 
+        # A configured local model can legitimately take minutes to load (or
+        # live on an on-demand filesystem).  The desktop shell, database, and
+        # knowledge browser must not be held hostage by that optional worker.
+        # Callers that own an explicit user configuration may therefore defer
+        # readiness and let the model become available independently.
+        env = ProviderEnv(
+            OPENAI_COMPATIBLE_BASE_URL=f"http://127.0.0.1:{port}/v1",
+            OPENAI_COMPATIBLE_API_KEY="sk-no-key",
+        )
+        if not wait_for_ready:
+            return env
+
         deadline = time.monotonic() + self._max_wait
         while time.monotonic() < deadline:
             if self._proc.poll() is not None:
@@ -106,10 +124,7 @@ class MlxProvider:
                     f"(returncode={self._proc.returncode}) while loading model {model!r}"
                 )
             if self._ready_probe(port):
-                return ProviderEnv(
-                    OPENAI_COMPATIBLE_BASE_URL=f"http://127.0.0.1:{port}/v1",
-                    OPENAI_COMPATIBLE_API_KEY="sk-no-key",
-                )
+                return env
             time.sleep(0.5)
 
         self.stop()
