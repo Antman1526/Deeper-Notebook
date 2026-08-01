@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from time import time
 
 import pytest
 from fastapi import FastAPI
@@ -10,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 
 from deeper_notebook.knowledge_engine.capabilities import capabilities_for
 from deeper_notebook.knowledge_engine.contracts import KnowledgeDocument
+from deeper_notebook.local_models.contracts import LocalModelRouteCandidate
 
 
 def _document() -> KnowledgeDocument:
@@ -61,6 +63,38 @@ def app_with_knowledge_engine() -> FastAPI:
     app = FastAPI()
     app.state.knowledge_engine_service = _Engine()
     app.state.podcast_notebook_loader = _load_notebook
+    app.state.local_model_route_candidates = (
+        LocalModelRouteCandidate(
+            model_id="local-podcast",
+            provider="openai_compatible",
+            fingerprint="b" * 64,
+            modalities=("text",),
+            accepted_roles=("podcast_outline", "podcast_script"),
+            context_tokens=32_768,
+            supports_structured_output=True,
+            readiness="ready_verified",
+            health_healthy=True,
+            accepted_quality=0.9,
+            benchmarked_at=time(),
+            peak_memory_bytes=1,
+            latency_ms=1,
+        ),
+        LocalModelRouteCandidate(
+            model_id="local-voice",
+            provider="piper",
+            fingerprint="c" * 64,
+            modalities=("audio",),
+            accepted_roles=("text_to_speech",),
+            context_tokens=1,
+            supports_structured_output=False,
+            readiness="ready_verified",
+            health_healthy=True,
+            accepted_quality=0.9,
+            benchmarked_at=time(),
+            peak_memory_bytes=1,
+            latency_ms=1,
+        ),
+    )
     app.include_router(router, prefix="/api")
     return app
 
@@ -114,6 +148,60 @@ async def test_preview_resolves_an_app_notebook_without_exposing_context(
     assert response.status_code == 200
     assert response.json()["entries"][0]["authority_kind"] == "app_owned"
     assert "Private app-owned notebook material" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_readiness_returns_redacted_local_stage_routes(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/readiness",
+            json={
+                "selections": [
+                    {"kind": "notebook", "notebook_id": "notebook:research"}
+                ],
+                "execution_policy": "strict_local",
+                "compute_profile": "balanced",
+                "include_transcription": False,
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ready"] is True
+    assert [plan["role"] for plan in body["stage_plans"]] == [
+        "podcast_outline",
+        "podcast_script",
+        "text_to_speech",
+    ]
+    assert "Private app-owned notebook material" not in response.text
+    assert "/Users/" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_readiness_fails_closed_when_required_local_stage_roles_are_missing(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    app_with_knowledge_engine.state.local_model_route_candidates = ()
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/readiness",
+            json={
+                "selections": [{"kind": "notebook", "notebook_id": "notebook:research"}]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["ready"] is False
+    assert response.json()["blocked_reasons"] == ["podcast_stage_route_blocked"]
+    assert all(plan["outcome"] == "blocked" for plan in response.json()["stage_plans"])
 
 
 @pytest.mark.asyncio
