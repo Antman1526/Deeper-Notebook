@@ -327,3 +327,66 @@ uv run pytest tests/test_knowledge_workspace_persistence.py \
 (cd frontend && npx playwright test e2e/research-core-lab.spec.ts --project=native-runtime)
 # 4 passed
 ```
+
+## Final contract and fixture audit — 2026-08-01
+
+The final V2 workspace pass closes parity between the real persistence
+contracts and the strict browser fixture. Current Session and named-workspace
+payloads reject path-bearing document and space identifiers before persistence.
+The fixture now materializes both absent and partial navigation objects with
+the same defaults and tag normalization as the backend. Its tag deduplication
+uses a confined, dependency-free NFKC-plus-casefold parity table verified
+against the active Python runtime; for example, `Straße` and `STRASSE` keep a
+single `Straße` tag.
+
+The following hashes supersede the earlier recorded browser-spec hash:
+
+```text
+0bb8f42eabb4da33e0bd7bb7c000162925349bc5248d5ba83753bb7c20383990  frontend/e2e/research-core-lab.spec.ts
+6c005557ba7b1def22844831f172c0529a3008dd5f4f01e857de89ba9123b131  scripts/verify_research_core_lab.py
+72c7267c38317a8e594b555c0a850c097acdbb9e851281392caddcb19caab3fb  tests/test_verify_research_core_lab.py
+eed20f040cea2aa0772028ca791dc006294b7cb23e797571274a00ec5d67388e  frontend/playwright.config.ts
+```
+
+```sh
+PYTHONPATH="$PWD" .venv/bin/python -m pytest -q \
+  tests/test_knowledge_workspace_persistence.py \
+  tests/test_knowledge_workspace_api.py \
+  tests/test_knowledge_navigation_contracts.py \
+  tests/test_knowledge_navigation_service.py \
+  tests/test_knowledge_navigation_api.py \
+  tests/test_local_model_planner.py \
+  tests/test_local_model_settings.py \
+  tests/test_research_core_local_models_api.py \
+  tests/test_verify_research_core_lab.py \
+  desktop/tests/test_config.py desktop/tests/test_launcher.py
+# 226 passed, 8 existing dependency warnings
+
+.venv/bin/ruff check deeper_notebook/local_models deeper_notebook/workspace \
+  api/routers/local_models.py desktop/config.py desktop/launcher.py \
+  tests/test_local_model_planner.py tests/test_local_model_settings.py \
+  tests/test_research_core_local_models_api.py tests/test_verify_research_core_lab.py \
+  scripts/verify_research_core_lab.py
+# All checks passed
+
+(cd frontend && npx vitest run src/components/vault src/components/local-models \
+  src/lib/api/knowledge-workspace.test.ts \
+  src/lib/stores/knowledge-workspace-store.test.ts \
+  src/lib/commands/command-registry.test.ts \
+  src/components/common/CommandPalette.test.tsx --pool=forks --maxWorkers=1 \
+  && npx tsc --noEmit)
+# 41 files, 403 tests passed; TypeScript passed
+
+(cd frontend && npm run build)
+# passed: Next.js 16.2.12 Turbopack production build
+
+(cd frontend && npx playwright test e2e/research-core-lab.spec.ts --project=native-runtime --reporter=line)
+# 7 passed
+```
+
+The seven browser tests run against a production Next server with a strict
+synthetic API fixture. They are strong client/fixture acceptance evidence, but
+they are not a packaged desktop launch, a live persistence-server proof, or a
+SurrealDB runtime proof. The controlled native runtime cannot be launched from
+this checkout because it does not contain the packaged desktop runtime binaries
+and no installed desktop instance is listening on `http://localhost:65060`.
