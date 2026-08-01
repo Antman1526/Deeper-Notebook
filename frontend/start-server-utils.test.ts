@@ -32,6 +32,36 @@ describe('standalone frontend startup helpers', () => {
     expect(resolveStandaloneServer(root)).toBe(join(root, 'server.js'))
   })
 
+  it('uses the standalone server nested under its output tracing root', () => {
+    const checkout = tempFrontend()
+    const root = join(checkout, '.worktrees', 'phase-1', 'frontend')
+    const server = join(
+      root,
+      '.next',
+      'standalone',
+      '.worktrees',
+      'phase-1',
+      'frontend',
+      'server.js',
+    )
+    mkdirSync(join(root, '.next'), { recursive: true })
+    mkdirSync(join(root, '.next', 'standalone', '.worktrees', 'phase-1', 'frontend'), {
+      recursive: true,
+    })
+    writeFileSync(server, '')
+    writeFileSync(
+      join(root, '.next', 'required-server-files.json'),
+      JSON.stringify({
+        appDir: root,
+        config: { outputFileTracingRoot: checkout },
+      }),
+    )
+
+    const { resolveStandaloneServer } = require('./start-server-utils.js')
+
+    expect(resolveStandaloneServer(root)).toBe(server)
+  })
+
   it('links build static assets beside the nested standalone server', () => {
     const root = tempFrontend()
     mkdirSync(join(root, '.next', 'standalone'), { recursive: true })
