@@ -57,3 +57,32 @@ does not modify that page or the shared dependency symlink.
 ## Boundaries
 
 The worktree-local `node_modules/` remains untracked and was not committed.
+
+## Review repair — saved settings and pending cloud continuation
+
+### Red
+
+New focused regressions failed because Ask, Search, and Podcast submitted
+hard-coded `strict_local` / `balanced` route-plan requests. The Local Preferred
+dialog also appeared without an actual planner-proposed cloud fallback and
+pre-filled its contextual fields. Parser coverage did not exercise nested
+`path` leaks.
+
+### Repair and verification
+
+- Every route-plan surface now waits for the saved local settings query and
+  forwards its execution policy, compute profile, and role-specific override.
+- A cloud-continuation dialog is offered only when saved Local Preferred has a
+  concrete `approval_required` route plan. It starts empty and requires an
+  exact stage/content-class match; confirmation records only that continuation
+  state and executes no work. Strict Local exposes no continuation control.
+- The shared redacted parser now has nested path-leak regressions for route
+  plans and settings, and rejects the leak before schema coercion.
+
+```sh
+(cd frontend && npx vitest run src/app/'(dashboard)'/settings/local-models/page.test.tsx src/components/local-models/LocalExecutionPolicyPanel.test.tsx src/components/local-models/ModelRoutePlanPanel.test.tsx src/components/local-models/ModelInventory.test.tsx src/components/vault/ResearchCoreHeader.test.tsx src/lib/api/local-models.test.ts src/components/vault/KnowledgeAskPane.test.tsx src/components/vault/KnowledgeSearchPane.test.tsx src/components/vault/KnowledgePodcastPane.test.tsx --pool=forks --maxWorkers=1)
+# 9 files, 31 tests passed
+
+(cd frontend && npx tsc --noEmit)
+# passed after removing stale generated frontend/.next types from the prior failed build
+```

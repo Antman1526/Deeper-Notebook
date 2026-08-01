@@ -43,6 +43,7 @@ const testState = vi.hoisted(() => ({
     mutate: vi.fn(),
   },
   saveSettingsMutation: { data: undefined as unknown, isPending: false, mutate: vi.fn() },
+  routePlans: [] as Array<{ data: unknown; isError: boolean; isLoading: boolean }>,
 }))
 
 vi.mock('@/components/layout/AppShell', () => ({
@@ -95,7 +96,7 @@ vi.mock('@/components/local-models/RouteReceiptPanel', () => ({
 
 vi.mock('@/lib/hooks/use-local-models', () => ({
   useLocalModelsHealth: () => testState.health,
-  useModelRoutePlan: () => ({ data: undefined, isError: false, isLoading: false }),
+  useModelRoutePlan: () => testState.routePlans.shift() ?? ({ data: undefined, isError: false, isLoading: false }),
 }))
 
 vi.mock('@/lib/api/client', () => ({ default: testState.api }))
@@ -138,6 +139,7 @@ function resetState() {
   testState.saveSettingsMutation.mutate.mockReset()
   testState.health = { data: undefined, isLoading: false }
   testState.mutationCalls = 0
+  testState.routePlans = []
   testState.queryCalls = []
   testState.queries.inventory = {
     data: {
@@ -228,5 +230,15 @@ describe('LocalModelsPage', () => {
     render(<LocalModelsPage />)
     expect(screen.getByText('planned: 1')).toBeInTheDocument()
     expect(screen.getByText('No verified local route is currently available.')).toBeInTheDocument()
+  })
+
+  it('offers the pending cloud fallback only after saved Local Preferred receives an approval-required route', () => {
+    testState.queries.settings = { data: { model_dir: '/models', execution_policy: 'local_preferred', compute_profile: 'maximum_quality', local_model_memory_limit_bytes: 0, role_overrides: {}, trusted_external_model_roots: [] } }
+    testState.routePlans = [
+      { data: { role: 'research_chat', outcome: 'approval_required', selected_model_id: null, selected_provider: null, resource_tier: null, selection_source: null, route_reason: 'cloud approval required', escalation_model_ids: [], blocked_reason: null, selected_fingerprint: null, selected_measurements: {} }, isError: false, isLoading: false },
+      { data: undefined, isError: false, isLoading: false },
+    ]
+    render(<LocalModelsPage />)
+    expect(screen.getByRole('button', { name: 'Review pending cloud fallback' })).toBeInTheDocument()
   })
 })
