@@ -161,6 +161,11 @@ export const podcastsApi = {
     customPrompt?: string | null
     episodeLength?: 'short' | 'medium' | 'long' | null
     reviewOutline?: boolean
+    editorialBrief?: {
+      centralQuestion?: string | null
+      audience?: string | null
+      outline?: string[]
+    } | null
     executionPolicy?: 'strict_local' | 'local_preferred' | 'custom'
     computeProfile?: 'efficient' | 'balanced' | 'maximum_quality'
     includeTranscription?: boolean
@@ -177,6 +182,11 @@ export const podcastsApi = {
       custom_prompt: payload.customPrompt ?? null,
       episode_length: payload.episodeLength ?? null,
       review_outline: payload.reviewOutline ?? true,
+      editorial_brief: payload.editorialBrief ? {
+        central_question: payload.editorialBrief.centralQuestion ?? null,
+        audience: payload.editorialBrief.audience ?? null,
+        outline: payload.editorialBrief.outline ?? [],
+      } : null,
       execution_policy: payload.executionPolicy ?? 'strict_local',
       compute_profile: payload.computeProfile ?? 'balanced',
       include_transcription: payload.includeTranscription ?? false,
