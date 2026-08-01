@@ -29,6 +29,27 @@ export const RESEARCH_MODE_ICON_KEYS: Record<ResearchMode, string> = {
   podcast: 'podcast',
 }
 
+type LocalResearchHealth = {
+  isLoading?: boolean
+  isError?: boolean
+  error?: { message?: string } | null
+  data?: {
+    models?: Array<{
+      status?: 'healthy' | 'unhealthy' | 'not_configured' | 'unknown'
+      detail?: string | null
+    }>
+  }
+}
+
+export function getLocalResearchReadinessReason(health: LocalResearchHealth): string | null {
+  if (health.isLoading) return 'Local model readiness is loading'
+  if (health.isError) return health.error?.message || 'Local model readiness is unavailable'
+  const models = health.data?.models ?? []
+  if (models.some((model) => model.status === 'healthy')) return null
+  return models.find((model) => model.detail)?.detail
+    || 'No configured local research model is ready'
+}
+
 type ResearchModeAvailabilityContext = {
   target?: Pick<KnowledgeTabTarget, 'kind'> & { authority?: 'external-vault' | 'overlay' }
   askReadinessReason?: string | null

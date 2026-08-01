@@ -577,8 +577,12 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
     navigation: { utilityMode: wire.navigation.utility_mode, sidebarVisible: wire.navigation.sidebar_visible, sidebarWidth: wire.navigation.sidebar_width, activeBookmarkFolderId: wire.navigation.active_bookmark_folder_id, bookmarkTags: wire.navigation.bookmark_tags, sourceTreeQuery: wire.navigation.source_tree_query, searchQuery: wire.navigation.search_query, searchMode: wire.navigation.search_mode, activeDraftId: wire.navigation.active_draft_id, selectedSpaceIds: wire.navigation.selected_space_ids, authorityFilters: wire.navigation.authority_filters, metricsVisible: wire.navigation.metrics_visible },
     panes: Object.fromEntries(Object.entries(wire.panes).map(([paneId, pane]) => [paneId, { id: pane.id, activeTabId: pane.active_tab_id, tabs: pane.tabs.map((tab) => {
       const target = tab.target
-      const document = target.kind === 'document' ? target : null
-      return { id: tab.id, mode: tab.mode, target, title: tab.title, vaultId: document?.container_id ?? '', noteId: document?.note_id ?? '', relativePath: document?.relative_locator ?? '', viewMode: document?.render_mode ?? 'reading', sourceAuthority: document?.authority ?? 'external-vault', knowledgeDocumentId: document?.knowledge_document_id ?? (target.kind === 'graph' ? target.root_document_id : null), graphViewport: target.kind === 'graph' ? target.viewport : null }
+      const document = target.kind === 'document'
+        ? target
+        : target.kind === 'graph'
+          ? target.origin
+          : null
+      return { id: tab.id, mode: tab.mode, target, title: tab.title, vaultId: document?.container_id ?? '', noteId: document?.note_id ?? '', relativePath: document?.relative_locator ?? '', viewMode: target.kind === 'graph' ? 'graph' : document?.render_mode ?? 'reading', sourceAuthority: document?.authority ?? 'external-vault', knowledgeDocumentId: document?.knowledge_document_id ?? (target.kind === 'graph' ? target.root_document_id : null), graphViewport: target.kind === 'graph' ? target.viewport : null }
     }) }])), layout: fromWireLayout(wire.layout),
   }
 }

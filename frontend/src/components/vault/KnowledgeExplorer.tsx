@@ -5,7 +5,7 @@ import { RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import type { KnowledgeWorkspaceDocument, OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
+import type { KnowledgeTab, KnowledgeWorkspaceDocument, OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
 import type { VaultFile } from '@/lib/api/vault'
 import { vaultApi } from '@/lib/api/vault'
 import { overlayApi } from '@/lib/api/overlay'
@@ -114,18 +114,31 @@ function graphContextsEqual(left: GraphBookmarkContext, right: GraphBookmarkCont
 }
 
 function namedTargetForTab(
-  tab: OpenKnowledgeTab & { id: string; knowledgeDocumentId: string | null },
+  tab: KnowledgeTab,
   documentId: string,
   focusedBlock: { blockId: string; sourceRevisionId: string | null } | undefined,
   graphContext: GraphBookmarkContext,
 ): KnowledgeTarget {
   if (focusedBlock) return { kind: 'block', documentId, ...focusedBlock }
-  if (tab.viewMode === 'graph') {
+  const persistedGraphTarget = tab.mode === 'graph' && tab.target?.kind === 'graph'
+    ? tab.target
+    : null
+  const hasPersistedGraphFilters = Boolean(
+    persistedGraphTarget
+    && (persistedGraphTarget.space_ids.length > 0 || persistedGraphTarget.relation_kinds.length > 0),
+  )
+  if (persistedGraphTarget || tab.viewMode === 'graph') {
     const context = graphContext?.rootDocumentId === documentId ? graphContext : null
     return {
-      kind: 'graph', rootDocumentId: context?.rootDocumentId ?? documentId,
-      spaceIds: context?.spaceIds ?? [], relationKinds: context?.relationKinds ?? [],
-      viewport: context?.viewport ?? tab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+      kind: 'graph',
+      rootDocumentId: hasPersistedGraphFilters
+        ? persistedGraphTarget?.root_document_id ?? documentId
+        : context?.rootDocumentId ?? documentId,
+      spaceIds: hasPersistedGraphFilters ? persistedGraphTarget!.space_ids : context?.spaceIds ?? [],
+      relationKinds: hasPersistedGraphFilters ? persistedGraphTarget!.relation_kinds : context?.relationKinds ?? [],
+      viewport: hasPersistedGraphFilters
+        ? persistedGraphTarget!.viewport
+        : context?.viewport ?? tab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
     }
   }
   return { kind: 'document', documentId }
@@ -510,20 +523,35 @@ export function KnowledgeExplorer() {
     const currentNavigation = currentWorkspace.navigation
     const currentGraphContext = currentWorkspace.graphBookmarkContext
     const focusedBlock = currentWorkspace.focusedBlocksByTab[activeTab.id] ?? null
+    const persistedGraphTarget = activeTab.mode === 'graph' && activeTab.target?.kind === 'graph'
+      ? activeTab.target
+      : null
+    const hasPersistedGraphFilters = Boolean(
+      persistedGraphTarget
+      && (persistedGraphTarget.space_ids.length > 0 || persistedGraphTarget.relation_kinds.length > 0),
+    )
     await createBookmark({
       target: focusedBlock
         ? {
             kind: 'block', documentId: activeTab.knowledgeDocumentId,
             blockId: focusedBlock.blockId, sourceRevisionId: focusedBlock.sourceRevisionId,
           }
-        : activeTab.viewMode === 'graph'
+        : (activeTab.mode === 'graph' && activeTab.target?.kind === 'graph') || activeTab.viewMode === 'graph'
         ? {
-            kind: 'graph', rootDocumentId: activeTab.knowledgeDocumentId,
-            spaceIds: currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
+            kind: 'graph', rootDocumentId: hasPersistedGraphFilters
+              ? persistedGraphTarget!.root_document_id ?? activeTab.knowledgeDocumentId
+              : activeTab.knowledgeDocumentId,
+            spaceIds: hasPersistedGraphFilters
+              ? persistedGraphTarget!.space_ids
+              : currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
               ? currentGraphContext.spaceIds : currentNavigation.selectedSpaceIds,
-            relationKinds: currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
+            relationKinds: hasPersistedGraphFilters
+              ? persistedGraphTarget!.relation_kinds
+              : currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
               ? currentGraphContext.relationKinds : [],
-            viewport: currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
+            viewport: hasPersistedGraphFilters
+              ? persistedGraphTarget!.viewport
+              : currentGraphContext?.rootDocumentId === activeTab.knowledgeDocumentId
               ? currentGraphContext.viewport
               : activeTab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
           }

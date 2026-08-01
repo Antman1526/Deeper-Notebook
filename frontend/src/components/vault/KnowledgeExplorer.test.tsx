@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
-import { serializeKnowledgeWorkspace } from '@/lib/api/knowledge-workspace'
+import { parseKnowledgeWorkspace, serializeKnowledgeWorkspace } from '@/lib/api/knowledge-workspace'
 import {
   resetKnowledgeCommandContextStore,
   useKnowledgeCommandContextStore,
@@ -843,8 +843,8 @@ describe('KnowledgeExplorer durable workspace integration', () => {
   })
 
   it('loads a persisted tab missing from the file listing when its active ID is null', async () => {
-    useKnowledgeWorkspaceStore.getState().replaceWorkspace({
-      version: 1,
+    useKnowledgeWorkspaceStore.getState().replaceWorkspace(parseKnowledgeWorkspace(serializeKnowledgeWorkspace({
+      version: 2,
       activePaneId: 'pane-1',
       nextId: 3,
       panes: {
@@ -866,7 +866,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       },
       layout: { type: 'pane', paneId: 'pane-1' },
       navigation: useKnowledgeWorkspaceStore.getState().navigation,
-    })
+    })))
 
     await renderExplorer()
 

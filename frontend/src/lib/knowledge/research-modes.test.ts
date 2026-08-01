@@ -40,4 +40,15 @@ describe('research mode descriptors', () => {
       target: { kind: 'search' },
     })).toEqual({ available: true, reason: null })
   })
+
+  it('fails closed when a target is missing or incompatible', () => {
+    expect(getResearchModeAvailability('ask', {})).toEqual({
+      available: false,
+      reason: 'Requires a ask target',
+    })
+    expect(getResearchModeAvailability('podcast', { target: { kind: 'search' } })).toEqual({
+      available: false,
+      reason: 'Requires a podcast target',
+    })
+  })
 })
