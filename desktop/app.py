@@ -529,7 +529,14 @@ def _phase_select_provider(ctx: AppContext) -> None:
         # opens.
         model = cfg.default_model or provider.pick_default_model()
         if model:
-            extra_env = provider.start(model, validate=not bool(cfg.default_model))
+            configured_model = bool(cfg.default_model)
+            extra_env = provider.start(
+                model,
+                validate=not configured_model,
+                # Keep the native knowledge app available even while an
+                # explicitly selected local model is still loading.
+                wait_for_ready=not configured_model,
+            )
             extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
             ctx.model_provider_runtime = provider
 
