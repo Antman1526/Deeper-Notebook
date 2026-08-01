@@ -424,6 +424,11 @@ describe('knowledge workspace API boundary', () => {
     expect(tab.target).toMatchObject({
       kind: 'graph', space_ids: ['knowledge_engine_space:target'], relation_kinds: ['target-link'],
     })
+    expect(tab.graphBookmarkContext).toEqual({
+      rootDocumentId: 'knowledge_engine_document:plan',
+      spaceIds: ['knowledge_engine_space:target'], relationKinds: ['target-link'],
+      viewport: { x: 5, y: -3, zoom: 1.25 },
+    })
   })
 
   it('serializes only approved snake_case fields for PUT', async () => {

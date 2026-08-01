@@ -35,19 +35,24 @@ type LocalResearchHealth = {
   error?: { message?: string } | null
   data?: {
     models?: Array<{
+      name?: string
       status?: 'healthy' | 'unhealthy' | 'not_configured' | 'unknown'
       detail?: string | null
     }>
   }
 }
 
-export function getLocalResearchReadinessReason(health: LocalResearchHealth): string | null {
+export function getLocalResearchReadinessReason(
+  health: LocalResearchHealth,
+  chatModelId: string | null,
+): string | null {
   if (health.isLoading) return 'Local model readiness is loading'
   if (health.isError) return health.error?.message || 'Local model readiness is unavailable'
-  const models = health.data?.models ?? []
-  if (models.some((model) => model.status === 'healthy')) return null
-  return models.find((model) => model.detail)?.detail
-    || 'No configured local research model is ready'
+  if (!chatModelId) return 'No local research chat model is configured'
+  const chatModel = health.data?.models?.find((model) => model.name === chatModelId)
+  if (chatModel?.status === 'healthy') return null
+  return chatModel?.detail
+    || `Configured chat model ${chatModelId} is unavailable`
 }
 
 type ResearchModeAvailabilityContext = {

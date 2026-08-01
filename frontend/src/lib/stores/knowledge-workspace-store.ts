@@ -521,6 +521,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
             target: candidate.mode === 'graph' && candidate.target?.kind === 'graph'
               ? { ...candidate.target, viewport: { ...parsed } }
               : candidate.target,
+            graphBookmarkContext: candidate.graphBookmarkContext
+              ? { ...candidate.graphBookmarkContext, viewport: { ...parsed } }
+              : candidate.graphBookmarkContext,
           } as KnowledgeTab : candidate),
     } } })
   },
