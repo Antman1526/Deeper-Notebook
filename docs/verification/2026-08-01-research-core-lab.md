@@ -128,3 +128,33 @@ PYTHONPATH="$PWD" .venv/bin/python scripts/verify_research_core_lab.py \
 The exact execution remains blocked before browser tests start by the same
 Turbopack external-`node_modules` symlink error. This repair does not claim
 native-runtime or packaged-app proof.
+
+## Production-build repair — 2026-08-01
+
+The worktree-local `frontend/node_modules` symlink intentionally points to
+the repository checkout's existing dependency directory. `next.config.ts`
+sets `turbopack.root` to that enclosing checkout so Turbopack can resolve the
+in-repository target without changing the symlink or its target.
+
+The setup-wizard completion key is intentionally module-local: Next.js pages
+may not export arbitrary named values. Its focused test retains the same
+literal assertion value, while the wizard's localStorage, cookie, and routing
+behavior are unchanged.
+
+```sh
+(cd frontend && npm run build)
+# passed: Next.js 16.2.12 Turbopack production build
+
+(cd frontend && npx next build --webpack)
+# passed: webpack production build and Next page-module validation
+
+(cd frontend && npx vitest run 'src/app/(dashboard)/setup-wizard/page.test.tsx' \
+  --pool=forks --maxWorkers=1)
+# 1 file, 9 tests passed
+
+(cd frontend && npx tsc --noEmit)
+# passed
+```
+
+The native-runtime and packaged-app gates remain separate and are not claimed
+by this frontend build repair.

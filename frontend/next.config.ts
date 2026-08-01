@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 import bundleAnalyzer from "@next/bundle-analyzer";
 
 // v0.7.127 — opt-in bundle-size visualization. Run `npm run build:analyze`
@@ -12,6 +13,13 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
+  // The worktree's node_modules is intentionally shared from the repository
+  // checkout. Allow Turbopack to resolve that existing in-repository target
+  // without changing the worktree symlink.
+  turbopack: {
+    root: path.resolve(__dirname, "..", "..", ".."),
+  },
+
   // Enable standalone output for optimized Docker deployment
   output: "standalone",
 
