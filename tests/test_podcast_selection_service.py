@@ -9,6 +9,7 @@ from deeper_notebook.podcasts.selection_contracts import (
     KnowledgeDocumentSelection,
 )
 from deeper_notebook.podcasts.selection_service import (
+    KnowledgeEnginePodcastSelectionResolver,
     PodcastSelectionService,
     ResolvedSelectionItem,
 )
@@ -95,3 +96,71 @@ async def test_external_selection_remains_read_only_and_never_exposes_content():
     assert entry.relative_locator == "Research/Note.md"
     assert "content" not in entry.model_dump()
     assert "write" not in entry.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_engine_resolver_reads_unified_document_projection_without_path_access():
+    class Engine:
+        async def get_document(self, document_id):
+            assert document_id == "knowledge_engine_document:external"
+            return type(
+                "Document",
+                (),
+                {
+                    "id": document_id,
+                    "title": "External note",
+                    "authority_kind": "external_read_only",
+                    "relative_locator": "Research/Note.md",
+                    "source_revision_id": "knowledge_engine_revision:external",
+                    "content_hash": "f" * 64,
+                    "normalized_body": "read through projection only",
+                },
+            )()
+
+    resolver = KnowledgeEnginePodcastSelectionResolver(engine=Engine())
+
+    items = await resolver.resolve(
+        KnowledgeDocumentSelection(
+            document_id="knowledge_engine_document:external",
+            expected_revision_id="knowledge_engine_revision:external",
+        )
+    )
+
+    assert items[0].authority_kind == "external_read_only"
+    assert items[0].relative_locator == "Research/Note.md"
+    assert items[0].content == "read through projection only"
+
+
+@pytest.mark.asyncio
+async def test_engine_resolver_marks_stale_revision_changed_before_preview():
+    class Engine:
+        async def get_document(self, document_id):
+            return type(
+                "Document",
+                (),
+                {
+                    "id": document_id,
+                    "title": "Changed note",
+                    "authority_kind": "external_read_only",
+                    "relative_locator": "Research/Changed.md",
+                    "source_revision_id": "knowledge_engine_revision:current",
+                    "content_hash": "a" * 64,
+                    "normalized_body": "must not be silently included",
+                },
+            )()
+
+    preview = await PodcastSelectionService(
+        resolver=KnowledgeEnginePodcastSelectionResolver(engine=Engine())
+    ).preview(
+        [
+            KnowledgeDocumentSelection(
+                document_id="knowledge_engine_document:changed",
+                expected_revision_id="knowledge_engine_revision:expected",
+            )
+        ]
+    )
+
+    assert preview.entries[0].state == "changed"
+    assert preview.entries[0].reason == "source_revision_changed"
+    assert preview.included_characters == 0
+    assert preview.current_worker_eligible is False
