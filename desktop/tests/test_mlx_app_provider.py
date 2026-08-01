@@ -24,7 +24,7 @@ class FakeMlxProvider:
     def pick_default_model(self):
         return "MLX/default-model"
 
-    def start(self, model: str):
+    def start(self, model: str, **_kwargs):
         self.started.append(model)
         return ProviderEnv(
             OPENAI_COMPATIBLE_BASE_URL="http://127.0.0.1:51231/v1",
