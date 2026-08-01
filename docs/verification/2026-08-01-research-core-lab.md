@@ -87,7 +87,7 @@ The error happens before application compilation or browser test execution.
 ```
 
 The configuration now explicitly includes the mandated Task 9 file in the
-`native-runtime` project, so the command collects three tests when the build
+`native-runtime` project, so the command collects four tests when the build
 surface is repaired. A persistent native app on `http://localhost:65060` was
 not supplied for this run; the verifier records that separately and does not
 claim mocked browser coverage as native-app proof.
