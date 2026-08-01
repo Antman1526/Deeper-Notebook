@@ -59,3 +59,32 @@ git diff --check
   source material was mutated by the planner tests or planner implementation.
 - The pre-existing worktree-local `node_modules/` remains untracked and is not
   part of this task's commit.
+
+## Review repair — eligibility order and receipt bounds
+
+### Red
+
+New planner regressions first failed because benchmark freshness was reported
+before a candidate's wrong modality, future timestamps were incorrectly
+accepted as fresh, and arbitrary `bounded_unit_id` text was placed unchanged
+in escalation receipts.
+
+### Repair
+
+- The eight observable eligibility gates now run exactly as specified:
+  readiness, modality, role acceptance, context, structured output, health,
+  memory reservation, then execution policy. Freshness/accepted-quality proof
+  is evaluated only after those observable gates, so malformed candidates do
+  not mask a modality (or any earlier ordered) failure.
+- Benchmark age now requires `0 <= now - benchmarked_at <= 30 days`; a future
+  timestamp fails closed.
+- `bounded_unit_id` is retained only when it is an opaque ASCII identifier of
+  at most 128 characters (`[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`); malformed,
+  path-like, multiline, or overlong values are recorded as `null`.
+
+### Verification
+
+```sh
+PYTHONPATH="$PWD" /Users/Antman/Documents/Open\ Notebook/Deeper-Notebook/.venv/bin/pytest -q tests/test_local_model_planner.py
+# 24 passed
+```

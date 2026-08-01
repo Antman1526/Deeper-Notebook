@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Iterable
 
@@ -47,6 +48,7 @@ _ALLOWED_ESCALATION_REASONS = frozenset(
         "declared_task_complexity",
     }
 )
+_SAFE_BOUNDED_UNIT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 
 
 def classify_resource_tier(peak_memory_bytes: int, latency_ms: int) -> ResourceTier:
@@ -135,12 +137,13 @@ class LocalModelPlanner:
         """Return at most two higher-tier candidates for a declared quality failure."""
         request = self._plan_requests.get(id(first_pass))
         selected = self._by_id.get(first_pass.selected_model_id or "")
+        safe_unit_id = _safe_bounded_unit_id(bounded_unit_id)
         receipt = {
             "first_pass_model_id": first_pass.selected_model_id,
             "first_pass_fingerprint": first_pass.selected_fingerprint,
             "first_pass_measurements": dict(first_pass.selected_measurements),
             "reason": reason,
-            "bounded_unit_id": bounded_unit_id,
+            "bounded_unit_id": safe_unit_id,
         }
         if reason not in _ALLOWED_ESCALATION_REASONS:
             return EscalationPlan(
@@ -280,13 +283,6 @@ class LocalModelPlanner:
         # Ordering is contractual; preserve it when adding any future gate.
         if candidate.readiness != "ready_verified":
             return f"Readiness gate failed: {candidate.readiness}."
-        if (
-            candidate.benchmarked_at is None
-            or self._now - candidate.benchmarked_at > BENCHMARK_MAX_AGE_SECONDS
-        ):
-            return "Readiness gate failed: accepted benchmark is missing or stale."
-        if candidate.accepted_quality <= 0:
-            return "Readiness gate failed: accepted benchmark quality is missing."
         if not set(request.modalities).issubset(candidate.modalities):
             return "Modality gate failed."
         if (
@@ -311,6 +307,13 @@ class LocalModelPlanner:
             return "Memory reservation gate failed."
         if not candidate.is_local:
             return f"Execution policy gate failed: {request.execution_policy} permits no cloud fallback."
+        if candidate.benchmarked_at is None:
+            return "Readiness gate failed: accepted benchmark is missing or stale."
+        benchmark_age = self._now - candidate.benchmarked_at
+        if not 0 <= benchmark_age <= BENCHMARK_MAX_AGE_SECONDS:
+            return "Readiness gate failed: accepted benchmark is missing or stale."
+        if candidate.accepted_quality <= 0:
+            return "Readiness gate failed: accepted benchmark quality is missing."
         return None
 
 
@@ -331,3 +334,10 @@ def _no_eligible_reason(failures: list[str]) -> str:
     if not failures:
         return "No local route candidates are available."
     return sorted(failures)[0]
+
+
+def _safe_bounded_unit_id(value: object) -> str | None:
+    """Keep only a short opaque identifier; never receipt arbitrary work text."""
+    if not isinstance(value, str) or _SAFE_BOUNDED_UNIT_ID.fullmatch(value) is None:
+        return None
+    return value

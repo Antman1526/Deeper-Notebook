@@ -11,6 +11,7 @@ from deeper_notebook.local_models.contracts import (
     RouteRequest,
 )
 from deeper_notebook.local_models.planner import (
+    BENCHMARK_MAX_AGE_SECONDS,
     LocalModelPlanner,
     classify_resource_tier,
 )
@@ -145,6 +146,36 @@ def test_stale_benchmark_and_no_eligible_route_fail_closed():
     assert "benchmark" in (plan.blocked_reason or "").lower()
 
 
+def test_eligibility_reports_modality_before_a_stale_benchmark():
+    wrong_modality_and_stale = _candidate(
+        "wrong-modality",
+        tier_memory=4 * 1024**3,
+        latency_ms=100,
+        modalities=("image",),
+        benchmarked_at=0.0,
+    )
+
+    plan = LocalModelPlanner(
+        [wrong_modality_and_stale], now=BENCHMARK_MAX_AGE_SECONDS + 1
+    ).plan(RouteRequest(role="research_chat", modalities=("text",)))
+
+    assert plan.outcome == "blocked"
+    assert "modality" in (plan.blocked_reason or "").lower()
+
+
+def test_future_dated_benchmark_fails_closed():
+    future_dated = _candidate(
+        "future", tier_memory=4 * 1024**3, latency_ms=100, benchmarked_at=2_000.0
+    )
+
+    plan = LocalModelPlanner([future_dated], now=1_000.0).plan(
+        RouteRequest(role="research_chat")
+    )
+
+    assert plan.outcome == "blocked"
+    assert "benchmark" in (plan.blocked_reason or "").lower()
+
+
 def test_escalation_receipt_is_redacted_bounded_and_only_allows_declared_failures():
     first = _candidate("first", tier_memory=4 * 1024**3, latency_ms=100)
     second = _candidate("second", tier_memory=10 * 1024**3, latency_ms=100)
@@ -165,3 +196,21 @@ def test_escalation_receipt_is_redacted_bounded_and_only_allows_declared_failure
     assert set(escalation.receipt).isdisjoint({"source", "output", "prompt", "path"})
 
     assert planner.escalation_plan(plan, reason="provider_error").allowed is False
+
+
+@pytest.mark.parametrize("unsafe_unit_id", ["x" * 129, "raw source\noutput", "../../raw-output"])
+def test_escalation_omits_unsafe_bounded_unit_ids(unsafe_unit_id):
+    first = _candidate("first", tier_memory=4 * 1024**3, latency_ms=100)
+    second = _candidate("second", tier_memory=10 * 1024**3, latency_ms=100)
+    planner = LocalModelPlanner([first, second], now=1_100.0)
+    plan = planner.plan(RouteRequest(role="research_chat"))
+
+    escalation = planner.escalation_plan(
+        plan,
+        reason="confidence_below_threshold",
+        bounded_unit_id=unsafe_unit_id,
+    )
+
+    assert escalation.allowed is True
+    assert escalation.receipt["bounded_unit_id"] is None
+    assert unsafe_unit_id not in repr(escalation.receipt)
