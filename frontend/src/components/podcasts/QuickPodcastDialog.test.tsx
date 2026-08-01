@@ -57,6 +57,27 @@ describe('QuickPodcastDialog', () => {
     expect(podcastsApi.getPodcastReadiness).toHaveBeenCalledOnce()
   })
 
+  it('returns keyboard focus to the action that opened the review', async () => {
+    vi.mocked(podcastsApi.getPodcastReadiness).mockResolvedValue({
+      preview: {
+        selectionFingerprint: 'f'.repeat(64), entries: [], includedCharacters: 0,
+        requiresBatchEngine: false, currentWorkerEligible: true, blockedReasons: [],
+      }, stagePlans: [], ready: true, blockedReasons: [],
+    })
+    const invoker = document.createElement('button')
+    document.body.append(invoker)
+    invoker.focus()
+    usePodcastStudioStore.getState().open([{
+      kind: 'notebook', notebookId: 'notebook:research',
+    }], 'quick')
+
+    render(<QuickPodcastDialog />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(invoker).toHaveFocus())
+    invoker.remove()
+  })
+
   it('requires explicit confirmation and closes only after one accepted submit', async () => {
     vi.mocked(podcastsApi.getPodcastReadiness).mockResolvedValue({
       preview: {
