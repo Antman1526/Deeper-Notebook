@@ -205,6 +205,20 @@ vi.mock('./VaultGraph', () => ({
   },
 }))
 
+vi.mock('./KnowledgeAskPane', () => ({
+  KnowledgeAskPane: ({ readinessReason }: { readinessReason?: string | null }) => (
+    <div>Ask shell {readinessReason ?? 'ready'}</div>
+  ),
+}))
+
+vi.mock('./KnowledgeSearchPane', () => ({
+  KnowledgeSearchPane: () => <div>Search shell</div>,
+}))
+
+vi.mock('./KnowledgePodcastPane', () => ({
+  KnowledgePodcastPane: () => <div>Podcast shell</div>,
+}))
+
 import { KnowledgePaneContent } from './KnowledgePaneContent'
 
 const pageFixture = {
@@ -349,8 +363,8 @@ function overlayGraphPage(): OverlayPage {
 }
 
 function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'graph' | 'canvas' = 'reading') {
-  useKnowledgeWorkspaceStore.getState().replaceWorkspace({
-    version: 1,
+  useKnowledgeWorkspaceStore.getState().replaceWorkspace(parseKnowledgeWorkspace(serializeKnowledgeWorkspace({
+    version: 2,
     activePaneId: 'pane-1',
     nextId: 2,
     panes: {
@@ -372,14 +386,14 @@ function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'gra
     },
     layout: { type: 'pane', paneId: 'pane-1' },
     navigation: useKnowledgeWorkspaceStore.getState().navigation,
-  })
+  })))
 }
 
 function replaceOverlayWorkspace(
   viewMode: 'reading' | 'source' | 'live-preview' | 'graph' = 'source',
 ) {
-  useKnowledgeWorkspaceStore.getState().replaceWorkspace({
-    version: 1,
+  useKnowledgeWorkspaceStore.getState().replaceWorkspace(parseKnowledgeWorkspace(serializeKnowledgeWorkspace({
+    version: 2,
     activePaneId: 'pane-1',
     nextId: 2,
     panes: {
@@ -401,7 +415,50 @@ function replaceOverlayWorkspace(
     },
     layout: { type: 'pane', paneId: 'pane-1' },
     navigation: useKnowledgeWorkspaceStore.getState().navigation,
-  })
+  })))
+}
+
+function replaceResearchWorkspace(
+  mode: 'ask' | 'graph' | 'podcast',
+) {
+  const documentTarget = {
+    kind: 'document' as const,
+    container_id: 'vault:one',
+    note_id: 'note:plan',
+    title: 'Canonical Plan',
+    relative_locator: 'pages/plan.md',
+    authority: 'external-vault' as const,
+    knowledge_document_id: 'knowledge_engine_document:plan',
+    render_mode: 'reading' as const,
+  }
+  const target = mode === 'ask'
+    ? { kind: 'ask' as const, thread_id: null, selected_document_ids: [] }
+    : mode === 'graph'
+        ? {
+            kind: 'graph' as const,
+            root_document_id: 'knowledge_engine_document:plan',
+            space_ids: [],
+            relation_kinds: [],
+            viewport: { x: 0, y: 0, zoom: 1 },
+            origin: documentTarget,
+          }
+        : { kind: 'podcast' as const, production_id: null, seed_document_ids: ['knowledge_engine_document:plan'] }
+  useKnowledgeWorkspaceStore.getState().replaceWorkspace(parseKnowledgeWorkspace(serializeKnowledgeWorkspace({
+    version: 2,
+    activePaneId: 'pane-1',
+    nextId: 2,
+    panes: {
+      'pane-1': {
+        id: 'pane-1', activeTabId: 'tab-1', tabs: [{
+          id: 'tab-1', mode, target, title: mode === 'ask' ? 'Ask' : mode === 'podcast' ? 'Podcast' : 'Canonical Plan',
+          vaultId: '', noteId: '', relativePath: '', viewMode: 'reading',
+          sourceAuthority: 'external-vault', knowledgeDocumentId: null, graphViewport: null,
+        }],
+      },
+    },
+    layout: { type: 'pane', paneId: 'pane-1' },
+    navigation: useKnowledgeWorkspaceStore.getState().navigation,
+  })))
 }
 
 function PaneHarness({
@@ -432,8 +489,8 @@ function renderPane(
 }
 
 function replaceTwoPaneWorkspace() {
-  useKnowledgeWorkspaceStore.getState().replaceWorkspace({
-    version: 1,
+  useKnowledgeWorkspaceStore.getState().replaceWorkspace(parseKnowledgeWorkspace(serializeKnowledgeWorkspace({
+    version: 2,
     activePaneId: 'pane-1',
     nextId: 3,
     panes: {
@@ -477,7 +534,7 @@ function replaceTwoPaneWorkspace() {
       second: { type: 'pane', paneId: 'pane-2' },
     },
     navigation: useKnowledgeWorkspaceStore.getState().navigation,
-  })
+  })))
 }
 
 function TwoPaneHarness() {
@@ -553,6 +610,29 @@ describe('KnowledgePaneContent', () => {
       expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].viewMode)
         .toBe(mode)
     }
+  })
+
+  it('dispatches Ask and Podcast targets without document queries', () => {
+    replaceResearchWorkspace('ask')
+    const { rerender } = renderPane()
+
+    expect(screen.getByText('Ask shell ready')).toBeInTheDocument()
+    expect(queries.vaultPageArgs).toHaveBeenLastCalledWith(undefined, undefined)
+
+    replaceResearchWorkspace('podcast')
+    rerender(<PaneHarness />)
+
+    expect(screen.getByText('Podcast shell')).toBeInTheDocument()
+    expect(queries.vaultPageArgs).toHaveBeenLastCalledWith(undefined, undefined)
+  })
+
+  it('dispatches a restored graph target through its document origin', () => {
+    replaceResearchWorkspace('graph')
+
+    renderPane()
+
+    expect(queries.graph).toHaveBeenLastCalledWith('vault:one', 'note:plan', true)
+    expect(screen.getByText('Local graph content')).toBeInTheDocument()
   })
 
   it('renders a Canvas tab without loading a Markdown page', () => {
