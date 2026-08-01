@@ -132,6 +132,64 @@ def test_resource_governor_stops_partial_provider_after_failed_health_check():
     assert governor.snapshot()["reservations"] == {}
 
 
+def test_try_spawn_reserves_a_real_sidecar_and_cleans_it_up_after_failed_health(
+    cfg, tmp_path, monkeypatch
+):
+    sv = Supervisor(cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64")
+    proc = _alive_proc()
+    monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: False)
+
+    def spawn(_port):
+        sv._procs.append(proc)
+
+    sv._try_spawn("supervisor.llamacpp_embed", spawn, 41234)
+
+    proc.terminate.assert_called_once()
+    assert sv.resource_governor.snapshot()["reservations"] == {}
+    assert "embed" not in sv._sidecar_procs
+
+
+def test_try_spawn_releases_reservation_when_sidecar_spawn_raises(
+    cfg, tmp_path, monkeypatch
+):
+    sv = Supervisor(cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64")
+    proc = _alive_proc()
+    monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: True)
+
+    def partial_spawn(_port):
+        sv._procs.append(proc)
+        raise RuntimeError("health setup failed")
+
+    sv._try_spawn("supervisor.llamacpp_embed", partial_spawn, 41234)
+
+    proc.terminate.assert_called_once()
+    assert sv.resource_governor.snapshot()["reservations"] == {}
+
+
+def test_try_spawn_queues_a_heavyweight_mlx_chat_when_another_is_reserved(
+    cfg, tmp_path
+):
+    mlx_cfg = Config(
+        model_dir=cfg.model_dir,
+        provider="mlx",
+        default_model="",
+        surreal_user=cfg.surreal_user,
+        surreal_password=cfg.surreal_password,
+    )
+    sv = Supervisor(
+        mlx_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
+    )
+    assert sv.resource_governor.reserve(
+        "other-heavyweight", 1, heavyweight_mlx=True
+    ) == "reserved"
+    started: list[int] = []
+
+    sv._try_spawn("supervisor.llamacpp_chat", lambda port: started.append(port), 41234)
+
+    assert started == []
+    assert sv.resource_governor.snapshot()["queued_heavyweight_swaps"] == ["chat"]
+
+
 def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
     # Supply enough procs for all possible spawns (4 core + up to 3 v0.3 shims + up to 2 v0.4 shims).
     procs = [_alive_proc() for _ in range(10)]

@@ -32,6 +32,14 @@ from desktop.data_root import active_data_root
 router = APIRouter()
 
 
+def _safe_settings_text(value: object) -> str:
+    if not isinstance(value, str) or any(
+        ord(character) < 32 or ord(character) == 127 for character in value
+    ):
+        raise ValueError("Settings strings cannot contain control characters.")
+    return value
+
+
 def _local_settings_response(cfg) -> dict[str, object]:
     """Serialize only non-secret local-routing preferences."""
     return {
@@ -62,17 +70,22 @@ async def local_models_settings_put(body: dict):
         model_dir = validate_model_root(Path(body.get("model_dir", cfg.model_dir)))
         execution_policy = body.get("execution_policy", cfg.execution_policy)
         compute_profile = body.get("compute_profile", cfg.compute_profile)
-        if execution_policy not in {"strict_local", "local_preferred", "custom"}:
+        if not isinstance(execution_policy, str) or execution_policy not in {"strict_local", "local_preferred", "custom"}:
             raise ValueError("Unsupported execution policy.")
-        if compute_profile not in {"efficient", "balanced", "maximum_quality"}:
+        if not isinstance(compute_profile, str) or compute_profile not in {"efficient", "balanced", "maximum_quality"}:
             raise ValueError("Unsupported compute profile.")
         memory_limit = body.get("local_model_memory_limit_bytes", cfg.local_model_memory_limit_bytes)
-        if memory_limit is not None and (not isinstance(memory_limit, int) or memory_limit < 0):
+        if memory_limit is not None and (type(memory_limit) is not int or memory_limit < 0):
             raise ValueError("Memory limit must be non-negative.")
         role_overrides = body.get("role_overrides", cfg.role_overrides)
         trusted_roots = body.get("trusted_external_model_roots", cfg.trusted_external_model_roots)
         if not isinstance(role_overrides, dict) or not isinstance(trusted_roots, list | tuple):
             raise ValueError("Invalid local model settings.")
+        validated_overrides = {
+            _safe_settings_text(key): _safe_settings_text(value)
+            for key, value in role_overrides.items()
+        }
+        validated_roots = tuple(_safe_settings_text(root) for root in trusted_roots)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     updated = replace(
@@ -81,8 +94,8 @@ async def local_models_settings_put(body: dict):
         execution_policy=execution_policy,
         compute_profile=compute_profile,
         local_model_memory_limit_bytes=memory_limit,
-        role_overrides={str(key): str(value) for key, value in role_overrides.items()},
-        trusted_external_model_roots=tuple(str(item) for item in trusted_roots),
+        role_overrides=validated_overrides,
+        trusted_external_model_roots=validated_roots,
     )
     updated.save(path)
     return _local_settings_response(updated)
@@ -108,6 +121,10 @@ async def local_models_route_plan(body: dict, request: Request):
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="Invalid route-plan request.") from exc
+    transport = getattr(request.app.state, "local_model_transport", None)
+    if transport is not None:
+        loopback_endpoint = "http://127.0.0.1/local-models/route-plan"
+        transport(loopback_endpoint)
     candidates = getattr(request.app.state, "local_model_route_candidates", ())
     plan = plan_model_route(list(candidates), route_request)
     return plan.receipt()

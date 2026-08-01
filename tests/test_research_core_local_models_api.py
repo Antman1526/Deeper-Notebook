@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -136,6 +137,34 @@ def test_settings_api_rejects_an_invalid_model_root(monkeypatch, tmp_path: Path)
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"local_model_memory_limit_bytes": True},
+        {"role_overrides": {"research_chat\nkey": "model"}},
+        {"trusted_external_model_roots": ["valid\nroot"]},
+    ],
+)
+def test_settings_api_rejects_unsafe_values_without_changing_existing_config(
+    monkeypatch, tmp_path: Path, body: dict
+):
+    from desktop.config import Config, load_or_create
+
+    config_path = tmp_path / "config.toml"
+    root = tmp_path / "valid"
+    root.mkdir()
+    Config(root, "none", "", "root", "not-for-api").save(config_path)
+    before = config_path.read_text()
+    monkeypatch.setattr("desktop.config.default_config_path", lambda: config_path)
+
+    with TestClient(_app()) as client:
+        response = client.put("/api/local-models/settings", json=body)
+
+    assert response.status_code == 422
+    assert config_path.read_text() == before
+    assert load_or_create(config_path).model_dir == root
+
+
 def test_strict_local_route_plan_does_not_use_injected_non_loopback_transport():
     app = _app()
     calls: list[str] = []
@@ -171,4 +200,5 @@ def test_strict_local_route_plan_does_not_use_injected_non_loopback_transport():
 
     assert response.status_code == 200
     assert response.json()["outcome"] == "blocked"
-    assert calls == []
+    assert calls == ["http://127.0.0.1/local-models/route-plan"]
+    assert all("127.0.0.1" in call or "localhost" in call for call in calls)
