@@ -145,7 +145,10 @@ def main() -> int:
     args = parser.parse_args()
     if args.fixture_root is None:
         with tempfile.TemporaryDirectory(prefix="deeper-notebook-navigation-proof-") as directory:
-            temp_root = Path(directory)
+            # macOS exposes /var through a symlink to /private/var.  This is
+            # verifier-owned, so canonicalize it before constructing the
+            # child; caller-supplied roots remain symlink-rejected.
+            temp_root = Path(directory).resolve()
             # The parent is owned by TemporaryDirectory, while this child is
             # intentionally new so verifier_config can mark it with its
             # fixture sentinel before writing any synthetic source.

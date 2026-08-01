@@ -78,3 +78,23 @@ def test_default_cli_uses_fresh_owned_child_fixture(tmp_path: Path, monkeypatch:
     assert '"status": "blocked"' in report
     assert '"synthetic_passed": true' in report
     assert (tmp_path / "fixture" / verifier._FIXTURE_SENTINEL).is_file()
+
+
+def test_default_cli_accepts_a_real_temporary_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+    original_run = verifier.run_verifier
+
+    def capture_run(**kwargs: object):
+        captured.update(kwargs)
+        return original_run(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(verifier, "run_verifier", capture_run)
+    monkeypatch.setattr(verifier, "_api_health", lambda _: (False, None))
+    monkeypatch.setattr(sys, "argv", ["verify_navigation_productivity.py"])
+    assert verifier.main() == 2
+    fixture_root = captured["fixture_root"]
+    output_path = captured["output_path"]
+    assert isinstance(fixture_root, Path) and isinstance(output_path, Path)
+    assert fixture_root.name == "fixture"
+    assert output_path.name == "proof.json"
+    assert output_path.parent == fixture_root.parent
