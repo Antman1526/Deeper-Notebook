@@ -401,6 +401,79 @@ async def test_folder_collection_traverses_nested_folders_without_truncating_tar
 
 
 @pytest.mark.asyncio
+async def test_workspace_collection_resolves_only_explicit_document_and_block_tabs():
+    class Engine:
+        async def get_document(self, document_id):
+            return type(
+                "Document",
+                (),
+                {
+                    "id": document_id,
+                    "title": document_id.rsplit(":", 1)[1],
+                    "authority_kind": "external_read_only",
+                    "relative_locator": "Research/Workspace.md",
+                    "source_revision_id": "knowledge_engine_revision:current",
+                    "content_hash": "b" * 64,
+                    "normalized_body": f"workspace body {document_id}",
+                },
+            )()
+
+        async def get_current_block_content(self, **kwargs):
+            return type(
+                "Block",
+                (),
+                {**kwargs, "plain_text": "workspace block"},
+            )()
+
+    class Navigation:
+        async def get_workspace(self, workspace_id):
+            assert workspace_id == "named_knowledge_workspace:research"
+            document = type(
+                "DocumentTarget",
+                (),
+                {"kind": "document", "document_id": "knowledge_engine_document:document"},
+            )()
+            block = type(
+                "BlockTarget",
+                (),
+                {
+                    "kind": "block",
+                    "document_id": "knowledge_engine_document:block",
+                    "block_id": "knowledge_engine_block:block",
+                    "source_revision_id": "knowledge_engine_revision:current",
+                },
+            )()
+            search = type("SearchTarget", (), {"kind": "search"})()
+            tabs = [
+                type("Tab", (), {"target": document})(),
+                type("Tab", (), {"target": block})(),
+                type("Tab", (), {"target": search})(),
+            ]
+            return type(
+                "Workspace",
+                (),
+                {"snapshot": type("Snapshot", (), {"panes": {"pane": type("Pane", (), {"tabs": tabs})()}})()},
+            )()
+
+    engine_resolver = KnowledgeEnginePodcastSelectionResolver(engine=Engine())
+    items = await KnowledgeNavigationPodcastSelectionResolver(
+        navigation=Navigation(), engine_resolver=engine_resolver
+    ).resolve(
+        KnowledgeCollectionSelection(
+            collection_kind="workspace",
+            collection_id="named_knowledge_workspace:research",
+        )
+    )
+
+    assert [item.stable_id for item in items] == [
+        "knowledge_engine_document:document",
+        "knowledge_engine_block:block",
+        "named_knowledge_workspace:research",
+    ]
+    assert items[-1].state == "unavailable"
+
+
+@pytest.mark.asyncio
 async def test_preview_fingerprint_includes_resolved_revision_without_source_body():
     @dataclass
     class RevisionResolver:
