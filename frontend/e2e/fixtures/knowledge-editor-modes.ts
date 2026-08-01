@@ -303,6 +303,17 @@ function validateNamedWorkspaceSnapshot(snapshot: unknown): string | null {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return "snapshot_invalid";
   const value = snapshot as Record<string, unknown>;
   if (value.version !== 1 || !value.panes || typeof value.panes !== "object" || Array.isArray(value.panes)) return "snapshot_invalid";
+  if (
+    value.navigation !== undefined
+    && (
+      !value.navigation
+      || typeof value.navigation !== "object"
+      || Array.isArray(value.navigation)
+      || !validFixtureSpaceIds(
+        (value.navigation as Record<string, unknown>).selected_space_ids ?? [],
+      )
+    )
+  ) return "snapshot_navigation_invalid";
   for (const pane of Object.values(value.panes as Record<string, unknown>)) {
     if (!pane || typeof pane !== "object" || Array.isArray(pane)) return "pane_invalid";
     const tabs = (pane as Record<string, unknown>).tabs;
