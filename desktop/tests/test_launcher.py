@@ -190,6 +190,58 @@ def test_try_spawn_queues_a_heavyweight_mlx_chat_when_another_is_reserved(
     assert sv.resource_governor.snapshot()["queued_heavyweight_swaps"] == ["chat"]
 
 
+def test_restart_sidecar_replaces_its_reservation_under_a_tight_memory_limit(
+    cfg, tmp_path, monkeypatch
+):
+    tight_cfg = Config(
+        cfg.model_dir, "none", "", cfg.surreal_user, cfg.surreal_password,
+        local_model_memory_limit_bytes=1024**3,
+    )
+    sv = Supervisor(
+        tight_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
+    )
+    old, new = _alive_proc(), _alive_proc()
+    assert sv.resource_governor.reserve("embed", 1024**3) == "reserved"
+    sv._sidecar_procs["embed"] = old
+    sv._sidecar_spawn_args["embed"] = (41234, "supervisor.llamacpp_embed")
+    sv._procs = [old]
+    monkeypatch.setattr("desktop.launcher.os.getpgid", lambda _pid: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(sv, "_spawn_llamacpp_embed", lambda _port: sv._procs.append(new))
+    monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: True)
+
+    ok, _detail = sv.restart_sidecar("embed")
+
+    assert ok is True
+    old.terminate.assert_called_once()
+    assert sv._sidecar_procs["embed"] is new
+    assert sv.resource_governor.snapshot()["reservations"] == {"embed": 1024**3}
+
+
+def test_restart_sidecar_replaces_its_heavyweight_mlx_reservation(
+    cfg, tmp_path, monkeypatch
+):
+    mlx_cfg = Config(
+        cfg.model_dir, "mlx", "", cfg.surreal_user, cfg.surreal_password,
+        local_model_memory_limit_bytes=5 * 1024**3,
+    )
+    sv = Supervisor(
+        mlx_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
+    )
+    old, new = _alive_proc(), _alive_proc()
+    assert sv.resource_governor.reserve("chat", 5 * 1024**3, heavyweight_mlx=True) == "reserved"
+    sv._sidecar_procs["chat"] = old
+    sv._sidecar_spawn_args["chat"] = (41234, "supervisor.llamacpp_chat")
+    sv._procs = [old]
+    monkeypatch.setattr("desktop.launcher.os.getpgid", lambda _pid: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(sv, "_spawn_llamacpp_chat", lambda _port: sv._procs.append(new))
+    monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: True)
+
+    ok, _detail = sv.restart_sidecar("chat")
+
+    assert ok is True
+    assert sv.resource_governor.snapshot()["reservations"] == {"chat": 5 * 1024**3}
+
+
 def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
     # Supply enough procs for all possible spawns (4 core + up to 3 v0.3 shims + up to 2 v0.4 shims).
     procs = [_alive_proc() for _ in range(10)]

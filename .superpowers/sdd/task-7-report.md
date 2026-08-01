@@ -36,6 +36,33 @@ git diff --check
 # passed
 ```
 
+## Final review repair — restart reservation replacement
+
+### Red
+
+Two tight-limit restart regressions failed: one for a 1 GiB embed sidecar and
+one for the 5 GiB heavyweight MLX chat reservation. `restart_sidecar` removed
+the old process but left its governor reservation, so `_try_spawn` rejected
+the replacement as over budget.
+
+### Repair and verification
+
+`restart_sidecar` now releases the stopped child's reservation immediately
+before delegating replacement to `_try_spawn`. The new spawn acquires its own
+reservation and the existing no-child/error paths release it if a healthy
+replacement is not produced.
+
+```sh
+PYTHONPATH="$PWD" uv run --no-sync pytest -q tests/test_local_model_settings.py tests/test_research_core_local_models_api.py desktop/tests/test_config.py desktop/tests/test_launcher.py desktop/tests/test_launcher_adaptive_nctx.py
+# 77 passed; one existing FastAPI/TestClient deprecation warning
+
+PYTHONPATH="$PWD" uv run --no-sync ruff check deeper_notebook/local_models/settings.py desktop/config.py desktop/launcher.py api/routers/local_models.py tests/test_local_model_settings.py tests/test_research_core_local_models_api.py desktop/tests/test_config.py desktop/tests/test_launcher.py
+# all checks passed
+
+git diff --check
+# passed
+```
+
 ## Boundaries
 
 - No provider, model library, model source root, manifest, or external brain
