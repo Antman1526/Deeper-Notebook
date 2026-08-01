@@ -332,8 +332,8 @@ export interface KnowledgeTab {
   sourceAuthority: KnowledgeSourceAuthority
   knowledgeDocumentId: string | null
   graphViewport: GraphViewport | null
-  mode: z.infer<typeof researchModeSchema>
-  target: z.infer<typeof workspaceTabTargetWireSchema>
+  mode?: z.infer<typeof researchModeSchema>
+  target?: z.infer<typeof workspaceTabTargetWireSchema>
   // Restore-only stable graph metadata. It is intentionally not written to the
   // Current Session wire payload, which remains compatible with the server API.
   graphBookmarkContext?: {
@@ -395,7 +395,7 @@ export interface SplitLayoutNode {
 export type KnowledgeLayoutNode = PaneLayoutNode | SplitLayoutNode
 
 export interface KnowledgeWorkspaceDocument {
-  version: 2
+  version: 1 | 2
   activePaneId: string
   nextId: number
   panes: Record<string, KnowledgePane>

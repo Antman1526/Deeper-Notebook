@@ -213,8 +213,10 @@ class NamedWorkspaceTab(_Strict):
         derived = {"document": "read", "graph": "graph", "search": "search"}.get(
             self.target.kind, "read"
         )
-        if self.mode != derived:
+        if self.mode is None:
             object.__setattr__(self, "mode", derived)
+        elif self.mode != derived:
+            raise ValueError("workspace mode must match target kind")
         return self
 
 
