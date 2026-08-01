@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
+from deeper_notebook.vault.canvas import CanvasDocument, CanvasNode
 from deeper_notebook.vault.repository import (
     TrustImportResult,
     VaultFile,
@@ -153,6 +154,41 @@ class _Service:
             failed=1,
         )
 
+    async def read_canvas(self, vault_id: str, relative_path: str):
+        if vault_id != "vault_mount:fixture" or relative_path != "maps/plan.canvas":
+            raise LookupError("canvas_not_found")
+        file = VaultFile(
+            id="vault_file:canvas",
+            note_id="note:canvas",
+            vault_id=vault_id,
+            relative_path=relative_path,
+            file_kind="metadata",
+            format="markdown",
+            content_hash="a" * 64,
+            size_bytes=128,
+            modified_ns=1,
+            parse_status="parsed",
+            deleted_state="present",
+        )
+        return SimpleNamespace(
+            file=file,
+            source_hash="a" * 64,
+            document=CanvasDocument(
+                nodes=(
+                    CanvasNode(
+                        id="idea",
+                        type="text",
+                        x=0,
+                        y=0,
+                        width=100,
+                        height=80,
+                        text="Idea",
+                    ),
+                ),
+                edges=(),
+            ),
+        )
+
 
 def _mount() -> VaultMount:
     return VaultMount(
@@ -289,6 +325,20 @@ def test_read_only_vault_resources_return_relative_data_only(client):
     receipts = test_client.get(f"{root}/receipts")
     assert receipts.status_code == 200
     assert "/Users/owner" not in receipts.text
+
+
+def test_canvas_endpoint_returns_hash_bound_relative_data_only(client):
+    test_client, _, _ = client
+
+    response = test_client.get(
+        "/api/deeper-notebook/vaults/vault_mount:fixture/canvases/maps/plan.canvas"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["file"]["relative_path"] == "maps/plan.canvas"
+    assert response.json()["source_hash"] == "a" * 64
+    assert response.json()["nodes"][0]["text"] == "Idea"
+    assert "/Users/owner" not in response.text
 
 
 def test_page_enriches_unified_identity_in_one_batched_lookup(client):
