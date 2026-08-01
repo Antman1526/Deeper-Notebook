@@ -591,7 +591,7 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
             viewport: target.viewport,
           }
         : null
-      return { id: tab.id, mode: tab.mode, target, title: tab.title, vaultId: document?.container_id ?? '', noteId: document?.note_id ?? '', relativePath: document?.relative_locator ?? '', viewMode: target.kind === 'graph' ? 'graph' : document?.render_mode ?? 'reading', sourceAuthority: document?.authority ?? 'external-vault', knowledgeDocumentId: document?.knowledge_document_id ?? (target.kind === 'graph' ? target.root_document_id : null), graphViewport: target.kind === 'graph' ? target.viewport : null, graphBookmarkContext }
+      return { id: tab.id, mode: tab.mode, target, title: tab.title, vaultId: document?.container_id ?? '', noteId: document?.note_id ?? '', relativePath: document?.relative_locator ?? '', viewMode: target.kind === 'graph' ? 'graph' : document?.render_mode ?? 'reading', sourceAuthority: document?.authority ?? (target.kind === 'ask' || target.kind === 'search' || target.kind === 'podcast' || target.kind === 'graph' ? 'overlay' : 'external-vault'), knowledgeDocumentId: document?.knowledge_document_id ?? (target.kind === 'graph' ? target.root_document_id : null), graphViewport: target.kind === 'graph' ? target.viewport : null, graphBookmarkContext }
     }) }])), layout: fromWireLayout(wire.layout),
   }
 }
