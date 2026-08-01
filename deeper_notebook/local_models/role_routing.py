@@ -12,7 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from deeper_notebook.local_models.contracts import (
+    LocalModelRouteCandidate,
+    ModelRoutePlan,
+    RouteRequest,
+)
 from deeper_notebook.local_models.inventory import LocalModelInfo
+from deeper_notebook.local_models.planner import plan_model_route
 
 
 @dataclass(frozen=True)
@@ -88,6 +94,19 @@ def recommend_model_roles(
         _recommend("study_fast", models, benchmark_results, manifest_entries),
         _recommend("embedding", models, benchmark_results, manifest_entries),
     ]
+
+
+def plan_local_model_route(
+    candidates: list[LocalModelRouteCandidate],
+    request: RouteRequest,
+    **planner_kwargs: object,
+) -> ModelRoutePlan:
+    """Adapt the approved role surface to the side-effect-free route planner.
+
+    The established heuristic recommendations above remain inventory guidance;
+    execution-facing callers must use this measured, verified route contract.
+    """
+    return plan_model_route(candidates, request, **planner_kwargs)
 
 
 def model_match_key(name: str) -> str:

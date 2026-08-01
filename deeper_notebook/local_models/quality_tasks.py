@@ -18,6 +18,8 @@ class QualityMeasurement:
     context_recall: bool | None = None
     answer_correctness: bool | None = None
     refusal_when_evidence_absent: bool | None = None
+    capability_available: bool | None = None
+    identity_matches: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,9 @@ class QualityTask:
     context_marker: str | None = None
     correctness_terms: tuple[str, ...] = ()
     requires_evidence_refusal: bool = False
+    probe_kind: str = "language"
+    maximum_probe_bytes: int = 0
+    required_capability: str | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +50,82 @@ _SOURCE_CONTEXT = "ORCHID-17"
 _SOURCE_CITATION = "[source:brief]"
 
 _QUALITY_TASKS: dict[str, QualityTask] = {
+    "research_chat": QualityTask(
+        role="research_chat",
+        minimum_context_tokens=2048,
+        prompt="Answer using only the supplied local evidence and identify its citation.",
+        expected_citation=_SOURCE_CITATION,
+        correctness_terms=("local",),
+    ),
+    "evidence_extraction": QualityTask(
+        role="evidence_extraction",
+        minimum_context_tokens=4096,
+        requires_structured_output=True,
+        required_json_fields=("claims", "citations"),
+        prompt="Return JSON with claims and citations drawn only from supplied evidence.",
+    ),
+    "claim_verification": QualityTask(
+        role="claim_verification",
+        minimum_context_tokens=4096,
+        requires_structured_output=True,
+        required_json_fields=("verdict", "evidence"),
+        prompt="Return JSON with verdict and evidence; reject unsupported claims.",
+        requires_evidence_refusal=True,
+    ),
+    "editorial_writing": QualityTask(
+        role="editorial_writing",
+        minimum_context_tokens=2048,
+        prompt="Write a concise, evidence-grounded editorial paragraph.",
+        correctness_terms=("evidence",),
+    ),
+    "embedding_retrieval": QualityTask(
+        role="embedding_retrieval",
+        minimum_context_tokens=0,
+        prompt="Return the nearest local evidence identifier for the supplied query.",
+        correctness_terms=("local",),
+    ),
+    "vision_analysis": QualityTask(
+        role="vision_analysis",
+        minimum_context_tokens=2048,
+        prompt="Describe only visible, supplied image evidence and identify uncertainty.",
+        requires_evidence_refusal=True,
+    ),
+    "code_data_analysis": QualityTask(
+        role="code_data_analysis",
+        minimum_context_tokens=8192,
+        requires_structured_output=True,
+        required_json_fields=("finding", "evidence"),
+        prompt="Return JSON with a code or data finding and its supplied evidence.",
+    ),
+    "podcast_outline": QualityTask(
+        role="podcast_outline",
+        minimum_context_tokens=8192,
+        requires_structured_output=True,
+        required_json_fields=("segments",),
+        prompt="Return JSON with evidence-grounded podcast outline segments.",
+    ),
+    "podcast_script": QualityTask(
+        role="podcast_script",
+        minimum_context_tokens=8192,
+        prompt="Draft an evidence-grounded podcast script with uncertainty stated.",
+        requires_evidence_refusal=True,
+    ),
+    "speech_to_text": QualityTask(
+        role="speech_to_text",
+        minimum_context_tokens=0,
+        prompt="",
+        probe_kind="capability_identity",
+        maximum_probe_bytes=4096,
+        required_capability="speech_to_text",
+    ),
+    "text_to_speech": QualityTask(
+        role="text_to_speech",
+        minimum_context_tokens=0,
+        prompt="",
+        probe_kind="capability_identity",
+        maximum_probe_bytes=4096,
+        required_capability="text_to_speech",
+    ),
     "chat": QualityTask(
         role="chat",
         minimum_context_tokens=2048,
@@ -143,7 +224,31 @@ def gate_quality_task(
             allowed=False,
             reason="Model is known not to support required structured output.",
         )
+    if task.probe_kind == "capability_identity":
+        capability = task.required_capability or ""
+        capabilities = getattr(registered_model, "capabilities", None)
+        if capabilities is not None and capability not in capabilities:
+            return QualityTaskGate(
+                allowed=False,
+                reason=f"Model does not advertise required {capability} capability.",
+            )
     return QualityTaskGate(allowed=True)
+
+
+def evaluate_capability_identity_probe(
+    task: QualityTask,
+    *,
+    capability_available: bool,
+    runtime_identity_matches: bool,
+) -> QualityMeasurement:
+    """Record a bounded speech sidecar probe without submitting language text."""
+    if task.probe_kind != "capability_identity":
+        raise ValueError("Capability/identity probes are reserved for speech roles.")
+    return QualityMeasurement(
+        capability_available=capability_available,
+        identity_matches=runtime_identity_matches,
+        answer_correctness=capability_available and runtime_identity_matches,
+    )
 
 
 def evaluate_quality_response(
