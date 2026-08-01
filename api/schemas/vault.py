@@ -124,3 +124,29 @@ class VaultPageResponse(_VaultSchema):
     tasks: list[dict[str, Any]] = Field(default_factory=list)
     outgoing_links: list[VaultLinkResponse] = Field(default_factory=list)
     backlinks: list[VaultLinkResponse] = Field(default_factory=list)
+
+
+class VaultCanvasNodeResponse(_VaultSchema):
+    id: str = Field(min_length=1, max_length=16_384)
+    type: Literal["text", "file", "group", "unsupported"]
+    x: float
+    y: float
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    text: str | None = None
+    file_path: str | None = None
+    label: str | None = None
+
+
+class VaultCanvasEdgeResponse(_VaultSchema):
+    id: str = Field(min_length=1, max_length=16_384)
+    from_node: str = Field(min_length=1, max_length=16_384)
+    to_node: str = Field(min_length=1, max_length=16_384)
+    label: str | None = None
+
+
+class VaultCanvasResponse(_VaultSchema):
+    file: VaultFileResponse
+    source_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    nodes: list[VaultCanvasNodeResponse] = Field(max_length=500)
+    edges: list[VaultCanvasEdgeResponse] = Field(max_length=500)

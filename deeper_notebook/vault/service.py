@@ -18,13 +18,15 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from deeper_notebook.knowledge_engine.shadow import KnowledgeShadowProjector
+from deeper_notebook.vault.canvas import CanvasDocument, parse_canvas_document
 from deeper_notebook.vault.contracts import VaultState
 from deeper_notebook.vault.parsers import VaultParseError, parse_document
-from deeper_notebook.vault.repository import VaultMount, VaultMountCreate
+from deeper_notebook.vault.repository import VaultFile, VaultMount, VaultMountCreate
 from deeper_notebook.vault.security import (
     VaultSecurityError,
     approve_vault_root,
     classify_vault_path,
+    secure_read,
 )
 from deeper_notebook.vault.watcher import (
     VaultFileObservation,
@@ -44,6 +46,13 @@ class VaultScanResult:
     reconciliation_required: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class VaultCanvasDocument:
+    file: VaultFile
+    source_hash: str
+    document: CanvasDocument
+
+
 def _shadow_diagnostic_operation_id(
     legacy_operation_id: str, relative_locator: str
 ) -> str:
@@ -57,6 +66,8 @@ def _shadow_diagnostic_operation_id(
 class _Repository(Protocol):
     async def create_mount(self, request: VaultMountCreate) -> VaultMount: ...
     async def list_mounts(self) -> list[VaultMount]: ...
+    async def get_mount(self, vault_id: str) -> VaultMount: ...
+    async def get_file(self, vault_id: str, relative_path: str) -> VaultFile: ...
     async def mark_scan_started(
         self, vault_id: str, *, started_at: datetime | None = None
     ) -> None: ...
@@ -179,6 +190,33 @@ class VaultService:
         self._mounts[mount.id] = mount
         self._states[mount.id] = mount.status
         return mount
+
+    async def read_canvas(
+        self, vault_id: str, relative_path: str
+    ) -> VaultCanvasDocument:
+        """Read one current external Canvas only when it matches its projection."""
+
+        file = await self._repository.get_file(vault_id, relative_path)
+        if (
+            file.vault_id != vault_id
+            or file.relative_path != relative_path
+            or file.deleted_state != "present"
+            or file.parse_status not in {"parsed", "invalid"}
+            or not file.content_hash
+            or classify_vault_path(relative_path).kind != "metadata"
+            or not relative_path.casefold().endswith(".canvas")
+        ):
+            raise LookupError("canvas_not_found")
+        mount = self._mounts.get(vault_id) or await self._repository.get_mount(vault_id)
+        with approve_vault_root(mount.root_path) as root:
+            source = secure_read(root, relative_path)
+        if source.sha256 != file.content_hash:
+            raise VaultSecurityError("changed_during_read")
+        return VaultCanvasDocument(
+            file=file,
+            source_hash=source.sha256,
+            document=parse_canvas_document(source.content, relative_path=relative_path),
+        )
 
     async def _load_mounts(self) -> None:
         for mount in await self._repository.list_mounts():

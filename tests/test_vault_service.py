@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover - Windows skips POSIX vault tests
 from deeper_notebook.vault.repository import (
     FailureResult,
     ProjectionResult,
+    VaultFile,
     VaultMount,
     VaultMountCreate,
 )
@@ -45,6 +46,7 @@ class FakeRepository:
     missing_operations: list[tuple[str, str, str]]
     failures: list[tuple[str, str, str]] = field(default_factory=list)
     state_transitions: list[tuple[str, str, datetime]] = field(default_factory=list)
+    files: dict[tuple[str, str], VaultFile] = field(default_factory=dict)
 
     async def create_mount(self, request: VaultMountCreate) -> VaultMount:
         mount = VaultMount(id=f"vault_mount:{request.name}", **request.model_dump())
@@ -53,6 +55,12 @@ class FakeRepository:
 
     async def list_mounts(self) -> list[VaultMount]:
         return list(self.mounts)
+
+    async def get_mount(self, vault_id: str) -> VaultMount:
+        return next(mount for mount in self.mounts if mount.id == vault_id)
+
+    async def get_file(self, vault_id: str, relative_path: str) -> VaultFile:
+        return self.files[(vault_id, relative_path)]
 
     async def mark_scan_started(
         self, vault_id: str, *, started_at: datetime | None = None
@@ -217,6 +225,41 @@ async def test_completed_scan_state_is_visible_to_repository_and_fresh_service(
         "scanning",
         "ready-read-only",
     ]
+
+
+@pytest.mark.asyncio
+async def test_read_canvas_returns_only_a_hash_bound_document(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "canvas"
+    root.mkdir()
+    maps = root / "maps"
+    maps.mkdir()
+    content = (
+        b'{"nodes":[{"id":"idea","type":"text","x":0,"y":0,"width":100,"height":80,"text":"Idea"}],"edges":[]}'
+    )
+    (maps / "plan.canvas").write_bytes(content)
+    mount = _mount(root)
+    file = VaultFile(
+        id="vault_file:canvas",
+        note_id="note:canvas",
+        vault_id=mount.id,
+        relative_path="maps/plan.canvas",
+        file_kind="metadata",
+        format="markdown",
+        content_hash=hashlib.sha256(content).hexdigest(),
+        size_bytes=len(content),
+        modified_ns=1,
+        parse_status="parsed",
+        deleted_state="present",
+    )
+    repository = FakeRepository([mount], [], [], files={(mount.id, file.relative_path): file})
+
+    result = await VaultService(repository).read_canvas(mount.id, file.relative_path)
+
+    assert result.file.id == file.id
+    assert result.source_hash == file.content_hash
+    assert result.document.nodes[0].text == "Idea"
 
 
 @pytest.mark.asyncio
