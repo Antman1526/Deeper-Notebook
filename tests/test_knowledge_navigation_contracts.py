@@ -159,6 +159,7 @@ def test_restore_plan_preserves_reconstructable_workspace_tab_state():
         id="tab-1",
         display_label="Research plan",
         view_mode="reading",
+        mode="read",
         target={"kind": "document", "document_id": "knowledge_engine_document:plan"},
         target_state="available",
         target_document=_open_descriptor(),

@@ -244,7 +244,7 @@ class KnowledgeNavigationService:
     async def create_workspace(
         self, command: CreateWorkspace
     ) -> NamedKnowledgeWorkspace:
-        self._validate_workspace_snapshot(command.snapshot)
+        await self._validate_workspace_snapshot(command.snapshot)
         return await self.metadata_repository.create_workspace(command)
 
     async def get_workspace(self, workspace_id: str) -> NamedKnowledgeWorkspace:
@@ -260,7 +260,7 @@ class KnowledgeNavigationService:
         if has_name == has_snapshot:
             raise ValueError("workspace updates must rename or replace a snapshot")
         if command.snapshot is not None:
-            self._validate_workspace_snapshot(command.snapshot)
+            await self._validate_workspace_snapshot(command.snapshot)
         return await self.metadata_repository.update_workspace(workspace_id, command)
 
     async def duplicate_workspace(
@@ -295,6 +295,7 @@ class KnowledgeNavigationService:
                         id=tab.id,
                         display_label=tab.display_label,
                         view_mode=tab.view_mode,
+                        mode=tab.mode,
                         target=tab.target,
                         target_state=hydrated.state,
                         target_document=hydrated.document,
@@ -319,8 +320,7 @@ class KnowledgeNavigationService:
         if workspace_id == WORKSPACE_CAPACITY_ALLOCATOR_ID:
             raise LookupError("named_knowledge_workspace_not_found")
 
-    @staticmethod
-    def _validate_workspace_snapshot(snapshot: object) -> None:
+    async def _validate_workspace_snapshot(self, snapshot: object) -> None:
         """Assert document and block tabs retain strict, unified targets."""
         panes = getattr(snapshot, "panes", {})
         for pane in panes.values():
@@ -328,6 +328,23 @@ class KnowledgeNavigationService:
                 target = tab.target
                 if target.kind == "document" and not target.document_id:
                     raise ValueError("workspace document target is required")
+                if target.kind == "document" and tab.mode == "write":
+                    try:
+                        descriptor = await self._engine_call(
+                            "open_descriptor", target.document_id
+                        )
+                    except (LookupError, KnowledgeNavigationRepositoryError):
+                        raise KnowledgeNavigationServiceError(
+                            "workspace_write_target_not_app_owned"
+                        ) from None
+                    if (
+                        descriptor is None
+                        or getattr(descriptor, "authority_kind", None)
+                        != "app_owned"
+                    ):
+                        raise KnowledgeNavigationServiceError(
+                            "workspace_write_target_not_app_owned"
+                        )
                 if target.kind == "block" and (
                     not target.document_id or not target.block_id
                 ):

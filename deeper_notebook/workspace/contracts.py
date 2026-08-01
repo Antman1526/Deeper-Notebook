@@ -11,6 +11,10 @@ from pydantic_core import PydanticCustomError
 KnowledgeViewMode = Literal["reading", "source", "live-preview", "graph", "canvas"]
 KnowledgeSourceAuthority = Literal["external-vault", "overlay"]
 SplitDirection = Literal["horizontal", "vertical"]
+NavigationLocalId = Annotated[
+    str,
+    Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"),
+]
 
 
 class KnowledgeTabState(BaseModel):
@@ -278,7 +282,7 @@ class DocumentTabTarget(_StrictWorkspaceModel):
 
 class AskTabTarget(_StrictWorkspaceModel):
     kind: Literal["ask"] = "ask"
-    thread_id: str | None = Field(default=None, max_length=128)
+    thread_id: NavigationLocalId | None = None
     selected_document_ids: list[str] = Field(default_factory=list, max_length=128)
 
 
@@ -303,7 +307,7 @@ class GraphTabTarget(_StrictWorkspaceModel):
 
 class PodcastTabTarget(_StrictWorkspaceModel):
     kind: Literal["podcast"] = "podcast"
-    production_id: str | None = Field(default=None, max_length=128)
+    production_id: NavigationLocalId | None = None
     seed_document_ids: list[str] = Field(default_factory=list, max_length=128)
 
 
