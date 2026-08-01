@@ -10,6 +10,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from api.schemas.vault import (
+    VaultCanvasEdgeResponse,
+    VaultCanvasNodeResponse,
+    VaultCanvasResponse,
     VaultFileResponse,
     VaultLinkResponse,
     VaultMountCreateRequest,
@@ -21,6 +24,7 @@ from api.schemas.vault import (
     VaultTrustImportResponse,
     VaultTrustSummaryResponse,
 )
+from deeper_notebook.vault.canvas import CanvasDocumentError
 from deeper_notebook.vault.repository import VaultMountCreate, VaultProjectionError
 from deeper_notebook.vault.security import VaultSecurityError, approve_vault_root
 from deeper_notebook.vault.trust import TrustManifestError
@@ -56,6 +60,12 @@ def _map_exception(exc: Exception) -> HTTPException:
         return _error(status.HTTP_409_CONFLICT, "vault_scan_in_progress")
     if "vault_read_only" in message or isinstance(exc, PermissionError):
         return _error(status.HTTP_405_METHOD_NOT_ALLOWED, "vault_read_only")
+    if isinstance(exc, CanvasDocumentError):
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "canvas_invalid")
+    if isinstance(exc, LookupError) and "canvas_not_found" in message:
+        return _error(status.HTTP_404_NOT_FOUND, "canvas_not_found")
+    if isinstance(exc, VaultSecurityError) and exc.code == "changed_during_read":
+        return _error(status.HTTP_409_CONFLICT, "canvas_source_changed")
     if isinstance(exc, LookupError) and "vault_note_file_not_found" in message:
         return _error(
             status.HTTP_409_CONFLICT,
@@ -276,6 +286,48 @@ async def get_page(request: Request, vault_id: str, note_id: str) -> VaultPageRe
             backlinks=[
                 VaultLinkResponse.model_validate(item.model_dump())
                 for item in page.backlinks
+            ],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.get(
+    "/vaults/{vault_id}/canvases/{relative_path:path}",
+    response_model=VaultCanvasResponse,
+)
+async def get_canvas(
+    request: Request, vault_id: str, relative_path: str
+) -> VaultCanvasResponse:
+    try:
+        result = await _service(request).read_canvas(vault_id, relative_path)
+        return VaultCanvasResponse(
+            file=VaultFileResponse.model_validate(result.file.model_dump()),
+            source_hash=result.source_hash,
+            nodes=[
+                VaultCanvasNodeResponse(
+                    id=node.id,
+                    type=node.type,
+                    x=node.x,
+                    y=node.y,
+                    width=node.width,
+                    height=node.height,
+                    text=node.text,
+                    file_path=node.file_path,
+                    label=node.label,
+                )
+                for node in result.document.nodes
+            ],
+            edges=[
+                VaultCanvasEdgeResponse(
+                    id=edge.id,
+                    from_node=edge.from_node,
+                    to_node=edge.to_node,
+                    label=edge.label,
+                )
+                for edge in result.document.edges
             ],
         )
     except HTTPException:

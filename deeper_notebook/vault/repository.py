@@ -1900,6 +1900,31 @@ class VaultRepository:
             for row in rows
         ]
 
+    async def get_file(self, vault_id: str, relative_path: str) -> VaultFile:
+        """Return one durable vault file by exact canonical identity."""
+
+        _canonical_vault_relative_path(relative_path)
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT * FROM vault_file
+                WHERE vault_id = $vault_id
+                AND relative_path = $relative_path
+                LIMIT 1;
+                """,
+                {
+                    "vault_id": _db_id(vault_id),
+                    "relative_path": relative_path,
+                },
+            )
+        if not rows:
+            raise LookupError("canvas_not_found")
+        row = rows[0]
+        return _persisted_vault_file(
+            {**row, "note_id": _record_id("note", str(row["id"]))}
+        )
+
     async def get_page(self, vault_id: str, note_id: str) -> VaultPage:
         async with self._connection_factory() as connection:
             notes = await self._query(
