@@ -76,15 +76,15 @@ describe('KnowledgeTabStrip', () => {
     renderTabStrip()
 
     expect(screen.getByRole('tablist', { name: 'Open tabs' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Research' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'Read: Research' })).toHaveAttribute(
       'aria-selected',
       'true',
     )
-    expect(screen.getByRole('tab', { name: 'Research' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'Read: Research' })).toHaveAttribute(
       'tabindex',
       '0',
     )
-    expect(screen.getByRole('tab', { name: 'Plan' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'Read: Plan' })).toHaveAttribute(
       'tabindex',
       '-1',
     )
@@ -93,7 +93,7 @@ describe('KnowledgeTabStrip', () => {
   it('activates a clicked tab without conflating its adjacent close control', () => {
     const { onActivateTab, onCloseTab } = renderTabStrip()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Plan' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Read: Plan' }))
     expect(onActivateTab).toHaveBeenCalledWith('pane-1', 'tab-1')
     expect(onCloseTab).not.toHaveBeenCalled()
 
@@ -106,7 +106,7 @@ describe('KnowledgeTabStrip', () => {
   it('associates every stable tab ID with its pane content panel', () => {
     renderTabStrip()
 
-    expect(screen.getByRole('tab', { name: 'Plan' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'Read: Plan' })).toHaveAttribute(
       'id',
       'knowledge-tab-6:pane-1-5:tab-1',
     )
@@ -187,8 +187,8 @@ describe('KnowledgeTabStrip', () => {
 
     fireEvent.click(closeActiveTab)
 
-    expect(screen.queryByRole('tab', { name: 'Research' })).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Decisions' })).toHaveFocus()
+    expect(screen.queryByRole('tab', { name: 'Read: Research' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Graph: Decisions' })).toHaveFocus()
   })
 
   it('requests focus on the pane fallback after its final tab closes', () => {
@@ -238,14 +238,15 @@ describe('KnowledgeTabStrip', () => {
   })
 
   it.each([
-    { start: 'Decisions', key: 'ArrowRight', target: 'Plan' },
-    { start: 'Plan', key: 'ArrowLeft', target: 'Decisions' },
-    { start: 'Research', key: 'Home', target: 'Plan' },
-    { start: 'Research', key: 'End', target: 'Decisions' },
+    { start: 'Graph: Decisions', key: 'ArrowRight', target: 'Read: Plan', targetTitle: 'Plan' },
+    { start: 'Read: Plan', key: 'ArrowLeft', target: 'Graph: Decisions', targetTitle: 'Decisions' },
+    { start: 'Read: Research', key: 'Home', target: 'Read: Plan', targetTitle: 'Plan' },
+    { start: 'Read: Research', key: 'End', target: 'Graph: Decisions', targetTitle: 'Decisions' },
   ])('moves focus and selection from $start to $target with $key', ({
     start,
     key,
     target,
+    targetTitle,
   }) => {
     const { onActivateTab } = renderTabStrip()
     const startingTab = screen.getByRole('tab', { name: start })
@@ -257,7 +258,7 @@ describe('KnowledgeTabStrip', () => {
     expect(targetTab).toHaveFocus()
     expect(onActivateTab).toHaveBeenCalledWith(
       'pane-1',
-      pane.tabs.find((tab) => tab.title === target)?.id,
+      pane.tabs.find((tab) => tab.title === targetTitle)?.id,
     )
   })
 })

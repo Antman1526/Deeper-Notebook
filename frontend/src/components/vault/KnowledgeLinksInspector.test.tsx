@@ -102,7 +102,7 @@ describe('KnowledgeLinksInspector authority routing', () => {
     vi.clearAllMocks()
     currentOverlayPage = overlayPage
     useKnowledgeWorkspaceStore.getState().replaceWorkspace({
-      version: 1,
+      version: 2,
       activePaneId: 'pane-1',
       nextId: 2,
       panes: {

@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import type { KnowledgePane } from '@/lib/api/knowledge-workspace'
+import type { ResearchMode } from '@/lib/knowledge/research-modes'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 
@@ -36,6 +37,14 @@ export function getKnowledgeTabId(paneId: string, tabId: string): string {
 
 export function getEffectiveKnowledgeTabId(pane: KnowledgePane): string | null {
   return pane.activeTabId ?? pane.tabs[0]?.id ?? null
+}
+
+function modeLabel(tab: KnowledgePane['tabs'][number]): string {
+  const mode = tab.mode ?? (tab.viewMode === 'graph' ? 'graph' : tab.sourceAuthority === 'overlay' ? 'write' : 'read')
+  const labels: Record<ResearchMode, string> = {
+    read: 'Read', write: 'Write', ask: 'Ask', search: 'Search', graph: 'Graph', podcast: 'Podcast',
+  }
+  return labels[mode]
 }
 
 export function KnowledgeTabStrip({
@@ -124,6 +133,7 @@ export function KnowledgeTabStrip({
         const authorityLabel = isOverlay
           ? t('knowledge.overlay.writable')
           : t('knowledge.overlay.externalReadOnly')
+        const accessibleTabName = `${modeLabel(tab)}: ${tab.title}`
 
         return (
           <div
@@ -141,7 +151,7 @@ export function KnowledgeTabStrip({
               id={getKnowledgeTabId(pane.id, tab.id)}
               type="button"
               role="tab"
-              aria-label={tab.title}
+              aria-label={accessibleTabName}
               aria-selected={isActive}
               aria-controls={panelId}
               tabIndex={isActive ? 0 : -1}

@@ -15,10 +15,12 @@ import { VaultLinks } from './VaultLinks'
 
 interface KnowledgeLinksInspectorProps {
   onNavigate: KnowledgeNavigate
+  embedded?: boolean
 }
 
 export function KnowledgeLinksInspector({
   onNavigate,
+  embedded = false,
 }: KnowledgeLinksInspectorProps) {
   const { t } = useTranslation()
   const activePane = useKnowledgeWorkspaceStore(
@@ -137,11 +139,8 @@ export function KnowledgeLinksInspector({
     )
   }
 
-  return (
-    <aside
-      className="space-y-6 border-t p-4 lg:border-l lg:border-t-0"
-      aria-label={t('knowledge.noteLinks')}
-    >
+  const content = (
+    <>
       {linksLoading ? (
         <p className="text-sm text-muted-foreground">
           {t('knowledge.linksLoading')}
@@ -168,6 +167,19 @@ export function KnowledgeLinksInspector({
           />
         </>
       )}
+    </>
+  )
+
+  if (embedded) {
+    return <div className="space-y-6" aria-label={t('knowledge.noteLinks')}>{content}</div>
+  }
+
+  return (
+    <aside
+      className="space-y-6 border-t p-4 lg:border-l lg:border-t-0"
+      aria-label={t('knowledge.noteLinks')}
+    >
+      {content}
     </aside>
   )
 }
