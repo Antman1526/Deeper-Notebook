@@ -36,7 +36,11 @@ export default defineConfig({
     },
     {
       name: 'native-runtime',
-      testMatch: ['e2e/native/**/*.spec.ts', 'e2e/research-core-lab.spec.ts'],
+      testMatch: [
+        'e2e/native/**/*.spec.ts',
+        'e2e/research-core-lab.spec.ts',
+        'e2e/podcast-intelligence-studio.spec.ts',
+      ],
       use: { ...devices['Desktop Chrome'] },
       metadata: {
         proof_boundary: 'native-runtime',
