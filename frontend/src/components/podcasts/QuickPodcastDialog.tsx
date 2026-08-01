@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { podcastsApi } from '@/lib/api/podcasts'
 import type { PodcastReadiness } from '@/lib/types/podcasts'
@@ -27,12 +27,23 @@ export function QuickPodcastDialog() {
   const dismiss = usePodcastStudioStore((state) => state.dismiss)
   const [readiness, setReadiness] = useState<PodcastReadiness | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [episodeProfiles, setEpisodeProfiles] = useState<string[]>([])
+  const [speakerProfiles, setSpeakerProfiles] = useState<string[]>([])
+  const [episodeProfile, setEpisodeProfile] = useState('')
+  const [speakerProfile, setSpeakerProfile] = useState('')
+  const [phase, setPhase] = useState<'review' | 'confirm'>('review')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const submissionKey = useRef<string | null>(null)
   const open = isOpen && destination === 'quick'
 
   useEffect(() => {
     if (!open || selections.length === 0) {
       setReadiness(null)
       setError(null)
+      setPhase('review')
+      setSubmitError(null)
+      submissionKey.current = null
       return
     }
     let current = true
@@ -44,6 +55,54 @@ export function QuickPodcastDialog() {
     )
     return () => { current = false }
   }, [open, selections])
+
+  useEffect(() => {
+    if (!open) return
+    let current = true
+    void Promise.all([
+      podcastsApi.listEpisodeProfiles(),
+      podcastsApi.listSpeakerProfiles(),
+    ]).then(
+      ([episodes, speakers]) => {
+        if (!current) return
+        const episodeNames = episodes.map((profile) => profile.name)
+        const speakerNames = speakers.map((profile) => profile.name)
+        setEpisodeProfiles(episodeNames)
+        setSpeakerProfiles(speakerNames)
+        setEpisodeProfile((currentValue) => currentValue || episodeNames[0] || '')
+        setSpeakerProfile((currentValue) => currentValue || speakerNames[0] || '')
+      },
+      () => current && setError('Podcast profiles are unavailable. No production was started.'),
+    )
+    return () => { current = false }
+  }, [open])
+
+  const canConfirm = Boolean(
+    readiness?.ready && episodeProfile && speakerProfile && readiness.preview.selectionFingerprint,
+  )
+
+  const confirmProduction = async () => {
+    if (!readiness || !canConfirm || submitting) return
+    setSubmitting(true)
+    setSubmitError(null)
+    submissionKey.current ??= `podcast-${crypto.randomUUID()}`
+    try {
+      await podcastsApi.submitStudioPodcast({
+        selections,
+        selectionFingerprint: readiness.preview.selectionFingerprint,
+        idempotencyKey: submissionKey.current,
+        episodeProfile,
+        speakerProfile,
+        episodeName: readiness.preview.entries[0]?.title ?? 'Deeper Notebook podcast',
+        reviewOutline: true,
+      })
+      dismiss()
+    } catch {
+      setSubmitError('Production could not be submitted. Review your readiness and try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && dismiss()}>
@@ -77,9 +136,55 @@ export function QuickPodcastDialog() {
               {readiness.blockedReasons.join(', ')}
             </p>
           ) : null}
+          {phase === 'review' ? (
+            <section aria-labelledby="quick-podcast-profiles">
+              <h2 id="quick-podcast-profiles" className="text-sm font-semibold">Production profiles</h2>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <label className="grid gap-1 text-sm">
+                  Episode profile
+                  <select
+                    value={episodeProfile}
+                    onChange={(event) => setEpisodeProfile(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="">Choose a profile</option>
+                    {episodeProfiles.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-1 text-sm">
+                  Voice profile
+                  <select
+                    value={speakerProfile}
+                    onChange={(event) => setSpeakerProfile(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="">Choose a profile</option>
+                    {speakerProfiles.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </label>
+              </div>
+            </section>
+          ) : (
+            <section aria-labelledby="quick-podcast-confirmation">
+              <h2 id="quick-podcast-confirmation" className="text-sm font-semibold">Confirm production</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This sends one confirmed, fingerprint-checked local production job.
+              </p>
+            </section>
+          )}
+          {submitError ? <p role="alert" className="text-sm text-destructive">{submitError}</p> : null}
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={dismiss}>Cancel</Button>
+          {phase === 'review' ? (
+            <Button type="button" disabled={!canConfirm} onClick={() => setPhase('confirm')}>
+              Continue to confirmation
+            </Button>
+          ) : (
+            <Button type="button" disabled={!canConfirm || submitting} onClick={confirmProduction}>
+              {submitting ? 'Submitting…' : 'Confirm production'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
