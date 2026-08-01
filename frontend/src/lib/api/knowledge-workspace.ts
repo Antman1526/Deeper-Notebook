@@ -4,6 +4,8 @@ import apiClient from './client'
 
 const workspacePath = '/deeper-notebook/workspace/knowledge'
 const workspaceNavigationId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/)
+const knowledgeDocumentId = z.string().regex(/^knowledge_engine_document:[A-Za-z0-9_-]+$/)
+const knowledgeSpaceId = z.string().regex(/^knowledge_engine_space:[A-Za-z0-9_-]+$/)
 
 export const knowledgeViewModeSchema = z.enum([
   'reading',
@@ -36,7 +38,7 @@ export const knowledgeWorkspaceNavigationWireSchema = z.object({
   search_query: z.string().max(512).default(''),
   search_mode: z.enum(['exact', 'text', 'semantic']).default('text'),
   active_draft_id: z.string().min(1).max(128).nullable().default(null),
-  selected_space_ids: z.array(z.string().regex(/^knowledge_engine_space:[A-Za-z0-9_-]+$/)).max(32).default([]),
+  selected_space_ids: z.array(knowledgeSpaceId).max(32).default([]),
   authority_filters: z.array(knowledgeAuthorityFilterSchema).max(2).default([]),
   metrics_visible: z.boolean().default(true),
 }).strict().default({
@@ -75,7 +77,7 @@ export const openKnowledgeTabSchema = z.object({
   relativePath: canonicalVaultRelativePathSchema,
   viewMode: knowledgeViewModeSchema.optional(),
   sourceAuthority: knowledgeSourceAuthoritySchema.optional(),
-  knowledgeDocumentId: z.string().regex(/^knowledge_engine_document:[A-Za-z0-9_-]+$/).nullable().optional(),
+  knowledgeDocumentId: knowledgeDocumentId.nullable().optional(),
   graphViewport: graphViewportSchema.nullable().optional(),
 }).strict()
 
@@ -87,7 +89,7 @@ export const knowledgeTabWireSchema = z.object({
   relative_path: canonicalVaultRelativePathSchema,
   view_mode: knowledgeViewModeSchema,
   source_authority: knowledgeSourceAuthoritySchema.default('external-vault'),
-  knowledge_document_id: z.string().regex(/^knowledge_engine_document:[A-Za-z0-9_-]+$/).nullable().default(null),
+  knowledge_document_id: knowledgeDocumentId.nullable().default(null),
   graph_viewport: graphViewportSchema.nullable().default({ x: 0, y: 0, zoom: 1 }),
 }).strict()
 
@@ -212,10 +214,10 @@ const documentTabTargetWireSchema = z.object({
 }).strict()
 const workspaceTabTargetWireSchema = z.discriminatedUnion('kind', [
   documentTabTargetWireSchema,
-  z.object({ kind: z.literal('ask'), thread_id: workspaceNavigationId.nullable().default(null), selected_document_ids: z.array(z.string()).max(128).default([]) }).strict(),
-  z.object({ kind: z.literal('search'), query: z.string().max(512).default(''), search_mode: z.enum(['exact', 'text', 'semantic']).default('text'), space_ids: z.array(z.string()).max(32).default([]), authority_kinds: z.array(knowledgeAuthorityFilterSchema).max(2).default([]) }).strict(),
-  z.object({ kind: z.literal('graph'), root_document_id: z.string().max(128).nullable().default(null), space_ids: z.array(z.string()).max(32).default([]), relation_kinds: z.array(z.string()).max(32).default([]), viewport: graphViewportSchema.default({ x: 0, y: 0, zoom: 1 }), origin: documentTabTargetWireSchema.nullable().default(null) }).strict(),
-  z.object({ kind: z.literal('podcast'), production_id: workspaceNavigationId.nullable().default(null), seed_document_ids: z.array(z.string()).max(128).default([]) }).strict(),
+  z.object({ kind: z.literal('ask'), thread_id: workspaceNavigationId.nullable().default(null), selected_document_ids: z.array(knowledgeDocumentId).max(128).default([]) }).strict(),
+  z.object({ kind: z.literal('search'), query: z.string().max(512).default(''), search_mode: z.enum(['exact', 'text', 'semantic']).default('text'), space_ids: z.array(knowledgeSpaceId).max(32).default([]), authority_kinds: z.array(knowledgeAuthorityFilterSchema).max(2).default([]) }).strict(),
+  z.object({ kind: z.literal('graph'), root_document_id: knowledgeDocumentId.nullable().default(null), space_ids: z.array(knowledgeSpaceId).max(32).default([]), relation_kinds: z.array(z.string()).max(32).default([]), viewport: graphViewportSchema.default({ x: 0, y: 0, zoom: 1 }), origin: documentTabTargetWireSchema.nullable().default(null) }).strict(),
+  z.object({ kind: z.literal('podcast'), production_id: workspaceNavigationId.nullable().default(null), seed_document_ids: z.array(knowledgeDocumentId).max(128).default([]) }).strict(),
 ])
 const knowledgeTabV2WireSchema = z.object({ id: z.string().min(1).max(128), mode: researchModeSchema, title: z.string().min(1).max(512), target: workspaceTabTargetWireSchema }).strict()
 const rawKnowledgeWorkspaceV2WireSchema = z.object({
