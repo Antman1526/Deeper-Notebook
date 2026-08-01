@@ -1,10 +1,40 @@
 import sys
+import threading
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
 from scripts import verify_navigation_productivity as verifier
 from scripts.verify_navigation_productivity import run_verifier, verifier_config
+
+
+class _DirectHealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler contract
+        if self.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, *_args: object) -> None:
+        return
+
+
+@contextmanager
+def _direct_health_server() -> Iterator[str]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _DirectHealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
 
 
 def test_verifier_requires_persistent_api_and_surreal_runtime(tmp_path: Path) -> None:
@@ -13,6 +43,11 @@ def test_verifier_requires_persistent_api_and_surreal_runtime(tmp_path: Path) ->
     assert result.report["status"] == "blocked"
     assert result.report["external_writes"] == 0
     assert result.report["source_hashes_unchanged"] is True
+
+
+def test_verifier_probes_the_native_api_direct_health_endpoint() -> None:
+    with _direct_health_server() as api_url:
+        assert verifier._api_health(api_url) == (True, 200)
 
 
 def test_verifier_rejects_real_second_brain_roots(tmp_path: Path) -> None:
