@@ -48,11 +48,21 @@ describe('podcast Studio API', () => {
       idempotencyKey: 'podcast-submit-ui-1',
       episodeProfile: 'Local Episode', speakerProfile: 'Local Voice',
       episodeName: 'Research synthesis',
+      editorialBrief: {
+        centralQuestion: 'What should change after this research?',
+        audience: 'Research team',
+        outline: ['Context', 'Decision'],
+      },
     })).resolves.toMatchObject({ jobId: 'command:podcast-one' })
 
     expect(apiClient.post).toHaveBeenCalledWith('/podcasts/studio/submit', expect.objectContaining({
       selections: [{ kind: 'notebook', notebook_id: 'notebook:research' }],
       selection_fingerprint: 'a'.repeat(64), confirmed: true,
+      editorial_brief: {
+        central_question: 'What should change after this research?',
+        audience: 'Research team',
+        outline: ['Context', 'Decision'],
+      },
     }))
     expect(JSON.stringify(vi.mocked(apiClient.post).mock.calls[0][1])).not.toContain('/Users/')
   })
