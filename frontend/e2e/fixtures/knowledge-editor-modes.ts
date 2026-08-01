@@ -266,6 +266,58 @@ function fixtureDescriptorForDocumentId(documentId: unknown): Record<string, unk
   return null;
 }
 
+const fixtureNavigationId = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
+const fixtureDocumentId = /^knowledge_engine_document:[A-Za-z0-9_-]+$/;
+
+function validFixtureOpaqueId(value: unknown): boolean {
+  return value === null || (typeof value === "string" && fixtureNavigationId.test(value));
+}
+
+function validateNamedWorkspaceSnapshot(snapshot: unknown): string | null {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return "snapshot_invalid";
+  const value = snapshot as Record<string, unknown>;
+  if (value.version !== 1 || !value.panes || typeof value.panes !== "object" || Array.isArray(value.panes)) return "snapshot_invalid";
+  for (const pane of Object.values(value.panes as Record<string, unknown>)) {
+    if (!pane || typeof pane !== "object" || Array.isArray(pane)) return "pane_invalid";
+    const tabs = (pane as Record<string, unknown>).tabs;
+    if (!Array.isArray(tabs)) return "tabs_invalid";
+    for (const tab of tabs) {
+      if (!tab || typeof tab !== "object" || Array.isArray(tab)) return "tab_invalid";
+      const candidate = tab as Record<string, unknown>;
+      const target = candidate.target;
+      if (!target || typeof target !== "object" || Array.isArray(target)) return "target_invalid";
+      const targetValue = target as Record<string, unknown>;
+      const kind = targetValue.kind;
+      const mode = candidate.mode;
+      const viewMode = candidate.view_mode;
+      if (kind === "document") {
+        if (!fixtureDocumentId.test(String(targetValue.document_id)) || !["read", "write"].includes(String(mode))) return "document_mode_invalid";
+        if (mode === "write" && viewMode !== "source") return "document_write_invalid";
+        continue;
+      }
+      if (kind === "search") {
+        const query = targetValue.query;
+        if (mode !== "search" || typeof query !== "string" || query.length > 512 || (query !== "" && query.trim() === "")) return "search_invalid";
+        continue;
+      }
+      if (kind === "graph") {
+        if (mode !== "graph" || (targetValue.root_document_id !== null && !fixtureDocumentId.test(String(targetValue.root_document_id)))) return "graph_invalid";
+        continue;
+      }
+      if (kind === "ask") {
+        if (mode !== "ask" || !validFixtureOpaqueId(targetValue.thread_id)) return "ask_invalid";
+        continue;
+      }
+      if (kind === "podcast") {
+        if (mode !== "podcast" || !validFixtureOpaqueId(targetValue.production_id)) return "podcast_invalid";
+        continue;
+      }
+      return "target_kind_invalid";
+    }
+  }
+  return null;
+}
+
 function restorePlanForFixtureWorkspace(workspace: Record<string, unknown>): Record<string, unknown> {
   const snapshot = workspace.snapshot as Record<string, unknown>;
   const panes = snapshot.panes as Record<string, Record<string, unknown>>;
@@ -619,6 +671,11 @@ export async function fulfillKnowledgeRequest(
     if (!(await allowRequestMethod(route, ["GET", "HEAD", "POST"], unexpectedApiTraffic))) return;
     if (method === "POST") {
       const body = request.postDataJSON() as Record<string, unknown>;
+      const invalidSnapshot = validateNamedWorkspaceSnapshot(body.snapshot);
+      if (invalidSnapshot) {
+        await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: { code: invalidSnapshot } }) });
+        return;
+      }
       const ordinal = state.namedWorkspaces.length + 1;
       const workspace = {
         schema_version: 1,

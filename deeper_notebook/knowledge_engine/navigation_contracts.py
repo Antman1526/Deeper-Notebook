@@ -148,7 +148,7 @@ class BlockTarget(_Strict):
 
 class SearchTarget(_Strict):
     kind: Literal["search"] = "search"
-    query: str = Field(min_length=1, max_length=512)
+    query: str = Field(min_length=0, max_length=512)
     search_mode: Literal["exact", "text", "semantic"] = "text"
     space_ids: list[KnowledgeSpaceId] = Field(default_factory=list, max_length=32)
     authority_kinds: list[AuthorityKind] = Field(default_factory=list, max_length=2)
@@ -157,6 +157,8 @@ class SearchTarget(_Strict):
     @field_validator("query")
     @classmethod
     def query_is_visible(cls, value: str) -> str:
+        if value == "":
+            return value
         return _display_text(value, label="query", limit=512)
 
     @field_validator("tags")
@@ -167,13 +169,13 @@ class SearchTarget(_Strict):
 
 class AskTarget(_Strict):
     kind: Literal["ask"] = "ask"
-    thread_id: str | None = Field(default=None, max_length=128)
+    thread_id: NavigationLocalId | None = None
     selected_document_ids: list[KnowledgeDocumentId] = Field(default_factory=list, max_length=128)
 
 
 class PodcastTarget(_Strict):
     kind: Literal["podcast"] = "podcast"
-    production_id: str | None = Field(default=None, max_length=128)
+    production_id: NavigationLocalId | None = None
     seed_document_ids: list[KnowledgeDocumentId] = Field(default_factory=list, max_length=128)
 
 
@@ -223,13 +225,14 @@ class NamedWorkspaceTab(_Strict):
     @model_validator(mode="after")
     def legacy_mode_is_derived(self) -> "NamedWorkspaceTab":
         derived = {
-            "document": "read", "graph": "graph", "search": "search",
-            "ask": "ask", "podcast": "podcast",
-        }.get(
-            self.target.kind, "read"
-        )
+            "document": "read", "block": "read", "graph": "graph",
+            "search": "search", "ask": "ask", "podcast": "podcast",
+        }.get(self.target.kind, "read")
         if self.mode is None:
             object.__setattr__(self, "mode", derived)
+        elif self.target.kind == "document" and self.mode in {"read", "write"}:
+            if self.mode == "write" and self.view_mode != "source":
+                raise ValueError("workspace mode must match target kind")
         elif self.mode != derived:
             raise ValueError("workspace mode must match target kind")
         return self

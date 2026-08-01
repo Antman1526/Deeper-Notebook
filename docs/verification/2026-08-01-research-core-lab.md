@@ -226,3 +226,35 @@ surface with synthetic API fixtures; it is not evidence of a packaged desktop
 launch or a user-owned persistent native application. External vault writes,
 provider execution, model-library mutation, and credentials remain out of
 scope.
+
+## P1 named-target contract repair — 2026-08-01
+
+The named-workspace contract now accepts a document target in explicit
+`read` or `write` mode (write requires source view), preserves an intentionally
+empty Search query, and carries rootless Graph, Ask, and Podcast targets
+without substituting document identities. Ask `thread_id` and Podcast
+`production_id` are bounded opaque navigation identifiers, rejecting paths,
+controls, and raw content. Restored content-free modes are marked app-owned,
+not external read-only.
+
+The strict browser fixture validates the named snapshot's target/mode pair
+before storing it and returns `422` for invalid combinations, including unsafe
+opaque IDs. It therefore cannot make the browser proof pass by accepting an
+invalid client payload.
+
+```sh
+uv run pytest tests/test_knowledge_navigation_contracts.py \
+  tests/test_knowledge_navigation_service.py -q
+# 48 passed
+
+(cd frontend && npx vitest run src/components/vault/KnowledgeExplorer.test.tsx \
+  src/lib/api/knowledge-navigation.test.ts --pool=forks --maxWorkers=1 \
+  && npx tsc --noEmit)
+# 62 tests passed; TypeScript passed
+
+(cd frontend && npx playwright test e2e/research-core-lab.spec.ts --project=native-runtime)
+# 4 passed
+```
+
+This remains fixture-backed browser acceptance, not a packaged-app launch or
+live persistence-server proof.

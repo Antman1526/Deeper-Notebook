@@ -128,7 +128,7 @@ function createResearchModeTab(
 ): KnowledgeTab | null {
   const base = {
     id, vaultId: '', noteId: '', relativePath: '', viewMode: 'reading' as const,
-    sourceAuthority: 'external-vault' as const, knowledgeDocumentId: null, graphViewport: null,
+    sourceAuthority: 'overlay' as const, knowledgeDocumentId: null, graphViewport: null,
   }
   const document = activeTab?.target?.kind === 'document' ? activeTab.target : null
   if (mode === 'read' || mode === 'write') {
@@ -170,17 +170,14 @@ function namedTargetForTab(
   // Named workspaces retain V2 research targets directly. This keeps
   // non-document modes durable without fabricating document identities.
   if (tab.target?.kind === 'search') {
-    const query = tab.target.query.trim()
-    return query
-      ? {
-          kind: 'search',
-          query,
-          searchMode: tab.target.search_mode,
-          spaceIds: tab.target.space_ids,
-          authorityKinds: tab.target.authority_kinds,
-          tags: [],
-        }
-      : null
+    return {
+      kind: 'search',
+      query: tab.target.query,
+      searchMode: tab.target.search_mode,
+      spaceIds: tab.target.space_ids,
+      authorityKinds: tab.target.authority_kinds,
+      tags: [],
+    }
   }
   if (tab.target?.kind === 'ask') {
     return {
@@ -271,7 +268,7 @@ async function namedSnapshotFromCurrentWorkspace(): Promise<NamedWorkspaceSnapsh
               ? 'ask'
               : target.kind === 'podcast'
                 ? 'podcast'
-            : tab.mode === 'write' ? 'write' : 'read'
+                : target.kind === 'block' ? 'read' : tab.mode === 'write' ? 'write' : 'read'
         return {
           id: tab.id,
           target,
@@ -308,7 +305,7 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
           title: tab.displayLabel,
           relativePath: '',
           viewMode: 'reading' as const,
-          sourceAuthority: 'external-vault' as const,
+          sourceAuthority: 'overlay' as const,
           knowledgeDocumentId: null,
           graphViewport: null,
           mode: 'search' as const,
@@ -327,7 +324,7 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
           title: tab.displayLabel,
           relativePath: '',
           viewMode: 'reading' as const,
-          sourceAuthority: 'external-vault' as const,
+          sourceAuthority: 'overlay' as const,
           knowledgeDocumentId: null,
           graphViewport: null,
           mode: 'ask' as const,
@@ -344,7 +341,7 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
           title: tab.displayLabel,
           relativePath: '',
           viewMode: 'reading' as const,
-          sourceAuthority: 'external-vault' as const,
+          sourceAuthority: 'overlay' as const,
           knowledgeDocumentId: null,
           graphViewport: null,
           mode: 'podcast' as const,
@@ -352,6 +349,32 @@ function workspaceFromRestorePlan(plan: WorkspaceRestorePlan): KnowledgeWorkspac
             kind: 'podcast' as const,
             production_id: tab.target.productionId,
             seed_document_ids: tab.target.seedDocumentIds,
+          },
+        }]
+        if (tab.target.kind === 'graph' && !tab.targetDocument) return [{
+          id: tab.id,
+          vaultId: '',
+          noteId: '',
+          title: tab.displayLabel,
+          relativePath: '',
+          viewMode: 'graph' as const,
+          sourceAuthority: 'overlay' as const,
+          knowledgeDocumentId: tab.target.rootDocumentId,
+          graphViewport: tab.target.viewport,
+          graphBookmarkContext: {
+            rootDocumentId: tab.target.rootDocumentId ?? '',
+            spaceIds: tab.target.spaceIds,
+            relationKinds: tab.target.relationKinds,
+            viewport: tab.target.viewport,
+          },
+          mode: 'graph' as const,
+          target: {
+            kind: 'graph' as const,
+            root_document_id: tab.target.rootDocumentId,
+            space_ids: tab.target.spaceIds,
+            relation_kinds: tab.target.relationKinds,
+            viewport: tab.target.viewport,
+            origin: null,
           },
         }]
         if (!tab.targetDocument) return []
