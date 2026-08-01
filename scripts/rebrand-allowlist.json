@@ -616,7 +616,7 @@
           "content"
         ]
       },
-      "coverage_sha256": "18d29edf646299162dfb8995aa7a27bc63a6bfa39d0386a70cda6783f6c71fc6"
+      "coverage_sha256": "ac1e50b5fe3af7628d2fe57ef6e5c0504cd1c74cd7fcfcf406c00c0cf040631f"
     },
     "launcher-pref-env-migration-v1": {
       "kind": "env_alias",
@@ -667,7 +667,7 @@
           "path"
         ]
       },
-      "coverage_sha256": "da736c409b6d40a8ca483672d360bbdf55b9815f8a6a64f8d10aa378f7de77de"
+      "coverage_sha256": "9bc29a0306b25b65e5ba98ef8362e1aeb22179f1418e89910a61c0946105e50b"
     },
     "legacy-artifact-probe-v1": {
       "kind": "legacy_artifact_probe",
@@ -825,7 +825,7 @@
           "path"
         ]
       },
-      "coverage_sha256": "23b7777babf0cf82661dc1b2b1acb9a111277fc4fe0e1fe2235cb52d5e76e2eb"
+      "coverage_sha256": "3e312b872a7a1eaa2364fb1eddf9a8717831341bfb8a8be9a46d071dbad11e88"
     },
     "python-symbol-compat-v1": {
       "kind": "public_symbol",
@@ -14088,7 +14088,7 @@
       "path": "desktop/build/pyinstaller.spec",
       "pattern": "open_notebook",
       "source": "content",
-      "line": 103,
+      "line": 113,
       "column": 17,
       "context_sha256": "c96b1b059d62b35f8a7c408fa72a7ae88aac600499ec9ffe095a79bd9f732f2a",
       "category": "compatibility_alias",
@@ -14096,7 +14096,7 @@
         "path": "desktop/build/pyinstaller.spec",
         "pattern": "open_notebook",
         "source": "content",
-        "line": 103,
+        "line": 113,
         "column": 17,
         "context_sha256": "c96b1b059d62b35f8a7c408fa72a7ae88aac600499ec9ffe095a79bd9f732f2a",
         "category": "compatibility_alias",
@@ -14108,7 +14108,7 @@
       "path": "desktop/build/pyinstaller.spec",
       "pattern": "/api/onp",
       "source": "content",
-      "line": 151,
+      "line": 162,
       "column": 46,
       "context_sha256": "aff3224654a0a726759e64264c7a450aae54acdbe707f39b32133356e58e5cd4",
       "category": "compatibility_alias",
@@ -14116,7 +14116,7 @@
         "path": "desktop/build/pyinstaller.spec",
         "pattern": "/api/onp",
         "source": "content",
-        "line": 151,
+        "line": 162,
         "column": 46,
         "context_sha256": "aff3224654a0a726759e64264c7a450aae54acdbe707f39b32133356e58e5cd4",
         "category": "compatibility_alias",
@@ -14128,7 +14128,7 @@
       "path": "desktop/build/pyinstaller.spec",
       "pattern": "/onp/",
       "source": "content",
-      "line": 151,
+      "line": 162,
       "column": 50,
       "context_sha256": "aff3224654a0a726759e64264c7a450aae54acdbe707f39b32133356e58e5cd4",
       "category": "compatibility_alias",
@@ -14136,7 +14136,7 @@
         "path": "desktop/build/pyinstaller.spec",
         "pattern": "/onp/",
         "source": "content",
-        "line": 151,
+        "line": 162,
         "column": 50,
         "context_sha256": "aff3224654a0a726759e64264c7a450aae54acdbe707f39b32133356e58e5cd4",
         "category": "compatibility_alias",
@@ -14148,7 +14148,7 @@
       "path": "desktop/build/pyinstaller.spec",
       "pattern": "open-notebook-plus",
       "source": "content",
-      "line": 221,
+      "line": 232,
       "column": 43,
       "context_sha256": "e993da3ed5a30b9a1b71e7b7dd14bc8dcc38cb2738b9be33ce60fa818760f70d",
       "category": "compatibility_alias",
@@ -14156,7 +14156,7 @@
         "path": "desktop/build/pyinstaller.spec",
         "pattern": "open-notebook-plus",
         "source": "content",
-        "line": 221,
+        "line": 232,
         "column": 43,
         "context_sha256": "e993da3ed5a30b9a1b71e7b7dd14bc8dcc38cb2738b9be33ce60fa818760f70d",
         "category": "compatibility_alias",
