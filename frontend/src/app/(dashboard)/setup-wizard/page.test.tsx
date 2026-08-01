@@ -38,7 +38,9 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { useDeepHealth } from '@/lib/hooks/use-deep-health'
-import SetupWizardPage, { WIZARD_COMPLETED_KEY } from './page'
+import SetupWizardPage from './page'
+
+const WIZARD_COMPLETED_KEY = 'wizard_completed'
 
 const HEALTHY = {
   status: 'healthy' as const,
