@@ -6,6 +6,7 @@ import pytest
 
 from deeper_notebook.podcasts.selection_contracts import (
     AppNoteSelection,
+    AppSourceSelection,
     GraphSelection,
     KnowledgeDocumentSelection,
     NotebookSelection,
@@ -13,6 +14,7 @@ from deeper_notebook.podcasts.selection_contracts import (
 from deeper_notebook.podcasts.selection_service import (
     AppNotebookPodcastSelectionResolver,
     AppNotePodcastSelectionResolver,
+    AppSourcePodcastSelectionResolver,
     KnowledgeEnginePodcastSelectionResolver,
     PodcastSelectionService,
     ResolvedSelectionItem,
@@ -271,3 +273,29 @@ async def test_app_note_resolver_keeps_canonical_external_notes_out_of_app_owned
     assert items[0].state == "unavailable"
     assert items[0].reason == "external_note_requires_knowledge_selection"
     assert items[0].content == ""
+
+
+@pytest.mark.asyncio
+async def test_app_source_resolver_uses_stored_insights_without_a_source_path():
+    class Insight:
+        content = "Source insight"
+
+    class Source:
+        id = "source:research"
+        title = "Research source"
+        full_text = "Full source text"
+
+        async def get_insights(self):
+            return [Insight()]
+
+    async def load_source(source_id: str):
+        assert source_id == "source:research"
+        return Source()
+
+    items = await AppSourcePodcastSelectionResolver(source_loader=load_source).resolve(
+        AppSourceSelection(source_id="source:research", inclusion_mode="insights")
+    )
+
+    assert items[0].authority_kind == "app_owned"
+    assert items[0].content == "Source insight"
+    assert items[0].relative_locator is None
