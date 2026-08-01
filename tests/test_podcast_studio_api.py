@@ -357,9 +357,13 @@ async def test_preview_rejects_an_unavailable_selection_kind_without_side_effect
         response = await client.post(
             "/api/podcasts/selection/preview",
             json={
-                "selections": [
-                    {"kind": "app_source", "source_id": "source:unavailable"}
-                ]
+                    "selections": [
+                        {
+                            "kind": "knowledge_collection",
+                            "collection_kind": "folder",
+                            "collection_id": "knowledge_bookmark_folder:unavailable",
+                        }
+                    ]
             },
         )
 
