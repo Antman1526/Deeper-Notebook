@@ -6,6 +6,7 @@ export const vaultKeys = {
   all: ['vaults'] as const,
   detail: (id: string) => ['vaults', id] as const,
   files: (id: string) => ['vaults', id, 'files'] as const,
+  canvas: (id: string, relativePath: string) => ['vaults', id, 'canvases', relativePath] as const,
   page: (id: string, noteId: string) => ['vaults', id, 'pages', noteId] as const,
   backlinks: (id: string, noteId: string) => ['vaults', id, 'pages', noteId, 'backlinks'] as const,
   graph: (id: string, centerNoteId?: string) => centerNoteId ? ['vaults', id, 'graph', centerNoteId] as const : ['vaults', id, 'graph'] as const,
@@ -13,6 +14,13 @@ export const vaultKeys = {
 
 export function useVaults() { return useQuery({ queryKey: vaultKeys.all, queryFn: vaultApi.list }) }
 export function useVaultFiles(vaultId?: string) { return useQuery({ queryKey: vaultKeys.files(vaultId ?? ''), queryFn: () => vaultApi.files(vaultId!), enabled: Boolean(vaultId) }) }
+export function useVaultCanvas(vaultId?: string, relativePath?: string, enabled = true) {
+  return useQuery({
+    queryKey: vaultKeys.canvas(vaultId ?? '', relativePath ?? ''),
+    queryFn: () => vaultApi.canvas(vaultId!, relativePath!),
+    enabled: Boolean(vaultId && relativePath && enabled),
+  })
+}
 export function useVaultPage(vaultId?: string, noteId?: string) { return useQuery({ queryKey: vaultKeys.page(vaultId ?? '', noteId ?? ''), queryFn: () => vaultApi.page(vaultId!, noteId!), enabled: Boolean(vaultId && noteId) }) }
 export function useVaultPagePreview(vaultId?: string, noteId?: string, enabled = false) {
   return useQuery({

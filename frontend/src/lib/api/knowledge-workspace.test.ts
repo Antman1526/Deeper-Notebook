@@ -7,6 +7,7 @@ vi.mock('./client', () => ({
 import apiClient from './client'
 import {
   defaultKnowledgeWorkspace,
+  knowledgeViewModeSchema,
   knowledgeWorkspaceApi,
   knowledgeWorkspaceWireSchema,
   openKnowledgeTabSchema,
@@ -66,6 +67,10 @@ describe('knowledge workspace API boundary', () => {
   })
   beforeEach(() => {
     vi.resetAllMocks()
+  })
+
+  it('accepts Canvas as a persisted knowledge view mode', () => {
+    expect(knowledgeViewModeSchema.parse('canvas')).toBe('canvas')
   })
 
   it.each([
