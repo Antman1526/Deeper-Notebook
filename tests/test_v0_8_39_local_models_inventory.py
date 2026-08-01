@@ -13,6 +13,8 @@ Backend-only this phase. Covers:
 """
 from __future__ import annotations
 
+import hashlib
+import inspect
 from pathlib import Path
 
 import pytest
@@ -29,6 +31,60 @@ from deeper_notebook.local_models.inventory import (
     LocalModelInfo,
     enumerate_models,
 )
+
+
+def test_local_model_readiness_contract_is_public():
+    """Task 5 exposes one pure readiness classifier for routing gates."""
+    import deeper_notebook.local_models as local_models
+
+    assert hasattr(local_models, "classify_model_readiness")
+
+
+def test_inventory_accepts_explicit_external_root_trust():
+    """Discovery must not infer permission to traverse an external symlink."""
+    assert "trusted_external_roots" in inspect.signature(enumerate_models).parameters
+
+
+def test_inventory_never_recurses_an_untrusted_external_stt_symlink(tmp_path):
+    """The exact selected-link and resolved-target fingerprints are required."""
+    from deeper_notebook.local_models.contracts import ExternalModelRootTrust
+    from deeper_notebook.local_models.inventory import model_root_fingerprint
+
+    selected_root = tmp_path / "AI_Models"
+    selected_root.mkdir()
+    external_stt = tmp_path / "external-stt"
+    external_stt.mkdir()
+    voice = external_stt / "whisper-small-q5_k_m.gguf"
+    voice.write_bytes(b"owner-managed-stt-weights")
+    link = selected_root / "STT"
+    link.symlink_to(external_stt, target_is_directory=True)
+    fixture_hash = hashlib.sha256(voice.read_bytes()).hexdigest()
+    trust = ExternalModelRootTrust(
+        selected_root_fingerprint=model_root_fingerprint(link),
+        resolved_target_fingerprint=model_root_fingerprint(external_stt),
+    )
+
+    assert enumerate_models(selected_root) == []
+    trusted_rows = enumerate_models(
+        selected_root,
+        trusted_external_roots=[trust],
+    )
+
+    assert [row.name for row in trusted_rows] == ["whisper-small-q5_k_m"]
+    assert hashlib.sha256(voice.read_bytes()).hexdigest() == fixture_hash
+
+
+def test_inventory_never_follows_an_untrusted_external_mlx_root(tmp_path):
+    selected_root = tmp_path / "AI_Models"
+    selected_root.mkdir()
+    external_mlx = tmp_path / "external-mlx"
+    repo = external_mlx / "mlx-community__outside-7B-4bit"
+    repo.mkdir(parents=True)
+    (repo / "config.json").write_text('{"model_type": "qwen"}')
+    (repo / "model.safetensors").write_bytes(b"external MLX weights")
+    (selected_root / "MLX").symlink_to(external_mlx, target_is_directory=True)
+
+    assert enumerate_models(selected_root) == []
 
 # ---------------------------------------------------------------------------
 # parse_quant_from_filename
