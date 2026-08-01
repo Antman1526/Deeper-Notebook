@@ -167,7 +167,7 @@ test.describe('Research Core Lab browser acceptance', () => {
             layout: { type: 'pane', pane_id: 'pane-1' },
             navigation: {
               utility_mode: 'workspaces', sidebar_width: 400,
-              bookmark_tags: ['  Research  ', 'research'],
+              bookmark_tags: ['Straße', 'STRASSE', '  Research  ', 'research'],
               selected_space_ids: ['knowledge_engine_space:primary'],
               metrics_visible: false,
             },
@@ -193,7 +193,7 @@ test.describe('Research Core Lab browser acceptance', () => {
 
     const expectedNavigation = {
       utility_mode: 'workspaces', sidebar_visible: true, sidebar_width: 400,
-      active_bookmark_folder_id: null, bookmark_tags: ['Research'], source_tree_query: '',
+      active_bookmark_folder_id: null, bookmark_tags: ['Straße', 'Research'], source_tree_query: '',
       search_query: '', search_mode: 'text', active_draft_id: null,
       selected_space_ids: ['knowledge_engine_space:primary'], authority_filters: [], metrics_visible: false,
     }
