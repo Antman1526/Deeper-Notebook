@@ -80,6 +80,46 @@ class _Navigation:
             },
         )()
 
+    async def list_folders(self):
+        return [
+            type(
+                "Folder",
+                (),
+                {
+                    "id": "knowledge_bookmark_folder:research",
+                    "parent_folder_id": None,
+                },
+            )()
+        ]
+
+    async def list_bookmarks(self, filters, cursor, limit):
+        assert filters.folder_id == "knowledge_bookmark_folder:research"
+        assert cursor is None
+        assert limit == 100
+        return type(
+            "BookmarkPage",
+            (),
+            {
+                "items": [
+                    type(
+                        "Bookmark",
+                        (),
+                        {
+                            "target": type(
+                                "DocumentTarget",
+                                (),
+                                {
+                                    "kind": "document",
+                                    "document_id": "knowledge_engine_document:external",
+                                },
+                            )(),
+                        },
+                    )()
+                ],
+                "next_cursor": None,
+            },
+        )()
+
 
 class _Notebook:
     id = "notebook:research"
@@ -253,6 +293,32 @@ async def test_preview_resolves_a_saved_bookmark_without_exposing_target_body(
     assert response.status_code == 200
     assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"
     assert response.json()["entries"][0]["authority_kind"] == "external_read_only"
+    assert "This body is server-resolved only." not in response.text
+
+
+@pytest.mark.asyncio
+async def test_preview_resolves_a_saved_folder_without_exposing_target_body(
+    app_with_knowledge_engine: FastAPI,
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/selection/preview",
+            json={
+                "selections": [
+                    {
+                        "kind": "knowledge_collection",
+                        "collection_kind": "folder",
+                        "collection_id": "knowledge_bookmark_folder:research",
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"
     assert "This body is server-resolved only." not in response.text
 
 
@@ -517,7 +583,7 @@ async def test_preview_has_a_stable_no_engine_failure_without_source_details() -
 
 
 @pytest.mark.asyncio
-async def test_preview_rejects_an_unavailable_selection_kind_without_side_effects(
+async def test_preview_reports_a_missing_saved_folder_without_side_effects(
     app_with_knowledge_engine: FastAPI,
 ) -> None:
     async with AsyncClient(
@@ -537,5 +603,5 @@ async def test_preview_rejects_an_unavailable_selection_kind_without_side_effect
             },
         )
 
-    assert response.status_code == 422
-    assert response.json() == {"detail": {"code": "podcast_selection_unavailable"}}
+    assert response.status_code == 404
+    assert response.json() == {"detail": {"code": "podcast_selection_not_found"}}
