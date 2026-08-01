@@ -187,6 +187,15 @@ function workspaceFingerprint(document: KnowledgeWorkspaceDocument): string | nu
   }
 }
 
+function documentTarget(tab: KnowledgePane['tabs'][number], renderMode = tab.viewMode) {
+  return {
+    kind: 'document' as const, container_id: tab.vaultId, note_id: tab.noteId,
+    title: tab.title, relative_locator: tab.relativePath,
+    authority: tab.sourceAuthority, knowledge_document_id: tab.knowledgeDocumentId,
+    render_mode: renderMode === 'graph' ? 'reading' as const : renderMode,
+  }
+}
+
 export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set, get) => ({
   ...defaultKnowledgeWorkspace(),
   hydrated: false,
@@ -453,8 +462,26 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
         [paneId]: {
           ...pane,
           tabs: pane.tabs.map((candidate) =>
-            candidate.id === tabId
-              ? { ...candidate, viewMode: parsedMode.data }
+            candidate.id === tabId ? (() => {
+              const next = { ...candidate, viewMode: parsedMode.data }
+              if (parsedMode.data === 'graph') {
+                return {
+                  ...next, mode: 'graph' as const,
+                  target: {
+                    kind: 'graph' as const,
+                    root_document_id: candidate.knowledgeDocumentId,
+                    space_ids: [], relation_kinds: [],
+                    viewport: candidate.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+                    origin: documentTarget(candidate, 'reading'),
+                  },
+                }
+              }
+              return {
+                ...next,
+                mode: candidate.sourceAuthority === 'overlay' ? 'write' as const : 'read' as const,
+                target: documentTarget(next),
+              }
+            })()
               : candidate),
         },
       },
@@ -476,7 +503,12 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     )) return
     set({ revision: state.revision + 1, panes: { ...state.panes, [paneId]: {
       ...pane, tabs: pane.tabs.map((candidate) => candidate.id === tabId
-        ? { ...candidate, graphViewport: { ...parsed } } : candidate),
+        ? {
+            ...candidate, graphViewport: { ...parsed },
+            target: candidate.mode === 'graph' && candidate.target.kind === 'graph'
+              ? { ...candidate.target, viewport: { ...parsed } }
+              : candidate.target,
+          } : candidate),
     } } })
   },
 

@@ -104,6 +104,15 @@ def test_workspace_v2_rejects_a_mode_target_mismatch():
         KnowledgeWorkspaceDocumentV2.model_validate(payload)
 
 
+@pytest.mark.parametrize("locator", ["/secret.md", "C:\\secret.md", "a\\b.md", "a//b.md", "./a.md", "a/../b.md", " a.md", "a.md ", "a\x00b.md"])
+def test_workspace_v2_document_targets_require_canonical_relative_locators(locator: str):
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(mode="json")
+    payload["panes"]["pane-1"]["tabs"][0]["target"]["relative_locator"] = locator
+
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+
+
 def split_layout_payload(depth: int) -> dict:
     node: dict = {"type": "pane", "pane_id": "pane-1"}
     for level in range(2, depth + 1):
