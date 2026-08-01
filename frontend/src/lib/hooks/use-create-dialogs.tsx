@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useCallback, ReactNode } from 'rea
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { CreateNotebookDialog } from '@/components/notebooks/CreateNotebookDialog'
 import { GeneratePodcastDialog } from '@/components/podcasts/GeneratePodcastDialog'
+import { QuickPodcastDialog } from '@/components/podcasts/QuickPodcastDialog'
 
 interface SourceDialogOptions {
   defaultNotebookId?: string
@@ -55,6 +56,7 @@ export function CreateDialogsProvider({ children }: { children: ReactNode }) {
       />
       <CreateNotebookDialog open={notebookDialogOpen} onOpenChange={setNotebookDialogOpen} />
       <GeneratePodcastDialog open={podcastDialogOpen} onOpenChange={setPodcastDialogOpen} />
+      <QuickPodcastDialog />
     </CreateDialogsContext.Provider>
   )
 }

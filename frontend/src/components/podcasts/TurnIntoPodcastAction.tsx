@@ -34,7 +34,10 @@ export function TurnIntoPodcastAction({
         size="sm"
         disabled={Boolean(disabledReason)}
         aria-describedby={reasonId}
-        onClick={() => onOpen([selection], destination)}
+        onClick={(event) => {
+          event.stopPropagation()
+          onOpen([selection], destination)
+        }}
       >
         <Podcast aria-hidden="true" />
         Turn into podcast
