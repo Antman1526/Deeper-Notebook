@@ -314,20 +314,82 @@ const namedWorkspaceNavigationDefaults = Object.freeze({
   metrics_visible: true,
 });
 
+const namedWorkspaceNavigationKeys = new Set([
+  "utility_mode", "sidebar_visible", "sidebar_width",
+  "active_bookmark_folder_id", "bookmark_tags", "source_tree_query",
+  "search_query", "search_mode", "active_draft_id", "selected_space_ids",
+  "authority_filters", "metrics_visible",
+]);
+const fixtureBookmarkFolderId = /^knowledge_bookmark_folder:[A-Za-z0-9_-]+$/;
+
+function fixtureNavigationValue(
+  navigation: Record<string, unknown>,
+  key: keyof typeof namedWorkspaceNavigationDefaults,
+): unknown {
+  return navigation[key] === undefined
+    ? namedWorkspaceNavigationDefaults[key]
+    : navigation[key];
+}
+
+function normalizeFixtureBookmarkTags(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 32) return null;
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of value) {
+    if (typeof candidate !== "string") return null;
+    const tag = candidate.normalize("NFKC").trim().replace(/\s+/g, " ");
+    if (
+      !tag
+      || tag.length > 128
+      || /^(?:[\\/]|[A-Za-z]:[\\/])/.test(tag)
+      || tag.includes("\0")
+      || [...tag].some((character) => character.codePointAt(0)! < 32)
+    ) return null;
+    const key = tag.toLocaleLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      tags.push(tag);
+    }
+  }
+  return tags;
+}
+
+function validNamedWorkspaceNavigation(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const navigation = value as Record<string, unknown>;
+  if (Object.keys(navigation).some((key) => !namedWorkspaceNavigationKeys.has(key))) return false;
+  const activeBookmarkFolderId = fixtureNavigationValue(navigation, "active_bookmark_folder_id");
+  const activeDraftId = fixtureNavigationValue(navigation, "active_draft_id");
+  const authorityFilters = fixtureNavigationValue(navigation, "authority_filters");
+  const sourceTreeQuery = fixtureNavigationValue(navigation, "source_tree_query");
+  const searchQuery = fixtureNavigationValue(navigation, "search_query");
+  return (
+    ["sources", "bookmarks", "workspaces"].includes(String(fixtureNavigationValue(navigation, "utility_mode")))
+    && typeof fixtureNavigationValue(navigation, "sidebar_visible") === "boolean"
+    && Number.isInteger(fixtureNavigationValue(navigation, "sidebar_width"))
+    && Number(fixtureNavigationValue(navigation, "sidebar_width")) >= 240
+    && Number(fixtureNavigationValue(navigation, "sidebar_width")) <= 640
+    && (activeBookmarkFolderId === null || (typeof activeBookmarkFolderId === "string" && fixtureBookmarkFolderId.test(activeBookmarkFolderId)))
+    && normalizeFixtureBookmarkTags(fixtureNavigationValue(navigation, "bookmark_tags")) !== null
+    && typeof sourceTreeQuery === "string" && sourceTreeQuery.length <= 256
+    && typeof searchQuery === "string" && searchQuery.length <= 512
+    && ["exact", "text", "semantic"].includes(String(fixtureNavigationValue(navigation, "search_mode")))
+    && (activeDraftId === null || validFixtureOpaqueId(activeDraftId))
+    && validFixtureSpaceIds(fixtureNavigationValue(navigation, "selected_space_ids"))
+    && Array.isArray(authorityFilters)
+    && authorityFilters.length <= 2
+    && authorityFilters.every((authority) => authority === "app_owned" || authority === "external_read_only")
+    && typeof fixtureNavigationValue(navigation, "metrics_visible") === "boolean"
+  );
+}
+
 function validateNamedWorkspaceSnapshot(snapshot: unknown): string | null {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return "snapshot_invalid";
   const value = snapshot as Record<string, unknown>;
   if (value.version !== 1 || !value.panes || typeof value.panes !== "object" || Array.isArray(value.panes)) return "snapshot_invalid";
   if (
     value.navigation !== undefined
-    && (
-      !value.navigation
-      || typeof value.navigation !== "object"
-      || Array.isArray(value.navigation)
-      || !validFixtureSpaceIds(
-        (value.navigation as Record<string, unknown>).selected_space_ids ?? [],
-      )
-    )
+    && !validNamedWorkspaceNavigation(value.navigation)
   ) return "snapshot_navigation_invalid";
   for (const pane of Object.values(value.panes as Record<string, unknown>)) {
     if (!pane || typeof pane !== "object" || Array.isArray(pane)) return "pane_invalid";
@@ -373,11 +435,19 @@ function validateNamedWorkspaceSnapshot(snapshot: unknown): string | null {
 
 function normalizeNamedWorkspaceSnapshot(snapshot: unknown): Record<string, unknown> {
   const value = snapshot as Record<string, unknown>;
+  const providedNavigation = value.navigation === undefined
+    ? {}
+    : value.navigation as Record<string, unknown>;
+  const navigation = {
+    ...namedWorkspaceNavigationDefaults,
+    ...providedNavigation,
+  };
   return {
     ...value,
-    navigation: value.navigation === undefined
-      ? { ...namedWorkspaceNavigationDefaults }
-      : value.navigation,
+    navigation: {
+      ...navigation,
+      bookmark_tags: normalizeFixtureBookmarkTags(navigation.bookmark_tags) ?? [],
+    },
   };
 }
 
