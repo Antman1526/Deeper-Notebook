@@ -8,6 +8,7 @@ import {
   knowledgeViewModeSchema,
   type GraphViewport,
   type KnowledgeLayoutNode,
+  type KnowledgeViewMode,
   type KnowledgeWorkspaceNavigation,
 } from './knowledge-workspace'
 
@@ -183,7 +184,7 @@ export interface NamedWorkspaceTab {
   id: string
   target: KnowledgeTarget
   displayLabel: string
-  viewMode: 'reading' | 'source' | 'live-preview' | 'graph'
+  viewMode: KnowledgeViewMode
 }
 
 export interface NamedWorkspacePane {

@@ -105,6 +105,32 @@ export const vaultGraphSchema = z.object({
   edges: z.array(z.object({ id: z.string(), source: z.string(), target: z.string(), kind: z.string().optional(), resolved: z.boolean().optional() }).passthrough()),
 })
 
+export const vaultCanvasNodeSchema = z.object({
+  id: z.string().min(1).max(16_384),
+  type: z.enum(['text', 'file', 'group', 'unsupported']),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().finite().positive(),
+  height: z.number().finite().positive(),
+  text: z.string().nullable(),
+  file_path: canonicalVaultRelativePathSchema.nullable(),
+  label: z.string().nullable(),
+}).strict()
+
+export const vaultCanvasEdgeSchema = z.object({
+  id: z.string().min(1).max(16_384),
+  from_node: z.string().min(1).max(16_384),
+  to_node: z.string().min(1).max(16_384),
+  label: z.string().nullable(),
+}).strict()
+
+export const vaultCanvasSchema = z.object({
+  file: vaultFileSchema,
+  source_hash: z.string().regex(/^[0-9a-f]{64}$/i),
+  nodes: z.array(vaultCanvasNodeSchema).max(500),
+  edges: z.array(vaultCanvasEdgeSchema).max(500),
+}).strict()
+
 export const vaultScanSchema = z.object({
   operation_id: z.string(), state: z.string(), observed: z.number(), parsed: z.number(), unchanged: z.number(), unsupported: z.number(), invalid: z.number(), missing: z.number(), embeddings_pending: z.number(),
 })
@@ -114,6 +140,9 @@ export type VaultMount = z.infer<typeof vaultMountSchema>
 export type VaultPage = z.infer<typeof vaultPageSchema>
 export type VaultLink = z.infer<typeof vaultLinkSchema>
 export type VaultGraph = z.infer<typeof vaultGraphSchema>
+export type VaultCanvasNode = z.infer<typeof vaultCanvasNodeSchema>
+export type VaultCanvasEdge = z.infer<typeof vaultCanvasEdgeSchema>
+export type VaultCanvasDocument = z.infer<typeof vaultCanvasSchema>
 
 function isAuthoredContentField(key: string): boolean {
   const normalized = key
@@ -196,6 +225,11 @@ function safeParse<T>(schema: z.ZodType<T>, data: unknown): T {
   return schema.parse(data)
 }
 
+function encodeRelativeVaultPath(relativePath: string): string {
+  const canonical = canonicalVaultRelativePathSchema.parse(relativePath)
+  return canonical.split('/').map(encodeURIComponent).join('/')
+}
+
 export type VaultPageContractErrorCode =
   | 'page-invalid'
   | 'canonical-path-unavailable'
@@ -267,6 +301,12 @@ export const vaultApi = {
   list: async () => safeParse(z.array(vaultMountSchema), (await apiClient.get(`${vaultPrefix}`)).data),
   detail: async (vaultId: string) => safeParse(vaultMountSchema, (await apiClient.get(`${vaultPrefix}/${encodeURIComponent(vaultId)}`)).data),
   files: async (vaultId: string) => safeParse(z.array(vaultFileSchema), (await apiClient.get(`${vaultPrefix}/${encodeURIComponent(vaultId)}/files`)).data),
+  canvas: async (vaultId: string, relativePath: string) => safeParse(
+    vaultCanvasSchema,
+    (await apiClient.get(
+      `${vaultPrefix}/${encodeURIComponent(vaultId)}/canvases/${encodeRelativeVaultPath(relativePath)}`,
+    )).data,
+  ),
   page: getRequestedPage,
   backlinks: async (vaultId: string, noteId: string) => safeParse(z.array(vaultLinkSchema), (await apiClient.get(`${vaultPrefix}/${encodeURIComponent(vaultId)}/pages/${encodeURIComponent(noteId)}/backlinks`)).data),
   outgoing: async (vaultId: string, noteId: string) => safeParse(z.array(vaultLinkSchema), (await apiClient.get(`${vaultPrefix}/${encodeURIComponent(vaultId)}/pages/${encodeURIComponent(noteId)}/outgoing`)).data),
