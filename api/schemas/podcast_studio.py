@@ -79,6 +79,41 @@ class PodcastReadinessResponse(_Strict):
     blocked_reasons: list[str] = Field(default_factory=list, max_length=128)
 
 
+class PodcastEditorialBrief(_Strict):
+    """Small, source-body-free editorial intent saved with an episode."""
+
+    central_question: str | None = Field(default=None, max_length=1_000)
+    audience: str | None = Field(default=None, max_length=256)
+    outline: list[str] = Field(default_factory=list, max_length=32)
+
+    @field_validator("central_question", "audience")
+    @classmethod
+    def normalize_optional_label(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        if cls._looks_like_filesystem_path(normalized):
+            raise ValueError("editorial brief labels must not be filesystem paths")
+        return normalized or None
+
+    @field_validator("outline")
+    @classmethod
+    def normalize_outline(cls, value: list[str]) -> list[str]:
+        normalized = [" ".join(item.split()) for item in value]
+        if any(not item or len(item) > 512 for item in normalized):
+            raise ValueError("outline entries must be non-empty labels up to 512 characters")
+        if any(cls._looks_like_filesystem_path(item) for item in normalized):
+            raise ValueError("outline entries must not be filesystem paths")
+        return normalized
+
+    @staticmethod
+    def _looks_like_filesystem_path(value: str) -> bool:
+        return (
+            value.startswith(("/", "\\", "file://"))
+            or (len(value) >= 3 and value[0].isalpha() and value[1:3] == ":\\")
+        )
+
+
 class PodcastStudioSubmitRequest(PodcastReadinessRequest):
     selection_fingerprint: str = Field(
         min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
@@ -96,6 +131,7 @@ class PodcastStudioSubmitRequest(PodcastReadinessRequest):
     custom_prompt: str | None = Field(default=None, max_length=10_000)
     episode_length: Literal["short", "medium", "long"] | None = None
     review_outline: bool = True
+    editorial_brief: PodcastEditorialBrief | None = None
 
     @field_validator("episode_profile", "speaker_profile", "episode_name")
     @classmethod
@@ -118,6 +154,7 @@ class PodcastStudioSubmitResponse(_Strict):
 __all__ = [
     "PodcastReadinessRequest",
     "PodcastReadinessResponse",
+    "PodcastEditorialBrief",
     "PodcastSelectionPreviewEntryResponse",
     "PodcastSelectionPreviewRequest",
     "PodcastSelectionPreviewResponse",
