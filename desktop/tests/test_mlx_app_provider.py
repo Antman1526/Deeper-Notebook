@@ -68,6 +68,34 @@ def test_phase_select_provider_starts_mlx_and_stashes_runtime(monkeypatch, tmp_p
     assert FakeMlxProvider.stopped is True
 
 
+def test_phase_select_provider_uses_configured_mlx_default_without_inventory_scan(
+    monkeypatch, tmp_path,
+):
+    import desktop.providers.mlx as mlx_mod
+
+    class ConfiguredMlxProvider(FakeMlxProvider):
+        def is_available(self):  # pragma: no cover - assertion helper
+            raise AssertionError("configured launch default must not scan inventory")
+
+    ConfiguredMlxProvider.started = []
+    monkeypatch.setattr(mlx_mod, "MlxProvider", ConfiguredMlxProvider)
+
+    ctx = _new_context()
+    ctx.cfg = Config(
+        model_dir=tmp_path,
+        provider="mlx",
+        default_model="MLX/configured-model",
+        surreal_user="root",
+        surreal_password="password",
+    )
+    ctx.venv_py = tmp_path / "python"
+    ctx.log_dir = tmp_path / "logs"
+
+    _phase_select_provider(ctx)
+
+    assert ConfiguredMlxProvider.started == ["MLX/configured-model"]
+
+
 def test_phase_select_provider_uses_default_mlx_model_when_config_blank(
     monkeypatch,
     tmp_path,
