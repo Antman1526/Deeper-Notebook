@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -59,3 +60,21 @@ def test_source_hash_baseline_precedes_every_proof_action(tmp_path: Path, monkey
     monkeypatch.setattr(verifier, "_api_health", mutate_after_baseline)
     result = run_verifier(api_url="http://127.0.0.1:9", fixture_root=root, output_path=tmp_path / "proof.json")
     assert result.report["source_hashes_unchanged"] is False
+
+
+def test_default_cli_uses_fresh_owned_child_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class OwnedTemporaryDirectory:
+        def __enter__(self) -> str:
+            return str(tmp_path)
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    monkeypatch.setattr(verifier.tempfile, "TemporaryDirectory", lambda **_: OwnedTemporaryDirectory())
+    monkeypatch.setattr(verifier, "_api_health", lambda _: (False, None))
+    monkeypatch.setattr(sys, "argv", ["verify_navigation_productivity.py"])
+    assert verifier.main() == 2
+    report = (tmp_path / "proof.json").read_text(encoding="utf-8")
+    assert '"status": "blocked"' in report
+    assert '"synthetic_passed": true' in report
+    assert (tmp_path / "fixture" / verifier._FIXTURE_SENTINEL).is_file()

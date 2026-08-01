@@ -141,12 +141,22 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", default="http://127.0.0.1:8000")
     parser.add_argument("--fixture-root", type=Path)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.fixture_root is None:
         with tempfile.TemporaryDirectory(prefix="deeper-notebook-navigation-proof-") as directory:
-            result = run_verifier(api_url=args.api_url, fixture_root=Path(directory), output_path=args.output)
+            temp_root = Path(directory)
+            # The parent is owned by TemporaryDirectory, while this child is
+            # intentionally new so verifier_config can mark it with its
+            # fixture sentinel before writing any synthetic source.
+            result = run_verifier(
+                api_url=args.api_url,
+                fixture_root=temp_root / "fixture",
+                output_path=args.output or temp_root / "proof.json",
+            )
     else:
+        if args.output is None:
+            parser.error("--output is required when --fixture-root is supplied")
         result = run_verifier(api_url=args.api_url, fixture_root=args.fixture_root, output_path=args.output)
     return result.exit_code
 
