@@ -42,6 +42,7 @@ from deeper_notebook.podcasts.profile_names import (
 from deeper_notebook.podcasts.selection_contracts import (
     AppNoteSelection,
     AppSourceSelection,
+    KnowledgeCollectionSelection,
     NotebookSelection,
 )
 from deeper_notebook.podcasts.selection_service import (
@@ -50,6 +51,7 @@ from deeper_notebook.podcasts.selection_service import (
     AppSourcePodcastSelectionResolver,
     CompositePodcastSelectionResolver,
     KnowledgeEnginePodcastSelectionResolver,
+    KnowledgeNavigationPodcastSelectionResolver,
     PodcastSelectionPreparation,
     PodcastSelectionService,
 )
@@ -111,6 +113,11 @@ def _podcast_source_loader(request: Request):
     return configured_loader if callable(configured_loader) else Source.get
 
 
+def _podcast_navigation_service(request: Request):
+    navigation = getattr(request.app.state, "knowledge_navigation_service", None)
+    return navigation if callable(getattr(navigation, "get_bookmark", None)) else None
+
+
 def _podcast_selection_service(
     request: Request, payload: PodcastSelectionPreviewRequest
 ) -> PodcastSelectionService:
@@ -129,11 +136,23 @@ def _podcast_selection_service(
         )
         for selection in payload.selections
     ):
-        resolvers.append(
-            KnowledgeEnginePodcastSelectionResolver(
-                engine=_podcast_selection_engine(request)
-            )
+        engine_resolver = KnowledgeEnginePodcastSelectionResolver(
+            engine=_podcast_selection_engine(request)
         )
+        resolvers.append(engine_resolver)
+        if any(
+            isinstance(selection, KnowledgeCollectionSelection)
+            and selection.collection_kind == "bookmark"
+            for selection in payload.selections
+        ):
+            navigation = _podcast_navigation_service(request)
+            if navigation is not None:
+                resolvers.insert(
+                    0,
+                    KnowledgeNavigationPodcastSelectionResolver(
+                        navigation=navigation, engine_resolver=engine_resolver
+                    ),
+                )
     return PodcastSelectionService(
         resolver=CompositePodcastSelectionResolver(resolvers=tuple(resolvers))
     )
