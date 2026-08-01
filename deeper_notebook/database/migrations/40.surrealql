@@ -1,0 +1,7 @@
+-- Phase 2 Podcast Intelligence Studio metadata. These fields intentionally
+-- contain summaries and redacted planning receipts, never source bodies,
+-- credentials, canonical external paths, or absolute model paths.
+DEFINE FIELD IF NOT EXISTS selection_summary ON TABLE episode FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS selection_fingerprint ON TABLE episode TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS editorial_brief ON TABLE episode FLEXIBLE TYPE option<object>;
+DEFINE FIELD IF NOT EXISTS model_plan_receipts ON TABLE episode FLEXIBLE TYPE array<object> DEFAULT [];
