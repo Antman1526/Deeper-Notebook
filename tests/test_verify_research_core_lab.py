@@ -35,12 +35,39 @@ def test_verifier_records_the_phase_one_contract_proofs_without_paths(tmp_path: 
 
     checks = result.report["checks"]  # type: ignore[assignment]
     assert checks["workspace_migration"]["status"] == "passed"  # type: ignore[index]
-    assert checks["strict_local"]["cloud_requests"] == 0  # type: ignore[index]
+    assert checks["local_library"]["before_fingerprint"] == checks["local_library"]["after_fingerprint"]  # type: ignore[index]
+    assert checks["local_library"]["unchanged"] is True  # type: ignore[index]
+    assert checks["strict_local"]["transport_calls"] == 0  # type: ignore[index]
+    assert checks["strict_local"]["transport_instrumented"] is True  # type: ignore[index]
     assert checks["heavyweight_mlx"]["second_reservation"] == "queued"  # type: ignore[index]
+    assert checks["heavyweight_mlx"]["active_heavyweight_count"] == 1  # type: ignore[index]
     assert checks["focused_gates"]["status"] == "not_run"  # type: ignore[index]
     proof = output.read_text(encoding="utf-8")
     assert str(tmp_path) not in proof
     assert "Plan.md" not in proof
+
+
+def test_verifier_records_real_focused_gate_statuses_without_storing_output(tmp_path: Path) -> None:
+    calls: list[tuple[tuple[str, ...], Path]] = []
+
+    def run(command: tuple[str, ...], cwd: Path) -> verifier.CommandResult:
+        calls.append((command, cwd))
+        return verifier.CommandResult(returncode=0 if "pytest" in command else 1, output="private output")
+
+    result = run_verifier(
+        native_url="http://127.0.0.1:9",
+        fixture_root=tmp_path / "fixture",
+        output_path=tmp_path / "proof.json",
+        run_focused_gates=True,
+        command_runner=run,
+    )
+
+    gates = result.report["checks"]["focused_gates"]  # type: ignore[index]
+    assert gates["tests"]["status"] == "passed"  # type: ignore[index]
+    assert gates["build"]["status"] == "failed"  # type: ignore[index]
+    assert gates["build"]["output_sha256"]  # type: ignore[index]
+    assert "private output" not in (tmp_path / "proof.json").read_text(encoding="utf-8")
+    assert len(calls) == 2
 
 
 def test_verifier_rejects_user_content_and_non_temporary_or_output_roots(tmp_path: Path) -> None:
