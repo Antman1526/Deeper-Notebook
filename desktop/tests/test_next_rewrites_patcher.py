@@ -41,6 +41,8 @@ def _make_symlinked_bundle(root: Path) -> Path:
     (res / "public").mkdir()
     (res / "node_modules").mkdir()
     (res / "node_modules" / "marker.txt").write_text("dep")
+    (res / "node_modules" / "next").mkdir()
+    (res / "node_modules" / "next" / "package.json").write_text("{}")
 
     fw = root / "Contents" / "Frameworks" / "frontend"
     fw.mkdir(parents=True)
@@ -92,6 +94,14 @@ def test_patch_resolves_symlinked_bundle_to_real_files(tmp_path, monkeypatch):
 
     # node_modules came along (a complete, runnable frontend).
     assert (work / "node_modules" / "marker.txt").exists()
+
+    # The app can be upgraded without a server.js source change. A stale
+    # per-user runtime that lacks the newly packaged Next dependency must be
+    # refreshed instead of looking current solely by the server mtime.
+    (work / "node_modules" / "next" / "package.json").unlink()
+    refreshed = nrp._copy_to_writable((fw / "server.js").resolve().parent)
+    assert refreshed == work
+    assert (work / "node_modules" / "next" / "package.json").exists()
 
 
 def test_patch_real_dir_unchanged_path(tmp_path, monkeypatch):
