@@ -1596,7 +1596,8 @@ class Supervisor:
         # grandchildren of llama-cpp / whisper-cpp / piper-cpp are
         # also reaped.
         old = self._sidecar_procs.get(kind)
-        if old is not None and old.poll() is None:
+        stopped = old is None or old.poll() is not None
+        if old is not None and not stopped:
             try:
                 pgid = _os.getpgid(old.pid)
                 _os.killpg(pgid, _signal.SIGTERM)
@@ -1608,12 +1609,26 @@ class Supervisor:
                     pass
             try:
                 old.wait(timeout=5.0)
+                stopped = True
             except subprocess.TimeoutExpired:
                 try:
                     pgid = _os.getpgid(old.pid)
                     _os.killpg(pgid, _signal.SIGKILL)
                 except (OSError, ProcessLookupError):
-                    pass
+                    return False, (
+                        f"Sidecar {kind!r} could not be confirmed stopped; "
+                        "keeping the existing process and reservation."
+                    )
+                try:
+                    old.wait(timeout=2.0)
+                    stopped = True
+                except subprocess.TimeoutExpired:
+                    stopped = old.poll() is not None
+        if not stopped:
+            return False, (
+                f"Sidecar {kind!r} could not be confirmed stopped; "
+                "keeping the existing process and reservation."
+            )
         # Drop the dead Popen from both trackers so the next spawn
         # populates fresh entries.
         self._sidecar_procs.pop(kind, None)

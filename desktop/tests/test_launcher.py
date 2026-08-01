@@ -242,6 +242,47 @@ def test_restart_sidecar_replaces_its_heavyweight_mlx_reservation(
     assert sv.resource_governor.snapshot()["reservations"] == {"chat": 5 * 1024**3}
 
 
+def test_restart_sidecar_keeps_existing_tracking_when_kill_cannot_be_confirmed(
+    cfg, tmp_path, monkeypatch
+):
+    tight_cfg = Config(
+        cfg.model_dir, "none", "", cfg.surreal_user, cfg.surreal_password,
+        local_model_memory_limit_bytes=1024**3,
+    )
+    sv = Supervisor(
+        tight_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
+    )
+    old = _alive_proc()
+    old.wait.side_effect = subprocess.TimeoutExpired("embed", 5)
+    assert sv.resource_governor.reserve("embed", 1024**3) == "reserved"
+    sv._sidecar_procs["embed"] = old
+    sv._sidecar_spawn_args["embed"] = (41234, "supervisor.llamacpp_embed")
+    sv._procs = [old]
+    pgids = iter((41234, OSError("missing process group")))
+
+    def getpgid(_pid):
+        value = next(pgids)
+        if isinstance(value, OSError):
+            raise value
+        return value
+
+    monkeypatch.setattr(
+        "desktop.launcher.os.getpgid",
+        getpgid,
+    )
+    spawned: list[int] = []
+    monkeypatch.setattr(sv, "_spawn_llamacpp_embed", lambda port: spawned.append(port))
+
+    ok, detail = sv.restart_sidecar("embed")
+
+    assert ok is False
+    assert "could not be confirmed" in detail
+    assert spawned == []
+    assert sv._sidecar_procs["embed"] is old
+    assert sv._procs == [old]
+    assert sv.resource_governor.snapshot()["reservations"] == {"embed": 1024**3}
+
+
 def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
     # Supply enough procs for all possible spawns (4 core + up to 3 v0.3 shims + up to 2 v0.4 shims).
     procs = [_alive_proc() for _ in range(10)]
