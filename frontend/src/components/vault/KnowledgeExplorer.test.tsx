@@ -582,6 +582,30 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(palette).toBeVisible()
   })
 
+  it('runs the document-metrics command through the registered palette context', async () => {
+    render(
+      <>
+        <KnowledgeExplorer />
+        <CommandPalette />
+      </>,
+    )
+    await waitFor(() => expect(screen.getAllByRole('treeitem')).toHaveLength(2))
+    await selectFile('notes/one.md')
+    act(() => useKnowledgeWorkspaceStore.getState().setNavigation({ metricsVisible: false }))
+
+    const workspace = screen.getByTestId('knowledge-workspace')
+    workspace.focus()
+    fireEvent.keyDown(workspace, { key: '/' })
+    const palette = await screen.findByRole('dialog', { name: 'common.quickActions' })
+    fireEvent.click(within(palette).getByRole('option', {
+      name: 'knowledge.commands.toggleMetrics',
+    }))
+
+    await waitFor(() => {
+      expect(useKnowledgeWorkspaceStore.getState().navigation.metricsVisible).toBe(true)
+    })
+  })
+
   it('copies the active tab when splitting and opens later selections only in the active pane', async () => {
     await renderExplorer()
     await selectFile('notes/one.md')

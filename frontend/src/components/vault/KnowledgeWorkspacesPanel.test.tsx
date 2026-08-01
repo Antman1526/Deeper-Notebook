@@ -26,6 +26,15 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof KnowledgeWor
 }
 
 describe('KnowledgeWorkspacesPanel', () => {
+  it('opens Save Current As from command intent', () => {
+    renderPanel({ commandIntent: { id: 1, kind: 'save' } })
+    expect(screen.getByRole('form', { name: 'Workspace editor' })).toBeVisible()
+  })
+
+  it('opens explicit revision-aware replacement selection from command intent', () => {
+    renderPanel({ commandIntent: { id: 1, kind: 'replace' } })
+    expect(screen.getByRole('status')).toHaveTextContent('Select a saved workspace')
+  })
   it('lists Current Session separately and opens a named workspace at its listed revision', async () => {
     const props = renderPanel()
 

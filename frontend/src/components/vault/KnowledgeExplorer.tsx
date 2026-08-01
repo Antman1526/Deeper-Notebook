@@ -218,6 +218,7 @@ export function KnowledgeExplorer() {
   const [uniqueDialogOpen, setUniqueDialogOpen] = useState(false)
   const [restoreApplying, setRestoreApplying] = useState(false)
   const [restoreError, setRestoreError] = useState<string | null>(null)
+  const [workspaceCommandIntent, setWorkspaceCommandIntent] = useState<{ id: number; kind: 'save' | 'replace' } | null>(null)
   const [postRestoreState, setPostRestoreState] = useState<PostRestoreState | null>(null)
   const [activePaneElement, setActivePaneElement] = useState<HTMLElement | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -227,6 +228,7 @@ export function KnowledgeExplorer() {
   const paneElementsRef = useRef<Record<string, HTMLElement | null>>({})
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null)
   const semanticSearchKeyRef = useRef<string | null>(null)
+  const restoreInvokerRef = useRef<HTMLElement | null>(null)
   const selectedRoot = selectedRootState
     ?? (mounts.data?.[0]
       ? { authority: 'external-vault' as const, id: mounts.data[0].id }
@@ -447,6 +449,7 @@ export function KnowledgeExplorer() {
     }
   }, [setPendingWorkspaceRestore])
   const openNamedWorkspace = useCallback(async (workspace: NamedKnowledgeWorkspaceSummary) => {
+    restoreInvokerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const plan = await restoreWorkspace({ workspaceId: workspace.id, revision: workspace.revision })
     const hasUnavailableTargets = plan.summary.stale > 0
       || plan.summary.unavailable > 0
@@ -490,6 +493,12 @@ export function KnowledgeExplorer() {
   const openWorkspaces = useCallback(() => {
     setNavigation({ utilityMode: 'workspaces' })
   }, [setNavigation])
+  const requestWorkspaceAction = useCallback((kind: 'save' | 'replace') => {
+    setNavigation({ utilityMode: 'workspaces' })
+    setWorkspaceCommandIntent((current) => ({ id: (current?.id ?? 0) + 1, kind }))
+  }, [setNavigation])
+  const requestSaveWorkspaceAs = useCallback(() => requestWorkspaceAction('save'), [requestWorkspaceAction])
+  const requestReplaceWorkspace = useCallback(() => requestWorkspaceAction('replace'), [requestWorkspaceAction])
   const toggleMetrics = useCallback(() => {
     setNavigation({ metricsVisible: !useKnowledgeWorkspaceStore.getState().navigation.metricsVisible })
   }, [setNavigation])
@@ -736,6 +745,7 @@ export function KnowledgeExplorer() {
               onReplaceWithCurrent={replaceNamedWorkspace}
               onDelete={deleteNamedWorkspace}
               onRefresh={async () => { await namedWorkspaces.refetch() }}
+              commandIntent={workspaceCommandIntent}
             />
           ) : <>
           <label className="text-sm font-medium" htmlFor="vault-mount">
@@ -884,8 +894,8 @@ export function KnowledgeExplorer() {
         openBookmarks={openBookmarks}
         randomNote={openRandomNote}
         openWorkspaces={openWorkspaces}
-        saveWorkspaceAs={openWorkspaces}
-        replaceWorkspace={openWorkspaces}
+        saveWorkspaceAs={requestSaveWorkspaceAs}
+        replaceWorkspace={requestReplaceWorkspace}
         toggleMetrics={toggleMetrics}
       />
       <KnowledgeQuickSwitcher mounts={mounts.data || []} searchMode={navigation.searchMode} onBookmarkSearch={(query, mode) => { void bookmarkSearch(query, mode) }} />
@@ -905,6 +915,9 @@ export function KnowledgeExplorer() {
           if (restoreApplying) return
           setRestoreError(null)
           setPendingWorkspaceRestore(null)
+          const invoker = restoreInvokerRef.current
+          restoreInvokerRef.current = null
+          setTimeout(() => invoker?.isConnected && invoker.focus(), 0)
         }}
       />
     </div>
