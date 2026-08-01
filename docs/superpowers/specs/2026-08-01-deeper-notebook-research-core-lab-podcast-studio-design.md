@@ -13,7 +13,9 @@ implementation phases
 
 Turn Deeper Notebook's Knowledge workspace into its flagship Research Core Lab
 and make source-grounded podcast production an optional first-class capability
-for every notebook and note.
+for every notebook and note. Use Antman's existing local model library as a
+first-class, automatically routed intelligence layer for research, evidence,
+writing, vision, retrieval, podcast production, transcription, and voice.
 
 The design must make Deeper Notebook competitive with Gemini Notebook while
 preserving the product's distinct advantage: a durable, local-first knowledge
@@ -38,7 +40,7 @@ Official benchmark references:
 Gemini Notebook helps a user understand a collection of sources. Deeper
 Notebook helps a user build and operate a durable knowledge system.
 
-That position is expressed through seven product advantages:
+That position is expressed through eight product advantages:
 
 1. **Living knowledge:** mounted Obsidian and Logseq spaces remain continuously
    indexable rather than becoming disconnected upload snapshots.
@@ -54,6 +56,9 @@ That position is expressed through seven product advantages:
    than only remembering a notebook name.
 7. **Source authority:** app-owned content is editable while mounted external
    content remains visibly and technically read-only.
+8. **Local intelligence ownership:** verified models in the user's Mac model
+   library can perform specialized research roles without silently uploading
+   source material or falling back to a cloud provider.
 
 ## Relationship to Existing Designs
 
@@ -91,8 +96,12 @@ The baseline already provides:
 - source-driven podcast suggestions, length controls, and optional outline
   review;
 - background podcast jobs, stage status, retry and cancellation;
-- synchronized transcripts with citation IDs; and
-- a persistent global audio player.
+- synchronized transcripts with citation IDs;
+- a persistent global audio player;
+- local MLX, llama.cpp, Ollama, and OpenAI-compatible provider support;
+- local-model inventory, health, manifest reconciliation, and early role-routing
+  APIs; and
+- native MLX model discovery and registration through the desktop launcher.
 
 The redesign must reveal and connect these capabilities before inventing
 parallel replacements.
@@ -117,6 +126,12 @@ parallel replacements.
 11. A production-oriented Podcast library and completed Episode Lab.
 12. Accessibility, responsive behavior, performance budgets, recovery states,
     and end-to-end proof.
+13. Read-only discovery of the approved Mac model library at
+    `/Users/Antman/Desktop/MacBook AI models`.
+14. Automatic, inspectable role routing across verified compatible local
+    language, vision, embedding, speech-to-text, and text-to-speech models.
+15. Per-role and per-production model overrides, strict-local execution, memory
+    governance, health proof, and explicit fallback behavior.
 
 ### Out of scope
 
@@ -129,8 +144,15 @@ parallel replacements.
 - real-time multi-user collaboration;
 - mobile-native clients;
 - public podcast hosting, distribution, or automatic publishing;
-- unattended publishing to feeds or social platforms; and
-- protected write-back to mounted vaults.
+- unattended publishing to feeds or social platforms;
+- protected write-back to mounted vaults;
+- automatically downloading, replacing, moving, or deleting model-library
+  files during normal research;
+- treating planned, removed, incomplete, or incompatible manifest entries as
+  runnable models;
+- adding a custom runtime for every Transformers or experimental repository in
+  the library; and
+- silent cloud fallback from a local-model task.
 
 ## Core Interaction Architecture
 
@@ -289,6 +311,168 @@ Compact states are:
 The full explanation appears on focus, hover, source inspection, or attempted
 use of an unavailable mutation. Authority must be conveyed by text or icon in
 addition to color.
+
+## Local Model Intelligence Router
+
+### Approved library root
+
+On Antman's Mac, the approved library root is:
+
+`/Users/Antman/Desktop/MacBook AI models`
+
+The desktop launcher exposes that selection through
+`DEEPER_NOTEBOOK_MODEL_DIR`. The absolute path is a local device setting, not a
+portable source-code constant. Other users and devices may choose another
+folder without changing the product contract.
+
+The library currently organizes assets under roots including `MLX`, `GGUF`,
+`LMStudio`, `ollama`, `Transformers`, `STT`, and `TTS`. Discovery is read-only.
+Normal research does not download, overwrite, rename, relocate, clean up, or
+delete model files.
+
+### Discovery and eligibility
+
+The inventory classifies each discovered model as one of:
+
+- `ready_verified`;
+- `ready_unverified`;
+- `requires_runtime`;
+- `runtime_unavailable`;
+- `installed_unsupported`;
+- `incomplete`;
+- `planned`; or
+- `removed`.
+
+`manifests/model_manifest.json` provides identity, role, revision, checksum,
+and curation hints. It is not runtime proof. File completeness, supported
+format, declared capabilities, memory fit, provider readiness, and a bounded
+live health probe determine whether a route may execute.
+
+The router must not select a manifest entry whose current state is planned,
+removed, incomplete, incompatible, or unavailable. A model with an upstream
+revision mismatch may remain installed and visible but is not automatically
+promoted to a trusted route without an explicit local acceptance record.
+`ready_unverified` models remain visible for diagnosis and explicit acceptance,
+but automatic routing cannot use them until bounded runtime and acceptance
+proof promotes them to `ready_verified`.
+
+Native MLX discovery may serve complete MLX repositories through the existing
+loopback `mlx_lm.server` path. GGUF models require a compatible llama.cpp-style
+runtime. LM Studio and Ollama models require their corresponding local service
+to be running and to report the expected model identity. Transformers and
+experimental repositories remain visible but unsupported until a tested
+runtime adapter exists.
+
+Symlinked STT or TTS directories that resolve outside the selected root require
+a separate, persisted local trust decision for the resolved target. The scanner
+does not recursively follow arbitrary external symlinks.
+
+### Automatic role routing
+
+The selected approach is automatic role routing with visible overrides. The
+router assigns independently versioned roles for:
+
+- `research_chat` for Ask and grounded synthesis;
+- `evidence_extraction` for claim and source analysis;
+- `claim_verification` for the independent verification pass;
+- `editorial_writing` for note and podcast narrative work;
+- `embedding_retrieval` for semantic indexing and search;
+- `vision_analysis` for supported document images and visual sources;
+- `code_data_analysis` for code or structured-data work;
+- `podcast_outline` for the evidence-backed storyboard;
+- `podcast_script` for dialogue generation;
+- `speech_to_text` for transcription; and
+- `text_to_speech` for podcast voices.
+
+Selection considers:
+
+- verified compatibility and current health;
+- task capability and modality;
+- context capacity;
+- benchmark and acceptance history;
+- estimated unified-memory requirement;
+- current memory pressure and loaded sidecars;
+- expected latency; and
+- user-pinned role or production-template overrides.
+
+Manifest categories and role labels seed recommendations but never override
+live readiness or resource safety. A coding model is not selected for
+evidence synthesis merely because it is large, and a vision model is not
+selected for text-only work when a smaller accepted model is sufficient.
+
+The runtime records a stable model identity, local revision or fingerprint,
+provider, route reason, and selection source (`automatic`, `role_override`, or
+`production_override`) with every generated artifact. It does not store raw
+credentials or expose the absolute model path in artifact API payloads. The
+dedicated local Settings surface may display the user-selected library root.
+
+### Overrides and execution policies
+
+Before execution, the interface shows the selected model and the reason it was
+chosen. The user may:
+
+- accept the automatic route;
+- pin a compatible model for a product role;
+- override a model for one Ask, search, or podcast production; or
+- save compatible model assignments in a Podcast template.
+
+Three execution policies are available:
+
+1. **Strict Local:** never contact a cloud model; fail closed when no accepted
+   local route is ready.
+2. **Local Preferred:** use an accepted local route first and ask before any
+   cloud fallback.
+3. **Custom:** use explicit per-role routes chosen by the user.
+
+No policy silently sends notebook, note, evidence, prompt, transcript, or
+podcast content to a cloud provider. Changing from local execution to cloud
+execution is an explicit, contextual approval that identifies the affected
+stage and content class.
+
+### Mac resource governance
+
+The default Mac policy loads at most one heavyweight MLX language model at a
+time. Adjacent stages reuse a compatible loaded model when that does not weaken
+the approved role contract. A required model change is queued and performed
+through a controlled unload, memory-recovery, load, and health-check sequence.
+
+Embedding, speech-to-text, or text-to-speech sidecars may coexist only when the
+resource governor predicts that the combined workload remains inside the
+configured unified-memory budget. The governor uses current memory pressure,
+model size, active contexts, and sidecar reservations rather than model name
+alone.
+
+If a route cannot start:
+
+- the task remains queued or fails with a stable reason;
+- another accepted local candidate may be proposed;
+- user-pinned assignments are never silently ignored;
+- partial model processes are stopped and reported; and
+- Strict Local never degrades to cloud execution.
+
+### Product surfaces
+
+The Research header shows quiet local readiness and expands to reveal the
+active model, memory pressure, and queued work when attention is needed.
+
+Settings → Local Models exposes:
+
+- the approved library folder;
+- rescan and health actions;
+- format and runtime compatibility;
+- verification and manifest-alignment state;
+- role recommendations and overrides;
+- local execution policy; and
+- memory and concurrency limits.
+
+Ask and Search show the active synthesis and embedding routes. Podcast Studio
+shows a Model Plan for Evidence, Storyboard, Script, Verification, Voice, and
+optional Transcription. The Model Plan is inspectable before generation and is
+recorded with production history.
+
+The model library is never presented as a flat list of folders alone. The UI
+groups models by readiness, modality, supported role, and resource fit so an
+installed but unusable model cannot be mistaken for a working route.
 
 ## Optional Podcast Contract
 
@@ -556,7 +740,7 @@ All external knowledge remains `external_read_only` throughout this design.
 The system checks readiness before expensive generation:
 
 - research-set hydration;
-- required model roles;
+- required model roles, accepted local revisions, and bounded live health;
 - voice profile and voice model;
 - local storage availability;
 - evidence policy viability; and
@@ -601,9 +785,14 @@ Implementation budgets include:
 - debouncing evidence-scope recalculation;
 - batching large Research Set analysis with visible progress;
 - avoiding duplicate hydration across split panes;
-- keeping collapsed rails unmounted or inert where safe; and
+- keeping collapsed rails unmounted or inert where safe;
 - preserving responsive pane resize and document scrolling during background
-  generation.
+  generation;
+- loading only one heavyweight MLX language model by default;
+- reusing a compatible loaded model across adjacent stages;
+- reserving memory before starting embedding, transcription, or voice sidecars;
+  and
+- queuing model swaps rather than starting competing heavyweight runtimes.
 
 ## Delivery Phases
 
@@ -613,9 +802,11 @@ Implementation budgets include:
 - equal mode launcher and typed mode tabs;
 - adaptive canvas integration;
 - typography, surface, focus, and authority improvements;
-- responsive and accessible behavior; and
+- responsive and accessible behavior;
 - preservation of current commands, workspaces, document modes, graph,
-  backlinks, bookmarks, and persistence.
+  backlinks, bookmarks, and persistence; and
+- local-library selection, verified inventory, role-routing status, and the
+  Research-header local readiness surface.
 
 Phase 1 does not require the new podcast evidence pipeline.
 
@@ -626,9 +817,11 @@ Phase 1 does not require the new podcast evidence pipeline.
 - Research Set selection and manifest preview;
 - full Podcast Studio route or pane surface;
 - visual storyboard and production timeline;
-- production-oriented Podcast library; and
+- production-oriented Podcast library;
 - reuse of current profiles, modes, outline review, jobs, transcript, citation,
-  player, cancellation, and retry behavior.
+  player, cancellation, and retry behavior; and
+- an inspectable Podcast Model Plan using accepted local role routes and
+  explicit per-production overrides.
 
 Phase 2 may adapt current backend contracts but must not pretend that the Phase
 3 evidence engine exists before it does.
@@ -642,8 +835,12 @@ Phase 2 may adapt current backend contracts but must not pretend that the Phase
 - cited storyboard and script verification;
 - artifact version graph;
 - source-change decisions;
-- resumable stage and segment generation; and
-- Episode Lab evidence inspection.
+- resumable stage and segment generation;
+- Episode Lab evidence inspection;
+- independent local routes for Evidence, Script, and Verification where the
+  accepted library and Mac memory budget permit them; and
+- artifact receipts recording model identity, revision, provider, and route
+  reason without exposing canonical model paths.
 
 Each phase requires its own implementation plan and verification record. The
 application must remain usable at the end of every phase.
@@ -662,8 +859,13 @@ application must remain usable at the end of every phase.
 - evidence-policy gating;
 - source-change state transitions;
 - stage version invalidation;
-- idempotency keys and segment regeneration boundaries; and
-- accessible names, roles, focus, and reduced motion.
+- idempotency keys and segment regeneration boundaries;
+- accessible names, roles, focus, and reduced motion;
+- model-role scoring and deterministic tie-breakers;
+- role and production override precedence;
+- planned, removed, incomplete, unverified, and unsupported model states;
+- Strict Local and Local Preferred policy presentation; and
+- model-plan receipts that redact canonical paths.
 
 ### API and integration tests
 
@@ -674,8 +876,18 @@ application must remain usable at the end of every phase.
 - strict and interpretation evidence policies;
 - retry and cancellation at every durable stage;
 - exact preservation of approved upstream artifacts after downstream failure;
-- no duplicate episode after retry; and
-- redaction of canonical roots and provider error details.
+- no duplicate episode after retry;
+- redaction of canonical roots and provider error details;
+- discovery from `/Users/Antman/Desktop/MacBook AI models`, including the
+  spaces in the path;
+- packaged-app restart with the selected library preserved;
+- compatibility-alias and separately approved external-symlink behavior;
+- manifest reconciliation against current installed files;
+- live runtime identity mismatch and health-probe failure;
+- memory-budget rejection and queued model swaps;
+- one-heavyweight-MLX default enforcement;
+- zero network requests to cloud-model endpoints in Strict Local mode; and
+- exact model-library fingerprint preservation after discovery and execution.
 
 ### Browser tests
 
@@ -689,6 +901,10 @@ application must remain usable at the end of every phase.
 - edit and approve a storyboard;
 - recover a failed Voice stage without regenerating Research or Script;
 - use Episode Lab transcript, citation, and segment regeneration;
+- inspect and override automatic local routes;
+- reject an incompatible model without losing the current research task;
+- view Podcast Model Plan and production model receipts;
+- complete a Strict Local podcast run without cloud fallback;
 - complete all primary flows by keyboard; and
 - verify responsive drawers at supported viewport widths.
 
@@ -726,6 +942,14 @@ The program is complete only when:
     gates pass.
 12. Phase-specific component, API, integration, browser, production-build, and
     native-runtime verification passes with recorded evidence.
+13. The selected Mac model library is discovered without modifying its files,
+    and only verified compatible live routes execute automatically.
+14. Ask, evidence, verification, editorial, retrieval, vision, podcast, STT,
+    and TTS roles expose automatic recommendations and explicit overrides.
+15. Strict Local produces zero cloud-model requests and never silently falls
+    back after a local failure.
+16. The Mac resource governor prevents competing heavyweight MLX loads and
+    preserves application responsiveness during queued model changes.
 
 ## Approved Defaults
 
@@ -738,4 +962,11 @@ The program is complete only when:
 - Podcast Studio pauses for storyboard approval by default.
 - Strict evidence is the default evidence policy.
 - External Obsidian and Logseq content remains read-only.
+- The current Mac library root is
+  `/Users/Antman/Desktop/MacBook AI models` through a local configurable
+  setting rather than a portable source constant.
+- Local models use automatic role routing with visible per-role and
+  per-production overrides.
+- Strict Local is available and fails closed; cloud fallback is never silent.
+- One heavyweight MLX language model is loaded at a time by default.
 - The work ships in three independently verifiable phases.
