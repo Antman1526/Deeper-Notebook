@@ -1464,19 +1464,41 @@ class Supervisor:
         # restart_sidecar can re-invoke fn(*args) without re-deriving
         # ports/paths.
         kind = self._step_to_kind(step)
+        heavyweight_mlx = bool(kind == "chat" and self.cfg.provider == "mlx")
+        if kind is not None:
+            reservation = self.resource_governor.reserve(
+                kind,
+                self._SIDECAR_RESERVATION_BYTES[kind],
+                heavyweight_mlx=heavyweight_mlx,
+            )
+            if reservation != "reserved":
+                self._progress(step, reservation, "Local resource governor deferred spawn")
+                return
         if kind is not None and args:
             # Args is typically (port,) for sidecars. Store the int +
             # the step name so restart logs the right label.
             self._sidecar_spawn_args[kind] = (args[0] if args else 0, step)
         self._progress(step, "running")
+        proc_count = len(self._procs)
         try:
             fn(*args)
+            spawned = self._procs[proc_count:]
+            if kind is not None and not spawned:
+                self.resource_governor.release(kind)
+                self._progress(step, "done")
+                return
+            if kind is not None and not self._sidecar_health_check(kind, spawned[-1]):
+                raise RuntimeError("sidecar failed its post-spawn health check")
             # v0.8.40 — track the Popen by kind for restart lookup. The
             # spawn fn pushed it onto _procs already; grab the last one.
-            if kind is not None and self._procs:
-                self._sidecar_procs[kind] = self._procs[-1]
+            if kind is not None:
+                self._sidecar_procs[kind] = spawned[-1]
             self._progress(step, "done")
         except Exception as exc:
+            if kind is not None:
+                for proc in self._procs[proc_count:]:
+                    self._cleanup_partial_sidecar(proc)
+                self.resource_governor.release(kind)
             log.warning("%s spawn failed: %s", step, exc, exc_info=True)
             self._progress(step, "error", str(exc))
 
@@ -1490,9 +1512,28 @@ class Supervisor:
         "supervisor.piper": "piper",
         "supervisor.memory": "memory",
     }
+    _SIDECAR_RESERVATION_BYTES: dict[str, int] = {
+        "chat": 5 * 1024**3,
+        "embed": 1024**3,
+        "whisper": 2 * 1024**3,
+        "piper": 512 * 1024**2,
+        "memory": 512 * 1024**2,
+    }
 
     def _step_to_kind(self, step: str) -> str | None:
         return self._STEP_TO_KIND.get(step)
+
+    def _sidecar_health_check(self, _kind: str, proc: subprocess.Popen) -> bool:
+        """A started child must still be alive before its reservation is kept."""
+        return proc.poll() is None
+
+    def _cleanup_partial_sidecar(self, proc: subprocess.Popen) -> None:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        if proc in self._procs:
+            self._procs.remove(proc)
 
     def restart_sidecar(self, kind: str) -> tuple[bool, str]:
         """v0.8.40 — Kill the named sidecar's process group and respawn

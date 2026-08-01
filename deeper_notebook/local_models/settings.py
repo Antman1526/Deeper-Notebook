@@ -1,6 +1,7 @@
 """Owner-only persistence for non-secret device-local model preferences."""
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -11,6 +12,12 @@ ExecutionPolicy = Literal["strict_local", "local_preferred", "custom"]
 ComputeProfile = Literal["efficient", "balanced", "maximum_quality"]
 _POLICIES = {"strict_local", "local_preferred", "custom"}
 _PROFILES = {"efficient", "balanced", "maximum_quality"}
+
+
+def _safe_text(value: object) -> str:
+    if not isinstance(value, str) or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("Settings strings cannot contain control characters.")
+    return value
 
 
 def validate_model_root(root: Path) -> Path:
@@ -40,8 +47,16 @@ class LocalModelSettings:
             raise ValueError("Unsupported execution policy.")
         if self.compute_profile not in _PROFILES:
             raise ValueError("Unsupported compute profile.")
-        if self.local_model_memory_limit_bytes is not None and self.local_model_memory_limit_bytes < 0:
+        if self.local_model_memory_limit_bytes is not None and (
+            type(self.local_model_memory_limit_bytes) is not int
+            or self.local_model_memory_limit_bytes < 0
+        ):
             raise ValueError("Memory limit must be non-negative.")
+        for key, value in self.role_overrides.items():
+            _safe_text(key)
+            _safe_text(value)
+        for root in self.trusted_external_model_roots:
+            _safe_text(root)
 
 
 class LocalModelSettingsStore:
@@ -68,9 +83,9 @@ class LocalModelSettingsStore:
         except OSError:
             pass
         lines = [
-            f"model_dir = {settings.model_dir.as_posix()!r}",
-            f"execution_policy = {settings.execution_policy!r}",
-            f"compute_profile = {settings.compute_profile!r}",
+            f"model_dir = {json.dumps(str(settings.model_dir), ensure_ascii=True)}",
+            f"execution_policy = {json.dumps(settings.execution_policy)}",
+            f"compute_profile = {json.dumps(settings.compute_profile)}",
         ]
         if settings.local_model_memory_limit_bytes is not None:
             lines.append(
@@ -78,11 +93,17 @@ class LocalModelSettingsStore:
                 f"{settings.local_model_memory_limit_bytes}"
             )
         if settings.trusted_external_model_roots:
-            values = ", ".join(repr(item) for item in settings.trusted_external_model_roots)
+            values = ", ".join(
+                json.dumps(item, ensure_ascii=True)
+                for item in settings.trusted_external_model_roots
+            )
             lines.append(f"trusted_external_model_roots = [{values}]")
         if settings.role_overrides:
             lines.append("[role_overrides]")
-            lines.extend(f"{key!r} = {value!r}" for key, value in settings.role_overrides.items())
+            lines.extend(
+                f"{json.dumps(key)} = {json.dumps(value)}"
+                for key, value in settings.role_overrides.items()
+            )
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")
         tmp.write_text("\n".join(lines) + "\n")
         try:
