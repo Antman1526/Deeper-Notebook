@@ -3,10 +3,8 @@
 import { useId } from 'react'
 import { Podcast } from 'lucide-react'
 
-import type { PodcastSelection } from '@/lib/podcasts/selection'
+import type { PodcastDestination, PodcastSelection } from '@/lib/podcasts/selection'
 import { Button } from '@/components/ui/button'
-
-export type PodcastDestination = 'quick' | 'studio'
 
 interface TurnIntoPodcastActionProps {
   selection: PodcastSelection

@@ -72,6 +72,7 @@ export const podcastSelectionSchema = z.discriminatedUnion('kind', [
 ])
 
 export type PodcastSelection = z.infer<typeof podcastSelectionSchema>
+export type PodcastDestination = 'quick' | 'studio'
 
 export function normalizePodcastSelections(selections: PodcastSelection[]): PodcastSelection[] {
   return selections.map((selection) => {
