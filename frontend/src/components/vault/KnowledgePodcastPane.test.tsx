@@ -25,8 +25,8 @@ describe('KnowledgePodcastPane', () => {
 
     render(<KnowledgePodcastPane seedDocumentIds={['knowledge_engine_document:plan']} />)
 
-    expect(screen.getByText('1 selected document')).toBeInTheDocument()
-    expect(screen.getByText('Podcast generation opens in Phase 2.')).toBeInTheDocument()
+    expect(screen.getByText(/1 selected document/u)).toBeInTheDocument()
+    expect(screen.getByText(/Production remains a separate confirmation/u)).toBeInTheDocument()
     expect(fetchSpy).not.toHaveBeenCalledWith('/podcasts/generate', expect.anything())
 
     fetchSpy.mockRestore()
@@ -36,5 +36,14 @@ describe('KnowledgePodcastPane', () => {
     routePlan.data = { role: 'podcast_outline', outcome: 'ready', selected_model_id: 'qwen-local', selected_provider: 'mlx', resource_tier: 'standard', selection_source: 'automatic', route_reason: 'Verified local route.', escalation_model_ids: [], blocked_reason: null, selected_fingerprint: 'fingerprint', selected_measurements: {} }
     render(<KnowledgePodcastPane seedDocumentIds={[]} />)
     for (const title of ['Evidence route', 'Storyboard route', 'Script route', 'Verification route', 'Voice route']) expect(screen.getByText(title)).toBeInTheDocument()
+  })
+
+  it('uses the shared Studio with an honest locked Phase 3 boundary', () => {
+    render(<KnowledgePodcastPane seedDocumentIds={['knowledge_engine_document:plan']} />)
+
+    expect(screen.getByRole('region', { name: 'Podcast Intelligence Studio' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Research Set' })).toBeInTheDocument()
+    expect(screen.getByText('Evidence')).toBeInTheDocument()
+    expect(screen.getAllByText('Available after intellectual engine upgrade')).toHaveLength(2)
   })
 })
