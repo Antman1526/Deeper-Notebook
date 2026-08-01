@@ -25,7 +25,7 @@ from deeper_notebook.vault.repository import (
     VaultMount,
     VaultMountCreate,
 )
-from deeper_notebook.vault.security import approve_vault_root
+from deeper_notebook.vault.security import VaultSecurityError, approve_vault_root
 from deeper_notebook.vault.service import VaultService, _ObservationAdapter
 from deeper_notebook.vault.watcher import (
     VaultFileObservation,
@@ -224,6 +224,31 @@ async def test_completed_scan_state_is_visible_to_repository_and_fresh_service(
     assert [state for _, state, _ in repository.state_transitions] == [
         "scanning",
         "ready-read-only",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_scan_marks_mount_unavailable_when_root_open_times_out(
+    synthetic_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = synthetic_root / "vault"
+    root.mkdir()
+    repository = FakeRepository([_mount(root)], [], [])
+    service = VaultService(repository, stable_after_seconds=0)
+
+    def stalled_root_open(_path: str, *, timeout_seconds: float):
+        raise VaultSecurityError("root_open_timeout")
+
+    monkeypatch.setattr(
+        "deeper_notebook.vault.service.approve_vault_root_bounded", stalled_root_open
+    )
+
+    result = await service.scan("vault_mount:fixture")
+
+    assert result.status == "unavailable"
+    assert [state for _, state, _ in repository.state_transitions] == [
+        "scanning",
+        "unavailable",
     ]
 
 
