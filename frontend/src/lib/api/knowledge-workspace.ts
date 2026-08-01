@@ -3,6 +3,7 @@ import { z } from 'zod'
 import apiClient from './client'
 
 const workspacePath = '/deeper-notebook/workspace/knowledge'
+const workspaceNavigationId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/)
 
 export const knowledgeViewModeSchema = z.enum([
   'reading',
@@ -211,10 +212,10 @@ const documentTabTargetWireSchema = z.object({
 }).strict()
 const workspaceTabTargetWireSchema = z.discriminatedUnion('kind', [
   documentTabTargetWireSchema,
-  z.object({ kind: z.literal('ask'), thread_id: z.string().max(128).nullable().default(null), selected_document_ids: z.array(z.string()).max(128).default([]) }).strict(),
+  z.object({ kind: z.literal('ask'), thread_id: workspaceNavigationId.nullable().default(null), selected_document_ids: z.array(z.string()).max(128).default([]) }).strict(),
   z.object({ kind: z.literal('search'), query: z.string().max(512).default(''), search_mode: z.enum(['exact', 'text', 'semantic']).default('text'), space_ids: z.array(z.string()).max(32).default([]), authority_kinds: z.array(knowledgeAuthorityFilterSchema).max(2).default([]) }).strict(),
   z.object({ kind: z.literal('graph'), root_document_id: z.string().max(128).nullable().default(null), space_ids: z.array(z.string()).max(32).default([]), relation_kinds: z.array(z.string()).max(32).default([]), viewport: graphViewportSchema.default({ x: 0, y: 0, zoom: 1 }), origin: documentTabTargetWireSchema.nullable().default(null) }).strict(),
-  z.object({ kind: z.literal('podcast'), production_id: z.string().max(128).nullable().default(null), seed_document_ids: z.array(z.string()).max(128).default([]) }).strict(),
+  z.object({ kind: z.literal('podcast'), production_id: workspaceNavigationId.nullable().default(null), seed_document_ids: z.array(z.string()).max(128).default([]) }).strict(),
 ])
 const knowledgeTabV2WireSchema = z.object({ id: z.string().min(1).max(128), mode: researchModeSchema, title: z.string().min(1).max(512), target: workspaceTabTargetWireSchema }).strict()
 const rawKnowledgeWorkspaceV2WireSchema = z.object({
@@ -338,7 +339,7 @@ export interface KnowledgeTab {
   // written as a separate wire field: its values are derived from that target
   // so intentionally empty saved filters remain distinguishable from new tabs.
   graphBookmarkContext?: {
-    rootDocumentId: string
+    rootDocumentId: string | null
     spaceIds: string[]
     relationKinds: string[]
     viewport: GraphViewport
@@ -355,6 +356,7 @@ export interface OpenKnowledgeTab {
   knowledgeDocumentId?: string | null
   graphViewport?: GraphViewport | null
   graphBookmarkContext?: KnowledgeTab['graphBookmarkContext']
+  mode?: z.infer<typeof researchModeSchema>
 }
 
 export type GraphViewport = z.infer<typeof graphViewportSchema>
@@ -585,7 +587,7 @@ function fromWire(data: unknown): KnowledgeWorkspaceDocument {
           : null
       const graphBookmarkContext = target.kind === 'graph'
         ? {
-            rootDocumentId: target.root_document_id ?? document?.knowledge_document_id ?? '',
+            rootDocumentId: target.root_document_id ?? document?.knowledge_document_id ?? null,
             spaceIds: target.space_ids,
             relationKinds: target.relation_kinds,
             viewport: target.viewport,

@@ -697,6 +697,7 @@ class HydratedWorkspaceTab(_Strict):
     id: NavigationLocalId
     display_label: str = Field(min_length=1, max_length=512)
     view_mode: Literal["reading", "source", "live-preview", "graph"]
+    mode: Literal["read", "write", "ask", "search", "graph", "podcast"]
     target: KnowledgeTarget
     target_state: TargetState
     target_document: KnowledgeOpenDescriptor | None = None

@@ -29,7 +29,7 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   durableRevision: number
   durableFingerprint: string | null
   graphBookmarkContext: {
-    rootDocumentId: string
+    rootDocumentId: string | null
     spaceIds: string[]
     relationKinds: string[]
     viewport: GraphViewport
@@ -201,6 +201,7 @@ function documentTarget(tab: KnowledgePane['tabs'][number], renderMode = tab.vie
 export function createKnowledgeWorkspaceTab(tab: OpenKnowledgeTab, id: string) {
   const viewMode = tab.viewMode ?? 'reading'
   const sourceAuthority = tab.sourceAuthority ?? 'external-vault'
+  const mode = tab.mode ?? (sourceAuthority === 'overlay' ? 'write' as const : 'read' as const)
   const base = {
     ...tab, id, viewMode, sourceAuthority,
     knowledgeDocumentId: tab.knowledgeDocumentId ?? null,
@@ -217,7 +218,7 @@ export function createKnowledgeWorkspaceTab(tab: OpenKnowledgeTab, id: string) {
     }
   }
   return {
-    ...base, mode: sourceAuthority === 'overlay' ? 'write' as const : 'read' as const,
+    ...base, mode,
     target: documentTarget(base),
   }
 }

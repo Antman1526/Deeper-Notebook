@@ -562,6 +562,7 @@ async def test_restore_plan_hydrates_every_target_without_mutating_current_sessi
         "tab-block",
         "tab-search",
     ]
+    assert plan.panes["pane-one"].tabs[0].mode == "read"
     assert (
         plan.panes["pane-one"].tabs[0].target_document.relative_locator
         == "Plans/Research.md"
@@ -637,6 +638,66 @@ async def test_workspace_service_enforces_rename_replace_boundaries_without_curr
     assert copied.revision == 1
     assert metadata.deleted == [created.id]
     assert current_session_path.read_bytes() == before
+
+
+@pytest.mark.asyncio
+async def test_workspace_service_rejects_external_document_write_targets() -> None:
+    metadata = _WorkspaceCrudMetadataRepository(_named_workspace())
+    engine = _Engine()
+    service = KnowledgeNavigationService(
+        metadata_repository=metadata,
+        engine_repository=engine,
+    )
+    write_snapshot = NamedWorkspaceSnapshot.model_validate(
+        {
+            "active_pane_id": "pane-write",
+            "next_id": 2,
+            "panes": {
+                "pane-write": {
+                    "id": "pane-write",
+                    "active_tab_id": "tab-write",
+                    "tabs": [
+                        {
+                            "id": "tab-write",
+                            "display_label": "Plan draft",
+                            "view_mode": "source",
+                            "mode": "write",
+                            "target": {
+                                "kind": "document",
+                                "document_id": "knowledge_engine_document:plan",
+                            },
+                        }
+                    ],
+                }
+            },
+            "layout": {"type": "pane", "pane_id": "pane-write"},
+        }
+    )
+
+    with pytest.raises(
+        KnowledgeNavigationServiceError,
+        match="workspace_write_target_not_app_owned",
+    ):
+        await service.create_workspace(
+            CreateWorkspace(
+                operation_id="service-external-write",
+                name="External write",
+                snapshot=write_snapshot,
+            )
+        )
+    assert metadata.create_commands == []
+
+    engine.descriptor = engine.descriptor.model_copy(
+        update={"authority_kind": "app_owned"}
+    )
+    await service.create_workspace(
+        CreateWorkspace(
+            operation_id="service-overlay-write",
+            name="Overlay write",
+            snapshot=write_snapshot,
+        )
+    )
+    assert metadata.create_commands[-1].snapshot == write_snapshot
 
 
 @pytest.mark.asyncio

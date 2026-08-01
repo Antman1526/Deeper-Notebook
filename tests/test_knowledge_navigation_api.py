@@ -219,6 +219,7 @@ class _NavigationService:
                                 "id": "tab-search",
                                 "display_label": "Research",
                                 "view_mode": "reading",
+                                "mode": "search",
                                 "target": {"kind": "search", "query": "research"},
                                 "target_state": "available",
                             }
