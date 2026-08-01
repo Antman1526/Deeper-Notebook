@@ -8,6 +8,8 @@ const indexedSearch = vi.hoisted(() => ({
   semantic: { data: undefined, isPending: false, isError: false },
 }))
 const routePlan = vi.hoisted(() => ({ data: undefined as any, isError: false, isLoading: false }))
+const savedSettings = vi.hoisted(() => ({ data: { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} } as any }))
+const routePlanCalls = vi.hoisted(() => [] as unknown[][])
 
 vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
   useKnowledgeIndexedSearch: (...args: unknown[]) => {
@@ -15,7 +17,10 @@ vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
     return indexedSearch
   },
 }))
-vi.mock('@/lib/hooks/use-local-models', () => ({ useModelRoutePlan: () => routePlan }))
+vi.mock('@/lib/hooks/use-local-models', () => ({
+  useLocalModelSettings: () => savedSettings,
+  useModelRoutePlan: (...args: unknown[]) => { routePlanCalls.push(args); return routePlan },
+}))
 
 import { KnowledgeSearchPane } from './KnowledgeSearchPane'
 
@@ -24,6 +29,8 @@ describe('KnowledgeSearchPane', () => {
     routePlan.data = undefined
     routePlan.isError = false
     routePlan.isLoading = false
+    routePlanCalls.length = 0
+    savedSettings.data = { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} }
     indexedSearch.calls = []
     indexedSearch.runSemanticSearch.mockReset()
   })
@@ -50,5 +57,11 @@ describe('KnowledgeSearchPane', () => {
     render(<KnowledgeSearchPane query="" searchMode="text" spaceIds={[]} authorityKinds={[]} />)
     expect(screen.getByText('Embedding route')).toBeInTheDocument()
     expect(indexedSearch.runSemanticSearch).not.toHaveBeenCalled()
+  })
+
+  it('plans Embedding with saved Local Preferred settings and its explicit override', () => {
+    savedSettings.data = { execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_overrides: { embedding_retrieval: 'embed-override' } }
+    render(<KnowledgeSearchPane query="" searchMode="text" spaceIds={[]} authorityKinds={[]} />)
+    expect(routePlanCalls).toContainEqual([{ role: 'embedding_retrieval', execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_override_model_id: 'embed-override', modalities: ['text'] }])
   })
 })

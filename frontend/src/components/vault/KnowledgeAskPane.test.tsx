@@ -22,6 +22,8 @@ const localModelsHealth = vi.hoisted(() => ({
   error: null as Error | null,
 }))
 const routePlan = vi.hoisted(() => ({ data: undefined as any, isError: false, isLoading: false }))
+const savedSettings = vi.hoisted(() => ({ data: { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} } as any }))
+const routePlanCalls = vi.hoisted(() => [] as unknown[][])
 
 vi.mock('@/lib/hooks/use-ask', () => ({ useAsk: () => ask }))
 vi.mock('@/lib/hooks/use-models', () => ({
@@ -30,7 +32,8 @@ vi.mock('@/lib/hooks/use-models', () => ({
 }))
 vi.mock('@/lib/hooks/use-local-models', () => ({
   useLocalModelsHealth: () => localModelsHealth,
-  useModelRoutePlan: () => routePlan,
+  useLocalModelSettings: () => savedSettings,
+  useModelRoutePlan: (...args: unknown[]) => { routePlanCalls.push(args); return routePlan },
 }))
 
 import { KnowledgeAskPane } from './KnowledgeAskPane'
@@ -40,6 +43,8 @@ describe('KnowledgeAskPane', () => {
     routePlan.data = undefined
     routePlan.isError = false
     routePlan.isLoading = false
+    routePlanCalls.length = 0
+    savedSettings.data = { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} }
     ask.sendAsk.mockReset()
     modelDefaults.default_chat_model = 'local-research-chat'
     configuredModels.data = [{
@@ -68,6 +73,12 @@ describe('KnowledgeAskPane', () => {
     expect(screen.getByText('Research Chat route')).toBeInTheDocument()
     expect(screen.getByText('qwen-local')).toBeInTheDocument()
     expect(ask.sendAsk).not.toHaveBeenCalled()
+  })
+
+  it('plans Research Chat with saved Local Preferred settings and its explicit override', () => {
+    savedSettings.data = { execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_overrides: { research_chat: 'qwen-override' } }
+    render(<KnowledgeAskPane selectedDocumentIds={[]} />)
+    expect(routePlanCalls).toContainEqual([{ role: 'research_chat', execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_override_model_id: 'qwen-override', modalities: ['text'] }])
   })
 
   it('fails closed instead of sending a selected-source question through global Ask', () => {
