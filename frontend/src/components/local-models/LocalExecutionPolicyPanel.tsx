@@ -42,6 +42,13 @@ export function LocalExecutionPolicyPanel({ policy, computeProfile, memoryLimitB
     setStage('')
     setContentClass('')
   }
+  const handleCloudDialogOpenChange = (open: boolean) => {
+    setConfirmOpen(open)
+    if (!open) {
+      setStage('')
+      setContentClass('')
+    }
+  }
 
   return <Card data-testid="local-execution-policy">
     <CardHeader className="pb-3"><CardTitle className="text-base">Local execution policy</CardTitle><CardDescription>Strict Local never contacts cloud endpoints. Local Preferred requires a contextual confirmation before any cloud route.</CardDescription></CardHeader>
@@ -58,7 +65,7 @@ export function LocalExecutionPolicyPanel({ policy, computeProfile, memoryLimitB
         <label className="text-sm font-medium">Memory limit (bytes)<Input aria-label="Memory limit bytes" className="mt-1" inputMode="numeric" min="0" onChange={event => setNextLimit(event.target.value)} value={nextLimit} /></label>
       </div>
       <Button type="button" disabled={Boolean(isSaving) || !validLimit} onClick={() => onSave({ execution_policy: nextPolicy, compute_profile: nextProfile, local_model_memory_limit_bytes: limit })}>Save local execution policy</Button>
-      {canReviewCloudFallback && <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      {canReviewCloudFallback && <AlertDialog open={confirmOpen} onOpenChange={handleCloudDialogOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Confirm pending Local Preferred cloud route</AlertDialogTitle><AlertDialogDescription>Type the exact proposed stage and content class to record an approved continuation. This does not execute a task or call a cloud provider.</AlertDialogDescription></AlertDialogHeader>
           <label className="text-sm font-medium">Stage<Input aria-label="stage" className="mt-1" onChange={event => setStage(event.target.value)} value={stage} /></label>
