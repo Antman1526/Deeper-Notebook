@@ -489,6 +489,30 @@ describe('knowledge workspace API boundary', () => {
         },
       },
     }).success).toBe(false)
+    const unsafeTargets = [
+      { mode: 'graph', target: { kind: 'graph', root_document_id: '/private/root', space_ids: [], relation_kinds: [], viewport: { x: 0, y: 0, zoom: 1 }, origin: null } },
+      { mode: 'ask', target: { kind: 'ask', thread_id: 'thread:one', selected_document_ids: ['/private/document'] } },
+      { mode: 'podcast', target: { kind: 'podcast', production_id: 'production:one', seed_document_ids: ['/private/document'] } },
+      { mode: 'graph', target: { kind: 'graph', root_document_id: null, space_ids: ['../private-space'], relation_kinds: [], viewport: { x: 0, y: 0, zoom: 1 }, origin: null } },
+      { mode: 'search', target: { kind: 'search', query: '', search_mode: 'text', space_ids: ['../private-space'], authority_kinds: [] } },
+    ] as const
+    for (const [index, { mode, target }] of unsafeTargets.entries()) {
+      expect(knowledgeWorkspaceWireSchema.safeParse({
+        ...wire,
+        panes: {
+          ...wire.panes,
+          'pane-1': {
+            ...wire.panes['pane-1'],
+            tabs: [{
+              id: `unsafe-${index}`,
+              mode,
+              title: 'Unsafe',
+              target,
+            }],
+          },
+        },
+      }).success).toBe(false)
+    }
   })
 
   it('serializes only approved snake_case fields for PUT', async () => {

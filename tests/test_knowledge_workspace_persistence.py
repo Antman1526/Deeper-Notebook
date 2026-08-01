@@ -49,7 +49,13 @@ def populated() -> KnowledgeWorkspaceDocument:
 
 
 @pytest.mark.parametrize(
-    ("view_mode", "source_authority", "expected_mode", "expected_kind", "expected_render"),
+    (
+        "view_mode",
+        "source_authority",
+        "expected_mode",
+        "expected_kind",
+        "expected_render",
+    ),
     [
         ("reading", "external-vault", "read", "document", "reading"),
         ("source", "external-vault", "read", "document", "source"),
@@ -97,16 +103,35 @@ def test_migrate_workspace_v1_preserves_session_identity_and_maps_modes(
 
 
 def test_workspace_v2_rejects_a_mode_target_mismatch():
-    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(mode="json")
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
     payload["panes"]["pane-1"]["tabs"][0]["mode"] = "ask"
 
     with pytest.raises(ValidationError, match="workspace_mode_target_mismatch"):
         KnowledgeWorkspaceDocumentV2.model_validate(payload)
 
 
-@pytest.mark.parametrize("locator", ["/secret.md", "C:\\secret.md", "a\\b.md", "a//b.md", "./a.md", "a/../b.md", " a.md", "a.md ", "a\x00b.md"])
-def test_workspace_v2_document_targets_require_canonical_relative_locators(locator: str):
-    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(mode="json")
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "/secret.md",
+        "C:\\secret.md",
+        "a\\b.md",
+        "a//b.md",
+        "./a.md",
+        "a/../b.md",
+        " a.md",
+        "a.md ",
+        "a\x00b.md",
+    ],
+)
+def test_workspace_v2_document_targets_require_canonical_relative_locators(
+    locator: str,
+):
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
     payload["panes"]["pane-1"]["tabs"][0]["target"]["relative_locator"] = locator
 
     with pytest.raises(ValidationError):
@@ -114,7 +139,9 @@ def test_workspace_v2_document_targets_require_canonical_relative_locators(locat
 
 
 def test_workspace_v2_content_free_targets_preserve_null_graph_and_reject_unsafe_ids():
-    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(mode="json")
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
     payload["panes"]["pane-1"]["tabs"] = [
         {
             "id": "tab-graph",
@@ -133,13 +160,21 @@ def test_workspace_v2_content_free_targets_preserve_null_graph_and_reject_unsafe
             "id": "tab-ask",
             "mode": "ask",
             "title": "Ask",
-            "target": {"kind": "ask", "thread_id": "thread:one", "selected_document_ids": []},
+            "target": {
+                "kind": "ask",
+                "thread_id": "thread:one",
+                "selected_document_ids": ["knowledge_engine_document:one"],
+            },
         },
         {
             "id": "tab-podcast",
             "mode": "podcast",
             "title": "Podcast",
-            "target": {"kind": "podcast", "production_id": "production:one", "seed_document_ids": []},
+            "target": {
+                "kind": "podcast",
+                "production_id": "production:one",
+                "seed_document_ids": ["knowledge_engine_document:two"],
+            },
         },
     ]
     payload["panes"]["pane-1"]["active_tab_id"] = "tab-graph"
@@ -152,6 +187,73 @@ def test_workspace_v2_content_free_targets_preserve_null_graph_and_reject_unsafe
         KnowledgeWorkspaceDocumentV2.model_validate(payload)
     payload["panes"]["pane-1"]["tabs"][1]["target"]["thread_id"] = "thread:one"
     payload["panes"]["pane-1"]["tabs"][2]["target"]["production_id"] = "episode\nraw"
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+    payload["panes"]["pane-1"]["tabs"][2]["target"]["production_id"] = "production:one"
+
+    for tab_index, field in (
+        (0, "root_document_id"),
+        (1, "selected_document_ids"),
+        (2, "seed_document_ids"),
+    ):
+        payload["panes"]["pane-1"]["tabs"][tab_index]["target"][field] = (
+            "/private/document"
+            if field == "root_document_id"
+            else ["/private/document"]
+        )
+        with pytest.raises(ValidationError):
+            KnowledgeWorkspaceDocumentV2.model_validate(payload)
+        payload["panes"]["pane-1"]["tabs"][tab_index]["target"][field] = (
+            None if field == "root_document_id" else ["knowledge_engine_document:one"]
+        )
+
+
+@pytest.mark.parametrize("target_kind", ["search", "graph"])
+def test_workspace_v2_targets_require_canonical_space_ids(target_kind: str):
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
+    payload["panes"]["pane-1"]["tabs"] = [
+        {
+            "id": "tab-target",
+            "mode": target_kind,
+            "title": target_kind.title(),
+            "target": {
+                "kind": target_kind,
+                "query": "" if target_kind == "search" else None,
+                "search_mode": "text" if target_kind == "search" else None,
+                "root_document_id": None if target_kind == "graph" else None,
+                "space_ids": ["../private-space"],
+                "relation_kinds": [] if target_kind == "graph" else None,
+                "viewport": {"x": 0, "y": 0, "zoom": 1}
+                if target_kind == "graph"
+                else None,
+                "origin": None if target_kind == "graph" else None,
+                "authority_kinds": [] if target_kind == "search" else None,
+            },
+        }
+    ]
+    payload["panes"]["pane-1"]["active_tab_id"] = "tab-target"
+    payload["panes"]["pane-1"]["tabs"][0]["target"] = {
+        key: value
+        for key, value in payload["panes"]["pane-1"]["tabs"][0]["target"].items()
+        if value is not None
+    }
+
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+
+
+def test_workspace_v2_navigation_requires_canonical_space_ids():
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
+    payload["navigation"]["selected_space_ids"] = ["knowledge_engine_space:primary"]
+    assert KnowledgeWorkspaceDocumentV2.model_validate(
+        payload
+    ).navigation.selected_space_ids == ["knowledge_engine_space:primary"]
+
+    payload["navigation"]["selected_space_ids"] = ["../private-space"]
     with pytest.raises(ValidationError):
         KnowledgeWorkspaceDocumentV2.model_validate(payload)
 
@@ -216,13 +318,17 @@ def attempt_temporary_files(path: Path) -> list[Path]:
 
 def test_missing_workspace_returns_default(tmp_path: Path):
     state = load_knowledge_workspace(path=tmp_path / "knowledge.json")
-    assert state == workspace_contracts.migrate_workspace_v1(default_knowledge_workspace())
+    assert state == workspace_contracts.migrate_workspace_v1(
+        default_knowledge_workspace()
+    )
 
 
 def test_workspace_round_trips_through_atomic_file(tmp_path: Path):
     path = tmp_path / "workspaces" / "knowledge.json"
     save_knowledge_workspace(populated(), path=path)
-    assert load_knowledge_workspace(path=path) == workspace_contracts.migrate_workspace_v1(populated())
+    assert load_knowledge_workspace(
+        path=path
+    ) == workspace_contracts.migrate_workspace_v1(populated())
     assert not path.with_suffix(".json.tmp").exists()
 
 
@@ -258,7 +364,9 @@ def test_current_session_round_trips_a_bounded_search_mode():
     workspace = KnowledgeWorkspaceDocument.model_validate(payload)
 
     assert workspace.navigation.search_mode == "semantic"
-    assert KnowledgeWorkspaceDocument.model_validate(workspace.model_dump()) == workspace
+    assert (
+        KnowledgeWorkspaceDocument.model_validate(workspace.model_dump()) == workspace
+    )
     payload["navigation"] = {"search_mode": "unsupported"}
     with pytest.raises(ValidationError):
         KnowledgeWorkspaceDocument.model_validate(payload)
@@ -288,7 +396,9 @@ def test_stale_legacy_temporary_file_does_not_block_future_saves(
 
     save_knowledge_workspace(populated(), path=path)
 
-    assert load_knowledge_workspace(path=path) == workspace_contracts.migrate_workspace_v1(populated())
+    assert load_knowledge_workspace(
+        path=path
+    ) == workspace_contracts.migrate_workspace_v1(populated())
     assert stale.read_bytes() == b"interrupted older save"
     assert attempt_temporary_files(path) == []
 
@@ -336,10 +446,9 @@ def test_overlapping_saves_use_distinct_temporary_files(
     assert replacement_sources[0] != replacement_sources[1]
     assert all(source.parent == path.parent for source in replacement_sources)
     restored = load_knowledge_workspace(path=path)
-    assert (
-        restored == workspace_contracts.migrate_workspace_v1(first)
-        or restored == workspace_contracts.migrate_workspace_v1(second)
-    )
+    assert restored == workspace_contracts.migrate_workspace_v1(
+        first
+    ) or restored == workspace_contracts.migrate_workspace_v1(second)
     assert attempt_temporary_files(path) == []
 
 

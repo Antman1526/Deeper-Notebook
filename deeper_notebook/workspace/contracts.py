@@ -15,6 +15,22 @@ NavigationLocalId = Annotated[
     str,
     Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"),
 ]
+KnowledgeDocumentId = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^knowledge_engine_document:[A-Za-z0-9_-]+$",
+    ),
+]
+KnowledgeSpaceId = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^knowledge_engine_space:[A-Za-z0-9_-]+$",
+    ),
+]
 
 
 class KnowledgeTabState(BaseModel):
@@ -126,7 +142,9 @@ class KnowledgeWorkspaceNavigation(BaseModel):
     search_query: str = Field(default="", max_length=512)
     search_mode: Literal["exact", "text", "semantic"] = "text"
     active_draft_id: str | None = Field(default=None, max_length=128)
-    selected_space_ids: list[str] = Field(default_factory=list, max_length=32)
+    selected_space_ids: list[KnowledgeSpaceId] = Field(
+        default_factory=list, max_length=32
+    )
     authority_filters: list[Literal["app_owned", "external_read_only"]] = Field(
         default_factory=list, max_length=2
     )
@@ -283,14 +301,16 @@ class DocumentTabTarget(_StrictWorkspaceModel):
 class AskTabTarget(_StrictWorkspaceModel):
     kind: Literal["ask"] = "ask"
     thread_id: NavigationLocalId | None = None
-    selected_document_ids: list[str] = Field(default_factory=list, max_length=128)
+    selected_document_ids: list[KnowledgeDocumentId] = Field(
+        default_factory=list, max_length=128
+    )
 
 
 class SearchTabTarget(_StrictWorkspaceModel):
     kind: Literal["search"] = "search"
     query: str = Field(default="", max_length=512)
     search_mode: Literal["exact", "text", "semantic"] = "text"
-    space_ids: list[str] = Field(default_factory=list, max_length=32)
+    space_ids: list[KnowledgeSpaceId] = Field(default_factory=list, max_length=32)
     authority_kinds: list[Literal["app_owned", "external_read_only"]] = Field(
         default_factory=list, max_length=2
     )
@@ -298,8 +318,8 @@ class SearchTabTarget(_StrictWorkspaceModel):
 
 class GraphTabTarget(_StrictWorkspaceModel):
     kind: Literal["graph"] = "graph"
-    root_document_id: str | None = Field(default=None, max_length=128)
-    space_ids: list[str] = Field(default_factory=list, max_length=32)
+    root_document_id: KnowledgeDocumentId | None = None
+    space_ids: list[KnowledgeSpaceId] = Field(default_factory=list, max_length=32)
     relation_kinds: list[str] = Field(default_factory=list, max_length=32)
     viewport: GraphViewport = Field(default_factory=GraphViewport)
     origin: DocumentTabTarget | None = None
@@ -308,11 +328,17 @@ class GraphTabTarget(_StrictWorkspaceModel):
 class PodcastTabTarget(_StrictWorkspaceModel):
     kind: Literal["podcast"] = "podcast"
     production_id: NavigationLocalId | None = None
-    seed_document_ids: list[str] = Field(default_factory=list, max_length=128)
+    seed_document_ids: list[KnowledgeDocumentId] = Field(
+        default_factory=list, max_length=128
+    )
 
 
 KnowledgeTabTarget = Annotated[
-    DocumentTabTarget | AskTabTarget | SearchTabTarget | GraphTabTarget | PodcastTabTarget,
+    DocumentTabTarget
+    | AskTabTarget
+    | SearchTabTarget
+    | GraphTabTarget
+    | PodcastTabTarget,
     Field(discriminator="kind"),
 ]
 
@@ -382,9 +408,7 @@ class KnowledgeWorkspaceDocumentV2(_StrictWorkspaceModel):
 
     @model_validator(mode="after")
     def workspace_references_are_consistent(self) -> "KnowledgeWorkspaceDocumentV2":
-        _validate_workspace_references(
-            self.active_pane_id, self.panes, self.layout
-        )
+        _validate_workspace_references(self.active_pane_id, self.panes, self.layout)
         return self
 
 

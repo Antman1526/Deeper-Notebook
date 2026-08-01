@@ -294,3 +294,36 @@ The browser result is fixture-bound acceptance only: it verifies the client
 payload/restore boundary and does not prove a packaged desktop launch or a
 live persistence server. The backend pytest result is the direct evidence for
 the real contract and service authorization behavior.
+
+## P1 Current Session identifier hardening — 2026-08-01
+
+Current Session V2 now uses strict `knowledge_engine_document:` identifiers
+for Graph roots and Ask/Podcast document selections, while retaining the
+intentional `null` root for a rootless Graph. Graph and Search target space
+arrays, along with Current Session navigation spaces, use strict
+`knowledge_engine_space:` identifiers. Path-bearing values are rejected before
+they can reach persistence.
+
+The strict browser fixture applies the same document-array and target-space
+checks to named workspace POST/PATCH payloads. Its browser acceptance remains
+fixture-bound; the API save/reject pytest directly proves the persistence
+endpoint rejects unsafe Current Session identifiers and retains the last valid
+save.
+
+```sh
+uv run pytest tests/test_knowledge_workspace_persistence.py \
+  tests/test_knowledge_workspace_api.py \
+  tests/test_knowledge_navigation_contracts.py \
+  tests/test_knowledge_navigation_service.py \
+  tests/test_knowledge_navigation_api.py -q
+# 143 passed
+
+(cd frontend && npx vitest run src/lib/api/knowledge-workspace.test.ts \
+  src/lib/api/knowledge-navigation.test.ts \
+  src/components/vault/KnowledgeExplorer.test.tsx --pool=forks --maxWorkers=1 \
+  && npx tsc --noEmit)
+# 100 tests passed; TypeScript passed
+
+(cd frontend && npx playwright test e2e/research-core-lab.spec.ts --project=native-runtime)
+# 4 passed
+```
