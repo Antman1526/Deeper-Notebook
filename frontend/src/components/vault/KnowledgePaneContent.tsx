@@ -21,12 +21,14 @@ import type {
 } from '@/lib/api/knowledge-workspace'
 import {
   VaultPageContractError,
+  type VaultFile,
   type VaultMount,
 } from '@/lib/api/vault'
 import { useOverlayPage } from '@/lib/hooks/use-overlay'
 import {
   useVaultGraph,
   useVaultOutgoing,
+  useVaultCanvas,
   useVaultPage,
 } from '@/lib/hooks/use-vault'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -35,6 +37,7 @@ import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-sto
 import { VaultDocumentView } from './VaultDocumentView'
 import { DocumentMetricsFooter } from './DocumentMetricsFooter'
 import { VaultGraph } from './VaultGraph'
+import { CanvasViewer } from './CanvasViewer'
 
 export type KnowledgeNavigate = (
   vaultId: string,
@@ -49,6 +52,7 @@ export type KnowledgeNavigate = (
 interface KnowledgePaneContentProps {
   pane: KnowledgePane
   mounts: VaultMount[]
+  vaultFiles?: VaultFile[]
   onNavigate: KnowledgeNavigate
 }
 
@@ -62,6 +66,7 @@ const shortcutModes: Record<string, KnowledgeViewMode> = {
 export function KnowledgePaneContent({
   pane,
   mounts,
+  vaultFiles = [],
   onNavigate,
 }: KnowledgePaneContentProps) {
   const { t } = useTranslation()
@@ -113,19 +118,25 @@ export function KnowledgePaneContent({
     : null
   const graphContext = tabGraphContext ?? sharedGraphContext
   const isOverlay = activeTab?.sourceAuthority === 'overlay'
+  const isCanvas = !isOverlay && visibleMode === 'canvas'
   const overlayPage = useOverlayPage(isOverlay ? noteId : undefined)
   const vaultPage = useVaultPage(
-    isOverlay ? undefined : vaultId,
-    isOverlay ? undefined : noteId,
+    isOverlay || isCanvas ? undefined : vaultId,
+    isOverlay || isCanvas ? undefined : noteId,
   )
   const outgoing = useVaultOutgoing(
-    isOverlay ? undefined : vaultId,
-    isOverlay ? undefined : noteId,
+    isOverlay || isCanvas ? undefined : vaultId,
+    isOverlay || isCanvas ? undefined : noteId,
   )
   const graph = useVaultGraph(
-    isOverlay ? undefined : vaultId,
-    isOverlay ? undefined : noteId,
-    !isOverlay && visibleMode === 'graph',
+    isOverlay || isCanvas ? undefined : vaultId,
+    isOverlay || isCanvas ? undefined : noteId,
+    !isOverlay && !isCanvas && visibleMode === 'graph',
+  )
+  const canvas = useVaultCanvas(
+    isCanvas ? vaultId : undefined,
+    isCanvas ? activeTab?.relativePath : undefined,
+    isCanvas,
   )
 
   useEffect(() => {
@@ -197,6 +208,21 @@ export function KnowledgePaneContent({
           </p>
         </div>
       </div>
+    )
+  }
+
+  if (isCanvas) {
+    return (
+      <CanvasViewer
+        canvas={canvas.data}
+        isLoading={canvas.isLoading}
+        error={canvas.error}
+        onRetry={() => { void canvas.refetch() }}
+        vaultId={vaultId}
+        paneId={pane.id}
+        files={vaultFiles}
+        onNavigate={onNavigate}
+      />
     )
   }
 

@@ -3,7 +3,7 @@ import { useEffect, type ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { OverlayPage } from '@/lib/api/overlay'
-import type { VaultPage } from '@/lib/api/vault'
+import type { VaultCanvasDocument, VaultPage } from '@/lib/api/vault'
 import { VaultPageContractError } from '@/lib/api/vault'
 import {
   parseKnowledgeWorkspace,
@@ -57,6 +57,14 @@ const queries = vi.hoisted(() => ({
   vaultPageArgs: vi.fn(),
   vaultOutgoingArgs: vi.fn(),
   graph: vi.fn(),
+  vaultCanvasArgs: vi.fn(),
+  canvas: {
+    data: undefined as VaultCanvasDocument | undefined,
+    isLoading: false,
+    isError: false,
+    error: null as Error | null,
+    refetch: vi.fn(),
+  },
   overlayPageArgs: vi.fn(),
   outgoingLinks: [] as VaultPage['outgoing_links'],
 }))
@@ -77,6 +85,10 @@ vi.mock('@/lib/hooks/use-vault', () => ({
       isLoading: false,
       isError: false,
     }
+  },
+  useVaultCanvas: (vaultId?: string, relativePath?: string, enabled?: boolean) => {
+    queries.vaultCanvasArgs(vaultId, relativePath, enabled)
+    return queries.canvas
   },
 }))
 
@@ -224,6 +236,22 @@ const pageFixture = {
   backlinks: [],
 } satisfies VaultPage
 
+const canvasFixture: VaultCanvasDocument = {
+  file: {
+    ...pageFixture.file,
+    id: 'file:canvas',
+    note_id: 'note:canvas',
+    relative_path: 'maps/Plan.canvas',
+    file_kind: 'metadata',
+  },
+  source_hash: 'b'.repeat(64),
+  nodes: [{
+    id: 'idea', type: 'text', x: 0, y: 0, width: 100, height: 80,
+    text: 'Idea', file_path: null, label: null,
+  }],
+  edges: [],
+}
+
 function overlayPageWithTarget(
   targetOverlayNoteId: string | null,
 ): OverlayPage {
@@ -320,7 +348,7 @@ function overlayGraphPage(): OverlayPage {
   }
 }
 
-function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'graph' = 'reading') {
+function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'graph' | 'canvas' = 'reading') {
   useKnowledgeWorkspaceStore.getState().replaceWorkspace({
     version: 1,
     activePaneId: 'pane-1',
@@ -332,9 +360,9 @@ function replaceWorkspace(viewMode: 'reading' | 'source' | 'live-preview' | 'gra
         tabs: [{
           id: 'tab-1',
           vaultId: 'vault:one',
-          noteId: 'note:plan',
-          title: 'Stale Plan',
-          relativePath: 'synthetic/stale.md',
+          noteId: viewMode === 'canvas' ? 'note:canvas' : 'note:plan',
+          title: viewMode === 'canvas' ? 'Canvas Plan' : 'Stale Plan',
+          relativePath: viewMode === 'canvas' ? 'maps/Plan.canvas' : 'synthetic/stale.md',
           viewMode,
           sourceAuthority: 'external-vault',
           knowledgeDocumentId: null,
@@ -472,10 +500,18 @@ describe('KnowledgePaneContent', () => {
       error: null,
     }
     queries.graph.mockClear()
+    queries.vaultCanvasArgs.mockClear()
     queries.vaultPageArgs.mockClear()
     queries.vaultOutgoingArgs.mockClear()
     queries.overlayPageArgs.mockClear()
     queries.outgoingLinks = []
+    queries.canvas = {
+      data: canvasFixture,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }
     overlayView.onReload = undefined
     overlayView.onNavigate = undefined
     overlayView.onMarkdownChange = undefined
@@ -517,6 +553,20 @@ describe('KnowledgePaneContent', () => {
       expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].viewMode)
         .toBe(mode)
     }
+  })
+
+  it('renders a Canvas tab without loading a Markdown page', () => {
+    replaceWorkspace('canvas')
+
+    renderPane()
+
+    expect(screen.getByLabelText('Canvas viewer')).toBeInTheDocument()
+    expect(queries.vaultCanvasArgs).toHaveBeenCalledWith(
+      'vault:one',
+      'maps/Plan.canvas',
+      true,
+    )
+    expect(queries.vaultPageArgs).toHaveBeenLastCalledWith(undefined, undefined)
   })
 
   it('switches modes with region-scoped Control number shortcuts only', () => {

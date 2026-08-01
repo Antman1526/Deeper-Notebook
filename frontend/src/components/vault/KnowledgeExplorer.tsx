@@ -66,7 +66,7 @@ type SelectedKnowledgeRoot =
   | { authority: 'external-vault'; id: string }
 
 function titleFromRelativePath(relativePath: string): string {
-  return relativePath.split('/').pop()?.replace(/\.md$/i, '') || relativePath
+  return relativePath.split('/').pop()?.replace(/\.(?:md|canvas)$/i, '') || relativePath
 }
 
 function tabFromFile(file: VaultFile): OpenKnowledgeTab {
@@ -75,6 +75,9 @@ function tabFromFile(file: VaultFile): OpenKnowledgeTab {
     noteId: file.note_id,
     title: titleFromRelativePath(file.relative_path),
     relativePath: file.relative_path,
+    viewMode: file.relative_path.toLocaleLowerCase().endsWith('.canvas')
+      ? 'canvas'
+      : 'reading',
     sourceAuthority: 'external-vault',
   }
 }
@@ -872,6 +875,7 @@ export function KnowledgeExplorer() {
               <KnowledgePaneContent
                 pane={pane}
                 mounts={mounts.data || []}
+                vaultFiles={files.data || []}
                 onNavigate={navigate}
               />
             )}
