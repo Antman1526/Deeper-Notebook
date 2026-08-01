@@ -46,4 +46,26 @@ describe('podcast studio store', () => {
       selections: [],
     })
   })
+
+  it('restores the invoking action after the review surface closes', async () => {
+    const invoker = document.createElement('button')
+    const dialogControl = document.createElement('button')
+    document.body.append(invoker, dialogControl)
+
+    invoker.focus()
+    usePodcastStudioStore.getState().open([selection], 'quick')
+    dialogControl.focus()
+    usePodcastStudioStore.getState().dismiss()
+
+    await new Promise(resolve => window.setTimeout(resolve, 0))
+
+    expect(invoker).toHaveFocus()
+    expect(usePodcastStudioStore.getState()).toMatchObject({
+      isOpen: false,
+      destination: null,
+      selections: [],
+    })
+    invoker.remove()
+    dialogControl.remove()
+  })
 })
