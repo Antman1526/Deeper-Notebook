@@ -142,7 +142,7 @@ def _podcast_selection_service(
         resolvers.append(engine_resolver)
         if any(
             isinstance(selection, KnowledgeCollectionSelection)
-            and selection.collection_kind in {"bookmark", "folder"}
+            and selection.collection_kind in {"bookmark", "folder", "workspace"}
             for selection in payload.selections
         ):
             navigation = _podcast_navigation_service(request)
