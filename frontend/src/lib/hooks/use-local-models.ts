@@ -18,6 +18,7 @@ import apiClient from '@/lib/api/client'
 
 export interface LocalModelHealth {
   name: string
+  credential_id?: string | null
   status: 'healthy' | 'unhealthy' | 'not_configured' | 'unknown'
   detail: string | null
   latency_ms: number | null

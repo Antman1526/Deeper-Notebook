@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
-import { useModelDefaults } from '@/lib/hooks/use-models'
+import { useModelDefaults, useModels } from '@/lib/hooks/use-models'
 import {
   getLocalResearchReadinessReason,
   getResearchModeAvailability,
@@ -23,9 +23,15 @@ export function KnowledgeAskPane({
   const [question, setQuestion] = useState('')
   const localModelsHealth = useLocalModelsHealth()
   const { data: modelDefaults } = useModelDefaults()
+  const { data: models } = useModels()
+  const defaultChatModel = models?.find(
+    (model) => model.id === modelDefaults?.default_chat_model && model.type === 'language',
+  ) ?? null
   const localReadinessReason = getLocalResearchReadinessReason(
     localModelsHealth,
-    modelDefaults?.default_chat_model ?? null,
+    defaultChatModel
+      ? { id: defaultChatModel.id, credentialId: defaultChatModel.credential ?? null }
+      : null,
   )
   const selectionLabel = `${selectedDocumentIds.length} selected document${selectedDocumentIds.length === 1 ? '' : 's'}`
   const readiness = getResearchModeAvailability('ask', {
