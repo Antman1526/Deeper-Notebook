@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from deeper_notebook.knowledge_engine.capabilities import AuthorityKind
 from deeper_notebook.podcasts.selection_contracts import PodcastSelection
@@ -79,6 +79,42 @@ class PodcastReadinessResponse(_Strict):
     blocked_reasons: list[str] = Field(default_factory=list, max_length=128)
 
 
+class PodcastStudioSubmitRequest(PodcastReadinessRequest):
+    selection_fingerprint: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    idempotency_key: str = Field(
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$",
+    )
+    confirmed: Literal[True]
+    episode_profile: str = Field(min_length=1, max_length=256)
+    speaker_profile: str = Field(min_length=1, max_length=256)
+    episode_name: str = Field(min_length=1, max_length=512)
+    mode: Literal["deep_dive", "brief", "critique", "debate"] = "deep_dive"
+    custom_prompt: str | None = Field(default=None, max_length=10_000)
+    episode_length: Literal["short", "medium", "long"] | None = None
+    review_outline: bool = True
+
+    @field_validator("episode_profile", "speaker_profile", "episode_name")
+    @classmethod
+    def label_is_not_path(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized or normalized.startswith(("/", "\\")) or ":\\" in normalized:
+            raise ValueError("label must not be a filesystem path")
+        return normalized
+
+
+class PodcastStudioSubmitResponse(_Strict):
+    job_id: str = Field(min_length=1, max_length=256)
+    status: Literal["submitted"]
+    message: str = Field(min_length=1, max_length=256)
+    episode_profile: str = Field(min_length=1, max_length=256)
+    episode_name: str = Field(min_length=1, max_length=512)
+    mode: Literal["deep_dive", "brief", "critique", "debate"]
+
+
 __all__ = [
     "PodcastReadinessRequest",
     "PodcastReadinessResponse",
@@ -86,4 +122,6 @@ __all__ = [
     "PodcastSelectionPreviewRequest",
     "PodcastSelectionPreviewResponse",
     "PodcastStageModelPlanResponse",
+    "PodcastStudioSubmitRequest",
+    "PodcastStudioSubmitResponse",
 ]

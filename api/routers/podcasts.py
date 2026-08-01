@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -18,6 +20,8 @@ from api.schemas.podcast_studio import (
     PodcastSelectionPreviewRequest,
     PodcastSelectionPreviewResponse,
     PodcastStageModelPlanResponse,
+    PodcastStudioSubmitRequest,
+    PodcastStudioSubmitResponse,
 )
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from deeper_notebook.config import DATA_FOLDER
@@ -45,6 +49,28 @@ from deeper_notebook.podcasts.selection_service import (
 )
 
 router = APIRouter()
+
+
+_PODCAST_SUBMISSION_LOCKS: dict[str, asyncio.Lock] = {}
+_PODCAST_SUBMISSION_LOCKS_GUARD = asyncio.Lock()
+_PODCAST_SUBMISSION_RESULTS: dict[str, tuple[str, PodcastStudioSubmitResponse]] = {}
+
+
+async def _podcast_submission_lock(idempotency_key: str) -> asyncio.Lock:
+    async with _PODCAST_SUBMISSION_LOCKS_GUARD:
+        lock = _PODCAST_SUBMISSION_LOCKS.get(idempotency_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _PODCAST_SUBMISSION_LOCKS[idempotency_key] = lock
+        return lock
+
+
+def _submission_request_digest(payload: PodcastStudioSubmitRequest) -> str:
+    """Bind an idempotency key to a source-body-free confirmed request."""
+    encoded = json.dumps(
+        payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _podcast_selection_engine(request: Request):
@@ -228,6 +254,100 @@ async def podcast_readiness(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"code": "podcast_readiness_unavailable"},
+        ) from None
+
+
+@router.post(
+    "/podcasts/studio/submit",
+    response_model=PodcastStudioSubmitResponse,
+)
+async def submit_podcast_studio(
+    request: Request,
+    payload: PodcastStudioSubmitRequest,
+) -> PodcastStudioSubmitResponse:
+    """Submit only a fresh, confirmed, locally-routable server-side selection."""
+    try:
+        preparation = await _podcast_selection_preparation(request, payload)
+        preview = preparation.preview
+        if payload.selection_fingerprint != preview.selection_fingerprint:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "podcast_selection_changed"},
+            )
+        if preview.requires_batch_engine:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"code": "podcast_batch_engine_required"},
+            )
+        if not preview.current_worker_eligible:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"code": "podcast_selection_not_ready"},
+            )
+        stage_plans = _podcast_stage_plans(
+            request,
+            included_characters=preview.included_characters,
+            execution_policy=payload.execution_policy,
+            compute_profile=payload.compute_profile,
+            include_transcription=payload.include_transcription,
+        )
+        if any(plan.outcome != "ready" for plan in stage_plans):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"code": "podcast_stage_route_blocked"},
+            )
+        request_digest = _submission_request_digest(payload)
+        lock = await _podcast_submission_lock(payload.idempotency_key)
+        async with lock:
+            cached = _PODCAST_SUBMISSION_RESULTS.get(payload.idempotency_key)
+            if cached is not None:
+                cached_digest, cached_response = cached
+                if cached_digest != request_digest:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={"code": "podcast_idempotency_conflict"},
+                    )
+                return cached_response
+            job_id = await PodcastService.submit_generation_job(
+                episode_profile_name=payload.episode_profile,
+                speaker_profile_name=payload.speaker_profile,
+                episode_name=payload.episode_name,
+                content=preparation.content,
+                mode=payload.mode,
+                custom_prompt=payload.custom_prompt,
+                episode_length=payload.episode_length,
+                review_outline=payload.review_outline,
+            )
+            response = PodcastStudioSubmitResponse(
+                job_id=job_id,
+                status="submitted",
+                message="Podcast generation accepted after confirmation.",
+                episode_profile=payload.episode_profile,
+                episode_name=payload.episode_name,
+                mode=payload.mode,
+            )
+            _PODCAST_SUBMISSION_RESULTS[payload.idempotency_key] = (
+                request_digest,
+                response,
+            )
+            return response
+    except HTTPException:
+        raise
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "podcast_selection_not_found"},
+        ) from None
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "podcast_submission_invalid"},
+        ) from None
+    except Exception as exc:
+        logger.warning("Podcast Studio submission unavailable ({})", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "podcast_submission_unavailable"},
         ) from None
 
 
