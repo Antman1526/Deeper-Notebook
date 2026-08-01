@@ -1,4 +1,4 @@
-import { ModelRoutePlanPanel } from '@/components/local-models/ModelRoutePlanPanel'
+import { PodcastStudio } from '@/components/podcasts/PodcastStudio'
 import { useLocalModelSettings, useModelRoutePlan } from '@/lib/hooks/use-local-models'
 
 interface KnowledgePodcastPaneProps {
@@ -6,7 +6,6 @@ interface KnowledgePodcastPaneProps {
 }
 
 export function KnowledgePodcastPane({ seedDocumentIds }: KnowledgePodcastPaneProps) {
-  const selectionLabel = `${seedDocumentIds.length} selected document${seedDocumentIds.length === 1 ? '' : 's'}`
   const settings = useLocalModelSettings()
   const routeRequest = (role: 'evidence_extraction' | 'podcast_outline' | 'podcast_script' | 'claim_verification' | 'text_to_speech', modalities: Array<'text' | 'audio'>) => settings.data ? ({
     role, modalities, execution_policy: settings.data.execution_policy, compute_profile: settings.data.compute_profile,
@@ -23,14 +22,16 @@ export function KnowledgePodcastPane({ seedDocumentIds }: KnowledgePodcastPanePr
 
   return (
     <section aria-label="Knowledge Podcast" className="space-y-3">
-      <div>
-        <h2 className="text-xl font-semibold">Podcast</h2>
-        <p className="text-sm text-muted-foreground">{selectionLabel}</p>
-      </div>
-      <p className="text-sm text-muted-foreground">Podcast generation opens in Phase 2.</p>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {plans.map(([title, route]) => <ModelRoutePlanPanel key={title} title={title} plan={route.data} isError={settings.isError || route.isError} isLoading={settings.isLoading || route.isLoading} />)}
-      </div>
+      <PodcastStudio
+        seedDocumentIds={seedDocumentIds}
+        modelPlans={plans.map(([label, route]) => ({
+          label,
+          plan: route.data ? {
+            outcome: route.data.outcome,
+            reason: route.data.route_reason,
+          } : undefined,
+        }))}
+      />
     </section>
   )
 }
