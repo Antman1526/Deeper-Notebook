@@ -22,6 +22,7 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
     NamedWorkspaceTab,
     NamedWorkspaceSnapshot,
     PodcastTarget,
+    SearchTarget,
     NavigationReceipt,
     WorkspaceRestorePane,
     WorkspaceRestorePlan,
@@ -233,6 +234,37 @@ def test_legacy_named_workspace_tab_derives_its_research_mode():
             mode="podcast",
             target={"kind": "document", "document_id": "knowledge_engine_document:plan"},
         )
+
+
+def test_named_workspace_modes_preserve_write_and_content_free_targets():
+    write = NamedWorkspaceTab(
+        id="tab-write",
+        display_label="Draft",
+        view_mode="source",
+        mode="write",
+        target={"kind": "document", "document_id": "knowledge_engine_document:draft"},
+    )
+    empty_search = SearchTarget(kind="search", query="")
+    ask = AskTarget(kind="ask", thread_id="thread:session_1")
+    podcast = PodcastTarget(kind="podcast", production_id="production:episode_1")
+
+    assert write.mode == "write"
+    assert empty_search.query == ""
+    assert ask.thread_id == "thread:session_1"
+    assert podcast.production_id == "production:episode_1"
+
+    with pytest.raises(ValidationError, match="workspace mode"):
+        NamedWorkspaceTab(
+            id="tab-invalid-write",
+            display_label="Draft",
+            view_mode="reading",
+            mode="write",
+            target={"kind": "document", "document_id": "knowledge_engine_document:draft"},
+        )
+    with pytest.raises(ValidationError):
+        AskTarget(kind="ask", thread_id="/private/thread")
+    with pytest.raises(ValidationError):
+        PodcastTarget(kind="podcast", production_id="episode\nraw-content")
 
 
 def test_persistence_rows_match_migration_39_fields_and_target_kind():

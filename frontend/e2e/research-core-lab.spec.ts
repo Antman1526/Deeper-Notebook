@@ -129,7 +129,6 @@ test.describe('Research Core Lab browser acceptance', () => {
     await expect(page.getByRole('toolbar', { name: /^Knowledge pane pane-\d+$/ })).toHaveCount(2)
     await page.getByRole('button', { name: 'Search (Alt+4)' }).click()
     await expect(page.getByRole('tab', { name: 'Search: Search', exact: true })).toHaveAttribute('aria-selected', 'true')
-    await page.getByLabel('Search knowledge').fill('overlay evidence')
     await expect(page.getByRole('tab', { name: 'Write: Research draft', exact: true })).toHaveCount(2)
     await expect.poll(() => JSON.stringify(fixture.state.workspace)).toContain('"type":"split"')
     await expect.poll(() => JSON.stringify(fixture.state.workspace)).toContain('"mode":"write"')
@@ -145,9 +144,8 @@ test.describe('Research Core Lab browser acceptance', () => {
     await expect(page.getByRole('tab', { name: 'Ask: Ask', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Podcast (Alt+6)' }).click()
     await expect(page.getByRole('tab', { name: 'Podcast: Podcast', exact: true })).toBeVisible()
-    await page.getByRole('tab', { name: 'Write: Research draft', exact: true }).first().click()
     await page.getByRole('button', { name: 'Graph (Alt+5)' }).click()
-    await expect(page.getByRole('tab', { name: 'Graph: Research draft', exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Graph: Podcast', exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: 'Workspaces', exact: true }).click()
     await page.getByRole('button', { name: 'Save Current As' }).click()
@@ -166,7 +164,7 @@ test.describe('Research Core Lab browser acceptance', () => {
     await expect(page.getByRole('tab', { name: 'Search: Search', exact: true })).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Ask: Ask', exact: true })).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Podcast: Podcast', exact: true })).toBeVisible()
-    await expect(page.getByRole('tab', { name: 'Graph: Research draft', exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Graph: Podcast', exact: true })).toBeVisible()
 
     await page.setViewportSize({ width: 900, height: 800 })
     const sourcesDrawer = page.getByRole('button', { name: 'Open sources drawer' })

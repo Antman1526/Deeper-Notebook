@@ -291,18 +291,18 @@ const wireTargetSchema = z.discriminatedUnion('kind', [
     source_revision_id: revisionId.nullable().default(null),
   }).strict(),
   z.object({
-    kind: z.literal('search'), query: z.string().min(1).max(512),
+    kind: z.literal('search'), query: z.string().max(512),
     search_mode: z.enum(['exact', 'text', 'semantic']).default('text'),
     space_ids: z.array(spaceId).max(32).default([]),
     authority_kinds: z.array(authoritySchema).max(2).default([]),
     tags: z.array(z.string().min(1).max(128)).max(32).default([]),
   }).strict(),
   z.object({
-    kind: z.literal('ask'), thread_id: z.string().min(1).max(128).nullable().default(null),
+    kind: z.literal('ask'), thread_id: navigationId.nullable().default(null),
     selected_document_ids: z.array(documentId).max(128).default([]),
   }).strict(),
   z.object({
-    kind: z.literal('podcast'), production_id: z.string().min(1).max(128).nullable().default(null),
+    kind: z.literal('podcast'), production_id: navigationId.nullable().default(null),
     seed_document_ids: z.array(documentId).max(128).default([]),
   }).strict(),
   z.object({
@@ -321,17 +321,17 @@ const camelTargetSchema: z.ZodType<KnowledgeTarget> = z.discriminatedUnion('kind
     sourceRevisionId: revisionId.nullable(),
   }).strict(),
   z.object({
-    kind: z.literal('search'), query: z.string().min(1).max(512),
+    kind: z.literal('search'), query: z.string().max(512),
     searchMode: z.enum(['exact', 'text', 'semantic']),
     spaceIds: z.array(spaceId).max(32), authorityKinds: z.array(authoritySchema).max(2),
     tags: z.array(z.string().min(1).max(128)).max(32),
   }).strict(),
   z.object({
-    kind: z.literal('ask'), threadId: z.string().min(1).max(128).nullable(),
+    kind: z.literal('ask'), threadId: navigationId.nullable(),
     selectedDocumentIds: z.array(documentId).max(128),
   }).strict(),
   z.object({
-    kind: z.literal('podcast'), productionId: z.string().min(1).max(128).nullable(),
+    kind: z.literal('podcast'), productionId: navigationId.nullable(),
     seedDocumentIds: z.array(documentId).max(128),
   }).strict(),
   z.object({
