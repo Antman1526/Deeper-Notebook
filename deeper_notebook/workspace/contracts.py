@@ -264,10 +264,13 @@ class DocumentTabTarget(_StrictWorkspaceModel):
     def locator_must_be_vault_relative(cls, value: str) -> str:
         if (
             not value
+            or value.strip() != value
             or value.startswith(("/", "\\"))
             or value.startswith(("//", "\\\\"))
             or re.match(r"^[A-Za-z]:", value)
-            or ".." in value.replace("\\", "/").split("/")
+            or "\\" in value
+            or "\x00" in value
+            or any(part in {"", ".", ".."} for part in value.split("/"))
         ):
             raise ValueError("note path must be relative to its vault")
         return value

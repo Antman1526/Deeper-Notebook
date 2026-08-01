@@ -210,14 +210,11 @@ class NamedWorkspaceTab(_Strict):
 
     @model_validator(mode="after")
     def legacy_mode_is_derived(self) -> "NamedWorkspaceTab":
-        if self.mode is None:
-            object.__setattr__(
-                self,
-                "mode",
-                {"document": "read", "graph": "graph", "search": "search"}.get(
-                    self.target.kind, "read"
-                ),
-            )
+        derived = {"document": "read", "graph": "graph", "search": "search"}.get(
+            self.target.kind, "read"
+        )
+        if self.mode != derived:
+            object.__setattr__(self, "mode", derived)
         return self
 
 
