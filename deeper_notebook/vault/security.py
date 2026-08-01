@@ -6,11 +6,12 @@ import errno
 import hashlib
 import os
 import stat
+import threading
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import TracebackType
-from typing import Callable, Literal
+from typing import Callable, Literal, TypeVar
 
 from deeper_notebook.vault.parsers.common import configured_max_markdown_bytes
 
@@ -43,7 +44,11 @@ _SAFE_MESSAGES = {
     "file_too_large": "The candidate exceeds the configured parser limit.",
     "changed_during_read": "The candidate changed while it was being read.",
     "root_changed": "The approved root identity changed.",
+    "root_open_timeout": "Opening the approved root timed out.",
+    "scan_timeout": "Listing approved vault files timed out.",
 }
+
+_Value = TypeVar("_Value")
 
 PathKind = Literal[
     "markdown", "metadata", "connector", "control", "temporary", "ignored"
@@ -169,6 +174,72 @@ class ApprovedVaultRoot:
         except OSError as exc:
             raise VaultSecurityError("root_changed") from exc
         return stats[-1]
+
+
+def _run_with_filesystem_timeout(
+    operation: Callable[[], _Value],
+    *,
+    timeout_seconds: float,
+    timeout_code: str,
+    close_late_result: Callable[[_Value], None] | None = None,
+) -> _Value:
+    """Bound an uninterruptible filesystem operation without blocking shutdown.
+
+    macOS can leave descriptor-relative ``open`` or ``scandir`` blocked in the
+    kernel when privacy controls or a remote volume stop responding. A daemon
+    thread lets the API report a typed timeout; a late approved descriptor is
+    closed instead of being retained by an abandoned worker.
+    """
+
+    if timeout_seconds <= 0:
+        raise ValueError("filesystem timeout must be positive")
+    lock = threading.Lock()
+    finished = threading.Event()
+    expired = False
+    completed = False
+    has_result = False
+    result: _Value | None = None
+    error: Exception | None = None
+
+    def run() -> None:
+        nonlocal completed, error, has_result, result
+        late_result: _Value | None = None
+        try:
+            value = operation()
+        except Exception as exc:
+            with lock:
+                if not expired:
+                    error = exc
+                    completed = True
+        else:
+            with lock:
+                if expired:
+                    late_result = value
+                else:
+                    result = value
+                    has_result = True
+                    completed = True
+        finally:
+            if late_result is not None and close_late_result is not None:
+                try:
+                    close_late_result(late_result)
+                except Exception:
+                    pass
+            finished.set()
+
+    thread = threading.Thread(target=run, name="vault-filesystem-boundary", daemon=True)
+    thread.start()
+    if not finished.wait(timeout_seconds):
+        with lock:
+            if not completed:
+                expired = True
+                raise VaultSecurityError(timeout_code)
+    with lock:
+        if error is not None:
+            raise error
+        if has_result:
+            return result  # type: ignore[return-value]
+    raise VaultSecurityError(timeout_code)
 
 
 def _descriptor_security_available() -> bool:
@@ -383,6 +454,19 @@ def approve_vault_root(root: Path | str) -> ApprovedVaultRoot:
                 except OSError:
                     pass
         raise VaultSecurityError("invalid_root") from exc
+
+
+def approve_vault_root_bounded(
+    root: Path | str, *, timeout_seconds: float = 15.0
+) -> ApprovedVaultRoot:
+    """Open an approved root without allowing a stalled ``open`` to freeze callers."""
+
+    return _run_with_filesystem_timeout(
+        lambda: approve_vault_root(root),
+        timeout_seconds=timeout_seconds,
+        timeout_code="root_open_timeout",
+        close_late_result=lambda approved: approved.close(),
+    )
 
 
 def _relative_parts(relative_path: str) -> tuple[str, ...]:
@@ -679,6 +763,18 @@ def list_secure_candidates(root: ApprovedVaultRoot) -> list[SecureFileCandidate]
     return candidates
 
 
+def list_secure_candidates_bounded(
+    root: ApprovedVaultRoot, *, timeout_seconds: float = 15.0
+) -> list[SecureFileCandidate]:
+    """List candidates without allowing an OS-level directory stall to block callers."""
+
+    return _run_with_filesystem_timeout(
+        lambda: list_secure_candidates(root),
+        timeout_seconds=timeout_seconds,
+        timeout_code="scan_timeout",
+    )
+
+
 __all__ = [
     "INDEXABLE_MARKDOWN",
     "INDEXABLE_METADATA",
@@ -690,8 +786,10 @@ __all__ = [
     "VaultPathClassification",
     "VaultSecurityError",
     "approve_vault_root",
+    "approve_vault_root_bounded",
     "canonical_vault_relative_path",
     "classify_vault_path",
     "list_secure_candidates",
+    "list_secure_candidates_bounded",
     "secure_read",
 ]

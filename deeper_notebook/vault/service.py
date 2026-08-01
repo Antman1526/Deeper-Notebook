@@ -25,6 +25,7 @@ from deeper_notebook.vault.repository import VaultFile, VaultMount, VaultMountCr
 from deeper_notebook.vault.security import (
     VaultSecurityError,
     approve_vault_root,
+    approve_vault_root_bounded,
     classify_vault_path,
     secure_read,
 )
@@ -133,11 +134,15 @@ class VaultService:
         *,
         shadow_projector: KnowledgeShadowProjector | None = None,
         stable_after_seconds: float = 2.0,
+        filesystem_timeout_seconds: float = 15.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._repository = repository
         self._shadow_projector = shadow_projector
         self._stable_after_seconds = max(2.0, stable_after_seconds)
+        if filesystem_timeout_seconds <= 0:
+            raise ValueError("filesystem timeout must be positive")
+        self._filesystem_timeout_seconds = filesystem_timeout_seconds
         self._clock = clock
         self._watchers: dict[str, VaultWatcher] = {}
         self._mounts: dict[str, VaultMount] = {}
@@ -228,7 +233,10 @@ class VaultService:
         if watcher is not None:
             return watcher
         try:
-            root = approve_vault_root(mount.root_path)
+            root = approve_vault_root_bounded(
+                mount.root_path,
+                timeout_seconds=self._filesystem_timeout_seconds,
+            )
         except VaultSecurityError as exc:
             self._states[mount.id] = "unavailable"
             logger.warning("Vault mount {} is unavailable ({})", mount.id, exc.code)
@@ -254,6 +262,7 @@ class VaultService:
             known_paths=paths,
             known_projected_hashes=hashes,
             excluded_relative_prefixes=child_prefixes,
+            filesystem_timeout_seconds=self._filesystem_timeout_seconds,
         )
         self._watchers[mount.id] = watcher
         return watcher

@@ -14,7 +14,7 @@ from deeper_notebook.vault.security import (
     SecureFileCandidate,
     VaultSecurityError,
     classify_vault_path,
-    list_secure_candidates,
+    list_secure_candidates_bounded,
     secure_read,
 )
 
@@ -148,6 +148,7 @@ class VaultWatcher:
         known_projected_hashes: Mapping[str, str | None] | None = None,
         excluded_relative_prefixes: tuple[str, ...] = (),
         max_file_bytes: int | None = None,
+        filesystem_timeout_seconds: float = 15.0,
     ) -> None:
         if stable_after_seconds < 2.0:
             raise ValueError("vault stability window must be at least two seconds")
@@ -156,6 +157,9 @@ class VaultWatcher:
         self._repository = repository
         self._stable_after_seconds = stable_after_seconds
         self._max_file_bytes = max_file_bytes
+        if filesystem_timeout_seconds <= 0:
+            raise ValueError("filesystem timeout must be positive")
+        self._filesystem_timeout_seconds = filesystem_timeout_seconds
         self._excluded_relative_prefixes = tuple(
             self._validated_excluded_prefix(prefix)
             for prefix in excluded_relative_prefixes
@@ -263,7 +267,10 @@ class VaultWatcher:
 
     async def _scan_locked(self, *, now_monotonic: float | None) -> list[VaultWorkItem]:
         now = time.monotonic() if now_monotonic is None else now_monotonic
-        candidates = list_secure_candidates(self._root)
+        candidates = list_secure_candidates_bounded(
+            self._root,
+            timeout_seconds=self._filesystem_timeout_seconds,
+        )
         current_paths: set[str] = set()
         work: list[VaultWorkItem] = []
 
