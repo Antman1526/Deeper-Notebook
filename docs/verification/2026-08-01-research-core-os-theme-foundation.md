@@ -1,12 +1,12 @@
 # Research Core OS Theme Foundation Verification
 
-Status: verified after final-review repair. The focused frontend contracts,
-Guided Tips contracts, desktop/API theme suite, generated-asset freshness
-check, scoped ESLint, production build, and all eight deterministic visual
-comparisons pass. Repository-wide lint remains blocked by pre-existing
+Status: verified after final-review authority follow-up. The focused frontend
+contracts, Guided Tips contracts, desktop/API theme suite, generated-asset
+freshness check, scoped ESLint, production build, and all eight deterministic
+visual comparisons pass. Repository-wide lint remains blocked by pre-existing
 Podcast/Vault findings; that unrelated gate is recorded separately below.
 
-Commit: `b7b90cf0f2da49fc62cc546267e5f582ebf82d8e`
+Commit: `e99ba815bcc31ea65669d5083cebdaacea39a8c7`
 
 Foundation baseline commit: `53ec0990b14fdcd6413d8bd7af9936ce0c2e434b`
 
@@ -57,6 +57,40 @@ Product repair commit: `b7b90cf0f2da49fc62cc546267e5f582ebf82d8e`
   capture and asserts the final Classics group and Midnight Aurora card. Six
   full-page baselines were regenerated to 6382px; the two selected
   Accessibility card crops remained byte-identical.
+
+## Final-review authority follow-up closure
+
+Product follow-up commit: `e99ba815bcc31ea65669d5083cebdaacea39a8c7`
+
+- `ThemeGallery` now resolves the persisted `system` selection through the
+  current OS palette for preview and restore, using the shared
+  `resolveCatalogTheme` and `applyCatalogTheme` authority.
+- `ThemeProvider` is the sole owner of the OS media-query listener.
+  `useTheme()` now subscribes to the provider/application-applied effective
+  theme signal, so consumers still follow provider OS changes without adding
+  another media listener.
+- `THEME_SELECTION_CHANGE_EVENT` is shared by the provider, ThemeSwitcher,
+  and ThemeGallery. Cross-picker writes now update Current state, reset an
+  active external preview, and refresh the gallery restore baseline; listener
+  cleanup is covered by regression tests.
+
+Follow-up focused frontend command:
+
+```bash
+cd frontend && npm test -- src/lib/themes/catalog.test.ts src/lib/theme-script.test.ts src/lib/brand.test.ts src/components/vault/ResearchCoreVisualSystem.test.tsx src/components/deeper-notebook/ThemeSwitcher.test.tsx src/components/deeper-notebook/ThemeGallery.test.tsx src/components/providers/ThemeProvider.test.tsx src/components/providers/ThemeProvider.integration.test.tsx src/lib/stores/theme-store.test.ts src/lib/guided-tips/catalog.test.ts src/lib/stores/guided-tips-store.test.ts src/components/guided-tips/GuidedTipsProvider.test.tsx
+```
+
+Result: **exit 0 — 12 files passed; 59 tests passed.** This includes the
+System preview/restore, sole provider listener/useTheme consumer, and
+cross-picker synchronization regressions.
+
+Follow-up scoped checks:
+
+- `cd frontend && npx eslint src/lib/theme-storage.ts src/lib/stores/theme-store.ts src/components/providers/ThemeProvider.tsx src/components/providers/ThemeProvider.integration.test.tsx src/components/deeper-notebook/ThemeGallery.tsx src/components/deeper-notebook/ThemeGallery.test.tsx src/components/deeper-notebook/ThemeSwitcher.tsx src/components/deeper-notebook/ThemeSwitcher.test.tsx`: **exit 0**.
+- `npm run build`: **exit 0**, all 23 routes generated.
+- `PYTHONPATH=. ./.build-venv/bin/python scripts/render_theme_static_assets.py --check`: **exit 0**.
+- `npm run test:e2e:themes`: **exit 0 — 8 passed (36.0s)**; no snapshots changed.
+- Scoped `git diff --check`: **exit 0**.
 
 ## Regression gates
 
