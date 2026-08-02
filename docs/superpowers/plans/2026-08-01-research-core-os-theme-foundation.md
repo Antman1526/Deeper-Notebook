@@ -1234,6 +1234,25 @@ git add docs/verification/2026-08-01-research-core-os-theme-foundation.md
 git commit -m "docs: verify Research Core theme foundation"
 ```
 
+## Final-review repair progress (2026-08-02)
+
+- [x] Restored canonical persisted `system` selection authority and one
+  provider-owned OS listener, with dark/light transition, cleanup, and
+  explicit-theme stability regressions.
+- [x] Enforced >=4.5:1 primary/accent foreground contrast across all runtime
+  palettes, refreshed generated auxiliary assets, and added the permanent
+  parametrized test.
+- [x] Added the stable Settings scroll-viewport selector, capture-only
+  unclip, final Classics/Midnight Aurora visibility assertions, and refreshed
+  six full-page baselines to 6382px while retaining the two selected-card
+  proofs unchanged.
+- [x] Product repair commit: `b7b90cf0f2da49fc62cc546267e5f582ebf82d8e`.
+- [x] Final verification: frontend focused contracts 44 tests, Guided Tips
+  11 tests, desktop/API theme suite 247 tests, generated-asset check, scoped
+  ESLint, production build, and Playwright 8/8 no-update all pass.
+- [ ] Repository-wide Podcast/Vault ESLint findings remain outside this plan
+  and require a separate cleanup scope.
+
 ## Program Boundary After This Plan
 
 This plan ends with working themes, gallery, persistence, auxiliary desktop
