@@ -48,6 +48,15 @@ def _memory_injection_js() -> str:
 # upstream's defaults bleed through; that produced unreadable labels in the
 # dark themes (the issue visible in the v0.4 screenshot).
 _THEMES = {
+    # --- Research Core OS palettes ---
+    "research-core-dark": {"is_dark": True, "bg": "#071B1D", "fg": "#D8FFF8", "card": "#0B292B", "muted": "#12383A", "muted_fg": "#A3CEC8", "primary": "#2DD4BF", "primary_fg": "#041313", "accent": "#38BDF8", "accent_fg": "#041313", "border": "#225053", "destructive": "#FB7185"},
+    "research-core-light": {"is_dark": False, "bg": "#F5FBF9", "fg": "#102A2A", "card": "#FFFFFF", "muted": "#E5F2EE", "muted_fg": "#526E69", "primary": "#0F766E", "primary_fg": "#FFFFFF", "accent": "#0284C7", "accent_fg": "#FFFFFF", "border": "#C9DED8", "destructive": "#DC2626"},
+    "deep-ocean": {"is_dark": True, "bg": "#06151F", "fg": "#D8F3F8", "card": "#0B2432", "muted": "#123446", "muted_fg": "#9FC6CE", "primary": "#2DD4BF", "primary_fg": "#041619", "accent": "#38BDF8", "accent_fg": "#041619", "border": "#21485A", "destructive": "#FB7185"},
+    "graphite-lab": {"is_dark": True, "bg": "#151A1D", "fg": "#EDF7F5", "card": "#20272B", "muted": "#2A3438", "muted_fg": "#B5C6C3", "primary": "#5EEAD4", "primary_fg": "#0D1718", "accent": "#67E8F9", "accent_fg": "#0D1718", "border": "#3B494E", "destructive": "#FB7185"},
+    "arctic-research": {"is_dark": False, "bg": "#F4FAFC", "fg": "#122A35", "card": "#FFFFFF", "muted": "#E3EFF3", "muted_fg": "#4F6974", "primary": "#0F766E", "primary_fg": "#FFFFFF", "accent": "#0284C7", "accent_fg": "#FFFFFF", "border": "#C7DBE2", "destructive": "#DC2626"},
+    "archive-paper": {"is_dark": False, "bg": "#F7F1E5", "fg": "#2B332E", "card": "#FFFDF8", "muted": "#ECE3D3", "muted_fg": "#665F52", "primary": "#0F766E", "primary_fg": "#FFFFFF", "accent": "#A16207", "accent_fg": "#FFFFFF", "border": "#D8CDBB", "destructive": "#B91C1C"},
+    "high-contrast-dark": {"is_dark": True, "bg": "#000000", "fg": "#FFFFFF", "card": "#111111", "muted": "#1E1E1E", "muted_fg": "#E6E6E6", "primary": "#5EEAD4", "primary_fg": "#000000", "accent": "#67E8F9", "accent_fg": "#000000", "border": "#FFFFFF", "destructive": "#FF5A67"},
+    "high-contrast-light": {"is_dark": False, "bg": "#FFFFFF", "fg": "#000000", "card": "#FFFFFF", "muted": "#EFEFEF", "muted_fg": "#333333", "primary": "#006B63", "primary_fg": "#FFFFFF", "accent": "#005FCC", "accent_fg": "#FFFFFF", "border": "#000000", "destructive": "#B00020"},
     # --- Light themes ---
     "light-blue": {
         "is_dark": False,
@@ -201,7 +210,7 @@ def _theme_tokens(theme_id: str) -> dict:
     Sidebar tokens get a slightly contrasted treatment so the left nav reads
     as a distinct region rather than blending into the body.
     """
-    t = _THEMES.get(theme_id, _THEMES["light-blue"])
+    t = _THEMES.get(theme_id, _THEMES["research-core-dark"])
     bg, fg = t["bg"], t["fg"]
     card, muted, muted_fg = t["card"], t["muted"], t["muted_fg"]
     primary, primary_fg = t["primary"], t["primary_fg"]
@@ -212,8 +221,27 @@ def _theme_tokens(theme_id: str) -> dict:
     # Sidebar slightly offset from the body. Light → a touch grayer.
     # Dark → a touch lighter so the sidebar is legible against the body.
     sidebar = card if is_dark else "#FAFBFC"
+    warning = "#FBBF24" if is_dark else "#D97706"
+    research_tokens = {
+        "--dn-canvas": bg,
+        "--dn-panel": card,
+        "--dn-panel-raised": f"color-mix(in oklab, {card} 88%, {primary})",
+        "--dn-separator": border,
+        "--dn-focus": primary,
+        "--dn-selection": f"color-mix(in oklab, {primary} 22%, transparent)",
+        "--dn-evidence": accent,
+        "--dn-warning": f"var(--warning, {warning})",
+        "--dn-editable": primary,
+        "--dn-read-only": muted_fg,
+        "--dn-model-local": primary,
+        "--dn-model-cloud": f"var(--info, {accent})",
+        "--dn-graph-node": primary,
+        "--dn-graph-edge": muted_fg,
+        "--dn-graph-selected": accent,
+    }
 
     return {
+        **research_tokens,
         # Body
         "--background": bg,
         "--foreground": fg,
@@ -268,14 +296,14 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
     for tid, _meta in _THEMES.items():
         tokens = _theme_tokens(tid)
         decls = "\n          ".join(f"{k}: {v};" for k, v in tokens.items())
-        # The default block (no data-theme attribute) uses the light-blue
+        # The default block (no data-theme attribute) uses the Research Core
         # palette so the page never flashes unstyled.
-        if tid == "light-blue":
+        if tid == "research-core-dark":
             blocks.append(f":root, :root[data-theme=\"{tid}\"] {{\n          {decls}\n        }}")
         else:
             blocks.append(f":root[data-theme=\"{tid}\"] {{\n          {decls}\n        }}")
     all_themes_css = "\n        ".join(blocks)
-    initial = theme_id if theme_id in _THEMES else "light-blue"
+    initial = theme_id if theme_id in _THEMES else "research-core-dark"
     is_dark_map = {tid: ("true" if _THEMES[tid]["is_dark"] else "false") for tid in _THEMES}
     is_dark_js = ", ".join(f'"{tid}": {v}' for tid, v in is_dark_map.items())
 
@@ -316,7 +344,7 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
       // Apply a theme: sets dataset.theme + .dark class. Internal — called
       // by both the initial-load path and window.DN.setTheme.
       function applyTheme(theme) {{
-        if (!IS_DARK.hasOwnProperty(theme)) theme = "light-blue";
+        if (!IS_DARK.hasOwnProperty(theme)) theme = "research-core-dark";
         document.documentElement.dataset.theme = theme;
         document.documentElement.classList.toggle('dark', IS_DARK[theme]);
       }}

@@ -47,7 +47,7 @@ class Config:
     default_model: str
     surreal_user: str
     surreal_password: str
-    theme: str = "light-blue"
+    theme: str = "research-core-dark"
     openchronicle_choice: str = "skip"
     encryption_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     execution_policy: Literal["strict_local", "local_preferred", "custom"] = "strict_local"
@@ -111,7 +111,7 @@ def load_or_create(path: Path) -> Config:
             default_model="",
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
-            theme="light-blue",
+            theme="research-core-dark",
             openchronicle_choice="skip",
             encryption_key=secrets.token_urlsafe(32),
         )
@@ -130,7 +130,7 @@ def load_or_create(path: Path) -> Config:
         default_model=raw.get("default_model", ""),
         surreal_user=raw.get("surreal_user", "root"),
         surreal_password=raw["surreal_password"],
-        theme=raw.get("theme", "light-blue"),
+        theme=raw.get("theme", "research-core-dark"),
         openchronicle_choice=raw.get("openchronicle_choice", "skip"),
         encryption_key=encryption_key if encryption_key else secrets.token_urlsafe(32),
         execution_policy=raw.get("execution_policy", "strict_local"),
