@@ -75,14 +75,26 @@ function getCatalogTheme(
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  const { theme, legacyThemeOverride, getSystemTheme, getEffectiveTheme } = useThemeStore()
+  const {
+    theme,
+    legacyThemeOverride,
+    setLegacyThemeOverride,
+    getSystemTheme,
+    getEffectiveTheme,
+  } = useThemeStore()
   const [storageRevision, setStorageRevision] = useState(0)
 
   useEffect(() => {
-    const handleCanonicalThemeChange = () => setStorageRevision(revision => revision + 1)
+    const handleCanonicalThemeChange = () => {
+      // A canonical picker write supersedes any transient legacy command.
+      // Clear the override synchronously so the next resolution cannot paint
+      // the stale CommandPalette choice or retain its system listener.
+      setLegacyThemeOverride(false)
+      setStorageRevision(revision => revision + 1)
+    }
     window.addEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
     return () => window.removeEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
-  }, [])
+  }, [setLegacyThemeOverride])
 
   useEffect(() => {
     const root = window.document.documentElement

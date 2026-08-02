@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -11,15 +12,16 @@ import {
   useCommandSurfaceStore,
 } from '@/lib/commands/command-surface-store'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
+import { useThemeStore } from '@/lib/stores/theme-store'
 import type { SearchResponse } from '@/lib/types/search'
 
 const router = vi.hoisted(() => ({ push: vi.fn() }))
+const deeperNotebookFetch = vi.hoisted(() => ({ deeperNotebookFetch: vi.fn() }))
 const dialogs = vi.hoisted(() => ({
   openSourceDialog: vi.fn(),
   openNotebookDialog: vi.fn(),
   openPodcastDialog: vi.fn(),
 }))
-const theme = vi.hoisted(() => ({ setTheme: vi.fn() }))
 const indexed = vi.hoisted(() => ({
   runSemanticSearch: vi.fn(),
   text: {
@@ -52,13 +54,13 @@ const commandData = vi.hoisted(() => ({
 }))
 
 vi.mock('next/navigation', () => ({ useRouter: () => router }))
+vi.mock('@/lib/api/deeper-notebook', () => deeperNotebookFetch)
 vi.mock('@/lib/hooks/use-create-dialogs', () => ({
   useCreateDialogs: () => dialogs,
 }))
 vi.mock('@/lib/hooks/use-notebooks', () => ({
   useNotebooks: () => ({ data: [{ id: 'notebook-1', name: 'Research Core', description: '' }], isLoading: false }),
 }))
-vi.mock('@/lib/stores/theme-store', () => ({ useTheme: () => theme }))
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { query?: string }) => ({
@@ -129,8 +131,21 @@ vi.mock('@/lib/hooks/use-vault', () => ({
 vi.mock('@/lib/hooks/use-overlay', () => ({
   useOverlayNotes: () => ({ data: [], isLoading: false, isError: false }),
 }))
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => children,
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => children,
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick, ...props }: { children: ReactNode; onClick?: () => void; 'aria-current'?: 'true' }) => (
+    <button onClick={onClick} {...props}>{children}</button>
+  ),
+  DropdownMenuLabel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuSeparator: () => <hr />,
+}))
 
 import { CommandPalette } from './CommandPalette'
+import { ThemeGallery } from '@/components/deeper-notebook/ThemeGallery'
+import { ThemeSwitcher } from '@/components/deeper-notebook/ThemeSwitcher'
+import { ThemeProvider } from '@/components/providers/ThemeProvider'
 
 function renderPalette() {
   return render(<CommandPalette />)
@@ -176,7 +191,13 @@ describe('CommandPalette', () => {
     HTMLElement.prototype.scrollIntoView = vi.fn()
     router.push.mockReset()
     Object.values(dialogs).forEach(mock => mock.mockReset())
-    theme.setTheme.mockReset()
+    localStorage.clear()
+    document.documentElement.dataset.theme = ''
+    document.documentElement.className = ''
+    useThemeStore.setState({ theme: 'system', legacyThemeOverride: false, appliedTheme: 'light' })
+    deeperNotebookFetch.deeperNotebookFetch.mockResolvedValue({
+      json: async () => ({ theme: 'light-blue' }),
+    })
     indexed.runSemanticSearch.mockReset()
     commandData.catalog.candidates = []
     indexed.text = { data: { results: [], total_count: 0, search_type: 'text' }, isCurrent: true }
@@ -204,13 +225,37 @@ describe('CommandPalette', () => {
     ['Light', 'light'],
     ['Dark', 'dark'],
     ['System', 'system'],
-  ] as const)('routes the %s palette command through the legacy theme setter', async (label, value) => {
+  ] as const)('routes the %s palette command through the live legacy theme setter', async (label, value) => {
     renderPalette()
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
 
     fireEvent.click(await screen.findByRole('option', { name: label }))
 
-    await waitFor(() => expect(theme.setTheme).toHaveBeenCalledWith(value))
+    await waitFor(() => expect(useThemeStore.getState().theme).toBe(value))
+  })
+
+  it('keeps picker and painted authority on a newer canonical selection after a CommandPalette choice', async () => {
+    render(
+      <ThemeProvider>
+        <ThemeSwitcher />
+        <ThemeGallery />
+        <CommandPalette />
+      </ThemeProvider>,
+    )
+
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    fireEvent.click(await screen.findByRole('option', { name: 'Dark' }))
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('archive-paper'))
+    expect(localStorage.getItem('dn-theme')).toBe('archive-paper')
+    expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
+    expect(screen.getByRole('button', { name: 'Archive Paper Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'Archive Paper theme' })).toHaveTextContent('Current')
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(useThemeStore.getState().legacyThemeOverride).toBe(false)
   })
 
   it('preserves Cmd+N, Cmd+U, and Cmd+/ global shortcuts', () => {
