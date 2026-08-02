@@ -21,14 +21,37 @@ export function normalizeCatalogTheme(
   return isThemeId(value) ? value : null
 }
 
-export function getStoredCatalogTheme(effectiveTheme: EffectiveTheme): ThemeId | null {
+/**
+ * Resolve a persisted catalog selection to the concrete palette that should
+ * be painted. `system` is intentionally kept as a selection until this point
+ * so the provider can own the single OS appearance listener.
+ */
+export function resolveCatalogTheme(
+  selection: ThemeId,
+  effectiveTheme: EffectiveTheme,
+): ThemeId {
+  if (selection === 'system') return effectiveTheme === 'dark' ? 'dark' : 'light-blue'
+  return selection
+}
+
+/**
+ * Read the canonical catalog selection without resolving `system`. This is
+ * distinct from the effective palette and is what determines listener
+ * ownership in ThemeProvider.
+ */
+export function getStoredCatalogSelection(): ThemeId | null {
   if (typeof window === 'undefined') return null
 
   try {
-    return normalizeCatalogTheme(peekStoredTheme(localStorage), effectiveTheme)
+    return normalizeCatalogTheme(peekStoredTheme(localStorage), 'light')
   } catch {
     return null
   }
+}
+
+export function getStoredCatalogTheme(effectiveTheme: EffectiveTheme): ThemeId | null {
+  const selection = getStoredCatalogSelection()
+  return selection ? resolveCatalogTheme(selection, effectiveTheme) : null
 }
 
 export function applyCatalogTheme(root: HTMLElement, theme: ThemeId) {

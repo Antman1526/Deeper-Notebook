@@ -17,4 +17,11 @@ export function readStoredTheme(storage: Storage): string | null {
 export function writeStoredTheme(storage: Storage, theme: string): void {
   storage.setItem(CANONICAL_THEME_KEY, theme)
   storage.setItem(LEGACY_THEME_KEY, theme)
+
+  // ThemeProvider uses this same-tab signal to re-evaluate canonical
+  // selection authority. The browser `storage` event only reaches other
+  // documents, while ThemeSwitcher and ThemeGallery update this document.
+  if (typeof window !== 'undefined' && storage === window.localStorage) {
+    window.dispatchEvent(new Event('dn-theme-change'))
+  }
 }
