@@ -83,7 +83,16 @@ export function GuidedTipsProvider() {
     updatePosition()
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !document.querySelector(SUSPEND_SELECTOR)) {
+      const anchor = document.querySelector<HTMLElement>(
+        `[data-guided-tip-anchor="${tip.anchor}"]`,
+      )
+
+      if (
+        event.key === 'Escape'
+        && calloutRef.current
+        && anchor
+        && !document.querySelector(SUSPEND_SELECTOR)
+      ) {
         complete(tip)
         setPosition(null)
       }
