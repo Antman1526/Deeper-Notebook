@@ -72,7 +72,44 @@ describe('ThemeProvider legacy system ownership', () => {
     expect(document.documentElement).not.toHaveClass('dark')
   })
 
+  it('resolves canonical persisted system and follows both OS directions', () => {
+    localStorage.setItem('dn-theme', 'system')
+    systemDark = true
+
+    render(<ThemeProvider><div>Research Core</div></ThemeProvider>)
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(document.documentElement).toHaveClass('dark')
+    expect(addEventListener).toHaveBeenCalledTimes(1)
+
+    systemDark = false
+    dispatchSystemChange()
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(addEventListener).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an explicit persisted catalog theme fixed without an OS listener', () => {
+    localStorage.setItem('dn-theme', 'research-core-light')
+    systemDark = true
+
+    render(<ThemeProvider><div>Research Core</div></ThemeProvider>)
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'research-core-light')
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(addEventListener).not.toHaveBeenCalled()
+
+    systemDark = false
+    dispatchSystemChange()
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'research-core-light')
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(removeEventListener).not.toHaveBeenCalled()
+  })
+
   it('removes the sole system listener when the globally mounted provider unmounts', () => {
+    localStorage.setItem('dn-theme', 'system')
     useThemeStore.setState({ theme: 'system', legacyThemeOverride: false })
     const view = render(<ThemeProvider><div>Research Core</div></ThemeProvider>)
 

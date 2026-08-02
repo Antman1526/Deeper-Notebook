@@ -38,7 +38,7 @@ export default function SettingsPage() {
   // sparse on wide monitors while still hitting the "roomy" target.
   return (
     <AppShell>
-      <div className="flex-1 overflow-y-auto">
+      <div data-testid="settings-scroll-viewport" className="flex-1 overflow-y-auto">
         <div className="px-6 py-10 sm:px-8">
           <div className="mx-auto max-w-3xl space-y-10">
             <header className="flex items-start justify-between gap-4">

@@ -95,7 +95,7 @@
   --border: #D8E5F5;
   --primary: #2D7FF9;
   --accent: #5AB1FF;
-  --on-primary: #FFFFFF;
+  --on-primary: #000000;
 }
 
 [data-theme="system"] {
@@ -106,7 +106,7 @@
   --border: #D8E5F5;
   --primary: #2D7FF9;
   --accent: #5AB1FF;
-  --on-primary: #FFFFFF;
+  --on-primary: #000000;
 }
 
 [data-theme="solarized-light"] {
@@ -117,7 +117,7 @@
   --border: #D8D2BF;
   --primary: #268BD2;
   --accent: #2AA198;
-  --on-primary: #FDF6E3;
+  --on-primary: #000000;
 }
 
 [data-theme="github-light"] {
@@ -161,7 +161,7 @@
   --border: #14424F;
   --primary: #268BD2;
   --accent: #2AA198;
-  --on-primary: #FDF6E3;
+  --on-primary: #000000;
 }
 
 [data-theme="dracula"] {
@@ -194,7 +194,7 @@
   --border: #2A2D52;
   --primary: #6C7BFF;
   --accent: #B96CFF;
-  --on-primary: #FFFFFF;
+  --on-primary: #000000;
 }
 
 [data-theme="tokyo-night"] {
@@ -271,6 +271,6 @@
   --border: #DFDAD9;
   --primary: #907AA9;
   --accent: #D7827E;
-  --on-primary: #FAF4ED;
+  --on-primary: #000000;
 }
 

@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { DEFAULT_THEME_ID, type ThemeId } from '@/lib/themes/catalog'
 import {
   applyCatalogTheme,
-  getStoredCatalogTheme,
+  getStoredCatalogSelection,
   normalizeCatalogTheme,
+  resolveCatalogTheme,
   useThemeStore,
 } from '@/lib/stores/theme-store'
 
@@ -15,69 +16,100 @@ interface ThemeProviderProps {
 
 type CatalogThemeSource = 'document' | 'storage' | 'effective'
 
+interface CatalogThemeResolution {
+  selection: ThemeId
+  theme: ThemeId
+  source: CatalogThemeSource
+}
+
 function getCatalogTheme(
   root: HTMLElement,
   effectiveTheme: 'light' | 'dark',
+  systemTheme: 'light' | 'dark',
   theme: 'light' | 'dark' | 'system',
   legacyThemeOverride: boolean,
-): { theme: ThemeId; source: CatalogThemeSource } {
+): CatalogThemeResolution {
   if (legacyThemeOverride) {
+    const selection = theme === 'system'
+      ? 'system'
+      : normalizeCatalogTheme(theme, effectiveTheme, 'legacy') ?? DEFAULT_THEME_ID
     return {
-      theme: normalizeCatalogTheme(theme, effectiveTheme, 'legacy') ?? DEFAULT_THEME_ID,
+      selection,
+      theme: resolveCatalogTheme(selection, selection === 'system' ? systemTheme : effectiveTheme),
       source: 'effective',
     }
   }
 
-  const storedTheme = getStoredCatalogTheme(effectiveTheme)
-  if (storedTheme) return { theme: storedTheme, source: 'storage' }
+  const storedSelection = getStoredCatalogSelection()
+  if (storedSelection) {
+    return {
+      selection: storedSelection,
+      theme: resolveCatalogTheme(storedSelection, storedSelection === 'system' ? systemTheme : effectiveTheme),
+      source: 'storage',
+    }
+  }
 
   const documentTheme = root.dataset.theme
   if (documentTheme) {
     const catalogTheme = normalizeCatalogTheme(documentTheme, effectiveTheme)
     const legacySystemFallback = theme === 'system'
       && (catalogTheme === 'dark' || catalogTheme === 'light-blue')
-    if (catalogTheme && !legacySystemFallback) return { theme: catalogTheme, source: 'document' }
+    if (catalogTheme && !legacySystemFallback) {
+      return {
+        selection: catalogTheme,
+        theme: resolveCatalogTheme(catalogTheme, catalogTheme === 'system' ? systemTheme : effectiveTheme),
+        source: 'document',
+      }
+    }
   }
 
+  const selection = theme === 'system'
+    ? 'system'
+    : normalizeCatalogTheme(theme, effectiveTheme, 'legacy') ?? DEFAULT_THEME_ID
   return {
-    theme: normalizeCatalogTheme(effectiveTheme, effectiveTheme, 'legacy') ?? DEFAULT_THEME_ID,
+    selection,
+    theme: resolveCatalogTheme(selection, selection === 'system' ? systemTheme : effectiveTheme),
     source: 'effective',
   }
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const { theme, legacyThemeOverride, getSystemTheme, getEffectiveTheme } = useThemeStore()
+  const [storageRevision, setStorageRevision] = useState(0)
+
+  useEffect(() => {
+    const handleCanonicalThemeChange = () => setStorageRevision(revision => revision + 1)
+    window.addEventListener('dn-theme-change', handleCanonicalThemeChange)
+    return () => window.removeEventListener('dn-theme-change', handleCanonicalThemeChange)
+  }, [])
 
   useEffect(() => {
     const root = window.document.documentElement
     const effectiveTheme = getEffectiveTheme()
-    const catalogTheme = getCatalogTheme(root, effectiveTheme, theme, legacyThemeOverride)
+    const systemTheme = getSystemTheme()
+    const catalogTheme = getCatalogTheme(root, effectiveTheme, systemTheme, theme, legacyThemeOverride)
 
     // The pre-hydration script is the catalog-theme authority. Legacy values
     // are normalized to the catalog before they reach the document.
     applyCatalogTheme(root, catalogTheme.theme)
 
-    if (catalogTheme.source !== 'effective') return
-
-    // Preserve legacy system changes when catalog selection came from the
-    // effective legacy store rather than pre-hydration document or storage.
-    if (theme === 'system') {
+    // `system` is a persisted selection, not a palette. The provider owns the
+    // one OS media-query listener for both canonical storage and legacy store
+    // fallbacks, while explicit catalog IDs remain fixed across OS changes.
+    if (catalogTheme.selection === 'system') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-      
-      const handleChange = () => {
-        const newSystemTheme = getSystemTheme()
-        applyCatalogTheme(
-          root,
-          (legacyThemeOverride ? null : getStoredCatalogTheme(newSystemTheme))
-            ?? normalizeCatalogTheme('system', newSystemTheme, 'legacy')
-            ?? DEFAULT_THEME_ID,
-        )
+
+      const handleChange = (event: MediaQueryListEvent) => {
+        const newSystemTheme = typeof event.matches === 'boolean'
+          ? (event.matches ? 'dark' : 'light')
+          : getSystemTheme()
+        applyCatalogTheme(root, resolveCatalogTheme('system', newSystemTheme))
       }
 
       mediaQuery.addEventListener('change', handleChange)
       return () => mediaQuery.removeEventListener('change', handleChange)
     }
-  }, [theme, legacyThemeOverride, getSystemTheme, getEffectiveTheme])
+  }, [theme, legacyThemeOverride, getSystemTheme, getEffectiveTheme, storageRevision])
 
   return <>{children}</>
 }
