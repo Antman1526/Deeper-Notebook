@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deliver the complete 25-theme Research Core OS foundation, make Research Core Dark the safe fresh-install default, add a categorized visual theme gallery, and establish deterministic visual-proof infrastructure without redesigning unrelated application screens.
+**Goal:** Deliver the complete 25-theme Research Core OS foundation, make Research Core Dark the safe fresh-install default, add a categorized visual theme gallery and local contextual Guided Tips, and establish deterministic visual-proof infrastructure without redesigning unrelated application screens.
 
 **Architecture:** Keep `desktop/window.py` as the runtime palette authority, add a typed frontend catalog for labels/groups/previews, and enforce cross-layer ID lockstep with tests. Theme components consume semantic CSS variables instead of theme IDs; generated static assets keep first-run and auxiliary desktop surfaces synchronized. Playwright captures stable theme-gallery and shell renders now, while later Research Core OS plans extend the same fixture and matrix to Dashboard, Knowledge, grounded chat, and Podcast Studio.
 
@@ -19,6 +19,7 @@
 - Normal text meets WCAG AA; body foreground targets WCAG AAA where the existing test contract requires it.
 - Focus, selection, hover, disabled, status, and destructive states must remain distinguishable without color alone.
 - Operating-system reduced motion remains authoritative.
+- Guided Tips remain local-only, non-modal, independently disableable, and never start a mutation, scan, model run, or podcast.
 - Do not stage or modify `desktop/requirements.lock`, `history.txt`, `desktop/build/__pycache__/`, or the root `node_modules/` directory; they are pre-existing unrelated or generated worktree state.
 - Do not change protected-vault paths, watcher state, mount authority, source hashes, provider secrets, or local-model files.
 
@@ -35,6 +36,13 @@
 - `desktop/tests/test_theme_static_assets.py` — generated-asset freshness and 25-ID lockstep proof.
 - `frontend/e2e/fixtures/theme-visuals.ts` — strict mocked auth/settings/theme fixture for visual captures.
 - `frontend/e2e/theme-gallery-visual.spec.ts` — deterministic gallery and shell screenshots.
+- `frontend/src/lib/guided-tips/catalog.ts` — stable route, anchor, copy, and version definitions for major-section tips.
+- `frontend/src/lib/guided-tips/catalog.test.ts` — exact section coverage and stable-ID contracts.
+- `frontend/src/lib/stores/guided-tips-store.ts` — local enablement and versioned completion state.
+- `frontend/src/lib/stores/guided-tips-store.test.ts` — disable, completion, version, and replay persistence tests.
+- `frontend/src/components/guided-tips/GuidedTipsProvider.tsx` — non-modal anchored callout controller.
+- `frontend/src/components/guided-tips/GuidedTipsProvider.test.tsx` — routing, anchoring, suspension, keyboard, and Settings-control tests.
+- `frontend/src/components/guided-tips/index.ts` — public Guided Tips exports.
 
 ### Modified files
 
@@ -67,6 +75,8 @@
 - `desktop/memory_dashboard/server.py` — use the Research Core Dark missing-config fallback.
 - `frontend/package.json` — add the focused visual-proof script.
 - `frontend/playwright.config.ts` — add deterministic visual project settings without changing native/device proof boundaries.
+- `frontend/src/components/layout/AppShell.tsx` — mount one Guided Tips provider for authenticated application routes.
+- `frontend/src/components/layout/AppSidebar.tsx` — expose stable section anchors without changing navigation behavior.
 
 ---
 
@@ -331,11 +341,11 @@ research_tokens = {
     "--dn-focus": primary,
     "--dn-selection": f"color-mix(in oklab, {primary} 22%, transparent)",
     "--dn-evidence": accent,
-    "--dn-warning": warning,
+    "--dn-warning": f"var(--warning, {warning})",
     "--dn-editable": primary,
     "--dn-read-only": muted_fg,
     "--dn-model-local": primary,
-    "--dn-model-cloud": accent,
+    "--dn-model-cloud": f"var(--info, {accent})",
     "--dn-graph-node": primary,
     "--dn-graph-edge": muted_fg,
     "--dn-graph-selected": accent,
@@ -407,6 +417,12 @@ describe('pre-hydration Research Core theme script', () => {
     expect(themeScript).toContain('research-core-dark')
     expect(themeScript).toContain("classList.toggle('dark'")
   })
+
+  it('normalizes legacy light values and rejects unknown theme IDs', () => {
+    expect(themeScript).toContain("theme === 'light'")
+    expect(themeScript).toContain("theme = 'light-blue'")
+    expect(themeScript).toContain('validThemes.includes(theme)')
+  })
 })
 ```
 
@@ -436,9 +452,10 @@ Expected: FAIL on old storage precedence/default and missing tokens.
 Import the catalog constants into `theme-script.ts` and emit a script that:
 
 ```ts
-import { DARK_THEME_IDS, DEFAULT_THEME_ID } from '@/lib/themes/catalog'
+import { DARK_THEME_IDS, DEFAULT_THEME_ID, THEME_CATALOG } from '@/lib/themes/catalog'
 
 const darkIds = JSON.stringify(DARK_THEME_IDS)
+const validIds = JSON.stringify(THEME_CATALOG.map(theme => theme.id))
 
 export const themeScript = `
 (function() {
@@ -448,7 +465,10 @@ export const themeScript = `
     var persisted = JSON.parse(localStorage.getItem('theme-storage') || '{}').state?.theme;
     var theme = canonical || legacy || persisted || '${DEFAULT_THEME_ID}';
     var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (theme === 'light') theme = 'light-blue';
     if (theme === 'system') theme = systemDark ? 'dark' : 'light-blue';
+    var validThemes = ${validIds};
+    if (!validThemes.includes(theme)) theme = '${DEFAULT_THEME_ID}';
     var darkThemes = ${darkIds};
     document.documentElement.dataset.theme = theme;
     document.documentElement.classList.toggle('dark', darkThemes.includes(theme));
@@ -527,17 +547,20 @@ git commit -m "feat: apply Research Core themes before hydration"
 - [ ] **Step 1: Write failing gallery behavior tests**
 
 Create tests that render the gallery with mocked dropdown primitives and a
-canonical `DN.setTheme` spy. Assert:
+canonical `DN.setTheme` spy. Preview changes only the document theme; Apply is
+the only action that calls the persistent bridge. Assert:
 
 ```ts
 expect(screen.getByRole('heading', { name: 'Featured' })).toBeVisible()
 expect(screen.getByRole('button', { name: /Preview Research Core Light/ })).toBeVisible()
 expect(screen.getByText('High Contrast Dark')).toBeVisible()
 fireEvent.click(screen.getByRole('button', { name: /Preview Archive Paper/ }))
-expect(canonical.setTheme).toHaveBeenCalledWith('archive-paper')
+expect(document.documentElement.dataset.theme).toBe('archive-paper')
+expect(canonical.setTheme).not.toHaveBeenCalled()
 fireEvent.click(screen.getByRole('button', { name: 'Restore previous theme' }))
-expect(canonical.setTheme).toHaveBeenLastCalledWith('research-core-dark')
+expect(document.documentElement.dataset.theme).toBe('research-core-dark')
 fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
+expect(canonical.setTheme).toHaveBeenCalledWith('archive-paper')
 expect(localStorage.getItem('dn-theme')).toBe('archive-paper')
 ```
 
@@ -582,9 +605,12 @@ from `theme.preview`, not hardcoded Tailwind colors:
 
 - [ ] **Step 4: Implement preview/apply/restore and grouping**
 
-`ThemeGallery` records the active theme when mounted, previews through the
-canonical bridge without writing storage, applies through the bridge plus
-`writeStoredTheme`, and restores the original theme when requested. Render
+`ThemeGallery` records the active theme when mounted. Preview sets
+`document.documentElement.dataset.theme` and toggles `.dark` from
+`THEME_BY_ID[themeId].dark`; it must not call the desktop bridge or write
+storage. Apply calls the canonical bridge plus `writeStoredTheme`. Restore sets
+the original dataset/class directly and leaves persisted configuration
+untouched. Render
 sections in this order: Featured, Light, Dark, Accessibility, Classics. Include
 a text search over label and description.
 
@@ -650,6 +676,7 @@ git commit -m "feat: add Research Core theme gallery"
 - [ ] **Step 1: Write the failing freshness test**
 
 ```py
+import json
 from pathlib import Path
 from desktop.window import _THEMES
 from scripts.render_theme_static_assets import render_assets
@@ -661,8 +688,10 @@ def test_generated_theme_assets_are_current():
 
 def test_first_run_catalog_contains_every_runtime_theme():
     source = (ROOT / "desktop/first_run/static/theme-catalog.generated.js").read_text()
-    for theme_id in _THEMES:
-        assert f"id: '{theme_id}'" in source
+    prefix = "window.DN_THEME_CATALOG = "
+    assert source.startswith(prefix)
+    catalog = json.loads(source.removeprefix(prefix).removesuffix(";\n"))
+    assert {entry["id"] for entry in catalog} == set(_THEMES)
 ```
 
 - [ ] **Step 2: Run the test and verify the missing generator failure**
@@ -917,13 +946,221 @@ git add frontend/e2e/fixtures/theme-visuals.ts frontend/e2e/theme-gallery-visual
 git commit -m "test: add Research Core theme visual proof"
 ```
 
-### Task 7: Foundation Regression Gate and Written Handoff
+### Task 7: Local Contextual Guided Tips
+
+**Files:**
+- Create: `frontend/src/lib/guided-tips/catalog.ts`
+- Create: `frontend/src/lib/guided-tips/catalog.test.ts`
+- Create: `frontend/src/lib/stores/guided-tips-store.ts`
+- Create: `frontend/src/lib/stores/guided-tips-store.test.ts`
+- Create: `frontend/src/components/guided-tips/GuidedTipsProvider.tsx`
+- Create: `frontend/src/components/guided-tips/GuidedTipsProvider.test.tsx`
+- Create: `frontend/src/components/guided-tips/index.ts`
+- Modify: `frontend/src/components/layout/AppShell.tsx`
+- Modify: `frontend/src/components/layout/AppSidebar.tsx`
+- Modify: `frontend/src/app/(dashboard)/settings/page.tsx`
+
+**Interfaces:**
+- Produces: `GuidedTipDefinition`, `GUIDED_TIPS`, `getGuidedTipForPath(pathname: string)`, `useGuidedTipsStore`, and `GuidedTipsProvider`.
+- Consumes: authenticated dashboard routing, stable sidebar `data-guided-tip-anchor` attributes, and the Settings Appearance section created in Task 4.
+
+- [ ] **Step 1: Write failing catalog and persistence tests**
+
+Create `frontend/src/lib/guided-tips/catalog.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { GUIDED_TIPS, getGuidedTipForPath } from './catalog'
+
+describe('Guided Tips catalog', () => {
+  it('covers the approved major sections with stable unique IDs', () => {
+    expect(GUIDED_TIPS.map(tip => tip.id)).toEqual([
+      'dashboard-overview', 'sources-overview', 'capture-overview',
+      'notebooks-overview', 'knowledge-overview', 'search-overview',
+      'studio-overview', 'podcasts-overview', 'study-overview',
+      'models-overview', 'settings-overview',
+    ])
+    expect(new Set(GUIDED_TIPS.map(tip => tip.id)).size).toBe(GUIDED_TIPS.length)
+    expect(GUIDED_TIPS.every(tip => tip.version === 1)).toBe(true)
+  })
+
+  it('uses path boundaries and chooses the most specific route', () => {
+    expect(getGuidedTipForPath('/settings/api-keys')?.id).toBe('models-overview')
+    expect(getGuidedTipForPath('/settings')?.id).toBe('settings-overview')
+    expect(getGuidedTipForPath('/sources/example')?.id).toBe('sources-overview')
+    expect(getGuidedTipForPath('/source-code')).toBeUndefined()
+  })
+})
+```
+
+Create a store test that resets the Zustand state before each test and asserts:
+
+```ts
+const tip = { id: 'knowledge-overview', version: 1 }
+expect(useGuidedTipsStore.getState().isComplete(tip)).toBe(false)
+useGuidedTipsStore.getState().complete(tip)
+expect(useGuidedTipsStore.getState().isComplete(tip)).toBe(true)
+expect(useGuidedTipsStore.getState().isComplete({ ...tip, version: 2 })).toBe(false)
+useGuidedTipsStore.getState().setEnabled(false)
+useGuidedTipsStore.getState().replayAll()
+expect(useGuidedTipsStore.getState().enabled).toBe(false)
+expect(useGuidedTipsStore.getState().completed).toEqual({})
+```
+
+- [ ] **Step 2: Run the focused tests and verify missing-module failures**
+
+Run:
+
+```bash
+cd frontend && npm test -- src/lib/guided-tips/catalog.test.ts src/lib/stores/guided-tips-store.test.ts
+```
+
+Expected: FAIL because the catalog and store do not exist.
+
+- [ ] **Step 3: Implement the exact initial tip catalog**
+
+```ts
+export interface GuidedTipDefinition {
+  id: string
+  version: number
+  pathPrefix: string
+  anchor: string
+  title: string
+  body: string
+}
+
+export const GUIDED_TIPS = [
+  { id: 'dashboard-overview', version: 1, pathPrefix: '/', anchor: '/', title: 'Your research home', body: 'Resume recent work, create a notebook, or check active research and podcast production.' },
+  { id: 'sources-overview', version: 1, pathPrefix: '/sources', anchor: '/sources', title: 'Sources', body: 'Add and organize the material Deeper Notebook can cite in answers and outputs.' },
+  { id: 'capture-overview', version: 1, pathPrefix: '/capture', anchor: '/capture', title: 'Capture', body: 'Collect a quick idea or reference now, then organize it when you are ready.' },
+  { id: 'notebooks-overview', version: 1, pathPrefix: '/notebooks', anchor: '/notebooks', title: 'Notebooks', body: 'Group sources, notes, grounded conversations, and generated research artifacts by project.' },
+  { id: 'knowledge-overview', version: 1, pathPrefix: '/knowledge', anchor: '/knowledge', title: 'Knowledge workspace', body: 'Explore notes, backlinks, graphs, searches, and read-only external vaults in one persistent workspace.' },
+  { id: 'search-overview', version: 1, pathPrefix: '/search', anchor: '/search', title: 'Ask and Search', body: 'Choose the sources you trust, ask a grounded question, and open citations in context.' },
+  { id: 'studio-overview', version: 1, pathPrefix: '/studio', anchor: '/studio', title: 'Studio', body: 'Turn selected research into a controlled output. Opening Studio never starts generation.' },
+  { id: 'podcasts-overview', version: 1, pathPrefix: '/podcasts', anchor: '/podcasts', title: 'Podcasts', body: 'Create optional source-grounded audio, review its outline, and inspect the transcript and citations.' },
+  { id: 'study-overview', version: 1, pathPrefix: '/study', anchor: '/study', title: 'Study', body: 'Build focused review material from selected notebook sources.' },
+  { id: 'models-overview', version: 1, pathPrefix: '/settings/api-keys', anchor: '/settings/api-keys', title: 'Models', body: 'Choose local or connected models by role and verify readiness before using them.' },
+  { id: 'settings-overview', version: 1, pathPrefix: '/settings', anchor: '/settings', title: 'Settings', body: 'Control appearance, guided tips, providers, privacy, and advanced application behavior.' },
+] as const satisfies readonly GuidedTipDefinition[]
+
+export function getGuidedTipForPath(pathname: string): GuidedTipDefinition | undefined {
+  return [...GUIDED_TIPS]
+    .filter(tip => tip.pathPrefix === '/'
+      ? pathname === '/'
+      : pathname === tip.pathPrefix || pathname.startsWith(`${tip.pathPrefix}/`))
+    .sort((a, b) => b.pathPrefix.length - a.pathPrefix.length)[0]
+}
+```
+
+- [ ] **Step 4: Implement local versioned completion state**
+
+Create a persisted Zustand store named `dn-guided-tips-v1` with:
+
+```ts
+interface TipIdentity { id: string; version: number }
+interface GuidedTipsState {
+  enabled: boolean
+  completed: Record<string, number>
+  setEnabled: (enabled: boolean) => void
+  complete: (tip: TipIdentity) => void
+  replayAll: () => void
+  isComplete: (tip: TipIdentity) => boolean
+}
+```
+
+The default is `enabled: true`. `complete` stores the highest seen version for
+the ID. `isComplete` returns true only when the stored version is greater than
+or equal to the catalog version. `replayAll` clears `completed` and preserves
+`enabled` exactly.
+
+- [ ] **Step 5: Write failing provider behavior tests**
+
+Mock `usePathname()` as `/knowledge`, render an element with
+`data-guided-tip-anchor="/knowledge"`, and assert:
+
+```ts
+expect(await screen.findByRole('note', { name: 'Knowledge workspace tip' })).toBeVisible()
+expect(screen.getByText(/read-only external vaults/)).toBeVisible()
+fireEvent.click(screen.getByRole('button', { name: 'Got it' }))
+expect(screen.queryByRole('note', { name: 'Knowledge workspace tip' })).not.toBeInTheDocument()
+```
+
+Add tests that an open `[aria-modal="true"]` suppresses the tip, a missing
+anchor fails closed, `Don't show again` sets `enabled` false, Escape dismisses
+only the current version, and the callout contains no focus trap.
+
+- [ ] **Step 6: Implement the anchored non-modal provider**
+
+`GuidedTipsProvider` selects the longest matching route, checks `enabled` and
+`isComplete`, finds `[data-guided-tip-anchor="${tip.anchor}"]`, and positions a
+fixed-width callout beside the anchor using `getBoundingClientRect()`. Clamp top
+and left to a 16-pixel viewport inset. Recalculate on resize and capture-phase
+scroll.
+
+Use an `aside` with `role="note"`, `aria-label={`${tip.title} tip`}`, and no
+focus-trap behavior. `Got it` and Escape call `complete(tip)`. `Don't show
+again` calls `setEnabled(false)`. A `MutationObserver` hides the callout while
+any of these selectors exists:
+
+```ts
+'[aria-modal="true"], [data-guided-tips-suspend="true"]'
+```
+
+When the anchor disappears, hide the tip rather than moving it to an unrelated
+corner. Disconnect observers and event listeners on cleanup.
+
+- [ ] **Step 7: Add stable anchors and Settings controls**
+
+Add `data-guided-tip-anchor="/"` to the expanded/collapsed brand area in
+`AppSidebar`. Add `data-guided-tip-anchor={item.href}` to each navigation
+button without changing its accessible name or click behavior.
+
+Mount `<GuidedTipsProvider />` once inside `AppShell` after the main content.
+
+In the Settings Appearance section, add:
+
+```tsx
+<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
+  <div>
+    <p className="text-sm font-medium">Guided tips</p>
+    <p className="text-sm text-muted-foreground">Show small contextual messages when you visit a section for the first time.</p>
+  </div>
+  <div className="flex gap-2">
+    <Button type="button" variant="outline" role="switch" aria-checked={tipsEnabled} onClick={() => setTipsEnabled(!tipsEnabled)}>
+      {tipsEnabled ? 'On' : 'Off'}
+    </Button>
+    <Button type="button" variant="ghost" onClick={replayAllTips}>Replay all tips</Button>
+  </div>
+</div>
+```
+
+The toggle changes only `enabled`. Replay changes only completion state.
+
+- [ ] **Step 8: Run Guided Tips tests and lint**
+
+Run:
+
+```bash
+cd frontend && npm test -- src/lib/guided-tips/catalog.test.ts src/lib/stores/guided-tips-store.test.ts src/components/guided-tips/GuidedTipsProvider.test.tsx
+npm run lint -- src/lib/guided-tips src/lib/stores/guided-tips-store.ts src/components/guided-tips src/components/layout/AppShell.tsx src/components/layout/AppSidebar.tsx 'src/app/(dashboard)/settings/page.tsx'
+```
+
+Expected: tests PASS and ESLint exits 0.
+
+- [ ] **Step 9: Commit Guided Tips**
+
+```bash
+git add frontend/src/lib/guided-tips frontend/src/lib/stores/guided-tips-store.ts frontend/src/lib/stores/guided-tips-store.test.ts frontend/src/components/guided-tips frontend/src/components/layout/AppShell.tsx frontend/src/components/layout/AppSidebar.tsx 'frontend/src/app/(dashboard)/settings/page.tsx'
+git commit -m "feat: add local contextual guided tips"
+```
+
+### Task 8: Foundation Regression Gate and Written Handoff
 
 **Files:**
 - Modify: `docs/verification/2026-08-01-research-core-os-theme-foundation.md`
 
 **Interfaces:**
-- Consumes: exact implementation commit and outputs from Tasks 1-6.
+- Consumes: exact implementation commit and outputs from Tasks 1-7.
 - Produces: a reproducible verification record and the stable dependency boundary for the shell-redesign plan.
 
 - [ ] **Step 1: Run frontend component and contract tests**
@@ -932,6 +1169,14 @@ Run:
 
 ```bash
 cd frontend && npm test -- src/lib/themes/catalog.test.ts src/lib/theme-script.test.ts src/lib/brand.test.ts src/components/vault/ResearchCoreVisualSystem.test.tsx src/components/deeper-notebook/ThemeSwitcher.test.tsx src/components/deeper-notebook/ThemeGallery.test.tsx
+```
+
+Expected: PASS.
+
+Also run:
+
+```bash
+cd frontend && npm test -- src/lib/guided-tips/catalog.test.ts src/lib/stores/guided-tips-store.test.ts src/components/guided-tips/GuidedTipsProvider.test.tsx
 ```
 
 Expected: PASS.
@@ -976,7 +1221,8 @@ sizes, and known boundary:
 The record starts with `# Research Core OS Theme Foundation Verification` and
 records the literal 40-character output of `git rev-parse HEAD` on its Commit
 line. It then records this exact scope statement: `25-theme runtime, fresh
-default, semantic tokens, gallery, auxiliary surfaces, and theme visual proof`.
+default, semantic tokens, gallery, auxiliary surfaces, Guided Tips, and theme
+visual proof`.
 It also records that source authority is unchanged and that the Dashboard,
 Knowledge, chat, and Podcast Studio anchor matrices are outside this foundation
 proof and remain assigned to their subsequent redesign plans.
@@ -991,7 +1237,7 @@ git commit -m "docs: verify Research Core theme foundation"
 ## Program Boundary After This Plan
 
 This plan ends with working themes, gallery, persistence, auxiliary desktop
-surfaces, and visual-proof infrastructure. It intentionally does not bundle the
+surfaces, Guided Tips, and visual-proof infrastructure. It intentionally does not bundle the
 larger screen redesign into the same review unit. The next coordinated plans
 use these stable tokens and fixtures in this order:
 
