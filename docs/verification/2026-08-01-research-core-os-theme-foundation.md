@@ -1,13 +1,12 @@
 # Research Core OS Theme Foundation Verification
 
-Status: partially verified. The focused frontend contracts, Guided Tips
-contracts, desktop/API theme suite, generated-asset freshness check, and
-production build pass. Repository-wide lint remains blocked by pre-existing
-Podcast/Vault findings, and six of the eight current visual comparisons remain
-open because the full-page captures are 82px taller than their unchanged
-baselines; the exact outcomes are recorded below.
+Status: verified. The focused frontend contracts, Guided Tips contracts,
+desktop/API theme suite, generated-asset freshness check, production build,
+and all eight deterministic visual comparisons pass. Repository-wide lint
+remains blocked by pre-existing Podcast/Vault findings; that unrelated gate is
+recorded separately below.
 
-Commit: `025d16e10ded14206e618272f2d156464d1fb5a6`
+Commit: `53ec0990b14fdcd6413d8bd7af9936ce0c2e434b`
 
 Branch: `codex/podcast-intelligence-studio-phase-2`
 
@@ -125,30 +124,50 @@ cd frontend && npm run test:e2e:themes
 
 Result: **exit 1 after all eight browser comparisons.** The two selected
 Accessibility-card captures passed. The six full-page captures failed only on
-the existing image dimensions: each expected baseline is 5068px tall while
-the current stable capture is 5150px tall (with the existing pixel-diff
-threshold also exceeded). No snapshot was regenerated or changed.
+the reviewed 82px first-visit Guided Tips height change: each previous
+baseline was 5068px tall while the current stable capture was 5150px tall
+(with the existing pixel-diff threshold also exceeded). No snapshot was
+changed by this first run.
 
-The eight baselines below are the unchanged Task 6 visual proof consumed by
-this handoff. Task 6 regenerated them, reran the command without updates, and
-visually inspected all eight at the stated page viewports. The selected-card
-captures are card crops from their 1440x900 page viewport.
+Following the reviewed baseline-closure decision, the exact update command was
+run:
+
+```bash
+cd frontend && npm run test:e2e:themes -- --update-snapshots
+```
+
+Result: **exit 0 — 8 passed (6 full-page baselines regenerated; 2 selected
+Accessibility-card captures unchanged).** Every changed full-page image was
+visually inspected at its test viewport. The updated captures consistently
+show the approved first-visit Settings Guided Tip and the Settings Guided
+Tips control row; no unrelated visual drift was accepted. The two selected
+card crops were byte-unchanged against the prior commit.
+
+The required no-update command was then rerun unchanged:
+
+```bash
+cd frontend && npm run test:e2e:themes
+```
+
+Result: **exit 0 — 8 passed (36.7s).** No snapshots changed during this final
+proof run. The selected-card captures are card crops from their 1440x900 page
+viewport.
 
 | Capture | Test viewport | Baseline file | Image dimensions |
 | --- | ---: | --- | ---: |
-| Research Core Dark full page | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/research-core-dark-1440x900-mocked-browser-darwin.png` | 1440x5068 |
-| Research Core Light full page | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/research-core-light-1440x900-mocked-browser-darwin.png` | 1440x5068 |
-| Deep Ocean full page | 1280x800 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/deep-ocean-1280x800-mocked-browser-darwin.png` | 1280x5068 |
-| Archive Paper full page | 1280x800 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/archive-paper-1280x800-mocked-browser-darwin.png` | 1280x5068 |
-| High Contrast Dark full page | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/high-contrast-dark-1440x900-mocked-browser-darwin.png` | 1440x5068 |
-| High Contrast Light full page | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/high-contrast-light-1440x900-mocked-browser-darwin.png` | 1440x5068 |
+| Research Core Dark full page | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/research-core-dark-1440x900-mocked-browser-darwin.png` | 1440x5150 |
+| Research Core Light full page | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/research-core-light-1440x900-mocked-browser-darwin.png` | 1440x5150 |
+| Deep Ocean full page | 1280x800 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/deep-ocean-1280x800-mocked-browser-darwin.png` | 1280x5150 |
+| Archive Paper full page | 1280x800 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/archive-paper-1280x800-mocked-browser-darwin.png` | 1280x5150 |
+| High Contrast Dark full page | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/high-contrast-dark-1440x900-mocked-browser-darwin.png` | 1440x5150 |
+| High Contrast Light full page | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/high-contrast-light-1440x900-mocked-browser-darwin.png` | 1440x5150 |
 | High Contrast Dark selected Accessibility card | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/high-contrast-dark-selected-accessibility-mocked-browser-darwin.png` | 378x228 |
 | High Contrast Light selected Accessibility card | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/high-contrast-light-selected-accessibility-mocked-browser-darwin.png` | 378x228 |
 
-No snapshot was regenerated during the repair. The inherited proof remains
-unchanged; the production build gate is now green, while the six full-page
-visual comparisons require a separate baseline-drift investigation before
-any authorized snapshot update.
+The six full-page baselines are now the reviewed 5150px captures from snapshot
+commit `53ec0990b14fdcd6413d8bd7af9936ce0c2e434b`; the two selected card crops
+remain byte-identical to their prior proof. The production build and final
+8/8 visual gate are green.
 
 ## Boundaries and next plans
 
@@ -167,8 +186,5 @@ stable tokens and fixtures in this order:
 
 ## Open items
 
-- Investigate the 82px full-page height drift reported by the current
-  `npm run test:e2e:themes` run. Do not update snapshots without a separately
-  reviewed visual-baseline decision.
 - Clean up the pre-existing repository-wide Podcast/Vault ESLint findings in a
   separate scope; they are not part of this verification record's fix.
