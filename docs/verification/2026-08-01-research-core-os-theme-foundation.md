@@ -1,13 +1,13 @@
 # Research Core OS Theme Foundation Verification
 
-Status: verified after the second fresh-review persistence closure. The focused
+Status: verified after the final approval stale-override closure. The focused
 frontend contracts, Guided Tips contracts, desktop/API theme suite,
 generated-asset freshness check, scoped ESLint, production build, and all eight
 deterministic visual comparisons pass. Repository-wide lint remains blocked by
 pre-existing Podcast/Vault findings; that unrelated gate is recorded separately
 below.
 
-Commit: `c9b19424a971194dc532d24dc2f1701083d6768f`
+Commit: `0a9aefb39671fc5ecd0a0636aea9120e7dc50c84`
 
 Foundation baseline commit: `53ec0990b14fdcd6413d8bd7af9936ce0c2e434b`
 
@@ -108,6 +108,41 @@ Second-closure scoped checks:
 - `cd frontend && npm run build`: **exit 0**, all 23 routes generated.
 - `PYTHONPATH=. ./.build-venv/bin/python scripts/render_theme_static_assets.py --check`: **exit 0**.
 - `cd frontend && npm run test:e2e:themes`: **exit 0 — 8 passed (33.4s)**; no snapshots changed.
+- Scoped `git diff --check`: **exit 0**.
+
+## Final approval stale-override closure
+
+Product repair commit: `0a9aefb39671fc5ecd0a0636aea9120e7dc50c84`
+
+- Successful legacy `setTheme` canonical writes now clear
+  `legacyThemeOverride`; a failed canonical write retains the override while
+  still applying the live palette fail-soft.
+- `ThemeProvider` clears stale legacy authority synchronously on every
+  `THEME_SELECTION_CHANGE_EVENT` before re-resolving storage. A later Gallery
+  or ThemeSwitcher selection therefore wins over a CommandPalette choice, and
+  replacing legacy System with an explicit catalog theme removes the sole OS
+  listener and blocks later OS repaints.
+- The actual CommandPalette drives the live store in the integration regression;
+  mounted ThemeSwitcher/ThemeGallery assertions cover both Current labels,
+  canonical and legacy storage, painted DOM state, and provider effects.
+
+Final-closure focused frontend command:
+
+```bash
+cd frontend && npm test -- src/lib/themes/catalog.test.ts src/lib/theme-script.test.ts src/lib/brand.test.ts src/components/vault/ResearchCoreVisualSystem.test.tsx src/components/deeper-notebook/ThemeSwitcher.test.tsx src/components/deeper-notebook/ThemeGallery.test.tsx src/components/providers/ThemeProvider.test.tsx src/components/providers/ThemeProvider.integration.test.tsx src/lib/stores/theme-store.test.ts src/lib/guided-tips/catalog.test.ts src/lib/stores/guided-tips-store.test.ts src/components/guided-tips/GuidedTipsProvider.test.tsx src/components/common/CommandPalette.test.tsx
+```
+
+Result: **exit 0 — 13 files passed; 102 tests passed.** The desktop/API theme
+surface was untouched by this frontend-only closure; the prior 247-test gate
+and generated assets remain the recorded source-of-truth evidence.
+
+Final-closure scoped checks:
+
+- Scoped frontend ESLint across the changed store, provider, picker, and
+  CommandPalette source/tests: **exit 0**.
+- `cd frontend && npm run build`: **exit 0**, all 23 routes generated.
+- `PYTHONPATH=. ./.build-venv/bin/python scripts/render_theme_static_assets.py --check`: **exit 0**.
+- `cd frontend && npm run test:e2e:themes`: **exit 0 — 8 passed (37.7s)**; no snapshots changed.
 - Scoped `git diff --check`: **exit 0**.
 
 Follow-up focused frontend command:
