@@ -5,7 +5,16 @@ import { RotateCcw, Search } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { peekStoredTheme, writeStoredTheme } from '@/lib/theme-storage'
+import {
+  peekStoredTheme,
+  THEME_SELECTION_CHANGE_EVENT,
+  writeStoredTheme,
+} from '@/lib/theme-storage'
+import {
+  applyCatalogTheme,
+  resolveCatalogTheme,
+  useThemeStore,
+} from '@/lib/stores/theme-store'
 import {
   DEFAULT_THEME_ID,
   THEME_BY_ID,
@@ -41,9 +50,10 @@ function readActiveTheme(): ThemeId {
 }
 
 function setDocumentTheme(themeId: ThemeId) {
-  const theme = THEME_BY_ID[themeId]
-  document.documentElement.dataset.theme = themeId
-  document.documentElement.classList.toggle('dark', theme.dark)
+  const effectiveTheme = themeId === 'system'
+    ? useThemeStore.getState().getSystemTheme()
+    : 'light'
+  applyCatalogTheme(document.documentElement, resolveCatalogTheme(themeId, effectiveTheme))
 }
 
 export function ThemeGallery() {
@@ -56,6 +66,15 @@ export function ThemeGallery() {
     const activeTheme = readActiveTheme()
     originalTheme.current = activeTheme
     setSelectedTheme(activeTheme)
+
+    const handleCanonicalThemeChange = () => {
+      const nextTheme = readActiveTheme()
+      originalTheme.current = nextTheme
+      setSelectedTheme(nextTheme)
+      setPreviewingTheme(null)
+    }
+    window.addEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
+    return () => window.removeEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
   }, [])
 
   const matchingThemes = useMemo(() => {

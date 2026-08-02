@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { DEFAULT_THEME_ID, type ThemeId } from '@/lib/themes/catalog'
+import { THEME_SELECTION_CHANGE_EVENT } from '@/lib/theme-storage'
 import {
   applyCatalogTheme,
   getStoredCatalogSelection,
@@ -79,8 +80,8 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 
   useEffect(() => {
     const handleCanonicalThemeChange = () => setStorageRevision(revision => revision + 1)
-    window.addEventListener('dn-theme-change', handleCanonicalThemeChange)
-    return () => window.removeEventListener('dn-theme-change', handleCanonicalThemeChange)
+    window.addEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
+    return () => window.removeEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
   }, [])
 
   useEffect(() => {

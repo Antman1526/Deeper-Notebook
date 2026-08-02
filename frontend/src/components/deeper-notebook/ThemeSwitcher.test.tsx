@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { THEME_SELECTION_CHANGE_EVENT } from '@/lib/theme-storage'
+
 const { deeperNotebookFetch } = vi.hoisted(() => ({
   deeperNotebookFetch: vi.fn(),
 }))
@@ -26,6 +28,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
 }))
 
 import { ThemeSwitcher } from './ThemeSwitcher'
+import { ThemeGallery } from './ThemeGallery'
 
 type ThemeBridge = { setTheme: ReturnType<typeof vi.fn> }
 type ThemeWindow = Window & { DN?: ThemeBridge; ONP?: ThemeBridge }
@@ -47,6 +50,7 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     document.documentElement.dataset.theme = ''
     localStorage.clear()
     deeperNotebookFetch.mockReset()
+    vi.restoreAllMocks()
   })
 
   it('uses the canonical DN bridge when it is the only desktop bridge', () => {
@@ -145,5 +149,41 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
 
     expect(screen.getByRole('button', { name: 'System Current theme' })).toHaveAttribute('aria-current', 'true')
     expect(screen.getByRole('button', { name: 'Dark' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('synchronizes current selection and the gallery restore baseline across pickers', () => {
+    const canonical = { setTheme: vi.fn() }
+    ;(window as ThemeWindow).DN = canonical
+    localStorage.setItem('dn-theme', 'research-core-dark')
+
+    const addListener = vi.spyOn(window, 'addEventListener')
+    const removeListener = vi.spyOn(window, 'removeEventListener')
+    const view = render(
+      <>
+        <ThemeSwitcher />
+        <ThemeGallery />
+      </>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
+    expect(screen.getByRole('button', { name: 'Archive Paper Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'Archive Paper theme' })).toHaveTextContent('Current')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Research Core Light' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dark' }))
+    expect(screen.getByRole('button', { name: 'Dark Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'Dark theme' })).toHaveTextContent('Current')
+    expect(screen.queryByRole('button', { name: 'Restore previous theme' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Research Core Light' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restore previous theme' }))
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(screen.getByRole('article', { name: 'Dark theme' })).toHaveTextContent('Current')
+
+    view.unmount()
+    const selectionAdds = addListener.mock.calls.filter(([type]) => type === THEME_SELECTION_CHANGE_EVENT)
+    const selectionRemoves = removeListener.mock.calls.filter(([type]) => type === THEME_SELECTION_CHANGE_EVENT)
+    expect(selectionAdds).toHaveLength(2)
+    expect(selectionRemoves).toHaveLength(2)
   })
 })
