@@ -8,8 +8,6 @@ export type Theme = 'light' | 'dark' | 'system'
 export type EffectiveTheme = Exclude<Theme, 'system'>
 export type CatalogThemeSource = 'catalog' | 'legacy'
 
-let removeSystemThemeListener: (() => void) | undefined
-
 export function normalizeCatalogTheme(
   value: string | null | undefined,
   effectiveTheme: EffectiveTheme,
@@ -61,21 +59,6 @@ export const useThemeStore = create<ThemeState>()(
           const catalogTheme = normalizeCatalogTheme(theme, effectiveTheme, 'legacy')
             ?? DEFAULT_THEME_ID
           applyCatalogTheme(window.document.documentElement, catalogTheme)
-
-          removeSystemThemeListener?.()
-          removeSystemThemeListener = undefined
-
-          if (theme === 'system') {
-            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-            const handleChange = () => {
-              const systemTheme = get().getSystemTheme()
-              const nextCatalogTheme = normalizeCatalogTheme('system', systemTheme, 'legacy')
-                ?? DEFAULT_THEME_ID
-              applyCatalogTheme(window.document.documentElement, nextCatalogTheme)
-            }
-            mediaQuery.addEventListener('change', handleChange)
-            removeSystemThemeListener = () => mediaQuery.removeEventListener('change', handleChange)
-          }
         }
       },
       
