@@ -1,5 +1,13 @@
 export type ThemeGroup = 'featured' | 'light' | 'dark' | 'accessibility' | 'classics'
 
+export const THEME_GROUPS: readonly { id: ThemeGroup; label: string }[] = [
+  { id: 'featured', label: 'Featured' },
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
+  { id: 'accessibility', label: 'Accessibility' },
+  { id: 'classics', label: 'Classics' },
+]
+
 export interface ThemeDefinition {
   id: string
   label: string

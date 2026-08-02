@@ -23,8 +23,8 @@ import { readStoredTheme, writeStoredTheme } from '@/lib/theme-storage'
 import {
   DEFAULT_THEME_ID,
   THEME_CATALOG,
+  THEME_GROUPS,
   isThemeId,
-  type ThemeGroup,
   type ThemeId,
 } from '@/lib/themes/catalog'
 import { Button } from '@/components/ui/button'
@@ -37,14 +37,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Palette, Check } from 'lucide-react'
-
-const THEME_GROUPS: readonly { id: ThemeGroup; label: string }[] = [
-  { id: 'featured', label: 'Featured' },
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
-  { id: 'accessibility', label: 'Accessibility' },
-  { id: 'classics', label: 'Classics' },
-]
 
 interface ThemeBridge {
   setTheme?: (theme: string) => void
@@ -141,6 +133,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
                   key={theme.id}
                   onClick={() => handleSelect(theme.id)}
                   className="gap-2"
+                  aria-current={activeTheme === theme.id ? 'true' : undefined}
                 >
                   <span
                     className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
@@ -156,6 +149,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
                     />
                   </span>
                   <span className="flex-1">{theme.label}</span>
+                  {activeTheme === theme.id && <span className="sr-only">Current theme</span>}
                   {activeTheme === theme.id && <Check className="h-3 w-3" aria-hidden="true" />}
                 </DropdownMenuItem>
               ))}
