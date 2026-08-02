@@ -6,6 +6,7 @@ import { ThemeProvider } from './ThemeProvider'
 const themeStore = vi.hoisted(() => ({
   theme: 'system' as 'light' | 'dark' | 'system',
   legacyThemeOverride: false,
+  setLegacyThemeOverride: vi.fn(),
   getSystemTheme: vi.fn<() => 'light' | 'dark'>(),
   getEffectiveTheme: vi.fn<() => 'light' | 'dark'>(),
 }))
@@ -21,6 +22,7 @@ describe('ThemeProvider catalog compatibility', () => {
     document.documentElement.className = ''
     themeStore.theme = 'system'
     themeStore.legacyThemeOverride = false
+    themeStore.setLegacyThemeOverride.mockReset()
     themeStore.getSystemTheme.mockReturnValue('dark')
     themeStore.getEffectiveTheme.mockReturnValue('dark')
   })

@@ -58,6 +58,7 @@ describe('legacy theme-store catalog authority', () => {
     expect(localStorage.getItem('dn-theme')).toBe(selection)
     expect(localStorage.getItem('onp-theme')).toBe(selection)
     expect(document.documentElement.dataset.theme).toBe(applied)
+    expect(useThemeStore.getState().legacyThemeOverride).toBe(false)
     expect(onSelectionChange).toHaveBeenCalledTimes(1)
 
     window.removeEventListener(THEME_SELECTION_CHANGE_EVENT, onSelectionChange)
@@ -95,6 +96,7 @@ describe('legacy theme-store catalog authority', () => {
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.documentElement).toHaveClass('dark')
     expect(useThemeStore.getState().appliedTheme).toBe('dark')
+    expect(useThemeStore.getState().legacyThemeOverride).toBe(true)
   })
 
 })

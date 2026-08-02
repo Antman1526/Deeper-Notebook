@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useTheme, useThemeStore } from '@/lib/stores/theme-store'
+import { writeStoredTheme } from '@/lib/theme-storage'
 import { ThemeProvider } from './ThemeProvider'
 
 function ThemeConsumer() {
@@ -131,6 +132,42 @@ describe('ThemeProvider legacy system ownership', () => {
     expect(document.documentElement).toHaveAttribute('data-theme', 'research-core-light')
     expect(document.documentElement).not.toHaveClass('dark')
     expect(removeEventListener).not.toHaveBeenCalled()
+  })
+
+  it('clears a stale legacy command when a canonical picker selection arrives', () => {
+    render(<ThemeProvider><div>Research Core</div></ThemeProvider>)
+
+    act(() => useThemeStore.getState().setTheme('dark'))
+    expect(useThemeStore.getState().legacyThemeOverride).toBe(false)
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+
+    act(() => writeStoredTheme(localStorage, 'archive-paper'))
+
+    expect(useThemeStore.getState().legacyThemeOverride).toBe(false)
+    expect(document.documentElement).toHaveAttribute('data-theme', 'archive-paper')
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('removes the system listener when a canonical picker replaces a legacy system command', () => {
+    render(<ThemeProvider><div>Research Core</div></ThemeProvider>)
+
+    act(() => useThemeStore.getState().setTheme('system'))
+    expect(useThemeStore.getState().legacyThemeOverride).toBe(false)
+    expect(addEventListener).toHaveBeenCalledTimes(1)
+
+    act(() => writeStoredTheme(localStorage, 'research-core-light'))
+
+    expect(useThemeStore.getState().legacyThemeOverride).toBe(false)
+    expect(document.documentElement).toHaveAttribute('data-theme', 'research-core-light')
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(removeEventListener).toHaveBeenCalledTimes(1)
+    expect(listeners).toEqual([])
+
+    systemDark = true
+    dispatchSystemChange()
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'research-core-light')
+    expect(document.documentElement).not.toHaveClass('dark')
   })
 
   it('removes the sole system listener when the globally mounted provider unmounts', () => {

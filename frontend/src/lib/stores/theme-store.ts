@@ -58,6 +58,7 @@ interface ThemeState {
   legacyThemeOverride: boolean
   appliedTheme: EffectiveTheme
   setTheme: (theme: Theme) => void
+  setLegacyThemeOverride: (legacyThemeOverride: boolean) => void
   setAppliedTheme: (theme: EffectiveTheme) => void
   getSystemTheme: () => EffectiveTheme
   getEffectiveTheme: () => EffectiveTheme
@@ -69,6 +70,14 @@ export const useThemeStore = create<ThemeState>()(
       theme: 'system',
       legacyThemeOverride: false,
       appliedTheme: 'light',
+
+      setLegacyThemeOverride: (legacyThemeOverride: boolean) => {
+        try {
+          set({ legacyThemeOverride })
+        } catch {
+          // A persistence failure must not block the live theme authority.
+        }
+      },
 
       setAppliedTheme: (appliedTheme: EffectiveTheme) => {
         try {
@@ -91,11 +100,14 @@ export const useThemeStore = create<ThemeState>()(
             ? 'system'
             : normalizeCatalogTheme(theme, effectiveTheme, 'legacy')
             ?? DEFAULT_THEME_ID
+          let canonicalPersisted = false
           try {
             writeStoredTheme(localStorage, selection)
+            canonicalPersisted = true
           } catch {
             // Storage may be unavailable; keep the live palette authoritative.
           }
+          if (canonicalPersisted) get().setLegacyThemeOverride(false)
           applyCatalogTheme(
             window.document.documentElement,
             resolveCatalogTheme(selection, effectiveTheme),
