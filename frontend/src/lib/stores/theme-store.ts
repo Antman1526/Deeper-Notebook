@@ -1,32 +1,81 @@
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { peekStoredTheme } from '@/lib/theme-storage'
+import { DEFAULT_THEME_ID, THEME_BY_ID, isThemeId, type ThemeId } from '@/lib/themes/catalog'
 
 export type Theme = 'light' | 'dark' | 'system'
+export type EffectiveTheme = Exclude<Theme, 'system'>
+export type CatalogThemeSource = 'catalog' | 'legacy'
+
+let removeSystemThemeListener: (() => void) | undefined
+
+export function normalizeCatalogTheme(
+  value: string | null | undefined,
+  effectiveTheme: EffectiveTheme,
+  source: CatalogThemeSource = 'catalog',
+): ThemeId | null {
+  if (!value) return null
+  if (value === 'light') return 'light-blue'
+  if (source === 'legacy' && value === 'system') {
+    return effectiveTheme === 'dark' ? 'dark' : 'light-blue'
+  }
+  return isThemeId(value) ? value : null
+}
+
+export function getStoredCatalogTheme(effectiveTheme: EffectiveTheme): ThemeId | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    return normalizeCatalogTheme(peekStoredTheme(localStorage), effectiveTheme)
+  } catch {
+    return null
+  }
+}
+
+export function applyCatalogTheme(root: HTMLElement, theme: ThemeId) {
+  root.setAttribute('data-theme', theme)
+  root.classList.remove('light', 'dark')
+  root.classList.toggle('dark', THEME_BY_ID[theme].dark)
+}
 
 interface ThemeState {
   theme: Theme
+  legacyThemeOverride: boolean
   setTheme: (theme: Theme) => void
-  getSystemTheme: () => 'light' | 'dark'
-  getEffectiveTheme: () => 'light' | 'dark'
+  getSystemTheme: () => EffectiveTheme
+  getEffectiveTheme: () => EffectiveTheme
 }
 
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
       theme: 'system',
+      legacyThemeOverride: false,
       
       setTheme: (theme: Theme) => {
-        set({ theme })
+        set({ theme, legacyThemeOverride: true })
         
-        // Apply theme to document immediately
         if (typeof window !== 'undefined') {
-          const root = window.document.documentElement
           const effectiveTheme = theme === 'system' ? get().getSystemTheme() : theme
-          
-          root.classList.remove('light', 'dark')
-          root.classList.add(effectiveTheme)
-          root.setAttribute('data-theme', effectiveTheme)
+          const catalogTheme = normalizeCatalogTheme(theme, effectiveTheme, 'legacy')
+            ?? DEFAULT_THEME_ID
+          applyCatalogTheme(window.document.documentElement, catalogTheme)
+
+          removeSystemThemeListener?.()
+          removeSystemThemeListener = undefined
+
+          if (theme === 'system') {
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+            const handleChange = () => {
+              const systemTheme = get().getSystemTheme()
+              const nextCatalogTheme = normalizeCatalogTheme('system', systemTheme, 'legacy')
+                ?? DEFAULT_THEME_ID
+              applyCatalogTheme(window.document.documentElement, nextCatalogTheme)
+            }
+            mediaQuery.addEventListener('change', handleChange)
+            removeSystemThemeListener = () => mediaQuery.removeEventListener('change', handleChange)
+          }
         }
       },
       
