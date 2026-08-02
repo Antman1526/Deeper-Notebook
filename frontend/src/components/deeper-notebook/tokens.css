@@ -4,6 +4,23 @@
  * active theme (light-blue, dracula, nord, …) without per-theme overrides. */
 
 :root {
+  /* Cross-component semantic surface and state contract. */
+  --dn-canvas: var(--background);
+  --dn-panel: var(--card);
+  --dn-panel-raised: color-mix(in oklab, var(--card) 88%, var(--primary));
+  --dn-separator: var(--border);
+  --dn-focus: var(--ring);
+  --dn-selection: color-mix(in oklab, var(--primary) 22%, transparent);
+  --dn-evidence: var(--accent);
+  --dn-warning: var(--warning);
+  --dn-editable: var(--primary);
+  --dn-read-only: var(--muted-foreground);
+  --dn-model-local: var(--primary);
+  --dn-model-cloud: var(--info);
+  --dn-graph-node: var(--primary);
+  --dn-graph-edge: var(--muted-foreground);
+  --dn-graph-selected: var(--accent);
+
   /* Soft translucent versions of the primary/accent colors for chips, hover
    * states, subtle highlights. Works on both light and dark themes. */
   --dn-accent-soft: color-mix(in oklab, var(--primary) 12%, transparent);
@@ -14,11 +31,9 @@
   /* Status colors not present in shadcn defaults */
   --dn-success: oklch(0.65 0.18 145);
   --dn-success-soft: color-mix(in oklab, var(--dn-success) 18%, transparent);
-  --dn-warning: oklch(0.78 0.16 75);
   --dn-warning-soft: color-mix(in oklab, var(--dn-warning) 18%, transparent);
   --dn-info: var(--primary);
   --dn-info-soft: var(--dn-accent-soft);
-  --dn-evidence: oklch(0.58 0.17 285);
   --dn-model-gguf: oklch(0.57 0.18 245);
   --dn-model-mlx: oklch(0.62 0.16 175);
 

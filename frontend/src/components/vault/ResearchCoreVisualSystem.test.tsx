@@ -10,6 +10,7 @@ const source = (file: string) => fs.readFileSync(
 describe('Research Core visual system', () => {
   it('defines semantic deep-teal Research Core tokens without relying on raw component colors', () => {
     const globals = source('../../app/globals.css')
+    const tokens = source('../deeper-notebook/tokens.css')
 
     for (const token of [
       '--research-canvas',
@@ -21,6 +22,15 @@ describe('Research Core visual system', () => {
       '--research-glow',
     ]) {
       expect(globals).toMatch(new RegExp(`${token}:`))
+    }
+
+    for (const token of [
+      '--dn-canvas', '--dn-panel', '--dn-panel-raised', '--dn-separator',
+      '--dn-focus', '--dn-selection', '--dn-evidence', '--dn-warning',
+      '--dn-editable', '--dn-read-only', '--dn-model-local', '--dn-model-cloud',
+      '--dn-graph-node', '--dn-graph-edge', '--dn-graph-selected',
+    ]) {
+      expect(tokens).toMatch(new RegExp(`${token}:`))
     }
   })
 
