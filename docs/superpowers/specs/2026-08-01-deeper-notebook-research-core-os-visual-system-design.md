@@ -4,7 +4,7 @@
 
 **Author:** Anthony Henry with Codex
 
-**Status:** Approved in conversational design; pending written-spec review
+**Status:** Approved 2026-08-02; Guided Tips amendment approved 2026-08-02
 
 **Baseline:** `codex/podcast-intelligence-studio-phase-2` at `4b257e2c`
 
@@ -325,6 +325,31 @@ list. Appearance includes the theme gallery, density, reading typography,
 motion preference, and contrast preview. Advanced technical configuration stays
 available without dominating the default surface.
 
+## Guided Tips
+
+Each major section can show one small contextual message on first use. Guided
+Tips explain the section's purpose and identify the safest useful next action
+without blocking access to the application.
+
+Required behavior:
+
+- tips are anchored to a stable section heading, navigation entry, or primary action;
+- only one tip is visible at a time;
+- a tip is non-modal and never starts a mutation, model run, scan, or podcast;
+- controls are `Got it`, `Next`, and `Don't show again` where applicable;
+- dismissal is stored locally by stable tip ID and tip-content version;
+- `Show guided tips` in Settings enables or disables the system globally;
+- `Replay all tips` clears only guided-tip completion state;
+- disabling tips does not erase completion state until Replay is requested;
+- tips remain hidden while a dialog, confirmation, generation, scan, or other
+  critical workflow owns focus;
+- tips are keyboard reachable, screen-reader named, and do not trap focus; and
+- external Obsidian and Logseq content remains read-only regardless of tip copy.
+
+Initial coverage includes Dashboard, Sources, Capture, Notebooks, Knowledge,
+Ask and Search, Studio, Podcasts, Study, Models, and Settings. A missing anchor
+fails closed by skipping the tip rather than placing a detached callout.
+
 ## Render Quality Gate
 
 "Attractive" is treated as a verified product requirement, not a subjective
@@ -466,6 +491,8 @@ The design is implemented when:
 9. Opening a research or Podcast Studio surface does not start generation.
 10. Required frontend, desktop, native, and packaging checks pass at the exact
     implementation head.
+11. Guided Tips cover the initial major sections, remain non-modal, persist
+    locally by version, and can be disabled or replayed from Settings.
 
 ## Decision Summary
 
