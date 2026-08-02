@@ -5,19 +5,22 @@ import { ThemeProvider } from './ThemeProvider'
 
 const themeStore = vi.hoisted(() => ({
   theme: 'system' as 'light' | 'dark' | 'system',
+  legacyThemeOverride: false,
   getSystemTheme: vi.fn<() => 'light' | 'dark'>(),
   getEffectiveTheme: vi.fn<() => 'light' | 'dark'>(),
 }))
 
-vi.mock('@/lib/stores/theme-store', () => ({
-  useThemeStore: () => themeStore,
-}))
+vi.mock('@/lib/stores/theme-store', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/stores/theme-store')>()
+  return { ...actual, useThemeStore: () => themeStore }
+})
 
 describe('ThemeProvider catalog compatibility', () => {
   beforeEach(() => {
     document.documentElement.dataset.theme = ''
     document.documentElement.className = ''
     themeStore.theme = 'system'
+    themeStore.legacyThemeOverride = false
     themeStore.getSystemTheme.mockReturnValue('dark')
     themeStore.getEffectiveTheme.mockReturnValue('dark')
   })
@@ -62,5 +65,54 @@ describe('ThemeProvider catalog compatibility', () => {
 
     expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
     expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('tracks system changes when the document only contains its legacy effective fallback', () => {
+    const listeners: Array<(event: MediaQueryListEvent) => void> = []
+    window.matchMedia = vi.fn(() => ({
+      matches: true,
+      media: '(prefers-color-scheme: dark)',
+      onchange: null,
+      addEventListener: (_type, listener) => listeners.push(listener as (event: MediaQueryListEvent) => void),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }) as MediaQueryList)
+    document.documentElement.dataset.theme = 'dark'
+
+    render(<ThemeProvider><div>Legacy system fallback</div></ThemeProvider>)
+    themeStore.getSystemTheme.mockReturnValue('light')
+    listeners.forEach(listener => listener({ matches: false } as MediaQueryListEvent))
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('keeps dn/onp persisted catalog selections stable across system changes', () => {
+    const listeners: Array<(event: MediaQueryListEvent) => void> = []
+    window.matchMedia = vi.fn(() => ({
+      matches: true,
+      media: '(prefers-color-scheme: dark)',
+      onchange: null,
+      addEventListener: (_type, listener) => listeners.push(listener as (event: MediaQueryListEvent) => void),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }) as MediaQueryList)
+
+    for (const storageKey of ['dn-theme', 'onp-theme']) {
+      localStorage.clear()
+      localStorage.setItem(storageKey, 'research-core-light')
+      document.documentElement.dataset.theme = 'dark'
+
+      render(<ThemeProvider><div>Persisted catalog theme</div></ThemeProvider>)
+      themeStore.getSystemTheme.mockReturnValue('dark')
+      listeners.forEach(listener => listener({ matches: true } as MediaQueryListEvent))
+
+      expect(document.documentElement).toHaveAttribute('data-theme', 'research-core-light')
+      expect(document.documentElement).not.toHaveClass('dark')
+    }
   })
 })
