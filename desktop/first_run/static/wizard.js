@@ -1,17 +1,7 @@
 (() => {
-  const THEMES = [
-    { id: 'light-blue', name: 'Light Blue', bg: '#FFFFFF', fg: '#2D7FF9' },
-    { id: 'system', name: 'System', bg: '#FFFFFF', fg: '#1A2B3C' },
-    { id: 'solarized-light', name: 'Solarized Light', bg: '#FDF6E3', fg: '#268BD2' },
-    { id: 'github-light', name: 'GitHub Light', bg: '#FFFFFF', fg: '#0969DA' },
-    { id: 'paper', name: 'Paper', bg: '#FBF8F1', fg: '#8B5A2B' },
-    { id: 'dark', name: 'Dark', bg: '#0F1419', fg: '#5AB1FF' },
-    { id: 'solarized-dark', name: 'Solarized Dark', bg: '#002B36', fg: '#268BD2' },
-    { id: 'dracula', name: 'Dracula', bg: '#282A36', fg: '#BD93F9' },
-    { id: 'nord', name: 'Nord', bg: '#2E3440', fg: '#88C0D0' },
-  ];
+  const THEMES = window.DN_THEME_CATALOG;
 
-  let chosenTheme = 'light-blue';
+  let chosenTheme = 'research-core-dark';
   let openchronicleChoice = 'skip';
   const html = document.documentElement;
 
@@ -40,12 +30,14 @@
     card.addEventListener('click', () => setTheme(t.id));
     grid.appendChild(card);
   });
-  setTheme('light-blue');
+  setTheme(chosenTheme);
 
-  // Dark-mode quick toggle: flips light-blue <-> dark
+  // Dark-mode quick toggle: flips between the Research Core defaults.
   document.getElementById('dark_toggle').addEventListener('click', () => {
-    const dark = ['dark', 'solarized-dark', 'dracula', 'nord'].includes(chosenTheme);
-    setTheme(dark ? 'light-blue' : 'dark');
+    const selectedTheme = THEMES.find(theme => theme.id === chosenTheme);
+    setTheme(selectedTheme && selectedTheme.dark
+      ? 'research-core-light'
+      : 'research-core-dark');
   });
 
   // Pre-fill model dir

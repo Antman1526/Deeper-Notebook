@@ -302,7 +302,7 @@ def build_app(
             cfg = load_or_create(default_config_path())
             return web.json_response({"theme": cfg.theme})
         except Exception:
-            return web.json_response({"theme": "light-blue"})
+            return web.json_response({"theme": "research-core-dark"})
 
     app.router.add_get("/", index)
     app.router.add_get("/api/memory/{path:.+}", proxy)
