@@ -9,6 +9,7 @@ describe('ThemeProvider legacy system ownership', () => {
   let listeners: Array<(event: MediaQueryListEvent) => void> = []
   let addEventListener: ReturnType<typeof vi.fn>
   let removeEventListener: ReturnType<typeof vi.fn>
+  let dispatchSystemChange: () => void
 
   beforeEach(() => {
     systemDark = false
@@ -16,6 +17,9 @@ describe('ThemeProvider legacy system ownership', () => {
     addEventListener = vi.fn((_type, listener) => listeners.push(listener as (event: MediaQueryListEvent) => void))
     removeEventListener = vi.fn((_type, listener) => {
       listeners = listeners.filter(candidate => candidate !== listener)
+    })
+    dispatchSystemChange = () => act(() => {
+      listeners.forEach(listener => listener({ matches: systemDark } as MediaQueryListEvent))
     })
     window.matchMedia = vi.fn(() => ({
       get matches() { return systemDark },
@@ -49,7 +53,7 @@ describe('ThemeProvider legacy system ownership', () => {
     expect(addEventListener).toHaveBeenCalledTimes(1)
 
     systemDark = true
-    act(() => listeners.forEach(listener => listener({ matches: true } as MediaQueryListEvent)))
+    dispatchSystemChange()
 
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
     expect(document.documentElement).toHaveClass('dark')
@@ -57,7 +61,15 @@ describe('ThemeProvider legacy system ownership', () => {
     act(() => useThemeStore.getState().setTheme('light'))
 
     expect(removeEventListener).toHaveBeenCalledTimes(1)
+    expect(listeners).toEqual([])
     expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
+    expect(document.documentElement).not.toHaveClass('dark')
+
+    systemDark = true
+    dispatchSystemChange()
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
+    expect(document.documentElement).not.toHaveClass('dark')
   })
 
   it('removes the sole system listener when the globally mounted provider unmounts', () => {
@@ -68,5 +80,14 @@ describe('ThemeProvider legacy system ownership', () => {
     view.unmount()
 
     expect(removeEventListener).toHaveBeenCalledTimes(1)
+    expect(listeners).toEqual([])
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
+    expect(document.documentElement).not.toHaveClass('dark')
+
+    systemDark = true
+    dispatchSystemChange()
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
+    expect(document.documentElement).not.toHaveClass('dark')
   })
 })
