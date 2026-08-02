@@ -1,11 +1,13 @@
 # Research Core OS Theme Foundation Verification
 
 Status: partially verified. The focused frontend contracts, Guided Tips
-contracts, desktop/API theme suite, and generated-asset freshness check pass.
-The repository-wide lint, production build, and current visual command remain
-open at this implementation head; their actual failures are recorded below.
+contracts, desktop/API theme suite, generated-asset freshness check, and
+production build pass. Repository-wide lint remains blocked by pre-existing
+Podcast/Vault findings, and six of the eight current visual comparisons remain
+open because the full-page captures are 82px taller than their unchanged
+baselines; the exact outcomes are recorded below.
 
-Commit: `7e696b1078ecc6a69ef56945cb4a987c7cf5c234`
+Commit: `025d16e10ded14206e618272f2d156464d1fb5a6`
 
 Branch: `codex/podcast-intelligence-studio-phase-2`
 
@@ -103,17 +105,15 @@ all in pre-existing Podcast/Vault files (`no-explicit-any` errors and unused
 or missing-effect-dependency warnings). No unrelated lint findings were
 repaired in this documentation task.
 
-The production build was run independently so its result is recorded:
+The production build was run independently after the Guided Tips callback
+narrowing repair so its result is recorded:
 
 ```bash
 cd frontend && npm run build
 ```
 
-Result: **exit 1.** Next.js compiled successfully, then TypeScript failed at
-`src/components/guided-tips/GuidedTipsProvider.tsx:87:37` because `tip` is
-possibly `undefined` inside the keyboard handler. This is an implementation
-issue outside Task 8's documentation-only ownership; it remains open rather
-than being silently treated as a passing build.
+Result: **exit 0.** Next.js compiled successfully, TypeScript completed, and
+static page generation produced all 23 routes.
 
 ### 4. Deterministic visual proof
 
@@ -123,10 +123,11 @@ The required no-snapshot-update command was run unchanged:
 cd frontend && npm run test:e2e:themes
 ```
 
-Result: **exit 1 before browser startup.** The Playwright web server invokes
-`npm run build`, which stops on the same `GuidedTipsProvider.tsx:87:37`
-TypeScript error. Therefore this Task 8 invocation executed zero browser
-comparisons and changed no snapshots.
+Result: **exit 1 after all eight browser comparisons.** The two selected
+Accessibility-card captures passed. The six full-page captures failed only on
+the existing image dimensions: each expected baseline is 5068px tall while
+the current stable capture is 5150px tall (with the existing pixel-diff
+threshold also exceeded). No snapshot was regenerated or changed.
 
 The eight baselines below are the unchanged Task 6 visual proof consumed by
 this handoff. Task 6 regenerated them, reran the command without updates, and
@@ -144,9 +145,10 @@ captures are card crops from their 1440x900 page viewport.
 | High Contrast Dark selected Accessibility card | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/high-contrast-dark-selected-accessibility-mocked-browser-darwin.png` | 378x228 |
 | High Contrast Light selected Accessibility card | 1440x900 | `frontend/e2e/theme-gallery-visual.spec.ts-snapshots/high-contrast-light-selected-accessibility-mocked-browser-darwin.png` | 378x228 |
 
-No snapshot was regenerated during Task 8. The inherited proof remains
-unchanged, but a fresh current-head visual pass is still open until the
-production build type error is repaired in its owning implementation scope.
+No snapshot was regenerated during the repair. The inherited proof remains
+unchanged; the production build gate is now green, while the six full-page
+visual comparisons require a separate baseline-drift investigation before
+any authorized snapshot update.
 
 ## Boundaries and next plans
 
@@ -165,8 +167,8 @@ stable tokens and fixtures in this order:
 
 ## Open items
 
-- Repair or otherwise resolve the `GuidedTipsProvider.tsx:87:37` TypeScript
-  narrowing error in the Task 7 implementation scope, then rerun the production
-  build and `npm run test:e2e:themes` without updating snapshots.
+- Investigate the 82px full-page height drift reported by the current
+  `npm run test:e2e:themes` run. Do not update snapshots without a separately
+  reviewed visual-baseline decision.
 - Clean up the pre-existing repository-wide Podcast/Vault ESLint findings in a
   separate scope; they are not part of this verification record's fix.
