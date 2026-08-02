@@ -7,6 +7,8 @@
 
 export { ReasoningSlotCard } from './ReasoningSlotCard'
 export { ThemeSwitcher } from './ThemeSwitcher'
+export { ThemeGallery } from './ThemeGallery'
+export { ThemePreviewCard } from './ThemePreviewCard'
 export { GmailIntegration } from './GmailIntegration'
 export { GmailSidebarButton } from './GmailSidebarButton'
 export { ArtifactRail } from './ArtifactRail'
