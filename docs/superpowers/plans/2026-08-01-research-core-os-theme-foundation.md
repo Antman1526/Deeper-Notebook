@@ -1270,6 +1270,24 @@ git commit -m "docs: verify Research Core theme foundation"
 - [ ] Repository-wide Podcast/Vault ESLint findings remain outside this plan
   and require a separate cleanup scope.
 
+## Final-review persistence closure progress (2026-08-02)
+
+- [x] Legacy Zustand theme commands now normalize `light`, `dark`, and
+  `system` to canonical catalog selections, persist both theme storage keys,
+  emit the shared selection event, and apply the resolved live palette.
+- [x] Storage-write failures remain fail-soft for both persistence and the live
+  provider/application-applied effective-theme signal.
+- [x] Mounted ThemeSwitcher/ThemeGallery synchronization, CommandPalette
+  routing, canonical-over-legacy prehydration precedence, and the three-way
+  legacy mapping/event regressions are covered.
+- [x] Product persistence-closure commit:
+  `c9b19424a971194dc532d24dc2f1701083d6768f`.
+- [x] Persistence-closure verification: focused frontend 12 files / 66 tests,
+  scoped ESLint, production build, generator freshness, Playwright 8/8
+  no-update, and diff checks all pass.
+- [ ] Repository-wide Podcast/Vault ESLint findings remain outside this plan
+  and require a separate cleanup scope.
+
 ## Program Boundary After This Plan
 
 This plan ends with working themes, gallery, persistence, auxiliary desktop
