@@ -1253,6 +1253,23 @@ git commit -m "docs: verify Research Core theme foundation"
 - [ ] Repository-wide Podcast/Vault ESLint findings remain outside this plan
   and require a separate cleanup scope.
 
+## Final-review authority follow-up progress (2026-08-02)
+
+- [x] ThemeGallery System preview and restore resolve the current OS palette
+  through the shared catalog resolver/application helper.
+- [x] `useTheme()` no longer installs an OS media-query listener; effective
+  theme consumers follow the provider/application-applied signal while
+  ThemeProvider owns the sole OS listener.
+- [x] ThemeSwitcher and ThemeGallery subscribe to the shared canonical
+  selection event, synchronize Current state, clear external previews, and
+  refresh the restore baseline with cleanup regressions.
+- [x] Product follow-up commit: `e99ba815bcc31ea65669d5083cebdaacea39a8c7`.
+- [x] Follow-up verification: focused frontend 12 files / 59 tests, scoped
+  ESLint, production build, generator freshness, Playwright 8/8 no-update,
+  and diff checks all pass.
+- [ ] Repository-wide Podcast/Vault ESLint findings remain outside this plan
+  and require a separate cleanup scope.
+
 ## Program Boundary After This Plan
 
 This plan ends with working themes, gallery, persistence, auxiliary desktop
