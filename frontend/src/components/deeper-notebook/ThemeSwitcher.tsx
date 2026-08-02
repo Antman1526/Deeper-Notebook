@@ -19,7 +19,11 @@
 import { useEffect, useState } from 'react'
 
 import { deeperNotebookFetch } from '@/lib/api/deeper-notebook'
-import { readStoredTheme, writeStoredTheme } from '@/lib/theme-storage'
+import {
+  readStoredTheme,
+  THEME_SELECTION_CHANGE_EVENT,
+  writeStoredTheme,
+} from '@/lib/theme-storage'
 import {
   DEFAULT_THEME_ID,
   THEME_CATALOG,
@@ -61,24 +65,52 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
   // when the persisted selection is system), so only use it as a fallback
   // when storage is unavailable or has no valid selection.
   useEffect(() => {
+    const handleCanonicalThemeChange = () => {
+      try {
+        const cached = readStoredTheme(localStorage)
+        if (cached && isThemeId(cached)) setActiveTheme(cached)
+      } catch {
+        // Storage may be disabled; retain the current picker state.
+      }
+    }
+    window.addEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
+
+    let initialized = false
     try {
       const cached = readStoredTheme(localStorage)
       if (cached && isThemeId(cached)) {
         setActiveTheme(cached)
-        return
+        initialized = true
       }
     } catch {
       /* localStorage disabled — fall through to API */
     }
-    const current = document.documentElement.dataset.theme
-    if (current && isThemeId(current)) {
-      setActiveTheme(current)
-      return
+    if (!initialized) {
+      const current = document.documentElement.dataset.theme
+      if (current && isThemeId(current)) {
+        setActiveTheme(current)
+        initialized = true
+      }
     }
-    deeperNotebookFetch('/api/deeper-notebook/theme')
-      .then((r) => r.json())
-      .then((data) => setActiveTheme(isThemeId(data.theme) ? data.theme : DEFAULT_THEME_ID))
-      .catch(() => {})
+    if (!initialized) {
+      deeperNotebookFetch('/api/deeper-notebook/theme')
+        .then((r) => r.json())
+        .then((data) => {
+          try {
+            const cached = readStoredTheme(localStorage)
+            if (cached && isThemeId(cached)) {
+              setActiveTheme(cached)
+              return
+            }
+          } catch {
+            // Storage may be disabled; use the API response below.
+          }
+          setActiveTheme(isThemeId(data.theme) ? data.theme : DEFAULT_THEME_ID)
+        })
+        .catch(() => {})
+    }
+
+    return () => window.removeEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
   }, [])
 
   const handleSelect = (themeId: ThemeId) => {
