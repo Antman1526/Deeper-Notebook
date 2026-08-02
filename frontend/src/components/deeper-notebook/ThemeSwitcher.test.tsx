@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { THEME_SELECTION_CHANGE_EVENT } from '@/lib/theme-storage'
+import { useThemeStore } from '@/lib/stores/theme-store'
 
 const { deeperNotebookFetch } = vi.hoisted(() => ({
   deeperNotebookFetch: vi.fn(),
@@ -49,6 +50,7 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     delete (window as ThemeWindow).ONP
     document.documentElement.dataset.theme = ''
     localStorage.clear()
+    useThemeStore.setState({ theme: 'system', legacyThemeOverride: false, appliedTheme: 'light' })
     deeperNotebookFetch.mockReset()
     vi.restoreAllMocks()
   })
@@ -185,5 +187,27 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     const selectionRemoves = removeListener.mock.calls.filter(([type]) => type === THEME_SELECTION_CHANGE_EVENT)
     expect(selectionAdds).toHaveLength(2)
     expect(selectionRemoves).toHaveLength(2)
+  })
+
+  it('synchronizes mounted pickers after the legacy setter writes canonical storage', () => {
+    localStorage.setItem('dn-theme', 'research-core-dark')
+    document.documentElement.dataset.theme = 'dark'
+    document.documentElement.classList.add('dark')
+
+    render(
+      <>
+        <ThemeSwitcher />
+        <ThemeGallery />
+      </>,
+    )
+
+    act(() => useThemeStore.getState().setTheme('light'))
+
+    expect(localStorage.getItem('dn-theme')).toBe('light-blue')
+    expect(localStorage.getItem('onp-theme')).toBe('light-blue')
+    expect(screen.getByRole('button', { name: 'Light Blue Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'Light Blue theme' })).toHaveTextContent('Current')
+    expect(document.documentElement.dataset.theme).toBe('light-blue')
+    expect(document.documentElement).not.toHaveClass('dark')
   })
 })

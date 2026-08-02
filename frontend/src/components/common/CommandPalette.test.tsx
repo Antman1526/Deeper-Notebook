@@ -200,6 +200,19 @@ describe('CommandPalette', () => {
     expect(screen.queryByRole('dialog', { name: 'Quick actions' })).toBeNull()
   })
 
+  it.each([
+    ['Light', 'light'],
+    ['Dark', 'dark'],
+    ['System', 'system'],
+  ] as const)('routes the %s palette command through the legacy theme setter', async (label, value) => {
+    renderPalette()
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+
+    fireEvent.click(await screen.findByRole('option', { name: label }))
+
+    await waitFor(() => expect(theme.setTheme).toHaveBeenCalledWith(value))
+  })
+
   it('preserves Cmd+N, Cmd+U, and Cmd+/ global shortcuts', () => {
     renderPalette()
     fireEvent.keyDown(document, { key: 'n', metaKey: true })

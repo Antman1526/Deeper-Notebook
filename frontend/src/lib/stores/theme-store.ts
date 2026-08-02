@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { peekStoredTheme } from '@/lib/theme-storage'
+import { peekStoredTheme, writeStoredTheme } from '@/lib/theme-storage'
 import { DEFAULT_THEME_ID, THEME_BY_ID, isThemeId, type ThemeId } from '@/lib/themes/catalog'
 
 export type Theme = 'light' | 'dark' | 'system'
@@ -70,16 +70,36 @@ export const useThemeStore = create<ThemeState>()(
       legacyThemeOverride: false,
       appliedTheme: 'light',
 
-      setAppliedTheme: (appliedTheme: EffectiveTheme) => set({ appliedTheme }),
+      setAppliedTheme: (appliedTheme: EffectiveTheme) => {
+        try {
+          set({ appliedTheme })
+        } catch {
+          // A persistence failure must not block the live palette signal.
+        }
+      },
       
       setTheme: (theme: Theme) => {
-        set({ theme, legacyThemeOverride: true })
+        try {
+          set({ theme, legacyThemeOverride: true })
+        } catch {
+          // Persist middleware may reject a storage write; keep applying live.
+        }
         
         if (typeof window !== 'undefined') {
           const effectiveTheme = theme === 'system' ? get().getSystemTheme() : theme
-          const catalogTheme = normalizeCatalogTheme(theme, effectiveTheme, 'legacy')
+          const selection = theme === 'system'
+            ? 'system'
+            : normalizeCatalogTheme(theme, effectiveTheme, 'legacy')
             ?? DEFAULT_THEME_ID
-          applyCatalogTheme(window.document.documentElement, catalogTheme)
+          try {
+            writeStoredTheme(localStorage, selection)
+          } catch {
+            // Storage may be unavailable; keep the live palette authoritative.
+          }
+          applyCatalogTheme(
+            window.document.documentElement,
+            resolveCatalogTheme(selection, effectiveTheme),
+          )
         }
       },
       
