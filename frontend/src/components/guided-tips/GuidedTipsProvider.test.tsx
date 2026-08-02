@@ -80,6 +80,19 @@ describe('GuidedTipsProvider', () => {
     expect(useGuidedTipsStore.getState().completed).toEqual({ 'knowledge-overview': 1 })
   })
 
+  it('does not complete a rendered tip after its expected anchor is removed', async () => {
+    const anchor = document.createElement('button')
+    anchor.setAttribute('data-guided-tip-anchor', '/knowledge')
+    document.body.append(anchor)
+    render(<GuidedTipsProvider />)
+
+    await screen.findByRole('note', { name: 'Knowledge workspace tip' })
+    anchor.remove()
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(useGuidedTipsStore.getState().completed).toEqual({})
+  })
+
   it('does not create a focus trap', async () => {
     renderTip()
 
