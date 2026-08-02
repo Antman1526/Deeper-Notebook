@@ -1,8 +1,13 @@
-import { act, render } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useThemeStore } from '@/lib/stores/theme-store'
+import { useTheme, useThemeStore } from '@/lib/stores/theme-store'
 import { ThemeProvider } from './ThemeProvider'
+
+function ThemeConsumer() {
+  const { effectiveTheme } = useTheme()
+  return <output data-testid="effective-theme">{effectiveTheme}</output>
+}
 
 describe('ThemeProvider legacy system ownership', () => {
   let systemDark = false
@@ -34,14 +39,14 @@ describe('ThemeProvider legacy system ownership', () => {
     localStorage.clear()
     document.documentElement.dataset.theme = ''
     document.documentElement.className = ''
-    useThemeStore.setState({ theme: 'light', legacyThemeOverride: false })
+    useThemeStore.setState({ theme: 'light', legacyThemeOverride: false, appliedTheme: 'light' })
   })
 
   afterEach(() => {
     localStorage.clear()
     document.documentElement.dataset.theme = ''
     document.documentElement.className = ''
-    useThemeStore.setState({ theme: 'system', legacyThemeOverride: false })
+    useThemeStore.setState({ theme: 'system', legacyThemeOverride: false, appliedTheme: 'light' })
   })
 
   it('uses one provider-owned listener for direct system changes and removes it when switching away', () => {
@@ -87,6 +92,26 @@ describe('ThemeProvider legacy system ownership', () => {
 
     expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
     expect(document.documentElement).not.toHaveClass('dark')
+    expect(addEventListener).toHaveBeenCalledTimes(1)
+  })
+
+  it('updates a useTheme consumer through the provider without a second OS listener', () => {
+    localStorage.setItem('dn-theme', 'system')
+    useThemeStore.setState({ theme: 'system', legacyThemeOverride: false, appliedTheme: 'light' })
+
+    render(
+      <ThemeProvider>
+        <ThemeConsumer />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByTestId('effective-theme')).toHaveTextContent('light')
+    expect(addEventListener).toHaveBeenCalledTimes(1)
+
+    systemDark = true
+    dispatchSystemChange()
+
+    expect(screen.getByTestId('effective-theme')).toHaveTextContent('dark')
     expect(addEventListener).toHaveBeenCalledTimes(1)
   })
 

@@ -75,6 +75,29 @@ describe('ThemeGallery', () => {
     expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
   })
 
+  it('resolves System preview and restore through the current dark OS palette', () => {
+    const previousMatchMedia = window.matchMedia
+    window.matchMedia = vi.fn(() => ({ matches: true }) as MediaQueryList)
+
+    try {
+      localStorage.setItem('dn-theme', 'system')
+      document.documentElement.dataset.theme = 'light-blue'
+      document.documentElement.classList.remove('dark')
+
+      render(<ThemeGallery />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Preview System' }))
+      expect(document.documentElement.dataset.theme).toBe('dark')
+      expect(document.documentElement).toHaveClass('dark')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Restore previous theme' }))
+      expect(document.documentElement.dataset.theme).toBe('dark')
+      expect(document.documentElement).toHaveClass('dark')
+    } finally {
+      window.matchMedia = previousMatchMedia
+    }
+  })
+
   it('does not migrate legacy storage while mounting, previewing, or restoring', () => {
     document.documentElement.dataset.theme = ''
     document.documentElement.classList.remove('dark')

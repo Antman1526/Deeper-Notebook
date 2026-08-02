@@ -1,6 +1,10 @@
 const CANONICAL_THEME_KEY = 'dn-theme'
 const LEGACY_THEME_KEY = 'onp-theme'
 
+// Same-document consumers use this signal because the browser `storage`
+// event only reaches other documents.
+export const THEME_SELECTION_CHANGE_EVENT = 'dn-theme-change'
+
 export function peekStoredTheme(storage: Storage): string | null {
   return storage.getItem(CANONICAL_THEME_KEY) ?? storage.getItem(LEGACY_THEME_KEY)
 }
@@ -18,10 +22,9 @@ export function writeStoredTheme(storage: Storage, theme: string): void {
   storage.setItem(CANONICAL_THEME_KEY, theme)
   storage.setItem(LEGACY_THEME_KEY, theme)
 
-  // ThemeProvider uses this same-tab signal to re-evaluate canonical
-  // selection authority. The browser `storage` event only reaches other
-  // documents, while ThemeSwitcher and ThemeGallery update this document.
+  // ThemeProvider, ThemeSwitcher, and ThemeGallery use this same-tab signal
+  // to re-evaluate canonical selection authority.
   if (typeof window !== 'undefined' && storage === window.localStorage) {
-    window.dispatchEvent(new Event('dn-theme-change'))
+    window.dispatchEvent(new Event(THEME_SELECTION_CHANGE_EVENT))
   }
 }

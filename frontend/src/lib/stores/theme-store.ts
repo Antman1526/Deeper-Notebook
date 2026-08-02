@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { peekStoredTheme } from '@/lib/theme-storage'
@@ -54,16 +53,12 @@ export function getStoredCatalogTheme(effectiveTheme: EffectiveTheme): ThemeId |
   return selection ? resolveCatalogTheme(selection, effectiveTheme) : null
 }
 
-export function applyCatalogTheme(root: HTMLElement, theme: ThemeId) {
-  root.setAttribute('data-theme', theme)
-  root.classList.remove('light', 'dark')
-  root.classList.toggle('dark', THEME_BY_ID[theme].dark)
-}
-
 interface ThemeState {
   theme: Theme
   legacyThemeOverride: boolean
+  appliedTheme: EffectiveTheme
   setTheme: (theme: Theme) => void
+  setAppliedTheme: (theme: EffectiveTheme) => void
   getSystemTheme: () => EffectiveTheme
   getEffectiveTheme: () => EffectiveTheme
 }
@@ -73,6 +68,9 @@ export const useThemeStore = create<ThemeState>()(
     (set, get) => ({
       theme: 'system',
       legacyThemeOverride: false,
+      appliedTheme: 'light',
+
+      setAppliedTheme: (appliedTheme: EffectiveTheme) => set({ appliedTheme }),
       
       setTheme: (theme: Theme) => {
         set({ theme, legacyThemeOverride: true })
@@ -104,37 +102,26 @@ export const useThemeStore = create<ThemeState>()(
   )
 )
 
-// Hook for components to use theme
-//
-// v0.7.59 — compute effectiveTheme client-side only.
-//
-// The previous version called `getEffectiveTheme()` during render. On
-// the server `typeof window === 'undefined'` so it returned 'light';
-// on the client, after Zustand's persist middleware rehydrated, it
-// could return 'dark' from localStorage. Any component that used
-// `isDark` for class names hydration-mismatched on the first paint,
-// flickering between the SSR default and the persisted choice.
-//
-// We now seed effectiveTheme as 'light' (matches SSR) and update it
-// inside useEffect — that effect only runs client-side, AFTER React
-// has committed the first render, so the SSR ↔ first-render output
-// is identical. Subsequent renders pick up the real value.
-//
-// We also listen for the system-theme media query so `theme === 'system'`
-// follows the OS dynamically without requiring a manual setTheme().
-export function useTheme() {
-  const { theme, setTheme, getEffectiveTheme, getSystemTheme } = useThemeStore()
-  const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light')
+export function applyCatalogTheme(root: HTMLElement, theme: ThemeId) {
+  root.setAttribute('data-theme', theme)
+  root.classList.remove('light', 'dark')
+  root.classList.toggle('dark', THEME_BY_ID[theme].dark)
 
-  useEffect(() => {
-    setEffectiveTheme(getEffectiveTheme())
-    if (theme === 'system' && typeof window !== 'undefined') {
-      const mql = window.matchMedia('(prefers-color-scheme: dark)')
-      const onChange = () => setEffectiveTheme(getSystemTheme())
-      mql.addEventListener('change', onChange)
-      return () => mql.removeEventListener('change', onChange)
-    }
-  }, [theme, getEffectiveTheme, getSystemTheme])
+  // Consumers read this provider/application-applied signal instead of
+  // installing their own OS media-query listeners.
+  if (typeof window !== 'undefined') {
+    useThemeStore.getState().setAppliedTheme(THEME_BY_ID[theme].dark ? 'dark' : 'light')
+  }
+}
+
+// Hook for components to use theme. `appliedTheme` starts at the SSR-safe
+// light value and is updated whenever ThemeProvider or an application surface
+// applies a concrete catalog palette. This hook intentionally has no OS
+// media-query listener; ThemeProvider owns that single source of truth.
+export function useTheme() {
+  const theme = useThemeStore(state => state.theme)
+  const setTheme = useThemeStore(state => state.setTheme)
+  const effectiveTheme = useThemeStore(state => state.appliedTheme)
 
   return {
     theme,
