@@ -27,15 +27,15 @@ type ThemeWindow = Window & {
 }
 
 function readActiveTheme(): ThemeId {
-  const documentTheme = document.documentElement.dataset.theme
-  if (documentTheme && isThemeId(documentTheme)) return documentTheme
-
   try {
     const storedTheme = peekStoredTheme(localStorage)
     if (storedTheme && isThemeId(storedTheme)) return storedTheme
   } catch {
     // Storage may be disabled; the Research Core default remains available.
   }
+
+  const documentTheme = document.documentElement.dataset.theme
+  if (documentTheme && isThemeId(documentTheme)) return documentTheme
 
   return DEFAULT_THEME_ID
 }

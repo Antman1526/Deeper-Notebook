@@ -47,6 +47,24 @@ def test_focus_ring_has_three_to_one_contrast_against_background(theme_id):
     assert _contrast_ratio(tokens["--ring"], tokens["--background"]) >= 3.0
 
 
+@pytest.mark.parametrize(
+    ("theme_id", "foreground_token"),
+    [
+        (theme_id, foreground_token)
+        for theme_id in _THEMES
+        for foreground_token in ("--primary-foreground", "--accent-foreground")
+    ],
+)
+def test_primary_and_accent_foregrounds_meet_wcag_aa(theme_id, foreground_token):
+    tokens = _theme_tokens(theme_id)
+    color_token = "--primary" if foreground_token == "--primary-foreground" else "--accent"
+    ratio = _contrast_ratio(tokens[foreground_token], tokens[color_token])
+    assert ratio >= 4.5, (
+        f"{theme_id}: {foreground_token}={tokens[foreground_token]} "
+        f"{color_token}={tokens[color_token]} contrast={ratio:.2f}, expected >= 4.5"
+    )
+
+
 @pytest.mark.parametrize("theme_id", list(_THEMES.keys()))
 def test_every_theme_produces_27_shadcn_tokens(theme_id):
     """Every theme must produce the full shadcn token set so no upstream
