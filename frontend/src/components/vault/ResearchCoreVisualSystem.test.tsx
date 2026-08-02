@@ -34,6 +34,20 @@ describe('Research Core visual system', () => {
     }
   })
 
+  it('maps catalog light themes onto light semantic surfaces', () => {
+    const globals = source('../../app/globals.css')
+
+    expect(globals).toContain('html[data-theme="research-core-light"]')
+    expect(globals).toContain('--dn-theme-canvas: #F5FBF9;')
+    expect(globals).toContain('--dn-theme-text: #102A2A;')
+    expect(globals).toContain('html[data-theme="archive-paper"]')
+    expect(globals).toContain('--dn-theme-canvas: #F7F1E5;')
+    expect(globals).toContain('html[data-theme="high-contrast-light"]')
+    expect(globals).toContain('--dn-theme-canvas: #FFFFFF;')
+    expect(globals).toMatch(/html\[data-theme\]\s*\{[\s\S]*--background:\s*var\(--dn-theme-canvas\)/)
+    expect(globals).toMatch(/html\[data-theme\]\s*\{[\s\S]*--foreground:\s*var\(--dn-theme-text\)/)
+  })
+
   it('ships responsive drawer and sequential mode hooks with a bounded entry transition', () => {
     const css = source('./vault.css')
 

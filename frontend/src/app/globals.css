@@ -179,6 +179,75 @@
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
 }
 
+/* Catalog themes set only six foundational values. Every application surface
+   continues to consume the semantic variables below, never a theme ID. */
+html[data-theme] {
+  --background: var(--dn-theme-canvas);
+  --foreground: var(--dn-theme-text);
+  --card: var(--dn-theme-panel);
+  --card-foreground: var(--dn-theme-text);
+  --popover: var(--dn-theme-panel);
+  --popover-foreground: var(--dn-theme-text);
+  --primary: var(--dn-theme-primary);
+  --primary-foreground: var(--dn-theme-canvas);
+  --secondary: color-mix(in oklab, var(--dn-theme-panel) 82%, var(--dn-theme-canvas));
+  --secondary-foreground: var(--dn-theme-text);
+  --muted: color-mix(in oklab, var(--dn-theme-panel) 74%, var(--dn-theme-canvas));
+  --muted-foreground: color-mix(in oklab, var(--dn-theme-text) 70%, var(--dn-theme-canvas));
+  --accent: var(--dn-theme-accent);
+  --accent-foreground: var(--dn-theme-text);
+  --border: var(--dn-theme-border);
+  --input: var(--dn-theme-border);
+  --ring: var(--dn-theme-accent);
+  --sidebar: var(--dn-theme-canvas);
+  --sidebar-foreground: var(--dn-theme-text);
+  --sidebar-primary: var(--dn-theme-primary);
+  --sidebar-primary-foreground: var(--dn-theme-canvas);
+  --sidebar-accent: color-mix(in oklab, var(--dn-theme-panel) 74%, var(--dn-theme-primary));
+  --sidebar-accent-foreground: var(--dn-theme-text);
+  --sidebar-border: var(--dn-theme-border);
+  --sidebar-ring: var(--dn-theme-accent);
+  --research-canvas: var(--dn-theme-canvas);
+  --research-panel: var(--dn-theme-panel);
+  --research-line: var(--dn-theme-border);
+  --research-accent: var(--dn-theme-primary);
+  --research-accent-strong: var(--dn-theme-accent);
+  --research-warning: var(--dn-theme-accent);
+  --research-glow: color-mix(in oklab, var(--dn-theme-accent) 28%, transparent);
+  --success: var(--dn-theme-primary);
+  --success-foreground: var(--dn-theme-canvas);
+  --warning: var(--dn-theme-accent);
+  --warning-foreground: var(--dn-theme-canvas);
+  --info: var(--dn-theme-accent);
+  --info-foreground: var(--dn-theme-canvas);
+}
+
+html[data-theme="research-core-dark"] { --dn-theme-canvas: #071B1D; --dn-theme-panel: #0B292B; --dn-theme-text: #D8FFF8; --dn-theme-primary: #2DD4BF; --dn-theme-accent: #38BDF8; --dn-theme-border: #225053; }
+html[data-theme="research-core-light"] { --dn-theme-canvas: #F5FBF9; --dn-theme-panel: #FFFFFF; --dn-theme-text: #102A2A; --dn-theme-primary: #0F766E; --dn-theme-accent: #0284C7; --dn-theme-border: #C9DED8; }
+html[data-theme="deep-ocean"] { --dn-theme-canvas: #06151F; --dn-theme-panel: #0B2432; --dn-theme-text: #D8F3F8; --dn-theme-primary: #2DD4BF; --dn-theme-accent: #38BDF8; --dn-theme-border: #21485A; }
+html[data-theme="graphite-lab"] { --dn-theme-canvas: #151A1D; --dn-theme-panel: #20272B; --dn-theme-text: #EDF7F5; --dn-theme-primary: #5EEAD4; --dn-theme-accent: #67E8F9; --dn-theme-border: #3B494E; }
+html[data-theme="arctic-research"] { --dn-theme-canvas: #F4FAFC; --dn-theme-panel: #FFFFFF; --dn-theme-text: #122A35; --dn-theme-primary: #0F766E; --dn-theme-accent: #0284C7; --dn-theme-border: #C7DBE2; }
+html[data-theme="archive-paper"] { --dn-theme-canvas: #F7F1E5; --dn-theme-panel: #FFFDF8; --dn-theme-text: #2B332E; --dn-theme-primary: #0F766E; --dn-theme-accent: #A16207; --dn-theme-border: #D8CDBB; }
+html[data-theme="high-contrast-dark"] { --dn-theme-canvas: #000000; --dn-theme-panel: #111111; --dn-theme-text: #FFFFFF; --dn-theme-primary: #5EEAD4; --dn-theme-accent: #67E8F9; --dn-theme-border: #FFFFFF; }
+html[data-theme="high-contrast-light"] { --dn-theme-canvas: #FFFFFF; --dn-theme-panel: #FFFFFF; --dn-theme-text: #000000; --dn-theme-primary: #006B63; --dn-theme-accent: #005FCC; --dn-theme-border: #000000; }
+html[data-theme="light-blue"] { --dn-theme-canvas: #FFFFFF; --dn-theme-panel: #FFFFFF; --dn-theme-text: #1A2B3C; --dn-theme-primary: #2D7FF9; --dn-theme-accent: #5AB1FF; --dn-theme-border: #D8E5F5; }
+html[data-theme="system"] { --dn-theme-canvas: #FFFFFF; --dn-theme-panel: #FFFFFF; --dn-theme-text: #1A2B3C; --dn-theme-primary: #2D7FF9; --dn-theme-accent: #5AB1FF; --dn-theme-border: #D8E5F5; }
+html[data-theme="solarized-light"] { --dn-theme-canvas: #FDF6E3; --dn-theme-panel: #FDF6E3; --dn-theme-text: #073642; --dn-theme-primary: #268BD2; --dn-theme-accent: #2AA198; --dn-theme-border: #D8D2BF; }
+html[data-theme="github-light"] { --dn-theme-canvas: #FFFFFF; --dn-theme-panel: #FFFFFF; --dn-theme-text: #24292F; --dn-theme-primary: #0969DA; --dn-theme-accent: #1F883D; --dn-theme-border: #D0D7DE; }
+html[data-theme="paper"] { --dn-theme-canvas: #FBF8F1; --dn-theme-panel: #FBF8F1; --dn-theme-text: #2A2520; --dn-theme-primary: #8B5A2B; --dn-theme-accent: #C0853D; --dn-theme-border: #DDD3BF; }
+html[data-theme="catppuccin-latte"] { --dn-theme-canvas: #EFF1F5; --dn-theme-panel: #FFFFFF; --dn-theme-text: #4C4F69; --dn-theme-primary: #8839EF; --dn-theme-accent: #1E66F5; --dn-theme-border: #BCC0CC; }
+html[data-theme="rose-pine-dawn"] { --dn-theme-canvas: #FAF4ED; --dn-theme-panel: #FFFAF3; --dn-theme-text: #4B4661; --dn-theme-primary: #907AA9; --dn-theme-accent: #D7827E; --dn-theme-border: #DFDAD9; }
+html[data-theme="dark"] { --dn-theme-canvas: #0F1419; --dn-theme-panel: #1A2330; --dn-theme-text: #E5EBF2; --dn-theme-primary: #5AB1FF; --dn-theme-accent: #2D7FF9; --dn-theme-border: #2A3540; }
+html[data-theme="midnight-aurora"] { --dn-theme-canvas: #0D0E1D; --dn-theme-panel: #181A33; --dn-theme-text: #EEF0FF; --dn-theme-primary: #6C7BFF; --dn-theme-accent: #B96CFF; --dn-theme-border: #2A2D52; }
+html[data-theme="tokyo-night"] { --dn-theme-canvas: #1A1B26; --dn-theme-panel: #24283B; --dn-theme-text: #C0CAF5; --dn-theme-primary: #7AA2F7; --dn-theme-accent: #BB9AF7; --dn-theme-border: #3B4261; }
+html[data-theme="catppuccin-mocha"] { --dn-theme-canvas: #1E1E2E; --dn-theme-panel: #313244; --dn-theme-text: #CDD6F4; --dn-theme-primary: #CBA6F7; --dn-theme-accent: #F5C2E7; --dn-theme-border: #45475A; }
+html[data-theme="rose-pine"] { --dn-theme-canvas: #191724; --dn-theme-panel: #1F1D2E; --dn-theme-text: #E0DEF4; --dn-theme-primary: #C4A7E7; --dn-theme-accent: #EBBCBA; --dn-theme-border: #403D52; }
+html[data-theme="one-dark"] { --dn-theme-canvas: #282C34; --dn-theme-panel: #21252B; --dn-theme-text: #C5CCD6; --dn-theme-primary: #61AFEF; --dn-theme-accent: #C678DD; --dn-theme-border: #3E4451; }
+html[data-theme="gruvbox-dark"] { --dn-theme-canvas: #282828; --dn-theme-panel: #3C3836; --dn-theme-text: #EBDBB2; --dn-theme-primary: #FABD2F; --dn-theme-accent: #FE8019; --dn-theme-border: #504945; }
+html[data-theme="solarized-dark"] { --dn-theme-canvas: #002B36; --dn-theme-panel: #073642; --dn-theme-text: #EEE8D5; --dn-theme-primary: #268BD2; --dn-theme-accent: #2AA198; --dn-theme-border: #14424F; }
+html[data-theme="dracula"] { --dn-theme-canvas: #282A36; --dn-theme-panel: #343746; --dn-theme-text: #F8F8F2; --dn-theme-primary: #BD93F9; --dn-theme-accent: #FF79C6; --dn-theme-border: #44475A; }
+html[data-theme="nord"] { --dn-theme-canvas: #2E3440; --dn-theme-panel: #3B4252; --dn-theme-text: #ECEFF4; --dn-theme-primary: #88C0D0; --dn-theme-accent: #5E81AC; --dn-theme-border: #4C566A; }
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

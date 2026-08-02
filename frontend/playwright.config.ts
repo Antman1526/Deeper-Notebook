@@ -28,7 +28,12 @@ export default defineConfig({
     {
       name: 'mocked-browser',
       testIgnore: ['e2e/native/**', 'e2e/device/**'],
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        colorScheme: 'dark',
+        deviceScaleFactor: 1,
+      },
       metadata: {
         proof_boundary: 'mocked-browser',
         ci_gate: 'required-linux',
