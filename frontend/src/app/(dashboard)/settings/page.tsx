@@ -14,6 +14,7 @@ import { RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 // v0.8.70 — replay the launch "Aurora Reveal" intro on demand.
 import { replayIntro } from '@/components/intro/IntroReveal'
+import { ThemeGallery } from '@/components/deeper-notebook'
 
 export default function SettingsPage() {
   const { t } = useTranslation()
@@ -46,6 +47,15 @@ export default function SettingsPage() {
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </header>
+
+            <section aria-labelledby="appearance-heading" className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Appearance</p>
+                <h2 id="appearance-heading" className="mt-1 text-xl font-semibold">Choose your research environment</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Preview a complete workspace theme, then apply it when it feels right.</p>
+              </div>
+              <ThemeGallery />
+            </section>
 
             <SettingsForm />
             <UpdatesCard />

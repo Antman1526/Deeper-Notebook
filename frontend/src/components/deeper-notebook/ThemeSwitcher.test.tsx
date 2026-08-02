@@ -20,6 +20,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuTrigger: ({ children }: ChildrenProps) => children,
   DropdownMenuContent: ({ children }: ChildrenProps) => <div>{children}</div>,
   DropdownMenuItem: ({ children, onClick }: MenuItemProps) => <button onClick={onClick}>{children}</button>,
+  DropdownMenuLabel: ({ children }: ChildrenProps) => <div>{children}</div>,
   DropdownMenuSeparator: () => <hr />,
 }))
 
@@ -29,7 +30,7 @@ type ThemeBridge = { setTheme: ReturnType<typeof vi.fn> }
 type ThemeWindow = Window & { DN?: ThemeBridge; ONP?: ThemeBridge }
 
 function selectDarkTheme() {
-  fireEvent.click(screen.getByText('Dark'))
+  fireEvent.click(screen.getByRole('button', { name: 'Dark' }))
 }
 
 describe('ThemeSwitcher Deeper Notebook compatibility', () => {
@@ -106,5 +107,24 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     render(<ThemeSwitcher />)
 
     expect(localStorage.getItem('dn-theme')).toBe('dark')
+  })
+
+  it('shows all catalog groups and applies Research Core Light canonically', () => {
+    const canonical = { setTheme: vi.fn() }
+    ;(window as ThemeWindow).DN = canonical
+
+    render(<ThemeSwitcher />)
+
+    expect(screen.getByText('Featured')).toBeVisible()
+    expect(screen.getByText('Light')).toBeVisible()
+    expect(screen.getAllByText('Dark')).toHaveLength(2)
+    expect(screen.getByText('Accessibility')).toBeVisible()
+    expect(screen.getByText('Classics')).toBeVisible()
+    expect(screen.getAllByRole('button')).toHaveLength(26)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Research Core Light' }))
+
+    expect(canonical.setTheme).toHaveBeenCalledWith('research-core-light')
+    expect(localStorage.getItem('dn-theme')).toBe('research-core-light')
   })
 })
