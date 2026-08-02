@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { THEME_SELECTION_CHANGE_EVENT } from '@/lib/theme-storage'
 import { useThemeStore } from '@/lib/stores/theme-store'
+import { ThemeProvider } from '@/components/providers/ThemeProvider'
 
 const { deeperNotebookFetch } = vi.hoisted(() => ({
   deeperNotebookFetch: vi.fn(),
@@ -209,5 +210,27 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     expect(screen.getByRole('article', { name: 'Light Blue theme' })).toHaveTextContent('Current')
     expect(document.documentElement.dataset.theme).toBe('light-blue')
     expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('lets a later canonical picker selection supersede a legacy command after provider resolution', () => {
+    render(
+      <ThemeProvider>
+        <ThemeSwitcher />
+        <ThemeGallery />
+      </ThemeProvider>,
+    )
+
+    act(() => useThemeStore.getState().setTheme('dark'))
+    expect(document.documentElement.dataset.theme).toBe('dark')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
+
+    expect(localStorage.getItem('dn-theme')).toBe('archive-paper')
+    expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
+    expect(screen.getByRole('button', { name: 'Archive Paper Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'Archive Paper theme' })).toHaveTextContent('Current')
+    expect(document.documentElement.dataset.theme).toBe('archive-paper')
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(useThemeStore.getState().legacyThemeOverride).toBe(false)
   })
 })
