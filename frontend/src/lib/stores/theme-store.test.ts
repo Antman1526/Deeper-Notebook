@@ -43,16 +43,11 @@ describe('legacy theme-store catalog authority', () => {
     expect(document.documentElement).not.toHaveClass('dark')
   })
 
-  it('maps legacy system changes through catalog IDs when no explicit catalog theme exists', () => {
+  it('maps the direct legacy system setter to the current catalog theme without owning a listener', () => {
     useThemeStore.getState().setTheme('system')
     expect(document.documentElement.dataset.theme).toBe('light-blue')
     expect(document.documentElement).not.toHaveClass('dark')
-
-    systemDark = true
-    mediaListeners.forEach(listener => listener({ matches: true } as MediaQueryListEvent))
-
-    expect(document.documentElement.dataset.theme).toBe('dark')
-    expect(document.documentElement).toHaveClass('dark')
+    expect(mediaListeners).toEqual([])
   })
 
   it('lets a new legacy setter override stale catalog storage', () => {
@@ -61,12 +56,12 @@ describe('legacy theme-store catalog authority', () => {
     useThemeStore.getState().setTheme('light')
     expect(document.documentElement.dataset.theme).toBe('light-blue')
 
-    useThemeStore.getState().setTheme('system')
     systemDark = true
-    mediaListeners.forEach(listener => listener({ matches: true } as MediaQueryListEvent))
+    useThemeStore.getState().setTheme('system')
 
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.documentElement).toHaveClass('dark')
+    expect(mediaListeners).toEqual([])
   })
 
 })
