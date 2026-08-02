@@ -97,6 +97,32 @@ git diff --check
 - The pre-existing worktree-local `node_modules/` remains untracked and is not
   part of this task's commit.
 
+## 2026-08-02 — Research Core Guided Tips
+
+### Delivered scope
+
+- Added the approved local-only, versioned eleven-section Guided Tips catalog
+  and the `dn-guided-tips-v1` Zustand persistence store.
+- Added a non-modal anchored provider that clamps its fixed callout to a 16px
+  viewport inset, updates on resize and capture-phase scroll, fails closed for
+  missing anchors, and hides while modal or explicit suspension UI is present.
+- Added one provider mount, stable sidebar anchors, and independent Settings
+  controls that toggle enablement or clear only completion state.
+
+### Verification
+
+```sh
+cd frontend && npm test -- src/lib/guided-tips/catalog.test.ts src/lib/stores/guided-tips-store.test.ts src/components/guided-tips/GuidedTipsProvider.test.tsx
+# 3 files passed; 10 tests passed
+
+cd frontend && npx eslint src/lib/guided-tips src/lib/stores/guided-tips-store.ts src/components/guided-tips src/components/layout/AppShell.tsx src/components/layout/AppSidebar.tsx 'src/app/(dashboard)/settings/page.tsx'
+# passed
+```
+
+The plan's literal `npm run lint -- ...` invocation also runs its existing
+repository-wide `eslint src/` prefix and remains blocked by ten unrelated
+Podcast/Vault `no-explicit-any` errors. No unrelated files were changed.
+
 ## Review repair
 
 ### Red

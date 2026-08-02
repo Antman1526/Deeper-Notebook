@@ -151,6 +151,7 @@ export function AppSidebar() {
         )}
       >
         <div
+          data-guided-tip-anchor="/"
           className={cn(
             'flex h-16 items-center group',
             isCollapsed ? 'justify-center px-2' : 'justify-between px-4'
@@ -316,6 +317,7 @@ export function AppSidebar() {
                   )
                   const button = (
                     <Button
+                      data-guided-tip-anchor={item.href}
                       variant={isActive ? 'secondary' : 'ghost'}
                       className={cn(
                         // v0.8.70 — active state is now a Framer Motion
