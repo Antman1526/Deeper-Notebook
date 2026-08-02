@@ -59,7 +59,7 @@ def test_get_theme_returns_default_when_config_file_missing(app, monkeypatch):
     with TestClient(app) as client:
         r = client.get("/api/deeper-notebook/theme")
     assert r.status_code == 200
-    assert r.json()["theme"] == "light-blue"
+    assert r.json()["theme"] == "research-core-dark"
 
 
 def test_get_theme_propagates_http_exception(app, monkeypatch):
@@ -95,6 +95,26 @@ def test_post_theme_rejects_unknown(app, monkeypatch):
         r = client.post("/api/deeper-notebook/theme", json={"theme": "neon-purple"})
     assert r.status_code == 400
     assert "unknown theme" in r.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "theme",
+    [
+        "research-core-dark", "research-core-light", "deep-ocean", "graphite-lab",
+        "arctic-research", "archive-paper", "high-contrast-dark", "high-contrast-light",
+    ],
+)
+def test_post_theme_accepts_each_research_core_palette(app, monkeypatch, theme):
+    monkeypatch.setattr(_FakeCfg, "save", lambda self, path: None)
+    monkeypatch.setattr(
+        deeper_notebook_mod, "_load_config", lambda: (Path("/tmp/c.toml"), _FakeCfg())
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/api/deeper-notebook/theme", json={"theme": theme})
+
+    assert response.status_code == 200
+    assert response.json()["theme"] == theme
 
 
 def test_post_theme_preserves_other_fields_via_dataclasses_replace(app, monkeypatch):
