@@ -39,6 +39,8 @@ export function GuidedTipsProvider() {
       return
     }
 
+    const activeTip = tip
+
     const updatePosition = () => {
       if (document.querySelector(SUSPEND_SELECTOR)) {
         setPosition(null)
@@ -46,7 +48,7 @@ export function GuidedTipsProvider() {
       }
 
       const anchor = document.querySelector<HTMLElement>(
-        `[data-guided-tip-anchor="${tip.anchor}"]`,
+        `[data-guided-tip-anchor="${activeTip.anchor}"]`,
       )
 
       if (!anchor) {
@@ -84,7 +86,7 @@ export function GuidedTipsProvider() {
 
     function handleKeyDown(event: KeyboardEvent) {
       const anchor = document.querySelector<HTMLElement>(
-        `[data-guided-tip-anchor="${tip.anchor}"]`,
+        `[data-guided-tip-anchor="${activeTip.anchor}"]`,
       )
 
       if (
@@ -93,7 +95,7 @@ export function GuidedTipsProvider() {
         && anchor
         && !document.querySelector(SUSPEND_SELECTOR)
       ) {
-        complete(tip)
+        complete(activeTip)
         setPosition(null)
       }
     }
