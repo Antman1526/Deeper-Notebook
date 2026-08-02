@@ -1,12 +1,13 @@
 # Research Core OS Theme Foundation Verification
 
-Status: verified after final-review authority follow-up. The focused frontend
-contracts, Guided Tips contracts, desktop/API theme suite, generated-asset
-freshness check, scoped ESLint, production build, and all eight deterministic
-visual comparisons pass. Repository-wide lint remains blocked by pre-existing
-Podcast/Vault findings; that unrelated gate is recorded separately below.
+Status: verified after the second fresh-review persistence closure. The focused
+frontend contracts, Guided Tips contracts, desktop/API theme suite,
+generated-asset freshness check, scoped ESLint, production build, and all eight
+deterministic visual comparisons pass. Repository-wide lint remains blocked by
+pre-existing Podcast/Vault findings; that unrelated gate is recorded separately
+below.
 
-Commit: `e99ba815bcc31ea65669d5083cebdaacea39a8c7`
+Commit: `c9b19424a971194dc532d24dc2f1701083d6768f`
 
 Foundation baseline commit: `53ec0990b14fdcd6413d8bd7af9936ce0c2e434b`
 
@@ -73,6 +74,41 @@ Product follow-up commit: `e99ba815bcc31ea65669d5083cebdaacea39a8c7`
   and ThemeGallery. Cross-picker writes now update Current state, reset an
   active external preview, and refresh the gallery restore baseline; listener
   cleanup is covered by regression tests.
+
+## Second fresh-review persistence closure
+
+Product repair commit: `c9b19424a971194dc532d24dc2f1701083d6768f`
+
+- The legacy Zustand `setTheme('light' | 'dark' | 'system')` path now maps to
+  the canonical catalog selection (`light-blue`, `dark`, or `system`), writes
+  both `dn-theme` and `onp-theme`, and emits the shared same-document selection
+  event before applying the resolved live palette.
+- Storage failures are fail-soft: a rejected persist or canonical storage write
+  does not block the live DOM palette or the provider/application-applied
+  effective-theme signal.
+- A mounted ThemeSwitcher plus ThemeGallery regression proves legacy setter
+  writes update both pickers. CommandPalette regressions cover all three
+  commands routing through the legacy setter, and runtime theme-script tests
+  prove canonical storage wins over stale legacy storage during prehydration for
+  both explicit dark and system selections.
+
+Second-closure focused frontend command:
+
+```bash
+cd frontend && npm test -- src/lib/themes/catalog.test.ts src/lib/theme-script.test.ts src/lib/brand.test.ts src/components/vault/ResearchCoreVisualSystem.test.tsx src/components/deeper-notebook/ThemeSwitcher.test.tsx src/components/deeper-notebook/ThemeGallery.test.tsx src/components/providers/ThemeProvider.test.tsx src/components/providers/ThemeProvider.integration.test.tsx src/lib/stores/theme-store.test.ts src/lib/guided-tips/catalog.test.ts src/lib/stores/guided-tips-store.test.ts src/components/guided-tips/GuidedTipsProvider.test.tsx
+```
+
+Result: **exit 0 — 12 files passed; 66 tests passed.** This includes the
+canonical/legacy storage and event regressions, fail-soft storage behavior,
+mounted picker synchronization, and canonical-prehydration precedence tests.
+
+Second-closure scoped checks:
+
+- `cd frontend && npx eslint src/lib/theme-storage.ts src/lib/stores/theme-store.ts src/lib/stores/theme-store.test.ts src/lib/theme-script.test.ts src/components/providers/ThemeProvider.tsx src/components/providers/ThemeProvider.integration.test.tsx src/components/deeper-notebook/ThemeGallery.tsx src/components/deeper-notebook/ThemeGallery.test.tsx src/components/deeper-notebook/ThemeSwitcher.tsx src/components/deeper-notebook/ThemeSwitcher.test.tsx src/components/common/CommandPalette.test.tsx`: **exit 0**.
+- `cd frontend && npm run build`: **exit 0**, all 23 routes generated.
+- `PYTHONPATH=. ./.build-venv/bin/python scripts/render_theme_static_assets.py --check`: **exit 0**.
+- `cd frontend && npm run test:e2e:themes`: **exit 0 — 8 passed (33.4s)**; no snapshots changed.
+- Scoped `git diff --check`: **exit 0**.
 
 Follow-up focused frontend command:
 
