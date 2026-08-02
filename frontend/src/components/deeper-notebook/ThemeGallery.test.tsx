@@ -74,4 +74,39 @@ describe('ThemeGallery', () => {
     expect(localStorage.getItem('dn-theme')).toBe('archive-paper')
     expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
   })
+
+  it('does not migrate legacy storage while mounting, previewing, or restoring', () => {
+    document.documentElement.dataset.theme = ''
+    document.documentElement.classList.remove('dark')
+    localStorage.setItem('onp-theme', 'research-core-dark')
+
+    render(<ThemeGallery />)
+
+    expect(localStorage.getItem('dn-theme')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Archive Paper' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restore previous theme' }))
+
+    expect(document.documentElement.dataset.theme).toBe('research-core-dark')
+    expect(localStorage.getItem('dn-theme')).toBeNull()
+    expect(localStorage.getItem('onp-theme')).toBe('research-core-dark')
+  })
+
+  it('updates the restore baseline after Apply', () => {
+    const canonical = { setTheme: vi.fn() }
+    ;(window as ThemeWindow).DN = canonical
+
+    render(<ThemeGallery />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Research Core Light' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restore previous theme' }))
+
+    expect(document.documentElement.dataset.theme).toBe('archive-paper')
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(screen.getByRole('article', { name: 'Archive Paper theme' })).toHaveTextContent('Current')
+    expect(localStorage.getItem('dn-theme')).toBe('archive-paper')
+    expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
+    expect(canonical.setTheme).toHaveBeenCalledTimes(1)
+    expect(canonical.setTheme).toHaveBeenCalledWith('archive-paper')
+  })
 })

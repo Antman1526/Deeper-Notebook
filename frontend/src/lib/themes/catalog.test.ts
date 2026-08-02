@@ -5,6 +5,7 @@ import {
   DEFAULT_THEME_ID,
   THEME_BY_ID,
   THEME_CATALOG,
+  THEME_GROUPS,
   isThemeId,
 } from './catalog'
 
@@ -37,5 +38,15 @@ describe('Research Core OS theme catalog', () => {
     expect(DARK_THEME_IDS).not.toContain('research-core-light')
     expect(isThemeId('archive-paper')).toBe(true)
     expect(isThemeId('unknown-neon')).toBe(false)
+  })
+
+  it('exports the one approved theme group order', () => {
+    expect(THEME_GROUPS).toEqual([
+      { id: 'featured', label: 'Featured' },
+      { id: 'light', label: 'Light' },
+      { id: 'dark', label: 'Dark' },
+      { id: 'accessibility', label: 'Accessibility' },
+      { id: 'classics', label: 'Classics' },
+    ])
   })
 })

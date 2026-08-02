@@ -12,6 +12,7 @@ interface ChildrenProps {
 
 interface MenuItemProps extends ChildrenProps {
   onClick?: () => void
+  'aria-current'?: 'true'
 }
 
 vi.mock('@/lib/api/deeper-notebook', () => ({ deeperNotebookFetch }))
@@ -19,7 +20,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: ChildrenProps) => children,
   DropdownMenuTrigger: ({ children }: ChildrenProps) => children,
   DropdownMenuContent: ({ children }: ChildrenProps) => <div>{children}</div>,
-  DropdownMenuItem: ({ children, onClick }: MenuItemProps) => <button onClick={onClick}>{children}</button>,
+  DropdownMenuItem: ({ children, onClick, ...props }: MenuItemProps) => <button onClick={onClick} {...props}>{children}</button>,
   DropdownMenuLabel: ({ children }: ChildrenProps) => <div>{children}</div>,
   DropdownMenuSeparator: () => <hr />,
 }))
@@ -126,5 +127,13 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
 
     expect(canonical.setTheme).toHaveBeenCalledWith('research-core-light')
     expect(localStorage.getItem('dn-theme')).toBe('research-core-light')
+  })
+
+  it('exposes the compact current theme to assistive technology', () => {
+    document.documentElement.dataset.theme = 'dark'
+
+    render(<ThemeSwitcher />)
+
+    expect(screen.getByRole('button', { name: 'Dark Current theme' })).toHaveAttribute('aria-current', 'true')
   })
 })

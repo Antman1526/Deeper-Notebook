@@ -5,13 +5,13 @@ import { RotateCcw, Search } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { readStoredTheme, writeStoredTheme } from '@/lib/theme-storage'
+import { peekStoredTheme, writeStoredTheme } from '@/lib/theme-storage'
 import {
   DEFAULT_THEME_ID,
   THEME_BY_ID,
   THEME_CATALOG,
+  THEME_GROUPS,
   isThemeId,
-  type ThemeGroup,
   type ThemeId,
 } from '@/lib/themes/catalog'
 
@@ -26,20 +26,12 @@ type ThemeWindow = Window & {
   ONP?: ThemeBridge
 }
 
-const THEME_GROUPS: readonly { id: ThemeGroup; label: string }[] = [
-  { id: 'featured', label: 'Featured' },
-  { id: 'light', label: 'Light' },
-  { id: 'dark', label: 'Dark' },
-  { id: 'accessibility', label: 'Accessibility' },
-  { id: 'classics', label: 'Classics' },
-]
-
 function readActiveTheme(): ThemeId {
   const documentTheme = document.documentElement.dataset.theme
   if (documentTheme && isThemeId(documentTheme)) return documentTheme
 
   try {
-    const storedTheme = readStoredTheme(localStorage)
+    const storedTheme = peekStoredTheme(localStorage)
     if (storedTheme && isThemeId(storedTheme)) return storedTheme
   } catch {
     // Storage may be disabled; the Research Core default remains available.
@@ -98,6 +90,7 @@ export function ThemeGallery() {
 
     const themeBridge = (window as ThemeWindow).DN ?? (window as ThemeWindow).ONP
     themeBridge?.setTheme?.(themeId)
+    originalTheme.current = themeId
   }
 
   return (
