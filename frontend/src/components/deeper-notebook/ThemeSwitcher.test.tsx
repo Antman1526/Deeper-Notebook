@@ -136,4 +136,14 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
 
     expect(screen.getByRole('button', { name: 'Dark Current theme' })).toHaveAttribute('aria-current', 'true')
   })
+
+  it('prefers persisted system selection over its resolved dark document palette', () => {
+    localStorage.setItem('dn-theme', 'system')
+    document.documentElement.dataset.theme = 'dark'
+
+    render(<ThemeSwitcher />)
+
+    expect(screen.getByRole('button', { name: 'System Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: 'Dark' })).not.toHaveAttribute('aria-current')
+  })
 })
