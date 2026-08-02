@@ -1,6 +1,10 @@
 const CANONICAL_THEME_KEY = 'dn-theme'
 const LEGACY_THEME_KEY = 'onp-theme'
 
+export function peekStoredTheme(storage: Storage): string | null {
+  return storage.getItem(CANONICAL_THEME_KEY) ?? storage.getItem(LEGACY_THEME_KEY)
+}
+
 export function readStoredTheme(storage: Storage): string | null {
   const canonical = storage.getItem(CANONICAL_THEME_KEY)
   if (canonical) return canonical
