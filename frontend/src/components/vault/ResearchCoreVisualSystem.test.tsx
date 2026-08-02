@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { THEME_CATALOG } from '@/lib/themes/catalog'
 
 const source = (file: string) => fs.readFileSync(
   path.resolve(__dirname, file),
@@ -48,6 +49,21 @@ describe('Research Core visual system', () => {
     expect(globals).toMatch(/html\[data-theme\]\s*\{[\s\S]*--foreground:\s*var\(--dn-theme-text\)/)
   })
 
+  it('uses contrast-safe accent foregrounds for every catalog theme', () => {
+    const globals = source('../../app/globals.css')
+
+    for (const theme of THEME_CATALOG) {
+      const selector = new RegExp(
+        `html\\[data-theme="${theme.id}"\\]\\s*\\{([^}]*)\\}`,
+      ).exec(globals)
+      expect(selector?.[1]).toMatch(/--dn-theme-accent-foreground:\s*#[0-9A-F]{6}/)
+
+      const foreground = /--dn-theme-accent-foreground:\s*(#[0-9A-F]{6})/.exec(selector?.[1] ?? '')?.[1]
+      expect(foreground).toBeDefined()
+      expect(contrastRatio(theme.preview.accent, foreground as string)).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
   it('ships responsive drawer and sequential mode hooks with a bounded entry transition', () => {
     const css = source('./vault.css')
 
@@ -69,3 +85,16 @@ describe('Research Core visual system', () => {
     expect(css).toMatch(/transition-duration:\s*0\.01ms/)
   })
 })
+
+function contrastRatio(first: string, second: string): number {
+  const luminance = (value: string) => {
+    const channels = [1, 3, 5].map(offset => parseInt(value.slice(offset, offset + 2), 16) / 255)
+    const linear = channels.map(channel => (
+      channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+    ))
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+  }
+
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a)
+  return (lighter + 0.05) / (darker + 0.05)
+}

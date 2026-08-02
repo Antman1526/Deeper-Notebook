@@ -27,3 +27,26 @@ for (const capture of captures) {
     expect(fixture.unexpectedRequests).toEqual([])
   })
 }
+
+for (const capture of captures.filter(capture => capture.theme.startsWith('high-contrast'))) {
+  test(`${capture.theme} selected accessibility gallery`, async ({ page }) => {
+    const fixture = await installThemeVisualFixture(page, capture.theme)
+    await page.setViewportSize(capture.viewport)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('/settings')
+
+    const label = capture.theme === 'high-contrast-dark' ? 'High Contrast Dark' : 'High Contrast Light'
+    const card = page.getByRole('article', { name: `${label} theme` })
+    await card.scrollIntoViewIfNeeded()
+    await expect(card).toContainText('Current')
+    await page.getByRole('button', { name: `Preview ${label}` }).click()
+    await expect(card).toContainText('Previewing')
+
+    const selectedCard = await card.screenshot({
+      animations: 'disabled',
+      caret: 'hide',
+    })
+    expect(selectedCard).toMatchSnapshot(`${capture.theme}-selected-accessibility.png`)
+    expect(fixture.unexpectedRequests).toEqual([])
+  })
+}
