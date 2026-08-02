@@ -1288,6 +1288,24 @@ git commit -m "docs: verify Research Core theme foundation"
 - [ ] Repository-wide Podcast/Vault ESLint findings remain outside this plan
   and require a separate cleanup scope.
 
+## Final approval stale-override closure progress (2026-08-02)
+
+- [x] Successful legacy canonical persistence clears `legacyThemeOverride`,
+  while canonical storage failures preserve the live legacy override and
+  fail-soft palette application.
+- [x] ThemeProvider clears stale legacy authority before re-resolving every
+  canonical selection event; later Gallery/ThemeSwitcher selections now win
+  over CommandPalette state and explicit themes remove stale System listeners.
+- [x] Actual CommandPalette, mounted ThemeSwitcher/ThemeGallery, storage,
+  painted-DOM, picker Current-state, and OS-listener regressions are covered.
+- [x] Product stale-override closure commit:
+  `0a9aefb39671fc5ecd0a0636aea9120e7dc50c84`.
+- [x] Final-closure verification: focused frontend 13 files / 102 tests,
+  scoped ESLint, production build, generator freshness, Playwright 8/8
+  no-update, and diff checks all pass. Desktop/API surfaces were untouched.
+- [ ] Repository-wide Podcast/Vault ESLint findings remain outside this plan
+  and require a separate cleanup scope.
+
 ## Program Boundary After This Plan
 
 This plan ends with working themes, gallery, persistence, auxiliary desktop
