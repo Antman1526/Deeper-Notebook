@@ -51,8 +51,16 @@ describe('ThemeProvider catalog compatibility', () => {
 
     render(<ThemeProvider><div>Legacy light</div></ThemeProvider>)
 
-    expect(document.documentElement).toHaveAttribute('data-theme', 'light')
-    expect(document.documentElement).toHaveClass('light')
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('normalizes a legacy stored light value through the catalog', () => {
+    localStorage.setItem('dn-theme', 'light')
+
+    render(<ThemeProvider><div>Stored legacy light</div></ThemeProvider>)
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light-blue')
     expect(document.documentElement).not.toHaveClass('dark')
   })
 })
