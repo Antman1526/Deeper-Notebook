@@ -56,18 +56,11 @@ interface ThemeSwitcherProps {
 export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
   const [activeTheme, setActiveTheme] = useState<ThemeId>(DEFAULT_THEME_ID)
 
-  // Read the current theme from <html data-theme="..."> on mount.
-  // window.DN.setTheme has already set that attribute by the time React
-  // mounts — fallback to localStorage (preserves user choice across hard
-  // reloads that may briefly race the injection), then to the API.
+  // The persisted catalog selection is the authority for the picker. The
+  // document attribute is the resolved visual palette (for example, dark
+  // when the persisted selection is system), so only use it as a fallback
+  // when storage is unavailable or has no valid selection.
   useEffect(() => {
-    const current = document.documentElement.dataset.theme
-    if (current && isThemeId(current)) {
-      setActiveTheme(current)
-      return
-    }
-    // v0.5.9 — localStorage fallback so the dropdown doesn't flicker to
-    // the default while waiting for the API response.
     try {
       const cached = readStoredTheme(localStorage)
       if (cached && isThemeId(cached)) {
@@ -76,6 +69,11 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
       }
     } catch {
       /* localStorage disabled — fall through to API */
+    }
+    const current = document.documentElement.dataset.theme
+    if (current && isThemeId(current)) {
+      setActiveTheme(current)
+      return
     }
     deeperNotebookFetch('/api/deeper-notebook/theme')
       .then((r) => r.json())
