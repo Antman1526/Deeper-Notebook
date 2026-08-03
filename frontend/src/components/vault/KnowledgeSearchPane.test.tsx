@@ -1,15 +1,34 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { LocalModelSettings, ModelRoutePlan } from '@/lib/api/local-models'
+
 const indexedSearch = vi.hoisted(() => ({
   calls: [] as unknown[][],
   runSemanticSearch: vi.fn(),
   text: { data: undefined, isLoading: false, isError: false },
   semantic: { data: undefined, isPending: false, isError: false },
 }))
-const routePlan = vi.hoisted(() => ({ data: undefined as any, isError: false, isLoading: false }))
-const savedSettings = vi.hoisted(() => ({ data: { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} } as any }))
+const routePlan = vi.hoisted(() => ({ data: undefined as ModelRoutePlan | undefined, isError: false, isLoading: false }))
+const savedSettings = vi.hoisted(() => ({ data: {
+  model_dir: '',
+  execution_policy: 'strict_local',
+  compute_profile: 'balanced',
+  local_model_memory_limit_bytes: null,
+  role_overrides: {},
+  trusted_external_model_roots: [],
+} as LocalModelSettings }))
 const routePlanCalls = vi.hoisted(() => [] as unknown[][])
+
+const localSettings = (overrides: Partial<LocalModelSettings> = {}): LocalModelSettings => ({
+  model_dir: '',
+  execution_policy: 'strict_local',
+  compute_profile: 'balanced',
+  local_model_memory_limit_bytes: null,
+  role_overrides: {},
+  trusted_external_model_roots: [],
+  ...overrides,
+})
 
 vi.mock('@/lib/hooks/use-knowledge-command-data', () => ({
   useKnowledgeIndexedSearch: (...args: unknown[]) => {
@@ -31,7 +50,7 @@ describe('KnowledgeSearchPane', () => {
     routePlan.isError = false
     routePlan.isLoading = false
     routePlanCalls.length = 0
-    savedSettings.data = { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} }
+    savedSettings.data = localSettings()
     indexedSearch.calls = []
     indexedSearch.runSemanticSearch.mockReset()
     usePodcastStudioStore.getState().dismiss()
@@ -62,7 +81,11 @@ describe('KnowledgeSearchPane', () => {
   })
 
   it('plans Embedding with saved Local Preferred settings and its explicit override', () => {
-    savedSettings.data = { execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_overrides: { embedding_retrieval: 'embed-override' } }
+    savedSettings.data = localSettings({
+      execution_policy: 'local_preferred',
+      compute_profile: 'maximum_quality',
+      role_overrides: { embedding_retrieval: 'embed-override' },
+    })
     render(<KnowledgeSearchPane query="" searchMode="text" spaceIds={[]} authorityKinds={[]} />)
     expect(routePlanCalls).toContainEqual([{ role: 'embedding_retrieval', execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_override_model_id: 'embed-override', modalities: ['text'] }])
   })
