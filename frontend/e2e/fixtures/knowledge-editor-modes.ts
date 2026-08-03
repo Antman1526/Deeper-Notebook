@@ -651,6 +651,28 @@ export async function installKnowledgeShellMocks(
     },
     unexpectedApiTraffic,
   );
+  await page.route((url) => url.pathname === "/api/local-models/route-plan", async (route) => {
+    if (!(await allowRequestMethod(route, ["POST"], unexpectedApiTraffic))) return;
+    const body = route.request().postDataJSON() as { role?: unknown };
+    if (typeof body.role !== "string") {
+      unexpectedApiTraffic.push(requestLabel(route));
+      await fulfillFixtureJson(route, { detail: "Fixture route plan requires a role" }, 422);
+      return;
+    }
+    await fulfillFixtureJson(route, {
+      role: body.role,
+      outcome: "blocked",
+      selected_model_id: null,
+      selected_provider: null,
+      resource_tier: null,
+      selection_source: null,
+      route_reason: "No local model is configured in the read-only fixture.",
+      escalation_model_ids: [],
+      blocked_reason: "No local model is configured in the read-only fixture.",
+      selected_fingerprint: null,
+      selected_measurements: {},
+    });
+  });
   await fulfillJson(page, "/api/notebooks", [], unexpectedApiTraffic);
   await fulfillJson(page, "/api/sources", [], unexpectedApiTraffic);
   await fulfillJson(page, "/api/episode-profiles", [], unexpectedApiTraffic);
