@@ -2,6 +2,7 @@
 
 import type { PodcastSelection } from '@/lib/podcasts/selection'
 import type { PodcastSelectionPreview, PodcastSelectionPreviewEntry, PodcastSelectionState } from '@/lib/types/podcasts'
+import { isAbsoluteFilesystemPath, redactAbsolutePaths } from '@/lib/podcasts/safe-text'
 
 export interface ResearchSetPanelProps {
   selections: PodcastSelection[]
@@ -25,21 +26,13 @@ function entriesFor(preview: PodcastSelectionPreview | null | undefined): Podcas
   return preview?.entries ?? []
 }
 
-function redactPaths(value: string): string {
-  return value
-    .replace(/file:\/\/[^\s,;)]*/gi, '[path redacted]')
-    .replace(/[A-Za-z]:[\\/][^\s,;)]*/g, '[path redacted]')
-    .replace(/\\\\[^\s,;)]*/g, '[path redacted]')
-    .replace(/(?<!:)\/(?:[^/\s,;]+[\\/])*[^/\s,;]+/g, '[path redacted]')
-}
-
 function safeTitle(value: string): string {
-  if (/^(?:[\\/]|[A-Za-z]:[\\/])/.test(value)) return value.split(/[\\/]/).pop() || 'Untitled reference'
-  return redactPaths(value)
+  if (isAbsoluteFilesystemPath(value)) return value.split(/[\\/]/).filter(Boolean).pop() || 'Untitled reference'
+  return redactAbsolutePaths(value)
 }
 
 function safeReason(value: string): string {
-  return redactPaths(value)
+  return redactAbsolutePaths(value)
 }
 
 function EntryList({ entries, label }: { entries: PodcastSelectionPreviewEntry[]; label: string }) {

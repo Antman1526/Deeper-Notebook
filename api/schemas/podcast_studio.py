@@ -10,6 +10,27 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from deeper_notebook.knowledge_engine.capabilities import AuthorityKind
 from deeper_notebook.podcasts.selection_contracts import PodcastSelection
 
+_ABSOLUTE_MODEL_ID = re.compile(
+    r"^(?:/|\\\\|//|[A-Za-z]:[\\/]|file://)", re.IGNORECASE
+)
+_EMBEDDED_FILE_URL = re.compile(r"\bfile://[^\s,;\)\]}>]*", re.IGNORECASE)
+_EMBEDDED_WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s,;\)\]}>]*")
+_EMBEDDED_UNC_PATH = re.compile(r"(?:^|(?<=[\s(\"'=]))(?:\\\\|//)[^\s,;\)\]}>]*")
+_EMBEDDED_POSIX_PATH = re.compile(r"(?:^|(?<=[\s(\"'=]))/(?!/)[^\s,;\)\]}>]*")
+
+
+def _looks_like_absolute_model_id(value: str) -> bool:
+    return bool(_ABSOLUTE_MODEL_ID.match(value))
+
+
+def _contains_absolute_filesystem_path(value: str) -> bool:
+    return bool(
+        _EMBEDDED_FILE_URL.search(value)
+        or _EMBEDDED_WINDOWS_PATH.search(value)
+        or _EMBEDDED_UNC_PATH.search(value)
+        or _EMBEDDED_POSIX_PATH.search(value)
+    )
+
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -78,13 +99,7 @@ class PodcastReadinessRequest(PodcastSelectionPreviewRequest):
 
     @staticmethod
     def _looks_like_filesystem_path(value: str) -> bool:
-        return bool(
-            re.search(
-                r"(?:file://(?:/|[A-Za-z]:[\\/])|/(?:[^\s,;]+)|[A-Za-z]:[\\/][^\s,;]+|\\\\[^\s,;]+)",
-                value,
-                re.IGNORECASE,
-            )
-        )
+        return _looks_like_absolute_model_id(value)
 
 
 class PodcastStageModelPlanResponse(_Strict):
@@ -169,15 +184,7 @@ class PodcastEditorialBrief(_Strict):
 
     @staticmethod
     def _looks_like_filesystem_path(value: str) -> bool:
-        return (
-            bool(
-                re.search(
-                    r"(?:file://(?:/|[A-Za-z]:[\\/])|/(?:[^\s,;]+)|[A-Za-z]:[\\/][^\s,;]+|\\\\[^\s,;]+)",
-                    value,
-                    re.IGNORECASE,
-                )
-            )
-        )
+        return _contains_absolute_filesystem_path(value)
 
     @model_validator(mode="after")
     def validate_full_intent_enums(self) -> "PodcastEditorialBrief":

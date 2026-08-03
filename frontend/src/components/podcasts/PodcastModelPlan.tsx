@@ -1,6 +1,7 @@
 'use client'
 
 import type { PodcastStageModelPlan } from '@/lib/types/podcasts'
+import { isAbsoluteFilesystemPath, redactAbsolutePaths } from '@/lib/podcasts/safe-text'
 
 export interface PodcastModelPlanItem {
   stage: 'outline' | 'script' | 'voice' | 'transcription' | 'evidence' | 'verification'
@@ -13,6 +14,7 @@ export interface PodcastModelPlanItem {
   resourceTier?: PodcastStageModelPlan['resourceTier']
   selectionSource?: PodcastStageModelPlan['selectionSource']
   overrideChoices?: string[]
+  pendingOverride?: boolean
 }
 
 export interface PodcastModelPlanProps {
@@ -26,12 +28,8 @@ const OUTCOME_LABELS: Record<PodcastStageModelPlan['outcome'], string> = {
 }
 
 function safeDetail(value: string): string {
-  if (/^(?:[\\/]|[A-Za-z]:[\\/])/.test(value)) return value.split(/[\\/]/).pop() || '[local model]'
-  return value
-    .replace(/file:\/\/[^\s,;)]*/gi, '[path redacted]')
-    .replace(/[A-Za-z]:[\\/][^\s,;)]*/g, '[path redacted]')
-    .replace(/\\\\[^\s,;)]*/g, '[path redacted]')
-    .replace(/(?<!:)\/(?:[^/\s,;]+[\\/])*[^/\s,;]+/g, '[path redacted]')
+  if (isAbsoluteFilesystemPath(value)) return value.split(/[\\/]/).filter(Boolean).pop() || '[local model]'
+  return redactAbsolutePaths(value)
 }
 
 export function PodcastModelPlan({ plans, overrideChoices = {}, onOverride }: PodcastModelPlanProps) {
@@ -51,6 +49,7 @@ export function PodcastModelPlan({ plans, overrideChoices = {}, onOverride }: Po
             </div>
             <p className="mt-1 text-muted-foreground">{safeDetail(plan.reason)}</p>
             {plan.modelId || plan.provider || plan.resourceTier ? <p className="mt-1 text-xs text-muted-foreground">{[plan.modelId, plan.provider, plan.resourceTier].filter(Boolean).map((detail) => safeDetail(String(detail))).join(' · ')}</p> : null}
+            {plan.pendingOverride ? <p className="mt-1 text-xs text-muted-foreground">Override pending review</p> : plan.selectionSource ? <p className="mt-1 text-xs text-muted-foreground">Selection source: {plan.selectionSource}</p> : null}
             {overrideChoices[plan.stage]?.length && onOverride ? (
               <label className="mt-2 grid gap-1 text-xs" htmlFor={`podcast-model-override-${plan.stage}`}>Override {plan.label} model
                 <select id={`podcast-model-override-${plan.stage}`} value={plan.modelId ?? ''} onChange={(event) => onOverride(plan.stage, event.target.value)} className="h-8 rounded border bg-background px-2 text-sm">
