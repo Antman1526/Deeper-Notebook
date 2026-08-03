@@ -17,7 +17,7 @@ const workspaceId = engineId('named_knowledge_workspace')
 const embeddedFileUrl = /\bfile:\/\/[^\s,;\)\]}>]*/i
 const embeddedWindowsPath = /(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s,;\)\]}>]*/
 const embeddedUncPath = /(?:^|(?<=[\s("'=]))(?:\\\\|\/\/)[^\s,;\)\]}>]*/
-const embeddedPosixPath = /(?:^|(?<=[\s("'=]))\/(?!\/)[^\s,;\)\]}>]*/
+const embeddedPosixPath = /(?:^|(?<=[\s("'=:]))\/(?!\/)[^\s,;\)\]}>]*/
 const authorityKind = z.enum(['app_owned', 'external_read_only'])
 const visibleQuery = z.string().min(1).max(512).refine(
   (value) => !embeddedFileUrl.test(value)
