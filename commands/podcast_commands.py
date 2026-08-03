@@ -3,7 +3,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -85,6 +85,9 @@ class PodcastGenerationInput(CommandInput):
     # the outline stage; the user reviews/edits it in the UI and approval
     # submits a resume_podcast command for the remaining stages.
     review_outline: bool = False
+    execution_policy: Literal["strict_local", "local_preferred", "custom"] = "strict_local"
+    compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced"
+    include_transcription: bool = False
     # Phase 2 Studio receipts. These are redacted decisions and counts only;
     # source bodies remain in `content` and never appear in these fields.
     selection_summary: Optional[dict[str, Any]] = None

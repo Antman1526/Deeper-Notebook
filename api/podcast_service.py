@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import HTTPException
 from loguru import logger
@@ -42,6 +42,9 @@ class PodcastGenerationRequest(BaseModel):
     # v0.8.68 — outline-review workflow: stop after the outline so the user
     # can edit it before transcript + audio are generated.
     review_outline: bool = False
+    execution_policy: Literal["strict_local", "local_preferred", "custom"] = "strict_local"
+    compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced"
+    include_transcription: bool = False
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -136,6 +139,9 @@ class PodcastService:
         custom_prompt: Optional[str] = None,
         episode_length: Optional[str] = None,
         review_outline: bool = False,
+        execution_policy: Literal["strict_local", "local_preferred", "custom"] = "strict_local",
+        compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced",
+        include_transcription: bool = False,
         selection_summary: Optional[dict[str, Any]] = None,
         selection_fingerprint: Optional[str] = None,
         editorial_brief: Optional[dict[str, Any]] = None,
@@ -269,6 +275,9 @@ class PodcastService:
                 "episode_length": episode_length,
                 # v0.8.68 — outline-review workflow flag.
                 "review_outline": bool(review_outline),
+                "execution_policy": execution_policy,
+                "compute_profile": compute_profile,
+                "include_transcription": bool(include_transcription),
                 "selection_summary": selection_summary,
                 "selection_fingerprint": selection_fingerprint,
                 "editorial_brief": editorial_brief,

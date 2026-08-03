@@ -28,6 +28,7 @@ from deeper_notebook.podcasts.models import EpisodeProfile, SpeakerProfile
 
 
 class _RetryEpisode:
+    id = "episode:failed"
     name = "Research synthesis"
     episode_profile = {"name": "Local Episode"}
     speaker_profile = {"name": "Local Voice"}
@@ -36,6 +37,7 @@ class _RetryEpisode:
     briefing_suffix = "Keep this concise"
     mode = "deep_dive"
     custom_prompt = "Lead with the result"
+    command = "command:old"
     selection_summary = {
         "version": 1,
         "total_count": 2,
@@ -61,18 +63,25 @@ class _RetryEpisode:
             "version": 1,
             "role": "podcast_outline",
             "outcome": "ready",
-            "reason": "automatic selected the standard verified local candidate after all route gates.",
+            "resource_tier": "standard",
+            "selection_source": "automatic",
+            "reason": "route_ready",
         }
     ]
+    retry_submitted = None
 
     def __init__(self) -> None:
         self.deleted = False
+        self.saved = False
 
     async def get_job_detail(self) -> dict[str, str]:
         return {"status": "failed", "error_message": "transient provider issue"}
 
     async def delete(self) -> None:
         self.deleted = True
+
+    async def save(self) -> None:
+        self.saved = True
 
 
 def test_editorial_brief_rejects_an_absolute_path() -> None:
@@ -191,10 +200,22 @@ def test_redacted_receipts_preserve_prose_but_remove_embedded_paths() -> None:
         )
     ]
     receipt = _redacted_model_plan_receipts(plans)[0]
-    assert "model_id" not in receipt
-    assert "pros/cons" in receipt["reason"]
-    assert "HTTPS://example.test" in receipt["reason"]
-    assert "/Users/Antman/models/secret.gguf" not in receipt["reason"]
+    assert set(receipt) == {
+        "version",
+        "role",
+        "outcome",
+        "resource_tier",
+        "selection_source",
+        "reason",
+    }
+    assert receipt == {
+        "version": 1,
+        "role": "podcast_outline",
+        "outcome": "ready",
+        "resource_tier": "standard",
+        "selection_source": "automatic",
+        "reason": "route_ready",
+    }
 
 
 def test_episode_response_has_safe_legacy_metadata_defaults() -> None:
@@ -279,6 +300,223 @@ async def test_retry_submission_failure_preserves_old_episode_and_audio(
     assert episode.deleted is False
     assert audio.exists()
     assert audio.read_bytes() == b"old audio"
+
+
+@pytest.mark.asyncio
+async def test_retry_delete_failure_fences_job_and_reuses_it_without_unlinking_audio(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    episode = _RetryEpisode()
+    audio = tmp_path / "episodes" / "uuid" / "episode.mp3"
+    audio.parent.mkdir(parents=True)
+    audio.write_bytes(b"old audio")
+    episode.audio_file = str(audio)
+    delete_calls = 0
+    submissions: list[dict[str, object]] = []
+
+    async def get_episode(_: str) -> _RetryEpisode:
+        return episode
+
+    async def profile_exists(_: str) -> object:
+        return object()
+
+    async def submit_generation_job(**kwargs) -> str:
+        submissions.append(kwargs)
+        return "command:fenced"
+
+    async def delete() -> None:
+        nonlocal delete_calls
+        delete_calls += 1
+        raise RuntimeError("old row delete failed")
+
+    episode.delete = delete  # type: ignore[method-assign]
+    import api.routers.podcasts as podcasts_router
+
+    monkeypatch.setattr(podcasts_router, "_AUDIO_ROOT", tmp_path / "episodes")
+    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
+    monkeypatch.setattr(EpisodeProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+
+    with pytest.raises(HTTPException, match="Failed to retry episode"):
+        await _retry_podcast_episode_locked("episode:failed")
+
+    assert episode.saved is True
+    assert episode.retry_submitted.model_dump(mode="json") == {
+        "job_id": "command:fenced",
+        "generation": 1,
+    }
+    assert episode.command == "command:fenced"
+    assert audio.exists()
+    assert delete_calls == 1
+
+    reused = await _retry_podcast_episode_locked("episode:failed")
+
+    assert reused == {
+        "job_id": "command:fenced",
+        "message": "Retry already submitted successfully",
+    }
+    assert len(submissions) == 1
+    assert delete_calls == 1
+    assert audio.exists()
+
+
+@pytest.mark.asyncio
+async def test_retry_fence_save_failure_cancels_replacement_and_preserves_old_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    import api.routers.podcasts as podcasts_router
+
+    episode = _RetryEpisode()
+    audio = tmp_path / "episodes" / "uuid" / "episode.mp3"
+    audio.parent.mkdir(parents=True)
+    audio.write_bytes(b"old audio")
+    episode.audio_file = str(audio)
+    cancellations: list[str] = []
+
+    async def get_episode(_: str) -> _RetryEpisode:
+        return episode
+
+    async def profile_exists(_: str) -> object:
+        return object()
+
+    async def submit_generation_job(**kwargs) -> str:
+        return "command:cancel-me"
+
+    async def fail_save() -> None:
+        raise RuntimeError("fence save failed")
+
+    async def cancel_command_job(job_id: str) -> bool:
+        cancellations.append(job_id)
+        return True
+
+    episode.save = fail_save  # type: ignore[method-assign]
+    monkeypatch.setattr(podcasts_router, "_AUDIO_ROOT", tmp_path / "episodes")
+    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
+    monkeypatch.setattr(EpisodeProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+    monkeypatch.setattr(
+        podcasts_router.CommandService,
+        "cancel_command_job",
+        cancel_command_job,
+    )
+
+    with pytest.raises(HTTPException, match="replacement was cancelled"):
+        await _retry_podcast_episode_locked("episode:failed")
+
+    assert cancellations == ["command:cancel-me"]
+    assert episode.retry_submitted is None
+    assert episode.deleted is False
+    assert audio.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_result", [False, "raises"])
+async def test_retry_fence_uncertain_cancellation_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_result: bool | str,
+) -> None:
+    import api.routers.podcasts as podcasts_router
+
+    episode = _RetryEpisode()
+    episode.id = f"episode:uncertain-{cancel_result}"
+    submissions = 0
+
+    async def get_episode(_: str) -> _RetryEpisode:
+        return episode
+
+    async def profile_exists(_: str) -> object:
+        return object()
+
+    async def submit_generation_job(**kwargs) -> str:
+        nonlocal submissions
+        submissions += 1
+        return "command:uncertain"
+
+    async def fail_save() -> None:
+        raise RuntimeError("fence save failed")
+
+    async def cancel_command_job(job_id: str) -> bool:
+        if cancel_result == "raises":
+            raise RuntimeError("cancel uncertain")
+        return cancel_result
+
+    episode.save = fail_save  # type: ignore[method-assign]
+    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
+    monkeypatch.setattr(EpisodeProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+    monkeypatch.setattr(
+        podcasts_router.CommandService,
+        "cancel_command_job",
+        cancel_command_job,
+    )
+
+    with pytest.raises(HTTPException, match="state is uncertain"):
+        await _retry_podcast_episode_locked("episode:failed")
+
+    assert episode.retry_submitted is None
+    assert episode.deleted is False
+
+    with pytest.raises(HTTPException, match="state is uncertain") as second:
+        await _retry_podcast_episode_locked(episode.id)
+
+    assert second.value.status_code == 409
+    assert submissions == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_deletes_old_row_before_best_effort_audio_unlink(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import api.routers.podcasts as podcasts_router
+
+    episode = _RetryEpisode()
+    episode.audio_file = "contained/audio.mp3"
+    events: list[str] = []
+
+    class FailingAudioPath:
+        parent = None
+
+        def exists(self) -> bool:
+            return True
+
+        def unlink(self) -> None:
+            events.append("unlink")
+            raise OSError("audio unlink failed")
+
+    async def get_episode(_: str) -> _RetryEpisode:
+        return episode
+
+    async def profile_exists(_: str) -> object:
+        return object()
+
+    async def submit_generation_job(**kwargs) -> str:
+        return "command:audio-failure"
+
+    async def delete() -> None:
+        events.append("delete")
+        episode.deleted = True
+
+    episode.delete = delete  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        podcasts_router,
+        "_resolve_audio_path",
+        lambda _: FailingAudioPath(),
+    )
+    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
+    monkeypatch.setattr(EpisodeProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+
+    result = await _retry_podcast_episode_locked("episode:failed")
+
+    assert result["job_id"] == "command:audio-failure"
+    assert events == ["delete", "unlink"]
+    assert episode.deleted is True
 
 
 @pytest.mark.asyncio
@@ -392,9 +630,11 @@ async def test_changed_selection_returns_preview_required_without_mutation(
         ],
         "production_settings": {
             "mode": "deep_dive",
-            "custom_prompt": None,
             "episode_length": None,
             "review_outline": False,
+            "execution_policy": "strict_local",
+            "compute_profile": "balanced",
+            "include_transcription": False,
         },
     }
     episode.selection_fingerprint = "a" * 64
@@ -440,7 +680,14 @@ async def test_changed_selection_returns_preview_required_without_mutation(
     assert episode.deleted is False
 
 
-def _v2_retry_summary(*, mode: str = "debate", episode_length: str = "long") -> dict[str, object]:
+def _v2_retry_summary(
+    *,
+    mode: str = "debate",
+    episode_length: str = "long",
+    execution_policy: str = "strict_local",
+    compute_profile: str = "balanced",
+    include_transcription: bool = False,
+) -> dict[str, object]:
     return {
         "version": 2,
         "total_count": 1,
@@ -461,6 +708,9 @@ def _v2_retry_summary(*, mode: str = "debate", episode_length: str = "long") -> 
             "mode": mode,
             "episode_length": episode_length,
             "review_outline": True,
+            "execution_policy": execution_policy,
+            "compute_profile": compute_profile,
+            "include_transcription": include_transcription,
         },
     }
 
@@ -511,6 +761,11 @@ async def test_actual_v2_changed_fingerprint_returns_preview_without_mutation(
         "_podcast_selection_preparation",
         preparation,
     )
+    monkeypatch.setattr(
+        podcasts_router,
+        "_podcast_stage_plans",
+        lambda *args, **kwargs: [],
+    )
 
     result = await _resolve_retry_selection(episode, request=object())
 
@@ -538,6 +793,42 @@ async def test_tampered_v2_summary_count_mismatch_fails_closed() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("unsafe_key", "unsafe_value"),
+    [
+        ("api_key", "secret"),
+        ("password", "secret"),
+        ("token", "secret"),
+        ("source_text", "private source body"),
+        ("unknown", "unexpected scalar"),
+        ("model_id", "local-model"),
+    ],
+)
+async def test_tampered_v2_receipts_reject_unknown_sensitive_or_model_fields(
+    unsafe_key: str,
+    unsafe_value: str,
+) -> None:
+    episode = _RetryEpisode()
+    episode.id = f"episode:tampered-receipt-{unsafe_key}"
+    episode.selection_summary = _v2_retry_summary()
+    episode.model_plan_receipts = [{
+        "version": 1,
+        "role": "podcast_outline",
+        "outcome": "ready",
+        "resource_tier": "standard",
+        "selection_source": "automatic",
+        "reason": "route_ready",
+        unsafe_key: unsafe_value,
+    }]
+
+    result = await _resolve_retry_selection(episode, request=object())
+
+    assert result is not None
+    assert result.status == "preview_required"
+    assert result.code == "podcast_selection_tampered"
+
+
+@pytest.mark.asyncio
 async def test_actual_v2_matching_retry_replays_settings_and_submits_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -545,7 +836,13 @@ async def test_actual_v2_matching_retry_replays_settings_and_submits_once(
 
     episode = _RetryEpisode()
     episode.id = "episode:matching-real"
-    episode.selection_summary = _v2_retry_summary(mode="critique", episode_length="short")
+    episode.selection_summary = _v2_retry_summary(
+        mode="critique",
+        episode_length="short",
+        execution_policy="local_preferred",
+        compute_profile="maximum_quality",
+        include_transcription=True,
+    )
     episode.selection_fingerprint = "d" * 64
     submitted: list[dict[str, object]] = []
 
@@ -567,6 +864,11 @@ async def test_actual_v2_matching_retry_replays_settings_and_submits_once(
     monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
     monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
     monkeypatch.setattr(podcasts_router, "_podcast_selection_preparation", preparation)
+    monkeypatch.setattr(
+        podcasts_router,
+        "_podcast_stage_plans",
+        lambda *args, **kwargs: [],
+    )
 
     result = await _retry_podcast_episode_locked("episode:matching-real", request=object())
 
@@ -575,6 +877,9 @@ async def test_actual_v2_matching_retry_replays_settings_and_submits_once(
     assert submitted[0]["mode"] == "critique"
     assert submitted[0]["episode_length"] == "short"
     assert submitted[0]["review_outline"] is True
+    assert submitted[0]["execution_policy"] == "local_preferred"
+    assert submitted[0]["compute_profile"] == "maximum_quality"
+    assert submitted[0]["include_transcription"] is True
     assert episode.deleted is True
 
 
@@ -598,6 +903,73 @@ async def test_retry_selection_http_unavailability_is_typed_preview_required(
     assert result.status == "preview_required"
     assert result.code == "podcast_selection_unavailable"
     assert result.selections[0].document_id == "knowledge_engine_document:research"
+
+
+@pytest.mark.asyncio
+async def test_v2_retry_production_override_receipt_requires_fresh_preview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import api.routers.podcasts as podcasts_router
+
+    episode = _RetryEpisode()
+    episode.id = "episode:override-receipt"
+    episode.selection_summary = _v2_retry_summary()
+    episode.model_plan_receipts = [{
+        "version": 1,
+        "role": "podcast_outline",
+        "outcome": "ready",
+        "resource_tier": "standard",
+        "selection_source": "production_override",
+        "reason": "route_ready",
+    }]
+    called = False
+
+    async def preparation(*args, **kwargs):
+        nonlocal called
+        called = True
+        return _retry_preview(fingerprint="a" * 64, eligible=True)
+
+    monkeypatch.setattr(podcasts_router, "_podcast_selection_preparation", preparation)
+
+    result = await _resolve_retry_selection(episode, request=object())
+
+    assert result is not None
+    assert result.status == "preview_required"
+    assert result.code == "podcast_selection_unavailable"
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_v2_retry_route_planner_block_fails_closed_before_submit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    import api.routers.podcasts as podcasts_router
+
+    episode = _RetryEpisode()
+    episode.id = "episode:route-blocked"
+    episode.selection_summary = _v2_retry_summary(
+        execution_policy="strict_local",
+        compute_profile="maximum_quality",
+        include_transcription=True,
+    )
+
+    async def preparation(*args, **kwargs):
+        return _retry_preview(fingerprint="a" * 64, eligible=True)
+
+    monkeypatch.setattr(podcasts_router, "_podcast_selection_preparation", preparation)
+    monkeypatch.setattr(
+        podcasts_router,
+        "_podcast_stage_plans",
+        lambda *args, **kwargs: [SimpleNamespace(outcome="blocked")],
+    )
+
+    result = await _resolve_retry_selection(episode, request=object())
+
+    assert result is not None
+    assert result.status == "preview_required"
+    assert result.code == "podcast_selection_unavailable"
 
 
 @pytest.mark.asyncio

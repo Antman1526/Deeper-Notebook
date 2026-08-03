@@ -131,6 +131,19 @@ class PodcastStageModelPlanResponse(_Strict):
         return list(dict.fromkeys(normalized))
 
 
+class PodcastModelPlanReceipt(_Strict):
+    """Exact persisted planner receipt with no provider/model/source text."""
+
+    version: Literal[1] = 1
+    role: Literal[
+        "podcast_outline", "podcast_script", "text_to_speech", "speech_to_text"
+    ]
+    outcome: Literal["ready", "blocked", "approval_required"]
+    resource_tier: Literal["light", "standard", "heavyweight"] | None
+    selection_source: Literal["automatic", "role_override", "production_override"] | None
+    reason: Literal["route_ready", "route_blocked", "route_approval_required"]
+
+
 class PodcastReadinessResponse(_Strict):
     preview: PodcastSelectionPreviewResponse
     stage_plans: list[PodcastStageModelPlanResponse] = Field(min_length=3, max_length=4)
@@ -297,6 +310,7 @@ __all__ = [
     "PodcastSelectionPreviewRequest",
     "PodcastSelectionPreviewResponse",
     "PodcastStageModelPlanResponse",
+    "PodcastModelPlanReceipt",
     "PodcastStudioSubmitRequest",
     "PodcastStudioSubmitResponse",
     "PodcastRetryPreviewRequiredResponse",
