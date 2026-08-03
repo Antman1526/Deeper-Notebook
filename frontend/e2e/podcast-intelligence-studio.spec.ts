@@ -258,6 +258,33 @@ async function createOwnedNotebookFixture(page: Page) {
   return { notebook, note }
 }
 
+async function carryQuickSelectionIntoStudio(
+  page: Page,
+  receipts: Receipt[],
+  expectedSelection: Record<string, unknown>,
+  quickReadinessCount: number,
+  studioReadinessCount: number,
+) {
+  const returnUrl = page.url()
+  const dialog = page.getByRole('dialog', { name: 'Review selection' })
+  await expect(dialog).toBeVisible()
+  await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length)
+    .toBe(quickReadinessCount)
+  expect(receipts.at(-1)?.body?.selections).toEqual([expectedSelection])
+
+  await dialog.getByRole('button', { name: 'Customize in Studio' }).click()
+  await page.waitForURL('**/podcasts/studio')
+  await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeVisible()
+  await page.getByRole('button', { name: 'Prepare production review' }).click()
+  await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length)
+    .toBe(studioReadinessCount)
+  expect(receipts.at(-1)?.body?.selections).toEqual([expectedSelection])
+
+  await page.getByRole('button', { name: 'Close Studio without producing' }).click()
+  await expect.poll(() => page.url()).toBe(returnUrl)
+  await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeHidden()
+}
+
 test.describe('Podcast Intelligence Studio browser acceptance', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     await installLoopbackRequestGuard(page)
@@ -416,7 +443,7 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
   })
 
   test('opens and dismisses app notebook, app note, and app source review entries without submitting', async ({ page }) => {
-    test.setTimeout(60_000)
+    test.setTimeout(120_000)
     await setReturningUser(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const receipts = await installPodcastFixtures(page)
@@ -435,11 +462,9 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await page.goto('/notebooks')
     await expect(page.getByText(notebook.name, { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Turn into podcast' }).first().click()
-    await expect(page.getByRole('dialog', { name: 'Review selection' })).toBeVisible()
-    await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length).toBe(1)
-    expect(receipts.at(-1)?.body?.selections).toEqual([{ kind: 'notebook', notebook_id: notebook.id }])
-    await page.getByRole('button', { name: 'Cancel' }).click()
-    await expect(page.getByRole('dialog', { name: 'Review selection' })).toBeHidden()
+    await carryQuickSelectionIntoStudio(
+      page, receipts, { kind: 'notebook', notebook_id: notebook.id }, 1, 2,
+    )
 
     await page.goto(`/notebooks/${encodeURIComponent(notebook.id)}`)
     const noteTitle = page.getByText(note.title, { exact: true })
@@ -455,10 +480,9 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await noteActions.focus()
     await expect(noteActions).toBeFocused()
     await noteActions.press('Enter')
-    await expect(page.getByRole('dialog', { name: 'Review selection' })).toBeVisible()
-    await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length).toBe(2)
-    expect(receipts.at(-1)?.body?.selections).toEqual([{ kind: 'app_note', note_id: note.id }])
-    await page.getByRole('button', { name: 'Cancel' }).click()
+    await carryQuickSelectionIntoStudio(
+      page, receipts, { kind: 'app_note', note_id: note.id }, 3, 4,
+    )
 
     const sourceActions = page.getByRole('button', { name: 'Source actions', exact: true })
     await expect(sourceActions).toHaveCount(1)
@@ -472,14 +496,16 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await sourcePodcastAction.focus()
     await expect(sourcePodcastAction).toBeFocused()
     await sourcePodcastAction.press('Enter')
-    await expect(page.getByRole('dialog', { name: 'Review selection' })).toBeVisible()
-    await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length).toBe(3)
-    expect(receipts.at(-1)?.body?.selections).toEqual([{ kind: 'app_source', source_id: 'source:fixture', inclusion_mode: 'full' }])
-    await page.getByRole('button', { name: 'Cancel' }).click()
+    await carryQuickSelectionIntoStudio(
+      page, receipts,
+      { kind: 'app_source', source_id: 'source:fixture', inclusion_mode: 'full' },
+      5, 6,
+    )
     expect(receipts.some((receipt) => receipt.path === '/api/podcasts/studio/submit')).toBe(false)
   })
 
   test('opens and dismisses real Knowledge search, graph, external-document, and selected-block review controls without submitting', async ({ page }) => {
+    test.setTimeout(180_000)
     await setReturningUser(page)
     const knowledge = await installStrictKnowledgeFixture(page)
     const receipts = await installPodcastFixtures(page)
@@ -506,15 +532,6 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
       },
     ]
 
-    const dismissReview = async (expectedSelection: Record<string, unknown>, count: number) => {
-      const dialog = page.getByRole('dialog', { name: 'Review selection' })
-      await expect(dialog).toBeVisible()
-      await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length).toBe(count)
-      expect(receipts.at(-1)?.body?.selections).toEqual([expectedSelection])
-      await dialog.getByRole('button', { name: 'Cancel' }).click()
-      await expect(dialog).toBeHidden()
-    }
-
     await page.goto('/knowledge')
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('knowledge-workspace')).toBeVisible()
@@ -525,19 +542,19 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await searchInput.fill('Evidence')
     await page.getByRole('button', { name: 'Search knowledge' }).click()
     await page.getByRole('button', { name: 'Turn into podcast', exact: true }).click()
-    await dismissReview({
+    await carryQuickSelectionIntoStudio(page, receipts, {
       kind: 'saved_search', query: 'Evidence', search_mode: 'exact',
       space_ids: ['knowledge_engine_space:fixture'], authority_kinds: ['external_read_only'],
-    }, 1)
+    }, 1, 2)
 
     await page.getByRole('tab', { name: 'Search: Text search' }).click()
     await searchInput.fill('Plan')
     await page.getByRole('button', { name: 'Search knowledge' }).click()
     await page.getByRole('button', { name: 'Turn into podcast', exact: true }).click()
-    await dismissReview({
+    await carryQuickSelectionIntoStudio(page, receipts, {
       kind: 'saved_search', query: 'Plan', search_mode: 'text',
       space_ids: ['knowledge_engine_space:fixture'], authority_kinds: ['external_read_only'],
-    }, 2)
+    }, 3, 4)
 
     await page.getByLabel(/Mounted vaults|Mounts/).selectOption('external-vault:vault:fixture')
     const fileFilter = page.getByRole('textbox', { name: 'Filter files' })
@@ -554,15 +571,15 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
 
     await page.getByRole('button', { name: 'Graph (Alt+5)' }).click()
     await page.getByRole('button', { name: 'Turn graph into podcast' }).click()
-    await dismissReview({
+    await carryQuickSelectionIntoStudio(page, receipts, {
       kind: 'graph_selection', document_ids: ['knowledge_engine_document:evidence', 'knowledge_engine_document:plan'],
-    }, 3)
+    }, 5, 6)
 
     await page.getByRole('button', { name: 'Read (Alt+1)' }).click()
     await page.getByRole('button', { name: 'Turn note into podcast' }).click()
-    await dismissReview({
+    await carryQuickSelectionIntoStudio(page, receipts, {
       kind: 'knowledge_document', document_id: 'knowledge_engine_document:evidence', expected_revision_id: null,
-    }, 4)
+    }, 7, 8)
 
     await evidenceNote.focus()
     await page.keyboard.press('Enter')
@@ -589,10 +606,10 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     expect(selectionReceipt.text?.trim()).toBe('Evidence')
     await expect(page.getByRole('button', { name: 'Turn selected block into podcast' })).toBeVisible()
     await page.getByRole('button', { name: 'Turn selected block into podcast' }).click()
-    await dismissReview({
+    await carryQuickSelectionIntoStudio(page, receipts, {
       kind: 'knowledge_block', document_id: 'knowledge_engine_document:evidence', block_id: 'knowledge_engine_block:evidence',
       expected_revision_id: 'knowledge_engine_revision:evidence', source_start: null, source_end: null,
-    }, 5)
+    }, 9, 10)
 
     expect(receipts.some((receipt) => receipt.path === '/api/podcasts/studio/submit')).toBe(false)
     expect(knowledge.externalMutationRequests).toEqual([])

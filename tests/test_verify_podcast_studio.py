@@ -15,48 +15,50 @@ from scripts import verify_podcast_studio as verifier
 _PROOF_REVISION = "a" * 40
 
 
-def _write_native_playwright_report(
-    report_path: Path,
+def _native_playwright_report(
     *,
     result_status: str = "passed",
     test_count: int = 5,
     revision: str | None = _PROOF_REVISION,
-) -> None:
-    report_path.write_text(
-        json.dumps(
+    titles: tuple[str, ...] | None = None,
+) -> dict[str, object]:
+    owned_titles = titles or verifier._PLAYWRIGHT_NATIVE_TEST_TITLES
+    selected_titles = list(owned_titles[:test_count])
+    if test_count > len(selected_titles):
+        selected_titles.extend(
+            f"unexpected fixture case {index}"
+            for index in range(len(selected_titles), test_count)
+        )
+    return {
+        "config": {
+            "argv": ["playwright", "test", "e2e/podcast-intelligence-studio.spec.ts", "--project=native-runtime"],
+            "rootDir": "/synthetic/frontend/e2e",
+        },
+        "suites": [
             {
-                "config": {
-                    "argv": ["playwright", "test", "e2e/podcast-intelligence-studio.spec.ts", "--project=native-runtime"],
-                    "rootDir": "/synthetic/frontend/e2e",
-                },
-                "suites": [
+                "title": "podcast-intelligence-studio.spec.ts",
+                "file": "podcast-intelligence-studio.spec.ts",
+                "specs": [
                     {
-                        "title": "podcast-intelligence-studio.spec.ts",
-                        "file": "podcast-intelligence-studio.spec.ts",
-                        "specs": [
+                        "title": title,
+                        "tests": [
                             {
-                                "title": f"fixture case {index}",
-                                "tests": [
-                                    {
-                                        "projectName": "native-runtime",
-                                        "annotations": [] if revision is None else [{
-                                            "type": "podcast_studio_runtime_revision",
-                                            "description": revision,
-                                        }],
-                                        "results": [{"status": result_status}],
-                                    }
-                                ],
+                                "projectName": "native-runtime",
+                                "annotations": [] if revision is None else [{
+                                    "type": "podcast_studio_runtime_revision",
+                                    "description": revision,
+                                }],
+                                "results": [{"status": result_status}],
                             }
-                            for index in range(test_count)
                         ],
                     }
+                    for title in selected_titles
                 ],
-                "errors": [],
-                "stats": {"expected": test_count, "unexpected": 0, "skipped": 0},
             }
-        ),
-        encoding="utf-8",
-    )
+        ],
+        "errors": [],
+        "stats": {"expected": test_count, "unexpected": 0, "skipped": 0},
+    }
 
 
 def test_health_exposes_only_a_valid_opt_in_proof_revision(
@@ -126,8 +128,7 @@ def test_checkout_revision_ignores_ambient_git_routing_and_config(
 def test_verifier_binds_live_health_and_every_playwright_case_to_expected_revision(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    report_path = tmp_path / "playwright.json"
-    _write_native_playwright_report(report_path)
+    report = _native_playwright_report()
     monkeypatch.setattr(
         verifier,
         "_native_health",
@@ -138,7 +139,8 @@ def test_verifier_binds_live_health_and_every_playwright_case_to_expected_revisi
         native_url="http://127.0.0.1:65060",
         fixture_root=tmp_path / "fixture",
         output_path=tmp_path / "proof.json",
-        playwright_report_path=report_path,
+        playwright_runner=lambda _url, _revision: report,
+        playwright_receipt_output=tmp_path / "receipt.json",
         expected_revision=_PROOF_REVISION,
     )
 
@@ -155,8 +157,7 @@ def test_verifier_binds_live_health_and_every_playwright_case_to_expected_revisi
 def test_verifier_rejects_missing_or_unbound_revision_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    report_path = tmp_path / "playwright.json"
-    _write_native_playwright_report(report_path, revision=None)
+    report = _native_playwright_report(revision=None)
     monkeypatch.setattr(
         verifier,
         "_native_health",
@@ -167,7 +168,7 @@ def test_verifier_rejects_missing_or_unbound_revision_evidence(
         native_url="http://127.0.0.1:65060",
         fixture_root=tmp_path / "fixture",
         output_path=tmp_path / "proof.json",
-        playwright_report_path=report_path,
+        playwright_runner=lambda _url, _revision: report,
         expected_revision=_PROOF_REVISION,
     )
 
@@ -214,6 +215,38 @@ def test_fixture_write_guard_rejects_write_restore_attempt_without_mutating_sour
     assert verifier._hashes(fixture) == before
 
 
+def test_fixture_write_guard_rejects_link_creation_and_symlink_escape(
+    tmp_path: Path,
+) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / verifier._FIXTURE_SENTINEL).write_text("synthetic fixture only\n", encoding="utf-8")
+    verifier._create_fixture(fixture)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_note = outside / "outside.md"
+    outside_note.write_text("outside bytes\n", encoding="utf-8")
+    escape = fixture / "obsidian" / "escape"
+    escape.symlink_to(outside, target_is_directory=True)
+    before = verifier._hashes(fixture)
+    outside_before = outside_note.read_bytes()
+
+    with verifier.fixture_write_guard(fixture) as guard:
+        with pytest.raises(PermissionError, match="synthetic fixture write blocked"):
+            os.symlink(outside_note, fixture / "obsidian" / "created-link.md")
+        with pytest.raises(PermissionError, match="synthetic fixture write blocked"):
+            os.link(outside_note, fixture / "obsidian" / "created-hardlink.md")
+        with pytest.raises(PermissionError, match="synthetic fixture write blocked"):
+            (escape / "outside.md").write_text("escaped mutation\n", encoding="utf-8")
+
+    assert guard.write_attempts == 3
+    assert not (fixture / "obsidian" / "created-link.md").exists()
+    assert not (fixture / "obsidian" / "created-hardlink.md").exists()
+    assert outside_note.read_bytes() == outside_before
+    assert verifier._hashes(fixture) == before
+    assert "obsidian/escape" in before
+
+
 def test_verifier_rejects_a_retry_that_leaves_owned_audio_behind(tmp_path: Path) -> None:
     fixture = tmp_path / "fixture"
     fixture.mkdir()
@@ -234,8 +267,7 @@ def test_verifier_rejects_a_retry_that_leaves_owned_audio_behind(tmp_path: Path)
 def test_verifier_requires_a_complete_passing_native_playwright_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    report_path = tmp_path / "playwright.json"
-    _write_native_playwright_report(report_path)
+    report = _native_playwright_report()
     monkeypatch.setattr(
         verifier,
         "_native_health",
@@ -246,7 +278,7 @@ def test_verifier_requires_a_complete_passing_native_playwright_report(
         native_url="http://127.0.0.1:65060",
         fixture_root=tmp_path / "fixture",
         output_path=tmp_path / "proof.json",
-        playwright_report_path=report_path,
+        playwright_runner=lambda _url, _revision: report,
         expected_revision=_PROOF_REVISION,
     )
 
@@ -263,8 +295,7 @@ def test_verifier_requires_a_complete_passing_native_playwright_report(
 def test_verifier_rejects_an_incomplete_or_failed_native_playwright_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    report_path = tmp_path / "playwright.json"
-    _write_native_playwright_report(report_path, result_status="failed", test_count=4)
+    report = _native_playwright_report(result_status="failed", test_count=4)
     monkeypatch.setattr(
         verifier,
         "_native_health",
@@ -275,13 +306,88 @@ def test_verifier_rejects_an_incomplete_or_failed_native_playwright_report(
         native_url="http://127.0.0.1:65060",
         fixture_root=tmp_path / "fixture",
         output_path=tmp_path / "proof.json",
-        playwright_report_path=report_path,
+        playwright_runner=lambda _url, _revision: report,
         expected_revision=_PROOF_REVISION,
     )
 
     assert result.exit_code == 2
     assert result.report["status"] == "blocked"
     assert result.report["gates"]["playwright_native"]["status"] == "blocked"  # type: ignore[index]
+
+
+def test_verifier_rejects_five_passing_but_unowned_playwright_titles() -> None:
+    report = _native_playwright_report(
+        titles=tuple(f"fabricated case {index}" for index in range(5))
+    )
+
+    gate = verifier._playwright_native_gate(report, _PROOF_REVISION)
+
+    assert gate == {
+        "status": "blocked",
+        "reason": "native-runtime Playwright report does not contain the exact owned studio cases",
+    }
+
+
+def test_verifier_owns_playwright_execution_and_keeps_raw_report_ephemeral(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        args: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        captured["args"] = args
+        captured.update(kwargs)
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        raw_report = Path(environment["PLAYWRIGHT_JSON_OUTPUT_NAME"])
+        raw_report.write_text(json.dumps(_native_playwright_report()), encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(verifier.subprocess, "run", fake_run)
+
+    report = verifier._execute_native_playwright(
+        "http://127.0.0.1:65060", _PROOF_REVISION
+    )
+
+    assert report["stats"] == {"expected": 5, "unexpected": 0, "skipped": 0}
+    assert captured["args"] == [
+        "npm", "exec", "--", "playwright", "test",
+        "e2e/podcast-intelligence-studio.spec.ts",
+        "--project=native-runtime", "--reporter=json",
+    ]
+    environment = captured["env"]
+    assert isinstance(environment, dict)
+    assert environment["PODCAST_STUDIO_EXPECTED_REVISION"] == _PROOF_REVISION
+    assert not Path(environment["PLAYWRIGHT_JSON_OUTPUT_NAME"]).exists()
+
+
+def test_sanitized_playwright_receipt_contains_no_host_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        verifier,
+        "_native_health",
+        lambda _url: (True, 200, {"status": "healthy", "name": "Deeper Notebook", "proof_revision": _PROOF_REVISION}),
+    )
+    receipt = tmp_path / "receipt.json"
+
+    result = verifier.run_verifier(
+        native_url="http://127.0.0.1:65060",
+        fixture_root=tmp_path / "fixture",
+        output_path=tmp_path / "proof.json",
+        playwright_runner=lambda _url, _revision: _native_playwright_report(),
+        playwright_receipt_output=receipt,
+        expected_revision=_PROOF_REVISION,
+    )
+
+    assert result.exit_code == 0
+    receipt_text = receipt.read_text(encoding="utf-8")
+    assert "/Users/" not in receipt_text
+    assert str(tmp_path) not in receipt_text
+    assert json.loads(receipt_text) == verifier._sanitized_playwright_receipt(
+        _PROOF_REVISION
+    )
 
 
 def test_verifier_uses_a_new_owned_synthetic_vault_pair_only(tmp_path: Path) -> None:
