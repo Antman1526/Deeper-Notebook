@@ -564,6 +564,11 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
       kind: 'knowledge_document', document_id: 'knowledge_engine_document:evidence', expected_revision_id: null,
     }, 4)
 
+    // Allow the newly active Read tab to install its native selection listener
+    // before exercising the same browser selection a reader would make.
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    }))
     const evidenceBlock = page.locator('[data-knowledge-block-id="knowledge_engine_block:evidence"]')
     await expect(evidenceBlock).toBeVisible()
     const selectionReceipt = await evidenceBlock.evaluate((element) => {
