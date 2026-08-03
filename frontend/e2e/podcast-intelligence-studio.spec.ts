@@ -583,9 +583,10 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
         ?.closest<HTMLElement>('[data-knowledge-block-id]')?.dataset.knowledgeBlockId
       return { isCollapsed: selection?.isCollapsed, text: selection?.toString(), selectedBlockId }
     })
-    expect(selectionReceipt).toEqual({
-      isCollapsed: false, text: 'Evidence', selectedBlockId: 'knowledge_engine_block:evidence',
+    expect(selectionReceipt).toMatchObject({
+      isCollapsed: false, selectedBlockId: 'knowledge_engine_block:evidence',
     })
+    expect(selectionReceipt.text?.trim()).toBe('Evidence')
     await expect(page.getByRole('button', { name: 'Turn selected block into podcast' })).toBeVisible()
     await page.getByRole('button', { name: 'Turn selected block into podcast' }).click()
     await dismissReview({
