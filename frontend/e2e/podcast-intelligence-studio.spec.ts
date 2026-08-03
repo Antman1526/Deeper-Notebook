@@ -576,25 +576,11 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     }))
     const evidenceBlock = page.locator('[data-knowledge-block-id="knowledge_engine_block:evidence"]')
     await expect(evidenceBlock).toBeVisible()
-    const selectionReceipt = await evidenceBlock.evaluate((element) => {
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
-      let textNode: Node | null = null
-      for (let candidate = walker.nextNode(); candidate; candidate = walker.nextNode()) {
-        if (candidate.nodeValue?.trim()) {
-          textNode = candidate
-          break
-        }
-      }
-      if (!textNode) throw new Error('Expected the fixture block to contain selectable text.')
-      const range = document.createRange()
-      range.setStart(textNode, 0)
-      range.setEnd(textNode, textNode.nodeValue!.length)
+    await page.getByLabel('Evidence reading view').getByRole('heading', { name: 'Evidence' }).dblclick()
+    const selectionReceipt = await evidenceBlock.evaluate(() => {
       const selection = window.getSelection()
-      selection?.removeAllRanges()
-      selection?.addRange(range)
       const selectedBlockId = selection?.anchorNode?.parentElement
         ?.closest<HTMLElement>('[data-knowledge-block-id]')?.dataset.knowledgeBlockId
-      document.dispatchEvent(new Event('selectionchange'))
       return { isCollapsed: selection?.isCollapsed, text: selection?.toString(), selectedBlockId }
     })
     expect(selectionReceipt).toEqual({
