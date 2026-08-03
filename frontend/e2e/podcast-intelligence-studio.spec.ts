@@ -484,6 +484,24 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     navigation.search_mode = 'exact'
     navigation.selected_space_ids = ['knowledge_engine_space:fixture']
     navigation.authority_filters = ['external_read_only']
+    const pane = (knowledge.state.workspace.panes as Record<string, Record<string, unknown>>)['pane-1']
+    pane.active_tab_id = 'tab-search-exact'
+    pane.tabs = [
+      {
+        id: 'tab-search-exact', mode: 'search', title: 'Exact search',
+        target: {
+          kind: 'search', query: '', search_mode: 'exact',
+          space_ids: ['knowledge_engine_space:fixture'], authority_kinds: ['external_read_only'],
+        },
+      },
+      {
+        id: 'tab-search-text', mode: 'search', title: 'Text search',
+        target: {
+          kind: 'search', query: '', search_mode: 'text',
+          space_ids: ['knowledge_engine_space:fixture'], authority_kinds: ['external_read_only'],
+        },
+      },
+    ]
 
     const dismissReview = async (expectedSelection: Record<string, unknown>, count: number) => {
       const dialog = page.getByRole('dialog', { name: 'Review selection' })
@@ -508,6 +526,15 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
       space_ids: ['knowledge_engine_space:fixture'], authority_kinds: ['external_read_only'],
     }, 1)
 
+    await page.getByRole('tab', { name: 'Search: Text search' }).click()
+    await searchInput.fill('Plan')
+    await page.getByRole('button', { name: 'Search knowledge' }).click()
+    await page.getByRole('button', { name: 'Turn into podcast', exact: true }).click()
+    await dismissReview({
+      kind: 'saved_search', query: 'Plan', search_mode: 'text',
+      space_ids: ['knowledge_engine_space:fixture'], authority_kinds: ['external_read_only'],
+    }, 2)
+
     await page.getByLabel(/Mounted vaults|Mounts/).selectOption('external-vault:vault:fixture')
     await page.getByRole('treeitem', { name: 'pages/evidence.md', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Evidence' })).toBeVisible()
@@ -516,13 +543,13 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await page.getByRole('button', { name: 'Turn graph into podcast' }).click()
     await dismissReview({
       kind: 'graph_selection', document_ids: ['knowledge_engine_document:evidence', 'knowledge_engine_document:plan'],
-    }, 2)
+    }, 3)
 
     await page.getByRole('button', { name: 'Read (Alt+1)' }).click()
     await page.getByRole('button', { name: 'Turn note into podcast' }).click()
     await dismissReview({
       kind: 'knowledge_document', document_id: 'knowledge_engine_document:evidence', expected_revision_id: null,
-    }, 3)
+    }, 4)
 
     const evidenceBlock = page.locator('[data-knowledge-block-id="knowledge_engine_block:evidence"]')
     await expect(evidenceBlock).toBeVisible()
@@ -539,7 +566,7 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await dismissReview({
       kind: 'knowledge_block', document_id: 'knowledge_engine_document:evidence', block_id: 'knowledge_engine_block:evidence',
       expected_revision_id: 'knowledge_engine_revision:evidence', source_start: null, source_end: null,
-    }, 4)
+    }, 5)
 
     expect(receipts.some((receipt) => receipt.path === '/api/podcasts/studio/submit')).toBe(false)
     expect(knowledge.externalMutationRequests).toEqual([])
