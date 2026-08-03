@@ -566,15 +566,29 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
 
     const evidenceBlock = page.locator('[data-knowledge-block-id="knowledge_engine_block:evidence"]')
     await expect(evidenceBlock).toBeVisible()
-    await evidenceBlock.evaluate((element) => {
-      const textNode = document.createTreeWalker(element, NodeFilter.SHOW_TEXT).nextNode()
+    const selectionReceipt = await evidenceBlock.evaluate((element) => {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+      let textNode: Node | null = null
+      for (let candidate = walker.nextNode(); candidate; candidate = walker.nextNode()) {
+        if (candidate.nodeValue?.trim()) {
+          textNode = candidate
+          break
+        }
+      }
       if (!textNode) throw new Error('Expected the fixture block to contain selectable text.')
       const range = document.createRange()
-      range.selectNodeContents(textNode)
+      range.setStart(textNode, 0)
+      range.setEnd(textNode, textNode.nodeValue!.length)
       const selection = window.getSelection()
       selection?.removeAllRanges()
       selection?.addRange(range)
+      const selectedBlockId = selection?.anchorNode?.parentElement
+        ?.closest<HTMLElement>('[data-knowledge-block-id]')?.dataset.knowledgeBlockId
       document.dispatchEvent(new Event('selectionchange'))
+      return { isCollapsed: selection?.isCollapsed, text: selection?.toString(), selectedBlockId }
+    })
+    expect(selectionReceipt).toEqual({
+      isCollapsed: false, text: 'Evidence', selectedBlockId: 'knowledge_engine_block:evidence',
     })
     await expect(page.getByRole('button', { name: 'Turn selected block into podcast' })).toBeVisible()
     await page.getByRole('button', { name: 'Turn selected block into podcast' }).click()
