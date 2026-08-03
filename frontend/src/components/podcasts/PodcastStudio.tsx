@@ -57,6 +57,26 @@ function selectionsFromSeeds(seedDocumentIds: string[]): PodcastSelection[] {
   return seedDocumentIds.map((documentId) => ({ kind: 'knowledge_document', documentId }))
 }
 
+function normalizeProductionOverrides(overrides: Partial<Record<PodcastProductionRole, string>>): Partial<Record<PodcastProductionRole, string>> {
+  const normalized: Partial<Record<PodcastProductionRole, string>> = {}
+  for (const role of Object.keys(overrides).sort() as PodcastProductionRole[]) {
+    const modelId = overrides[role]
+    if (modelId) normalized[role] = modelId
+  }
+  return normalized
+}
+
+function sameProductionOverrides(
+  left: Partial<Record<PodcastProductionRole, string>>,
+  right: Partial<Record<PodcastProductionRole, string>>,
+): boolean {
+  const normalizedLeft = normalizeProductionOverrides(left)
+  const normalizedRight = normalizeProductionOverrides(right)
+  const leftRoles = Object.keys(normalizedLeft) as PodcastProductionRole[]
+  const rightRoles = Object.keys(normalizedRight) as PodcastProductionRole[]
+  return leftRoles.length === rightRoles.length && leftRoles.every((role) => normalizedLeft[role] === normalizedRight[role])
+}
+
 function toProvidedPlanItems(modelPlans: PodcastStudioProps['modelPlans']): PodcastModelPlanItem[] {
   return modelPlans?.map((item, index) => {
     const defaults = knowledgeRouteDefaults[index] ?? stageDefaults[index] ?? stageDefaults[0]
@@ -136,6 +156,8 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
   const [productionError, setProductionError] = useState<string | null>(null)
   const [submittedMessage, setSubmittedMessage] = useState<string | null>(null)
   const submissionKey = useRef<string | null>(null)
+  const readinessGeneration = useRef(0)
+  const modelOverridesRef = useRef(modelOverrides)
 
   const setStudioState = (next: PodcastStudioState) => {
     setStudioStateInternal(next)
@@ -144,17 +166,25 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
 
   const prepareProductionReview = async () => {
     if (isPreparing || resolvedSelections.length === 0) return
+    const requestGeneration = readinessGeneration.current + 1
+    const requestOverrides = normalizeProductionOverrides(modelOverridesRef.current)
+    const isCurrentRequest = () => (
+      readinessGeneration.current === requestGeneration
+      && sameProductionOverrides(modelOverridesRef.current, requestOverrides)
+    )
+    readinessGeneration.current = requestGeneration
     setIsPreparing(true)
     setProductionError(null)
     setSubmittedMessage(null)
     try {
       const [nextReadiness, nextEpisodeProfiles, nextSpeakerProfiles] = await Promise.all([
-        Object.keys(modelOverrides).length > 0
-          ? podcastsApi.getPodcastReadiness(resolvedSelections, { productionOverrides: modelOverrides })
+        Object.keys(requestOverrides).length > 0
+          ? podcastsApi.getPodcastReadiness(resolvedSelections, { productionOverrides: requestOverrides })
           : podcastsApi.getPodcastReadiness(resolvedSelections),
         podcastsApi.listEpisodeProfiles(),
         podcastsApi.listSpeakerProfiles(),
       ])
+      if (!isCurrentRequest()) return
       setReadiness(nextReadiness)
       const nextEpisodeNames = nextEpisodeProfiles.map((profile) => profile.name)
       const nextSpeakerNames = nextSpeakerProfiles.map((profile) => profile.name)
@@ -168,9 +198,9 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
       setStudioState(nextReadiness.ready ? 'briefing_ready' : 'preview_ready')
       setProductionPhase('review')
     } catch {
-      setProductionError('Podcast readiness is unavailable. No production was started.')
+      if (isCurrentRequest()) setProductionError('Podcast readiness is unavailable. No production was started.')
     } finally {
-      setIsPreparing(false)
+      if (isCurrentRequest()) setIsPreparing(false)
     }
   }
 
@@ -237,15 +267,16 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
     const selectedPlan = plans.find((plan) => plan.stage === stage)
     const role = selectedPlan ? productionRoleForPlan(selectedPlan) : null
     if (!role) return
-    setModelOverrides((current) => {
-      const next = { ...current }
-      if (modelId) next[role] = modelId
-      else delete next[role]
-      return next
-    })
+    const nextOverrides = { ...modelOverridesRef.current }
+    if (modelId) nextOverrides[role] = modelId
+    else delete nextOverrides[role]
+    modelOverridesRef.current = normalizeProductionOverrides(nextOverrides)
+    readinessGeneration.current += 1
+    setModelOverrides(modelOverridesRef.current)
     setReadiness(null)
     setProductionPhase('review')
     setProductionError(null)
+    setIsPreparing(false)
     setStudioState('selecting')
   }
 

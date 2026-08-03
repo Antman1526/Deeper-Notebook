@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/api/podcasts', () => ({
@@ -11,7 +11,36 @@ vi.mock('@/lib/api/podcasts', () => ({
 }))
 
 import { podcastsApi } from '@/lib/api/podcasts'
+import type { PodcastReadiness } from '@/lib/types/podcasts'
 import { PodcastStudio } from './PodcastStudio'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, resolve, reject }
+}
+
+const readinessForOverride = (modelId: string, title = 'Research plan'): PodcastReadiness => ({
+  preview: {
+    selectionFingerprint: modelId === 'model-a' ? 'a'.repeat(64) : 'b'.repeat(64),
+    entries: [{
+      stableId: 'knowledge_engine_document:plan', title, authorityKind: 'app_owned',
+      relativeLocator: null, revisionId: null, fingerprint: 'c'.repeat(64),
+      state: 'included', reason: `${modelId} readiness`, estimatedCharacters: 120,
+    }], includedCharacters: 120, requiresBatchEngine: false,
+    currentWorkerEligible: true, blockedReasons: [],
+  },
+  stagePlans: [{
+    role: 'podcast_outline', outcome: 'ready', modelId, provider: 'mlx',
+    resourceTier: 'standard', selectionSource: 'production_override', reason: `${modelId} route is ready.`, blockedReason: null,
+    overrideChoices: ['model-a', 'model-b'],
+  }],
+  ready: true, blockedReasons: [],
+})
 
 describe('PodcastStudio', () => {
   beforeEach(() => vi.resetAllMocks())
@@ -59,6 +88,78 @@ describe('PodcastStudio', () => {
     expect(screen.getByLabelText('Override Outline route model')).toHaveValue('outline-alt')
     expect(podcastsApi.getPodcastReadiness).not.toHaveBeenCalled()
     expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
+  })
+
+  it('fences stale deferred readiness before a fresh override can confirm and submit', async () => {
+    const staleReadiness = deferred<PodcastReadiness>()
+    vi.mocked(podcastsApi.getPodcastReadiness)
+      .mockImplementationOnce(() => staleReadiness.promise)
+      .mockResolvedValueOnce(readinessForOverride('model-b', 'Fresh model-b fingerprint'))
+    vi.mocked(podcastsApi.listEpisodeProfiles).mockResolvedValue([{
+      id: 'episode_profile:local', name: 'Local Episode', description: '', speaker_config: 'Local Voice', default_briefing: '', num_segments: 4,
+    }])
+    vi.mocked(podcastsApi.listSpeakerProfiles).mockResolvedValue([{
+      id: 'speaker_profile:local', name: 'Local Voice', description: '', speakers: [],
+    }])
+    vi.mocked(podcastsApi.submitStudioPodcast).mockResolvedValue({
+      jobId: 'command:model-b', status: 'submitted', message: 'accepted', episodeProfile: 'Local Episode', episodeName: 'Fresh model-b fingerprint', mode: 'deep_dive',
+    })
+
+    render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} modelPlans={[{
+      stage: 'outline', label: 'Outline route', overrideChoices: ['model-a', 'model-b'],
+      plan: { outcome: 'ready', reason: 'Preloaded route.', modelId: 'model-a', role: 'podcast_outline' },
+    }]} />)
+
+    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'model-a' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    await waitFor(() => expect(podcastsApi.getPodcastReadiness).toHaveBeenCalledWith(
+      [{ kind: 'knowledge_document', documentId: 'knowledge_engine_document:plan' }],
+      { productionOverrides: { podcast_outline: 'model-a' } },
+    ))
+
+    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'model-b' } })
+    expect(screen.getByRole('button', { name: 'Prepare production review' })).toBeEnabled()
+
+    await act(async () => {
+      staleReadiness.resolve(readinessForOverride('model-a', 'Stale model-a fingerprint'))
+      await staleReadiness.promise
+    })
+
+    expect(screen.queryByText('Stale model-a fingerprint')).not.toBeInTheDocument()
+    expect(screen.queryByText('model-a route is ready.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Production profiles')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Continue to confirmation' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    expect(await screen.findByText('Fresh model-b fingerprint')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to confirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+    await waitFor(() => expect(podcastsApi.submitStudioPodcast).toHaveBeenCalledWith(expect.objectContaining({
+      selectionFingerprint: 'b'.repeat(64), productionOverrides: { podcast_outline: 'model-b' },
+    })))
+  })
+
+  it('does not surface an error from an invalidated deferred readiness request', async () => {
+    const staleReadiness = deferred<PodcastReadiness>()
+    vi.mocked(podcastsApi.getPodcastReadiness).mockImplementationOnce(() => staleReadiness.promise)
+
+    render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} modelPlans={[{
+      stage: 'outline', label: 'Outline route', overrideChoices: ['model-a', 'model-b'],
+      plan: { outcome: 'ready', reason: 'Preloaded route.', modelId: 'model-a', role: 'podcast_outline' },
+    }]} />)
+
+    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'model-a' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    await waitFor(() => expect(podcastsApi.getPodcastReadiness).toHaveBeenCalledTimes(1))
+    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'model-b' } })
+
+    await act(async () => {
+      staleReadiness.reject(new Error('stale readiness failed'))
+      await staleReadiness.promise.catch(() => undefined)
+    })
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Prepare production review' })).toBeEnabled()
   })
 
   it('uses blocked readiness plans over stale Knowledge plans after an override review', async () => {
