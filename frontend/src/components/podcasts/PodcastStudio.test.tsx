@@ -16,6 +16,23 @@ import { PodcastStudio } from './PodcastStudio'
 describe('PodcastStudio', () => {
   beforeEach(() => vi.resetAllMocks())
 
+  it('renders one sequential four-region production layout and locked Phase 3 stages', () => {
+    render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
+
+    const studio = screen.getByRole('region', { name: 'Podcast Intelligence Studio' })
+    const regions = Array.from(studio.querySelectorAll<HTMLElement>('[data-studio-region]'))
+    expect(regions.map((region) => region.dataset.studioRegion)).toEqual([
+      'research-set', 'editorial-brief', 'outline-workspace', 'production-timeline',
+    ])
+    expect(screen.getByRole('region', { name: 'Research Set' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Editorial Brief' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Outline Storyboard' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Production Timeline' })).toBeVisible()
+    expect(screen.getAllByText('Available after intellectual engine upgrade')).toHaveLength(2)
+    expect(podcastsApi.getPodcastReadiness).not.toHaveBeenCalled()
+    expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
+  })
+
   it('keeps an editable editorial brief local until a later confirmation', () => {
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
@@ -27,6 +44,21 @@ describe('PodcastStudio', () => {
     expect(screen.getByLabelText('Central question')).toHaveValue('What changes after the research is connected?')
     expect(screen.getByLabelText('Audience')).toHaveValue('expert')
     expect(screen.getByText('Opening the Studio does not submit a production job.')).toBeVisible()
+  })
+
+  it('keeps model overrides local to the controller until a later confirmation', () => {
+    render(<PodcastStudio
+      seedDocumentIds={['knowledge_engine_document:plan']}
+      modelPlans={[{
+        stage: 'outline', label: 'Outline route', overrideChoices: ['outline-local', 'outline-alt'],
+        plan: { outcome: 'ready', reason: 'Verified local route.', modelId: 'outline-local', role: 'podcast_outline' },
+      }]}
+    />)
+
+    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'outline-alt' } })
+    expect(screen.getByLabelText('Override Outline route model')).toHaveValue('outline-alt')
+    expect(podcastsApi.getPodcastReadiness).not.toHaveBeenCalled()
+    expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
   })
 
   it('moves outline segments with explicit keyboard-accessible controls', () => {

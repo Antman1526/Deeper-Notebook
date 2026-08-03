@@ -1,5 +1,19 @@
-import { PodcastStudio } from '@/components/podcasts/PodcastStudio'
+'use client'
+
+import dynamic from 'next/dynamic'
 import { useLocalModelSettings, useModelRoutePlan } from '@/lib/hooks/use-local-models'
+
+const LazyPodcastStudio = dynamic(
+  () => import('@/components/podcasts/PodcastStudio').then((module) => module.PodcastStudio),
+  {
+    ssr: false,
+    loading: () => (
+      <section aria-label="Podcast Intelligence Studio" className="rounded-md border p-4" aria-busy="true">
+        <p className="text-sm text-muted-foreground">Loading Podcast Intelligence Studio…</p>
+      </section>
+    ),
+  },
+)
 
 interface KnowledgePodcastPaneProps {
   seedDocumentIds: string[]
@@ -22,7 +36,7 @@ export function KnowledgePodcastPane({ seedDocumentIds }: KnowledgePodcastPanePr
 
   return (
     <section aria-label="Knowledge Podcast" className="space-y-3">
-      <PodcastStudio
+      <LazyPodcastStudio
         seedDocumentIds={seedDocumentIds}
         modelPlans={plans.map(([label, route]) => ({
           label,
