@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { GeneratePodcastDialog } from '@/components/podcasts/GeneratePodcastDialog'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useModalManager } from '@/lib/hooks/use-modal-manager'
+import { isExactSourceCitationId } from '@/components/podcasts/EpisodeLab'
 
 function SummaryBadge({ label, value }: { label: string; value: number }) {
   return (
@@ -22,6 +24,7 @@ function SummaryBadge({ label, value }: { label: string; value: number }) {
 
 export function EpisodesTab() {
   const { t } = useTranslation()
+  const { openModal } = useModalManager()
   const [showGenerateDialog, setShowGenerateDialog] = useState(false)
   const {
     episodes,
@@ -53,6 +56,10 @@ export function EpisodesTab() {
     async (episodeId: string) => { await cancelEpisode.mutateAsync(episodeId) },
     [cancelEpisode]
   )
+
+  const handleCitationClick = useCallback((citationId: string) => {
+    if (isExactSourceCitationId(citationId)) openModal('source', citationId)
+  }, [openModal])
 
   const emptyState = !isLoading && episodes.length === 0
 
@@ -119,7 +126,7 @@ export function EpisodesTab() {
       ) : null}
 
       {!isLoading && !isError && episodes.length > 0 && (
-        <PodcastLibrary episodes={episodes} onDelete={handleDelete} onRetry={handleRetry} onCancel={handleCancel} />
+        <PodcastLibrary episodes={episodes} onDelete={handleDelete} onRetry={handleRetry} onCancel={handleCancel} retrying={retryEpisode.isPending} onCitationClick={handleCitationClick} />
       )}
 
       <GeneratePodcastDialog

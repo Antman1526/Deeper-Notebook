@@ -9,6 +9,7 @@ import { SyncedTranscript } from './SyncedTranscript'
 
 const PHASE_3_LOCK_COPY = 'Available after intellectual engine upgrade'
 const PHASE_3_CITATION_COPY = 'Source citation — claim evidence mapping arrives in Phase 3'
+const SOURCE_CITATION_ID = /^source:[A-Za-z0-9_-]{1,121}$/
 
 export interface EpisodeStageHistoryEntry {
   label: string
@@ -91,12 +92,17 @@ export function isContainedAudioDownloadUrl(value: string | null | undefined): v
   return Boolean(value && /^\/api\/podcasts\/episodes\/[A-Za-z0-9:_-]{1,160}\/audio$/.test(value))
 }
 
+export function isExactSourceCitationId(value: string): boolean {
+  return SOURCE_CITATION_ID.test(value)
+}
+
 interface EpisodeLabProps {
   episode: PodcastEpisode
   onClose: () => void
   onRetry?: (episodeId: string) => Promise<void> | void
   onCancel?: (episodeId: string) => Promise<void> | void
   onCitationClick?: (citationId: string) => void
+  retrying?: boolean
 }
 
 /**
@@ -104,11 +110,12 @@ interface EpisodeLabProps {
  * so progress survives navigation, while keeping citation links honest until
  * the evidence graph can resolve a stable claim target.
  */
-export function EpisodeLab({ episode, onClose, onRetry, onCancel, onCitationClick }: EpisodeLabProps) {
+export function EpisodeLab({ episode, onClose, onRetry, onCancel, onCitationClick, retrying = false }: EpisodeLabProps) {
   const setPlayingEpisode = useAudioPlayerStore((state) => state.setEpisode)
   const setPosition = useAudioPlayerStore((state) => state.setPosition)
   const currentTime = useAudioPlayerStore((state) => state.positionByEpisode[episode.id] ?? 0)
   const [citationNotice, setCitationNotice] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<'retry' | 'cancel' | null>(null)
   const audioPath = episode.audio_url ?? episode.audio_file
   const downloadUrl = isContainedAudioDownloadUrl(episode.audio_url) ? episode.audio_url : null
   const canRetry = FAILED_EPISODE_STATUSES.includes(episode.job_status ?? 'unknown')
@@ -116,6 +123,8 @@ export function EpisodeLab({ episode, onClose, onRetry, onCancel, onCitationClic
     && episode.generation_stage !== 'awaiting_review'
   const history = getEpisodeStageHistory(episode)
   const segments = outlineSegments(episode)
+  const retryPending = pendingAction === 'retry' || retrying
+  const actionsPending = pendingAction !== null || retrying
 
   const playInGlobalPlayer = () => {
     if (!audioPath) return
@@ -132,11 +141,21 @@ export function EpisodeLab({ episode, onClose, onRetry, onCancel, onCitationClic
   }
 
   const handleCitationClick = (citationId: string) => {
-    if (onCitationClick) {
+    if (onCitationClick && isExactSourceCitationId(citationId)) {
       onCitationClick(citationId)
       return
     }
     setCitationNotice(PHASE_3_CITATION_COPY)
+  }
+
+  const runEpisodeAction = (action: 'retry' | 'cancel', callback: ((episodeId: string) => Promise<void> | void) | undefined) => {
+    if (!callback || actionsPending) return
+    setPendingAction(action)
+    try {
+      void Promise.resolve(callback(episode.id)).finally(() => setPendingAction(null))
+    } catch {
+      setPendingAction(null)
+    }
   }
 
   return (
@@ -209,8 +228,8 @@ export function EpisodeLab({ episode, onClose, onRetry, onCancel, onCitationClic
       </section>
 
       {(canRetry && onRetry) || (canCancel && onCancel) ? <section aria-label="Episode actions" className="flex flex-wrap gap-2">
-        {canRetry && onRetry ? <Button type="button" size="sm" variant="outline" onClick={() => onRetry(episode.id)}>Retry episode</Button> : null}
-        {canCancel && onCancel ? <Button type="button" size="sm" variant="outline" onClick={() => onCancel(episode.id)}>Cancel episode</Button> : null}
+        {canRetry && onRetry ? <Button type="button" size="sm" variant="outline" onClick={() => runEpisodeAction('retry', onRetry)} disabled={actionsPending} aria-busy={retryPending}>{retryPending ? 'Retrying episode…' : 'Retry episode'}</Button> : null}
+        {canCancel && onCancel ? <Button type="button" size="sm" variant="outline" onClick={() => runEpisodeAction('cancel', onCancel)} disabled={actionsPending} aria-busy={pendingAction === 'cancel'}>{pendingAction === 'cancel' ? 'Cancelling episode…' : 'Cancel episode'}</Button> : null}
       </section> : null}
     </section>
   )
