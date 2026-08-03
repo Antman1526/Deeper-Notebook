@@ -205,6 +205,18 @@ async def _podcast_selection_preparation(
 
 
 def _stage_plan_response(plan) -> PodcastStageModelPlanResponse:
+    override_choices = list(
+        dict.fromkeys(
+            [
+                model_id
+                for model_id in (
+                    plan.selected_model_id,
+                    *getattr(plan, "escalation_model_ids", ()),
+                )
+                if model_id
+            ]
+        )
+    )[:3]
     return PodcastStageModelPlanResponse(
         role=plan.role,
         outcome=plan.outcome,
@@ -214,6 +226,7 @@ def _stage_plan_response(plan) -> PodcastStageModelPlanResponse:
         selection_source=plan.selection_source,
         reason=plan.route_reason,
         blocked_reason=plan.blocked_reason,
+        override_choices=override_choices,
     )
 
 
@@ -224,6 +237,7 @@ def _podcast_stage_plans(
     execution_policy: str,
     compute_profile: str,
     include_transcription: bool,
+    production_overrides: dict[str, str] | None = None,
 ) -> list[PodcastStageModelPlanResponse]:
     from deeper_notebook.local_models.contracts import RouteRequest
     from deeper_notebook.local_models.planner import plan_model_route
@@ -237,6 +251,7 @@ def _podcast_stage_plans(
     ]
     if include_transcription:
         roles.append(("speech_to_text", ("audio",), False))
+    overrides = production_overrides or {}
     return [
         _stage_plan_response(
             plan_model_route(
@@ -250,6 +265,7 @@ def _podcast_stage_plans(
                     requires_structured_output=requires_structured_output,
                     execution_policy=execution_policy,
                     compute_profile=compute_profile,
+                    production_override_model_id=overrides.get(role),
                 ),
             )
         )
@@ -306,6 +322,7 @@ async def podcast_readiness(
             execution_policy=payload.execution_policy,
             compute_profile=payload.compute_profile,
             include_transcription=payload.include_transcription,
+            production_overrides=payload.production_overrides,
         )
         planner_blocked = any(plan.outcome != "ready" for plan in stage_plans)
         blocked_reasons = list(preparation.preview.blocked_reasons)
@@ -370,6 +387,7 @@ async def submit_podcast_studio(
             execution_policy=payload.execution_policy,
             compute_profile=payload.compute_profile,
             include_transcription=payload.include_transcription,
+            production_overrides=payload.production_overrides,
         )
         if any(plan.outcome != "ready" for plan in stage_plans):
             raise HTTPException(
@@ -402,7 +420,7 @@ async def submit_podcast_studio(
                 ),
                 selection_fingerprint=preview.selection_fingerprint,
                 editorial_brief=(
-                    payload.editorial_brief.model_dump(mode="json")
+                    payload.editorial_brief.model_dump(mode="json", exclude_unset=True)
                     if payload.editorial_brief is not None
                     else None
                 ),

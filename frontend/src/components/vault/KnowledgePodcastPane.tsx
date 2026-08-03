@@ -2,6 +2,12 @@
 
 import dynamic from 'next/dynamic'
 import { useLocalModelSettings, useModelRoutePlan } from '@/lib/hooks/use-local-models'
+import type { ModelRoutePlan } from '@/lib/api/local-models'
+
+type StudioRouteRole = 'podcast_outline' | 'podcast_script' | 'text_to_speech' | 'speech_to_text'
+function isStudioRouteRole(role: ModelRoutePlan['role']): role is StudioRouteRole {
+  return role === 'podcast_outline' || role === 'podcast_script' || role === 'text_to_speech' || role === 'speech_to_text'
+}
 
 const LazyPodcastStudio = dynamic(
   () => import('@/components/podcasts/PodcastStudio').then((module) => module.PodcastStudio),
@@ -40,9 +46,17 @@ export function KnowledgePodcastPane({ seedDocumentIds }: KnowledgePodcastPanePr
         seedDocumentIds={seedDocumentIds}
         modelPlans={plans.map(([label, route]) => ({
           label,
+          overrideChoices: route.data && isStudioRouteRole(route.data.role) && route.data.role !== 'speech_to_text'
+            ? [route.data.selected_model_id, ...route.data.escalation_model_ids].filter((modelId): modelId is string => Boolean(modelId))
+            : [],
           plan: route.data ? {
             outcome: route.data.outcome,
             reason: route.data.route_reason,
+            role: isStudioRouteRole(route.data.role) ? route.data.role : undefined,
+            modelId: route.data.selected_model_id,
+            provider: route.data.selected_provider,
+            resourceTier: route.data.resource_tier,
+            selectionSource: route.data.selection_source,
           } : undefined,
         }))}
       />

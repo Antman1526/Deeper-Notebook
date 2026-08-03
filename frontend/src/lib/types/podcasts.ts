@@ -85,6 +85,14 @@ export interface PodcastSelectionSummary {
 export interface PodcastEditorialBrief {
   central_question?: string | null
   audience?: string | null
+  purpose?: string | null
+  format?: PodcastOverviewMode | null
+  target_minutes?: number | null
+  required_takeaway?: string | null
+  include_unanswered_questions?: boolean | null
+  evidence_policy?: 'strict' | 'interpretation' | string | null
+  episode_profile_name?: string | null
+  speaker_profile_name?: string | null
   outline?: string[]
 }
 
@@ -99,6 +107,24 @@ export interface PodcastModelPlanReceipt {
 }
 
 export type PodcastOverviewMode = 'deep_dive' | 'brief' | 'critique' | 'debate'
+
+export type PodcastEditorialAudience = 'foundation' | 'practitioner' | 'expert'
+export type PodcastEditorialPurpose = 'explain' | 'analyze' | 'challenge' | 'compare' | 'teach'
+export type PodcastEditorialEvidencePolicy = 'strict' | 'interpretation'
+
+export interface PodcastEditorialIntent {
+  centralQuestion: string
+  audience: PodcastEditorialAudience
+  purpose: PodcastEditorialPurpose
+  format: PodcastOverviewMode
+  targetMinutes: number
+  requiredTakeaway: string
+  includeUnansweredQuestions: boolean
+  evidencePolicy: PodcastEditorialEvidencePolicy
+  episodeProfileName: string
+  speakerProfileName: string
+  outline: string[]
+}
 
 export interface TranscriptSegment {
   start_seconds: number
@@ -179,13 +205,17 @@ export interface PodcastStageModelPlan {
   selectionSource: 'automatic' | 'role_override' | 'production_override' | null
   reason: string
   blockedReason: string | null
+  overrideChoices?: string[]
 }
+
+export type PodcastProductionRole = 'podcast_outline' | 'podcast_script' | 'text_to_speech' | 'speech_to_text'
 
 export interface PodcastReadiness {
   preview: PodcastSelectionPreview
   stagePlans: PodcastStageModelPlan[]
   ready: boolean
   blockedReasons: string[]
+  productionOverrides?: Partial<Record<PodcastProductionRole, string>>
 }
 
 export interface PodcastStudioSubmitResponse {

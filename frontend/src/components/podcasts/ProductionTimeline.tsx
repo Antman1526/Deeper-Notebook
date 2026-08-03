@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 export type PodcastStudioState = 'selecting' | 'preview_ready' | 'briefing_ready' | 'submitted' | 'awaiting_outline' | 'generating' | 'completed' | 'failed' | 'cancelled'
 export type ProductionStageName = 'Research Set Preview' | 'Editorial Brief' | 'Outline Storyboard' | 'Script/Voice Job' | 'Episode'
@@ -22,7 +22,7 @@ export interface ProductionTimelineProps {
 
 const stageIndexForState: Record<PodcastStudioState, number> = {
   selecting: 0, preview_ready: 0, briefing_ready: 1, submitted: 2, awaiting_outline: 2,
-  generating: 3, completed: 4, failed: 3, cancelled: 0,
+  generating: 3, completed: 4, failed: 2, cancelled: 0,
 }
 
 function stageStatus(index: number, state: PodcastStudioState): 'complete' | 'current' | 'upcoming' {
@@ -36,6 +36,11 @@ export function ProductionTimeline({ state, selectedStage, onStageChange, childr
   const [internalStage, setInternalStage] = useState<ProductionStageName>(selectedStage ?? PRODUCTION_STAGES[stageIndexForState[state]].name)
   const stageRefs = useRef<Record<number, HTMLButtonElement | null>>({})
   const activeStage = selectedStage ?? internalStage
+  useEffect(() => {
+    if (selectedStage === undefined) {
+      setInternalStage(PRODUCTION_STAGES[stageIndexForState[state]].name)
+    }
+  }, [selectedStage, state])
   const move = (index: number) => {
     if (index < 0 || index >= PRODUCTION_STAGES.length) return
     const next = PRODUCTION_STAGES[index].name
