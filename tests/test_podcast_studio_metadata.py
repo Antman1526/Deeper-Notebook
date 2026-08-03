@@ -28,7 +28,11 @@ from api.schemas.podcast_studio import (
     PodcastSelectionPreviewResponse,
     PodcastStageModelPlanResponse,
 )
-from deeper_notebook.podcasts.models import EpisodeProfile, SpeakerProfile
+from deeper_notebook.podcasts.models import (
+    EpisodeProfile,
+    PodcastEpisode,
+    SpeakerProfile,
+)
 
 
 class _RetryEpisode:
@@ -234,6 +238,42 @@ def test_episode_response_has_safe_legacy_metadata_defaults() -> None:
     assert response.selection_fingerprint is None
     assert response.editorial_brief is None
     assert response.model_plan_receipts == []
+
+
+def test_episode_model_normalizes_exact_legacy_retry_marker() -> None:
+    episode = PodcastEpisode.model_validate(
+        {
+            "name": "Legacy retry",
+            "episode_profile": {},
+            "speaker_profile": {},
+            "briefing": "brief",
+            "content": "source",
+            "retry_submitted": {"job_id": "command:legacy", "generation": 1},
+        }
+    )
+
+    assert episode.retry_submitted is not None
+    assert episode.retry_submitted.state == "submitted"
+    assert episode.retry_submitted.job_id == "command:legacy"
+    assert episode.retry_submitted.replacement_command == "command:legacy"
+
+
+def test_episode_model_rejects_legacy_retry_marker_with_extra_keys() -> None:
+    with pytest.raises(ValidationError):
+        PodcastEpisode.model_validate(
+            {
+                "name": "Tampered legacy retry",
+                "episode_profile": {},
+                "speaker_profile": {},
+                "briefing": "brief",
+                "content": "source",
+                "retry_submitted": {
+                    "job_id": "command:legacy",
+                    "generation": 1,
+                    "token": "must-not-be-accepted",
+                },
+            }
+        )
 
 
 @pytest.mark.asyncio
