@@ -638,6 +638,19 @@ export async function installKnowledgeShellMocks(
     },
     unexpectedApiTraffic,
   );
+  await fulfillJson(
+    page,
+    "/api/local-models/settings",
+    {
+      model_dir: "fixture-models",
+      execution_policy: "strict_local",
+      compute_profile: "balanced",
+      local_model_memory_limit_bytes: null,
+      role_overrides: {},
+      trusted_external_model_roots: [],
+    },
+    unexpectedApiTraffic,
+  );
   await fulfillJson(page, "/api/notebooks", [], unexpectedApiTraffic);
   await fulfillJson(page, "/api/sources", [], unexpectedApiTraffic);
   await fulfillJson(page, "/api/episode-profiles", [], unexpectedApiTraffic);
