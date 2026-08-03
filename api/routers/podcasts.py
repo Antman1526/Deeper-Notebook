@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -591,16 +592,12 @@ async def submit_podcast_studio(
 # concurrent retries could both pass the terminal-state check and both
 # delete+resubmit — duplicating episodes or deleting content out from under a
 # just-started job. These locks serialize retries of the SAME episode within
-# this process (the desktop app runs a single Uvicorn worker, so process-level
-# is sufficient; a multi-worker deployment would need a DB-level optimistic
-# status transition instead). Locks are created lazily and keyed by episode id.
+# this process. The durable episode reservation is the retry source of truth
+# across restarts; a multi-worker deployment would additionally need a
+# database-level compare-and-set reservation. Locks are created lazily and
+# keyed by episode id.
 _RETRY_LOCKS: dict[str, asyncio.Lock] = {}
 _RETRY_LOCKS_GUARD = asyncio.Lock()
-# If the replacement command was submitted but both fence persistence and
-# cancellation are uncertain, fail closed for this episode until an operator
-# can reconcile the command. This prevents a later click from submitting a
-# second replacement in the same process.
-_RETRY_UNCERTAIN_SUBMISSIONS: dict[str, str] = {}
 
 
 async def _get_retry_lock(episode_id: str) -> asyncio.Lock:
@@ -1382,13 +1379,20 @@ def _stored_retry_submission(episode: Any) -> PodcastRetrySubmission | None:
 async def _persist_retry_submission_fence(
     episode: Any,
     *,
+    reservation: PodcastRetrySubmission,
     job_id: str,
 ) -> PodcastRetrySubmission:
-    """Persist the replacement command before touching old row/audio state."""
-    previous = _stored_retry_submission(episode)
+    """Record the replacement command after its durable reservation."""
+    if reservation.state != "reserved":
+        raise ValueError("podcast retry submission requires a reservation")
     previous_command = getattr(episode, "command", None)
-    generation = previous.generation + 1 if previous is not None else 1
-    marker = PodcastRetrySubmission(job_id=job_id, generation=generation)
+    marker = PodcastRetrySubmission(
+        state="submitted",
+        operation_id=reservation.operation_id,
+        job_id=job_id,
+        replacement_command=job_id,
+        generation=reservation.generation,
+    )
     episode.retry_submitted = marker
     episode.command = job_id
     try:
@@ -1397,7 +1401,10 @@ async def _persist_retry_submission_fence(
             raise ValueError("episode cannot persist retry fence")
         await save()
     except Exception as save_exc:
-        episode.retry_submitted = previous
+        # The durable reservation remains the source of truth after a failed
+        # submitted-fence save. It intentionally survives a process restart
+        # and blocks another replacement from being submitted.
+        episode.retry_submitted = reservation
         episode.command = previous_command
         try:
             cancelled = await CommandService.cancel_command_job(job_id)
@@ -1406,27 +1413,45 @@ async def _persist_retry_submission_fence(
                 "Retry fence save failed and replacement cancellation is uncertain: {}",
                 cancel_exc,
             )
-            episode_id = str(getattr(episode, "id", ""))
-            if episode_id:
-                _RETRY_UNCERTAIN_SUBMISSIONS[episode_id] = job_id
             raise HTTPException(
-                status_code=500,
+                status_code=409,
                 detail="Retry submission state is uncertain; retry is blocked.",
             ) from cancel_exc
         if cancelled is not True:
             logger.error(
                 "Retry fence save failed and replacement cancellation returned false"
             )
-            episode_id = str(getattr(episode, "id", ""))
-            if episode_id:
-                _RETRY_UNCERTAIN_SUBMISSIONS[episode_id] = job_id
             raise HTTPException(
-                status_code=500,
+                status_code=409,
                 detail="Retry submission state is uncertain; retry is blocked.",
             ) from save_exc
         raise HTTPException(
+            status_code=409,
+            detail="Retry submission state is uncertain; retry is blocked.",
+        ) from save_exc
+    return marker
+
+
+async def _persist_retry_reservation(episode: Any) -> PodcastRetrySubmission:
+    """Persist a retry reservation before the replacement command exists."""
+    if _stored_retry_submission(episode) is not None:
+        raise ValueError("podcast retry submission is already reserved")
+    marker = PodcastRetrySubmission(
+        state="reserved",
+        operation_id=uuid.uuid4().hex,
+        generation=1,
+    )
+    episode.retry_submitted = marker
+    try:
+        save = getattr(episode, "save", None)
+        if not callable(save):
+            raise ValueError("episode cannot persist retry reservation")
+        await save()
+    except Exception as save_exc:
+        episode.retry_submitted = None
+        raise HTTPException(
             status_code=500,
-            detail="Retry could not be fenced; replacement was cancelled.",
+            detail="Retry reservation could not be saved; no replacement was submitted.",
         ) from save_exc
     return marker
 
@@ -1440,15 +1465,13 @@ async def _retry_podcast_episode_locked(
     try:
         episode = await PodcastService.get_episode(episode_id)
 
-        uncertain_job_id = _RETRY_UNCERTAIN_SUBMISSIONS.get(episode_id)
-        if uncertain_job_id is not None:
-            raise HTTPException(
-                status_code=409,
-                detail="Retry submission state is uncertain; retry is blocked.",
-            )
-
         existing_fence = _stored_retry_submission(episode)
         if existing_fence is not None:
+            if existing_fence.state != "submitted":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Retry submission state is uncertain; retry is blocked.",
+                )
             return {
                 "job_id": existing_fence.job_id,
                 "message": "Retry already submitted successfully",
@@ -1533,6 +1556,10 @@ async def _retry_podcast_episode_locked(
 
         retry_settings = _stored_retry_settings(episode)
 
+        # A durable reservation is the retry's exactly-once authority. If it
+        # cannot be written, do not create a replacement command.
+        reservation = await _persist_retry_reservation(episode)
+
         # Submit a new job.
         # v0.8.68 — replay the user's per-episode customization. The suffix
         # was previously dropped on retry, silently regenerating with the
@@ -1561,7 +1588,11 @@ async def _retry_podcast_episode_locked(
 
         # Persist a durable fence before deleting anything. If this save fails,
         # the replacement is cancelled and the old row/audio remain untouched.
-        await _persist_retry_submission_fence(episode, job_id=job_id)
+        await _persist_retry_submission_fence(
+            episode,
+            reservation=reservation,
+            job_id=job_id,
+        )
 
         # Delete the old row before unlinking audio. If row deletion fails, the
         # durable fence makes subsequent retries reuse the same replacement and

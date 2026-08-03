@@ -119,6 +119,9 @@ def test_selection_contract_rejects_unknown_fields_and_wrong_collection_id():
         r"Read \\server\share\Private.md before recording.",
         "Read //server/share/Private.md before recording.",
         "Read file:///Users/Antman/Private.md before recording.",
+        "root:/Users/Antman/Private.md",
+        "path:/etc/passwd",
+        "See:/Volumes/MainStore/Private.md",
     ],
 )
 def test_saved_search_rejects_embedded_absolute_paths(query: str):
