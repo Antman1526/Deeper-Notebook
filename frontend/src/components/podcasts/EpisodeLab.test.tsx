@@ -1,7 +1,7 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { EpisodeLab, getEpisodeStageHistory } from './EpisodeLab'
+import { EpisodeLab, getEpisodeStageHistory, isExactSourceCitationId } from './EpisodeLab'
 import { useAudioPlayerStore } from '@/lib/stores/audio-player-store'
 import type { PodcastEpisode } from '@/lib/types/podcasts'
 
@@ -113,17 +113,29 @@ describe('EpisodeLab', () => {
     expect(useAudioPlayerStore.getState().positionByEpisode['episode:local-review']).toBe(15)
   })
 
-  it('routes exact citation IDs to the optional callback and uses the Phase 3 fallback otherwise', () => {
+  it('routes only bounded source citations to the optional callback and uses the Phase 3 fallback otherwise', () => {
     const onCitationClick = vi.fn()
-    const { rerender } = render(<EpisodeLab episode={episode} onClose={vi.fn()} onCitationClick={onCitationClick} />)
+    const sourceEpisode = {
+      ...episode,
+      transcript_segments: [{ ...episode.transcript_segments![0], citation_ids: ['source:source-123'] }],
+    }
+    const { rerender } = render(<EpisodeLab episode={sourceEpisode} onClose={vi.fn()} onCitationClick={onCitationClick} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'citation:one' }))
-    expect(onCitationClick).toHaveBeenCalledWith('citation:one')
+    fireEvent.click(screen.getByRole('button', { name: 'source:source-123' }))
+    expect(onCitationClick).toHaveBeenCalledWith('source:source-123')
     expect(screen.queryByText('Source citation — claim evidence mapping arrives in Phase 3')).not.toBeInTheDocument()
 
-    rerender(<EpisodeLab episode={episode} onClose={vi.fn()} />)
+    rerender(<EpisodeLab episode={episode} onClose={vi.fn()} onCitationClick={onCitationClick} />)
     fireEvent.click(screen.getByRole('button', { name: 'citation:one' }))
+    expect(onCitationClick).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Source citation — claim evidence mapping arrives in Phase 3')).toBeVisible()
+  })
+
+  it('accepts only the bounded SourceId citation contract', () => {
+    expect(isExactSourceCitationId('source:source-123_abc')).toBe(true)
+    expect(isExactSourceCitationId(`source:${'a'.repeat(121)}`)).toBe(true)
+    expect(isExactSourceCitationId('source:source:123')).toBe(false)
+    expect(isExactSourceCitationId(`source:${'a'.repeat(122)}`)).toBe(false)
   })
 
   it('downloads only contained API-relative audio URLs', () => {
@@ -159,5 +171,37 @@ describe('EpisodeLab', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel episode' }))
     expect(onCancel).toHaveBeenCalledWith('episode:local-review')
+  })
+
+  it('fences repeated retries while the asynchronous retry is pending', async () => {
+    let resolveRetry: (() => void) | undefined
+    const onRetry = vi.fn(() => new Promise<void>((resolve) => { resolveRetry = resolve }))
+    render(<EpisodeLab episode={{ ...episode, job_status: 'failed' }} onClose={vi.fn()} onRetry={onRetry} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry episode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Retrying episode…' }))
+
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Retrying episode…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Retrying episode…' })).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => { resolveRetry?.() })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retry episode' })).toBeEnabled())
+  })
+
+  it('fences repeated cancellations while the asynchronous cancellation is pending', async () => {
+    let resolveCancel: (() => void) | undefined
+    const onCancel = vi.fn(() => new Promise<void>((resolve) => { resolveCancel = resolve }))
+    render(<EpisodeLab episode={{ ...episode, job_status: 'running' }} onClose={vi.fn()} onCancel={onCancel} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel episode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelling episode…' }))
+
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Cancelling episode…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancelling episode…' })).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => { resolveCancel?.() })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel episode' })).toBeEnabled())
   })
 })

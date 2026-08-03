@@ -116,6 +116,15 @@ describe('PodcastLibrary', () => {
     expect(within(lab).getByText('Local evidence review')).toBeVisible()
   })
 
+  it('passes retry pending state to the existing guarded EpisodeCard action', () => {
+    const episode = createEpisode('episode:failed', 'failed')
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <PodcastLibrary episodes={[episode]} onDelete={vi.fn()} onRetry={vi.fn()} retrying />
+    </QueryClientProvider>)
+
+    expect(screen.getByRole('button', { name: 'podcasts.retrying' })).toBeDisabled()
+  })
+
   it('filters by date and aggregate selection authority without exposing source paths', () => {
     const episodes = [
       createEpisode('external-recent', null, null, {
