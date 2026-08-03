@@ -46,16 +46,18 @@ describe('QuickPodcastDialog', () => {
     })
     const selection = { kind: 'notebook' as const, notebookId: 'notebook:research' }
     usePodcastStudioStore.getState().open([selection], 'quick')
+    document.body.style.pointerEvents = 'none'
 
     render(<QuickPodcastDialog />)
     fireEvent.click(await screen.findByRole('button', { name: 'Customize in Studio' }))
 
     await waitFor(() => expect(usePodcastStudioStore.getState()).toMatchObject({
-      isOpen: true,
+      isOpen: false,
       destination: 'studio',
       selections: [selection],
     }))
-    expect(routerPush).toHaveBeenCalledWith('/podcasts/studio')
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith('/podcasts/studio'))
+    await waitFor(() => expect(document.body.style.pointerEvents).toBe(''))
     expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
   })
 
