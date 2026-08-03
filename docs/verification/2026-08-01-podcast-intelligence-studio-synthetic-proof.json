@@ -8,13 +8,21 @@
     },
     "read_only_flow": {
       "external_write_receipts": 0,
-      "operations": [
-        "preview",
-        "fake_worker_submit",
-        "retry",
-        "metadata_review"
-      ],
-      "status": "passed"
+      "metadata_audio": {
+        "old_audio_bytes": 21,
+        "old_audio_removed_after_retry": true
+      },
+      "preview": {
+        "included_count": 2
+      },
+      "retry": {
+        "durable_fence": true,
+        "job_id": "command:synthetic-2"
+      },
+      "status": "passed",
+      "submission": {
+        "fake_worker_job_count": 2
+      }
     },
     "semantic_selection": {
       "reason": "verified_unified_embedding_index_required",
@@ -29,17 +37,18 @@
   },
   "gates": {
     "native_runtime": {
-      "reason": "requires caller-launched persistent native runtime",
-      "route_status": null,
-      "status": "blocked"
+      "reason": null,
+      "route_status": 200,
+      "status": "passed"
     },
     "playwright_native": {
-      "reason": "requires persistent native-runtime Playwright proof",
-      "status": "blocked"
+      "status": "passed",
+      "test_count": 5,
+      "test_file": "e2e/podcast-intelligence-studio.spec.ts"
     }
   },
   "schema_version": 1,
   "source_hashes_unchanged": true,
-  "status": "blocked",
+  "status": "passed",
   "synthetic_passed": true
 }
