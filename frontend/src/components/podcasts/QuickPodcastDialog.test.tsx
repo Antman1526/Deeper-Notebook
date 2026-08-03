@@ -1,6 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const routerPush = vi.hoisted(() => vi.fn())
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: routerPush }),
+}))
+
 vi.mock('@/lib/api/podcasts', () => ({
   podcastsApi: {
     getPodcastReadiness: vi.fn(),
@@ -25,6 +31,32 @@ describe('QuickPodcastDialog', () => {
       id: 'speaker_profile:local', name: 'Local Voice', description: '', speakers: [],
     }])
     usePodcastStudioStore.getState().dismiss()
+  })
+
+  it('carries the reviewed selection into Studio without submitting', async () => {
+    vi.mocked(podcastsApi.getPodcastReadiness).mockResolvedValue({
+      preview: {
+        selectionFingerprint: 'e'.repeat(64), entries: [{
+          stableId: 'notebook:research', title: 'Research', authorityKind: 'app_owned',
+          relativeLocator: null, revisionId: null, fingerprint: 'f'.repeat(64),
+          state: 'included', reason: 'included', estimatedCharacters: 120,
+        }], includedCharacters: 120, requiresBatchEngine: false,
+        currentWorkerEligible: true, blockedReasons: [],
+      }, stagePlans: [], ready: true, blockedReasons: [],
+    })
+    const selection = { kind: 'notebook' as const, notebookId: 'notebook:research' }
+    usePodcastStudioStore.getState().open([selection], 'quick')
+
+    render(<QuickPodcastDialog />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Customize in Studio' }))
+
+    await waitFor(() => expect(usePodcastStudioStore.getState()).toMatchObject({
+      isOpen: true,
+      destination: 'studio',
+      selections: [selection],
+    }))
+    expect(routerPush).toHaveBeenCalledWith('/podcasts/studio')
+    expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
   })
 
   it('reviews server-resolved selections and dismisses without a submission', async () => {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 import { podcastsApi } from '@/lib/api/podcasts'
 import type { PodcastReadiness } from '@/lib/types/podcasts'
@@ -24,7 +25,9 @@ export function QuickPodcastDialog() {
   const isOpen = usePodcastStudioStore((state) => state.isOpen)
   const destination = usePodcastStudioStore((state) => state.destination)
   const selections = usePodcastStudioStore((state) => state.selections)
+  const openStudio = usePodcastStudioStore((state) => state.open)
   const dismiss = usePodcastStudioStore((state) => state.dismiss)
+  const router = useRouter()
   const [readiness, setReadiness] = useState<PodcastReadiness | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [episodeProfiles, setEpisodeProfiles] = useState<string[]>([])
@@ -176,6 +179,18 @@ export function QuickPodcastDialog() {
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={dismiss}>Cancel</Button>
+          {phase === 'review' ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                openStudio(selections, 'studio')
+                router.push('/podcasts/studio')
+              }}
+            >
+              Customize in Studio
+            </Button>
+          ) : null}
           {phase === 'review' ? (
             <Button type="button" disabled={!canConfirm} onClick={() => setPhase('confirm')}>
               Continue to confirmation

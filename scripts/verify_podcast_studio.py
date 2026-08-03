@@ -16,12 +16,13 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 from unittest.mock import patch
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -43,9 +44,17 @@ _FIXTURE_SENTINEL = ".deeper-notebook-podcast-studio-fixture"
 _FORBIDDEN_ROOT_PARTS = {"2nd Brains", "BrainPulse Ventures LLC", "MacBook AI models"}
 _SELECTION_ADAPTER = TypeAdapter(PodcastSelection)
 _PLAYWRIGHT_NATIVE_TEST_FILE = "e2e/podcast-intelligence-studio.spec.ts"
-_PLAYWRIGHT_NATIVE_TEST_COUNT = 5
+_PLAYWRIGHT_NATIVE_TEST_TITLES = (
+    "opens as a sequential, no-selection review surface without submitting production",
+    "keeps intercepted episode, retry, studio, and local-only controls explicitly reviewed",
+    "fails a whole-notebook oversize preview closed before production confirmation",
+    "opens and dismisses app notebook, app note, and app source review entries without submitting",
+    "opens and dismisses real Knowledge search, graph, external-document, and selected-block review controls without submitting",
+)
+_PLAYWRIGHT_NATIVE_TEST_COUNT = len(_PLAYWRIGHT_NATIVE_TEST_TITLES)
 _PROOF_REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
 _PROOF_REVISION_ANNOTATION = "podcast_studio_runtime_revision"
+PlaywrightRunner = Callable[[str, str], dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -73,10 +82,16 @@ class FixtureWriteGuard:
         if not isinstance(value, (str, bytes, os.PathLike)):
             return False
         try:
-            candidate = Path(value).expanduser().absolute().resolve(strict=False)
+            candidate = Path(value).expanduser().absolute()
         except (OSError, TypeError, ValueError):
             return False
-        return _inside(self.fixture_root, candidate)
+        if _inside(self.fixture_root, candidate):
+            return True
+        try:
+            resolved = candidate.resolve(strict=False)
+        except (OSError, RuntimeError, ValueError):
+            return False
+        return _inside(self.fixture_root, resolved)
 
     def reject(self) -> None:
         self.write_attempts += 1
@@ -153,6 +168,23 @@ def verifier_config(
     return VerifierConfig(root, output, _loopback_url(native_url), expected_revision)
 
 
+def _new_receipt_output(
+    receipt_path: Path, fixture_root: Path, proof_output: Path
+) -> Path:
+    requested = receipt_path.expanduser().absolute()
+    receipt = requested.resolve(strict=False)
+    if (
+        _has_symlink_component(requested.parent)
+        or receipt.exists()
+        or receipt.is_symlink()
+        or not receipt.parent.is_dir()
+        or _inside(fixture_root, receipt)
+        or receipt == proof_output
+    ):
+        raise ValueError("new Playwright receipt output file required")
+    return receipt
+
+
 def _write_mode(mode: object) -> bool:
     return isinstance(mode, str) and any(flag in mode for flag in "wax+")
 
@@ -205,11 +237,11 @@ def fixture_write_guard(fixture_root: Path) -> Iterator[FixtureWriteGuard]:
         for name in ("unlink", "rmdir", "mkdir", "touch", "write_text", "write_bytes"):
             stack.enter_context(patch.object(Path, name, new=single_path(getattr(Path, name))))
         stack.enter_context(patch.object(Path, "open", new=path_open(Path.open)))
-        for name in ("rename", "replace"):
+        for name in ("rename", "replace", "symlink_to", "hardlink_to"):
             stack.enter_context(patch.object(Path, name, new=two_paths(getattr(Path, name))))
         for name in ("remove", "unlink", "rmdir", "mkdir"):
             stack.enter_context(patch.object(os, name, new=single_path(getattr(os, name))))
-        for name in ("rename", "replace"):
+        for name in ("rename", "replace", "symlink", "link"):
             stack.enter_context(patch.object(os, name, new=two_paths(getattr(os, name))))
         stack.enter_context(patch.object(os, "open", new=guarded_os_open))
         stack.enter_context(patch.object(builtins, "open", new=open_file(builtins.open)))
@@ -218,11 +250,17 @@ def fixture_write_guard(fixture_root: Path) -> Iterator[FixtureWriteGuard]:
 
 
 def _hashes(root: Path) -> dict[str, str]:
-    return {
-        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted(root.rglob("*"))
-        if path.is_file() and not path.is_symlink()
-    }
+    inventory: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            target = os.readlink(path)
+            inventory[relative] = hashlib.sha256(
+                b"symlink\0" + os.fsencode(target)
+            ).hexdigest()
+        elif path.is_file():
+            inventory[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return inventory
 
 
 def _create_fixture(root: Path) -> None:
@@ -505,25 +543,18 @@ def _native_runtime_gate(
 
 
 def _playwright_native_gate(
-    report_path: Path | None, expected_revision: str | None
+    report: dict[str, object] | None, expected_revision: str | None
 ) -> dict[str, object]:
-    """Accept only a complete, passing report for the owned native project."""
-    if report_path is None:
+    """Accept only the exact, complete native suite run by this verifier."""
+    if report is None:
         return {
             "status": "blocked",
-            "reason": "requires persistent native-runtime Playwright proof",
+            "reason": "requires verifier-owned persistent native-runtime Playwright proof",
         }
     if expected_revision is None:
         return {
             "status": "blocked",
             "reason": "requires an expected 40-hex proof revision",
-        }
-    try:
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {
-            "status": "blocked",
-            "reason": "requires a readable native-runtime Playwright JSON report",
         }
     if not isinstance(report, dict) or report.get("errors") != []:
         return {
@@ -549,7 +580,7 @@ def _playwright_native_gate(
             "reason": "Playwright report does not target the native studio test file",
         }
 
-    matching_tests: list[dict[str, object]] = []
+    matching_specs: list[tuple[str, dict[str, object]]] = []
 
     def collect_matching_tests(suites: object) -> None:
         if not isinstance(suites, list):
@@ -572,12 +603,21 @@ def _playwright_native_gate(
                                 isinstance(test, dict)
                                 and test.get("projectName") == "native-runtime"
                             ):
-                                matching_tests.append(test)
+                                title = spec.get("title")
+                                if isinstance(title, str):
+                                    matching_specs.append((title, test))
             collect_matching_tests(suite.get("suites"))
 
     collect_matching_tests(report.get("suites"))
+    titles = [title for title, _test in matching_specs]
+    if titles != list(_PLAYWRIGHT_NATIVE_TEST_TITLES):
+        return {
+            "status": "blocked",
+            "reason": "native-runtime Playwright report does not contain the exact owned studio cases",
+        }
+
     statuses: list[object] = []
-    for test in matching_tests:
+    for _title, test in matching_specs:
         results = test.get("results")
         if not isinstance(results, list) or len(results) != 1:
             return {
@@ -600,7 +640,7 @@ def _playwright_native_gate(
 
     stats = report.get("stats")
     if (
-        len(matching_tests) != _PLAYWRIGHT_NATIVE_TEST_COUNT
+        len(matching_specs) != _PLAYWRIGHT_NATIVE_TEST_COUNT
         or statuses != ["passed"] * _PLAYWRIGHT_NATIVE_TEST_COUNT
         or not isinstance(stats, dict)
         or stats.get("expected") != _PLAYWRIGHT_NATIVE_TEST_COUNT
@@ -619,12 +659,83 @@ def _playwright_native_gate(
     }
 
 
+def _execute_native_playwright(
+    native_url: str, expected_revision: str
+) -> dict[str, object]:
+    """Run the owned native suite and keep its raw, path-bearing JSON ephemeral."""
+    with tempfile.TemporaryDirectory(
+        prefix="deeper-notebook-playwright-raw-"
+    ) as directory:
+        raw_report = Path(directory) / "playwright.json"
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "API_URL": native_url,
+                "INTERNAL_API_URL": native_url,
+                "PODCAST_STUDIO_NATIVE_URL": native_url,
+                "PODCAST_STUDIO_EXPECTED_REVISION": expected_revision,
+                "PLAYWRIGHT_JSON_OUTPUT_NAME": str(raw_report),
+            }
+        )
+        completed = subprocess.run(
+            [
+                "npm",
+                "exec",
+                "--",
+                "playwright",
+                "test",
+                _PLAYWRIGHT_NATIVE_TEST_FILE,
+                "--project=native-runtime",
+                "--reporter=json",
+            ],
+            cwd=_REPOSITORY_ROOT / "frontend",
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError("verifier-owned native Playwright suite failed")
+        try:
+            report = json.loads(raw_report.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                "verifier-owned native Playwright report was unreadable"
+            ) from error
+        if not isinstance(report, dict):
+            raise RuntimeError("verifier-owned native Playwright report was invalid")
+        return report
+
+
+def _sanitized_playwright_receipt(expected_revision: str) -> dict[str, object]:
+    """Return a deterministic aggregate with no host paths or source content."""
+    return {
+        "schema_version": 1,
+        "receipt_kind": "verifier_owned_native_playwright",
+        "execution": "verifier_owned_playwright_subprocess",
+        "proof_revision": expected_revision,
+        "test_file": _PLAYWRIGHT_NATIVE_TEST_FILE,
+        "tests": [
+            {
+                "title": title,
+                "project": "native-runtime",
+                "status": "passed",
+                "proof_revision": expected_revision,
+            }
+            for title in _PLAYWRIGHT_NATIVE_TEST_TITLES
+        ],
+        "stats": {"expected": _PLAYWRIGHT_NATIVE_TEST_COUNT, "unexpected": 0, "skipped": 0},
+    }
+
+
 def run_verifier(
     *,
     native_url: str,
     fixture_root: Path,
     output_path: Path,
-    playwright_report_path: Path | None = None,
+    playwright_runner: PlaywrightRunner | None = None,
+    playwright_receipt_output: Path | None = None,
     expected_revision: str | None = None,
 ) -> VerificationResult:
     config = verifier_config(
@@ -632,6 +743,15 @@ def run_verifier(
         output_path=output_path,
         native_url=native_url,
         expected_revision=expected_revision,
+    )
+    receipt_output = (
+        _new_receipt_output(
+            playwright_receipt_output,
+            config.fixture_root,
+            config.output_path,
+        )
+        if playwright_receipt_output is not None
+        else None
     )
     _create_fixture(config.fixture_root)
     before = _hashes(config.fixture_root)
@@ -645,9 +765,27 @@ def run_verifier(
     native_runtime = _native_runtime_gate(
         native_ok, native_status, health_body, config.expected_revision
     )
+    playwright_report: dict[str, object] | None = None
+    playwright_error: str | None = None
+    if (
+        native_runtime["status"] == "passed"
+        and config.expected_revision is not None
+        and playwright_runner is not None
+    ):
+        try:
+            playwright_report = playwright_runner(
+                config.native_url, config.expected_revision
+            )
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            playwright_error = str(error)
     playwright_native = _playwright_native_gate(
-        playwright_report_path, config.expected_revision
+        playwright_report, config.expected_revision
     )
+    if playwright_error is not None:
+        playwright_native = {
+            "status": "blocked",
+            "reason": "verifier-owned native Playwright execution failed",
+        }
     passed = (
         exact_text["status"] == "passed"
         and read_only_flow["status"] == "passed"
@@ -686,6 +824,16 @@ def run_verifier(
     config.output_path.write_text(
         json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8"
     )
+    if passed and receipt_output is not None and config.expected_revision is not None:
+        receipt_output.write_text(
+            json.dumps(
+                _sanitized_playwright_receipt(config.expected_revision),
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     return VerificationResult(0 if passed else 2, report)
 
 
@@ -694,7 +842,7 @@ def main() -> int:
     parser.add_argument("--native-url", default="http://localhost:65060")
     parser.add_argument("--fixture-root", type=Path)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--playwright-report", type=Path)
+    parser.add_argument("--playwright-receipt-output", type=Path, required=True)
     parser.add_argument("--expected-revision", required=True)
     args = parser.parse_args()
     if args.fixture_root is None:
@@ -704,7 +852,8 @@ def main() -> int:
                 native_url=args.native_url,
                 fixture_root=root / "fixture",
                 output_path=args.output or root / "proof.json",
-                playwright_report_path=args.playwright_report,
+                playwright_runner=_execute_native_playwright,
+                playwright_receipt_output=args.playwright_receipt_output,
                 expected_revision=args.expected_revision,
             ).exit_code
     if args.output is None:
@@ -713,7 +862,8 @@ def main() -> int:
         native_url=args.native_url,
         fixture_root=args.fixture_root,
         output_path=args.output,
-        playwright_report_path=args.playwright_report,
+        playwright_runner=_execute_native_playwright,
+        playwright_receipt_output=args.playwright_receipt_output,
         expected_revision=args.expected_revision,
     ).exit_code
 
