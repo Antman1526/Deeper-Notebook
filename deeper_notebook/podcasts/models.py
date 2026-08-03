@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
@@ -171,6 +172,35 @@ class PodcastRetrySubmission(BaseModel):
         if self.job_id != self.replacement_command:
             raise ValueError("submitted retry command must match its job")
         return self
+
+
+def normalize_retry_submission(
+    value: Any,
+) -> PodcastRetrySubmission | Any:
+    """Upgrade only the exact two-field fence written by the prior build."""
+    if not isinstance(value, dict) or set(value) != {"job_id", "generation"}:
+        return value
+    job_id = value.get("job_id")
+    generation = value.get("generation")
+    if (
+        not isinstance(job_id, str)
+        or not job_id.strip()
+        or len(job_id) > 256
+        or not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or not 1 <= generation <= 1_000_000
+    ):
+        raise ValueError("stored podcast retry fence is invalid")
+    operation_id = hashlib.sha256(
+        f"legacy-retry:{job_id}:{generation}".encode()
+    ).hexdigest()[:32]
+    return PodcastRetrySubmission(
+        state="submitted",
+        operation_id=operation_id,
+        job_id=job_id,
+        replacement_command=job_id,
+        generation=generation,
+    )
 
 
 def transcript_segments_from_payload(
@@ -529,6 +559,11 @@ class PodcastEpisode(ObjectModel):
         cls, value: PodcastOverviewMode | str | None
     ) -> PodcastOverviewMode:
         return normalize_podcast_mode(value)
+
+    @field_validator("retry_submitted", mode="before")
+    @classmethod
+    def normalize_legacy_retry_submission(cls, value: Any) -> Any:
+        return normalize_retry_submission(value)
 
     async def get_job_status(self) -> Optional[str]:
         """Get the status of the associated command"""

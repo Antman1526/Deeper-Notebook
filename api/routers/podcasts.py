@@ -43,6 +43,7 @@ from deeper_notebook.podcasts.models import (
     PodcastRetrySubmission,
     TranscriptSegment,
     normalize_podcast_mode,
+    normalize_retry_submission,
 )
 from deeper_notebook.podcasts.profile_names import (
     CANONICAL_LOCAL_EPISODE_PROFILE,
@@ -1372,30 +1373,11 @@ def _stored_retry_submission(episode: Any) -> PodcastRetrySubmission | None:
     raw_marker = getattr(episode, "retry_submitted", None)
     if raw_marker is None:
         return None
-    if isinstance(raw_marker, dict) and set(raw_marker) == {"job_id", "generation"}:
-        job_id = raw_marker.get("job_id")
-        generation = raw_marker.get("generation")
-        if (
-            not isinstance(job_id, str)
-            or not job_id.strip()
-            or len(job_id) > 256
-            or not isinstance(generation, int)
-            or isinstance(generation, bool)
-            or not 1 <= generation <= 1_000_000
-        ):
-            raise ValueError("stored podcast retry fence is invalid")
-        operation_id = hashlib.sha256(
-            f"legacy-retry:{job_id}:{generation}".encode()
-        ).hexdigest()[:32]
-        return PodcastRetrySubmission(
-            state="submitted",
-            operation_id=operation_id,
-            job_id=job_id,
-            replacement_command=job_id,
-            generation=generation,
-        )
     try:
-        return PodcastRetrySubmission.model_validate(raw_marker, strict=True)
+        normalized = normalize_retry_submission(raw_marker)
+        if isinstance(normalized, PodcastRetrySubmission):
+            return normalized
+        return PodcastRetrySubmission.model_validate(normalized, strict=True)
     except (TypeError, ValueError, ValidationError) as exc:
         raise ValueError("stored podcast retry fence is invalid") from exc
 
