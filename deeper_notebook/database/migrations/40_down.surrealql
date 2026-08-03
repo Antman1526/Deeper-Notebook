@@ -2,3 +2,4 @@ REMOVE FIELD IF EXISTS selection_summary ON TABLE episode;
 REMOVE FIELD IF EXISTS selection_fingerprint ON TABLE episode;
 REMOVE FIELD IF EXISTS editorial_brief ON TABLE episode;
 REMOVE FIELD IF EXISTS model_plan_receipts ON TABLE episode;
+REMOVE FIELD IF EXISTS retry_submitted ON TABLE episode;
