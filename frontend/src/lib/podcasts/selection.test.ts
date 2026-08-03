@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  fromPodcastSelectionWire,
   normalizePodcastSelections,
   podcastSelectionSchema,
   toPodcastSelectionWire,
@@ -49,5 +50,26 @@ describe('podcast selection contracts', () => {
       document_id: 'knowledge_engine_document:research',
       expected_revision_id: 'knowledge_engine_revision:one',
     })
+  })
+
+  it('converts a retry preview wire reference through the strict client union', () => {
+    expect(fromPodcastSelectionWire({
+      kind: 'knowledge_document',
+      document_id: 'knowledge_engine_document:research',
+      expected_revision_id: null,
+    })).toEqual({
+      kind: 'knowledge_document',
+      documentId: 'knowledge_engine_document:research',
+      expectedRevisionId: null,
+    })
+  })
+
+  it('rejects unsafe or extra retry preview wire fields', () => {
+    expect(() => fromPodcastSelectionWire({
+      kind: 'knowledge_document',
+      document_id: 'knowledge_engine_document:research',
+      expected_revision_id: null,
+      source_body: 'private body',
+    })).toThrow()
   })
 })
