@@ -17,6 +17,7 @@ vi.mock('@/lib/api/knowledge-workspace', async (importOriginal) => {
 import {
   defaultKnowledgeWorkspace,
   knowledgeWorkspaceApi,
+  parseKnowledgeWorkspace,
   serializeKnowledgeWorkspace,
   type KnowledgeWorkspaceDocument,
 } from '@/lib/api/knowledge-workspace'
@@ -51,27 +52,43 @@ const plan = {
 } as const
 
 function remoteWorkspace(): KnowledgeWorkspaceDocument {
-  return {
+  return parseKnowledgeWorkspace({
     version: 1,
-    activePaneId: 'pane-1',
-    nextId: 8,
+    active_pane_id: 'pane-1',
+    next_id: 8,
     panes: {
       'pane-1': {
         id: 'pane-1',
-        activeTabId: 'tab-7',
+        active_tab_id: 'tab-7',
         tabs: [{
           id: 'tab-7',
-          ...plan,
-          viewMode: 'live-preview',
-          sourceAuthority: 'external-vault',
-          knowledgeDocumentId: null,
-          graphViewport: { x: 0, y: 0, zoom: 1 },
+          vault_id: plan.vaultId,
+          note_id: plan.noteId,
+          title: plan.title,
+          relative_path: plan.relativePath,
+          view_mode: 'live-preview',
+          source_authority: 'external-vault',
+          knowledge_document_id: null,
+          graph_viewport: { x: 0, y: 0, zoom: 1 },
         }],
       },
     },
-    layout: { type: 'pane', paneId: 'pane-1' },
-    navigation: defaultKnowledgeWorkspace().navigation,
-  }
+    layout: { type: 'pane', pane_id: 'pane-1' },
+    navigation: {
+      utility_mode: 'sources',
+      sidebar_visible: true,
+      sidebar_width: 320,
+      active_bookmark_folder_id: null,
+      bookmark_tags: [],
+      source_tree_query: '',
+      search_query: '',
+      search_mode: 'text',
+      active_draft_id: null,
+      selected_space_ids: [],
+      authority_filters: [],
+      metrics_visible: true,
+    },
+  })
 }
 
 function createWrapper() {
@@ -220,7 +237,7 @@ describe('knowledge workspace synchronization', () => {
     })
     expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(1)
     expect(knowledgeWorkspaceApi.put).toHaveBeenCalledWith(expect.objectContaining({
-      version: 1,
+      version: 2,
       activePaneId: 'pane-1',
       nextId: 3,
     }))
@@ -526,7 +543,10 @@ describe('knowledge workspace synchronization', () => {
           ...current.panes['pane-1'],
           tabs: current.panes['pane-1'].tabs.map((tab) => ({
             ...tab,
-            viewMode: 'graph',
+            viewMode: 'source',
+            target: tab.target.kind === 'document'
+              ? { ...tab.target, render_mode: 'source' as const }
+              : tab.target,
           })),
         },
       },
@@ -541,7 +561,7 @@ describe('knowledge workspace synchronization', () => {
 
     expect(knowledgeWorkspaceApi.put).toHaveBeenCalledTimes(2)
     expect(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0]
-      .panes['pane-1'].tabs[0].viewMode).toBe('graph')
+      .panes['pane-1'].tabs[0].viewMode).toBe('source')
 
     await act(async () => {
       secondSave.resolve(vi.mocked(knowledgeWorkspaceApi.put).mock.calls[1][0])
@@ -567,6 +587,9 @@ describe('knowledge workspace synchronization', () => {
           tabs: state.panes['pane-1'].tabs.map((tab) => ({
             ...tab,
             relativePath: '/Users/owner/secret.md',
+            target: tab.target.kind === 'document'
+              ? { ...tab.target, relative_locator: '/Users/owner/secret.md' }
+              : tab.target,
           })),
         },
       },
