@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 const flowProps = vi.hoisted(() => ({
@@ -79,6 +80,32 @@ describe('VaultGraph controlled viewport', () => {
       relationKinds: [],
       viewport: { x: 3, y: 6, zoom: 2 },
     })
+  })
+
+  it('does not repeat bookmark publication after an implicit empty relation filter rerenders its parent', async () => {
+    const onBookmarkContext = vi.fn()
+    function BookmarkContextHarness() {
+      const [, setBookmarkContext] = useState<unknown>(null)
+      return <VaultGraph
+        graph={{
+          nodes: [{ id: 'note:one', title: 'One', source_format: 'markdown' }],
+          edges: [],
+        }}
+        unresolved={[]}
+        onNavigate={vi.fn()}
+        viewport={{ x: 3, y: 6, zoom: 2 }}
+        rootDocumentId="knowledge_engine_document:one"
+        spaceIds={['knowledge_engine_space:research']}
+        onBookmarkContext={(context) => {
+          onBookmarkContext(context)
+          setBookmarkContext(context)
+        }}
+      />
+    }
+
+    render(<BookmarkContextHarness />)
+
+    await waitFor(() => expect(onBookmarkContext).toHaveBeenCalledTimes(1))
   })
 
   it('opens a bounded unified graph selection through review-only podcast state', () => {
