@@ -13,6 +13,7 @@ interface PodcastStudioState {
   selections: PodcastSelection[]
   invoker: HTMLElement | null
   open: (selections: PodcastSelection[], destination: PodcastDestination) => void
+  handoffToStudio: () => void
   dismiss: () => void
 }
 
@@ -39,6 +40,11 @@ export const usePodcastStudioStore = create<PodcastStudioState>()((set, get) => 
       invoker: activeElement instanceof HTMLElement ? activeElement : null,
     })
   },
+  handoffToStudio: () => set((state) => ({
+    ...state,
+    isOpen: false,
+    destination: 'studio',
+  })),
   dismiss: () => {
     const invoker = get().invoker
     set(emptyStudioState)

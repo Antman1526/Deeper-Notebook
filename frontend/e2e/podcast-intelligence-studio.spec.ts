@@ -276,10 +276,9 @@ async function carryQuickSelectionIntoStudio(
   await page.waitForURL('**/podcasts/studio')
   await expect(dialog).toBeHidden()
   await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeVisible()
-  const prepareReview = page.getByRole('button', { name: 'Prepare production review' })
-  await prepareReview.focus()
-  await expect(prepareReview).toBeFocused()
-  await prepareReview.press('Enter')
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).pointerEvents))
+    .not.toBe('none')
+  await page.getByRole('button', { name: 'Prepare production review' }).click()
   await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length)
     .toBe(studioReadinessCount)
   expect(receipts.at(-1)?.body?.selections).toEqual([expectedSelection])
@@ -579,6 +578,10 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
       kind: 'graph_selection', document_ids: ['knowledge_engine_document:evidence', 'knowledge_engine_document:plan'],
     }, 5, 6)
 
+    await evidenceNote.focus()
+    await page.keyboard.press('Enter')
+    await expect(evidenceNote).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByLabel('Evidence reading view')).toBeVisible()
     await page.getByRole('button', { name: 'Read (Alt+1)' }).click()
     await page.getByRole('button', { name: 'Turn note into podcast' }).click()
     await carryQuickSelectionIntoStudio(page, receipts, {

@@ -47,6 +47,18 @@ describe('podcast studio store', () => {
     })
   })
 
+  it('closes Quick review while preserving the exact Studio handoff selection', () => {
+    usePodcastStudioStore.getState().open([selection], 'quick')
+
+    usePodcastStudioStore.getState().handoffToStudio()
+
+    expect(usePodcastStudioStore.getState()).toMatchObject({
+      isOpen: false,
+      destination: 'studio',
+      selections: [selection],
+    })
+  })
+
   it('restores the invoking action after the review surface closes', async () => {
     const invoker = document.createElement('button')
     const dialogControl = document.createElement('button')

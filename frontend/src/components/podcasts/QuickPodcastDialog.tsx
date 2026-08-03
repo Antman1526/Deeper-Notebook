@@ -9,6 +9,7 @@ import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -25,7 +26,7 @@ export function QuickPodcastDialog() {
   const isOpen = usePodcastStudioStore((state) => state.isOpen)
   const destination = usePodcastStudioStore((state) => state.destination)
   const selections = usePodcastStudioStore((state) => state.selections)
-  const openStudio = usePodcastStudioStore((state) => state.open)
+  const handoffToStudio = usePodcastStudioStore((state) => state.handoffToStudio)
   const dismiss = usePodcastStudioStore((state) => state.dismiss)
   const router = useRouter()
   const [readiness, setReadiness] = useState<PodcastReadiness | null>(null)
@@ -38,6 +39,7 @@ export function QuickPodcastDialog() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const submissionKey = useRef<string | null>(null)
+  const studioHandoffPending = useRef(false)
   const open = isOpen && destination === 'quick'
 
   useEffect(() => {
@@ -108,8 +110,29 @@ export function QuickPodcastDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && dismiss()}>
-      <DialogContent className="max-w-xl">
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) return
+        if (!studioHandoffPending.current) {
+          dismiss()
+          return
+        }
+        handoffToStudio()
+        // Let Radix finish releasing its modal pointer lock before the route
+        // replaces this dialog. Same-task navigation can strand the lock.
+        window.setTimeout(() => {
+          router.push('/podcasts/studio')
+          studioHandoffPending.current = false
+        }, 250)
+      }}
+    >
+      <DialogContent
+        className="max-w-xl"
+        onCloseAutoFocus={() => {
+          if (studioHandoffPending.current) document.body.style.pointerEvents = ''
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Review selection</DialogTitle>
           <DialogDescription>
@@ -180,16 +203,15 @@ export function QuickPodcastDialog() {
         <DialogFooter>
           <Button type="button" variant="outline" onClick={dismiss}>Cancel</Button>
           {phase === 'review' ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                openStudio(selections, 'studio')
-                router.push('/podcasts/studio')
-              }}
-            >
-              Customize in Studio
-            </Button>
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => { studioHandoffPending.current = true }}
+              >
+                Customize in Studio
+              </Button>
+            </DialogClose>
           ) : null}
           {phase === 'review' ? (
             <Button type="button" disabled={!canConfirm} onClick={() => setPhase('confirm')}>
