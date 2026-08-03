@@ -15,8 +15,8 @@ const EMPTY_STRING_ARRAY: string[] = []
 type BookmarkContext = { rootDocumentId: string; spaceIds: string[]; relationKinds: string[]; viewport: Viewport }
 
 function bookmarkContextsEqual(left: BookmarkContext | null, right: BookmarkContext): boolean {
-  return Boolean(left)
-    && left.rootDocumentId === right.rootDocumentId
+  if (!left) return false
+  return left.rootDocumentId === right.rootDocumentId
     && left.viewport.x === right.viewport.x
     && left.viewport.y === right.viewport.y
     && left.viewport.zoom === right.viewport.zoom
