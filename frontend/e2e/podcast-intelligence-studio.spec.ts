@@ -550,7 +550,7 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await evidenceNote.focus()
     await page.keyboard.press('Enter')
     await expect(evidenceNote).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByRole('heading', { name: 'Evidence' })).toBeVisible()
+    await expect(page.getByLabel('Evidence reading view').getByRole('heading', { name: 'Evidence' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Graph (Alt+5)' }).click()
     await page.getByRole('button', { name: 'Turn graph into podcast' }).click()
