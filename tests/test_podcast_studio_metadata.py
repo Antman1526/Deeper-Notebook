@@ -344,7 +344,10 @@ async def test_retry_delete_failure_fences_job_and_reuses_it_without_unlinking_a
 
     assert episode.saved is True
     assert episode.retry_submitted.model_dump(mode="json") == {
+        "state": "submitted",
+        "operation_id": episode.retry_submitted.operation_id,
         "job_id": "command:fenced",
+        "replacement_command": "command:fenced",
         "generation": 1,
     }
     assert episode.command == "command:fenced"
@@ -363,7 +366,7 @@ async def test_retry_delete_failure_fences_job_and_reuses_it_without_unlinking_a
 
 
 @pytest.mark.asyncio
-async def test_retry_fence_save_failure_cancels_replacement_and_preserves_old_state(
+async def test_retry_reservation_save_failure_skips_submission_and_preserves_old_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
@@ -374,55 +377,6 @@ async def test_retry_fence_save_failure_cancels_replacement_and_preserves_old_st
     audio.parent.mkdir(parents=True)
     audio.write_bytes(b"old audio")
     episode.audio_file = str(audio)
-    cancellations: list[str] = []
-
-    async def get_episode(_: str) -> _RetryEpisode:
-        return episode
-
-    async def profile_exists(_: str) -> object:
-        return object()
-
-    async def submit_generation_job(**kwargs) -> str:
-        return "command:cancel-me"
-
-    async def fail_save() -> None:
-        raise RuntimeError("fence save failed")
-
-    async def cancel_command_job(job_id: str) -> bool:
-        cancellations.append(job_id)
-        return True
-
-    episode.save = fail_save  # type: ignore[method-assign]
-    monkeypatch.setattr(podcasts_router, "_AUDIO_ROOT", tmp_path / "episodes")
-    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
-    monkeypatch.setattr(EpisodeProfile, "get_by_name", profile_exists)
-    monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
-    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
-    monkeypatch.setattr(
-        podcasts_router.CommandService,
-        "cancel_command_job",
-        cancel_command_job,
-    )
-
-    with pytest.raises(HTTPException, match="replacement was cancelled"):
-        await _retry_podcast_episode_locked("episode:failed")
-
-    assert cancellations == ["command:cancel-me"]
-    assert episode.retry_submitted is None
-    assert episode.deleted is False
-    assert audio.exists()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("cancel_result", [False, "raises"])
-async def test_retry_fence_uncertain_cancellation_fails_closed(
-    monkeypatch: pytest.MonkeyPatch,
-    cancel_result: bool | str,
-) -> None:
-    import api.routers.podcasts as podcasts_router
-
-    episode = _RetryEpisode()
-    episode.id = f"episode:uncertain-{cancel_result}"
     submissions = 0
 
     async def get_episode(_: str) -> _RetryEpisode:
@@ -434,17 +388,85 @@ async def test_retry_fence_uncertain_cancellation_fails_closed(
     async def submit_generation_job(**kwargs) -> str:
         nonlocal submissions
         submissions += 1
-        return "command:uncertain"
+        return "command:cancel-me"
 
     async def fail_save() -> None:
         raise RuntimeError("fence save failed")
+
+    async def unexpected_cancel_command_job(job_id: str) -> bool:
+        raise AssertionError("a failed reservation must not create or cancel a job")
+
+    episode.save = fail_save  # type: ignore[method-assign]
+    monkeypatch.setattr(podcasts_router, "_AUDIO_ROOT", tmp_path / "episodes")
+    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
+    monkeypatch.setattr(EpisodeProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+    monkeypatch.setattr(
+        podcasts_router.CommandService,
+        "cancel_command_job",
+        unexpected_cancel_command_job,
+    )
+
+    with pytest.raises(HTTPException):
+        await _retry_podcast_episode_locked("episode:failed")
+
+    assert submissions == 0
+    assert episode.retry_submitted is None
+    assert episode.deleted is False
+    assert audio.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_result", [False, "raises"])
+async def test_durable_retry_reservation_blocks_a_fresh_reload_after_post_submit_fence_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_result: bool | str,
+) -> None:
+    import api.routers.podcasts as podcasts_router
+
+    persisted: dict[str, object] = {
+        "retry_submitted": None,
+        "command": "command:old",
+    }
+    save_attempts = 0
+    submissions = 0
+
+    class ReloadedEpisode(_RetryEpisode):
+        def __init__(self) -> None:
+            super().__init__()
+            self.id = f"episode:uncertain-{cancel_result}"
+            self.retry_submitted = persisted["retry_submitted"]
+            self.command = persisted["command"]
+
+        async def save(self) -> None:
+            nonlocal save_attempts
+            save_attempts += 1
+            if save_attempts == 2:
+                raise RuntimeError("submitted fence save failed")
+            marker = self.retry_submitted
+            self.retry_submitted = marker
+            persisted["retry_submitted"] = (
+                marker.model_dump(mode="json") if marker is not None else None
+            )
+            persisted["command"] = self.command
+
+    async def get_episode(_: str) -> _RetryEpisode:
+        return ReloadedEpisode()
+
+    async def profile_exists(_: str) -> object:
+        return object()
+
+    async def submit_generation_job(**kwargs) -> str:
+        nonlocal submissions
+        submissions += 1
+        return "command:uncertain"
 
     async def cancel_command_job(job_id: str) -> bool:
         if cancel_result == "raises":
             raise RuntimeError("cancel uncertain")
         return cancel_result
 
-    episode.save = fail_save  # type: ignore[method-assign]
     monkeypatch.setattr(PodcastService, "get_episode", get_episode)
     monkeypatch.setattr(EpisodeProfile, "get_by_name", profile_exists)
     monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
@@ -455,14 +477,22 @@ async def test_retry_fence_uncertain_cancellation_fails_closed(
         cancel_command_job,
     )
 
-    with pytest.raises(HTTPException, match="state is uncertain"):
+    with pytest.raises(HTTPException, match="state is uncertain") as first:
         await _retry_podcast_episode_locked("episode:failed")
 
-    assert episode.retry_submitted is None
-    assert episode.deleted is False
+    assert first.value.status_code == 409
+    marker = persisted["retry_submitted"]
+    assert isinstance(marker, dict)
+    assert marker["state"] == "reserved"
+    assert isinstance(marker["operation_id"], str) and marker["operation_id"]
+    assert marker["job_id"] is None
+    assert marker["replacement_command"] is None
+    assert marker["generation"] == 1
 
+    # The second request deliberately reloads a new episode instance, simulating
+    # a process restart with no process-local uncertainty map to consult.
     with pytest.raises(HTTPException, match="state is uncertain") as second:
-        await _retry_podcast_episode_locked(episode.id)
+        await _retry_podcast_episode_locked(f"episode:uncertain-{cancel_result}")
 
     assert second.value.status_code == 409
     assert submissions == 1

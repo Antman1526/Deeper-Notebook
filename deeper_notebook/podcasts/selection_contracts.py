@@ -34,7 +34,7 @@ _EMBEDDED_UNC_PATH = re.compile(
     r"(?:^|(?<=[\s(\"'=]))(?:\\\\|//)[^\s,;\)\]}>]*"
 )
 _EMBEDDED_POSIX_PATH = re.compile(
-    r"(?:^|(?<=[\s(\"'=]))/(?!/)[^\s,;\)\]}>]*"
+    r"(?:^|(?<=[\s(\"'=:]))/(?!/)[^\s,;\)\]}>]*"
 )
 
 NotebookId = Annotated[

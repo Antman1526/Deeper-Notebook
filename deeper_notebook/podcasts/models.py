@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -150,12 +150,27 @@ class TranscriptSegment(BaseModel):
 
 
 class PodcastRetrySubmission(BaseModel):
-    """Durable fence linking one replacement command to one retry generation."""
+    """Durable reservation linking exactly one replacement to a retry."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    job_id: str = Field(min_length=1, max_length=256)
+    state: Literal["reserved", "submitted"]
+    operation_id: str = Field(min_length=32, max_length=32, pattern=r"^[a-f0-9]{32}$")
+    job_id: str | None = Field(default=None, min_length=1, max_length=256)
+    replacement_command: str | None = Field(default=None, min_length=1, max_length=256)
     generation: int = Field(ge=1, le=1_000_000)
+
+    @model_validator(mode="after")
+    def state_matches_command_fence(self) -> "PodcastRetrySubmission":
+        if self.state == "reserved":
+            if self.job_id is not None or self.replacement_command is not None:
+                raise ValueError("reserved retry submission cannot contain a command")
+            return self
+        if self.job_id is None or self.replacement_command is None:
+            raise ValueError("submitted retry submission requires a command")
+        if self.job_id != self.replacement_command:
+            raise ValueError("submitted retry command must match its job")
+        return self
 
 
 def transcript_segments_from_payload(
