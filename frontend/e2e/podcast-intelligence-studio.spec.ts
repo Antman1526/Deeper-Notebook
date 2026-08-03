@@ -564,6 +564,11 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
       kind: 'knowledge_document', document_id: 'knowledge_engine_document:evidence', expected_revision_id: null,
     }, 4)
 
+    await evidenceNote.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('tab', { name: 'Read: Evidence', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByLabel('Evidence reading view')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Turn note into podcast' })).toBeVisible()
     // Allow the newly active Read tab to install its native selection listener
     // before exercising the same browser selection a reader would make.
     await page.evaluate(() => new Promise<void>((resolve) => {
