@@ -26,6 +26,16 @@ from deeper_notebook.knowledge_engine.navigation_contracts import (
 
 _LEGACY_ID = r"[A-Za-z0-9_-]+"
 _VISIBLE_TEXT = re.compile(r"^(?:[\\/]|[A-Za-z]:[\\/])")
+_EMBEDDED_FILE_URL = re.compile(r"\bfile://[^\s,;\)\]}>]*", re.IGNORECASE)
+_EMBEDDED_WINDOWS_PATH = re.compile(
+    r"(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s,;\)\]}>]*"
+)
+_EMBEDDED_UNC_PATH = re.compile(
+    r"(?:^|(?<=[\s(\"'=]))(?:\\\\|//)[^\s,;\)\]}>]*"
+)
+_EMBEDDED_POSIX_PATH = re.compile(
+    r"(?:^|(?<=[\s(\"'=]))/(?!/)[^\s,;\)\]}>]*"
+)
 
 NotebookId = Annotated[
     str, Field(min_length=1, max_length=128, pattern=rf"^notebook:{_LEGACY_ID}$")
@@ -48,11 +58,20 @@ def _visible_query(value: str) -> str:
     normalized = " ".join(value.split())
     if not normalized or len(normalized) > 512:
         raise ValueError("query must contain visible text")
-    if _VISIBLE_TEXT.match(normalized) or "\x00" in normalized:
+    if _VISIBLE_TEXT.match(normalized) or _contains_absolute_filesystem_path(normalized):
         raise ValueError("query must not contain an absolute path")
     if any(ord(character) < 32 for character in normalized):
         raise ValueError("query must not contain control characters")
     return normalized
+
+
+def _contains_absolute_filesystem_path(value: str) -> bool:
+    return bool(
+        _EMBEDDED_FILE_URL.search(value)
+        or _EMBEDDED_WINDOWS_PATH.search(value)
+        or _EMBEDDED_UNC_PATH.search(value)
+        or _EMBEDDED_POSIX_PATH.search(value)
+    )
 
 
 class NotebookSelection(_Strict):

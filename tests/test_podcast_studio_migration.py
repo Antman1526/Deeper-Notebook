@@ -16,6 +16,7 @@ def test_phase_two_episode_metadata_is_optional_and_redacted_by_contract():
     assert episode.selection_fingerprint is None
     assert episode.editorial_brief is None
     assert episode.model_plan_receipts == []
+    assert episode.retry_submitted is None
 
 
 def test_phase_two_migration_only_adds_and_removes_studio_metadata_fields():
@@ -23,7 +24,13 @@ def test_phase_two_migration_only_adds_and_removes_studio_metadata_fields():
     up = (migration_root / "40.surrealql").read_text(encoding="utf-8")
     down = (migration_root / "40_down.surrealql").read_text(encoding="utf-8")
 
-    for field in ("selection_summary", "selection_fingerprint", "editorial_brief", "model_plan_receipts"):
+    for field in (
+        "selection_summary",
+        "selection_fingerprint",
+        "editorial_brief",
+        "model_plan_receipts",
+        "retry_submitted",
+    ):
         assert f"DEFINE FIELD IF NOT EXISTS {field} ON TABLE episode" in up
         assert f"REMOVE FIELD IF EXISTS {field} ON TABLE episode" in down
     assert "content" not in up

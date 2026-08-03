@@ -9,16 +9,14 @@ from fastapi.responses import FileResponse
 from loguru import logger
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
+from api.command_service import CommandService
 from api.podcast_service import (
     PodcastGenerationRequest,
     PodcastGenerationResponse,
     PodcastService,
 )
 from api.schemas.podcast_studio import (
-    _EMBEDDED_FILE_URL,
-    _EMBEDDED_POSIX_PATH,
-    _EMBEDDED_UNC_PATH,
-    _EMBEDDED_WINDOWS_PATH,
+    PodcastModelPlanReceipt,
     PodcastReadinessRequest,
     PodcastReadinessResponse,
     PodcastRetryPreviewRequiredResponse,
@@ -39,6 +37,7 @@ from deeper_notebook.podcasts import file_uri_to_local_path
 from deeper_notebook.podcasts.models import (
     EpisodeProfile,
     PodcastOverviewMode,
+    PodcastRetrySubmission,
     TranscriptSegment,
     normalize_podcast_mode,
 )
@@ -90,6 +89,7 @@ def _submission_request_digest(payload: PodcastStudioSubmitRequest) -> str:
 
 
 _PODCAST_SELECTION_ADAPTER = TypeAdapter(list[PodcastSelection])
+_PODCAST_RECEIPTS_ADAPTER = TypeAdapter(list[PodcastModelPlanReceipt])
 
 
 def _normalize_retry_settings(
@@ -216,36 +216,21 @@ def _selection_summary(
 def _redacted_model_plan_receipts(
     stage_plans: list[PodcastStageModelPlanResponse],
 ) -> list[dict[str, object]]:
-    """Keep planner decisions without persisting model identifiers or paths."""
-    def safe_text(value: str) -> str:
-        # Planner reasons are display receipts, not an authority channel. Keep
-        # them bounded and remove the path forms that could expose local model
-        # roots or credentials in a future planner message.
-        normalized = value.strip()[:512]
-        for pattern in (
-            _EMBEDDED_FILE_URL,
-            _EMBEDDED_WINDOWS_PATH,
-            _EMBEDDED_UNC_PATH,
-            _EMBEDDED_POSIX_PATH,
-        ):
-            normalized = pattern.sub("[redacted]", normalized)
-        return normalized
-
+    """Keep only exact planner state enums; omit model/provider/source text."""
     receipts: list[dict[str, object]] = []
     for plan in stage_plans:
-        receipt: dict[str, object] = {
-            "version": 1,
-            "role": plan.role,
-            "outcome": plan.outcome,
-            "reason": safe_text(plan.reason),
-        }
-        if plan.provider is not None:
-            receipt["provider"] = safe_text(plan.provider)
-        if plan.resource_tier is not None:
-            receipt["resource_tier"] = safe_text(plan.resource_tier)
-        if plan.selection_source is not None:
-            receipt["selection_source"] = safe_text(plan.selection_source)
-        receipts.append(receipt)
+        receipt = PodcastModelPlanReceipt(
+            role=plan.role,
+            outcome=plan.outcome,
+            resource_tier=plan.resource_tier,
+            selection_source=plan.selection_source,
+            reason={
+                "ready": "route_ready",
+                "blocked": "route_blocked",
+                "approval_required": "route_approval_required",
+            }[plan.outcome],
+        )
+        receipts.append(receipt.model_dump(mode="json"))
     return receipts
 
 
@@ -545,6 +530,9 @@ async def submit_podcast_studio(
                 custom_prompt=payload.custom_prompt,
                 episode_length=payload.episode_length,
                 review_outline=payload.review_outline,
+                execution_policy=payload.execution_policy,
+                compute_profile=payload.compute_profile,
+                include_transcription=payload.include_transcription,
                 selection_summary=_selection_summary(
                     PodcastSelectionPreviewResponse.model_validate(preview.model_dump()),
                     selections=payload.selections,
@@ -608,6 +596,11 @@ async def submit_podcast_studio(
 # status transition instead). Locks are created lazily and keyed by episode id.
 _RETRY_LOCKS: dict[str, asyncio.Lock] = {}
 _RETRY_LOCKS_GUARD = asyncio.Lock()
+# If the replacement command was submitted but both fence persistence and
+# cancellation are uncertain, fail closed for this episode until an operator
+# can reconcile the command. This prevents a later click from submitting a
+# second replacement in the same process.
+_RETRY_UNCERTAIN_SUBMISSIONS: dict[str, str] = {}
 
 
 async def _get_retry_lock(episode_id: str) -> asyncio.Lock:
@@ -736,6 +729,9 @@ async def generate_podcast(request: PodcastGenerationRequest):
             custom_prompt=request.resolved_custom_prompt,
             episode_length=request.episode_length,
             review_outline=request.review_outline,
+            execution_policy=request.execution_policy,
+            compute_profile=request.compute_profile,
+            include_transcription=request.include_transcription,
         )
 
         return PodcastGenerationResponse(
@@ -1080,12 +1076,18 @@ def _stored_retry_settings(episode: Any) -> dict[str, object]:
     """Read and validate v2's normalized settings; legacy rows use defaults."""
     summary = getattr(episode, "selection_summary", None)
     if not isinstance(summary, dict) or summary.get("version") != 2:
-        return _normalize_retry_settings(
+        settings = _normalize_retry_settings(
             mode=getattr(episode, "mode", None),
             custom_prompt=None,
             episode_length=None,
             review_outline=False,
         )
+        settings.update(
+            execution_policy="strict_local",
+            compute_profile="balanced",
+            include_transcription=False,
+        )
+        return settings
     settings = summary.get("production_settings")
     if not isinstance(settings, dict):
         raise ValueError("podcast retry production settings are missing")
@@ -1099,45 +1101,46 @@ def _stored_retry_settings(episode: Any) -> dict[str, object]:
     }
     if set(settings) - allowed_settings:
         raise ValueError("podcast retry production settings contain unsafe fields")
-    if settings.get("execution_policy") not in {
-        None,
+    execution_policy = settings.get("execution_policy", "strict_local")
+    compute_profile = settings.get("compute_profile", "balanced")
+    include_transcription = settings.get("include_transcription", False)
+    if execution_policy not in {
         "strict_local",
         "local_preferred",
         "custom",
     }:
         raise ValueError("podcast retry execution policy is invalid")
-    if settings.get("compute_profile") not in {
-        None,
+    if compute_profile not in {
         "efficient",
         "balanced",
         "maximum_quality",
     }:
         raise ValueError("podcast retry compute profile is invalid")
-    if settings.get("include_transcription") is not None and not isinstance(
-        settings.get("include_transcription"), bool
-    ):
+    if not isinstance(include_transcription, bool):
         raise ValueError("podcast retry transcription setting is invalid")
-    return _normalize_retry_settings(
+    normalized = _normalize_retry_settings(
         mode=settings.get("mode"),
         custom_prompt=None,
         episode_length=settings.get("episode_length"),
         review_outline=settings.get("review_outline"),
     )
+    normalized.update(
+        execution_policy=execution_policy,
+        compute_profile=compute_profile,
+        include_transcription=include_transcription,
+    )
+    return normalized
 
 
-def _validate_stored_model_plan_receipts(episode: Any) -> None:
+def _validate_stored_model_plan_receipts(
+    episode: Any,
+) -> list[dict[str, object]]:
     receipts = getattr(episode, "model_plan_receipts", [])
-    if not isinstance(receipts, list):
-        raise ValueError("podcast planner receipts are invalid")
-    forbidden = {"model_id", "model_path", "raw_model_path", "source_body", "credential"}
-    for receipt in receipts:
-        if not isinstance(receipt, dict) or forbidden.intersection(receipt):
-            raise ValueError("podcast planner receipts contain unsafe fields")
-        for key, value in receipt.items():
-            if not isinstance(key, str) or not isinstance(value, (str, int, float, bool, type(None))):
-                raise ValueError("podcast planner receipt value is invalid")
-            if isinstance(value, str) and _contains_absolute_filesystem_path(value):
-                raise ValueError("podcast planner receipt contains a filesystem path")
+    try:
+        validated = _PODCAST_RECEIPTS_ADAPTER.validate_python(receipts, strict=True)
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ValueError("podcast planner receipts contain unsafe fields") from exc
+    return [receipt.model_dump(mode="json") for receipt in validated]
 
 
 def _validate_stored_v2_summary(summary: dict[str, object]) -> None:
@@ -1244,13 +1247,27 @@ async def _resolve_retry_selection(
         )
 
     try:
-        _stored_retry_settings(episode)
-        _validate_stored_model_plan_receipts(episode)
+        retry_settings = _stored_retry_settings(episode)
+        stored_receipts = _validate_stored_model_plan_receipts(episode)
     except (TypeError, ValueError, ValidationError):
         return _preview_required_response(
             episode_id=str(getattr(episode, "id", "")),
             code="podcast_selection_tampered",
             message="Stored Studio settings are invalid. Review the episode before retrying.",
+            selections=selections,
+        )
+
+    if any(
+        receipt["selection_source"] == "production_override"
+        for receipt in stored_receipts
+    ):
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_unavailable",
+            message=(
+                "The original production override requires a fresh Studio review "
+                "before retrying."
+            ),
             selections=selections,
         )
 
@@ -1299,6 +1316,40 @@ async def _resolve_retry_selection(
             selections=selections,
         )
 
+    try:
+        stage_plans = _podcast_stage_plans(
+            request,
+            included_characters=preview.included_characters,
+            execution_policy=retry_settings["execution_policy"],
+            compute_profile=retry_settings["compute_profile"],
+            include_transcription=retry_settings["include_transcription"],
+            production_overrides=None,
+        )
+    except Exception:
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_unavailable",
+            message=(
+                "Current production routes are unavailable. Review fresh routes "
+                "before retrying."
+            ),
+            selections=selections,
+            selection_fingerprint=preview.selection_fingerprint,
+            preview=preview,
+        )
+    if any(plan.outcome != "ready" for plan in stage_plans):
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_unavailable",
+            message=(
+                "The saved production settings are no longer ready. Review fresh "
+                "routes before retrying."
+            ),
+            selections=selections,
+            selection_fingerprint=preview.selection_fingerprint,
+            preview=preview,
+        )
+
     expected_fingerprint = getattr(episode, "selection_fingerprint", None)
     changed = (
         expected_fingerprint != preview.selection_fingerprint
@@ -1318,6 +1369,68 @@ async def _resolve_retry_selection(
     )
 
 
+def _stored_retry_submission(episode: Any) -> PodcastRetrySubmission | None:
+    raw_marker = getattr(episode, "retry_submitted", None)
+    if raw_marker is None:
+        return None
+    try:
+        return PodcastRetrySubmission.model_validate(raw_marker, strict=True)
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ValueError("stored podcast retry fence is invalid") from exc
+
+
+async def _persist_retry_submission_fence(
+    episode: Any,
+    *,
+    job_id: str,
+) -> PodcastRetrySubmission:
+    """Persist the replacement command before touching old row/audio state."""
+    previous = _stored_retry_submission(episode)
+    previous_command = getattr(episode, "command", None)
+    generation = previous.generation + 1 if previous is not None else 1
+    marker = PodcastRetrySubmission(job_id=job_id, generation=generation)
+    episode.retry_submitted = marker
+    episode.command = job_id
+    try:
+        save = getattr(episode, "save", None)
+        if not callable(save):
+            raise ValueError("episode cannot persist retry fence")
+        await save()
+    except Exception as save_exc:
+        episode.retry_submitted = previous
+        episode.command = previous_command
+        try:
+            cancelled = await CommandService.cancel_command_job(job_id)
+        except Exception as cancel_exc:
+            logger.error(
+                "Retry fence save failed and replacement cancellation is uncertain: {}",
+                cancel_exc,
+            )
+            episode_id = str(getattr(episode, "id", ""))
+            if episode_id:
+                _RETRY_UNCERTAIN_SUBMISSIONS[episode_id] = job_id
+            raise HTTPException(
+                status_code=500,
+                detail="Retry submission state is uncertain; retry is blocked.",
+            ) from cancel_exc
+        if cancelled is not True:
+            logger.error(
+                "Retry fence save failed and replacement cancellation returned false"
+            )
+            episode_id = str(getattr(episode, "id", ""))
+            if episode_id:
+                _RETRY_UNCERTAIN_SUBMISSIONS[episode_id] = job_id
+            raise HTTPException(
+                status_code=500,
+                detail="Retry submission state is uncertain; retry is blocked.",
+            ) from save_exc
+        raise HTTPException(
+            status_code=500,
+            detail="Retry could not be fenced; replacement was cancelled.",
+        ) from save_exc
+    return marker
+
+
 async def _retry_podcast_episode_locked(
     episode_id: str,
     *,
@@ -1326,6 +1439,20 @@ async def _retry_podcast_episode_locked(
     """Body of the retry handler; runs while holding the per-episode lock."""
     try:
         episode = await PodcastService.get_episode(episode_id)
+
+        uncertain_job_id = _RETRY_UNCERTAIN_SUBMISSIONS.get(episode_id)
+        if uncertain_job_id is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Retry submission state is uncertain; retry is blocked.",
+            )
+
+        existing_fence = _stored_retry_submission(episode)
+        if existing_fence is not None:
+            return {
+                "job_id": existing_fence.job_id,
+                "message": "Retry already submitted successfully",
+            }
 
         # Validate episode is in a terminal state (failed OR completed).
         detail = await episode.get_job_detail()
@@ -1423,14 +1550,28 @@ async def _retry_podcast_episode_locked(
             ),
             episode_length=retry_settings["episode_length"],
             review_outline=retry_settings["review_outline"],
+            execution_policy=retry_settings["execution_policy"],
+            compute_profile=retry_settings["compute_profile"],
+            include_transcription=retry_settings["include_transcription"],
             selection_summary=getattr(episode, "selection_summary", None),
             selection_fingerprint=getattr(episode, "selection_fingerprint", None),
             editorial_brief=getattr(episode, "editorial_brief", None),
             model_plan_receipts=getattr(episode, "model_plan_receipts", []),
         )
 
-        # Cleanup starts only after the replacement submission succeeded. A
-        # provider/submit exception above therefore preserves old state.
+        # Persist a durable fence before deleting anything. If this save fails,
+        # the replacement is cancelled and the old row/audio remain untouched.
+        await _persist_retry_submission_fence(episode, job_id=job_id)
+
+        # Delete the old row before unlinking audio. If row deletion fails, the
+        # durable fence makes subsequent retries reuse the same replacement and
+        # the old audio remains available for recovery.
+        deleted = await episode.delete()
+        if deleted is False:
+            raise RuntimeError("old podcast episode delete returned false")
+
+        # Cleanup starts only after the replacement submission and durable
+        # fence succeed. A provider/submit failure above preserves old state.
         if episode.audio_file:
             audio_path = _resolve_audio_path(episode.audio_file)
             if audio_path is None:
@@ -1447,8 +1588,6 @@ async def _retry_podcast_episode_locked(
                     raise
                 except Exception as e:
                     logger.warning(f"Failed to delete audio file {audio_path}: {e}")
-
-        await episode.delete()
 
         return {"job_id": job_id, "message": "Retry submitted successfully"}
 

@@ -14,9 +14,17 @@ const spaceId = engineId('knowledge_engine_space')
 const bookmarkId = engineId('knowledge_bookmark')
 const folderId = engineId('knowledge_bookmark_folder')
 const workspaceId = engineId('named_knowledge_workspace')
+const embeddedFileUrl = /\bfile:\/\/[^\s,;\)\]}>]*/i
+const embeddedWindowsPath = /(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s,;\)\]}>]*/
+const embeddedUncPath = /(?:^|(?<=[\s("'=]))(?:\\\\|\/\/)[^\s,;\)\]}>]*/
+const embeddedPosixPath = /(?:^|(?<=[\s("'=]))\/(?!\/)[^\s,;\)\]}>]*/
 const authorityKind = z.enum(['app_owned', 'external_read_only'])
 const visibleQuery = z.string().min(1).max(512).refine(
-  (value) => !/^(?:[\\/]|[A-Za-z]:[\\/])/.test(value) && !value.includes('\0'),
+  (value) => !embeddedFileUrl.test(value)
+    && !embeddedWindowsPath.test(value)
+    && !embeddedUncPath.test(value)
+    && !embeddedPosixPath.test(value)
+    && !value.includes('\0'),
   'A podcast selection cannot contain an absolute path',
 )
 

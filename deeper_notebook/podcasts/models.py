@@ -149,6 +149,15 @@ class TranscriptSegment(BaseModel):
         return self
 
 
+class PodcastRetrySubmission(BaseModel):
+    """Durable fence linking one replacement command to one retry generation."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    job_id: str = Field(min_length=1, max_length=256)
+    generation: int = Field(ge=1, le=1_000_000)
+
+
 def transcript_segments_from_payload(
     payload: Any,
     *,
@@ -435,7 +444,7 @@ class PodcastEpisode(ObjectModel):
     # stuck on completed episodes forever (caught by the live smoke test).
     nullable_fields: ClassVar[set[str]] = {
         "generation_stage", "custom_prompt", "selection_summary",
-        "selection_fingerprint", "editorial_brief",
+        "selection_fingerprint", "editorial_brief", "retry_submitted",
     }
 
     name: str = Field(..., description="Episode name")
@@ -495,6 +504,7 @@ class PodcastEpisode(ObjectModel):
     selection_fingerprint: Optional[str] = Field(default=None, max_length=128)
     editorial_brief: Optional[dict[str, Any]] = Field(default=None)
     model_plan_receipts: list[dict[str, Any]] = Field(default_factory=list)
+    retry_submitted: PodcastRetrySubmission | None = Field(default=None)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

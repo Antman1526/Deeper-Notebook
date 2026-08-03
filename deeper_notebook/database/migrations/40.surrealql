@@ -5,3 +5,4 @@ DEFINE FIELD IF NOT EXISTS selection_summary ON TABLE episode FLEXIBLE TYPE opti
 DEFINE FIELD IF NOT EXISTS selection_fingerprint ON TABLE episode TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS editorial_brief ON TABLE episode FLEXIBLE TYPE option<object>;
 DEFINE FIELD IF NOT EXISTS model_plan_receipts ON TABLE episode FLEXIBLE TYPE array<object> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS retry_submitted ON TABLE episode FLEXIBLE TYPE option<object>;

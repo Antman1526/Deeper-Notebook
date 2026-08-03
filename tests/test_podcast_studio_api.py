@@ -800,6 +800,9 @@ async def test_confirmed_submit_uses_server_resolved_content_once_per_idempotenc
     assert len(calls) == 1
     assert calls[0]["content"] == "Private app-owned notebook material"
     assert calls[0]["selection_fingerprint"] == preview.json()["selection_fingerprint"]
+    assert calls[0]["execution_policy"] == "strict_local"
+    assert calls[0]["compute_profile"] == "maximum_quality"
+    assert calls[0]["include_transcription"] is False
     assert calls[0]["selection_summary"] == {
         "authority_counts": {"app_owned": 1},
         "included_items": [{

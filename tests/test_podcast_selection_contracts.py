@@ -111,6 +111,44 @@ def test_selection_contract_rejects_unknown_fields_and_wrong_collection_id():
         )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Read /Users/Antman/Private.md before recording.",
+        r"Read C:\Users\Antman\Private.md before recording.",
+        r"Read \\server\share\Private.md before recording.",
+        "Read //server/share/Private.md before recording.",
+        "Read file:///Users/Antman/Private.md before recording.",
+    ],
+)
+def test_saved_search_rejects_embedded_absolute_paths(query: str):
+    with pytest.raises(ValidationError):
+        selection_adapter.validate_python(
+            {
+                "kind": "saved_search",
+                "query": query,
+                "search_mode": "text",
+                "space_ids": ["knowledge_engine_space:overlay"],
+                "authority_kinds": ["external_read_only"],
+            }
+        )
+
+
+def test_saved_search_preserves_slash_prose_and_https_urls():
+    query = "Compare pros/cons and/or 1/2 at https://example.com/guide."
+    selection = selection_adapter.validate_python(
+        {
+            "kind": "saved_search",
+            "query": query,
+            "search_mode": "text",
+            "space_ids": ["knowledge_engine_space:overlay"],
+            "authority_kinds": ["external_read_only"],
+        }
+    )
+
+    assert selection.query == query
+
+
 def test_selection_contract_bounds_graph_and_search_scopes():
     graph_ids = [f"knowledge_engine_document:{index}" for index in range(129)]
     with pytest.raises(ValidationError):
