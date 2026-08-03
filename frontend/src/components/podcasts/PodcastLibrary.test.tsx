@@ -3,7 +3,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { PodcastEpisode } from '@/lib/types/podcasts'
-import { filterEpisodesForLibrary, groupEpisodesForLibrary, PodcastLibrary } from './PodcastLibrary'
+import {
+  filterEpisodesForLibrary,
+  getLibraryStageOptions,
+  groupEpisodesForLibrary,
+  PodcastLibrary,
+} from './PodcastLibrary'
 
 function createEpisode(
   id: string,
@@ -49,6 +54,52 @@ describe('groupEpisodesForLibrary', () => {
     expect(groups['Needs Attention'].map(item => item.id)).toEqual(['failed'])
   })
 
+  it('applies failure precedence before outline review and recognizes cancelled generation stages', () => {
+    const groups = groupEpisodesForLibrary([
+      createEpisode('failed-review', 'failed', 'awaiting_review'),
+      createEpisode('cancelled-stage', 'completed', 'cancelled'),
+      createEpisode('cancelled-job', 'cancelled' as PodcastEpisode['job_status'], null),
+      createEpisode('review', 'completed', 'awaiting_review'),
+    ])
+
+    expect(groups['Needs Attention'].map(item => item.id)).toEqual([
+      'failed-review',
+      'cancelled-stage',
+      'cancelled-job',
+    ])
+    expect(groups['Ready to Review'].map(item => item.id)).toEqual(['review'])
+  })
+})
+
+describe('filterEpisodesForLibrary', () => {
+  it('treats legacy episodes without a mode as deep dives', () => {
+    const legacy = createEpisode('legacy', null, null, { mode: undefined })
+    const brief = createEpisode('brief', null, null, { mode: 'brief' })
+
+    expect(filterEpisodesForLibrary([legacy, brief], {
+      format: 'deep_dive', profile: 'all', stage: 'all', date: 'all', authority: 'all',
+    }).map(item => item.id)).toEqual(['legacy'])
+  })
+
+  it('derives stage choices from the current vocabulary and loaded episodes', () => {
+    const options = getLibraryStageOptions([
+      createEpisode('custom-stage', 'running', 'awaiting_review:custom'),
+      createEpisode('combine', 'running', 'combining_audio'),
+    ])
+
+    expect(options).toEqual(expect.arrayContaining([
+      'awaiting_review',
+      'generating_outline',
+      'generating_transcript',
+      'generating_audio',
+      'combining_audio',
+      'awaiting_review:custom',
+    ]))
+    expect(new Set(options).size).toBe(options.length)
+  })
+})
+
+describe('PodcastLibrary', () => {
   it('opens one episode in the dedicated Lab without replacing the production card', () => {
     const episode = createEpisode('episode:one', 'completed', null, {
       name: 'Local evidence review',
@@ -84,5 +135,16 @@ describe('groupEpisodesForLibrary', () => {
     }, new Date('2026-08-01T12:00:00Z'))
 
     expect(filtered.map(item => item.id)).toEqual(['external-recent'])
+  })
+
+  it('keeps a stable empty state and the disabled Phase 3 evidence filter', () => {
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <PodcastLibrary episodes={[]} onDelete={vi.fn()} onRetry={vi.fn()} />
+    </QueryClientProvider>)
+
+    expect(screen.getByText('No podcast episodes yet.')).toBeVisible()
+    const evidenceFilter = screen.getByRole('button', { name: 'Evidence filters — Phase 3' })
+    expect(evidenceFilter).toBeDisabled()
+    expect(evidenceFilter).toHaveAttribute('title', 'Evidence-state filters arrive in Phase 3')
   })
 })
