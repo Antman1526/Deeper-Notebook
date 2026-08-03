@@ -638,6 +638,66 @@ def test_readiness_rejects_unknown_or_path_production_overrides() -> None:
         )
 
 
+@pytest.mark.parametrize("model_id", ["org/model", "manifest:org/model", "model:alpha", "gguf:local-name"])
+def test_model_override_identifiers_accept_bounded_opaque_namespaces(model_id: str) -> None:
+    from api.schemas.podcast_studio import (
+        PodcastReadinessRequest,
+        PodcastStageModelPlanResponse,
+    )
+
+    request = PodcastReadinessRequest(
+        selections=[{"kind": "notebook", "notebook_id": "notebook:research"}],
+        production_overrides={"podcast_outline": model_id},
+    )
+    plan = PodcastStageModelPlanResponse(
+        role="podcast_outline",
+        outcome="ready",
+        reason="Local route is ready.",
+        override_choices=[model_id],
+    )
+
+    assert request.production_overrides == {"podcast_outline": model_id}
+    assert plan.override_choices == [model_id]
+
+
+@pytest.mark.parametrize("model_id", ["/Users/Antman/model", "\\\\server\\share\\model", "C:\\Models\\model", "C:/Models/model", "file:///Users/Antman/model"])
+def test_model_override_identifiers_reject_absolute_path_forms(model_id: str) -> None:
+    from api.schemas.podcast_studio import (
+        PodcastReadinessRequest,
+        PodcastStageModelPlanResponse,
+    )
+
+    with pytest.raises(ValueError):
+        PodcastReadinessRequest(
+            selections=[{"kind": "notebook", "notebook_id": "notebook:research"}],
+            production_overrides={"podcast_outline": model_id},
+        )
+    with pytest.raises(ValueError):
+        PodcastStageModelPlanResponse(
+            role="podcast_outline",
+            outcome="ready",
+            reason="Local route is ready.",
+            override_choices=[model_id],
+        )
+
+
+def test_editorial_brief_preserves_ordinary_slash_prose_and_https_urls() -> None:
+    from api.schemas.podcast_studio import PodcastEditorialBrief
+
+    prose = "Compare pros/cons and/or 1/2 in notes/plan.md at https://example.com/Users/owner/guide."
+    brief = PodcastEditorialBrief(central_question=prose, outline=[prose])
+
+    assert brief.central_question == prose
+    assert brief.outline == [prose]
+
+
+def test_editorial_brief_rejects_embedded_general_posix_absolute_paths() -> None:
+    from api.schemas.podcast_studio import PodcastEditorialBrief
+
+    with pytest.raises(ValueError):
+        PodcastEditorialBrief(central_question="Read /etc/passwd before production.")
+
+
 def test_submit_rejects_mismatched_editorial_top_level_values() -> None:
     from api.schemas.podcast_studio import PodcastStudioSubmitRequest
 

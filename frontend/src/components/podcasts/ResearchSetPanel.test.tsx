@@ -80,4 +80,15 @@ describe('ResearchSetPanel', () => {
     expect(screen.getByText('[path redacted] and [path redacted]')).toBeVisible()
     expect(screen.getByText('Imported from [path redacted]')).toHaveAttribute('title', 'Imported from [path redacted]')
   })
+
+  it('preserves ordinary prose, relative locators, ratios, and HTTPS URLs in preview text', () => {
+    const value = 'Compare pros/cons and/or 1/2 in notes/plan.md at https://example.com/Users/owner/guide.'
+    render(<ResearchSetPanel selections={[]} preview={preview({ entries: [{
+      stableId: 'knowledge_engine_document:prose', title: value,
+      authorityKind: 'external_read_only', relativeLocator: 'notes/plan.md', revisionId: null,
+      fingerprint: null, state: 'included', reason: value, estimatedCharacters: 120,
+    }], blockedReasons: [value] })} />)
+
+    expect(screen.getAllByText(value)).toHaveLength(3)
+  })
 })
