@@ -274,8 +274,12 @@ async function carryQuickSelectionIntoStudio(
 
   await dialog.getByRole('button', { name: 'Customize in Studio' }).click()
   await page.waitForURL('**/podcasts/studio')
+  await expect(dialog).toBeHidden()
   await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeVisible()
-  await page.getByRole('button', { name: 'Prepare production review' }).click()
+  const prepareReview = page.getByRole('button', { name: 'Prepare production review' })
+  await prepareReview.focus()
+  await expect(prepareReview).toBeFocused()
+  await prepareReview.press('Enter')
   await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length)
     .toBe(studioReadinessCount)
   expect(receipts.at(-1)?.body?.selections).toEqual([expectedSelection])

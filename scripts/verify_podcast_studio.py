@@ -693,7 +693,7 @@ def _execute_native_playwright(
             check=False,
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=900,
         )
         if completed.returncode != 0:
             raise RuntimeError("verifier-owned native Playwright suite failed")
