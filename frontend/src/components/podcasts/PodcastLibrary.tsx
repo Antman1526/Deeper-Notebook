@@ -118,11 +118,13 @@ export function filterEpisodesForLibrary(
   ))
 }
 
-export function PodcastLibrary({ episodes, onDelete, onRetry, onCancel }: {
+export function PodcastLibrary({ episodes, onDelete, onRetry, onCancel, retrying, onCitationClick }: {
   episodes: PodcastEpisode[]
   onDelete: (episodeId: string) => Promise<void> | void
   onRetry: (episodeId: string) => Promise<void> | void
   onCancel?: (episodeId: string) => Promise<void> | void
+  retrying?: boolean
+  onCitationClick?: (citationId: string) => void
 }) {
   const [format, setFormat] = useState('all')
   const [profile, setProfile] = useState('all')
@@ -144,8 +146,8 @@ export function PodcastLibrary({ episodes, onDelete, onRetry, onCancel }: {
       <label className="grid gap-1 text-sm">Selection authority<select aria-label="Selection authority filter" value={authority} onChange={event => setAuthority(event.target.value as LibraryAuthorityFilter)} className="h-9 rounded-md border bg-background px-2"><option value="all">All authority</option><option value="app_owned">App-owned</option><option value="external_read_only">External read-only</option></select></label>
       <Button type="button" size="sm" variant="outline" disabled title="Evidence-state filters arrive in Phase 3">Evidence filters — Phase 3</Button>
     </div>
-    {(Object.entries(groups) as Array<[LibraryGroup, PodcastEpisode[]]>).map(([title, items]) => items.length > 0 && <section key={title} aria-label={title} className="space-y-3"><h2 className="text-lg font-semibold">{title}</h2><div className="space-y-4">{items.map(episode => <div key={episode.id} className="space-y-2"><Button type="button" size="sm" variant="outline" aria-label={`Open Episode Lab for ${episode.name}`} onClick={() => setLabEpisodeId(episode.id)}>Open Episode Lab</Button><EpisodeCard episode={episode} onDelete={onDelete} onRetry={onRetry} /></div>)}</div></section>)}
-    {labEpisode ? <EpisodeLab episode={labEpisode} onClose={() => setLabEpisodeId(null)} onRetry={onRetry} onCancel={onCancel} /> : null}
+    {(Object.entries(groups) as Array<[LibraryGroup, PodcastEpisode[]]>).map(([title, items]) => items.length > 0 && <section key={title} aria-label={title} className="space-y-3"><h2 className="text-lg font-semibold">{title}</h2><div className="space-y-4">{items.map(episode => <div key={episode.id} className="space-y-2"><Button type="button" size="sm" variant="outline" aria-label={`Open Episode Lab for ${episode.name}`} onClick={() => setLabEpisodeId(episode.id)}>Open Episode Lab</Button><EpisodeCard episode={episode} onDelete={onDelete} onRetry={onRetry} retrying={retrying} /></div>)}</div></section>)}
+    {labEpisode ? <EpisodeLab episode={labEpisode} onClose={() => setLabEpisodeId(null)} onRetry={onRetry} onCancel={onCancel} onCitationClick={onCitationClick} retrying={retrying} /> : null}
     {filtered.length === 0 && <p className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">{episodes.length === 0 ? 'No podcast episodes yet.' : 'No episodes match these production filters.'}</p>}
   </section>
 }
