@@ -1,9 +1,28 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-const routePlan = vi.hoisted(() => ({ data: undefined as any, isError: false, isLoading: false }))
-const savedSettings = vi.hoisted(() => ({ data: { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} } as any }))
+import type { LocalModelSettings, ModelRoutePlan } from '@/lib/api/local-models'
+
+const routePlan = vi.hoisted(() => ({ data: undefined as ModelRoutePlan | undefined, isError: false, isLoading: false }))
+const savedSettings = vi.hoisted(() => ({ data: {
+  model_dir: '',
+  execution_policy: 'strict_local',
+  compute_profile: 'balanced',
+  local_model_memory_limit_bytes: null,
+  role_overrides: {},
+  trusted_external_model_roots: [],
+} as LocalModelSettings }))
 const routePlanCalls = vi.hoisted(() => [] as unknown[][])
+
+const localSettings = (overrides: Partial<LocalModelSettings> = {}): LocalModelSettings => ({
+  model_dir: '',
+  execution_policy: 'strict_local',
+  compute_profile: 'balanced',
+  local_model_memory_limit_bytes: null,
+  role_overrides: {},
+  trusted_external_model_roots: [],
+  ...overrides,
+})
 vi.mock('@/lib/hooks/use-local-models', () => ({
   useLocalModelSettings: () => savedSettings,
   useModelRoutePlan: (...args: unknown[]) => { routePlanCalls.push(args); return routePlan },
@@ -13,7 +32,11 @@ import { KnowledgePodcastPane } from './KnowledgePodcastPane'
 
 describe('KnowledgePodcastPane', () => {
   it('plans every Podcast stage with saved Local Preferred settings and overrides', () => {
-    savedSettings.data = { execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_overrides: { podcast_script: 'script-override', text_to_speech: 'voice-override' } }
+    savedSettings.data = localSettings({
+      execution_policy: 'local_preferred',
+      compute_profile: 'maximum_quality',
+      role_overrides: { podcast_script: 'script-override', text_to_speech: 'voice-override' },
+    })
     routePlanCalls.length = 0
     render(<KnowledgePodcastPane seedDocumentIds={[]} />)
     expect(routePlanCalls).toContainEqual([{ role: 'podcast_script', execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_override_model_id: 'script-override', modalities: ['text'] }])
@@ -25,7 +48,7 @@ describe('KnowledgePodcastPane', () => {
 
     render(<KnowledgePodcastPane seedDocumentIds={['knowledge_engine_document:plan']} />)
 
-    expect(screen.getByText(/1 selected document/u)).toBeInTheDocument()
+    expect(screen.getByText(/1 selected reference/u)).toBeInTheDocument()
     expect(screen.getByText(/Production remains a separate confirmation/u)).toBeInTheDocument()
     expect(fetchSpy).not.toHaveBeenCalledWith('/podcasts/generate', expect.anything())
 

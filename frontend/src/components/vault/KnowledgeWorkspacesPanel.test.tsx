@@ -51,6 +51,23 @@ describe('KnowledgeWorkspacesPanel', () => {
     renderPanel({ commandIntent: { id: 1, kind: 'replace' } })
     expect(screen.getByRole('status')).toHaveTextContent('Select a saved workspace')
   })
+  it('reacts when a command intent changes kind under the same id', () => {
+    const props = {
+      workspaces: [researchDesk],
+      onSaveCurrentAs: vi.fn(async () => undefined),
+      onOpen: vi.fn(async () => undefined),
+      onRename: vi.fn(async () => undefined),
+      onDuplicate: vi.fn(async () => undefined),
+      onReplaceWithCurrent: vi.fn(async () => undefined),
+      onDelete: vi.fn(async () => undefined),
+      onRefresh: vi.fn(async () => undefined),
+    }
+    const { rerender } = render(<KnowledgeWorkspacesPanel {...props} commandIntent={{ id: 1, kind: 'save' }} />)
+
+    rerender(<KnowledgeWorkspacesPanel {...props} commandIntent={{ id: 1, kind: 'replace' }} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Select a saved workspace')
+  })
   it('lists Current Session separately and opens a named workspace at its listed revision', async () => {
     const props = renderPanel()
 

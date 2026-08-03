@@ -48,12 +48,14 @@ export function KnowledgeWorkspacesPanel({
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
   const [selectingReplacement, setSelectingReplacement] = useState(false)
+  const commandIntentId = commandIntent?.id ?? null
+  const commandIntentKind = commandIntent?.kind ?? null
 
   useEffect(() => {
-    if (!commandIntent) return
-    if (commandIntent.kind === 'save') begin('save')
+    if (!commandIntentKind) return
+    if (commandIntentKind === 'save') begin('save')
     else setSelectingReplacement(true)
-  }, [commandIntent?.id])
+  }, [commandIntentId, commandIntentKind])
 
   const begin = (mode: Exclude<EditMode, null>, workspace?: NamedKnowledgeWorkspaceSummary) => {
     setEditMode(mode)

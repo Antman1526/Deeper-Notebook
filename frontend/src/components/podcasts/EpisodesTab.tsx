@@ -25,7 +25,6 @@ export function EpisodesTab() {
   const [showGenerateDialog, setShowGenerateDialog] = useState(false)
   const {
     episodes,
-    statusGroups,
     statusCounts,
     isLoading,
     isError,
