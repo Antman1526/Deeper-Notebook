@@ -61,6 +61,49 @@ describe('PodcastStudio', () => {
     expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
   })
 
+  it('uses blocked readiness plans over stale Knowledge plans after an override review', async () => {
+    vi.mocked(podcastsApi.getPodcastReadiness).mockResolvedValue({
+      preview: {
+        selectionFingerprint: 'f'.repeat(64), entries: [{
+          stableId: 'knowledge_engine_document:plan', title: 'Research plan', authorityKind: 'app_owned',
+          relativeLocator: null, revisionId: null, fingerprint: 'a'.repeat(64),
+          state: 'included', reason: 'included', estimatedCharacters: 120,
+        }], includedCharacters: 120, requiresBatchEngine: false,
+        currentWorkerEligible: true, blockedReasons: ['Override is blocked by the planner.'],
+      },
+      stagePlans: [{
+        role: 'podcast_outline', outcome: 'blocked', modelId: null, provider: null,
+        resourceTier: null, selectionSource: 'automatic', reason: 'Override is blocked by the planner.', blockedReason: 'Override is blocked by the planner.',
+        overrideChoices: ['outline-local'],
+      }],
+      ready: false, blockedReasons: ['Override is blocked by the planner.'],
+    })
+    vi.mocked(podcastsApi.listEpisodeProfiles).mockResolvedValue([])
+    vi.mocked(podcastsApi.listSpeakerProfiles).mockResolvedValue([])
+
+    render(<PodcastStudio
+      seedDocumentIds={['knowledge_engine_document:plan']}
+      modelPlans={[{
+        stage: 'outline', label: 'Outline route', overrideChoices: ['outline-local', 'outline-alt'],
+        plan: {
+          outcome: 'ready', reason: 'Stale Knowledge route is ready.', modelId: 'outline-local', provider: 'stale-provider',
+          resourceTier: 'standard', selectionSource: 'automatic', role: 'podcast_outline',
+        },
+      }]}
+    />)
+
+    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'outline-alt' } })
+    expect(screen.getByText('Override pending review')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+
+    expect((await screen.findAllByText('Override is blocked by the planner.')).length).toBeGreaterThan(0)
+    expect(screen.getByText('Blocked')).toBeVisible()
+    expect(screen.queryByText('Stale Knowledge route is ready.')).not.toBeInTheDocument()
+    expect(screen.queryByText(/stale-provider/)).not.toBeInTheDocument()
+    expect(screen.getByText('Selection source: automatic')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Continue to confirmation' })).toBeDisabled()
+  })
+
   it('sends the selected production override to both readiness and submit', async () => {
     vi.mocked(podcastsApi.getPodcastReadiness).mockResolvedValue({
       preview: {

@@ -57,27 +57,29 @@ function selectionsFromSeeds(seedDocumentIds: string[]): PodcastSelection[] {
   return seedDocumentIds.map((documentId) => ({ kind: 'knowledge_document', documentId }))
 }
 
-function toPlanItems(modelPlans: PodcastStudioProps['modelPlans'], readiness: PodcastReadiness | null): PodcastModelPlanItem[] {
-  if (modelPlans && modelPlans.length > 0) {
-    return modelPlans.map((item, index) => {
-      const defaults = knowledgeRouteDefaults[index] ?? stageDefaults[index] ?? stageDefaults[0]
-      return {
-        stage: item.stage ?? defaults.stage,
-        label: item.label,
-        role: item.plan?.role ?? defaults.role,
-        outcome: item.plan?.outcome ?? 'blocked',
-        reason: item.plan?.reason ?? 'Route plan unavailable.',
-        modelId: item.plan?.modelId ?? null,
-        provider: item.plan?.provider ?? null,
-        resourceTier: item.plan?.resourceTier ?? null,
-        selectionSource: item.plan?.selectionSource ?? null,
-        overrideChoices: item.overrideChoices ?? [],
-      }
-    })
-  }
-  return readiness?.stagePlans.map((plan, index) => ({
-    stage: stageDefaults[index]?.stage ?? 'transcription',
-    label: stageDefaults[index]?.label ?? plan.role,
+function toProvidedPlanItems(modelPlans: PodcastStudioProps['modelPlans']): PodcastModelPlanItem[] {
+  return modelPlans?.map((item, index) => {
+    const defaults = knowledgeRouteDefaults[index] ?? stageDefaults[index] ?? stageDefaults[0]
+    return {
+      stage: item.stage ?? defaults.stage,
+      label: item.label,
+      role: item.plan?.role ?? defaults.role,
+      outcome: item.plan?.outcome ?? 'blocked',
+      reason: item.plan?.reason ?? 'Route plan unavailable.',
+      modelId: item.plan?.modelId ?? null,
+      provider: item.plan?.provider ?? null,
+      resourceTier: item.plan?.resourceTier ?? null,
+      selectionSource: item.plan?.selectionSource ?? null,
+      overrideChoices: item.overrideChoices ?? [],
+    }
+  }) ?? []
+}
+
+function toReadinessPlanItem(plan: PodcastReadiness['stagePlans'][number]): PodcastModelPlanItem {
+  const defaults = stageDefaults.find((item) => item.role === plan.role) ?? stageDefaults[0]
+  return {
+    stage: defaults.stage,
+    label: defaults.label,
     role: plan.role,
     outcome: plan.outcome,
     reason: plan.reason,
@@ -86,7 +88,26 @@ function toPlanItems(modelPlans: PodcastStudioProps['modelPlans'], readiness: Po
     resourceTier: plan.resourceTier,
     selectionSource: plan.selectionSource,
     overrideChoices: plan.overrideChoices ?? [],
-  })) ?? []
+  }
+}
+
+function toPlanItems(modelPlans: PodcastStudioProps['modelPlans'], readiness: PodcastReadiness | null): PodcastModelPlanItem[] {
+  const provided = toProvidedPlanItems(modelPlans)
+  if (!readiness) return provided
+
+  const freshByRole = new Map(readiness.stagePlans.map((plan) => [plan.role, toReadinessPlanItem(plan)]))
+  const merged = provided.flatMap((plan) => {
+    const productionRole = productionRoleForPlan(plan)
+    if (!productionRole) return [plan]
+    const fresh = freshByRole.get(productionRole)
+    if (!fresh) return []
+    freshByRole.delete(productionRole)
+    return [{ ...fresh, label: plan.label }]
+  })
+  const remainingFresh = readiness.stagePlans
+    .map((plan) => freshByRole.get(plan.role))
+    .filter((plan): plan is PodcastModelPlanItem => Boolean(plan))
+  return [...merged, ...remainingFresh]
 }
 
 function productionRoleForPlan(plan: PodcastModelPlanItem): PodcastProductionRole | null {
@@ -205,11 +226,12 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
   const planChoices = Object.fromEntries(
     plans.filter((plan) => (plan.overrideChoices?.length ?? 0) > 0).map((plan) => [plan.stage, plan.overrideChoices ?? []]),
   ) as Partial<Record<PodcastModelPlanItem['stage'], string[]>>
-  const displayedPlans = plans.map((plan) => ({
-    ...plan,
-    modelId: (productionRoleForPlan(plan) ? modelOverrides[productionRoleForPlan(plan)!] : undefined) ?? plan.modelId ?? null,
-    selectionSource: (productionRoleForPlan(plan) && modelOverrides[productionRoleForPlan(plan)!]) ? 'production_override' as const : plan.selectionSource,
-  }))
+  const displayedPlans = plans.map((plan) => {
+    const productionRole = productionRoleForPlan(plan)
+    const pendingOverride = productionRole ? modelOverrides[productionRole] : undefined
+    if (readiness || !pendingOverride) return plan
+    return { ...plan, modelId: pendingOverride, pendingOverride: true }
+  })
 
   const handleOverride = (stage: PodcastModelPlanItem['stage'], modelId: string) => {
     const selectedPlan = plans.find((plan) => plan.stage === stage)

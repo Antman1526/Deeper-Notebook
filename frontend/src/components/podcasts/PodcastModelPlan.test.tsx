@@ -22,4 +22,17 @@ describe('PodcastModelPlan', () => {
     fireEvent.change(screen.getByLabelText('Override Outline model'), { target: { value: 'other-local' } })
     expect(onOverride).toHaveBeenCalledWith('outline', 'other-local')
   })
+
+  it('preserves prose and HTTPS explanations while redacting embedded absolute paths', () => {
+    render(<PodcastModelPlan plans={[
+      {
+        stage: 'outline', label: 'Outline', role: 'podcast_outline', outcome: 'ready',
+        modelId: 'manifest:org/model', provider: 'mlx', resourceTier: 'light', selectionSource: 'automatic',
+        reason: 'Compare pros/cons and/or 1/2 at https://example.com/Users/owner/guide; source /Volumes/Private/plan.md.',
+      },
+    ]} />)
+
+    expect(screen.getByText('Compare pros/cons and/or 1/2 at https://example.com/Users/owner/guide; source [path redacted]')).toBeVisible()
+    expect(screen.getByText(/manifest:org\/model/)).toBeVisible()
+  })
 })
