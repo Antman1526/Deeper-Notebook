@@ -28,7 +28,8 @@ type BrowserRequestReceipt = {
 const browserRequestReceipts = new WeakMap<Page, BrowserRequestReceipt>()
 
 function isTaskOwnedLoopback(url: URL): boolean {
-  return url.hostname === '127.0.0.1' && (url.port === '3117' || url.port === '65060')
+  return (url.hostname === '127.0.0.1' || url.hostname === 'localhost')
+    && (url.port === '3117' || url.port === '65060')
 }
 
 async function installLoopbackRequestGuard(page: Page): Promise<void> {
@@ -516,8 +517,9 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('knowledge-workspace')).toBeVisible()
 
-    await page.getByRole('button', { name: 'Search (Alt+4)' }).click()
+    await page.getByRole('tab', { name: 'Search: Exact search' }).click()
     const searchInput = page.getByRole('textbox', { name: 'Search knowledge' })
+    await expect(searchInput).toBeVisible()
     await searchInput.fill('Evidence')
     await page.getByRole('button', { name: 'Search knowledge' }).click()
     await page.getByRole('button', { name: 'Turn into podcast', exact: true }).click()
