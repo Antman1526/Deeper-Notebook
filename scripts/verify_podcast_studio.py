@@ -10,12 +10,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import builtins
 import hashlib
+import io
 import json
+import os
+import re
 import sys
 import tempfile
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 from unittest.mock import patch
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -38,6 +44,8 @@ _FORBIDDEN_ROOT_PARTS = {"2nd Brains", "BrainPulse Ventures LLC", "MacBook AI mo
 _SELECTION_ADAPTER = TypeAdapter(PodcastSelection)
 _PLAYWRIGHT_NATIVE_TEST_FILE = "e2e/podcast-intelligence-studio.spec.ts"
 _PLAYWRIGHT_NATIVE_TEST_COUNT = 5
+_PROOF_REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
+_PROOF_REVISION_ANNOTATION = "podcast_studio_runtime_revision"
 
 
 @dataclass(frozen=True)
@@ -45,12 +53,34 @@ class VerifierConfig:
     fixture_root: Path
     output_path: Path
     native_url: str
+    expected_revision: str | None
 
 
 @dataclass(frozen=True)
 class VerificationResult:
     exit_code: int
     report: dict[str, object]
+
+
+@dataclass
+class FixtureWriteGuard:
+    """Fail closed before an owned synthetic source can be mutated."""
+
+    fixture_root: Path
+    write_attempts: int = 0
+
+    def targets_fixture(self, value: object) -> bool:
+        if not isinstance(value, (str, bytes, os.PathLike)):
+            return False
+        try:
+            candidate = Path(value).expanduser().absolute().resolve(strict=False)
+        except (OSError, TypeError, ValueError):
+            return False
+        return _inside(self.fixture_root, candidate)
+
+    def reject(self) -> None:
+        self.write_attempts += 1
+        raise PermissionError("synthetic fixture write blocked")
 
 
 def _inside(parent: Path, child: Path) -> bool:
@@ -82,7 +112,11 @@ def _loopback_url(value: str) -> str:
 
 
 def verifier_config(
-    *, fixture_root: Path, output_path: Path, native_url: str = "http://localhost:65060"
+    *,
+    fixture_root: Path,
+    output_path: Path,
+    native_url: str = "http://localhost:65060",
+    expected_revision: str | None = None,
 ) -> VerifierConfig:
     requested_root = fixture_root.expanduser().absolute()
     temporary_root = Path(tempfile.gettempdir()).resolve()
@@ -114,7 +148,73 @@ def verifier_config(
         or _inside(root, output)
     ):
         raise ValueError("new proof output file required")
-    return VerifierConfig(root, output, _loopback_url(native_url))
+    if expected_revision is not None and not _PROOF_REVISION_PATTERN.fullmatch(expected_revision):
+        raise ValueError("expected revision must be a lowercase 40-hex value")
+    return VerifierConfig(root, output, _loopback_url(native_url), expected_revision)
+
+
+def _write_mode(mode: object) -> bool:
+    return isinstance(mode, str) and any(flag in mode for flag in "wax+")
+
+
+@contextmanager
+def fixture_write_guard(fixture_root: Path) -> Iterator[FixtureWriteGuard]:
+    """Block Python filesystem mutations under the verifier-owned source root."""
+    guard = FixtureWriteGuard(fixture_root.resolve())
+
+    def single_path(original):
+        def guarded(path, *args, **kwargs):
+            if guard.targets_fixture(path):
+                guard.reject()
+            return original(path, *args, **kwargs)
+
+        return guarded
+
+    def path_open(original):
+        def guarded(path, mode="r", *args, **kwargs):
+            if guard.targets_fixture(path) and _write_mode(mode):
+                guard.reject()
+            return original(path, mode, *args, **kwargs)
+
+        return guarded
+
+    def open_file(original):
+        def guarded(file, mode="r", *args, **kwargs):
+            if guard.targets_fixture(file) and _write_mode(mode):
+                guard.reject()
+            return original(file, mode, *args, **kwargs)
+
+        return guarded
+
+    def two_paths(original):
+        def guarded(source, target, *args, **kwargs):
+            if guard.targets_fixture(source) or guard.targets_fixture(target):
+                guard.reject()
+            return original(source, target, *args, **kwargs)
+
+        return guarded
+
+    def guarded_os_open(path, flags, *args, **kwargs):
+        write_flags = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC
+        if guard.targets_fixture(path) and flags & write_flags:
+            guard.reject()
+        return original_os_open(path, flags, *args, **kwargs)
+
+    original_os_open = os.open
+    with ExitStack() as stack:
+        for name in ("unlink", "rmdir", "mkdir", "touch", "write_text", "write_bytes"):
+            stack.enter_context(patch.object(Path, name, new=single_path(getattr(Path, name))))
+        stack.enter_context(patch.object(Path, "open", new=path_open(Path.open)))
+        for name in ("rename", "replace"):
+            stack.enter_context(patch.object(Path, name, new=two_paths(getattr(Path, name))))
+        for name in ("remove", "unlink", "rmdir", "mkdir"):
+            stack.enter_context(patch.object(os, name, new=single_path(getattr(os, name))))
+        for name in ("rename", "replace"):
+            stack.enter_context(patch.object(os, name, new=two_paths(getattr(os, name))))
+        stack.enter_context(patch.object(os, "open", new=guarded_os_open))
+        stack.enter_context(patch.object(builtins, "open", new=open_file(builtins.open)))
+        stack.enter_context(patch.object(io, "open", new=open_file(io.open)))
+        yield guard
 
 
 def _hashes(root: Path) -> dict[str, str]:
@@ -321,6 +421,8 @@ async def _execute_read_only_flow(fixture_root: Path) -> dict[str, object]:
                 content=preparation.content,
             )
             retry = await podcast_router_module._retry_podcast_episode_locked(episode.id)
+        old_audio_removed_after_retry = not old_audio.exists()
+        _assert_owned_audio_removed(old_audio)
 
     retry_marker = getattr(episode, "retry_submitted", None)
     if (
@@ -338,26 +440,83 @@ async def _execute_read_only_flow(fixture_root: Path) -> dict[str, object]:
         "retry": {"job_id": retry["job_id"], "durable_fence": True},
         "metadata_audio": {
             "old_audio_bytes": old_audio_bytes,
-            "old_audio_removed_after_retry": not old_audio.exists(),
+            "old_audio_removed_after_retry": old_audio_removed_after_retry,
         },
         "external_write_receipts": resolver.external_write_attempts,
     }
 
 
-def _native_health(native_url: str) -> tuple[bool, int | None]:
+def _assert_owned_audio_removed(audio_path: Path) -> None:
+    if audio_path.exists():
+        raise RuntimeError("synthetic retry left owned audio behind")
+
+
+def _native_health(native_url: str) -> tuple[bool, int | None, dict[str, object] | None]:
     try:
         with urlopen(f"{native_url}/health", timeout=2) as response:  # nosec B310: loopback validated
-            return 200 <= response.status < 300, response.status
+            try:
+                payload = json.loads(response.read().decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                payload = None
+            return (
+                200 <= response.status < 300,
+                response.status,
+                payload if isinstance(payload, dict) else None,
+            )
     except (URLError, OSError):
-        return False, None
+        return False, None, None
 
 
-def _playwright_native_gate(report_path: Path | None) -> dict[str, object]:
+def _native_runtime_gate(
+    native_ok: bool,
+    native_status: int | None,
+    health_body: dict[str, object] | None,
+    expected_revision: str | None,
+) -> dict[str, object]:
+    if expected_revision is None:
+        return {
+            "status": "blocked",
+            "route_status": native_status,
+            "reason": "requires an expected 40-hex proof revision",
+        }
+    if not native_ok:
+        return {
+            "status": "blocked",
+            "route_status": native_status,
+            "reason": "requires caller-launched persistent native runtime",
+        }
+    if (
+        health_body is None
+        or health_body.get("status") != "healthy"
+        or health_body.get("name") != "Deeper Notebook"
+        or health_body.get("proof_revision") != expected_revision
+    ):
+        return {
+            "status": "blocked",
+            "route_status": native_status,
+            "reason": "loopback health body is not bound to the expected proof revision",
+        }
+    return {
+        "status": "passed",
+        "route_status": native_status,
+        "proof_revision": expected_revision,
+        "reason": None,
+    }
+
+
+def _playwright_native_gate(
+    report_path: Path | None, expected_revision: str | None
+) -> dict[str, object]:
     """Accept only a complete, passing report for the owned native project."""
     if report_path is None:
         return {
             "status": "blocked",
             "reason": "requires persistent native-runtime Playwright proof",
+        }
+    if expected_revision is None:
+        return {
+            "status": "blocked",
+            "reason": "requires an expected 40-hex proof revision",
         }
     try:
         report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -427,6 +586,17 @@ def _playwright_native_gate(report_path: Path | None) -> dict[str, object]:
             }
         result = results[0]
         statuses.append(result.get("status") if isinstance(result, dict) else None)
+        annotations = test.get("annotations")
+        if not isinstance(annotations, list) or not any(
+            isinstance(annotation, dict)
+            and annotation.get("type") == _PROOF_REVISION_ANNOTATION
+            and annotation.get("description") == expected_revision
+            for annotation in annotations
+        ):
+            return {
+                "status": "blocked",
+                "reason": "native-runtime Playwright report lacks a bound revision annotation",
+            }
 
     stats = report.get("stats")
     if (
@@ -445,6 +615,7 @@ def _playwright_native_gate(report_path: Path | None) -> dict[str, object]:
         "status": "passed",
         "test_file": _PLAYWRIGHT_NATIVE_TEST_FILE,
         "test_count": _PLAYWRIGHT_NATIVE_TEST_COUNT,
+        "proof_revision": expected_revision,
     }
 
 
@@ -454,24 +625,36 @@ def run_verifier(
     fixture_root: Path,
     output_path: Path,
     playwright_report_path: Path | None = None,
+    expected_revision: str | None = None,
 ) -> VerificationResult:
     config = verifier_config(
-        fixture_root=fixture_root, output_path=output_path, native_url=native_url
+        fixture_root=fixture_root,
+        output_path=output_path,
+        native_url=native_url,
+        expected_revision=expected_revision,
     )
     _create_fixture(config.fixture_root)
     before = _hashes(config.fixture_root)
     exact_text = _exact_text_selection_check()
     semantic = _semantic_selection_check()
-    read_only_flow = asyncio.run(_execute_read_only_flow(config.fixture_root))
+    with fixture_write_guard(config.fixture_root) as fixture_guard:
+        read_only_flow = asyncio.run(_execute_read_only_flow(config.fixture_root))
+    read_only_flow["fixture_write_attempts"] = fixture_guard.write_attempts
     after = _hashes(config.fixture_root)
-    native_ok, native_status = _native_health(config.native_url)
-    playwright_native = _playwright_native_gate(playwright_report_path)
+    native_ok, native_status, health_body = _native_health(config.native_url)
+    native_runtime = _native_runtime_gate(
+        native_ok, native_status, health_body, config.expected_revision
+    )
+    playwright_native = _playwright_native_gate(
+        playwright_report_path, config.expected_revision
+    )
     passed = (
         exact_text["status"] == "passed"
         and read_only_flow["status"] == "passed"
         and before == after
         and read_only_flow["external_write_receipts"] == 0
-        and native_ok
+        and read_only_flow["fixture_write_attempts"] == 0
+        and native_runtime["status"] == "passed"
         and playwright_native["status"] == "passed"
     )
     report: dict[str, object] = {
@@ -486,18 +669,17 @@ def run_verifier(
             ).hexdigest(),
         },
         "source_hashes_unchanged": before == after,
-        "external_writes": read_only_flow["external_write_receipts"],
+        "external_writes": (
+            read_only_flow["external_write_receipts"]
+            + read_only_flow["fixture_write_attempts"]
+        ),
         "checks": {
             "exact_text_selection": exact_text,
             "semantic_selection": semantic,
             "read_only_flow": read_only_flow,
         },
         "gates": {
-            "native_runtime": {
-                "status": "passed" if native_ok else "blocked",
-                "route_status": native_status,
-                "reason": None if native_ok else "requires caller-launched persistent native runtime",
-            },
+            "native_runtime": native_runtime,
             "playwright_native": playwright_native,
         },
     }
@@ -513,6 +695,7 @@ def main() -> int:
     parser.add_argument("--fixture-root", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--playwright-report", type=Path)
+    parser.add_argument("--expected-revision", required=True)
     args = parser.parse_args()
     if args.fixture_root is None:
         with tempfile.TemporaryDirectory(prefix="deeper-notebook-podcast-studio-") as directory:
@@ -522,6 +705,7 @@ def main() -> int:
                 fixture_root=root / "fixture",
                 output_path=args.output or root / "proof.json",
                 playwright_report_path=args.playwright_report,
+                expected_revision=args.expected_revision,
             ).exit_code
     if args.output is None:
         parser.error("--output is required when --fixture-root is supplied")
@@ -530,6 +714,7 @@ def main() -> int:
         fixture_root=args.fixture_root,
         output_path=args.output,
         playwright_report_path=args.playwright_report,
+        expected_revision=args.expected_revision,
     ).exit_code
 
 
