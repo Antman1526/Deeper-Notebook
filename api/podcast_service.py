@@ -78,6 +78,22 @@ class PodcastGenerationResponse(BaseModel):
     mode: PodcastOverviewMode = PodcastOverviewMode.DEEP_DIVE
 
 
+class PodcastSubmissionNotCreatedError(Exception):
+    """The request failed before the command submitter was invoked."""
+
+    def __init__(self, cause: Exception) -> None:
+        super().__init__(str(cause))
+        self.cause = cause
+
+
+class PodcastSubmissionUncertainError(Exception):
+    """The command submitter was invoked, but acceptance is not known."""
+
+    def __init__(self, cause: Exception) -> None:
+        super().__init__(str(cause))
+        self.cause = cause
+
+
 class PodcastService:
     """Service layer for podcast operations"""
 
@@ -146,8 +162,10 @@ class PodcastService:
         selection_fingerprint: Optional[str] = None,
         editorial_brief: Optional[dict[str, Any]] = None,
         model_plan_receipts: Optional[list[dict[str, Any]]] = None,
+        classify_submission_failures: bool = False,
     ) -> str:
         """Submit a podcast generation job for background processing"""
+        command_invocation_started = False
         try:
             # Validate episode profile exists
             episode_profile = await EpisodeProfile.get_by_name(episode_profile_name)
@@ -313,6 +331,7 @@ class PodcastService:
                 or 10
             )
             try:
+                command_invocation_started = True
                 job_id = await asyncio.wait_for(
                     asyncio.to_thread(
                         submit_command,
@@ -338,18 +357,36 @@ class PodcastService:
             )
             return job_id_str
 
-        except (InvalidInputError, ConfigurationError):
+        except (InvalidInputError, ConfigurationError) as exc:
             # v0.8.68 — let the typed exceptions raised by the offline gate
             # and the content-budget check bubble to the global handlers in
             # api/main.py (400 / 422 with their actionable messages). The
             # broad `except Exception` below otherwise converted them into a
             # generic 500 "Server error", hiding exactly the guidance those
             # errors exist to deliver.
+            if classify_submission_failures and not command_invocation_started:
+                raise PodcastSubmissionNotCreatedError(exc) from exc
+            if classify_submission_failures:
+                raise PodcastSubmissionUncertainError(exc) from exc
             raise
         except ValueError as e:
+            if classify_submission_failures:
+                error_type = (
+                    PodcastSubmissionUncertainError
+                    if command_invocation_started
+                    else PodcastSubmissionNotCreatedError
+                )
+                raise error_type(e) from e
             logger.warning(f"Podcast submission rejected: {e}")
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
+            if classify_submission_failures:
+                error_type = (
+                    PodcastSubmissionUncertainError
+                    if command_invocation_started
+                    else PodcastSubmissionNotCreatedError
+                )
+                raise error_type(e) from e
             logger.error(f"Failed to submit podcast generation job: {e}")
             raise HTTPException(
                 status_code=500,
