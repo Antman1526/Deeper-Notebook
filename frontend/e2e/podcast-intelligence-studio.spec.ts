@@ -567,8 +567,10 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     const evidenceBlock = page.locator('[data-knowledge-block-id="knowledge_engine_block:evidence"]')
     await expect(evidenceBlock).toBeVisible()
     await evidenceBlock.evaluate((element) => {
+      const textNode = document.createTreeWalker(element, NodeFilter.SHOW_TEXT).nextNode()
+      if (!textNode) throw new Error('Expected the fixture block to contain selectable text.')
       const range = document.createRange()
-      range.selectNodeContents(element)
+      range.selectNodeContents(textNode)
       const selection = window.getSelection()
       selection?.removeAllRanges()
       selection?.addRange(range)
