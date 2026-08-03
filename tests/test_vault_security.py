@@ -4,6 +4,7 @@ import os
 import shutil
 import socket
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 
@@ -18,7 +19,9 @@ from deeper_notebook.vault.security import (
     VaultSecurityError,
     _is_lexically_unsafe_root,
     approve_vault_root,
+    approve_vault_root_bounded,
     classify_vault_path,
+    list_secure_candidates_bounded,
     secure_read,
 )
 
@@ -101,6 +104,53 @@ def test_approved_root_rejects_symlink_in_ancestor_chain(tmp_path: Path) -> None
     with pytest.raises(VaultSecurityError) as caught:
         approve_vault_root(linked_parent / "vault")
     assert caught.value.code == "unsafe_symlink"
+
+
+def test_bounded_root_approval_returns_a_safe_timeout_when_open_stalls(
+    vault_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def stalled_open(_root: Path | str):
+        started.set()
+        release.wait()
+        return approve_vault_root(vault_root)
+
+    monkeypatch.setattr(
+        "deeper_notebook.vault.security.approve_vault_root", stalled_open
+    )
+
+    with pytest.raises(VaultSecurityError) as caught:
+        approve_vault_root_bounded(vault_root, timeout_seconds=0.01)
+
+    assert started.is_set()
+    assert caught.value.code == "root_open_timeout"
+    release.set()
+
+
+def test_bounded_candidate_listing_returns_a_safe_timeout_when_walk_stalls(
+    vault_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def stalled_walk(_root):
+        started.set()
+        release.wait()
+        return []
+
+    monkeypatch.setattr(
+        "deeper_notebook.vault.security.list_secure_candidates", stalled_walk
+    )
+
+    with approve_vault_root(vault_root) as approved:
+        with pytest.raises(VaultSecurityError) as caught:
+            list_secure_candidates_bounded(approved, timeout_seconds=0.01)
+
+    assert started.is_set()
+    assert caught.value.code == "scan_timeout"
+    release.set()
 
 
 @pytest.mark.parametrize(

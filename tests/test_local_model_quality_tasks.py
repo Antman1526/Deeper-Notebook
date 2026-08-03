@@ -11,6 +11,34 @@ from deeper_notebook.local_models.quality_tasks import (
 )
 
 
+def test_quality_tasks_cover_every_approved_role_and_keep_speech_probes_bounded():
+    roles = {
+        "research_chat",
+        "evidence_extraction",
+        "claim_verification",
+        "editorial_writing",
+        "embedding_retrieval",
+        "vision_analysis",
+        "code_data_analysis",
+        "podcast_outline",
+        "podcast_script",
+        "speech_to_text",
+        "text_to_speech",
+    }
+
+    tasks = {role: quality_task_for_role(role) for role in roles}
+
+    assert set(tasks) == roles
+    assert all(task.role in roles for task in tasks.values())
+    assert all(task.prompt for role, task in tasks.items() if "speech" not in role)
+    assert tasks["speech_to_text"].probe_kind == "capability_identity"
+    assert tasks["text_to_speech"].probe_kind == "capability_identity"
+    assert tasks["speech_to_text"].prompt == ""
+    assert tasks["text_to_speech"].prompt == ""
+    assert tasks["speech_to_text"].maximum_probe_bytes <= 4096
+    assert tasks["text_to_speech"].maximum_probe_bytes <= 4096
+
+
 def test_quality_task_evaluates_typed_response_signals():
     task = quality_task_for_role("source_synthesis")
 

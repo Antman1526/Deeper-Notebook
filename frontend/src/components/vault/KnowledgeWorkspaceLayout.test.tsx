@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { defaultKnowledgeWorkspace } from '@/lib/api/knowledge-workspace'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import { KnowledgeWorkspaceLayout } from './KnowledgeWorkspaceLayout'
 
@@ -53,6 +54,7 @@ describe('KnowledgeWorkspaceLayout', () => {
 
   it('renders recursive right and down splits as accessible pane regions', () => {
     renderLayout()
+    expect(screen.getByRole('main', { name: 'Knowledge workspace' })).toBeInTheDocument()
     const firstPane = screen.getByRole('region', {
       name: /Knowledge pane pane-1/,
     })
@@ -82,16 +84,16 @@ describe('KnowledgeWorkspaceLayout', () => {
     useKnowledgeWorkspaceStore.getState().openTab(research)
     renderLayout()
     const panel = screen.getByRole('tabpanel')
-    const researchTab = screen.getByRole('tab', { name: 'Research' })
+    const researchTab = screen.getByRole('tab', { name: 'Read: Research' })
 
     expect(panel).toHaveAttribute('id', 'knowledge-panel-pane-1')
     expect(panel).toHaveAttribute('aria-labelledby', researchTab.id)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Plan' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Read: Plan' }))
 
     expect(panel).toHaveAttribute(
       'aria-labelledby',
-      screen.getByRole('tab', { name: 'Plan' }).id,
+      screen.getByRole('tab', { name: 'Read: Plan' }).id,
     )
   })
 
@@ -102,18 +104,21 @@ describe('KnowledgeWorkspaceLayout', () => {
       activeTabId: null,
     }
     current.replaceWorkspace({
-      version: 1,
+      ...defaultKnowledgeWorkspace(),
+      version: 2,
       activePaneId: 'pane-1',
       nextId: current.nextId,
       panes: { 'pane-1': paneWithNoActiveId },
       layout: { type: 'pane', paneId: 'pane-1' },
     })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId)
+      .toBeNull()
     const renderPane = vi.fn((pane: { activeTabId: string | null }) => (
       <div>Rendered tab {pane.activeTabId ?? 'none'}</div>
     ))
 
     render(<KnowledgeWorkspaceLayout renderPane={renderPane} />)
-    const firstTab = screen.getByRole('tab', { name: 'Plan' })
+    const firstTab = screen.getByRole('tab', { name: 'Read: Plan' })
     const tabPanel = screen.getByRole('tabpanel')
     const effectiveTabId = paneWithNoActiveId.tabs[0].id
 
@@ -229,6 +234,24 @@ describe('KnowledgeWorkspaceLayout', () => {
     )
 
     expect(useKnowledgeWorkspaceStore.getState().activePaneId).toBe('pane-1')
+  })
+
+  it('reports the current pane element and clears it on unmount', () => {
+    const onPaneElement = vi.fn()
+    const { unmount } = render(
+      <KnowledgeWorkspaceLayout
+        renderPane={(pane) => <div>Content for {pane.id}</div>}
+        onPaneElement={onPaneElement}
+      />,
+    )
+
+    const pane = screen.getByRole('region', {
+      name: /Knowledge pane pane-1/,
+    })
+    expect(onPaneElement).toHaveBeenCalledWith('pane-1', pane)
+
+    unmount()
+    expect(onPaneElement).toHaveBeenLastCalledWith('pane-1', null)
   })
 
   it('does not allow the last pane to close', () => {

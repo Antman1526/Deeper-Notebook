@@ -26,6 +26,8 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface NotesColumnProps {
   notes?: NoteResponse[]
@@ -51,6 +53,7 @@ export function NotesColumn({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
   const [exportNote, setExportNote] = useState<NoteResponse | null>(null)
+  const openPodcastReview = usePodcastStudioStore((state) => state.open)
 
   const deleteNote = useDeleteNote()
 
@@ -220,6 +223,14 @@ export function NotesColumn({
                         {note.content}
                       </p>
                     )}
+                    <div className="mt-3" onClick={(event) => event.stopPropagation()}>
+                      <TurnIntoPodcastAction
+                        selection={{ kind: 'app_note', noteId: note.id }}
+                        destination="quick"
+                        disabledReason={note.content?.trim() ? undefined : 'No readable content is available'}
+                        onOpen={openPodcastReview}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>

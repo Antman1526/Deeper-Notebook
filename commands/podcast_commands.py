@@ -3,10 +3,10 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from surreal_commands import CommandInput, CommandOutput, command
 
 from deeper_notebook.config import DATA_FOLDER
@@ -85,6 +85,12 @@ class PodcastGenerationInput(CommandInput):
     # the outline stage; the user reviews/edits it in the UI and approval
     # submits a resume_podcast command for the remaining stages.
     review_outline: bool = False
+    # Phase 2 Studio receipts. These are redacted decisions and counts only;
+    # source bodies remain in `content` and never appear in these fields.
+    selection_summary: Optional[dict[str, Any]] = None
+    selection_fingerprint: Optional[str] = None
+    editorial_brief: Optional[dict[str, Any]] = None
+    model_plan_receipts: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PodcastResumeInput(CommandInput):
@@ -320,6 +326,10 @@ async def generate_podcast_command(
             transcript=None,
             outline=None,
             transcript_segments=[],
+            selection_summary=input_data.selection_summary,
+            selection_fingerprint=input_data.selection_fingerprint,
+            editorial_brief=input_data.editorial_brief,
+            model_plan_receipts=input_data.model_plan_receipts,
         )
         await episode.save()
 

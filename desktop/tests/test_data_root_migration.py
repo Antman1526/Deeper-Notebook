@@ -60,6 +60,35 @@ def test_classifies_roots(
     assert classify_roots(canonical, legacy).state == expected
 
 
+def test_active_data_root_uses_explicit_controlled_data_root(tmp_path, monkeypatch):
+    """A caller can isolate a native runtime without changing a user profile."""
+    controlled_root = tmp_path / "controlled-runtime"
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DATA_DIR", str(controlled_root))
+
+    assert data_root.active_data_root() == controlled_root
+    assert controlled_root.is_dir()
+
+
+def test_active_data_root_rejects_controlled_root_through_symlink(tmp_path, monkeypatch):
+    target = tmp_path / "target"
+    target.mkdir()
+    redirected_parent = tmp_path / "redirected"
+    redirected_parent.symlink_to(target, target_is_directory=True)
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_DATA_DIR", str(redirected_parent / "runtime")
+    )
+
+    with pytest.raises(ValueError, match="symlink"):
+        data_root.active_data_root()
+
+
+def test_active_data_root_rejects_filesystem_root_override(monkeypatch):
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DATA_DIR", Path("/").anchor)
+
+    with pytest.raises(ValueError, match="filesystem root"):
+        data_root.active_data_root()
+
+
 def test_non_equivalent_roots_are_conflict(tmp_path):
     canonical, legacy, _ = _roots(tmp_path)
     (canonical / "config.toml").parent.mkdir(parents=True)

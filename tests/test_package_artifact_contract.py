@@ -74,6 +74,34 @@ def test_actual_frozen_source_stage_contains_both_package_trees(
     ).is_file()
 
 
+def test_standalone_frontend_root_handles_workspace_relative_build_output(
+    tmp_path: Path,
+) -> None:
+    layout = _load_module(LAYOUT_PATH, "package_layout")
+    standalone = tmp_path / "standalone"
+    frontend = standalone / ".worktrees" / "branch" / "frontend"
+    (frontend / ".next").mkdir(parents=True)
+    (frontend / "package.json").write_text("{}", encoding="utf-8")
+    (frontend / "server.js").write_text("// app", encoding="utf-8")
+    (standalone / "unrelated" / "server.js").parent.mkdir(parents=True)
+    (standalone / "unrelated" / "server.js").write_text("// ignored", encoding="utf-8")
+
+    assert layout.standalone_frontend_root(standalone) == frontend
+
+
+def test_standalone_frontend_node_modules_handles_workspace_relative_output(
+    tmp_path: Path,
+) -> None:
+    layout = _load_module(LAYOUT_PATH, "package_layout")
+    standalone = tmp_path / "standalone"
+    frontend = standalone / ".worktrees" / "branch" / "frontend"
+    dependencies = frontend / "node_modules"
+    (dependencies / "next").mkdir(parents=True)
+    (standalone / "frontend" / "node_modules" / "next").mkdir(parents=True)
+
+    assert layout.standalone_frontend_node_modules(standalone, frontend) == dependencies
+
+
 def test_ci_inspects_the_actual_pyinstaller_output() -> None:
     workflow = (ROOT / ".github/workflows/build-desktop.yml").read_text(
         encoding="utf-8"

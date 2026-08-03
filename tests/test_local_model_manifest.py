@@ -14,6 +14,95 @@ from deeper_notebook.local_models.manifest import (
 )
 
 
+def test_readiness_is_pure_and_manifest_text_never_verifies_a_model():
+    from deeper_notebook.local_models.contracts import (
+        ModelReadinessEvidence,
+        classify_model_readiness,
+    )
+
+    manifest_only = ModelReadinessEvidence(
+        file_complete=True,
+        supported_runtime=True,
+        manifest_state="installed",
+        runtime_identity_matches=True,
+        health_checked=False,
+        health_healthy=False,
+        benchmark_accepted=False,
+        symlink_trusted=True,
+    )
+    verified = ModelReadinessEvidence(
+        file_complete=True,
+        supported_runtime=True,
+        manifest_state="installed",
+        runtime_identity_matches=True,
+        health_checked=True,
+        health_healthy=True,
+        health_latency_ms=900,
+        benchmark_accepted=True,
+        symlink_trusted=True,
+    )
+
+    assert classify_model_readiness(manifest_only).readiness == "ready_unverified"
+    ready = classify_model_readiness(verified)
+    assert ready.readiness == "ready_verified"
+    assert ready.route_eligible is True
+
+
+def test_readiness_distinguishes_missing_runtime_from_runtime_identity_mismatch():
+    from deeper_notebook.local_models.contracts import (
+        ModelReadinessEvidence,
+        classify_model_readiness,
+    )
+
+    common = {
+        "file_complete": True,
+        "supported_runtime": True,
+        "manifest_state": "installed",
+        "symlink_trusted": True,
+    }
+    no_runtime = classify_model_readiness(
+        ModelReadinessEvidence(**common, runtime_configured=False)
+    )
+    mismatched_runtime = classify_model_readiness(
+        ModelReadinessEvidence(**common, runtime_configured=True)
+    )
+
+    assert no_runtime.readiness == "requires_runtime"
+    assert mismatched_runtime.readiness == "runtime_unavailable"
+    assert no_runtime.route_eligible is False
+    assert mismatched_runtime.route_eligible is False
+
+
+def test_manifest_lifecycle_state_is_explicit_and_never_proves_readiness(tmp_path):
+    from deeper_notebook.local_models.manifest import manifest_lifecycle_state
+
+    manifest = tmp_path / "manifests" / "model_inventory.md"
+    planned = load_model_manifest_from_text(
+        "planned",
+        manifest,
+    )
+    removed = load_model_manifest_from_text(
+        "removed - retired",
+        manifest,
+    )
+
+    assert manifest_lifecycle_state(planned) == "planned"
+    assert manifest_lifecycle_state(removed) == "removed"
+
+
+def load_model_manifest_from_text(status: str, manifest: Path):
+    from deeper_notebook.local_models.manifest import parse_model_manifest
+
+    return parse_model_manifest(
+        "\n".join([
+            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+            "|---|---|---|---|---|---|---|",
+            f"| Test | primary | `example/model` | `MLX/example__model` | MLX | {status} | test |",
+        ]),
+        manifest_path=manifest,
+    )[0]
+
+
 def _write_manifest(root: Path) -> Path:
     manifest = root / "manifests" / "model_inventory.md"
     manifest.parent.mkdir(parents=True)

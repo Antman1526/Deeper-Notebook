@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from desktop.config import Config
-from desktop.launcher import Supervisor
+from desktop.launcher import ResourceGovernor, Supervisor
 
 
 def make_config(tmp_path: Path) -> Config:
@@ -102,6 +102,185 @@ def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
         assert sv.frontend_url.startswith("http://127.0.0.1:")
     finally:
         sv.stop_all()
+
+
+def test_resource_governor_queues_second_heavyweight_and_releases_sidecar_reservation():
+    governor = ResourceGovernor(memory_limit_bytes=10)
+
+    assert governor.reserve("mlx-first", 6, heavyweight_mlx=True) == "reserved"
+    assert governor.reserve("speech", 2) == "reserved"
+    assert governor.reserve("mlx-second", 6, heavyweight_mlx=True) == "queued"
+    governor.release("speech")
+
+    assert governor.snapshot()["reservations"] == {"mlx-first": 6}
+    assert governor.snapshot()["queued_heavyweight_swaps"] == ["mlx-second"]
+
+
+def test_resource_governor_stops_partial_provider_after_failed_health_check():
+    governor = ResourceGovernor(memory_limit_bytes=10)
+    proc = MagicMock()
+
+    started = governor.start_provider(
+        "embed",
+        reservation_bytes=2,
+        spawn=lambda: proc,
+        health_check=lambda _proc: False,
+    )
+
+    assert started is False
+    proc.terminate.assert_called_once()
+    assert governor.snapshot()["reservations"] == {}
+
+
+def test_try_spawn_reserves_a_real_sidecar_and_cleans_it_up_after_failed_health(
+    cfg, tmp_path, monkeypatch
+):
+    sv = Supervisor(cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64")
+    proc = _alive_proc()
+    monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: False)
+
+    def spawn(_port):
+        sv._procs.append(proc)
+
+    sv._try_spawn("supervisor.llamacpp_embed", spawn, 41234)
+
+    proc.terminate.assert_called_once()
+    assert sv.resource_governor.snapshot()["reservations"] == {}
+    assert "embed" not in sv._sidecar_procs
+
+
+def test_try_spawn_releases_reservation_when_sidecar_spawn_raises(
+    cfg, tmp_path, monkeypatch
+):
+    sv = Supervisor(cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64")
+    proc = _alive_proc()
+    monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: True)
+
+    def partial_spawn(_port):
+        sv._procs.append(proc)
+        raise RuntimeError("health setup failed")
+
+    sv._try_spawn("supervisor.llamacpp_embed", partial_spawn, 41234)
+
+    proc.terminate.assert_called_once()
+    assert sv.resource_governor.snapshot()["reservations"] == {}
+
+
+def test_try_spawn_queues_a_heavyweight_mlx_chat_when_another_is_reserved(
+    cfg, tmp_path
+):
+    mlx_cfg = Config(
+        model_dir=cfg.model_dir,
+        provider="mlx",
+        default_model="",
+        surreal_user=cfg.surreal_user,
+        surreal_password=cfg.surreal_password,
+    )
+    sv = Supervisor(
+        mlx_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
+    )
+    assert sv.resource_governor.reserve(
+        "other-heavyweight", 1, heavyweight_mlx=True
+    ) == "reserved"
+    started: list[int] = []
+
+    sv._try_spawn("supervisor.llamacpp_chat", lambda port: started.append(port), 41234)
+
+    assert started == []
+    assert sv.resource_governor.snapshot()["queued_heavyweight_swaps"] == ["chat"]
+
+
+def test_restart_sidecar_replaces_its_reservation_under_a_tight_memory_limit(
+    cfg, tmp_path, monkeypatch
+):
+    tight_cfg = Config(
+        cfg.model_dir, "none", "", cfg.surreal_user, cfg.surreal_password,
+        local_model_memory_limit_bytes=1024**3,
+    )
+    sv = Supervisor(
+        tight_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
+    )
+    old, new = _alive_proc(), _alive_proc()
+    assert sv.resource_governor.reserve("embed", 1024**3) == "reserved"
+    sv._sidecar_procs["embed"] = old
+    sv._sidecar_spawn_args["embed"] = (41234, "supervisor.llamacpp_embed")
+    sv._procs = [old]
+    monkeypatch.setattr("desktop.launcher.os.getpgid", lambda _pid: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(sv, "_spawn_llamacpp_embed", lambda _port: sv._procs.append(new))
+    monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: True)
+
+    ok, _detail = sv.restart_sidecar("embed")
+
+    assert ok is True
+    old.terminate.assert_called_once()
+    assert sv._sidecar_procs["embed"] is new
+    assert sv.resource_governor.snapshot()["reservations"] == {"embed": 1024**3}
+
+
+def test_restart_sidecar_replaces_its_heavyweight_mlx_reservation(
+    cfg, tmp_path, monkeypatch
+):
+    mlx_cfg = Config(
+        cfg.model_dir, "mlx", "", cfg.surreal_user, cfg.surreal_password,
+        local_model_memory_limit_bytes=5 * 1024**3,
+    )
+    sv = Supervisor(
+        mlx_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
+    )
+    old, new = _alive_proc(), _alive_proc()
+    assert sv.resource_governor.reserve("chat", 5 * 1024**3, heavyweight_mlx=True) == "reserved"
+    sv._sidecar_procs["chat"] = old
+    sv._sidecar_spawn_args["chat"] = (41234, "supervisor.llamacpp_chat")
+    sv._procs = [old]
+    monkeypatch.setattr("desktop.launcher.os.getpgid", lambda _pid: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(sv, "_spawn_llamacpp_chat", lambda _port: sv._procs.append(new))
+    monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: True)
+
+    ok, _detail = sv.restart_sidecar("chat")
+
+    assert ok is True
+    assert sv.resource_governor.snapshot()["reservations"] == {"chat": 5 * 1024**3}
+
+
+def test_restart_sidecar_keeps_existing_tracking_when_kill_cannot_be_confirmed(
+    cfg, tmp_path, monkeypatch
+):
+    tight_cfg = Config(
+        cfg.model_dir, "none", "", cfg.surreal_user, cfg.surreal_password,
+        local_model_memory_limit_bytes=1024**3,
+    )
+    sv = Supervisor(
+        tight_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
+    )
+    old = _alive_proc()
+    old.wait.side_effect = subprocess.TimeoutExpired("embed", 5)
+    assert sv.resource_governor.reserve("embed", 1024**3) == "reserved"
+    sv._sidecar_procs["embed"] = old
+    sv._sidecar_spawn_args["embed"] = (41234, "supervisor.llamacpp_embed")
+    sv._procs = [old]
+    pgids = iter((41234, OSError("missing process group")))
+
+    def getpgid(_pid):
+        value = next(pgids)
+        if isinstance(value, OSError):
+            raise value
+        return value
+
+    monkeypatch.setattr(
+        "desktop.launcher.os.getpgid",
+        getpgid,
+    )
+    spawned: list[int] = []
+    monkeypatch.setattr(sv, "_spawn_llamacpp_embed", lambda port: spawned.append(port))
+
+    ok, detail = sv.restart_sidecar("embed")
+
+    assert ok is False
+    assert "could not be confirmed" in detail
+    assert spawned == []
+    assert sv._sidecar_procs["embed"] is old
+    assert sv._procs == [old]
+    assert sv.resource_governor.snapshot()["reservations"] == {"embed": 1024**3}
 
 
 def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
@@ -285,6 +464,8 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
         assert sv.session_env["SURREAL_URL"].startswith("ws://127.0.0.1:")
         assert sv.session_env["SURREAL_USER"] == "root"
         assert sv.session_env["SURREAL_PASSWORD"] == "A" * 24
+        assert sv.session_env["DEEPER_NOTEBOOK_MODEL_DIR"] == str(cfg.model_dir)
+        assert sv.session_env["DEEPER_NOTEBOOK_COMPUTE_PROFILE"] == "balanced"
         # v0.8.4 — CRITICAL: DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL must be
         # in session_env so the API child can probe llama.cpp sidecar
         # health. Without this, v0.8.0 Phase 3 smart routing's

@@ -145,10 +145,22 @@ def _copy_to_writable(frontend_dir: Path) -> Path:
     user_dir = active_data_root() / WRITABLE_COPY_NAME
     src_sentinel = frontend_dir / "server.js"
     dest_sentinel = user_dir / "server.js"
+    # server.js itself often remains byte-for-byte identical across a frontend
+    # dependency upgrade.  A previous runtime copy can therefore look current
+    # by mtime while missing newly packaged dependencies such as ``next``.
+    # Treat the traced Next package as a second upgrade sentinel when present.
+    src_next = frontend_dir / "node_modules" / "next" / "package.json"
+    dest_next = user_dir / "node_modules" / "next" / "package.json"
 
     needs_copy = (
         not dest_sentinel.exists()
         or src_sentinel.stat().st_mtime > dest_sentinel.stat().st_mtime
+        or (src_next.exists() and not dest_next.exists())
+        or (
+            src_next.exists()
+            and dest_next.exists()
+            and src_next.stat().st_mtime > dest_next.stat().st_mtime
+        )
     )
     if needs_copy:
         log.info(

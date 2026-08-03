@@ -19,39 +19,28 @@
 import { useEffect, useState } from 'react'
 
 import { deeperNotebookFetch } from '@/lib/api/deeper-notebook'
-import { readStoredTheme, writeStoredTheme } from '@/lib/theme-storage'
+import {
+  readStoredTheme,
+  THEME_SELECTION_CHANGE_EVENT,
+  writeStoredTheme,
+} from '@/lib/theme-storage'
+import {
+  DEFAULT_THEME_ID,
+  THEME_CATALOG,
+  THEME_GROUPS,
+  isThemeId,
+  type ThemeId,
+} from '@/lib/themes/catalog'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Palette, Check } from 'lucide-react'
-
-// Kept in lockstep with desktop/window.py:_THEMES and the theme router.
-// `accent` is each theme's primary/accent hue — rendered as a second dot in
-// the swatch so the (now many) dark themes are distinguishable at a glance.
-const DN_THEMES = [
-  { id: 'light-blue', label: 'Light Blue', dark: false, swatch: '#FFFFFF', accent: '#2D7FF9' },
-  { id: 'system', label: 'System', dark: false, swatch: '#FFFFFF', accent: '#5AB1FF' },
-  { id: 'solarized-light', label: 'Solarized Light', dark: false, swatch: '#FDF6E3', accent: '#268BD2' },
-  { id: 'github-light', label: 'GitHub Light', dark: false, swatch: '#FFFFFF', accent: '#0969DA' },
-  { id: 'paper', label: 'Paper', dark: false, swatch: '#FBF8F1', accent: '#8B5A2B' },
-  { id: 'catppuccin-latte', label: 'Catppuccin Latte', dark: false, swatch: '#EFF1F5', accent: '#8839EF' },
-  { id: 'rose-pine-dawn', label: 'Rosé Pine Dawn', dark: false, swatch: '#FAF4ED', accent: '#907AA9' },
-  { id: 'dark', label: 'Dark', dark: true, swatch: '#0F1419', accent: '#5AB1FF' },
-  { id: 'midnight-aurora', label: 'Midnight Aurora', dark: true, swatch: '#0D0E1D', accent: '#6C7BFF' },
-  { id: 'tokyo-night', label: 'Tokyo Night', dark: true, swatch: '#1A1B26', accent: '#7AA2F7' },
-  { id: 'catppuccin-mocha', label: 'Catppuccin Mocha', dark: true, swatch: '#1E1E2E', accent: '#CBA6F7' },
-  { id: 'rose-pine', label: 'Rosé Pine', dark: true, swatch: '#191724', accent: '#C4A7E7' },
-  { id: 'one-dark', label: 'One Dark', dark: true, swatch: '#282C34', accent: '#61AFEF' },
-  { id: 'gruvbox-dark', label: 'Gruvbox Dark', dark: true, swatch: '#282828', accent: '#FABD2F' },
-  { id: 'solarized-dark', label: 'Solarized Dark', dark: true, swatch: '#002B36', accent: '#2AA198' },
-  { id: 'dracula', label: 'Dracula', dark: true, swatch: '#282A36', accent: '#BD93F9' },
-  { id: 'nord', label: 'Nord', dark: true, swatch: '#2E3440', accent: '#88C0D0' },
-]
 
 interface ThemeBridge {
   setTheme?: (theme: string) => void
@@ -69,36 +58,62 @@ interface ThemeSwitcherProps {
 }
 
 export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
-  const [activeTheme, setActiveTheme] = useState<string>('light-blue')
+  const [activeTheme, setActiveTheme] = useState<ThemeId>(DEFAULT_THEME_ID)
 
-  // Read the current theme from <html data-theme="..."> on mount.
-  // window.DN.setTheme has already set that attribute by the time React
-  // mounts — fallback to localStorage (preserves user choice across hard
-  // reloads that may briefly race the injection), then to the API.
+  // The persisted catalog selection is the authority for the picker. The
+  // document attribute is the resolved visual palette (for example, dark
+  // when the persisted selection is system), so only use it as a fallback
+  // when storage is unavailable or has no valid selection.
   useEffect(() => {
-    const current = document.documentElement.dataset.theme
-    if (current) {
-      setActiveTheme(current)
-      return
+    const handleCanonicalThemeChange = () => {
+      try {
+        const cached = readStoredTheme(localStorage)
+        if (cached && isThemeId(cached)) setActiveTheme(cached)
+      } catch {
+        // Storage may be disabled; retain the current picker state.
+      }
     }
-    // v0.5.9 — localStorage fallback so the dropdown doesn't flicker to
-    // the default while waiting for the API response.
+    window.addEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
+
+    let initialized = false
     try {
       const cached = readStoredTheme(localStorage)
-      if (cached) {
+      if (cached && isThemeId(cached)) {
         setActiveTheme(cached)
-        return
+        initialized = true
       }
     } catch {
       /* localStorage disabled — fall through to API */
     }
-    deeperNotebookFetch('/api/deeper-notebook/theme')
-      .then((r) => r.json())
-      .then((d) => setActiveTheme(d.theme || 'light-blue'))
-      .catch(() => {})
+    if (!initialized) {
+      const current = document.documentElement.dataset.theme
+      if (current && isThemeId(current)) {
+        setActiveTheme(current)
+        initialized = true
+      }
+    }
+    if (!initialized) {
+      deeperNotebookFetch('/api/deeper-notebook/theme')
+        .then((r) => r.json())
+        .then((data) => {
+          try {
+            const cached = readStoredTheme(localStorage)
+            if (cached && isThemeId(cached)) {
+              setActiveTheme(cached)
+              return
+            }
+          } catch {
+            // Storage may be disabled; use the API response below.
+          }
+          setActiveTheme(isThemeId(data.theme) ? data.theme : DEFAULT_THEME_ID)
+        })
+        .catch(() => {})
+    }
+
+    return () => window.removeEventListener(THEME_SELECTION_CHANGE_EVENT, handleCanonicalThemeChange)
   }, [])
 
-  const handleSelect = (themeId: string) => {
+  const handleSelect = (themeId: ThemeId) => {
     setActiveTheme(themeId)
     // v0.5.9 — also write localStorage so a subsequent navigation that races
     // the injection still shows the right swatch in the dropdown.
@@ -115,9 +130,6 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
       }).catch(() => {})
     }
   }
-
-  const lightThemes = DN_THEMES.filter((t) => !t.dark)
-  const darkThemes = DN_THEMES.filter((t) => t.dark)
 
   return (
     <DropdownMenu>
@@ -136,46 +148,44 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
           <span className="sr-only">Switch theme</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[180px]">
-        {lightThemes.map((t) => (
-          <DropdownMenuItem
-            key={t.id}
-            onClick={() => handleSelect(t.id)}
-            className="gap-2"
-          >
-            <span
-              className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border"
-              style={{ background: t.swatch, borderColor: 'var(--border)' }}
-            >
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ background: t.accent }}
-              />
-            </span>
-            <span className="flex-1">{t.label}</span>
-            {activeTheme === t.id && <Check className="h-3 w-3" />}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        {darkThemes.map((t) => (
-          <DropdownMenuItem
-            key={t.id}
-            onClick={() => handleSelect(t.id)}
-            className="gap-2"
-          >
-            <span
-              className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border"
-              style={{ background: t.swatch, borderColor: '#444' }}
-            >
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ background: t.accent }}
-              />
-            </span>
-            <span className="flex-1">{t.label}</span>
-            {activeTheme === t.id && <Check className="h-3 w-3" />}
-          </DropdownMenuItem>
-        ))}
+      <DropdownMenuContent align="end" className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] min-w-56">
+        {THEME_GROUPS.map((group, groupIndex) => {
+          const themes = THEME_CATALOG.filter(theme => theme.group === group.id)
+
+          return (
+            <div key={group.id}>
+              {groupIndex > 0 && <DropdownMenuSeparator />}
+              <DropdownMenuLabel className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                {group.label}
+              </DropdownMenuLabel>
+              {themes.map(theme => (
+                <DropdownMenuItem
+                  key={theme.id}
+                  onClick={() => handleSelect(theme.id)}
+                  className="gap-2"
+                  aria-current={activeTheme === theme.id ? 'true' : undefined}
+                >
+                  <span
+                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+                    style={{
+                      background: theme.preview.canvas,
+                      borderColor: theme.preview.border,
+                    }}
+                    aria-hidden="true"
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ background: theme.preview.primary }}
+                    />
+                  </span>
+                  <span className="flex-1">{theme.label}</span>
+                  {activeTheme === theme.id && <span className="sr-only">Current theme</span>}
+                  {activeTheme === theme.id && <Check className="h-3 w-3" aria-hidden="true" />}
+                </DropdownMenuItem>
+              ))}
+            </div>
+          )
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   )

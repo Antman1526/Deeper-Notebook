@@ -15,6 +15,56 @@ import desktop.window as window_module
 from desktop.window import _THEMES, _theme_injection_js, _theme_tokens
 
 
+EXPECTED_THEME_IDS = {
+    "research-core-dark", "research-core-light", "deep-ocean", "graphite-lab",
+    "arctic-research", "archive-paper", "high-contrast-dark", "high-contrast-light",
+    "light-blue", "system", "solarized-light", "github-light", "paper",
+    "catppuccin-latte", "rose-pine-dawn", "dark", "midnight-aurora",
+    "tokyo-night", "catppuccin-mocha", "rose-pine", "one-dark",
+    "gruvbox-dark", "solarized-dark", "dracula", "nord",
+}
+
+
+def test_theme_catalog_contains_exact_research_core_os_ids():
+    assert set(_THEMES) == EXPECTED_THEME_IDS
+
+
+@pytest.mark.parametrize("theme_id", list(_THEMES))
+def test_every_theme_exposes_research_core_semantic_tokens(theme_id):
+    tokens = _theme_tokens(theme_id)
+    required = {
+        "--dn-canvas", "--dn-panel", "--dn-panel-raised", "--dn-separator",
+        "--dn-focus", "--dn-selection", "--dn-evidence", "--dn-warning",
+        "--dn-editable", "--dn-read-only", "--dn-model-local", "--dn-model-cloud",
+        "--dn-graph-node", "--dn-graph-edge", "--dn-graph-selected",
+    }
+    assert required <= set(tokens)
+
+
+@pytest.mark.parametrize("theme_id", list(_THEMES))
+def test_focus_ring_has_three_to_one_contrast_against_background(theme_id):
+    tokens = _theme_tokens(theme_id)
+    assert _contrast_ratio(tokens["--ring"], tokens["--background"]) >= 3.0
+
+
+@pytest.mark.parametrize(
+    ("theme_id", "foreground_token"),
+    [
+        (theme_id, foreground_token)
+        for theme_id in _THEMES
+        for foreground_token in ("--primary-foreground", "--accent-foreground")
+    ],
+)
+def test_primary_and_accent_foregrounds_meet_wcag_aa(theme_id, foreground_token):
+    tokens = _theme_tokens(theme_id)
+    color_token = "--primary" if foreground_token == "--primary-foreground" else "--accent"
+    ratio = _contrast_ratio(tokens[foreground_token], tokens[color_token])
+    assert ratio >= 4.5, (
+        f"{theme_id}: {foreground_token}={tokens[foreground_token]} "
+        f"{color_token}={tokens[color_token]} contrast={ratio:.2f}, expected >= 4.5"
+    )
+
+
 @pytest.mark.parametrize("theme_id", list(_THEMES.keys()))
 def test_every_theme_produces_27_shadcn_tokens(theme_id):
     """Every theme must produce the full shadcn token set so no upstream

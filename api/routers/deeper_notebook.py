@@ -24,6 +24,8 @@ router = APIRouter()
 # Kept in lockstep with desktop/window.py:_THEMES — adding a theme requires
 # updating both. The UI shouldn't accept an arbitrary string.
 _VALID_THEMES = {
+    "research-core-dark", "research-core-light", "deep-ocean", "graphite-lab",
+    "arctic-research", "archive-paper", "high-contrast-dark", "high-contrast-light",
     "light-blue", "system", "solarized-light", "github-light", "paper",
     "dark", "solarized-dark", "dracula", "nord",
     # v0.8.72 — premium theme pack (must mirror desktop/window.py:_THEMES
@@ -75,7 +77,7 @@ async def get_theme() -> ThemeResponse:
     except Exception:
         # Config file unreadable / first-run before disk write — return
         # the default rather than 500'ing the UI.
-        return ThemeResponse(theme="light-blue", available=sorted(_VALID_THEMES))
+        return ThemeResponse(theme="research-core-dark", available=sorted(_VALID_THEMES))
     return ThemeResponse(theme=cfg.theme, available=sorted(_VALID_THEMES))
 
 

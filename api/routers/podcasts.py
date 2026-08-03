@@ -1,8 +1,10 @@
 import asyncio
+import hashlib
+import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -12,9 +14,19 @@ from api.podcast_service import (
     PodcastGenerationResponse,
     PodcastService,
 )
+from api.schemas.podcast_studio import (
+    PodcastReadinessRequest,
+    PodcastReadinessResponse,
+    PodcastSelectionPreviewRequest,
+    PodcastSelectionPreviewResponse,
+    PodcastStageModelPlanResponse,
+    PodcastStudioSubmitRequest,
+    PodcastStudioSubmitResponse,
+)
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from deeper_notebook.config import DATA_FOLDER
 from deeper_notebook.database.repository import repo_query
+from deeper_notebook.domain.notebook import Note, Notebook, Source
 from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 from deeper_notebook.podcasts import file_uri_to_local_path
 from deeper_notebook.podcasts.models import (
@@ -27,8 +39,406 @@ from deeper_notebook.podcasts.profile_names import (
     CANONICAL_LOCAL_EPISODE_PROFILE,
     select_existing_episode_profile_name,
 )
+from deeper_notebook.podcasts.selection_contracts import (
+    AppNoteSelection,
+    AppSourceSelection,
+    KnowledgeCollectionSelection,
+    NotebookSelection,
+)
+from deeper_notebook.podcasts.selection_service import (
+    AppNotebookPodcastSelectionResolver,
+    AppNotePodcastSelectionResolver,
+    AppSourcePodcastSelectionResolver,
+    CompositePodcastSelectionResolver,
+    KnowledgeEnginePodcastSelectionResolver,
+    KnowledgeNavigationPodcastSelectionResolver,
+    PodcastSelectionPreparation,
+    PodcastSelectionService,
+)
 
 router = APIRouter()
+
+
+_PODCAST_SUBMISSION_LOCKS: dict[str, asyncio.Lock] = {}
+_PODCAST_SUBMISSION_LOCKS_GUARD = asyncio.Lock()
+_PODCAST_SUBMISSION_RESULTS: dict[str, tuple[str, PodcastStudioSubmitResponse]] = {}
+
+
+async def _podcast_submission_lock(idempotency_key: str) -> asyncio.Lock:
+    async with _PODCAST_SUBMISSION_LOCKS_GUARD:
+        lock = _PODCAST_SUBMISSION_LOCKS.get(idempotency_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _PODCAST_SUBMISSION_LOCKS[idempotency_key] = lock
+        return lock
+
+
+def _submission_request_digest(payload: PodcastStudioSubmitRequest) -> str:
+    """Bind an idempotency key to a source-body-free confirmed request."""
+    encoded = json.dumps(
+        payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _selection_summary(preview: PodcastSelectionPreviewResponse) -> dict[str, object]:
+    """Persist source-body-free selection counts, never titles or locators."""
+    included_entries = [entry for entry in preview.entries if entry.state == "included"]
+    authority_counts: dict[str, int] = {}
+    for entry in included_entries:
+        authority_counts[entry.authority_kind] = (
+            authority_counts.get(entry.authority_kind, 0) + 1
+        )
+    return {
+        "version": 1,
+        "total_count": len(preview.entries),
+        "included_count": len(included_entries),
+        "authority_counts": authority_counts,
+    }
+
+
+def _redacted_model_plan_receipts(
+    stage_plans: list[PodcastStageModelPlanResponse],
+) -> list[dict[str, object]]:
+    """Keep planner decisions without persisting model identifiers or paths."""
+    receipts: list[dict[str, object]] = []
+    for plan in stage_plans:
+        receipt: dict[str, object] = {
+            "version": 1,
+            "role": plan.role,
+            "outcome": plan.outcome,
+            "reason": plan.reason,
+        }
+        if plan.provider is not None:
+            receipt["provider"] = plan.provider
+        if plan.resource_tier is not None:
+            receipt["resource_tier"] = plan.resource_tier
+        if plan.selection_source is not None:
+            receipt["selection_source"] = plan.selection_source
+        receipts.append(receipt)
+    return receipts
+
+
+def _podcast_selection_engine(request: Request):
+    """Return only the read projection required for a podcast preview."""
+    engine = getattr(request.app.state, "knowledge_engine_service", None)
+    if engine is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "podcast_selection_unavailable"},
+        )
+    if not callable(getattr(engine, "get_document", None)):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "podcast_selection_unavailable"},
+        )
+    return engine
+
+
+def _podcast_notebook_loader(request: Request):
+    """Use the app context boundary, with an app-state hook for isolated tests."""
+    configured_loader = getattr(request.app.state, "podcast_notebook_loader", None)
+    return configured_loader if callable(configured_loader) else Notebook.get
+
+
+def _podcast_note_loader(request: Request):
+    configured_loader = getattr(request.app.state, "podcast_note_loader", None)
+    return configured_loader if callable(configured_loader) else Note.get
+
+
+def _podcast_source_loader(request: Request):
+    configured_loader = getattr(request.app.state, "podcast_source_loader", None)
+    return configured_loader if callable(configured_loader) else Source.get
+
+
+def _podcast_navigation_service(request: Request):
+    navigation = getattr(request.app.state, "knowledge_navigation_service", None)
+    return navigation if callable(getattr(navigation, "get_bookmark", None)) else None
+
+
+def _podcast_selection_service(
+    request: Request, payload: PodcastSelectionPreviewRequest
+) -> PodcastSelectionService:
+    resolvers = [
+        AppNotebookPodcastSelectionResolver(
+            notebook_loader=_podcast_notebook_loader(request)
+        ),
+        AppNotePodcastSelectionResolver(note_loader=_podcast_note_loader(request)),
+        AppSourcePodcastSelectionResolver(
+            source_loader=_podcast_source_loader(request)
+        ),
+    ]
+    if any(
+        not isinstance(
+            selection, (NotebookSelection, AppNoteSelection, AppSourceSelection)
+        )
+        for selection in payload.selections
+    ):
+        engine_resolver = KnowledgeEnginePodcastSelectionResolver(
+            engine=_podcast_selection_engine(request)
+        )
+        resolvers.append(engine_resolver)
+        if any(
+            isinstance(selection, KnowledgeCollectionSelection)
+            and selection.collection_kind in {"bookmark", "folder", "workspace"}
+            for selection in payload.selections
+        ):
+            navigation = _podcast_navigation_service(request)
+            if navigation is not None:
+                resolvers.insert(
+                    0,
+                    KnowledgeNavigationPodcastSelectionResolver(
+                        navigation=navigation, engine_resolver=engine_resolver
+                    ),
+                )
+    return PodcastSelectionService(
+        resolver=CompositePodcastSelectionResolver(resolvers=tuple(resolvers))
+    )
+
+
+async def _podcast_selection_preparation(
+    request: Request, payload: PodcastSelectionPreviewRequest
+) -> PodcastSelectionPreparation:
+    return await _podcast_selection_service(request, payload).prepare(
+        payload.selections
+    )
+
+
+def _stage_plan_response(plan) -> PodcastStageModelPlanResponse:
+    return PodcastStageModelPlanResponse(
+        role=plan.role,
+        outcome=plan.outcome,
+        model_id=plan.selected_model_id,
+        provider=plan.selected_provider,
+        resource_tier=plan.resource_tier,
+        selection_source=plan.selection_source,
+        reason=plan.route_reason,
+        blocked_reason=plan.blocked_reason,
+    )
+
+
+def _podcast_stage_plans(
+    request: Request,
+    *,
+    included_characters: int,
+    execution_policy: str,
+    compute_profile: str,
+    include_transcription: bool,
+) -> list[PodcastStageModelPlanResponse]:
+    from deeper_notebook.local_models.contracts import RouteRequest
+    from deeper_notebook.local_models.planner import plan_model_route
+
+    candidates = list(getattr(request.app.state, "local_model_route_candidates", ()))
+    text_context_tokens = max(1, (included_characters + 3) // 4)
+    roles: list[tuple[str, tuple[str, ...], bool]] = [
+        ("podcast_outline", ("text",), True),
+        ("podcast_script", ("text",), False),
+        ("text_to_speech", ("audio",), False),
+    ]
+    if include_transcription:
+        roles.append(("speech_to_text", ("audio",), False))
+    return [
+        _stage_plan_response(
+            plan_model_route(
+                candidates,
+                RouteRequest(
+                    role=role,
+                    required_context_tokens=(
+                        text_context_tokens if role != "text_to_speech" else 0
+                    ),
+                    modalities=modalities,
+                    requires_structured_output=requires_structured_output,
+                    execution_policy=execution_policy,
+                    compute_profile=compute_profile,
+                ),
+            )
+        )
+        for role, modalities, requires_structured_output in roles
+    ]
+
+
+@router.post(
+    "/podcasts/selection/preview",
+    response_model=PodcastSelectionPreviewResponse,
+)
+async def preview_podcast_selection(
+    request: Request,
+    payload: PodcastSelectionPreviewRequest,
+) -> PodcastSelectionPreviewResponse:
+    """Resolve references for review without starting a model or source mutation."""
+    try:
+        preview = (await _podcast_selection_preparation(request, payload)).preview
+        return PodcastSelectionPreviewResponse.model_validate(preview.model_dump())
+    except HTTPException:
+        raise
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "podcast_selection_not_found"},
+        ) from None
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "podcast_selection_unavailable"},
+        ) from None
+    except Exception as exc:
+        logger.warning("Podcast selection preview unavailable ({})", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "podcast_selection_unavailable"},
+        ) from None
+
+
+@router.post("/podcasts/readiness", response_model=PodcastReadinessResponse)
+async def podcast_readiness(
+    request: Request,
+    payload: PodcastReadinessRequest,
+) -> PodcastReadinessResponse:
+    """Inspect selection and local planner readiness without starting production."""
+    try:
+        preparation = await _podcast_selection_preparation(request, payload)
+        preview = PodcastSelectionPreviewResponse.model_validate(
+            preparation.preview.model_dump()
+        )
+        stage_plans = _podcast_stage_plans(
+            request,
+            included_characters=preparation.preview.included_characters,
+            execution_policy=payload.execution_policy,
+            compute_profile=payload.compute_profile,
+            include_transcription=payload.include_transcription,
+        )
+        planner_blocked = any(plan.outcome != "ready" for plan in stage_plans)
+        blocked_reasons = list(preparation.preview.blocked_reasons)
+        if planner_blocked:
+            blocked_reasons.append("podcast_stage_route_blocked")
+        return PodcastReadinessResponse(
+            preview=preview,
+            stage_plans=stage_plans,
+            ready=preview.current_worker_eligible and not planner_blocked,
+            blocked_reasons=blocked_reasons,
+        )
+    except HTTPException:
+        raise
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "podcast_selection_not_found"},
+        ) from None
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "podcast_readiness_unavailable"},
+        ) from None
+    except Exception as exc:
+        logger.warning("Podcast readiness unavailable ({})", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "podcast_readiness_unavailable"},
+        ) from None
+
+
+@router.post(
+    "/podcasts/studio/submit",
+    response_model=PodcastStudioSubmitResponse,
+)
+async def submit_podcast_studio(
+    request: Request,
+    payload: PodcastStudioSubmitRequest,
+) -> PodcastStudioSubmitResponse:
+    """Submit only a fresh, confirmed, locally-routable server-side selection."""
+    try:
+        preparation = await _podcast_selection_preparation(request, payload)
+        preview = preparation.preview
+        if payload.selection_fingerprint != preview.selection_fingerprint:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "podcast_selection_changed"},
+            )
+        if preview.requires_batch_engine:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"code": "podcast_batch_engine_required"},
+            )
+        if not preview.current_worker_eligible:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"code": "podcast_selection_not_ready"},
+            )
+        stage_plans = _podcast_stage_plans(
+            request,
+            included_characters=preview.included_characters,
+            execution_policy=payload.execution_policy,
+            compute_profile=payload.compute_profile,
+            include_transcription=payload.include_transcription,
+        )
+        if any(plan.outcome != "ready" for plan in stage_plans):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"code": "podcast_stage_route_blocked"},
+            )
+        request_digest = _submission_request_digest(payload)
+        lock = await _podcast_submission_lock(payload.idempotency_key)
+        async with lock:
+            cached = _PODCAST_SUBMISSION_RESULTS.get(payload.idempotency_key)
+            if cached is not None:
+                cached_digest, cached_response = cached
+                if cached_digest != request_digest:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail={"code": "podcast_idempotency_conflict"},
+                    )
+                return cached_response
+            job_id = await PodcastService.submit_generation_job(
+                episode_profile_name=payload.episode_profile,
+                speaker_profile_name=payload.speaker_profile,
+                episode_name=payload.episode_name,
+                content=preparation.content,
+                mode=payload.mode,
+                custom_prompt=payload.custom_prompt,
+                episode_length=payload.episode_length,
+                review_outline=payload.review_outline,
+                selection_summary=_selection_summary(
+                    PodcastSelectionPreviewResponse.model_validate(preview.model_dump())
+                ),
+                selection_fingerprint=preview.selection_fingerprint,
+                editorial_brief=(
+                    payload.editorial_brief.model_dump(mode="json")
+                    if payload.editorial_brief is not None
+                    else None
+                ),
+                model_plan_receipts=_redacted_model_plan_receipts(stage_plans),
+            )
+            response = PodcastStudioSubmitResponse(
+                job_id=job_id,
+                status="submitted",
+                message="Podcast generation accepted after confirmation.",
+                episode_profile=payload.episode_profile,
+                episode_name=payload.episode_name,
+                mode=payload.mode,
+            )
+            _PODCAST_SUBMISSION_RESULTS[payload.idempotency_key] = (
+                request_digest,
+                response,
+            )
+            return response
+    except HTTPException:
+        raise
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "podcast_selection_not_found"},
+        ) from None
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "podcast_submission_invalid"},
+        ) from None
+    except Exception as exc:
+        logger.warning("Podcast Studio submission unavailable ({})", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "podcast_submission_unavailable"},
+        ) from None
 
 
 # v0.8.70 — per-episode retry serialization. The retry handler reads the
@@ -84,6 +494,12 @@ class PodcastEpisodeResponse(BaseModel):
     # v0.8.68 — per-stage progress / outline-review state (see
     # GENERATION_STAGES in deeper_notebook/podcasts/models.py).
     generation_stage: Optional[str] = None
+    # Phase 2 Studio receipt. It contains aggregate counts and planner
+    # decisions only; canonical selected source content is never returned here.
+    selection_summary: Optional[dict[str, Any]] = None
+    selection_fingerprint: Optional[str] = None
+    editorial_brief: Optional[dict[str, Any]] = None
+    model_plan_receipts: list[dict[str, Any]] = Field(default_factory=list)
 
 
 def _resolve_audio_path(audio_file: str) -> Optional[Path]:
@@ -285,6 +701,10 @@ async def list_podcast_episodes(
                     job_status=job_status,
                     error_message=error_message,
                     generation_stage=getattr(episode, "generation_stage", None),
+                    selection_summary=getattr(episode, "selection_summary", None),
+                    selection_fingerprint=getattr(episode, "selection_fingerprint", None),
+                    editorial_brief=getattr(episode, "editorial_brief", None),
+                    model_plan_receipts=getattr(episode, "model_plan_receipts", []),
                 )
             )
 
@@ -361,6 +781,10 @@ async def get_podcast_episode(episode_id: str):
             job_status=job_status,
             error_message=error_message,
             generation_stage=getattr(episode, "generation_stage", None),
+            selection_summary=getattr(episode, "selection_summary", None),
+            selection_fingerprint=getattr(episode, "selection_fingerprint", None),
+            editorial_brief=getattr(episode, "editorial_brief", None),
+            model_plan_receipts=getattr(episode, "model_plan_receipts", []),
         )
 
     except HTTPException:
@@ -557,6 +981,10 @@ async def _retry_podcast_episode_locked(episode_id: str):
                 getattr(episode, "custom_prompt", None)
                 or getattr(episode, "briefing_suffix", None)
             ),
+            selection_summary=getattr(episode, "selection_summary", None),
+            selection_fingerprint=getattr(episode, "selection_fingerprint", None),
+            editorial_brief=getattr(episode, "editorial_brief", None),
+            model_plan_receipts=getattr(episode, "model_plan_receipts", []),
         )
 
         return {"job_id": job_id, "message": "Retry submitted successfully"}

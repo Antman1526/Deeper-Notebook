@@ -67,7 +67,7 @@ const SUBSYSTEM_LABEL_KEYS: Record<SubsystemKey, string> = {
   command_registry: 'setupWizard.subsystems.command_registry',
 }
 
-export const WIZARD_COMPLETED_KEY = 'wizard_completed'
+const WIZARD_COMPLETED_KEY = 'wizard_completed'
 
 function markWizardCompleted() {
   if (typeof window === 'undefined') return

@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone, tzinfo
 
 import pytest
 
 from deeper_notebook.database import async_migrate
+
+
+class _UndefinedOffsetTimezone(tzinfo):
+    def utcoffset(self, _value):
+        return None
+
+    def dst(self, _value):
+        return None
 
 
 def test_canonical_title_key_matches_projection_and_migration_semantics():
@@ -22,17 +31,32 @@ def test_discovered_migration_33_carries_numeric_hook_identity():
     assert downs[32].version == 33
 
 
-def test_migration_33_schema_phase_enters_updated_preservation_mode():
+def test_migration_33_schema_phase_enters_explicit_timestamp_carriage_mode():
     ups, _downs = async_migrate.AsyncMigrationManager._discover_migrations()
 
-    assert (
+    note_preservation = (
         "DEFINE FIELD OVERWRITE updated ON note "
-        "DEFAULT time::now() VALUE $before OR time::now()"
-    ) in ups[32].sql
-    assert (
+        "DEFAULT time::now() VALUE $before OR time::now();"
+    )
+    note_passthrough = (
+        "DEFINE FIELD IF NOT EXISTS updated ON note DEFAULT time::now();"
+    )
+    link_preservation = (
         "DEFINE FIELD OVERWRITE updated ON TABLE note_link TYPE datetime "
-        "DEFAULT time::now() VALUE $before OR time::now()"
-    ) in ups[32].sql
+        "DEFAULT time::now() VALUE $before OR time::now();"
+    )
+    link_passthrough = (
+        "DEFINE FIELD IF NOT EXISTS updated ON TABLE note_link TYPE datetime "
+        "DEFAULT time::now();"
+    )
+    assert ups[32].sql.index(note_preservation) < ups[32].sql.index(note_passthrough)
+    assert ups[32].sql.index(link_preservation) < ups[32].sql.index(link_passthrough)
+    assert ups[32].sql.index(
+        "REMOVE FIELD IF EXISTS updated ON note;"
+    ) < ups[32].sql.index(note_passthrough)
+    assert ups[32].sql.index(
+        "REMOVE FIELD IF EXISTS updated ON TABLE note_link;"
+    ) < ups[32].sql.index(link_passthrough)
 
 
 @pytest.mark.asyncio
@@ -113,9 +137,15 @@ async def test_backfill_treats_database_error_strings_as_hook_failure():
         selected = False
 
         async def query(self, statement, _variables=None):
-            if "SELECT id, title FROM note" in statement and not self.selected:
+            if "SELECT id, title, updated FROM note" in statement and not self.selected:
                 self.selected = True
-                return [{"id": "note:old", "title": "Old"}]
+                return [
+                    {
+                        "id": "note:old",
+                        "title": "Old",
+                        "updated": datetime(2026, 7, 27, tzinfo=timezone.utc),
+                    }
+                ]
             if "FOR $item IN $items" in statement:
                 return "synthetic database error"
             return []
@@ -145,12 +175,12 @@ async def test_backfill_selects_only_none_keys_not_completed_empty_keys():
     note_select = next(
         statement
         for statement in connection.statements
-        if "SELECT id, title FROM note" in statement
+        if "SELECT id, title, updated FROM note" in statement
     )
     link_select = next(
         statement
         for statement in connection.statements
-        if "SELECT id, target_text FROM note_link" in statement
+        if "SELECT id, target_text, updated FROM note_link" in statement
     )
     assert "title_key = NONE" in note_select
     assert "title_key = ''" not in note_select
@@ -159,7 +189,7 @@ async def test_backfill_selects_only_none_keys_not_completed_empty_keys():
 
 
 @pytest.mark.asyncio
-async def test_note_key_batch_is_fixed_transaction_and_hook_restores_updated_ddl():
+async def test_note_key_batch_is_fixed_transaction_and_hook_restores_link_updated_ddl():
     from deeper_notebook.database.migration_33_vault_backfill import (
         run_vault_migration_33_backfill,
     )
@@ -167,12 +197,19 @@ async def test_note_key_batch_is_fixed_transaction_and_hook_restores_updated_ddl
     class Connection:
         selected = False
         statements: list[tuple[str, dict | None]] = []
+        historical_updated = datetime(2026, 7, 27, 12, 34, tzinfo=timezone.utc)
 
         async def query(self, statement, variables=None):
             self.statements.append((statement, variables))
-            if "SELECT id, title FROM note" in statement and not self.selected:
+            if "SELECT id, title, updated FROM note" in statement and not self.selected:
                 self.selected = True
-                return [{"id": "note:old", "title": "Old"}]
+                return [
+                    {
+                        "id": "note:old",
+                        "title": "Old",
+                        "updated": self.historical_updated,
+                    }
+                ]
             if "BEGIN TRANSACTION;" in statement:
                 if "canonical_updated_fields_restored" in statement:
                     return {"canonical_updated_fields_restored": True}
@@ -187,24 +224,62 @@ async def test_note_key_batch_is_fixed_transaction_and_hook_restores_updated_ddl
     )
     assert transaction.strip().startswith("BEGIN TRANSACTION;")
     assert "DEFINE FIELD" not in transaction
+    assert "updated = $item.updated" in transaction
     assert transaction.index("RETURN { updated_preserved: true };") < transaction.index(
         "COMMIT TRANSACTION;"
     )
-    assert variables == {"items": [{"record_id": "note:old", "title_key": "old"}]}
+    assert variables == {
+        "items": [
+            {
+                "record_id": "note:old",
+                "title_key": "old",
+                "updated": connection.historical_updated,
+            }
+        ]
+    }
     restoration = next(
         statement
         for statement, _variables in connection.statements
         if "canonical_updated_fields_restored" in statement
     )
-    assert (
-        "DEFINE FIELD OVERWRITE updated ON note DEFAULT time::now() VALUE time::now();"
-    ) in restoration
+    assert "DEFINE FIELD OVERWRITE updated ON note " not in restoration
     assert (
         "DEFINE FIELD OVERWRITE updated ON TABLE note_link TYPE datetime "
         "DEFAULT time::now() VALUE time::now();"
     ) in restoration
     assert restoration.index(
         "RETURN { canonical_updated_fields_restored: true };"
+    ) < restoration.index("COMMIT TRANSACTION;")
+
+
+@pytest.mark.asyncio
+async def test_migration_36_hook_restores_note_updated_after_note_schema_changes():
+    from deeper_notebook.database.migration_33_vault_backfill import (
+        run_python_migration_hook,
+    )
+
+    class Connection:
+        statements: list[tuple[str, dict | None]] = []
+
+        async def query(self, statement, variables=None):
+            self.statements.append((statement, variables))
+            if "canonical_note_updated_field_restored" in statement:
+                return {"canonical_note_updated_field_restored": True}
+            return []
+
+    connection = Connection()
+    await run_python_migration_hook(36, connection)
+
+    assert len(connection.statements) == 1
+    restoration, variables = connection.statements[0]
+    assert variables == {}
+    assert (
+        "DEFINE FIELD OVERWRITE updated ON note "
+        "DEFAULT time::now() VALUE time::now();"
+    ) in restoration
+    assert "ON TABLE note_link" not in restoration
+    assert restoration.index(
+        "RETURN { canonical_note_updated_field_restored: true };"
     ) < restoration.index("COMMIT TRANSACTION;")
 
 
@@ -218,15 +293,22 @@ async def test_link_batches_are_fixed_timestamp_preserving_transactions():
         link_key_selected = False
         reconcile_selected = False
         statements: list[tuple[str, dict | None]] = []
+        historical_updated = datetime(2026, 7, 27, 12, 34, tzinfo=timezone.utc)
 
         async def query(self, statement, variables=None):
             self.statements.append((statement, variables))
             if (
-                "SELECT id, target_text FROM note_link" in statement
+                "SELECT id, target_text, updated FROM note_link" in statement
                 and not self.link_key_selected
             ):
                 self.link_key_selected = True
-                return [{"id": "note_link:old", "target_text": "Target"}]
+                return [
+                    {
+                        "id": "note_link:old",
+                        "target_text": "Target",
+                        "updated": self.historical_updated,
+                    }
+                ]
             if (
                 "source_note_id,\n                    target_title_key" in statement
                 and not self.reconcile_selected
@@ -239,6 +321,7 @@ async def test_link_batches_are_fixed_timestamp_preserving_transactions():
                         "target_title_key": "target",
                         "target_note_id": None,
                         "resolved": False,
+                        "updated": self.historical_updated,
                     }
                 ]
             if "SELECT id, vault_id FROM note" in statement:
@@ -263,6 +346,50 @@ async def test_link_batches_are_fixed_timestamp_preserving_transactions():
     for transaction in transactions:
         assert transaction.strip().startswith("BEGIN TRANSACTION;")
         assert "DEFINE FIELD" not in transaction
+        assert "updated = $item.updated" in transaction
         assert transaction.index(
             "RETURN { updated_preserved: true };"
         ) < transaction.index("COMMIT TRANSACTION;")
+    update_batches = [
+        variables
+        for statement, variables in connection.statements
+        if "UPDATE $item.record_id" in statement
+    ]
+    assert all(
+        item["updated"] == connection.historical_updated
+        for variables in update_batches
+        for item in variables["items"]
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "missing_updated",
+    [
+        None,
+        "not-a-datetime",
+        datetime(2026, 7, 27, tzinfo=_UndefinedOffsetTimezone()),
+    ],
+)
+async def test_note_key_backfill_rejects_missing_or_invalid_updated(missing_updated):
+    from deeper_notebook.database.migration_33_vault_backfill import (
+        run_vault_migration_33_backfill,
+    )
+
+    class Connection:
+        selected = False
+
+        async def query(self, statement, _variables=None):
+            if "SELECT id, title, updated FROM note" in statement and not self.selected:
+                self.selected = True
+                return [
+                    {
+                        "id": "note:old",
+                        "title": "Old",
+                        "updated": missing_updated,
+                    }
+                ]
+            return []
+
+    with pytest.raises(RuntimeError, match="migration_33_note_updated_invalid"):
+        await run_vault_migration_33_backfill(Connection(), batch_size=1)

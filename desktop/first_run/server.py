@@ -49,7 +49,7 @@ def build_app(config_path: Path, on_done: Callable[[], None],
             default_model=body.get("default_model", ""),
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
-            theme=body.get("theme", "light-blue"),
+            theme=body.get("theme", "research-core-dark"),
             openchronicle_choice=body.get("openchronicle_choice", "skip"),
             encryption_key=secrets.token_urlsafe(32),
         )

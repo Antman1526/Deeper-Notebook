@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -16,13 +17,17 @@ from loguru import logger
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from deeper_notebook.knowledge_engine.shadow import KnowledgeShadowProjector
+from deeper_notebook.vault.canvas import CanvasDocument, parse_canvas_document
 from deeper_notebook.vault.contracts import VaultState
 from deeper_notebook.vault.parsers import VaultParseError, parse_document
-from deeper_notebook.vault.repository import VaultMount, VaultMountCreate
+from deeper_notebook.vault.repository import VaultFile, VaultMount, VaultMountCreate
 from deeper_notebook.vault.security import (
     VaultSecurityError,
     approve_vault_root,
+    approve_vault_root_bounded,
     classify_vault_path,
+    secure_read,
 )
 from deeper_notebook.vault.watcher import (
     VaultFileObservation,
@@ -42,9 +47,28 @@ class VaultScanResult:
     reconciliation_required: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class VaultCanvasDocument:
+    file: VaultFile
+    source_hash: str
+    document: CanvasDocument
+
+
+def _shadow_diagnostic_operation_id(
+    legacy_operation_id: str, relative_locator: str
+) -> str:
+    return (
+        "shadow-diagnostic-v1:"
+        f"{sha256(legacy_operation_id.encode()).hexdigest()}:"
+        f"{sha256(relative_locator.encode()).hexdigest()}"
+    )
+
+
 class _Repository(Protocol):
     async def create_mount(self, request: VaultMountCreate) -> VaultMount: ...
     async def list_mounts(self) -> list[VaultMount]: ...
+    async def get_mount(self, vault_id: str) -> VaultMount: ...
+    async def get_file(self, vault_id: str, relative_path: str) -> VaultFile: ...
     async def mark_scan_started(
         self, vault_id: str, *, started_at: datetime | None = None
     ) -> None: ...
@@ -108,11 +132,17 @@ class VaultService:
         self,
         repository: _Repository,
         *,
+        shadow_projector: KnowledgeShadowProjector | None = None,
         stable_after_seconds: float = 2.0,
+        filesystem_timeout_seconds: float = 15.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._repository = repository
+        self._shadow_projector = shadow_projector
         self._stable_after_seconds = max(2.0, stable_after_seconds)
+        if filesystem_timeout_seconds <= 0:
+            raise ValueError("filesystem timeout must be positive")
+        self._filesystem_timeout_seconds = filesystem_timeout_seconds
         self._clock = clock
         self._watchers: dict[str, VaultWatcher] = {}
         self._mounts: dict[str, VaultMount] = {}
@@ -166,6 +196,33 @@ class VaultService:
         self._states[mount.id] = mount.status
         return mount
 
+    async def read_canvas(
+        self, vault_id: str, relative_path: str
+    ) -> VaultCanvasDocument:
+        """Read one current external Canvas only when it matches its projection."""
+
+        file = await self._repository.get_file(vault_id, relative_path)
+        if (
+            file.vault_id != vault_id
+            or file.relative_path != relative_path
+            or file.deleted_state != "present"
+            or file.parse_status not in {"parsed", "invalid"}
+            or not file.content_hash
+            or classify_vault_path(relative_path).kind != "metadata"
+            or not relative_path.casefold().endswith(".canvas")
+        ):
+            raise LookupError("canvas_not_found")
+        mount = self._mounts.get(vault_id) or await self._repository.get_mount(vault_id)
+        with approve_vault_root(mount.root_path) as root:
+            source = secure_read(root, relative_path)
+        if source.sha256 != file.content_hash:
+            raise VaultSecurityError("changed_during_read")
+        return VaultCanvasDocument(
+            file=file,
+            source_hash=source.sha256,
+            document=parse_canvas_document(source.content, relative_path=relative_path),
+        )
+
     async def _load_mounts(self) -> None:
         for mount in await self._repository.list_mounts():
             self._mounts[mount.id] = mount
@@ -176,7 +233,10 @@ class VaultService:
         if watcher is not None:
             return watcher
         try:
-            root = approve_vault_root(mount.root_path)
+            root = approve_vault_root_bounded(
+                mount.root_path,
+                timeout_seconds=self._filesystem_timeout_seconds,
+            )
         except VaultSecurityError as exc:
             self._states[mount.id] = "unavailable"
             logger.warning("Vault mount {} is unavailable ({})", mount.id, exc.code)
@@ -202,6 +262,7 @@ class VaultService:
             known_paths=paths,
             known_projected_hashes=hashes,
             excluded_relative_prefixes=child_prefixes,
+            filesystem_timeout_seconds=self._filesystem_timeout_seconds,
         )
         self._watchers[mount.id] = watcher
         return watcher
@@ -335,6 +396,44 @@ class VaultService:
             return VaultScanResult(
                 mount.id, "conflict", operation_id, reconciliation_required=True
             )
+        if (
+            self._shadow_projector is not None
+            and result.status in {"projected", "unchanged"}
+            and parsed.source_format in {"obsidian", "logseq", "markdown"}
+        ):
+            try:
+                await self._shadow_projector.project_external(
+                    legacy_operation_id=operation_id,
+                    mount=mount,
+                    observation=item,
+                    source_kind=parsed.source_format,
+                    vault_file_id=result.vault_file_id,
+                    projected_note_id=result.note_id,
+                )
+            except Exception as error:
+                try:
+                    await self._shadow_projector.record_external_failure(
+                        legacy_operation_id=operation_id,
+                        mount=mount,
+                        observation=item,
+                        error=error,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Knowledge shadow failure receipt unavailable operation_id={} code={}",
+                        _shadow_diagnostic_operation_id(
+                            operation_id, item.relative_path
+                        ),
+                        "knowledge_engine_failure_receipt_unavailable",
+                    )
+                else:
+                    logger.warning(
+                        "Knowledge shadow failed operation_id={} code={}",
+                        _shadow_diagnostic_operation_id(
+                            operation_id, item.relative_path
+                        ),
+                        "knowledge_engine_shadow_failed",
+                    )
         handoff = await watcher.acknowledge_projected(
             item.relative_path, item.content_hash
         )

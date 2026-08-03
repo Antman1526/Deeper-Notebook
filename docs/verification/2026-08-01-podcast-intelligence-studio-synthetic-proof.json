@@ -1,0 +1,45 @@
+{
+  "checks": {
+    "exact_text_selection": {
+      "authority_filter_count": 1,
+      "selection_count": 2,
+      "space_filter_count": 2,
+      "status": "passed"
+    },
+    "read_only_flow": {
+      "external_write_receipts": 0,
+      "operations": [
+        "preview",
+        "fake_worker_submit",
+        "retry",
+        "metadata_review"
+      ],
+      "status": "passed"
+    },
+    "semantic_selection": {
+      "reason": "verified_unified_embedding_index_required",
+      "status": "blocked"
+    }
+  },
+  "external_writes": 0,
+  "fixture": {
+    "file_count": 3,
+    "inventory_hash": "8e8deca5d1b377a688baa6375844203b4af0d4a3b39c9c8cb975655f1b383490",
+    "kind": "synthetic_obsidian_logseq"
+  },
+  "gates": {
+    "native_runtime": {
+      "reason": "requires caller-launched persistent native runtime",
+      "route_status": null,
+      "status": "blocked"
+    },
+    "playwright_native": {
+      "reason": "requires persistent native-runtime Playwright proof",
+      "status": "blocked"
+    }
+  },
+  "schema_version": 1,
+  "source_hashes_unchanged": true,
+  "status": "blocked",
+  "synthetic_passed": true
+}

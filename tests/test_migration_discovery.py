@@ -103,6 +103,50 @@ def test_default_migration_discovery_includes_vault_repair_33_and_down():
     assert downs[32].version == 33
 
 
+def test_default_migration_discovery_includes_overlay_36_and_down():
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 36
+    assert "overlay_space" in ups[35].sql
+    assert "overlay_mutation_receipt" in ups[35].sql
+    assert downs[35] is not None
+    assert "REMOVE TABLE IF EXISTS overlay_note" in downs[35].sql
+
+
+def test_default_migration_discovery_includes_overlay_index_repair_37_and_down():
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 37
+    assert "REMOVE INDEX IF EXISTS idx_overlay_daily" in ups[36].sql
+    assert downs[36] is not None
+    assert "repaired_index_restored: false" in downs[36].sql
+    assert ups[36].version == 37
+    assert downs[36].version == 37
+
+
+def test_default_migration_discovery_includes_unified_engine_38_and_down():
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 38
+    assert "knowledge_engine_document" in ups[37].sql
+    assert downs[37] is not None
+    assert "schema_preserved: true" in downs[37].sql
+    assert ups[37].version == 38
+    assert downs[37].version == 38
+
+
+def test_default_migration_discovery_includes_navigation_39_and_down():
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert len(ups) >= 39
+    assert "knowledge_bookmark_folder" in ups[38].sql
+    assert "knowledge_navigation_operation_receipt" in ups[38].sql
+    assert downs[38] is not None
+    assert "REMOVE TABLE IF EXISTS knowledge_bookmark;" in downs[38].sql
+    assert ups[38].version == 39
+    assert downs[38].version == 39
+
+
 def test_discover_ignores_non_numeric_files(tmp_path):
     """README.md / *.txt in the migrations dir must not break discovery."""
     _write_migration_files(tmp_path, ns=[1, 2])

@@ -63,9 +63,9 @@ def build_app(
     async def theme(_: web.Request) -> web.Response:
         try:
             raw = tomllib.loads(config_path.read_text())
-            t = raw.get("theme", "light-blue")
+            t = raw.get("theme", "research-core-dark")
         except Exception:
-            t = "light-blue"
+            t = "research-core-dark"
         return web.json_response({"theme": t})
 
     async def installed(_: web.Request) -> web.Response:

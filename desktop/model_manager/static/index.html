@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light-blue">
+<html lang="en" data-theme="research-core-dark">
 <head>
   <meta charset="utf-8">
   <title>Deeper Notebook — Models</title>
@@ -11,7 +11,7 @@
       fetch('/api/theme')
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          document.documentElement.dataset.theme = d.theme || 'light-blue';
+          document.documentElement.dataset.theme = d.theme || 'research-core-dark';
         })
         .catch(function () { /* keep default */ });
     }());

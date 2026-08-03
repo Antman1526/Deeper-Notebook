@@ -136,6 +136,10 @@ class PodcastService:
         custom_prompt: Optional[str] = None,
         episode_length: Optional[str] = None,
         review_outline: bool = False,
+        selection_summary: Optional[dict[str, Any]] = None,
+        selection_fingerprint: Optional[str] = None,
+        editorial_brief: Optional[dict[str, Any]] = None,
+        model_plan_receipts: Optional[list[dict[str, Any]]] = None,
     ) -> str:
         """Submit a podcast generation job for background processing"""
         try:
@@ -265,6 +269,10 @@ class PodcastService:
                 "episode_length": episode_length,
                 # v0.8.68 — outline-review workflow flag.
                 "review_outline": bool(review_outline),
+                "selection_summary": selection_summary,
+                "selection_fingerprint": selection_fingerprint,
+                "editorial_brief": editorial_brief,
+                "model_plan_receipts": model_plan_receipts or [],
             }
 
             # Ensure command modules are imported before submitting

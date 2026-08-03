@@ -154,6 +154,34 @@ def test_short_name_precedence_and_child_process_mirroring(monkeypatch):
     assert env["DN_DB_POOL_SIZE"] == "8", "normalization must not mutate its input"
 
 
+@pytest.mark.parametrize(
+    "canonical",
+    (
+        "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED",
+        "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_BACKFILL_ENABLED",
+    ),
+)
+def test_knowledge_engine_flags_use_product_precedence(canonical):
+    suffix = canonical.removeprefix("DEEPER_NOTEBOOK_")
+    values = {
+        canonical: "true",
+        f"DN_{suffix}": "false",
+    }
+
+    assert resolve_env(canonical, getter=values.get) == "true"
+
+
+@pytest.mark.parametrize(
+    "canonical",
+    (
+        "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED",
+        "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_BACKFILL_ENABLED",
+    ),
+)
+def test_knowledge_engine_flags_default_disabled(canonical):
+    assert resolve_env(canonical, "false", getter=lambda _name: None) == "false"
+
+
 def test_deliberately_empty_canonical_value_wins(monkeypatch):
     canonical = "DEEPER_NOTEBOOK_PASSWORD"
     _clear_aliases(monkeypatch, canonical)

@@ -46,6 +46,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useAudioPlayerStore } from '@/lib/stores/audio-player-store'
+import { EpisodeResearchReceipt } from '@/components/podcasts/EpisodeResearchReceipt'
 import type { TFunction } from 'i18next'
 
 interface EpisodeCardProps {
@@ -612,6 +613,12 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
                     <TabsContent value="summary" className="flex-1 overflow-hidden">
                       <ScrollArea className="h-full pr-4">
                         <div className="space-y-6">
+                          <EpisodeResearchReceipt
+                            selectionSummary={episode.selection_summary}
+                            selectionFingerprint={episode.selection_fingerprint}
+                            editorialBrief={episode.editorial_brief}
+                            modelPlanReceipts={episode.model_plan_receipts}
+                          />
                           <section className="space-y-2">
                             <h4 className="text-sm font-semibold text-foreground">{t('podcasts.episodeProfile')}</h4>
                             <div className="grid gap-2 text-sm md:grid-cols-2">

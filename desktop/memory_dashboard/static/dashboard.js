@@ -2,9 +2,9 @@
   // Apply theme from /api/theme
   try {
     const t = await fetch('/api/theme').then(r => r.json());
-    document.documentElement.dataset.theme = t.theme || 'light-blue';
+    document.documentElement.dataset.theme = t.theme || 'research-core-dark';
   } catch (e) {
-    document.documentElement.dataset.theme = 'light-blue';
+    document.documentElement.dataset.theme = 'research-core-dark';
   }
 
   async function loadList(kind, listId, countId) {

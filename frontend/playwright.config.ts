@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const port = 3100
+// Keep mocked browser proof isolated from user-owned local apps. Port 3100 is
+// commonly occupied by the adjacent Paperclip workspace on this machine.
+const port = 3117
 const baseURL = `http://127.0.0.1:${port}`
 
 export default defineConfig({
@@ -17,7 +19,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
+    command: `npm run build && PORT=${port} npm run start`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
@@ -26,7 +28,12 @@ export default defineConfig({
     {
       name: 'mocked-browser',
       testIgnore: ['e2e/native/**', 'e2e/device/**'],
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        colorScheme: 'dark',
+        deviceScaleFactor: 1,
+      },
       metadata: {
         proof_boundary: 'mocked-browser',
         ci_gate: 'required-linux',
@@ -34,7 +41,11 @@ export default defineConfig({
     },
     {
       name: 'native-runtime',
-      testMatch: 'e2e/native/**/*.spec.ts',
+      testMatch: [
+        'e2e/native/**/*.spec.ts',
+        'e2e/research-core-lab.spec.ts',
+        'e2e/podcast-intelligence-studio.spec.ts',
+      ],
       use: { ...devices['Desktop Chrome'] },
       metadata: {
         proof_boundary: 'native-runtime',

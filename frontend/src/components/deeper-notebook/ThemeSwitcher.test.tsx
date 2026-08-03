@@ -1,6 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { THEME_SELECTION_CHANGE_EVENT } from '@/lib/theme-storage'
+import { useThemeStore } from '@/lib/stores/theme-store'
+import { ThemeProvider } from '@/components/providers/ThemeProvider'
 
 const { deeperNotebookFetch } = vi.hoisted(() => ({
   deeperNotebookFetch: vi.fn(),
@@ -12,6 +16,7 @@ interface ChildrenProps {
 
 interface MenuItemProps extends ChildrenProps {
   onClick?: () => void
+  'aria-current'?: 'true'
 }
 
 vi.mock('@/lib/api/deeper-notebook', () => ({ deeperNotebookFetch }))
@@ -19,17 +24,19 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: ChildrenProps) => children,
   DropdownMenuTrigger: ({ children }: ChildrenProps) => children,
   DropdownMenuContent: ({ children }: ChildrenProps) => <div>{children}</div>,
-  DropdownMenuItem: ({ children, onClick }: MenuItemProps) => <button onClick={onClick}>{children}</button>,
+  DropdownMenuItem: ({ children, onClick, ...props }: MenuItemProps) => <button onClick={onClick} {...props}>{children}</button>,
+  DropdownMenuLabel: ({ children }: ChildrenProps) => <div>{children}</div>,
   DropdownMenuSeparator: () => <hr />,
 }))
 
 import { ThemeSwitcher } from './ThemeSwitcher'
+import { ThemeGallery } from './ThemeGallery'
 
 type ThemeBridge = { setTheme: ReturnType<typeof vi.fn> }
 type ThemeWindow = Window & { DN?: ThemeBridge; ONP?: ThemeBridge }
 
 function selectDarkTheme() {
-  fireEvent.click(screen.getByText('Dark'))
+  fireEvent.click(screen.getByRole('button', { name: 'Dark' }))
 }
 
 describe('ThemeSwitcher Deeper Notebook compatibility', () => {
@@ -44,7 +51,9 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     delete (window as ThemeWindow).ONP
     document.documentElement.dataset.theme = ''
     localStorage.clear()
+    useThemeStore.setState({ theme: 'system', legacyThemeOverride: false, appliedTheme: 'light' })
     deeperNotebookFetch.mockReset()
+    vi.restoreAllMocks()
   })
 
   it('uses the canonical DN bridge when it is the only desktop bridge', () => {
@@ -106,5 +115,122 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     render(<ThemeSwitcher />)
 
     expect(localStorage.getItem('dn-theme')).toBe('dark')
+  })
+
+  it('shows all catalog groups and applies Research Core Light canonically', () => {
+    const canonical = { setTheme: vi.fn() }
+    ;(window as ThemeWindow).DN = canonical
+
+    render(<ThemeSwitcher />)
+
+    expect(screen.getByText('Featured')).toBeVisible()
+    expect(screen.getByText('Light')).toBeVisible()
+    expect(screen.getAllByText('Dark')).toHaveLength(2)
+    expect(screen.getByText('Accessibility')).toBeVisible()
+    expect(screen.getByText('Classics')).toBeVisible()
+    expect(screen.getAllByRole('button')).toHaveLength(26)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Research Core Light' }))
+
+    expect(canonical.setTheme).toHaveBeenCalledWith('research-core-light')
+    expect(localStorage.getItem('dn-theme')).toBe('research-core-light')
+  })
+
+  it('exposes the compact current theme to assistive technology', () => {
+    document.documentElement.dataset.theme = 'dark'
+
+    render(<ThemeSwitcher />)
+
+    expect(screen.getByRole('button', { name: 'Dark Current theme' })).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('prefers persisted system selection over its resolved dark document palette', () => {
+    localStorage.setItem('dn-theme', 'system')
+    document.documentElement.dataset.theme = 'dark'
+
+    render(<ThemeSwitcher />)
+
+    expect(screen.getByRole('button', { name: 'System Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: 'Dark' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('synchronizes current selection and the gallery restore baseline across pickers', () => {
+    const canonical = { setTheme: vi.fn() }
+    ;(window as ThemeWindow).DN = canonical
+    localStorage.setItem('dn-theme', 'research-core-dark')
+
+    const addListener = vi.spyOn(window, 'addEventListener')
+    const removeListener = vi.spyOn(window, 'removeEventListener')
+    const view = render(
+      <>
+        <ThemeSwitcher />
+        <ThemeGallery />
+      </>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
+    expect(screen.getByRole('button', { name: 'Archive Paper Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'Archive Paper theme' })).toHaveTextContent('Current')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Research Core Light' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dark' }))
+    expect(screen.getByRole('button', { name: 'Dark Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'Dark theme' })).toHaveTextContent('Current')
+    expect(screen.queryByRole('button', { name: 'Restore previous theme' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Research Core Light' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restore previous theme' }))
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(screen.getByRole('article', { name: 'Dark theme' })).toHaveTextContent('Current')
+
+    view.unmount()
+    const selectionAdds = addListener.mock.calls.filter(([type]) => type === THEME_SELECTION_CHANGE_EVENT)
+    const selectionRemoves = removeListener.mock.calls.filter(([type]) => type === THEME_SELECTION_CHANGE_EVENT)
+    expect(selectionAdds).toHaveLength(2)
+    expect(selectionRemoves).toHaveLength(2)
+  })
+
+  it('synchronizes mounted pickers after the legacy setter writes canonical storage', () => {
+    localStorage.setItem('dn-theme', 'research-core-dark')
+    document.documentElement.dataset.theme = 'dark'
+    document.documentElement.classList.add('dark')
+
+    render(
+      <>
+        <ThemeSwitcher />
+        <ThemeGallery />
+      </>,
+    )
+
+    act(() => useThemeStore.getState().setTheme('light'))
+
+    expect(localStorage.getItem('dn-theme')).toBe('light-blue')
+    expect(localStorage.getItem('onp-theme')).toBe('light-blue')
+    expect(screen.getByRole('button', { name: 'Light Blue Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'Light Blue theme' })).toHaveTextContent('Current')
+    expect(document.documentElement.dataset.theme).toBe('light-blue')
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('lets a later canonical picker selection supersede a legacy command after provider resolution', () => {
+    render(
+      <ThemeProvider>
+        <ThemeSwitcher />
+        <ThemeGallery />
+      </ThemeProvider>,
+    )
+
+    act(() => useThemeStore.getState().setTheme('dark'))
+    expect(document.documentElement.dataset.theme).toBe('dark')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
+
+    expect(localStorage.getItem('dn-theme')).toBe('archive-paper')
+    expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
+    expect(screen.getByRole('button', { name: 'Archive Paper Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'Archive Paper theme' })).toHaveTextContent('Current')
+    expect(document.documentElement.dataset.theme).toBe('archive-paper')
+    expect(document.documentElement).not.toHaveClass('dark')
+    expect(useThemeStore.getState().legacyThemeOverride).toBe(false)
   })
 })

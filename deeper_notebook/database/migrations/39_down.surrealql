@@ -1,0 +1,4 @@
+REMOVE TABLE IF EXISTS knowledge_bookmark;
+REMOVE TABLE IF EXISTS knowledge_bookmark_folder;
+REMOVE TABLE IF EXISTS named_knowledge_workspace;
+REMOVE TABLE IF EXISTS knowledge_navigation_operation_receipt;

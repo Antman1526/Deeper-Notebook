@@ -6,6 +6,7 @@ import { DbRepairBanner } from './DbRepairBanner'
 import { UpdateBanner } from './UpdateBanner'
 import { NetworkStatusBadge } from './NetworkStatusBadge'
 import { GlobalAudioPlayer } from '@/components/podcasts/GlobalAudioPlayer'
+import { GuidedTipsProvider } from '@/components/guided-tips'
 
 interface AppShellProps {
   children: React.ReactNode
@@ -21,6 +22,7 @@ export function AppShell({ children }: AppShellProps) {
         <UpdateBanner />
         <NetworkStatusBadge />
         {children}
+        <GuidedTipsProvider />
         <GlobalAudioPlayer />
       </main>
     </div>

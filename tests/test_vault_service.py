@@ -21,10 +21,11 @@ except ImportError:  # pragma: no cover - Windows skips POSIX vault tests
 from deeper_notebook.vault.repository import (
     FailureResult,
     ProjectionResult,
+    VaultFile,
     VaultMount,
     VaultMountCreate,
 )
-from deeper_notebook.vault.security import approve_vault_root
+from deeper_notebook.vault.security import VaultSecurityError, approve_vault_root
 from deeper_notebook.vault.service import VaultService, _ObservationAdapter
 from deeper_notebook.vault.watcher import (
     VaultFileObservation,
@@ -45,6 +46,7 @@ class FakeRepository:
     missing_operations: list[tuple[str, str, str]]
     failures: list[tuple[str, str, str]] = field(default_factory=list)
     state_transitions: list[tuple[str, str, datetime]] = field(default_factory=list)
+    files: dict[tuple[str, str], VaultFile] = field(default_factory=dict)
 
     async def create_mount(self, request: VaultMountCreate) -> VaultMount:
         mount = VaultMount(id=f"vault_mount:{request.name}", **request.model_dump())
@@ -53,6 +55,12 @@ class FakeRepository:
 
     async def list_mounts(self) -> list[VaultMount]:
         return list(self.mounts)
+
+    async def get_mount(self, vault_id: str) -> VaultMount:
+        return next(mount for mount in self.mounts if mount.id == vault_id)
+
+    async def get_file(self, vault_id: str, relative_path: str) -> VaultFile:
+        return self.files[(vault_id, relative_path)]
 
     async def mark_scan_started(
         self, vault_id: str, *, started_at: datetime | None = None
@@ -125,6 +133,19 @@ class FakeRepository:
             parse_state="parsed",
             embedding_state="pending",
         )
+
+
+class FailingShadowProjector:
+    def __init__(self) -> None:
+        self.calls = []
+        self.failure_reports = []
+
+    async def project_external(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+        raise RuntimeError("knowledge_engine_repository_unavailable")
+
+    async def record_external_failure(self, **kwargs) -> None:
+        self.failure_reports.append(kwargs)
 
 
 def _mount(
@@ -204,6 +225,66 @@ async def test_completed_scan_state_is_visible_to_repository_and_fresh_service(
         "scanning",
         "ready-read-only",
     ]
+
+
+@pytest.mark.asyncio
+async def test_scan_marks_mount_unavailable_when_root_open_times_out(
+    synthetic_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = synthetic_root / "vault"
+    root.mkdir()
+    repository = FakeRepository([_mount(root)], [], [])
+    service = VaultService(repository, stable_after_seconds=0)
+
+    def stalled_root_open(_path: str, *, timeout_seconds: float):
+        raise VaultSecurityError("root_open_timeout")
+
+    monkeypatch.setattr(
+        "deeper_notebook.vault.service.approve_vault_root_bounded", stalled_root_open
+    )
+
+    result = await service.scan("vault_mount:fixture")
+
+    assert result.status == "unavailable"
+    assert [state for _, state, _ in repository.state_transitions] == [
+        "scanning",
+        "unavailable",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_read_canvas_returns_only_a_hash_bound_document(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "canvas"
+    root.mkdir()
+    maps = root / "maps"
+    maps.mkdir()
+    content = (
+        b'{"nodes":[{"id":"idea","type":"text","x":0,"y":0,"width":100,"height":80,"text":"Idea"}],"edges":[]}'
+    )
+    (maps / "plan.canvas").write_bytes(content)
+    mount = _mount(root)
+    file = VaultFile(
+        id="vault_file:canvas",
+        note_id="note:canvas",
+        vault_id=mount.id,
+        relative_path="maps/plan.canvas",
+        file_kind="metadata",
+        format="markdown",
+        content_hash=hashlib.sha256(content).hexdigest(),
+        size_bytes=len(content),
+        modified_ns=1,
+        parse_status="parsed",
+        deleted_state="present",
+    )
+    repository = FakeRepository([mount], [], [], files={(mount.id, file.relative_path): file})
+
+    result = await VaultService(repository).read_canvas(mount.id, file.relative_path)
+
+    assert result.file.id == file.id
+    assert result.source_hash == file.content_hash
+    assert result.document.nodes[0].text == "Idea"
 
 
 @pytest.mark.asyncio
@@ -459,6 +540,74 @@ async def test_one_scan_operation_id_is_reused_for_every_projected_file(
     assert {operation for _, _, operation in repository.projections} == {
         result.operation_id
     }
+
+
+@pytest.mark.asyncio
+async def test_shadow_failure_does_not_undo_a_proven_vault_projection(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "shadow-contained"
+    root.mkdir()
+    source = b"# Research\n"
+    (root / "Research.md").write_bytes(source)
+    repository = FakeRepository([_mount(root)], [], [])
+    shadow = FailingShadowProjector()
+    moments = iter((1.0, 3.0))
+    service = VaultService(
+        repository,
+        shadow_projector=shadow,
+        stable_after_seconds=0,
+        clock=lambda: next(moments),
+    )
+
+    await service.scan("vault_mount:fixture")
+    result = await service.scan("vault_mount:fixture")
+
+    assert result.projected == 1
+    assert len(repository.projections) == 1
+    assert shadow.calls[0]["observation"].content == source
+    assert shadow.calls[0]["source_kind"] == "markdown"
+    assert isinstance(shadow.failure_reports[0]["error"], RuntimeError)
+
+
+@pytest.mark.asyncio
+async def test_unavailable_shadow_reporter_uses_only_a_hashed_fallback(
+    synthetic_root: Path,
+    monkeypatch,
+):
+    class MissingReporter:
+        async def project_external(self, **_kwargs) -> None:
+            raise RuntimeError("private failure")
+
+    root = synthetic_root / "shadow-fallback"
+    root.mkdir()
+    (root / "Research.md").write_text("# Research\n")
+    messages = []
+    monkeypatch.setattr(
+        "deeper_notebook.vault.service.logger.warning",
+        lambda message, *arguments: messages.append((message, arguments)),
+    )
+    moments = iter((1.0, 3.0))
+    service = VaultService(
+        FakeRepository([_mount(root)], [], []),
+        shadow_projector=MissingReporter(),
+        stable_after_seconds=0,
+        clock=lambda: next(moments),
+    )
+
+    await service.scan("vault_mount:fixture")
+    result = await service.scan("vault_mount:fixture")
+
+    assert result.projected == 1
+    assert messages == [
+        (
+            "Knowledge shadow failure receipt unavailable operation_id={} code={}",
+            (messages[0][1][0], "knowledge_engine_failure_receipt_unavailable"),
+        )
+    ]
+    assert messages[0][1][0].startswith("shadow-diagnostic-v1:")
+    assert "vault-scan-" not in str(messages)
+    assert "Research.md" not in str(messages)
 
 
 @pytest.mark.asyncio

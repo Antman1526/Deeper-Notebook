@@ -27,6 +27,7 @@ function selectSerializableWorkspace(
     layout: state.layout,
     activePaneId: state.activePaneId,
     nextId: state.nextId,
+    navigation: state.navigation,
   }
 }
 

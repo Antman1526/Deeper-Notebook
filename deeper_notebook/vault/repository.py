@@ -8,8 +8,9 @@ import re
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from loguru import logger
 from pydantic import (
@@ -48,6 +49,17 @@ from deeper_notebook.vault.trust import (
     parse_trust_manifest,
 )
 from deeper_notebook.vault.watcher import VaultFileObservation, VaultWorkItem
+
+if TYPE_CHECKING:
+    from deeper_notebook.overlay.contracts import OverlayPage
+
+
+@dataclass(frozen=True, slots=True)
+class OwnedProjectionUnitOfWork:
+    """Authority-scoped graph rows and mutations for one caller transaction."""
+
+    variables: dict[str, Any]
+    mutation_statement: str
 
 
 @contextmanager
@@ -348,6 +360,118 @@ def _task_datetime(value: date | None) -> datetime | None:
     if value is None:
         return None
     return datetime.combine(value, time.min, tzinfo=timezone.utc)
+
+
+def _document_graph_records(
+    *,
+    note_id: str,
+    identity_scope: str,
+    parsed: ParsedDocument,
+    vault_file_id: str | None,
+    overlay_note_id: str | None,
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Build shared block, link, and task rows for one parsed Markdown source."""
+
+    if (vault_file_id is None) == (overlay_note_id is None):
+        raise ValueError("projection_authority_mismatch")
+    block_ids = {
+        block.parser_id: _record_id("note_block", identity_scope, block.parser_id)
+        for block in parsed.blocks
+    }
+    blocks: list[dict[str, Any]] = []
+    for block in parsed.blocks:
+        block_id = block_ids[block.parser_id]
+        block_data = {
+            "schema_version": 1,
+            "note_id": _db_id(note_id),
+            "vault_file_id": _db_id(vault_file_id) if vault_file_id else None,
+            "parser_id": block.parser_id,
+            "parent_block_id": (
+                _db_id(block_ids[block.parent_parser_id])
+                if block.parent_parser_id
+                else None
+            ),
+            "position": block.position,
+            "stable_source_id": block.stable_source_id,
+            "block_kind": block.block_kind,
+            "markdown": block.markdown,
+            "plain_text": block.plain_text,
+            "properties": block.properties,
+            "task_state": block.task_state,
+            "heading_path": block.heading_path,
+            "source_start": block.source_start,
+            "source_end": block.source_end,
+        }
+        if overlay_note_id is not None:
+            block_data["overlay_note_id"] = _db_id(overlay_note_id)
+        blocks.append({"record_id": _db_id(block_id), "data": block_data})
+
+    links: list[dict[str, Any]] = [link.model_dump() for link in parsed.links]
+    link_spans = {
+        (int(link["source_start"]), int(link["source_end"])) for link in links
+    }
+    for embed in parsed.embeds:
+        span = (embed.source_start, embed.source_end)
+        if span in link_spans:
+            continue
+        links.append(
+            {
+                **embed.model_dump(),
+                "alias": None,
+                "link_kind": "embed",
+            }
+        )
+        link_spans.add(span)
+
+    persisted_links: list[dict[str, Any]] = []
+    for link in links:
+        link_id = _record_id(
+            "note_link",
+            note_id,
+            str(link["source_start"]),
+            str(link["source_end"]),
+        )
+        source_parser_id = link.pop("source_block_parser_id")
+        target_text = link["target_text"]
+        link_data = {
+            "schema_version": 1,
+            "source_note_id": _db_id(note_id),
+            "source_block_id": (
+                _db_id(block_ids[source_parser_id]) if source_parser_id else None
+            ),
+            "target_note_id": None,
+            "target_block_id": None,
+            **link,
+            "target_title_key": canonical_title_key(target_text),
+            "resolved": False,
+        }
+        persisted_links.append(
+            {
+                "record_id": _db_id(link_id),
+                "data": link_data,
+                "target_title": canonical_title_key(target_text),
+            }
+        )
+
+    tasks: list[dict[str, Any]] = []
+    for task in parsed.tasks:
+        block_id = block_ids[task.block_parser_id]
+        task_id = _record_id("knowledge_task", block_id)
+        task_data = {
+            "schema_version": 1,
+            "note_id": _db_id(note_id),
+            "block_id": _db_id(block_id),
+            **task.model_dump(),
+        }
+        task_data.pop("block_parser_id")
+        for field in ("scheduled", "due", "completed"):
+            task_data[field] = _task_datetime(task_data[field])
+        tasks.append({"record_id": _db_id(task_id), "data": task_data})
+    return blocks, persisted_links, tasks
 
 
 async def _await_task_terminal(task: asyncio.Task[Any]) -> Any:
@@ -673,6 +797,296 @@ class VaultRepository:
             reconciliation_required=projection_status == "conflict",
         )
 
+    async def project_owned_document(
+        self,
+        *,
+        source_authority: Literal["overlay"],
+        overlay_space_id: str,
+        overlay_note_id: str,
+        projected_note_id: str,
+        parsed: ParsedDocument,
+        revision: int,
+    ) -> OverlayPage:
+        """Project app-owned Markdown without creating or mutating a vault mount."""
+
+        unit = self.owned_projection_unit_of_work(
+            source_authority=source_authority,
+            overlay_space_id=overlay_space_id,
+            overlay_note_id=overlay_note_id,
+            projected_note_id=projected_note_id,
+            parsed=parsed,
+            revision=revision,
+        )
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                self._owned_projection_transaction(unit.mutation_statement),
+                unit.variables,
+            )
+        outcome = next(
+            (
+                row
+                for row in reversed(rows)
+                if isinstance(row, dict) and row.get("outcome")
+            ),
+            None,
+        )
+        if outcome is None or outcome.get("outcome") != "projected":
+            raise RuntimeError("overlay_projection_outcome_missing")
+        from deeper_notebook.overlay.contracts import OverlayPage
+
+        try:
+            return OverlayPage.model_validate(outcome.get("page"))
+        except ValidationError:
+            raise RuntimeError("overlay_projection_invalid") from None
+
+    def owned_projection_unit_of_work(
+        self,
+        *,
+        source_authority: Literal["overlay"],
+        overlay_space_id: str,
+        overlay_note_id: str,
+        projected_note_id: str,
+        parsed: ParsedDocument,
+        revision: int,
+    ) -> OwnedProjectionUnitOfWork:
+        """Build the sole overlay graph unit for a caller-owned transaction."""
+        if source_authority != "overlay":
+            raise ValueError("invalid_source_authority")
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+            raise ValueError("invalid_overlay_revision")
+        self._owned_record_id(
+            overlay_space_id,
+            prefix="overlay_space:",
+            error_code="invalid_overlay_space_id",
+        )
+        self._owned_record_id(
+            overlay_note_id,
+            prefix="overlay_note:",
+            error_code="invalid_overlay_note_id",
+        )
+        self._owned_record_id(
+            projected_note_id,
+            prefix="note:",
+            error_code="invalid_projected_note_id",
+        )
+        return OwnedProjectionUnitOfWork(
+            variables=self._owned_projection_variables(
+                overlay_space_id=overlay_space_id,
+                overlay_note_id=overlay_note_id,
+                projected_note_id=projected_note_id,
+                parsed=parsed,
+                revision=revision,
+            ),
+            mutation_statement=self._owned_projection_mutations(),
+        )
+
+    @staticmethod
+    def _owned_record_id(value: str, *, prefix: str, error_code: str):
+        if (
+            not isinstance(value, str)
+            or not value.startswith(prefix)
+            or len(value) == len(prefix)
+        ):
+            raise ValueError(error_code)
+        try:
+            return _db_id(value)
+        except Exception:
+            raise ValueError(error_code) from None
+
+    def _owned_projection_variables(
+        self,
+        *,
+        overlay_space_id: str,
+        overlay_note_id: str,
+        projected_note_id: str,
+        parsed: ParsedDocument,
+        revision: int,
+    ) -> dict[str, Any]:
+        blocks, links, tasks = _document_graph_records(
+            note_id=projected_note_id,
+            identity_scope=overlay_note_id,
+            parsed=parsed,
+            vault_file_id=None,
+            overlay_note_id=overlay_note_id,
+        )
+        return {
+            "overlay_space_id": _db_id(overlay_space_id),
+            "overlay_note_id": _db_id(overlay_note_id),
+            "projected_note_id": _db_id(projected_note_id),
+            "revision": revision,
+            "projected_note": {
+                "title": parsed.title,
+                "title_key": canonical_title_key(parsed.title),
+                "note_type": "human",
+                "content": parsed.markdown,
+                "source_format": parsed.source_format,
+                "canonical_external": False,
+                "source_authority": "overlay",
+                "overlay_space_id": _db_id(overlay_space_id),
+                "overlay_note_id": _db_id(overlay_note_id),
+                "properties": parsed.properties,
+                "tags": parsed.tags,
+                "source_hash": parsed.content_hash,
+                "external_state": None,
+            },
+            "blocks": blocks,
+            "links": links,
+            "tasks": tasks,
+        }
+
+    @staticmethod
+    def _owned_projection_mutations() -> str:
+        return """
+        UPSERT $projected_note_id MERGE $projected_note;
+        DELETE note_block WHERE note_id = $projected_note_id;
+        DELETE note_link WHERE source_note_id = $projected_note_id;
+        DELETE knowledge_task WHERE note_id = $projected_note_id;
+        FOR $block IN $blocks {
+            UPSERT $block.record_id CONTENT $block.data;
+        };
+        FOR $link IN $links {
+            UPSERT $link.record_id CONTENT $link.data;
+        };
+        FOR $task IN $tasks {
+            UPSERT $task.record_id CONTENT $task.data;
+        };
+        FOR $affected_link IN (
+            SELECT * FROM note_link
+            WHERE source_note_id IN (
+                SELECT VALUE id FROM note
+                WHERE source_authority = 'overlay'
+                AND overlay_space_id = $overlay_space_id
+            )
+            AND (
+                source_note_id = $projected_note_id
+                OR target_title_key = $prior_projected_note.title_key
+                OR target_title_key = $projected_note.title_key
+            )
+        ) {
+            LET $targets = (
+                SELECT VALUE id FROM note
+                WHERE source_authority = 'overlay'
+                AND overlay_space_id = $overlay_space_id
+                AND title_key = $affected_link.target_title_key
+            );
+            UPDATE $affected_link.id SET
+                target_note_id = IF array::len($targets) = 1 {
+                    $targets[0]
+                } ELSE {
+                    NONE
+                },
+                resolved = array::len($targets) = 1;
+        };
+        """
+
+    @staticmethod
+    def _owned_projection_transaction(
+        mutation_statement: str,
+    ) -> str:
+        return (
+            """
+            BEGIN TRANSACTION;
+            LET $overlay = (
+                SELECT
+                    id,
+                    space_id,
+                    projected_note_id,
+                    stable_id,
+                    kind,
+                    date_key,
+                    relative_path,
+                    title,
+                    content_hash,
+                    revision,
+                    projection_state,
+                    encoding,
+                    newline,
+                    created_at,
+                    updated_at
+                FROM $overlay_note_id
+                LIMIT 1
+            )[0];
+            LET $prior_projected_note = (
+                SELECT * FROM $projected_note_id LIMIT 1
+            )[0];
+            LET $valid_overlay = (
+                $overlay != NONE
+                AND $overlay.space_id = $overlay_space_id
+                AND $overlay.projected_note_id = $projected_note_id
+                AND $overlay.revision = $revision
+                AND $overlay.content_hash = $projected_note.source_hash
+                AND (
+                    $prior_projected_note = NONE
+                    OR (
+                        $prior_projected_note.source_authority = 'overlay'
+                        AND $prior_projected_note.overlay_space_id
+                            = $overlay_space_id
+                        AND $prior_projected_note.overlay_note_id
+                            = $overlay_note_id
+                    )
+                )
+            );
+            IF $valid_overlay {
+            """
+            + mutation_statement
+            + """
+            };
+            LET $page = {
+                overlay: $overlay,
+                note: (SELECT * FROM $projected_note_id LIMIT 1)[0],
+                blocks: (
+                    SELECT * FROM note_block
+                    WHERE note_id = $projected_note_id
+                    ORDER BY position
+                ),
+                tasks: (
+                    SELECT * FROM knowledge_task
+                    WHERE note_id = $projected_note_id
+                ),
+                outgoing_links: (
+                    SELECT *,
+                        source_note_id.title AS source_note_title,
+                        source_note_id.overlay_note_id
+                            AS source_overlay_note_id,
+                        source_note_id.overlay_note_id.relative_path
+                            AS source_relative_path,
+                        target_note_id.title AS target_note_title,
+                        target_note_id.overlay_note_id
+                            AS target_overlay_note_id,
+                        target_note_id.overlay_note_id.relative_path
+                            AS target_relative_path
+                    FROM note_link
+                    WHERE source_note_id = $projected_note_id
+                ),
+                backlinks: (
+                    SELECT *,
+                        source_note_id.title AS source_note_title,
+                        source_note_id.overlay_note_id
+                            AS source_overlay_note_id,
+                        source_note_id.overlay_note_id.relative_path
+                            AS source_relative_path,
+                        target_note_id.title AS target_note_title,
+                        target_note_id.overlay_note_id
+                            AS target_overlay_note_id,
+                        target_note_id.overlay_note_id.relative_path
+                            AS target_relative_path
+                    FROM note_link
+                    WHERE target_note_id = $projected_note_id
+                )
+            };
+            RETURN {
+                outcome: IF $valid_overlay {
+                    'projected'
+                } ELSE {
+                    'conflict'
+                },
+                page: $page
+            };
+            COMMIT TRANSACTION;
+            """
+        )
+
     async def _submit_embedding_after_commit(
         self,
         note_id: str,
@@ -872,100 +1286,13 @@ class VaultRepository:
             "source_hash": parsed.content_hash,
             "external_state": "current",
         }
-        block_ids = {
-            block.parser_id: _record_id("note_block", vault_file_id, block.parser_id)
-            for block in parsed.blocks
-        }
-        blocks: list[dict[str, Any]] = []
-        for block in parsed.blocks:
-            block_id = block_ids[block.parser_id]
-            block_data = {
-                "schema_version": 1,
-                "note_id": _db_id(note_id),
-                "vault_file_id": _db_id(vault_file_id),
-                "parser_id": block.parser_id,
-                "parent_block_id": (
-                    _db_id(block_ids[block.parent_parser_id])
-                    if block.parent_parser_id
-                    else None
-                ),
-                "position": block.position,
-                "stable_source_id": block.stable_source_id,
-                "block_kind": block.block_kind,
-                "markdown": block.markdown,
-                "plain_text": block.plain_text,
-                "properties": block.properties,
-                "task_state": block.task_state,
-                "heading_path": block.heading_path,
-                "source_start": block.source_start,
-                "source_end": block.source_end,
-            }
-            blocks.append({"record_id": _db_id(block_id), "data": block_data})
-
-        persisted_links: list[dict[str, Any]] = []
-        links: list[dict[str, Any]] = [link.model_dump() for link in parsed.links]
-        link_spans = {
-            (int(link["source_start"]), int(link["source_end"])) for link in links
-        }
-        for embed in parsed.embeds:
-            span = (embed.source_start, embed.source_end)
-            # Parsers expose embeds both as rich metadata and as explicit graph
-            # edges. The note_link identity/index is one edge per source span,
-            # so only synthesize an edge when a parser supplied embed metadata
-            # without the corresponding ParsedLink.
-            if span in link_spans:
-                continue
-            links.append(
-                {
-                    **embed.model_dump(),
-                    "alias": None,
-                    "link_kind": "embed",
-                }
-            )
-            link_spans.add(span)
-        for link in links:
-            link_id = _record_id(
-                "note_link",
-                note_id,
-                str(link["source_start"]),
-                str(link["source_end"]),
-            )
-            source_parser_id = link.pop("source_block_parser_id")
-            target_text = link["target_text"]
-            link_data = {
-                "schema_version": 1,
-                "source_note_id": _db_id(note_id),
-                "source_block_id": (
-                    _db_id(block_ids[source_parser_id]) if source_parser_id else None
-                ),
-                "target_note_id": None,
-                "target_block_id": None,
-                **link,
-                "target_title_key": canonical_title_key(target_text),
-                "resolved": False,
-            }
-            persisted_links.append(
-                {
-                    "record_id": _db_id(link_id),
-                    "data": link_data,
-                    "target_title": canonical_title_key(target_text),
-                }
-            )
-
-        tasks: list[dict[str, Any]] = []
-        for task in parsed.tasks:
-            block_id = block_ids[task.block_parser_id]
-            task_id = _record_id("knowledge_task", block_id)
-            task_data = {
-                "schema_version": 1,
-                "note_id": _db_id(note_id),
-                "block_id": _db_id(block_id),
-                **task.model_dump(),
-            }
-            task_data.pop("block_parser_id")
-            for field in ("scheduled", "due", "completed"):
-                task_data[field] = _task_datetime(task_data[field])
-            tasks.append({"record_id": _db_id(task_id), "data": task_data})
+        blocks, persisted_links, tasks = _document_graph_records(
+            note_id=note_id,
+            identity_scope=vault_file_id,
+            parsed=parsed,
+            vault_file_id=vault_file_id,
+            overlay_note_id=None,
+        )
 
         success_receipt = self._receipt_data(
             operation_id=operation_id,
@@ -1573,6 +1900,31 @@ class VaultRepository:
             for row in rows
         ]
 
+    async def get_file(self, vault_id: str, relative_path: str) -> VaultFile:
+        """Return one durable vault file by exact canonical identity."""
+
+        _canonical_vault_relative_path(relative_path)
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                """
+                SELECT * FROM vault_file
+                WHERE vault_id = $vault_id
+                AND relative_path = $relative_path
+                LIMIT 1;
+                """,
+                {
+                    "vault_id": _db_id(vault_id),
+                    "relative_path": relative_path,
+                },
+            )
+        if not rows:
+            raise LookupError("canvas_not_found")
+        row = rows[0]
+        return _persisted_vault_file(
+            {**row, "note_id": _record_id("note", str(row["id"]))}
+        )
+
     async def get_page(self, vault_id: str, note_id: str) -> VaultPage:
         async with self._connection_factory() as connection:
             notes = await self._query(
@@ -2155,6 +2507,7 @@ class VaultRepository:
 
 __all__ = [
     "FailureResult",
+    "OwnedProjectionUnitOfWork",
     "ProjectionResult",
     "TrustImportResult",
     "VaultFile",

@@ -41,6 +41,59 @@ from desktop.ports import find_free_ports
 log = logging.getLogger(__name__)
 
 
+class ResourceGovernor:
+    """Bounded, in-memory resource ledger for local sidecars.
+
+    It records reservations only; it never probes or modifies a model library.
+    """
+
+    def __init__(self, memory_limit_bytes: int | None = None) -> None:
+        self.memory_limit_bytes = memory_limit_bytes
+        self._reservations: dict[str, int] = {}
+        self._heavyweight_mlx: str | None = None
+        self._queued_heavyweight_swaps: list[str] = []
+
+    def reserve(self, name: str, bytes_needed: int, *, heavyweight_mlx: bool = False) -> str:
+        required = max(0, int(bytes_needed))
+        if heavyweight_mlx and self._heavyweight_mlx not in {None, name}:
+            if name not in self._queued_heavyweight_swaps:
+                self._queued_heavyweight_swaps.append(name)
+            return "queued"
+        if self.memory_limit_bytes is not None and sum(self._reservations.values()) + required > self.memory_limit_bytes:
+            return "blocked"
+        self._reservations[name] = required
+        if heavyweight_mlx:
+            self._heavyweight_mlx = name
+        return "reserved"
+
+    def release(self, name: str) -> None:
+        self._reservations.pop(name, None)
+        if self._heavyweight_mlx == name:
+            self._heavyweight_mlx = None
+
+    def start_provider(self, name: str, *, reservation_bytes: int, spawn, health_check, heavyweight_mlx: bool = False) -> bool:
+        if self.reserve(name, reservation_bytes, heavyweight_mlx=heavyweight_mlx) != "reserved":
+            return False
+        proc = spawn()
+        if health_check(proc):
+            return True
+        try:
+            proc.terminate()
+        finally:
+            self.release(name)
+        return False
+
+    def snapshot(self) -> dict[str, object]:
+        reserved = sum(self._reservations.values())
+        return {
+            "memory_limit_bytes": self.memory_limit_bytes,
+            "reserved_bytes": reserved,
+            "memory_pressure": "limited" if self.memory_limit_bytes is not None and reserved >= self.memory_limit_bytes else "normal",
+            "reservations": dict(self._reservations),
+            "queued_heavyweight_swaps": list(self._queued_heavyweight_swaps),
+        }
+
+
 def _n_gpu_layers(env_key: str, *, mac_default: int = -1) -> str:
     """v0.8.67c — resolve llama.cpp `--n_gpu_layers` for a sidecar.
 
@@ -189,6 +242,7 @@ class Supervisor:
         progress: "ProgressBus | None" = None,
     ) -> None:
         self.cfg = cfg
+        self.resource_governor = ResourceGovernor(cfg.local_model_memory_limit_bytes)
         self.repo_root = repo_root
         self.bin_dir = bin_dir
         self.surreal_arch = surreal_arch
@@ -416,6 +470,12 @@ class Supervisor:
             "NEXT_PUBLIC_API_URL": api_url,
             "NEXT_PUBLIC_API_BASE": api_url,  # legacy, kept for safety
             "DEEPER_NOTEBOOK_ENCRYPTION_KEY": self.cfg.encryption_key,
+            "DEEPER_NOTEBOOK_MODEL_DIR": str(self.cfg.model_dir),
+            "DEEPER_NOTEBOOK_EXECUTION_POLICY": self.cfg.execution_policy,
+            "DEEPER_NOTEBOOK_COMPUTE_PROFILE": self.cfg.compute_profile,
+            "DEEPER_NOTEBOOK_LOCAL_MODEL_MEMORY_LIMIT_BYTES": str(
+                self.cfg.local_model_memory_limit_bytes or 0
+            ),
             # v0.4 memory layer: predeclare URLs so the surreal-commands worker
             # (spawned before these servers actually bind) sees them in its env.
             # The real servers come up later in start_all; worker connects
@@ -1404,19 +1464,41 @@ class Supervisor:
         # restart_sidecar can re-invoke fn(*args) without re-deriving
         # ports/paths.
         kind = self._step_to_kind(step)
+        heavyweight_mlx = bool(kind == "chat" and self.cfg.provider == "mlx")
+        if kind is not None:
+            reservation = self.resource_governor.reserve(
+                kind,
+                self._SIDECAR_RESERVATION_BYTES[kind],
+                heavyweight_mlx=heavyweight_mlx,
+            )
+            if reservation != "reserved":
+                self._progress(step, reservation, "Local resource governor deferred spawn")
+                return
         if kind is not None and args:
             # Args is typically (port,) for sidecars. Store the int +
             # the step name so restart logs the right label.
             self._sidecar_spawn_args[kind] = (args[0] if args else 0, step)
         self._progress(step, "running")
+        proc_count = len(self._procs)
         try:
             fn(*args)
+            spawned = self._procs[proc_count:]
+            if kind is not None and not spawned:
+                self.resource_governor.release(kind)
+                self._progress(step, "done")
+                return
+            if kind is not None and not self._sidecar_health_check(kind, spawned[-1]):
+                raise RuntimeError("sidecar failed its post-spawn health check")
             # v0.8.40 — track the Popen by kind for restart lookup. The
             # spawn fn pushed it onto _procs already; grab the last one.
-            if kind is not None and self._procs:
-                self._sidecar_procs[kind] = self._procs[-1]
+            if kind is not None:
+                self._sidecar_procs[kind] = spawned[-1]
             self._progress(step, "done")
         except Exception as exc:
+            if kind is not None:
+                for proc in self._procs[proc_count:]:
+                    self._cleanup_partial_sidecar(proc)
+                self.resource_governor.release(kind)
             log.warning("%s spawn failed: %s", step, exc, exc_info=True)
             self._progress(step, "error", str(exc))
 
@@ -1430,9 +1512,28 @@ class Supervisor:
         "supervisor.piper": "piper",
         "supervisor.memory": "memory",
     }
+    _SIDECAR_RESERVATION_BYTES: dict[str, int] = {
+        "chat": 5 * 1024**3,
+        "embed": 1024**3,
+        "whisper": 2 * 1024**3,
+        "piper": 512 * 1024**2,
+        "memory": 512 * 1024**2,
+    }
 
     def _step_to_kind(self, step: str) -> str | None:
         return self._STEP_TO_KIND.get(step)
+
+    def _sidecar_health_check(self, _kind: str, proc: subprocess.Popen) -> bool:
+        """A started child must still be alive before its reservation is kept."""
+        return proc.poll() is None
+
+    def _cleanup_partial_sidecar(self, proc: subprocess.Popen) -> None:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        if proc in self._procs:
+            self._procs.remove(proc)
 
     def restart_sidecar(self, kind: str) -> tuple[bool, str]:
         """v0.8.40 — Kill the named sidecar's process group and respawn
@@ -1495,7 +1596,8 @@ class Supervisor:
         # grandchildren of llama-cpp / whisper-cpp / piper-cpp are
         # also reaped.
         old = self._sidecar_procs.get(kind)
-        if old is not None and old.poll() is None:
+        stopped = old is None or old.poll() is not None
+        if old is not None and not stopped:
             try:
                 pgid = _os.getpgid(old.pid)
                 _os.killpg(pgid, _signal.SIGTERM)
@@ -1507,17 +1609,35 @@ class Supervisor:
                     pass
             try:
                 old.wait(timeout=5.0)
+                stopped = True
             except subprocess.TimeoutExpired:
                 try:
                     pgid = _os.getpgid(old.pid)
                     _os.killpg(pgid, _signal.SIGKILL)
                 except (OSError, ProcessLookupError):
-                    pass
+                    return False, (
+                        f"Sidecar {kind!r} could not be confirmed stopped; "
+                        "keeping the existing process and reservation."
+                    )
+                try:
+                    old.wait(timeout=2.0)
+                    stopped = True
+                except subprocess.TimeoutExpired:
+                    stopped = old.poll() is not None
+        if not stopped:
+            return False, (
+                f"Sidecar {kind!r} could not be confirmed stopped; "
+                "keeping the existing process and reservation."
+            )
         # Drop the dead Popen from both trackers so the next spawn
         # populates fresh entries.
         self._sidecar_procs.pop(kind, None)
         if old in self._procs:
             self._procs.remove(old)
+        # The old child is no longer running, so its reservation must not
+        # count against its own replacement. `_try_spawn` acquires a fresh
+        # reservation and releases it again if no healthy replacement appears.
+        self.resource_governor.release(kind)
 
         # Respawn via the same _try_spawn path used at boot — preserves
         # progress events + the v0.8.40 _sidecar_procs/spawn_args

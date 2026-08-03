@@ -44,10 +44,27 @@ UPGRADE = ROOT / "deeper_notebook/database/migrations/33.surrealql"
 MIGRATION_34_DOWN = ROOT / "deeper_notebook/database/migrations/34_down.surrealql"
 MIGRATION_35 = ROOT / "deeper_notebook/database/migrations/35.surrealql"
 MIGRATION_35_DOWN = ROOT / "deeper_notebook/database/migrations/35_down.surrealql"
+MIGRATION_36_DOWN = ROOT / "deeper_notebook/database/migrations/36_down.surrealql"
+MIGRATION_37_DOWN = ROOT / "deeper_notebook/database/migrations/37_down.surrealql"
+MIGRATION_38_DOWN = ROOT / "deeper_notebook/database/migrations/38_down.surrealql"
+MIGRATION_39_DOWN = ROOT / "deeper_notebook/database/migrations/39_down.surrealql"
+
+
+async def _restore_recorded_v35_state() -> None:
+    """Undo overlay migration 36 so migration-35 behavior can be isolated."""
+    await repo_query(MIGRATION_39_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 39);")
+    await repo_query(MIGRATION_38_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 38);")
+    await repo_query(MIGRATION_37_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 37);")
+    await repo_query(MIGRATION_36_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 36);")
 
 
 async def _restore_recorded_v32_state() -> None:
     """Undo the current-head migrations so the test starts at recorded v32."""
+    await _restore_recorded_v35_state()
     await repo_query(MIGRATION_35_DOWN.read_text(encoding="utf-8"))
     await repo_query(MIGRATION_34_DOWN.read_text(encoding="utf-8"))
     await repo_query(
@@ -74,6 +91,65 @@ async def test_migration_creates_vault_projection_tables(clean_namespace):
         "vault_sync_receipt",
         "vault_trust_record",
     }.issubset(tables)
+    assert {
+        "knowledge_engine_space",
+        "knowledge_engine_document",
+        "knowledge_engine_block",
+        "knowledge_engine_relation",
+        "knowledge_engine_task",
+        "knowledge_engine_asset",
+        "knowledge_engine_view",
+        "knowledge_engine_source_revision",
+        "knowledge_engine_identity_map",
+        "knowledge_engine_projection_receipt",
+        "knowledge_engine_backfill_checkpoint",
+        "knowledge_bookmark_folder",
+        "knowledge_bookmark",
+        "named_knowledge_workspace",
+        "knowledge_navigation_operation_receipt",
+    }.issubset(tables)
+    assert await get_latest_version() == 39
+
+
+async def test_migration_38_down_up_preserves_shadow_records(clean_namespace):
+    await repo_query(
+        "CREATE knowledge_engine_backfill_checkpoint:round_trip CONTENT $checkpoint;",
+        {
+            "checkpoint": {
+                "schema_version": 1,
+                "space_id": "space:round_trip",
+                "last_relative_locator": "Pages/Round Trip.md",
+                "last_source_hash": "a" * 64,
+                "status": "completed",
+                "projected": 1,
+                "unchanged": 0,
+                "failed": 0,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    await repo_query(MIGRATION_39_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 39);")
+    await repo_query(MIGRATION_38_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 38);")
+    assert await get_latest_version() == 37
+
+    row_after_down = (
+        await repo_query(
+            "SELECT * FROM knowledge_engine_backfill_checkpoint:round_trip;"
+        )
+    )[0]
+    assert str(row_after_down["id"]) == "knowledge_engine_backfill_checkpoint:round_trip"
+
+    manager = AsyncMigrationManager()
+    await manager.run_migration_up()
+    assert await get_latest_version() == 39
+    row_after_up = (
+        await repo_query(
+            "SELECT * FROM knowledge_engine_backfill_checkpoint:round_trip;"
+        )
+    )[0]
+    assert str(row_after_up["id"]) == "knowledge_engine_backfill_checkpoint:round_trip"
 
 
 async def _vault_file_fields() -> dict:
@@ -110,10 +186,11 @@ async def test_migration_35_exposes_optional_vault_file_newline_field(
     clean_namespace,
 ):
     assert "newline" in await _vault_file_fields()
-    assert await get_latest_version() == 35
+    assert await get_latest_version() == 39
 
 
 async def test_migration_35_upgrades_v34_row_without_newline(clean_namespace):
+    await _restore_recorded_v35_state()
     await repo_query(MIGRATION_35_DOWN.read_text(encoding="utf-8"))
     await repo_query("DELETE type::thing('_sbl_migrations', 35);")
     assert await get_latest_version() == 34
@@ -130,7 +207,7 @@ async def test_migration_35_upgrades_v34_row_without_newline(clean_namespace):
     manager = AsyncMigrationManager()
     await manager.run_migration_up()
 
-    assert await get_latest_version() == 35
+    assert await get_latest_version() == 39
     row = (
         await repo_query(
             "SELECT * FROM $id;",
@@ -164,6 +241,7 @@ async def test_migration_35_down_preserves_row_and_up_is_idempotent(
     await _create_mount()
     await _create_v34_vault_file("vault_file:newline_round_trip", newline="crlf")
 
+    await _restore_recorded_v35_state()
     await repo_query(MIGRATION_35_DOWN.read_text(encoding="utf-8"))
 
     assert "newline" not in await _vault_file_fields()
@@ -179,7 +257,7 @@ async def test_migration_35_down_preserves_row_and_up_is_idempotent(
     manager = AsyncMigrationManager()
     await manager.run_migration_up()
     await manager.run_migration_up()
-    assert await get_latest_version() == 35
+    assert await get_latest_version() == 39
     assert "newline" in await _vault_file_fields()
 
 
@@ -493,7 +571,7 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
 
     manager = AsyncMigrationManager()
     await manager.run_migration_up()
-    assert await get_latest_version() == 35
+    assert await get_latest_version() == 39
 
     note_info = await repo_query("INFO FOR TABLE note;")
     link_info = await repo_query("INFO FOR TABLE note_link;")
@@ -559,13 +637,21 @@ async def test_recorded_v32_schema_upgrades_through_idempotent_migration_33(
         assert after["source_end"] == before["source_end"]
 
     await manager.runner.run_one_down()
+    assert await get_latest_version() == 38
+    await manager.runner.run_one_down()
+    assert await get_latest_version() == 37
+    await manager.runner.run_one_down()
+    assert await get_latest_version() == 36
+    await manager.runner.run_one_down()
+    assert await get_latest_version() == 35
+    await manager.runner.run_one_down()
     assert await get_latest_version() == 34
     await manager.runner.run_one_down()
     assert await get_latest_version() == 33
     await manager.runner.run_one_down()
     assert await get_latest_version() == 32
     await manager.run_migration_up()
-    assert await get_latest_version() == 35
+    assert await get_latest_version() == 39
     assert await repo_query("SELECT * FROM note ORDER BY id;") == list(
         notes_after.values()
     )
@@ -659,10 +745,12 @@ async def test_migration_33_note_batch_failure_rolls_back_row_and_field_definiti
 
     assert await get_latest_version() == 32
     assert (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0] == before
-    assert "VALUE $before OR time::now()" in await _updated_field_definition("note")
+    failed_schema = await _updated_field_definition("note")
+    assert "DEFAULT time::now()" in failed_schema
+    assert "VALUE" not in failed_schema
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 35
+    assert await get_latest_version() == 39
     migrated = (await repo_query("SELECT * FROM $id;", {"id": note_id}))[0]
     assert migrated["title_key"] == "rollback note"
     assert migrated["updated"] == before["updated"]
@@ -752,12 +840,12 @@ async def test_migration_33_link_batch_failure_rolls_back_row_and_field_definiti
 
     assert await get_latest_version() == 32
     assert (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0] == before
-    assert "VALUE $before OR time::now()" in await _updated_field_definition(
-        "note_link"
-    )
+    failed_schema = await _updated_field_definition("note_link")
+    assert "DEFAULT time::now()" in failed_schema
+    assert "VALUE" not in failed_schema
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 35
+    assert await get_latest_version() == 39
     migrated = (await repo_query("SELECT * FROM $id;", {"id": link_id}))[0]
     assert migrated["target_title_key"] == "target"
     assert migrated["target_note_id"] == str(target_id)
@@ -796,13 +884,15 @@ async def test_migration_33_final_restore_failure_rolls_back_both_field_definiti
             await manager.run_migration_up()
 
     assert await get_latest_version() == 32
-    assert "VALUE $before OR time::now()" in await _updated_field_definition("note")
-    assert "VALUE $before OR time::now()" in await _updated_field_definition(
-        "note_link"
-    )
+    failed_note_schema = await _updated_field_definition("note")
+    failed_link_schema = await _updated_field_definition("note_link")
+    assert "DEFAULT time::now()" in failed_note_schema
+    assert "VALUE" not in failed_note_schema
+    assert "DEFAULT time::now()" in failed_link_schema
+    assert "VALUE" not in failed_link_schema
 
     await manager.run_migration_up()
-    assert await get_latest_version() == 35
+    assert await get_latest_version() == 39
     assert await _updated_field_definition("note") == note_schema_before
     assert await _updated_field_definition("note_link") == link_schema_before
 
@@ -920,6 +1010,74 @@ async def test_complete_projection_is_atomic_and_record_typed(clean_namespace):
     assert receipts[0]["status"] == "success"
     assert receipts[0].get("before_hash") is None
     assert receipts[0]["after_hash"] == "a" * 64
+
+
+async def test_owned_projection_is_overlay_scoped_and_keeps_vault_tables_immutable(
+    clean_namespace,
+):
+    overlay_space_id = ensure_record_id("overlay_space:default")
+    overlay_note_id = ensure_record_id("overlay_note:integration_owned")
+    projected_note_id = ensure_record_id("note:integration_owned")
+    now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+    await repo_query(
+        """
+        CREATE $space_id CONTENT $space;
+        CREATE $overlay_note_id CONTENT $overlay_note;
+        """,
+        {
+            "space_id": overlay_space_id,
+            "space": {
+                "schema_version": 1,
+                "slug": "default",
+                "display_name": "Deeper Notebook Overlay",
+                "root_version": 1,
+                "created_at": now,
+                "updated_at": now,
+            },
+            "overlay_note_id": overlay_note_id,
+            "overlay_note": {
+                "schema_version": 1,
+                "space_id": overlay_space_id,
+                "projected_note_id": projected_note_id,
+                "stable_id": "01JTESTOVERLAY000000000001",
+                "kind": "unique",
+                "date_key": None,
+                "relative_path": "Notes/20260729-1542 Alpha.md",
+                "title": "Alpha",
+                "content_hash": "a" * 64,
+                "revision": 1,
+                "projection_state": "current",
+                "encoding": "utf-8",
+                "newline": "lf",
+                "created_at": now,
+                "updated_at": now,
+            },
+        },
+    )
+    repository = VaultRepository(embedding_submitter=lambda *_args: None)
+
+    page = await repository.project_owned_document(
+        source_authority="overlay",
+        overlay_space_id="overlay_space:default",
+        overlay_note_id="overlay_note:integration_owned",
+        projected_note_id="note:integration_owned",
+        parsed=_document(),
+        revision=1,
+    )
+
+    assert page.overlay.id == "overlay_note:integration_owned"
+    assert page.note["source_authority"] == "overlay"
+    assert page.note["canonical_external"] is False
+    blocks = await repo_query("SELECT * FROM note_block;")
+    assert len(blocks) == 2
+    assert all(block.get("vault_file_id") is None for block in blocks)
+    assert all(
+        str(block["overlay_note_id"]) == "overlay_note:integration_owned"
+        for block in blocks
+    )
+    assert await repo_query("SELECT * FROM vault_mount;") == []
+    assert await repo_query("SELECT * FROM vault_file;") == []
+    assert await repo_query("SELECT * FROM vault_sync_receipt;") == []
 
 
 async def test_obsidian_fixture_embeds_project_once_per_source_span(clean_namespace):

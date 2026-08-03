@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import PurePosixPath
 from typing import Any
@@ -9,6 +10,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from api.schemas.vault import (
+    VaultCanvasEdgeResponse,
+    VaultCanvasNodeResponse,
+    VaultCanvasResponse,
     VaultFileResponse,
     VaultLinkResponse,
     VaultMountCreateRequest,
@@ -20,11 +24,16 @@ from api.schemas.vault import (
     VaultTrustImportResponse,
     VaultTrustSummaryResponse,
 )
+from deeper_notebook.vault.canvas import CanvasDocumentError
 from deeper_notebook.vault.repository import VaultMountCreate, VaultProjectionError
 from deeper_notebook.vault.security import VaultSecurityError, approve_vault_root
 from deeper_notebook.vault.trust import TrustManifestError
 
 router = APIRouter()
+_KNOWLEDGE_DOCUMENT_ID = re.compile(r"^knowledge_engine_document:[A-Za-z0-9_-]+$")
+_KNOWLEDGE_BLOCK_ID = re.compile(r"^knowledge_engine_block:[A-Za-z0-9_-]+$")
+_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS = 0.25
+_GRAPH_PODCAST_SELECTION_LIMIT = 128
 
 
 def _service(request: Request) -> Any:
@@ -52,6 +61,12 @@ def _map_exception(exc: Exception) -> HTTPException:
         return _error(status.HTTP_409_CONFLICT, "vault_scan_in_progress")
     if "vault_read_only" in message or isinstance(exc, PermissionError):
         return _error(status.HTTP_405_METHOD_NOT_ALLOWED, "vault_read_only")
+    if isinstance(exc, CanvasDocumentError):
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "canvas_invalid")
+    if isinstance(exc, LookupError) and "canvas_not_found" in message:
+        return _error(status.HTTP_404_NOT_FOUND, "canvas_not_found")
+    if isinstance(exc, VaultSecurityError) and exc.code == "changed_during_read":
+        return _error(status.HTTP_409_CONFLICT, "canvas_source_changed")
     if isinstance(exc, LookupError) and "vault_note_file_not_found" in message:
         return _error(
             status.HTTP_409_CONFLICT,
@@ -107,6 +122,97 @@ def _mount_detail(mount: Any) -> VaultMountDetail:
     return VaultMountDetail(
         **_mount_summary(mount).model_dump(), root_path=mount.root_path
     )
+
+
+async def _page_identity(
+    request: Request, *, legacy_note_id: str, blocks: list[dict[str, Any]]
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """Optionally enrich a canonical page; engine failures must never block reads."""
+    service = getattr(request.app.state, "knowledge_engine_service", None)
+    copied_blocks = [dict(block) for block in blocks]
+    if service is None:
+        return None, copied_blocks
+    try:
+        keys = tuple(
+            dict.fromkeys(
+                key
+                for block in copied_blocks
+                if isinstance(block, dict)
+                for key in [block.get("stable_source_id") or block.get("parser_id")]
+                if isinstance(key, str)
+            )
+        )
+        resolved = await asyncio.wait_for(
+            service.resolve_legacy_page(
+                legacy_note_id=legacy_note_id, block_keys=keys
+            ),
+            timeout=_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS,
+        )
+        document_id = getattr(resolved, "document_id", None)
+        block_ids = getattr(resolved, "block_ids", None)
+        if isinstance(resolved, dict):
+            document_id = resolved.get("document_id")
+            block_ids = resolved.get("block_ids")
+        if (
+            not isinstance(document_id, str)
+            or _KNOWLEDGE_DOCUMENT_ID.fullmatch(document_id) is None
+            or not isinstance(block_ids, dict)
+        ):
+            return None, copied_blocks
+        for block in copied_blocks:
+            key = block.get("stable_source_id") or block.get("parser_id")
+            block_id = block_ids.get(key) if isinstance(key, str) else None
+            if isinstance(block_id, str) and _KNOWLEDGE_BLOCK_ID.fullmatch(block_id):
+                block["knowledge_block_id"] = block_id
+        return document_id, copied_blocks
+    except Exception:
+        return None, copied_blocks
+
+
+async def _graph_document_identities(
+    request: Request, note_ids: list[str],
+) -> dict[str, str]:
+    """Read-only bounded legacy-to-unified identities for graph actions.
+
+    A vault graph is intentionally keyed by legacy note IDs. UI actions that
+    cross into the unified knowledge engine must not infer or pass source
+    paths, so expose only already-projected document IDs. Enrichment is best
+    effort and failure leaves the graph itself fully readable.
+    """
+    service = getattr(request.app.state, "knowledge_engine_service", None)
+    if service is None:
+        return {}
+    unique_note_ids = tuple(dict.fromkeys(note_ids))[:_GRAPH_PODCAST_SELECTION_LIMIT]
+    if not unique_note_ids:
+        return {}
+    try:
+        resolved = await asyncio.wait_for(
+            asyncio.gather(
+                *(
+                    service.resolve_legacy_page(
+                        legacy_note_id=note_id,
+                        block_keys=(),
+                    )
+                    for note_id in unique_note_ids
+                ),
+                return_exceptions=True,
+            ),
+            timeout=_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        return {}
+    identities: dict[str, str] = {}
+    for note_id, item in zip(unique_note_ids, resolved, strict=True):
+        if isinstance(item, Exception):
+            continue
+        document_id = (
+            item.get("document_id")
+            if isinstance(item, dict)
+            else getattr(item, "document_id", None)
+        )
+        if isinstance(document_id, str) and _KNOWLEDGE_DOCUMENT_ID.fullmatch(document_id):
+            identities[note_id] = document_id
+    return identities
 
 
 @router.post(
@@ -211,10 +317,14 @@ async def get_page(request: Request, vault_id: str, note_id: str) -> VaultPageRe
         page = await _repository(request).get_page(vault_id, note_id)
         if re.fullmatch(r"[0-9a-fA-F]{64}", page.file.content_hash or "") is None:
             raise LookupError("vault_page_content_hash_unavailable")
+        document_id, blocks = await _page_identity(
+            request, legacy_note_id=note_id, blocks=page.blocks
+        )
         return VaultPageResponse(
+            knowledge_document_id=document_id,
             file=VaultFileResponse.model_validate(page.file.model_dump()),
             note=page.note,
-            blocks=page.blocks,
+            blocks=blocks,
             tasks=page.tasks,
             outgoing_links=[
                 VaultLinkResponse.model_validate(item.model_dump())
@@ -223,6 +333,48 @@ async def get_page(request: Request, vault_id: str, note_id: str) -> VaultPageRe
             backlinks=[
                 VaultLinkResponse.model_validate(item.model_dump())
                 for item in page.backlinks
+            ],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
+@router.get(
+    "/vaults/{vault_id}/canvases/{relative_path:path}",
+    response_model=VaultCanvasResponse,
+)
+async def get_canvas(
+    request: Request, vault_id: str, relative_path: str
+) -> VaultCanvasResponse:
+    try:
+        result = await _service(request).read_canvas(vault_id, relative_path)
+        return VaultCanvasResponse(
+            file=VaultFileResponse.model_validate(result.file.model_dump()),
+            source_hash=result.source_hash,
+            nodes=[
+                VaultCanvasNodeResponse(
+                    id=node.id,
+                    type=node.type,
+                    x=node.x,
+                    y=node.y,
+                    width=node.width,
+                    height=node.height,
+                    text=node.text,
+                    file_path=node.file_path,
+                    label=node.label,
+                )
+                for node in result.document.nodes
+            ],
+            edges=[
+                VaultCanvasEdgeResponse(
+                    id=edge.id,
+                    from_node=edge.from_node,
+                    to_node=edge.to_node,
+                    label=edge.label,
+                )
+                for edge in result.document.edges
             ],
         )
     except HTTPException:
@@ -275,7 +427,16 @@ async def graph(
         result = await _repository(request).graph(
             vault_id, center_note_id, depth, limit
         )
-        return result.model_dump()
+        payload = result.model_dump()
+        document_ids = await _graph_document_identities(
+            request,
+            [node["id"] for node in payload["nodes"] if isinstance(node.get("id"), str)],
+        )
+        for node in payload["nodes"]:
+            note_id = node.get("id")
+            if isinstance(note_id, str) and note_id in document_ids:
+                node["knowledge_document_id"] = document_ids[note_id]
+        return payload
     except Exception as exc:
         raise _map_exception(exc) from None
 

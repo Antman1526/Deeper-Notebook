@@ -15,6 +15,7 @@ from deeper_notebook.local_models.benchmarks import (
     BenchmarkMeasurement,
     BenchmarkResult,
     QualityMeasurement,
+    benchmark_is_accepted,
     clear_benchmark_jobs,
     get_benchmark_job,
     list_benchmark_jobs,
@@ -91,6 +92,7 @@ async def test_benchmark_job_measures_registered_role_models(tmp_path):
     assert by_role["source_synthesis"].model_id == "model:qwen-coder"
     assert by_role["source_synthesis"].latency_ms == 800
     assert by_role["source_synthesis"].tokens_per_second == 42
+    assert by_role["source_synthesis"].benchmark_fingerprint
     assert by_role["study_fast"].model_id == "model:gemma"
     assert by_role["study_fast"].score > by_role["source_synthesis"].score
     history = load_benchmark_history(tmp_path)
@@ -158,6 +160,32 @@ def test_legacy_speed_only_history_rows_remain_readable_as_performance_only(tmp_
     assert restored[0].quality is None
     assert restored[0].normalized_metrics == {"latency": 100.0, "throughput": 50.0}
     assert restored[0].score == 24.5
+    assert benchmark_is_accepted(restored[0], now=1_000.0) is False
+
+
+def test_benchmark_persists_peak_memory_fingerprint_and_fresh_accepted_quality(
+    tmp_path,
+):
+    result = BenchmarkResult(
+        role="research_chat",
+        label="Research chat",
+        status="completed",
+        latency_ms=250,
+        tokens_per_second=40,
+        peak_memory_bytes=4 * 1024**3,
+        benchmark_fingerprint="model-fingerprint-1",
+        completed_at=900.0,
+        quality=QualityMeasurement(answer_correctness=True),
+        score=82.0,
+    )
+    save_benchmark_history(tmp_path, [result])
+
+    restored = load_benchmark_history(tmp_path)[0]
+
+    assert restored.peak_memory_bytes == 4 * 1024**3
+    assert restored.benchmark_fingerprint == "model-fingerprint-1"
+    assert benchmark_is_accepted(restored, now=1_000.0) is True
+    assert benchmark_is_accepted(restored, now=31 * 24 * 60 * 60) is False
 
 
 def test_legacy_benchmark_filename_is_read_but_new_writes_are_canonical(tmp_path):

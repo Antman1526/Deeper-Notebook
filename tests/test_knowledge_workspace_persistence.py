@@ -4,9 +4,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+import deeper_notebook.workspace.contracts as workspace_contracts
+
 from deeper_notebook.workspace.contracts import (
     KnowledgeTabState,
     KnowledgeWorkspaceDocument,
+    KnowledgeWorkspaceDocumentV2,
     PaneLayoutNode,
     SplitLayoutNode,
     default_knowledge_workspace,
@@ -43,6 +46,226 @@ def populated() -> KnowledgeWorkspaceDocument:
             "layout": {"type": "pane", "pane_id": "pane-1"},
         }
     )
+
+
+@pytest.mark.parametrize(
+    (
+        "view_mode",
+        "source_authority",
+        "expected_mode",
+        "expected_kind",
+        "expected_render",
+    ),
+    [
+        ("reading", "external-vault", "read", "document", "reading"),
+        ("source", "external-vault", "read", "document", "source"),
+        ("live-preview", "external-vault", "read", "document", "live-preview"),
+        ("canvas", "external-vault", "read", "document", "canvas"),
+        ("reading", "overlay", "write", "document", "reading"),
+        ("graph", "external-vault", "graph", "graph", None),
+    ],
+)
+def test_migrate_workspace_v1_preserves_session_identity_and_maps_modes(
+    view_mode: str,
+    source_authority: str,
+    expected_mode: str,
+    expected_kind: str,
+    expected_render: str | None,
+):
+    payload = populated().model_dump(mode="json")
+    tab_payload = payload["panes"]["pane-1"]["tabs"][0]
+    tab_payload["view_mode"] = view_mode
+    tab_payload["source_authority"] = source_authority
+    tab_payload["knowledge_document_id"] = "knowledge_engine_document:one"
+    tab_payload["graph_viewport"] = {"x": 2.0, "y": 3.0, "zoom": 1.5}
+    payload["navigation"] = {"utility_mode": "workspaces", "sidebar_width": 400}
+
+    migrated = workspace_contracts.migrate_workspace_v1(
+        KnowledgeWorkspaceDocument.model_validate(payload)
+    )
+
+    tab = migrated.panes["pane-1"].tabs[0]
+    assert migrated.version == 2
+    assert migrated.active_pane_id == "pane-1"
+    assert migrated.next_id == 2
+    assert migrated.layout == PaneLayoutNode(pane_id="pane-1")
+    assert migrated.navigation.utility_mode == "workspaces"
+    assert tab.id == "tab:one"
+    assert tab.mode == expected_mode
+    assert tab.target.kind == expected_kind
+    if expected_kind == "document":
+        assert tab.target.relative_locator == "Projects/One.md"
+        assert tab.target.render_mode == expected_render
+    else:
+        assert tab.target.viewport.zoom == 1.5
+        assert tab.target.origin is not None
+        assert tab.target.origin.relative_locator == "Projects/One.md"
+
+
+def test_workspace_v2_rejects_a_mode_target_mismatch():
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
+    payload["panes"]["pane-1"]["tabs"][0]["mode"] = "ask"
+
+    with pytest.raises(ValidationError, match="workspace_mode_target_mismatch"):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "/secret.md",
+        "C:\\secret.md",
+        "a\\b.md",
+        "a//b.md",
+        "./a.md",
+        "a/../b.md",
+        " a.md",
+        "a.md ",
+        "a\x00b.md",
+    ],
+)
+def test_workspace_v2_document_targets_require_canonical_relative_locators(
+    locator: str,
+):
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
+    payload["panes"]["pane-1"]["tabs"][0]["target"]["relative_locator"] = locator
+
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+
+
+def test_workspace_v2_content_free_targets_preserve_null_graph_and_reject_unsafe_ids():
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
+    payload["panes"]["pane-1"]["tabs"] = [
+        {
+            "id": "tab-graph",
+            "mode": "graph",
+            "title": "Rootless graph",
+            "target": {
+                "kind": "graph",
+                "root_document_id": None,
+                "space_ids": [],
+                "relation_kinds": [],
+                "viewport": {"x": 0, "y": 0, "zoom": 1},
+                "origin": None,
+            },
+        },
+        {
+            "id": "tab-ask",
+            "mode": "ask",
+            "title": "Ask",
+            "target": {
+                "kind": "ask",
+                "thread_id": "thread:one",
+                "selected_document_ids": ["knowledge_engine_document:one"],
+            },
+        },
+        {
+            "id": "tab-podcast",
+            "mode": "podcast",
+            "title": "Podcast",
+            "target": {
+                "kind": "podcast",
+                "production_id": "production:one",
+                "seed_document_ids": ["knowledge_engine_document:two"],
+            },
+        },
+    ]
+    payload["panes"]["pane-1"]["active_tab_id"] = "tab-graph"
+
+    parsed = KnowledgeWorkspaceDocumentV2.model_validate(payload)
+    assert parsed.panes["pane-1"].tabs[0].target.root_document_id is None
+
+    payload["panes"]["pane-1"]["tabs"][1]["target"]["thread_id"] = "/private/thread"
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+    payload["panes"]["pane-1"]["tabs"][1]["target"]["thread_id"] = "thread:one"
+    payload["panes"]["pane-1"]["tabs"][2]["target"]["production_id"] = "episode\nraw"
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+    payload["panes"]["pane-1"]["tabs"][2]["target"]["production_id"] = "production:one"
+
+    for tab_index, field in (
+        (0, "root_document_id"),
+        (1, "selected_document_ids"),
+        (2, "seed_document_ids"),
+    ):
+        payload["panes"]["pane-1"]["tabs"][tab_index]["target"][field] = (
+            "/private/document"
+            if field == "root_document_id"
+            else ["/private/document"]
+        )
+        with pytest.raises(ValidationError):
+            KnowledgeWorkspaceDocumentV2.model_validate(payload)
+        payload["panes"]["pane-1"]["tabs"][tab_index]["target"][field] = (
+            None if field == "root_document_id" else ["knowledge_engine_document:one"]
+        )
+
+
+@pytest.mark.parametrize("target_kind", ["search", "graph"])
+def test_workspace_v2_targets_require_canonical_space_ids(target_kind: str):
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
+    payload["panes"]["pane-1"]["tabs"] = [
+        {
+            "id": "tab-target",
+            "mode": target_kind,
+            "title": target_kind.title(),
+            "target": {
+                "kind": target_kind,
+                "query": "" if target_kind == "search" else None,
+                "search_mode": "text" if target_kind == "search" else None,
+                "root_document_id": None if target_kind == "graph" else None,
+                "space_ids": ["../private-space"],
+                "relation_kinds": [] if target_kind == "graph" else None,
+                "viewport": {"x": 0, "y": 0, "zoom": 1}
+                if target_kind == "graph"
+                else None,
+                "origin": None if target_kind == "graph" else None,
+                "authority_kinds": [] if target_kind == "search" else None,
+            },
+        }
+    ]
+    payload["panes"]["pane-1"]["active_tab_id"] = "tab-target"
+    payload["panes"]["pane-1"]["tabs"][0]["target"] = {
+        key: value
+        for key, value in payload["panes"]["pane-1"]["tabs"][0]["target"].items()
+        if value is not None
+    }
+
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+
+
+def test_workspace_v2_navigation_requires_canonical_space_ids():
+    payload = workspace_contracts.migrate_workspace_v1(populated()).model_dump(
+        mode="json"
+    )
+    payload["navigation"]["selected_space_ids"] = ["knowledge_engine_space:primary"]
+    assert KnowledgeWorkspaceDocumentV2.model_validate(
+        payload
+    ).navigation.selected_space_ids == ["knowledge_engine_space:primary"]
+
+    payload["navigation"]["selected_space_ids"] = ["../private-space"]
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocumentV2.model_validate(payload)
+
+
+def test_migrate_workspace_v1_canonicalizes_windows_relative_locators():
+    payload = populated().model_dump(mode="json")
+    payload["panes"]["pane-1"]["tabs"][0]["relative_path"] = "Notes\\One.md"
+    legacy = KnowledgeWorkspaceDocument.model_validate(payload)
+
+    migrated = workspace_contracts.migrate_workspace_v1(legacy)
+
+    assert migrated.panes["pane-1"].tabs[0].target.relative_locator == "Notes/One.md"
 
 
 def split_layout_payload(depth: int) -> dict:
@@ -95,14 +318,73 @@ def attempt_temporary_files(path: Path) -> list[Path]:
 
 def test_missing_workspace_returns_default(tmp_path: Path):
     state = load_knowledge_workspace(path=tmp_path / "knowledge.json")
-    assert state == default_knowledge_workspace()
+    assert state == workspace_contracts.migrate_workspace_v1(
+        default_knowledge_workspace()
+    )
 
 
 def test_workspace_round_trips_through_atomic_file(tmp_path: Path):
     path = tmp_path / "workspaces" / "knowledge.json"
     save_knowledge_workspace(populated(), path=path)
-    assert load_knowledge_workspace(path=path) == populated()
+    assert load_knowledge_workspace(
+        path=path
+    ) == workspace_contracts.migrate_workspace_v1(populated())
     assert not path.with_suffix(".json.tmp").exists()
+
+
+def test_legacy_workspace_tabs_default_to_external_vault_authority():
+    workspace = populated()
+
+    assert workspace.panes["pane-1"].tabs[0].source_authority == "external-vault"
+    assert (
+        workspace.model_dump()["panes"]["pane-1"]["tabs"][0]["source_authority"]
+        == "external-vault"
+    )
+
+
+def test_pre_navigation_current_session_loads_with_version_one_defaults():
+    payload = populated().model_dump()
+    payload.pop("navigation", None)
+    payload["panes"]["pane-1"]["tabs"][0].pop("knowledge_document_id", None)
+    payload["panes"]["pane-1"]["tabs"][0].pop("graph_viewport", None)
+
+    workspace = KnowledgeWorkspaceDocument.model_validate(payload)
+
+    assert workspace.version == 1
+    assert workspace.navigation.utility_mode == "sources"
+    assert workspace.navigation.sidebar_width == 320
+    assert workspace.panes["pane-1"].tabs[0].knowledge_document_id is None
+    assert workspace.panes["pane-1"].tabs[0].graph_viewport is None
+
+
+def test_current_session_round_trips_a_bounded_search_mode():
+    payload = populated().model_dump()
+    payload["navigation"] = {"search_mode": "semantic"}
+
+    workspace = KnowledgeWorkspaceDocument.model_validate(payload)
+
+    assert workspace.navigation.search_mode == "semantic"
+    assert (
+        KnowledgeWorkspaceDocument.model_validate(workspace.model_dump()) == workspace
+    )
+    payload["navigation"] = {"search_mode": "unsupported"}
+    with pytest.raises(ValidationError):
+        KnowledgeWorkspaceDocument.model_validate(payload)
+
+
+def test_split_first_size_defaults_without_storing_a_second_panel_size():
+    split = SplitLayoutNode.model_validate(
+        {
+            "type": "split",
+            "id": "split-one",
+            "direction": "horizontal",
+            "first": {"type": "pane", "pane_id": "pane-1"},
+            "second": {"type": "pane", "pane_id": "pane-2"},
+        }
+    )
+
+    assert split.first_size == 50.0
+    assert "second_size" not in split.model_dump()
 
 
 def test_stale_legacy_temporary_file_does_not_block_future_saves(
@@ -114,7 +396,9 @@ def test_stale_legacy_temporary_file_does_not_block_future_saves(
 
     save_knowledge_workspace(populated(), path=path)
 
-    assert load_knowledge_workspace(path=path) == populated()
+    assert load_knowledge_workspace(
+        path=path
+    ) == workspace_contracts.migrate_workspace_v1(populated())
     assert stale.read_bytes() == b"interrupted older save"
     assert attempt_temporary_files(path) == []
 
@@ -162,15 +446,15 @@ def test_overlapping_saves_use_distinct_temporary_files(
     assert replacement_sources[0] != replacement_sources[1]
     assert all(source.parent == path.parent for source in replacement_sources)
     restored = load_knowledge_workspace(path=path)
-    assert restored == first or restored == second
+    assert restored == workspace_contracts.migrate_workspace_v1(
+        first
+    ) or restored == workspace_contracts.migrate_workspace_v1(second)
     assert attempt_temporary_files(path) == []
 
 
 def test_absolute_or_parent_relative_paths_are_rejected():
     payload = populated().model_dump()
-    payload["panes"]["pane-1"]["tabs"][0]["relative_path"] = (
-        "/Users/me/secret.md"
-    )
+    payload["panes"]["pane-1"]["tabs"][0]["relative_path"] = "/Users/me/secret.md"
     with pytest.raises(ValidationError):
         KnowledgeWorkspaceDocument.model_validate(payload)
     payload["panes"]["pane-1"]["tabs"][0]["relative_path"] = "../secret.md"
@@ -218,8 +502,7 @@ def test_save_revalidates_mutated_documents_before_writing(
         document.version = 2
     elif mutation == "over-limit-tabs":
         document.panes["pane-1"].tabs.extend(
-            KnowledgeTabState.model_validate(tab(index))
-            for index in range(2, 130)
+            KnowledgeTabState.model_validate(tab(index)) for index in range(2, 130)
         )
     else:
         document.layout = PaneLayoutNode(pane_id="missing")
@@ -288,9 +571,7 @@ def test_save_rejects_encoded_state_larger_than_persistence_limit(
 def test_tab_limit_is_rejected_before_nested_tab_validation():
     payload = populated().model_dump()
     payload["panes"]["pane-1"]["active_tab_id"] = "tab-1"
-    payload["panes"]["pane-1"]["tabs"] = [
-        tab(index) for index in range(1, 130)
-    ]
+    payload["panes"]["pane-1"]["tabs"] = [tab(index) for index in range(1, 130)]
     payload["panes"]["pane-1"]["tabs"][-1]["relative_path"] = (
         "/must-not-be-deeply-validated.md"
     )

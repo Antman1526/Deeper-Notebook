@@ -1,0 +1,6 @@
+-- Unified knowledge projections are sticky so a version rollback cannot erase
+-- source-grounded shadow records that a later consumer may need to inspect.
+RETURN {
+  schema_preserved: true,
+  reason: "unified knowledge projections are sticky; disable consumers instead"
+};

@@ -10,7 +10,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Literal
 
-from deeper_notebook.local_models.inventory import LocalModelInfo, enumerate_models
+from deeper_notebook.local_models.inventory import (
+    LocalModelInfo,
+    enumerate_models,
+    model_root_fingerprint,
+)
 from deeper_notebook.local_models.quality_tasks import (
     QualityMeasurement,
     evaluate_quality_response,
@@ -63,6 +67,7 @@ class BenchmarkMeasurement:
     latency_ms: int
     tokens_per_second: float
     quality: QualityMeasurement | None = None
+    peak_memory_bytes: int | None = None
 
     def normalized_metrics(self) -> dict[str, float]:
         metrics = {
@@ -99,6 +104,9 @@ class BenchmarkResult:
     provider: str | None = None
     latency_ms: int | None = None
     tokens_per_second: float | None = None
+    peak_memory_bytes: int | None = None
+    benchmark_fingerprint: str | None = None
+    completed_at: float | None = None
     quality: QualityMeasurement | None = None
     normalized_metrics: dict[str, float] = field(default_factory=dict)
     score: float = 0.0
@@ -132,6 +140,7 @@ _VALID_ROLES = {
     "study_fast",
     "embedding",
 }
+BENCHMARK_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
 
 def clear_benchmark_jobs() -> None:
@@ -210,6 +219,20 @@ def save_benchmark_history(model_dir: Path, results: list[BenchmarkResult]) -> N
         path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     except OSError:
         return
+
+
+def benchmark_is_accepted(
+    result: BenchmarkResult,
+    *,
+    now: float | None = None,
+) -> bool:
+    """Accept only fresh, quality-bearing results; speed-only history is advisory."""
+    if result.status != "completed" or result.score <= 0 or result.quality is None:
+        return False
+    if result.completed_at is None:
+        return False
+    current_time = time.time() if now is None else now
+    return 0 <= current_time - result.completed_at <= BENCHMARK_MAX_AGE_SECONDS
 
 
 async def resolve_measured_model_id(
@@ -360,6 +383,9 @@ async def _run_benchmark_job(
                         provider=getattr(registered_model, "provider", None),
                         latency_ms=measurement.latency_ms,
                         tokens_per_second=round(measurement.tokens_per_second, 2),
+                        peak_memory_bytes=measurement.peak_memory_bytes,
+                        benchmark_fingerprint=model_root_fingerprint(route.model.path),
+                        completed_at=time.time(),
                         quality=measurement.quality,
                         normalized_metrics=measurement.normalized_metrics(),
                         score=score_benchmark_measurement(role, measurement),

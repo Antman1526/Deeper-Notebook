@@ -27,6 +27,13 @@ from deeper_notebook.local_models.benchmarks import (
     save_benchmark_history,
     start_benchmark,
 )
+from deeper_notebook.local_models.contracts import (
+    ExternalModelRootTrust,
+    ModelReadinessAssessment,
+    ModelReadinessEvidence,
+    classify_model_readiness,
+    trust_record_matches,
+)
 from deeper_notebook.local_models.downloader import (
     RECOMMENDATIONS,
     DownloadJob,
@@ -43,6 +50,8 @@ from deeper_notebook.local_models.gguf_metadata import (
 )
 from deeper_notebook.local_models.inventory import (
     LocalModelInfo,
+    LocalModelReadinessInfo,
+    build_readiness_inventory,
     enumerate_models,
 )
 from deeper_notebook.local_models.manifest import (
@@ -58,6 +67,7 @@ from deeper_notebook.local_models.manifest import (
     find_manifest_matches,
     find_unmatched_manifest_entries,
     load_model_manifest,
+    manifest_lifecycle_state,
     model_manifest_path,
     parse_model_manifest,
     preview_manifest_row,
@@ -80,6 +90,7 @@ __all__ = [
     "DownloadJob",
     "GGUFMetadata",
     "LocalModelInfo",
+    "LocalModelReadinessInfo",
     "BenchmarkJob",
     "BenchmarkMeasurement",
     "BenchmarkResult",
@@ -94,11 +105,16 @@ __all__ = [
     "RECOMMENDATIONS",
     "append_manifest_row",
     "benchmark_history_path",
+    "build_readiness_inventory",
     "build_manifest_recommendations",
     "build_manifest_reconciliation",
     "cancel_job",
     "cancel_snapshot_install",
     "clear_benchmark_jobs",
+    "classify_model_readiness",
+    "ExternalModelRootTrust",
+    "ModelReadinessAssessment",
+    "ModelReadinessEvidence",
     "enumerate_models",
     "get_benchmark_job",
     "get_job",
@@ -107,6 +123,7 @@ __all__ = [
     "find_unmatched_manifest_entries",
     "load_benchmark_history",
     "load_model_manifest",
+    "manifest_lifecycle_state",
     "list_benchmark_jobs",
     "list_jobs",
     "list_snapshot_installs",
@@ -124,4 +141,5 @@ __all__ = [
     "start_benchmark",
     "start_download",
     "start_snapshot_install",
+    "trust_record_matches",
 ]

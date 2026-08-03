@@ -105,14 +105,17 @@ def test_probe_all_iterates_credentials():
     from deeper_notebook.health.local_models import probe_all_local_models
 
     creds = [
-        {"name": "chat", "kind": "openai_compatible",
+        {"credential_id": "credential:chat", "name": "chat", "kind": "openai_compatible",
          "base_url": "http://127.0.0.1:0/v1"},
-        {"name": "embed", "kind": "openai_compatible",
+        {"credential_id": "credential:embed", "name": "embed", "kind": "openai_compatible",
          "base_url": "http://127.0.0.1:0/v1"},
     ]
     results = probe_all_local_models(creds)
     assert len(results) == 2
     assert [r["name"] for r in results] == ["chat", "embed"]
+    assert [r["credential_id"] for r in results] == [
+        "credential:chat", "credential:embed",
+    ]
     assert all(r["status"] == "not_configured" for r in results)
 
 
@@ -179,16 +182,19 @@ async def test_load_local_credentials_includes_local_ollama(monkeypatch):
     async def _fake_get_all():
         return [
             SimpleNamespace(
+                id="credential:ollama",
                 name="Ollama",
                 provider="ollama",
                 base_url="http://127.0.0.1:11434",
             ),
             SimpleNamespace(
+                id="credential:remote",
                 name="Remote Ollama",
                 provider="ollama",
                 base_url="http://192.168.1.10:11434",
             ),
             SimpleNamespace(
+                id="credential:gguf",
                 name="Local GGUF",
                 provider="openai_compatible",
                 base_url="http://localhost:8080/v1",
@@ -201,11 +207,13 @@ async def test_load_local_credentials_includes_local_ollama(monkeypatch):
 
     assert creds == [
         {
+            "credential_id": "credential:ollama",
             "name": "Ollama",
             "kind": "ollama",
             "base_url": "http://127.0.0.1:11434",
         },
         {
+            "credential_id": "credential:gguf",
             "name": "Local GGUF",
             "kind": "openai_compatible",
             "base_url": "http://localhost:8080/v1",

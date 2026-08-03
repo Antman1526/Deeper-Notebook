@@ -1,0 +1,6 @@
+-- Intentionally do not restore idx_overlay_daily: on SurrealDB 2.1 it treats
+-- every unique note's optional date_key as the same NONE value.
+RETURN {
+    schema_preserved: true,
+    repaired_index_restored: false
+};

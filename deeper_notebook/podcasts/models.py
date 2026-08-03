@@ -433,7 +433,10 @@ class PodcastEpisode(ObjectModel):
     # field is listed here, so the workers' `generation_stage = None` on
     # success never reached the DB and the last stage ("combining_audio")
     # stuck on completed episodes forever (caught by the live smoke test).
-    nullable_fields: ClassVar[set[str]] = {"generation_stage", "custom_prompt"}
+    nullable_fields: ClassVar[set[str]] = {
+        "generation_stage", "custom_prompt", "selection_summary",
+        "selection_fingerprint", "editorial_brief",
+    }
 
     name: str = Field(..., description="Episode name")
     episode_profile: dict[str, Any] = Field(
@@ -486,6 +489,12 @@ class PodcastEpisode(ObjectModel):
         description="Set by POST /podcasts/episodes/{id}/cancel; the worker "
         "polls it and aborts the in-flight generation",
     )
+    # Phase 2 Studio receipts. Legacy rows retain the defaults. Persist only
+    # redacted references/counts and planner decisions, never selected bodies.
+    selection_summary: Optional[dict[str, Any]] = Field(default=None)
+    selection_fingerprint: Optional[str] = Field(default=None, max_length=128)
+    editorial_brief: Optional[dict[str, Any]] = Field(default=None)
+    model_plan_receipts: list[dict[str, Any]] = Field(default_factory=list)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

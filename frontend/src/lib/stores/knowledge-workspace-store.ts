@@ -8,18 +8,37 @@ import {
   splitDirectionSchema,
   type KnowledgeLayoutNode,
   type KnowledgePane,
+  type KnowledgeTab,
+  type GraphViewport,
+  type KnowledgeWorkspaceNavigation,
   type KnowledgeViewMode,
   type KnowledgeWorkspaceDocument,
   type OpenKnowledgeTab,
   type SplitDirection,
 } from '@/lib/api/knowledge-workspace'
+import type { WorkspaceRestorePlan } from '@/lib/api/knowledge-navigation'
+import {
+  clearOverlayDraft,
+  clearOverlayDrafts,
+  resetOverlayDraftStore,
+} from '@/lib/stores/overlay-draft-store'
 
 export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   hydrated: boolean
   revision: number
   durableRevision: number
   durableFingerprint: string | null
+  graphBookmarkContext: {
+    rootDocumentId: string | null
+    spaceIds: string[]
+    relationKinds: string[]
+    viewport: GraphViewport
+  } | null
+  focusedBlocksByTab: Record<string, { blockId: string; sourceRevisionId: string | null }>
+  pendingWorkspaceRestore: WorkspaceRestorePlan | null
+  activeSearchContext: { query: string; mode: 'exact' | 'text' | 'semantic'; spaceIds: string[]; authorityKinds: ('app_owned' | 'external_read_only')[]; tags: string[] } | null
   replaceWorkspace: (document: KnowledgeWorkspaceDocument) => void
+  applyNamedWorkspace: (document: KnowledgeWorkspaceDocument) => boolean
   hydrateWorkspace: (
     document: KnowledgeWorkspaceDocument,
     requestStartRevision: number,
@@ -29,12 +48,20 @@ export interface KnowledgeWorkspaceState extends KnowledgeWorkspaceDocument {
   reconcileTabReference: (
     paneId: string,
     tabId: string,
-    reference: Pick<OpenKnowledgeTab, 'title' | 'relativePath'>,
+    reference: Pick<OpenKnowledgeTab, 'title' | 'relativePath' | 'knowledgeDocumentId'>,
   ) => void
   closeTab: (paneId: string, tabId: string) => void
   activateTab: (paneId: string, tabId: string) => void
   setActivePane: (paneId: string) => void
   setTabViewMode: (paneId: string, tabId: string, mode: KnowledgeViewMode) => void
+  setSearchTabQuery: (paneId: string, tabId: string, query: string) => void
+  setTabGraphViewport: (paneId: string, tabId: string, viewport: GraphViewport) => void
+  setSplitSize: (splitId: string, firstSize: number) => void
+  setNavigation: (navigation: Partial<KnowledgeWorkspaceNavigation>) => void
+  setGraphBookmarkContext: (context: KnowledgeWorkspaceState['graphBookmarkContext']) => void
+  setFocusedBlock: (paneId: string, tabId: string, block: { blockId: string; sourceRevisionId: string | null } | null) => void
+  setPendingWorkspaceRestore: (plan: WorkspaceRestorePlan | null) => void
+  setActiveSearchContext: (context: KnowledgeWorkspaceState['activeSearchContext']) => void
   splitPane: (paneId: string, direction: SplitDirection) => string
   closePane: (paneId: string) => void
   resetWorkspace: () => void
@@ -76,6 +103,29 @@ function collapsePane(
 
 function firstPaneId(node: KnowledgeLayoutNode): string {
   return node.type === 'pane' ? node.paneId : firstPaneId(node.first)
+}
+
+function setSplitSizeInLayout(
+  node: KnowledgeLayoutNode,
+  splitId: string,
+  firstSize: number,
+): KnowledgeLayoutNode {
+  if (node.type === 'pane') return node
+  if (node.id === splitId) return { ...node, firstSize }
+  const first = setSplitSizeInLayout(node.first, splitId, firstSize)
+  const second = setSplitSizeInLayout(node.second, splitId, firstSize)
+  return first === node.first && second === node.second ? node : { ...node, first, second }
+}
+
+function hasSplit(layout: KnowledgeLayoutNode, splitId: string): boolean {
+  const stack = [layout]
+  while (stack.length) {
+    const node = stack.pop()!
+    if (node.type === 'pane') continue
+    if (node.id === splitId) return true
+    stack.push(node.first, node.second)
+  }
+  return false
 }
 
 function totalTabCount(panes: Record<string, KnowledgePane>): number {
@@ -139,12 +189,50 @@ function workspaceFingerprint(document: KnowledgeWorkspaceDocument): string | nu
   }
 }
 
+function documentTarget(tab: KnowledgePane['tabs'][number], renderMode = tab.viewMode) {
+  return {
+    kind: 'document' as const, container_id: tab.vaultId, note_id: tab.noteId,
+    title: tab.title, relative_locator: tab.relativePath,
+    authority: tab.sourceAuthority, knowledge_document_id: tab.knowledgeDocumentId,
+    render_mode: renderMode === 'graph' ? 'reading' as const : renderMode,
+  }
+}
+
+export function createKnowledgeWorkspaceTab(tab: OpenKnowledgeTab, id: string) {
+  const viewMode = tab.viewMode ?? 'reading'
+  const sourceAuthority = tab.sourceAuthority ?? 'external-vault'
+  const mode = tab.mode ?? (sourceAuthority === 'overlay' ? 'write' as const : 'read' as const)
+  const base = {
+    ...tab, id, viewMode, sourceAuthority,
+    knowledgeDocumentId: tab.knowledgeDocumentId ?? null,
+    graphViewport: tab.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+  }
+  if (viewMode === 'graph') {
+    return {
+      ...base, mode: 'graph' as const,
+      target: {
+        kind: 'graph' as const, root_document_id: base.knowledgeDocumentId,
+        space_ids: [], relation_kinds: [], viewport: base.graphViewport,
+        origin: documentTarget(base, 'reading'),
+      },
+    }
+  }
+  return {
+    ...base, mode,
+    target: documentTarget(base),
+  }
+}
+
 export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set, get) => ({
   ...defaultKnowledgeWorkspace(),
   hydrated: false,
   revision: 0,
   durableRevision: 0,
   durableFingerprint: workspaceFingerprint(defaultKnowledgeWorkspace()),
+  graphBookmarkContext: null,
+  focusedBlocksByTab: {},
+  pendingWorkspaceRestore: null,
+  activeSearchContext: null,
 
   replaceWorkspace: (document) => {
     const fingerprint = workspaceFingerprint(document)
@@ -155,7 +243,30 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       hydrated: true,
       durableRevision: state.revision,
       durableFingerprint: fingerprint,
+      focusedBlocksByTab: {},
+      pendingWorkspaceRestore: null,
+      activeSearchContext: null,
     })
+  },
+
+  applyNamedWorkspace: (document) => {
+    try {
+      serializeKnowledgeWorkspace(document)
+    } catch {
+      return false
+    }
+    const state = get()
+    set({
+      ...document,
+      hydrated: true,
+      revision: state.revision + 1,
+      durableRevision: state.durableRevision,
+      durableFingerprint: state.durableFingerprint,
+      focusedBlocksByTab: {},
+      pendingWorkspaceRestore: null,
+      activeSearchContext: null,
+    })
+    return true
   },
 
   hydrateWorkspace: (document, requestStartRevision) => {
@@ -168,6 +279,9 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
         hydrated: true,
         durableRevision: Math.max(state.durableRevision, requestStartRevision),
         durableFingerprint: fingerprint,
+        focusedBlocksByTab: {},
+        pendingWorkspaceRestore: null,
+        activeSearchContext: null,
       })
       return
     }
@@ -195,6 +309,19 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     set({ durableRevision, durableFingerprint: fingerprint })
   },
 
+  setGraphBookmarkContext: (graphBookmarkContext) => set({ graphBookmarkContext }),
+  setPendingWorkspaceRestore: (pendingWorkspaceRestore) => set({ pendingWorkspaceRestore }),
+  setActiveSearchContext: (activeSearchContext) => set({ activeSearchContext }),
+  setFocusedBlock: (paneId, tabId, block) => {
+    const key = tabId
+    const state = get()
+    if (!state.panes[paneId]?.tabs.some((tab) => tab.id === tabId)) return
+    const focusedBlocksByTab = { ...state.focusedBlocksByTab }
+    if (block) focusedBlocksByTab[key] = block
+    else delete focusedBlocksByTab[key]
+    set({ focusedBlocksByTab })
+  },
+
   openTab: (tab, requestedPaneId) => {
     const parsed = openKnowledgeTabSchema.safeParse(tab)
     if (!parsed.success) return
@@ -205,13 +332,16 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     if (!pane) return
     const existing = pane.tabs.find(
       (candidate) =>
-        candidate.vaultId === validTab.vaultId && candidate.noteId === validTab.noteId,
+        candidate.vaultId === validTab.vaultId
+        && candidate.noteId === validTab.noteId
+        && candidate.sourceAuthority === (validTab.sourceAuthority ?? 'external-vault'),
     )
     if (existing) {
       if (state.activePaneId === paneId && pane.activeTabId === existing.id) return
       set({
         activePaneId: paneId,
         revision: state.revision + 1,
+        focusedBlocksByTab: {},
         panes: {
           ...state.panes,
           [paneId]: { ...pane, activeTabId: existing.id },
@@ -222,15 +352,14 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     if (totalTabCount(state.panes) >= 128) return
 
     const allocated = allocateId('tab', state.nextId, collectTabIds(state.panes))
-    const created = {
-      ...validTab,
-      id: allocated.id,
-      viewMode: validTab.viewMode ?? 'reading',
-    }
+    const created = createKnowledgeWorkspaceTab(validTab, allocated.id)
     set({
       activePaneId: paneId,
       nextId: allocated.nextId,
       revision: state.revision + 1,
+      focusedBlocksByTab: {},
+      pendingWorkspaceRestore: null,
+      activeSearchContext: null,
       panes: {
         ...state.panes,
         [paneId]: {
@@ -247,17 +376,23 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     const pane = state.panes[paneId]
     const tab = pane?.tabs.find((candidate) => candidate.id === tabId)
     if (!pane || !tab) return
+    const knowledgeDocumentId = Object.hasOwn(reference, 'knowledgeDocumentId')
+      ? reference.knowledgeDocumentId
+      : tab.knowledgeDocumentId
     const parsed = openKnowledgeTabSchema.safeParse({
       vaultId: tab.vaultId,
       noteId: tab.noteId,
       title: reference.title,
       relativePath: reference.relativePath,
       viewMode: tab.viewMode,
+      sourceAuthority: tab.sourceAuthority,
+      knowledgeDocumentId,
     })
     if (!parsed.success) return
     if (
       tab.title === parsed.data.title
       && tab.relativePath === parsed.data.relativePath
+      && tab.knowledgeDocumentId === (parsed.data.knowledgeDocumentId ?? null)
     ) {
       return
     }
@@ -267,12 +402,19 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
         ...state.panes,
         [paneId]: {
           ...pane,
-          tabs: pane.tabs.map((candidate) => candidate.id === tabId
-            ? {
-                ...candidate,
+          tabs: pane.tabs.map((candidate): KnowledgeTab => candidate.id === tabId
+            ? (() => {
+                const updated = {
+                  ...candidate,
                 title: parsed.data.title,
                 relativePath: parsed.data.relativePath,
-              }
+                knowledgeDocumentId: parsed.data.knowledgeDocumentId ?? null,
+                }
+                if (updated.mode === 'graph' && updated.target?.kind === 'graph') {
+                  return { ...updated, target: { ...updated.target, root_document_id: updated.knowledgeDocumentId, origin: documentTarget(updated, 'reading') } } as KnowledgeTab
+                }
+                return { ...updated, target: documentTarget(updated) } as KnowledgeTab
+              })()
             : candidate),
         },
       },
@@ -285,6 +427,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     const closedIndex = pane?.tabs.findIndex((tab) => tab.id === tabId) ?? -1
     if (!pane || closedIndex < 0) return
     const tabs = pane.tabs.filter((tab) => tab.id !== tabId)
+    clearOverlayDraft(`${paneId}:${tabId}`)
     let activeTabId = pane.activeTabId
     if (activeTabId === tabId) {
       activeTabId = tabs[closedIndex]?.id ?? tabs[closedIndex - 1]?.id ?? null
@@ -306,6 +449,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     set({
       activePaneId: paneId,
       revision: state.revision + 1,
+      focusedBlocksByTab: {},
       panes: {
         ...state.panes,
         [paneId]: { ...pane, activeTabId: tabId },
@@ -333,12 +477,98 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
         [paneId]: {
           ...pane,
           tabs: pane.tabs.map((candidate) =>
-            candidate.id === tabId
-              ? { ...candidate, viewMode: parsedMode.data }
+            candidate.id === tabId ? (() => {
+              const next = { ...candidate, viewMode: parsedMode.data }
+              if (parsedMode.data === 'graph') {
+                return {
+                  ...next, mode: 'graph' as const,
+                  target: {
+                    kind: 'graph' as const,
+                    root_document_id: candidate.knowledgeDocumentId,
+                    space_ids: [], relation_kinds: [],
+                    viewport: candidate.graphViewport ?? { x: 0, y: 0, zoom: 1 },
+                    origin: documentTarget(candidate, 'reading'),
+                  },
+                }
+              }
+              return {
+                ...next,
+                mode: candidate.sourceAuthority === 'overlay' ? 'write' as const : 'read' as const,
+                target: documentTarget(next),
+              }
+            })()
               : candidate),
         },
       },
     })
+  },
+
+  setSearchTabQuery: (paneId, tabId, query) => {
+    const state = get()
+    const pane = state.panes[paneId]
+    const tab = pane?.tabs.find((candidate) => candidate.id === tabId)
+    if (!pane || !tab || tab.target?.kind !== 'search' || tab.target.query === query) return
+    set({
+      revision: state.revision + 1,
+      panes: {
+        ...state.panes,
+        [paneId]: {
+          ...pane,
+          tabs: pane.tabs.map((candidate): KnowledgeTab => candidate.id === tabId
+            ? { ...candidate, target: { ...candidate.target!, query } } as KnowledgeTab
+            : candidate),
+        },
+      },
+    })
+  },
+
+  setTabGraphViewport: (paneId, tabId, viewport) => {
+    const parsed = viewport
+    if (
+      !Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)
+      || !Number.isFinite(parsed.zoom) || parsed.zoom < 0.1 || parsed.zoom > 10
+    ) return
+    const state = get()
+    const pane = state.panes[paneId]
+    const tab = pane?.tabs.find((candidate) => candidate.id === tabId)
+    if (!pane || !tab || (
+      tab.graphViewport?.x === parsed.x && tab.graphViewport?.y === parsed.y
+      && tab.graphViewport?.zoom === parsed.zoom
+    )) return
+    set({ revision: state.revision + 1, panes: { ...state.panes, [paneId]: {
+      ...pane, tabs: pane.tabs.map((candidate): KnowledgeTab => candidate.id === tabId
+        ? {
+            ...candidate, graphViewport: { ...parsed },
+            target: candidate.mode === 'graph' && candidate.target?.kind === 'graph'
+              ? { ...candidate.target, viewport: { ...parsed } }
+              : candidate.target,
+            graphBookmarkContext: candidate.graphBookmarkContext
+              ? { ...candidate.graphBookmarkContext, viewport: { ...parsed } }
+              : candidate.graphBookmarkContext,
+          } as KnowledgeTab : candidate),
+    } } })
+  },
+
+  setSplitSize: (splitId, firstSize) => {
+    if (!Number.isFinite(firstSize) || firstSize < 10 || firstSize > 90) return
+    const state = get()
+    if (!hasSplit(state.layout, splitId)) return
+    const layout = setSplitSizeInLayout(state.layout, splitId, firstSize)
+    if (layout === state.layout) return
+    set({ layout, revision: state.revision + 1 })
+  },
+
+  setNavigation: (navigation) => {
+    const state = get()
+    const next = { ...defaultKnowledgeWorkspace().navigation!, ...state.navigation, ...navigation }
+    try {
+      serializeKnowledgeWorkspace({
+        version: state.version, activePaneId: state.activePaneId, nextId: state.nextId,
+        panes: state.panes, layout: state.layout, navigation: next,
+      })
+    } catch { return }
+    if (JSON.stringify(next) === JSON.stringify(state.navigation)) return
+    set({ navigation: next, revision: state.revision + 1 })
   },
 
   splitPane: (paneId, direction) => {
@@ -380,6 +610,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       type: 'split',
       id: splitId,
       direction: parsedDirection.data,
+      firstSize: 50,
       first: { type: 'pane', paneId },
       second: { type: 'pane', paneId: newPaneId },
     }
@@ -399,6 +630,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
     const layout = collapsePane(state.layout, paneId)
     if (!layout) return
     const panes = { ...state.panes }
+    clearOverlayDrafts(state.panes[paneId].tabs.map((tab) => `${paneId}:${tab.id}`))
     delete panes[paneId]
     set({
       panes,
@@ -411,6 +643,7 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
   },
 
   resetWorkspace: () => {
+    resetOverlayDraftStore()
     const revision = get().revision + 1
     const document = defaultKnowledgeWorkspace()
     set({
@@ -419,6 +652,10 @@ export const useKnowledgeWorkspaceStore = create<KnowledgeWorkspaceState>()((set
       revision,
       durableRevision: revision,
       durableFingerprint: workspaceFingerprint(document),
+      graphBookmarkContext: null,
+      focusedBlocksByTab: {},
+      pendingWorkspaceRestore: null,
+      activeSearchContext: null,
     })
   },
 }))

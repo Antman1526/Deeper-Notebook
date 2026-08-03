@@ -7,10 +7,104 @@ import {
   Language,
   PodcastGenerationRequest,
   PodcastGenerationResponse,
+  PodcastOverviewMode,
+  PodcastReadiness,
+  PodcastSelectionPreview,
+  PodcastSelectionPreviewEntry,
+  PodcastStageModelPlan,
+  PodcastStudioSubmitResponse,
 } from '@/lib/types/podcasts'
+import {
+  normalizePodcastSelections,
+  toPodcastSelectionWire,
+  type PodcastSelection,
+} from '@/lib/podcasts/selection'
 
 export type EpisodeProfileInput = Omit<EpisodeProfile, 'id'>
 export type SpeakerProfileInput = Omit<SpeakerProfile, 'id'>
+
+interface PodcastSelectionPreviewWire {
+  selection_fingerprint: string
+  entries: Array<{
+    stable_id: string
+    title: string
+    authority_kind: PodcastSelectionPreviewEntry['authorityKind']
+    relative_locator: string | null
+    revision_id: string | null
+    fingerprint: string | null
+    state: PodcastSelectionPreviewEntry['state']
+    reason: string
+    estimated_characters: number
+  }>
+  included_characters: number
+  requires_batch_engine: boolean
+  current_worker_eligible: boolean
+  blocked_reasons: string[]
+}
+
+interface PodcastReadinessWire {
+  preview: PodcastSelectionPreviewWire
+  stage_plans: Array<{
+    role: PodcastStageModelPlan['role']
+    outcome: PodcastStageModelPlan['outcome']
+    model_id: string | null
+    provider: string | null
+    resource_tier: PodcastStageModelPlan['resourceTier']
+    selection_source: PodcastStageModelPlan['selectionSource']
+    reason: string
+    blocked_reason: string | null
+  }>
+  ready: boolean
+  blocked_reasons: string[]
+}
+
+interface PodcastStudioSubmitWire {
+  job_id: string
+  status: 'submitted'
+  message: string
+  episode_profile: string
+  episode_name: string
+  mode: PodcastOverviewMode
+}
+
+function toPodcastSelectionPreview(wire: PodcastSelectionPreviewWire): PodcastSelectionPreview {
+  return {
+    selectionFingerprint: wire.selection_fingerprint,
+    entries: wire.entries.map((entry) => ({
+      stableId: entry.stable_id,
+      title: entry.title,
+      authorityKind: entry.authority_kind,
+      relativeLocator: entry.relative_locator,
+      revisionId: entry.revision_id,
+      fingerprint: entry.fingerprint,
+      state: entry.state,
+      reason: entry.reason,
+      estimatedCharacters: entry.estimated_characters,
+    })),
+    includedCharacters: wire.included_characters,
+    requiresBatchEngine: wire.requires_batch_engine,
+    currentWorkerEligible: wire.current_worker_eligible,
+    blockedReasons: wire.blocked_reasons,
+  }
+}
+
+function toPodcastReadiness(wire: PodcastReadinessWire): PodcastReadiness {
+  return {
+    preview: toPodcastSelectionPreview(wire.preview),
+    stagePlans: wire.stage_plans.map((plan) => ({
+      role: plan.role,
+      outcome: plan.outcome,
+      modelId: plan.model_id,
+      provider: plan.provider,
+      resourceTier: plan.resource_tier,
+      selectionSource: plan.selection_source,
+      reason: plan.reason,
+      blockedReason: plan.blocked_reason,
+    })),
+    ready: wire.ready,
+    blockedReasons: wire.blocked_reasons,
+  }
+}
 
 export async function resolvePodcastAssetUrl(path?: string | null): Promise<string | undefined> {
   if (!path) {
@@ -31,6 +125,82 @@ export async function resolvePodcastAssetUrl(path?: string | null): Promise<stri
 }
 
 export const podcastsApi = {
+  previewPodcastSelection: async (selections: PodcastSelection[]) => {
+    const response = await apiClient.post<PodcastSelectionPreviewWire>(
+      '/podcasts/selection/preview',
+      { selections: normalizePodcastSelections(selections).map(toPodcastSelectionWire) },
+    )
+    return toPodcastSelectionPreview(response.data)
+  },
+
+  getPodcastReadiness: async (
+    selections: PodcastSelection[],
+    options: {
+      executionPolicy?: 'strict_local' | 'local_preferred' | 'custom'
+      computeProfile?: 'efficient' | 'balanced' | 'maximum_quality'
+      includeTranscription?: boolean
+    } = {},
+  ) => {
+    const response = await apiClient.post<PodcastReadinessWire>('/podcasts/readiness', {
+      selections: normalizePodcastSelections(selections).map(toPodcastSelectionWire),
+      execution_policy: options.executionPolicy ?? 'strict_local',
+      compute_profile: options.computeProfile ?? 'balanced',
+      include_transcription: options.includeTranscription ?? false,
+    })
+    return toPodcastReadiness(response.data)
+  },
+
+  submitStudioPodcast: async (payload: {
+    selections: PodcastSelection[]
+    selectionFingerprint: string
+    idempotencyKey: string
+    episodeProfile: string
+    speakerProfile: string
+    episodeName: string
+    mode?: PodcastOverviewMode
+    customPrompt?: string | null
+    episodeLength?: 'short' | 'medium' | 'long' | null
+    reviewOutline?: boolean
+    editorialBrief?: {
+      centralQuestion?: string | null
+      audience?: string | null
+      outline?: string[]
+    } | null
+    executionPolicy?: 'strict_local' | 'local_preferred' | 'custom'
+    computeProfile?: 'efficient' | 'balanced' | 'maximum_quality'
+    includeTranscription?: boolean
+  }): Promise<PodcastStudioSubmitResponse> => {
+    const response = await apiClient.post<PodcastStudioSubmitWire>('/podcasts/studio/submit', {
+      selections: normalizePodcastSelections(payload.selections).map(toPodcastSelectionWire),
+      selection_fingerprint: payload.selectionFingerprint,
+      idempotency_key: payload.idempotencyKey,
+      confirmed: true,
+      episode_profile: payload.episodeProfile,
+      speaker_profile: payload.speakerProfile,
+      episode_name: payload.episodeName,
+      mode: payload.mode ?? 'deep_dive',
+      custom_prompt: payload.customPrompt ?? null,
+      episode_length: payload.episodeLength ?? null,
+      review_outline: payload.reviewOutline ?? true,
+      editorial_brief: payload.editorialBrief ? {
+        central_question: payload.editorialBrief.centralQuestion ?? null,
+        audience: payload.editorialBrief.audience ?? null,
+        outline: payload.editorialBrief.outline ?? [],
+      } : null,
+      execution_policy: payload.executionPolicy ?? 'strict_local',
+      compute_profile: payload.computeProfile ?? 'balanced',
+      include_transcription: payload.includeTranscription ?? false,
+    })
+    return {
+      jobId: response.data.job_id,
+      status: response.data.status,
+      message: response.data.message,
+      episodeProfile: response.data.episode_profile,
+      episodeName: response.data.episode_name,
+      mode: response.data.mode,
+    }
+  },
+
   listEpisodes: async () => {
     const response = await apiClient.get<PodcastEpisode[]>('/podcasts/episodes')
     return response.data

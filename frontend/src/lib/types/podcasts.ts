@@ -68,6 +68,34 @@ export interface PodcastEpisode {
   error_message?: string | null
   // v0.8.68 — per-stage progress / outline-review state.
   generation_stage?: string | null
+  // Phase 2 Studio receipts. Aggregate provenance and planner decisions only.
+  selection_summary?: PodcastSelectionSummary | null
+  selection_fingerprint?: string | null
+  editorial_brief?: PodcastEditorialBrief | null
+  model_plan_receipts?: PodcastModelPlanReceipt[]
+}
+
+export interface PodcastSelectionSummary {
+  version?: number
+  total_count?: number
+  included_count?: number
+  authority_counts?: Record<string, number>
+}
+
+export interface PodcastEditorialBrief {
+  central_question?: string | null
+  audience?: string | null
+  outline?: string[]
+}
+
+export interface PodcastModelPlanReceipt {
+  version?: number
+  role?: string
+  outcome?: string
+  provider?: string
+  resource_tier?: string
+  selection_source?: string
+  reason?: string
 }
 
 export type PodcastOverviewMode = 'deep_dive' | 'brief' | 'critique' | 'debate'
@@ -108,6 +136,64 @@ export interface PodcastGenerationResponse {
   message: string
   episode_profile: string
   episode_name: string
+  mode: PodcastOverviewMode
+}
+
+export type PodcastSelectionAuthority = 'app_owned' | 'external_read_only'
+export type PodcastSelectionState =
+  | 'included'
+  | 'duplicate'
+  | 'unavailable'
+  | 'changed'
+  | 'empty'
+  | 'failed_parse'
+  | 'oversize'
+
+export interface PodcastSelectionPreviewEntry {
+  stableId: string
+  title: string
+  authorityKind: PodcastSelectionAuthority
+  relativeLocator: string | null
+  revisionId: string | null
+  fingerprint: string | null
+  state: PodcastSelectionState
+  reason: string
+  estimatedCharacters: number
+}
+
+export interface PodcastSelectionPreview {
+  selectionFingerprint: string
+  entries: PodcastSelectionPreviewEntry[]
+  includedCharacters: number
+  requiresBatchEngine: boolean
+  currentWorkerEligible: boolean
+  blockedReasons: string[]
+}
+
+export interface PodcastStageModelPlan {
+  role: 'podcast_outline' | 'podcast_script' | 'text_to_speech' | 'speech_to_text'
+  outcome: 'ready' | 'blocked' | 'approval_required'
+  modelId: string | null
+  provider: string | null
+  resourceTier: 'light' | 'standard' | 'heavyweight' | null
+  selectionSource: 'automatic' | 'role_override' | 'production_override' | null
+  reason: string
+  blockedReason: string | null
+}
+
+export interface PodcastReadiness {
+  preview: PodcastSelectionPreview
+  stagePlans: PodcastStageModelPlan[]
+  ready: boolean
+  blockedReasons: string[]
+}
+
+export interface PodcastStudioSubmitResponse {
+  jobId: string
+  status: 'submitted'
+  message: string
+  episodeProfile: string
+  episodeName: string
   mode: PodcastOverviewMode
 }
 

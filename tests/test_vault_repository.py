@@ -20,6 +20,7 @@ from deeper_notebook.vault.contracts import (
     ParsedTask,
 )
 from deeper_notebook.vault.repository import (
+    OwnedProjectionUnitOfWork,
     ProjectionResult,
     VaultFile,
     VaultLink,
@@ -290,6 +291,127 @@ async def test_scan_completion_rejects_non_terminal_state():
             "vault_mount:test",
             status="scanning",
         )
+
+
+@pytest.mark.asyncio
+async def test_owned_projection_is_authority_explicit_and_never_mutates_vault_rows():
+    overlay_row = {
+        "id": "overlay_note:owned",
+        "space_id": "overlay_space:default",
+        "projected_note_id": "note:owned",
+        "stable_id": "01JTESTOVERLAY000000000001",
+        "kind": "unique",
+        "date_key": None,
+        "relative_path": "Notes/20260729-1542 Research.md",
+        "title": "Research",
+        "content_hash": "a" * 64,
+        "revision": 1,
+        "projection_state": "current",
+        "encoding": "utf-8",
+        "newline": "lf",
+        "created_at": datetime(2026, 7, 29, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 7, 29, tzinfo=timezone.utc),
+    }
+    page = {
+        "overlay": overlay_row,
+        "note": {"id": "note:owned", "title": "Alpha"},
+        "blocks": [],
+        "tasks": [],
+        "outgoing_links": [],
+        "backlinks": [],
+    }
+
+    class OwnedRecorder(QueryRecorder):
+        async def query(self, statement, variables=None):
+            compact = " ".join(statement.split())
+            self.calls.append((compact, variables or {}))
+            return [{"outcome": "projected", "page": page}]
+
+    connection = OwnedRecorder()
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    result = await repository.project_owned_document(
+        source_authority="overlay",
+        overlay_space_id="overlay_space:default",
+        overlay_note_id="overlay_note:owned",
+        projected_note_id="note:owned",
+        parsed=_document(),
+        revision=1,
+    )
+
+    assert result.overlay.id == "overlay_note:owned"
+    assert result.note["id"] == "note:owned"
+    statement, variables = connection.calls[0]
+    assert statement.startswith("BEGIN TRANSACTION;")
+    assert "UPSERT $projected_note_id MERGE $projected_note" in statement
+    assert "WHERE source_authority = 'overlay'" in statement
+    assert "overlay_space_id = $overlay_space_id" in statement
+    assert "vault_mount" not in statement
+    assert "vault_file" not in statement
+    assert "vault_sync_receipt" not in statement
+    assert variables["projected_note"]["source_authority"] == "overlay"
+    assert variables["projected_note"]["canonical_external"] is False
+    assert variables["projected_note"]["external_state"] is None
+    assert all(block["data"]["vault_file_id"] is None for block in variables["blocks"])
+    assert all(
+        str(block["data"]["overlay_note_id"]) == "overlay_note:owned"
+        for block in variables["blocks"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_owned_projection_rejects_non_overlay_authority_before_query():
+    connection = QueryRecorder()
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    with pytest.raises(ValueError, match="invalid_source_authority"):
+        await repository.project_owned_document(
+            source_authority="external-vault",  # type: ignore[arg-type]
+            overlay_space_id="overlay_space:default",
+            overlay_note_id="overlay_note:owned",
+            projected_note_id="note:owned",
+            parsed=_document(),
+            revision=1,
+        )
+
+    assert connection.calls == []
+
+
+def test_owned_projection_unit_of_work_is_typed_and_authority_scoped():
+    repository = VaultRepository(connection_factory=ConnectionSequence(QueryRecorder()))
+
+    unit = repository.owned_projection_unit_of_work(
+        source_authority="overlay",
+        overlay_space_id="overlay_space:default",
+        overlay_note_id="overlay_note:owned",
+        projected_note_id="note:owned",
+        parsed=_document(),
+        revision=1,
+    )
+
+    assert isinstance(unit, OwnedProjectionUnitOfWork)
+    assert unit.variables["projected_note"]["source_authority"] == "overlay"
+    assert "UPSERT $projected_note_id MERGE $projected_note" in (
+        unit.mutation_statement
+    )
+
+
+@pytest.mark.asyncio
+async def test_owned_projection_rejects_non_note_projected_identity_before_query():
+    connection = QueryRecorder()
+    repository = VaultRepository(connection_factory=ConnectionSequence(connection))
+
+    with pytest.raises(ValueError, match="invalid_projected_note_id"):
+        await repository.project_owned_document(
+            source_authority="overlay",
+            overlay_space_id="overlay_space:default",
+            overlay_note_id="overlay_note:owned",
+            projected_note_id="vault_file:owned",
+            parsed=_document(),
+            revision=1,
+        )
+
+    assert connection.calls == []
 
 
 def _work(

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import nullcontext
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
+from deeper_notebook.vault.canvas import CanvasDocument, CanvasNode
 from deeper_notebook.vault.repository import (
     TrustImportResult,
     VaultFile,
@@ -69,6 +72,14 @@ class _Repository:
                 deleted_state="present",
             ),
             note={"id": note_id, "title": "One", "content": "# One\n"},
+            blocks=[
+                {
+                    "parser_id": "parser-one",
+                    "stable_source_id": "block-one",
+                    "markdown": "# One",
+                },
+                {"parser_id": "parser-two", "markdown": "Two"},
+            ],
         )
 
     async def backlinks(self, vault_id: str, note_id: str):
@@ -143,6 +154,41 @@ class _Service:
             failed=1,
         )
 
+    async def read_canvas(self, vault_id: str, relative_path: str):
+        if vault_id != "vault_mount:fixture" or relative_path != "maps/plan.canvas":
+            raise LookupError("canvas_not_found")
+        file = VaultFile(
+            id="vault_file:canvas",
+            note_id="note:canvas",
+            vault_id=vault_id,
+            relative_path=relative_path,
+            file_kind="metadata",
+            format="markdown",
+            content_hash="a" * 64,
+            size_bytes=128,
+            modified_ns=1,
+            parse_status="parsed",
+            deleted_state="present",
+        )
+        return SimpleNamespace(
+            file=file,
+            source_hash="a" * 64,
+            document=CanvasDocument(
+                nodes=(
+                    CanvasNode(
+                        id="idea",
+                        type="text",
+                        x=0,
+                        y=0,
+                        width=100,
+                        height=80,
+                        text="Idea",
+                    ),
+                ),
+                edges=(),
+            ),
+        )
+
 
 def _mount() -> VaultMount:
     return VaultMount(
@@ -191,12 +237,11 @@ def client(monkeypatch):
 
 def test_canonical_vault_endpoints_are_read_only_and_omit_legacy_alias(client):
     test_client, _, _ = client
-    from api.routers.vault import router as vault_router
 
     prefix = "/api/deeper-notebook/vaults"
     routes = {
-        f"/api/deeper-notebook{route.path}": route.methods
-        for route in vault_router.routes
+        path: {method.upper() for method in operations}
+        for path, operations in test_client.app.openapi()["paths"].items()
     }
     required = {
         prefix,
@@ -282,6 +327,142 @@ def test_read_only_vault_resources_return_relative_data_only(client):
     assert "/Users/owner" not in receipts.text
 
 
+def test_canvas_endpoint_returns_hash_bound_relative_data_only(client):
+    test_client, _, _ = client
+
+    response = test_client.get(
+        "/api/deeper-notebook/vaults/vault_mount:fixture/canvases/maps/plan.canvas"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["file"]["relative_path"] == "maps/plan.canvas"
+    assert response.json()["source_hash"] == "a" * 64
+    assert response.json()["nodes"][0]["text"] == "Idea"
+    assert "/Users/owner" not in response.text
+
+
+def test_page_enriches_unified_identity_in_one_batched_lookup(client):
+    test_client, _, _ = client
+
+    class _IdentityService:
+        calls: list[tuple[str, tuple[str, ...]]] = []
+
+        async def resolve_legacy_page(self, *, legacy_note_id, block_keys):
+            self.calls.append((legacy_note_id, block_keys))
+            return {
+                "document_id": "knowledge_engine_document:current",
+                "block_ids": {
+                    "block-one": "knowledge_engine_block:one",
+                    "parser-two": "knowledge_engine_block:two",
+                },
+            }
+
+    service = _IdentityService()
+    test_client.app.state.knowledge_engine_service = service
+    try:
+        response = test_client.get(
+            "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one"
+        )
+    finally:
+        del test_client.app.state.knowledge_engine_service
+
+    assert response.status_code == 200
+    assert (
+        response.json()["knowledge_document_id"] == "knowledge_engine_document:current"
+    )
+    assert [block["knowledge_block_id"] for block in response.json()["blocks"]] == [
+        "knowledge_engine_block:one",
+        "knowledge_engine_block:two",
+    ]
+    assert service.calls == [("note:one", ("block-one", "parser-two"))]
+
+
+def test_graph_exposes_only_bounded_unified_document_identities(client):
+    test_client, _, _ = client
+
+    class _IdentityService:
+        calls: list[tuple[str, tuple[str, ...]]] = []
+
+        async def resolve_legacy_page(self, *, legacy_note_id, block_keys):
+            self.calls.append((legacy_note_id, block_keys))
+            return {
+                "document_id": "knowledge_engine_document:current",
+                "block_ids": {},
+            }
+
+    service = _IdentityService()
+    test_client.app.state.knowledge_engine_service = service
+    try:
+        response = test_client.get(
+            "/api/deeper-notebook/vaults/vault_mount:fixture/graph?center_note_id=note:one"
+        )
+    finally:
+        del test_client.app.state.knowledge_engine_service
+
+    assert response.status_code == 200
+    assert response.json()["nodes"] == [{
+        "id": "note:one",
+        "title": "One",
+        "knowledge_document_id": "knowledge_engine_document:current",
+    }]
+    assert service.calls == [("note:one", ())]
+    assert "/Users/" not in response.text
+
+
+def test_page_identity_enrichment_fails_open_for_malformed_service_data(client):
+    test_client, _, _ = client
+
+    class _MalformedIdentityService:
+        async def resolve_legacy_page(self, **_kwargs):
+            return {
+                "document_id": "knowledge_engine_document:bad/id",
+                "block_ids": {"block-one": "knowledge_engine_block:bad/id"},
+            }
+
+    test_client.app.state.knowledge_engine_service = _MalformedIdentityService()
+    try:
+        response = test_client.get(
+            "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one"
+        )
+    finally:
+        del test_client.app.state.knowledge_engine_service
+
+    assert response.status_code == 200
+    assert response.json()["knowledge_document_id"] is None
+    assert all("knowledge_block_id" not in block for block in response.json()["blocks"])
+
+
+@pytest.mark.asyncio
+async def test_page_identity_enrichment_times_out_without_blocking_canonical_reads(
+    monkeypatch,
+):
+    from api.routers import vault as vault_router
+
+    class _NeverCompletes:
+        async def resolve_legacy_page(self, **_kwargs):
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        vault_router, "_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS", 0.01, raising=False
+    )
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(knowledge_engine_service=_NeverCompletes())
+        )
+    )
+
+    result = await asyncio.wait_for(
+        vault_router._page_identity(
+            request,
+            legacy_note_id="note:one",
+            blocks=[{"parser_id": "heading", "markdown": "# One"}],
+        ),
+        timeout=0.1,
+    )
+
+    assert result == (None, [{"parser_id": "heading", "markdown": "# One"}])
+
+
 def test_unresolved_link_response_keeps_null_target_identity_and_spans(client):
     test_client, repository, _ = client
     repository.outgoing_links = AsyncMock(
@@ -299,8 +480,7 @@ def test_unresolved_link_response_keeps_null_target_identity_and_spans(client):
     )
 
     response = test_client.get(
-        "/api/deeper-notebook/vaults/"
-        "vault_mount:fixture/pages/note:one/outgoing"
+        "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one/outgoing"
     )
 
     assert response.status_code == 200
@@ -426,14 +606,11 @@ def test_page_maps_invalid_persisted_file_to_safe_projection_error(client):
 def test_outgoing_maps_invalid_resolved_link_to_safe_projection_error(client):
     test_client, repository, _ = client
     repository.outgoing_links = AsyncMock(
-        side_effect=VaultProjectionError(
-            "incomplete resolved link pages/private.md"
-        ),
+        side_effect=VaultProjectionError("incomplete resolved link pages/private.md"),
     )
 
     response = test_client.get(
-        "/api/deeper-notebook/vaults/"
-        "vault_mount:fixture/pages/note:one/outgoing"
+        "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one/outgoing"
     )
 
     assert response.status_code == 409

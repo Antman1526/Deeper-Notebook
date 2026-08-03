@@ -14,10 +14,15 @@ import { RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 // v0.8.70 — replay the launch "Aurora Reveal" intro on demand.
 import { replayIntro } from '@/components/intro/IntroReveal'
+import { ThemeGallery } from '@/components/deeper-notebook'
+import { useGuidedTipsStore } from '@/lib/stores/guided-tips-store'
 
 export default function SettingsPage() {
   const { t } = useTranslation()
   const { refetch } = useSettings()
+  const tipsEnabled = useGuidedTipsStore((state) => state.enabled)
+  const setTipsEnabled = useGuidedTipsStore((state) => state.setEnabled)
+  const replayAllTips = useGuidedTipsStore((state) => state.replayAll)
 
   // v0.7.153 — Visual rhythm refresh (Settings = roomy treatment).
   // Pain points addressed (per user 2026-05-21):
@@ -33,7 +38,7 @@ export default function SettingsPage() {
   // sparse on wide monitors while still hitting the "roomy" target.
   return (
     <AppShell>
-      <div className="flex-1 overflow-y-auto">
+      <div data-testid="settings-scroll-viewport" className="flex-1 overflow-y-auto">
         <div className="px-6 py-10 sm:px-8">
           <div className="mx-auto max-w-3xl space-y-10">
             <header className="flex items-start justify-between gap-4">
@@ -46,6 +51,27 @@ export default function SettingsPage() {
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </header>
+
+            <section aria-labelledby="appearance-heading" className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Appearance</p>
+                <h2 id="appearance-heading" className="mt-1 text-xl font-semibold">Choose your research environment</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Preview a complete workspace theme, then apply it when it feels right.</p>
+              </div>
+              <ThemeGallery />
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">Guided tips</p>
+                  <p className="text-sm text-muted-foreground">Show small contextual messages when you visit a section for the first time.</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" role="switch" aria-checked={tipsEnabled} onClick={() => setTipsEnabled(!tipsEnabled)}>
+                    {tipsEnabled ? 'On' : 'Off'}
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={replayAllTips}>Replay all tips</Button>
+                </div>
+              </div>
+            </section>
 
             <SettingsForm />
             <UpdatesCard />

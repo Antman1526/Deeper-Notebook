@@ -98,11 +98,32 @@ const editorModeLocaleKeys = [
 // exact-copy checks even when the current source slice delegates their display.
 const sharedVaultSurfaceLocaleKeys = new Set([
   ...editorModeLocaleKeys.map(key => `knowledge.${key}`),
+  ...[
+    'quickSwitcher', 'quickSwitcherDescription', 'alreadyOpen',
+    'partialCatalogFailure', 'knowledgeCommands', 'semanticSearchFor',
+    'semanticSearchResults', 'semanticUnavailable', 'previousTab', 'nextTab',
+    'closeActiveTab', 'focusFiles', 'focusPane', 'focusLinks',
+    'commandUnavailable', 'exactResults', 'indexedSearchResults', 'semanticSearch',
+  ].map(key => `knowledge.${key}`),
   'knowledge.properties',
   'knowledge.tags',
   'knowledge.noProperties',
   'knowledge.noTags',
   'knowledge.outline',
+  'knowledge.navigation.sources',
+  'knowledge.navigation.bookmarks',
+  'knowledge.navigation.randomNote',
+  'knowledge.navigation.workspaces',
+  'knowledge.navigation.currentSession',
+  'knowledge.navigation.saveCurrentAs',
+  'knowledge.navigation.replaceWithCurrent',
+  'knowledge.navigation.openAvailable',
+  'knowledge.navigation.targetAvailable',
+  'knowledge.navigation.targetStale',
+  'knowledge.navigation.targetUnavailable',
+  'knowledge.navigation.targetMissing',
+  'knowledge.navigation.appOwned',
+  'knowledge.navigation.externalReadOnly',
 ])
 
 describe('Read-only editor mode locale contracts', () => {
@@ -139,6 +160,231 @@ describe('Read-only editor mode locale contracts', () => {
       contentHash: 'Content hash',
       readOnlyMode: '{{mode}} is read-only',
       headingLevel: 'Level {{level}} {{title}}',
+    })
+  })
+})
+
+const commandNavigationLocaleKeys = [
+  'quickSwitcher', 'quickSwitcherDescription', 'alreadyOpen',
+  'partialCatalogFailure', 'knowledgeCommands', 'semanticSearchFor',
+  'semanticSearchResults', 'semanticUnavailable', 'previousTab', 'nextTab',
+  'closeActiveTab', 'focusFiles', 'focusPane', 'focusLinks',
+  'commandUnavailable', 'exactResults', 'indexedSearchResults', 'semanticSearch',
+] as const
+
+const knowledgeCommandLocaleKeys = [
+  'viewReading', 'viewSource', 'viewLivePreview', 'viewGraph', 'splitRight',
+  'splitDown', 'closePane', 'closeTab', 'previousTab', 'nextTab', 'scanVault',
+  'focusFiles', 'focusPane', 'focusLinks', 'requiresActiveTab',
+  'requiresActivePane', 'requiresMultiplePanes', 'requiresSelectedVault',
+  'requiresFileTree', 'requiresLinks',
+] as const
+
+const knowledgeNavigationLocaleKeys = [
+  'sources', 'bookmarks', 'randomNote', 'workspaces', 'currentSession',
+  'saveCurrentAs', 'replaceWithCurrent', 'openAvailable', 'targetAvailable',
+  'targetStale', 'targetUnavailable', 'targetMissing', 'appOwned',
+  'externalReadOnly', 'words', 'characters', 'readingMinutes', 'selectionMetrics',
+] as const
+
+const overlayLocaleKeys = [
+  'name', 'writable', 'today', 'newUnique', 'uniqueTitle', 'create', 'creating', 'daily', 'notes',
+  'empty', 'loadError', 'createError', 'save', 'saving', 'saved', 'saveError',
+  'dirtyDraft', 'revision', 'projectionCurrent', 'projectionPending',
+  'projectionFailed', 'projectionConflict', 'conflict', 'reload', 'reloadTitle',
+  'reloadDescription', 'discardAndReload', 'reloadError', 'externalReadOnly',
+  'noteDetails', 'noHeadings',
+] as const
+
+const rawEnglishRuntimeLeafAllowlist = new Set([
+  'de-DE:commands.viewGraph',
+  'fr-FR:commands.viewSource',
+])
+
+const approvedNonEnglishCommandNavigationCopy = {
+  'bn-IN': ['দ্রুত সুইচার', 'সূচিবদ্ধ ভল্ট নোট খুলুন', 'খোলা', '{{count}}টি ভল্ট ক্যাটালগ লোড করা যায়নি', 'জ্ঞান কমান্ড', '{{query}}-এর জন্য অর্থভিত্তিক অনুসন্ধান', 'অর্থভিত্তিক ফলাফল', 'অর্থভিত্তিক অনুসন্ধানের জন্য এমবেডিং মডেল প্রয়োজন', 'পূর্ববর্তী ট্যাব', 'পরবর্তী ট্যাব', 'সক্রিয় ট্যাব বন্ধ করুন', 'ভল্ট ফাইলে ফোকাস করুন', 'সক্রিয় পেনে ফোকাস করুন', 'নোট লিঙ্কে ফোকাস করুন', 'কমান্ড অনুপলব্ধ'],
+  'ca-ES': ['Selector ràpid', 'Obre una nota indexada de la volta', 'Oberta', "No s'han pogut carregar {{count}} catàlegs de volta", 'Ordres de coneixement', 'Cerca semàntica de {{query}}', 'Resultats semàntics', "La cerca semàntica requereix un model d'incrustacions", 'Pestanya anterior', 'Pestanya següent', 'Tanca la pestanya activa', 'Enfoca els fitxers de la volta', 'Enfoca el panell actiu', 'Enfoca els enllaços de la nota', 'Ordre no disponible'],
+  'de-DE': ['Schnellwechsler', 'Indizierte Tresornotiz öffnen', 'Offen', '{{count}} Tresorkatalog konnte nicht geladen werden', 'Wissensbefehle', 'Semantische Suche nach {{query}}', 'Semantische Ergebnisse', 'Semantische Suche erfordert ein Einbettungsmodell', 'Vorheriger Tab', 'Nächster Tab', 'Aktiven Tab schließen', 'Tresordateien fokussieren', 'Aktiven Bereich fokussieren', 'Notizlinks fokussieren', 'Befehl nicht verfügbar'],
+  'es-ES': ['Selector rápido', 'Abrir una nota indexada de la bóveda', 'Abierta', 'No se pudieron cargar {{count}} catálogos de bóveda', 'Comandos de conocimiento', 'Búsqueda semántica de {{query}}', 'Resultados semánticos', 'La búsqueda semántica requiere un modelo de incrustaciones', 'Pestaña anterior', 'Pestaña siguiente', 'Cerrar pestaña activa', 'Enfocar archivos de la bóveda', 'Enfocar panel activo', 'Enfocar enlaces de la nota', 'Comando no disponible'],
+  'fr-FR': ['Sélecteur rapide', 'Ouvrir une note indexée du coffre', 'Ouverte', 'Impossible de charger {{count}} catalogues de coffre', 'Commandes de connaissances', 'Recherche sémantique de {{query}}', 'Résultats sémantiques', "La recherche sémantique nécessite un modèle d'embeddings", 'Onglet précédent', 'Onglet suivant', "Fermer l'onglet actif", 'Cibler les fichiers du coffre', 'Cibler le volet actif', 'Cibler les liens de la note', 'Commande indisponible'],
+  'it-IT': ['Selettore rapido', 'Apri una nota indicizzata della cassaforte', 'Aperta', 'Impossibile caricare {{count}} cataloghi della cassaforte', 'Comandi della conoscenza', 'Ricerca semantica per {{query}}', 'Risultati semantici', 'La ricerca semantica richiede un modello di embedding', 'Scheda precedente', 'Scheda successiva', 'Chiudi scheda attiva', 'Attiva i file della cassaforte', 'Attiva il riquadro corrente', 'Attiva i link della nota', 'Comando non disponibile'],
+  'ja-JP': ['クイックスイッチャー', 'インデックス済みの保管庫ノートを開く', '開いています', '{{count}} 件の保管庫カタログを読み込めませんでした', 'ナレッジコマンド', '{{query}} のセマンティック検索', 'セマンティック結果', 'セマンティック検索には埋め込みモデルが必要です', '前のタブ', '次のタブ', 'アクティブなタブを閉じる', '保管庫ファイルにフォーカス', 'アクティブなペインにフォーカス', 'ノートリンクにフォーカス', 'コマンドを使用できません'],
+  'pl-PL': ['Szybki przełącznik', 'Otwórz zindeksowaną notatkę skarbca', 'Otwarta', 'Nie udało się załadować {{count}} katalogów skarbca', 'Polecenia wiedzy', 'Wyszukiwanie semantyczne: {{query}}', 'Wyniki semantyczne', 'Wyszukiwanie semantyczne wymaga modelu osadzania', 'Poprzednia karta', 'Następna karta', 'Zamknij aktywną kartę', 'Ustaw fokus na plikach skarbca', 'Ustaw fokus na aktywnym panelu', 'Ustaw fokus na linkach notatki', 'Polecenie niedostępne'],
+  'pt-BR': ['Alternador rápido', 'Abrir uma nota indexada do cofre', 'Aberta', 'Não foi possível carregar {{count}} catálogos do cofre', 'Comandos de conhecimento', 'Pesquisa semântica por {{query}}', 'Resultados semânticos', 'A pesquisa semântica requer um modelo de embeddings', 'Guia anterior', 'Próxima guia', 'Fechar guia ativa', 'Focar arquivos do cofre', 'Focar painel ativo', 'Focar links da nota', 'Comando indisponível'],
+  'ru-RU': ['Быстрый переключатель', 'Открыть проиндексированную заметку хранилища', 'Открыта', 'Не удалось загрузить {{count}} каталогов хранилища', 'Команды знаний', 'Семантический поиск: {{query}}', 'Семантические результаты', 'Для семантического поиска нужна модель эмбеддингов', 'Предыдущая вкладка', 'Следующая вкладка', 'Закрыть активную вкладку', 'Перейти к файлам хранилища', 'Перейти к активной панели', 'Перейти к ссылкам заметки', 'Команда недоступна'],
+  'tr-TR': ['Hızlı değiştirici', 'Dizinlenmiş bir kasa notunu aç', 'Açık', '{{count}} kasa kataloğu yüklenemedi', 'Bilgi komutları', '{{query}} için anlamsal arama', 'Anlamsal sonuçlar', 'Anlamsal arama için bir gömme modeli gerekir', 'Önceki sekme', 'Sonraki sekme', 'Etkin sekmeyi kapat', 'Kasa dosyalarına odaklan', 'Etkin bölmeye odaklan', 'Not bağlantılarına odaklan', 'Komut kullanılamıyor'],
+  'zh-CN': ['快速切换', '打开已索引的知识库笔记', '已打开', '无法加载 {{count}} 个知识库目录', '知识命令', '对 {{query}} 进行语义搜索', '语义结果', '语义搜索需要嵌入模型', '上一个标签页', '下一个标签页', '关闭当前标签页', '聚焦知识库文件', '聚焦当前窗格', '聚焦笔记链接', '命令不可用'],
+  'zh-TW': ['快速切換', '開啟已索引的知識庫筆記', '已開啟', '無法載入 {{count}} 個知識庫目錄', '知識命令', '對 {{query}} 進行語意搜尋', '語意結果', '語意搜尋需要嵌入模型', '上一個分頁', '下一個分頁', '關閉目前分頁', '聚焦知識庫檔案', '聚焦目前窗格', '聚焦筆記連結', '命令無法使用'],
+} as const
+
+describe('Command-navigation locale contracts', () => {
+  it.each(Object.entries(resources))('%s resolves all 38 command-navigation leaves directly', (code, resource) => {
+    const translation = resource.translation as Record<string, unknown>
+    for (const key of commandNavigationLocaleKeys) {
+      const value = getTranslation(translation, `knowledge.${key}`)
+      expect(value, `${code} is missing knowledge.${key}`).toEqual(expect.any(String))
+      expect((value as string).trim()).not.toBe('')
+    }
+    for (const key of knowledgeCommandLocaleKeys) {
+      const value = getTranslation(translation, `knowledge.commands.${key}`)
+      expect(value, `${code} is missing knowledge.commands.${key}`).toEqual(expect.any(String))
+      expect((value as string).trim()).not.toBe('')
+    }
+    for (const key of knowledgeNavigationLocaleKeys) {
+      const value = getTranslation(translation, `knowledge.navigation.${key}`)
+      expect(value, `${code} is missing knowledge.navigation.${key}`).toEqual(expect.any(String))
+      expect((value as string).trim(), `${code} has an empty knowledge.navigation.${key}`)
+        .not.toBe('')
+    }
+  })
+
+  it('keeps exact English command-navigation copy', () => {
+    expect(enUS.knowledge).toMatchObject({
+      quickSwitcher: 'Quick switcher', quickSwitcherDescription: 'Open an indexed vault note',
+      alreadyOpen: 'Open', partialCatalogFailure: '{{count}} vault catalog could not be loaded',
+      knowledgeCommands: 'Knowledge commands', semanticSearchFor: 'Semantic search for {{query}}',
+      semanticSearchResults: 'Semantic results', semanticUnavailable: 'Semantic search requires an embedding model',
+      previousTab: 'Previous tab', nextTab: 'Next tab', closeActiveTab: 'Close active tab',
+      focusFiles: 'Focus vault files', focusPane: 'Focus active pane', focusLinks: 'Focus note links',
+      commandUnavailable: 'Command unavailable', exactResults: 'Exact matches',
+      indexedSearchResults: 'Indexed results', semanticSearch: 'Semantic search',
+      commands: {
+        viewReading: 'Reading', viewSource: 'Source', viewLivePreview: 'Live Preview', viewGraph: 'Graph',
+        splitRight: 'Split pane right', splitDown: 'Split pane down', closePane: 'Close pane',
+        closeTab: 'Close active tab', previousTab: 'Previous tab', nextTab: 'Next tab', scanVault: 'Scan vault',
+        focusFiles: 'Focus vault files', focusPane: 'Focus active pane', focusLinks: 'Focus note links',
+        requiresActiveTab: 'Requires an active tab', requiresActivePane: 'Requires an active pane',
+        requiresMultiplePanes: 'Requires multiple panes', requiresSelectedVault: 'Select a vault first',
+        requiresFileTree: 'File tree unavailable', requiresLinks: 'Note links unavailable',
+      },
+    })
+  })
+
+  it('keeps exact English navigation-productivity copy', () => {
+    expect(enUS.knowledge.navigation).toEqual({
+      sources: 'Sources',
+      bookmarks: 'Bookmarks',
+      randomNote: 'Random Note',
+      workspaces: 'Workspaces',
+      currentSession: 'Current Session',
+      saveCurrentAs: 'Save Current As',
+      replaceWithCurrent: 'Replace With Current',
+      openAvailable: 'Open available',
+      targetAvailable: 'Available',
+      targetStale: 'Stale',
+      targetUnavailable: 'Unavailable',
+      targetMissing: 'Missing',
+      appOwned: 'App-owned',
+      externalReadOnly: 'External read-only',
+      words: '{{count}} words',
+      characters: '{{count}} characters',
+      readingMinutes: '{{count}} min read',
+      selectionMetrics: 'Selection: {{words}} words, {{characters}} characters',
+    })
+  })
+
+  it.each(Object.entries(approvedNonEnglishCommandNavigationCopy))(
+    '%s keeps the approved localized command-navigation copy',
+    (code, approvedCopy) => {
+      const translation = resources[code as keyof typeof resources]
+        .translation as Record<string, unknown>
+      for (const [index, key] of commandNavigationLocaleKeys.slice(0, 15).entries()) {
+        expect(getTranslation(translation, `knowledge.${key}`)).toBe(approvedCopy[index])
+      }
+    },
+  )
+
+  it.each(Object.entries(resources).filter(([code]) => code !== 'en-US'))(
+    '%s has no unapproved raw-English runtime leaves',
+    (code, resource) => {
+      const translation = resource.translation as Record<string, unknown>
+      const english = enUS as unknown as { knowledge: Record<string, unknown> }
+      for (const key of ['exactResults', 'indexedSearchResults', 'semanticSearch'] as const) {
+        expect(getTranslation(translation, `knowledge.${key}`)).not.toBe(english.knowledge[key])
+      }
+      for (const key of knowledgeCommandLocaleKeys) {
+        if (rawEnglishRuntimeLeafAllowlist.has(`${code}:commands.${key}`)) continue
+        expect(getTranslation(translation, `knowledge.commands.${key}`)).not.toBe(
+          getTranslation(english.knowledge, `commands.${key}`),
+        )
+      }
+    },
+  )
+
+  it.each(Object.entries(resources))('%s preserves command-navigation interpolation tokens', (code, resource) => {
+    const translation = resource.translation as Record<string, unknown>
+    expect(getTranslation(translation, 'knowledge.partialCatalogFailure')).toContain('{{count}}')
+    expect(getTranslation(translation, 'knowledge.semanticSearchFor')).toContain('{{query}}')
+  })
+
+  it.each(Object.entries(resources))('%s preserves navigation-productivity interpolation tokens', (code, resource) => {
+    const translation = resource.translation as Record<string, unknown>
+    expect(getTranslation(translation, 'knowledge.navigation.words')).toContain('{{count}}')
+    expect(getTranslation(translation, 'knowledge.navigation.characters')).toContain('{{count}}')
+    expect(getTranslation(translation, 'knowledge.navigation.readingMinutes')).toContain('{{count}}')
+    const selection = getTranslation(translation, 'knowledge.navigation.selectionMetrics') as string
+    expect(selection).toContain('{{words}}')
+    expect(selection).toContain('{{characters}}')
+  })
+
+  it.each(Object.entries(resources).filter(([code]) => code !== 'en-US'))(
+    '%s does not fall back to raw English navigation-productivity copy',
+    (code, resource) => {
+      const translation = resource.translation as Record<string, unknown>
+      for (const key of knowledgeNavigationLocaleKeys) {
+        expect(getTranslation(translation, `knowledge.navigation.${key}`)).not.toBe(
+          getTranslation(enUS as unknown as Record<string, unknown>, `knowledge.navigation.${key}`),
+        )
+      }
+    },
+  )
+})
+
+describe('Overlay locale contracts', () => {
+  it.each(Object.entries(resources))('%s provides the exact overlay leaf set', (code, resource) => {
+    const overlay = getTranslation(resource.translation as Record<string, unknown>, 'knowledge.overlay')
+    expect(overlay, `${code} is missing knowledge.overlay`).toEqual(expect.any(Object))
+    expect(Object.keys(overlay as Record<string, unknown>).sort()).toEqual([...overlayLocaleKeys].sort())
+    for (const key of overlayLocaleKeys) {
+      expect(getTranslation(resource.translation as Record<string, unknown>, `knowledge.overlay.${key}`))
+        .toEqual(expect.any(String))
+    }
+  })
+
+  it.each(Object.entries(resources))(
+    '%s preserves the overlay revision interpolation token',
+    (code, resource) => {
+      expect(
+        getTranslation(
+          resource.translation as Record<string, unknown>,
+          'knowledge.overlay.revision',
+        ),
+        `${code} must interpolate the loaded revision`,
+      ).toContain('{{revision}}')
+    },
+  )
+
+  it('keeps exact English revision-safe editing copy', () => {
+    expect(enUS.knowledge.overlay).toMatchObject({
+      save: 'Save',
+      saving: 'Saving…',
+      saved: 'Saved',
+      saveError: 'The draft could not be saved.',
+      dirtyDraft: 'Unsaved draft',
+      revision: 'Revision {{revision}}',
+      projectionCurrent: 'Projection current',
+      projectionPending: 'Projection pending',
+      projectionFailed: 'Projection failed',
+      projectionConflict: 'Projection conflict',
+      conflict: 'This note changed elsewhere. Your draft is still safe.',
+      reload: 'Review server version',
+      reloadTitle: 'Discard local draft?',
+      reloadDescription: 'Reload the latest server revision and discard this local draft.',
+      discardAndReload: 'Discard and reload',
+      reloadError: 'The server revision could not be reloaded.',
+      externalReadOnly: 'External read-only',
+      noteDetails: 'Note details',
+      noHeadings: 'No headings',
     })
   })
 })

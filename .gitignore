@@ -158,3 +158,6 @@ backups/
 
 # Local recovery snapshots produced by scripts/upstream_sync_guard.sh.
 output/upstream-sync/
+
+# Local isolated implementation worktrees.
+.worktrees/

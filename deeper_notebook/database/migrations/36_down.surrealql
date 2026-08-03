@@ -1,0 +1,21 @@
+LET $projected_note_ids = SELECT VALUE projected_note_id FROM overlay_note;
+
+DELETE knowledge_task WHERE note_id IN $projected_note_ids;
+DELETE note_link WHERE source_note_id IN $projected_note_ids
+  OR target_note_id IN $projected_note_ids;
+DELETE note_block WHERE overlay_note_id != NONE;
+DELETE note WHERE overlay_note_id != NONE;
+
+REMOVE INDEX IF EXISTS idx_note_block_overlay ON TABLE note_block;
+REMOVE FIELD IF EXISTS overlay_note_id ON TABLE note_block;
+DEFINE FIELD OVERWRITE vault_file_id ON TABLE note_block TYPE record<vault_file>;
+
+REMOVE INDEX IF EXISTS idx_note_overlay_note ON TABLE note;
+REMOVE FIELD IF EXISTS overlay_note_id ON TABLE note;
+REMOVE FIELD IF EXISTS overlay_space_id ON TABLE note;
+REMOVE FIELD IF EXISTS source_authority ON TABLE note;
+
+REMOVE TABLE IF EXISTS overlay_mutation_receipt;
+REMOVE TABLE IF EXISTS overlay_revision;
+REMOVE TABLE IF EXISTS overlay_note;
+REMOVE TABLE IF EXISTS overlay_space;

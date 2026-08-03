@@ -5,6 +5,7 @@ import {
   useVaultOutgoing,
   useVaultPage,
 } from '@/lib/hooks/use-vault'
+import { useOverlayPage } from '@/lib/hooks/use-overlay'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   useKnowledgeWorkspaceStore,
@@ -14,10 +15,12 @@ import { VaultLinks } from './VaultLinks'
 
 interface KnowledgeLinksInspectorProps {
   onNavigate: KnowledgeNavigate
+  embedded?: boolean
 }
 
 export function KnowledgeLinksInspector({
   onNavigate,
+  embedded = false,
 }: KnowledgeLinksInspectorProps) {
   const { t } = useTranslation()
   const activePane = useKnowledgeWorkspaceStore(
@@ -28,29 +31,92 @@ export function KnowledgeLinksInspector({
   ) ?? activePane?.tabs[0]
   const vaultId = activeTab?.vaultId
   const noteId = activeTab?.noteId
-  const page = useVaultPage(vaultId, noteId)
-  const backlinks = useVaultBacklinks(vaultId, noteId)
-  const outgoing = useVaultOutgoing(vaultId, noteId)
-  const currentBacklinks = backlinks.data || page.data?.backlinks || []
-  const currentOutgoing = outgoing.data || page.data?.outgoing_links || []
+  const isOverlay = activeTab?.sourceAuthority === 'overlay'
+  const overlayPage = useOverlayPage(isOverlay ? noteId : undefined)
+  const page = useVaultPage(
+    isOverlay ? undefined : vaultId,
+    isOverlay ? undefined : noteId,
+  )
+  const backlinks = useVaultBacklinks(
+    isOverlay ? undefined : vaultId,
+    isOverlay ? undefined : noteId,
+  )
+  const outgoing = useVaultOutgoing(
+    isOverlay ? undefined : vaultId,
+    isOverlay ? undefined : noteId,
+  )
+  const currentBacklinks = isOverlay
+    ? overlayPage.data?.backlinks ?? []
+    : backlinks.data || page.data?.backlinks || []
+  const currentOutgoing = isOverlay
+    ? overlayPage.data?.outgoing_links ?? []
+    : outgoing.data || page.data?.outgoing_links || []
+  const displayBacklinks = isOverlay
+    ? currentBacklinks.map((link) => (
+        link.source_overlay_note_id && link.source_relative_path
+          ? link
+          : { ...link, resolved: false }
+      ))
+    : currentBacklinks
+  const displayOutgoing = isOverlay
+    ? currentOutgoing.map((link) => (
+        link.target_overlay_note_id
+          ? link
+          : { ...link, resolved: false }
+      ))
+    : currentOutgoing
   const linksLoading = Boolean(
-    noteId && (backlinks.isLoading || outgoing.isLoading),
+    noteId && (
+      isOverlay
+        ? overlayPage.isLoading
+        : backlinks.isLoading || outgoing.isLoading
+    ),
   )
   const linksError = Boolean(
-    noteId && (backlinks.isError || outgoing.isError),
+    noteId && (
+      isOverlay
+        ? overlayPage.isError
+        : backlinks.isError || outgoing.isError
+    ),
   )
 
   const navigateBacklink = (targetNoteId: string) => {
     if (!activeTab) return
+    const overlayLink = isOverlay
+      ? overlayPage.data?.backlinks.find(
+          (candidate) => candidate.source_note_id === targetNoteId,
+        )
+      : undefined
     const link = currentBacklinks.find(
       (candidate) => candidate.source_note_id === targetNoteId,
     )
     const title = link?.source_note_title || targetNoteId
-    onNavigate(activeTab.vaultId, targetNoteId, undefined, title)
+    const mappedOverlayLink = overlayLink?.source_overlay_note_id
+      && overlayLink.source_relative_path
+      ? overlayLink
+      : undefined
+    const navigationNoteId = isOverlay
+      ? mappedOverlayLink?.source_overlay_note_id
+      : targetNoteId
+    if (!navigationNoteId) return
+    onNavigate(
+      activeTab.vaultId,
+      navigationNoteId,
+      isOverlay ? mappedOverlayLink?.source_relative_path ?? undefined : undefined,
+      title,
+      undefined,
+      undefined,
+      activeTab.sourceAuthority,
+    )
   }
 
   const navigateOutgoing = (targetNoteId: string) => {
     if (!activeTab) return
+    const overlayLink = isOverlay
+      ? overlayPage.data?.outgoing_links.find(
+          (candidate) => candidate.target_note_id === targetNoteId,
+        )
+      : undefined
     const link = currentOutgoing.find(
       (candidate) => candidate.target_note_id === targetNoteId,
     )
@@ -58,21 +124,23 @@ export function KnowledgeLinksInspector({
       || link?.target_note_title === undefined
       ? undefined
       : link.target_note_title
+    const navigationNoteId = isOverlay
+      ? overlayLink?.target_overlay_note_id
+      : targetNoteId
+    if (!navigationNoteId) return
     onNavigate(
       activeTab.vaultId,
-      targetNoteId,
+      navigationNoteId,
       link?.target_relative_path ?? undefined,
       titleHint,
       undefined,
       link?.target_text || targetNoteId,
+      activeTab.sourceAuthority,
     )
   }
 
-  return (
-    <aside
-      className="space-y-6 border-t p-4 lg:border-l lg:border-t-0"
-      aria-label={t('knowledge.noteLinks')}
-    >
+  const content = (
+    <>
       {linksLoading ? (
         <p className="text-sm text-muted-foreground">
           {t('knowledge.linksLoading')}
@@ -85,20 +153,33 @@ export function KnowledgeLinksInspector({
         <>
           <VaultLinks
             title={t('knowledge.backlinks')}
-            links={currentBacklinks}
+            links={displayBacklinks}
             direction="source"
             unresolvedLabel={t('knowledge.unresolved')}
             onNavigate={navigateBacklink}
           />
           <VaultLinks
             title={t('knowledge.outgoing')}
-            links={currentOutgoing}
+            links={displayOutgoing}
             direction="target"
             unresolvedLabel={t('knowledge.unresolved')}
             onNavigate={navigateOutgoing}
           />
         </>
       )}
+    </>
+  )
+
+  if (embedded) {
+    return <div className="space-y-6" aria-label={t('knowledge.noteLinks')}>{content}</div>
+  }
+
+  return (
+    <aside
+      className="space-y-6 border-t p-4 lg:border-l lg:border-t-0"
+      aria-label={t('knowledge.noteLinks')}
+    >
+      {content}
     </aside>
   )
 }

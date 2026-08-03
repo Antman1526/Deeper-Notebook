@@ -30,7 +30,7 @@ def api_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
 
 
 @pytest.mark.asyncio
-async def test_get_returns_default_and_put_survives_new_client(
+async def test_legacy_put_defaults_authority_and_serializes_it_explicitly(
     api_app: FastAPI,
 ) -> None:
     workspace_path = api_app.state.workspace_path
@@ -42,7 +42,7 @@ async def test_get_returns_default_and_put_survives_new_client(
         assert initial.status_code == 200
         assert str(workspace_path) not in initial.text
 
-        payload = initial.json()
+        payload = default_knowledge_workspace().model_dump(mode="json")
         payload["panes"]["pane-1"]["tabs"] = [
             {
                 "id": "tab:one",
@@ -59,7 +59,15 @@ async def test_get_returns_default_and_put_survives_new_client(
             json=payload,
         )
         assert saved.status_code == 200
-        assert saved.json() == payload
+        from deeper_notebook.workspace.contracts import (
+            KnowledgeWorkspaceDocument,
+            migrate_workspace_v1,
+        )
+
+        expected = migrate_workspace_v1(
+            KnowledgeWorkspaceDocument.model_validate(payload)
+        ).model_dump(mode="json")
+        assert saved.json() == expected
         assert str(workspace_path) not in saved.text
 
     async with AsyncClient(
@@ -72,6 +80,10 @@ async def test_get_returns_default_and_put_survives_new_client(
 
     assert restored.status_code == 200
     assert restored.json()["panes"]["pane-1"]["active_tab_id"] == "tab:one"
+    assert (
+        restored.json()["panes"]["pane-1"]["tabs"][0]["target"]["authority"]
+        == "external-vault"
+    )
     assert str(workspace_path) not in restored.text
 
 
@@ -104,6 +116,87 @@ async def test_put_rejects_absolute_relative_path(api_app: FastAPI) -> None:
 
 
 @pytest.mark.asyncio
+async def test_v2_put_persists_canonical_target_ids_and_rejects_path_bearing_ids(
+    api_app: FastAPI,
+) -> None:
+    from deeper_notebook.workspace import default_knowledge_workspace_v2
+
+    payload = default_knowledge_workspace_v2().model_dump(mode="json")
+    payload["panes"]["pane-1"]["tabs"] = [
+        {
+            "id": "tab-graph",
+            "mode": "graph",
+            "title": "Graph",
+            "target": {
+                "kind": "graph",
+                "root_document_id": "knowledge_engine_document:root",
+                "space_ids": ["knowledge_engine_space:primary"],
+                "relation_kinds": [],
+                "viewport": {"x": 0, "y": 0, "zoom": 1},
+                "origin": None,
+            },
+        },
+        {
+            "id": "tab-ask",
+            "mode": "ask",
+            "title": "Ask",
+            "target": {
+                "kind": "ask",
+                "thread_id": "thread:one",
+                "selected_document_ids": ["knowledge_engine_document:one"],
+            },
+        },
+        {
+            "id": "tab-podcast",
+            "mode": "podcast",
+            "title": "Podcast",
+            "target": {
+                "kind": "podcast",
+                "production_id": "production:one",
+                "seed_document_ids": ["knowledge_engine_document:two"],
+            },
+        },
+    ]
+    payload["panes"]["pane-1"]["active_tab_id"] = "tab-graph"
+    payload["navigation"]["selected_space_ids"] = ["knowledge_engine_space:primary"]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app), base_url="http://test"
+    ) as client:
+        saved = await client.put(
+            "/api/deeper-notebook/workspace/knowledge", json=payload
+        )
+        assert saved.status_code == 200
+        assert (
+            saved.json()["panes"]["pane-1"]["tabs"][0]["target"]["root_document_id"]
+            == "knowledge_engine_document:root"
+        )
+
+        for tab_index, field, value in (
+            (0, "root_document_id", "/private/document"),
+            (0, "space_ids", ["../private-space"]),
+            (1, "selected_document_ids", ["/private/document"]),
+            (2, "seed_document_ids", ["/private/document"]),
+        ):
+            unsafe = saved.json()
+            unsafe["panes"]["pane-1"]["tabs"][tab_index]["target"][field] = value
+            rejected = await client.put(
+                "/api/deeper-notebook/workspace/knowledge", json=unsafe
+            )
+            assert rejected.status_code == 422
+
+        unsafe_navigation = saved.json()
+        unsafe_navigation["navigation"]["selected_space_ids"] = ["../private-space"]
+        rejected_navigation = await client.put(
+            "/api/deeper-notebook/workspace/knowledge", json=unsafe_navigation
+        )
+        assert rejected_navigation.status_code == 422
+
+        restored = await client.get("/api/deeper-notebook/workspace/knowledge")
+    assert restored.json() == saved.json()
+
+
+@pytest.mark.asyncio
 async def test_put_rejects_oversized_content_length_before_json_parsing(
     api_app: FastAPI,
 ) -> None:
@@ -119,9 +212,7 @@ async def test_put_rejects_oversized_content_length_before_json_parsing(
         )
 
     assert response.status_code == 413
-    assert response.json() == {
-        "detail": {"code": "workspace_request_too_large"}
-    }
+    assert response.json() == {"detail": {"code": "workspace_request_too_large"}}
 
 
 @pytest.mark.asyncio
@@ -145,9 +236,7 @@ async def test_put_rejects_oversized_chunked_body_while_streaming(
         )
 
     assert response.status_code == 413
-    assert response.json() == {
-        "detail": {"code": "workspace_request_too_large"}
-    }
+    assert response.json() == {"detail": {"code": "workspace_request_too_large"}}
 
 
 @pytest.mark.asyncio
@@ -256,9 +345,7 @@ async def test_encoded_write_over_limit_returns_stable_too_large(
         )
 
     assert response.status_code == 413
-    assert response.json() == {
-        "detail": {"code": "workspace_request_too_large"}
-    }
+    assert response.json() == {"detail": {"code": "workspace_request_too_large"}}
 
 
 @pytest.mark.asyncio

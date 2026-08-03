@@ -6,6 +6,11 @@ import { canonicalVaultRelativePathSchema } from './knowledge-workspace'
 
 const vaultPrefix = '/deeper-notebook/vaults'
 
+const knowledgeDocumentIdSchema = z.string()
+  .regex(/^knowledge_engine_document:[A-Za-z0-9_-]+$/)
+const knowledgeBlockIdSchema = z.string()
+  .regex(/^knowledge_engine_block:[A-Za-z0-9_-]+$/)
+
 export const vaultFileSchema = z.object({
   id: z.string(),
   note_id: z.string(),
@@ -65,23 +70,66 @@ export const vaultLinkSchema = z.object({
 })
 
 export const vaultBlockSchema = z.object({
+  knowledge_block_id: knowledgeBlockIdSchema.nullable().optional(),
+  source_revision_id: z.string().regex(/^knowledge_engine_(?:revision|source_revision):[A-Za-z0-9_-]+$/).nullable().optional(),
   markdown: z.string().optional(),
   heading_path: z.array(z.string()).optional(),
   block_kind: z.string().optional(),
   properties: z.record(z.string(), z.unknown()).optional(),
 }).passthrough()
 
+export const vaultNoteSchema = z.object({
+  id: z.string(),
+  title: z.string().nullable().optional(),
+  markdown: z.string().optional(),
+  content: z.string().optional(),
+  source_format: z.string().optional(),
+  external_state: z.string().optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+  tags: z.array(z.string()).optional(),
+}).passthrough()
+
+// Task payloads are intentionally opaque until their source format is normalized.
+export const vaultTaskSchema = z.unknown()
+
 export const vaultPageSchema = z.object({
+  knowledge_document_id: knowledgeDocumentIdSchema.nullable().optional(),
   file: vaultFileSchema,
-  note: z.object({ id: z.string(), title: z.string().nullable().optional(), markdown: z.string().optional(), content: z.string().optional(), source_format: z.string().optional(), external_state: z.string().optional(), properties: z.record(z.string(), z.unknown()).optional(), tags: z.array(z.string()).optional() }).passthrough(),
+  note: vaultNoteSchema,
   blocks: z.array(vaultBlockSchema),
-  tasks: z.array(z.unknown()), outgoing_links: z.array(vaultLinkSchema), backlinks: z.array(vaultLinkSchema),
+  tasks: z.array(vaultTaskSchema), outgoing_links: z.array(vaultLinkSchema), backlinks: z.array(vaultLinkSchema),
 }).passthrough()
 
 export const vaultGraphSchema = z.object({
-  nodes: z.array(z.object({ id: z.string(), title: z.string().nullable().optional(), source_format: z.string().nullable().optional(), external_state: z.string().nullable().optional() }).passthrough()),
+  nodes: z.array(z.object({ id: z.string(), title: z.string().nullable().optional(), source_format: z.string().nullable().optional(), external_state: z.string().nullable().optional(), knowledge_document_id: knowledgeDocumentIdSchema.nullable().optional() }).passthrough()),
   edges: z.array(z.object({ id: z.string(), source: z.string(), target: z.string(), kind: z.string().optional(), resolved: z.boolean().optional() }).passthrough()),
 })
+
+export const vaultCanvasNodeSchema = z.object({
+  id: z.string().min(1).max(16_384),
+  type: z.enum(['text', 'file', 'group', 'unsupported']),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().finite().positive(),
+  height: z.number().finite().positive(),
+  text: z.string().nullable(),
+  file_path: canonicalVaultRelativePathSchema.nullable(),
+  label: z.string().nullable(),
+}).strict()
+
+export const vaultCanvasEdgeSchema = z.object({
+  id: z.string().min(1).max(16_384),
+  from_node: z.string().min(1).max(16_384),
+  to_node: z.string().min(1).max(16_384),
+  label: z.string().nullable(),
+}).strict()
+
+export const vaultCanvasSchema = z.object({
+  file: vaultFileSchema,
+  source_hash: z.string().regex(/^[0-9a-f]{64}$/i),
+  nodes: z.array(vaultCanvasNodeSchema).max(500),
+  edges: z.array(vaultCanvasEdgeSchema).max(500),
+}).strict()
 
 export const vaultScanSchema = z.object({
   operation_id: z.string(), state: z.string(), observed: z.number(), parsed: z.number(), unchanged: z.number(), unsupported: z.number(), invalid: z.number(), missing: z.number(), embeddings_pending: z.number(),
@@ -92,6 +140,9 @@ export type VaultMount = z.infer<typeof vaultMountSchema>
 export type VaultPage = z.infer<typeof vaultPageSchema>
 export type VaultLink = z.infer<typeof vaultLinkSchema>
 export type VaultGraph = z.infer<typeof vaultGraphSchema>
+export type VaultCanvasNode = z.infer<typeof vaultCanvasNodeSchema>
+export type VaultCanvasEdge = z.infer<typeof vaultCanvasEdgeSchema>
+export type VaultCanvasDocument = z.infer<typeof vaultCanvasSchema>
 
 function isAuthoredContentField(key: string): boolean {
   const normalized = key
@@ -174,6 +225,11 @@ function safeParse<T>(schema: z.ZodType<T>, data: unknown): T {
   return schema.parse(data)
 }
 
+function encodeRelativeVaultPath(relativePath: string): string {
+  const canonical = canonicalVaultRelativePathSchema.parse(relativePath)
+  return canonical.split('/').map(encodeURIComponent).join('/')
+}
+
 export type VaultPageContractErrorCode =
   | 'page-invalid'
   | 'canonical-path-unavailable'
@@ -245,6 +301,12 @@ export const vaultApi = {
   list: async () => safeParse(z.array(vaultMountSchema), (await apiClient.get(`${vaultPrefix}`)).data),
   detail: async (vaultId: string) => safeParse(vaultMountSchema, (await apiClient.get(`${vaultPrefix}/${encodeURIComponent(vaultId)}`)).data),
   files: async (vaultId: string) => safeParse(z.array(vaultFileSchema), (await apiClient.get(`${vaultPrefix}/${encodeURIComponent(vaultId)}/files`)).data),
+  canvas: async (vaultId: string, relativePath: string) => safeParse(
+    vaultCanvasSchema,
+    (await apiClient.get(
+      `${vaultPrefix}/${encodeURIComponent(vaultId)}/canvases/${encodeRelativeVaultPath(relativePath)}`,
+    )).data,
+  ),
   page: getRequestedPage,
   backlinks: async (vaultId: string, noteId: string) => safeParse(z.array(vaultLinkSchema), (await apiClient.get(`${vaultPrefix}/${encodeURIComponent(vaultId)}/pages/${encodeURIComponent(noteId)}/backlinks`)).data),
   outgoing: async (vaultId: string, noteId: string) => safeParse(z.array(vaultLinkSchema), (await apiClient.get(`${vaultPrefix}/${encodeURIComponent(vaultId)}/pages/${encodeURIComponent(noteId)}/outgoing`)).data),

@@ -11,6 +11,7 @@ import {
   selectPaneCount,
   useKnowledgeWorkspaceStore,
 } from './knowledge-workspace-store'
+import { useOverlayDraftStore } from './overlay-draft-store'
 
 const plan = {
   vaultId: 'vault:one',
@@ -44,7 +45,7 @@ describe('knowledge workspace store', () => {
     useKnowledgeWorkspaceStore.getState().openTab(plan)
 
     expect(useKnowledgeWorkspaceStore.getState()).toMatchObject({
-      version: 1,
+      version: 2,
       activePaneId: 'pane-1',
       nextId: 3,
       hydrated: false,
@@ -54,6 +55,65 @@ describe('knowledge workspace store', () => {
     persistSpy.mockRestore()
   })
 
+  it('persists render-mode transitions as matching V2 targets', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    const tabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+
+    store.setTabViewMode('pane-1', tabId, 'graph')
+    let tab = useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0]
+    expect(tab).toMatchObject({ mode: 'graph', target: { kind: 'graph', origin: { relative_locator: 'Projects/Plan.md' } } })
+    expect(serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState()).panes['pane-1'].tabs[0])
+      .toMatchObject({ mode: 'graph', target: { kind: 'graph' } })
+
+    store.setTabViewMode('pane-1', tabId, 'source')
+    tab = useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0]
+    expect(tab).toMatchObject({ mode: 'read', target: { kind: 'document', render_mode: 'source' } })
+  })
+
+  it('opens graph tabs with a V2 graph target and reconciles its origin', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab({ ...plan, viewMode: 'graph' })
+    const tabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+    store.reconcileTabReference('pane-1', tabId, {
+      title: 'Renamed', relativePath: 'Projects/Renamed.md',
+      knowledgeDocumentId: 'knowledge_engine_document:renamed',
+    })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0]).toMatchObject({
+      mode: 'graph', target: {
+        kind: 'graph', root_document_id: 'knowledge_engine_document:renamed',
+        origin: { title: 'Renamed', relative_locator: 'Projects/Renamed.md' },
+      },
+    })
+  })
+
+  it('applies a named workspace in one revision and preserves drafts', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab({ ...plan, sourceAuthority: 'overlay' })
+    const tabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+    useOverlayDraftStore.setState({ drafts: { [`pane-1:${tabId}`]: {} as never } })
+    const before = useKnowledgeWorkspaceStore.getState().revision
+
+    expect(store.applyNamedWorkspace(defaultKnowledgeWorkspace())).toBe(true)
+    expect(useKnowledgeWorkspaceStore.getState().revision).toBe(before + 1)
+    expect(useOverlayDraftStore.getState().drafts).toHaveProperty(`pane-1:${tabId}`)
+  })
+
+  it('leaves current state unchanged when named workspace validation fails', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    const before = useKnowledgeWorkspaceStore.getState()
+    const invalid = defaultKnowledgeWorkspace()
+    invalid.panes['pane-1'].tabs = [{
+      id: 'tab-1', vaultId: 'vault:one', noteId: 'note:one', title: 'One',
+      relativePath: '/unsafe.md', viewMode: 'reading', sourceAuthority: 'external-vault',
+      knowledgeDocumentId: null, graphViewport: { x: 0, y: 0, zoom: 1 },
+    }]
+    invalid.panes['pane-1'].activeTabId = 'tab-1'
+
+    expect(store.applyNamedWorkspace(invalid)).toBe(false)
+    expect(useKnowledgeWorkspaceStore.getState()).toBe(before)
+  })
+
   it('deduplicates an open note inside the active pane', () => {
     const store = useKnowledgeWorkspaceStore.getState()
     store.openTab(plan)
@@ -61,6 +121,15 @@ describe('knowledge workspace store', () => {
 
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs).toHaveLength(1)
     expect(selectActiveKnowledgeTab(useKnowledgeWorkspaceStore.getState())).toMatchObject(plan)
+  })
+
+  it('keeps overlay and external tabs distinct for identical note IDs', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    store.openTab({ ...plan, sourceAuthority: 'overlay' })
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs)
+      .toHaveLength(2)
   })
 
   it('creates recursively nestable horizontal and vertical splits', () => {
@@ -102,6 +171,26 @@ describe('knowledge workspace store', () => {
     store.closeTab('pane-1', current.tabs[1].id)
     expect(selectActiveKnowledgeTab(useKnowledgeWorkspaceStore.getState())?.noteId)
       .toBe('note:plan')
+  })
+
+  it('clears ephemeral overlay drafts when their tab closes or the workspace resets', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab({ ...plan, sourceAuthority: 'overlay' })
+    const tabId = useKnowledgeWorkspaceStore
+      .getState().panes['pane-1'].activeTabId!
+    const viewId = `pane-1:${tabId}`
+    useOverlayDraftStore.setState({
+      drafts: { [viewId]: {} as never },
+    })
+
+    store.closeTab('pane-1', tabId)
+    expect(useOverlayDraftStore.getState().drafts).toEqual({})
+
+    useOverlayDraftStore.setState({
+      drafts: { 'pane-1:stale': {} as never },
+    })
+    useKnowledgeWorkspaceStore.getState().resetWorkspace()
+    expect(useOverlayDraftStore.getState().drafts).toEqual({})
   })
 
   it('stores view mode independently per tab', () => {
@@ -160,6 +249,46 @@ describe('knowledge workspace store', () => {
 
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0])
       .toMatchObject(plan)
+  })
+
+  it('reconciles only a valid page unified document ID without activating another tab', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    const before = useKnowledgeWorkspaceStore.getState()
+    const tabId = before.panes['pane-1'].activeTabId!
+
+    before.reconcileTabReference('pane-1', tabId, {
+      title: plan.title,
+      relativePath: plan.relativePath,
+      knowledgeDocumentId: 'knowledge_engine_document:research',
+    })
+
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1']).toMatchObject({
+      activeTabId: tabId,
+      tabs: [{ id: tabId, knowledgeDocumentId: 'knowledge_engine_document:research' }],
+    })
+    useKnowledgeWorkspaceStore.getState().reconcileTabReference('pane-1', tabId, {
+      title: plan.title,
+      relativePath: plan.relativePath,
+      knowledgeDocumentId: 'not-a-unified-id',
+    })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId)
+      .toBe('knowledge_engine_document:research')
+  })
+
+  it('preserves an omitted unified ID but clears an explicitly absent page ID', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab({ ...plan, knowledgeDocumentId: 'knowledge_engine_document:research' })
+    const tabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+
+    store.reconcileTabReference('pane-1', tabId, { title: plan.title, relativePath: plan.relativePath })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId)
+      .toBe('knowledge_engine_document:research')
+
+    store.reconcileTabReference('pane-1', tabId, {
+      title: plan.title, relativePath: plan.relativePath, knowledgeDocumentId: null,
+    })
+    expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId).toBeNull()
   })
 
   it.each([
@@ -228,6 +357,7 @@ describe('knowledge workspace store', () => {
         type: 'split',
         id: `split-depth-${depth}`,
         direction: 'horizontal',
+        firstSize: 50,
         first: layout,
         second: { type: 'pane', paneId: 'pane-1' },
       }
@@ -291,6 +421,9 @@ describe('knowledge workspace store', () => {
             id: 'tab-2',
             ...plan,
             viewMode: 'reading',
+            sourceAuthority: 'external-vault',
+            knowledgeDocumentId: null,
+            graphViewport: { x: 0, y: 0, zoom: 1 },
           }],
         },
       },
@@ -318,9 +451,11 @@ describe('knowledge workspace store', () => {
         type: 'split',
         id: 'split-4',
         direction: 'horizontal',
+        firstSize: 50,
         first: { type: 'pane', paneId: 'pane-1' },
         second: { type: 'pane', paneId: 'pane-2' },
       },
+      navigation: defaultKnowledgeWorkspace().navigation,
     })
 
     const newPaneId = useKnowledgeWorkspaceStore
@@ -332,5 +467,21 @@ describe('knowledge workspace store', () => {
     expect(JSON.stringify(state.layout)).toContain('"id":"split-5"')
     expect(state.nextId).toBe(6)
     expect(() => serializeKnowledgeWorkspace(state)).not.toThrow()
+  })
+
+  it('keeps focused block context transient and clears it when the tab changes', () => {
+    const store = useKnowledgeWorkspaceStore.getState()
+    store.openTab(plan)
+    const firstTabId = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId!
+    store.setFocusedBlock('pane-1', firstTabId, {
+      blockId: 'knowledge_engine_block:plan', sourceRevisionId: 'knowledge_engine_revision:one',
+    })
+    expect(useKnowledgeWorkspaceStore.getState().focusedBlocksByTab[firstTabId]).toEqual({
+      blockId: 'knowledge_engine_block:plan', sourceRevisionId: 'knowledge_engine_revision:one',
+    })
+    expect(serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState())).not.toHaveProperty('focusedBlocksByTab')
+
+    store.openTab(research)
+    expect(useKnowledgeWorkspaceStore.getState().focusedBlocksByTab[firstTabId]).toBeUndefined()
   })
 })

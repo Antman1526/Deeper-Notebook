@@ -45,11 +45,14 @@ from api.routers import (
     exports,  # v0.7.90 — notebook/note export to host filesystem
     filesystem,  # v0.7.90 — host filesystem listing/mkdir for picker UI
     insights,
+    knowledge_engine,
+    knowledge_navigation,
     knowledge_workspace,
     languages,
     models,
     notebooks,
     notes,
+    overlay,
     podcasts,
     research,
     search,
@@ -84,6 +87,10 @@ from deeper_notebook.exceptions import (
     RateLimitError,
 )
 from deeper_notebook.identity import DESCRIPTION, PRODUCT_NAME
+from deeper_notebook.knowledge_engine.service import (
+    KnowledgeEngineService,
+    enabled_setting,
+)
 from deeper_notebook.logging import configure_logging
 from deeper_notebook.utils.encryption import get_secret_from_env
 
@@ -218,6 +225,151 @@ def _track_task(task: "asyncio.Task") -> "asyncio.Task":
     return task
 
 
+def _clear_knowledge_engine_service(app: FastAPI) -> None:
+    """Remove optional engine state without leaving a disabled sentinel."""
+    if hasattr(app.state, "knowledge_engine_service"):
+        delattr(app.state, "knowledge_engine_service")
+
+
+def _clear_knowledge_navigation_service(app: FastAPI) -> None:
+    """Remove navigation state at lifespan exit without a disabled sentinel."""
+    if hasattr(app.state, "knowledge_navigation_service"):
+        delattr(app.state, "knowledge_navigation_service")
+
+
+async def _start_knowledge_navigation(
+    app: FastAPI,
+    *,
+    engine_service: KnowledgeEngineService | None = None,
+) -> None:
+    """Own metadata navigation independently of optional engine hydration."""
+    from deeper_notebook.knowledge_engine.navigation_repository import (
+        KnowledgeNavigationRepository,
+    )
+    from deeper_notebook.knowledge_engine.navigation_service import (
+        KnowledgeNavigationService,
+    )
+
+    _clear_knowledge_navigation_service(app)
+    engine_repository = engine_service
+    app.state.knowledge_navigation_service = KnowledgeNavigationService(
+        metadata_repository=KnowledgeNavigationRepository(),
+        engine_repository=engine_repository,
+    )
+
+
+def _create_knowledge_engine_runtime() -> KnowledgeEngineService:
+    """Build the optional engine without exposing its storage dependencies."""
+    from deeper_notebook.knowledge_engine.backfill import (
+        CanonicalSourceCatalog,
+        KnowledgeBackfillService,
+    )
+    from deeper_notebook.knowledge_engine.equivalence import legacy_projection_digest
+    from deeper_notebook.knowledge_engine.repository import KnowledgeRepository
+    from deeper_notebook.knowledge_engine.shadow import KnowledgeShadowCoordinator
+    from deeper_notebook.overlay.paths import OverlayLayout
+    from deeper_notebook.overlay.repository import OverlayRepository
+    from deeper_notebook.overlay.storage import OverlayStorage
+    from deeper_notebook.vault.repository import VaultRepository
+
+    repository = KnowledgeRepository()
+    coordinator = KnowledgeShadowCoordinator(repository=repository)
+    catalog = CanonicalSourceCatalog(
+        overlay_repository=OverlayRepository(),
+        overlay_storage=OverlayStorage(OverlayLayout.active()),
+        vault_repository=VaultRepository(),
+    )
+    backfill = KnowledgeBackfillService(catalog=catalog, repository=repository)
+
+    async def legacy_digest_builder(
+        space_id: str, exact_queries: tuple[str, ...]
+    ):
+        return await legacy_projection_digest(
+            catalog,
+            space_id=space_id,
+            exact_queries=exact_queries,
+        )
+
+    async def unified_digest_builder(
+        space_id: str, exact_queries: tuple[str, ...]
+    ):
+        return await repository.projection_digest(space_id, exact_queries)
+
+    return KnowledgeEngineService(
+        repository=repository,
+        coordinator=coordinator,
+        catalog=catalog,
+        backfill=backfill,
+        legacy_digest_builder=legacy_digest_builder,
+        unified_digest_builder=unified_digest_builder,
+    )
+
+
+async def _start_knowledge_engine(
+    app: FastAPI,
+    *,
+    runtime_factory=_create_knowledge_engine_runtime,
+) -> tuple[object | None, asyncio.Task | None]:
+    """Start the shadow-only engine and return its coordinator/task ownership."""
+    _clear_knowledge_engine_service(app)
+    try:
+        shadow_enabled = enabled_setting(
+            "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED"
+        )
+        backfill_enabled = enabled_setting(
+            "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_BACKFILL_ENABLED"
+        )
+    except Exception as exc:
+        logger.warning(
+            "knowledge_engine_configuration_invalid ({})", type(exc).__name__
+        )
+        return None, None
+
+    if backfill_enabled and not shadow_enabled:
+        logger.warning("knowledge_engine_configuration_invalid ({})", "ValueError")
+        return None, None
+    if not shadow_enabled:
+        return None, None
+
+    try:
+        service = runtime_factory()
+        app.state.knowledge_engine_service = service
+        task = None
+        if backfill_enabled:
+            task = _track_task(
+                asyncio.create_task(
+                    service.run_backfill(), name="knowledge-engine-backfill"
+                )
+            )
+        return service.coordinator, task
+    except Exception as exc:
+        _clear_knowledge_engine_service(app)
+        logger.warning(
+            "knowledge_engine_startup_unavailable ({})", type(exc).__name__
+        )
+        return None, None
+
+
+async def _stop_knowledge_engine(
+    app: FastAPI,
+    backfill_task: asyncio.Task | None,
+) -> None:
+    """Cancel only the task this lifespan invocation explicitly owns."""
+    if backfill_task is not None:
+        if not backfill_task.done():
+            backfill_task.cancel()
+        try:
+            await backfill_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.warning(
+                "knowledge_engine_backfill_shutdown_unavailable ({})",
+                type(exc).__name__,
+            )
+    _clear_knowledge_engine_service(app)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -278,6 +430,39 @@ async def lifespan(app: FastAPI):
         # Fail fast - don't start the API with an outdated database schema
         raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
 
+    # The unified engine is strictly optional. Resolve it after durable schema
+    # preparation and before legacy services so one coordinator can be injected
+    # into both legacy projection paths without altering their availability.
+    knowledge_shadow_coordinator, knowledge_backfill_task = (
+        await _start_knowledge_engine(app)
+    )
+    await _start_knowledge_navigation(
+        app,
+        engine_service=getattr(app.state, "knowledge_engine_service", None),
+    )
+
+    # App-owned overlay startup is isolated from the rest of the API. The
+    # canonical filesystem root is never exposed through app state or routes.
+    overlay_service = None
+    app.state.overlay_service = None
+    try:
+        from deeper_notebook.overlay.paths import OverlayLayout
+        from deeper_notebook.overlay.repository import OverlayRepository
+        from deeper_notebook.overlay.service import OverlayService
+        from deeper_notebook.overlay.storage import OverlayStorage
+
+        overlay_service = OverlayService(
+            OverlayRepository(),
+            OverlayStorage(OverlayLayout.active()),
+            shadow_projector=knowledge_shadow_coordinator,
+        )
+        app.state.overlay_service = overlay_service
+    except Exception as exc:
+        logger.warning(
+            "Overlay startup unavailable ({})",
+            type(exc).__name__,
+        )
+
     # Vault indexing begins only after migrations are durable. Unavailable roots
     # are contained by the service so local API startup remains available.
     vault_service = None
@@ -286,7 +471,10 @@ async def lifespan(app: FastAPI):
         from deeper_notebook.vault.repository import VaultRepository
         from deeper_notebook.vault.service import VaultService
 
-        vault_service = VaultService(VaultRepository())
+        vault_service = VaultService(
+            VaultRepository(),
+            shadow_projector=knowledge_shadow_coordinator,
+        )
         app.state.vault_service = vault_service
         await vault_service.start_watchers()
         vault_scan_task = _track_task(
@@ -592,6 +780,12 @@ async def lifespan(app: FastAPI):
     # Yield control to the application
     yield
 
+    _clear_knowledge_navigation_service(app)
+    await _stop_knowledge_engine(app, knowledge_backfill_task)
+
+    if overlay_service is not None:
+        app.state.overlay_service = None
+
     if vault_service is not None:
         try:
             await vault_service.stop_watchers()
@@ -607,7 +801,9 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            logger.warning("Vault initial scan shutdown raised ({})", type(exc).__name__)
+            logger.warning(
+                "Vault initial scan shutdown raised ({})", type(exc).__name__
+            )
 
     # v0.7.165 — Cancel the gmail-prewarm task on shutdown if it's
     # still running. The task is short-lived (a single SurrealDB read)
@@ -1019,6 +1215,21 @@ app.include_router(
     vault.router,
     prefix="/api/deeper-notebook",
     tags=["deeper-notebook-vault"],
+)
+app.include_router(
+    overlay.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook-overlay"],
+)
+app.include_router(
+    knowledge_engine.router,
+    prefix="/api/deeper-notebook",
+    tags=["deeper-notebook-knowledge-engine"],
+)
+app.include_router(
+    knowledge_navigation.router,
+    prefix="/api/deeper-notebook/knowledge",
+    tags=["deeper-notebook-knowledge-navigation"],
 )
 app.include_router(
     knowledge_workspace.router,

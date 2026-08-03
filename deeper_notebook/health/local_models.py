@@ -16,6 +16,7 @@ import httpx
 
 class HealthResult(TypedDict):
     name: str
+    credential_id: NotRequired[str]
     status: Literal["healthy", "unhealthy", "not_configured", "unknown"]
     detail: str | None
     latency_ms: float | None
@@ -196,10 +197,14 @@ def probe_all_local_models(credentials: list[dict]) -> list[HealthResult]:
         return []
 
     def _probe(cred: dict) -> HealthResult:
-        return probe_local_model(
+        result = probe_local_model(
             name=cred["name"], kind=cred["kind"],
             base_url=cred["base_url"],
         )
+        credential_id = cred.get("credential_id")
+        if isinstance(credential_id, str) and credential_id:
+            result["credential_id"] = credential_id
+        return result
 
     max_workers = min(len(credentials), _MAX_CONCURRENT_PROBES)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

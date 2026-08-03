@@ -40,6 +40,7 @@ export interface VaultCodeMirrorProps {
   markdown: string
   extensions: Extension[]
   className?: string
+  onSelectionChange?: (from: number, to: number) => void
 }
 
 const externalUpdate = Annotation.define<boolean>()
@@ -98,7 +99,7 @@ const lockedExtensions: Extension[] = [
 export const VaultCodeMirror = forwardRef<
   VaultCodeMirrorHandle,
   VaultCodeMirrorProps
->(function VaultCodeMirror({ ariaLabel, markdown: source, extensions, className }, ref) {
+>(function VaultCodeMirror({ ariaLabel, markdown: source, extensions, className, onSelectionChange }, ref) {
   const crlfCarriageReturns = useMemo(
     () => collectCrlfCarriageReturns(source),
     [source],
@@ -111,6 +112,8 @@ export const VaultCodeMirror = forwardRef<
   const crlfCarriageReturnsRef = useRef(crlfCarriageReturns)
   const configuredExtensionsRef = useRef(extensions)
   const configuredAriaLabelRef = useRef(ariaLabel)
+  const onSelectionChangeRef = useRef(onSelectionChange)
+  onSelectionChangeRef.current = onSelectionChange
 
   useImperativeHandle(ref, () => ({
     getDocument: () => sourceRef.current,
@@ -154,6 +157,10 @@ export const VaultCodeMirror = forwardRef<
         )
         if (containsUnauthorizedDocumentChange) return
         editor.update(transactions)
+        if (transactions.some((transaction) => transaction.selection)) {
+          const selection = editor.state.selection.main
+          onSelectionChangeRef.current?.(selection.from, selection.to)
+        }
       },
       parent: host,
     })
