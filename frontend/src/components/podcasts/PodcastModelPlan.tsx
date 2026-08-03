@@ -27,7 +27,11 @@ const OUTCOME_LABELS: Record<PodcastStageModelPlan['outcome'], string> = {
 
 function safeDetail(value: string): string {
   if (/^(?:[\\/]|[A-Za-z]:[\\/])/.test(value)) return value.split(/[\\/]/).pop() || '[local model]'
-  return value.replace(/(?:[\\/][^\s,;]+)+/g, '[path redacted]')
+  return value
+    .replace(/file:\/\/[^\s,;)]*/gi, '[path redacted]')
+    .replace(/[A-Za-z]:[\\/][^\s,;)]*/g, '[path redacted]')
+    .replace(/\\\\[^\s,;)]*/g, '[path redacted]')
+    .replace(/(?<!:)\/(?:[^/\s,;]+[\\/])*[^/\s,;]+/g, '[path redacted]')
 }
 
 export function PodcastModelPlan({ plans, overrideChoices = {}, onOverride }: PodcastModelPlanProps) {

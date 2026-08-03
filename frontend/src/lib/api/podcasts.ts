@@ -12,6 +12,8 @@ import {
   PodcastSelectionPreview,
   PodcastSelectionPreviewEntry,
   PodcastStageModelPlan,
+  PodcastProductionRole,
+  PodcastEditorialIntent,
   PodcastStudioSubmitResponse,
 } from '@/lib/types/podcasts'
 import {
@@ -53,6 +55,7 @@ interface PodcastReadinessWire {
     selection_source: PodcastStageModelPlan['selectionSource']
     reason: string
     blocked_reason: string | null
+    override_choices?: string[]
   }>
   ready: boolean
   blocked_reasons: string[]
@@ -88,7 +91,10 @@ function toPodcastSelectionPreview(wire: PodcastSelectionPreviewWire): PodcastSe
   }
 }
 
-function toPodcastReadiness(wire: PodcastReadinessWire): PodcastReadiness {
+function toPodcastReadiness(
+  wire: PodcastReadinessWire,
+  productionOverrides: Partial<Record<PodcastProductionRole, string>> = {},
+): PodcastReadiness {
   return {
     preview: toPodcastSelectionPreview(wire.preview),
     stagePlans: wire.stage_plans.map((plan) => ({
@@ -100,9 +106,11 @@ function toPodcastReadiness(wire: PodcastReadinessWire): PodcastReadiness {
       selectionSource: plan.selection_source,
       reason: plan.reason,
       blockedReason: plan.blocked_reason,
+      overrideChoices: plan.override_choices ?? [],
     })),
     ready: wire.ready,
     blockedReasons: wire.blocked_reasons,
+    productionOverrides,
   }
 }
 
@@ -139,6 +147,7 @@ export const podcastsApi = {
       executionPolicy?: 'strict_local' | 'local_preferred' | 'custom'
       computeProfile?: 'efficient' | 'balanced' | 'maximum_quality'
       includeTranscription?: boolean
+      productionOverrides?: Partial<Record<PodcastProductionRole, string>>
     } = {},
   ) => {
     const response = await apiClient.post<PodcastReadinessWire>('/podcasts/readiness', {
@@ -146,8 +155,9 @@ export const podcastsApi = {
       execution_policy: options.executionPolicy ?? 'strict_local',
       compute_profile: options.computeProfile ?? 'balanced',
       include_transcription: options.includeTranscription ?? false,
+      production_overrides: options.productionOverrides ?? {},
     })
-    return toPodcastReadiness(response.data)
+    return toPodcastReadiness(response.data, options.productionOverrides)
   },
 
   submitStudioPodcast: async (payload: {
@@ -161,14 +171,23 @@ export const podcastsApi = {
     customPrompt?: string | null
     episodeLength?: 'short' | 'medium' | 'long' | null
     reviewOutline?: boolean
-    editorialBrief?: {
+    editorialBrief?: Partial<PodcastEditorialIntent> | {
       centralQuestion?: string | null
       audience?: string | null
+      purpose?: string | null
+      format?: PodcastOverviewMode | null
+      targetMinutes?: number | null
+      requiredTakeaway?: string | null
+      includeUnansweredQuestions?: boolean | null
+      evidencePolicy?: 'strict' | 'interpretation' | string | null
+      episodeProfileName?: string | null
+      speakerProfileName?: string | null
       outline?: string[]
     } | null
     executionPolicy?: 'strict_local' | 'local_preferred' | 'custom'
     computeProfile?: 'efficient' | 'balanced' | 'maximum_quality'
     includeTranscription?: boolean
+    productionOverrides?: Partial<Record<PodcastProductionRole, string>>
   }): Promise<PodcastStudioSubmitResponse> => {
     const response = await apiClient.post<PodcastStudioSubmitWire>('/podcasts/studio/submit', {
       selections: normalizePodcastSelections(payload.selections).map(toPodcastSelectionWire),
@@ -185,11 +204,20 @@ export const podcastsApi = {
       editorial_brief: payload.editorialBrief ? {
         central_question: payload.editorialBrief.centralQuestion ?? null,
         audience: payload.editorialBrief.audience ?? null,
+        purpose: payload.editorialBrief.purpose ?? null,
+        format: payload.editorialBrief.format ?? null,
+        target_minutes: payload.editorialBrief.targetMinutes ?? null,
+        required_takeaway: payload.editorialBrief.requiredTakeaway ?? null,
+        include_unanswered_questions: payload.editorialBrief.includeUnansweredQuestions ?? null,
+        evidence_policy: payload.editorialBrief.evidencePolicy ?? null,
+        episode_profile_name: payload.editorialBrief.episodeProfileName ?? null,
+        speaker_profile_name: payload.editorialBrief.speakerProfileName ?? null,
         outline: payload.editorialBrief.outline ?? [],
       } : null,
       execution_policy: payload.executionPolicy ?? 'strict_local',
       compute_profile: payload.computeProfile ?? 'balanced',
       include_transcription: payload.includeTranscription ?? false,
+      production_overrides: payload.productionOverrides ?? {},
     })
     return {
       jobId: response.data.job_id,

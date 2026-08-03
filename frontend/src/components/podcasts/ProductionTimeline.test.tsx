@@ -20,4 +20,13 @@ describe('ProductionTimeline', () => {
     expect(screen.getByRole('tab', { name: /Evidence/ })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getAllByText('Available after intellectual engine upgrade')).toHaveLength(2)
   })
+
+  it('tracks controller state changes when the tab is not deliberately controlled', () => {
+    const { rerender } = render(<ProductionTimeline state="selecting" />)
+    expect(screen.getByRole('tab', { name: 'Research Set Preview' })).toHaveAttribute('aria-selected', 'true')
+
+    rerender(<ProductionTimeline state="briefing_ready" />)
+    expect(screen.getByRole('tab', { name: 'Editorial Brief' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Research Set Preview' })).toHaveAttribute('data-status', 'complete')
+  })
 })

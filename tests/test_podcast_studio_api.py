@@ -239,7 +239,7 @@ def app_with_knowledge_engine() -> FastAPI:
             fingerprint="c" * 64,
             modalities=("audio",),
             accepted_roles=("text_to_speech",),
-            context_tokens=1,
+            context_tokens=32_768,
             supports_structured_output=False,
             readiness="ready_verified",
             health_healthy=True,
@@ -497,6 +497,174 @@ async def test_readiness_returns_redacted_local_stage_routes(
     ]
     assert "Private app-owned notebook material" not in response.text
     assert "/Users/" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_studio_submit_persists_full_editorial_intent_and_validated_overrides(
+    app_with_knowledge_engine: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from api.podcast_service import PodcastService
+
+    app_with_knowledge_engine.state.local_model_route_candidates = (
+        *app_with_knowledge_engine.state.local_model_route_candidates,
+        LocalModelRouteCandidate(
+            model_id="local-podcast-alt",
+            provider="openai_compatible",
+            fingerprint="d" * 64,
+            modalities=("text",),
+            accepted_roles=("podcast_outline", "podcast_script"),
+            context_tokens=32_768,
+            supports_structured_output=True,
+            readiness="ready_verified",
+            health_healthy=True,
+            accepted_quality=0.95,
+            benchmarked_at=time(),
+            peak_memory_bytes=1,
+            latency_ms=1,
+        ),
+        LocalModelRouteCandidate(
+            model_id="local-voice-alt",
+            provider="piper",
+            fingerprint="e" * 64,
+            modalities=("audio",),
+            accepted_roles=("text_to_speech",),
+            context_tokens=1,
+            supports_structured_output=False,
+            readiness="ready_verified",
+            health_healthy=True,
+            accepted_quality=0.95,
+            benchmarked_at=time(),
+            peak_memory_bytes=1,
+            latency_ms=1,
+        ),
+        LocalModelRouteCandidate(
+            model_id="local-stt-alt",
+            provider="whisper",
+            fingerprint="f" * 64,
+            modalities=("audio",),
+            accepted_roles=("speech_to_text",),
+            context_tokens=32_768,
+            supports_structured_output=False,
+            readiness="ready_verified",
+            health_healthy=True,
+            accepted_quality=0.95,
+            benchmarked_at=time(),
+            peak_memory_bytes=1,
+            latency_ms=1,
+        ),
+    )
+    calls: list[dict[str, object]] = []
+
+    async def submit_generation_job(**kwargs) -> str:
+        calls.append(kwargs)
+        return "command:podcast-full-intent"
+
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine),
+        base_url="http://test",
+    ) as client:
+        selection = {"kind": "notebook", "notebook_id": "notebook:research"}
+        preview = await client.post(
+            "/api/podcasts/selection/preview", json={"selections": [selection]}
+        )
+        editorial_brief = {
+            "central_question": "What changed?",
+            "audience": "expert",
+            "purpose": "analyze",
+            "format": "critique",
+            "target_minutes": 42,
+            "required_takeaway": "Use the new evidence threshold.",
+            "include_unanswered_questions": True,
+            "evidence_policy": "interpretation",
+            "episode_profile_name": "Local Episode",
+            "speaker_profile_name": "Local Voice",
+            "outline": ["Context", "Finding", "Decision"],
+        }
+        production_overrides = {
+            "podcast_outline": "local-podcast-alt",
+            "podcast_script": "local-podcast-alt",
+            "text_to_speech": "local-voice-alt",
+            "speech_to_text": "local-stt-alt",
+        }
+        readiness = await client.post(
+            "/api/podcasts/readiness",
+            json={
+                "selections": [selection],
+                "include_transcription": True,
+                "production_overrides": production_overrides,
+            },
+        )
+        payload = {
+            "selections": [selection],
+            "selection_fingerprint": preview.json()["selection_fingerprint"],
+            "idempotency_key": "podcast-full-intent-1",
+            "confirmed": True,
+            "episode_profile": "Local Episode",
+            "speaker_profile": "Local Voice",
+            "episode_name": "Research synthesis",
+            "mode": "critique",
+            "include_transcription": True,
+            "production_overrides": production_overrides,
+            "editorial_brief": editorial_brief,
+        }
+        response = await client.post("/api/podcasts/studio/submit", json=payload)
+
+    assert readiness.status_code == 200
+    assert readiness.json()["ready"] is True
+    assert all(
+        plan["selection_source"] == "production_override"
+        for plan in readiness.json()["stage_plans"]
+    )
+    assert response.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["editorial_brief"] == editorial_brief
+    assert calls[0]["model_plan_receipts"][-1]["selection_source"] == "production_override"
+
+
+def test_readiness_rejects_unknown_or_path_production_overrides() -> None:
+    from api.schemas.podcast_studio import PodcastReadinessRequest
+
+    with pytest.raises(ValueError):
+        PodcastReadinessRequest(
+            selections=[{"kind": "notebook", "notebook_id": "notebook:research"}],
+            production_overrides={"unknown_role": "model"},
+        )
+    with pytest.raises(ValueError):
+        PodcastReadinessRequest(
+            selections=[{"kind": "notebook", "notebook_id": "notebook:research"}],
+            production_overrides={"podcast_outline": "/Users/Antman/model"},
+        )
+
+
+def test_submit_rejects_mismatched_editorial_top_level_values() -> None:
+    from api.schemas.podcast_studio import PodcastStudioSubmitRequest
+
+    with pytest.raises(ValueError, match="match submission mode"):
+        PodcastStudioSubmitRequest(
+            selections=[{"kind": "notebook", "notebook_id": "notebook:research"}],
+            selection_fingerprint="a" * 64,
+            idempotency_key="podcast-mismatch-1",
+            confirmed=True,
+            episode_profile="Local Episode",
+            speaker_profile="Local Voice",
+            episode_name="Research synthesis",
+            mode="deep_dive",
+            editorial_brief={
+                "central_question": "What changed?",
+                "audience": "expert",
+                "purpose": "analyze",
+                "format": "critique",
+                "target_minutes": 30,
+                "required_takeaway": "Use the finding.",
+                "include_unanswered_questions": False,
+                "evidence_policy": "strict",
+                "episode_profile_name": "Local Episode",
+                "speaker_profile_name": "Local Voice",
+                "outline": ["Finding"],
+            },
+        )
 
 
 @pytest.mark.asyncio

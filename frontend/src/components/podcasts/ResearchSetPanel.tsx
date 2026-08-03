@@ -25,13 +25,21 @@ function entriesFor(preview: PodcastSelectionPreview | null | undefined): Podcas
   return preview?.entries ?? []
 }
 
+function redactPaths(value: string): string {
+  return value
+    .replace(/file:\/\/[^\s,;)]*/gi, '[path redacted]')
+    .replace(/[A-Za-z]:[\\/][^\s,;)]*/g, '[path redacted]')
+    .replace(/\\\\[^\s,;)]*/g, '[path redacted]')
+    .replace(/(?<!:)\/(?:[^/\s,;]+[\\/])*[^/\s,;]+/g, '[path redacted]')
+}
+
 function safeTitle(value: string): string {
   if (/^(?:[\\/]|[A-Za-z]:[\\/])/.test(value)) return value.split(/[\\/]/).pop() || 'Untitled reference'
-  return value
+  return redactPaths(value)
 }
 
 function safeReason(value: string): string {
-  return value.replace(/(?:[\\/][^\s,;]+)+/g, '[path redacted]')
+  return redactPaths(value)
 }
 
 function EntryList({ entries, label }: { entries: PodcastSelectionPreviewEntry[]; label: string }) {
@@ -42,7 +50,10 @@ function EntryList({ entries, label }: { entries: PodcastSelectionPreviewEntry[]
       <ul className="space-y-1 text-sm">
         {entries.map((entry) => (
           <li key={`${entry.stableId}:${entry.revisionId ?? 'current'}:${entry.state}`} className="flex items-start justify-between gap-3 rounded border px-3 py-2">
-            <span className="min-w-0 truncate" title={safeTitle(entry.title)}>{safeTitle(entry.title)}</span>
+            <div className="min-w-0">
+              <span className="block truncate" title={safeTitle(entry.title)}>{safeTitle(entry.title)}</span>
+              <span className="block truncate text-xs text-muted-foreground" title={safeReason(entry.reason)}>{safeReason(entry.reason)}</span>
+            </div>
             <span className="shrink-0 text-xs text-muted-foreground">{STATE_LABELS[entry.state]}</span>
           </li>
         ))}

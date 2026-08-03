@@ -64,6 +64,19 @@ describe('KnowledgePodcastPane', () => {
     })
   })
 
+  it('preserves planner provider, tier, source, and safe override choices in the Knowledge pane', async () => {
+    routePlan.data = {
+      role: 'podcast_outline', outcome: 'ready', selected_model_id: 'qwen-local', selected_provider: 'mlx',
+      resource_tier: 'standard', selection_source: 'automatic', route_reason: 'Verified local route.',
+      escalation_model_ids: ['qwen-heavy'], blocked_reason: null, selected_fingerprint: 'fingerprint', selected_measurements: {},
+    }
+    render(<KnowledgePodcastPane seedDocumentIds={[]} />)
+
+    await waitFor(() => expect(screen.getAllByText('qwen-local · mlx · standard')).not.toHaveLength(0))
+    const override = screen.getAllByRole('combobox', { name: /Override .* model/ })[0]
+    expect(Array.from(override.querySelectorAll('option')).map((option) => option.textContent)).toEqual(['Automatic route', 'qwen-local', 'qwen-heavy'])
+  })
+
   it('uses the shared Studio with an honest locked Phase 3 boundary', async () => {
     render(<KnowledgePodcastPane seedDocumentIds={['knowledge_engine_document:plan']} />)
 
