@@ -1,0 +1,57 @@
+{
+  "checks": {
+    "exact_text_selection": {
+      "authority_filter_count": 1,
+      "selection_count": 2,
+      "space_filter_count": 2,
+      "status": "passed"
+    },
+    "read_only_flow": {
+      "external_write_receipts": 0,
+      "fixture_write_attempts": 0,
+      "metadata_audio": {
+        "old_audio_bytes": 21,
+        "old_audio_removed_after_retry": true
+      },
+      "preview": {
+        "included_count": 2
+      },
+      "retry": {
+        "durable_fence": true,
+        "job_id": "command:synthetic-2"
+      },
+      "status": "passed",
+      "submission": {
+        "fake_worker_job_count": 2
+      }
+    },
+    "semantic_selection": {
+      "reason": "verified_unified_embedding_index_required",
+      "status": "blocked"
+    }
+  },
+  "external_writes": 0,
+  "fixture": {
+    "file_count": 3,
+    "inventory_hash": "8e8deca5d1b377a688baa6375844203b4af0d4a3b39c9c8cb975655f1b383490",
+    "kind": "synthetic_obsidian_logseq"
+  },
+  "gates": {
+    "native_runtime": {
+      "proof_revision": "5dbee84b980d2e2080e746f23963418ebb42d29f",
+      "reason": null,
+      "route_status": 200,
+      "status": "passed"
+    },
+    "playwright_native": {
+      "proof_revision": "5dbee84b980d2e2080e746f23963418ebb42d29f",
+      "status": "passed",
+      "test_count": 5,
+      "test_file": "e2e/podcast-intelligence-studio.spec.ts"
+    }
+  },
+  "schema_version": 1,
+  "source_hashes_unchanged": true,
+  "status": "passed",
+  "synthetic_passed": true
+}
