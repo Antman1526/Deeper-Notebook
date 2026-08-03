@@ -1,0 +1,356 @@
+{
+  "config": {
+    "argv": [
+      "/Users/Antman/.nvm/versions/node/v24.17.0/bin/node",
+      "/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/podcast-studio-verification/frontend/node_modules/.bin/playwright",
+      "test",
+      "e2e/podcast-intelligence-studio.spec.ts",
+      "--project=native-runtime",
+      "--reporter=json"
+    ],
+    "configFile": "/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/podcast-studio-verification/frontend/playwright.config.ts",
+    "rootDir": "/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/podcast-studio-verification/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/podcast-studio-verification/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "proof_boundary": "mocked-browser",
+          "ci_gate": "required-linux"
+        },
+        "id": "mocked-browser",
+        "name": "mocked-browser",
+        "testDir": "/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/podcast-studio-verification/frontend/e2e",
+        "testIgnore": [
+          "e2e/native/**",
+          "e2e/device/**"
+        ],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/podcast-studio-verification/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "proof_boundary": "native-runtime",
+          "ci_gate": "platform-native-only"
+        },
+        "id": "native-runtime",
+        "name": "native-runtime",
+        "testDir": "/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/podcast-studio-verification/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "e2e/native/**/*.spec.ts",
+          "e2e/research-core-lab.spec.ts",
+          "e2e/podcast-intelligence-studio.spec.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/podcast-studio-verification/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "proof_boundary": "packaged-device",
+          "ci_gate": "manual-device-required",
+          "manual_requirements": "installed app launch, microphone, and real local models"
+        },
+        "id": "packaged-device",
+        "name": "packaged-device",
+        "testDir": "/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/podcast-studio-verification/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "e2e/device/**/*.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.61.1",
+    "workers": 8,
+    "webServer": {
+      "command": "npm run build && PORT=3117 npm run start",
+      "url": "http://127.0.0.1:3117",
+      "reuseExistingServer": true,
+      "timeout": 120000
+    }
+  },
+  "suites": [
+    {
+      "title": "podcast-intelligence-studio.spec.ts",
+      "file": "podcast-intelligence-studio.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Podcast Intelligence Studio browser acceptance",
+          "file": "podcast-intelligence-studio.spec.ts",
+          "line": 261,
+          "column": 6,
+          "specs": [
+            {
+              "title": "opens as a sequential, no-selection review surface without submitting production",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [
+                    {
+                      "type": "podcast_studio_runtime_revision",
+                      "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "native-runtime",
+                  "projectName": "native-runtime",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1363,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-03T09:24:01.301Z",
+                      "annotations": [
+                        {
+                          "type": "podcast_studio_runtime_revision",
+                          "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "53280ad8459fd9f6fbd7-1f2b87039f9c8e52f9e1",
+              "file": "podcast-intelligence-studio.spec.ts",
+              "line": 284,
+              "column": 7
+            },
+            {
+              "title": "keeps intercepted episode, retry, studio, and local-only controls explicitly reviewed",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [
+                    {
+                      "type": "podcast_studio_runtime_revision",
+                      "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "native-runtime",
+                  "projectName": "native-runtime",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1883,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-03T09:24:02.899Z",
+                      "annotations": [
+                        {
+                          "type": "podcast_studio_runtime_revision",
+                          "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "53280ad8459fd9f6fbd7-69d83b91937833a7ac4a",
+              "file": "podcast-intelligence-studio.spec.ts",
+              "line": 322,
+              "column": 7
+            },
+            {
+              "title": "fails a whole-notebook oversize preview closed before production confirmation",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [
+                    {
+                      "type": "podcast_studio_runtime_revision",
+                      "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "native-runtime",
+                  "projectName": "native-runtime",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5911,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-03T09:24:04.788Z",
+                      "annotations": [
+                        {
+                          "type": "podcast_studio_runtime_revision",
+                          "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "53280ad8459fd9f6fbd7-8d6413e4bdca99da405f",
+              "file": "podcast-intelligence-studio.spec.ts",
+              "line": 377,
+              "column": 7
+            },
+            {
+              "title": "opens and dismisses app notebook, app note, and app source review entries without submitting",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [
+                    {
+                      "type": "podcast_studio_runtime_revision",
+                      "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "native-runtime",
+                  "projectName": "native-runtime",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2453,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-03T09:24:10.705Z",
+                      "annotations": [
+                        {
+                          "type": "podcast_studio_runtime_revision",
+                          "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "53280ad8459fd9f6fbd7-589ad1b7db0de25b7696",
+              "file": "podcast-intelligence-studio.spec.ts",
+              "line": 418,
+              "column": 7
+            },
+            {
+              "title": "opens and dismisses real Knowledge search, graph, external-document, and selected-block review controls without submitting",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [
+                    {
+                      "type": "podcast_studio_runtime_revision",
+                      "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                    }
+                  ],
+                  "expectedStatus": "passed",
+                  "projectId": "native-runtime",
+                  "projectName": "native-runtime",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3586,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-08-03T09:24:13.164Z",
+                      "annotations": [
+                        {
+                          "type": "podcast_studio_runtime_revision",
+                          "description": "5dbee84b980d2e2080e746f23963418ebb42d29f"
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "53280ad8459fd9f6fbd7-852d3a712977ecbb8943",
+              "file": "podcast-intelligence-studio.spec.ts",
+              "line": 482,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-08-03T09:23:36.905Z",
+    "duration": 39960.850999999995,
+    "expected": 5,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
