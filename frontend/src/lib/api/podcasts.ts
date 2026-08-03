@@ -18,6 +18,7 @@ import {
 } from '@/lib/types/podcasts'
 import {
   normalizePodcastSelections,
+  fromPodcastSelectionWire,
   toPodcastSelectionWire,
   type PodcastSelection,
 } from '@/lib/podcasts/selection'
@@ -69,6 +70,39 @@ interface PodcastStudioSubmitWire {
   episode_name: string
   mode: PodcastOverviewMode
 }
+
+interface PodcastRetryPreviewRequiredWire {
+  status: 'preview_required'
+  code: 'podcast_selection_changed' | 'podcast_selection_unavailable' | 'podcast_selection_tampered'
+  message: string
+  episode_id: string
+  selections: unknown[]
+  selection_fingerprint?: string | null
+  preview?: PodcastSelectionPreviewWire | null
+}
+
+interface PodcastRetrySubmittedWire {
+  job_id: string
+  message: string
+}
+
+export interface PodcastRetryPreviewRequired {
+  status: 'preview_required'
+  code: PodcastRetryPreviewRequiredWire['code']
+  message: string
+  episodeId: string
+  selections: PodcastSelection[]
+  selectionFingerprint: string | null
+  preview: PodcastSelectionPreview | null
+}
+
+export interface PodcastRetrySubmitted {
+  status: 'submitted'
+  jobId: string
+  message: string
+}
+
+export type PodcastRetryResult = PodcastRetryPreviewRequired | PodcastRetrySubmitted
 
 function toPodcastSelectionPreview(wire: PodcastSelectionPreviewWire): PodcastSelectionPreview {
   return {
@@ -239,10 +273,30 @@ export const podcastsApi = {
   },
 
   retryEpisode: async (episodeId: string) => {
-    const response = await apiClient.post<{ job_id: string; message: string }>(
+    const response = await apiClient.post<PodcastRetrySubmittedWire | PodcastRetryPreviewRequiredWire>(
       `/podcasts/episodes/${episodeId}/retry`
     )
-    return response.data
+    if ('job_id' in response.data) {
+      return {
+        status: 'submitted' as const,
+        jobId: response.data.job_id,
+        message: response.data.message,
+      } satisfies PodcastRetrySubmitted
+    }
+    if (response.data.status === 'preview_required') {
+      return {
+        status: 'preview_required' as const,
+        code: response.data.code,
+        message: response.data.message,
+        episodeId: response.data.episode_id,
+        selections: response.data.selections.map(fromPodcastSelectionWire),
+        selectionFingerprint: response.data.selection_fingerprint ?? null,
+        preview: response.data.preview
+          ? toPodcastSelectionPreview(response.data.preview)
+          : null,
+      } satisfies PodcastRetryPreviewRequired
+    }
+    throw new Error('Unexpected podcast retry response')
   },
 
   // v0.8.68 — cancel an in-flight generation (worker polls the flag).

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from api.podcast_service import (
     PodcastGenerationRequest,
@@ -15,13 +15,20 @@ from api.podcast_service import (
     PodcastService,
 )
 from api.schemas.podcast_studio import (
+    _EMBEDDED_FILE_URL,
+    _EMBEDDED_POSIX_PATH,
+    _EMBEDDED_UNC_PATH,
+    _EMBEDDED_WINDOWS_PATH,
     PodcastReadinessRequest,
     PodcastReadinessResponse,
+    PodcastRetryPreviewRequiredResponse,
+    PodcastSelectionPreviewEntryResponse,
     PodcastSelectionPreviewRequest,
     PodcastSelectionPreviewResponse,
     PodcastStageModelPlanResponse,
     PodcastStudioSubmitRequest,
     PodcastStudioSubmitResponse,
+    _contains_absolute_filesystem_path,
 )
 from api.utils.iso import iso  # v0.7.182 — Safari-safe datetime serialization
 from deeper_notebook.config import DATA_FOLDER
@@ -44,6 +51,7 @@ from deeper_notebook.podcasts.selection_contracts import (
     AppSourceSelection,
     KnowledgeCollectionSelection,
     NotebookSelection,
+    PodcastSelection,
 )
 from deeper_notebook.podcasts.selection_service import (
     AppNotebookPodcastSelectionResolver,
@@ -81,40 +89,162 @@ def _submission_request_digest(payload: PodcastStudioSubmitRequest) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _selection_summary(preview: PodcastSelectionPreviewResponse) -> dict[str, object]:
-    """Persist source-body-free selection counts, never titles or locators."""
+_PODCAST_SELECTION_ADAPTER = TypeAdapter(list[PodcastSelection])
+
+
+def _normalize_retry_settings(
+    *,
+    mode: PodcastOverviewMode | str | None,
+    custom_prompt: str | None,
+    episode_length: str | None,
+    review_outline: bool,
+) -> dict[str, object]:
+    """Normalize only the non-secret settings needed by a retry."""
+    normalized_mode = normalize_podcast_mode(mode).value
+    # ``custom_prompt`` is intentionally accepted for the old helper call but
+    # never persisted in the summary: it has its own episode field and may
+    # contain source-grounded prose. Preserve it there with only boundary trim.
+    del custom_prompt
+    if episode_length not in (None, "short", "medium", "long"):
+        raise ValueError("episode_length must be short, medium, or long")
+    if not isinstance(review_outline, bool):
+        raise ValueError("review_outline must be a boolean")
+    return {
+        "mode": normalized_mode,
+        "episode_length": episode_length,
+        "review_outline": review_outline,
+    }
+
+
+def _validated_selection_references(
+    selections: list[PodcastSelection] | list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Round-trip selections through the strict server union before storage."""
+    try:
+        validated = _PODCAST_SELECTION_ADAPTER.validate_python(selections, strict=True)
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ValueError("podcast selection references are invalid") from exc
+    return [selection.model_dump(mode="json") for selection in validated]
+
+
+def _path_free_receipt_text(value: str, *, field: str) -> str:
+    normalized = value.strip()
+    if not normalized or len(normalized) > 512:
+        raise ValueError(f"{field} must be a bounded label")
+    if "\x00" in normalized or any(ord(character) < 32 for character in normalized):
+        raise ValueError(f"{field} contains control characters")
+    if _contains_absolute_filesystem_path(normalized):
+        raise ValueError(f"{field} must be a path-free reference")
+    return normalized
+
+
+def _safe_included_item(entry: PodcastSelectionPreviewEntryResponse) -> dict[str, object]:
+    stable_id = _path_free_receipt_text(entry.stable_id, field="stable_id")
+    if "/" in stable_id or "\\" in stable_id or stable_id.lower().startswith("file:"):
+        raise ValueError("stable_id must be a path-free reference")
+    if entry.fingerprint is not None and (
+        len(entry.fingerprint) != 64
+        or any(character not in "0123456789abcdef" for character in entry.fingerprint)
+    ):
+        raise ValueError("selection fingerprints must be lowercase SHA-256 values")
+    return {
+        "stable_id": stable_id,
+        "authority_kind": entry.authority_kind,
+        **({"revision_id": _path_free_receipt_text(entry.revision_id, field="revision_id")} if entry.revision_id is not None else {}),
+        **({"fingerprint": entry.fingerprint} if entry.fingerprint is not None else {}),
+    }
+
+
+def _selection_summary(
+    preview: PodcastSelectionPreviewResponse,
+    selections: list[PodcastSelection] | list[dict[str, object]] | None = None,
+    *,
+    mode: PodcastOverviewMode | str | None = None,
+    custom_prompt: str | None = None,
+    episode_length: str | None = None,
+    review_outline: bool = False,
+    execution_policy: str | None = None,
+    compute_profile: str | None = None,
+    include_transcription: bool | None = None,
+) -> dict[str, object]:
+    """Persist source-body-free selection receipts and retry settings.
+
+    Calls without the original references retain the v1 aggregate shape for
+    compatibility with older callers.  Studio submissions always provide the
+    validated references and receive the v2 shape.
+    """
     included_entries = [entry for entry in preview.entries if entry.state == "included"]
     authority_counts: dict[str, int] = {}
     for entry in included_entries:
         authority_counts[entry.authority_kind] = (
             authority_counts.get(entry.authority_kind, 0) + 1
         )
-    return {
-        "version": 1,
+    summary: dict[str, object] = {
+        "version": 1 if selections is None else 2,
         "total_count": len(preview.entries),
         "included_count": len(included_entries),
         "authority_counts": authority_counts,
     }
+    if selections is not None:
+        summary["included_items"] = [
+            _safe_included_item(entry)
+            for entry in included_entries
+        ]
+        summary["selections"] = _validated_selection_references(selections)
+        production_settings = _normalize_retry_settings(
+            mode=mode,
+            custom_prompt=custom_prompt,
+            episode_length=episode_length,
+            review_outline=review_outline,
+        )
+        if execution_policy is not None:
+            production_settings["execution_policy"] = _path_free_receipt_text(
+                execution_policy, field="execution_policy"
+            )
+        if compute_profile is not None:
+            production_settings["compute_profile"] = _path_free_receipt_text(
+                compute_profile, field="compute_profile"
+            )
+        if include_transcription is not None:
+            if not isinstance(include_transcription, bool):
+                raise ValueError("include_transcription must be a boolean")
+            production_settings["include_transcription"] = include_transcription
+        summary["production_settings"] = production_settings
+    return summary
 
 
 def _redacted_model_plan_receipts(
     stage_plans: list[PodcastStageModelPlanResponse],
 ) -> list[dict[str, object]]:
     """Keep planner decisions without persisting model identifiers or paths."""
+    def safe_text(value: str) -> str:
+        # Planner reasons are display receipts, not an authority channel. Keep
+        # them bounded and remove the path forms that could expose local model
+        # roots or credentials in a future planner message.
+        normalized = value.strip()[:512]
+        for pattern in (
+            _EMBEDDED_FILE_URL,
+            _EMBEDDED_WINDOWS_PATH,
+            _EMBEDDED_UNC_PATH,
+            _EMBEDDED_POSIX_PATH,
+        ):
+            normalized = pattern.sub("[redacted]", normalized)
+        return normalized
+
     receipts: list[dict[str, object]] = []
     for plan in stage_plans:
         receipt: dict[str, object] = {
             "version": 1,
             "role": plan.role,
             "outcome": plan.outcome,
-            "reason": plan.reason,
+            "reason": safe_text(plan.reason),
         }
         if plan.provider is not None:
-            receipt["provider"] = plan.provider
+            receipt["provider"] = safe_text(plan.provider)
         if plan.resource_tier is not None:
-            receipt["resource_tier"] = plan.resource_tier
+            receipt["resource_tier"] = safe_text(plan.resource_tier)
         if plan.selection_source is not None:
-            receipt["selection_source"] = plan.selection_source
+            receipt["selection_source"] = safe_text(plan.selection_source)
         receipts.append(receipt)
     return receipts
 
@@ -416,7 +546,15 @@ async def submit_podcast_studio(
                 episode_length=payload.episode_length,
                 review_outline=payload.review_outline,
                 selection_summary=_selection_summary(
-                    PodcastSelectionPreviewResponse.model_validate(preview.model_dump())
+                    PodcastSelectionPreviewResponse.model_validate(preview.model_dump()),
+                    selections=payload.selections,
+                    mode=payload.mode,
+                    custom_prompt=payload.custom_prompt,
+                    episode_length=payload.episode_length,
+                    review_outline=payload.review_outline,
+                    execution_policy=payload.execution_policy,
+                    compute_profile=payload.compute_profile,
+                    include_transcription=payload.include_transcription,
                 ),
                 selection_fingerprint=preview.selection_fingerprint,
                 editorial_brief=(
@@ -867,7 +1005,7 @@ async def stream_podcast_episode_audio(episode_id: str):
 
 
 @router.post("/podcasts/episodes/{episode_id}/retry")
-async def retry_podcast_episode(episode_id: str):
+async def retry_podcast_episode(request: Request, episode_id: str):
     """Retry or regenerate a podcast episode by deleting it and submitting a
     new job with the same parameters.
 
@@ -881,7 +1019,7 @@ async def retry_podcast_episode(episode_id: str):
     retry_lock = await _get_retry_lock(episode_id)
     try:
         async with retry_lock:
-            return await _retry_podcast_episode_locked(episode_id)
+            return await _retry_podcast_episode_locked(episode_id, request=request)
     except HTTPException:
         raise
     except (NotFoundError, InvalidInputError):
@@ -891,7 +1029,300 @@ async def retry_podcast_episode(episode_id: str):
         raise HTTPException(status_code=500, detail="Failed to retry episode")
 
 
-async def _retry_podcast_episode_locked(episode_id: str):
+def _preview_required_response(
+    *,
+    episode_id: str,
+    code: str,
+    message: str,
+    selections: list[PodcastSelection] | list[dict[str, object]],
+    selection_fingerprint: str | None = None,
+    preview: PodcastSelectionPreviewResponse | None = None,
+) -> PodcastRetryPreviewRequiredResponse:
+    """Build the only result allowed when retry authority is stale/unsafe."""
+    try:
+        safe_selections = _validated_selection_references(selections)
+    except ValueError:
+        safe_selections = []
+    return PodcastRetryPreviewRequiredResponse(
+        status="preview_required",
+        code=code,  # type: ignore[arg-type]
+        message=message,
+        episode_id=episode_id,
+        selections=safe_selections,
+        selection_fingerprint=selection_fingerprint,
+        preview=preview,
+    )
+
+
+def _clear_stale_revision_pins(
+    selections: list[PodcastSelection],
+    *,
+    changed: bool,
+) -> list[dict[str, object]]:
+    """Drop expected revision pins before returning a changed preview.
+
+    A retry preview is an invitation to re-confirm current authority, not a
+    permission to replay stale content. Clearing pins on changed/unavailable
+    material lets the Studio resolve the current revision explicitly.
+    """
+    if not changed:
+        return [selection.model_dump(mode="json") for selection in selections]
+    cleared: list[dict[str, object]] = []
+    for selection in selections:
+        value = selection.model_dump(mode="json")
+        if "expected_revision_id" in value:
+            value["expected_revision_id"] = None
+        cleared.append(value)
+    return cleared
+
+
+def _stored_retry_settings(episode: Any) -> dict[str, object]:
+    """Read and validate v2's normalized settings; legacy rows use defaults."""
+    summary = getattr(episode, "selection_summary", None)
+    if not isinstance(summary, dict) or summary.get("version") != 2:
+        return _normalize_retry_settings(
+            mode=getattr(episode, "mode", None),
+            custom_prompt=None,
+            episode_length=None,
+            review_outline=False,
+        )
+    settings = summary.get("production_settings")
+    if not isinstance(settings, dict):
+        raise ValueError("podcast retry production settings are missing")
+    allowed_settings = {
+        "mode",
+        "episode_length",
+        "review_outline",
+        "execution_policy",
+        "compute_profile",
+        "include_transcription",
+    }
+    if set(settings) - allowed_settings:
+        raise ValueError("podcast retry production settings contain unsafe fields")
+    if settings.get("execution_policy") not in {
+        None,
+        "strict_local",
+        "local_preferred",
+        "custom",
+    }:
+        raise ValueError("podcast retry execution policy is invalid")
+    if settings.get("compute_profile") not in {
+        None,
+        "efficient",
+        "balanced",
+        "maximum_quality",
+    }:
+        raise ValueError("podcast retry compute profile is invalid")
+    if settings.get("include_transcription") is not None and not isinstance(
+        settings.get("include_transcription"), bool
+    ):
+        raise ValueError("podcast retry transcription setting is invalid")
+    return _normalize_retry_settings(
+        mode=settings.get("mode"),
+        custom_prompt=None,
+        episode_length=settings.get("episode_length"),
+        review_outline=settings.get("review_outline"),
+    )
+
+
+def _validate_stored_model_plan_receipts(episode: Any) -> None:
+    receipts = getattr(episode, "model_plan_receipts", [])
+    if not isinstance(receipts, list):
+        raise ValueError("podcast planner receipts are invalid")
+    forbidden = {"model_id", "model_path", "raw_model_path", "source_body", "credential"}
+    for receipt in receipts:
+        if not isinstance(receipt, dict) or forbidden.intersection(receipt):
+            raise ValueError("podcast planner receipts contain unsafe fields")
+        for key, value in receipt.items():
+            if not isinstance(key, str) or not isinstance(value, (str, int, float, bool, type(None))):
+                raise ValueError("podcast planner receipt value is invalid")
+            if isinstance(value, str) and _contains_absolute_filesystem_path(value):
+                raise ValueError("podcast planner receipt contains a filesystem path")
+
+
+def _validate_stored_v2_summary(summary: dict[str, object]) -> None:
+    """Fail closed on DB-tampered metadata before resolving any source."""
+    allowed = {
+        "version",
+        "total_count",
+        "included_count",
+        "authority_counts",
+        "included_items",
+        "selections",
+        "production_settings",
+    }
+    if set(summary) - allowed or summary.get("version") != 2:
+        raise ValueError("podcast selection summary contains unsafe fields")
+    for count_key in ("total_count", "included_count"):
+        count = summary.get(count_key)
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError("podcast selection summary counts are invalid")
+    if summary["total_count"] < summary["included_count"]:
+        raise ValueError("podcast selection summary counts are inconsistent")
+    authority_counts = summary.get("authority_counts")
+    if not isinstance(authority_counts, dict):
+        raise ValueError("podcast selection summary authority counts are invalid")
+    for authority, count in authority_counts.items():
+        if authority not in {"app_owned", "external_read_only"}:
+            raise ValueError("podcast selection summary authority is invalid")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError("podcast selection summary authority count is invalid")
+    included_items = summary.get("included_items")
+    if not isinstance(included_items, list):
+        raise ValueError("podcast selection summary receipts are missing")
+    for item in included_items:
+        if not isinstance(item, dict):
+            raise ValueError("podcast selection summary receipt is invalid")
+        if set(item) - {"stable_id", "authority_kind", "revision_id", "fingerprint"}:
+            raise ValueError("podcast selection summary receipt contains unsafe fields")
+        stable_id = item.get("stable_id")
+        if not isinstance(stable_id, str):
+            raise ValueError("podcast selection summary stable ID is unsafe")
+        _path_free_receipt_text(stable_id, field="stable_id")
+        if "/" in stable_id or "\\" in stable_id:
+            raise ValueError("podcast selection summary stable ID is unsafe")
+        if item.get("authority_kind") not in {"app_owned", "external_read_only"}:
+            raise ValueError("podcast selection summary authority is invalid")
+        revision_id = item.get("revision_id")
+        if revision_id is not None:
+            if not isinstance(revision_id, str) or "/" in revision_id or "\\" in revision_id:
+                raise ValueError("podcast selection summary revision ID is unsafe")
+            _path_free_receipt_text(revision_id, field="revision_id")
+        fingerprint = item.get("fingerprint")
+        if fingerprint is not None and (
+            not isinstance(fingerprint, str)
+            or len(fingerprint) != 64
+            or any(character not in "0123456789abcdef" for character in fingerprint)
+        ):
+            raise ValueError("podcast selection summary fingerprint is invalid")
+    if summary["included_count"] != len(included_items):
+        raise ValueError("podcast selection summary included count is inconsistent")
+    if sum(authority_counts.values()) != summary["included_count"]:
+        raise ValueError("podcast selection summary authority counts are inconsistent")
+    receipt_authorities: dict[str, int] = {}
+    for item in included_items:
+        authority = item["authority_kind"]
+        receipt_authorities[authority] = receipt_authorities.get(authority, 0) + 1
+    if receipt_authorities != authority_counts:
+        raise ValueError("podcast selection summary authority receipts are inconsistent")
+
+
+async def _resolve_retry_selection(
+    episode: Any,
+    *,
+    request: Request | None = None,
+) -> PodcastRetryPreviewRequiredResponse | None:
+    """Re-resolve v2 references before any destructive retry mutation.
+
+    Legacy v1 rows intentionally keep the existing content retry path.  A v2
+    row without a request context, malformed references, or unavailable/stale
+    authority fails closed with a typed preview result.
+    """
+    summary = getattr(episode, "selection_summary", None)
+    if not isinstance(summary, dict) or summary.get("version") != 2:
+        return None
+    try:
+        _validate_stored_v2_summary(summary)
+    except (TypeError, ValueError, ValidationError):
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_tampered",
+            message="Stored Studio metadata is unsafe. Review fresh references before retrying.",
+            selections=[],
+        )
+    raw_selections = summary.get("selections")
+    try:
+        selections = _PODCAST_SELECTION_ADAPTER.validate_python(
+            raw_selections, strict=True
+        )
+    except (TypeError, ValueError, ValidationError):
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_tampered",
+            message="Stored Studio selections are invalid. Review fresh references before retrying.",
+            selections=[],
+        )
+
+    try:
+        _stored_retry_settings(episode)
+        _validate_stored_model_plan_receipts(episode)
+    except (TypeError, ValueError, ValidationError):
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_tampered",
+            message="Stored Studio settings are invalid. Review the episode before retrying.",
+            selections=selections,
+        )
+
+    if request is None:
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_unavailable",
+            message="Current selection authority is unavailable. Review the episode before retrying.",
+            selections=selections,
+        )
+
+    try:
+        preparation = await _podcast_selection_preparation(
+            request,
+            PodcastSelectionPreviewRequest(selections=selections),
+        )
+        preview = PodcastSelectionPreviewResponse.model_validate(
+            preparation.preview.model_dump()
+        )
+    except HTTPException:
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_unavailable",
+            message="Current selection authority is unavailable. Review fresh references before retrying.",
+            selections=selections,
+        )
+    except LookupError:
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_unavailable",
+            message="A stored Studio selection is unavailable. Review fresh references before retrying.",
+            selections=selections,
+        )
+    except (TypeError, ValueError, ValidationError):
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_unavailable",
+            message="Current selection authority is unavailable. Review fresh references before retrying.",
+            selections=selections,
+        )
+    except Exception:
+        return _preview_required_response(
+            episode_id=str(getattr(episode, "id", "")),
+            code="podcast_selection_unavailable",
+            message="Current selection authority is unavailable. Review fresh references before retrying.",
+            selections=selections,
+        )
+
+    expected_fingerprint = getattr(episode, "selection_fingerprint", None)
+    changed = (
+        expected_fingerprint != preview.selection_fingerprint
+        or not preview.current_worker_eligible
+    )
+    if not changed:
+        return None
+
+    cleared = _clear_stale_revision_pins(selections, changed=True)
+    return _preview_required_response(
+        episode_id=str(getattr(episode, "id", "")),
+        code="podcast_selection_changed",
+        message="The selected source changed. Review it before retrying.",
+        selections=cleared,
+        selection_fingerprint=preview.selection_fingerprint,
+        preview=preview,
+    )
+
+
+async def _retry_podcast_episode_locked(
+    episode_id: str,
+    *,
+    request: Request | None = None,
+):
     """Body of the retry handler; runs while holding the per-episode lock."""
     try:
         episode = await PodcastService.get_episode(episode_id)
@@ -959,30 +1390,21 @@ async def _retry_podcast_episode_locked(episode_id: str):
                 ),
             )
 
-        # Delete audio file if any. v0.7.2 — skip unlink for paths
-        # outside _AUDIO_ROOT (None) instead of trusting the DB value.
-        if episode.audio_file:
-            audio_path = _resolve_audio_path(episode.audio_file)
-            if audio_path is None:
-                logger.warning(
-                    "Retry: skipping audio cleanup — episode.audio_file "
-                    "({}) is outside the podcast output root",
-                    episode.audio_file,
-                )
-            elif audio_path.exists():
-                try:
-                    audio_path.unlink()
-                    # v0.8.68 — also sweep the now-empty UUID directory.
-                    _cleanup_episode_dir(audio_path)
-                except HTTPException:
-                    # v0.7.108 — re-raise typed HTTPExceptions so the next
-                    # `except Exception` doesn't clobber them to 500.
-                    raise
-                except Exception as e:
-                    logger.warning(f"Failed to delete audio file {audio_path}: {e}")
+        # Re-resolve v2 references before any destructive mutation. A changed,
+        # unavailable, or tampered summary returns a typed preview result and
+        # leaves the complete old episode/audio untouched.
+        preview_required = await _resolve_retry_selection(
+            episode,
+            request=request,
+        )
+        if preview_required is not None:
+            return (
+                preview_required.model_dump(mode="json")
+                if hasattr(preview_required, "model_dump")
+                else preview_required
+            )
 
-        # Delete the failed episode
-        await episode.delete()
+        retry_settings = _stored_retry_settings(episode)
 
         # Submit a new job.
         # v0.8.68 — replay the user's per-episode customization. The suffix
@@ -994,16 +1416,39 @@ async def _retry_podcast_episode_locked(episode_id: str):
             episode_name=episode_name,
             content=content,
             briefing_suffix=getattr(episode, "briefing_suffix", None),
-            mode=getattr(episode, "mode", None),
+            mode=retry_settings["mode"],
             custom_prompt=(
                 getattr(episode, "custom_prompt", None)
                 or getattr(episode, "briefing_suffix", None)
             ),
+            episode_length=retry_settings["episode_length"],
+            review_outline=retry_settings["review_outline"],
             selection_summary=getattr(episode, "selection_summary", None),
             selection_fingerprint=getattr(episode, "selection_fingerprint", None),
             editorial_brief=getattr(episode, "editorial_brief", None),
             model_plan_receipts=getattr(episode, "model_plan_receipts", []),
         )
+
+        # Cleanup starts only after the replacement submission succeeded. A
+        # provider/submit exception above therefore preserves old state.
+        if episode.audio_file:
+            audio_path = _resolve_audio_path(episode.audio_file)
+            if audio_path is None:
+                logger.warning(
+                    "Retry: skipping audio cleanup — episode.audio_file "
+                    "({}) is outside the podcast output root",
+                    episode.audio_file,
+                )
+            elif audio_path.exists():
+                try:
+                    audio_path.unlink()
+                    _cleanup_episode_dir(audio_path)
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Failed to delete audio file {audio_path}: {e}")
+
+        await episode.delete()
 
         return {"job_id": job_id, "message": "Retry submitted successfully"}
 

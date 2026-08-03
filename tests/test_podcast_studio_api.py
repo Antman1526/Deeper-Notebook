@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from time import time
 
@@ -605,7 +606,7 @@ async def test_studio_submit_persists_full_editorial_intent_and_validated_overri
             "speaker_profile": "Local Voice",
             "episode_name": "Research synthesis",
             "mode": "critique",
-            "include_transcription": True,
+            "include_transcription": False,
             "production_overrides": production_overrides,
             "editorial_brief": editorial_brief,
         }
@@ -780,7 +781,11 @@ async def test_confirmed_submit_uses_server_resolved_content_once_per_idempotenc
             "speaker_profile": "Local Voice",
             "episode_name": "Research synthesis",
             "mode": "deep_dive",
+            "episode_length": "long",
             "review_outline": True,
+            "execution_policy": "strict_local",
+            "compute_profile": "maximum_quality",
+            "include_transcription": False,
             "editorial_brief": {
                 "central_question": "What does the research change?",
                 "audience": "Research team",
@@ -797,9 +802,25 @@ async def test_confirmed_submit_uses_server_resolved_content_once_per_idempotenc
     assert calls[0]["selection_fingerprint"] == preview.json()["selection_fingerprint"]
     assert calls[0]["selection_summary"] == {
         "authority_counts": {"app_owned": 1},
+        "included_items": [{
+            "stable_id": "notebook:research",
+            "authority_kind": "app_owned",
+            "fingerprint": hashlib.sha256(
+                b"Private app-owned notebook material"
+            ).hexdigest(),
+        }],
         "included_count": 1,
+        "production_settings": {
+            "mode": "deep_dive",
+            "episode_length": "long",
+            "review_outline": True,
+            "execution_policy": "strict_local",
+            "compute_profile": "maximum_quality",
+            "include_transcription": False,
+        },
+        "selections": [{"kind": "notebook", "notebook_id": "notebook:research"}],
         "total_count": 1,
-        "version": 1,
+        "version": 2,
     }
     assert calls[0]["editorial_brief"] == payload["editorial_brief"]
     receipts = calls[0]["model_plan_receipts"]

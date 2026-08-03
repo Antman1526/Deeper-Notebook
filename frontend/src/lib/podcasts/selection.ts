@@ -119,3 +119,98 @@ export function toPodcastSelectionWire(selection: PodcastSelection): Record<stri
       return { kind: selection.kind, document_ids: selection.documentIds }
   }
 }
+
+/**
+ * Convert a backend retry-preview reference through the same strict union as
+ * browser-created selections.  The backend intentionally returns snake_case
+ * keys; no source body, path, or unknown metadata is accepted here.
+ */
+export function fromPodcastSelectionWire(value: unknown): PodcastSelection {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid podcast selection wire reference')
+  }
+  const wire = value as Record<string, unknown>
+  const kind = wire.kind
+  const allowedKeys: Record<string, string[]> = {
+    notebook: ['kind', 'notebook_id'],
+    app_note: ['kind', 'note_id'],
+    app_source: ['kind', 'source_id', 'inclusion_mode'],
+    knowledge_document: ['kind', 'document_id', 'expected_revision_id'],
+    knowledge_block: [
+      'kind', 'document_id', 'block_id', 'expected_revision_id',
+      'source_start', 'source_end',
+    ],
+    knowledge_collection: ['kind', 'collection_kind', 'collection_id'],
+    saved_search: ['kind', 'query', 'search_mode', 'space_ids', 'authority_kinds'],
+    graph_selection: ['kind', 'document_ids'],
+  }
+  if (typeof kind !== 'string' || !allowedKeys[kind]
+    || Object.keys(wire).some((key) => !allowedKeys[kind].includes(key))) {
+    throw new Error('Invalid podcast selection wire reference')
+  }
+  let candidate: Record<string, unknown>
+  switch (kind) {
+    case 'notebook':
+      candidate = { kind, notebookId: wire.notebook_id }
+      break
+    case 'app_note':
+      candidate = { kind, noteId: wire.note_id }
+      break
+    case 'app_source':
+      candidate = {
+        kind,
+        sourceId: wire.source_id,
+        inclusionMode: wire.inclusion_mode,
+      }
+      break
+    case 'knowledge_document':
+      candidate = {
+        kind,
+        documentId: wire.document_id,
+        expectedRevisionId: wire.expected_revision_id ?? null,
+      }
+      break
+    case 'knowledge_block':
+      candidate = {
+        kind,
+        documentId: wire.document_id,
+        blockId: wire.block_id,
+        expectedRevisionId: wire.expected_revision_id ?? null,
+        sourceStart: wire.source_start ?? null,
+        sourceEnd: wire.source_end ?? null,
+      }
+      break
+    case 'knowledge_collection':
+      candidate = {
+        kind,
+        collectionKind: wire.collection_kind,
+        collectionId: wire.collection_id,
+      }
+      break
+    case 'saved_search':
+      candidate = {
+        kind,
+        query: wire.query,
+        searchMode: wire.search_mode,
+        spaceIds: wire.space_ids,
+        authorityKinds: wire.authority_kinds,
+      }
+      break
+    case 'graph_selection':
+      candidate = { kind, documentIds: wire.document_ids }
+      break
+    default:
+      throw new Error('Invalid podcast selection wire reference')
+  }
+  return podcastSelectionSchema.parse(candidate)
+}
+
+export function fromPodcastSelectionWireList(value: unknown): PodcastSelection[] {
+  if (!Array.isArray(value)) {
+    throw new Error('Invalid podcast selection wire references')
+  }
+  return value.map(fromPodcastSelectionWire)
+}
+
+// Explicit alias for callers that prefer parser terminology.
+export const parsePodcastSelectionWire = fromPodcastSelectionWire
