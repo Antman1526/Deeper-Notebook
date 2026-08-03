@@ -111,4 +111,34 @@ describe('podcast Studio API', () => {
       },
     }))
   })
+
+  it('maps a typed preview-required retry without treating it as submitted', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ data: {
+      status: 'preview_required',
+      code: 'podcast_selection_changed',
+      message: 'Review the changed selection.',
+      episode_id: 'episode:changed',
+      selections: [{
+        kind: 'knowledge_document',
+        document_id: 'knowledge_engine_document:research',
+        expected_revision_id: null,
+      }],
+      selection_fingerprint: 'd'.repeat(64),
+      preview: null,
+    } } as never)
+
+    await expect(podcastsApi.retryEpisode('episode:changed')).resolves.toEqual({
+      status: 'preview_required',
+      code: 'podcast_selection_changed',
+      message: 'Review the changed selection.',
+      episodeId: 'episode:changed',
+      selections: [{
+        kind: 'knowledge_document',
+        documentId: 'knowledge_engine_document:research',
+        expectedRevisionId: null,
+      }],
+      selectionFingerprint: 'd'.repeat(64),
+      preview: null,
+    })
+  })
 })

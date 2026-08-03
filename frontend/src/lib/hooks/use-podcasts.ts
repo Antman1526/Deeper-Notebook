@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { podcastsApi, EpisodeProfileInput, SpeakerProfileInput } from '@/lib/api/podcasts'
@@ -9,6 +10,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 // string. Direct use as a toast description renders the key as text
 // to the user on mapped errors.
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
+import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import {
   ACTIVE_EPISODE_STATUSES,
   EpisodeProfile,
@@ -93,13 +95,20 @@ export function usePodcastEpisodes(options?: { autoRefresh?: boolean }) {
 
 export function useRetryPodcastEpisode() {
   const queryClient = useQueryClient()
+  const router = useRouter()
+  const openStudio = usePodcastStudioStore((state) => state.open)
   const { toast } = useToast()
   const { t } = useTranslation()
 
   return useMutation({
     mutationFn: (episodeId: string) => podcastsApi.retryEpisode(episodeId),
-    onSuccess: async () => {
+    onSuccess: async (response) => {
       await queryClient.refetchQueries({ queryKey: QUERY_KEYS.podcastEpisodes })
+      if (response.status === 'preview_required') {
+        openStudio(response.selections, 'studio')
+        router.push('/podcasts/studio')
+        return
+      }
       toast({
         title: t('podcasts.retryStarted'),
         description: t('podcasts.retryStartedDesc'),

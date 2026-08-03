@@ -266,6 +266,29 @@ class PodcastStudioSubmitResponse(_Strict):
     mode: Literal["deep_dive", "brief", "critique", "debate"]
 
 
+class PodcastRetryPreviewRequiredResponse(_Strict):
+    """Typed, non-destructive retry result for stale Studio selections.
+
+    The references are the strict wire-safe union, never resolved source text
+    or a filesystem locator.  An empty list is allowed for tampered metadata:
+    the caller must fail closed and ask the user to choose fresh references.
+    """
+
+    status: Literal["preview_required"]
+    code: Literal[
+        "podcast_selection_changed",
+        "podcast_selection_unavailable",
+        "podcast_selection_tampered",
+    ]
+    message: str = Field(min_length=1, max_length=512)
+    episode_id: str = Field(min_length=1, max_length=256)
+    selections: list[PodcastSelection] = Field(max_length=128)
+    selection_fingerprint: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+    preview: PodcastSelectionPreviewResponse | None = None
+
+
 __all__ = [
     "PodcastReadinessRequest",
     "PodcastReadinessResponse",
@@ -276,4 +299,5 @@ __all__ = [
     "PodcastStageModelPlanResponse",
     "PodcastStudioSubmitRequest",
     "PodcastStudioSubmitResponse",
+    "PodcastRetryPreviewRequiredResponse",
 ]
