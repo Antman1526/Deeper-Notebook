@@ -26,10 +26,12 @@ type BrowserRequestReceipt = {
 }
 
 const browserRequestReceipts = new WeakMap<Page, BrowserRequestReceipt>()
+const taskOwnedLoopbackHosts = new Set([
+  '127.0.0.1:3117', '127.0.0.1:65060', 'localhost:3117', 'localhost:65060',
+])
 
 function isTaskOwnedLoopback(url: URL): boolean {
-  return (url.hostname === '127.0.0.1' || url.hostname === 'localhost')
-    && (url.port === '3117' || url.port === '65060')
+  return taskOwnedLoopbackHosts.has(url.host)
 }
 
 async function installLoopbackRequestGuard(page: Page): Promise<void> {
@@ -196,7 +198,7 @@ async function installPodcastFixtures(page: Page): Promise<Receipt[]> {
         return routeJson(route, {
           ...readiness,
           ready: false,
-          blocked_reasons: ['fixture_override_rejected'],
+          blocked_reasons: ['Fixture rejected the selected outline override.'],
           stage_plans: readiness.stage_plans.map((stagePlan) => stagePlan.role === 'podcast_outline'
             ? { ...stagePlan, outcome: 'blocked', blocked_reason: 'Fixture rejected the selected outline override.' }
             : stagePlan),
@@ -273,10 +275,10 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
   test.afterEach(async ({ page }) => {
     const receipt = browserRequestReceipts.get(page)
     expect(receipt).toBeDefined()
-    expect(receipt?.observedHosts.filter((host) => !['127.0.0.1:3117', '127.0.0.1:65060'].includes(host)))
+    expect(receipt?.observedHosts.filter((host) => !taskOwnedLoopbackHosts.has(host)))
       .toEqual(receipt?.blockedHosts)
     expect(receipt?.observedHosts.filter((host) => !receipt.blockedHosts.includes(host))
-      .every((host) => host === '127.0.0.1:3117' || host === '127.0.0.1:65060')).toBe(true)
+      .every((host) => taskOwnedLoopbackHosts.has(host))).toBe(true)
   })
 
   test('opens as a sequential, no-selection review surface without submitting production', async ({ page }) => {
@@ -538,7 +540,16 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     }, 2)
 
     await page.getByLabel(/Mounted vaults|Mounts/).selectOption('external-vault:vault:fixture')
-    await page.getByRole('treeitem', { name: 'pages/evidence.md', exact: true }).click()
+    const fileFilter = page.getByRole('textbox', { name: 'Filter files' })
+    await expect(fileFilter).toBeVisible()
+    await fileFilter.focus()
+    await page.keyboard.press('Escape')
+    const guidedTipsDismiss = page.getByRole('button', { name: 'Got it', exact: true })
+    if (await guidedTipsDismiss.isVisible()) await guidedTipsDismiss.click()
+    const evidenceNote = page.getByRole('treeitem', { name: 'pages/evidence.md', exact: true })
+    await evidenceNote.focus()
+    await page.keyboard.press('Enter')
+    await expect(evidenceNote).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: 'Evidence' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Graph (Alt+5)' }).click()
