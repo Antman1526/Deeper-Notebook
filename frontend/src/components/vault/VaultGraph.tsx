@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, type MouseEvent } from 'react'
 import { Background, Controls, ReactFlow, type Edge, type Node, type Viewport } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
@@ -10,7 +10,23 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import './vault.css'
 
-export function VaultGraph({ graph, unresolved, onNavigate, viewport, onMoveEnd, rootDocumentId, spaceIds = [], relationKinds = [], onBookmarkContext }: {
+const EMPTY_STRING_ARRAY: string[] = []
+
+type BookmarkContext = { rootDocumentId: string; spaceIds: string[]; relationKinds: string[]; viewport: Viewport }
+
+function bookmarkContextsEqual(left: BookmarkContext | null, right: BookmarkContext): boolean {
+  return Boolean(left)
+    && left.rootDocumentId === right.rootDocumentId
+    && left.viewport.x === right.viewport.x
+    && left.viewport.y === right.viewport.y
+    && left.viewport.zoom === right.viewport.zoom
+    && left.spaceIds.length === right.spaceIds.length
+    && left.spaceIds.every((spaceId, index) => spaceId === right.spaceIds[index])
+    && left.relationKinds.length === right.relationKinds.length
+    && left.relationKinds.every((relationKind, index) => relationKind === right.relationKinds[index])
+}
+
+export function VaultGraph({ graph, unresolved, onNavigate, viewport, onMoveEnd, rootDocumentId, spaceIds = EMPTY_STRING_ARRAY, relationKinds = EMPTY_STRING_ARRAY, onBookmarkContext }: {
   graph?: VaultGraphData
   unresolved: VaultLink[]
   onNavigate: (noteId: string) => void
@@ -19,7 +35,7 @@ export function VaultGraph({ graph, unresolved, onNavigate, viewport, onMoveEnd,
   rootDocumentId?: string | null
   spaceIds?: string[]
   relationKinds?: string[]
-  onBookmarkContext?: (context: { rootDocumentId: string; spaceIds: string[]; relationKinds: string[]; viewport: Viewport }) => void
+  onBookmarkContext?: (context: BookmarkContext) => void
 }) {
   const { t } = useTranslation()
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
@@ -38,9 +54,13 @@ export function VaultGraph({ graph, unresolved, onNavigate, viewport, onMoveEnd,
   const liveRelationKinds = useMemo(() => relationKinds.length
     ? relationKinds
     : [...new Set((graph?.edges ?? []).map((edge) => edge.kind || 'related'))].filter((kind) => /^[A-Za-z0-9_.:-]{1,64}$/.test(kind)), [graph, relationKinds])
+  const lastBookmarkContext = useRef<BookmarkContext | null>(null)
   useEffect(() => {
     if (!rootDocumentId || !onBookmarkContext || !viewport) return
-    onBookmarkContext({ rootDocumentId, spaceIds, relationKinds: liveRelationKinds, viewport })
+    const context = { rootDocumentId, spaceIds, relationKinds: liveRelationKinds, viewport }
+    if (bookmarkContextsEqual(lastBookmarkContext.current, context)) return
+    lastBookmarkContext.current = context
+    onBookmarkContext(context)
   }, [liveRelationKinds, onBookmarkContext, rootDocumentId, spaceIds, viewport])
   if (!nodes.length) return <p className="flex h-full items-center justify-center rounded-md border border-dashed p-6 text-sm text-muted-foreground">{t('knowledge.noGraphLinks')}</p>
   const podcastDocumentIds = [...new Set(
