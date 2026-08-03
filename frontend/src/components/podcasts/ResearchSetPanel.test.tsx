@@ -44,7 +44,7 @@ describe('ResearchSetPanel', () => {
     expect(screen.getByText('Changed note')).toBeVisible()
     expect(screen.getByText('Duplicate note')).toBeVisible()
     expect(screen.getByText('Oversize note')).toBeVisible()
-    expect(screen.getByText(/batch engine/i)).toBeVisible()
+    expect(screen.getByText('Selection requires a batch engine; the current worker will not truncate it.')).toBeVisible()
     expect(screen.queryByText(/\/Users\//)).not.toBeInTheDocument()
   })
 
@@ -64,5 +64,20 @@ describe('ResearchSetPanel', () => {
 
     expect(screen.queryByText(/\/Users\/Antman/)).not.toBeInTheDocument()
     expect(screen.getByText('private.md')).toBeVisible()
+  })
+
+  it('redacts embedded POSIX, Windows, and file URLs in external preview text and attributes', () => {
+    render(<ResearchSetPanel selections={[]} preview={preview({ entries: [{
+      stableId: 'knowledge_engine_document:private',
+      title: 'Imported from /Users/Antman/Secret/note.md',
+      authorityKind: 'external_read_only', relativeLocator: 'C:\\Users\\Antman\\Secret\\note.md',
+      revisionId: null, fingerprint: null, state: 'unavailable',
+      reason: 'file:///Users/Antman/Secret/note.md and C:\\Users\\Antman\\Secret\\note.md', estimatedCharacters: 0,
+    }], blockedReasons: ['failed at file:///Users/Antman/Secret/note.md'] })} />)
+
+    expect(screen.queryByText(/\/Users\/Antman|C:\\Users\\Antman|file:/)).not.toBeInTheDocument()
+    expect(screen.getByText('Imported from [path redacted]')).toBeVisible()
+    expect(screen.getByText('[path redacted] and [path redacted]')).toBeVisible()
+    expect(screen.getByText('Imported from [path redacted]')).toHaveAttribute('title', 'Imported from [path redacted]')
   })
 })

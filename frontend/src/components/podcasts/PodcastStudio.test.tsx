@@ -61,6 +61,51 @@ describe('PodcastStudio', () => {
     expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
   })
 
+  it('sends the selected production override to both readiness and submit', async () => {
+    vi.mocked(podcastsApi.getPodcastReadiness).mockResolvedValue({
+      preview: {
+        selectionFingerprint: 'e'.repeat(64), entries: [{
+          stableId: 'knowledge_engine_document:plan', title: 'Research plan', authorityKind: 'app_owned',
+          relativeLocator: null, revisionId: null, fingerprint: 'f'.repeat(64),
+          state: 'included', reason: 'included', estimatedCharacters: 120,
+        }], includedCharacters: 120, requiresBatchEngine: false,
+        currentWorkerEligible: true, blockedReasons: [],
+      },
+      stagePlans: [{
+        role: 'podcast_outline', outcome: 'ready', modelId: 'outline-alt', provider: 'mlx',
+        resourceTier: 'standard', selectionSource: 'production_override', reason: 'override', blockedReason: null,
+        overrideChoices: ['outline-alt', 'outline-heavy'],
+      }],
+      ready: true, blockedReasons: [],
+    })
+    vi.mocked(podcastsApi.listEpisodeProfiles).mockResolvedValue([{
+      id: 'episode_profile:local', name: 'Local Episode', description: '', speaker_config: 'Local Voice', default_briefing: '', num_segments: 4,
+    }])
+    vi.mocked(podcastsApi.listSpeakerProfiles).mockResolvedValue([{
+      id: 'speaker_profile:local', name: 'Local Voice', description: '', speakers: [],
+    }])
+    vi.mocked(podcastsApi.submitStudioPodcast).mockResolvedValue({
+      jobId: 'command:override', status: 'submitted', message: 'accepted', episodeProfile: 'Local Episode', episodeName: 'Research plan', mode: 'deep_dive',
+    })
+
+    render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} modelPlans={[{
+      stage: 'outline', label: 'Outline route', overrideChoices: ['outline-local', 'outline-alt'],
+      plan: { outcome: 'ready', reason: 'Verified local route.', modelId: 'outline-local', role: 'podcast_outline' },
+    }]} />)
+    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'outline-alt' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    await screen.findByText('Production profiles')
+    expect(podcastsApi.getPodcastReadiness).toHaveBeenCalledWith(
+      [{ kind: 'knowledge_document', documentId: 'knowledge_engine_document:plan' }],
+      { productionOverrides: { podcast_outline: 'outline-alt' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to confirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+    await waitFor(() => expect(podcastsApi.submitStudioPodcast).toHaveBeenCalledWith(expect.objectContaining({
+      productionOverrides: { podcast_outline: 'outline-alt' },
+    })))
+  })
+
   it('moves outline segments with explicit keyboard-accessible controls', () => {
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
@@ -113,9 +158,49 @@ describe('PodcastStudio', () => {
       editorialBrief: {
         centralQuestion: 'What should change after the research?',
         audience: 'practitioner',
+        purpose: 'explain',
+        format: 'deep_dive',
+        targetMinutes: 20,
+        requiredTakeaway: null,
+        includeUnansweredQuestions: false,
+        evidencePolicy: 'strict',
+        episodeProfileName: 'Local Episode',
+        speakerProfileName: 'Local Voice',
         outline: ['Introduction', 'Findings', 'Takeaway'],
       },
       reviewOutline: true,
     })))
+  })
+
+  it('keeps the honest briefing state after a failed pre-submission request', async () => {
+    vi.mocked(podcastsApi.getPodcastReadiness).mockResolvedValue({
+      preview: {
+        selectionFingerprint: 'c'.repeat(64), entries: [{
+          stableId: 'knowledge_engine_document:plan', title: 'Research plan', authorityKind: 'app_owned',
+          relativeLocator: null, revisionId: null, fingerprint: 'd'.repeat(64),
+          state: 'included', reason: 'included', estimatedCharacters: 120,
+        }], includedCharacters: 120, requiresBatchEngine: false,
+        currentWorkerEligible: true, blockedReasons: [],
+      }, stagePlans: [], ready: true, blockedReasons: [],
+    })
+    vi.mocked(podcastsApi.listEpisodeProfiles).mockResolvedValue([{
+      id: 'episode_profile:local', name: 'Local Episode', description: '', speaker_config: 'Local Voice',
+      default_briefing: '', num_segments: 4,
+    }])
+    vi.mocked(podcastsApi.listSpeakerProfiles).mockResolvedValue([{
+      id: 'speaker_profile:local', name: 'Local Voice', description: '', speakers: [],
+    }])
+    vi.mocked(podcastsApi.submitStudioPodcast).mockRejectedValueOnce(new Error('submit failed'))
+
+    render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    await screen.findByText('Production profiles')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to confirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('could not be submitted'))
+    expect(screen.getByRole('tab', { name: 'Editorial Brief' })).toHaveAttribute('data-status', 'current')
+    expect(screen.getByRole('tab', { name: 'Outline Storyboard' })).toHaveAttribute('data-status', 'upcoming')
+    expect(screen.getByRole('tab', { name: 'Script/Voice Job' })).toHaveAttribute('data-status', 'upcoming')
   })
 })

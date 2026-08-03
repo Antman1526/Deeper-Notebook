@@ -29,7 +29,15 @@ class _RetryEpisode:
     selection_fingerprint = "a" * 64
     editorial_brief = {
         "central_question": "What should change?",
-        "audience": "Research team",
+        "audience": "expert",
+        "purpose": "analyze",
+        "format": "deep_dive",
+        "target_minutes": 30,
+        "required_takeaway": "Change the review threshold.",
+        "include_unanswered_questions": True,
+        "evidence_policy": "strict",
+        "episode_profile_name": "Local Episode",
+        "speaker_profile_name": "Local Voice",
         "outline": ["Context", "Decision"],
     }
     model_plan_receipts = [

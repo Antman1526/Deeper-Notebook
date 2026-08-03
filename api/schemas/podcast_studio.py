@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from deeper_notebook.knowledge_engine.capabilities import AuthorityKind
 from deeper_notebook.podcasts.selection_contracts import PodcastSelection
@@ -55,6 +56,35 @@ class PodcastReadinessRequest(PodcastSelectionPreviewRequest):
     )
     compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced"
     include_transcription: bool = False
+    production_overrides: dict[
+        Literal[
+            "podcast_outline", "podcast_script", "text_to_speech", "speech_to_text"
+        ],
+        str,
+    ] = Field(default_factory=dict, max_length=4)
+
+    @field_validator("production_overrides")
+    @classmethod
+    def validate_production_overrides(
+        cls, value: dict[str, str]
+    ) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for role, model_id in value.items():
+            model = " ".join(model_id.split())
+            if not model or len(model) > 512 or cls._looks_like_filesystem_path(model):
+                raise ValueError("production override model IDs must be bounded labels")
+            normalized[role] = model
+        return normalized
+
+    @staticmethod
+    def _looks_like_filesystem_path(value: str) -> bool:
+        return bool(
+            re.search(
+                r"(?:file://(?:/|[A-Za-z]:[\\/])|/(?:[^\s,;]+)|[A-Za-z]:[\\/][^\s,;]+|\\\\[^\s,;]+)",
+                value,
+                re.IGNORECASE,
+            )
+        )
 
 
 class PodcastStageModelPlanResponse(_Strict):
@@ -70,6 +100,20 @@ class PodcastStageModelPlanResponse(_Strict):
     ) = None
     reason: str = Field(min_length=1, max_length=1024)
     blocked_reason: str | None = Field(default=None, max_length=1024)
+    override_choices: list[str] = Field(default_factory=list, max_length=3)
+
+    @field_validator("override_choices")
+    @classmethod
+    def validate_override_choices(cls, value: list[str]) -> list[str]:
+        normalized = [" ".join(item.split()) for item in value]
+        if any(
+            not item
+            or len(item) > 512
+            or PodcastReadinessRequest._looks_like_filesystem_path(item)
+            for item in normalized
+        ):
+            raise ValueError("override choices must be bounded labels")
+        return list(dict.fromkeys(normalized))
 
 
 class PodcastReadinessResponse(_Strict):
@@ -84,9 +128,26 @@ class PodcastEditorialBrief(_Strict):
 
     central_question: str | None = Field(default=None, max_length=1_000)
     audience: str | None = Field(default=None, max_length=256)
+    purpose: str | None = Field(default=None, max_length=32)
+    format: str | None = Field(default=None, max_length=32)
+    target_minutes: int | None = Field(default=None, ge=1, le=180)
+    required_takeaway: str | None = Field(default=None, max_length=1_000)
+    include_unanswered_questions: bool | None = None
+    evidence_policy: str | None = Field(default=None, max_length=32)
+    episode_profile_name: str | None = Field(default=None, max_length=256)
+    speaker_profile_name: str | None = Field(default=None, max_length=256)
     outline: list[str] = Field(default_factory=list, max_length=32)
 
-    @field_validator("central_question", "audience")
+    @field_validator(
+        "central_question",
+        "audience",
+        "required_takeaway",
+        "episode_profile_name",
+        "speaker_profile_name",
+        "purpose",
+        "format",
+        "evidence_policy",
+    )
     @classmethod
     def normalize_optional_label(cls, value: str | None) -> str | None:
         if value is None:
@@ -109,9 +170,37 @@ class PodcastEditorialBrief(_Strict):
     @staticmethod
     def _looks_like_filesystem_path(value: str) -> bool:
         return (
-            value.startswith(("/", "\\", "file://"))
-            or (len(value) >= 3 and value[0].isalpha() and value[1:3] == ":\\")
+            bool(
+                re.search(
+                    r"(?:file://(?:/|[A-Za-z]:[\\/])|/(?:[^\s,;]+)|[A-Za-z]:[\\/][^\s,;]+|\\\\[^\s,;]+)",
+                    value,
+                    re.IGNORECASE,
+                )
+            )
         )
+
+    @model_validator(mode="after")
+    def validate_full_intent_enums(self) -> "PodcastEditorialBrief":
+        full_fields = {
+            "purpose",
+            "format",
+            "target_minutes",
+            "required_takeaway",
+            "include_unanswered_questions",
+            "evidence_policy",
+            "episode_profile_name",
+            "speaker_profile_name",
+        }
+        if any(getattr(self, field) is not None for field in full_fields):
+            if self.audience not in {"foundation", "practitioner", "expert"}:
+                raise ValueError("audience must be foundation, practitioner, or expert")
+            if self.purpose not in {"explain", "analyze", "challenge", "compare", "teach"}:
+                raise ValueError("purpose is not supported")
+            if self.format not in {"brief", "deep_dive", "critique", "debate"}:
+                raise ValueError("format is not supported")
+            if self.evidence_policy not in {"strict", "interpretation"}:
+                raise ValueError("evidence_policy is not supported")
+        return self
 
 
 class PodcastStudioSubmitRequest(PodcastReadinessRequest):
@@ -137,9 +226,28 @@ class PodcastStudioSubmitRequest(PodcastReadinessRequest):
     @classmethod
     def label_is_not_path(cls, value: str) -> str:
         normalized = " ".join(value.split())
-        if not normalized or normalized.startswith(("/", "\\")) or ":\\" in normalized:
+        if not normalized or PodcastEditorialBrief._looks_like_filesystem_path(normalized):
             raise ValueError("label must not be a filesystem path")
         return normalized
+
+    @model_validator(mode="after")
+    def editorial_values_agree_with_submission(self) -> "PodcastStudioSubmitRequest":
+        brief = self.editorial_brief
+        if brief is None:
+            return self
+        if brief.format is not None and brief.format != self.mode:
+            raise ValueError("editorial format must match submission mode")
+        if (
+            brief.episode_profile_name is not None
+            and brief.episode_profile_name != self.episode_profile
+        ):
+            raise ValueError("editorial episode profile must match submission profile")
+        if (
+            brief.speaker_profile_name is not None
+            and brief.speaker_profile_name != self.speaker_profile
+        ):
+            raise ValueError("editorial speaker profile must match submission profile")
+        return self
 
 
 class PodcastStudioSubmitResponse(_Strict):

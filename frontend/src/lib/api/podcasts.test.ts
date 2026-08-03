@@ -61,9 +61,54 @@ describe('podcast Studio API', () => {
       editorial_brief: {
         central_question: 'What should change after this research?',
         audience: 'Research team',
+        purpose: null,
+        format: null,
+        target_minutes: null,
+        required_takeaway: null,
+        include_unanswered_questions: null,
+        evidence_policy: null,
+        episode_profile_name: null,
+        speaker_profile_name: null,
+        outline: ['Context', 'Decision'],
+      },
+      production_overrides: {},
+    }))
+    expect(JSON.stringify(vi.mocked(apiClient.post).mock.calls[0][1])).not.toContain('/Users/')
+  })
+
+  it('sends every editorial field and production overrides through the wire contract', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ data: {
+      job_id: 'command:podcast-full', status: 'submitted', message: 'accepted',
+      episode_profile: 'Local Episode', episode_name: 'Research synthesis', mode: 'critique',
+    } } as never)
+
+    await podcastsApi.submitStudioPodcast({
+      selections: [{ kind: 'notebook', notebookId: 'notebook:research' }],
+      selectionFingerprint: 'a'.repeat(64), idempotencyKey: 'podcast-full-ui-1',
+      episodeProfile: 'Local Episode', speakerProfile: 'Local Voice', episodeName: 'Research synthesis',
+      mode: 'critique', productionOverrides: {
+        podcast_outline: 'outline-alt', podcast_script: 'script-alt',
+        text_to_speech: 'voice-alt', speech_to_text: 'stt-alt',
+      },
+      editorialBrief: {
+        centralQuestion: 'What changed?', audience: 'expert', purpose: 'analyze', format: 'critique',
+        targetMinutes: 42, requiredTakeaway: 'Use the threshold.', includeUnansweredQuestions: true,
+        evidencePolicy: 'interpretation', episodeProfileName: 'Local Episode', speakerProfileName: 'Local Voice',
+        outline: ['Context', 'Decision'],
+      },
+    })
+
+    expect(apiClient.post).toHaveBeenCalledWith('/podcasts/studio/submit', expect.objectContaining({
+      production_overrides: {
+        podcast_outline: 'outline-alt', podcast_script: 'script-alt',
+        text_to_speech: 'voice-alt', speech_to_text: 'stt-alt',
+      },
+      editorial_brief: {
+        central_question: 'What changed?', audience: 'expert', purpose: 'analyze', format: 'critique',
+        target_minutes: 42, required_takeaway: 'Use the threshold.', include_unanswered_questions: true,
+        evidence_policy: 'interpretation', episode_profile_name: 'Local Episode', speaker_profile_name: 'Local Voice',
         outline: ['Context', 'Decision'],
       },
     }))
-    expect(JSON.stringify(vi.mocked(apiClient.post).mock.calls[0][1])).not.toContain('/Users/')
   })
 })

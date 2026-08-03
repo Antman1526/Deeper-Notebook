@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { podcastsApi } from '@/lib/api/podcasts'
-import type { PodcastReadiness } from '@/lib/types/podcasts'
+import type { PodcastProductionRole, PodcastReadiness } from '@/lib/types/podcasts'
 import type { PodcastSelection } from '@/lib/podcasts/selection'
 import { EditorialBriefPanel, type EditorialBriefValues } from './EditorialBriefPanel'
 import { OutlineStoryboard } from './OutlineStoryboard'
@@ -85,8 +85,14 @@ function toPlanItems(modelPlans: PodcastStudioProps['modelPlans'], readiness: Po
     provider: plan.provider,
     resourceTier: plan.resourceTier,
     selectionSource: plan.selectionSource,
-    overrideChoices: [],
+    overrideChoices: plan.overrideChoices ?? [],
   })) ?? []
+}
+
+function productionRoleForPlan(plan: PodcastModelPlanItem): PodcastProductionRole | null {
+  return plan.role === 'podcast_outline' || plan.role === 'podcast_script' || plan.role === 'text_to_speech' || plan.role === 'speech_to_text'
+    ? plan.role
+    : null
 }
 
 /**
@@ -101,7 +107,7 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
   const [readiness, setReadiness] = useState<PodcastReadiness | null>(null)
   const [episodeProfiles, setEpisodeProfiles] = useState<string[]>([])
   const [speakerProfiles, setSpeakerProfiles] = useState<string[]>([])
-  const [modelOverrides, setModelOverrides] = useState<Partial<Record<PodcastModelPlanItem['stage'], string>>>({})
+  const [modelOverrides, setModelOverrides] = useState<Partial<Record<PodcastProductionRole, string>>>({})
   const [studioState, setStudioStateInternal] = useState<PodcastStudioState>(initialState)
   const [productionPhase, setProductionPhase] = useState<'review' | 'confirm'>('review')
   const [isPreparing, setIsPreparing] = useState(false)
@@ -122,7 +128,9 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
     setSubmittedMessage(null)
     try {
       const [nextReadiness, nextEpisodeProfiles, nextSpeakerProfiles] = await Promise.all([
-        podcastsApi.getPodcastReadiness(resolvedSelections),
+        Object.keys(modelOverrides).length > 0
+          ? podcastsApi.getPodcastReadiness(resolvedSelections, { productionOverrides: modelOverrides })
+          : podcastsApi.getPodcastReadiness(resolvedSelections),
         podcastsApi.listEpisodeProfiles(),
         podcastsApi.listSpeakerProfiles(),
       ])
@@ -167,12 +175,18 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
         episodeName: readiness.preview.entries[0]?.title ?? 'Deeper Notebook podcast',
         mode: brief.format,
         reviewOutline: true,
+        productionOverrides: modelOverrides,
         editorialBrief: {
-          // These are the currently API-compatible, source-body-free fields.
-          // The remaining brief fields remain local until the backend contract
-          // grows them in a later Phase-2/3 migration.
           centralQuestion: brief.centralQuestion || null,
           audience: brief.audience,
+          purpose: brief.purpose,
+          format: brief.format,
+          targetMinutes: brief.targetMinutes,
+          requiredTakeaway: brief.requiredTakeaway || null,
+          includeUnansweredQuestions: brief.includeUnansweredQuestions,
+          evidencePolicy: brief.evidencePolicy,
+          episodeProfileName: brief.episodeProfileName,
+          speakerProfileName: brief.speakerProfileName,
           outline,
         },
       })
@@ -181,7 +195,7 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
       setSubmittedMessage(`Production submitted: ${submitted.episodeName}. Outline review is next.`)
     } catch {
       setProductionError('Production could not be submitted. Review readiness and try again.')
-      setStudioState('failed')
+      setStudioState('briefing_ready')
     } finally {
       setIsSubmitting(false)
     }
@@ -193,9 +207,25 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
   ) as Partial<Record<PodcastModelPlanItem['stage'], string[]>>
   const displayedPlans = plans.map((plan) => ({
     ...plan,
-    modelId: modelOverrides[plan.stage] ?? plan.modelId ?? null,
-    selectionSource: modelOverrides[plan.stage] ? 'production_override' as const : plan.selectionSource,
+    modelId: (productionRoleForPlan(plan) ? modelOverrides[productionRoleForPlan(plan)!] : undefined) ?? plan.modelId ?? null,
+    selectionSource: (productionRoleForPlan(plan) && modelOverrides[productionRoleForPlan(plan)!]) ? 'production_override' as const : plan.selectionSource,
   }))
+
+  const handleOverride = (stage: PodcastModelPlanItem['stage'], modelId: string) => {
+    const selectedPlan = plans.find((plan) => plan.stage === stage)
+    const role = selectedPlan ? productionRoleForPlan(selectedPlan) : null
+    if (!role) return
+    setModelOverrides((current) => {
+      const next = { ...current }
+      if (modelId) next[role] = modelId
+      else delete next[role]
+      return next
+    })
+    setReadiness(null)
+    setProductionPhase('review')
+    setProductionError(null)
+    setStudioState('selecting')
+  }
 
   return (
     <section aria-label="Podcast Intelligence Studio" className="space-y-5">
@@ -215,7 +245,7 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
           <PodcastModelPlan
             plans={displayedPlans}
             overrideChoices={planChoices}
-            onOverride={(stage, modelId) => setModelOverrides((current) => ({ ...current, [stage]: modelId }))}
+            onOverride={handleOverride}
           />
         </section>
         <ProductionTimeline state={studioState}>
