@@ -99,6 +99,8 @@ const planPage = {
   },
   blocks: [
     {
+      knowledge_block_id: "knowledge_engine_block:plan",
+      source_revision_id: "knowledge_engine_revision:plan",
       markdown: "# Plan",
       plain_text: "Plan",
       heading_path: ["Plan"],
@@ -136,6 +138,8 @@ const evidencePage = {
   },
   blocks: [
     {
+      knowledge_block_id: "knowledge_engine_block:evidence",
+      source_revision_id: "knowledge_engine_revision:evidence",
       markdown: "# Evidence",
       plain_text: "Evidence",
       heading_path: ["Evidence"],
@@ -968,6 +972,14 @@ export async function fulfillKnowledgeRequest(
         {
           id: "note:plan",
           title: "Plan",
+          knowledge_document_id: "knowledge_engine_document:plan",
+          source_format: "obsidian",
+          external_state: "current",
+        },
+        {
+          id: "note:evidence",
+          title: "Evidence",
+          knowledge_document_id: "knowledge_engine_document:evidence",
           source_format: "obsidian",
           external_state: "current",
         },

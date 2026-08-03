@@ -1,4 +1,7 @@
 import os
+import re
+import subprocess
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -1307,11 +1310,56 @@ async def health():
     Same shape as /livez. Existing dashboards and the launcher's wait
     loop point at /health; new code should use /livez (cheap) or
     /readyz (full dependency check)."""
-    return {
+    response = {
         "status": "healthy",
         "name": PRODUCT_NAME,
         "description": DESCRIPTION,
     }
+    proof_revision = os.environ.get("DEEPER_NOTEBOOK_PROOF_REVISION")
+    if (
+        proof_revision is not None
+        and re.fullmatch(r"[0-9a-f]{40}", proof_revision)
+        and _checkout_head_revision() == proof_revision
+    ):
+        response["proof_revision"] = proof_revision
+    return response
+
+
+def _checkout_head_revision() -> str | None:
+    """Read the loaded worktree's immutable HEAD without invoking a shell."""
+    git_environment = os.environ.copy()
+    for name in tuple(git_environment):
+        if name in {
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_COMMON_DIR",
+            "GIT_NAMESPACE",
+        } or name.startswith("GIT_CONFIG_"):
+            git_environment.pop(name, None)
+    git_environment.update(
+        {
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_OPTIONAL_LOCKS": "0",
+        }
+    )
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=Path(__file__).resolve().parents[1],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=1,
+            env=git_environment,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    revision = completed.stdout.strip()
+    return revision if completed.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", revision) else None
 
 
 # v0.7.210 — Version endpoint. Drives the splash window's "Open
