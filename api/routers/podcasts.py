@@ -15,6 +15,8 @@ from api.podcast_service import (
     PodcastGenerationRequest,
     PodcastGenerationResponse,
     PodcastService,
+    PodcastSubmissionNotCreatedError,
+    PodcastSubmissionUncertainError,
 )
 from api.schemas.podcast_studio import (
     PodcastModelPlanReceipt,
@@ -1370,6 +1372,28 @@ def _stored_retry_submission(episode: Any) -> PodcastRetrySubmission | None:
     raw_marker = getattr(episode, "retry_submitted", None)
     if raw_marker is None:
         return None
+    if isinstance(raw_marker, dict) and set(raw_marker) == {"job_id", "generation"}:
+        job_id = raw_marker.get("job_id")
+        generation = raw_marker.get("generation")
+        if (
+            not isinstance(job_id, str)
+            or not job_id.strip()
+            or len(job_id) > 256
+            or not isinstance(generation, int)
+            or isinstance(generation, bool)
+            or not 1 <= generation <= 1_000_000
+        ):
+            raise ValueError("stored podcast retry fence is invalid")
+        operation_id = hashlib.sha256(
+            f"legacy-retry:{job_id}:{generation}".encode()
+        ).hexdigest()[:32]
+        return PodcastRetrySubmission(
+            state="submitted",
+            operation_id=operation_id,
+            job_id=job_id,
+            replacement_command=job_id,
+            generation=generation,
+        )
     try:
         return PodcastRetrySubmission.model_validate(raw_marker, strict=True)
     except (TypeError, ValueError, ValidationError) as exc:
@@ -1454,6 +1478,31 @@ async def _persist_retry_reservation(episode: Any) -> PodcastRetrySubmission:
             detail="Retry reservation could not be saved; no replacement was submitted.",
         ) from save_exc
     return marker
+
+
+async def _clear_retry_reservation(
+    episode: Any,
+    reservation: PodcastRetrySubmission,
+) -> None:
+    """Release only the exact reservation after a proven pre-submit failure."""
+    current = _stored_retry_submission(episode)
+    if current != reservation or current.state != "reserved":
+        raise HTTPException(
+            status_code=409,
+            detail="Retry reservation changed; retry is blocked.",
+        )
+    episode.retry_submitted = None
+    try:
+        save = getattr(episode, "save", None)
+        if not callable(save):
+            raise ValueError("episode cannot clear retry reservation")
+        await save()
+    except Exception as save_exc:
+        episode.retry_submitted = reservation
+        raise HTTPException(
+            status_code=409,
+            detail="Retry reservation could not be cleared; retry is blocked.",
+        ) from save_exc
 
 
 async def _retry_podcast_episode_locked(
@@ -1564,27 +1613,37 @@ async def _retry_podcast_episode_locked(
         # v0.8.68 — replay the user's per-episode customization. The suffix
         # was previously dropped on retry, silently regenerating with the
         # base briefing only (different output than the user asked for).
-        job_id = await PodcastService.submit_generation_job(
-            episode_profile_name=ep_profile_name,
-            speaker_profile_name=sp_profile_name,
-            episode_name=episode_name,
-            content=content,
-            briefing_suffix=getattr(episode, "briefing_suffix", None),
-            mode=retry_settings["mode"],
-            custom_prompt=(
-                getattr(episode, "custom_prompt", None)
-                or getattr(episode, "briefing_suffix", None)
-            ),
-            episode_length=retry_settings["episode_length"],
-            review_outline=retry_settings["review_outline"],
-            execution_policy=retry_settings["execution_policy"],
-            compute_profile=retry_settings["compute_profile"],
-            include_transcription=retry_settings["include_transcription"],
-            selection_summary=getattr(episode, "selection_summary", None),
-            selection_fingerprint=getattr(episode, "selection_fingerprint", None),
-            editorial_brief=getattr(episode, "editorial_brief", None),
-            model_plan_receipts=getattr(episode, "model_plan_receipts", []),
-        )
+        try:
+            job_id = await PodcastService.submit_generation_job(
+                episode_profile_name=ep_profile_name,
+                speaker_profile_name=sp_profile_name,
+                episode_name=episode_name,
+                content=content,
+                briefing_suffix=getattr(episode, "briefing_suffix", None),
+                mode=retry_settings["mode"],
+                custom_prompt=(
+                    getattr(episode, "custom_prompt", None)
+                    or getattr(episode, "briefing_suffix", None)
+                ),
+                episode_length=retry_settings["episode_length"],
+                review_outline=retry_settings["review_outline"],
+                execution_policy=retry_settings["execution_policy"],
+                compute_profile=retry_settings["compute_profile"],
+                include_transcription=retry_settings["include_transcription"],
+                selection_summary=getattr(episode, "selection_summary", None),
+                selection_fingerprint=getattr(episode, "selection_fingerprint", None),
+                editorial_brief=getattr(episode, "editorial_brief", None),
+                model_plan_receipts=getattr(episode, "model_plan_receipts", []),
+                classify_submission_failures=True,
+            )
+        except PodcastSubmissionNotCreatedError as submit_exc:
+            await _clear_retry_reservation(episode, reservation)
+            raise submit_exc.cause
+        except PodcastSubmissionUncertainError as submit_exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Retry submission state is uncertain; retry is blocked.",
+            ) from submit_exc
 
         # Persist a durable fence before deleting anything. If this save fails,
         # the replacement is cancelled and the old row/audio remain untouched.

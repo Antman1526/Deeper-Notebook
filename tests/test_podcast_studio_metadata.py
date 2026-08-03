@@ -8,7 +8,11 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from api.podcast_service import PodcastService
+from api.podcast_service import (
+    PodcastService,
+    PodcastSubmissionNotCreatedError,
+    PodcastSubmissionUncertainError,
+)
 from api.routers.podcasts import (
     PodcastEpisodeResponse,
     _redacted_model_plan_receipts,
@@ -276,6 +280,7 @@ async def test_retry_submission_failure_preserves_old_episode_and_audio(
     audio.parent.mkdir(parents=True)
     audio.write_bytes(b"old audio")
     episode.audio_file = str(audio)
+    attempts = 0
 
     async def get_episode(_: str) -> _RetryEpisode:
         return episode
@@ -284,7 +289,11 @@ async def test_retry_submission_failure_preserves_old_episode_and_audio(
         return object()
 
     async def submit_generation_job(**kwargs) -> str:
-        raise RuntimeError("provider unavailable")
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise PodcastSubmissionNotCreatedError(RuntimeError("provider unavailable"))
+        return "command:recovered"
 
     import api.routers.podcasts as podcasts_router
 
@@ -298,8 +307,203 @@ async def test_retry_submission_failure_preserves_old_episode_and_audio(
         await _retry_podcast_episode_locked("episode:failed")
 
     assert episode.deleted is False
+    assert episode.retry_submitted is None
     assert audio.exists()
     assert audio.read_bytes() == b"old audio"
+
+    result = await _retry_podcast_episode_locked("episode:failed")
+
+    assert result["job_id"] == "command:recovered"
+    assert attempts == 2
+    assert episode.deleted is True
+
+
+@pytest.mark.asyncio
+async def test_retry_exact_legacy_submitted_marker_reuses_job_without_submission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    episode = _RetryEpisode()
+    episode.retry_submitted = {"job_id": "command:legacy", "generation": 3}
+    submissions = 0
+
+    async def get_episode(_: str) -> _RetryEpisode:
+        return episode
+
+    async def submit_generation_job(**kwargs) -> str:
+        nonlocal submissions
+        submissions += 1
+        return "command:unexpected"
+
+    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+
+    result = await _retry_podcast_episode_locked("episode:legacy")
+
+    assert result == {
+        "job_id": "command:legacy",
+        "message": "Retry already submitted successfully",
+    }
+    assert submissions == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_rejects_legacy_marker_with_extra_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    episode = _RetryEpisode()
+    episode.retry_submitted = {
+        "job_id": "command:legacy",
+        "generation": 3,
+        "token": "must-not-be-accepted",
+    }
+
+    async def get_episode(_: str) -> _RetryEpisode:
+        return episode
+
+    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
+
+    with pytest.raises(HTTPException, match="Failed to retry episode"):
+        await _retry_podcast_episode_locked("episode:legacy")
+
+
+@pytest.mark.asyncio
+async def test_retry_uncertain_submit_keeps_reservation_across_reload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persisted: dict[str, object] = {"retry_submitted": None}
+    submissions = 0
+
+    class ReloadedEpisode(_RetryEpisode):
+        def __init__(self) -> None:
+            super().__init__()
+            self.retry_submitted = persisted["retry_submitted"]
+
+        async def save(self) -> None:
+            marker = self.retry_submitted
+            persisted["retry_submitted"] = (
+                marker.model_dump(mode="json") if marker is not None else None
+            )
+
+    async def get_episode(_: str) -> _RetryEpisode:
+        return ReloadedEpisode()
+
+    async def profile_exists(_: str) -> object:
+        return object()
+
+    async def submit_generation_job(**kwargs) -> str:
+        nonlocal submissions
+        submissions += 1
+        raise PodcastSubmissionUncertainError(TimeoutError("submit timed out"))
+
+    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
+    monkeypatch.setattr(EpisodeProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+
+    with pytest.raises(HTTPException, match="state is uncertain"):
+        await _retry_podcast_episode_locked("episode:uncertain")
+    with pytest.raises(HTTPException, match="state is uncertain"):
+        await _retry_podcast_episode_locked("episode:uncertain")
+
+    assert submissions == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_definite_failure_clear_save_failure_keeps_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    episode = _RetryEpisode()
+    saves = 0
+    submissions = 0
+
+    async def get_episode(_: str) -> _RetryEpisode:
+        return episode
+
+    async def profile_exists(_: str) -> object:
+        return object()
+
+    async def save() -> None:
+        nonlocal saves
+        saves += 1
+        if saves == 2:
+            raise RuntimeError("reservation clear failed")
+
+    async def submit_generation_job(**kwargs) -> str:
+        nonlocal submissions
+        submissions += 1
+        raise PodcastSubmissionNotCreatedError(RuntimeError("not submitted"))
+
+    episode.save = save  # type: ignore[method-assign]
+    monkeypatch.setattr(PodcastService, "get_episode", get_episode)
+    monkeypatch.setattr(EpisodeProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(SpeakerProfile, "get_by_name", profile_exists)
+    monkeypatch.setattr(PodcastService, "submit_generation_job", submit_generation_job)
+
+    with pytest.raises(HTTPException, match="could not be cleared") as first:
+        await _retry_podcast_episode_locked("episode:failed")
+
+    assert first.value.status_code == 409
+    assert episode.retry_submitted.state == "reserved"
+
+    with pytest.raises(HTTPException, match="state is uncertain"):
+        await _retry_podcast_episode_locked("episode:failed")
+
+    assert submissions == 1
+
+
+@pytest.mark.asyncio
+async def test_podcast_service_classifies_precommand_rejection_as_not_created(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import api.podcast_service as service_module
+
+    async def missing_profile(_: str) -> None:
+        return None
+
+    def unexpected_submit(*args, **kwargs):
+        raise AssertionError("pre-command rejection must not invoke submit_command")
+
+    monkeypatch.setattr(service_module.EpisodeProfile, "get_by_name", missing_profile)
+    monkeypatch.setattr(service_module, "submit_command", unexpected_submit)
+
+    with pytest.raises(PodcastSubmissionNotCreatedError):
+        await PodcastService.submit_generation_job(
+            episode_profile_name="missing",
+            speaker_profile_name="unused",
+            episode_name="Rejected",
+            content="source",
+            classify_submission_failures=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_podcast_service_classifies_submitter_exception_as_uncertain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import api.podcast_service as service_module
+
+    async def profile(_: str) -> object:
+        return type("Profile", (), {"speakers": [{}, {}]})()
+
+    async def skip_gate(*args, **kwargs) -> None:
+        return None
+
+    def fail_submit(*args, **kwargs):
+        raise RuntimeError("submit transport ended without a receipt")
+
+    monkeypatch.setattr(service_module.EpisodeProfile, "get_by_name", profile)
+    monkeypatch.setattr(service_module.SpeakerProfile, "get_by_name", profile)
+    monkeypatch.setattr(PodcastService, "_gate_offline_cloud_models", skip_gate)
+    monkeypatch.setattr(service_module, "submit_command", fail_submit)
+
+    with pytest.raises(PodcastSubmissionUncertainError):
+        await PodcastService.submit_generation_job(
+            episode_profile_name="episode",
+            speaker_profile_name="speakers",
+            episode_name="Uncertain",
+            content="source",
+            classify_submission_failures=True,
+        )
 
 
 @pytest.mark.asyncio
