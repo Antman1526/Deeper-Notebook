@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { LocalModelsHealthPayload } from '@/lib/hooks/use-local-models'
+import type { LocalModelSettings, ModelRoutePlan } from '@/lib/api/local-models'
 
 const ask = vi.hoisted(() => ({ sendAsk: vi.fn(), isStreaming: false }))
 const modelDefaults = vi.hoisted(() => ({ default_chat_model: 'local-research-chat' as string | null }))
@@ -21,9 +22,26 @@ const localModelsHealth = vi.hoisted(() => ({
   isError: false,
   error: null as Error | null,
 }))
-const routePlan = vi.hoisted(() => ({ data: undefined as any, isError: false, isLoading: false }))
-const savedSettings = vi.hoisted(() => ({ data: { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} } as any }))
+const routePlan = vi.hoisted(() => ({ data: undefined as ModelRoutePlan | undefined, isError: false, isLoading: false }))
+const savedSettings = vi.hoisted(() => ({ data: {
+  model_dir: '',
+  execution_policy: 'strict_local',
+  compute_profile: 'balanced',
+  local_model_memory_limit_bytes: null,
+  role_overrides: {},
+  trusted_external_model_roots: [],
+} as LocalModelSettings }))
 const routePlanCalls = vi.hoisted(() => [] as unknown[][])
+
+const localSettings = (overrides: Partial<LocalModelSettings> = {}): LocalModelSettings => ({
+  model_dir: '',
+  execution_policy: 'strict_local',
+  compute_profile: 'balanced',
+  local_model_memory_limit_bytes: null,
+  role_overrides: {},
+  trusted_external_model_roots: [],
+  ...overrides,
+})
 
 vi.mock('@/lib/hooks/use-ask', () => ({ useAsk: () => ask }))
 vi.mock('@/lib/hooks/use-models', () => ({
@@ -44,7 +62,7 @@ describe('KnowledgeAskPane', () => {
     routePlan.isError = false
     routePlan.isLoading = false
     routePlanCalls.length = 0
-    savedSettings.data = { execution_policy: 'strict_local', compute_profile: 'balanced', role_overrides: {} }
+    savedSettings.data = localSettings()
     ask.sendAsk.mockReset()
     modelDefaults.default_chat_model = 'local-research-chat'
     configuredModels.data = [{
@@ -76,7 +94,11 @@ describe('KnowledgeAskPane', () => {
   })
 
   it('plans Research Chat with saved Local Preferred settings and its explicit override', () => {
-    savedSettings.data = { execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_overrides: { research_chat: 'qwen-override' } }
+    savedSettings.data = localSettings({
+      execution_policy: 'local_preferred',
+      compute_profile: 'maximum_quality',
+      role_overrides: { research_chat: 'qwen-override' },
+    })
     render(<KnowledgeAskPane selectedDocumentIds={[]} />)
     expect(routePlanCalls).toContainEqual([{ role: 'research_chat', execution_policy: 'local_preferred', compute_profile: 'maximum_quality', role_override_model_id: 'qwen-override', modalities: ['text'] }])
   })
