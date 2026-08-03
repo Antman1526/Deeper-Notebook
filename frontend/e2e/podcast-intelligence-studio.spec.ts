@@ -1,10 +1,52 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 
+import { installStrictKnowledgeFixture } from './fixtures/knowledge-editor-modes'
+
+const proofRevisionPattern = /^[0-9a-f]{40}$/
+const proofRuntimeUrl = process.env.PODCAST_STUDIO_NATIVE_URL ?? 'http://127.0.0.1:65060'
+
+function expectedProofRevision(): string {
+  const revision = process.env.PODCAST_STUDIO_EXPECTED_REVISION
+  if (!revision || !proofRevisionPattern.test(revision)) {
+    throw new Error('PODCAST_STUDIO_EXPECTED_REVISION must be a lowercase 40-hex revision')
+  }
+  return revision
+}
+
 type Receipt = {
   method: string
   path: string
   host: string
   body: Record<string, unknown> | null
+}
+
+type BrowserRequestReceipt = {
+  observedHosts: string[]
+  blockedHosts: string[]
+}
+
+const browserRequestReceipts = new WeakMap<Page, BrowserRequestReceipt>()
+
+function isTaskOwnedLoopback(url: URL): boolean {
+  return url.hostname === '127.0.0.1' && (url.port === '3117' || url.port === '65060')
+}
+
+async function installLoopbackRequestGuard(page: Page): Promise<void> {
+  const receipt: BrowserRequestReceipt = { observedHosts: [], blockedHosts: [] }
+  browserRequestReceipts.set(page, receipt)
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.protocol === 'http:' || url.protocol === 'https:') receipt.observedHosts.push(url.host)
+  })
+  await page.route('**/*', async (route) => {
+    const url = new URL(route.request().url())
+    if ((url.protocol === 'http:' || url.protocol === 'https:') && !isTaskOwnedLoopback(url)) {
+      receipt.blockedHosts.push(url.host)
+      await route.abort()
+      return
+    }
+    await route.fallback()
+  })
 }
 
 const fixtureEpisodeProfile = {
@@ -148,6 +190,17 @@ async function installPodcastFixtures(page: Page): Promise<Receipt[]> {
     if (path === '/api/podcasts/episodes' && method === 'GET') return routeJson(route, fixtureEpisodes)
     if (path === '/api/podcasts/readiness' && method === 'POST') {
       record(route)
+      const body = requestBody(route)
+      if (body?.production_overrides && (body.production_overrides as Record<string, unknown>).podcast_outline === 'safe-local-outline') {
+        return routeJson(route, {
+          ...readiness,
+          ready: false,
+          blocked_reasons: ['fixture_override_rejected'],
+          stage_plans: readiness.stage_plans.map((stagePlan) => stagePlan.role === 'podcast_outline'
+            ? { ...stagePlan, outcome: 'blocked', blocked_reason: 'Fixture rejected the selected outline override.' }
+            : stagePlan),
+        })
+      }
       return routeJson(route, readiness)
     }
     if (path === '/api/podcasts/studio/submit' && method === 'POST') {
@@ -203,6 +256,28 @@ async function createOwnedNotebookFixture(page: Page) {
 }
 
 test.describe('Podcast Intelligence Studio browser acceptance', () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await installLoopbackRequestGuard(page)
+    const revision = expectedProofRevision()
+    testInfo.annotations.push({ type: 'podcast_studio_runtime_revision', description: revision })
+    const health = await page.request.get(`${proofRuntimeUrl}/health`)
+    expect(health.ok()).toBe(true)
+    expect(await health.json() as Record<string, unknown>).toMatchObject({
+      status: 'healthy',
+      name: 'Deeper Notebook',
+      proof_revision: revision,
+    })
+  })
+
+  test.afterEach(async ({ page }) => {
+    const receipt = browserRequestReceipts.get(page)
+    expect(receipt).toBeDefined()
+    expect(receipt?.observedHosts.filter((host) => !['127.0.0.1:3117', '127.0.0.1:65060'].includes(host)))
+      .toEqual(receipt?.blockedHosts)
+    expect(receipt?.observedHosts.filter((host) => !receipt.blockedHosts.includes(host))
+      .every((host) => host === '127.0.0.1:3117' || host === '127.0.0.1:65060')).toBe(true)
+  })
+
   test('opens as a sequential, no-selection review surface without submitting production', async ({ page }) => {
     const submissions: string[] = []
     // This test deliberately uses the isolated persistent local API. The app
@@ -219,6 +294,16 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await setReturningUser(page)
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/podcasts/studio')
+    const nonLoopbackAborted = await page.evaluate(async () => {
+      try {
+        await fetch('https://podcast-task8.invalid/non-loopback-guard')
+        return false
+      } catch {
+        return true
+      }
+    })
+    expect(nonLoopbackAborted).toBe(true)
+    expect(browserRequestReceipts.get(page)?.blockedHosts).toContain('podcast-task8.invalid')
 
     await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Research Set' })).toBeVisible()
@@ -236,11 +321,6 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.setViewportSize({ width: 640, height: 844 })
     const receipts = await installPodcastFixtures(page)
-    const apiHosts: string[] = []
-    page.on('request', (request) => {
-      const url = new URL(request.url())
-      if (url.pathname.startsWith('/api/')) apiHosts.push(url.host)
-    })
 
     await page.goto('/podcasts')
     await expect(page.getByRole('heading', { name: 'Fixture outline review' })).toBeVisible()
@@ -253,7 +333,9 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await page.getByLabel('Continue Production').getByRole('button', { name: 'Cancel' }).click()
     await expect.poll(() => receipts.some((receipt) => receipt.path.endsWith('/episode:active/cancel'))).toBe(true)
 
-    await page.getByRole('button', { name: 'Listen' }).click()
+    await page.getByRole('button', { name: 'Open Episode Lab for Fixture completed episode' }).click()
+    await expect(page.getByRole('region', { name: 'Episode Lab' })).toBeVisible()
+    await page.getByRole('button', { name: 'Play in global player' }).click()
     await expect(page.getByLabel('Audio overview player')).toBeVisible()
     await expect(page.getByLabel('Audio overview player').getByText('Fixture completed episode')).toBeVisible()
 
@@ -273,13 +355,14 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await expect(page.getByRole('button', { name: 'Prepare production review' })).toBeEnabled()
     await page.getByRole('button', { name: 'Prepare production review' }).click()
     await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length).toBe(2)
+    await expect(page.getByText('Fixture rejected the selected outline override.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Continue to confirmation' })).toBeDisabled()
 
     const readinessBodies = receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').map((receipt) => receipt.body)
     expect(readinessBodies.every((body) => body?.execution_policy === 'strict_local')).toBe(true)
     expect(readinessBodies.at(-1)?.production_overrides).toEqual({ podcast_outline: 'safe-local-outline' })
     expect(receipts.some((receipt) => receipt.path === '/api/podcasts/studio/submit')).toBe(false)
     expect(receipts.every((receipt) => receipt.host === '127.0.0.1:65060')).toBe(true)
-    expect(apiHosts.every((host) => host === '127.0.0.1:3117' || host === '127.0.0.1:65060')).toBe(true)
     const sequentialLayoutFits = await page.locator('[data-studio-layout]').evaluate((element) => element.scrollWidth <= element.clientWidth)
     expect(sequentialLayoutFits).toBe(true)
     const cdp = await page.context().newCDPSession(page)
@@ -393,30 +476,73 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     expect(receipts.some((receipt) => receipt.path === '/api/podcasts/studio/submit')).toBe(false)
   })
 
-  test('passes saved-search, graph, external-document, and selected-block values through the retry selection boundary', async ({ page }) => {
+  test('opens and dismisses real Knowledge search, graph, external-document, and selected-block review controls without submitting', async ({ page }) => {
     await setReturningUser(page)
+    const knowledge = await installStrictKnowledgeFixture(page)
     const receipts = await installPodcastFixtures(page)
-    const retrySelections = [
-      { kind: 'saved_search', query: 'fixture search', search_mode: 'text', space_ids: ['knowledge_engine_space:fixture'], authority_kinds: ['external_read_only'] },
-      { kind: 'graph_selection', document_ids: ['knowledge_engine_document:fixture'] },
-      { kind: 'knowledge_document', document_id: 'knowledge_engine_document:fixture', expected_revision_id: 'knowledge_engine_revision:fixture' },
-      { kind: 'knowledge_block', document_id: 'knowledge_engine_document:fixture', block_id: 'knowledge_engine_block:fixture', expected_revision_id: 'knowledge_engine_revision:fixture', source_start: 0, source_end: 12 },
-    ]
-    let selectionIndex = 0
-    await page.route('**/api/podcasts/episodes/episode:failed/retry', (route) => routeJson(route, {
-      status: 'preview_required', code: 'podcast_selection_changed', message: 'Synthetic selection boundary retry',
-      episode_id: 'episode:failed', selection_fingerprint: null, preview: null,
-      selections: [retrySelections[selectionIndex++]],
-    }))
+    const navigation = knowledge.state.workspace.navigation as Record<string, unknown>
+    navigation.search_mode = 'exact'
+    navigation.selected_space_ids = ['knowledge_engine_space:fixture']
+    navigation.authority_filters = ['external_read_only']
 
-    for (const selection of retrySelections) {
-      await page.goto('/podcasts')
-      await page.getByRole('button', { name: 'Retry' }).click()
-      await page.waitForURL('**/podcasts/studio')
-      await page.getByRole('button', { name: 'Prepare production review' }).click()
-      await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length).toBe(selectionIndex)
-      expect(receipts.at(-1)?.body?.selections).toEqual([selection])
-      expect(receipts.some((receipt) => receipt.path === '/api/podcasts/studio/submit')).toBe(false)
+    const dismissReview = async (expectedSelection: Record<string, unknown>, count: number) => {
+      const dialog = page.getByRole('dialog', { name: 'Review selection' })
+      await expect(dialog).toBeVisible()
+      await expect.poll(() => receipts.filter((receipt) => receipt.path === '/api/podcasts/readiness').length).toBe(count)
+      expect(receipts.at(-1)?.body?.selections).toEqual([expectedSelection])
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dialog).toBeHidden()
     }
+
+    await page.goto('/knowledge')
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('knowledge-workspace')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Search (Alt+4)' }).click()
+    const searchInput = page.getByRole('textbox', { name: 'Search knowledge' })
+    await searchInput.fill('Evidence')
+    await page.getByRole('button', { name: 'Search knowledge' }).click()
+    await page.getByRole('button', { name: 'Turn into podcast', exact: true }).click()
+    await dismissReview({
+      kind: 'saved_search', query: 'Evidence', search_mode: 'exact',
+      space_ids: ['knowledge_engine_space:fixture'], authority_kinds: ['external_read_only'],
+    }, 1)
+
+    await page.getByLabel(/Mounted vaults|Mounts/).selectOption('external-vault:vault:fixture')
+    await page.getByRole('treeitem', { name: 'pages/evidence.md', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Evidence' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Graph (Alt+5)' }).click()
+    await page.getByRole('button', { name: 'Turn graph into podcast' }).click()
+    await dismissReview({
+      kind: 'graph_selection', document_ids: ['knowledge_engine_document:evidence', 'knowledge_engine_document:plan'],
+    }, 2)
+
+    await page.getByRole('button', { name: 'Read (Alt+1)' }).click()
+    await page.getByRole('button', { name: 'Turn note into podcast' }).click()
+    await dismissReview({
+      kind: 'knowledge_document', document_id: 'knowledge_engine_document:evidence', expected_revision_id: null,
+    }, 3)
+
+    const evidenceBlock = page.locator('[data-knowledge-block-id="knowledge_engine_block:evidence"]')
+    await expect(evidenceBlock).toBeVisible()
+    await evidenceBlock.evaluate((element) => {
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      document.dispatchEvent(new Event('selectionchange'))
+    })
+    await expect(page.getByRole('button', { name: 'Turn selected block into podcast' })).toBeVisible()
+    await page.getByRole('button', { name: 'Turn selected block into podcast' }).click()
+    await dismissReview({
+      kind: 'knowledge_block', document_id: 'knowledge_engine_document:evidence', block_id: 'knowledge_engine_block:evidence',
+      expected_revision_id: 'knowledge_engine_revision:evidence', source_start: null, source_end: null,
+    }, 4)
+
+    expect(receipts.some((receipt) => receipt.path === '/api/podcasts/studio/submit')).toBe(false)
+    expect(knowledge.externalMutationRequests).toEqual([])
+    expect(knowledge.unexpectedRequests).toEqual([])
   })
 })
