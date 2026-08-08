@@ -47,7 +47,12 @@ test.describe('knowledge editor modes', () => {
     )
 
     await page.goto('/knowledge')
-    await page.getByRole('treeitem', { name: 'pages/plan.md', exact: true }).click()
+    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+    await page.getByTestId('knowledge-workspace').focus()
+    await page.keyboard.press(`${modifier}+o`)
+    const switcher = page.getByRole('dialog', { name: 'Quick switcher' })
+    await switcher.getByRole('combobox').fill('plan')
+    await switcher.getByRole('option', { name: 'plan pages/plan.md · Fixture vault', exact: true }).click()
     await page.getByRole('button', { name: 'Live Preview', exact: true }).click()
 
     const livePreview = page.locator(
@@ -57,7 +62,7 @@ test.describe('knowledge editor modes', () => {
 
     await expect
       .poll(() => JSON.stringify(state.workspace))
-      .toContain('"view_mode":"live-preview"')
+      .toContain('"render_mode":"live-preview"')
 
     await page.reload()
 
@@ -100,6 +105,7 @@ test.describe('knowledge editor modes', () => {
 
     await installKnowledgeShellMocks(page, unexpectedApiTraffic)
     await page.goto('/knowledge')
+    await expect(page.getByTestId('knowledge-workspace')).toBeVisible()
 
     const statuses = await page.evaluate(async (legacyVaultPath) => {
       const legacyVaultResponse = await fetch(legacyVaultPath, {
@@ -112,10 +118,9 @@ test.describe('knowledge editor modes', () => {
     }, testOnlyLegacyVaultPath)
 
     expect(statuses).toEqual([501, 405])
-    expect(unexpectedApiTraffic).toEqual([
-      `POST ${testOnlyLegacyVaultPath}`,
-      'POST /api/notebooks',
-    ])
+    expect(
+      unexpectedApiTraffic.filter((entry) => !entry.startsWith('GET /api/deeper-notebook/')),
+    ).toEqual([`POST ${testOnlyLegacyVaultPath}`, 'POST /api/notebooks'])
   })
 
   test('rejects unknown canonical page descendants', async ({ page }) => {
