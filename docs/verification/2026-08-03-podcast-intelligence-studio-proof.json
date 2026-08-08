@@ -38,13 +38,13 @@
   },
   "gates": {
     "native_runtime": {
-      "proof_revision": "5dbee84b980d2e2080e746f23963418ebb42d29f",
+      "proof_revision": "d0962f4d0dac8b74df84503f991722fe90b5c15c",
       "reason": null,
       "route_status": 200,
       "status": "passed"
     },
     "playwright_native": {
-      "proof_revision": "5dbee84b980d2e2080e746f23963418ebb42d29f",
+      "proof_revision": "d0962f4d0dac8b74df84503f991722fe90b5c15c",
       "status": "passed",
       "test_count": 5,
       "test_file": "e2e/podcast-intelligence-studio.spec.ts"
