@@ -1,7 +1,7 @@
 # Podcast Intelligence Studio verification record
 
-Status: **controlled verification passed at repair revision
-`5dbee84b980d2e2080e746f23963418ebb42d29f`; packaged-device, live-worker,
+Status: **controlled verification passed at final repair revision
+`d0962f4d0dac8b74df84503f991722fe90b5c15c`; packaged-device, live-worker,
 audio-decode, semantic-index, and current external-vault proof remain open.**
 
 This record separates the owned synthetic source boundary, deterministic
@@ -11,14 +11,16 @@ vault mount or scan.
 
 ## Current controlled run
 
-- Runtime revision: `5dbee84b980d2e2080e746f23963418ebb42d29f`. The task-owned
+- Runtime revision: `d0962f4d0dac8b74df84503f991722fe90b5c15c`. The task-owned
   API health response at `127.0.0.1:65060` returned that exact opt-in,
   checkout-verified `proof_revision`.
 - Runtime data: disposable API data and SurrealDB on task-owned loopback ports
   `65060` and `65059`; no user data or credentials were used.
-- Browser receipt: [five-case native-runtime Playwright JSON](2026-08-03-podcast-intelligence-studio-playwright.json).
-  Each case carries the same runtime-revision annotation and the report has
-  five expected, five passed, zero skipped, and zero unexpected results.
+- Browser receipt: [sanitized five-case native-runtime receipt](2026-08-03-podcast-intelligence-studio-playwright.json).
+  The verifier launched Playwright itself, kept the raw path-bearing report in
+  an ephemeral directory, required the exact five spec titles and matching
+  runtime-revision annotations, then wrote this deterministic aggregate. It
+  records five expected, five passed, zero skipped, and zero unexpected.
 - Independent result: [synthetic verifier proof](2026-08-03-podcast-intelligence-studio-proof.json)
   passed. It records zero fixture-write attempts, zero external-write receipts,
   unchanged source hashes, and successful old-audio deletion before temporary
@@ -31,14 +33,14 @@ vault mount or scan.
 
 | Check | Result |
 | --- | --- |
-| Backend Task 8 serial slice | 116 passed; 7 dependency deprecation warnings |
+| Backend Task 8 serial slice | 120 passed; 7 dependency deprecation warnings |
 | Scoped Ruff, including every touched Python path | passed |
-| Focused frontend Task 8 slice | 20 files, 77 tests passed; includes the graph bookmark rerender regression |
+| Focused frontend Task 8 slice | 20 files, 79 tests passed; includes selection-preserving Studio handoff and modal pointer-lock regressions |
 | `npm exec -- tsc --noEmit` comparison | 13 inherited diagnostics only: ThemeProvider, use-knowledge-workspace, and theme-store tests |
 | `npm run build` | passed |
 | Native Playwright enumeration | exactly 5 Task 8 cases |
-| Revision-bound native Playwright receipt | 5/5 passed against `5dbee84b...d29f` |
-| `scripts/verify_podcast_studio.py --expected-revision 5dbee84b...d29f` | passed; validates health and every report annotation |
+| Revision-bound native Playwright receipt | 5/5 passed against `d0962f4d...c15c` |
+| `scripts/verify_podcast_studio.py --expected-revision d0962f4d...c15c` | passed; owns Playwright execution and validates health, exact spec identities, and every report annotation |
 
 The serial matrix used these commands, in order:
 
@@ -53,9 +55,12 @@ uv run ruff check deeper_notebook/podcasts api/main.py api/routers/podcasts.py a
 ## Browser coverage and containment
 
 The native receipt invokes production UI controls, not a retry-selection
-shortcut: exact and text Search, graph conversion, the external knowledge
-document action, and a real reader double-click selection for the identified
-block. It opens and dismisses Quick Podcast/Studio without a submission; it
+shortcut: notebook, app note, app source, exact and text Search, graph
+conversion, the external knowledge document action, and a real reader
+double-click selection for the identified block. Each Quick review carries its
+exact selection into Studio, performs a second readiness review, and closes
+without a submission. The handoff waits for the modal to release its pointer
+lock, so the Studio remains mouse-operable after navigation. The receipt
 also covers non-loopback request aborting, an override rejected by readiness
 with confirmation disabled and zero submit, Episode Lab's `Play in global
 player` handoff, and selected-block identity receipt.

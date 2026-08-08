@@ -1,0 +1,44 @@
+{
+  "execution": "verifier_owned_playwright_subprocess",
+  "proof_revision": "d0962f4d0dac8b74df84503f991722fe90b5c15c",
+  "receipt_kind": "verifier_owned_native_playwright",
+  "schema_version": 1,
+  "stats": {
+    "expected": 5,
+    "skipped": 0,
+    "unexpected": 0
+  },
+  "test_file": "e2e/podcast-intelligence-studio.spec.ts",
+  "tests": [
+    {
+      "project": "native-runtime",
+      "proof_revision": "d0962f4d0dac8b74df84503f991722fe90b5c15c",
+      "status": "passed",
+      "title": "opens as a sequential, no-selection review surface without submitting production"
+    },
+    {
+      "project": "native-runtime",
+      "proof_revision": "d0962f4d0dac8b74df84503f991722fe90b5c15c",
+      "status": "passed",
+      "title": "keeps intercepted episode, retry, studio, and local-only controls explicitly reviewed"
+    },
+    {
+      "project": "native-runtime",
+      "proof_revision": "d0962f4d0dac8b74df84503f991722fe90b5c15c",
+      "status": "passed",
+      "title": "fails a whole-notebook oversize preview closed before production confirmation"
+    },
+    {
+      "project": "native-runtime",
+      "proof_revision": "d0962f4d0dac8b74df84503f991722fe90b5c15c",
+      "status": "passed",
+      "title": "opens and dismisses app notebook, app note, and app source review entries without submitting"
+    },
+    {
+      "project": "native-runtime",
+      "proof_revision": "d0962f4d0dac8b74df84503f991722fe90b5c15c",
+      "status": "passed",
+      "title": "opens and dismisses real Knowledge search, graph, external-document, and selected-block review controls without submitting"
+    }
+  ]
+}
