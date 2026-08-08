@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from deeper_notebook.tools.web_evidence import WebEvidence
+
 
 class CreateResearchRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -48,6 +50,7 @@ class ResearchCandidateResponse(BaseModel):
     snippet: str | None = None
     search_query: str | None = None
     decision: Literal["accepted", "rejected", "pending"]
+    evidence: WebEvidence | None = None
 
 
 class ResearchComparisonResponse(BaseModel):
