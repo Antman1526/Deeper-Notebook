@@ -695,11 +695,11 @@ _KIND_SCOPE_EXACT_PATHS = {
             "deeper_notebook/research/graph.py",
             "deeper_notebook/local_models/benchmarks.py",
             "deeper_notebook/podcasts/profile_names.py",
-            "frontend/src/components/deeper-notebook/ThemeSwitcher.tsx",
-            "frontend/src/components/deeper-notebook/ThemeSwitcher.test.tsx",
-            "frontend/src/lib/theme-storage.ts",
-            "tests/test_local_model_benchmarks.py",
-            "tests/test_persisted_queue_identifiers.py",
+            "frontend/src/components/deeper-notebook/ThemeSwitcher.tsx", "frontend/src/components/deeper-notebook/ThemeGallery.test.tsx",
+            "frontend/src/components/deeper-notebook/ThemeSwitcher.test.tsx", "frontend/src/components/providers/ThemeProvider.test.tsx",
+            "frontend/src/lib/theme-storage.ts", "frontend/src/lib/stores/theme-store.test.ts",
+            "frontend/src/lib/theme-script.test.ts", "frontend/src/lib/theme-script.ts",
+            "tests/test_local_model_benchmarks.py", "tests/test_persisted_queue_identifiers.py",
             "scripts/repair_desktop_db.sh",
             "tests/integration/conftest.py",
             "tests/test_domain.py",
@@ -790,7 +790,7 @@ _KIND_SCOPE_PREFIXES = {
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _PINNED_SELECTOR_INVENTORY_SHA256 = (
-    "53665463ed944cbc9e118ce671c9134196118015c65fb4df50a5656befd7639f"
+    "e3fc840024131f56fdfbead0b25b45e598e7e5bb3db2ceaa1c2fcd67a42aa859"
 )
 _SEMANTIC_SELECTOR_PATHS = frozenset(
     {
