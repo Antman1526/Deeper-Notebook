@@ -22,6 +22,13 @@ __all__ = ["WebEvidence", "normalize_web_results"]
 
 _DEFAULT_MAX_RESULTS = 20
 _DEFAULT_MAX_AGE = timedelta(hours=24)
+# Allow at most four times each normalized field limit for surrounding
+# whitespace before normalization, rejecting hostile raw strings before
+# ``strip`` can scan them.
+_RAW_STRING_LENGTH_MULTIPLE = 4
+# This budget is independent of accepted-result count so invalid/infinite
+# provider iterables cannot keep the adapter running indefinitely.
+_MAX_EXAMINED_ENTRIES = 100
 _MAX_QUERY_LENGTH = 1_000
 _MAX_PROVIDER_LENGTH = 32
 _MAX_TITLE_LENGTH = 512
@@ -69,6 +76,12 @@ def _normalized_text(value: object, *, max_length: int, truncate: bool) -> str |
     if not isinstance(value, str):
         return None
     try:
+        if len(value) > max_length * _RAW_STRING_LENGTH_MULTIPLE:
+            return None
+        # Validate the raw provider value before trimming or hashing.  This
+        # rejects unpaired surrogates and other text that cannot cross UTF-8
+        # boundaries without replacement or an exception.
+        value.encode("utf-8")
         text = value.strip()
     except Exception:
         return None
@@ -108,6 +121,9 @@ def _normalize_url(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     try:
+        if len(value) > _MAX_URL_LENGTH * _RAW_STRING_LENGTH_MULTIPLE:
+            return None
+        value.encode("utf-8")
         raw_url = value.strip()
     except Exception:
         return None
@@ -247,13 +263,15 @@ def normalize_web_results(
         return ()
 
     records: list[WebEvidence] = []
-    while len(records) < limit:
+    examined = 0
+    while len(records) < limit and examined < _MAX_EXAMINED_ENTRIES:
         try:
             entry = next(iterator)
         except StopIteration:
             break
         except Exception:
             break
+        examined += 1
 
         values = _entry_values(entry)
         if values is None:
