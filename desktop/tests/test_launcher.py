@@ -62,6 +62,28 @@ def _alive_proc():
     return p
 
 
+def test_supervisor_uses_source_standalone_frontend_when_built(cfg, tmp_path):
+    standalone = tmp_path / "frontend" / ".next" / "standalone"
+    standalone.mkdir(parents=True)
+    (standalone / "server.js").write_text("// standalone server\n")
+
+    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+
+    assert sv._next_frontend_dir() == standalone
+
+
+def test_supervisor_keeps_packaged_frontend_layout_when_no_source_build(cfg, tmp_path):
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "server.js").write_text("// packaged server\n")
+
+    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
+                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+
+    assert sv._next_frontend_dir() == frontend
+
+
 def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
     started: list[str] = []
     procs = {name: _alive_proc() for name in ("surreal", "api", "worker", "next")}
