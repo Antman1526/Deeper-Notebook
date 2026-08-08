@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 
 from api.routers import research as research_router
 from deeper_notebook.research.state import ResearchCandidate, ResearchRun
+from deeper_notebook.security.outbound_url import OutboundURLPolicyError
+from deeper_notebook.tools.web_evidence import normalize_web_results
 
 
 @dataclass
@@ -61,21 +63,38 @@ def _client(monkeypatch, store: MemoryRepository) -> TestClient:
 def test_create_discovers_normalized_candidates_then_pauses(monkeypatch) -> None:
     store = MemoryRepository()
 
-    async def fake_search(query: str, *, max_results: int):
-        return [
-            {
-                "url": "https://Example.com/a#ignored",
-                "title": "One",
-                "snippet": "First",
-            },
-            {"url": "https://example.com/a", "title": "Duplicate", "snippet": "x"},
-            {"url": "file:///etc/passwd", "title": "Unsafe", "snippet": "x"},
-        ]
+    async def fake_search_with_evidence(query: str, *, max_results: int):
+        return normalize_web_results(
+            [
+                {
+                    "url": "https://Example.com/a#ignored",
+                    "title": "One",
+                    "snippet": "First",
+                },
+                {
+                    "url": "https://example.com/a",
+                    "title": "Duplicate",
+                    "snippet": "x",
+                },
+                {
+                    "url": "file:///etc/passwd",
+                    "title": "Unsafe",
+                    "snippet": "x",
+                },
+            ],
+            query=query,
+            provider="tavily",
+            degraded=True,
+            max_results=max_results,
+        )
 
     monkeypatch.setattr(
         "deeper_notebook.research.discovery.web_search_enabled", lambda: True
     )
-    monkeypatch.setattr("deeper_notebook.research.discovery.run_web_search", fake_search)
+    monkeypatch.setattr(
+        "deeper_notebook.research.discovery.run_web_search_with_evidence",
+        fake_search_with_evidence,
+    )
     with _client(monkeypatch, store) as client:
         response = client.post(
             "/api/notebooks/notebook:one/research-runs",
@@ -94,8 +113,29 @@ def test_create_discovers_normalized_candidates_then_pauses(monkeypatch) -> None
             "snippet": "First",
             "search_query": "secure research",
             "decision": "pending",
+            "evidence": {
+                "query": "secure research",
+                "provider": "tavily",
+                "title": "One",
+                "url": "https://example.com/a",
+                "snippet": "First",
+                "retrieved_at": body["candidates"][0]["evidence"]["retrieved_at"],
+                "freshness": "fresh",
+                "degraded": True,
+                "source_fingerprint": body["candidates"][0]["evidence"][
+                    "source_fingerprint"
+                ],
+                "evidence_id": body["candidates"][0]["evidence"]["evidence_id"],
+            },
         }
     ]
+
+    evidence = body["candidates"][0]["evidence"]
+    assert evidence["provider"] == "tavily"
+    assert len(evidence["source_fingerprint"]) == 64
+    assert len(evidence["evidence_id"]) == 64
+    assert evidence["freshness"] == "fresh"
+    assert evidence["degraded"] is True
 
 
 def test_approve_records_rejected_candidates_before_resume(monkeypatch) -> None:
@@ -140,6 +180,41 @@ def test_approve_records_rejected_candidates_before_resume(monkeypatch) -> None:
     assert store.run.approval_decisions == {"candidate:ok": True}
     assert store.run.source_ids == ["source:one"]
     assert store.run.checkpoints["validate"]["comparison"]["verdicts"]
+
+
+def test_approve_with_evidence_still_requires_outbound_url_validation(monkeypatch) -> None:
+    evidence = normalize_web_results(
+        [{"title": "T", "url": "https://example.com/a", "snippet": "S"}],
+        query="q",
+        provider="tavily",
+    )[0]
+    candidate = ResearchCandidate(
+        candidate_id="candidate:unsafe",
+        url="https://example.com/a",
+        evidence=evidence,
+    )
+    store = MemoryRepository(
+        ResearchRun(
+            id="research_run:one",
+            notebook_id="notebook:one",
+            objective="Reject unsafe source",
+            stage="await_source_approval",
+            candidates=[candidate],
+        )
+    )
+
+    async def blocked(url: str):
+        raise OutboundURLPolicyError("blocked")
+
+    monkeypatch.setattr(research_router, "validate_outbound_url", blocked)
+    with _client(monkeypatch, store) as client:
+        response = client.post(
+            "/api/notebooks/notebook:one/research-runs/research_run:one/approve",
+            json={"accepted_candidate_ids": ["candidate:unsafe"]},
+        )
+
+    assert response.status_code == 409
+    assert store.run.approval_decisions == {}
 
 
 def test_rejects_cross_notebook_access_and_streams_current_status(monkeypatch) -> None:

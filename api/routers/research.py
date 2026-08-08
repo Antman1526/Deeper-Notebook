@@ -99,6 +99,7 @@ def _response(run: ResearchRun) -> ResearchRunResponse:
                 snippet=candidate.summary,
                 search_query=query,
                 decision=decision,
+                evidence=candidate.evidence,
             )
         )
     comparison_data = run.checkpoints.get("compare", {}).get("comparison", {})

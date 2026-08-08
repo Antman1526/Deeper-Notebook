@@ -50,12 +50,14 @@ import time
 from loguru import logger
 
 from deeper_notebook.environment import resolve_env
+from deeper_notebook.tools.web_evidence import WebEvidence, normalize_web_results
 
 __all__ = [
     "WEB_SEARCH_TOOL_NAME",
     "active_provider",
     "web_search_enabled",
     "run_web_search",
+    "run_web_search_with_evidence",
     "format_results",
     "build_web_search_tool",
 ]
@@ -279,8 +281,10 @@ async def _do_attempt(
     )
 
 
-async def run_web_search(query: str, *, max_results: int | None = None) -> list[dict]:
-    """Run a web search, walking the provider failover chain.
+async def _run_web_search_result(
+    query: str, *, max_results: int | None = None
+) -> tuple[list[dict], str | None, bool]:
+    """Run one web search failover chain and return result metadata.
 
     v0.8.65 — tries each attempt in :func:`_provider_chain` in order:
       * an attempt that *errors* (timeout, 429, connection refused, non-2xx)
@@ -301,7 +305,7 @@ async def run_web_search(query: str, *, max_results: int | None = None) -> list[
     chain = _provider_chain()
     query = (query or "").strip()
     if not chain or not query:
-        return []
+        return [], None, False
 
     # v0.8.68 — offline short-circuit (spec §6). Without this, an offline
     # machine burned the full 25s provider-failover budget per tool call
@@ -313,7 +317,7 @@ async def run_web_search(query: str, *, max_results: int | None = None) -> list[
     _net = await get_network_state_with_settings()
     if _net.status == "offline":
         logger.info("v0.8.68 web_search skipped: device offline")
-        return []
+        return [], None, False
 
     n = max_results if (max_results and max_results > 0) else _max_results()
 
@@ -327,7 +331,7 @@ async def run_web_search(query: str, *, max_results: int | None = None) -> list[
     # No fixed client timeout — each request gets a per-call timeout below so
     # the chain can shrink later attempts as the budget runs down.
     async with httpx.AsyncClient() as client:
-        for provider, target in chain:
+        for attempt_index, (provider, target) in enumerate(chain):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 logger.debug(
@@ -352,15 +356,41 @@ async def run_web_search(query: str, *, max_results: int | None = None) -> list[
                 )
                 continue
             if results:
-                return results
+                return results, provider, attempt_index > 0
             if provider == "searxng":
                 logger.debug(
                     "web_search searxng {} returned no results; trying next", target
                 )
                 continue
             # Paid provider returned a legitimate empty result — accept it.
-            return results
-    return []
+            return results, provider, attempt_index > 0
+    return [], None, False
+
+
+async def run_web_search(query: str, *, max_results: int | None = None) -> list[dict]:
+    """Run a web search while preserving the legacy raw result shape."""
+    results, _provider, _degraded = await _run_web_search_result(
+        query, max_results=max_results
+    )
+    return results
+
+
+async def run_web_search_with_evidence(
+    query: str, *, max_results: int | None = None
+) -> tuple[WebEvidence, ...]:
+    """Run the existing provider chain and return immutable evidence records."""
+    results, provider, degraded = await _run_web_search_result(
+        query, max_results=max_results
+    )
+    if not results or provider is None:
+        return ()
+    return normalize_web_results(
+        results,
+        query=query,
+        provider=provider,
+        max_results=max_results,
+        degraded=degraded,
+    )
 
 
 def format_results(query: str, results: list[dict]) -> str:
