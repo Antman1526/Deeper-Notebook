@@ -1406,6 +1406,8 @@ async def _persist_retry_submission_fence(
         if not callable(save):
             raise ValueError("episode cannot persist retry fence")
         await save()
+    except HTTPException:
+        raise
     except Exception as save_exc:
         # The durable reservation remains the source of truth after a failed
         # submitted-fence save. It intentionally survives a process restart
@@ -1414,6 +1416,8 @@ async def _persist_retry_submission_fence(
         episode.command = previous_command
         try:
             cancelled = await CommandService.cancel_command_job(job_id)
+        except HTTPException:
+            raise
         except Exception as cancel_exc:
             logger.error(
                 "Retry fence save failed and replacement cancellation is uncertain: {}",
@@ -1453,6 +1457,8 @@ async def _persist_retry_reservation(episode: Any) -> PodcastRetrySubmission:
         if not callable(save):
             raise ValueError("episode cannot persist retry reservation")
         await save()
+    except HTTPException:
+        raise
     except Exception as save_exc:
         episode.retry_submitted = None
         raise HTTPException(
@@ -1479,6 +1485,8 @@ async def _clear_retry_reservation(
         if not callable(save):
             raise ValueError("episode cannot clear retry reservation")
         await save()
+    except HTTPException:
+        raise
     except Exception as save_exc:
         episode.retry_submitted = reservation
         raise HTTPException(
