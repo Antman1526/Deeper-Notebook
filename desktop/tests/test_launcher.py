@@ -1,3 +1,4 @@
+import json
 import signal
 import subprocess
 import sys
@@ -71,6 +72,37 @@ def test_supervisor_uses_source_standalone_frontend_when_built(cfg, tmp_path):
                     surreal_arch="darwin-arm64", node_arch="darwin-arm64")
 
     assert sv._next_frontend_dir() == standalone
+
+
+def test_supervisor_resolves_traced_source_standalone_and_assets(cfg, tmp_path):
+    frontend = tmp_path / "frontend"
+    standalone = frontend / ".next" / "standalone" / "frontend"
+    standalone.mkdir(parents=True)
+    (standalone / "server.js").write_text("// traced standalone server\n")
+    (frontend / ".next" / "static" / "chunks").mkdir(parents=True)
+    (frontend / ".next" / "static" / "chunks" / "app.js").write_text("app")
+    (frontend / "public").mkdir()
+    (frontend / "public" / "logo.svg").write_text("<svg />")
+    (frontend / ".next" / "required-server-files.json").write_text(
+        json.dumps(
+            {
+                "appDir": str(frontend),
+                "config": {"outputFileTracingRoot": str(tmp_path)},
+            }
+        )
+    )
+
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
+
+    assert sv._next_frontend_dir() == standalone
+    assert (standalone / ".next" / "static" / "chunks" / "app.js").is_file()
+    assert (standalone / "public" / "logo.svg").is_file()
 
 
 def test_supervisor_keeps_packaged_frontend_layout_when_no_source_build(cfg, tmp_path):
