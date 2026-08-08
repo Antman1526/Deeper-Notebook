@@ -47,6 +47,7 @@ class FakeRepository:
     failures: list[tuple[str, str, str]] = field(default_factory=list)
     state_transitions: list[tuple[str, str, datetime]] = field(default_factory=list)
     files: dict[tuple[str, str], VaultFile] = field(default_factory=dict)
+    watch_enable_attempts: list[str] = field(default_factory=list)
 
     async def create_mount(self, request: VaultMountCreate) -> VaultMount:
         mount = VaultMount(id=f"vault_mount:{request.name}", **request.model_dump())
@@ -58,6 +59,10 @@ class FakeRepository:
 
     async def get_mount(self, vault_id: str) -> VaultMount:
         return next(mount for mount in self.mounts if mount.id == vault_id)
+
+    async def enable_watch(self, vault_id: str) -> VaultMount:
+        self.watch_enable_attempts.append(vault_id)
+        return self._replace_mount(vault_id, watch_enabled=True)
 
     async def get_file(self, vault_id: str, relative_path: str) -> VaultFile:
         return self.files[(vault_id, relative_path)]
@@ -177,6 +182,26 @@ def synthetic_root() -> Path:
         yield root
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_enable_watch_rejects_guarded_mount_before_persisting(
+    synthetic_root: Path,
+):
+    root = synthetic_root / "guarded"
+    root.mkdir()
+    mount = _mount(root).model_copy(
+        update={"write_policy": "guarded-write", "watch_enabled": False}
+    )
+    repository = FakeRepository([mount], [], [])
+    service = VaultService(repository)
+
+    with pytest.raises(VaultSecurityError) as caught:
+        await service.enable_watch(mount.id)
+
+    assert caught.value.code == "unsafe_root"
+    assert repository.watch_enable_attempts == []
+    assert (await repository.get_mount(mount.id)).watch_enabled is False
 
 
 @pytest.mark.asyncio

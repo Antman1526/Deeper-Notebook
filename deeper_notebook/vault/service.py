@@ -200,6 +200,9 @@ class VaultService:
 
     async def enable_watch(self, vault_id: str) -> VaultMount:
         """Enable observer-driven scans without changing vault write policy."""
+        existing = await self._repository.get_mount(vault_id)
+        if existing.write_policy != "read-only":
+            raise VaultSecurityError("unsafe_root")
         mount = await self._repository.enable_watch(vault_id)
         if mount.write_policy != "read-only":
             raise VaultSecurityError("unsafe_root")
