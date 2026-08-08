@@ -12,7 +12,10 @@ test.describe("knowledge overlay foundation", () => {
     const fixture = await installStrictKnowledgeFixture(page);
     await page.goto("/knowledge");
 
-    await page.getByRole("button", { name: "Today", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Deeper Notebook Overlay" })
+      .getByRole("button", { name: "Today", exact: true })
+      .click();
     await expect(
       page.getByText("Writable app-owned note").last(),
     ).toBeVisible();
@@ -27,7 +30,7 @@ test.describe("knowledge overlay foundation", () => {
     await page.getByLabel("Unique note title").fill("Research Idea");
     await page.getByRole("button", { name: "Create note" }).click();
     await expect(
-      page.getByRole("tab", { name: "Research Idea" }),
+      page.getByRole("tab", { name: "Write: Research Idea" }),
     ).toBeVisible();
     expect(
       fixture.overlayNotes.map((note) => note.relative_path),
@@ -54,7 +57,9 @@ test.describe("knowledge overlay foundation", () => {
     const fixture = await installStrictKnowledgeFixture(page);
     await page.goto("/knowledge");
 
-    const today = page.getByRole("button", { name: "Today", exact: true });
+    const today = page
+      .getByRole("region", { name: "Deeper Notebook Overlay" })
+      .getByRole("button", { name: "Today", exact: true });
     await today.click();
     await today.click();
     expect(fixture.dailyRequests).toHaveLength(2);
@@ -101,11 +106,11 @@ test.describe("knowledge overlay foundation", () => {
 
     await expect
       .poll(() => JSON.stringify(fixture.state.workspace))
-      .toContain('"source_authority":"overlay"');
+      .toContain('"authority":"overlay"');
     await page.reload();
     await expect(
       page.locator(
-        '[role="tab"][aria-label="Collision Proof"][title$="Collision Proof-2.md"]',
+        '[role="tab"][aria-label="Write: Collision Proof"][title$="Collision Proof-2.md"]',
       ),
     ).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("Revision 2")).toBeVisible();

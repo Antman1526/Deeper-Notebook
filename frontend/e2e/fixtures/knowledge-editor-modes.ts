@@ -577,6 +577,16 @@ export async function installKnowledgeShellMocks(
   page: Page,
   unexpectedApiTraffic: string[] = [],
 ): Promise<void> {
+  // Guided tips are covered by their own component tests. Keep acceptance
+  // interactions deterministic by starting the persisted store disabled so a
+  // callout cannot intercept a user-visible tree or drawer action.
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "dn-guided-tips-v1",
+      JSON.stringify({ state: { enabled: false, completed: {} }, version: 0 }),
+    );
+  });
+
   await page.context().addCookies([
     {
       name: "wizard_completed",
@@ -1401,7 +1411,12 @@ export async function openExternalEvidenceNote(page: Page): Promise<void> {
   await page
     .getByLabel(/Mounted vaults|Mounts/)
     .selectOption("external-vault:vault:fixture");
-  await page
-    .getByRole("treeitem", { name: "pages/evidence.md", exact: true })
+  const modifier = process.platform === "darwin" ? "Meta" : "Control";
+  await page.getByTestId("knowledge-workspace").focus();
+  await page.keyboard.press(`${modifier}+o`);
+  const switcher = page.getByRole("dialog", { name: "Quick switcher" });
+  await switcher.getByRole("combobox").fill("evidence");
+  await switcher
+    .getByRole("option", { name: "evidence pages/evidence.md · Fixture vault", exact: true })
     .click();
 }
