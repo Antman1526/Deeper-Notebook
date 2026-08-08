@@ -251,7 +251,6 @@ describe('CommandPalette', () => {
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('archive-paper'))
     expect(localStorage.getItem('dn-theme')).toBe('archive-paper')
-    expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
     expect(screen.getByRole('button', { name: 'Archive Paper Current theme' })).toHaveAttribute('aria-current', 'true')
     expect(screen.getByRole('article', { name: 'Archive Paper theme' })).toHaveTextContent('Current')
     expect(document.documentElement).not.toHaveClass('dark')

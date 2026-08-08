@@ -39,6 +39,7 @@ from deeper_notebook.podcasts.selection_service import (
     PodcastSelectionService,
     ResolvedSelectionItem,
 )
+from scripts.persisted_queue_inventory import LEGACY_QUEUE_APP
 
 _FIXTURE_SENTINEL = ".deeper-notebook-podcast-studio-fixture"
 _FORBIDDEN_ROOT_PARTS = {"2nd Brains", "BrainPulse Ventures LLC", "MacBook AI models"}
@@ -414,7 +415,7 @@ async def _execute_read_only_flow(fixture_root: Path) -> dict[str, object]:
         return None
 
     def fake_submit_command(module: str, command: str, _arguments: dict[str, object]) -> str:
-        if (module, command) != ("open_notebook", "generate_podcast"):
+        if (module, command) != (LEGACY_QUEUE_APP, "generate_podcast"):
             raise AssertionError("unexpected synthetic command")
         job_id = f"command:synthetic-{len(submissions) + 1}"
         submissions.append(job_id)
