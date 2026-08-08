@@ -7,9 +7,11 @@ HTTP 200.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -320,16 +322,51 @@ class Supervisor:
         """Return the directory containing the Next standalone server.
 
         Packaged applications ship ``frontend/server.js`` directly.  A source
-        checkout keeps the same standalone server under
-        ``frontend/.next/standalone/server.js`` after ``next build``.  Prefer
-        the latter only when it actually exists so the packaged layout remains
-        unchanged.
+        checkout keeps the server under the output tracing root recorded in
+        ``frontend/.next/required-server-files.json``.  That can be a nested
+        path such as ``frontend/.next/standalone/frontend/server.js`` when the
+        worktree is below the configured tracing root.  Resolve both layouts
+        so the launcher never falls back to a directory without ``server.js``.
         """
         frontend_dir = self.repo_root / "frontend"
-        source_standalone = frontend_dir / ".next" / "standalone"
-        if (source_standalone / "server.js").is_file():
-            return source_standalone
+        if (frontend_dir / "server.js").is_file():
+            return frontend_dir
+
+        standalone_root = frontend_dir / ".next" / "standalone"
+        candidates = [standalone_root]
+        metadata_path = frontend_dir / ".next" / "required-server-files.json"
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            app_dir = Path(metadata["appDir"]).resolve()
+            tracing_root = Path(metadata["config"]["outputFileTracingRoot"]).resolve()
+            relative_app = app_dir.relative_to(tracing_root)
+            if relative_app != Path("."):
+                candidates.insert(0, standalone_root / relative_app)
+        except (KeyError, OSError, TypeError, ValueError):
+            pass
+
+        for candidate in candidates:
+            if (candidate / "server.js").is_file():
+                self._ensure_source_standalone_assets(frontend_dir, candidate)
+                return candidate
         return frontend_dir
+
+    @staticmethod
+    def _ensure_source_standalone_assets(
+        frontend_dir: Path, server_dir: Path
+    ) -> None:
+        """Make source-build static/public assets visible beside server.js."""
+        for source, destination in (
+            (frontend_dir / ".next" / "static", server_dir / ".next" / "static"),
+            (frontend_dir / "public", server_dir / "public"),
+        ):
+            if not source.exists() or destination.exists():
+                continue
+            try:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                os.symlink(source, destination, target_is_directory=True)
+            except OSError:
+                shutil.copytree(source, destination)
 
     def start_all(self) -> None:
         # v0.7.142 — Singleton enforcement + orphan reaper.

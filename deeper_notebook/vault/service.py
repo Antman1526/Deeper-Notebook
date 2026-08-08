@@ -203,14 +203,23 @@ class VaultService:
         existing = await self._repository.get_mount(vault_id)
         if existing.write_policy != "read-only":
             raise VaultSecurityError("unsafe_root")
-        mount = await self._repository.enable_watch(vault_id)
+        watcher = await self._watcher_for(existing)
+        if watcher is None:
+            raise VaultSecurityError("invalid_root")
+        try:
+            mount = await self._repository.enable_watch(vault_id)
+        except Exception:
+            self._watchers.pop(existing.id, None)
+            watcher._root.close()
+            raise
         if mount.write_policy != "read-only":
+            self._watchers.pop(existing.id, None)
+            watcher._root.close()
             raise VaultSecurityError("unsafe_root")
         self._mounts[mount.id] = mount
         self._states[mount.id] = mount.status
         if self._closed or self._observer is None:
             return mount
-        await self._watcher_for(mount)
         if mount.id not in self._scheduled_watchers:
             self._observer.schedule(
                 _VaultEventHandler(self, mount), mount.root_path, recursive=True
