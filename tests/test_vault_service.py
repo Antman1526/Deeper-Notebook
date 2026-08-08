@@ -205,6 +205,31 @@ async def test_enable_watch_rejects_guarded_mount_before_persisting(
 
 
 @pytest.mark.asyncio
+async def test_enable_watch_rejects_unapproved_root_before_persisting(
+    synthetic_root: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = synthetic_root / "unapproved"
+    root.mkdir()
+    mount = _mount(root).model_copy(update={"watch_enabled": False})
+    repository = FakeRepository([mount], [], [])
+    service = VaultService(repository)
+
+    def reject_root(*_args, **_kwargs):
+        raise VaultSecurityError("unsafe_root")
+
+    monkeypatch.setattr(
+        "deeper_notebook.vault.service.approve_vault_root_bounded", reject_root
+    )
+
+    with pytest.raises(VaultSecurityError) as caught:
+        await service.enable_watch(mount.id)
+
+    assert caught.value.code == "invalid_root"
+    assert repository.watch_enable_attempts == []
+    assert (await repository.get_mount(mount.id)).watch_enabled is False
+
+
+@pytest.mark.asyncio
 async def test_scan_transitions_to_ready_read_only_and_projects_once(
     synthetic_root: Path,
 ):
