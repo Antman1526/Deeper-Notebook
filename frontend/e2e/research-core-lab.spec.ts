@@ -273,7 +273,17 @@ test.describe('Research Core Lab browser acceptance', () => {
       await page.keyboard.press('/')
       const palette = page.getByRole('dialog', { name: 'Quick actions' })
       await palette.getByRole('combobox').fill(label.toLowerCase())
-      await palette.locator(`[role="option"][data-value*="${modeCommandValues[label]}"]`).click()
+      if (label === 'Podcast') {
+        await expect(
+          palette.getByRole('option', { name: 'Podcast Requires an active tab', exact: true }),
+        ).toBeDisabled()
+      }
+      const modeOption = palette
+        .locator(
+          `[role="option"][data-value*="${modeCommandValues[label]}"][aria-disabled="false"]`,
+        )
+      await expect(modeOption).toBeEnabled()
+      await modeOption.click()
       await page.keyboard.press('Escape')
       await expect(palette).toBeHidden()
       await expect(page.getByRole('tablist', { name: 'Open tabs' }).getByRole('tab', { selected: true })).toHaveAttribute('aria-label', new RegExp(`^${label}:`))
