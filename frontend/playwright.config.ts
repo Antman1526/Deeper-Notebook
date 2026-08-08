@@ -27,7 +27,12 @@ export default defineConfig({
   projects: [
     {
       name: 'mocked-browser',
-      testIgnore: ['e2e/native/**', 'e2e/device/**'],
+      testIgnore: [
+        'e2e/native/**',
+        'e2e/device/**',
+        // Podcast Studio proof binds to the controlled native runtime on 65060.
+        'e2e/podcast-intelligence-studio.spec.ts',
+      ],
       use: {
         ...devices['Desktop Chrome'],
         locale: 'en-US',
