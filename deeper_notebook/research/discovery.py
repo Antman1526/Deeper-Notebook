@@ -10,7 +10,7 @@ ingestion safeguards.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from urllib.parse import urlsplit
 
 from loguru import logger
@@ -27,7 +27,11 @@ from deeper_notebook.security.outbound_url import (
     OutboundURLPolicyError,
     normalize_outbound_url,
 )
-from deeper_notebook.tools.web_search import run_web_search, web_search_enabled
+from deeper_notebook.tools.web_evidence import WebEvidence
+from deeper_notebook.tools.web_search import (
+    run_web_search_with_evidence,
+    web_search_enabled,
+)
 
 MAX_DISCOVERY_RESULTS = 20
 
@@ -44,7 +48,7 @@ def candidate_id_for_url(url: str) -> str:
 
 
 def normalize_candidates(
-    results: Iterable[dict[object, object]],
+    results: Iterable[WebEvidence | Mapping[object, object]],
 ) -> list[ResearchCandidate]:
     """Canonicalize provider output without fetching any candidate URL.
 
@@ -55,7 +59,21 @@ def normalize_candidates(
     candidates: list[ResearchCandidate] = []
     seen_urls: set[str] = set()
     for result in results:
-        raw_url = result.get("url")
+        if isinstance(result, WebEvidence):
+            raw_url = result.url
+            title = result.title
+            snippet = result.snippet
+            evidence = result
+        elif isinstance(result, Mapping):
+            try:
+                raw_url = result.get("url")
+                title = result.get("title")
+                snippet = result.get("snippet")
+            except Exception:
+                continue
+            evidence = None
+        else:
+            continue
         if not isinstance(raw_url, str):
             continue
         try:
@@ -65,8 +83,12 @@ def normalize_candidates(
         if url in seen_urls:
             continue
         seen_urls.add(url)
-        title = result.get("title")
-        snippet = result.get("snippet")
+        # WebEvidence fingerprints bind its canonical URL. If outbound policy
+        # canonicalizes the URL further (for example, adding a root slash),
+        # drop the receipt rather than attaching hashes for a different URL.
+        candidate_evidence = (
+            evidence if evidence is None or evidence.url == url else None
+        )
         candidates.append(
             ResearchCandidate(
                 candidate_id=candidate_id_for_url(url),
@@ -79,6 +101,7 @@ def normalize_candidates(
                     if isinstance(snippet, str) and snippet.strip()
                     else None
                 ),
+                evidence=candidate_evidence,
             )
         )
         if len(candidates) >= MAX_DISCOVERY_RESULTS:
@@ -92,7 +115,9 @@ async def discover_sources(run: ResearchRun) -> ResearchStageResult:
     if not query or not web_search_enabled():
         return ResearchStageResult(checkpoint={"query": query, "candidate_count": 0})
     try:
-        results = await run_web_search(query, max_results=MAX_DISCOVERY_RESULTS)
+        results = await run_web_search_with_evidence(
+            query, max_results=MAX_DISCOVERY_RESULTS
+        )
     except Exception as exc:
         # Discovery is best effort. Do not turn a provider outage into an
         # ingestion attempt or expose provider details to API callers.

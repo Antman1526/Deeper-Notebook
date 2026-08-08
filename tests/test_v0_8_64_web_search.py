@@ -362,6 +362,57 @@ async def test_cross_provider_failover_serper_to_tavily(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_evidence_reports_provider_that_won_failover(monkeypatch):
+    """Evidence names the provider that actually returned the fallback result."""
+    monkeypatch.setenv("SERPER_API_KEY", "serper")
+    monkeypatch.setenv("TAVILY_API_KEY", "tavily")
+
+    def handler(method, url, kw):
+        if "serper" in url:
+            raise RuntimeError("serper unavailable")
+        return {
+            "results": [
+                {
+                    "title": "T",
+                    "url": "https://example.com",
+                    "content": "S",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(httpx, "AsyncClient", _scripted_httpx(handler))
+    evidence = await ws.run_web_search_with_evidence("q")
+
+    assert evidence[0].provider == "tavily"
+    assert evidence[0].degraded is True
+
+
+@pytest.mark.asyncio
+async def test_raw_web_search_wrapper_preserves_legacy_shape(monkeypatch):
+    """The additive evidence path must not alter the raw search contract."""
+    monkeypatch.setenv("TAVILY_API_KEY", "tavily")
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        _scripted_httpx(
+            lambda *args: {
+                "results": [
+                    {
+                        "title": "T",
+                        "url": "https://example.com",
+                        "content": "S",
+                    }
+                ]
+            }
+        ),
+    )
+
+    assert await ws.run_web_search("q") == [
+        {"title": "T", "url": "https://example.com", "snippet": "S"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_paid_empty_stops_chain(monkeypatch):
     """A paid provider returning a legit empty 2xx is accepted — the chain does
     NOT cascade to the next paid provider (protects Tavily's limited quota)."""

@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from deeper_notebook.tools.web_evidence import WebEvidence
+
 ResearchStage = Literal[
     "plan",
     "discover",
@@ -61,6 +63,7 @@ class ResearchCandidate(BaseModel):
     url: str = Field(min_length=1, max_length=4096)
     title: str | None = Field(default=None, max_length=1000)
     summary: str | None = Field(default=None, max_length=2000)
+    evidence: WebEvidence | None = None
 
 
 class ResearchStageResult(BaseModel):
