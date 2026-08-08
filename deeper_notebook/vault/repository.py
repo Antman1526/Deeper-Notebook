@@ -541,6 +541,18 @@ class VaultRepository:
             return VaultMount.model_validate(rows[0])
         return VaultMount(id=mount_id, **request.model_dump())
 
+    async def enable_watch(self, vault_id: str) -> VaultMount:
+        """Persist read-only change detection for an existing mount only."""
+        async with self._connection_factory() as connection:
+            rows = await self._query(
+                connection,
+                "UPDATE $vault_id SET watch_enabled = true RETURN AFTER;",
+                {"vault_id": _db_id(vault_id)},
+            )
+        if not rows:
+            raise LookupError("vault_mount_not_found")
+        return VaultMount.model_validate(rows[0])
+
     async def mark_scan_started(
         self,
         vault_id: str,

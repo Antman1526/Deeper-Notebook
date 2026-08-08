@@ -66,6 +66,7 @@ def _shadow_diagnostic_operation_id(
 
 class _Repository(Protocol):
     async def create_mount(self, request: VaultMountCreate) -> VaultMount: ...
+    async def enable_watch(self, vault_id: str) -> VaultMount: ...
     async def list_mounts(self) -> list[VaultMount]: ...
     async def get_mount(self, vault_id: str) -> VaultMount: ...
     async def get_file(self, vault_id: str, relative_path: str) -> VaultFile: ...
@@ -145,6 +146,7 @@ class VaultService:
         self._filesystem_timeout_seconds = filesystem_timeout_seconds
         self._clock = clock
         self._watchers: dict[str, VaultWatcher] = {}
+        self._scheduled_watchers: set[str] = set()
         self._mounts: dict[str, VaultMount] = {}
         self._states: dict[str, str] = {}
         self._scan_locks: dict[str, asyncio.Lock] = {}
@@ -194,6 +196,24 @@ class VaultService:
         mount = await self._repository.create_mount(request)
         self._mounts[mount.id] = mount
         self._states[mount.id] = mount.status
+        return mount
+
+    async def enable_watch(self, vault_id: str) -> VaultMount:
+        """Enable observer-driven scans without changing vault write policy."""
+        mount = await self._repository.enable_watch(vault_id)
+        if mount.write_policy != "read-only":
+            raise VaultSecurityError("unsafe_root")
+        self._mounts[mount.id] = mount
+        self._states[mount.id] = mount.status
+        if self._closed or self._observer is None:
+            return mount
+        await self._watcher_for(mount)
+        if mount.id not in self._scheduled_watchers:
+            self._observer.schedule(
+                _VaultEventHandler(self, mount), mount.root_path, recursive=True
+            )
+            self._scheduled_watchers.add(mount.id)
+        self.notify_change(mount.id)
         return mount
 
     async def read_canvas(
@@ -495,6 +515,7 @@ class VaultService:
                     observer.schedule(
                         _VaultEventHandler(self, mount), mount.root_path, recursive=True
                     )
+                    self._scheduled_watchers.add(mount.id)
             observer.start()
             self._observer = observer
 
@@ -514,6 +535,7 @@ class VaultService:
         for watcher in self._watchers.values():
             watcher._root.close()  # descriptor cleanup; watcher owns the approved root.
         self._watchers.clear()
+        self._scheduled_watchers.clear()
 
 
 class _VaultEventHandler(FileSystemEventHandler):

@@ -243,6 +243,17 @@ async def create_vault(
         raise _map_exception(exc) from None
 
 
+@router.post("/vaults/{vault_id}/watch/enable", response_model=VaultMountDetail)
+async def enable_vault_watch(request: Request, vault_id: str) -> VaultMountDetail:
+    """Enable change detection for an existing read-only mount."""
+    try:
+        return _mount_detail(await _service(request).enable_watch(vault_id))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_exception(exc) from None
+
+
 @router.get("/vaults", response_model=list[VaultMountSummary])
 async def list_vaults(request: Request) -> list[VaultMountSummary]:
     try:

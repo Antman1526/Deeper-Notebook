@@ -137,9 +137,16 @@ class _Service:
     def __init__(self, repository: _Repository) -> None:
         self._repository = repository
         self.request = None
+        self.enabled_watch_for = None
 
     async def register_mount(self, request):
         self.request = request
+        return _mount()
+
+    async def enable_watch(self, vault_id: str):
+        if vault_id != "vault_mount:fixture":
+            raise LookupError("vault_mount_not_found")
+        self.enabled_watch_for = vault_id
         return _mount()
 
     async def scan(self, vault_id: str):
@@ -246,6 +253,7 @@ def test_canonical_vault_endpoints_are_read_only_and_omit_legacy_alias(client):
     required = {
         prefix,
         f"{prefix}/{{vault_id}}",
+        f"{prefix}/{{vault_id}}/watch/enable",
         f"{prefix}/{{vault_id}}/scan",
         f"{prefix}/{{vault_id}}/files",
         f"{prefix}/{{vault_id}}/pages/{{note_id}}",
@@ -284,6 +292,18 @@ def test_mount_create_is_strict_and_owner_detail_is_not_returned_by_list(client)
         ).status_code
         == 422
     )
+
+
+def test_existing_mount_can_enable_read_only_watching(client):
+    test_client, _, service = client
+
+    response = test_client.post(
+        "/api/deeper-notebook/vaults/vault_mount:fixture/watch/enable"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["watch_enabled"] is True
+    assert service.enabled_watch_for == "vault_mount:fixture"
 
 
 def test_read_only_vault_resources_return_relative_data_only(client):

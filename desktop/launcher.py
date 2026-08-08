@@ -316,6 +316,21 @@ class Supervisor:
         # to cloud. 0 = unresolved / no chat sidecar.
         self.chat_llm_n_ctx: int = 0
 
+    def _next_frontend_dir(self) -> Path:
+        """Return the directory containing the Next standalone server.
+
+        Packaged applications ship ``frontend/server.js`` directly.  A source
+        checkout keeps the same standalone server under
+        ``frontend/.next/standalone/server.js`` after ``next build``.  Prefer
+        the latter only when it actually exists so the packaged layout remains
+        unchanged.
+        """
+        frontend_dir = self.repo_root / "frontend"
+        source_standalone = frontend_dir / ".next" / "standalone"
+        if (source_standalone / "server.js").is_file():
+            return source_standalone
+        return frontend_dir
+
     def start_all(self) -> None:
         # v0.7.142 — Singleton enforcement + orphan reaper.
         # Before this release, double-clicking the .app twice spawned two
@@ -606,7 +621,7 @@ class Supervisor:
             PatchError,
             patch_rewrites_for_api_port,
         )
-        next_cwd = self.repo_root / "frontend"
+        next_cwd = self._next_frontend_dir()
         try:
             next_cwd = patch_rewrites_for_api_port(next_cwd, api_port)
         except PatchError as exc:
