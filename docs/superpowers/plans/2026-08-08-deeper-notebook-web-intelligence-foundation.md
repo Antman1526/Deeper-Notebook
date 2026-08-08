@@ -36,7 +36,7 @@ from deeper_notebook.tools.web_evidence import WebEvidence, normalize_web_result
 
 
 def test_normalizes_bounded_immutable_evidence_with_fingerprints():
-    now = datetime(2026, 8, 8, 12, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc) - timedelta(seconds=1)
     records = normalize_web_results(
         [{"title": "  Example  ", "url": "https://example.com/page#part", "snippet": "  A source  "}],
         query="  latest research ", provider="serper", retrieved_at=now,
@@ -123,7 +123,7 @@ source_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
 evidence_id: str = Field(pattern=r"^[a-f0-9]{64}$")
 ```
 
-Strip query/title/snippet, remove URL fragments, require `http` or `https`, reject userinfo/blank host, and cap normalization at `max_results` (default 20). Hash canonical JSON with sorted keys and compact separators using SHA-256. `source_fingerprint` excludes retrieval time; `evidence_id` includes query/provider plus the source fingerprint. Classify `fresh` when age is non-negative and within `max_age`, `stale` when older than `max_age`, and `unknown` for future or invalid timestamps. Catch per-entry validation errors and skip only that entry.
+Strip query/title/snippet, remove URL fragments, require `http` or `https`, reject userinfo/blank host, and cap normalization at `max_results` (default 20). Apply a fixed examined-entry ceiling in addition to the accepted-result ceiling so malformed or infinite provider iterables cannot cause unbounded work. Reject oversized raw strings before trimming and reject values that cannot be UTF-8 encoded. Hash canonical JSON with sorted keys and compact separators using SHA-256. `source_fingerprint` excludes retrieval time; `evidence_id` includes query/provider plus the source fingerprint. Classify `fresh` when age is non-negative and within `max_age`, `stale` when older than `max_age`, and `unknown` for future or invalid timestamps. Catch per-entry validation errors and skip only that entry.
 
 - [x] **Step 2: Run focused tests to verify they pass**
 
@@ -136,6 +136,26 @@ Expected: all focused evidence tests pass.
 Run: `uv run pytest -q tests/test_v0_8_64_web_search.py tests/test_search_api.py tests/test_research_api.py`
 
 Expected: all selected existing web/search/research tests pass with no changed legacy result shape.
+
+### Task 2A: Repair adversarial bounded-input gaps found in independent review
+
+**Files:**
+- Modify: `deeper_notebook/tools/web_evidence.py`
+- Modify: `tests/test_web_evidence.py`
+
+- [x] **Step 1: Add failing regressions**
+
+Cover an infinite/all-invalid iterable with a fixed examined-entry bound, an oversized pre-trim string, an unpaired Unicode surrogate, and a freshness assertion based on a runtime-relative timestamp.
+
+- [x] **Step 2: Implement the smallest repairs**
+
+Reject raw strings above a bounded multiple of their field limit before trimming; reject strings that fail UTF-8 encoding; stop after a fixed examined-entry ceiling even when fewer than `max_results` records were accepted.
+
+- [x] **Step 3: Run focused and compatibility tests**
+
+Run: `uv run pytest -q tests/test_web_evidence.py tests/test_v0_8_64_web_search.py tests/test_search_api.py tests/test_research_api.py`
+
+Expected: all tests pass.
 
 ### Task 3: Review, document adoption boundary, and commit
 
