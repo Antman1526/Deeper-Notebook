@@ -7,7 +7,9 @@ from deeper_notebook.tools.web_evidence import WebEvidence, normalize_web_result
 
 
 def test_normalizes_bounded_immutable_evidence_with_fingerprints():
-    now = datetime(2026, 8, 8, 12, tzinfo=timezone.utc)
+    # Keep the freshness assertion relative to the runtime clock so the test
+    # remains fresh after the historical implementation date has passed.
+    now = datetime.now(timezone.utc) - timedelta(seconds=1)
     records = normalize_web_results(
         [{"title": "  Example  ", "url": "https://example.com/page#part", "snippet": "  A source  "}],
         query="  latest research ", provider="serper", retrieved_at=now,
@@ -67,3 +69,65 @@ def test_freshness_and_degraded_state_are_explicit():
     )
     assert records[0].freshness == "stale"
     assert records[0].degraded is True
+
+
+def test_invalid_entries_are_bounded_by_examined_entry_budget():
+    examined = 0
+
+    def invalid_entries():
+        nonlocal examined
+        for _ in range(1_000):
+            examined += 1
+            yield {"title": "", "url": "https://example.com", "snippet": ""}
+
+    records = normalize_web_results(
+        invalid_entries(),
+        query="q",
+        provider="searxng",
+        max_results=1,
+    )
+
+    assert records == ()
+    assert examined == 100
+
+
+def test_rejects_oversized_raw_text_before_trimming():
+    oversized_title = (" " * 2_049) + "good"
+
+    records = normalize_web_results(
+        [{"title": oversized_title, "url": "https://example.com", "snippet": "ok"}],
+        query="q",
+        provider="searxng",
+    )
+
+    assert records == ()
+
+
+def test_skips_text_with_unpaired_unicode_surrogates_before_hashing():
+    records = normalize_web_results(
+        [{"title": "malformed\ud800", "url": "https://example.com", "snippet": "ok"}],
+        query="q",
+        provider="searxng",
+    )
+
+    assert records == ()
+
+
+def test_skips_url_with_unpaired_unicode_surrogates_before_hashing():
+    records = normalize_web_results(
+        [{"title": "ok", "url": "https://example.com/\ud800", "snippet": "ok"}],
+        query="q",
+        provider="searxng",
+    )
+
+    assert records == ()
+
+
+def test_rejects_query_with_unpaired_unicode_surrogates_before_hashing():
+    records = normalize_web_results(
+        [{"title": "ok", "url": "https://example.com", "snippet": "ok"}],
+        query="malformed\ud800",
+        provider="searxng",
+    )
+
+    assert records == ()
