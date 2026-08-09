@@ -9,6 +9,7 @@
   --accent: #38BDF8;
   --on-primary: #041313;
 }
+
 [data-theme="research-core-light"] {
   --bg: #F5FBF9;
   --surface: #FFFFFF;
