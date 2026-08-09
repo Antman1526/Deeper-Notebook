@@ -115,7 +115,9 @@ async def test_commit_snapshot_uses_one_transaction(snapshot, fake_connection):
 
     receipt = await repository.commit_snapshot(snapshot, operation_id="shadow-project-one")
 
-    assert len(fake_connection.queries) == 1
+    assert len(fake_connection.queries) == 2
+    claim_statement, _ = fake_connection.queries[0]
+    assert "CREATE $receipt_id CONTENT $claim_receipt;" in claim_statement
     statement, variables = fake_connection.queries[-1]
     assert "BEGIN TRANSACTION;" in statement
     assert "COMMIT TRANSACTION;" in statement
@@ -256,7 +258,7 @@ async def test_commit_snapshot_keeps_schema_string_foreign_keys_as_strings(
 
     await repository.commit_snapshot(snapshot, operation_id="schema-string-foreign-keys")
 
-    _, variables = fake_connection.queries[0]
+    _, variables = fake_connection.queries[-1]
     assert variables["document_id"] == snapshot.document.id
     assert variables["space_id"] == snapshot.space.id
     assert str(variables["document_record_id"]) == snapshot.document.id

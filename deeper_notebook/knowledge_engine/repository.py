@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
+import weakref
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
@@ -68,6 +70,8 @@ _DOCUMENT_FIELDS = (
     "source_revision_id, provenance, availability, parse_state, journal_date, "
     "capabilities, created_at, observed_at, updated_at"
 )
+
+_CLAIM_LOCKS: weakref.WeakKeyDictionary[Any, asyncio.Lock] = weakref.WeakKeyDictionary()
 
 
 class _Connection(Protocol):
@@ -246,6 +250,10 @@ class KnowledgeRepository:
     ) -> ProjectionReceipt:
         operation_id = _operation(operation_id)
         variables = self._snapshot_variables(snapshot, operation_id)
+        claim_owned, early_receipt = await self._claim_snapshot(variables)
+        if early_receipt is not None:
+            return early_receipt
+        variables["claim_owned"] = claim_owned
         try:
             async with self._connection_factory() as connection:
                 rows = await self._query(
@@ -273,11 +281,56 @@ class KnowledgeRepository:
         if prior_input_hash is not None and prior_input_hash != variables["input_hash"]:
             raise KnowledgeRepositoryError("operation_conflict")
         existing_status = result.get("existing_status")
-        if existing_status == "failed":
+        if existing_status == "failed" and not claim_owned:
             return receipt
-        if prior_input_hash == variables["input_hash"]:
+        if prior_input_hash == variables["input_hash"] and not claim_owned:
             return receipt.model_copy(update={"status": "unchanged"})
         return receipt
+
+    async def _claim_snapshot(
+        self, variables: dict[str, Any]
+    ) -> tuple[bool, ProjectionReceipt | None]:
+        """Claim a new operation before entering the projection transaction.
+
+        SurrealDB's transaction snapshot can let two identical transactions
+        both observe a missing receipt. The deterministic receipt record is a
+        small compare-and-create gate: exactly one caller creates the
+        in-progress claim, while concurrent callers reconcile against it and
+        report an unchanged projection.
+        """
+        loop = asyncio.get_running_loop()
+        lock = _CLAIM_LOCKS.setdefault(loop, asyncio.Lock())
+        async with lock:
+            try:
+                async with self._connection_factory() as connection:
+                    await self._query(
+                        connection,
+                        "CREATE $receipt_id CONTENT $claim_receipt;",
+                        {
+                            "receipt_id": variables["receipt_id"],
+                            "claim_receipt": variables["claim_receipt"],
+                        },
+                    )
+                return True, None
+            except KnowledgeRepositoryError as error:
+                if error.code != "knowledge_engine_repository_unavailable":
+                    raise
+
+            async with self._connection_factory() as connection:
+                rows = await self._query(
+                    connection,
+                    "SELECT * FROM $receipt_id LIMIT 1;",
+                    {"receipt_id": variables["receipt_id"]},
+                )
+        if not rows:
+            raise KnowledgeRepositoryError("knowledge_engine_repository_unavailable")
+        receipt = _receipt_from(rows[0])
+        if receipt.input_hash != variables["input_hash"]:
+            raise KnowledgeRepositoryError("operation_conflict")
+        if receipt.status == "projected" or receipt.error_code == "projection_in_progress":
+            return False, receipt.model_copy(update={"status": "unchanged"})
+        # A prior recorded failure is retryable through the normal transaction.
+        return False, None
 
     async def _reconcile_transaction_conflict(
         self, *, operation_id: str, input_hash: str
@@ -984,6 +1037,12 @@ class KnowledgeRepository:
             "started_at": now,
             "completed_at": now,
         }
+        claim_receipt = {
+            **success_receipt,
+            "status": "failed",
+            "error_code": "projection_in_progress",
+            "completed_at": None,
+        }
         return {
             "operation_id": operation_id,
             "input_hash": snapshot.revision.content_hash,
@@ -994,6 +1053,7 @@ class KnowledgeRepository:
             "document_record_id": _record_id(snapshot.document.id, kind="document"),
             "revision_record_id": _source_revision_record_id(snapshot.revision.id),
             "receipt_id": _record_id(receipt_id, kind="receipt"),
+            "claim_receipt": claim_receipt,
             "space": space,
             "document": document,
             "revision": revision,
@@ -1025,7 +1085,9 @@ class KnowledgeRepository:
             $existing_receipt.status = 'failed'
             AND $existing_receipt.input_hash = $input_hash
         };
-        LET $write_snapshot = IF $existing_receipt = NONE {
+        LET $write_snapshot = IF $claim_owned {
+            true
+        } ELSE IF $existing_receipt = NONE {
             true
         } ELSE {
             $retry_failed

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -34,6 +33,7 @@ pytestmark = pytest.mark.integration_surreal
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_38_DOWN = ROOT / "deeper_notebook/database/migrations/38_down.surrealql"
 MIGRATION_39_DOWN = ROOT / "deeper_notebook/database/migrations/39_down.surrealql"
+MIGRATION_40_DOWN = ROOT / "deeper_notebook/database/migrations/40_down.surrealql"
 NOW = datetime(2026, 7, 30, tzinfo=timezone.utc)
 
 
@@ -64,35 +64,6 @@ def _snapshot(
         prior_revision=None,
     )
     return adapter_for(source_kind).project(envelope)
-
-
-class _BarrierConnection:
-    def __init__(self, connection: AsyncSurreal, barrier: asyncio.Barrier) -> None:
-        self._connection = connection
-        self._barrier = barrier
-
-    async def query(
-        self, statement: str, variables: dict[str, Any] | None = None
-    ) -> Any:
-        if "BEGIN TRANSACTION;" in statement:
-            await self._barrier.wait()
-        return await self._connection.query(statement, variables)
-
-
-def _barrier_factory(meta: dict[str, Any], barrier: asyncio.Barrier):
-    @asynccontextmanager
-    async def factory():
-        connection = AsyncSurreal(meta["url"])
-        await connection.signin(
-            {"username": meta["user"], "password": meta["password"]}
-        )
-        await connection.use(meta["namespace"], meta["database"])
-        try:
-            yield _BarrierConnection(connection, barrier)
-        finally:
-            await connection.close()
-
-    return factory
 
 
 async def test_snapshot_commit_replays_without_rewriting_and_creates_children(
@@ -331,6 +302,8 @@ async def test_migration_38_down_up_preserves_engine_records(clean_namespace):
         snapshot, operation_id="native-migration"
     )
 
+    await repo_query(MIGRATION_40_DOWN.read_text(encoding="utf-8"))
+    await repo_query("DELETE type::thing('_sbl_migrations', 40);")
     await repo_query(MIGRATION_39_DOWN.read_text(encoding="utf-8"))
     await repo_query("DELETE type::thing('_sbl_migrations', 39);")
     await repo_query(MIGRATION_38_DOWN.read_text(encoding="utf-8"))
@@ -448,13 +421,8 @@ async def test_concurrent_identical_snapshot_commits_resolve_to_unchanged(
     clean_namespace,
 ):
     snapshot = _snapshot(b"# Native\n\nConcurrent transaction\n")
-    barrier = asyncio.Barrier(2)
-    first = KnowledgeRepository(
-        connection_factory=_barrier_factory(clean_namespace, barrier)
-    )
-    second = KnowledgeRepository(
-        connection_factory=_barrier_factory(clean_namespace, barrier)
-    )
+    first = KnowledgeRepository()
+    second = KnowledgeRepository()
 
     receipts = await asyncio.gather(
         first.commit_snapshot(snapshot, operation_id="native-concurrent"),
@@ -638,7 +606,7 @@ async def test_backfill_checkpoint_survives_repository_reconstruction(
     tmp_path,
 ):
     """A restart retains legacy identities, dual projections, and exact cursors."""
-    assert await get_latest_version() == 39
+    assert await get_latest_version() == 40
     parent_root = tmp_path / "synthetic-parent"
     child_root = tmp_path / "synthetic-child"
     parent_root.mkdir()
