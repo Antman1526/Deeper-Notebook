@@ -18,8 +18,8 @@ describe('legacy theme-store catalog authority', () => {
       get matches() { return systemDark },
       media: '(prefers-color-scheme: dark)',
       onchange: null,
-      addEventListener: (_type, listener) => mediaListeners.push(listener as (event: MediaQueryListEvent) => void),
-      removeEventListener: (_type, listener) => {
+      addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => mediaListeners.push(listener),
+      removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => {
         mediaListeners = mediaListeners.filter(candidate => candidate !== listener)
       },
       addListener: vi.fn(),
@@ -41,7 +41,7 @@ describe('legacy theme-store catalog authority', () => {
     useThemeStore.getState().setTheme('light')
 
     expect(document.documentElement.dataset.theme).toBe('light-blue')
-    expect(isThemeId(document.documentElement.dataset.theme)).toBe(true)
+    expect(isThemeId(document.documentElement.dataset.theme ?? '')).toBe(true)
     expect(document.documentElement).not.toHaveClass('dark')
   })
 
