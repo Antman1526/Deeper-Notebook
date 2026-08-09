@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 // Keep mocked browser proof isolated from user-owned local apps. Port 3100 is
 // commonly occupied by the adjacent Paperclip workspace on this machine.
-const port = 3117
+const port = Number(process.env.PLAYWRIGHT_PORT ?? 3117)
 const baseURL = `http://127.0.0.1:${port}`
 
 export default defineConfig({
