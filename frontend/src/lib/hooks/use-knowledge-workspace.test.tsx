@@ -544,7 +544,7 @@ describe('knowledge workspace synchronization', () => {
           tabs: current.panes['pane-1'].tabs.map((tab) => ({
             ...tab,
             viewMode: 'source',
-            target: tab.target.kind === 'document'
+            target: tab.target?.kind === 'document'
               ? { ...tab.target, render_mode: 'source' as const }
               : tab.target,
           })),
@@ -587,7 +587,7 @@ describe('knowledge workspace synchronization', () => {
           tabs: state.panes['pane-1'].tabs.map((tab) => ({
             ...tab,
             relativePath: '/Users/owner/secret.md',
-            target: tab.target.kind === 'document'
+            target: tab.target?.kind === 'document'
               ? { ...tab.target, relative_locator: '/Users/owner/secret.md' }
               : tab.target,
           })),
