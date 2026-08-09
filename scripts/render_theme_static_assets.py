@@ -62,7 +62,7 @@ def render_css() -> str:
             f'  --on-primary: {palette["primary_fg"]};\n'
             '}\n'
         )
-    return "\n".join(blocks) + "\n"
+    return "\n".join(blocks).rstrip("\n") + "\n"
 
 
 def render_catalog() -> str:
