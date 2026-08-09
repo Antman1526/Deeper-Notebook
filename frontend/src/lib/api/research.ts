@@ -2,6 +2,19 @@ import apiClient from './client'
 
 export type ResearchDecision = 'accepted' | 'rejected' | 'pending'
 
+export interface ResearchEvidence {
+  query: string
+  provider: string
+  title: string
+  url: string
+  snippet: string
+  retrieved_at: string
+  freshness: 'fresh' | 'stale' | 'unknown'
+  degraded: boolean
+  source_fingerprint: string
+  evidence_id: string
+}
+
 export interface ResearchCandidate {
   candidate_id: string
   url: string
@@ -10,6 +23,7 @@ export interface ResearchCandidate {
   snippet: string | null
   search_query: string | null
   decision: ResearchDecision
+  evidence?: ResearchEvidence | null
 }
 
 export interface ResearchRun {
