@@ -11,6 +11,7 @@ import { useTransformations } from '@/lib/hooks/use-transformations'
 import { Transformation } from '@/lib/types/transformations'
 import { Wand2, Play, RefreshCw } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
 export default function TransformationsPage() {
   const { t } = useTranslation()
@@ -25,8 +26,16 @@ export default function TransformationsPage() {
 
   return (
     <AppShell>
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-6">
+      <SystemRouteFrame
+        route="/transformations"
+        description={t('transformations.desc')}
+        actions={
+          <Button variant="outline" size="sm" aria-label="Refresh transformations" onClick={() => refetch()}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        }
+      >
+        <div className="space-y-6">
           {/* v0.7.164 — Header reorganized. The previous JSX opened
               a `flex items-center justify-between` shell that had
               only a left-half (the right slot was empty, so
@@ -38,20 +47,6 @@ export default function TransformationsPage() {
               promoted from `text-2xl font-bold` to the v0.7.153
               standard `text-3xl font-semibold tracking-tight` so
               all dashboard page titles weigh the same. */}
-          <header className="flex items-start justify-between gap-4">
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight">
-                {t('transformations.title')}
-              </h1>
-              <p className="text-muted-foreground max-w-3xl">
-                {t('transformations.desc')}
-              </p>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </header>
-
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('transformations.workspace')}</p>
@@ -84,7 +79,7 @@ export default function TransformationsPage() {
           </TabsContent>
         </Tabs>
         </div>
-      </div>
+      </SystemRouteFrame>
     </AppShell>
   )
 }

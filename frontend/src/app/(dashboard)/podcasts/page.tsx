@@ -12,6 +12,7 @@ import { Mic, LayoutTemplate } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useEpisodeProfiles, useSpeakerProfiles } from '@/lib/hooks/use-podcasts'
 import { needsModelSetup } from '@/lib/types/podcasts'
+import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
 export default function PodcastsPage() {
   const { t } = useTranslation()
@@ -39,14 +40,8 @@ export default function PodcastsPage() {
   //     toggle and the active panel)
   return (
     <AppShell>
-      <div className="flex-1 overflow-y-auto">
-        <div className="px-6 py-10 sm:px-8 space-y-10">
-          <header className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight">{t('podcasts.listTitle')}</h1>
-            <p className="text-muted-foreground">
-              {t('podcasts.listDesc')}
-            </p>
-          </header>
+      <SystemRouteFrame route="/podcasts" description={t('podcasts.listDesc')}>
+        <div className="space-y-10">
 
           {hasUnconfiguredProfiles ? (
             <Alert className="bg-amber-50 text-amber-900 border-amber-200">
@@ -83,7 +78,7 @@ export default function PodcastsPage() {
             </TabsContent>
           </Tabs>
         </div>
-      </div>
+      </SystemRouteFrame>
     </AppShell>
   )
 }
