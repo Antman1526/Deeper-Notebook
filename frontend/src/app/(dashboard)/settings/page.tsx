@@ -15,6 +15,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 // v0.8.70 — replay the launch "Aurora Reveal" intro on demand.
 import { replayIntro } from '@/components/intro/IntroReveal'
 import { ThemeGallery } from '@/components/deeper-notebook'
+import { DisplayPreferencesPanel } from '@/components/deeper-notebook/DisplayPreferencesPanel'
 import { useGuidedTipsStore } from '@/lib/stores/guided-tips-store'
 
 export default function SettingsPage() {
@@ -59,6 +60,7 @@ export default function SettingsPage() {
                 <p className="mt-1 text-sm text-muted-foreground">Preview a complete workspace theme, then apply it when it feels right.</p>
               </div>
               <ThemeGallery />
+              <DisplayPreferencesPanel />
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
                 <div>
                   <p className="text-sm font-medium">Guided tips</p>

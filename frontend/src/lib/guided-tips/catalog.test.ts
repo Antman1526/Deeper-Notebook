@@ -11,7 +11,27 @@ describe('Guided Tips catalog', () => {
       'models-overview', 'settings-overview',
     ])
     expect(new Set(GUIDED_TIPS.map(tip => tip.id)).size).toBe(GUIDED_TIPS.length)
-    expect(GUIDED_TIPS.every(tip => tip.version === 1)).toBe(true)
+    expect(GUIDED_TIPS.find(tip => tip.id === 'dashboard-overview')).toMatchObject({
+      version: 2,
+      title: 'Instrument Dock',
+    })
+    expect(GUIDED_TIPS.find(tip => tip.id === 'knowledge-overview')).toMatchObject({
+      version: 2,
+      title: 'Notebook Index',
+    })
+    expect(GUIDED_TIPS.find(tip => tip.id === 'search-overview')).toMatchObject({
+      version: 2,
+      title: 'Context Lens',
+    })
+    expect(GUIDED_TIPS.find(tip => tip.id === 'studio-overview')).toMatchObject({
+      version: 2,
+      title: 'Evidence Inserts',
+    })
+    expect(GUIDED_TIPS.find(tip => tip.id === 'podcasts-overview')).toMatchObject({
+      version: 2,
+      title: 'Podcast production review',
+    })
+    expect(GUIDED_TIPS.filter(tip => tip.version === 2)).toHaveLength(5)
   })
 
   it('uses path boundaries and chooses the most specific route', () => {

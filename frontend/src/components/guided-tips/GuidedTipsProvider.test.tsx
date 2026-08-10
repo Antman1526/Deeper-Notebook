@@ -34,12 +34,12 @@ describe('GuidedTipsProvider', () => {
   it('shows the path-matched knowledge tip and dismisses it with Got it', async () => {
     renderTip()
 
-    expect(await screen.findByRole('note', { name: 'Knowledge workspace tip' })).toBeVisible()
+    expect(await screen.findByRole('note', { name: 'Notebook Index tip' })).toBeVisible()
     expect(screen.getByText(/read-only external vaults/)).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: 'Got it' }))
 
-    expect(screen.queryByRole('note', { name: 'Knowledge workspace tip' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('note', { name: 'Notebook Index tip' })).not.toBeInTheDocument()
   })
 
   it('suppresses the tip while a modal is open', async () => {
@@ -50,7 +50,7 @@ describe('GuidedTipsProvider', () => {
     renderTip()
 
     await waitFor(() => {
-      expect(screen.queryByRole('note', { name: 'Knowledge workspace tip' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('note', { name: 'Notebook Index tip' })).not.toBeInTheDocument()
     })
   })
 
@@ -74,10 +74,10 @@ describe('GuidedTipsProvider', () => {
   it('dismisses only the current version when Escape is pressed', async () => {
     renderTip()
 
-    await screen.findByRole('note', { name: 'Knowledge workspace tip' })
+    await screen.findByRole('note', { name: 'Notebook Index tip' })
     fireEvent.keyDown(document, { key: 'Escape' })
 
-    expect(useGuidedTipsStore.getState().completed).toEqual({ 'knowledge-overview': 1 })
+    expect(useGuidedTipsStore.getState().completed).toEqual({ 'knowledge-overview': 2 })
   })
 
   it('does not complete a rendered tip after its expected anchor is removed', async () => {
@@ -86,7 +86,7 @@ describe('GuidedTipsProvider', () => {
     document.body.append(anchor)
     render(<GuidedTipsProvider />)
 
-    await screen.findByRole('note', { name: 'Knowledge workspace tip' })
+    await screen.findByRole('note', { name: 'Notebook Index tip' })
     anchor.remove()
     fireEvent.keyDown(document, { key: 'Escape' })
 
@@ -96,7 +96,7 @@ describe('GuidedTipsProvider', () => {
   it('does not create a focus trap', async () => {
     renderTip()
 
-    const tip = await screen.findByRole('note', { name: 'Knowledge workspace tip' })
+    const tip = await screen.findByRole('note', { name: 'Notebook Index tip' })
 
     expect(tip).not.toHaveAttribute('aria-modal')
     expect(tip).not.toHaveAttribute('tabindex')
