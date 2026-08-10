@@ -84,7 +84,27 @@ export async function installResearchWorkbenchMocks(page: Page): Promise<void> {
     overall: 'healthy',
     models: [],
   })
+  await fulfillJson(page, '/api/readyz', {
+    status: 'ready',
+    checks: {
+      database: 'online',
+      database_error: null,
+      migrations_applied: true,
+      migrations_pending: false,
+      migrations_error: null,
+    },
+  })
   await fulfillJson(page, '/healthz/deep', {
+    status: 'healthy',
+    checks: {
+      database: { status: 'ready', ok: true, error: null },
+      migrations: { status: 'ready', ok: true, error: null },
+      embedding_model: { status: 'ready', ok: true, error: null },
+      chat_model: { status: 'ready', ok: true, error: null },
+      command_registry: { status: 'ready', ok: true, error: null },
+    },
+  })
+  await fulfillJson(page, '/api/healthz/deep', {
     status: 'healthy',
     checks: {
       database: { status: 'ready', ok: true, error: null },

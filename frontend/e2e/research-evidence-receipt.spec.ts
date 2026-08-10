@@ -38,6 +38,8 @@ const researchRun = {
 }
 
 test('renders immutable evidence provenance in the approval step', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.route(/\/config$/, async (route) => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ apiUrl: '' }) })
   })
@@ -92,9 +94,22 @@ test('renders immutable evidence provenance in the approval step', async ({ page
 
   await page.addInitScript(() => {
     window.localStorage.setItem('onp-research-run:notebook-fixture-001', 'research-run-fixture-001')
+    window.localStorage.setItem('dn-theme', 'research-core-dark')
+    window.localStorage.setItem(
+      'dn-guided-tips-v1',
+      JSON.stringify({ state: { enabled: false, completed: {} }, version: 0 }),
+    )
+    window.localStorage.setItem(
+      'dn-display-preferences-v1',
+      JSON.stringify({
+        state: { wallpaper: 'static', motion: 'reduced', transparency: 'solid' },
+        version: 0,
+      }),
+    )
   })
   await page.context().addCookies([
     { name: 'wizard_completed', value: '1', domain: '127.0.0.1', path: '/' },
+    { name: 'onp_intro_seen', value: '1', domain: '127.0.0.1', path: '/' },
   ])
   await page.goto('/notebooks/notebook-fixture-001')
   const workspace = page.getByRole('region', { name: 'Guided research workspace' })
@@ -113,4 +128,8 @@ test('renders immutable evidence provenance in the approval step', async ({ page
     'title',
     researchRun.candidates[0].evidence.evidence_id,
   )
+  await expect(workspace).toHaveScreenshot('research-evidence-receipt.png', {
+    animations: 'disabled',
+    caret: 'hide',
+  })
 })
