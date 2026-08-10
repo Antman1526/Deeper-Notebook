@@ -5,8 +5,6 @@
  *   import { ReasoningSlotCard } from '@/components/deeper-notebook'
  */
 
-import './folio/folio.css'
-
 export { ReasoningSlotCard } from './ReasoningSlotCard'
 export { ThemeSwitcher } from './ThemeSwitcher'
 export { ThemeGallery } from './ThemeGallery'
