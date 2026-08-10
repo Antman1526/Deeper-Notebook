@@ -207,7 +207,7 @@ export default function SetupWizardPage() {
 
   return (
     <AppShell>
-      <SystemRouteFrame route="/setup-wizard" description={t('setupWizard.subtitle')}>
+      <SystemRouteFrame route="/setup-wizard" title={t('setupWizard.title')} description={t('setupWizard.subtitle')}>
         <div className="mx-auto max-w-3xl space-y-6 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
           <Card>

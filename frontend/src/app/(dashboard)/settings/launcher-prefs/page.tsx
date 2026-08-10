@@ -121,7 +121,7 @@ export default function LauncherPrefsPage() {
 
   return (
     <AppShell>
-      <SystemRouteFrame route="/settings/launcher-prefs" description={t('settings.launcherPrefs.description')}>
+      <SystemRouteFrame route="/settings/launcher-prefs" title={t('settings.launcherPrefs.title')} description={t('settings.launcherPrefs.description')}>
           <div className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
             {/* Restart-required banner — shown after a successful save */}

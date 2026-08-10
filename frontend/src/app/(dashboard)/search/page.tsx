@@ -190,7 +190,7 @@ export default function SearchPage() {
               toggles are self-explanatory).
           v0.7.180 — the orphaned `searchPage.chooseAMode` key has
           since been removed from all 10 locale files. */}
-      <KnowledgeRouteFrame route="/search">
+      <KnowledgeRouteFrame route="/search" title={t('searchPage.askAndSearch')}>
       <div className="space-y-8">
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'ask' | 'search')} className="w-full space-y-8">

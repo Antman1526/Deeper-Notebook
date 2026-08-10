@@ -18,18 +18,20 @@ export function KnowledgeRouteFrame({
   actions,
   description,
   context,
+  title,
 }: {
   route: KnowledgeRoutePath
   children: ReactNode
   actions?: ReactNode
   description?: string
   context?: ReactNode
+  title?: string
 }) {
   const metadata = knowledgeRouteFolioMetadata[route]
   return (
     <FolioRouteFrame
       section={metadata.eyebrow}
-      title={metadata.title}
+      title={title ?? metadata.title}
       description={description}
       actions={actions}
       context={context}

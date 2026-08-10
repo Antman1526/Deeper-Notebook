@@ -82,7 +82,7 @@ export default function MCPServersPage() {
 
   return (
     <AppShell>
-      <SystemRouteFrame route="/settings/mcp" description={t('settings.mcp.description')}>
+      <SystemRouteFrame route="/settings/mcp" title={t('settings.mcp.title')} description={t('settings.mcp.description')}>
           <div className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
             {/* v0.8.41 — Curated recommendations panel. Renders

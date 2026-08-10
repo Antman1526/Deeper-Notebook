@@ -40,7 +40,7 @@ export default function PodcastsPage() {
   //     toggle and the active panel)
   return (
     <AppShell>
-      <SystemRouteFrame route="/podcasts" description={t('podcasts.listDesc')}>
+      <SystemRouteFrame route="/podcasts" title={t('podcasts.listTitle')} description={t('podcasts.listDesc')}>
         <div className="space-y-10">
 
           {hasUnconfiguredProfiles ? (
