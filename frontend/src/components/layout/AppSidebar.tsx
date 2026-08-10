@@ -58,7 +58,7 @@ import {
   Sliders,  // v0.8.6 Item D — Launch preferences nav icon
 } from 'lucide-react'
 
-const getNavigation = (t: TFunction) => [
+export const getNavigation = (t: TFunction) => [
   {
     title: t('navigation.collect'),
     items: [
@@ -100,7 +100,8 @@ const getNavigation = (t: TFunction) => [
   },
 ] as const
 
-type CreateTarget = 'source' | 'notebook' | 'podcast'
+export const CREATE_TARGETS = ['source', 'notebook', 'podcast'] as const
+export type CreateTarget = (typeof CREATE_TARGETS)[number]
 
 export function AppSidebar() {
   const { t } = useTranslation()

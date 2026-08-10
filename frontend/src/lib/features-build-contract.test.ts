@@ -14,6 +14,7 @@ const PUBLIC_FLAG_NAMES = [
   'NEXT_PUBLIC_ONP_MODEL_FLEET',
   'NEXT_PUBLIC_DN_RESEARCH_RUNS',
   'NEXT_PUBLIC_ONP_RESEARCH_RUNS',
+  'NEXT_PUBLIC_DN_LUMINOUS_FOLIO',
 ] as const
 
 describe('Next production feature-flag contract', () => {
@@ -26,5 +27,9 @@ describe('Next production feature-flag contract', () => {
   it('never uses dynamic process.env lookup for client feature flags', () => {
     expect(source).not.toMatch(/process\.env\s*\[/)
     expect(source).not.toMatch(/\b(?:const|let|var)\s+\w+\s*=\s*process\.env\b/)
+  })
+
+  it('does not introduce a legacy alias for the new Luminous Folio flag', () => {
+    expect(source).not.toContain('NEXT_PUBLIC_ONP_LUMINOUS_FOLIO')
   })
 })

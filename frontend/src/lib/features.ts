@@ -39,3 +39,11 @@ export function isResearchRunsEnabled(): boolean {
     process.env.NEXT_PUBLIC_ONP_RESEARCH_RUNS,
   )
 }
+
+export function isLuminousFolioEnabled(): boolean {
+  return envFlag(
+    process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO,
+    undefined,
+    false,
+  )
+}

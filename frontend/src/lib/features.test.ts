@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   isEvidenceStudioEnabled,
+  isLuminousFolioEnabled,
   isModelFleetEnabled,
   isResearchRunsEnabled,
   isVisualRefreshEnabled,
@@ -12,6 +13,7 @@ const FEATURE_ENV = [
   'NEXT_PUBLIC_DN_EVIDENCE_STUDIO',
   'NEXT_PUBLIC_DN_MODEL_FLEET',
   'NEXT_PUBLIC_DN_RESEARCH_RUNS',
+  'NEXT_PUBLIC_DN_LUMINOUS_FOLIO',
   'NEXT_PUBLIC_ONP_VISUAL_REFRESH',
   'NEXT_PUBLIC_ONP_EVIDENCE_STUDIO',
   'NEXT_PUBLIC_ONP_MODEL_FLEET',
@@ -34,6 +36,16 @@ describe('frontend feature flags', () => {
     expect(isEvidenceStudioEnabled()).toBe(true)
     expect(isModelFleetEnabled()).toBe(true)
     expect(isResearchRunsEnabled()).toBe(false)
+  })
+
+  it('keeps Luminous Folio disabled by default and reads its canonical flag', () => {
+    delete process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO
+
+    expect(isLuminousFolioEnabled()).toBe(false)
+
+    process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = 'enabled'
+
+    expect(isLuminousFolioEnabled()).toBe(true)
   })
 
   it('reads canonical Deeper Notebook flags independently', () => {
