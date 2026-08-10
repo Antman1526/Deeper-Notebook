@@ -23,6 +23,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { StreamingResponse } from '@/components/search/StreamingResponse'
 import { AdvancedModelsDialog } from '@/components/search/AdvancedModelsDialog'
 import { SaveToNotebooksDialog } from '@/components/search/SaveToNotebooksDialog'
+import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
 
 export default function SearchPage() {
   const { t } = useTranslation()
@@ -189,8 +190,8 @@ export default function SearchPage() {
               toggles are self-explanatory).
           v0.7.180 — the orphaned `searchPage.chooseAMode` key has
           since been removed from all 10 locale files. */}
-      <div className="px-6 py-10 sm:px-8 space-y-8">
-        <h1 className="text-3xl font-semibold tracking-tight">{t('searchPage.askAndSearch')}</h1>
+      <KnowledgeRouteFrame route="/search">
+      <div className="space-y-8">
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'ask' | 'search')} className="w-full space-y-8">
           <TabsList aria-label={t('common.accessibility.searchKB')} className="w-full max-w-xl">
@@ -530,6 +531,7 @@ export default function SearchPage() {
           </TabsContent>
         </Tabs>
       </div>
+      </KnowledgeRouteFrame>
     </AppShell>
   )
 }
