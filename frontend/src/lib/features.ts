@@ -44,6 +44,6 @@ export function isLuminousFolioEnabled(): boolean {
   return envFlag(
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO,
     undefined,
-    false,
+    true,
   )
 }

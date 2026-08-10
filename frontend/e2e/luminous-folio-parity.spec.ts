@@ -15,6 +15,10 @@ for (const viewport of viewports) {
       if (message.type() === 'error') consoleErrors.push(message.text())
     })
 
+    await page.context().addCookies([
+      { name: 'wizard_completed', value: '1', domain: '127.0.0.1', path: '/' },
+      { name: 'onp_intro_seen', value: '1', domain: '127.0.0.1', path: '/' },
+    ])
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
     await page.goto('/notebooks')
 

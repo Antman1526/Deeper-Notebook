@@ -201,3 +201,44 @@ This is a deliberately partial matrix. Required next surfaces remain Horizon,
 Research Core, Evidence Studio, Podcast Studio, state/error variants,
 high-contrast views, and mobile visual renders. It does not authorize the
 Task 15 default-on switch yet.
+
+## Tasks 14–15 visual completion and default-on rollout
+
+- Date: 2026-08-10
+- Scope: Horizon, Knowledge, and research-evidence visual baselines; resilient
+  deterministic fixtures; Luminous Folio default-on with an explicit legacy
+  rollback.
+
+The visual matrix now covers the Luminous notebook index in Research Core
+Dark/Light, Archive Paper, Deep Ocean, and both high-contrast themes, plus a
+390px mobile viewport. It also records the Intelligence Horizon, the
+read-only Knowledge workspace, and the focused Guided Research evidence
+receipt. The fixtures pin theme, wallpaper, motion, transparency, onboarding,
+and readiness data before hydration; the Knowledge capture waits for its
+local-save state and the evidence capture scopes itself to the stable workflow
+region. This prevents a splash, guided tip, or transient save state from
+becoming an accidental visual baseline.
+
+The root route no longer redirects away from Intelligence Horizon. It now uses
+the existing dashboard route-group page and provider tree, preserving the
+existing data hooks and create-dialog authority while making the completed
+Horizon discoverable as the normal home screen.
+
+`NEXT_PUBLIC_DN_LUMINOUS_FOLIO` now defaults to enabled. Setting it to `0`
+remains a supported presentation-only rollback: no records, mounts, models,
+or podcast state are migrated or altered. A dedicated browser proof validates
+that the legacy sidebar and notebook route still render with that override.
+
+| Gate | Exact command | Result |
+| --- | --- | --- |
+| Expanded visual baseline + replay | `cd frontend && PLAYWRIGHT_PORT=3117 npx playwright test e2e/luminous-folio-visual.spec.ts e2e/research-evidence-receipt.spec.ts --project=mocked-browser --update-snapshots` then the same command without `--update-snapshots` | 10 passed. |
+| Default-on contracts | `cd frontend && npx vitest run src/lib/features.test.ts src/lib/features-build-contract.test.ts src/components/layout/AppShell.test.tsx src/components/deeper-notebook/route-frames/KnowledgeRouteFrames.test.tsx src/components/deeper-notebook/luminous-accessibility.test.tsx` | 5 files, 21 tests passed. |
+| Default-on production build | `cd frontend && npm run build` | Exit 0; Next.js 16.2.12 generated 23 routes. |
+| Default-on responsive browser parity | `cd frontend && PLAYWRIGHT_PORT=3117 npx playwright test e2e/luminous-folio-parity.spec.ts --project=mocked-browser` | 4 passed at 390x844, 768x1024, 1280x800, and 1440x900. |
+| Explicit rollback build | `cd frontend && NEXT_PUBLIC_DN_LUMINOUS_FOLIO=0 npm run build` | Exit 0; 23 routes. |
+| Explicit rollback browser proof | `cd frontend && PLAYWRIGHT_PORT=3117 npx playwright test e2e/luminous-folio-rollback.spec.ts --project=mocked-browser` against the override build/run | 1 passed; legacy sidebar present, Instrument Dock absent, one `main`. |
+| Lint and type checks | `cd frontend && npm run lint && npx tsc --noEmit` | Exit 0. |
+
+These are frontend/browser proof receipts only. Fresh desktop packaging,
+codesigning, installed-app launch, and native runtime checks remain separate
+release gates.

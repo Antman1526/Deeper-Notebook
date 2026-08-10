@@ -38,14 +38,14 @@ describe('frontend feature flags', () => {
     expect(isResearchRunsEnabled()).toBe(false)
   })
 
-  it('keeps Luminous Folio disabled by default and reads its canonical flag', () => {
+  it('enables Luminous Folio by default and keeps its canonical rollback flag', () => {
     delete process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO
 
-    expect(isLuminousFolioEnabled()).toBe(false)
-
-    process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = 'enabled'
-
     expect(isLuminousFolioEnabled()).toBe(true)
+
+    process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
+
+    expect(isLuminousFolioEnabled()).toBe(false)
   })
 
   it('reads canonical Deeper Notebook flags independently', () => {

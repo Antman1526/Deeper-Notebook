@@ -74,6 +74,7 @@ test('Luminous knowledge workspace — research-core-dark 1440x900', async ({ pa
   await page.goto('/knowledge')
 
   await expect(page.getByRole('heading', { name: 'Knowledge', exact: true })).toBeVisible()
+  await expect(page.getByText('Saved locally', { exact: true })).toBeVisible()
   await expect(page).toHaveScreenshot('knowledge-research-core-dark-1440x900.png', {
     animations: 'disabled',
     caret: 'hide',
