@@ -11,6 +11,7 @@ import { OutlineStoryboard } from './OutlineStoryboard'
 import { PodcastModelPlan, type PodcastModelPlanItem } from './PodcastModelPlan'
 import { ProductionTimeline, type PodcastStudioState } from './ProductionTimeline'
 import { ResearchSetPanel } from './ResearchSetPanel'
+import { PodcastStudioFolio } from '@/components/deeper-notebook/studios/PodcastStudioFolio'
 
 export interface PodcastStudioProps {
   seedDocumentIds: string[]
@@ -287,21 +288,21 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
         <p className="mt-1 text-sm text-muted-foreground">Build an optional, source-grounded audio overview. Production remains a separate confirmation.</p>
       </header>
 
-      <div data-studio-layout className="grid gap-4 xl:grid-cols-4">
-        <ResearchSetPanel selections={resolvedSelections} preview={readiness?.preview ?? null} />
-        <EditorialBriefPanel value={brief} onChange={(patch) => setBrief((current) => ({ ...current, ...patch }))} episodeProfiles={episodeProfiles} speakerProfiles={speakerProfiles} />
-        <section data-studio-region="outline-workspace" data-region="outline-workspace" aria-label="Outline and model workspace" className="space-y-4 rounded-md border p-4">
+      <PodcastStudioFolio
+        researchSet={<ResearchSetPanel selections={resolvedSelections} preview={readiness?.preview ?? null} />}
+        editorialBrief={<EditorialBriefPanel value={brief} onChange={(patch) => setBrief((current) => ({ ...current, ...patch }))} episodeProfiles={episodeProfiles} speakerProfiles={speakerProfiles} />}
+        storyboard={<section data-studio-region="outline-workspace" data-region="outline-workspace" aria-label="Outline and model workspace" className="space-y-4">
           <OutlineStoryboard
             segments={outline}
             onChange={(next) => setOutline(next.map((segment) => typeof segment === 'string' ? segment : segment.title ?? segment.name ?? segment.id ?? 'Untitled segment'))}
           />
-          <PodcastModelPlan
+        </section>}
+        modelPlan={<PodcastModelPlan
             plans={displayedPlans}
             overrideChoices={planChoices}
             onOverride={handleOverride}
-          />
-        </section>
-        <ProductionTimeline state={studioState}>
+          />}
+        production={<ProductionTimeline state={studioState}>
           <section aria-label="Production Review" className="space-y-3 rounded-md border p-3">
             <h4 className="font-medium">Production Review</h4>
             <p className="text-sm text-muted-foreground">Readiness is checked only when you request review. Production still requires a separate confirmation.</p>
@@ -337,9 +338,9 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
             {productionError ? <p role="alert" className="text-sm text-destructive">{productionError}</p> : null}
             {submittedMessage ? <p role="status" className="text-sm text-muted-foreground">{submittedMessage}</p> : null}
           </section>
-        </ProductionTimeline>
-      </div>
-      <p className="text-sm text-muted-foreground">Opening the Studio does not submit a production job.</p>
+        </ProductionTimeline>}
+        review={<p className="text-sm text-muted-foreground">Opening the Studio does not submit a production job.</p>}
+      />
     </section>
   )
 }

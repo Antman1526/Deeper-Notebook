@@ -49,6 +49,7 @@ describe('PodcastStudio', () => {
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
     const studio = screen.getByRole('region', { name: 'Podcast Intelligence Studio' })
+    expect(screen.getByRole('region', { name: 'Podcast production folio' })).toBeInTheDocument()
     const regions = Array.from(studio.querySelectorAll<HTMLElement>('[data-studio-region]'))
     expect(regions.map((region) => region.dataset.studioRegion)).toEqual([
       'research-set', 'editorial-brief', 'outline-workspace', 'production-timeline',
