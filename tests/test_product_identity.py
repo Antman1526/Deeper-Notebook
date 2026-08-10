@@ -2622,3 +2622,72 @@ def test_vault_legacy_route_selector_rejects_an_unapproved_new_route(tmp_path):
         and occurrence["line"] == 3
         for occurrence in report["categories"]["unexpected_active_identity"]
     )
+
+
+def test_frontend_alias_contract_survives_additional_canonical_feature_flag():
+    selectors = rebrand_audit.compatibility_selector_inventory(ROOT)
+    legacy_alias_pattern = next(
+        pattern
+        for pattern in LEGACY_PATTERNS
+        if pattern.endswith("_") and len(pattern) == 4
+    )
+    feature_aliases = [
+        contract_id
+        for key, contract_id in selectors.items()
+        if key[0] == "frontend/src/lib/features.ts"
+        and key[1] == legacy_alias_pattern
+    ]
+
+    assert len(feature_aliases) == 4
+    assert set(feature_aliases) == {"frontend-env-alias-v1"}
+
+
+def test_current_frontend_compatibility_seams_use_existing_contracts():
+    selectors = rebrand_audit.compatibility_selector_inventory(ROOT)
+    legacy_alias_pattern = next(
+        pattern
+        for pattern in LEGACY_PATTERNS
+        if pattern.endswith("_") and len(pattern) == 4
+    )
+    theme_alias_pattern = next(
+        pattern for pattern in LEGACY_PATTERNS if pattern.endswith("-theme")
+    )
+    expected = {
+        (
+            "frontend/src/lib/features.ts",
+            legacy_alias_pattern,
+            "frontend-env-alias-v1",
+        ),
+        (
+            "frontend/src/lib/features.test.ts",
+            legacy_alias_pattern,
+            "frontend-env-alias-v1",
+        ),
+        (
+            "frontend/src/lib/features-build-contract.test.ts",
+            legacy_alias_pattern,
+            "frontend-env-alias-v1",
+        ),
+        (
+            "frontend/src/lib/theme-script.ts",
+            theme_alias_pattern,
+            "theme-storage-migration-v1",
+        ),
+        (
+            "frontend/src/lib/theme-script.test.ts",
+            theme_alias_pattern,
+            "theme-storage-migration-v1",
+        ),
+    }
+
+    for path, pattern, contract_id in expected:
+        occurrences = {
+            rebrand_audit._selector_key(occurrence)
+            for occurrence in rebrand_audit._selector_occurrences_for_path(
+                ROOT,
+                path,
+            )
+            if occurrence["pattern"] == pattern
+        }
+        assert occurrences
+        assert all(selectors.get(key) == contract_id for key in occurrences)

@@ -790,7 +790,7 @@ _KIND_SCOPE_PREFIXES = {
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _PINNED_SELECTOR_INVENTORY_SHA256 = (
-    "e3fc840024131f56fdfbead0b25b45e598e7e5bb3db2ceaa1c2fcd67a42aa859"
+    "47c704106a935413c47adca96bafd1d35c9da0500b802e97fe95827b2613b153"
 )
 _SEMANTIC_SELECTOR_PATHS = frozenset(
     {
@@ -1835,7 +1835,7 @@ def _frontend_semantic_selectors(
             r"process\.env\.(NEXT_PUBLIC_(?:DN|ONP)_[A-Z0-9_]+)",
             source,
         )
-        if len(references) == 8 and set(references) == expected_names:
+        if expected_names.issubset(references) and all(references.count(name) == 1 for name in expected_names) and {name for name in references if name.split("_")[2] == "ONP"} == {name for name in expected_names if name.split("_")[2] == "ONP"}:
             for occurrence in _selector_occurrences_for_path(
                 root,
                 features_path,
