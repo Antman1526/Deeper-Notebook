@@ -67,7 +67,30 @@
 /* Research Core Lab uses semantic surfaces so the workspace remains legible
    under the host's deep-teal/cyan theme and any compatible user theme. */
 .research-core-canvas { background: var(--research-canvas); }
-.research-core-layout { position: relative; background: var(--research-canvas); }
+.research-core-folio { background: var(--research-canvas); }
+.research-core-folio__spread {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  background: var(--research-canvas);
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 20rem);
+}
+.research-core-folio__spread:has(.research-core-utility-drawer) {
+  grid-template-columns: var(--knowledge-sidebar-width) minmax(0, 1fr) minmax(15rem, 20rem);
+}
+.research-core-folio__spread:not(:has(.research-core-utility-drawer)) > .research-core-folio__index { display: none; }
+.research-core-folio__index { position: relative; }
+.research-core-folio__workspace,
+.research-core-folio__lens { min-width: 0; }
+.research-core-folio__index > [role="separator"] {
+  position: absolute;
+  z-index: 10;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+}
+.research-core-folio__workspace { overflow: hidden; }
+.research-core-editorial-workspace { background: var(--research-panel); }
 .research-core-main { background: var(--research-panel); }
 .research-core-utility-drawer,
 .research-core-intelligence-drawer {
@@ -77,14 +100,19 @@
 .research-core-drawer-triggers { display: none; }
 .research-core-drawer-trigger,
 .research-core-drawer-close { border-color: var(--research-line); }
+.research-core-authority { display: flex; flex-wrap: wrap; gap: 0.5rem 0.875rem; }
+.research-core-authority span { display: inline-flex; align-items: center; gap: 0.25rem; }
+.research-core-authority svg { width: 0.875rem; height: 0.875rem; flex: none; }
+.research-core-authority [data-authority="app-owned"] { color: var(--dn-editable); }
+.research-core-authority [data-authority="external-read-only"] { color: var(--dn-read-only); }
 
 @media (max-width: 1023px) {
-  .research-core-layout {
+  .research-core-folio__spread {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
   }
-  .research-core-main { grid-column: 1; grid-row: 1; }
+  .research-core-folio__workspace { grid-column: 1; grid-row: 1; }
   .research-core-drawer-triggers {
     display: flex;
     flex-wrap: wrap;
@@ -111,7 +139,7 @@
     opacity: 0;
     pointer-events: none;
   }
-  .research-core-layout > [role="separator"] { display: none; }
+  .research-core-folio__index > [role="separator"] { display: none; }
 }
 
 @media (min-width: 1024px) {

@@ -62,6 +62,7 @@ import { KnowledgeUtilityRail } from './KnowledgeUtilityRail'
 import { KnowledgeModeLauncher } from './KnowledgeModeLauncher'
 import { KnowledgeIntelligenceRail } from './KnowledgeIntelligenceRail'
 import { ResearchCoreHeader } from './ResearchCoreHeader'
+import { ResearchCoreFolioFrame } from '@/components/deeper-notebook/ResearchCoreFolioFrame'
 import { KnowledgeBookmarksPanel } from './KnowledgeBookmarksPanel'
 import { KnowledgeWorkspacesPanel } from './KnowledgeWorkspacesPanel'
 import { WorkspaceRestoreDialog } from './WorkspaceRestoreDialog'
@@ -968,8 +969,10 @@ export function KnowledgeExplorer() {
       ref={workspaceRef}
       className="research-core-canvas flex min-h-0 flex-1 flex-col"
       data-testid="knowledge-workspace"
+      style={{ '--knowledge-sidebar-width': `${navigation.sidebarWidth}px` } as CSSProperties}
       tabIndex={-1}
     >
+      <ResearchCoreFolioFrame header={<>
       <ResearchCoreHeader
         workspaceTitle={t('navigation.knowledge')}
         authoritySummary={authoritySummary}
@@ -1055,12 +1058,7 @@ export function KnowledgeExplorer() {
           )}
         </div>
       </div>
-      <div
-        className={`research-core-layout grid min-h-0 flex-1 grid-cols-1 ${navigation.sidebarVisible
-          ? 'lg:grid-cols-[var(--knowledge-sidebar-width)_4px_minmax(0,1fr)_minmax(15rem,20rem)]'
-          : 'lg:grid-cols-[minmax(0,1fr)_minmax(15rem,20rem)]'}`}
-        style={{ '--knowledge-sidebar-width': `${navigation.sidebarWidth}px` } as CSSProperties}
-      >
+      </>} index={<>
         {(navigation.sidebarVisible || isNarrowLayout) && <aside
           id="research-core-utility-drawer"
           ref={(element) => { fileTreeRef.current = element; sidebarRef.current = element }}
@@ -1208,6 +1206,7 @@ export function KnowledgeExplorer() {
           }}
           onMouseUp={() => { resizeStartRef.current = null }}
         />}
+        </>} workspace={<>
         {!navigation.sidebarVisible && !isNarrowLayout && <Button
           type="button"
           size="icon"
@@ -1236,7 +1235,7 @@ export function KnowledgeExplorer() {
             )}
           />
         </div>
-        <div ref={linksRef} tabIndex={-1}>
+        </>} lens={<div ref={linksRef} tabIndex={-1}>
           <KnowledgeIntelligenceRail
             drawerId="research-core-intelligence-drawer"
             drawerLabel={t('knowledge.intelligenceDrawer')}
@@ -1253,8 +1252,7 @@ export function KnowledgeExplorer() {
             initialPanel="connections"
             onNavigate={navigate}
           />
-        </div>
-      </div>
+        </div>} overlays={<>
       <KnowledgeCommandBridge
         workspaceRef={workspaceRef}
         activePaneElement={activePaneElement}
@@ -1296,6 +1294,7 @@ export function KnowledgeExplorer() {
           setTimeout(() => invoker?.isConnected && invoker.focus(), 0)
         }}
       />
+      </>} />
     </div>
   )
 }

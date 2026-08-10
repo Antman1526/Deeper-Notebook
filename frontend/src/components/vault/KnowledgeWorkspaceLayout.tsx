@@ -271,7 +271,7 @@ export function KnowledgeWorkspaceLayout({
   return (
     <main
       aria-label={t('knowledge.knowledgeWorkspace')}
-      className="h-full min-h-0 min-w-0 overflow-hidden"
+      className="research-core-editorial-workspace h-full min-h-0 min-w-0 overflow-hidden"
     >
       <LayoutNode
         node={layout}

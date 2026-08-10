@@ -502,6 +502,9 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     await renderExplorer()
     await selectFile('notes/one.md')
 
+    expect(screen.getByTestId('research-core-folio')).toBeInTheDocument()
+    expect(screen.getByTestId('research-core-folio-index')).toHaveTextContent('knowledge.readOnly')
+    expect(screen.getByTestId('research-core-folio-workspace')).toHaveTextContent('One')
     expect(screen.getByRole('banner', { name: 'Research Core workspace' })).toBeInTheDocument()
     expect(screen.getAllByRole('main')).toHaveLength(1)
     expect(screen.getByRole('complementary', { name: 'knowledge.intelligenceDrawer' })).toBeInTheDocument()

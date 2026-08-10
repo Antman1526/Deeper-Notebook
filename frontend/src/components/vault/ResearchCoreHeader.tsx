@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { FilePenLine, LockKeyhole } from 'lucide-react'
 
 export interface ResearchCoreReadiness {
   state: 'ready' | 'loading' | 'unavailable'
@@ -43,9 +44,10 @@ export function ResearchCoreHeader({
     <header aria-label="Research Core workspace" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3">
       <div className="min-w-0">
         <h1 className="truncate text-lg font-semibold">{workspaceTitle}</h1>
-        <p className="text-sm text-muted-foreground">
-          {authoritySummary.appOwned} app-owned · {authoritySummary.externalReadOnly} external read-only
-        </p>
+        <div className="research-core-authority text-sm text-muted-foreground" aria-label="Source authority summary">
+          <span data-authority="app-owned"><FilePenLine aria-hidden="true" />{authoritySummary.appOwned} app-owned editable</span>
+          <span data-authority="external-read-only"><LockKeyhole aria-hidden="true" />{authoritySummary.externalReadOnly} external read-only</span>
+        </div>
       </div>
       <dl className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <div><dt className="sr-only">Save state</dt><dd>{saveState}</dd></div>

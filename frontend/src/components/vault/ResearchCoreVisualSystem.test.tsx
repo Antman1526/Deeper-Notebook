@@ -68,6 +68,9 @@ describe('Research Core visual system', () => {
     const css = source('./vault.css')
 
     expect(css).toContain('.research-core-canvas')
+    expect(css).toContain('.research-core-folio')
+    expect(css).toContain('.research-core-folio__spread')
+    expect(css).toContain('.research-core-authority')
     expect(css).toContain('.research-core-drawer-trigger')
     expect(css).toContain('.research-core-utility-drawer')
     expect(css).toContain('.research-core-intelligence-drawer')
