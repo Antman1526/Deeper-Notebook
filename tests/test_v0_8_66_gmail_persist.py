@@ -20,7 +20,7 @@ import pytest
 from surrealdb import RecordID
 
 from deeper_notebook.domain import gmail as gmail_mod
-from deeper_notebook.domain.gmail import GmailIntegration, SINGLETON_ID
+from deeper_notebook.domain.gmail import SINGLETON_ID, GmailIntegration
 
 
 @pytest.mark.asyncio

@@ -18,7 +18,7 @@ These tests guard four behaviors of the v0.7.157 fix:
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

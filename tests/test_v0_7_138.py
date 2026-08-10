@@ -23,7 +23,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------- #
 # Fix #1 — Ask graph per-node timeouts
 # ---------------------------------------------------------------------- #
@@ -108,8 +107,10 @@ class TestRunTransformationTimeout:
         """Worker hangs are transient operationally even if @command
         retry is configured — we re-raise as RuntimeError (NOT
         ValueError) so surreal_commands' retry kicks in."""
-        from commands.source_commands import run_transformation_command
-        from commands.source_commands import RunTransformationInput
+        from commands.source_commands import (
+            RunTransformationInput,
+            run_transformation_command,
+        )
 
         monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "0.05")
 
@@ -143,8 +144,10 @@ class TestRunTransformationTimeout:
     @pytest.mark.asyncio
     async def test_fast_transformation_succeeds(self, monkeypatch):
         """Sanity: the wrapping doesn't change behavior on the happy path."""
-        from commands.source_commands import run_transformation_command
-        from commands.source_commands import RunTransformationInput
+        from commands.source_commands import (
+            RunTransformationInput,
+            run_transformation_command,
+        )
 
         monkeypatch.setenv("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "30")
 

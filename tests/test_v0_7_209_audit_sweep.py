@@ -36,7 +36,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -64,8 +63,9 @@ def test_memory_shim_models_runtime():
     """v0.7.209 — runtime smoke: build the shim's FastAPI app and
     actually hit /models. Mocks the mem_client so import side-
     effects don't matter."""
-    from fastapi.testclient import TestClient
     from unittest.mock import MagicMock
+
+    from fastapi.testclient import TestClient
 
     from desktop.desktop_shims.memory_shim import build_app
 
@@ -127,8 +127,9 @@ def test_auth_middleware_default_excluded_paths_includes_probes():
     `excluded_paths` must include /livez, /readyz, /healthz/deep,
     and /metrics. Otherwise instantiation without the explicit
     kwarg returns 401 on every K8s/Docker probe."""
-    from api.auth import PasswordAuthMiddleware
     from unittest.mock import MagicMock
+
+    from api.auth import PasswordAuthMiddleware
 
     mw = PasswordAuthMiddleware(app=MagicMock())
     for required in ("/livez", "/readyz", "/healthz/deep", "/metrics"):

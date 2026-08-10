@@ -44,7 +44,6 @@ from pathlib import Path
 
 import pytest
 
-
 # Paths to walk. We restrict to `api/routers/` because the convention
 # is about HTTP response semantics; service / domain / util modules
 # don't return HTTP responses and shouldn't be subject to this rule.

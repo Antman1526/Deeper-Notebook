@@ -19,10 +19,10 @@ from __future__ import annotations
 import pytest
 
 from api.routers.source_chat import (
+    SendMessageRequest,
     SourceChatSessionResponse,
     SourceChatSessionWithMessagesResponse,
     UpdateSourceChatSessionRequest,
-    SendMessageRequest,
 )
 
 

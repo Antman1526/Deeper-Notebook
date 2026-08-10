@@ -27,7 +27,6 @@ from pathlib import Path
 
 import pytest
 
-
 _MAKEFILE = Path("Makefile")
 _COMPOSE_FILES_PRESENT = {p.name for p in Path(".").glob("docker-compose*.yml")}
 

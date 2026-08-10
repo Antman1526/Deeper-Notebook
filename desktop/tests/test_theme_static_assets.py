@@ -4,7 +4,6 @@ from pathlib import Path
 from desktop.window import _THEMES
 from scripts.render_theme_static_assets import render_assets
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 

@@ -20,6 +20,8 @@ Coverage:
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+from typing import get_type_hints
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -27,8 +29,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from deeper_notebook.local_models import downloader as dl_mod
 from api.routers import local_models as local_models_router
+from deeper_notebook.local_models import downloader as dl_mod
 
 
 @pytest.fixture(autouse=True)
@@ -310,6 +312,10 @@ def test_download_endpoint_honors_nested_manifest_target_path(app, monkeypatch, 
             bytes_total = None
 
         return Job()
+
+    # Keep the local downloader seam's type annotations resolvable for tools
+    # and runtime introspection, not only stringized by ``__future__``.
+    assert get_type_hints(fake_start_download)["dest_dir"].__name__ == "Path"
 
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     monkeypatch.setattr(lm, "start_download", fake_start_download, raising=False)

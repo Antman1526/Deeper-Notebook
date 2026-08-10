@@ -13,9 +13,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from deeper_notebook.mcp import recommendations as recs_mod
 from api.routers import mcp as mcp_router
-
+from deeper_notebook.mcp import recommendations as recs_mod
 
 # ---------------------------------------------------------------------------
 # RECOMMENDATIONS table shape

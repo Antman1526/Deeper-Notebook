@@ -30,8 +30,9 @@ from tests.test_db_pool import (  # noqa: F401
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("fake_async_surreal", "fresh_pool")
 async def test_broken_release_wakes_parked_acquirer(
-    monkeypatch, fake_async_surreal, fresh_pool
+    monkeypatch,
 ):
     """cap=1: A holds the only connection; B parks at cap; A releases BROKEN.
     B must then acquire a fresh connection instead of hanging forever."""
@@ -81,8 +82,9 @@ async def test_broken_release_wakes_parked_acquirer(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("fake_async_surreal", "fresh_pool")
 async def test_broken_release_without_waiter_leaves_no_stray_sentinel(
-    monkeypatch, fake_async_surreal, fresh_pool
+    monkeypatch,
 ):
     """A broken release with NO parked waiter must NOT leave a sentinel in the
     idle queue — the sentinel is only for waking a parked acquirer. A stray
@@ -104,3 +106,25 @@ async def test_broken_release_without_waiter_leaves_no_stray_sentinel(
         assert conn is not repo._SLOT_FREED
         assert hasattr(conn, "query"), "acquire returned the sentinel, not a conn"
     assert repo._pool_total == 1
+
+
+def test_pool_deadlock_cases_register_shared_fixtures_without_shadowing():
+    """Fixture setup must stay shared instead of parameter-shadowing imports."""
+    import inspect
+
+    for name in (
+        "test_broken_release_wakes_parked_acquirer",
+        "test_broken_release_without_waiter_leaves_no_stray_sentinel",
+    ):
+        test = globals()[name]
+        fixture_names = {
+            fixture
+            for mark in getattr(test, "pytestmark", [])
+            if mark.name == "usefixtures"
+            for fixture in mark.args
+        }
+        assert {"fake_async_surreal", "fresh_pool"} <= fixture_names
+        assert not {
+            "fake_async_surreal",
+            "fresh_pool",
+        } & inspect.signature(test).parameters.keys()

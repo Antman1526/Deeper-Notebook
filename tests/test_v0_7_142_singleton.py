@@ -24,7 +24,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------- #
 # _is_pid_alive — the foundation everything else relies on
 # ---------------------------------------------------------------------- #
@@ -112,7 +111,7 @@ class TestReadPidFile:
 
 class TestAcquireSingleton:
     def test_acquire_writes_pid_file_with_our_pid(self, tmp_path):
-        from desktop.singleton import acquire_singleton, _read_pid_file
+        from desktop.singleton import _read_pid_file, acquire_singleton
         pid_file = tmp_path / "launcher.pid"
         handle = acquire_singleton(pid_file)
         try:
@@ -149,7 +148,7 @@ class TestAcquireSingleton:
 
     def test_acquire_cleans_up_stale_pid_and_proceeds(self, tmp_path):
         """A PID file owned by a dead process must be cleaned + reacquired."""
-        from desktop.singleton import acquire_singleton, _read_pid_file
+        from desktop.singleton import _read_pid_file, acquire_singleton
         pid_file = tmp_path / "launcher.pid"
         pid_file.parent.mkdir(parents=True, exist_ok=True)
         # Write a PID that doesn't exist
@@ -163,7 +162,7 @@ class TestAcquireSingleton:
 
     def test_acquire_handles_garbage_pid_file(self, tmp_path):
         """A corrupted PID file should be cleaned up + acquisition proceeds."""
-        from desktop.singleton import acquire_singleton, _read_pid_file
+        from desktop.singleton import _read_pid_file, acquire_singleton
         pid_file = tmp_path / "launcher.pid"
         pid_file.parent.mkdir(parents=True, exist_ok=True)
         pid_file.write_text("not a pid")
@@ -205,8 +204,8 @@ class TestSingletonRelease:
         NOT delete the new launcher's lock."""
         from desktop.singleton import (
             SingletonHandle,
-            acquire_singleton,
             _read_pid_file,
+            acquire_singleton,
         )
         pid_file = tmp_path / "launcher.pid"
         # Simulate having held it
@@ -283,10 +282,11 @@ class TestReapOrphans:
     def test_does_not_target_self_or_parent(self, tmp_path):
         """Even if our own cmdline matches a bundle_path, we must NOT
         appear in the orphan list — the test runner is alive!"""
-        from desktop.singleton import reap_orphans
         # Use python's actual install path — guaranteed to match
         # /something/ in our own cmdline (python interpreter path)
         import sys
+
+        from desktop.singleton import reap_orphans
         python_path = Path(sys.executable).parent
         orphans = reap_orphans(bundle_paths=[python_path], dry_run=True)
         own_pid = os.getpid()
@@ -339,7 +339,7 @@ def test_acquire_callback_runs_after_lock_held(tmp_path):
     """on_acquire_callback is the place to do setup that REQUIRES the
     lock (e.g., overwriting state files). Must run AFTER the lock is
     written."""
-    from desktop.singleton import acquire_singleton, _read_pid_file
+    from desktop.singleton import _read_pid_file, acquire_singleton
     pid_file = tmp_path / "launcher.pid"
     callback_saw_pid: dict[str, int | None] = {"pid": None}
 

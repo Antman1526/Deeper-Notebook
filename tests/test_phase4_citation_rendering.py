@@ -22,7 +22,6 @@ from pathlib import Path
 
 from ai_prompter import Prompter
 
-
 # Same regex shape the frontend uses (see
 # frontend/src/lib/utils/citations.ts). Keep these in sync.
 CITATION_RE = re.compile(r"\[(mcp|source|note|insight):([A-Za-z0-9_-]+)\]")

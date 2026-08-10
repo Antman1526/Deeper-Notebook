@@ -39,7 +39,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -217,8 +216,9 @@ def test_filesystem_denylist_still_blocks_posix_system_paths():
     """v0.7.185: the Windows-compatibility rewrite must NOT regress
     POSIX coverage. `/etc`, `/System`, etc. must still be blocked
     on macOS/Linux."""
-    from api.routers.filesystem import _resolve_and_validate
     from fastapi import HTTPException
+
+    from api.routers.filesystem import _resolve_and_validate
     # Use a fake denied path; the function resolves before comparing.
     with pytest.raises(HTTPException) as exc_info:
         _resolve_and_validate("/etc/passwd", must_exist=False)

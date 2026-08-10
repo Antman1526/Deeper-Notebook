@@ -26,10 +26,9 @@ router-level pagination behavior.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parent.parent
 

@@ -24,7 +24,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------- #
 # Part 1 — desktop/app.py _handle_already_running branches
 # ---------------------------------------------------------------------- #

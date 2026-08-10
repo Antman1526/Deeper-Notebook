@@ -12,7 +12,6 @@ from deeper_notebook.ai import privacy_classifier as pc
 from deeper_notebook.ai.privacy_gate import apply_privacy_gate
 from deeper_notebook.ai.router import ModelChoice
 
-
 # ---------------------------------------------------------------------------
 # parse_categories
 # ---------------------------------------------------------------------------

@@ -37,7 +37,6 @@ from unittest.mock import MagicMock
 
 import httpx
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -87,8 +86,9 @@ def test_wait_tcp_early_exits_when_proc_dies(monkeypatch):
     — not after the full timeout. We don't want to wait 30s in a
     test, so we set the timeout to 30s but verify the raise happens
     within 2s."""
-    from desktop.launcher import _wait_tcp
     import time as _time
+
+    from desktop.launcher import _wait_tcp
 
     fake_proc = MagicMock()
     fake_proc.poll.return_value = 1  # dead
@@ -164,8 +164,9 @@ def test_model_downloads_preserves_tmp_on_failure():
 
     Behavioural test: simulate a failure mid-stream and assert
     the .tmp file is still on disk afterward."""
-    from desktop.model_downloads import _download_one
     import tempfile
+
+    from desktop.model_downloads import _download_one
 
     class _FailingMid:
         status_code = 200

@@ -23,7 +23,6 @@ from fastapi.testclient import TestClient
 
 from api.routers import chat as chat_router
 
-
 # ---------------------------------------------------------------------------
 # Fixtures (mirror the structure in tests/test_chat_stream.py)
 # ---------------------------------------------------------------------------

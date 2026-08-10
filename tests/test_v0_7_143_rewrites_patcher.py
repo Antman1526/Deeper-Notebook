@@ -28,7 +28,6 @@ from pathlib import Path
 
 import pytest
 
-
 # Sample manifest contents matching what Next.js standalone bakes.
 # We don't need real Next output — just files with the magic string.
 SAMPLE_SERVER_JS = """
@@ -151,8 +150,8 @@ class TestPatchRewritesErrors:
         patcher must NOT silently claim success — that would mean
         launching a Next.js that can't reach the API."""
         from desktop.next_rewrites_patcher import (
-            patch_rewrites_for_api_port,
             PatchError,
+            patch_rewrites_for_api_port,
         )
         # Build the files but with a DIFFERENT URL that doesn't match
         # the build-time default.

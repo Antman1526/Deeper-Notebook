@@ -14,7 +14,6 @@ import pytest
 import deeper_notebook.ai.connection_tester as ct
 from api.command_service import CommandService
 
-
 # --- 1. connection_tester env-leak fix ------------------------------------
 
 async def test_connection_test_restores_absent_env_var(monkeypatch):

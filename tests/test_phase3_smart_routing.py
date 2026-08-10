@@ -16,7 +16,8 @@ to satisfy `await _local_chat_healthy_cached()` in production code.
 from unittest.mock import AsyncMock
 
 import pytest
-from deeper_notebook.ai.router import pick_provider, ModelChoice
+
+from deeper_notebook.ai.router import ModelChoice, pick_provider
 
 
 class TestPickProviderAutoMode:
@@ -204,6 +205,7 @@ class TestProvisionLangchainChatModelDisabled:
         to provision_langchain_model with model_id=None and default_type='chat'.
         pick_provider() must never be called."""
         import asyncio
+
         import deeper_notebook.ai.provision as provision_mod
 
         # Ensure env var is absent

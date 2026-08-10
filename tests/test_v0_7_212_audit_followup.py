@@ -32,7 +32,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -92,8 +91,8 @@ def test_apply_tool_call_raises_on_connection_error():
     exception. Logical errors (bad payload, etc.) still fall
     through to the soft-fail path."""
     from desktop.memory.writer import (
-        apply_tool_call,
         _MemoryBackendUnreachable,
+        apply_tool_call,
     )
 
     mem_client = MagicMock()

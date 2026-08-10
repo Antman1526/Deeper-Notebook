@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import pytest
 
-from desktop.memory.surreal_store import SurrealMemoryStore
-from desktop.memory.constants import ALL_MEMORY_TABLES
 from desktop.memory import writer as writer_mod
-
+from desktop.memory.constants import ALL_MEMORY_TABLES
+from desktop.memory.surreal_store import SurrealMemoryStore
 
 # ---------------------------------------------------------------------------
 # Fake SurrealDB client for the store

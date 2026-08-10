@@ -5,7 +5,6 @@ import pytest
 from pydantic import ValidationError
 
 import deeper_notebook.workspace.contracts as workspace_contracts
-
 from deeper_notebook.workspace.contracts import (
     KnowledgeTabState,
     KnowledgeWorkspaceDocument,

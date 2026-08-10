@@ -24,8 +24,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from deeper_notebook.local_models import downloader as dl_mod
 from api.routers import local_models as lm_router
+from deeper_notebook.local_models import downloader as dl_mod
 
 
 @pytest.fixture(autouse=True)

@@ -22,15 +22,15 @@ Resume covers:
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from deeper_notebook.local_models import downloader as dl_mod
 from api.routers import local_models as local_models_router
+from deeper_notebook.local_models import downloader as dl_mod
 
 
 @pytest.fixture(autouse=True)

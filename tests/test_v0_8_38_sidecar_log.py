@@ -18,9 +18,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from deeper_notebook.utils.error_classifier import classify_sidecar_error
 from api.routers import local_models as local_models_router
-
+from deeper_notebook.utils.error_classifier import classify_sidecar_error
 
 # ---------------------------------------------------------------------------
 # Classifier unit tests

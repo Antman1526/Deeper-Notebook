@@ -33,7 +33,6 @@ import pytest
 
 from deeper_notebook.exceptions import ExternalServiceError
 
-
 # ---------------------------------------------------------------------------
 # Timeout-knob parsing
 # ---------------------------------------------------------------------------

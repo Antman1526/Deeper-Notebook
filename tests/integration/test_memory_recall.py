@@ -29,7 +29,6 @@ import pytest
 
 from deeper_notebook.database.repository import repo_query
 
-
 pytestmark = pytest.mark.integration_surreal
 
 

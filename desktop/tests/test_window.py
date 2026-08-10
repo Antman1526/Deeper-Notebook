@@ -14,7 +14,6 @@ import pytest
 import desktop.window as window_module
 from desktop.window import _THEMES, _theme_injection_js, _theme_tokens
 
-
 EXPECTED_THEME_IDS = {
     "research-core-dark", "research-core-light", "deep-ocean", "graphite-lab",
     "arctic-research", "archive-paper", "high-contrast-dark", "high-contrast-light",

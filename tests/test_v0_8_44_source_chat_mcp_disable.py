@@ -64,6 +64,7 @@ def test_stream_source_chat_response_accepts_disabled_mcp_servers_kwarg():
     """Generator signature must accept the kwarg — otherwise the
     handler can't forward `request.disabled_mcp_servers` into it."""
     import inspect
+
     from api.routers.source_chat import stream_source_chat_response
 
     sig = inspect.signature(stream_source_chat_response)

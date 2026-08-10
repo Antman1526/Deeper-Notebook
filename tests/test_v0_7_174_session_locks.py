@@ -35,7 +35,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -124,8 +123,8 @@ async def test_lock_is_gc_eligible_after_release():
     many distinct session_ids would accumulate unbounded lock objects.
     """
     from api.utils.session_locks import (
-        get_session_lock,
         _count_live_locks,
+        get_session_lock,
     )
 
     # Baseline (other tests may have leaked locks; we only check delta).

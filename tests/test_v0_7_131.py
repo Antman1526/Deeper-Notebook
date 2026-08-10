@@ -16,7 +16,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------- #
 # Request-ID middleware character-set validation
 # ---------------------------------------------------------------------- #
@@ -129,7 +128,6 @@ class TestMetricsAuth:
         # for testability we re-create the handler inline against a
         # fresh FastAPI app. The handler's auth logic doesn't depend on
         # any other middleware so this works as a pure unit test.
-
         from api.main import metrics as metrics_handler
 
         app = FastAPI()

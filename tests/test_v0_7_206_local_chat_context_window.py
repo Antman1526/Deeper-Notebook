@@ -29,7 +29,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -71,8 +70,8 @@ def test_gguf_context_detect_handles_missing_gguf_lib():
     (could be a corrupt GGUF, an exotic quant, or the `gguf`
     library missing from the bundled venv on some builds). Always
     return the fallback."""
-    from pathlib import Path as P
     import sys
+    from pathlib import Path as P
 
     # Stash any existing `gguf` import out so the function takes
     # the ImportError path deterministically.

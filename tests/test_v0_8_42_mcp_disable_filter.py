@@ -16,10 +16,9 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # _resolve_chat_tools filtering

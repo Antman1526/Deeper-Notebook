@@ -10,8 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from httpx import AsyncClient, ASGITransport
-
+from httpx import ASGITransport, AsyncClient
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -31,6 +30,7 @@ def prefs_dir(tmp_path, monkeypatch):
 def api_app(monkeypatch):
     """Return a minimal FastAPI app with just the launcher-prefs router."""
     from fastapi import FastAPI
+
     from api.routers.launcher_prefs import router
 
     app = FastAPI()

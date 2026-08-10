@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import asyncio
 from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from deeper_notebook.utils import memory_recall
 from deeper_notebook.utils.memory_recall import (
-    recall_relevant_memory,
     recall_memory,
+    recall_relevant_memory,
 )
 
 

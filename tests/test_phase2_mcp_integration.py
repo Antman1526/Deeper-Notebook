@@ -39,8 +39,9 @@ def test_mcp_client_call_tool_handles_text_image_and_resource_blocks(monkeypatch
     non-text content was either missing its mime type
     (ImageContent → no `mimeType` field on the return) or silently
     lost (EmbeddedResource → returned None)."""
-    from deeper_notebook.mcp.client import MCPClient
     import asyncio
+
+    from deeper_notebook.mcp.client import MCPClient
 
     # Fake content block shapes — mirror the public attrs from mcp's
     # TextContent / ImageContent / EmbeddedResource without needing
@@ -113,8 +114,9 @@ def test_mcp_client_call_tool_handles_text_image_and_resource_blocks(monkeypatch
 def test_mcp_client_call_tool_empty_result_safe(monkeypatch):
     """v0.8.13 — empty content list must return text="" + blocks=[]
     rather than KeyError'ing on the chat-graph side."""
-    from deeper_notebook.mcp.client import MCPClient
     import asyncio
+
+    from deeper_notebook.mcp.client import MCPClient
 
     class _Result:
         content = []
@@ -185,8 +187,9 @@ def test_chat_graph_exposes_mcp_tools_when_enabled(monkeypatch):
         "deeper_notebook.mcp.registry.list_enabled_servers",
         lambda: __import__("asyncio").Future(),
     )
-    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
+
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     loop = asyncio.new_event_loop()
     try:
         tools = loop.run_until_complete(
@@ -216,8 +219,9 @@ def test_chat_graph_binds_gbrain_style_tool_names(monkeypatch):
     `web_search` (which gbrain doesn't expose) and the tool would
     fail every turn. Post-fix, each discovered remote name becomes a
     `mcp_<remote_name>` LangChain Tool."""
-    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
+
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
 
     loop = asyncio.new_event_loop()
     try:
@@ -251,9 +255,11 @@ def test_chat_graph_builds_structured_tool_with_real_args_schema(monkeypatch):
     arg; the LLM had to guess the real arg names and routinely sent
     wrong/empty args. Post-fix, `bind_tools` sends the real arg names
     + types so the LLM formats calls correctly first try."""
-    from deeper_notebook.graphs.chat import _resolve_chat_tools
-    from langchain_core.tools import StructuredTool
     import asyncio
+
+    from langchain_core.tools import StructuredTool
+
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
 
     schema = {
         "type": "object",
@@ -311,8 +317,9 @@ def test_resolve_chat_tools_handles_nullable_json_schema(monkeypatch):
     shape (real-world MCP servers use it) must build a valid optional
     Pydantic field. Pre-v0.8.12 the type_map.get(list) returned None
     and propagated as a broken field type."""
-    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
+
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
 
     schema = {
         "type": "object",
@@ -361,10 +368,12 @@ def test_resolve_chat_tools_caches_discovery_across_calls(monkeypatch):
     chat turn doesn't pay an MCP handshake. Pre-v0.8.12 every turn
     re-discovered tools (~50-500ms per turn). Cache key = server URL,
     TTL = 30s."""
-    from deeper_notebook.graphs.chat import (
-        _resolve_chat_tools, _clear_tool_discovery_cache,
-    )
     import asyncio
+
+    from deeper_notebook.graphs.chat import (
+        _clear_tool_discovery_cache,
+        _resolve_chat_tools,
+    )
 
     _clear_tool_discovery_cache()
 
@@ -412,10 +421,12 @@ def test_resolve_chat_tools_negative_caches_discovery_failures(monkeypatch):
     flaky/down MCP server adds discovery latency to every chat turn
     until the operator removes it. Operator who fixes the server
     sees recovery on the next turn after the TTL window expires."""
-    from deeper_notebook.graphs.chat import (
-        _resolve_chat_tools, _clear_tool_discovery_cache,
-    )
     import asyncio
+
+    from deeper_notebook.graphs.chat import (
+        _clear_tool_discovery_cache,
+        _resolve_chat_tools,
+    )
 
     _clear_tool_discovery_cache()
 
@@ -458,10 +469,12 @@ def test_bind_mcp_and_run_tool_loop_extracted_helper_works(monkeypatch):
     This test exercises the helper directly: fake model emits one
     tool_call, helper runs the tool, feeds ToolMessage back,
     re-invokes the model, returns (final_message, captures)."""
-    from deeper_notebook.graphs.chat import bind_mcp_and_run_tool_loop
-    from langchain_core.messages import AIMessage, HumanMessage
-    from unittest.mock import MagicMock
     import asyncio
+    from unittest.mock import MagicMock
+
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from deeper_notebook.graphs.chat import bind_mcp_and_run_tool_loop
 
     async def fake_list_enabled():
         return [{"id": "mcp_server:1", "name": "test",
@@ -562,8 +575,9 @@ def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
         fake_list_tools_raise,
     )
 
-    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
+
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
     loop = asyncio.new_event_loop()
     try:
         tools = loop.run_until_complete(_resolve_chat_tools())
@@ -614,6 +628,7 @@ def test_mcp_router_list_and_create(monkeypatch):
     """GET /api/mcp returns [] when the table is empty.
     POST /api/mcp 201 creates a server and returns the new record."""
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     _created_record = {
@@ -659,6 +674,7 @@ def test_mcp_router_duplicate_name_409(monkeypatch):
     whose message contains 'unique'. The router must catch that and raise
     HTTPException(409)."""
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     async def _dup_repo_create(table, data):
@@ -734,6 +750,7 @@ def test_patch_mcp_server_updates_priority(monkeypatch):
     """PATCH /api/mcp/{id} with {priority: 5} must call repo_update with
     the correct arguments and return the updated record."""
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     _updated = {"id": "mcp_server:p1", "name": "PriorityServer",
@@ -758,6 +775,7 @@ def test_patch_mcp_server_updates_priority(monkeypatch):
 def test_patch_mcp_server_rejects_empty_body(monkeypatch):
     """PATCH /api/mcp/{id} with an empty body {} must return 400."""
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     client = TestClient(app)
@@ -776,8 +794,9 @@ def test_resolve_chat_tools_captures_calls(monkeypatch):
     one record per call with correct index, name, args, and text.
     Uses force_tool_names to bypass network discovery — the unit test
     pins the captures behavior, not the discovery surface."""
-    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
+
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
 
     async def fake_call_tool(self, name, args):
         return {"text": "fake search result"}
@@ -818,8 +837,9 @@ def test_resolve_chat_tools_captures_calls(monkeypatch):
 def test_resolve_chat_tools_increments_index_across_calls(monkeypatch):
     """v0.8.10 — calling the wrapped MCP tool twice yields index 1
     then 2 in captures. Same as above but pins the index increment."""
-    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
+
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
 
     async def fake_call_tool(self, name, args):
         return {"text": "result"}
@@ -853,8 +873,9 @@ def test_resolve_chat_tools_increments_index_across_calls(monkeypatch):
 
 def test_resolve_chat_tools_truncates_long_text(monkeypatch):
     """Text longer than 4000 chars is truncated to exactly 4000 chars."""
-    from deeper_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
+
+    from deeper_notebook.graphs.chat import _resolve_chat_tools
 
     long_text = "x" * 10000
 
@@ -904,6 +925,7 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
     with the executed call's payload."""
     import asyncio
     from unittest.mock import MagicMock
+
     from langchain_core.messages import AIMessage
 
     # Mock MCP server registry → one enabled server
@@ -1033,6 +1055,7 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
     looping the API. Pin the bound at <=4 model invocations."""
     import asyncio
     from unittest.mock import MagicMock
+
     from langchain_core.messages import AIMessage, HumanMessage
 
     async def fake_list():

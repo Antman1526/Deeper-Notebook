@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 
 from desktop.memory import writer as writer_mod
-from desktop.memory.writer import apply_tool_call, _coerce_confidence
 from desktop.memory.surreal_store import SurrealMemoryStore
+from desktop.memory.writer import _coerce_confidence, apply_tool_call
 
 
 class _FakeMemClient:

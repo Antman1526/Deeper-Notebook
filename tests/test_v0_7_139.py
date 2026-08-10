@@ -18,7 +18,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------- #
 # benchmark_models.py — score math + report rendering
 # ---------------------------------------------------------------------- #
@@ -259,7 +258,9 @@ class TestReportRendering:
 
     def test_renders_with_three_models(self):
         from scripts.benchmark_models import (
-            ModelReport, ProbeResult, _render_markdown,
+            ModelReport,
+            ProbeResult,
+            _render_markdown,
         )
         reps = []
         for i in range(3):

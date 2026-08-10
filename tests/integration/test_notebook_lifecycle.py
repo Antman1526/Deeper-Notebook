@@ -26,7 +26,6 @@ import pytest
 from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.domain.notebook import Asset, Note, Notebook, Source
 
-
 pytestmark = pytest.mark.integration_surreal
 
 

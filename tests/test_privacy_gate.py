@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from deeper_notebook.ai.router import ModelChoice
 from deeper_notebook.ai import privacy_gate as pg
+from deeper_notebook.ai.router import ModelChoice
 from deeper_notebook.exceptions import ConfigurationError
-
 
 # ---------------------------------------------------------------------------
 # detect_sensitive

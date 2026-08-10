@@ -5,7 +5,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "live_source_ingestion_smoke.py"
 SPEC = importlib.util.spec_from_file_location("live_source_ingestion_smoke", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None

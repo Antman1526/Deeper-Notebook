@@ -21,9 +21,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from desktop.launcher_control import ControlServer
 from api.routers import local_models as local_models_router
-
+from desktop.launcher_control import ControlServer
 
 # ---------------------------------------------------------------------------
 # ControlServer tests
