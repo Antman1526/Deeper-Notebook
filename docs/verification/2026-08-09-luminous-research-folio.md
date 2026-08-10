@@ -173,3 +173,31 @@ dismisses that optional tip normally, then proves the mobile navigator and
 context-lens controls, desktop rail/lens visibility, one `main`, one `h1`, no
 horizontal overflow, and zero console errors. It does not claim a full visual
 snapshot matrix, native runtime, DMG, signing, or installed-app proof.
+
+## Task 14 visual-matrix checkpoint
+
+- Date: 2026-08-10
+- Scope: deterministic Luminous notebook-index render baselines only.
+- Fixture: fixed notebook data, guided tips disabled before hydration, pinned
+  theme/display preferences, static wallpaper, reduced motion, and solid
+  transparency.
+
+The first manual inspection rejected all four candidate renders because the
+desktop dock expanded utility labels into the navigation rail. The repair made
+those existing controls icon-first while preserving their accessible labels and
+handlers. The regenerated captures were manually reviewed at original
+resolution: no dock overlap, clipping, illegible glass, or horizontal document
+overflow was accepted in Research Core Dark/Light, Archive Paper, or Deep
+Ocean.
+
+| Gate | Exact command | Result |
+| --- | --- | --- |
+| Flag-on build | `cd frontend && NEXT_PUBLIC_DN_LUMINOUS_FOLIO=1 npm run build` | Exit 0; 23 routes. |
+| Candidate snapshots | `cd frontend && PLAYWRIGHT_PORT=3117 npx playwright test e2e/luminous-folio-visual.spec.ts --project=mocked-browser --update-snapshots` | 4 reviewed baselines generated. |
+| Visual regression | `cd frontend && PLAYWRIGHT_PORT=3117 npx playwright test e2e/luminous-folio-visual.spec.ts --project=mocked-browser` | 4 passed. |
+| Lint and TypeScript | `cd frontend && npm run lint && npx tsc --noEmit` | Exit 0. |
+
+This is a deliberately partial matrix. Required next surfaces remain Horizon,
+Research Core, Evidence Studio, Podcast Studio, state/error variants,
+high-contrast views, and mobile visual renders. It does not authorize the
+Task 15 default-on switch yet.

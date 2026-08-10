@@ -14,6 +14,7 @@
     "test:ui": "vitest --ui",
     "test:e2e:mocked": "playwright test --project=mocked-browser",
     "test:e2e:themes": "playwright test e2e/theme-gallery-visual.spec.ts --project=mocked-browser",
+    "test:e2e:folio-visuals": "playwright test e2e/luminous-folio-visual.spec.ts --project=mocked-browser",
     "test:e2e:native": "playwright test --project=native-runtime",
     "test:e2e:device": "playwright test --project=packaged-device"
   },

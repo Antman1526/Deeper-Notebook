@@ -82,9 +82,9 @@ export function InstrumentDock() {
 
       <div className="dn-dock-utilities" data-mobile-mode="utility-row">
         <div className="dn-dock-utility-row">
-          <ThemeSwitcher />
-          <LanguageToggle />
-          <GmailSidebarButton />
+          <ThemeSwitcher iconOnly />
+          <LanguageToggle iconOnly />
+          <GmailSidebarButton iconOnly />
         </div>
 
         <Button

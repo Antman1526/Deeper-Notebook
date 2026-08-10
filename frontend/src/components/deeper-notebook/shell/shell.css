@@ -71,6 +71,23 @@
   position: relative;
 }
 
+.dn-dock-create > button,
+.dn-dock-utilities > button {
+  min-width: 2.5rem;
+  justify-content: center;
+  padding-inline: 0.5rem;
+}
+
+.dn-dock-create > button > span:not(.sr-only),
+.dn-dock-utilities > button > span:not(.sr-only) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .dn-dock-utilities {
   display: grid;
   gap: var(--dn-space-2);
