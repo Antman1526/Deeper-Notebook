@@ -5,6 +5,16 @@
 The product uses the approved **Notebook Spark** visual identity with the
 teal-to-cyan **Research Core** colorway.
 
+![Deeper Notebook desktop icon](desktop/resources/icon.png)
+
+> **Current reconstruction snapshot:** this checkout contains the complete
+> backend, frontend, native desktop wrapper, local-model sidecars, Obsidian /
+> Logseq-compatible knowledge engine, research evidence receipts, podcast
+> studio, and the 15-document rebuild packet. The current desktop build is
+> `0.8.95`; the Python package track is `1.8.5`. Build and install receipts are
+> generated locally and are never treated as a substitute for a signed public
+> release.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Python 3.12](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black)
@@ -430,6 +440,10 @@ The full rebuild packet lives in [`docs/recreation/`](docs/recreation/). It is w
 - [`TECHNOLOGY-AUDIT.md`](docs/recreation/TECHNOLOGY-AUDIT.md) — an exhaustive technology inventory with each tool's specific role in this repo.
 
 These files can also be loaded into Deeper Notebook as source material.
+
+For current checkout metadata, the document-to-source map, sanitized artifact
+inventory, and explicit uncertainty notes, see
+[`docs/recreation/README.md`](docs/recreation/README.md).
 
 ---
 
