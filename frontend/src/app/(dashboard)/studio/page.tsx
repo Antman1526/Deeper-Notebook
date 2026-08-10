@@ -56,6 +56,7 @@ import { QUERY_KEYS } from '@/lib/api/query-client'
 // strings remain — full i18n extraction is deferred (see CHANGELOG).
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
+import { EvidenceStudioFolio } from '@/components/deeper-notebook/studios/EvidenceStudioFolio'
 
 // Must match api/routers/studio.py:_ALLOWED_EXTENSIONS
 const ALLOWED_EXTS = new Set([
@@ -343,7 +344,7 @@ export default function StudioPage() {
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto">
-        <div className="container mx-auto p-6 max-w-5xl">
+        <EvidenceStudioFolio status={<>
           <div className="mb-4">
             <Link href="/notebooks">
               <Button variant="ghost" size="sm">
@@ -366,6 +367,7 @@ export default function StudioPage() {
               {t('studio.subtitle')}
             </p>
           </header>
+        </>} sourceDesk={<>
 
       <Card className="mb-6">
         <CardHeader>
@@ -456,6 +458,7 @@ export default function StudioPage() {
           </div>
         </CardContent>
       </Card>
+      </>} editorialBrief={<>
 
       <Card className="mb-6">
         <CardHeader>
@@ -588,6 +591,7 @@ export default function StudioPage() {
           </div>
         </CardContent>
       </Card>
+      </>} artifactPages={<>
 
       {(mutation.isError || coursePackMutation.isError) && (
         <div className="mb-4 p-3 rounded border border-destructive/50 bg-destructive/10 flex items-start gap-2">
@@ -617,7 +621,7 @@ export default function StudioPage() {
               )}
             </Button>
           </div>
-        </div>
+        </>} trustMargin={<p>Generation remains explicit and reviewable before any output is produced.</p>} />
       </div>
     </AppShell>
   )
