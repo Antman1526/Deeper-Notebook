@@ -4,7 +4,7 @@
 
 **Author:** Anthony Henry with Codex
 
-**Status:** Approved in conversational design; pending written-spec review
+**Status:** Approved 2026-08-09
 
 **Baseline:** `agent/documentation-reconstruction` at `7a926ed2`
 
@@ -50,7 +50,7 @@ evidence, artifact generation, Podcast Studio, local models, or packaging.
 
 ## Baseline Snapshot
 
-At the design baseline, the frontend contains 22 page entry points and 26
+At the design baseline, the frontend contains 22 page entry points and 25
 catalog theme selectors. It already provides:
 
 - a semantic theme system with Research Core colors and an Aurora background;
