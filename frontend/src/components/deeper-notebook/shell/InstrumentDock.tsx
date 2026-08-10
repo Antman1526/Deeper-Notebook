@@ -1,9 +1,14 @@
 'use client'
 
-import { useState } from 'react'
-import { LogOut, Plus } from 'lucide-react'
+import { Book, FileText, LogOut, Mic, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { GmailSidebarButton } from '@/components/deeper-notebook/GmailSidebarButton'
 import { ThemeSwitcher } from '@/components/deeper-notebook/ThemeSwitcher'
 import { LocalModelHealthBadges } from '@/components/chat/LocalModelHealthBadges'
@@ -18,10 +23,8 @@ export function InstrumentDock() {
   const { t } = useTranslation()
   const { logout } = useAuth()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
-  const [createMenuOpen, setCreateMenuOpen] = useState(false)
 
   const handleCreateSelection = (target: CreateTarget) => {
-    setCreateMenuOpen(false)
     if (target === 'source') openSourceDialog()
     if (target === 'notebook') openNotebookDialog()
     if (target === 'podcast') openPodcastDialog()
@@ -39,36 +42,45 @@ export function InstrumentDock() {
       </div>
 
       <div className="dn-dock-create">
-        <Button
-          type="button"
-          aria-label={t('common.create')}
-          aria-expanded={createMenuOpen}
-          aria-haspopup="menu"
-          onClick={() => setCreateMenuOpen((open) => !open)}
-          className="w-full justify-start"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          <span>{t('common.create')}</span>
-        </Button>
-        {createMenuOpen ? (
-          <div className="dn-create-menu" role="menu" aria-label={t('common.create')}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              aria-label={t('common.create')}
+              className="w-full justify-start"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              <span>{t('common.create')}</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="top" className="w-48">
             {CREATE_TARGETS.map((target) => {
               const label = target === 'source'
                 ? t('common.source')
                 : target === 'notebook'
                   ? t('common.notebook')
                   : t('common.podcast')
+              const Icon = target === 'source'
+                ? FileText
+                : target === 'notebook'
+                  ? Book
+                  : Mic
               return (
-                <button key={target} type="button" role="menuitem" onClick={() => handleCreateSelection(target)}>
+                <DropdownMenuItem
+                  key={target}
+                  onSelect={() => handleCreateSelection(target)}
+                  className="gap-2"
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
                   {label}
-                </button>
+                </DropdownMenuItem>
               )
             })}
-          </div>
-        ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      <div className="dn-dock-utilities">
+      <div className="dn-dock-utilities" data-mobile-mode="utility-row">
         <div className="dn-dock-utility-row">
           <ThemeSwitcher />
           <LanguageToggle />

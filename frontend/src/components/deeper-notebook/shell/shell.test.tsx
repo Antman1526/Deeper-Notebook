@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LuminousAppShell } from './LuminousAppShell'
@@ -92,6 +92,10 @@ vi.mock('@/components/podcasts/GlobalAudioPlayer', () => ({
 vi.mock('./shell.css', () => ({}))
 
 describe('LuminousAppShell', () => {
+  const openCreateMenu = () => {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Create' }), { key: 'ArrowDown' })
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(useAuth).mockReturnValue({ logout } as never)
@@ -123,15 +127,15 @@ describe('LuminousAppShell', () => {
     ]
     expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(expectedRoutes)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    openCreateMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Source' }))
     expect(openSourceDialog).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    openCreateMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Notebook' }))
     expect(openNotebookDialog).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    openCreateMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Podcast' }))
     expect(openPodcastDialog).toHaveBeenCalledTimes(1)
 
@@ -154,5 +158,54 @@ describe('LuminousAppShell', () => {
     expect(screen.getByTestId('audio-player')).toBeInTheDocument()
     expect(screen.getAllByTestId('page-content')).toHaveLength(1)
     expect(document.querySelectorAll('.dn-editorial-canvas')).toHaveLength(1)
+  })
+
+  it('keeps theme, language, Gmail, auth, health, and version controls in the mobile dock alternative', () => {
+    render(<LuminousAppShell><div data-testid="page-content">Page content</div></LuminousAppShell>)
+
+    const utilities = document.querySelector('[data-mobile-mode="utility-row"]')
+    expect(utilities).toBeInTheDocument()
+    const mobileUtilities = within(utilities as HTMLElement)
+    expect(mobileUtilities.getByRole('button', { name: 'Theme' })).toBeInTheDocument()
+    expect(mobileUtilities.getByRole('button', { name: 'Language' })).toBeInTheDocument()
+    expect(mobileUtilities.getByRole('button', { name: 'Gmail' })).toBeInTheDocument()
+    expect(mobileUtilities.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
+    expect(mobileUtilities.getByTestId('local-model-health')).toBeInTheDocument()
+    expect(mobileUtilities.getByText('v—')).toBeInTheDocument()
+  })
+
+  it('keeps exactly one canonical guided-tip anchor for search', () => {
+    render(<LuminousAppShell><div data-testid="page-content">Page content</div></LuminousAppShell>)
+
+    const searchAnchors = document.querySelectorAll('[data-guided-tip-anchor="/search"]')
+    expect(searchAnchors).toHaveLength(1)
+    expect(searchAnchors[0]).toBe(screen.getByRole('link', { name: 'navigation.askAndSearch' }))
+  })
+
+  it('uses Radix menu keyboard focus, escape, outside dismissal, and callbacks', async () => {
+    render(<LuminousAppShell><div data-testid="page-content">Page content</div></LuminousAppShell>)
+
+    const trigger = screen.getByRole('button', { name: 'Create' })
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+
+    const source = screen.getByRole('menuitem', { name: 'Source' })
+    const notebook = screen.getByRole('menuitem', { name: 'Notebook' })
+    expect(source).toHaveFocus()
+    fireEvent.keyDown(source, { key: 'ArrowDown' })
+    await waitFor(() => expect(notebook).toHaveFocus())
+
+    fireEvent.keyDown(notebook, { key: 'Escape' })
+    await waitFor(() => expect(trigger).toHaveFocus())
+    expect(screen.queryByRole('menuitem', { name: 'Source' })).not.toBeInTheDocument()
+
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    expect(screen.getByRole('menuitem', { name: 'Source' })).toHaveFocus()
+    const outside = document.createElement('div')
+    document.body.appendChild(outside)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    fireEvent.pointerDown(outside, { button: 0 })
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Source' })).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger).toHaveFocus())
+    outside.remove()
   })
 })

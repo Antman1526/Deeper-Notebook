@@ -22,7 +22,7 @@ export function CommandBar() {
     : 'notebook'
 
   return (
-    <header className="dn-command-bar" aria-label="Command bar" data-guided-tip-anchor="/search">
+    <header className="dn-command-bar" aria-label="Command bar">
       <div className="dn-command-breadcrumb">
         <p className="dn-command-kicker">{routeLabel}</p>
         <h1>Deeper Notebook</h1>
