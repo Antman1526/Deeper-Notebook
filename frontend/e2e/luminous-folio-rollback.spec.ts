@@ -5,6 +5,10 @@ import { expect, test } from './fixtures/research-workbench'
  * This is the explicit presentation rollback proof; it never changes data.
  */
 test('legacy shell remains available through the explicit Folio rollback flag', async ({ page, researchWorkbench }) => {
+  test.skip(
+    process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO !== '0',
+    'The rollback proof requires a build created with NEXT_PUBLIC_DN_LUMINOUS_FOLIO=0.',
+  )
   void researchWorkbench
   await page.context().addCookies([
     { name: 'wizard_completed', value: '1', domain: '127.0.0.1', path: '/' },

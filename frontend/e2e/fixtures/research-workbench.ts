@@ -61,6 +61,10 @@ async function fulfillJson(page: Page, pathname: string, body: unknown): Promise
 
 export async function installResearchWorkbenchMocks(page: Page): Promise<void> {
   await page.context().grantPermissions(['microphone'])
+  await page.context().addCookies([
+    { name: 'wizard_completed', value: '1', domain: '127.0.0.1', path: '/' },
+    { name: 'onp_intro_seen', value: '1', domain: '127.0.0.1', path: '/' },
+  ])
 
   // Keep the baseline hermetic when layout-only integrations add a request.
   // Specific fixture routes below are registered afterwards and win first.

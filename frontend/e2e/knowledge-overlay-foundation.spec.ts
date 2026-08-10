@@ -30,6 +30,9 @@ test.describe("knowledge overlay foundation", () => {
     await page.getByLabel("Unique note title").fill("Research Idea");
     await page.getByRole("button", { name: "Create note" }).click();
     await expect(
+      page.locator('[role="dialog"][data-state="closed"]'),
+    ).toHaveCSS("pointer-events", "none");
+    await expect(
       page.getByRole("tab", { name: "Write: Research Idea" }),
     ).toBeVisible();
     expect(

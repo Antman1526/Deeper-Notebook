@@ -473,6 +473,19 @@
   }
 }
 
+/* Research Core already carries its own utility index and intelligence rail.
+ * At compact desktop widths, keep the shell dock and lens while releasing the
+ * outer notebook index so the editorial workspace retains a usable measure. */
+@media (min-width: 1024px) and (max-width: 1350px) {
+  .dn-luminous-workspace:has(.research-core-canvas) {
+    grid-template-columns: minmax(0, 1fr) minmax(17.5rem, 20rem);
+  }
+
+  .dn-luminous-workspace:has(.research-core-canvas) > .dn-adaptive-navigator {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dn-navigator-link {
     transition: none;

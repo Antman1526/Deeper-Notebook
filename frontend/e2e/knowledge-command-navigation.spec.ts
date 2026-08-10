@@ -33,6 +33,9 @@ test.describe("knowledge command navigation", () => {
     );
     await page.goto("/knowledge");
     await expect(page.getByTestId("knowledge-workspace")).toBeVisible();
+    await expect
+      .poll(() => page.getByTestId("research-core-folio-workspace").evaluate((element) => element.getBoundingClientRect().width))
+      .toBeGreaterThan(200);
     await page.getByTestId("knowledge-workspace").focus();
     await page.keyboard.press(`${modifier}+o`);
     const switcher = page.getByRole("dialog", { name: "Quick switcher" });
@@ -112,6 +115,9 @@ test.describe("knowledge command navigation", () => {
     );
     await page.goto("/knowledge");
     await expect(page.getByTestId("knowledge-workspace")).toBeVisible();
+    await expect
+      .poll(() => page.getByTestId("research-core-folio-workspace").evaluate((element) => element.getBoundingClientRect().width))
+      .toBeGreaterThan(200);
     await page.getByTestId("knowledge-workspace").focus();
     await page.keyboard.press(`${modifier}+k`);
     await page

@@ -57,7 +57,7 @@
 .dn-overlay-savebar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; border-bottom: 1px solid var(--border); padding: 0.625rem 0.75rem; background: var(--muted); }
 .dn-overlay-dirty { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--foreground); font-size: 0.75rem; font-weight: 600; }
 .dn-overlay-dirty > span { color: var(--primary); font-size: 0.625rem; }
-.dn-overlay-alert { display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid var(--border); padding: 0.625rem 0.75rem; background: color-mix(in oklab, var(--destructive) 7%, var(--background)); font-size: 0.8125rem; }
+.dn-overlay-alert { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; border-bottom: 1px solid var(--border); padding: 0.625rem 0.75rem; background: color-mix(in oklab, var(--destructive) 7%, var(--background)); font-size: 0.8125rem; }
 .dn-overlay-alert--conflict { border-color: color-mix(in oklab, var(--destructive) 40%, var(--border)); color: var(--foreground); }
 .dn-overlay-alert--conflict > svg { color: var(--destructive); }
 .dn-overlay-source-view { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); }
