@@ -66,6 +66,7 @@ import {
   TYPE_LABELS,
 } from './constants'
 import { DiscoverModelsDialog } from './components/DiscoverModelsDialog'
+import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
 // =============================================================================
 // Credential Form Dialog
@@ -998,9 +999,9 @@ export default function ApiKeysPage() {
   if (isLoading) {
     return (
       <AppShell>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <LoadingSpinner size="lg" />
-        </div>
+        <SystemRouteFrame route="/settings/api-keys">
+          <div className="flex min-h-[60vh] items-center justify-center"><LoadingSpinner size="lg" /></div>
+        </SystemRouteFrame>
       </AppShell>
     )
   }
@@ -1022,15 +1023,14 @@ export default function ApiKeysPage() {
   //     separation instead of running into each other
   return (
     <AppShell>
-      <div className="flex-1 overflow-y-auto">
-        <div className="px-6 py-10 sm:px-8 space-y-12">
+      <SystemRouteFrame route="/settings/api-keys" description={t('apiKeys.description')}>
+        <div className="space-y-12 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
           {/* Header */}
           <header className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-3">
+            <h2 className="flex items-center gap-3 text-2xl font-semibold">
               <Key className="h-7 w-7" />
               {t('apiKeys.title')}
-            </h1>
-            <p className="text-muted-foreground">{t('apiKeys.description')}</p>
+            </h2>
           </header>
 
           {/* Encryption warning */}
@@ -1172,7 +1172,7 @@ export default function ApiKeysPage() {
             </a>
           </div>
         </div>
-      </div>
+      </SystemRouteFrame>
     </AppShell>
   )
 }

@@ -36,6 +36,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useDeepHealth } from '@/lib/hooks/use-deep-health'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import type { SubsystemKey, SubsystemCheck } from '@/lib/api/health'
+import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
 const SUBSYSTEM_ORDER: SubsystemKey[] = [
   'database',
@@ -206,16 +207,8 @@ export default function SetupWizardPage() {
 
   return (
     <AppShell>
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-10 space-y-6">
-          <header className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight">
-              {t('setupWizard.title')}
-            </h1>
-            <p className="text-muted-foreground">
-              {t('setupWizard.subtitle')}
-            </p>
-          </header>
+      <SystemRouteFrame route="/setup-wizard" description={t('setupWizard.subtitle')}>
+        <div className="mx-auto max-w-3xl space-y-6 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -291,7 +284,7 @@ export default function SetupWizardPage() {
             </Button>
           </div>
         </div>
-      </div>
+      </SystemRouteFrame>
     </AppShell>
   )
 }

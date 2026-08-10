@@ -29,6 +29,7 @@ import {
 // Playwright) with one-click Connect. Lives alongside the existing
 // add-server form so the user has both paths.
 import { RecommendationsPanel } from './RecommendationsPanel'
+import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
 // Inline URL validity check — no extra dependency needed.
 function isValidUrl(url: string): boolean {
@@ -81,17 +82,8 @@ export default function MCPServersPage() {
 
   return (
     <AppShell>
-      <div className="flex-1 overflow-y-auto">
-        <div className="px-6 py-10 sm:px-8">
-          <div className="mx-auto max-w-3xl space-y-10">
-            <header className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight">
-                {t('settings.mcp.title')}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {t('settings.mcp.description')}
-              </p>
-            </header>
+      <SystemRouteFrame route="/settings/mcp" description={t('settings.mcp.description')}>
+          <div className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
             {/* v0.8.41 — Curated recommendations panel. Renders
                 above the manual add-form so users see the curated
@@ -211,8 +203,7 @@ export default function MCPServersPage() {
               )}
             </section>
           </div>
-        </div>
-      </div>
+      </SystemRouteFrame>
     </AppShell>
   )
 }

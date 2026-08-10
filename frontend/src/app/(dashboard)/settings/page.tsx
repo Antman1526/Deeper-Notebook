@@ -17,6 +17,7 @@ import { replayIntro } from '@/components/intro/IntroReveal'
 import { ThemeGallery } from '@/components/deeper-notebook'
 import { DisplayPreferencesPanel } from '@/components/deeper-notebook/DisplayPreferencesPanel'
 import { useGuidedTipsStore } from '@/lib/stores/guided-tips-store'
+import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
 export default function SettingsPage() {
   const { t } = useTranslation()
@@ -39,19 +40,11 @@ export default function SettingsPage() {
   // sparse on wide monitors while still hitting the "roomy" target.
   return (
     <AppShell>
-      <div data-testid="settings-scroll-viewport" className="flex-1 overflow-y-auto">
-        <div className="px-6 py-10 sm:px-8">
-          <div className="mx-auto max-w-3xl space-y-10">
-            <header className="flex items-start justify-between gap-4">
-              <div className="space-y-2">
-                <h1 className="text-3xl font-semibold tracking-tight">
-                  {t('navigation.settings')}
-                </h1>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </header>
+      <SystemRouteFrame
+        route="/settings"
+        actions={<Button variant="outline" size="sm" aria-label="Refresh settings" onClick={() => refetch()}><RefreshCw className="h-4 w-4" /></Button>}
+      >
+        <div data-testid="settings-scroll-viewport" className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
             <section aria-labelledby="appearance-heading" className="space-y-4">
               <div>
@@ -92,9 +85,8 @@ export default function SettingsPage() {
               </Button>
             </div>
             <ObservabilityCard />
-          </div>
         </div>
-      </div>
+      </SystemRouteFrame>
     </AppShell>
   )
 }

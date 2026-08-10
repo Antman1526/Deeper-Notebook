@@ -28,6 +28,7 @@ import {
   useLauncherPrefs,
   useUpdateLauncherPrefs,
 } from '@/lib/hooks/use-launcher-prefs'
+import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
 // ---------------------------------------------------------------------------
 // Whitelisted keys — must match desktop/launcher_prefs.py:ALLOWED_KEYS.
@@ -120,18 +121,8 @@ export default function LauncherPrefsPage() {
 
   return (
     <AppShell>
-      <div className="flex-1 overflow-y-auto">
-        <div className="px-6 py-10 sm:px-8">
-          <div className="mx-auto max-w-3xl space-y-10">
-
-            <header className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight">
-                {t('settings.launcherPrefs.title')}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {t('settings.launcherPrefs.description')}
-              </p>
-            </header>
+      <SystemRouteFrame route="/settings/launcher-prefs" description={t('settings.launcherPrefs.description')}>
+          <div className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
             {/* Restart-required banner — shown after a successful save */}
             {showRestartBanner && (
@@ -303,8 +294,7 @@ export default function LauncherPrefsPage() {
               </form>
             )}
           </div>
-        </div>
-      </div>
+      </SystemRouteFrame>
     </AppShell>
   )
 }

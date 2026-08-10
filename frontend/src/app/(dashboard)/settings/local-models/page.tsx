@@ -35,6 +35,7 @@ import {
 } from '@/lib/api/local-models'
 import apiClient from '@/lib/api/client'
 import { useLocalModelsHealth, useModelRoutePlan } from '@/lib/hooks/use-local-models'
+import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
 const BENCHMARK_ROLES = ['chat', 'source_synthesis', 'coding_research', 'study_fast']
 
@@ -231,5 +232,5 @@ function SettingsReadinessPanels({ inventory, readiness, readinessError, setting
 }
 
 export default function LocalModelsPage() {
-  return <AppShell><div className="flex-1 overflow-y-auto"><LocalModelsWorkspace /></div></AppShell>
+  return <AppShell><SystemRouteFrame route="/settings/local-models"><LocalModelsWorkspace /></SystemRouteFrame></AppShell>
 }
