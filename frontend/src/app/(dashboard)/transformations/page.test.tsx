@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { isLuminousFolioEnabled } from '@/lib/features'
+
 import TransformationsPage from './page'
 
 vi.mock('@/components/layout/AppShell', () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</> }))
@@ -19,7 +21,8 @@ vi.mock('@/lib/hooks/use-translation', () => ({
 describe('TransformationsPage', () => {
   it('keeps the prompt editor and transformation list inside a Create folio', () => {
     render(<TransformationsPage />)
-    expect(screen.getByRole('main', { name: 'Transformations' })).toBeInTheDocument()
+    const routeFrameRole = isLuminousFolioEnabled() ? 'main' : 'region'
+    expect(screen.getByRole(routeFrameRole, { name: 'Transformations' })).toBeInTheDocument()
     expect(screen.getByText('Create')).toBeInTheDocument()
     expect(screen.getByText('Prompt editor')).toBeInTheDocument()
     expect(screen.getByText('Transformation list')).toBeInTheDocument()
