@@ -9,7 +9,11 @@
 
 import { useRouter } from 'next/navigation'
 
-import { IntelligenceHorizon, HorizonNotebook } from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
+import { IntelligenceHorizon } from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
+import type {
+  HorizonNotebook,
+  HorizonReadiness,
+} from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
 import { AppShell } from '@/components/layout/AppShell'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
@@ -39,12 +43,15 @@ export default function DashboardPage() {
     : status?.status === 'ready'
       ? 'ready'
       : 'offline'
+  const readiness: HorizonReadiness | undefined = status
 
   return (
     <AppShell>
       <IntelligenceHorizon
         status={horizonStatus}
         recentNotebooks={recentNotebooks}
+        notebooksLoading={notebooksLoading}
+        readiness={readiness}
         onOpenStudio={() => router.push('/studio')}
         onCreateNotebook={openNotebookDialog}
         onCreatePodcast={openPodcastDialog}

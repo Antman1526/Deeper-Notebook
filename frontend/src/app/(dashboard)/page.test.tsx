@@ -1,9 +1,22 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { NotebookResponse } from '@/lib/types/api'
+import type { ReadyzResponse } from '@/lib/hooks/use-system-status'
 
 import DashboardPage from './page'
 
 const routerPush = vi.fn()
+const dashboardFixtures = vi.hoisted(() => ({
+  notebooks: {
+    data: [] as NotebookResponse[],
+    isLoading: false,
+  },
+  status: {
+    data: undefined as ReadyzResponse | undefined,
+    isLoading: false,
+  },
+}))
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: routerPush }),
@@ -26,14 +39,19 @@ vi.mock('@/components/layout/AppShell', () => ({
 }))
 
 vi.mock('@/lib/hooks/use-notebooks', () => ({
-  useNotebooks: () => ({ data: [], isLoading: false }),
+  useNotebooks: () => dashboardFixtures.notebooks,
 }))
 
 vi.mock('@/lib/hooks/use-system-status', () => ({
-  useSystemStatus: () => ({ data: undefined }),
+  useSystemStatus: () => dashboardFixtures.status,
 }))
 
 describe('DashboardPage active product identity', () => {
+  beforeEach(() => {
+    dashboardFixtures.notebooks = { data: [], isLoading: false }
+    dashboardFixtures.status = { data: undefined, isLoading: false }
+  })
+
   afterEach(() => {
     routerPush.mockClear()
     delete process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO
@@ -65,5 +83,43 @@ describe('DashboardPage active product identity', () => {
 
     expect(routerPush).toHaveBeenNthCalledWith(1, '/studio')
     expect(routerPush).toHaveBeenNthCalledWith(2, '/search')
+  })
+
+  it('maps offline readiness without hiding loaded notebooks or their distinct checks', () => {
+    dashboardFixtures.notebooks = {
+      data: [{
+        id: 'offline-notebook',
+        name: 'Offline notebook',
+        description: '',
+        archived: false,
+        created: '2026-08-10T12:00:00.000Z',
+        updated: '2026-08-10T12:00:00.000Z',
+        source_count: 0,
+        note_count: 0,
+      }],
+      isLoading: false,
+    }
+    dashboardFixtures.status = {
+      data: {
+        status: 'not_ready',
+        checks: {
+          database: 'offline',
+          database_error: 'database unavailable',
+          migrations_applied: false,
+          migrations_pending: true,
+          migrations_error: 'pending migrations',
+        },
+      },
+      isLoading: false,
+    }
+
+    render(<DashboardPage />)
+
+    expect(screen.getByRole('link', { name: 'Offline notebook' })).toHaveAttribute(
+      'href',
+      '/notebooks/offline-notebook',
+    )
+    expect(screen.getByText('database unavailable')).toBeInTheDocument()
+    expect(screen.getByText('pending migrations')).toBeInTheDocument()
   })
 })

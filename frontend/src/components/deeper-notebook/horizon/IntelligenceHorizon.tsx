@@ -31,6 +31,18 @@ export interface HorizonNotebook {
   href?: string
 }
 
+/** Read-only shape returned by the existing `/readyz` query. */
+export interface HorizonReadiness {
+  status: 'ready' | 'not_ready'
+  checks: {
+    database: 'online' | 'offline' | 'unknown'
+    database_error: string | null
+    migrations_applied: boolean
+    migrations_pending: boolean
+    migrations_error: string | null
+  }
+}
+
 export interface IntelligenceHorizonProps {
   status: 'loading' | 'ready' | 'offline'
   recentNotebooks: readonly HorizonNotebook[]
@@ -38,10 +50,13 @@ export interface IntelligenceHorizonProps {
   onCreateNotebook(): void
   onCreatePodcast(): void
   onAsk(): void
+  notebooksLoading?: boolean
+  readiness?: HorizonReadiness
   dataPath?: string
 }
 
 type StatusKind = 'ready' | 'loading' | 'offline'
+type ReadinessState = 'ready' | 'pending' | 'offline' | 'unknown'
 
 function relativeTime(iso?: string): string {
   if (!iso) return '—'
@@ -55,17 +70,25 @@ function relativeTime(iso?: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-function statusLabel(status: StatusKind): string {
-  if (status === 'ready') return 'ready'
-  if (status === 'offline') return 'offline'
-  return 'loading'
+function readinessLabel(state: ReadinessState): string {
+  return state
 }
 
-function StatusRow({ label, status }: { label: string; status: StatusKind }) {
+function StatusRow({
+  label,
+  state,
+  detail,
+}: {
+  label: string
+  state: ReadinessState
+  detail?: string | null
+}) {
   const icon =
-    status === 'ready' ? (
+    state === 'ready' ? (
       <CheckCircle2 aria-hidden="true" className="h-4 w-4 text-success" />
-    ) : status === 'offline' ? (
+    ) : state === 'pending' ? (
+      <CircleAlert aria-hidden="true" className="h-4 w-4 text-warning" />
+    ) : state === 'offline' ? (
       <CircleAlert aria-hidden="true" className="h-4 w-4 text-destructive" />
     ) : (
       <CircleDashed aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
@@ -77,15 +100,29 @@ function StatusRow({ label, status }: { label: string; status: StatusKind }) {
         {icon}
         <span>{label}</span>
       </div>
-      <span className="text-xs text-muted-foreground">{statusLabel(status)}</span>
+      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right">
+        <span className="text-xs text-muted-foreground">{readinessLabel(state)}</span>
+        {detail ? <span className="text-xs text-muted-foreground">{detail}</span> : null}
+      </div>
     </div>
   )
 }
 
 function actionLinkHandler(callback: () => void) {
   return (event: React.MouseEvent<HTMLAnchorElement>) => {
-    // Keep a real href for progressive enhancement while leaving navigation
-    // ownership with the dashboard page callback.
+    // Keep modified, middle, and auxiliary clicks native so users retain
+    // open-in-new-tab/window and context-menu behavior. Ordinary primary
+    // clicks still use the page-owned callback for client navigation.
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return
+    }
     event.preventDefault()
     callback()
   }
@@ -169,7 +206,35 @@ function HorizonActions({
   )
 }
 
-function StatusMargin({ status }: { status: StatusKind }) {
+function StatusMargin({
+  status,
+  readiness,
+}: {
+  status: StatusKind
+  readiness?: HorizonReadiness
+}) {
+  const apiState: ReadinessState = readiness ? 'ready' : 'unknown'
+  const databaseState: ReadinessState = readiness
+    ? readiness.checks.database === 'online'
+      ? 'ready'
+      : readiness.checks.database === 'offline'
+        ? 'offline'
+        : 'unknown'
+    : 'unknown'
+  const migrationsState: ReadinessState = readiness
+    ? readiness.checks.migrations_applied
+      ? 'ready'
+      : readiness.checks.migrations_pending
+        ? 'pending'
+        : readiness.checks.migrations_error
+          ? 'offline'
+          : 'unknown'
+    : 'unknown'
+  const databaseDetail = readiness?.checks.database_error
+  const migrationsDetail = readiness
+    ? readiness.checks.migrations_error ?? (readiness.checks.migrations_pending ? 'pending' : null)
+    : null
+
   return (
     <MarginNote label="Trust and model status">
       <div className="flex items-center justify-between gap-3">
@@ -181,14 +246,23 @@ function StatusMargin({ status }: { status: StatusKind }) {
       <p className="text-xs leading-5 text-muted-foreground">
         Local readiness stays visible before any notebook, source, or production action.
       </p>
+      {status !== 'ready' ? (
+        <p
+          role="status"
+          aria-label={`Runtime ${status}`}
+          className="text-xs font-medium text-muted-foreground"
+        >
+          Runtime {status}
+        </p>
+      ) : null}
       <div>
         <h3 className="text-sm font-semibold">System status</h3>
         <p className="mt-1 text-xs text-muted-foreground">Updated every 30 s from /readyz</p>
       </div>
       <div className="divide-y divide-border/70">
-        <StatusRow label="API" status={status} />
-        <StatusRow label="Database" status={status} />
-        <StatusRow label="Migrations" status={status} />
+        <StatusRow label="API" state={apiState} />
+        <StatusRow label="Database" state={databaseState} detail={databaseDetail} />
+        <StatusRow label="Migrations" state={migrationsState} detail={migrationsDetail} />
       </div>
       <EvidenceInsert label="Model route" className="border-0 bg-transparent p-0">
         <p className="text-xs leading-5 text-muted-foreground">
@@ -199,26 +273,12 @@ function StatusMargin({ status }: { status: StatusKind }) {
   )
 }
 
-function HorizonState({
-  status,
-}: {
-  status: StatusKind
-}) {
-  if (status === 'loading') {
-    return (
-      <FolioState
-        kind="loading"
-        title="Loading your notebook desk"
-        description="Checking local notebooks and runtime readiness. Your workspace stays untouched while it loads."
-      />
-    )
-  }
-
+function NotebookCollectionState() {
   return (
     <FolioState
-      kind="offline"
-      title="Notebook runtime offline"
-      description="Your local notebook surface is still available. Reconnect the runtime before starting a new action."
+      kind="loading"
+      title="Loading your notebook desk"
+      description="Checking local notebooks and runtime readiness. Your workspace stays untouched while it loads."
     />
   )
 }
@@ -230,17 +290,23 @@ export function IntelligenceHorizon({
   onCreateNotebook,
   onCreatePodcast,
   onAsk,
+  notebooksLoading = false,
+  readiness,
   dataPath = '~/.deeper-notebook/',
 }: IntelligenceHorizonProps) {
   const hasRecentNotebooks = recentNotebooks.length > 0
 
   return (
-    <FolioPage
-      eyebrow="Intelligence Horizon"
-      title="Deeper Notebook"
-      subtitle="Think further with every source"
-      className="mx-auto w-full max-w-7xl"
+    <div
+      data-testid="horizon-scroll-region"
+      className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto"
     >
+      <FolioPage
+        eyebrow="Intelligence Horizon"
+        title="Deeper Notebook"
+        subtitle="Think further with every source"
+        className="mx-auto w-full max-w-7xl"
+      >
       <div
         data-dn-horizon-cover="true"
         className="relative overflow-hidden rounded-2xl border border-[var(--dn-glass-border)] bg-[var(--dn-panel)] p-6 shadow-[var(--dn-shadow-soft)] sm:p-8"
@@ -262,7 +328,7 @@ export function IntelligenceHorizon({
       <FolioSpread
         className="mt-6"
         secondaryLabel="Trust and model status"
-        secondary={<StatusMargin status={status} />}
+        secondary={<StatusMargin status={status} readiness={readiness} />}
         primary={
           <section aria-labelledby="horizon-today-title" className="space-y-5">
             <div>
@@ -311,8 +377,8 @@ export function IntelligenceHorizon({
           </Link>
         </div>
 
-        {status !== 'ready' ? (
-          <HorizonState status={status} />
+        {notebooksLoading ? (
+          <NotebookCollectionState />
         ) : !hasRecentNotebooks ? (
           <FolioState
             kind="empty"
@@ -368,6 +434,7 @@ export function IntelligenceHorizon({
           All data lives in <code className="rounded bg-background px-1">{dataPath}</code>.
         </span>
       </aside>
-    </FolioPage>
+      </FolioPage>
+    </div>
   )
 }

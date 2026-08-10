@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { IntelligenceHorizon } from './IntelligenceHorizon'
@@ -11,6 +11,17 @@ const fixtureNotebooks = [
   },
 ] as const
 
+const distinctReadiness = {
+  status: 'not_ready' as const,
+  checks: {
+    database: 'offline' as const,
+    database_error: 'database unavailable',
+    migrations_applied: false,
+    migrations_pending: true,
+    migrations_error: 'pending migrations',
+  },
+}
+
 function renderHorizon(
   overrides: Partial<React.ComponentProps<typeof IntelligenceHorizon>> = {},
 ) {
@@ -21,6 +32,8 @@ function renderHorizon(
     onCreateNotebook: vi.fn(),
     onCreatePodcast: vi.fn(),
     onAsk: vi.fn(),
+    notebooksLoading: false,
+    readiness: distinctReadiness,
     dataPath: '~/.deeper-notebook/',
     ...overrides,
   }
@@ -57,6 +70,16 @@ describe('IntelligenceHorizon', () => {
     expect(props.onAsk).toHaveBeenCalledTimes(1)
   })
 
+  it('owns a scrollable content region so lower Horizon content remains reachable', () => {
+    renderHorizon()
+
+    expect(screen.getByTestId('horizon-scroll-region')).toHaveClass(
+      'h-full',
+      'min-h-0',
+      'overflow-y-auto',
+    )
+  })
+
   it('shows ready trust status, command hint, and local data path', () => {
     renderHorizon()
 
@@ -67,12 +90,56 @@ describe('IntelligenceHorizon', () => {
   })
 
   it.each([
-    ['loading', 'Loading your notebook desk'],
-    ['offline', 'Notebook runtime offline'],
-  ] as const)('preserves the %s state', (status, title) => {
+    ['loading', 'Runtime loading'],
+    ['offline', 'Runtime offline'],
+  ] as const)('preserves the %s readiness state separately from notebooks', (status, title) => {
     renderHorizon({ status })
 
     expect(screen.getByRole('status', { name: title })).toBeInTheDocument()
+  })
+
+  it('keeps loaded notebook links visible while readiness is offline', () => {
+    renderHorizon({ status: 'offline' })
+
+    expect(screen.getByRole('link', { name: 'Research notebook' })).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Notebook runtime offline' })).toBeNull()
+  })
+
+  it('keeps notebook loading independent from readiness state', () => {
+    renderHorizon({ status: 'offline', notebooksLoading: true })
+
+    expect(screen.getByRole('status', { name: 'Loading your notebook desk' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Research notebook' })).toBeNull()
+  })
+
+  it('preserves distinct API, database, and migration readiness details', () => {
+    renderHorizon({ status: 'offline', readiness: distinctReadiness })
+
+    expect(screen.getByText('ready')).toBeInTheDocument()
+    expect(screen.getAllByText('offline').length).toBeGreaterThan(0)
+    expect(screen.getByText('pending')).toBeInTheDocument()
+    expect(screen.getByText('database unavailable')).toBeInTheDocument()
+    expect(screen.getByText('pending migrations')).toBeInTheDocument()
+  })
+
+  it('leaves modified and middle clicks to native link behavior', () => {
+    const { props } = renderHorizon()
+    const studio = screen.getByRole('link', { name: 'Studio' })
+    const ask = screen.getByRole('link', { name: 'Ask' })
+    // Keep jsdom from attempting a real document navigation while preserving
+    // the production assertion above that both links expose their routes.
+    studio.setAttribute('href', '#')
+    ask.setAttribute('href', '#')
+    const modifiedClick = createEvent.click(studio, { metaKey: true })
+    const middleClick = createEvent.click(ask, { button: 1 })
+
+    fireEvent(studio, modifiedClick)
+    fireEvent(ask, middleClick)
+
+    expect(modifiedClick.defaultPrevented).toBe(false)
+    expect(middleClick.defaultPrevented).toBe(false)
+    expect(props.onOpenStudio).not.toHaveBeenCalled()
+    expect(props.onAsk).not.toHaveBeenCalled()
   })
 
   it('preserves the empty notebook state with an explicit Studio action', () => {
