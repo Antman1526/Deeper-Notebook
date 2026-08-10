@@ -282,6 +282,14 @@
 .dn-shell-banners {
   display: grid;
   gap: 0.25rem;
+  /* Keep informational banner surfaces from trapping clicks on the page
+     beneath them. Interactive links/buttons opt back in below. */
+  pointer-events: none;
+}
+
+.dn-shell-banners a,
+.dn-shell-banners button {
+  pointer-events: auto;
 }
 
 .dn-shell-audio {

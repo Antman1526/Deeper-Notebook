@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef } from 'react'
+import { memo, useCallback, useMemo, useRef } from 'react'
 import { EditorView } from '@codemirror/view'
 
 import type { KnowledgeViewMode } from '@/lib/api/knowledge-workspace'
@@ -42,7 +42,7 @@ function normalizedEditorOffset(source: string, rawOffset: number): number {
     .length
 }
 
-export function VaultDocumentView({
+function VaultDocumentViewContent({
   viewId,
   mode,
   page,
@@ -182,3 +182,5 @@ export function VaultDocumentView({
     </article>
   )
 }
+
+export const VaultDocumentView = memo(VaultDocumentViewContent)

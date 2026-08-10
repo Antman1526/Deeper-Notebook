@@ -21,6 +21,7 @@ import type {
 } from '@/lib/api/knowledge-workspace'
 import {
   VaultPageContractError,
+  type VaultLink,
   type VaultFile,
   type VaultMount,
 } from '@/lib/api/vault'
@@ -60,6 +61,8 @@ interface KnowledgePaneContentProps {
   vaultFiles?: VaultFile[]
   onNavigate: KnowledgeNavigate
 }
+
+const EMPTY_OUTGOING_LINKS: VaultLink[] = []
 
 const shortcutModes: Record<string, KnowledgeViewMode> = {
   '1': 'reading',
@@ -111,6 +114,7 @@ export function KnowledgePaneContent({
   )
   const activeTab = pane.tabs.find((tab) => tab.id === pane.activeTabId)
     ?? pane.tabs[0]
+  const activeTabId = activeTab?.id
   const focusedBlock = useKnowledgeWorkspaceStore((state) => activeTab
     ? state.focusedBlocksByTab[activeTab.id] ?? null
     : null)
@@ -181,6 +185,94 @@ export function KnowledgePaneContent({
   const graphContext = activeTab?.graphBookmarkContext
     ?? sharedGraphContext
     ?? tabGraphContext
+
+  const currentOutgoing = useMemo(() => (
+    isOverlay
+      ? overlayPage.data?.outgoing_links ?? EMPTY_OUTGOING_LINKS
+      : outgoing.data || vaultPage.data?.outgoing_links || EMPTY_OUTGOING_LINKS
+  ), [
+    isOverlay,
+    overlayPage.data?.outgoing_links,
+    outgoing.data,
+    vaultPage.data?.outgoing_links,
+  ])
+  const currentGraph = isOverlay ? overlayPage.data?.graph : graph.data
+  const documentPage = useMemo(() => (
+    vaultPage.data
+      ? { ...vaultPage.data, outgoing_links: currentOutgoing }
+      : null
+  ), [currentOutgoing, vaultPage.data])
+  const handleFocusedBlockChange = useCallback((block: { blockId: string; sourceRevisionId: string | null } | null) => {
+    if (activeTabId) setFocusedBlock(pane.id, activeTabId, block)
+  }, [activeTabId, pane.id, setFocusedBlock])
+  const navigate = useCallback((targetNoteId: string) => {
+    const isOverlayCenter = isOverlay
+      && overlayPage.data?.note.id === targetNoteId
+    const overlayLink = isOverlay
+      ? overlayPage.data?.outgoing_links.find(
+          (candidate) => candidate.target_note_id === targetNoteId,
+        )
+      : undefined
+    const overlayBacklink = isOverlay
+      ? overlayPage.data?.backlinks.find(
+          (candidate) => candidate.source_note_id === targetNoteId,
+        )
+      : undefined
+    const mappedOverlayBacklink = overlayBacklink?.source_overlay_note_id
+      && overlayBacklink.source_relative_path
+      ? overlayBacklink
+      : undefined
+    const link = currentOutgoing.find(
+      (candidate) => candidate.target_note_id === targetNoteId,
+    )
+    const graphNode = currentGraph?.nodes.find(
+      (candidate) => candidate.id === targetNoteId,
+    )
+    const titleHint = isOverlayCenter
+      ? overlayPage.data?.overlay.title
+      : link?.target_note_title === null
+        || link?.target_note_title === undefined
+        ? overlayBacklink?.source_note_title ?? graphNode?.title ?? undefined
+        : link.target_note_title
+    const navigationNoteId = isOverlayCenter
+      ? overlayPage.data?.overlay.id
+      : isOverlay
+        ? overlayLink?.target_overlay_note_id
+          ?? mappedOverlayBacklink?.source_overlay_note_id
+        : targetNoteId
+    const relativePathHint = isOverlayCenter
+      ? overlayPage.data?.overlay.relative_path
+      : overlayLink?.target_relative_path
+        ?? mappedOverlayBacklink?.source_relative_path
+        ?? link?.target_relative_path
+    const targetText = isOverlayCenter
+      ? overlayPage.data?.overlay.title
+      : isOverlay
+        ? overlayLink?.target_text
+          ?? mappedOverlayBacklink?.source_note_title
+          ?? targetNoteId
+        : link?.target_text || targetNoteId
+    if (!navigationNoteId) return
+    onNavigate(
+      vaultId ?? activeTab?.vaultId ?? '',
+      navigationNoteId,
+      relativePathHint ?? undefined,
+      titleHint,
+      pane.id,
+      targetText,
+      sourceAuthority,
+    )
+  }, [
+    activeTab?.vaultId,
+    currentGraph,
+    currentOutgoing,
+    isOverlay,
+    onNavigate,
+    overlayPage.data,
+    pane.id,
+    sourceAuthority,
+    vaultId,
+  ])
 
   useEffect(() => {
     const updateSelection = () => {
@@ -310,11 +402,7 @@ export function KnowledgePaneContent({
   const mount = isOverlay
     ? undefined
     : mounts.find((candidate) => candidate.id === vaultId)
-  const currentOutgoing = isOverlay
-    ? overlayPage.data?.outgoing_links ?? []
-    : outgoing.data || vaultPage.data?.outgoing_links || []
   const unresolved = currentOutgoing.filter((link) => !link.resolved)
-  const currentGraph = isOverlay ? overlayPage.data?.graph : graph.data
   const modeOptions = [
     { mode: 'reading', label: t('knowledge.reader'), icon: BookOpen },
     { mode: 'source', label: t('knowledge.source'), icon: Code2 },
@@ -325,65 +413,6 @@ export function KnowledgePaneContent({
     label: string
     icon: typeof BookOpen
   }>
-
-  const navigate = (targetNoteId: string) => {
-    const isOverlayCenter = isOverlay
-      && overlayPage.data?.note.id === targetNoteId
-    const overlayLink = isOverlay
-      ? overlayPage.data?.outgoing_links.find(
-          (candidate) => candidate.target_note_id === targetNoteId,
-        )
-      : undefined
-    const overlayBacklink = isOverlay
-      ? overlayPage.data?.backlinks.find(
-          (candidate) => candidate.source_note_id === targetNoteId,
-        )
-      : undefined
-    const mappedOverlayBacklink = overlayBacklink?.source_overlay_note_id
-      && overlayBacklink.source_relative_path
-      ? overlayBacklink
-      : undefined
-    const link = currentOutgoing.find(
-      (candidate) => candidate.target_note_id === targetNoteId,
-    )
-    const graphNode = currentGraph?.nodes.find(
-      (candidate) => candidate.id === targetNoteId,
-    )
-    const titleHint = isOverlayCenter
-      ? overlayPage.data?.overlay.title
-      : link?.target_note_title === null
-        || link?.target_note_title === undefined
-        ? overlayBacklink?.source_note_title ?? graphNode?.title ?? undefined
-        : link.target_note_title
-    const navigationNoteId = isOverlayCenter
-      ? overlayPage.data?.overlay.id
-      : isOverlay
-        ? overlayLink?.target_overlay_note_id
-          ?? mappedOverlayBacklink?.source_overlay_note_id
-        : targetNoteId
-    const relativePathHint = isOverlayCenter
-      ? overlayPage.data?.overlay.relative_path
-      : overlayLink?.target_relative_path
-        ?? mappedOverlayBacklink?.source_relative_path
-        ?? link?.target_relative_path
-    const targetText = isOverlayCenter
-      ? overlayPage.data?.overlay.title
-      : isOverlay
-        ? overlayLink?.target_text
-          ?? mappedOverlayBacklink?.source_note_title
-          ?? targetNoteId
-        : link?.target_text || targetNoteId
-    if (!navigationNoteId) return
-    onNavigate(
-      vaultId ?? activeTab.vaultId,
-      navigationNoteId,
-      relativePathHint ?? undefined,
-      titleHint,
-      pane.id,
-      targetText,
-      sourceAuthority,
-    )
-  }
 
   const errorKey = !isOverlay && vaultPage.error instanceof VaultPageContractError
     ? vaultPage.error.code === 'canonical-path-unavailable'
@@ -561,15 +590,12 @@ export function KnowledgePaneContent({
               />
             )
           ) : (
-              <VaultDocumentView
+          <VaultDocumentView
               viewId={`${pane.id}:${activeTab.id}`}
               mode={visibleMode}
-              page={{
-                ...vaultPage.data,
-                outgoing_links: currentOutgoing,
-              }}
+              page={documentPage!}
                 onNavigate={navigate}
-                onFocusedBlockChange={(block) => setFocusedBlock(pane.id, activeTab.id, block)}
+                onFocusedBlockChange={handleFocusedBlockChange}
               />
           )
         ) : null}
