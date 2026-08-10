@@ -7,10 +7,15 @@ const captures = [
   { theme: 'research-core-light', viewport: { width: 1440, height: 900 } },
   { theme: 'archive-paper', viewport: { width: 1280, height: 800 } },
   { theme: 'deep-ocean', viewport: { width: 1280, height: 800 } },
+  { theme: 'high-contrast-dark', viewport: { width: 1440, height: 900 } },
+  { theme: 'high-contrast-light', viewport: { width: 1440, height: 900 } },
+  { theme: 'research-core-dark', viewport: { width: 390, height: 844 } },
 ] as const
 
 for (const capture of captures) {
-  test(`Luminous notebook index — ${capture.theme}`, async ({ page }) => {
+  test(
+    `Luminous notebook index — ${capture.theme} ${capture.viewport.width}x${capture.viewport.height}`,
+    async ({ page }) => {
     await installLuminousFolioFixture(page, { theme: capture.theme })
     await page.setViewportSize(capture.viewport)
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -22,5 +27,6 @@ for (const capture of captures) {
       `notebooks-${capture.theme}-${capture.viewport.width}x${capture.viewport.height}.png`,
       { animations: 'disabled', caret: 'hide' },
     )
-  })
+    },
+  )
 }
