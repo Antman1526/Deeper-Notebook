@@ -73,6 +73,26 @@ switches themes.
 | `StudyArtifactViewers.tsx` | Interactive flashcard, quiz, Course Pack, Research Run, Mind Map, and Data Table viewers for Evidence Studio artifacts. |
 | `RunTimeline.tsx` | Compact Claude Code-style run inspector for notebook chat context, routing, MCP, privacy, and agent state. |
 
+## Luminous folio primitives
+
+The `folio/` namespace is the presentation-only notebook grammar. These
+components accept content and callbacks from an owning surface; they do not
+fetch data, own route knowledge, or write to stores.
+
+| Primitive | Use it for |
+|---|---|
+| `FolioPage` | One named `main`, `section`, or `article` with an associated title, optional subtitle/actions, and a complementary margin slot. |
+| `FolioRouteFrame` | A route-level composition that supplies section metadata and keeps the page landmark contract consistent. |
+| `FolioSpread` | A primary reading surface plus an optional labelled context lens. |
+| `FolioIndex` / `FolioTab` | Controlled notebook sections with roving focus, Arrow/Home/End keyboard navigation, and 44px targets. |
+| `MarginNote` | Backlinks, commentary, review notes, or other non-primary context. |
+| `EvidenceInsert` | An evidence receipt/content insert; receipt actions stay outside form labels. |
+| `FolioState` | Explicit loading, empty, error, offline, or permission states with a bounded action slot. |
+
+Use semantic shadcn variables and the `--dn-*` token layer when composing
+inside these primitives. Keep content, evidence approval, external-vault
+authority, and route behavior in the owning feature surface.
+
 ## Adding a new shadow component
 
 1. Create `components/deeper-notebook/MyThing.tsx`
