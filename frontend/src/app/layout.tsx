@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Newsreader } from "next/font/google";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 // ONP shadow-layer design tokens — layered on top of shadcn variables. See
@@ -15,7 +15,8 @@ import { I18nProvider } from "@/components/providers/I18nProvider";
 // v0.8.70 — skippable, once-per-user "Aurora Reveal" launch intro.
 import { IntroReveal } from "@/components/intro/IntroReveal";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-dn-sans" });
+const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-dn-editorial" });
 
 export const metadata: Metadata = {
   title: "Deeper Notebook",
@@ -32,7 +33,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.variable} ${newsreader.variable} font-sans`}>
         <ErrorBoundary>
           <ThemeProvider>
             <QueryProvider>

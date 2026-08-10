@@ -44,4 +44,52 @@ describe('pre-hydration Research Core theme script', () => {
       document.documentElement.className = ''
     }
   })
+
+  it('fails closed for malformed storage without deleting legacy theme data', () => {
+    localStorage.clear()
+    localStorage.setItem('onp-theme', 'archive-paper')
+    localStorage.setItem('theme-storage', '{malformed')
+    document.documentElement.dataset.theme = ''
+    document.documentElement.className = ''
+
+    window.eval(themeScript)
+
+    expect(document.documentElement.dataset.theme).toBe('research-core-dark')
+    expect(document.documentElement.dataset.dnWallpaper).toBe('aurora')
+    expect(document.documentElement.dataset.dnMotion).toBe('system')
+    expect(document.documentElement.dataset.dnTransparency).toBe('frosted')
+    expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
+    expect(localStorage.getItem('theme-storage')).toBe('{malformed')
+  })
+
+  it('resolves system reduced motion before React hydration', () => {
+    const previousMatchMedia = window.matchMedia
+    window.matchMedia = vi.fn((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+    }) as MediaQueryList)
+
+    try {
+      localStorage.clear()
+      localStorage.setItem(
+        'dn-display-preferences-v1',
+        JSON.stringify({
+          state: { wallpaper: 'static', motion: 'system', transparency: 'solid' },
+          version: 0,
+        }),
+      )
+      document.documentElement.dataset.theme = ''
+      document.documentElement.className = ''
+
+      window.eval(themeScript)
+
+      expect(document.documentElement.dataset.dnWallpaper).toBe('static')
+      expect(document.documentElement.dataset.dnMotion).toBe('reduced')
+      expect(document.documentElement.dataset.dnTransparency).toBe('solid')
+    } finally {
+      window.matchMedia = previousMatchMedia
+      localStorage.clear()
+      document.documentElement.dataset.theme = ''
+      document.documentElement.className = ''
+    }
+  })
 })

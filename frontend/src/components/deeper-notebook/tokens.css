@@ -37,6 +37,18 @@
   --dn-model-gguf: oklch(0.57 0.18 245);
   --dn-model-mlx: oklch(0.62 0.16 175);
 
+  /* Luminous Folio materials. These roles derive from the active semantic
+   * theme so presentation preferences never create a second palette. */
+  --dn-folio-paper: color-mix(in oklab, var(--card) 88%, #F5F1E7 12%);
+  --dn-folio-ink: var(--foreground);
+  --dn-paper-edge: color-mix(in oklab, var(--border) 76%, #CBAE70 24%);
+  --dn-brass: color-mix(in oklab, var(--accent) 72%, #CBAE70 28%);
+  --dn-brass-soft: color-mix(in oklab, var(--dn-brass) 18%, transparent);
+  --dn-glow: color-mix(in oklab, var(--accent) 28%, transparent);
+  --dn-grain: color-mix(in oklab, var(--foreground) 4%, transparent);
+  --dn-shell: color-mix(in oklab, var(--background) 84%, var(--primary) 16%);
+  --dn-lens: color-mix(in oklab, var(--card) 76%, var(--primary) 24%);
+
   /* Elevation — subtle border + soft shadow that reads as a card without
    * fighting the body background. */
   --dn-elevation-low: 0 1px 2px 0 color-mix(in oklab, var(--foreground) 8%, transparent);
@@ -76,6 +88,12 @@
   --dn-glass-bg: color-mix(in oklab, var(--card) 74%, transparent);
   --dn-glass-border: color-mix(in oklab, var(--foreground) 12%, transparent);
   --dn-glass-blur: 14px;
+
+  /* Motion roles: immediate/interface/narrative/ambient. */
+  --dn-motion-immediate: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --dn-motion-interface: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --dn-motion-narrative: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  --dn-motion-ambient: 26s ease-in-out;
 }
 
 .dark {
@@ -92,6 +110,48 @@
   box-shadow:
     var(--shadow-lg),
     inset 0 1px 0 0 color-mix(in oklab, white 16%, transparent);
+}
+
+/* Explicit display-preference guards keep ambient presentation outside the
+ * opaque reading surfaces and make reduced settings deterministic before
+ * React hydrates. */
+html[data-dn-wallpaper="off"] .dn-aurora-bg {
+  background: var(--background);
+}
+
+html[data-dn-wallpaper="off"] .dn-aurora-bg::before {
+  display: none;
+}
+
+html[data-dn-wallpaper="static"] .dn-aurora-bg::before {
+  animation: none;
+  transform: translate3d(0, 0, 0) scale(1.1);
+}
+
+html[data-dn-transparency="solid"] .dn-glass {
+  background: var(--card);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-dn-motion="reduced"] .dn-aurora-bg::before {
+  animation: none;
+  transform: translate3d(0, 0, 0) scale(1.1);
+}
+
+/* Serif is reserved for authored folio hierarchy, never compact controls or
+ * source/code text. */
+.dn-folio-title,
+.dn-folio-quote,
+.dn-editorial-summary {
+  font-family: var(--font-dn-editorial), Georgia, serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dn-aurora-bg::before {
+    animation: none;
+    transform: translate3d(0, 0, 0) scale(1.1);
+  }
 }
 
 /* Full-bleed aurora background — layered drifting radial gradients. The drift
