@@ -122,4 +122,27 @@ describe('DashboardPage active product identity', () => {
     expect(screen.getByText('database unavailable')).toBeInTheDocument()
     expect(screen.getByText('pending migrations')).toBeInTheDocument()
   })
+
+  it('keeps known runtime readiness while notebooks are still loading', () => {
+    dashboardFixtures.notebooks = { data: [], isLoading: true }
+    dashboardFixtures.status = {
+      data: {
+        status: 'ready',
+        checks: {
+          database: 'online',
+          database_error: null,
+          migrations_applied: true,
+          migrations_pending: false,
+          migrations_error: null,
+        },
+      },
+      isLoading: false,
+    }
+
+    render(<DashboardPage />)
+
+    expect(screen.getByText('Ready')).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Loading your notebook desk' })).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Runtime loading' })).toBeNull()
+  })
 })

@@ -34,11 +34,11 @@ export default function DashboardPage() {
     href: `/notebooks/${notebook.id}`,
   }))
 
-  const isLoading =
-    notebooksLoading ||
-    statusLoading === true ||
-    (statusLoading === undefined && status === undefined)
-  const horizonStatus = isLoading
+  // Runtime readiness is owned solely by the system-status query. Notebook
+  // collection loading is passed separately so a slow list cannot downgrade
+  // a known ready/offline runtime state.
+  const horizonStatus =
+    statusLoading === true || (statusLoading === undefined && status === undefined)
     ? 'loading'
     : status?.status === 'ready'
       ? 'ready'
