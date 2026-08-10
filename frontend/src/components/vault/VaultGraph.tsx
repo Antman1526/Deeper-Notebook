@@ -8,6 +8,7 @@ import type { VaultGraph as VaultGraphData, VaultLink } from '@/lib/api/vault'
 import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
+import { GraphAtlasFrame } from '@/components/deeper-notebook/GraphAtlasFrame'
 import './vault.css'
 
 const EMPTY_STRING_ARRAY: string[] = []
@@ -68,8 +69,8 @@ export function VaultGraph({ graph, unresolved, onNavigate, viewport, onMoveEnd,
       .map((node) => node.knowledge_document_id)
       .filter((documentId): documentId is string => Boolean(documentId)),
   )].slice(0, 128)
-  return <section className="space-y-3" aria-label={t('knowledge.localGraph')}>
-    <TurnIntoPodcastAction
+  return <GraphAtlasFrame
+    actions={<TurnIntoPodcastAction
       selection={podcastDocumentIds.length > 0
         ? { kind: 'graph_selection', documentIds: podcastDocumentIds }
         : undefined}
@@ -79,7 +80,13 @@ export function VaultGraph({ graph, unresolved, onNavigate, viewport, onMoveEnd,
         ? undefined
         : 'This graph has no unified document selection yet.'}
       onOpen={openPodcastReview}
-    />
-    <div className="vault-flow h-[480px] overflow-hidden rounded-md border"><ReactFlow nodes={nodes} edges={edges} viewport={viewport} fitView={!viewport} nodesConnectable={false} nodesDraggable={false} onConnect={() => undefined} onMoveEnd={(_event, nextViewport) => onMoveEnd?.(nextViewport)} onNodeClick={(_event: MouseEvent, node) => { if (!node.id.startsWith('unresolved:')) onNavigate(node.id) }} proOptions={{ hideAttribution: true }}><Background /><Controls showInteractive={false} /></ReactFlow></div>
-  </section>
+    />}
+    legend={<ul className="space-y-1 text-sm">
+      <li>{graph?.nodes.length ?? 0} connected source{(graph?.nodes.length ?? 0) === 1 ? '' : 's'}</li>
+      <li>{liveRelationKinds.length} relation type{liveRelationKinds.length === 1 ? '' : 's'}</li>
+      {unresolved.length ? <li>{unresolved.length} unresolved link{unresolved.length === 1 ? '' : 's'}</li> : null}
+    </ul>}
+    canvas={<div className="vault-flow h-[480px] overflow-hidden rounded-md border" aria-label={t('knowledge.localGraph')}><ReactFlow nodes={nodes} edges={edges} viewport={viewport} fitView={!viewport} nodesConnectable={false} nodesDraggable={false} onConnect={() => undefined} onMoveEnd={(_event, nextViewport) => onMoveEnd?.(nextViewport)} onNodeClick={(_event: MouseEvent, node) => { if (!node.id.startsWith('unresolved:')) onNavigate(node.id) }} proOptions={{ hideAttribution: true }}><Background /><Controls showInteractive={false} /></ReactFlow></div>}
+    inspector={<p className="text-sm text-muted-foreground">Open a connected note to inspect it in the existing workspace.</p>}
+  />
 }

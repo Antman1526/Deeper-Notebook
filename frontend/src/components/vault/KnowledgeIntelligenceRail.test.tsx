@@ -17,6 +17,7 @@ describe('KnowledgeIntelligenceRail', () => {
     )
 
     const rail = screen.getByRole('complementary', { name: 'Research intelligence' })
+    expect(screen.getByTestId('knowledge-evidence-lens')).toBeInTheDocument()
     expect(rail).toHaveTextContent('4 source excerpts')
     expect(screen.getByRole('button', { name: 'Connections' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Connections' }))

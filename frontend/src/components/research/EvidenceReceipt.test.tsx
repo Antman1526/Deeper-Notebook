@@ -25,7 +25,7 @@ describe('EvidenceReceipt', () => {
   it('renders provenance, freshness, retrieval time, and accessible fingerprints', () => {
     render(<EvidenceReceipt evidence={evidence} />)
 
-    expect(screen.getByRole('group', { name: 'Evidence receipt' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Evidence receipt' })).toHaveAttribute('data-dn-folio-evidence', 'true')
     expect(screen.getByText('serper')).toBeInTheDocument()
     expect(screen.getByText('Fresh')).toBeInTheDocument()
     expect(screen.getByText(/UTC/)).toBeInTheDocument()

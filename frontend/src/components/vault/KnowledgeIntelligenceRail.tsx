@@ -77,7 +77,7 @@ export function KnowledgeIntelligenceRail({
         </div>
       </div>
       {!collapsed ? (
-        <div className="p-3">
+        <div className="p-3" data-testid="knowledge-evidence-lens">
           <nav aria-label="Intelligence panels" className="mb-3 flex flex-wrap gap-1">
             {PANELS.map((item) => (
               <button
