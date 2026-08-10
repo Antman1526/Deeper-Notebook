@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { isLuminousFolioEnabled } from '@/lib/features'
+
 import SearchPage from './page'
 
 vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams() }))
@@ -22,7 +24,13 @@ describe('SearchPage', () => {
   it('keeps ask controls inside the Discover folio without auto-running a request', () => {
     render(<SearchPage />)
 
-    expect(screen.getByRole('main', { name: 'Ask & Search' })).toBeInTheDocument()
+    const routeFrameRole = isLuminousFolioEnabled() ? 'main' : 'region'
+    const routeFrame = screen.getByRole(routeFrameRole, { name: 'searchPage.askAndSearch' })
+    expect(routeFrame).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'searchPage.askAndSearch' })).toHaveAttribute(
+      'id',
+      routeFrame.getAttribute('aria-labelledby'),
+    )
     expect(screen.getByText('Discover')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'searchPage.askBeta' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'common.accessibility.enterQuestion' })).toBeInTheDocument()

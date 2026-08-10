@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { isLuminousFolioEnabled } from '@/lib/features'
+
 import PodcastsPage from './page'
 
 vi.mock('@/components/layout/AppShell', () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</> }))
@@ -14,7 +16,13 @@ vi.mock('@/lib/hooks/use-translation', () => ({
 describe('PodcastsPage', () => {
   it('places the existing episode workspace inside a Create folio', () => {
     render(<PodcastsPage />)
-    expect(screen.getByRole('main', { name: 'Podcasts' })).toBeInTheDocument()
+    const routeFrameRole = isLuminousFolioEnabled() ? 'main' : 'region'
+    const routeFrame = screen.getByRole(routeFrameRole, { name: 'podcasts.listTitle' })
+    expect(routeFrame).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'podcasts.listTitle' })).toHaveAttribute(
+      'id',
+      routeFrame.getAttribute('aria-labelledby'),
+    )
     expect(screen.getByText('Create')).toBeInTheDocument()
     expect(screen.getByRole('tabpanel')).toHaveTextContent('Episodes')
   })
