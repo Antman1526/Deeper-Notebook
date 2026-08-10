@@ -25,7 +25,7 @@ export function CommandBar() {
     <header className="dn-command-bar" aria-label="Command bar">
       <div className="dn-command-breadcrumb">
         <p className="dn-command-kicker">{routeLabel}</p>
-        <h1>Deeper Notebook</h1>
+        <p className="dn-command-title">Deeper Notebook</p>
       </div>
       <Button
         type="button"

@@ -1,6 +1,7 @@
 import * as React from 'react'
 
 import { FolioPage } from './FolioPage'
+import { isLuminousFolioEnabled } from '@/lib/features'
 
 export interface FolioRouteFrameProps {
   section: string
@@ -20,7 +21,7 @@ export const FolioRouteFrame = React.forwardRef<HTMLElement, FolioRouteFrameProp
     return (
       <FolioPage
         ref={ref}
-        as="main"
+        as={isLuminousFolioEnabled() ? 'main' : 'section'}
         eyebrow={section}
         title={title}
         subtitle={description}

@@ -130,7 +130,7 @@
   backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
 }
 
-.dn-command-breadcrumb h1,
+.dn-command-title,
 .dn-navigator-heading h2,
 .dn-context-lens-heading h2 {
   margin: 0;

@@ -140,3 +140,36 @@ icons, create dialog handlers, and existing feature-flag aliases are unchanged;
 only the requested static flag and downstream exports were added. The new flag
 has no legacy alias and remains false by default. This receipt does not claim
 later redesign, native-runtime, package, or release proof.
+
+## Task 13 resilience checkpoint
+
+- Date: 2026-08-10
+- Revision under test: `f5bb989c` plus the uncommitted Task 13 changes below.
+- Scope: Luminous-shell landmark/heading semantics, reduced-motion and solid
+  transparency contracts, contrast, source-approval label structure, and
+  deterministic responsive browser parity.
+
+The legacy shell remains the sole `main` landmark while the feature flag is
+off. With `NEXT_PUBLIC_DN_LUMINOUS_FOLIO=1`, the route frame owns the sole
+`main` landmark and its route title is the sole level-one heading; the product
+wordmark is no longer a second page heading. This keeps the fallback and the
+redesigned shell accessible without changing routes or handlers.
+
+| Gate | Exact command | Result |
+| --- | --- | --- |
+| RED landmark test | `cd frontend && npm exec vitest run src/components/deeper-notebook/route-frames/KnowledgeRouteFrames.test.tsx` | Expected failure: two `main` landmarks in legacy mode. |
+| RED heading test | `cd frontend && npm exec vitest run src/components/deeper-notebook/shell/shell.test.tsx` | Expected failure: two level-one headings in the Luminous shell. |
+| Focused unit contracts | `cd frontend && npm exec vitest run src/components/deeper-notebook/luminous-accessibility.test.tsx src/components/deeper-notebook/shell/shell.test.tsx src/components/deeper-notebook/route-frames/KnowledgeRouteFrames.test.tsx src/components/deeper-notebook/route-frames/SystemRouteFrames.test.tsx src/components/research/SourceApprovalPanel.test.tsx src/lib/themes/catalog.test.ts src/components/vault/ResearchCoreVisualSystem.test.tsx` | 7 files passed; 36 tests passed before the final fixture type correction, then rerun clean. |
+| Lint | `cd frontend && npm run lint` | Exit 0. |
+| TypeScript | `cd frontend && npx tsc --noEmit` | Exit 0 after adding the required fixture snippet. |
+| Flag-on production build | `cd frontend && NEXT_PUBLIC_DN_LUMINOUS_FOLIO=1 npm run build` | Exit 0; Next.js 16.2.12 generated 23 routes. |
+| Responsive mocked browser parity | `cd frontend && PLAYWRIGHT_PORT=3117 npx playwright test e2e/luminous-folio-parity.spec.ts --project=mocked-browser` | 4 passed at 390x844, 768x1024, 1280x800, and 1440x900. |
+
+The browser proof used a clean locally built frontend on port 3117 and the
+repository's deterministic research-workbench API fixture. The first attempt
+proved the fixture must be explicitly consumed; the next attempt revealed the
+intentional guided-tip overlay intercepting a pointer. The final contract
+dismisses that optional tip normally, then proves the mobile navigator and
+context-lens controls, desktop rail/lens visibility, one `main`, one `h1`, no
+horizontal overflow, and zero console errors. It does not claim a full visual
+snapshot matrix, native runtime, DMG, signing, or installed-app proof.

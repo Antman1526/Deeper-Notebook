@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LuminousAppShell } from './LuminousAppShell'
+import { FolioPage } from '../folio/FolioPage'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 
@@ -116,7 +117,7 @@ describe('LuminousAppShell', () => {
     expect(screen.getByRole('navigation', { name: 'Primary tools' })).toBeVisible()
     expect(screen.getByRole('navigation', { name: 'Notebook index' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled()
-    expect(screen.getByRole('heading', { name: 'Deeper Notebook' })).toBeVisible()
+    expect(screen.getByText('Deeper Notebook', { selector: '.dn-command-title' })).toBeVisible()
     expect(screen.getByTestId('global-audio-player')).toBeInTheDocument()
 
     const expectedRoutes = [
@@ -158,6 +159,19 @@ describe('LuminousAppShell', () => {
     expect(screen.getByTestId('audio-player')).toBeInTheDocument()
     expect(screen.getAllByTestId('page-content')).toHaveLength(1)
     expect(document.querySelectorAll('.dn-editorial-canvas')).toHaveLength(1)
+  })
+
+  it('leaves the page heading to the folio route', () => {
+    render(
+      <LuminousAppShell>
+        <FolioPage title="Research workspace">
+          <p>Local research.</p>
+        </FolioPage>
+      </LuminousAppShell>,
+    )
+
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getByRole('heading', { level: 1, name: 'Research workspace' })).toBeInTheDocument()
   })
 
   it('keeps theme, language, Gmail, auth, health, and version controls in the mobile dock alternative', () => {
