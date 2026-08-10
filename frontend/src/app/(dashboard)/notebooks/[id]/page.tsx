@@ -13,6 +13,7 @@ import { useNotebookSources } from '@/lib/hooks/use-sources'
 import { useNotes } from '@/lib/hooks/use-notes'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ArtifactRail } from '@/components/deeper-notebook'
+import { FolioRouteFrame } from '@/components/deeper-notebook/folio/FolioRouteFrame'
 import { ResearchRunWorkspace } from '@/components/research/ResearchRunWorkspace'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
@@ -167,9 +168,11 @@ export default function NotebookPage() {
     // and a UX dead-end if the request hung.
     return (
       <AppShell>
-        <div className="flex-1 flex items-center justify-center">
-          <LoadingSpinner size="lg" />
-        </div>
+        <FolioRouteFrame section="Organize" title="Notebook workspace">
+          <div className="flex flex-1 items-center justify-center">
+            <LoadingSpinner size="lg" />
+          </div>
+        </FolioRouteFrame>
       </AppShell>
     )
   }
@@ -177,16 +180,19 @@ export default function NotebookPage() {
   if (!notebook) {
     return (
       <AppShell>
-        <div className="p-6">
-          <h1 className="text-2xl font-bold mb-4">{t('notebooks.notFound')}</h1>
-          <p className="text-muted-foreground">{t('notebooks.notFoundDesc')}</p>
-        </div>
+        <FolioRouteFrame section="Organize" title="Notebook workspace">
+          <div>
+            <h2 className="mb-4 text-2xl font-semibold">{t('notebooks.notFound')}</h2>
+            <p className="text-muted-foreground">{t('notebooks.notFoundDesc')}</p>
+          </div>
+        </FolioRouteFrame>
       </AppShell>
     )
   }
 
   return (
     <AppShell>
+      <FolioRouteFrame section="Organize" title="Notebook workspace">
       {/* v0.7.164 — Notebook detail page header gets a clean visual
           break from the 3-column workspace below.
           Before: header was `p-6 pb-0` (no bottom padding, no
@@ -199,7 +205,7 @@ export default function NotebookPage() {
           `pt-8` so the columns "land" cleanly below the divider.
           This is the most-visited screen in the app — worth the
           polish to compete with NotebookLM's notebook view. */}
-      <div className="flex flex-col flex-1 min-h-0">
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex-shrink-0 px-6 pt-6 pb-4 border-b">
           <NotebookHeader notebook={notebook} />
         </div>
@@ -352,6 +358,7 @@ export default function NotebookPage() {
           </div>
         </div>
       </div>
+      </FolioRouteFrame>
     </AppShell>
   )
 }

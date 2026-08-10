@@ -13,6 +13,7 @@ import { CreateNotebookDialog } from '@/components/notebooks/CreateNotebookDialo
 import { ImportNotebookDialog } from './components/ImportNotebookDialog'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
 
 export default function NotebooksPage() {
   const { t } = useTranslation()
@@ -64,24 +65,18 @@ export default function NotebooksPage() {
 
   return (
     <AppShell>
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            {/* v0.7.164 — H1 hierarchy sweep. Page titles across the
-                dashboard previously shipped two competing styles:
-                `text-2xl font-bold` (notebooks/transformations/studio/
-                search) vs `text-3xl font-semibold tracking-tight`
-                (settings/podcasts/advanced/setup-wizard added in
-                v0.7.153). Unifying on the lighter v0.7.153 variant
-                — slightly larger, less heavy — for a cleaner read
-                that competes better with NotebookLM's typography. */}
-            <h1 className="text-3xl font-semibold tracking-tight">{t('notebooks.title')}</h1>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
+      <KnowledgeRouteFrame
+        route="/notebooks"
+        actions={
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Refresh notebooks"
+              onClick={() => refetch()}
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
             <Input
               id="notebook-search"
               name="notebook-search"
@@ -101,11 +96,11 @@ export default function NotebooksPage() {
               {t('notebooks.newNotebook')}
             </Button>
           </div>
-        </div>
-        
+        }
+      >
         <div className="space-y-8">
-          <NotebookList 
-            notebooks={filteredActive} 
+          <NotebookList
+            notebooks={filteredActive}
             isLoading={isLoading}
             title={t('notebooks.activeNotebooks')}
             emptyTitle={isSearching ? t('common.noMatches') : undefined}
@@ -132,10 +127,10 @@ export default function NotebooksPage() {
               ) : undefined
             }
           />
-          
+
           {hasArchived && (
-            <NotebookList 
-              notebooks={filteredArchived} 
+            <NotebookList
+              notebooks={filteredArchived}
               isLoading={false}
               title={t('notebooks.archivedNotebooks')}
               collapsible
@@ -144,8 +139,7 @@ export default function NotebooksPage() {
             />
           )}
         </div>
-        </div>
-      </div>
+      </KnowledgeRouteFrame>
 
       <CreateNotebookDialog
         open={createDialogOpen}
