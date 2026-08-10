@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { getApiErrorKey } from '@/lib/utils/error-handler'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
+import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
 
 export default function SourcesPage() {
   const { t, language } = useTranslation()
@@ -291,12 +292,25 @@ export default function SourcesPage() {
     }
   }
 
+  const sourceAction = () => (
+    <Button onClick={openSourceDialogAndRefresh} className="shrink-0">
+      <Plus className="mr-2 h-4 w-4" />
+      {t('sources.addNew')}
+    </Button>
+  )
+
   if (loading) {
     return (
       <AppShell>
-        <div className="flex h-full items-center justify-center">
-          <LoadingSpinner />
-        </div>
+        <KnowledgeRouteFrame
+          route="/sources"
+          description={t('sources.allSourcesDesc')}
+          actions={sourceAction()}
+        >
+          <div className="flex h-full items-center justify-center">
+            <LoadingSpinner />
+          </div>
+        </KnowledgeRouteFrame>
       </AppShell>
     )
   }
@@ -304,12 +318,18 @@ export default function SourcesPage() {
   if (error) {
     return (
       <AppShell>
-        <div className="flex h-full items-center justify-center">
-          {/* v0.7.180 — text-red-500 → text-destructive so the error
-              line absorbs the active theme's destructive hue (same as the
-              v0.7.165 ErrorBoundary fix). */}
-          <p className="text-destructive">{error}</p>
-        </div>
+        <KnowledgeRouteFrame
+          route="/sources"
+          description={t('sources.allSourcesDesc')}
+          actions={sourceAction()}
+        >
+          <div className="flex h-full items-center justify-center">
+            {/* v0.7.180 — text-red-500 → text-destructive so the error
+                line absorbs the active theme's destructive hue (same as the
+                v0.7.165 ErrorBoundary fix). */}
+            <p className="text-destructive">{error}</p>
+          </div>
+        </KnowledgeRouteFrame>
       </AppShell>
     )
   }
@@ -317,48 +337,30 @@ export default function SourcesPage() {
   if (sources.length === 0) {
     return (
       <AppShell>
-        {/* v0.7.34 — empty state now has a CTA. Previously a dead end:
-            users had to know to drill into a specific notebook to upload.
-            The "Add source" button opens the same SourceDialog the
-            sidebar Create button uses. */}
-        <EmptyState
-          icon={FileText}
-          title={t('sources.noSourcesYet')}
-          description={t('sources.allSourcesDescShort')}
-          action={
-            <Button onClick={openSourceDialogAndRefresh}>
-              <Upload className="mr-2 h-4 w-4" />
-              {t('sources.addNew')}
-            </Button>
-          }
-        />
+        <KnowledgeRouteFrame
+          route="/sources"
+          description={t('sources.allSourcesDesc')}
+          actions={sourceAction()}
+        >
+          <EmptyState
+            icon={FileText}
+            title={t('sources.noSourcesYet')}
+            description={t('sources.allSourcesDescShort')}
+          />
+        </KnowledgeRouteFrame>
       </AppShell>
     )
   }
 
   return (
     <AppShell>
-      <div className="flex flex-col h-full w-full max-w-none px-6 py-6">
-        <div className="mb-6 flex flex-shrink-0 items-start justify-between gap-4">
-          <div>
-            {/* v0.7.180 — H1 standardization (font-bold → font-semibold
-                tracking-tight). Last leftover dashboard H1 on the legacy
-                weight. See advanced/page.tsx:16 for context. */}
-            <h1 className="text-3xl font-semibold tracking-tight">{t('sources.allSources')}</h1>
-            <p className="mt-2 text-muted-foreground">
-              {t('sources.allSourcesDesc')}
-            </p>
-          </div>
-          {/* v0.7.34 — header-level Add Source button. Discoverability
-              fix: there was no in-page way to create a source from the
-              all-sources list; users had to drill into a notebook. */}
-          <Button onClick={openSourceDialogAndRefresh} className="shrink-0">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('sources.addNew')}
-          </Button>
-        </div>
-
-        <div ref={scrollContainerRef} className="flex-1 rounded-md border overflow-auto">
+      <KnowledgeRouteFrame
+        route="/sources"
+        description={t('sources.allSourcesDesc')}
+        actions={sourceAction()}
+      >
+        <div className="flex h-full min-h-0 w-full max-w-none flex-col">
+          <div ref={scrollContainerRef} className="flex-1 overflow-auto rounded-md border">
           <table
             ref={tableRef}
             tabIndex={0}
@@ -502,18 +504,19 @@ export default function SourcesPage() {
               )}
             </tbody>
           </table>
-        </div>
-      </div>
+          </div>
 
-      <ConfirmDialog
-        open={deleteDialog.open}
-        onOpenChange={(open) => setDeleteDialog({ open, source: deleteDialog.source })}
-        title={t('sources.delete')}
-        description={t('sources.deleteConfirmWithTitle').replace('{title}', deleteDialog.source?.title || t('sources.untitledSource'))}
-        confirmText={t('common.delete')}
-        confirmVariant="destructive"
-        onConfirm={handleDeleteConfirm}
-      />
+          <ConfirmDialog
+            open={deleteDialog.open}
+            onOpenChange={(open) => setDeleteDialog({ open, source: deleteDialog.source })}
+            title={t('sources.delete')}
+            description={t('sources.deleteConfirmWithTitle').replace('{title}', deleteDialog.source?.title || t('sources.untitledSource'))}
+            confirmText={t('common.delete')}
+            confirmVariant="destructive"
+            onConfirm={handleDeleteConfirm}
+          />
+        </div>
+      </KnowledgeRouteFrame>
     </AppShell>
   )
 }
