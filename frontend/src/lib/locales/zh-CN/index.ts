@@ -132,7 +132,6 @@ export const zhCN = {
       searchNotebooks: "搜索笔记本",
     },
     url: "URL",
-    errorDetails: "错误详情",
     editTransformation: "编辑转换规则",
     retry: "重试",
     traditionalChinese: "繁体中文",

@@ -135,7 +135,6 @@ export const plPL = {
       searchNotebooks: "Przeszukaj notatniki",
     },
     url: "URL",
-    errorDetails: "Szczegóły błędu",
     editTransformation: "Edytuj transformację",
     retry: "Spróbuj ponownie",
     traditionalChinese: "Chiński (tradycyjny)",

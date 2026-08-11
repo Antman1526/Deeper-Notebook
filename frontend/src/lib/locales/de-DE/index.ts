@@ -135,7 +135,6 @@ export const deDE = {
       searchNotebooks: "Notebooks suchen",
     },
     url: "URL",
-    errorDetails: "Fehlerdetails",
     editTransformation: "Transformation bearbeiten",
     retry: "Erneut versuchen",
     traditionalChinese: "繁體中文",

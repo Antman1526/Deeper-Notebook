@@ -132,7 +132,6 @@ export const itIT = {
       searchNotebooks: "Cerca quaderni",
     },
     url: "URL",
-    errorDetails: "Dettagli errore",
     editTransformation: "Modifica trasformazione",
     retry: "Riprova",
     traditionalChinese: "繁體中文",

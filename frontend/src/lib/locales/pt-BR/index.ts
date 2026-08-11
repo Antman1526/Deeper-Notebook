@@ -132,7 +132,6 @@ export const ptBR = {
       searchNotebooks: "Buscar cadernos",
     },
     url: "URL",
-    errorDetails: "Detalhes do Erro",
     editTransformation: "Editar Transformação",
     retry: "Tentar Novamente",
     traditionalChinese: "繁體中文",

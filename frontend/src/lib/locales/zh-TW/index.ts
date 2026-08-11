@@ -132,7 +132,6 @@ export const zhTW = {
       searchNotebooks: "搜尋筆記本",
     },
     url: "URL",
-    errorDetails: "錯誤詳情",
     editTransformation: "編輯轉換規則",
     retry: "重試",
     traditionalChinese: "繁體中文",

@@ -132,7 +132,6 @@ export const frFR = {
       searchNotebooks: "Rechercher dans les carnets",
     },
     url: "URL",
-    errorDetails: "Détails de l'erreur",
     editTransformation: "Modifier la transformation",
     retry: "Réessayer",
     traditionalChinese: "繁體中文",

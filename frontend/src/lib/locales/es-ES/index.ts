@@ -132,7 +132,6 @@ export const esES = {
       searchNotebooks: "Buscar cuadernos",
     },
     url: "URL",
-    errorDetails: "Detalles del error",
     editTransformation: "Editar transformación",
     retry: "Reintentar",
     traditionalChinese: "繁體中文",

@@ -135,7 +135,6 @@ export const caES = {
       searchNotebooks: "Cerca quaderns",
     },
     url: "URL",
-    errorDetails: "Detalls de l'error",
     editTransformation: "Edita la transformació",
     retry: "Torna-ho a provar",
     traditionalChinese: "繁體中文",

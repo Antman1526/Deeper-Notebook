@@ -132,7 +132,6 @@ export const bnIN = {
       searchNotebooks: "নোটবুক অনুসন্ধান",
     },
     url: "URL",
-    errorDetails: "ত্রুটির বিবরণ",
     editTransformation: "ট্রান্সফরমেশন সম্পাদনা",
     retry: "আবার চেষ্টা করুন",
     traditionalChinese: "繁體中文",

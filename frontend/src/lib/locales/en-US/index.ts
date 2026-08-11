@@ -136,7 +136,6 @@ export const enUS = {
       searchNotebooks: "Search notebooks",
     },
     url: "URL",
-    errorDetails: "Error Details",
     editTransformation: "Edit Transformation",
     retry: "Try Again",
     traditionalChinese: "繁體中文",

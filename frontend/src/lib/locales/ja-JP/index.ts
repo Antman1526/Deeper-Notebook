@@ -132,7 +132,6 @@ export const jaJP = {
       searchNotebooks: "ノートブックを検索",
     },
     url: "URL",
-    errorDetails: "エラー詳細",
     editTransformation: "トランスフォーメーションを編集",
     retry: "再試行",
     traditionalChinese: "繁體中文",

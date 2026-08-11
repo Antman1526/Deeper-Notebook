@@ -132,7 +132,6 @@ export const ruRU = {
       searchNotebooks: "Поиск блокнотов",
     },
     url: "URL",
-    errorDetails: "Детали ошибки",
     editTransformation: "Редактировать трансформацию",
     retry: "Повторить",
     traditionalChinese: "繁體中文",

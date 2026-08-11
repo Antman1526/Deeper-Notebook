@@ -135,7 +135,6 @@ export const trTR = {
       searchNotebooks: "Defterlerde ara",
     },
     url: "URL",
-    errorDetails: "Hata Ayrıntıları",
     editTransformation: "Dönüşümü Düzenle",
     retry: "Tekrar Dene",
     traditionalChinese: "繁體中文",
