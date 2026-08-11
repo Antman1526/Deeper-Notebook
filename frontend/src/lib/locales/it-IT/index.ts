@@ -969,6 +969,10 @@ export const itIT = {
       testFailed: "Test di connessione non riuscito.",
       moveUp: "Sposta su",
       moveDown: "Sposta giù",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "Aggiornamento del server MCP non riuscito.",
     },
     launcherPrefs: {

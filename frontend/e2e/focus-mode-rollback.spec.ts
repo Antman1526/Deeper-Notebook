@@ -8,6 +8,10 @@ const viewports = [
 
 for (const viewport of viewports) {
   test(`rollback Focus mode keeps legacy content usable at ${viewport.label} width`, async ({ page }) => {
+    test.skip(
+      process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO !== '0',
+      'The rollback Focus proof requires a build created with NEXT_PUBLIC_DN_LUMINOUS_FOLIO=0.',
+    )
     const consoleErrors: string[] = []
     page.on('console', message => {
       if (message.type() === 'error') consoleErrors.push(message.text())

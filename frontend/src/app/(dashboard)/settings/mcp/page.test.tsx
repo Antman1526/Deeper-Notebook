@@ -187,6 +187,89 @@ describe('MCPServersPage', () => {
     expect(delBtns).toHaveLength(2)
   })
 
+  it('renders the current enabled state and an accessible toggle per server', () => {
+    mockHooks({
+      servers: [
+        { id: 'srv:enabled', name: 'Alpha', url: 'https://alpha.example.com/mcp', enabled: true },
+        { id: 'srv:disabled', name: 'Beta', url: 'https://beta.example.com/mcp', enabled: false },
+      ],
+    })
+    render(<MCPServersPage />)
+
+    const enabledToggle = screen.getByRole('button', { name: /settings\.mcp\.disableButton Alpha/ })
+    const disabledToggle = screen.getByRole('button', { name: /settings\.mcp\.enableButton Beta/ })
+
+    expect(enabledToggle).toHaveAttribute('aria-pressed', 'true')
+    expect(disabledToggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('settings.mcp.enabledStatus')).toBeInTheDocument()
+    expect(screen.getByText('settings.mcp.disabledStatus')).toBeInTheDocument()
+  })
+
+  it('toggles enabled with only the existing PATCH enabled payload', () => {
+    const updateMutate = vi.fn()
+    mockHooks({
+      servers: [
+        { id: 'srv:1', name: 'Alpha', url: 'https://alpha.example.com/mcp', enabled: true },
+      ],
+      updateMutate,
+    })
+    render(<MCPServersPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: /settings\.mcp\.disableButton Alpha/ }))
+
+    expect(updateMutate).toHaveBeenCalledWith(
+      { id: 'srv:1', body: { enabled: false } },
+      expect.objectContaining({ onSettled: expect.any(Function) }),
+    )
+    expect(updateMutate.mock.calls[0][0].body).toEqual({ enabled: false })
+  })
+
+  it('guards a toggle row against duplicate mutations while the request settles', () => {
+    const updateMutate = vi.fn()
+    mockHooks({
+      servers: [
+        { id: 'srv:1', name: 'Alpha', url: 'https://alpha.example.com/mcp', enabled: true },
+      ],
+      updateMutate,
+    })
+    render(<MCPServersPage />)
+
+    const toggle = screen.getByRole('button', { name: /settings\.mcp\.disableButton Alpha/ })
+    fireEvent.click(toggle)
+    fireEvent.click(toggle)
+
+    expect(updateMutate).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps toggle controls isolated from test and delete mutation pending state', () => {
+    mockHooks({
+      servers: [
+        { id: 'srv:1', name: 'Alpha', url: 'https://alpha.example.com/mcp', enabled: true },
+      ],
+      testIsPending: true,
+      delIsPending: true,
+    })
+    render(<MCPServersPage />)
+
+    expect(screen.getByRole('button', { name: /settings\.mcp\.disableButton Alpha/ })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'settings.mcp.testButton' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'settings.mcp.deleteButton' })).toBeDisabled()
+  })
+
+  it('uses a stacked responsive row layout with a wrapping control grid', () => {
+    mockHooks({
+      servers: [
+        { id: 'srv:1', name: 'Alpha', url: 'https://alpha.example.com/mcp', enabled: true },
+      ],
+    })
+    render(<MCPServersPage />)
+
+    const row = screen.getByRole('listitem')
+    expect(row.className).toContain('flex-col')
+    expect(row.className).toContain('sm:flex-row')
+    expect(row.querySelector('[data-testid="mcp-server-actions"]')?.className).toContain('grid-cols-2')
+  })
+
   it('clicking Test calls test mutation with server id', () => {
     const testMutate = vi.fn()
     mockHooks({

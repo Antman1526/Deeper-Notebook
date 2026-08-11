@@ -971,6 +971,10 @@ export const deDE = {
       testFailed: "Verbindungstest fehlgeschlagen.",
       moveUp: "Nach oben",
       moveDown: "Nach unten",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "MCP-Server konnte nicht aktualisiert werden.",
     },
     launcherPrefs: {

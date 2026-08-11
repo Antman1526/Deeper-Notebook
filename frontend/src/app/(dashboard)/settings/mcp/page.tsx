@@ -55,6 +55,7 @@ export default function MCPServersPage() {
 
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
+  const [pendingUpdates, setPendingUpdates] = useState<Set<string>>(() => new Set())
 
   const canAdd =
     name.trim().length > 0 && isValidUrl(url) && !create.isPending
@@ -78,6 +79,33 @@ export default function MCPServersPage() {
     )
     if (!confirmed) return
     del.mutate(id)
+  }
+
+  const handleToggle = (server: (typeof servers)[number]) => {
+    if (update.isPending || pendingUpdates.has(server.id)) return
+
+    setPendingUpdates((current) => {
+      const next = new Set(current)
+      next.add(server.id)
+      return next
+    })
+
+    update.mutate(
+      {
+        id: server.id,
+        body: { enabled: !server.enabled },
+      },
+      {
+        onSettled: () => {
+          setPendingUpdates((current) => {
+            if (!current.has(server.id)) return current
+            const next = new Set(current)
+            next.delete(server.id)
+            return next
+          })
+        },
+      },
+    )
   }
 
   return (
@@ -140,13 +168,41 @@ export default function MCPServersPage() {
                   {servers.map((server, i) => (
                     <li
                       key={server.id}
-                      className="flex items-center justify-between gap-4 px-4 py-3"
+                      className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-sm">{server.name}</p>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <p className="min-w-0 truncate font-medium text-sm">{server.name}</p>
+                          <span
+                            className="shrink-0 text-[11px] text-muted-foreground"
+                            data-testid={`mcp-status-${server.id}`}
+                          >
+                            {server.enabled
+                              ? t('settings.mcp.enabledStatus')
+                              : t('settings.mcp.disabledStatus')}
+                          </span>
+                        </div>
                         <p className="truncate text-xs text-muted-foreground">{server.url}</p>
                       </div>
-                      <div className="flex shrink-0 gap-2">
+                      <div
+                        className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end"
+                        data-testid="mcp-server-actions"
+                      >
+                        <Button
+                          variant={server.enabled ? 'outline' : 'default'}
+                          size="sm"
+                          onClick={() => handleToggle(server)}
+                          disabled={update.isPending || pendingUpdates.has(server.id)}
+                          aria-pressed={server.enabled}
+                          aria-label={`${server.enabled
+                            ? t('settings.mcp.disableButton')
+                            : t('settings.mcp.enableButton')} ${server.name}`}
+                          data-testid={`mcp-toggle-${server.id}`}
+                        >
+                          {server.enabled
+                            ? t('settings.mcp.disableButton')
+                            : t('settings.mcp.enableButton')}
+                        </Button>
                         {/* v0.8.1 Item 5 — priority reorder buttons */}
                         <Button
                           variant="ghost"

@@ -985,6 +985,10 @@ export const enUS = {
       // v0.8.1 Item 5 — priority reorder buttons
       moveUp: "Move up",
       moveDown: "Move down",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "Failed to update MCP server.",
     },
     launcherPrefs: {

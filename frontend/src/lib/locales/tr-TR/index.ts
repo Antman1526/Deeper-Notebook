@@ -970,6 +970,10 @@ export const trTR = {
       testFailed: "Bağlantı testi başarısız.",
       moveUp: "Yukarı taşı",
       moveDown: "Aşağı taşı",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "MCP sunucusu güncellenemedi.",
     },
     launcherPrefs: {

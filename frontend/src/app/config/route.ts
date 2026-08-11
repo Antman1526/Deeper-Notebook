@@ -1,5 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+const FALLBACK_API_URL = 'http://localhost:5055'
+
+function normalizeHttpProtocol(value: string | null): 'http' | 'https' | null {
+  const normalized = value?.trim().toLowerCase()
+  return normalized === 'http' || normalized === 'https' ? normalized : null
+}
+
+/**
+ * Parse only the authority portion accepted by a Host header. URL's parser
+ * handles ports, DNS names, IPv4, and bracketed IPv6 without the lossy
+ * `split(':')` behavior this endpoint previously used. Paths, credentials,
+ * query strings, and fragments are not valid host values and fail closed.
+ */
+function parseHostHeader(hostHeader: string): string | null {
+  const value = hostHeader.trim()
+  if (!value || value !== hostHeader || /[/?#]/.test(value)) return null
+
+  try {
+    const parsed = new URL(`http://${value}`)
+    if (
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== '/' ||
+      parsed.search ||
+      parsed.hash ||
+      !parsed.hostname
+    ) {
+      return null
+    }
+
+    // URL.hostname is bracketed for IPv6 in the WHATWG implementation used by
+    // Next.js. Keep the guard for runtimes that return the raw colon form.
+    return parsed.hostname.includes(':') && !parsed.hostname.startsWith('[')
+      ? `[${parsed.hostname}]`
+      : parsed.hostname
+  } catch {
+    return null
+  }
+}
+
 /**
  * Runtime Configuration Endpoint
  *
@@ -34,35 +74,34 @@ export async function GET(request: NextRequest) {
 
   // Priority 2: Auto-detect from request headers
   try {
-    // Get the protocol (http or https)
-    // Check X-Forwarded-Proto first (for reverse proxies), then fallback to request scheme
-    const proto = request.headers.get('x-forwarded-proto') ||
-                  request.nextUrl.protocol.replace(':', '') ||
-                  'http'
+    // Check X-Forwarded-Proto first (for reverse proxies), but accept only
+    // the two schemes this browser-facing endpoint can safely emit. An
+    // explicitly malformed forwarded value falls back to localhost rather
+    // than being replaced with an untrusted request/header value.
+    const forwardedProto = request.headers.get('x-forwarded-proto')
+    const proto = forwardedProto === null
+      ? normalizeHttpProtocol(request.nextUrl.protocol.replace(/:$/, ''))
+      : normalizeHttpProtocol(forwardedProto)
 
     // Get the host header (includes port if non-standard)
     const hostHeader = request.headers.get('host')
 
-    if (hostHeader) {
-      // Extract just the hostname (remove port if present)
-      const hostname = hostHeader.split(':')[0]
+    if (proto && hostHeader) {
+      const hostname = parseHostHeader(hostHeader)
 
-      // Construct the API URL with port 5055
-      const apiUrl = `${proto}://${hostname}:5055`
+      if (hostname) {
+        // Construct the API URL with port 5055. `hostname` is already a
+        // standards-parsed authority, including brackets for IPv6.
+        const apiUrl = `${proto}://${hostname}:5055`
 
-      console.log(`[runtime-config] Auto-detected API URL: ${apiUrl} (proto=${proto}, host=${hostHeader})`)
-
-      return NextResponse.json({
-        apiUrl,
-      })
+        return NextResponse.json({ apiUrl })
+      }
     }
-  } catch (error) {
-    console.error('[runtime-config] Auto-detection failed:', error)
+  } catch {
+    // Preserve the safe fallback for malformed request implementations or
+    // unexpected header values without reflecting raw input into logs/output.
   }
 
   // Priority 3: Fallback to localhost
-  console.log('[runtime-config] Using fallback: http://localhost:5055')
-  return NextResponse.json({
-    apiUrl: 'http://localhost:5055',
-  })
+  return NextResponse.json({ apiUrl: FALLBACK_API_URL })
 }

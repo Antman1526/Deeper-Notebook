@@ -970,6 +970,10 @@ export const esES = {
       testFailed: "La prueba de conexión falló.",
       moveUp: "Mover arriba",
       moveDown: "Mover abajo",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "Error al actualizar el servidor MCP.",
     },
     launcherPrefs: {

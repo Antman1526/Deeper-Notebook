@@ -967,6 +967,10 @@ export const zhTW = {
       testFailed: "連線測試失敗。",
       moveUp: "上移",
       moveDown: "下移",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "更新 MCP 伺服器失敗。",
     },
     launcherPrefs: {

@@ -967,6 +967,10 @@ export const jaJP = {
       testFailed: "接続テストに失敗しました。",
       moveUp: "上へ",
       moveDown: "下へ",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "MCP サーバーの更新に失敗しました。",
     },
     launcherPrefs: {

@@ -968,6 +968,10 @@ export const bnIN = {
       testFailed: "সংযোগ পরীক্ষা ব্যর্থ হয়েছে।",
       moveUp: "উপরে সরান",
       moveDown: "নিচে সরান",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "MCP সার্ভার আপডেট করতে ব্যর্থ।",
     },
     launcherPrefs: {

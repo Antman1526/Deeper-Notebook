@@ -972,6 +972,10 @@ export const caES = {
       testFailed: "Ha fallat la prova de connexió.",
       moveUp: "Mou amunt",
       moveDown: "Mou avall",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "Ha fallat l'actualització del servidor MCP.",
     },
     launcherPrefs: {

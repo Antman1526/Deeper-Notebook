@@ -971,6 +971,10 @@ export const plPL = {
       testFailed: "Test połączenia nie powiódł się.",
       moveUp: "Przenieś w górę",
       moveDown: "Przenieś w dół",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "Nie udało się zaktualizować serwera MCP.",
     },
     launcherPrefs: {

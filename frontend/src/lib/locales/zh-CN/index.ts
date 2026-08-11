@@ -967,6 +967,10 @@ export const zhCN = {
       testFailed: "连接测试失败。",
       moveUp: "上移",
       moveDown: "下移",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "更新 MCP 服务器失败。",
     },
     launcherPrefs: {

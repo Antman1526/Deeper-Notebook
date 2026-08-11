@@ -967,6 +967,10 @@ export const ruRU = {
       testFailed: "Тест подключения не прошёл.",
       moveUp: "Переместить вверх",
       moveDown: "Переместить вниз",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "Не удалось обновить MCP-сервер.",
     },
     launcherPrefs: {

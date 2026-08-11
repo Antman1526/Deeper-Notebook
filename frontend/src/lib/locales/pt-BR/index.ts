@@ -968,6 +968,10 @@ export const ptBR = {
       testFailed: "Falha no teste de conexão.",
       moveUp: "Mover para cima",
       moveDown: "Mover para baixo",
+      enableButton: "Enable",
+      disableButton: "Disable",
+      enabledStatus: "Enabled",
+      disabledStatus: "Disabled",
       updateFailed: "Falha ao atualizar servidor MCP.",
     },
     launcherPrefs: {
