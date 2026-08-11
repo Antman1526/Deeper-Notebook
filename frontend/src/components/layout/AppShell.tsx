@@ -8,6 +8,7 @@ import { NetworkStatusBadge } from './NetworkStatusBadge'
 import { GlobalAudioPlayer } from '@/components/podcasts/GlobalAudioPlayer'
 import { GuidedTipsProvider } from '@/components/guided-tips'
 import { LuminousAppShell } from '@/components/deeper-notebook/shell/LuminousAppShell'
+import { FocusModeControl } from '@/components/deeper-notebook/shell/FocusModeControl'
 import { isLuminousFolioEnabled } from '@/lib/features'
 
 interface AppShellProps {
@@ -22,7 +23,7 @@ export function AppShell({ children }: AppShellProps) {
 
 function LegacyAppShell({ children }: AppShellProps) {
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="dn-legacy-shell relative flex h-screen overflow-hidden">
       <AppSidebar />
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <SetupBanner />
@@ -33,6 +34,7 @@ function LegacyAppShell({ children }: AppShellProps) {
         <GuidedTipsProvider />
         <GlobalAudioPlayer />
       </main>
+      <FocusModeControl />
     </div>
   )
 }

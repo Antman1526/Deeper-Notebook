@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 
+import { Button } from '@/components/ui/button'
 import {
   isMotionPreference,
   isTransparencyPreference,
@@ -65,13 +66,20 @@ export function DisplayPreferencesPanel() {
   const wallpaper = useDisplayPreferencesStore((state) => state.wallpaper)
   const motion = useDisplayPreferencesStore((state) => state.motion)
   const transparency = useDisplayPreferencesStore((state) => state.transparency)
+  const focusMode = useDisplayPreferencesStore((state) => state.focusMode)
   const setWallpaper = useDisplayPreferencesStore((state) => state.setWallpaper)
   const setMotion = useDisplayPreferencesStore((state) => state.setMotion)
   const setTransparency = useDisplayPreferencesStore((state) => state.setTransparency)
+  const setFocusMode = useDisplayPreferencesStore((state) => state.setFocusMode)
 
   useEffect(() => {
     applyDisplayPreferencesToDocument({ wallpaper, motion, transparency })
   }, [motion, transparency, wallpaper])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    document.documentElement.dataset.dnFocusMode = focusMode ? 'true' : 'false'
+  }, [focusMode])
 
   const updateWallpaper = (value: string) => {
     if (!isWallpaperPreference(value)) return
@@ -153,6 +161,25 @@ export function DisplayPreferencesPanel() {
             ))}
           </select>
         </label>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 bg-background/50 p-3">
+        <div>
+          <p className="text-sm font-medium">Focus mode</p>
+          <p className="text-sm text-muted-foreground">
+            Quiet the shell chrome while keeping the editorial canvas mounted. Shortcut: Ctrl+Shift+F / ⌘⇧F.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={focusMode ? 'secondary' : 'outline'}
+          aria-pressed={focusMode}
+          aria-label={focusMode ? 'Exit Focus mode' : 'Enter Focus mode'}
+          className="motion-reduce:transition-none"
+          onClick={() => setFocusMode(!focusMode)}
+        >
+          {focusMode ? 'Exit Focus mode' : 'Enter Focus mode'}
+        </Button>
       </div>
     </section>
   )

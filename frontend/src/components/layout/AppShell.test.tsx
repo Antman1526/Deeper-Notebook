@@ -35,6 +35,7 @@ describe('AppShell feature switch', () => {
     expect(screen.getByTestId('legacy-sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('legacy-page')).toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: 'Primary tools' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
   })
 
   it('renders only the Luminous shell when the flag is on', () => {
@@ -44,5 +45,6 @@ describe('AppShell feature switch', () => {
     expect(screen.getByRole('navigation', { name: 'Primary tools' })).toBeInTheDocument()
     expect(screen.getByTestId('luminous-page')).toBeInTheDocument()
     expect(screen.queryByTestId('legacy-sidebar')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
   })
 })

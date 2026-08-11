@@ -9,9 +9,12 @@ export interface DisplayPreferencesState {
   wallpaper: WallpaperPreference
   motion: MotionPreference
   transparency: TransparencyPreference
+  focusMode: boolean
   setWallpaper(value: WallpaperPreference): void
   setMotion(value: MotionPreference): void
   setTransparency(value: TransparencyPreference): void
+  setFocusMode(value: boolean): void
+  toggleFocusMode(): void
   reset(): void
 }
 
@@ -19,11 +22,12 @@ export const DISPLAY_PREFERENCES_STORAGE_KEY = 'dn-display-preferences-v1'
 
 export const DEFAULT_DISPLAY_PREFERENCES: Pick<
   DisplayPreferencesState,
-  'wallpaper' | 'motion' | 'transparency'
+  'wallpaper' | 'motion' | 'transparency' | 'focusMode'
 > = {
   wallpaper: 'aurora',
   motion: 'system',
   transparency: 'frosted',
+  focusMode: false,
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -49,10 +53,11 @@ function readPersistedPreferences(value: unknown): Partial<typeof DEFAULT_DISPLA
     wallpaper: isWallpaperPreference(value.wallpaper) ? value.wallpaper : undefined,
     motion: isMotionPreference(value.motion) ? value.motion : undefined,
     transparency: isTransparencyPreference(value.transparency) ? value.transparency : undefined,
+    focusMode: typeof value.focusMode === 'boolean' ? value.focusMode : undefined,
   }
 }
 
-function safePreferences(state: Pick<DisplayPreferencesState, 'wallpaper' | 'motion' | 'transparency'>) {
+function safePreferences(state: Pick<DisplayPreferencesState, 'wallpaper' | 'motion' | 'transparency' | 'focusMode'>) {
   return {
     wallpaper: isWallpaperPreference(state.wallpaper)
       ? state.wallpaper
@@ -63,6 +68,9 @@ function safePreferences(state: Pick<DisplayPreferencesState, 'wallpaper' | 'mot
     transparency: isTransparencyPreference(state.transparency)
       ? state.transparency
       : DEFAULT_DISPLAY_PREFERENCES.transparency,
+    focusMode: typeof state.focusMode === 'boolean'
+      ? state.focusMode
+      : DEFAULT_DISPLAY_PREFERENCES.focusMode,
   }
 }
 
@@ -85,6 +93,12 @@ export const useDisplayPreferencesStore = create<DisplayPreferencesState>()(
           ? value
           : DEFAULT_DISPLAY_PREFERENCES.transparency,
       }),
+      setFocusMode: (value) => set({
+        focusMode: typeof value === 'boolean'
+          ? value
+          : DEFAULT_DISPLAY_PREFERENCES.focusMode,
+      }),
+      toggleFocusMode: () => set((state) => ({ focusMode: !state.focusMode })),
       reset: () => set(DEFAULT_DISPLAY_PREFERENCES),
     }),
     {

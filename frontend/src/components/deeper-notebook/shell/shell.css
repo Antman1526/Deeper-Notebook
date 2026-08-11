@@ -1,3 +1,64 @@
+.dn-focus-mode-control {
+  position: absolute;
+  top: var(--dn-space-3);
+  right: var(--dn-space-3);
+  z-index: 10;
+  min-height: 2.5rem;
+  gap: 0.45rem;
+  transition: opacity var(--dn-motion-immediate), background var(--dn-motion-immediate), border-color var(--dn-motion-immediate);
+}
+
+.dn-focus-mode-control[data-focus-active="true"] {
+  position: fixed;
+  top: var(--dn-space-3);
+  right: var(--dn-space-3);
+  box-shadow: var(--dn-elevation-md);
+}
+
+.dn-focus-mode-shortcut {
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--muted);
+  padding: 0.15rem 0.35rem;
+  color: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.65rem;
+  white-space: nowrap;
+}
+
+.dn-legacy-shell > .dn-focus-mode-control {
+  top: var(--dn-space-3);
+}
+
+html[data-dn-focus-mode="true"] .dn-luminous-shell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html[data-dn-focus-mode="true"] .dn-luminous-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html[data-dn-focus-mode="true"] .dn-aurora-cartography,
+html[data-dn-focus-mode="true"] .dn-instrument-dock,
+html[data-dn-focus-mode="true"] .dn-adaptive-navigator,
+html[data-dn-focus-mode="true"] .dn-navigator-toggle,
+html[data-dn-focus-mode="true"] .dn-context-lens,
+html[data-dn-focus-mode="true"] .dn-context-lens-toggle {
+  display: none;
+}
+
+html[data-dn-focus-mode="true"] .dn-editorial-canvas {
+  padding: var(--dn-space-4) var(--dn-space-6);
+}
+
+html[data-dn-focus-mode="true"] .dn-legacy-shell > aside {
+  display: none;
+}
+
+html[data-dn-focus-mode="true"] .dn-legacy-shell > main {
+  width: 100%;
+}
+
 .dn-luminous-shell {
   position: relative;
   display: grid;
@@ -495,7 +556,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dn-navigator-link {
+  .dn-navigator-link,
+  .dn-focus-mode-control {
     transition: none;
   }
 }

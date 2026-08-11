@@ -7,8 +7,8 @@ const validIds = JSON.stringify(THEME_CATALOG.map(theme => theme.id))
 export const themeScript = `
 (function() {
   var root = document.documentElement;
-  var displayDefaults = { wallpaper: 'aurora', motion: 'system', transparency: 'frosted' };
-  var display = { wallpaper: displayDefaults.wallpaper, motion: displayDefaults.motion, transparency: displayDefaults.transparency };
+  var displayDefaults = { wallpaper: 'aurora', motion: 'system', transparency: 'frosted', focusMode: false };
+  var display = { wallpaper: displayDefaults.wallpaper, motion: displayDefaults.motion, transparency: displayDefaults.transparency, focusMode: displayDefaults.focusMode };
 
   try {
     var canonical = localStorage.getItem('dn-theme');
@@ -36,8 +36,9 @@ export const themeScript = `
     if (['aurora', 'static', 'off'].includes(persistedDisplay.wallpaper)) display.wallpaper = persistedDisplay.wallpaper;
     if (['system', 'full', 'reduced'].includes(persistedDisplay.motion)) display.motion = persistedDisplay.motion;
     if (['frosted', 'solid'].includes(persistedDisplay.transparency)) display.transparency = persistedDisplay.transparency;
+    if (typeof persistedDisplay.focusMode === 'boolean') display.focusMode = persistedDisplay.focusMode;
   } catch (error) {
-    display = { wallpaper: displayDefaults.wallpaper, motion: displayDefaults.motion, transparency: displayDefaults.transparency };
+    display = { wallpaper: displayDefaults.wallpaper, motion: displayDefaults.motion, transparency: displayDefaults.transparency, focusMode: displayDefaults.focusMode };
   }
 
   var prefersReducedMotion = false;
@@ -52,5 +53,6 @@ export const themeScript = `
   root.dataset.dnWallpaper = display.wallpaper;
   root.dataset.dnMotion = effectiveMotion;
   root.dataset.dnTransparency = display.transparency;
+  root.dataset.dnFocusMode = display.focusMode ? 'true' : 'false';
 })();
 `

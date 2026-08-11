@@ -100,4 +100,18 @@ describe('DisplayPreferencesPanel', () => {
       window.matchMedia = previousMatchMedia
     }
   })
+
+  it('exposes focus mode in display preferences with explicit pressed state', () => {
+    render(<DisplayPreferencesPanel />)
+
+    const focus = screen.getByRole('button', { name: 'Enter Focus mode' })
+    expect(focus).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(focus)
+
+    expect(screen.getByRole('button', { name: 'Exit Focus mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(JSON.parse(localStorage.getItem('dn-display-preferences-v1') ?? '{}')).toMatchObject({
+      state: { focusMode: true },
+    })
+    expect(document.documentElement.dataset.theme).toBe('archive-paper')
+  })
 })

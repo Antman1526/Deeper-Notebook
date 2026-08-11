@@ -6,6 +6,7 @@ import { AdaptiveNavigator } from './AdaptiveNavigator'
 import { AuroraCartography } from './AuroraCartography'
 import { CommandBar } from './CommandBar'
 import { ContextLens } from './ContextLens'
+import { FocusModeControl } from './FocusModeControl'
 import { InstrumentDock } from './InstrumentDock'
 import { ShellUtilities } from './ShellUtilities'
 
@@ -21,6 +22,7 @@ export function LuminousAppShell({ children }: { children: ReactNode }) {
         <ContextLens />
       </div>
       <ShellUtilities />
+      <FocusModeControl />
     </div>
   )
 }

@@ -13,6 +13,7 @@ describe('display preferences store', () => {
       wallpaper: 'aurora',
       motion: 'system',
       transparency: 'frosted',
+      focusMode: false,
     })
   })
 
@@ -36,6 +37,7 @@ describe('display preferences store', () => {
     useDisplayPreferencesStore.getState().setWallpaper('static')
     useDisplayPreferencesStore.getState().setMotion('full')
     useDisplayPreferencesStore.getState().setTransparency('solid')
+    useDisplayPreferencesStore.getState().setFocusMode(true)
 
     useDisplayPreferencesStore.getState().reset()
 
@@ -43,6 +45,7 @@ describe('display preferences store', () => {
       wallpaper: 'aurora',
       motion: 'system',
       transparency: 'frosted',
+      focusMode: false,
     })
   })
 
@@ -61,6 +64,44 @@ describe('display preferences store', () => {
       wallpaper: 'aurora',
       motion: 'system',
       transparency: 'frosted',
+    })
+  })
+
+  it('persists focus mode while preserving the legacy display fields', () => {
+    const store = useDisplayPreferencesStore.getState()
+
+    store.setWallpaper('off')
+    store.setMotion('reduced')
+    store.setTransparency('solid')
+    store.setFocusMode(true)
+
+    expect(useDisplayPreferencesStore.getState()).toMatchObject({
+      wallpaper: 'off',
+      motion: 'reduced',
+      transparency: 'solid',
+      focusMode: true,
+    })
+    expect(JSON.parse(localStorage.getItem('dn-display-preferences-v1') ?? '{}')).toMatchObject({
+      state: { wallpaper: 'off', motion: 'reduced', transparency: 'solid', focusMode: true },
+    })
+  })
+
+  it('fails closed to an inactive focus mode when its persisted value is malformed', async () => {
+    localStorage.setItem(
+      'dn-display-preferences-v1',
+      JSON.stringify({
+        state: { wallpaper: 'static', motion: 'full', transparency: 'solid', focusMode: 'yes' },
+        version: 0,
+      }),
+    )
+
+    await useDisplayPreferencesStore.persist.rehydrate()
+
+    expect(useDisplayPreferencesStore.getState()).toMatchObject({
+      wallpaper: 'static',
+      motion: 'full',
+      transparency: 'solid',
+      focusMode: false,
     })
   })
 })

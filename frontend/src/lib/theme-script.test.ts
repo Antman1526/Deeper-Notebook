@@ -92,4 +92,35 @@ describe('pre-hydration Research Core theme script', () => {
       document.documentElement.className = ''
     }
   })
+
+  it('prehydrates the persisted Focus mode root contract without changing theme state', () => {
+    localStorage.clear()
+    localStorage.setItem(
+      'dn-display-preferences-v1',
+      JSON.stringify({
+        state: { wallpaper: 'static', motion: 'system', transparency: 'solid', focusMode: true },
+        version: 0,
+      }),
+    )
+    document.documentElement.dataset.theme = 'research-core-dark'
+    document.documentElement.dataset.dnFocusMode = 'false'
+
+    window.eval(themeScript)
+
+    expect(document.documentElement.dataset.theme).toBe('research-core-dark')
+    expect(document.documentElement.dataset.dnFocusMode).toBe('true')
+  })
+
+  it('fails closed to inactive Focus mode for malformed persisted values', () => {
+    localStorage.clear()
+    localStorage.setItem(
+      'dn-display-preferences-v1',
+      JSON.stringify({ state: { focusMode: 'yes' }, version: 0 }),
+    )
+    document.documentElement.dataset.dnFocusMode = 'true'
+
+    window.eval(themeScript)
+
+    expect(document.documentElement.dataset.dnFocusMode).toBe('false')
+  })
 })

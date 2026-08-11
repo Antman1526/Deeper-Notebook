@@ -222,4 +222,20 @@ describe('LuminousAppShell', () => {
     await waitFor(() => expect(trigger).toHaveFocus())
     outside.remove()
   })
+
+  it('keeps editorial route content mounted while Focus mode exposes a keyboard-reachable exit', () => {
+    render(<LuminousAppShell><div data-testid="page-content">Page content</div></LuminousAppShell>)
+
+    fireEvent.keyDown(document, { key: 'f', ctrlKey: true, shiftKey: true })
+
+    expect(screen.getByTestId('page-content')).toBeInTheDocument()
+    expect(document.documentElement.dataset.dnFocusMode).toBe('true')
+    const exit = screen.getByRole('button', { name: 'Exit Focus mode' })
+    expect(exit).toBeVisible()
+    exit.focus()
+    expect(exit).toHaveFocus()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
+  })
 })
