@@ -242,3 +242,109 @@ that the legacy sidebar and notebook route still render with that override.
 These are frontend/browser proof receipts only. Fresh desktop packaging,
 codesigning, installed-app launch, and native runtime checks remain separate
 release gates.
+
+## Task 16 final release proof — 2026-08-10
+
+This section separates the current revision, code gates, native authority
+evidence, package integrity, installed smoke, and review limitations. It does
+not treat a browser or build result as a substitute for native or package
+proof.
+
+### Revision and preserved work
+
+- Current revision is `ce6bf284` (`test(ui): preserve transformations
+  route-frame parity`). Before this documentation change, the worktree had no
+  tracked diff.
+- The production/package revision is `022dda37`. The exact range proof is:
+  `git diff --stat 022dda37..ce6bf284` reports one file with four insertions
+  and one deletion, `frontend/src/app/(dashboard)/transformations/page.test.tsx`.
+  The range contains no production or package path, so the package evidence
+  below remains bound to a production-identical tree.
+- Preserved pre-existing untracked paths remain outside this commit:
+  `.codex/agent-context/deeper-notebook-research-evidence-adoption.md`,
+  `.codex/agent-context/deeper-notebook-web-intelligence.md`,
+  `.codex/agent-context/luminous-research-folio.md`,
+  `.codex/agent-context/research-evidence-ui.md`, and
+  `desktop/build/__pycache__/`.
+
+### Code and browser gates
+
+| Gate | Result |
+| --- | --- |
+| Backend `uv run pytest -q` | 4,662 passed, 66 skipped (32 warnings) |
+| `uv run ruff check .` | Clean |
+| Desktop tests | 792 passed, 2 skipped (4 warnings) |
+| Frontend `npm test` | 192 files, 1,407 passed |
+| Frontend lint, TypeScript, and production build | Clean; build generated 23 routes |
+| Feature-build contract | Passed |
+| Mocked browser | 41 passed, 1 skipped |
+| Theme gallery | 8/8 passed |
+| Folio visual matrix | 9/9 passed |
+| Route/accessibility/preference rollback matrix | 64/64 in default-on mode and 64/64 with `NEXT_PUBLIC_DN_LUMINOUS_FOLIO=0` |
+
+The tracked Playwright `frontend/test-results/.last-run.json` was restored to
+its canonical generated baseline after browser runs.
+
+### Native authority and persistence proof
+
+- The read-only vault and podcast authority checks preserved source hashes and
+  issued zero external writes; the read-only verifier reported zero changed
+  source files. Research Core native Playwright passed 7/7, Podcast Studio
+  native Playwright passed 5/5, and Surreal-backed projection tests passed
+  47/47.
+- Task 20 used a unique real no-symlink synthetic root under `/Users/Shared`,
+  disabled watchers, and dedicated task-owned loopback ports. The two-phase
+  unified verifier's prepare phase exited 5 with the designed
+  `knowledge_engine_restart_required` barrier; after a real API/Surreal
+  restart, verify exited 0. The Overlay root and source fingerprints were
+  preserved, trust replay was changed once and then idempotent, and the
+  approved parent/child authority contract remained intact.
+- The focused unified/backfill suite passed 41/41 and the lifecycle/service/
+  equivalence suite passed 26/26. Task-owned services stopped cleanly, the
+  loopback ports were free, and the exact synthetic root was moved to Trash;
+  no task root, watcher, user vault, credential, or external source remained.
+
+### Package and installed-app proof
+
+- `make build-mac` at production-identical `022dda37` exited 0: desktop tests
+  were 792 passed/2 skipped, the build precondition was 3,917 passed/1 skipped,
+  and the frontend build generated 23 routes.
+- The fresh arm64 artifact had bundle identity
+  `com.antman1526.open-notebook-plus`, version `0.8.95`, and local ad-hoc
+  signing. Deep/strict code signing and `hdiutil verify` passed. DMG SHA-256:
+  `844499fddcce4f7ed3b7f9be5d94b2d9fddc8c610696964f6e4c9d910cf95393`.
+  The artifact is not notarized; the expected `spctl`/Gatekeeper rejection is
+  informational, not a signing failure.
+- The validated app is installed at `/Applications/Deeper Notebook.app`.
+  The prior app remains recoverable at
+  `/Applications/Deeper Notebook.app.backup-task18-20260810-173703`.
+- In the normal installed user-data launch/restart/close smoke on 2026-08-10,
+  the native window title was observed, the API readiness response was 200,
+  the frontend readiness marker was observed, and all child listeners were
+  gone after each close. The launch started the configured local-model
+  services, but no content workflow was invoked. No user data was deleted.
+
+### Review and rollback
+
+- The final Code Review Graph range was assessed as low risk, with its static
+  untested-function caveat recorded. The manual visual matrix was reviewed
+  earlier and snapshots are green; there is no human external visual approval
+  beyond that review.
+- Presentation rollback remains `NEXT_PUBLIC_DN_LUMINOUS_FOLIO=0`; for a
+  rebuilt legacy presentation, run:
+
+  ```bash
+  cd frontend && NEXT_PUBLIC_DN_LUMINOUS_FOLIO=0 npm run build
+  ```
+
+- Installed-app rollback is reversible and preserves both copies. After
+  quitting the app, move the current bundle aside and restore the recorded
+  backup:
+
+  ```bash
+  mv "/Applications/Deeper Notebook.app" "/Applications/Deeper Notebook.app.failed-$(date +%Y%m%d-%H%M%S)"
+  cp -R "/Applications/Deeper Notebook.app.backup-task18-20260810-173703" "/Applications/Deeper Notebook.app"
+  ```
+
+No database rollback, external-vault mutation, or user-data deletion is part
+of this visual release.
