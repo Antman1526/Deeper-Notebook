@@ -2,9 +2,6 @@ import Link from 'next/link'
 import {
   ArrowRight,
   BookOpen,
-  CheckCircle2,
-  CircleAlert,
-  CircleDashed,
   Database,
   FileText,
   Mic,
@@ -13,11 +10,10 @@ import {
 } from 'lucide-react'
 import * as React from 'react'
 
-import { EvidenceInsert } from '../folio/EvidenceInsert'
+import { RuntimeStatusPanel } from '../runtime/RuntimeStatusPanel'
 import { FolioPage } from '../folio/FolioPage'
 import { FolioSpread } from '../folio/FolioSpread'
 import { FolioState } from '../folio/FolioState'
-import { MarginNote } from '../folio/MarginNote'
 
 export interface HorizonNotebook {
   id: string
@@ -53,10 +49,10 @@ export interface IntelligenceHorizonProps {
   notebooksLoading?: boolean
   readiness?: HorizonReadiness
   dataPath?: string
+  runtimeSnapshot?: unknown
+  runtimeSnapshotLoading?: boolean
+  onRefreshRuntime?(): void
 }
-
-type StatusKind = 'ready' | 'loading' | 'offline'
-type ReadinessState = 'ready' | 'pending' | 'offline' | 'unknown'
 
 function relativeTime(iso?: string): string {
   if (!iso) return '—'
@@ -68,44 +64,6 @@ function relativeTime(iso?: string): string {
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} hr ago`
   if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} d ago`
   return new Date(iso).toLocaleDateString()
-}
-
-function readinessLabel(state: ReadinessState): string {
-  return state
-}
-
-function StatusRow({
-  label,
-  state,
-  detail,
-}: {
-  label: string
-  state: ReadinessState
-  detail?: string | null
-}) {
-  const icon =
-    state === 'ready' ? (
-      <CheckCircle2 aria-hidden="true" className="h-4 w-4 text-success" />
-    ) : state === 'pending' ? (
-      <CircleAlert aria-hidden="true" className="h-4 w-4 text-warning" />
-    ) : state === 'offline' ? (
-      <CircleAlert aria-hidden="true" className="h-4 w-4 text-destructive" />
-    ) : (
-      <CircleDashed aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
-    )
-
-  return (
-    <div className="flex items-center justify-between gap-3 py-2 text-sm">
-      <div className="flex items-center gap-2">
-        {icon}
-        <span>{label}</span>
-      </div>
-      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right">
-        <span className="text-xs text-muted-foreground">{readinessLabel(state)}</span>
-        {detail ? <span className="text-xs text-muted-foreground">{detail}</span> : null}
-      </div>
-    </div>
-  )
 }
 
 function actionLinkHandler(callback: () => void) {
@@ -206,73 +164,6 @@ function HorizonActions({
   )
 }
 
-function StatusMargin({
-  status,
-  readiness,
-}: {
-  status: StatusKind
-  readiness?: HorizonReadiness
-}) {
-  const apiState: ReadinessState = readiness ? 'ready' : 'unknown'
-  const databaseState: ReadinessState = readiness
-    ? readiness.checks.database === 'online'
-      ? 'ready'
-      : readiness.checks.database === 'offline'
-        ? 'offline'
-        : 'unknown'
-    : 'unknown'
-  const migrationsState: ReadinessState = readiness
-    ? readiness.checks.migrations_applied
-      ? 'ready'
-      : readiness.checks.migrations_pending
-        ? 'pending'
-        : readiness.checks.migrations_error
-          ? 'offline'
-          : 'unknown'
-    : 'unknown'
-  const databaseDetail = readiness?.checks.database_error
-  const migrationsDetail = readiness
-    ? readiness.checks.migrations_error ?? (readiness.checks.migrations_pending ? 'pending' : null)
-    : null
-
-  return (
-    <MarginNote label="Trust and model status">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">Trust and model status</h2>
-        <span className="rounded-full border border-[var(--dn-paper-edge)] px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          {status === 'ready' ? 'Ready' : status === 'offline' ? 'Offline' : 'Loading'}
-        </span>
-      </div>
-      <p className="text-xs leading-5 text-muted-foreground">
-        Local readiness stays visible before any notebook, source, or production action.
-      </p>
-      {status !== 'ready' ? (
-        <p
-          role="status"
-          aria-label={`Runtime ${status}`}
-          className="text-xs font-medium text-muted-foreground"
-        >
-          Runtime {status}
-        </p>
-      ) : null}
-      <div>
-        <h3 className="text-sm font-semibold">System status</h3>
-        <p className="mt-1 text-xs text-muted-foreground">Updated every 30 s from /readyz</p>
-      </div>
-      <div className="divide-y divide-border/70">
-        <StatusRow label="API" state={apiState} />
-        <StatusRow label="Database" state={databaseState} detail={databaseDetail} />
-        <StatusRow label="Migrations" state={migrationsState} detail={migrationsDetail} />
-      </div>
-      <EvidenceInsert label="Model route" className="border-0 bg-transparent p-0">
-        <p className="text-xs leading-5 text-muted-foreground">
-          Local-first routing remains unchanged until you explicitly choose an action.
-        </p>
-      </EvidenceInsert>
-    </MarginNote>
-  )
-}
-
 function NotebookCollectionState() {
   return (
     <FolioState
@@ -284,15 +175,16 @@ function NotebookCollectionState() {
 }
 
 export function IntelligenceHorizon({
-  status,
   recentNotebooks,
   onOpenStudio,
   onCreateNotebook,
   onCreatePodcast,
   onAsk,
   notebooksLoading = false,
-  readiness,
   dataPath = '~/.deeper-notebook/',
+  runtimeSnapshot,
+  runtimeSnapshotLoading = false,
+  onRefreshRuntime,
 }: IntelligenceHorizonProps) {
   const hasRecentNotebooks = recentNotebooks.length > 0
 
@@ -328,7 +220,14 @@ export function IntelligenceHorizon({
       <FolioSpread
         className="mt-6"
         secondaryLabel="Trust and model status"
-        secondary={<StatusMargin status={status} readiness={readiness} />}
+        secondary={(
+          <RuntimeStatusPanel
+            snapshot={runtimeSnapshot}
+            isLoading={runtimeSnapshotLoading}
+            onRefresh={onRefreshRuntime}
+            compact
+          />
+        )}
         primary={
           <section aria-labelledby="horizon-today-title" className="space-y-5">
             <div>

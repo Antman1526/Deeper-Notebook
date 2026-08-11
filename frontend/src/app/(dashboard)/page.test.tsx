@@ -1,20 +1,32 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { RuntimeSnapshot } from '@/lib/api/runtime'
 import type { NotebookResponse } from '@/lib/types/api'
-import type { ReadyzResponse } from '@/lib/hooks/use-system-status'
 
 import DashboardPage from './page'
 
 const routerPush = vi.fn()
+const readyRuntimeSnapshot: RuntimeSnapshot = {
+  schema_version: 'runtime-snapshot-v1',
+  status: 'ready',
+  reasons: [],
+  readiness: { state: 'ready', database: 'online', migrations: 'applied' },
+  startup: { state: 'ready', stages: [] },
+  updates: { state: 'ready', enabled: true, update_available: false, current_version: '0.8.70' },
+  vault: { state: 'ready', ready: 1, degraded: 0, unavailable: 0 },
+  knowledge: { state: 'ready', projected: 1, unchanged: 0, failed: 0 },
+  backup: { state: 'ready', file_count: 1, newest_age_seconds: 5 },
+}
 const dashboardFixtures = vi.hoisted(() => ({
   notebooks: {
     data: [] as NotebookResponse[],
     isLoading: false,
   },
-  status: {
-    data: undefined as ReadyzResponse | undefined,
+  runtime: {
+    data: undefined as RuntimeSnapshot | undefined,
     isLoading: false,
+    refetch: vi.fn(),
   },
 }))
 
@@ -42,14 +54,14 @@ vi.mock('@/lib/hooks/use-notebooks', () => ({
   useNotebooks: () => dashboardFixtures.notebooks,
 }))
 
-vi.mock('@/lib/hooks/use-system-status', () => ({
-  useSystemStatus: () => dashboardFixtures.status,
+vi.mock('@/lib/hooks/use-runtime-snapshot', () => ({
+  useRuntimeSnapshot: () => dashboardFixtures.runtime,
 }))
 
 describe('DashboardPage active product identity', () => {
   beforeEach(() => {
     dashboardFixtures.notebooks = { data: [], isLoading: false }
-    dashboardFixtures.status = { data: undefined, isLoading: false }
+    dashboardFixtures.runtime = { data: readyRuntimeSnapshot, isLoading: false, refetch: vi.fn() }
   })
 
   afterEach(() => {
@@ -99,18 +111,15 @@ describe('DashboardPage active product identity', () => {
       }],
       isLoading: false,
     }
-    dashboardFixtures.status = {
+    dashboardFixtures.runtime = {
       data: {
-        status: 'not_ready',
-        checks: {
-          database: 'offline',
-          database_error: 'database unavailable',
-          migrations_applied: false,
-          migrations_pending: true,
-          migrations_error: 'pending migrations',
-        },
+        ...readyRuntimeSnapshot,
+        status: 'degraded',
+        reasons: ['database_offline', 'migrations_pending', 'database_check_failed', 'migrations_check_failed'],
+        readiness: { state: 'degraded', database: 'offline', migrations: 'pending' },
       },
       isLoading: false,
+      refetch: vi.fn(),
     }
 
     render(<DashboardPage />)
@@ -119,29 +128,24 @@ describe('DashboardPage active product identity', () => {
       'href',
       '/notebooks/offline-notebook',
     )
-    expect(screen.getByText('database unavailable')).toBeInTheDocument()
-    expect(screen.getByText('pending migrations')).toBeInTheDocument()
+    expect(screen.getByText('Database is offline')).toBeInTheDocument()
+    expect(screen.getByText('Migrations are pending')).toBeInTheDocument()
+    expect(screen.getByText('Database status is unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Migration status is unavailable')).toBeInTheDocument()
+    expect(screen.queryByText(/database unavailable|pending migrations/)).not.toBeInTheDocument()
   })
 
   it('keeps known runtime readiness while notebooks are still loading', () => {
     dashboardFixtures.notebooks = { data: [], isLoading: true }
-    dashboardFixtures.status = {
-      data: {
-        status: 'ready',
-        checks: {
-          database: 'online',
-          database_error: null,
-          migrations_applied: true,
-          migrations_pending: false,
-          migrations_error: null,
-        },
-      },
+    dashboardFixtures.runtime = {
+      data: readyRuntimeSnapshot,
       isLoading: false,
+      refetch: vi.fn(),
     }
 
     render(<DashboardPage />)
 
-    expect(screen.getByText('Ready')).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Runtime status Ready' })).toBeInTheDocument()
     expect(screen.getByRole('status', { name: 'Loading your notebook desk' })).toBeInTheDocument()
     expect(screen.queryByRole('status', { name: 'Runtime loading' })).toBeNull()
   })

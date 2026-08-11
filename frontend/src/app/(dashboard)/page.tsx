@@ -10,19 +10,17 @@
 import { useRouter } from 'next/navigation'
 
 import { IntelligenceHorizon } from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
-import type {
-  HorizonNotebook,
-  HorizonReadiness,
-} from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
+import type { HorizonNotebook } from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
 import { AppShell } from '@/components/layout/AppShell'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
-import { useSystemStatus } from '@/lib/hooks/use-system-status'
+import { UNKNOWN_RUNTIME_SNAPSHOT } from '@/lib/api/runtime'
+import { useRuntimeSnapshot } from '@/lib/hooks/use-runtime-snapshot'
 
 export default function DashboardPage() {
   const router = useRouter()
   const { data: notebooks, isLoading: notebooksLoading } = useNotebooks(false)
-  const { data: status, isLoading: statusLoading } = useSystemStatus()
+  const runtime = useRuntimeSnapshot()
   const { openNotebookDialog, openPodcastDialog } = useCreateDialogs()
 
   const recentNotebooks: HorizonNotebook[] = (notebooks ?? []).slice(0, 5).map((notebook) => ({
@@ -34,16 +32,13 @@ export default function DashboardPage() {
     href: `/notebooks/${notebook.id}`,
   }))
 
-  // Runtime readiness is owned solely by the system-status query. Notebook
-  // collection loading is passed separately so a slow list cannot downgrade
-  // a known ready/offline runtime state.
+  const runtimeSnapshot = runtime.data ?? UNKNOWN_RUNTIME_SNAPSHOT
   const horizonStatus =
-    statusLoading === true || (statusLoading === undefined && status === undefined)
+    runtime.isLoading
     ? 'loading'
-    : status?.status === 'ready'
+    : runtimeSnapshot.status === 'ready'
       ? 'ready'
       : 'offline'
-  const readiness: HorizonReadiness | undefined = status
 
   return (
     <AppShell>
@@ -51,7 +46,9 @@ export default function DashboardPage() {
         status={horizonStatus}
         recentNotebooks={recentNotebooks}
         notebooksLoading={notebooksLoading}
-        readiness={readiness}
+        runtimeSnapshot={runtimeSnapshot}
+        runtimeSnapshotLoading={runtime.isLoading}
+        onRefreshRuntime={() => void runtime.refetch()}
         onOpenStudio={() => router.push('/studio')}
         onCreateNotebook={openNotebookDialog}
         onCreatePodcast={openPodcastDialog}

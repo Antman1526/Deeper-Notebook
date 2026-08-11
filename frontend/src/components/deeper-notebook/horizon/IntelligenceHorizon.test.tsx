@@ -11,15 +11,23 @@ const fixtureNotebooks = [
   },
 ] as const
 
-const distinctReadiness = {
-  status: 'not_ready' as const,
-  checks: {
-    database: 'offline' as const,
-    database_error: 'database unavailable',
-    migrations_applied: false,
-    migrations_pending: true,
-    migrations_error: 'pending migrations',
-  },
+const readyRuntimeSnapshot = {
+  schema_version: 'runtime-snapshot-v1' as const,
+  status: 'ready' as const,
+  reasons: [] as const,
+  readiness: { state: 'ready' as const, database: 'online' as const, migrations: 'applied' as const },
+  startup: { state: 'ready' as const, stages: [] },
+  updates: { state: 'ready' as const, enabled: true, update_available: false, current_version: '0.8.70' },
+  vault: { state: 'ready' as const, ready: 1, degraded: 0, unavailable: 0 },
+  knowledge: { state: 'ready' as const, projected: 1, unchanged: 0, failed: 0 },
+  backup: { state: 'ready' as const, file_count: 1, newest_age_seconds: 5 },
+}
+
+const distinctRuntimeSnapshot = {
+  ...readyRuntimeSnapshot,
+  status: 'degraded' as const,
+  reasons: ['database_offline', 'migrations_pending', 'database_check_failed', 'migrations_check_failed'] as const,
+  readiness: { state: 'degraded' as const, database: 'offline' as const, migrations: 'pending' as const },
 }
 
 function renderHorizon(
@@ -33,7 +41,8 @@ function renderHorizon(
     onCreatePodcast: vi.fn(),
     onAsk: vi.fn(),
     notebooksLoading: false,
-    readiness: distinctReadiness,
+    runtimeSnapshot: readyRuntimeSnapshot,
+    runtimeSnapshotLoading: false,
     dataPath: '~/.deeper-notebook/',
     ...overrides,
   }
@@ -83,43 +92,47 @@ describe('IntelligenceHorizon', () => {
   it('shows ready trust status, command hint, and local data path', () => {
     renderHorizon()
 
-    expect(screen.getByText('Ready')).toBeVisible()
+    expect(screen.getByRole('status', { name: 'Runtime status Ready' })).toBeVisible()
     expect(screen.getByText(/⌘K/)).toBeVisible()
     expect(screen.getByText(/Ctrl\+K/)).toBeVisible()
     expect(screen.getByText('~/.deeper-notebook/')).toBeVisible()
   })
 
-  it.each([
-    ['loading', 'Runtime loading'],
-    ['offline', 'Runtime offline'],
-  ] as const)('preserves the %s readiness state separately from notebooks', (status, title) => {
-    renderHorizon({ status })
+  it('preserves runtime loading separately from notebooks', () => {
+    renderHorizon({ runtimeSnapshotLoading: true })
 
-    expect(screen.getByRole('status', { name: title })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Runtime status loading' })).toBeInTheDocument()
+  })
+
+  it('preserves degraded runtime readiness separately from notebooks', () => {
+    renderHorizon({ runtimeSnapshot: distinctRuntimeSnapshot })
+
+    expect(screen.getByRole('alert', { name: 'Runtime status Degraded' })).toBeInTheDocument()
   })
 
   it('keeps loaded notebook links visible while readiness is offline', () => {
-    renderHorizon({ status: 'offline' })
+    renderHorizon({ runtimeSnapshot: distinctRuntimeSnapshot })
 
     expect(screen.getByRole('link', { name: 'Research notebook' })).toBeInTheDocument()
     expect(screen.queryByRole('status', { name: 'Notebook runtime offline' })).toBeNull()
   })
 
   it('keeps notebook loading independent from readiness state', () => {
-    renderHorizon({ status: 'offline', notebooksLoading: true })
+    renderHorizon({ runtimeSnapshot: distinctRuntimeSnapshot, notebooksLoading: true })
 
     expect(screen.getByRole('status', { name: 'Loading your notebook desk' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Research notebook' })).toBeNull()
   })
 
   it('preserves distinct API, database, and migration readiness details', () => {
-    renderHorizon({ status: 'offline', readiness: distinctReadiness })
+    renderHorizon({ runtimeSnapshot: distinctRuntimeSnapshot })
 
-    expect(screen.getByText('ready')).toBeInTheDocument()
-    expect(screen.getAllByText('offline').length).toBeGreaterThan(0)
-    expect(screen.getByText('pending')).toBeInTheDocument()
-    expect(screen.getByText('database unavailable')).toBeInTheDocument()
-    expect(screen.getByText('pending migrations')).toBeInTheDocument()
+    expect(screen.getByText('Ready')).toBeInTheDocument()
+    expect(screen.getByText('Database is offline')).toBeInTheDocument()
+    expect(screen.getByText('Migrations are pending')).toBeInTheDocument()
+    expect(screen.getByText('Database status is unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Migration status is unavailable')).toBeInTheDocument()
+    expect(screen.queryByText(/database unavailable|pending migrations/)).not.toBeInTheDocument()
   })
 
   it('leaves modified and middle clicks to native link behavior', () => {

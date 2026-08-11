@@ -98,6 +98,17 @@ export async function installResearchWorkbenchMocks(page: Page): Promise<void> {
       migrations_error: null,
     },
   })
+  await fulfillJson(page, '/api/runtime/snapshot', {
+    schema_version: 'runtime-snapshot-v1',
+    status: 'ready',
+    reasons: [],
+    readiness: { state: 'ready', database: 'online', migrations: 'applied' },
+    startup: { state: 'ready', stages: [] },
+    updates: { state: 'ready', enabled: true, update_available: false, current_version: '0.8.70' },
+    vault: { state: 'ready', ready: 1, degraded: 0, unavailable: 0 },
+    knowledge: { state: 'ready', projected: 1, unchanged: 0, failed: 0 },
+    backup: { state: 'ready', file_count: 1, newest_age_seconds: 0 },
+  })
   await fulfillJson(page, '/healthz/deep', {
     status: 'healthy',
     checks: {

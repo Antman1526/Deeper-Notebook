@@ -1,13 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { AlertTriangle, RefreshCw } from 'lucide-react'
-import { enUS } from '@/lib/locales/en-US'
-
-// Use English as fallback for ErrorBoundary (class component cannot use hooks)
-const t = enUS
+import { RecoveryCenter } from './RecoveryCenter'
 
 interface ErrorBoundaryState {
   hasError: boolean
@@ -52,54 +46,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
         return <FallbackComponent error={this.state.error} resetError={this.resetError} />
       }
 
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-background p-4">
-          <Card className="w-full max-w-md">
-            <CardHeader className="text-center">
-              {/* v0.7.167 — Replaced raw Tailwind red palette
-                  (`bg-red-100`, `text-destructive`, `text-red-900` + their
-                  `dark:` variants) with the theme's destructive tokens.
-                  This was the ONE place in the audit using raw red
-                  outside the theme system — meant the error fallback
-                  rendered with a jarring hardcoded red even when the
-                  user picked one of the 8 non-blue themes (Solarized,
-                  Nord, Paper, etc.). Now the error UI absorbs the
-                  active theme's destructive hue. */}
-              <div className="mx-auto w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
-                <AlertTriangle className="w-6 h-6 text-destructive" />
-              </div>
-              <CardTitle className="text-destructive">{t?.common?.error || 'Something went wrong'}</CardTitle>
-              <CardDescription>
-                {t?.common?.refreshPage || 'An unexpected error occurred. Please try refreshing the page.'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {process.env.NODE_ENV === 'development' && this.state.error && (
-                <details className="text-xs bg-muted p-3 rounded border">
-                  <summary className="cursor-pointer font-medium">{t?.common?.errorDetails || 'Error Details'}</summary>
-                  <pre className="mt-2 whitespace-pre-wrap break-all">
-                    {this.state.error.toString()}
-                  </pre>
-                </details>
-              )}
-              <Button 
-                onClick={this.resetError} 
-                className="w-full"
-                variant="outline"
-              >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                {t?.common?.retry || 'Try Again'}
-              </Button>
-              <Button 
-                onClick={() => window.location.reload()} 
-                className="w-full"
-              >
-                {t?.common?.refresh || 'Refresh Page'}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )
+      return <RecoveryCenter resetError={this.resetError} />
     }
 
     return this.props.children

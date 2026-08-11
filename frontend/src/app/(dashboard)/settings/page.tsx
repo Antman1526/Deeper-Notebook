@@ -18,6 +18,9 @@ import { ThemeGallery } from '@/components/deeper-notebook'
 import { DisplayPreferencesPanel } from '@/components/deeper-notebook/DisplayPreferencesPanel'
 import { useGuidedTipsStore } from '@/lib/stores/guided-tips-store'
 import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
+import { RuntimeStatusPanel } from '@/components/deeper-notebook/runtime/RuntimeStatusPanel'
+import { UNKNOWN_RUNTIME_SNAPSHOT } from '@/lib/api/runtime'
+import { useRuntimeSnapshot } from '@/lib/hooks/use-runtime-snapshot'
 
 export default function SettingsPage() {
   const { t } = useTranslation()
@@ -25,6 +28,7 @@ export default function SettingsPage() {
   const tipsEnabled = useGuidedTipsStore((state) => state.enabled)
   const setTipsEnabled = useGuidedTipsStore((state) => state.setEnabled)
   const replayAllTips = useGuidedTipsStore((state) => state.replayAll)
+  const runtime = useRuntimeSnapshot()
 
   // v0.7.153 — Visual rhythm refresh (Settings = roomy treatment).
   // Pain points addressed (per user 2026-05-21):
@@ -69,6 +73,11 @@ export default function SettingsPage() {
             </section>
 
             <SettingsForm />
+            <RuntimeStatusPanel
+              snapshot={runtime.data ?? UNKNOWN_RUNTIME_SNAPSHOT}
+              isLoading={runtime.isLoading}
+              onRefresh={() => void runtime.refetch()}
+            />
             <UpdatesCard />
             <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/50 px-4 py-3">
               <div className="space-y-0.5">
