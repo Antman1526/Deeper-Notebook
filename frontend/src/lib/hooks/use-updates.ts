@@ -1,7 +1,8 @@
 // v0.8.70 — in-app update notifier hooks.
 // The check runs on mount with a 6h staleTime so reopening the app within the
 // window doesn't re-ping GitHub (the backend also caches). The query is
-// error-safe by design — a failed check resolves to update_available:false.
+// A failed check remains a query error; consumers render the safe unavailable
+// state instead of exposing raw transport details or a download action.
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'

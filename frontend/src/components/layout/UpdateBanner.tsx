@@ -5,9 +5,8 @@
 // defaultValue translations (the established banner pattern — no locale-file
 // entries, so it stays clear of the locale-parity contract).
 //
-// It is a NOTIFIER ONLY: the "Download" button links to the GitHub release
-// page; the app never downloads or installs anything itself (it ships unsigned
-// today, so silent self-update would be unsafe and OS-blocked anyway).
+// It is a NOTIFIER ONLY: the manual link opens a verified GitHub release page;
+// the app never downloads or installs anything itself.
 import { useState } from 'react'
 import { Sparkles, X } from 'lucide-react'
 
@@ -18,18 +17,22 @@ import { useUpdateCheck, useSkipVersion } from '@/lib/hooks/use-updates'
 
 export function UpdateBanner() {
   const { t } = useTranslation()
-  const { data } = useUpdateCheck()
+  const { data, isError } = useUpdateCheck()
   const skipVersion = useSkipVersion()
   // Session-only "Later" dismissal — clears on reload, reappears next launch.
   const [dismissed, setDismissed] = useState(false)
 
-  // Only show for a genuine, non-skipped, non-dismissed update with a link.
+  // Only show for a verified, non-skipped, non-dismissed update with a public
+  // release page. Unknown/unverified candidates stay informational in Settings.
   if (
     dismissed ||
+    isError ||
     !data?.update_available ||
     data.skipped ||
+    data.verification !== 'verified' ||
     !data.latest ||
-    !data.html_url
+    !data.release_url ||
+    data.enabled === false
   ) {
     return null
   }
@@ -47,15 +50,14 @@ export function UpdateBanner() {
         <AlertDescription className="flex flex-col gap-3">
           <span>
             {t('updates.description', {
-              defaultValue:
-                "You're on {{current}}. A newer version is available on GitHub. Downloads are installed manually.",
+              defaultValue: "You're on {{current}}. A verified release is available for manual review.",
               current: data.current,
             })}
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild size="sm">
-              <a href={data.html_url} target="_blank" rel="noreferrer">
-                {t('updates.download', { defaultValue: 'Download' })}
+              <a href={data.release_url} target="_blank" rel="noreferrer">
+                {t('updates.openRelease', { defaultValue: 'Open verified release (manual)' })}
               </a>
             </Button>
             <Button

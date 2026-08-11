@@ -25,11 +25,44 @@ import {
 
 export function UpdatesCard() {
   const { t } = useTranslation()
-  const { data } = useUpdateCheck()
+  const { data, isError } = useUpdateCheck()
   const setEnabled = useSetUpdateEnabled()
   const checkNow = useCheckForUpdatesNow()
 
   const enabled = data?.enabled ?? true
+  const verification = isError ? 'unknown' : data?.verification ?? 'unknown'
+
+  const releaseNotice = isError ? (
+    <span className="text-sm text-muted-foreground">
+      Release status unavailable.
+    </span>
+  ) : !data ? null : data.enabled === false ? (
+    <span className="text-sm text-muted-foreground">
+      Automatic update checks are off.
+    </span>
+  ) : verification === 'verified' && data.update_available && data.release_url ? (
+    <span className="flex flex-wrap items-center gap-2 text-sm text-primary">
+      <span>Verified release available (manual review only)</span>
+      <a
+        href={data.release_url}
+        target="_blank"
+        rel="noreferrer"
+        className="underline underline-offset-2"
+      >
+        Open verified release (manual)
+      </a>
+    </span>
+  ) : verification === 'unverified' ? (
+    <span className="text-sm text-muted-foreground">
+      Release needs verification before it can be offered.
+    </span>
+  ) : verification === 'unknown' ? (
+    <span className="text-sm text-muted-foreground">Release status unavailable.</span>
+  ) : data.last_check ? (
+    <span className="text-sm text-muted-foreground">
+      {t('updates.upToDate', { defaultValue: "You're up to date." })}
+    </span>
+  ) : null
 
   return (
     <Card>
@@ -75,18 +108,7 @@ export function UpdatesCard() {
             <RefreshCw className={`h-4 w-4${checkNow.isPending ? ' animate-spin' : ''}`} />
             {t('updates.checkNow', { defaultValue: 'Check now' })}
           </Button>
-          {data?.update_available ? (
-            <span className="text-sm text-primary">
-              {t('updates.availableShort', {
-                defaultValue: '{{version}} available',
-                version: data.latest ?? '',
-              })}
-            </span>
-          ) : data?.last_check ? (
-            <span className="text-sm text-muted-foreground">
-              {t('updates.upToDate', { defaultValue: "You're up to date." })}
-            </span>
-          ) : null}
+          {releaseNotice}
         </div>
       </CardContent>
     </Card>

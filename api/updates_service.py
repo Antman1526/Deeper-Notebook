@@ -26,9 +26,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import unquote, urlsplit
 
 import httpx
 from loguru import logger
@@ -49,6 +51,25 @@ RELEASES_FALLBACK_URL = (
 CHECK_TTL_SECONDS = 6 * 60 * 60  # 6 hours
 # Hard cap on the GitHub request so a hung connection can't stall the endpoint.
 REQUEST_TIMEOUT_SECONDS = 8.0
+
+VERIFICATION_VERIFIED = "verified"
+VERIFICATION_UNVERIFIED = "unverified"
+VERIFICATION_UNKNOWN = "unknown"
+_VERIFICATION_STATES = frozenset(
+    {VERIFICATION_VERIFIED, VERIFICATION_UNVERIFIED, VERIFICATION_UNKNOWN}
+)
+_STRICT_VERSION_RE = re.compile(
+    r"^v?[0-9]+(?:\.[0-9]+){1,4}(?:[-+][A-Za-z0-9.-]{1,24})?$"
+)
+_DMG_ASSET_RE = re.compile(
+    r"^Deeper-Notebook-mac-(?:arm64|x86_64)\.dmg$",
+    re.IGNORECASE,
+)
+_CHECKSUM_ASSET_RE = re.compile(
+    r"^(?:SHA256SUMS(?:\.txt)?|.*(?:sha256|checksum)[^/]*\.(?:txt|sha256|sha256sum))$",
+    re.IGNORECASE,
+)
+_MAX_RELEASE_ASSETS = 64
 
 
 def _state_path() -> Path:
@@ -113,6 +134,77 @@ def _is_newer(latest: Optional[str], current: str) -> bool:
     return _parse_version(latest) > _parse_version(current)
 
 
+def _strict_release_version(raw: Any) -> str | None:
+    """Return a bounded, fully parseable release tag or ``None``."""
+
+    if not isinstance(raw, str) or len(raw) > 64:
+        return None
+    candidate = raw.strip()
+    return candidate if _STRICT_VERSION_RE.fullmatch(candidate) else None
+
+
+def _canonical_release_url(raw: Any, *, tag: str | None = None) -> str | None:
+    """Accept only a public GitHub release page in the canonical repository."""
+
+    if not isinstance(raw, str) or len(raw) > 512:
+        return None
+    try:
+        parsed = urlsplit(raw)
+        if (
+            parsed.scheme != "https"
+            or parsed.netloc.lower() != "github.com"
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None
+        parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
+        prefix = [GITHUB_OWNER, GITHUB_REPO, "releases"]
+        if parts[:3] != prefix:
+            return None
+        if len(parts) == 5 and parts[3] == "tag":
+            if tag is not None and parts[4] != tag:
+                return None
+        elif len(parts) == 4 and parts[3].isdigit():
+            pass
+        else:
+            return None
+        return "https://github.com/" + "/".join(parts)
+    except (TypeError, ValueError):
+        return None
+
+
+def _classify_release(release: Any) -> tuple[str, str | None, str | None]:
+    """Classify public release metadata without downloading any asset."""
+
+    if not isinstance(release, Mapping):
+        return VERIFICATION_UNKNOWN, None, None
+    raw_tag = release.get("tag_name") or release.get("name")
+    tag = _strict_release_version(raw_tag)
+    if tag is None:
+        return VERIFICATION_UNVERIFIED, None, None
+    release_url = _canonical_release_url(release.get("html_url"), tag=tag)
+    if release_url is None:
+        return VERIFICATION_UNVERIFIED, tag, None
+    assets = release.get("assets")
+    if not isinstance(assets, list) or len(assets) > _MAX_RELEASE_ASSETS:
+        return VERIFICATION_UNVERIFIED, tag, None
+    has_dmg = False
+    has_checksum = False
+    for asset in assets:
+        if not isinstance(asset, Mapping):
+            continue
+        name = asset.get("name")
+        if not isinstance(name, str) or len(name) > 160:
+            continue
+        has_dmg = has_dmg or bool(_DMG_ASSET_RE.fullmatch(name))
+        has_checksum = has_checksum or bool(_CHECKSUM_ASSET_RE.fullmatch(name))
+    if not has_dmg or not has_checksum:
+        return VERIFICATION_UNVERIFIED, tag, None
+    return VERIFICATION_VERIFIED, tag, release_url
+
+
 def _read_state() -> dict[str, Any]:
     """Load persisted state, tolerating a missing/corrupt file."""
     path = _state_path()
@@ -162,10 +254,33 @@ def skip_version(version: str) -> dict[str, Any]:
 def _status_from_state(state: dict[str, Any]) -> dict[str, Any]:
     """Build the API status payload from a (possibly cached) state dict."""
     current = app_version()
-    cache = state.get("cache") or {}
-    latest = cache.get("latest")
-    skipped = state.get("skipped_version")
-    available = _is_newer(latest, current)
+    cache = state.get("cache") if isinstance(state, Mapping) else None
+    cache = cache if isinstance(cache, Mapping) else {}
+    latest = _strict_release_version(cache.get("latest"))
+    verification = cache.get("verification")
+    if verification not in _VERIFICATION_STATES:
+        verification = VERIFICATION_UNKNOWN
+    release_url = None
+    if verification == VERIFICATION_VERIFIED:
+        release_url = _canonical_release_url(
+            cache.get("release_url") or cache.get("html_url"), tag=latest
+        )
+        if release_url is None or latest is None:
+            verification = VERIFICATION_UNKNOWN
+    current_version = _strict_release_version(current)
+    available = (
+        verification == VERIFICATION_VERIFIED
+        and current_version is not None
+        and latest is not None
+        and _parse_version(latest) > _parse_version(current_version)
+    )
+    skipped = _strict_release_version(state.get("skipped_version"))
+    published_at = cache.get("published_at")
+    if not isinstance(published_at, str) or len(published_at) > 64:
+        published_at = None
+    last_check = state.get("last_check")
+    if not isinstance(last_check, str) or len(last_check) > 64:
+        last_check = None
     return {
         "current": current,
         "latest": latest,
@@ -174,11 +289,30 @@ def _status_from_state(state: dict[str, Any]) -> dict[str, Any]:
         "update_available": available,
         "skipped": available and skipped == latest,
         "skipped_version": skipped,
-        "html_url": cache.get("html_url") or RELEASES_FALLBACK_URL,
-        "published_at": cache.get("published_at"),
+        "html_url": release_url,
+        "release_url": release_url,
+        "verification": verification,
+        "published_at": published_at,
         "enabled": bool(state.get("enabled", True)),
-        "last_check": state.get("last_check"),
+        "last_check": last_check,
     }
+
+
+def _cache_projection(release: Any) -> dict[str, Any]:
+    """Persist only bounded classifier output, never raw asset metadata."""
+
+    verification, tag, release_url = _classify_release(release)
+    projected: dict[str, Any] = {
+        "latest": tag,
+        "verification": verification,
+    }
+    if release_url is not None:
+        projected["release_url"] = release_url
+        projected["html_url"] = release_url
+    published_at = release.get("published_at") if isinstance(release, Mapping) else None
+    if isinstance(published_at, str) and len(published_at) <= 64:
+        projected["published_at"] = published_at
+    return projected
 
 
 def _cache_fresh(state: dict[str, Any]) -> bool:
@@ -242,11 +376,7 @@ async def check(force: bool = False) -> dict[str, Any]:
     release = await _fetch_latest_release()
     state["last_check"] = datetime.now(timezone.utc).isoformat()
     if release is not None:
-        state["cache"] = {
-            "latest": release.get("tag_name") or release.get("name"),
-            "html_url": release.get("html_url"),
-            "published_at": release.get("published_at"),
-        }
+        state["cache"] = _cache_projection(release)
     # On failure we still stamp last_check so we back off for the TTL window
     # rather than hammering GitHub on every page load while offline.
     _write_state(state)

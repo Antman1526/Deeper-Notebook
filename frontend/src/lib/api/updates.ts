@@ -3,10 +3,16 @@
 // privacy gate enforceable. apiClient.baseURL already ends in `/api`.
 import { apiClient } from './client'
 
+export type UpdateVerification = 'verified' | 'unverified' | 'unknown'
+
 export interface UpdateStatus {
   current: string
   latest: string | null
   update_available: boolean
+  /** A candidate is actionable only when its release metadata is verified. */
+  verification: UpdateVerification
+  /** Public GitHub release page; never a package download URL. */
+  release_url: string | null
   /** True when an update exists but the user chose to skip that version. */
   skipped: boolean
   skipped_version: string | null

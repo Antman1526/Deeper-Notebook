@@ -9,6 +9,8 @@ the same PasswordAuthMiddleware as the rest of the API.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
@@ -24,6 +26,8 @@ class UpdateStatus(BaseModel):
     skipped: bool = False
     skipped_version: str | None = None
     html_url: str | None = None
+    release_url: str | None = None
+    verification: Literal["verified", "unverified", "unknown"] = "unknown"
     published_at: str | None = None
     enabled: bool = True
     last_check: str | None = None

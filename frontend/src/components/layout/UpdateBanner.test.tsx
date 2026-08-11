@@ -69,19 +69,24 @@ describe('UpdateBanner', () => {
     expect(container.textContent).toBe('')
   })
 
-  it('shows the banner with version and download link when an update is available', () => {
+  it('shows the banner with version and manual link when an update is available', () => {
     updateData = {
       current: '0.8.69',
       latest: 'v0.8.70',
       update_available: true,
+      verification: 'verified',
       skipped: false,
-      html_url: 'https://x/releases/v0.8.70',
+      release_url: 'https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70',
     }
     render(<UpdateBanner />)
     expect(screen.getByTestId('alert-title').textContent).toContain('v0.8.70')
-    const link = screen.getByText('Download').closest('a')
-    expect(link).toHaveAttribute('href', 'https://x/releases/v0.8.70')
+    const link = screen.getByText('Open verified release (manual)').closest('a')
+    expect(link).toHaveAttribute(
+      'href',
+      'https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70',
+    )
     expect(link).toHaveAttribute('rel', 'noreferrer')
+    expect(screen.queryByText(/download|install/i)).not.toBeInTheDocument()
   })
 
   it('Skip this version fires the mutation with the latest version', () => {
@@ -89,11 +94,33 @@ describe('UpdateBanner', () => {
       current: '0.8.69',
       latest: 'v0.8.70',
       update_available: true,
+      verification: 'verified',
       skipped: false,
-      html_url: 'https://x/releases/v0.8.70',
+      release_url: 'https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70',
     }
     render(<UpdateBanner />)
     screen.getByText('Skip this version').click()
     expect(skipMutate).toHaveBeenCalledWith('v0.8.70')
+  })
+
+  it.each([
+    ['unverified', true, true],
+    ['unknown', true, true],
+    ['verified', true, false],
+  ] as const)('never renders an install/download control for %s or disabled notices', (verification, updateAvailable, enabled) => {
+    updateData = {
+      current: '0.8.69',
+      latest: 'v0.8.70',
+      update_available: updateAvailable,
+      verification,
+      enabled,
+      skipped: false,
+      release_url: verification === 'verified'
+        ? 'https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70'
+        : null,
+    }
+    const { container } = render(<UpdateBanner />)
+    expect(container.textContent).not.toMatch(/download|install/i)
+    expect(container.querySelector('a')).toBeNull()
   })
 })

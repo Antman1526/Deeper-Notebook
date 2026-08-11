@@ -59,12 +59,28 @@ def test_is_newer(latest, current, newer):
 
 # --- check() with a fake GitHub response ----------------------------------
 
-def _fake_release(tag: str):
+def _fake_release(tag: str, *, html_url: str | None = None, assets=None):
+    release_url = html_url or (
+        f"https://github.com/Antman1526/Deeper-Notebook/releases/tag/{tag}"
+    )
+    release_assets = assets if assets is not None else [
+        {
+            "name": "Deeper-Notebook-mac-arm64.dmg",
+            "browser_download_url": release_url + "/download",
+        },
+        {
+            "name": "SHA256SUMS",
+            "browser_download_url": release_url + "/checksums",
+        },
+    ]
+
     async def _fetch():
         return {
             "tag_name": tag,
-            "html_url": f"https://example.test/releases/{tag}",
+            "html_url": release_url,
+            "url": release_url,
             "published_at": "2026-06-26T00:00:00Z",
+            "assets": release_assets,
         }
     return _fetch
 
@@ -76,7 +92,8 @@ async def test_check_reports_available_update(monkeypatch):
     assert status["latest"] == "v0.8.70"
     assert status["update_available"] is True
     assert status["skipped"] is False
-    assert status["html_url"].endswith("v0.8.70")
+    assert status["verification"] == "verified"
+    assert status["release_url"].endswith("v0.8.70")
 
 
 async def test_check_no_update_when_same_version(monkeypatch):
@@ -92,6 +109,7 @@ async def test_check_network_failure_is_safe(monkeypatch):
     status = await svc.check(force=True)
     assert status["update_available"] is False
     assert status["latest"] is None
+    assert status["verification"] == "unknown"
     # last_check is still stamped so we back off rather than hammering GitHub.
     assert status["last_check"] is not None
 
@@ -128,7 +146,13 @@ def test_skip_version_marks_skipped(_isolated_state):
     # Seed a cached "available" state, then skip it.
     svc._write_state({
         "enabled": True,
-        "cache": {"latest": "v0.8.70", "html_url": "https://x"},
+        "cache": {
+            "latest": "v0.8.70",
+            "verification": "verified",
+            "release_url": (
+                "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
+            ),
+        },
         "last_check": "2026-06-26T00:00:00+00:00",
     })
     status = svc.skip_version("v0.8.70")
@@ -167,10 +191,65 @@ def test_status_uses_canonical_release_page_when_github_payload_has_no_url():
         {"enabled": True, "cache": {"latest": "v0.8.70"}}
     )
 
-    assert (
-        status["html_url"]
-        == "https://github.com/Antman1526/Deeper-Notebook/releases/latest"
+    assert status["verification"] == "unknown"
+    assert status["html_url"] is None
+    assert status["release_url"] is None
+
+
+@pytest.mark.parametrize(
+    "release_kwargs,expected",
+    [
+        (
+            {"html_url": "https://github.com/other/repo/releases/tag/v0.8.70"},
+            "unverified",
+        ),
+        ({"tag": "not-a-version"}, "unverified"),
+        (
+            {
+                "assets": [
+                    {"name": "SHA256SUMS", "browser_download_url": "https://x"}
+                ]
+            },
+            "unverified",
+        ),
+        (
+            {
+                "assets": [
+                    {
+                        "name": "Deeper-Notebook-mac-arm64.dmg",
+                        "browser_download_url": "https://x",
+                    }
+                ]
+            },
+            "unverified",
+        ),
+    ],
+)
+async def test_release_candidate_requires_canonical_verified_metadata(
+    monkeypatch, release_kwargs, expected
+):
+    tag = release_kwargs.pop("tag", "v0.8.70")
+    monkeypatch.setattr(svc, "_fetch_latest_release", _fake_release(tag, **release_kwargs))
+
+    status = await svc.check(force=True)
+
+    assert status["verification"] == expected
+    assert status["update_available"] is False
+    assert status["release_url"] is None
+    assert status["html_url"] is None
+
+
+async def test_verified_release_exposes_only_manual_public_release_url(monkeypatch):
+    monkeypatch.setattr(svc, "_fetch_latest_release", _fake_release("v0.8.70"))
+
+    status = await svc.check(force=True)
+
+    assert status["verification"] == "verified"
+    assert status["update_available"] is True
+    assert status["release_url"] == (
+        "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
     )
+    assert status["html_url"] == status["release_url"]
 
 
 def test_app_version_prefers_canonical_distribution(monkeypatch):
