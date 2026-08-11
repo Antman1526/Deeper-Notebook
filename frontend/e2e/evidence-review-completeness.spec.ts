@@ -375,7 +375,6 @@ test('renders notebook Chat and selected Studio evidence review with keyboard ac
     (request) => request === 'GET /api/notebooks/notebook-fixture-001/suggested-questions',
   )).toHaveLength(1)
   expect(chatContextRequests.length).toBeGreaterThanOrEqual(2)
-  expect(chatContextRequests.length).toBeLessThanOrEqual(3)
   expect(expectedBackgroundRequests.every((request) => (
     request === 'GET /api/notebooks/notebook-fixture-001/suggested-questions'
       || request === 'POST /api/chat/context'

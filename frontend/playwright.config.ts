@@ -11,7 +11,11 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // The mocked suites share one stateful Next server and exercise several
+  // layout-heavy Knowledge workspaces. Run them serially in every environment
+  // so local release proof matches CI and cannot starve observers or corrupt
+  // teardown traces under high browser concurrency.
+  workers: 1,
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
     baseURL,
