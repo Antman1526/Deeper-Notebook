@@ -897,6 +897,7 @@ def _snapshot_install_job_to_dict(job):
         "job_id": job.job_id,
         "repo_id": job.repo_id,
         "target_path": job.target_path,
+        "revision": getattr(job, "revision", None),
         "status": job.status,
         "error": job.error,
         "log_tail": job.log_tail,

@@ -131,6 +131,7 @@ BenchmarkRunner = Callable[
 ]
 
 _JOBS: dict[str, BenchmarkJob] = {}
+_MAX_TERMINAL_JOBS = 512
 _HISTORY_FILENAME = "deeper-notebook-benchmarks.json"
 _LEGACY_HISTORY_FILENAME = "open-notebook-plus-benchmarks.json"
 _VALID_ROLES = {
@@ -143,15 +144,28 @@ _VALID_ROLES = {
 BENCHMARK_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
 
+def _prune_job_history() -> None:
+    """Keep bounded terminal benchmark history while retaining active jobs."""
+    terminal = {"completed", "failed"}
+    terminal_ids = [
+        job_id for job_id, job in _JOBS.items() if job.status in terminal
+    ]
+    excess = len(terminal_ids) - _MAX_TERMINAL_JOBS
+    for job_id in terminal_ids[: max(0, excess)]:
+        _JOBS.pop(job_id, None)
+
+
 def clear_benchmark_jobs() -> None:
     _JOBS.clear()
 
 
 def get_benchmark_job(job_id: str) -> BenchmarkJob | None:
+    _prune_job_history()
     return _JOBS.get(job_id)
 
 
 def list_benchmark_jobs() -> list[BenchmarkJob]:
+    _prune_job_history()
     return sorted(_JOBS.values(), key=lambda job: job.created_at, reverse=True)
 
 
@@ -286,6 +300,7 @@ async def start_benchmark(
         job_id=f"benchmark_{secrets.token_hex(8)}",
         roles=_normalize_roles(roles),
     )
+    _prune_job_history()
     _JOBS[job.job_id] = job
 
     async def _run() -> None:
@@ -416,6 +431,7 @@ async def _run_benchmark_job(
             history = load_benchmark_history(model_dir)
             history.extend(job.results)
             save_benchmark_history(model_dir, history)
+        _prune_job_history()
 
 
 def _skipped_result(

@@ -18,6 +18,10 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
+from desktop.build.archive_validation import (
+    validate_tar_members,
+    validate_zip_members,
+)
 from desktop.data_root import active_data_root
 
 # Max bytes kept in bootstrap-subprocess.log before truncation (P2-MED-19).
@@ -85,18 +89,24 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
         )
         shutil.rmtree(runtime_dir, ignore_errors=True)
 
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-
     suffix = tarball.suffix.lower()
     # Handle double-extension .tar.gz
     if tarball.name.endswith(".tar.gz"):
         with tarfile.open(tarball, "r:gz") as t:
-            t.extractall(runtime_dir, filter="data")
+            validate_tar_members(t, expected_root="python")
     elif suffix == ".zip":
         with zipfile.ZipFile(tarball) as z:
-            z.extractall(runtime_dir)
+            validate_zip_members(z.infolist(), expected_root="python")
     else:
         raise ValueError(f"Unsupported archive format: {tarball}")
+
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    if tarball.name.endswith(".tar.gz"):
+        with tarfile.open(tarball, "r:gz") as t:
+            t.extractall(runtime_dir, filter="data")  # nosec B202 - validated above
+    else:
+        with zipfile.ZipFile(tarball) as z:
+            z.extractall(runtime_dir)  # nosec B202 - validated above
 
     if not is_win and interpreter.exists():
         interpreter.chmod(0o755)

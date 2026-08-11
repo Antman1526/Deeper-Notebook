@@ -126,6 +126,18 @@ class DownloadJob:
 # desktop single-user use per the docstring at the top.
 _JOBS: dict[str, DownloadJob] = {}
 _REGISTRY_LOCK: "asyncio.Lock | None" = None
+_MAX_TERMINAL_JOBS = 512
+
+
+def _prune_job_history() -> None:
+    """Retain recent terminal jobs while never evicting active transfers."""
+    terminal = {"completed", "failed", "cancelled"}
+    terminal_ids = [
+        job_id for job_id, job in _JOBS.items() if job.status in terminal
+    ]
+    excess = len(terminal_ids) - _MAX_TERMINAL_JOBS
+    for job_id in terminal_ids[: max(0, excess)]:
+        _JOBS.pop(job_id, None)
 
 
 def _get_registry_lock() -> asyncio.Lock:
@@ -345,6 +357,8 @@ async def _stream_download(job: DownloadJob, dest_dir: Path) -> None:
         # leaving a status the UI can render.
         job.status = "failed"
         job.error = f"Unexpected error: {exc.__class__.__name__}"
+    finally:
+        _prune_job_history()
 
 
 async def start_download(
@@ -421,6 +435,7 @@ async def start_download(
         if part_size > 0:
             job.resume_from_bytes = part_size
 
+        _prune_job_history()
         _JOBS[job_id] = job
 
     # Fire the background task OUTSIDE the lock so the lock is held
@@ -433,6 +448,7 @@ async def start_download(
 def get_job(job_id: str) -> DownloadJob | None:
     """Look up a job. Returns None if unknown (job_id from a previous
     API process, or a typo from the client)."""
+    _prune_job_history()
     return _JOBS.get(job_id)
 
 
@@ -464,6 +480,7 @@ def list_jobs() -> list[DownloadJob]:
     in-flight + recently-completed downloads on page load (so a user
     who comes back to the page after a few minutes still sees the
     completion notification)."""
+    _prune_job_history()
     return list(_JOBS.values())
 
 
@@ -563,6 +580,7 @@ async def reconcile_jobs(dest_dir: Path) -> int:
             live_keys.add((repo_id, filename))
             reconstructed += 1
 
+    _prune_job_history()
     return reconstructed
 
 

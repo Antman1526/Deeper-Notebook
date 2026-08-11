@@ -6,6 +6,11 @@ darwin-arm64 = "https://github.com/surrealdb/surrealdb/releases/download/v2.1.0/
 darwin-x86_64 = "https://github.com/surrealdb/surrealdb/releases/download/v2.1.0/surreal-v2.1.0.darwin-amd64.tgz"
 windows-x86_64 = "https://github.com/surrealdb/surrealdb/releases/download/v2.1.0/surreal-v2.1.0.windows-amd64.exe"
 
+[surrealdb.sha256]
+darwin-arm64 = "3f9508f8be8db469aff9f3c8e20c17a54b6d1999f83dba275b983473241109ce"
+darwin-x86_64 = "fe7d4a53021ac7a473d924f94627e2e3fe9319e6d729201ae2005b71fcd91a0d"
+windows-x86_64 = "7f09401ac7196782ce7a1a2ddf6f5c8530319712bdf3ecd4ebaa9a22094233eb"
+
 [node]
 version = "20.18.0"
 
@@ -13,6 +18,11 @@ version = "20.18.0"
 darwin-arm64 = "https://nodejs.org/dist/v20.18.0/node-v20.18.0-darwin-arm64.tar.gz"
 darwin-x86_64 = "https://nodejs.org/dist/v20.18.0/node-v20.18.0-darwin-x64.tar.gz"
 windows-x86_64 = "https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip"
+
+[node.sha256]
+darwin-arm64 = "92e180624259d082562592bb12548037c6a417069be29e452ec5d158d657b4be"
+darwin-x86_64 = "c02aa7560612a4e2cc359fd89fae7aedde370c06db621f2040a4a9f830a125dc"
+windows-x86_64 = "f5cea43414cc33024bbe5867f208d1c9c915d6a38e92abeee07ed9e563662297"
 
 [uv]
 version = "0.5.11"
@@ -22,6 +32,11 @@ darwin-arm64 = "https://github.com/astral-sh/uv/releases/download/0.5.11/uv-aarc
 darwin-x86_64 = "https://github.com/astral-sh/uv/releases/download/0.5.11/uv-x86_64-apple-darwin.tar.gz"
 windows-x86_64 = "https://github.com/astral-sh/uv/releases/download/0.5.11/uv-x86_64-pc-windows-msvc.zip"
 
+[uv.sha256]
+darwin-arm64 = "695f3640d5b1a4e28de7e36e3a2e14072852dcc6c70bf9e4deec6ada00d516b4"
+darwin-x86_64 = "7e23d1d892c23f9e74245c4fd3d3e246438ce9b34460f85eee61f784de137b0b"
+windows-x86_64 = "3e8203e6434b45427f20824419f8d8d53f970a76d94ccdcad07f8498fa01a9d0"
+
 [python_standalone]
 version = "20241206"
 python_version = "3.12.8"
@@ -30,3 +45,8 @@ python_version = "3.12.8"
 darwin-arm64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8+20241206-aarch64-apple-darwin-install_only.tar.gz"
 darwin-x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8+20241206-x86_64-apple-darwin-install_only.tar.gz"
 windows-x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8+20241206-x86_64-pc-windows-msvc-install_only.tar.gz"
+
+[python_standalone.sha256]
+darwin-arm64 = "e3c4aa607717b23903ca2650d5c3ee24f89b97543e2db2b0f463bddc7a9e92f3"
+darwin-x86_64 = "3ba35c706577d755e8e52a4c161a042464577c0e695e2a605362fa469e26de10"
+windows-x86_64 = "767b4be3ddf6b99e5ade519789c1615c191d8cf99d5aff4685cc18b48931f1e6"
