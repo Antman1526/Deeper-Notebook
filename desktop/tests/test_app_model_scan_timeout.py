@@ -150,9 +150,10 @@ def _supervisor_context(tmp_path, receipt_store):
 
 
 class _RecordingReceiptStore:
-    def __init__(self, *, fail=False):
+    def __init__(self, *, fail_stages=()):
         self.records: list[tuple[str, int]] = []
-        self.fail = fail
+        self.attempts: list[tuple[str, int]] = []
+        self.fail_stages = set(fail_stages)
 
     def load_chat_model(self, root):
         return None
@@ -164,7 +165,8 @@ class _RecordingReceiptStore:
         return None
 
     def record(self, stage, elapsed_ms):
-        if self.fail:
+        self.attempts.append((stage, elapsed_ms))
+        if stage in self.fail_stages:
             raise OSError("receipt storage unavailable")
         self.records.append((stage, elapsed_ms))
 
@@ -265,7 +267,7 @@ def test_supervisor_failure_preserves_error_when_receipt_write_fails(
 ):
     from desktop import launcher
 
-    store = _RecordingReceiptStore(fail=True)
+    store = _RecordingReceiptStore(fail_stages={"chat_model_scan", "core_ready"})
     monkeypatch.setattr(app, "_scan_chat_llm_with_timeout", lambda _directory: None)
 
     class Supervisor:
@@ -288,3 +290,37 @@ def test_supervisor_failure_preserves_error_when_receipt_write_fails(
         app._phase_start_supervisor(ctx)
 
     assert Supervisor.instance.stop_calls == 1
+    assert [stage for stage, _elapsed in store.attempts] == ["chat_model_scan"]
+    assert not [stage for stage, _elapsed in store.records if stage == "core_ready"]
+
+
+def test_core_ready_receipt_failure_does_not_change_success(
+    monkeypatch, tmp_path
+):
+    from desktop import launcher
+
+    store = _RecordingReceiptStore(fail_stages={"core_ready"})
+    monkeypatch.setattr(app, "_scan_chat_llm_with_timeout", lambda _directory: None)
+
+    class Supervisor:
+        instance = None
+
+        def __init__(self, **kwargs):
+            self.start_calls = 0
+            Supervisor.instance = self
+
+        def start_all(self):
+            self.start_calls += 1
+
+        def stop_all(self):
+            raise AssertionError("successful startup must not stop the supervisor")
+
+    monkeypatch.setattr(launcher, "Supervisor", Supervisor)
+    ctx = _supervisor_context(tmp_path, store)
+
+    app._phase_start_supervisor(ctx)
+
+    assert ctx.sv is Supervisor.instance
+    assert Supervisor.instance.start_calls == 1
+    assert [stage for stage, _elapsed in store.attempts].count("core_ready") == 1
+    assert not [stage for stage, _elapsed in store.records if stage == "core_ready"]
