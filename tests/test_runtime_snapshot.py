@@ -52,8 +52,8 @@ async def test_ready_snapshot_uses_only_injected_read_models(tmp_path: Path) -> 
         _providers(auto_export_directory=lambda: tmp_path)
     )
 
-    assert snapshot.status == "ready"
-    assert snapshot.reasons == []
+    assert snapshot.status == "degraded"
+    assert snapshot.reasons == ["auto_export_unknown"]
     assert snapshot.readiness.database == "online"
     assert snapshot.readiness.migrations == "applied"
     assert snapshot.startup.stages[0].stage == "launcher_start"
@@ -502,3 +502,35 @@ async def test_malformed_provenance_degrades_without_raw_details() -> None:
     wire = snapshot.model_dump_json()
     assert "/private/raw" not in wire
     assert "c" * 64 not in wire
+
+
+@pytest.mark.asyncio
+async def test_existing_backup_directory_without_exports_is_unknown(tmp_path: Path) -> None:
+    from api.runtime_snapshot import build_runtime_snapshot
+
+    (tmp_path / "manual-export.txt").write_text("not an auto export", encoding="utf-8")
+
+    snapshot = await build_runtime_snapshot(
+        _providers(auto_export_directory=lambda: tmp_path)
+    )
+
+    assert snapshot.backup.state == "unknown"
+    assert snapshot.backup.file_count == 0
+    assert snapshot.backup.freshness == "unknown"
+    assert "auto_export_unknown" in snapshot.reasons
+
+
+@pytest.mark.asyncio
+async def test_provenance_requires_recognized_aggregate_fields() -> None:
+    from api.runtime_snapshot import build_runtime_snapshot
+
+    for malformed in ([{}], [{"root_path": "/private/raw"}]):
+        snapshot = await build_runtime_snapshot(
+            _providers(vault_summary=lambda value=malformed: value)
+        )
+
+        assert snapshot.provenance.state == "unknown"
+        assert snapshot.provenance.mount_count == 0
+        assert snapshot.provenance.external_read_only_count == 0
+        assert "provenance_unknown" in snapshot.reasons
+        assert "/private/raw" not in snapshot.model_dump_json()

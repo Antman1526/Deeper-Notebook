@@ -66,6 +66,19 @@ _MAX_AUTO_EXPORT_SIZE_BYTES = 4_294_967_296
 _MAX_COUNT = 1_000_000
 _MAX_RUNTIME_REASONS = 15
 AUTO_EXPORT_STALE_AFTER_SECONDS = 172_800
+_KNOWN_VAULT_STATES = frozenset(
+    {
+        "disconnected",
+        "scanning",
+        "ready-read-only",
+        "ready-write-enabled",
+        "stale",
+        "conflict",
+        "degraded",
+        "unavailable",
+    }
+)
+_KNOWN_WRITE_POLICIES = frozenset({"read-only", "guarded-write"})
 
 
 class _Contract(BaseModel):
@@ -476,8 +489,8 @@ def _normalise_backup(value: Any) -> tuple[AutoExportSnapshot, list[ReasonCode]]
                 newest_size = size
         if newest_mtime is None:
             return (
-                AutoExportSnapshot(state="ready", file_count=count),
-                [],
+                AutoExportSnapshot(state="unknown", file_count=count),
+                ["auto_export_unknown"],
             )
 
         age_raw = time.time() - newest_mtime
@@ -543,16 +556,19 @@ def _normalise_provenance(value: Any) -> tuple[ProvenanceSnapshot, list[ReasonCo
         external_read_only_count = 0
         fingerprints_available = False
         saw_item = False
+        recognized_item = False
         for item in _bounded_items(raw, _MAX_COUNT):
             saw_item = True
             entry = _as_mapping(item)
             if entry is None:
                 continue
+            status = entry.get("status")
+            write_policy = entry.get("write_policy")
+            if status not in _KNOWN_VAULT_STATES and write_policy not in _KNOWN_WRITE_POLICIES:
+                continue
+            recognized_item = True
             mount_count += 1
-            if (
-                entry.get("write_policy") == "read-only"
-                or entry.get("status") == "ready-read-only"
-            ):
+            if write_policy == "read-only" or status == "ready-read-only":
                 external_read_only_count += 1
             fingerprint = (
                 entry.get("source_fingerprint")
@@ -561,7 +577,7 @@ def _normalise_provenance(value: Any) -> tuple[ProvenanceSnapshot, list[ReasonCo
             )
             if isinstance(fingerprint, str) and _SOURCE_FINGERPRINT_RE.fullmatch(fingerprint):
                 fingerprints_available = True
-        if saw_item and mount_count == 0:
+        if saw_item and not recognized_item:
             raise TypeError("provenance mount entries are invalid")
         return (
             ProvenanceSnapshot(

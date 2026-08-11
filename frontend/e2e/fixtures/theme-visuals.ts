@@ -38,6 +38,38 @@ const updateStatus = {
   last_check: null,
 }
 
+const runtimeSnapshot = {
+  schema_version: 'runtime-snapshot-v1',
+  status: 'degraded',
+  reasons: ['auto_export_unknown', 'provenance_unknown'],
+  readiness: { state: 'ready', database: 'online', migrations: 'applied' },
+  startup: {
+    state: 'ready',
+    stages: [
+      { stage: 'launcher_start', elapsed_ms: 2 },
+      { stage: 'core_ready', elapsed_ms: 18 },
+    ],
+  },
+  updates: { state: 'ready', enabled: false, update_available: false, current_version: 'fixture' },
+  vault: { state: 'ready', ready: 0, degraded: 0, unavailable: 0 },
+  knowledge: { state: 'ready', projected: 0, unchanged: 0, failed: 0 },
+  backup: {
+    state: 'unknown',
+    freshness: 'unknown',
+    integrity: 'unknown',
+    file_count: 0,
+    newest_age_seconds: null,
+    newest_size_bytes: null,
+    newest_timestamp: null,
+  },
+  provenance: {
+    state: 'unknown',
+    mount_count: 0,
+    external_read_only_count: 0,
+    source_fingerprint_state: 'unknown',
+  },
+}
+
 function requestLabel(route: Route): string {
   const request = route.request()
   return `${request.method()} ${new URL(request.url()).pathname}`
@@ -121,6 +153,7 @@ export async function installThemeVisualFixture(
     status: 'online', forced_offline: false, local_fallback_model: null, checked_epoch_ms: 0,
   }, unexpectedRequests)
   await fulfillJson(page, '/api/updates/check', updateStatus, unexpectedRequests)
+  await fulfillJson(page, '/api/runtime/snapshot', runtimeSnapshot, unexpectedRequests)
   await fulfillJson(page, '/healthz/deep', {
     status: 'healthy',
     checks: {
