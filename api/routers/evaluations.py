@@ -179,6 +179,8 @@ async def get_latest_evaluation(
             selector_field=selector_field,
             selector_value=selector_value,
         )
+    except HTTPException:
+        raise
     except ValueError:
         raise HTTPException(status_code=422, detail="Evaluation selector is invalid") from None
     except Exception as exc:
@@ -213,6 +215,8 @@ async def batch_latest_evaluations(
             notebook_id=payload.notebook_id,
             message_ids=message_ids,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         if isinstance(exc, EvaluationRepositoryError):
             raise HTTPException(status_code=503, detail="Evaluations are unavailable") from None

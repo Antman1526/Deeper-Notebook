@@ -99,6 +99,34 @@ async def test_latest_lookup_returns_404_for_missing_or_cross_notebook_selector(
 
 
 @pytest.mark.asyncio
+async def test_latest_routes_preserve_typed_http_errors_from_repository(monkeypatch):
+    class Repository:
+        async def latest_run(self, **_kwargs):
+            raise HTTPException(status_code=409, detail="evaluation is changing")
+
+        async def latest_runs_for_messages(self, **_kwargs):
+            raise HTTPException(status_code=409, detail="evaluation is changing")
+
+    monkeypatch.setattr(evaluations, "EvaluationRepository", Repository)
+
+    with pytest.raises(HTTPException) as latest:
+        await evaluations.get_latest_evaluation(
+            notebook_id="notebook:mine", message_id="message:one"
+        )
+    assert latest.value.status_code == 409
+    assert latest.value.detail == "evaluation is changing"
+
+    with pytest.raises(HTTPException) as batch:
+        await evaluations.batch_latest_evaluations(
+            evaluations.EvaluationBatchRequest(
+                notebook_id="notebook:mine", message_ids=["message:one"]
+            )
+        )
+    assert batch.value.status_code == 409
+    assert batch.value.detail == "evaluation is changing"
+
+
+@pytest.mark.asyncio
 async def test_latest_lookup_requires_exactly_one_bounded_selector(monkeypatch):
     monkeypatch.setattr(evaluations, "repo_query", lambda *_args: pytest.fail("query should not run"))
 
