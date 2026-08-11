@@ -1,6 +1,10 @@
 import asyncio
+import math
 import os
+from collections import OrderedDict
+from collections.abc import Mapping
 from typing import Annotated, Optional
+from urllib.parse import urlsplit
 
 from ai_prompter import Prompter
 from langchain_core.messages import AIMessage, SystemMessage
@@ -214,13 +218,26 @@ def _json_schema_to_pydantic_model(
             return primary, ("null" in type_spec)
         return type_map.get(type_spec, Any), False
 
-    props = (schema or {}).get("properties", {}) or {}
-    required = set((schema or {}).get("required", []) or [])
+    if not isinstance(schema, dict):
+        schema = {}
+    props = schema.get("properties", {}) or {}
+    if not isinstance(props, dict):
+        props = {}
+    raw_required = schema.get("required", []) or []
+    required = (
+        {name for name in raw_required if isinstance(name, str)}
+        if isinstance(raw_required, list)
+        else set()
+    )
 
     fields: dict[str, tuple] = {}
     for name, spec in props.items():
+        if not isinstance(name, str) or not name or not isinstance(spec, dict):
+            continue
         py_type, is_nullable = _resolve_type(spec.get("type"))
         description = spec.get("description", "")
+        if not isinstance(description, str):
+            description = ""
         default = spec.get("default", None)
         # JSON-Schema-nullable forces optional even when listed in
         # `required`. JSON Schema's required-but-nullable shape means
@@ -256,9 +273,17 @@ def _json_schema_to_pydantic_model(
 import time as _time
 
 _TOOL_DISCOVERY_TTL_S = 30.0
+_TOOL_DISCOVERY_CACHE_MAX = 128
+_MAX_MCP_SERVERS = 32
+_MAX_MCP_TOOLS = 128
+_MAX_AGENT_ITERATIONS = 32
+_MAX_MCP_TOOL_TIMEOUT_SEC = 300.0
+_MAX_CHAT_MODEL_TIMEOUT_SEC = 600.0
+_MAX_MCP_SERVER_NAME_CHARS = 128
+_MAX_MCP_SERVER_URL_CHARS = 2048
 # Keyed by server URL so multiple registered servers each get their
 # own cache slot. Value is (timestamp, tools_full_list).
-_tool_discovery_cache: dict[str, tuple[float, list[dict]]] = {}
+_tool_discovery_cache: OrderedDict[str, tuple[float, list[dict]]] = OrderedDict()
 
 
 def _clear_tool_discovery_cache() -> None:
@@ -301,12 +326,64 @@ async def _resolve_chat_tools(
     """
     from langchain_core.tools import StructuredTool
 
-    from deeper_notebook.mcp.client import MCPClient
+    from deeper_notebook.mcp.client import (
+        MCPClient,
+        _bounded_input_schema,
+        _bounded_tool_specs,
+    )
     from deeper_notebook.mcp.registry import list_enabled_servers
 
-    servers = (
-        force_servers if force_servers is not None else await list_enabled_servers()
-    )
+    try:
+        raw_servers = (
+            force_servers
+            if force_servers is not None
+            else await list_enabled_servers()
+        )
+    except Exception:
+        # The registry is an optional extension surface.  A malformed test
+        # hook or transient adapter failure must not take down native chat.
+        return []
+    if not isinstance(raw_servers, (list, tuple)):
+        return []
+    servers: list[dict] = []
+    for raw_server in raw_servers:
+        if not isinstance(raw_server, Mapping):
+            continue
+        try:
+            name = raw_server.get("name")
+            url = raw_server.get("url")
+        except Exception:
+            continue
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or len(name.strip()) > _MAX_MCP_SERVER_NAME_CHARS
+        ):
+            continue
+        if not isinstance(url, str) or len(url.strip()) > _MAX_MCP_SERVER_URL_CHARS:
+            continue
+        name = name.strip()
+        url = url.strip()
+        try:
+            parsed_url = urlsplit(url)
+            if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+                continue
+        except ValueError:
+            continue
+        # Preserve the small registry record shape without materialising an
+        # attacker-controlled Mapping.  The chat resolver only consumes these
+        # fields; id/priority/created remain available for callers that inspect
+        # the registry directly.
+        server: dict[str, object] = {"name": name, "url": url}
+        for key in ("id", "enabled", "priority", "created"):
+            try:
+                if key in raw_server:
+                    server[key] = raw_server.get(key)
+            except Exception:
+                continue
+        servers.append(server)
+        if len(servers) >= _MAX_MCP_SERVERS:
+            break
     # v0.8.42 — per-request filter. The chat-graph node reads the
     # caller-supplied `disabled_mcp_servers` from state and passes it
     # here so the user can "load only the tools they need" on a given
@@ -314,7 +391,11 @@ async def _resolve_chat_tools(
     # normalised (case-insensitive, trimmed) on both sides so a UI
     # typo doesn't silently fail to filter.
     if exclude_server_names:
-        excluded = {n.strip().lower() for n in exclude_server_names if n}
+        excluded = {
+            n.strip().lower()
+            for n in exclude_server_names
+            if isinstance(n, str) and n.strip()
+        }
         servers = [
             s for s in servers if (s.get("name") or "").strip().lower() not in excluded
         ]
@@ -332,32 +413,46 @@ async def _resolve_chat_tools(
     # is the new test hook for cases that want to pin the schemas.
     async def _discover(client, url: str) -> list[dict]:
         if force_tools_full is not None:
-            return list(force_tools_full)
+            return _bounded_tool_specs(force_tools_full)
         if force_tool_names is not None:
             # Old test hook — synthesise minimal-shape entries so tests
             # written against the v0.8.10 API keep passing.
-            return [
-                {
-                    "name": n,
-                    "description": "",
-                    "input_schema": {"type": "object", "properties": {}},
-                }
-                for n in force_tool_names
-            ]
+            if not isinstance(force_tool_names, (list, tuple)):
+                return []
+            return _bounded_tool_specs(
+                [
+                    {
+                        "name": n,
+                        "description": "",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {},
+                        },
+                    }
+                    for n in force_tool_names[: _MAX_MCP_TOOLS]
+                ]
+            )
         # v0.8.12 — TTL-cached discovery. ~50-500ms saved per chat
         # turn for the same MCP server.
         now = _time.monotonic()
         cached = _tool_discovery_cache.get(url)
         if cached is not None and now - cached[0] < _TOOL_DISCOVERY_TTL_S:
+            _tool_discovery_cache.move_to_end(url)
             return cached[1]
         try:
-            available = await client.list_tools_full()
+            available = _bounded_tool_specs(await client.list_tools_full())
             _tool_discovery_cache[url] = (now, available)
+            _tool_discovery_cache.move_to_end(url)
+            while len(_tool_discovery_cache) > _TOOL_DISCOVERY_CACHE_MAX:
+                _tool_discovery_cache.popitem(last=False)
             return available
         except Exception:
             # Negative cache too — TTL prevents the chat node from
             # retrying a known-broken MCP server every single turn.
             _tool_discovery_cache[url] = (now, [])
+            _tool_discovery_cache.move_to_end(url)
+            while len(_tool_discovery_cache) > _TOOL_DISCOVERY_CACHE_MAX:
+                _tool_discovery_cache.popitem(last=False)
             return []
 
     def _make_tool(client, remote_name: str, description: str, schema: dict):
@@ -387,18 +482,23 @@ async def _resolve_chat_tools(
                 )
             return text
 
-        args_model = _json_schema_to_pydantic_model(remote_name, schema)
-        return StructuredTool.from_function(
-            coroutine=_invoke,
-            name=f"mcp_{remote_name}",
-            description=(
-                description
-                or f"Call the MCP server's `{remote_name}` tool. Use this "
-                f"when the user's question depends on information not in "
-                f"the notebook context."
-            ),
-            args_schema=args_model,
-        )
+        try:
+            args_model = _json_schema_to_pydantic_model(
+                remote_name, _bounded_input_schema(schema)
+            )
+            return StructuredTool.from_function(
+                coroutine=_invoke,
+                name=f"mcp_{remote_name}",
+                description=(
+                    description
+                    or f"Call the MCP server's `{remote_name}` tool. Use this "
+                    f"when the user's question depends on information not in "
+                    f"the notebook context."
+                ),
+                args_schema=args_model,
+            )
+        except Exception:
+            return None
 
     # v0.8.66 (audit MCP-2) — bind tools from ALL enabled servers, not just
     # servers[0]. Pre-v0.8.66 every server after the first (by the registry's
@@ -408,15 +508,31 @@ async def _resolve_chat_tools(
     tools: list = []
     seen_names: set[str] = set()
     for server in servers:
-        client = MCPClient(url=server["url"])
-        available = await _discover(client, server["url"])
+        try:
+            client = MCPClient(url=server["url"])
+            available = await _discover(client, server["url"])
+        except Exception:
+            # One broken optional plugin must not hide tools from other
+            # registered servers or native providers.
+            continue
         for t in available:
+            if not isinstance(t, dict):
+                continue
+            remote_name = t.get("name")
+            if not isinstance(remote_name, str) or not remote_name.strip():
+                continue
+            remote_name = remote_name.strip()
+            description = t.get("description", "")
+            if not isinstance(description, str):
+                description = ""
             tool = _make_tool(
                 client,
-                t["name"],
-                t.get("description", ""),
+                remote_name,
+                description[:2048],
                 t.get("input_schema") or {},
             )
+            if tool is None:
+                continue
             if tool.name in seen_names:
                 _logger.debug(
                     "MCP tool name collision {!r} (server {!r}) — keeping the "
@@ -427,6 +543,8 @@ async def _resolve_chat_tools(
                 continue
             seen_names.add(tool.name)
             tools.append(tool)
+            if len(tools) >= _MAX_MCP_TOOLS:
+                return tools
     return tools
 
 
@@ -448,14 +566,16 @@ def _agent_max_iterations(default: int = 4) -> int:
     other budget in this codebase is env-tunable, and the v0.8.56 truncation
     notice even tells users to "raise the cap" — but there was no knob. Guarded
     + clamped like `web_search._timeout_sec`: blank/garbage/<1 → the default."""
+    safe_default = default if isinstance(default, int) and default >= 1 else 4
+    safe_default = min(safe_default, _MAX_AGENT_ITERATIONS)
     raw = (resolve_env("DEEPER_NOTEBOOK_AGENT_MAX_ITERATIONS") or "").strip()
     if not raw:
-        return default
+        return safe_default
     try:
         val = int(raw)
     except ValueError:
-        return default
-    return val if val >= 1 else default
+        return safe_default
+    return min(val, _MAX_AGENT_ITERATIONS) if val >= 1 else safe_default
 
 
 def _mcp_tool_timeout_sec(default: float = 30.0) -> float:
@@ -464,14 +584,21 @@ def _mcp_tool_timeout_sec(default: float = 30.0) -> float:
     loop and was unguarded: a malformed value raised ValueError that crashed the
     whole batch (misattributed to the tool), and `0`/negative produced an
     instant-timeout. Blank/garbage/<=0 → the default."""
+    safe_default = (
+        min(default, _MAX_MCP_TOOL_TIMEOUT_SEC)
+        if math.isfinite(default) and default > 0
+        else 30.0
+    )
     raw = (resolve_env("DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC") or "").strip()
     if not raw:
-        return default
+        return safe_default
     try:
         val = float(raw)
     except ValueError:
-        return default
-    return val if val > 0 else default
+        return safe_default
+    if not math.isfinite(val) or val <= 0:
+        return safe_default
+    return min(val, _MAX_MCP_TOOL_TIMEOUT_SEC)
 
 
 def _chat_model_timeout_sec(default: float = 300.0) -> float:
@@ -481,14 +608,21 @@ def _chat_model_timeout_sec(default: float = 300.0) -> float:
     halts on client disconnect) a hung/wedged sidecar that never streams would
     hang the turn forever. Generous default 300s (matches the /chat/execute outer
     wrap). Blank/garbage/<=0 → default."""
+    safe_default = (
+        min(default, _MAX_CHAT_MODEL_TIMEOUT_SEC)
+        if math.isfinite(default) and default > 0
+        else 300.0
+    )
     raw = (resolve_env("DEEPER_NOTEBOOK_CHAT_MODEL_TIMEOUT_SEC") or "").strip()
     if not raw:
-        return default
+        return safe_default
     try:
         val = float(raw)
     except ValueError:
-        return default
-    return val if val > 0 else default
+        return safe_default
+    if not math.isfinite(val) or val <= 0:
+        return safe_default
+    return min(val, _MAX_CHAT_MODEL_TIMEOUT_SEC)
 
 
 def _fence_untrusted_tool_output(tool_name: str, text: str) -> str:

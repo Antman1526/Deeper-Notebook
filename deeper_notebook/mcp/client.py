@@ -8,12 +8,178 @@ session lifecycle directly.
 from __future__ import annotations
 
 import asyncio
+import math
 import os
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from deeper_notebook.environment import resolve_env
+
+# MCP responses are third-party input.  Keep every projection finite before it
+# reaches the chat graph, while leaving ordinary valid responses unchanged.
+_MAX_MCP_TOOLS = 64
+_MAX_TOOL_NAME_CHARS = 128
+_MAX_DESCRIPTION_CHARS = 2048
+_MAX_SCHEMA_DEPTH = 6
+_MAX_SCHEMA_ITEMS = 64
+_MAX_SCHEMA_STRING_CHARS = 1024
+_MAX_CONTENT_BLOCKS = 32
+_MAX_TEXT_CHARS = 8192
+_MAX_BINARY_CHARS = 1024 * 1024
+_MAX_URI_CHARS = 2048
+_MAX_MIME_CHARS = 128
+_MAX_REPR_CHARS = 1024
+_MAX_RPC_TIMEOUT_SEC = 300.0
+
+_EMPTY_SCHEMA = {"type": "object", "properties": {}}
+
+
+def _bounded_iterable(value: Any, limit: int) -> list[Any]:
+    """Read at most ``limit`` values without materialising an attacker iterable."""
+    try:
+        iterator = iter(value)
+    except Exception:
+        return []
+    values: list[Any] = []
+    for _ in range(limit):
+        try:
+            values.append(next(iterator))
+        except StopIteration:
+            break
+        except Exception:
+            break
+    return values
+
+
+def _normalise_tool_name(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    name = value.strip()
+    if not name or len(name) > _MAX_TOOL_NAME_CHARS:
+        return None
+    if any(ord(char) < 32 for char in name):
+        return None
+    return name
+
+
+def _bounded_schema_value(value: Any, depth: int = 0) -> Any:
+    """Copy JSON-like schema data with finite depth, keys, and strings."""
+    if depth > _MAX_SCHEMA_DEPTH:
+        return None
+    if value is None or isinstance(value, bool) or isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, str):
+        return value[:_MAX_SCHEMA_STRING_CHARS]
+    if isinstance(value, Mapping):
+        copied: dict[str, Any] = {}
+        try:
+            items = iter(value.items())
+        except Exception:
+            return copied
+        for _ in range(_MAX_SCHEMA_ITEMS):
+            try:
+                key, item = next(items)
+            except StopIteration:
+                break
+            except Exception:
+                break
+            if not isinstance(key, str) or not key or len(key) > _MAX_SCHEMA_STRING_CHARS:
+                continue
+            bounded = _bounded_schema_value(item, depth + 1)
+            if bounded is not None:
+                copied[key] = bounded
+        return copied
+    if isinstance(value, (list, tuple)):
+        return [
+            bounded
+            for item in _bounded_iterable(value, _MAX_SCHEMA_ITEMS)
+            if (bounded := _bounded_schema_value(item, depth + 1)) is not None
+        ]
+    return None
+
+
+def _bounded_input_schema(value: Any) -> dict[str, Any]:
+    """Return a safe JSON-schema projection for a discovered MCP tool."""
+    if not isinstance(value, Mapping):
+        return dict(_EMPTY_SCHEMA)
+    bounded = _bounded_schema_value(value)
+    if not isinstance(bounded, dict):
+        return dict(_EMPTY_SCHEMA)
+    properties = bounded.get("properties")
+    if not isinstance(properties, Mapping):
+        properties = {}
+    safe_properties: dict[str, dict[str, Any]] = {}
+    try:
+        property_items = iter(properties.items())
+    except Exception:
+        property_items = iter(())
+    for _ in range(_MAX_SCHEMA_ITEMS):
+        try:
+            key, spec = next(property_items)
+        except StopIteration:
+            break
+        except Exception:
+            break
+        if not isinstance(key, str) or not key or len(key) > _MAX_SCHEMA_STRING_CHARS:
+            continue
+        bounded_spec = _bounded_schema_value(spec)
+        if isinstance(bounded_spec, dict):
+            safe_properties[key] = bounded_spec
+    bounded["type"] = "object"
+    bounded["properties"] = safe_properties
+    required = bounded.get("required")
+    if isinstance(required, list):
+        bounded["required"] = [
+            name
+            for name in required[:_MAX_SCHEMA_ITEMS]
+            if isinstance(name, str) and name in safe_properties
+        ]
+    else:
+        bounded.pop("required", None)
+    return bounded
+
+
+def _tool_value(tool: Any, key: str, default: Any = None) -> Any:
+    if isinstance(tool, Mapping):
+        return tool.get(key, default)
+    return getattr(tool, key, default)
+
+
+def _bounded_tool_spec(tool: Any) -> dict[str, Any] | None:
+    name = _normalise_tool_name(_tool_value(tool, "name"))
+    if name is None:
+        return None
+    description = _tool_value(tool, "description", "")
+    if not isinstance(description, str):
+        description = ""
+    return {
+        "name": name,
+        "description": description[:_MAX_DESCRIPTION_CHARS],
+        "input_schema": _bounded_input_schema(
+            _tool_value(tool, "input_schema", _tool_value(tool, "inputSchema"))
+        ),
+    }
+
+
+def _bounded_tool_specs(raw_tools: Any) -> list[dict[str, Any]]:
+    projected: list[dict[str, Any]] = []
+    for raw_tool in _bounded_iterable(raw_tools, _MAX_MCP_TOOLS):
+        spec = _bounded_tool_spec(raw_tool)
+        if spec is None:
+            continue
+        projected.append(spec)
+    return projected
+
+
+def _safe_repr(value: Any) -> str:
+    try:
+        return repr(value)[:_MAX_REPR_CHARS]
+    except Exception:
+        return "<unrepresentable MCP content>"
 
 
 def _rpc_timeout(default: float = 30.0) -> float:
@@ -22,14 +188,21 @@ def _rpc_timeout(default: float = 30.0) -> float:
     the `/api/mcp/{id}/test` endpoint) up to the transport's ~300s SSE read
     timeout. Guarded+clamped like the other env knobs: blank/garbage/≤0 →
     default 30s."""
+    safe_default = (
+        min(default, _MAX_RPC_TIMEOUT_SEC)
+        if math.isfinite(default) and default > 0
+        else 30.0
+    )
     raw = (resolve_env("DEEPER_NOTEBOOK_MCP_RPC_TIMEOUT_SEC") or "").strip()
     if not raw:
-        return default
+        return safe_default
     try:
         val = float(raw)
     except ValueError:
-        return default
-    return val if val > 0 else default
+        return safe_default
+    if not math.isfinite(val) or val <= 0:
+        return safe_default
+    return min(val, _MAX_RPC_TIMEOUT_SEC)
 
 
 def _env_headers() -> Optional[dict[str, str]]:
@@ -75,7 +248,7 @@ class MCPClient:
         async def _do() -> list[str]:
             async with _open_session(self.url, self._headers()) as s:
                 result = await s.list_tools()
-                return [t.name for t in result.tools]
+                return [tool["name"] for tool in _bounded_tool_specs(getattr(result, "tools", []))]
         return await asyncio.wait_for(_do(), timeout=_rpc_timeout())
 
     async def list_tools_full(self) -> list[dict[str, Any]]:
@@ -99,17 +272,7 @@ class MCPClient:
         async def _do() -> list[dict[str, Any]]:
             async with _open_session(self.url, self._headers()) as s:
                 result = await s.list_tools()
-                tools_out: list[dict[str, Any]] = []
-                for t in result.tools:
-                    schema = getattr(t, "inputSchema", None) or {
-                        "type": "object", "properties": {}
-                    }
-                    tools_out.append({
-                        "name": t.name,
-                        "description": getattr(t, "description", "") or "",
-                        "input_schema": schema,
-                    })
-                return tools_out
+                return _bounded_tool_specs(getattr(result, "tools", []))
         # v0.8.66 (audit MCP-1) — bound discovery; a hung server otherwise
         # stalls every chat turn that resolves tools.
         return await asyncio.wait_for(_do(), timeout=_rpc_timeout())
@@ -152,76 +315,85 @@ class MCPClient:
     async def _call_tool_inner(self, name: str, arguments: dict) -> dict:
         async with _open_session(self.url, self._headers()) as s:
             result = await s.call_tool(name, arguments=arguments)
-            content = list(result.content or [])
+            raw_content = getattr(result, "content", [])
+            content = _bounded_iterable(raw_content, _MAX_CONTENT_BLOCKS)
 
             blocks: list[dict] = []
             text_chunks: list[str] = []
 
             for block in content:
-                # TextContent — `.text` is a plain string.
-                if hasattr(block, "text") and not hasattr(block, "resource"):
-                    txt = getattr(block, "text", "") or ""
-                    blocks.append({"type": "text", "text": txt})
-                    text_chunks.append(txt)
-                    continue
+                try:
+                    # TextContent — `.text` is a plain string.
+                    if hasattr(block, "text") and not hasattr(block, "resource"):
+                        txt = getattr(block, "text", "")
+                        if isinstance(txt, str):
+                            txt = txt[:_MAX_TEXT_CHARS]
+                            blocks.append({"type": "text", "text": txt})
+                            text_chunks.append(txt)
+                        continue
 
-                # ImageContent — `.data` is base64, `.mimeType` is e.g.
-                # "image/png". `bytes` is an approximate decoded size
-                # so the popover can show "image, 12 KB" without
-                # decoding the actual base64.
-                if hasattr(block, "data") and not hasattr(block, "resource"):
-                    data = getattr(block, "data", "") or ""
-                    mime = getattr(block, "mimeType", None) or "application/octet-stream"
-                    # base64 -> bytes approx: len * 3 / 4 minus padding
-                    approx = max(0, len(data) * 3 // 4)
-                    blocks.append({
-                        "type": "image",
-                        "mime_type": mime,
-                        "data": data,
-                        "bytes": approx,
-                    })
-                    # Add a placeholder line to text_chunks so the LLM
-                    # at least knows something arrived.
-                    text_chunks.append(f"[image: {mime}, ~{approx} bytes]")
-                    continue
-
-                # EmbeddedResource — `.resource` has `.uri`, `.mimeType`,
-                # and either `.text` or `.blob`.
-                if hasattr(block, "resource"):
-                    res = block.resource
-                    uri = getattr(res, "uri", "") or ""
-                    mime = getattr(res, "mimeType", None) or ""
-                    res_text = getattr(res, "text", None)
-                    res_blob = getattr(res, "blob", None)
-                    entry: dict = {
-                        "type": "resource",
-                        "uri": str(uri),
-                        "mime_type": mime,
-                    }
-                    if res_text is not None:
-                        entry["text"] = res_text
-                        text_chunks.append(res_text)
-                    elif res_blob is not None:
-                        # blob is base64 — same approximation as image
-                        entry["data"] = res_blob
-                        entry["bytes"] = max(0, len(res_blob) * 3 // 4)
-                        text_chunks.append(
-                            f"[resource: {uri or 'untitled'} ({mime}), "
-                            f"~{entry['bytes']} bytes]"
+                    # ImageContent — `.data` is base64, `.mimeType` is e.g.
+                    # "image/png". `bytes` is an approximate decoded size.
+                    if hasattr(block, "data") and not hasattr(block, "resource"):
+                        data = getattr(block, "data", "")
+                        if not isinstance(data, str):
+                            continue
+                        data = data[:_MAX_BINARY_CHARS]
+                        mime = getattr(block, "mimeType", None)
+                        mime = (
+                            mime[:_MAX_MIME_CHARS]
+                            if isinstance(mime, str) and mime
+                            else "application/octet-stream"
                         )
-                    else:
-                        text_chunks.append(f"[resource: {uri or 'untitled'}]")
-                    blocks.append(entry)
-                    continue
+                        approx = max(0, len(data) * 3 // 4)
+                        blocks.append({
+                            "type": "image",
+                            "mime_type": mime,
+                            "data": data,
+                            "bytes": approx,
+                        })
+                        text_chunks.append(f"[image: {mime}, ~{approx} bytes]")
+                        continue
 
-                # Future-proof fallback for content types we don't
-                # know about. Don't drop them silently — surface a
-                # repr so the LLM and the operator can see something
-                # arrived (so we know to add a handler).
-                blocks.append({"type": "unknown", "repr": repr(block)})
+                    # EmbeddedResource — `.resource` has `.uri`, `.mimeType`,
+                    # and either `.text` or `.blob`.
+                    if hasattr(block, "resource"):
+                        res = block.resource
+                        uri = getattr(res, "uri", "")
+                        uri = str(uri)[:_MAX_URI_CHARS] if uri else ""
+                        mime = getattr(res, "mimeType", None)
+                        mime = mime[:_MAX_MIME_CHARS] if isinstance(mime, str) else ""
+                        res_text = getattr(res, "text", None)
+                        res_blob = getattr(res, "blob", None)
+                        entry: dict = {
+                            "type": "resource",
+                            "uri": uri,
+                            "mime_type": mime,
+                        }
+                        if isinstance(res_text, str):
+                            entry["text"] = res_text[:_MAX_TEXT_CHARS]
+                            text_chunks.append(entry["text"])
+                        elif isinstance(res_blob, str):
+                            res_blob = res_blob[:_MAX_BINARY_CHARS]
+                            entry["data"] = res_blob
+                            entry["bytes"] = max(0, len(res_blob) * 3 // 4)
+                            text_chunks.append(
+                                f"[resource: {uri or 'untitled'} ({mime}), "
+                                f"~{entry['bytes']} bytes]"
+                            )
+                        else:
+                            text_chunks.append(f"[resource: {uri or 'untitled'}]")
+                        blocks.append(entry)
+                        continue
+
+                    blocks.append({"type": "unknown", "repr": _safe_repr(block)})
+                except Exception:
+                    # One malformed block must not discard valid siblings or
+                    # abort the chat turn.
+                    blocks.append({"type": "unknown", "repr": _safe_repr(block)})
 
             return {
                 "ok": True,
-                "text": "\n".join(c for c in text_chunks if c),
+                "text": "\n".join(c for c in text_chunks if c)[:_MAX_TEXT_CHARS],
                 "blocks": blocks,
             }
