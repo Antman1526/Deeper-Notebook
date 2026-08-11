@@ -23,14 +23,14 @@ dependencies = [
     "uvicorn>=0.24.0",
     "pydantic>=2.9.2",
     "loguru>=0.7.2",
-    "langchain>=1.2.0",
+    "langchain>=1.3.9",
     # v0.7.122 — bumped from >=1.0.5 to remediate CVE-2026-28277
     "langgraph>=1.0.10",
     "tiktoken>=0.12.0",
-    "langgraph-checkpoint-sqlite>=3.0.1",
+    "langgraph-checkpoint-sqlite>=3.1.1",
     "langchain-community>=0.4.1",
     "langchain-openai>=1.1.14",
-    "langchain-anthropic>=1.3.0",
+    "langchain-anthropic>=1.4.6",
     "langchain-ollama>=1.0.1",
     "langchain-google-genai>=4.1.2",
     "langchain-groq>=1.1.1",
@@ -57,22 +57,39 @@ dependencies = [
     # v0.8.0 — MCP (Model Context Protocol) client for connecting to
     # MCP servers. Used by Phase 2 to enable chat graph to call external
     # MCP tools (web search, fetch, etc.) via streamable-http transport.
-    "mcp>=1.0.0",
+    "mcp>=1.28.1,<2",
     # v0.7.122 — Explicit pins for transitive deps with known CVEs.
     # These come in via langchain-* / fastapi / content-core / httpx
     # at versions below their published fix. Pinning here forces uv
     # to resolve the higher version when the lockfile is regenerated.
     "langchain-core>=1.3.3",        # CVE-2026-44843
-    "langsmith>=0.8.0",             # CVE-2026-45134
+    "langsmith>=0.8.18",            # CVE-2026-45134
     "lxml>=6.1.0",                  # CVE-2026-41066
     "urllib3>=2.7.0",               # CVE-2026-44431 + 44432
-    "python-multipart>=0.0.27",     # CVE-2026-42561 (file-upload library)
+    "python-multipart>=0.0.31",     # CVE-2026-42561 (file-upload library)
     "starlette>=1.2.1",             # CVE-2026-48710 (BadHost)
+    # DN-DEP-SEC-2026-08-11 — direct floors keep uv from regressing transitive packages.
+    "aiohttp>=3.14.3",
+    "authlib>=1.6.12",
+    "click>=8.3.3",
+    "cryptography>=50.0.0",
+    "idna>=3.15",
+    "langchain-classic>=1.0.7",
+    "langgraph-checkpoint>=4.1.1",
+    "langgraph-sdk>=0.3.15",
+    "lxml-html-clean>=0.4.5",
+    "pyasn1>=0.6.4",
+    "pydantic-settings>=2.14.2",
+    "pyjwt>=2.13.0",
+    # DN-DEP-PIP-2026-08-11 — ai-prompter pulls pip as build tooling; keep
+    # the resolved installer above published PYSEC fixes.
+    "pip>=26.1.2",
+    "soupsieve>=2.8.4",
     # v0.8.70 — Managed local-model snapshot installs call
     # huggingface_hub.snapshot_download directly.
     "huggingface-hub>=1.3.0",
-    # Evidence Studio visual deliverables. Keep Pillow below 12 until the
-    # podcast-creator constraint documented below is lifted.
+    # Security exception (DN-DEP-PILLOW-2026-08-11): Pillow>=12.3.0 cannot resolve
+    # podcast-creator 0.12.0 -> moviepy>=2.2.1 -> Pillow<12; retain floor, report residuals, no overrides.
     "pillow>=11.3.0,<12.0",
     "python-docx>=1.2.0,<2.0",
     "python-pptx>=1.0.2,<2.0",
@@ -82,13 +99,6 @@ dependencies = [
     # Deterministic local Video Overview composition uses the package-managed
     # FFmpeg executable; no system FFmpeg installation is assumed.
     "imageio-ffmpeg>=0.6.0,<1.0",
-    # NOTE: pillow upgrade BLOCKED by podcast-creator 0.12.0 pinning
-    # pillow<12.0. The 6 pillow CVEs (CVE-2026-25990/40192/42308/
-    # 42309/42310/42311) all require pillow>=12.1.1 to fix. Lower
-    # impact in our pipeline: pillow only sees images extracted by
-    # content-core from uploaded PDFs/DOCX, which is a constrained
-    # attack surface. Will revisit when podcast-creator publishes a
-    # version that supports pillow>=12.
 ]
 
 [tool.setuptools.packages.find]
