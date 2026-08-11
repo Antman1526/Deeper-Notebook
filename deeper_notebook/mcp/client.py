@@ -240,6 +240,15 @@ async def _open_session(url: str, headers: Optional[dict[str, str]] = None):
     from mcp.client.session import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
 
+    from api.credentials_service import validate_url
+
+    # v0.8.?? — final outbound SSRF boundary. Registry rows can predate URL
+    # validation or be edited directly, so create/test validation is not
+    # sufficient. Reuse the credential URL policy immediately before opening
+    # the transport; this preserves explicitly allowed loopback/private local
+    # plugins while blocking link-local and unsupported schemes on every path.
+    await asyncio.to_thread(validate_url, url, "mcp")
+
     # v0.8.66 (audit MCP-4) — pass auth headers when provided (some MCP
     # transports reject an explicit `headers=None`, so only forward when set).
     kwargs = {"headers": headers} if headers else {}
