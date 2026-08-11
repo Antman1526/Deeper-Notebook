@@ -14,6 +14,16 @@ from api.runtime_snapshot import (
 )
 
 router = APIRouter()
+MAX_VAULT_SUMMARY_MOUNTS = 256
+
+
+def _bounded_mounts(mounts: Any):
+    iterator = iter(mounts)
+    for _ in range(MAX_VAULT_SUMMARY_MOUNTS):
+        try:
+            yield next(iterator)
+        except StopIteration:
+            return
 
 
 async def _vault_summary(request: Request) -> list[dict[str, Any]] | None:
@@ -23,13 +33,15 @@ async def _vault_summary(request: Request) -> list[dict[str, Any]] | None:
     if not callable(list_mounts):
         return None
     mounts = await list_mounts()
-    return [
-        {
-            "status": getattr(mount, "status", None),
-            "write_policy": getattr(mount, "write_policy", None),
-        }
-        for mount in mounts
-    ]
+    summary: list[dict[str, Any]] = []
+    for mount in _bounded_mounts(mounts):
+        summary.append(
+            {
+                "status": getattr(mount, "status", None),
+                "write_policy": getattr(mount, "write_policy", None),
+            }
+        )
+    return summary
 
 
 async def _knowledge_summary(request: Request) -> dict[str, Any] | None:
@@ -82,4 +94,4 @@ async def get_runtime_snapshot(
     return await build_runtime_snapshot(_providers_for_request(request))
 
 
-__all__ = ["get_runtime_snapshot", "router"]
+__all__ = ["MAX_VAULT_SUMMARY_MOUNTS", "get_runtime_snapshot", "router"]

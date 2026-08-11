@@ -229,6 +229,17 @@ def _as_mapping(value: Any) -> Mapping[str, Any] | None:
     return value if isinstance(value, Mapping) else None
 
 
+def _bounded_items(value: Sequence[Any], limit: int):
+    """Yield at most ``limit`` values without requesting the next one."""
+
+    iterator = iter(value)
+    for _ in range(limit):
+        try:
+            yield next(iterator)
+        except StopIteration:
+            return
+
+
 def _safe_version(value: Any) -> str | None:
     if not isinstance(value, str) or len(value) > 32 or not _VERSION_RE.fullmatch(value):
         return None
@@ -236,118 +247,139 @@ def _safe_version(value: Any) -> str | None:
 
 
 def _normalise_readiness(value: Any) -> tuple[ReadinessSnapshot, list[ReasonCode]]:
-    raw = _as_mapping(value)
-    if raw is None:
+    try:
+        raw = _as_mapping(value)
+        if raw is None:
+            raise TypeError("readiness provider did not return a mapping")
+        nested = _as_mapping(raw.get("checks"))
+        checks = nested if nested is not None else raw
+        database = checks.get("database")
+        if database not in {"online", "offline"}:
+            database = "unknown"
+        migration_value = checks.get("migrations")
+        if migration_value not in {"applied", "pending", "unknown"}:
+            pending = checks.get("migrations_pending")
+            migration_value = (
+                "pending" if pending is True else "applied" if pending is False else "unknown"
+            )
+        migrations: MigrationState = migration_value
+
+        reasons: list[ReasonCode] = []
+        if checks.get("database_check_failed") is True:
+            reasons.append("database_check_failed")
+        if checks.get("migrations_check_failed") is True:
+            reasons.append("migrations_check_failed")
+        if database == "offline":
+            reasons.append("database_offline")
+        if migrations == "pending":
+            reasons.append("migrations_pending")
+        if database == "unknown" or migrations == "unknown":
+            reasons.append("readiness_unknown")
+        if database == "online" and migrations == "applied":
+            state: SnapshotState = "ready"
+        elif database == "unknown" or migrations == "unknown":
+            state = "unknown"
+        else:
+            state = "degraded"
+        return ReadinessSnapshot(state=state, database=database, migrations=migrations), reasons
+    except Exception:
         return (
             ReadinessSnapshot(state="unknown", database="unknown", migrations="unknown"),
             ["readiness_unknown"],
         )
-    checks = _as_mapping(raw.get("checks")) or raw
-    database = checks.get("database")
-    if database not in {"online", "offline"}:
-        database = "unknown"
-    migration_value = checks.get("migrations")
-    if migration_value not in {"applied", "pending", "unknown"}:
-        pending = checks.get("migrations_pending")
-        migration_value = "pending" if pending is True else "applied" if pending is False else "unknown"
-    migrations: MigrationState = migration_value
-
-    reasons: list[ReasonCode] = []
-    if checks.get("database_check_failed") is True:
-        reasons.append("database_check_failed")
-    if checks.get("migrations_check_failed") is True:
-        reasons.append("migrations_check_failed")
-    if database == "offline":
-        reasons.append("database_offline")
-    if migrations == "pending":
-        reasons.append("migrations_pending")
-    if database == "unknown" or migrations == "unknown":
-        reasons.append("readiness_unknown")
-    if database == "online" and migrations == "applied":
-        state: SnapshotState = "ready"
-    elif database == "unknown" or migrations == "unknown":
-        state = "unknown"
-    else:
-        state = "degraded"
-    return ReadinessSnapshot(state=state, database=database, migrations=migrations), reasons
 
 
 def _normalise_startup(value: Any) -> tuple[StartupSnapshot, list[ReasonCode]]:
-    raw = _as_mapping(value)
-    if raw is None:
-        return StartupSnapshot(state="unknown"), ["startup_receipt_unavailable"]
-    stages_raw = raw.get("stages")
-    if not isinstance(stages_raw, Sequence) or isinstance(stages_raw, (str, bytes)):
+    try:
+        raw = _as_mapping(value)
+        if raw is None:
+            return StartupSnapshot(state="unknown"), ["startup_receipt_unavailable"]
+        stages_raw = raw.get("stages")
+        if not isinstance(stages_raw, Sequence) or isinstance(stages_raw, (str, bytes)):
+            return StartupSnapshot(state="unknown"), ["startup_receipt_invalid"]
+        stages: list[StartupStage] = []
+        saw_item = False
+        for item in _bounded_items(stages_raw, 16):
+            saw_item = True
+            entry = _as_mapping(item)
+            stage = entry.get("stage") if entry else None
+            elapsed = entry.get("elapsed_ms") if entry else None
+            if (
+                stage not in _ALLOWED_STAGES
+                or not isinstance(elapsed, int)
+                or isinstance(elapsed, bool)
+            ):
+                continue
+            if 0 <= elapsed <= 86_400_000:
+                stages.append(StartupStage(stage=stage, elapsed_ms=elapsed))
+        if saw_item and not stages:
+            return StartupSnapshot(state="unknown"), ["startup_receipt_invalid"]
+        return StartupSnapshot(state="ready", stages=stages), []
+    except Exception:
         return StartupSnapshot(state="unknown"), ["startup_receipt_invalid"]
-    stages: list[StartupStage] = []
-    for item in list(stages_raw)[:16]:
-        entry = _as_mapping(item)
-        stage = entry.get("stage") if entry else None
-        elapsed = entry.get("elapsed_ms") if entry else None
-        if stage not in _ALLOWED_STAGES or not isinstance(elapsed, int) or isinstance(elapsed, bool):
-            continue
-        if 0 <= elapsed <= 86_400_000:
-            stages.append(StartupStage(stage=stage, elapsed_ms=elapsed))
-    if stages_raw and not stages:
-        return StartupSnapshot(state="unknown"), ["startup_receipt_invalid"]
-    return StartupSnapshot(state="ready", stages=stages), []
 
 
 def _normalise_updates(value: Any) -> tuple[UpdateSnapshot, list[ReasonCode]]:
-    raw = _as_mapping(value)
-    if raw is None:
+    try:
+        raw = _as_mapping(value)
+        if raw is None:
+            return UpdateSnapshot(state="unknown"), ["updates_unknown"]
+        enabled = raw.get("enabled")
+        enabled_value = enabled if isinstance(enabled, bool) else None
+        available = raw.get("update_available")
+        available_value = available if isinstance(available, bool) else None
+        current = _safe_version(raw.get("current"))
+        if enabled_value is None and available_value is None and current is None:
+            return UpdateSnapshot(state="unknown"), ["updates_unknown"]
+        reasons: list[ReasonCode] = []
+        if enabled_value is False:
+            reasons.append("updates_disabled")
+        return (
+            UpdateSnapshot(
+                state="ready",
+                enabled=enabled_value,
+                update_available=available_value,
+                current_version=current,
+            ),
+            reasons,
+        )
+    except Exception:
         return UpdateSnapshot(state="unknown"), ["updates_unknown"]
-    enabled = raw.get("enabled")
-    enabled_value = enabled if isinstance(enabled, bool) else None
-    available = raw.get("update_available")
-    available_value = available if isinstance(available, bool) else None
-    current = _safe_version(raw.get("current"))
-    if enabled_value is None and available_value is None and current is None:
-        return UpdateSnapshot(state="unknown"), ["updates_unknown"]
-    reasons: list[ReasonCode] = []
-    if enabled_value is False:
-        reasons.append("updates_disabled")
-    return (
-        UpdateSnapshot(
-            state="ready",
-            enabled=enabled_value,
-            update_available=available_value,
-            current_version=current,
-        ),
-        reasons,
-    )
 
 
 def _normalise_vault(value: Any) -> tuple[VaultSnapshot, list[ReasonCode]]:
-    raw = value.get("mounts") if isinstance(value, Mapping) else value
-    if raw is None:
+    try:
+        raw = value.get("mounts") if isinstance(value, Mapping) else value
+        if raw is None:
+            return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
+        if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+            return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
+        ready = degraded = unavailable = 0
+        saw_item = False
+        # A mounted-source summary is normally tiny, but this boundary must
+        # also tolerate a bad adapter result without doing unbounded work or
+        # violating the response model's count cap.
+        for item in _bounded_items(raw, _MAX_COUNT):
+            saw_item = True
+            entry = _as_mapping(item)
+            status = entry.get("status") if entry else None
+            if status in {"ready-read-only", "ready-write-enabled"}:
+                ready += 1
+            elif status in {"scanning", "stale", "conflict", "degraded"}:
+                degraded += 1
+            elif status in {"disconnected", "unavailable"}:
+                unavailable += 1
+        if saw_item and not (ready or degraded or unavailable):
+            return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
+        reasons: list[ReasonCode] = []
+        if degraded:
+            reasons.append("vault_degraded")
+        if unavailable:
+            reasons.append("vault_unavailable")
+        state: SnapshotState = "degraded" if (degraded or unavailable) else "ready"
+        return VaultSnapshot(state=state, ready=ready, degraded=degraded, unavailable=unavailable), reasons
+    except Exception:
         return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
-    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
-        return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
-    ready = degraded = unavailable = 0
-    # A mounted-source summary is normally tiny, but this boundary must also
-    # tolerate a bad adapter result without doing unbounded work or violating
-    # the response model's count cap.
-    for index, item in enumerate(raw):
-        if index >= _MAX_COUNT:
-            break
-        entry = _as_mapping(item)
-        status = entry.get("status") if entry else None
-        if status in {"ready-read-only", "ready-write-enabled"}:
-            ready += 1
-        elif status in {"scanning", "stale", "conflict", "degraded"}:
-            degraded += 1
-        elif status in {"disconnected", "unavailable"}:
-            unavailable += 1
-    if raw and not (ready or degraded or unavailable):
-        return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
-    reasons: list[ReasonCode] = []
-    if degraded:
-        reasons.append("vault_degraded")
-    if unavailable:
-        reasons.append("vault_unavailable")
-    state: SnapshotState = "degraded" if (degraded or unavailable) else "ready"
-    return VaultSnapshot(state=state, ready=ready, degraded=degraded, unavailable=unavailable), reasons
 
 
 def _bounded_count(value: Any) -> int | None:
@@ -357,27 +389,30 @@ def _bounded_count(value: Any) -> int | None:
 
 
 def _normalise_knowledge(value: Any) -> tuple[KnowledgeSnapshot, list[ReasonCode]]:
-    raw = _as_mapping(value)
-    if raw is None:
-        return KnowledgeSnapshot(state="unknown"), ["knowledge_unknown"]
-    projected = _bounded_count(raw.get("projected"))
-    unchanged = _bounded_count(raw.get("unchanged"))
-    failed = _bounded_count(raw.get("failed"))
-    if projected is None and unchanged is None and failed is None:
-        return KnowledgeSnapshot(state="unknown"), ["knowledge_unknown"]
-    if failed and failed > 0:
+    try:
+        raw = _as_mapping(value)
+        if raw is None:
+            return KnowledgeSnapshot(state="unknown"), ["knowledge_unknown"]
+        projected = _bounded_count(raw.get("projected"))
+        unchanged = _bounded_count(raw.get("unchanged"))
+        failed = _bounded_count(raw.get("failed"))
+        if projected is None and unchanged is None and failed is None:
+            return KnowledgeSnapshot(state="unknown"), ["knowledge_unknown"]
+        if failed and failed > 0:
+            return (
+                KnowledgeSnapshot(
+                    state="degraded", projected=projected, unchanged=unchanged, failed=failed
+                ),
+                ["knowledge_degraded"],
+            )
         return (
             KnowledgeSnapshot(
-                state="degraded", projected=projected, unchanged=unchanged, failed=failed
+                state="ready", projected=projected, unchanged=unchanged, failed=failed
             ),
-            ["knowledge_degraded"],
+            [],
         )
-    return (
-        KnowledgeSnapshot(
-            state="ready", projected=projected, unchanged=unchanged, failed=failed
-        ),
-        [],
-    )
+    except Exception:
+        return KnowledgeSnapshot(state="unknown"), ["knowledge_unknown"]
 
 
 def _normalise_backup(value: Any) -> tuple[AutoExportSnapshot, list[ReasonCode]]:

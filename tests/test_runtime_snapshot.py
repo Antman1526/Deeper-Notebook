@@ -111,6 +111,120 @@ async def test_vault_summary_is_count_bounded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_throwing_provider_containers_fail_closed_to_unknown() -> None:
+    from api.runtime_snapshot import build_runtime_snapshot
+
+    class ThrowingMapping(dict):
+        def get(self, key, default=None):
+            raise RuntimeError(f"raw mapping failure for {key}")
+
+    class ThrowingSequence(Sequence[dict[str, int]]):
+        def __len__(self) -> int:
+            raise RuntimeError("raw sequence length failure")
+
+        def __getitem__(self, index: int) -> dict[str, int]:
+            raise RuntimeError(f"raw sequence item failure {index}")
+
+        def __iter__(self):
+            raise RuntimeError("raw sequence iteration failure")
+
+    for readiness, startup, vault, knowledge in (
+        (ThrowingMapping(), None, None, None),
+        ({"database": "online", "migrations": "applied"}, {"stages": ThrowingSequence()}, None, None),
+        ({"database": "online", "migrations": "applied"}, None, ThrowingMapping(), None),
+        ({"database": "online", "migrations": "applied"}, None, None, ThrowingMapping()),
+    ):
+        snapshot = await build_runtime_snapshot(
+            _providers(
+                readiness=lambda value=readiness: value,
+                startup_receipts=(lambda value=startup: value) if startup is not None else None,
+                vault_summary=(lambda value=vault: value) if vault is not None else None,
+                knowledge_summary=(lambda value=knowledge: value)
+                if knowledge is not None
+                else None,
+            )
+        )
+        assert snapshot.status in {"degraded", "unknown"}
+        assert all(isinstance(reason, str) for reason in snapshot.reasons)
+        assert "raw mapping failure" not in snapshot.model_dump_json()
+        assert "raw sequence failure" not in snapshot.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_startup_projection_stops_after_bounded_prefix() -> None:
+    from api.runtime_snapshot import build_runtime_snapshot
+
+    class LazyStages(Sequence[dict[str, int | str]]):
+        def __len__(self) -> int:
+            return 1_000_000
+
+        def __getitem__(self, index: int) -> dict[str, int | str]:
+            if index >= 16:
+                raise AssertionError("startup stages were read past the bound")
+            return {"stage": "core_ready", "elapsed_ms": index}
+
+        def __iter__(self):
+            for index in range(16):
+                yield {"stage": "core_ready", "elapsed_ms": index}
+            raise AssertionError("startup stages were iterated past the bound")
+
+    snapshot = await build_runtime_snapshot(
+        _providers(startup_receipts=lambda: {"stages": LazyStages()})
+    )
+
+    assert snapshot.startup.state == "ready"
+    assert len(snapshot.startup.stages) == 16
+
+
+@pytest.mark.asyncio
+async def test_router_bounds_lazy_mount_projection_before_materializing() -> None:
+    from api.routers.runtime import router
+
+    mount_bound = 256
+
+    class LazyMounts:
+        def __iter__(self):
+            for index in range(mount_bound):
+                yield type("Mount", (), {"status": "ready-read-only", "write_policy": "read-only"})()
+            raise AssertionError("mount summary was materialized past the bound")
+
+    class Repository:
+        async def list_mounts(self):
+            return LazyMounts()
+
+    class VaultService:
+        _repository = Repository()
+
+    app = FastAPI()
+    app.include_router(router)
+    app.state.vault_service = VaultService()
+    app.state.runtime_readiness_provider = lambda: {
+        "database": "online",
+        "migrations": "applied",
+    }
+    app.state.runtime_startup_receipt_provider = lambda: {"stages": []}
+    app.state.runtime_update_status_provider = lambda: {
+        "enabled": True,
+        "current": "1.8.5",
+        "update_available": False,
+    }
+    app.state.runtime_knowledge_summary_provider = lambda: {
+        "projected": 0,
+        "unchanged": 0,
+        "failed": 0,
+    }
+    app.state.runtime_auto_export_directory_provider = lambda: None
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/runtime/snapshot")
+
+    assert response.status_code == 200
+    assert response.json()["vault"]["ready"] == mount_bound
+
+
+@pytest.mark.asyncio
 async def test_provider_failures_are_redacted_without_running_side_effects():
     from api.runtime_snapshot import build_runtime_snapshot
 
