@@ -10,6 +10,7 @@ request.
 from __future__ import annotations
 
 import inspect
+import json
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -63,6 +64,8 @@ _VERSION_RE = re.compile(
 _MAX_AUTO_EXPORT_ENTRIES = 64
 _MAX_AUTO_EXPORT_SCAN_ENTRIES = 256
 _MAX_AUTO_EXPORT_SIZE_BYTES = 4_294_967_296
+_STARTUP_RECEIPT_FILENAME = "startup_receipt.json"
+_MAX_STARTUP_RECEIPT_BYTES = 64 * 1024
 _MAX_COUNT = 1_000_000
 _MAX_RUNTIME_REASONS = 15
 AUTO_EXPORT_STALE_AFTER_SECONDS = 172_800
@@ -229,12 +232,37 @@ async def default_readiness_provider() -> Mapping[str, Any]:
 
 def _default_startup_receipts(root_provider: Callable[[], Path]) -> Mapping[str, Any] | None:
     try:
+        root = Path(root_provider()).expanduser()
+    except Exception:
+        return None
+
+    try:
         from desktop.startup_receipts import StartupReceiptStore
 
-        root = Path(root_provider()).expanduser()
         # StartupReceiptStore._read is a bounded, fail-closed read API.  Do
         # not use record/load methods here: they mutate the receipt or model.
         return StartupReceiptStore(root)._read()
+    except (ImportError, ModuleNotFoundError):
+        # The packaged API runs from the frozen upstream tree, which does not
+        # contain the desktop launcher package.  Keep the API read-only and
+        # project only the bounded receipt fields it already normalizes.
+        receipt_path = root / _STARTUP_RECEIPT_FILENAME
+        try:
+            if (
+                receipt_path.is_symlink()
+                or not receipt_path.is_file()
+                or receipt_path.stat().st_size > _MAX_STARTUP_RECEIPT_BYTES
+            ):
+                return None
+            parsed = json.loads(receipt_path.read_text(encoding="utf-8"))
+            if not isinstance(parsed, Mapping) or parsed.get("schema_version") != 1:
+                return None
+            stages = parsed.get("stages")
+            if not isinstance(stages, list) or len(stages) > 16:
+                return None
+            return {"schema_version": 1, "stages": stages}
+        except (OSError, TypeError, ValueError):
+            return None
     except Exception:
         return None
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -9,6 +10,84 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+
+
+def test_packaged_startup_reader_does_not_require_desktop_package(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The bundled API has no importable desktop package at runtime."""
+
+    from api import runtime_snapshot
+
+    receipt = tmp_path / "startup_receipt.json"
+    receipt.write_text(
+        '{"schema_version":1,"stages":['
+        '{"stage":"launcher_start","elapsed_ms":0},'
+        '{"stage":"core_ready","elapsed_ms":42}],"chat_model":null}',
+        encoding="utf-8",
+    )
+    original_import = builtins.__import__
+
+    def block_packaged_desktop_import(name, *args, **kwargs):
+        if name == "desktop.startup_receipts":
+            raise ModuleNotFoundError("desktop package is not bundled")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", block_packaged_desktop_import)
+
+    projected = runtime_snapshot._default_startup_receipts(lambda: tmp_path)
+
+    assert projected is not None
+    assert projected["stages"][-1] == {"stage": "core_ready", "elapsed_ms": 42}
+
+
+@pytest.mark.asyncio
+async def test_packaged_snapshot_projects_receipt_without_desktop_package(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from api import runtime_snapshot
+
+    receipt = tmp_path / "startup_receipt.json"
+    receipt.write_text(
+        '{"schema_version":1,"stages":['
+        '{"stage":"launcher_start","elapsed_ms":0},'
+        '{"stage":"chat_model_scan","elapsed_ms":7},'
+        '{"stage":"core_ready","elapsed_ms":42}],'
+        '"chat_model":{"path":"/private/user/model.gguf",'
+        '"size":1,"mtime_ns":2}}',
+        encoding="utf-8",
+    )
+    original_import = builtins.__import__
+
+    def block_packaged_desktop_import(name, *args, **kwargs):
+        if name == "desktop.startup_receipts":
+            raise ModuleNotFoundError("desktop package is not bundled")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", block_packaged_desktop_import)
+
+    snapshot = await runtime_snapshot.build_runtime_snapshot(
+        runtime_snapshot.RuntimeSnapshotProviders(
+            readiness=lambda: {"database": "online", "migrations": "applied"},
+            active_data_root=lambda: tmp_path,
+            update_status=lambda: {
+                "enabled": True,
+                "current": "1.8.5",
+                "update_available": False,
+            },
+            vault_summary=lambda: [],
+            knowledge_summary=lambda: {"projected": 0, "unchanged": 0, "failed": 0},
+            auto_export_directory=lambda: None,
+        )
+    )
+
+    assert snapshot.startup.state == "ready"
+    assert [stage.stage for stage in snapshot.startup.stages] == [
+        "launcher_start",
+        "chat_model_scan",
+        "core_ready",
+    ]
+    assert "/private/user/model.gguf" not in snapshot.model_dump_json()
 
 
 def _providers(*, readiness=None, **overrides):
