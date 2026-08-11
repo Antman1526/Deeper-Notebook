@@ -19,6 +19,7 @@ import { DisplayPreferencesPanel } from '@/components/deeper-notebook/DisplayPre
 import { useGuidedTipsStore } from '@/lib/stores/guided-tips-store'
 import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 import { RuntimeStatusPanel } from '@/components/deeper-notebook/runtime/RuntimeStatusPanel'
+import { BackupProvenancePanel } from '@/components/deeper-notebook/runtime/BackupProvenancePanel'
 import { UNKNOWN_RUNTIME_SNAPSHOT } from '@/lib/api/runtime'
 import { useRuntimeSnapshot } from '@/lib/hooks/use-runtime-snapshot'
 
@@ -78,6 +79,7 @@ export default function SettingsPage() {
               isLoading={runtime.isLoading}
               onRefresh={() => void runtime.refetch()}
             />
+            <BackupProvenancePanel snapshot={runtime.data ?? UNKNOWN_RUNTIME_SNAPSHOT} />
             <UpdatesCard />
             <div className="flex items-center justify-between gap-4 rounded-lg border bg-card/50 px-4 py-3">
               <div className="space-y-0.5">

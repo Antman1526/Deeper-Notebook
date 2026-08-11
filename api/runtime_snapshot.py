@@ -14,6 +14,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -43,6 +44,8 @@ ReasonCode = Literal[
     "updates_disabled",
     "updates_unknown",
     "auto_export_unknown",
+    "auto_export_stale",
+    "provenance_unknown",
 ]
 
 ALLOWED_REASON_CODES = frozenset(ReasonCode.__args__)
@@ -59,7 +62,10 @@ _VERSION_RE = re.compile(
 )
 _MAX_AUTO_EXPORT_ENTRIES = 64
 _MAX_AUTO_EXPORT_SCAN_ENTRIES = 256
+_MAX_AUTO_EXPORT_SIZE_BYTES = 4_294_967_296
 _MAX_COUNT = 1_000_000
+_MAX_RUNTIME_REASONS = 15
+AUTO_EXPORT_STALE_AFTER_SECONDS = 172_800
 
 
 class _Contract(BaseModel):
@@ -110,8 +116,19 @@ class KnowledgeSnapshot(_Contract):
 
 class AutoExportSnapshot(_Contract):
     state: SnapshotState
+    freshness: Literal["valid", "stale", "unknown"] = "unknown"
+    integrity: Literal["verified", "unknown"] = "unknown"
     file_count: int = Field(ge=0, le=_MAX_AUTO_EXPORT_ENTRIES)
     newest_age_seconds: int | None = Field(default=None, ge=0, le=31_536_000_000)
+    newest_size_bytes: int | None = Field(default=None, ge=0, le=_MAX_AUTO_EXPORT_SIZE_BYTES)
+    newest_timestamp: str | None = Field(default=None, min_length=1, max_length=40)
+
+
+class ProvenanceSnapshot(_Contract):
+    state: SnapshotState
+    mount_count: int = Field(ge=0, le=_MAX_COUNT)
+    external_read_only_count: int = Field(ge=0, le=_MAX_COUNT)
+    source_fingerprint_state: Literal["available", "unknown"] = "unknown"
 
 
 class RuntimeSnapshot(_Contract):
@@ -119,13 +136,14 @@ class RuntimeSnapshot(_Contract):
 
     schema_version: Literal["runtime-snapshot-v1"] = "runtime-snapshot-v1"
     status: SnapshotState
-    reasons: list[ReasonCode] = Field(default_factory=list)
+    reasons: list[ReasonCode] = Field(default_factory=list, max_length=_MAX_RUNTIME_REASONS)
     readiness: ReadinessSnapshot
     startup: StartupSnapshot
     updates: UpdateSnapshot
     vault: VaultSnapshot
     knowledge: KnowledgeSnapshot
     backup: AutoExportSnapshot
+    provenance: ProvenanceSnapshot
 
 
 Provider = Callable[[], Any] | Callable[[], Awaitable[Any]]
@@ -142,6 +160,7 @@ class RuntimeSnapshotProviders:
     vault_summary: Provider | None = None
     knowledge_summary: Provider | None = None
     auto_export_directory: Provider | None = None
+    provenance_summary: Provider | None = None
 
 
 async def _invoke(provider: Provider | None) -> Any:
@@ -417,30 +436,153 @@ def _normalise_knowledge(value: Any) -> tuple[KnowledgeSnapshot, list[ReasonCode
 
 def _normalise_backup(value: Any) -> tuple[AutoExportSnapshot, list[ReasonCode]]:
     if value is None:
-        return AutoExportSnapshot(state="unknown", file_count=0), ["auto_export_unknown"]
+        return (
+            AutoExportSnapshot(state="unknown", file_count=0),
+            ["auto_export_unknown"],
+        )
     try:
         directory = Path(value).expanduser()
         if directory.is_symlink() or not directory.is_dir():
             raise OSError("not a directory")
         count = 0
         newest_mtime: float | None = None
+        newest_size: int | None = None
         for seen, entry in enumerate(directory.iterdir()):
             if seen >= _MAX_AUTO_EXPORT_SCAN_ENTRIES or count >= _MAX_AUTO_EXPORT_ENTRIES:
                 break
-            if not entry.is_file() or not entry.name.startswith("auto-export-") or entry.suffix != ".surql":
-                continue
             try:
-                mtime = entry.stat().st_mtime
-            except OSError:
+                if (
+                    entry.is_symlink()
+                    or not entry.is_file()
+                    or not entry.name.startswith("auto-export-")
+                    or entry.suffix != ".surql"
+                ):
+                    continue
+                metadata = entry.stat()
+                mtime = metadata.st_mtime
+                size = metadata.st_size
+                if (
+                    not isinstance(mtime, (int, float))
+                    or not isinstance(size, int)
+                    or isinstance(size, bool)
+                    or size < 0
+                ):
+                    continue
+            except (OSError, ValueError, TypeError):
                 continue
             count += 1
-            newest_mtime = mtime if newest_mtime is None else max(newest_mtime, mtime)
-        newest_age = None
-        if newest_mtime is not None:
-            newest_age = max(0, min(int(time.time() - newest_mtime), 31_536_000_000))
-        return AutoExportSnapshot(state="ready", file_count=count, newest_age_seconds=newest_age), []
+            if newest_mtime is None or mtime > newest_mtime:
+                newest_mtime = float(mtime)
+                newest_size = size
+        if newest_mtime is None:
+            return (
+                AutoExportSnapshot(state="ready", file_count=count),
+                [],
+            )
+
+        age_raw = time.time() - newest_mtime
+        if age_raw < 0:
+            return (
+                AutoExportSnapshot(
+                    state="unknown",
+                    file_count=count,
+                    newest_size_bytes=(
+                        newest_size
+                        if newest_size is not None and newest_size <= _MAX_AUTO_EXPORT_SIZE_BYTES
+                        else None
+                    ),
+                ),
+                ["auto_export_unknown"],
+            )
+        newest_age = min(int(age_raw), 31_536_000_000)
+        newest_timestamp = datetime.fromtimestamp(
+            newest_mtime, tz=timezone.utc
+        ).isoformat()
+        if newest_size is None or newest_size > _MAX_AUTO_EXPORT_SIZE_BYTES:
+            return (
+                AutoExportSnapshot(
+                    state="unknown",
+                    file_count=count,
+                    newest_age_seconds=newest_age,
+                    newest_timestamp=newest_timestamp,
+                ),
+                ["auto_export_unknown"],
+            )
+        freshness: Literal["valid", "stale", "unknown"] = (
+            "valid" if newest_age <= AUTO_EXPORT_STALE_AFTER_SECONDS else "stale"
+        )
+        state: SnapshotState = "ready" if freshness == "valid" else "degraded"
+        reasons: list[ReasonCode] = (
+            [] if freshness == "valid" else ["auto_export_stale"]
+        )
+        return (
+            AutoExportSnapshot(
+                state=state,
+                freshness=freshness,
+                integrity="unknown",
+                file_count=count,
+                newest_age_seconds=newest_age,
+                newest_size_bytes=newest_size,
+                newest_timestamp=newest_timestamp,
+            ),
+            reasons,
+        )
     except Exception:
         return AutoExportSnapshot(state="unknown", file_count=0), ["auto_export_unknown"]
+
+
+_SOURCE_FINGERPRINT_RE = re.compile(r"^[a-f0-9]{64}$")
+
+
+def _normalise_provenance(value: Any) -> tuple[ProvenanceSnapshot, list[ReasonCode]]:
+    try:
+        raw = value.get("mounts") if isinstance(value, Mapping) else value
+        if raw is None or not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+            raise TypeError("provenance mounts are not a bounded sequence")
+        mount_count = 0
+        external_read_only_count = 0
+        fingerprints_available = False
+        saw_item = False
+        for item in _bounded_items(raw, _MAX_COUNT):
+            saw_item = True
+            entry = _as_mapping(item)
+            if entry is None:
+                continue
+            mount_count += 1
+            if (
+                entry.get("write_policy") == "read-only"
+                or entry.get("status") == "ready-read-only"
+            ):
+                external_read_only_count += 1
+            fingerprint = (
+                entry.get("source_fingerprint")
+                or entry.get("source_hash")
+                or entry.get("content_hash")
+            )
+            if isinstance(fingerprint, str) and _SOURCE_FINGERPRINT_RE.fullmatch(fingerprint):
+                fingerprints_available = True
+        if saw_item and mount_count == 0:
+            raise TypeError("provenance mount entries are invalid")
+        return (
+            ProvenanceSnapshot(
+                state="ready",
+                mount_count=mount_count,
+                external_read_only_count=external_read_only_count,
+                source_fingerprint_state=(
+                    "available" if fingerprints_available else "unknown"
+                ),
+            ),
+            [],
+        )
+    except Exception:
+        return (
+            ProvenanceSnapshot(
+                state="unknown",
+                mount_count=0,
+                external_read_only_count=0,
+            ),
+            ["provenance_unknown"],
+        )
 
 
 def _aggregate_status(
@@ -476,19 +618,33 @@ async def build_runtime_snapshot(
     vault, vault_reasons = _normalise_vault(vault_raw)
     knowledge, knowledge_reasons = _normalise_knowledge(knowledge_raw)
     backup, backup_reasons = _normalise_backup(backup_raw)
+    provenance_raw = await _invoke(configured.provenance_summary)
+    if configured.provenance_summary is None:
+        provenance_raw = vault_raw
+    provenance, provenance_reasons = _normalise_provenance(provenance_raw)
     for code in (
         *startup_reasons,
         *update_reasons,
         *vault_reasons,
         *knowledge_reasons,
         *backup_reasons,
+        *provenance_reasons,
     ):
         if code in ALLOWED_REASON_CODES and code not in reasons:
             reasons.append(code)
 
+    reasons = reasons[:_MAX_RUNTIME_REASONS]
+
     status = _aggregate_status(
         readiness,
-        [startup.state, updates.state, vault.state, knowledge.state, backup.state],
+        [
+            startup.state,
+            updates.state,
+            vault.state,
+            knowledge.state,
+            backup.state,
+            provenance.state,
+        ],
     )
     return RuntimeSnapshot(
         status=status,
@@ -499,6 +655,7 @@ async def build_runtime_snapshot(
         vault=vault,
         knowledge=knowledge,
         backup=backup,
+        provenance=provenance,
     )
 
 
@@ -506,6 +663,7 @@ __all__ = [
     "ALLOWED_REASON_CODES",
     "AutoExportSnapshot",
     "KnowledgeSnapshot",
+    "ProvenanceSnapshot",
     "ReadinessSnapshot",
     "RuntimeSnapshot",
     "RuntimeSnapshotProviders",

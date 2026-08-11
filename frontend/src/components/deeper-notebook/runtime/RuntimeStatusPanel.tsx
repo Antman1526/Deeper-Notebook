@@ -26,6 +26,8 @@ const REASON_LABELS: Record<RuntimeReasonCode, string> = {
   updates_disabled: 'Update checks are off',
   updates_unknown: 'Update status is unavailable',
   auto_export_unknown: 'Local backup status is unavailable',
+  auto_export_stale: 'Local backup is stale',
+  provenance_unknown: 'External source provenance is unavailable',
 }
 
 export interface RuntimeStatusPanelProps {

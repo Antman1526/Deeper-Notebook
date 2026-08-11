@@ -71,6 +71,37 @@ describe('runtimeApi', () => {
     expect(JSON.stringify(projected)).not.toMatch(/secret-canary|private|token|stack-canary/i)
   })
 
+  it('projects bounded backup and aggregate provenance evidence without hashes', () => {
+    const extended = {
+      ...validSnapshot,
+      backup: {
+        ...validSnapshot.backup,
+        freshness: 'valid',
+        integrity: 'unknown',
+        newest_size_bytes: 2048,
+        newest_timestamp: '2026-08-11T00:00:00+00:00',
+      },
+      provenance: {
+        state: 'ready',
+        mount_count: 2,
+        external_read_only_count: 2,
+        source_fingerprint_state: 'available',
+      },
+    }
+
+    expect(normalizeRuntimeSnapshot(extended)).toEqual(extended)
+    const projectedHostile = normalizeRuntimeSnapshot({
+      ...extended,
+      provenance: { ...extended.provenance, source_fingerprint: 'a'.repeat(64) },
+    })
+    expect(projectedHostile.provenance).toEqual(extended.provenance)
+    expect(JSON.stringify(projectedHostile)).not.toContain('a'.repeat(64))
+    expect(normalizeRuntimeSnapshot({
+      ...extended,
+      backup: { ...extended.backup, newest_timestamp: '/private/raw' },
+    })).toEqual(UNKNOWN_RUNTIME_SNAPSHOT)
+  })
+
   it('deduplicates a bounded allowlisted reason list', () => {
     expect(normalizeRuntimeSnapshot({
       ...validSnapshot,

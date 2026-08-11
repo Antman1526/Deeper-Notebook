@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -405,3 +406,99 @@ async def test_authenticated_router_degrades_malformed_optional_inputs(monkeypat
     assert "/" not in body["readiness"].get("database", "")
     assert "malformed" not in authenticated.text
     assert "snapshot-secret" not in authenticated.text
+
+
+@pytest.mark.asyncio
+async def test_auto_export_receipt_projects_bounded_valid_and_stale_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from api import runtime_snapshot
+    from api.runtime_snapshot import build_runtime_snapshot
+
+    now = 1_800_000_000.0
+    monkeypatch.setattr(runtime_snapshot.time, "time", lambda: now)
+    export = tmp_path / "auto-export-20260101-000000.surql"
+    export.write_text("private source content", encoding="utf-8")
+    os.utime(export, (now, now))
+
+    valid = await build_runtime_snapshot(_providers(auto_export_directory=lambda: tmp_path))
+    assert valid.backup.freshness == "valid"
+    assert valid.backup.newest_size_bytes == len("private source content")
+    assert valid.backup.newest_timestamp is not None
+    assert valid.backup.integrity == "unknown"
+    assert str(tmp_path) not in valid.model_dump_json()
+    assert "private source content" not in valid.model_dump_json()
+
+    stale_timestamp = now - (runtime_snapshot.AUTO_EXPORT_STALE_AFTER_SECONDS + 1)
+    os.utime(export, (stale_timestamp, stale_timestamp))
+    stale = await build_runtime_snapshot(_providers(auto_export_directory=lambda: tmp_path))
+    assert stale.backup.freshness == "stale"
+    assert stale.backup.state == "degraded"
+    assert "auto_export_stale" in stale.reasons
+
+
+@pytest.mark.asyncio
+async def test_absent_auto_export_receipt_is_unknown_without_paths() -> None:
+    from api.runtime_snapshot import build_runtime_snapshot
+
+    snapshot = await build_runtime_snapshot(_providers(auto_export_directory=lambda: None))
+
+    assert snapshot.backup.freshness == "unknown"
+    assert snapshot.backup.newest_timestamp is None
+    assert snapshot.backup.newest_size_bytes is None
+    assert snapshot.backup.integrity == "unknown"
+    assert "/" not in snapshot.backup.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_provenance_aggregates_read_only_mounts_without_hashes_or_paths() -> None:
+    from api.runtime_snapshot import build_runtime_snapshot
+
+    snapshot = await build_runtime_snapshot(
+        _providers(
+            vault_summary=lambda: [
+                {
+                    "status": "ready-read-only",
+                    "write_policy": "read-only",
+                    "root_path": "/Volumes/private-vault",
+                    "source_fingerprint": "a" * 64,
+                },
+                {
+                    "status": "ready-write-enabled",
+                    "write_policy": "guarded-write",
+                    "source_fingerprint": "b" * 64,
+                },
+            ]
+        )
+    )
+
+    assert snapshot.provenance.state == "ready"
+    assert snapshot.provenance.mount_count == 2
+    assert snapshot.provenance.external_read_only_count == 1
+    assert snapshot.provenance.source_fingerprint_state == "available"
+    wire = snapshot.model_dump_json()
+    assert "/Volumes/private-vault" not in wire
+    assert "a" * 64 not in wire
+    assert "b" * 64 not in wire
+
+
+@pytest.mark.asyncio
+async def test_malformed_provenance_degrades_without_raw_details() -> None:
+    from api.runtime_snapshot import build_runtime_snapshot
+
+    snapshot = await build_runtime_snapshot(
+        _providers(
+            vault_summary=lambda: {
+                "mounts": "not-a-mount-list",
+                "root_path": "/private/raw",
+                "source_hash": "c" * 64,
+            }
+        )
+    )
+
+    assert snapshot.provenance.state == "unknown"
+    assert snapshot.provenance.mount_count == 0
+    assert snapshot.provenance.external_read_only_count == 0
+    wire = snapshot.model_dump_json()
+    assert "/private/raw" not in wire
+    assert "c" * 64 not in wire

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -15,6 +16,7 @@ from api.runtime_snapshot import (
 
 router = APIRouter()
 MAX_VAULT_SUMMARY_MOUNTS = 256
+_SOURCE_FINGERPRINT_RE = re.compile(r"^[a-f0-9]{64}$")
 
 
 def _bounded_mounts(mounts: Any):
@@ -35,12 +37,26 @@ async def _vault_summary(request: Request) -> list[dict[str, Any]] | None:
     mounts = await list_mounts()
     summary: list[dict[str, Any]] = []
     for mount in _bounded_mounts(mounts):
-        summary.append(
-            {
-                "status": getattr(mount, "status", None),
-                "write_policy": getattr(mount, "write_policy", None),
-            }
-        )
+        try:
+            mount_status = getattr(mount, "status", None)
+            write_policy = getattr(mount, "write_policy", None)
+        except Exception:
+            mount_status = None
+            write_policy = None
+        item: dict[str, Any] = {
+            "status": mount_status,
+            "write_policy": write_policy,
+        }
+        # A source fingerprint is only an internal provenance signal. The
+        # snapshot normalizer projects it to availability and never returns
+        # the hash itself on the wire.
+        try:
+            fingerprint = getattr(mount, "source_fingerprint", None)
+        except Exception:
+            fingerprint = None
+        if isinstance(fingerprint, str) and _SOURCE_FINGERPRINT_RE.fullmatch(fingerprint):
+            item["source_fingerprint"] = fingerprint
+        summary.append(item)
     return summary
 
 
