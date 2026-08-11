@@ -999,6 +999,11 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
         return fake_model
     monkeypatch.setattr(chat_mod, "provision_langchain_model", fake_provision)
 
+    async def fake_recall_memory(query=None):
+        return {"facts": [], "preferences": [], "episodes": []}
+
+    monkeypatch.setattr(chat_mod, "recall_memory", fake_recall_memory)
+
     # Run the node
     from langchain_core.messages import HumanMessage
     state = {
@@ -1110,6 +1115,11 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
     async def fake_provision(content, model_id, default_type, **kw):
         return fake_model
     monkeypatch.setattr(chat_mod, "provision_langchain_model", fake_provision)
+
+    async def fake_recall_memory(query=None):
+        return {"facts": [], "preferences": [], "episodes": []}
+
+    monkeypatch.setattr(chat_mod, "recall_memory", fake_recall_memory)
 
     state = {
         "messages": [HumanMessage(content="loop")],
