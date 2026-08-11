@@ -29,6 +29,14 @@ vi.mock('@/lib/hooks/use-modal-manager', () => ({
   useModalManager: () => ({ openModal: vi.fn() }),
 }))
 
+vi.mock('@/lib/hooks/use-evaluation', () => ({
+  useLatestMessageEvaluations: () => ({
+    data: {},
+    isLoading: false,
+    isError: false,
+  }),
+}))
+
 vi.mock('./ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector" />,
 }))
