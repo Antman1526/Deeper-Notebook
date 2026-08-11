@@ -27,6 +27,10 @@ _EXEMPT_PREFIXES = (
     "/api/version", "/api/config",
 )
 _WINDOW_SEC = 60.0
+# Full-table cleanup is intentionally amortized.  The current client's deque
+# is still cleaned on every request, while the O(table-size) sweep runs at most
+# once per interval (or when a new client arrives at capacity).
+_PRUNE_INTERVAL_SEC = 1.0
 # The limiter is opt-in, but an exposed process must still tolerate a stream
 # of one-shot source addresses.  Keep the in-memory client table finite even
 # when no client sends a second request that would otherwise trigger cleanup.
@@ -52,17 +56,29 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # arrives at capacity while retaining the existing mapping-like test
         # and diagnostic surface.
         self._hits: OrderedDict[str, deque] = OrderedDict()
+        self._last_prune_at = float("-inf")
 
-    def _prune_clients(self, cutoff: float) -> None:
+    def _prune_clients(self, cutoff: float, now: float | None = None) -> None:
         """Drop clients whose whole sliding window has expired."""
         for key, dq in list(self._hits.items()):
             while dq and dq[0] < cutoff:
                 dq.popleft()
             if not dq:
                 self._hits.pop(key, None)
+        self._last_prune_at = time.monotonic() if now is None else now
 
-    def _client_hits(self, ip: str, cutoff: float) -> deque:
-        self._prune_clients(cutoff)
+    def _client_hits(self, ip: str, cutoff: float, now: float | None = None) -> deque:
+        if now is None:
+            now = time.monotonic()
+        # A full sweep is not needed to serve an existing client.  If a new
+        # client arrives while at capacity, sweep first so expired entries can
+        # be reclaimed before LRU eviction; otherwise retain the bounded table
+        # and defer the sweep until the cadence elapses.
+        if (
+            now - self._last_prune_at >= _PRUNE_INTERVAL_SEC
+            or (ip not in self._hits and len(self._hits) >= _MAX_CLIENTS)
+        ):
+            self._prune_clients(cutoff, now)
         dq = self._hits.get(ip)
         if dq is None:
             while len(self._hits) >= _MAX_CLIENTS:
@@ -89,7 +105,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ip = request.client.host if request.client else "unknown"
         now = time.monotonic()
         cutoff = now - _WINDOW_SEC
-        dq = self._client_hits(ip, cutoff)
+        dq = self._client_hits(ip, cutoff, now)
 
         if len(dq) >= limit:
             retry = max(1, int(_WINDOW_SEC - (now - dq[0])))
