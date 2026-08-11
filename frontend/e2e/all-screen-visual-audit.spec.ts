@@ -124,6 +124,51 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
     theme: 'research-core-dark',
     unexpectedApiRequests,
   })
+  const sharedBackgroundResponses: ReadonlyArray<readonly [string, unknown]> = [
+    ['/api/system/db-repair-needed', { needs_repair: false }],
+    ['/api/updates/check', {
+      current: 'fixture', latest: null, update_available: false, skipped: false,
+      skipped_version: null, html_url: null, published_at: null, enabled: false, last_check: null,
+    }],
+    ['/api/system/network-status', {
+      status: 'online', forced_offline: false, local_fallback_model: null, checked_epoch_ms: 0,
+    }],
+    ['/api/deeper-notebook/vaults', []],
+    ['/api/deeper-notebook/overlay/notes', []],
+    ['/api/settings', {}],
+    ['/api/launcher-prefs', {}],
+    ['/api/mcp/web-search', { enabled: false, provider: null, tool_name: 'web_search' }],
+    ['/api/deeper-notebook/workspace/knowledge', {}],
+    ['/api/deeper-notebook/knowledge/bookmarks', { items: [], next_cursor: null }],
+    ['/api/deeper-notebook/knowledge/bookmark-folders', { items: [] }],
+    ['/api/deeper-notebook/knowledge/workspaces', { items: [] }],
+    ['/api/settings/observability', {}],
+  ]
+  for (const [pathname, body] of sharedBackgroundResponses) {
+    await page.route(url => url.pathname === pathname, async route => {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+    })
+  }
+  await page.route('**/api/local-models/route-plan', async route => {
+    const request = route.request().postDataJSON() as { role?: unknown }
+    const role = typeof request.role === 'string' ? request.role : 'unknown'
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        role,
+        outcome: 'blocked',
+        selected_model_id: null,
+        selected_provider: null,
+        resource_tier: null,
+        selection_source: null,
+        route_reason: 'No local model is configured in the visual fixture.',
+        escalation_model_ids: [],
+        blocked_reason: 'No local model is configured in the visual fixture.',
+        selected_fingerprint: null,
+        selected_measurements: {},
+      }),
+    })
+  })
   await page.route('**/api/notebooks/notebook-fixture-001', async route => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(researchWorkbenchFixtures.notebook) })
   })
