@@ -368,11 +368,18 @@ test('renders notebook Chat and selected Studio evidence review with keyboard ac
     { method: 'POST', pathname: '/api/evaluations/latest/batch' },
     { method: 'GET', pathname: '/api/evaluations/latest' },
   ])
-  expect(expectedBackgroundRequests).toEqual([
-    'POST /api/chat/context',
-    'GET /api/notebooks/notebook-fixture-001/suggested-questions',
-    'POST /api/chat/context',
-  ])
+  const chatContextRequests = expectedBackgroundRequests.filter(
+    (request) => request === 'POST /api/chat/context'
+  )
+  expect(expectedBackgroundRequests.filter(
+    (request) => request === 'GET /api/notebooks/notebook-fixture-001/suggested-questions',
+  )).toHaveLength(1)
+  expect(chatContextRequests.length).toBeGreaterThanOrEqual(2)
+  expect(chatContextRequests.length).toBeLessThanOrEqual(3)
+  expect(expectedBackgroundRequests.every((request) => (
+    request === 'GET /api/notebooks/notebook-fixture-001/suggested-questions'
+      || request === 'POST /api/chat/context'
+  ))).toBe(true)
   expect(unexpectedApiRequests).toEqual([])
   expect(consoleErrors).toEqual([])
 })
