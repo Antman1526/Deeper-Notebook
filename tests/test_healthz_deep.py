@@ -161,6 +161,18 @@ def test_deep_endpoint_is_exempt_from_auth(client, monkeypatch):
     assert r.status_code != 403
 
 
+def test_readyz_api_alias_returns_same_payload_and_is_auth_exempt(client, monkeypatch):
+    """The desktop apiClient reaches readiness through the `/api` base URL."""
+    _patch_all_healthy(monkeypatch)
+
+    r_root = client.get("/readyz")
+    r_api = client.get("/api/readyz", headers={})
+
+    assert r_root.status_code == r_api.status_code == 200
+    assert r_root.json() == r_api.json()
+    assert r_api.status_code not in (401, 403)
+
+
 def test_api_alias_returns_same_payload(client, monkeypatch):
     """v0.7.148 regression.
 

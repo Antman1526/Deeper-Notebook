@@ -983,6 +983,7 @@ app.add_middleware(
         "/health",
         "/livez",
         "/readyz",
+        "/api/readyz",
         "/healthz/deep",  # v0.7.112 — operators need to poll without auth
         # v0.7.148 — frontend reaches /healthz/deep through Next.js's /api/*
         # rewrite (frontend builds resolve `apiUrl` to a path that the
@@ -1461,6 +1462,12 @@ async def readyz():
     }
     status_code = 200 if ready else 503
     return JSONResponse(content=body, status_code=status_code)
+
+
+@app.get("/api/readyz")
+async def readyz_api_alias():
+    """Alias for `/readyz` for clients whose base URL already ends in `/api`."""
+    return await readyz()
 
 
 # v0.7.112 — Deep healthcheck. /readyz checks only the must-have-to-serve-

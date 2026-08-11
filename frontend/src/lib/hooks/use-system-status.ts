@@ -27,6 +27,48 @@ export interface ReadyzResponse {
   checks: ReadyzChecks
 }
 
+function fallbackReadiness(reason: string): ReadyzResponse {
+  return {
+    status: 'not_ready',
+    checks: {
+      database: 'unknown',
+      database_error: reason,
+      migrations_applied: false,
+      migrations_pending: false,
+      migrations_error: null,
+    },
+  }
+}
+
+function isReadyzResponse(value: unknown): value is ReadyzResponse {
+  if (typeof value !== 'object' || value === null) return false
+
+  const candidate = value as Record<string, unknown>
+  const checks = candidate.checks
+  if (
+    (candidate.status !== 'ready' && candidate.status !== 'not_ready') ||
+    typeof checks !== 'object' ||
+    checks === null
+  ) {
+    return false
+  }
+
+  const typedChecks = checks as Record<string, unknown>
+  return (
+    typedChecks.database === 'online' ||
+    typedChecks.database === 'offline' ||
+    typedChecks.database === 'unknown'
+  ) && (
+    typedChecks.database_error === null ||
+    typeof typedChecks.database_error === 'string'
+  ) && typeof typedChecks.migrations_applied === 'boolean'
+    && typeof typedChecks.migrations_pending === 'boolean'
+    && (
+      typedChecks.migrations_error === null ||
+      typeof typedChecks.migrations_error === 'string'
+    )
+}
+
 export function useSystemStatus(intervalMs: number = 30_000) {
   return useQuery<ReadyzResponse>({
     queryKey: ['system', 'readyz'],
@@ -37,20 +79,13 @@ export function useSystemStatus(intervalMs: number = 30_000) {
         const res = await apiClient.get<ReadyzResponse>('/readyz', {
           validateStatus: (s) => s < 600,
         })
-        return res.data
+        return isReadyzResponse(res.data)
+          ? res.data
+          : fallbackReadiness('Invalid readiness response')
       } catch (err) {
         // Network error — synthesize a "not ready" response so the
         // UI doesn't show stale state.
-        return {
-          status: 'not_ready',
-          checks: {
-            database: 'unknown',
-            database_error: (err as Error)?.message ?? 'API unreachable',
-            migrations_applied: false,
-            migrations_pending: false,
-            migrations_error: null,
-          },
-        }
+        return fallbackReadiness((err as Error)?.message ?? 'API unreachable')
       }
     },
     refetchInterval: intervalMs,
