@@ -49,6 +49,7 @@ describe('PodcastStudio', () => {
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
     const studio = screen.getByRole('region', { name: 'Podcast Intelligence Studio' })
+    expect(screen.getByRole('heading', { name: 'Podcast Intelligence Studio', level: 2 })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Podcast production folio' })).toBeInTheDocument()
     const regions = Array.from(studio.querySelectorAll<HTMLElement>('[data-studio-region]'))
     expect(regions.map((region) => region.dataset.studioRegion)).toEqual([
@@ -61,6 +62,13 @@ describe('PodcastStudio', () => {
     expect(screen.getAllByText('Available after intellectual engine upgrade')).toHaveLength(2)
     expect(podcastsApi.getPodcastReadiness).not.toHaveBeenCalled()
     expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
+  })
+
+  it('can promote its title to the route-level heading without changing the embedded default', () => {
+    render(<PodcastStudio headingLevel={1} seedDocumentIds={[]} />)
+
+    expect(screen.getByRole('heading', { name: 'Podcast Intelligence Studio', level: 1 })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Podcast Intelligence Studio', level: 2 })).not.toBeInTheDocument()
   })
 
   it('keeps an editable editorial brief local until a later confirmation', () => {

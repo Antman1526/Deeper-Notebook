@@ -760,13 +760,13 @@ function DefaultModelSelectors({
         {missingRequired.length > 0 && (
           <Alert>
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="flex items-center justify-between gap-4">
+            <AlertDescription className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
               <span>{t('models.missingRequiredModels').replace('{models}', missingRequired.join(', '))}</span>
               <Button
                 variant="outline" size="sm"
                 onClick={() => autoAssign.mutate()}
                 disabled={autoAssign.isPending}
-                className="shrink-0 gap-1.5"
+                className="w-full gap-1.5 sm:w-auto sm:shrink-0"
               >
                 {autoAssign.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
                 {autoAssign.isPending ? t('models.autoAssigning') : t('models.autoAssign')}
@@ -1116,7 +1116,7 @@ export default function ApiKeysPage() {
                   aria-label="Filter providers"
                 />
               </div>
-              <div className="flex gap-2 text-xs">
+              <div className="flex flex-wrap gap-2 text-xs">
                 {(['all', 'configured', 'env', 'none'] as const).map((status) => (
                   <Button
                     key={status}

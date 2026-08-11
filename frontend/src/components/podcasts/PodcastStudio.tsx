@@ -16,6 +16,7 @@ import { PodcastStudioFolio } from '@/components/deeper-notebook/studios/Podcast
 export interface PodcastStudioProps {
   seedDocumentIds: string[]
   selections?: PodcastSelection[]
+  headingLevel?: 1 | 2
   modelPlans?: Array<{
     label: string
     stage?: PodcastModelPlanItem['stage']
@@ -142,7 +143,7 @@ function productionRoleForPlan(plan: PodcastModelPlanItem): PodcastProductionRol
  * exact controller; presentation components remain controlled and have no
  * network effects on mount.
  */
-export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], initialState = 'selecting', onStateChange }: PodcastStudioProps) {
+export function PodcastStudio({ seedDocumentIds, selections, headingLevel = 2, modelPlans = [], initialState = 'selecting', onStateChange }: PodcastStudioProps) {
   const resolvedSelections = useMemo(() => selections ?? selectionsFromSeeds(seedDocumentIds), [seedDocumentIds, selections])
   const [brief, setBrief] = useState<EditorialBriefValues>(defaultBrief)
   const [outline, setOutline] = useState<string[]>(outlineDefaults)
@@ -281,10 +282,12 @@ export function PodcastStudio({ seedDocumentIds, selections, modelPlans = [], in
     setStudioState('selecting')
   }
 
+  const Heading = headingLevel === 1 ? 'h1' : 'h2'
+
   return (
     <section aria-label="Podcast Intelligence Studio" className="space-y-5">
       <header>
-        <h2 className="text-xl font-semibold">Podcast Intelligence Studio</h2>
+        <Heading className="text-xl font-semibold">Podcast Intelligence Studio</Heading>
         <p className="mt-1 text-sm text-muted-foreground">Build an optional, source-grounded audio overview. Production remains a separate confirmation.</p>
       </header>
 

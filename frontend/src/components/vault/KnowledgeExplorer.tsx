@@ -967,7 +967,7 @@ export function KnowledgeExplorer() {
   return (
     <div
       ref={workspaceRef}
-      className="research-core-canvas flex min-h-0 flex-1 flex-col"
+      className="research-core-canvas flex min-h-0 w-full max-w-full min-w-0 flex-1 flex-col"
       data-testid="knowledge-workspace"
       style={{ '--knowledge-sidebar-width': `${navigation.sidebarWidth}px` } as CSSProperties}
       tabIndex={-1}
@@ -1217,7 +1217,7 @@ export function KnowledgeExplorer() {
         >
           <span aria-hidden="true">›</span>
         </Button>}
-        <div className="research-core-main min-h-0 min-w-0 overflow-hidden">
+        <div className="research-core-main min-h-0 w-full max-w-full min-w-0 overflow-hidden">
           {activeSearchContext && <section aria-label="Active knowledge search" className="border-b px-3 py-2 text-sm">
             <p>{activeSearchContext.mode}: {activeSearchContext.query}</p>
             <p className="text-muted-foreground">Spaces: {activeSearchContext.spaceIds.join(', ') || 'all'} · Authorities: {activeSearchContext.authorityKinds.join(', ') || 'all'}</p>

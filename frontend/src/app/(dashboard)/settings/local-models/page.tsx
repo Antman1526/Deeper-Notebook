@@ -159,7 +159,7 @@ function LocalModelsWorkspace() {
 
   return <div className="mx-auto max-w-6xl space-y-6 px-6 py-8 sm:px-8">
     <header className="flex flex-wrap items-start justify-between gap-4">
-      <div className="max-w-3xl space-y-2"><h1 className="flex items-center gap-3 text-3xl font-semibold"><Cpu className="h-7 w-7" />Local model roles</h1><p className="text-muted-foreground">Inspect installed models, measure them for the work they do, and keep every routing decision local and explainable.</p></div>
+      <div className="max-w-3xl space-y-2"><h2 className="flex items-center gap-3 text-3xl font-semibold"><Cpu className="h-7 w-7" />Local model roles</h2><p className="text-muted-foreground">Inspect installed models, measure them for the work they do, and keep every routing decision local and explainable.</p></div>
       {inventory.isFetching && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Refreshing</span>}
     </header>
 

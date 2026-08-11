@@ -33,7 +33,7 @@ export default function PodcastStudioPage() {
             Close Studio without producing
           </Button>
         </div>
-        <PodcastStudio seedDocumentIds={[...new Set(seedDocumentIds)]} selections={selections} />
+        <PodcastStudio headingLevel={1} seedDocumentIds={[...new Set(seedDocumentIds)]} selections={selections} />
       </main>
     </AppShell>
   )

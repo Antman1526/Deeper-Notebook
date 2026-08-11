@@ -300,7 +300,7 @@ export function IntelligenceHorizon({
                 key={notebook.id}
                 href={notebook.href ?? `/notebooks/${encodeURIComponent(notebook.id)}`}
                 aria-label={notebook.name}
-                className="group flex min-h-16 items-center justify-between gap-4 rounded-xl border border-[var(--dn-paper-edge)] bg-[var(--dn-folio-paper)] px-4 py-3 transition-colors hover:border-primary/60 hover:bg-[var(--dn-accent-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group flex min-h-16 min-w-0 items-center justify-between gap-4 rounded-xl border border-[var(--dn-paper-edge)] bg-[var(--dn-folio-paper)] px-4 py-3 transition-colors hover:border-primary/60 hover:bg-[var(--dn-accent-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="flex min-w-0 items-center gap-3">
                   <BookOpen

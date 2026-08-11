@@ -18,6 +18,14 @@ export function AdaptiveNavigator() {
   const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
   const navigation = getNavigation(t)
+  let activeHref: string | undefined
+  for (const section of navigation) {
+    for (const item of section.items) {
+      if (isActivePath(pathname, item.href) && (!activeHref || item.href.length > activeHref.length)) {
+        activeHref = item.href
+      }
+    }
+  }
 
   return (
     <>
@@ -47,7 +55,7 @@ export function AdaptiveNavigator() {
               <p className="dn-navigator-section-title">{section.title}</p>
               <ul>
                 {section.items.map((item) => {
-                  const active = isActivePath(pathname, item.href)
+                  const active = item.href === activeHref
                   const Icon = item.icon
                   return (
                     <li key={item.href}>

@@ -11,9 +11,10 @@ const openSourceDialog = vi.fn()
 const openNotebookDialog = vi.fn()
 const openPodcastDialog = vi.fn()
 const logout = vi.fn()
+let currentPathname = '/knowledge/workspace'
 
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/knowledge/workspace',
+  usePathname: () => currentPathname,
   useRouter: () => ({ push }),
 }))
 
@@ -99,6 +100,7 @@ describe('LuminousAppShell', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    currentPathname = '/knowledge/workspace'
     vi.mocked(useAuth).mockReturnValue({ logout } as never)
     vi.mocked(useCreateDialogs).mockReturnValue({
       openSourceDialog,
@@ -194,6 +196,16 @@ describe('LuminousAppShell', () => {
     const searchAnchors = document.querySelectorAll('[data-guided-tip-anchor="/search"]')
     expect(searchAnchors).toHaveLength(1)
     expect(searchAnchors[0]).toBe(screen.getByRole('link', { name: 'navigation.askAndSearch' }))
+  })
+
+  it('marks only the most specific nested navigation route as current', () => {
+    currentPathname = '/settings/api-keys'
+    render(<LuminousAppShell><div data-testid="page-content">Page content</div></LuminousAppShell>)
+
+    const currentLinks = screen.getAllByRole('link').filter((link) => link.getAttribute('aria-current') === 'page')
+    expect(currentLinks).toHaveLength(1)
+    expect(currentLinks[0]).toHaveAttribute('href', '/settings/api-keys')
+    expect(document.querySelectorAll('#onp-sidebar-active')).toHaveLength(1)
   })
 
   it('uses Radix menu keyboard focus, escape, outside dismissal, and callbacks', async () => {

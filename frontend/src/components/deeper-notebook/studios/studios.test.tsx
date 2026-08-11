@@ -16,7 +16,7 @@ describe('EvidenceStudioFolio', () => {
       />,
     )
 
-    expect(screen.getByRole('region', { name: 'Evidence Studio folio' })).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'Evidence Studio folio' })).toBeInTheDocument()
     expect(screen.getByLabelText('Source desk')).toHaveTextContent('Upload sources')
     expect(screen.getByLabelText('Editorial brief')).toHaveTextContent('Notebook mode')
     expect(screen.getByLabelText('Artifact pages')).toHaveTextContent('Generate notebook')

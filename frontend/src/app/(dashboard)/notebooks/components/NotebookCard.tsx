@@ -52,7 +52,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
         style={{ cursor: 'pointer' }}
       >
           <CardHeader className="pb-3">
-            <div className="flex items-start justify-between">
+            <div className="flex min-w-0 items-start justify-between">
               <div className="flex-1 min-w-0">
                 <CardTitle className="text-base truncate group-hover:text-primary transition-colors">
                   {notebook.name}

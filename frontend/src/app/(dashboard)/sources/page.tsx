@@ -364,15 +364,16 @@ export default function SourcesPage() {
           <table
             ref={tableRef}
             tabIndex={0}
-            className="w-full min-w-[800px] outline-none table-fixed"
+            data-dn-sources-table="true"
+            className="w-full min-w-0 outline-none table-fixed xl:min-w-[800px]"
           >
             <colgroup>
-              <col className="w-[120px]" />
+              <col className="w-[7rem] sm:w-[120px]" />
               <col className="w-auto" />
-              <col className="w-[140px]" />
-              <col className="w-[100px]" />
-              <col className="w-[100px]" />
-              <col className="w-[100px]" />
+              <col className="hidden w-[140px] xl:table-column" />
+              <col className="hidden w-[100px] xl:table-column" />
+              <col className="hidden w-[100px] xl:table-column" />
+              <col className="w-[4.5rem] sm:w-[100px]" />
             </colgroup>
             <thead className="sticky top-0 bg-background z-10">
               <tr className="border-b bg-muted/50">
@@ -382,7 +383,7 @@ export default function SourcesPage() {
                 <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
                   {t('common.title')}
                 </th>
-                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground hidden sm:table-cell">
+                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground hidden xl:table-cell">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -401,10 +402,10 @@ export default function SourcesPage() {
                     )}
                   </Button>
                 </th>
-                <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden md:table-cell">
+                <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden xl:table-cell">
                   {t('sources.insights')}
                 </th>
-                <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
+                <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden xl:table-cell">
                   {t('sources.embedded')}
                 </th>
                 <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
@@ -465,16 +466,16 @@ export default function SourcesPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="h-12 px-4 text-muted-foreground text-sm hidden sm:table-cell">
+                  <td className="h-12 px-4 text-muted-foreground text-sm hidden xl:table-cell">
                     {formatDistanceToNow(new Date(source.created), { 
                       addSuffix: true,
                       locale: getDateLocale(language)
                     })}
                   </td>
-                  <td className="h-12 px-4 text-center hidden md:table-cell">
+                  <td className="h-12 px-4 text-center hidden xl:table-cell">
                     <span className="text-sm font-medium">{source.insights_count || 0}</span>
                   </td>
-                  <td className="h-12 px-4 text-center hidden lg:table-cell">
+                  <td className="h-12 px-4 text-center hidden xl:table-cell">
                     <Badge variant={source.embedded ? "default" : "secondary"} className="text-xs">
                       {source.embedded ? t('sources.yes') : t('sources.no')}
                     </Badge>

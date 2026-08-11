@@ -119,7 +119,7 @@ function PaneNode({
       onClick={() => setActivePane(pane.id)}
       onFocus={() => setActivePane(pane.id)}
       className={cn(
-        'flex h-full min-h-0 min-w-0 flex-col bg-background outline-none',
+        'flex h-full min-h-0 min-w-0 max-w-full flex-col bg-background outline-none',
         isActive && 'ring-1 ring-inset ring-primary',
       )}
     >
@@ -140,7 +140,7 @@ function PaneNode({
               setActivePane(pane.id)
             }
           }}
-          className="flex shrink-0 items-center border-b bg-muted/30 px-1"
+          className="flex min-w-0 max-w-full shrink flex-wrap items-center justify-end border-b bg-muted/30 px-1"
         >
           <PaneAction
             label={t('knowledge.splitPaneRight')}
@@ -271,7 +271,7 @@ export function KnowledgeWorkspaceLayout({
   return (
     <main
       aria-label={t('knowledge.knowledgeWorkspace')}
-      className="research-core-editorial-workspace h-full min-h-0 min-w-0 overflow-hidden"
+      className="research-core-editorial-workspace h-full min-h-0 min-w-0 max-w-full overflow-hidden"
     >
       <LayoutNode
         node={layout}

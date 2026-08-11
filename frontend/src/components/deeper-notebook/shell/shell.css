@@ -513,6 +513,16 @@
   }
 }
 
+/* On phone-width command bars the full Focus label and shortcut would cover
+ * the product name. Keep the control's accessible name/title while showing
+ * its compact icon affordance, matching the other narrow-shell controls. */
+@media (max-width: 22.5rem) {
+  .dn-focus-mode-control > span,
+  .dn-focus-mode-control > .dn-focus-mode-shortcut {
+    display: none;
+  }
+}
+
 /* Research Core already carries its own utility index and intelligence rail.
  * At compact desktop widths, keep the shell dock and lens while releasing the
  * outer notebook index so the editorial workspace retains a usable measure. */
