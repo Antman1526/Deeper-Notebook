@@ -70,6 +70,7 @@ For deeper dives, check `/open_notebook/` CLAUDE.md for component-specific guida
 | [Design Principles](design-principles.md) | All developers | What guides our decisions |
 | [API Reference](api-reference.md) | Building integrations | Complete REST API documentation |
 | [Security](security.md) | All developers | Security practices and vulnerability prevention |
+| [MCP plugin architecture](mcp-plugin-architecture.md) | Plugin authors and maintainers | Registered streamable-HTTP plugin boundary, lifecycle, and isolation |
 | [Maintainer Guide](maintainer-guide.md) | Maintainers | Managing issues, PRs, releases |
 | [Safe Upstream Sync](upstream-sync.md) | Maintainers | Bring in upstream updates without losing Plus features |
 | [Source Scan Policy](scan-policy.md) | Agents and maintainers | Keep source scans bounded and free of generated artifacts |

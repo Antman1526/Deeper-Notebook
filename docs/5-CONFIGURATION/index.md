@@ -178,6 +178,11 @@ OPEN_NOTEBOOK_ENCRYPTION_KEY=my-secret-key
 
 ### [Advanced](advanced.md)
 - Ports and networking
+
+### [MCP integration](mcp-integration.md)
+- Connect an MCP-compatible assistant to Deeper Notebook
+- For the registered plugin architecture and local streamable-HTTP example, see
+  the [MCP plugin architecture reference](../7-DEVELOPMENT/mcp-plugin-architecture.md)
 - Timeouts and concurrency
 - SSL/security
 - Retry configuration

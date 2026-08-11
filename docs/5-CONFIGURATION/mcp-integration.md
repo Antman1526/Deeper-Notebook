@@ -1,5 +1,11 @@
 # Model Context Protocol (MCP) Integration
 
+> **Architecture authority:** Deeper Notebook plugins are registered external
+> MCP servers reached over streamable HTTP. Read the maintainer reference
+> [MCP plugin architecture](../7-DEVELOPMENT/mcp-plugin-architecture.md) for
+> registration, lifecycle, isolation, and the local example. This page keeps
+> the client-configuration notes below for MCP-compatible assistants.
+
 Deeper Notebook can be seamlessly integrated into your AI workflows using the **Model Context Protocol (MCP)**, enabling direct access to your notebooks, sources, and chat functionality from AI assistants like Claude Desktop and VS Code extensions.
 
 ## What is MCP?

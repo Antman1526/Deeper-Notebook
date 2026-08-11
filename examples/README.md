@@ -8,6 +8,18 @@ templates playground.
 
 ## 📋 Available Examples
 
+### `mcp_local_streamable_http.py` - Local MCP plugin
+**Use this if:** You want a minimal loopback-only MCP endpoint to verify
+Deeper Notebook plugin registration and chat discovery.
+
+```bash
+uv run python examples/mcp_local_streamable_http.py
+```
+
+Then register `http://127.0.0.1:8765/mcp` in Settings → MCP Servers. See the
+[MCP plugin architecture reference](../docs/7-DEVELOPMENT/mcp-plugin-architecture.md)
+for lifecycle and isolation rules.
+
 ### `docker-compose-full-local.yml` - 100% Local AI (No Cloud APIs) 🌟
 **Use this if:** You want complete privacy with zero external API dependencies
 
