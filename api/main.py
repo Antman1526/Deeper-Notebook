@@ -76,6 +76,7 @@ from api.routers import (
 from api.routers import launcher_prefs as _launcher_prefs_router  # v0.8.6 Item D
 from api.routers import local_models as _local_models_router
 from api.routers import mcp as _mcp_router
+from api.routers import runtime as _runtime_router
 from api.routers import system as _system_router  # v0.8.40d — launcher → API env push
 from api.routers import updates as _updates_router  # v0.8.70 — in-app update notifier
 from deeper_notebook.database.async_migrate import AsyncMigrationManager
@@ -1293,6 +1294,7 @@ app.include_router(
 app.include_router(
     _updates_router.router, tags=["updates"]
 )  # v0.8.70 — in-app update notifier
+app.include_router(_runtime_router.router, tags=["runtime"])
 
 
 @app.get("/")
