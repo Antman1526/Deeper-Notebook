@@ -129,6 +129,9 @@ def _select_chat_llm_path(
                 receipt_store.cache_chat_model(selected, root=model_dir)
             else:
                 receipt_store.clear_chat_model()
+        except Exception:
+            pass
+        try:
             receipt_store.record(
                 "chat_model_scan",
                 int((time.monotonic() - started) * 1000),
