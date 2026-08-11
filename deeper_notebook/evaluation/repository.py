@@ -158,12 +158,12 @@ class EvaluationRepository:
         }
         try:
             rows = await repo_query(
-                "SELECT VALUE array::flatten([\n"
+                f"SELECT {_RUN_PROJECTION} FROM array::flatten([\n"
                 f"{branches}\n"
                 "]) ",
                 variables,
             )
-            # Depending on SurrealDB client/version, SELECT VALUE may return
+            # Depending on SurrealDB client/version, the array source may return
             # either the flattened array directly or one wrapper row.
             if len(rows) == 1 and isinstance(rows[0], list):
                 rows = rows[0]

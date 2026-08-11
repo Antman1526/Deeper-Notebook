@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from deeper_notebook.database.repository import ensure_record_id, repo_query
@@ -97,3 +99,78 @@ async def test_repository_persists_only_a_sanitized_error(clean_namespace):
         {"id": ensure_record_id(saved.id)},
     )
     assert rows == [{"error": "Evaluation failed. Review local logs for details."}]
+
+
+async def test_repository_batches_newest_message_runs_with_notebook_ownership(
+    clean_namespace,
+):
+    """Exercise the production nested query against a real SurrealDB runtime."""
+    notebook = Notebook(name="Batch evaluation", description="Owned batch lookup")
+    other_notebook = Notebook(name="Other notebook", description="Isolation check")
+    await notebook.save()
+    await other_notebook.save()
+
+    repository = EvaluationRepository()
+    older = await repository.create_run(
+        notebook_id=str(notebook.id),
+        evaluator_version="evaluation-v1",
+        model_id="local:test-model",
+        source_snapshots={},
+        verdicts=[],
+        message_id="message:one",
+        metrics={"generation": 1},
+    )
+    await asyncio.sleep(0.01)
+    newest = await repository.create_run(
+        notebook_id=str(notebook.id),
+        evaluator_version="evaluation-v1",
+        model_id="local:test-model",
+        source_snapshots={},
+        verdicts=[
+            ClaimVerdict(
+                claim="Newest claim",
+                status="uncited",
+                confidence=1,
+                explanation="No source marker.",
+            )
+        ],
+        message_id="message:one",
+        metrics={"generation": 2},
+    )
+    second = await repository.create_run(
+        notebook_id=str(notebook.id),
+        evaluator_version="evaluation-v1",
+        model_id="local:test-model",
+        source_snapshots={},
+        verdicts=[],
+        message_id="message:two",
+        metrics={"generation": 1},
+    )
+    await repository.create_run(
+        notebook_id=str(other_notebook.id),
+        evaluator_version="evaluation-v1",
+        model_id="local:test-model",
+        source_snapshots={},
+        verdicts=[],
+        message_id="message:one",
+        metrics={"generation": 99},
+    )
+
+    runs = await repository.latest_runs_for_messages(
+        notebook_id=str(notebook.id),
+        message_ids=["message:one", "message:two", "message:missing"],
+    )
+
+    assert {str(run["id"]) for run in runs} == {newest.id, second.id}
+    assert older.id not in {str(run["id"]) for run in runs}
+    assert {str(run["notebook_id"]) for run in runs} == {str(notebook.id)}
+    assert {run["message_id"] for run in runs} == {"message:one", "message:two"}
+    assert next(run for run in runs if run["message_id"] == "message:one")[
+        "metrics"
+    ] == {"generation": 2}
+
+    verdicts = await repository.list_verdicts_for_runs(
+        [str(run["id"]) for run in runs]
+    )
+    assert [verdict.claim for verdict in verdicts[newest.id]] == ["Newest claim"]
+    assert verdicts[second.id] == []
