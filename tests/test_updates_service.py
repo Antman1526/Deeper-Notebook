@@ -252,6 +252,70 @@ async def test_verified_release_exposes_only_manual_public_release_url(monkeypat
     assert status["html_url"] == status["release_url"]
 
 
+async def test_release_requires_actual_tag_name_not_display_name(monkeypatch):
+    release = await _fake_release("v0.8.70")()
+    release.pop("tag_name")
+    release["name"] = "v0.8.70"
+    monkeypatch.setattr(svc, "_fetch_latest_release", lambda: _release(release))
+
+    status = await svc.check(force=True)
+
+    assert status["verification"] == "unverified"
+    assert status["update_available"] is False
+    assert status["release_url"] is None
+
+
+async def test_release_url_must_bind_to_candidate_tag(monkeypatch):
+    release = await _fake_release("v0.8.70", html_url=(
+        "https://github.com/Antman1526/Deeper-Notebook/releases/123"
+    ))()
+    monkeypatch.setattr(svc, "_fetch_latest_release", lambda: _release(release))
+
+    status = await svc.check(force=True)
+
+    assert status["verification"] == "unverified"
+    assert status["update_available"] is False
+    assert status["release_url"] is None
+
+
+def test_downgraded_verified_cache_never_returns_release_url():
+    status = svc._status_from_state({
+        "enabled": True,
+        "cache": {
+            "latest": "not-a-version",
+            "verification": "verified",
+            "release_url": (
+                "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
+            ),
+            "html_url": (
+                "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
+            ),
+        },
+    })
+
+    assert status["verification"] == "unknown"
+    assert status["release_url"] is None
+    assert status["html_url"] is None
+
+
+async def test_unverified_published_at_canary_is_not_projected(monkeypatch):
+    release = await _fake_release(
+        "v0.8.70",
+        html_url="https://github.com/other/repo/releases/tag/v0.8.70",
+    )()
+    release["published_at"] = "https://canary.invalid/raw-error/path"
+    monkeypatch.setattr(svc, "_fetch_latest_release", lambda: _release(release))
+
+    status = await svc.check(force=True)
+
+    assert status["verification"] == "unverified"
+    assert status["published_at"] is None
+
+
+async def _release(release):
+    return release
+
+
 def test_app_version_prefers_canonical_distribution(monkeypatch):
     monkeypatch.delattr(__import__("desktop"), "__version__", raising=False)
     looked_up: list[str] = []

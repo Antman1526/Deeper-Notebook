@@ -163,12 +163,9 @@ def _canonical_release_url(raw: Any, *, tag: str | None = None) -> str | None:
         prefix = [GITHUB_OWNER, GITHUB_REPO, "releases"]
         if parts[:3] != prefix:
             return None
-        if len(parts) == 5 and parts[3] == "tag":
-            if tag is not None and parts[4] != tag:
-                return None
-        elif len(parts) == 4 and parts[3].isdigit():
-            pass
-        else:
+        if len(parts) != 5 or parts[3] != "tag":
+            return None
+        if tag is None or parts[4] != tag:
             return None
         return "https://github.com/" + "/".join(parts)
     except (TypeError, ValueError):
@@ -180,7 +177,7 @@ def _classify_release(release: Any) -> tuple[str, str | None, str | None]:
 
     if not isinstance(release, Mapping):
         return VERIFICATION_UNKNOWN, None, None
-    raw_tag = release.get("tag_name") or release.get("name")
+    raw_tag = release.get("tag_name")
     tag = _strict_release_version(raw_tag)
     if tag is None:
         return VERIFICATION_UNVERIFIED, None, None
@@ -203,6 +200,23 @@ def _classify_release(release: Any) -> tuple[str, str | None, str | None]:
     if not has_dmg or not has_checksum:
         return VERIFICATION_UNVERIFIED, tag, None
     return VERIFICATION_VERIFIED, tag, release_url
+
+
+def _safe_published_at(raw: Any, *, verification: str) -> str | None:
+    """Expose only a verified, timezone-aware ISO timestamp."""
+
+    if verification != VERIFICATION_VERIFIED or not isinstance(raw, str):
+        return None
+    if len(raw) > 64 or raw.strip() != raw:
+        return None
+    candidate = raw.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return raw
 
 
 def _read_state() -> dict[str, Any]:
@@ -267,6 +281,8 @@ def _status_from_state(state: dict[str, Any]) -> dict[str, Any]:
         )
         if release_url is None or latest is None:
             verification = VERIFICATION_UNKNOWN
+    if verification != VERIFICATION_VERIFIED:
+        release_url = None
     current_version = _strict_release_version(current)
     available = (
         verification == VERIFICATION_VERIFIED
@@ -275,9 +291,9 @@ def _status_from_state(state: dict[str, Any]) -> dict[str, Any]:
         and _parse_version(latest) > _parse_version(current_version)
     )
     skipped = _strict_release_version(state.get("skipped_version"))
-    published_at = cache.get("published_at")
-    if not isinstance(published_at, str) or len(published_at) > 64:
-        published_at = None
+    published_at = _safe_published_at(
+        cache.get("published_at"), verification=verification
+    )
     last_check = state.get("last_check")
     if not isinstance(last_check, str) or len(last_check) > 64:
         last_check = None
@@ -309,8 +325,11 @@ def _cache_projection(release: Any) -> dict[str, Any]:
     if release_url is not None:
         projected["release_url"] = release_url
         projected["html_url"] = release_url
-    published_at = release.get("published_at") if isinstance(release, Mapping) else None
-    if isinstance(published_at, str) and len(published_at) <= 64:
+    published_at = _safe_published_at(
+        release.get("published_at") if isinstance(release, Mapping) else None,
+        verification=verification,
+    )
+    if published_at is not None:
         projected["published_at"] = published_at
     return projected
 
