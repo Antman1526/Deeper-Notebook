@@ -153,6 +153,78 @@ async def test_mcp_bounds_do_not_materialize_hostile_lazy_iterables(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_mcp_discovery_skips_individually_broken_tool_mapping(monkeypatch):
+    import deeper_notebook.mcp.client as client_module
+
+    class _BrokenTool(dict):
+        def get(self, key, default=None):
+            raise RuntimeError("malformed tool mapping")
+
+    class _GoodTool:
+        name = "survives"
+        description = ""
+        inputSchema = {"type": "object", "properties": {}}
+
+    class _Session:
+        async def list_tools(self):
+            return type("Result", (), {"tools": [_BrokenTool(), _GoodTool()]})()
+
+    @asynccontextmanager
+    async def _open_session(url, headers=None):
+        yield _Session()
+
+    monkeypatch.setattr(client_module, "_open_session", _open_session)
+    tools = await client_module.MCPClient("http://127.0.0.1/mcp").list_tools_full()
+
+    assert [tool["name"] for tool in tools] == ["survives"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_result_projection_has_total_text_and_binary_budgets(monkeypatch):
+    import deeper_notebook.mcp.client as client_module
+
+    class _Text:
+        text = "t" * client_module._MAX_TEXT_CHARS
+
+    class _Image:
+        data = "A" * client_module._MAX_BINARY_CHARS
+        mimeType = "image/png"
+
+    class _Result:
+        content = [
+            _item
+            for _index in range(client_module._MAX_CONTENT_BLOCKS)
+            for _item in (_Text(), _Image())
+        ]
+
+    class _Session:
+        async def call_tool(self, name, arguments=None):
+            return _Result()
+
+    @asynccontextmanager
+    async def _open_session(url, headers=None):
+        yield _Session()
+
+    monkeypatch.setattr(client_module, "_open_session", _open_session)
+    result = await client_module.MCPClient("http://127.0.0.1/mcp").call_tool(
+        "bounded", {}
+    )
+
+    text_size = sum(
+        len(block.get("text", ""))
+        for block in result["blocks"]
+        if block["type"] == "text"
+    )
+    binary_size = sum(
+        len(block.get("data", ""))
+        for block in result["blocks"]
+        if block["type"] == "image"
+    )
+    assert text_size <= client_module._MAX_RESULT_TEXT_CHARS
+    assert binary_size <= client_module._MAX_RESULT_BINARY_CHARS
+
+
+@pytest.mark.asyncio
 async def test_chat_discovery_bounds_servers_and_cache(monkeypatch):
     import deeper_notebook.graphs.chat as chat_module
 

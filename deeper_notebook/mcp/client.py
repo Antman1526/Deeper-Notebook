@@ -28,6 +28,11 @@ _MAX_SCHEMA_STRING_CHARS = 1024
 _MAX_CONTENT_BLOCKS = 32
 _MAX_TEXT_CHARS = 8192
 _MAX_BINARY_CHARS = 1024 * 1024
+# Per-block limits above keep an individual payload finite.  These result-wide
+# budgets prevent a server from multiplying those limits across every allowed
+# content block in one response.
+_MAX_RESULT_TEXT_CHARS = 64 * 1024
+_MAX_RESULT_BINARY_CHARS = 4 * 1024 * 1024
 _MAX_URI_CHARS = 2048
 _MAX_MIME_CHARS = 128
 _MAX_REPR_CHARS = 1024
@@ -150,18 +155,26 @@ def _tool_value(tool: Any, key: str, default: Any = None) -> Any:
 
 
 def _bounded_tool_spec(tool: Any) -> dict[str, Any] | None:
-    name = _normalise_tool_name(_tool_value(tool, "name"))
+    try:
+        name = _normalise_tool_name(_tool_value(tool, "name"))
+    except Exception:
+        return None
     if name is None:
         return None
-    description = _tool_value(tool, "description", "")
+    try:
+        description = _tool_value(tool, "description", "")
+    except Exception:
+        description = ""
     if not isinstance(description, str):
         description = ""
+    try:
+        schema = _tool_value(tool, "input_schema", _tool_value(tool, "inputSchema"))
+    except Exception:
+        schema = None
     return {
         "name": name,
         "description": description[:_MAX_DESCRIPTION_CHARS],
-        "input_schema": _bounded_input_schema(
-            _tool_value(tool, "input_schema", _tool_value(tool, "inputSchema"))
-        ),
+        "input_schema": _bounded_input_schema(schema),
     }
 
 
@@ -320,6 +333,8 @@ class MCPClient:
 
             blocks: list[dict] = []
             text_chunks: list[str] = []
+            remaining_text = _MAX_RESULT_TEXT_CHARS
+            remaining_binary = _MAX_RESULT_BINARY_CHARS
 
             for block in content:
                 try:
@@ -327,7 +342,9 @@ class MCPClient:
                     if hasattr(block, "text") and not hasattr(block, "resource"):
                         txt = getattr(block, "text", "")
                         if isinstance(txt, str):
-                            txt = txt[:_MAX_TEXT_CHARS]
+                            allowed = min(_MAX_TEXT_CHARS, remaining_text)
+                            txt = txt[:allowed]
+                            remaining_text -= len(txt)
                             blocks.append({"type": "text", "text": txt})
                             text_chunks.append(txt)
                         continue
@@ -338,7 +355,9 @@ class MCPClient:
                         data = getattr(block, "data", "")
                         if not isinstance(data, str):
                             continue
-                        data = data[:_MAX_BINARY_CHARS]
+                        allowed = min(_MAX_BINARY_CHARS, remaining_binary)
+                        data = data[:allowed]
+                        remaining_binary -= len(data)
                         mime = getattr(block, "mimeType", None)
                         mime = (
                             mime[:_MAX_MIME_CHARS]
@@ -371,10 +390,14 @@ class MCPClient:
                             "mime_type": mime,
                         }
                         if isinstance(res_text, str):
-                            entry["text"] = res_text[:_MAX_TEXT_CHARS]
+                            allowed = min(_MAX_TEXT_CHARS, remaining_text)
+                            entry["text"] = res_text[:allowed]
+                            remaining_text -= len(entry["text"])
                             text_chunks.append(entry["text"])
                         elif isinstance(res_blob, str):
-                            res_blob = res_blob[:_MAX_BINARY_CHARS]
+                            allowed = min(_MAX_BINARY_CHARS, remaining_binary)
+                            res_blob = res_blob[:allowed]
+                            remaining_binary -= len(res_blob)
                             entry["data"] = res_blob
                             entry["bytes"] = max(0, len(res_blob) * 3 // 4)
                             text_chunks.append(
