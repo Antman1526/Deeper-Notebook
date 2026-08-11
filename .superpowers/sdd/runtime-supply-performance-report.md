@@ -1,7 +1,6 @@
 # Runtime Supply Chain and Performance Batch
 
 **Date:** 2026-08-11
-**Checkout:** `/Users/Antman/Documents/Open Notebook/Deeper-Notebook`
 **Base:** `1c43691cb816c51fa5490de1d63d3cd9a2ba4132`
 
 ## Scope and outcome
@@ -23,7 +22,7 @@ installed-app/package mutation was performed.
   and Python-build-standalone sidecars such as
   [`cpython-3.12.8+20241206-aarch64-apple-darwin-install_only.tar.gz.sha256`](https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8%2B20241206-aarch64-apple-darwin-install_only.tar.gz.sha256).
   SurrealDB v2.1.0 assets were downloaded from the exact
-  pinned official release URLs into a disposable `/tmp` directory and hashed:
+  pinned official release URLs into a disposable workspace and hashed:
   `darwin-arm64=3f9508f8…1109ce`, `darwin-x86_64=fe7d4a53…d91a0d`,
   `windows-x86_64=7f09401a…4233eb`.
 - `fetch_runtimes.download` rejects non-HTTPS/credential-bearing URLs,
