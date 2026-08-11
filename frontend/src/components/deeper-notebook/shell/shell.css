@@ -544,6 +544,17 @@ html[data-dn-focus-mode="true"] {
     grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr) var(--dn-focus-rail);
   }
 
+  /* The compact Research Core layout has a more specific :has() rule above;
+   * repeat that specificity here so Focus mode keeps the outer route index
+   * mounted and keyboard reachable. */
+  html[data-dn-focus-mode="true"] .dn-luminous-workspace:has(.research-core-canvas) {
+    grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr) var(--dn-focus-rail);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-luminous-workspace:has(.research-core-canvas) > .dn-adaptive-navigator {
+    display: block;
+  }
+
   html[data-dn-focus-mode="true"] .dn-instrument-dock {
     width: var(--dn-focus-rail);
     min-width: var(--dn-focus-rail);
@@ -746,6 +757,32 @@ html[data-dn-focus-mode="true"] {
   html[data-dn-focus-mode="true"] .dn-context-lens-toggle:focus-visible {
     width: min(var(--dn-focus-reveal), calc(100vw - 1rem));
     opacity: 1;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > aside,
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > .app-sidebar {
+    display: flex;
+    width: var(--dn-focus-rail);
+    min-width: var(--dn-focus-rail);
+    flex: 0 0 var(--dn-focus-rail);
+    overflow: hidden;
+    opacity: 0.78;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > aside:focus-within,
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > .app-sidebar:focus-within {
+    width: var(--dn-focus-reveal);
+    min-width: var(--dn-focus-reveal);
+    flex-basis: var(--dn-focus-reveal);
+    overflow: visible;
+    opacity: 1;
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > main {
+    min-width: 0;
+    width: auto;
+    flex: 1 1 auto;
   }
 }
 
