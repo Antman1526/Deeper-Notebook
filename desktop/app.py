@@ -32,6 +32,7 @@ import platform
 import sys
 import tempfile
 import threading
+import time
 import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -50,6 +51,7 @@ if TYPE_CHECKING:
     from desktop.launcher import Supervisor
     from desktop.progress import ProgressBus
     from desktop.providers import ModelProvider
+    from desktop.startup_receipts import StartupReceiptStore
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +97,58 @@ def _scan_chat_llm_with_timeout(gguf_dir):
         )
         return None
     return result[0]
+
+
+def _select_chat_llm_path(
+    model_dir: Path,
+    receipt_store: "StartupReceiptStore | None" = None,
+) -> Path | None:
+    """Use a validated local selection before running the bounded chooser."""
+    started = time.monotonic()
+    if receipt_store is not None:
+        try:
+            cached = receipt_store.load_chat_model(model_dir)
+        except Exception:
+            cached = None
+        if cached is not None:
+            try:
+                receipt_store.record(
+                    "chat_model_cache_hit",
+                    int((time.monotonic() - started) * 1000),
+                )
+            except Exception:
+                pass
+            return cached
+
+    selected = _scan_chat_llm_with_timeout(model_dir / "GGUF")
+    if selected is not None:
+        selected = Path(selected)
+    if receipt_store is not None:
+        try:
+            if selected is not None:
+                receipt_store.cache_chat_model(selected, root=model_dir)
+            else:
+                receipt_store.clear_chat_model()
+            receipt_store.record(
+                "chat_model_scan",
+                int((time.monotonic() - started) * 1000),
+            )
+        except Exception:
+            pass
+    return selected
+
+
+def _record_core_ready(ctx: "AppContext") -> None:
+    receipt_store = getattr(ctx, "startup_receipts", None)
+    if receipt_store is None:
+        return
+    try:
+        receipt_store.record(
+            "core_ready",
+            int((time.monotonic() - ctx.startup_started_at) * 1000),
+        )
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # Path helpers (private, replicated from __main__.py)
@@ -182,6 +236,8 @@ class AppContext:
     data_root_decision: "DataRootDecision | None" = None
     data_root_recovery_root: Path | None = None
     data_root_recovery_payload: dict[str, object] | None = None
+    startup_receipts: "StartupReceiptStore | None" = None
+    startup_started_at: float = dataclasses.field(default_factory=time.monotonic)
     _cleanup_lock: threading.Lock = dataclasses.field(
         default_factory=threading.Lock, repr=False, compare=False
     )
@@ -339,6 +395,7 @@ def _phase_load_config(ctx: AppContext) -> None:
     """Locate config.toml; set up log dir, progress bus, and first-run flag."""
     from desktop.config import default_config_path, load_or_create
     from desktop.progress import ProgressBus
+    from desktop.startup_receipts import StartupReceiptStore
 
     cfg_path = default_config_path()
     ctx._first_run = not cfg_path.exists()
@@ -348,6 +405,11 @@ def _phase_load_config(ctx: AppContext) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     _clear_desktop_readiness_marker(log_dir)
     ctx.log_dir = log_dir
+    ctx.startup_receipts = StartupReceiptStore(active_data_root())
+    try:
+        ctx.startup_receipts.record("launcher_start", 0)
+    except Exception:
+        log.debug("startup receipt could not be recorded", exc_info=True)
 
     # v0.6.25 — wire `desktop.launcher`, `desktop.auto_register.*`,
     # `desktop.memory.*` etc. into launcher.log. Previously the file was
@@ -717,7 +779,10 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
     # different recipe.
     gguf_dir = voice_model_dir / "GGUF"
     # v0.8.67f — time-bounded so a stalling model dir can't hang the launch.
-    chat_llm_path = _scan_chat_llm_with_timeout(gguf_dir)
+    chat_llm_path = _select_chat_llm_path(
+        voice_model_dir,
+        ctx.startup_receipts,
+    )
     # v0.7.211 — Surface "no local chat GGUF found" as a visible
     # progress event AND a launch warning the frontend can render.
     # Pre-v0.7.211 path: pick_chat_llm_file returned None, the if
@@ -793,6 +858,7 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
                 try:
                     sv.start_all()
                     ctx.sv = sv
+                    _record_core_ready(ctx)
                     return
                 except Exception as retry_exc:
                     # Retry failed for a DIFFERENT reason. Fall through
@@ -825,6 +891,7 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
         raise exc
 
     ctx.sv = sv
+    _record_core_ready(ctx)
 
 
 def _handle_already_running(exc, ctx) -> bool:
