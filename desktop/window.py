@@ -800,15 +800,27 @@ class _OnpJsApi:
                 return False
             pid = os.getpid()
             sh = (
-                f"/bin/sleep 1; "
-                f"/bin/kill {pid} 2>/dev/null; "
-                f"n=0; while /bin/kill -0 {pid} 2>/dev/null && [ $n -lt 20 ]; do "
-                f"/bin/sleep 0.3; n=$((n+1)); done; "
-                f"/bin/kill -9 {pid} 2>/dev/null; "
-                f"/bin/sleep 0.5; "
-                f'/usr/bin/open "{app_bundle}"'
+                'pid="$1"; app_bundle="$2"; '
+                "/bin/sleep 1; "
+                '/bin/kill "$pid" 2>/dev/null; '
+                'n=0; while /bin/kill -0 "$pid" 2>/dev/null && '
+                '[ "$n" -lt 20 ]; do '
+                '/bin/sleep 0.3; n=$((n+1)); done; '
+                '/bin/kill -9 "$pid" 2>/dev/null; '
+                '/bin/sleep 0.5; '
+                '/usr/bin/open "$app_bundle"'
             )
-            subprocess.Popen(["/bin/sh", "-c", sh], start_new_session=True)
+            subprocess.Popen(
+                [
+                    "/bin/sh",
+                    "-c",
+                    sh,
+                    "deeper-notebook-relaunch",
+                    str(pid),
+                    str(app_bundle),
+                ],
+                start_new_session=True,
+            )
         except Exception:
             return False
         return True

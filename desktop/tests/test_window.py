@@ -5,6 +5,7 @@ test asserting the token set is complete or that WCAG contrast holds. (P1-LOW-12
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -642,3 +643,33 @@ def test_relaunch_helper_starts_only_after_the_flush_gated_window_closes(
     assert len(launched) == 1
     assert launched[0][0][:2] == ["/bin/sh", "-c"]
     assert launched[0][1] == {"start_new_session": True}
+
+
+def test_relaunch_helper_passes_pid_and_bundle_as_quoted_shell_positionals(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Bundle paths must never become shell source, even with metacharacters."""
+    launched: list[tuple[list[str], dict[str, object]]] = []
+    bridge = window_module._OnpJsApi()
+    bundle_path = "/Applications/Deeper Notebook; touch /tmp/should-not-run.app"
+    bundle_executable = f"{bundle_path}/Contents/MacOS/Deeper Notebook"
+    monkeypatch.setattr(sys, "executable", bundle_executable)
+    monkeypatch.setattr(
+        "subprocess.Popen",
+        lambda command, **kwargs: launched.append((command, kwargs)),
+    )
+
+    bridge.relaunch()
+    bridge.complete_relaunch_after_close()
+
+    assert len(launched) == 1
+    command = launched[0][0]
+    assert len(command) == 6
+    assert command[:2] == ["/bin/sh", "-c"]
+    script = command[2]
+    assert '"$1"' in script and '"$2"' in script
+    assert bundle_executable not in script
+    assert str(os.getpid()) not in script
+    assert command[3] == "deeper-notebook-relaunch"
+    assert command[4] == str(os.getpid())
+    assert command[5] == bundle_path
