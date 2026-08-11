@@ -128,13 +128,13 @@ A focused improvement cycle (benchmarked against Google NotebookLM and local-fir
 
 ## Screenshots
 
-> _Screenshots coming soon._ Add images under `docs/assets/` and reference them here, e.g.:
->
-> ```markdown
-> ![Notebook view](docs/assets/notebook.png)
-> ![Source chat with citations](docs/assets/chat-citations.png)
-> ![Podcast outline review](docs/assets/podcast-outline.png)
-> ```
+The screenshots below are the same deterministic baselines used by the mocked-browser visual release gate:
+
+![Research Core notebook index](frontend/e2e/luminous-folio-visual.spec.ts-snapshots/notebooks-research-core-dark-1440x900-mocked-browser-darwin.png)
+
+![Knowledge workspace](frontend/e2e/luminous-folio-visual.spec.ts-snapshots/knowledge-research-core-dark-1440x900-mocked-browser-darwin.png)
+
+![Archive Paper theme](frontend/e2e/theme-gallery-visual.spec.ts-snapshots/archive-paper-1280x800-mocked-browser-darwin.png)
 
 ---
 
@@ -145,7 +145,7 @@ Deeper Notebook is a **three-tier application** (frontend / API / database) plus
 ```
 +-----------------------------------------------------------------------+
 |  Frontend   Next.js 16 + React 19 + TypeScript            :3000       |
-|  Zustand state · TanStack Query 5 · Shadcn/ui + Tailwind · i18n (10)  |
+|  Zustand state · TanStack Query 5 · Shadcn/ui + Tailwind · i18n (14)  |
 +----------------------------+------------------------------------------+
                              |  HTTP REST + NDJSON + SSE streams
 +----------------------------v------------------------------------------+
@@ -172,7 +172,7 @@ Desktop launcher (desktop/launcher.py) additionally supervises:
   • a bundled SurrealDB + Node.js runtime (single .app, no separate installs)
 ```
 
-**Frontend (`frontend/`)** — A Next.js 16 / React 19 app. State is held in Zustand stores; server state is fetched and cached with TanStack Query; UI is built from Shadcn/ui (Radix primitives) + Tailwind CSS. It talks to the API over REST for CRUD and over SSE / NDJSON streams for chat, ask, and job progress. Fully internationalized across 10 locales.
+**Frontend (`frontend/`)** — A Next.js 16 / React 19 app. State is held in Zustand stores; server state is fetched and cached with TanStack Query; UI is built from Shadcn/ui (Radix primitives) + Tailwind CSS. It talks to the API over REST for CRUD and over SSE / NDJSON streams for chat, ask, and job progress. Fully internationalized across 14 locales.
 
 **API (`api/` + `deeper_notebook/`)** — A FastAPI app exposing REST routers for notebooks, sources, notes, chat, ask/search, podcasts, transformations, models, credentials, MCP, Gmail digests, and system/health. Conversational and ingestion logic is orchestrated by **LangGraph** state machines. Evidence Studio uses strict Pydantic document schemas, a provider-neutral structured-generation adapter, deterministic Markdown and visual renderers, and a backward-compatible payload envelope under `deeper_notebook/studio/`; `python-pptx` writes editable decks and Pillow writes self-contained slide/infographic PDF and PNG files. Long-running work is dispatched to an async **surreal_commands** job queue and polled through the commands API.
 
