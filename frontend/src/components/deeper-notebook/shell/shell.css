@@ -30,35 +30,6 @@
   top: var(--dn-space-3);
 }
 
-html[data-dn-focus-mode="true"] .dn-luminous-shell {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-html[data-dn-focus-mode="true"] .dn-luminous-workspace {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-html[data-dn-focus-mode="true"] .dn-aurora-cartography,
-html[data-dn-focus-mode="true"] .dn-instrument-dock,
-html[data-dn-focus-mode="true"] .dn-adaptive-navigator,
-html[data-dn-focus-mode="true"] .dn-navigator-toggle,
-html[data-dn-focus-mode="true"] .dn-context-lens,
-html[data-dn-focus-mode="true"] .dn-context-lens-toggle {
-  display: none;
-}
-
-html[data-dn-focus-mode="true"] .dn-editorial-canvas {
-  padding: var(--dn-space-4) var(--dn-space-6);
-}
-
-html[data-dn-focus-mode="true"] .dn-legacy-shell > aside {
-  display: none;
-}
-
-html[data-dn-focus-mode="true"] .dn-legacy-shell > main {
-  width: 100%;
-}
-
 .dn-luminous-shell {
   position: relative;
   display: grid;
@@ -552,6 +523,229 @@ html[data-dn-focus-mode="true"] .dn-legacy-shell > main {
 
   .dn-luminous-workspace:has(.research-core-canvas) > .dn-adaptive-navigator {
     display: none;
+  }
+}
+
+/* Focus mode keeps the shell's routes and utility controls in a compact,
+ * keyboard-revealable rail. The rail is intentionally still in the layout
+ * and the DOM: moving focus into it restores its readable measure without
+ * removing navigation from keyboard or assistive-technology paths. */
+html[data-dn-focus-mode="true"] {
+  --dn-focus-rail: 3rem;
+  --dn-focus-reveal: 17rem;
+}
+
+@media (min-width: 1024px) {
+  html[data-dn-focus-mode="true"] .dn-luminous-shell {
+    grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-luminous-workspace {
+    grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr) var(--dn-focus-rail);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-instrument-dock {
+    width: var(--dn-focus-rail);
+    min-width: var(--dn-focus-rail);
+    overflow: hidden;
+    padding-inline: 0.25rem;
+    opacity: 0.78;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-instrument-dock:focus-within {
+    width: var(--dn-focus-reveal);
+    overflow: visible;
+    opacity: 1;
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-instrument-dock:focus-within .dn-dock-utility-row > button > span:not(.sr-only),
+  html[data-dn-focus-mode="true"] .dn-instrument-dock:focus-within .dn-dock-utilities > button > span:not(.sr-only) {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    white-space: nowrap;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-adaptive-navigator {
+    width: var(--dn-focus-rail);
+    max-width: var(--dn-focus-rail);
+    overflow: hidden;
+    padding-inline: 0.25rem;
+    opacity: 0.78;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-adaptive-navigator:focus-within {
+    position: relative;
+    z-index: 5;
+    width: var(--dn-focus-reveal);
+    max-width: var(--dn-focus-reveal);
+    overflow: auto;
+    opacity: 1;
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-context-lens {
+    width: var(--dn-focus-rail);
+    max-width: var(--dn-focus-rail);
+    overflow: hidden;
+    padding-inline: 0.25rem;
+    opacity: 0.78;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-context-lens.is-open,
+  html[data-dn-focus-mode="true"] .dn-context-lens:focus-within {
+    position: relative;
+    z-index: 5;
+    width: var(--dn-focus-reveal);
+    max-width: var(--dn-focus-reveal);
+    overflow: auto;
+    opacity: 1;
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-navigator-toggle,
+  html[data-dn-focus-mode="true"] .dn-context-lens-toggle {
+    position: absolute;
+    z-index: 6;
+    display: inline-flex;
+    width: var(--dn-focus-rail);
+    min-width: var(--dn-focus-rail);
+    overflow: hidden;
+    opacity: 0.7;
+    white-space: nowrap;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-navigator-toggle {
+    top: 4.75rem;
+    left: 0;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-context-lens-toggle {
+    top: 4.75rem;
+    right: 0;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-navigator-toggle:focus-visible,
+  html[data-dn-focus-mode="true"] .dn-context-lens-toggle:focus-visible {
+    width: var(--dn-focus-reveal);
+    opacity: 1;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-editorial-canvas {
+    padding: var(--dn-space-4) var(--dn-space-6);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > aside,
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > .app-sidebar {
+    display: flex;
+    width: var(--dn-focus-rail);
+    min-width: var(--dn-focus-rail);
+    flex: 0 0 var(--dn-focus-rail);
+    overflow: hidden;
+    opacity: 0.78;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > aside:focus-within,
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > .app-sidebar:focus-within {
+    width: var(--dn-focus-reveal);
+    min-width: var(--dn-focus-reveal);
+    flex-basis: var(--dn-focus-reveal);
+    overflow: visible;
+    opacity: 1;
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-legacy-shell > main {
+    min-width: 0;
+    width: auto;
+  }
+}
+
+@media (max-width: 1023px) {
+  /* The normal mobile sheet is closed with display:none. Focus mode keeps a
+   * compact, clipped rail mounted instead, then expands it on focus or an
+   * explicit toggle so the same routes remain reachable on small screens. */
+  html[data-dn-focus-mode="true"] .dn-adaptive-navigator {
+    position: fixed;
+    left: 0.25rem;
+    bottom: 4.75rem;
+    z-index: 6;
+    display: block;
+    width: var(--dn-focus-rail);
+    max-width: var(--dn-focus-rail);
+    max-height: min(40vh, 22rem);
+    overflow: hidden;
+    border: 1px solid var(--dn-glass-border);
+    border-radius: 0.45rem;
+    padding: 0.25rem;
+    opacity: 0.78;
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-adaptive-navigator:focus-within,
+  html[data-dn-focus-mode="true"] .dn-adaptive-navigator.is-open {
+    width: min(var(--dn-focus-reveal), calc(100vw - 1rem));
+    max-width: min(var(--dn-focus-reveal), calc(100vw - 1rem));
+    overflow: auto;
+    opacity: 1;
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-context-lens {
+    position: fixed;
+    right: 0.25rem;
+    bottom: 4.75rem;
+    z-index: 5;
+    display: block;
+    width: var(--dn-focus-rail);
+    max-width: var(--dn-focus-rail);
+    max-height: min(55vh, 30rem);
+    overflow: hidden;
+    border: 1px solid var(--dn-glass-border);
+    border-radius: 0.45rem;
+    padding: 0.25rem;
+    opacity: 0.78;
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-context-lens.is-open,
+  html[data-dn-focus-mode="true"] .dn-context-lens:focus-within {
+    width: min(var(--dn-focus-reveal), calc(100vw - 1rem));
+    max-width: min(var(--dn-focus-reveal), calc(100vw - 1rem));
+    overflow: auto;
+    opacity: 1;
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-navigator-toggle,
+  html[data-dn-focus-mode="true"] .dn-context-lens-toggle {
+    position: fixed;
+    z-index: 7;
+    display: inline-flex;
+    width: var(--dn-focus-rail);
+    min-width: var(--dn-focus-rail);
+    overflow: hidden;
+    opacity: 0.7;
+    white-space: nowrap;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-navigator-toggle {
+    left: 0.25rem;
+    bottom: calc(4.75rem + 0.25rem);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-context-lens-toggle {
+    right: 0.25rem;
+    bottom: calc(4.75rem + 0.25rem);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-navigator-toggle:focus-visible,
+  html[data-dn-focus-mode="true"] .dn-context-lens-toggle:focus-visible {
+    width: min(var(--dn-focus-reveal), calc(100vw - 1rem));
+    opacity: 1;
   }
 }
 

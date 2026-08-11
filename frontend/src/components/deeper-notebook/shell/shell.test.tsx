@@ -238,4 +238,20 @@ describe('LuminousAppShell', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
   })
+
+  it('keeps navigation and utility paths keyboard reachable while Focus mode is active', () => {
+    render(<LuminousAppShell><div data-testid="page-content">Page content</div></LuminousAppShell>)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enter Focus mode' }))
+
+    const navigationLink = screen.getByRole('link', { name: 'navigation.sources' })
+    const utility = screen.getAllByRole('button', { name: 'Sign out' })[0]
+    expect(navigationLink).toBeInTheDocument()
+    expect(utility).toBeInTheDocument()
+
+    navigationLink.focus()
+    expect(navigationLink).toHaveFocus()
+    utility.focus()
+    expect(utility).toHaveFocus()
+  })
 })

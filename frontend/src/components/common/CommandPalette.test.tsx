@@ -12,6 +12,7 @@ import {
   useCommandSurfaceStore,
 } from '@/lib/commands/command-surface-store'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
+import { DEFAULT_DISPLAY_PREFERENCES, useDisplayPreferencesStore } from '@/lib/stores/display-preferences-store'
 import { useThemeStore } from '@/lib/stores/theme-store'
 import type { SearchResponse } from '@/lib/types/search'
 
@@ -205,6 +206,7 @@ describe('CommandPalette', () => {
     resetCommandSurfaceStore()
     resetKnowledgeCommandContextStore()
     useKnowledgeWorkspaceStore.getState().resetWorkspace()
+    useDisplayPreferencesStore.setState(DEFAULT_DISPLAY_PREFERENCES)
   })
 
   it('preserves global palette commands and closes on a second Cmd+K', async () => {
@@ -218,6 +220,18 @@ describe('CommandPalette', () => {
     expect(screen.getByRole('option', { name: 'Research Core' })).toBeVisible()
 
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    expect(screen.queryByRole('dialog', { name: 'Quick actions' })).toBeNull()
+  })
+
+  it('exposes Focus mode as a global command and toggles the shared display preference', async () => {
+    renderPalette()
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+
+    const focusCommand = await screen.findByRole('option', { name: 'Enter Focus mode' })
+    expect(focusCommand).toBeVisible()
+    fireEvent.click(focusCommand)
+
+    await waitFor(() => expect(useDisplayPreferencesStore.getState().focusMode).toBe(true))
     expect(screen.queryByRole('dialog', { name: 'Quick actions' })).toBeNull()
   })
 

@@ -6,6 +6,7 @@ import {
   Book,
   Bot,
   FileText,
+  Focus,
   Loader2,
   MessageCircleQuestion,
   Mic,
@@ -55,6 +56,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useVaults } from '@/lib/hooks/use-vault'
 import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-store'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
+import { useDisplayPreferencesStore } from '@/lib/stores/display-preferences-store'
 import { useTheme } from '@/lib/stores/theme-store'
 
 const getNavigationItems = (t: TFunction) => [
@@ -111,6 +113,8 @@ export function CommandPalette() {
   const mounts = useVaults()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
   const { setTheme } = useTheme()
+  const focusMode = useDisplayPreferencesStore((state) => state.focusMode)
+  const toggleFocusMode = useDisplayPreferencesStore((state) => state.toggleFocusMode)
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const { data: notebooks, isLoading: notebooksLoading } = useNotebooks(false)
   const [open, setOpen] = useState(false)
@@ -229,6 +233,9 @@ export function CommandPalette() {
   const handleTheme = useCallback((theme: 'light' | 'dark' | 'system') => {
     handleSelect(() => setTheme(theme))
   }, [handleSelect, setTheme])
+  const handleFocusMode = useCallback(() => {
+    handleSelect(toggleFocusMode)
+  }, [handleSelect, toggleFocusMode])
 
   const buildKnowledgeContext = useCallback((): KnowledgeCommandExecutionContext | null => {
     const page = useKnowledgeCommandContextStore.getState()
@@ -469,6 +476,15 @@ export function CommandPalette() {
                   <item.icon className="h-4 w-4" /><span>{item.name}</span>
                 </CommandItem>
               ))}
+            </CommandGroup>
+            <CommandGroup heading="Workspace">
+              <CommandItem
+                value={`focus ${focusMode ? 'exit' : 'enter'} focus mode`}
+                onSelect={handleFocusMode}
+              >
+                <Focus className="h-4 w-4" aria-hidden="true" />
+                <span>{focusMode ? 'Exit Focus mode' : 'Enter Focus mode'}</span>
+              </CommandItem>
             </CommandGroup>
             {exactCandidates.length > 0 && (
               <CommandGroup heading={t('knowledge.exactResults')}>
