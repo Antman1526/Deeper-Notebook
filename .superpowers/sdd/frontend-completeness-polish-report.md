@@ -1,9 +1,9 @@
 # Frontend Completeness and MCP UX Polish Report
 
 Date: 2026-08-11
-Checkout: `/Users/Antman/Documents/Open Notebook/Deeper-Notebook`
+Checkout: Deeper Notebook repository
 Scoped starting revision: `bae64d07`
-Verification revision: `b8c8288e`
+Verification revision: `82d9011c` plus locale review repair
 
 ## Outcome
 
@@ -40,9 +40,8 @@ confirmed dead files were removed.
   test/delete pending isolation, and responsive class structure.
 - `frontend/src/lib/locales/*/index.ts` (all 14 locale catalogs): adds the
   four MCP labels (`enableButton`, `disableButton`, `enabledStatus`,
-  `disabledStatus`) to preserve locale-key parity. The short labels currently
-  use the existing English fallback wording in non-English catalogs; a future
-  translation pass can replace them without changing the contract.
+  `disabledStatus`) to preserve locale-key parity and provide native wording
+  in every supported locale.
 - `frontend/e2e/mcp-settings.spec.ts`: mocked browser proof at 320px for
   keyboard Enter toggle, exact expected MCP request set, add flow, failed Test
   isolation, row bounds, no console errors, and no unexpected MCP traffic.
@@ -132,3 +131,32 @@ this commit. The default aggregate result therefore is not a release claim;
 the focused MCP and explicit flag-off receipts above are the in-scope browser
 proof. A later visual audit should rerun the aggregate gate after the parent
 repairs and inspect the 320/768/1024/1440 states.
+
+## Review repair: native MCP locale labels
+
+The review finding that the 13 non-English catalogs mixed English controls into
+translated MCP sections is closed without changing keys or component behavior.
+The exact replacements are:
+
+| Locale | Enable | Disable | Enabled | Disabled |
+| --- | --- | --- | --- | --- |
+| `bn-IN` | সক্রিয় করুন | নিষ্ক্রিয় করুন | সক্রিয় | নিষ্ক্রিয় |
+| `ca-ES` | Activa | Desactiva | Activat | Desactivat |
+| `de-DE` | Aktivieren | Deaktivieren | Aktiviert | Deaktiviert |
+| `es-ES` | Habilitar | Deshabilitar | Habilitado | Deshabilitado |
+| `fr-FR` | Activer | Désactiver | Activé | Désactivé |
+| `it-IT` | Abilita | Disabilita | Abilitato | Disabilitato |
+| `ja-JP` | 有効化 | 無効化 | 有効 | 無効 |
+| `pl-PL` | Włącz | Wyłącz | Włączony | Wyłączony |
+| `pt-BR` | Ativar | Desativar | Ativado | Desativado |
+| `ru-RU` | Включить | Отключить | Включён | Отключён |
+| `tr-TR` | Etkinleştir | Devre dışı bırak | Etkin | Devre dışı |
+| `zh-CN` | 启用 | 禁用 | 已启用 | 已禁用 |
+| `zh-TW` | 啟用 | 停用 | 已啟用 | 已停用 |
+
+Review-repair verification: locale parity plus MCP component tests **2 files,
+173 tests passed**; `npm run lint` passed; `npx tsc --noEmit` passed;
+`git diff --check` passed; `python3 scripts/rebrand_audit.py --check` passed
+with `unexpected_active_identity: 0` and `stale_allowlist: []` after the
+report checkout label was made rebrand-neutral. `en-US`, MCP behavior, and all
+other source files were untouched.
