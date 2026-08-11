@@ -108,6 +108,102 @@ def test_download_digest_mismatch_preserves_previous_verified_destination(tmp_pa
     assert destination.read_bytes() == b"previously-verified"
 
 
+def test_node_extract_failure_preserves_previous_verified_runtime(
+    tmp_path: Path, monkeypatch,
+):
+    runtime_bin = tmp_path / "bin"
+    prior_node = runtime_bin / "node-darwin-arm64" / "bin" / "node"
+    prior_node.parent.mkdir(parents=True)
+    prior_node.write_bytes(b"previously-verified-node")
+
+    archive_bytes = _tar_bytes(
+        [("node-v20.18.0-darwin-arm64/bin/node", b"replacement-node", None)]
+    )
+
+    def fake_download(_url: str, destination: Path, _expected: str | None):
+        destination.write_bytes(archive_bytes)
+
+    def fail_extract(*_args, **_kwargs):
+        raise OSError("synthetic extraction failure")
+
+    monkeypatch.setattr(fetch_runtimes, "BIN", runtime_bin)
+    monkeypatch.setattr(fetch_runtimes, "download", fake_download)
+    monkeypatch.setattr(tarfile.TarFile, "extractall", fail_extract)
+
+    with pytest.raises(OSError, match="synthetic extraction failure"):
+        fetch_runtimes.fetch_node(
+            "20.18.0",
+            "https://example.invalid/node.tar.gz",
+            "darwin-arm64",
+            "0" * 64,
+        )
+
+    assert prior_node.read_bytes() == b"previously-verified-node"
+
+
+def test_surreal_extract_failure_preserves_previous_verified_runtime(
+    tmp_path: Path, monkeypatch,
+):
+    runtime_bin = tmp_path / "bin"
+    runtime_bin.mkdir()
+    target = runtime_bin / "surreal-darwin-arm64"
+    target.write_bytes(b"previously-verified-surreal")
+    archive_bytes = _tar_bytes([("surreal", b"replacement-surreal", None)])
+
+    def fake_download(_url: str, destination: Path, _expected: str | None):
+        destination.write_bytes(archive_bytes)
+
+    def fail_extract(*_args, **_kwargs):
+        raise OSError("synthetic extraction failure")
+
+    monkeypatch.setattr(fetch_runtimes, "BIN", runtime_bin)
+    monkeypatch.setattr(fetch_runtimes, "download", fake_download)
+    monkeypatch.setattr(tarfile.TarFile, "extract", fail_extract)
+
+    with pytest.raises(OSError, match="synthetic extraction failure"):
+        fetch_runtimes.fetch_surreal(
+            "2.1.0",
+            "https://example.invalid/surreal.tar.gz",
+            "darwin-arm64",
+            "0" * 64,
+        )
+
+    assert target.read_bytes() == b"previously-verified-surreal"
+
+
+def test_uv_extract_failure_preserves_previous_verified_runtime(
+    tmp_path: Path, monkeypatch,
+):
+    runtime_bin = tmp_path / "bin"
+    runtime_bin.mkdir()
+    target = runtime_bin / "uv"
+    target.write_bytes(b"previously-verified-uv")
+    archive_bytes = _tar_bytes(
+        [("uv-aarch64-apple-darwin/uv", b"replacement-uv", None)]
+    )
+
+    def fake_download(_url: str, destination: Path, _expected: str | None):
+        destination.write_bytes(archive_bytes)
+
+    def partial_then_fail(_archive, member, path, **_kwargs):
+        (Path(path) / member.name).write_bytes(b"partial")
+        raise OSError("synthetic extraction failure")
+
+    monkeypatch.setattr(fetch_runtimes, "BIN", runtime_bin)
+    monkeypatch.setattr(fetch_runtimes, "download", fake_download)
+    monkeypatch.setattr(tarfile.TarFile, "extract", partial_then_fail)
+
+    with pytest.raises(OSError, match="synthetic extraction failure"):
+        fetch_runtimes.fetch_uv(
+            "0.8.15",
+            "https://example.invalid/uv.tar.gz",
+            "darwin-arm64",
+            "0" * 64,
+        )
+
+    assert target.read_bytes() == b"previously-verified-uv"
+
+
 @pytest.mark.parametrize(
     ("name", "linkname"),
     [

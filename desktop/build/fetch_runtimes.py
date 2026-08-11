@@ -126,6 +126,24 @@ def _uv_root(arch: str) -> str:
     }[arch]
 
 
+def _replace_runtime_tree(staged: Path, destination: Path) -> None:
+    """Replace a verified runtime tree without deleting the last good copy first."""
+    backup = destination.with_name(
+        f".{destination.name}.{secrets.token_hex(8)}.backup"
+    )
+    had_destination = destination.exists()
+    if had_destination:
+        destination.replace(backup)
+    try:
+        staged.replace(destination)
+    except Exception:
+        if had_destination and backup.exists() and not destination.exists():
+            backup.replace(destination)
+        raise
+    if backup.exists():
+        shutil.rmtree(backup)
+
+
 def fetch_surreal(
     version: str, url: str, arch: str, expected_sha256: str | None = None,
 ) -> None:
@@ -136,22 +154,23 @@ def fetch_surreal(
     else:
         archive = BIN / "surreal.tgz"
         target = BIN / f"surreal-{arch}"
+        staging_dir = BIN / f".surreal-{arch}.{secrets.token_hex(8)}.extract"
         try:
+            staging_dir.mkdir(parents=True)
             download(url, archive, expected_sha256)
             with tarfile.open(archive) as t:
                 _validate_tar_members(
                     t, expected_root="surreal", exact_members={"surreal"}
                 )
-                # Only replace the prior binary after the new archive has
-                # passed both digest and layout validation.
-                target.unlink(missing_ok=True)
-                (BIN / "surreal").unlink(missing_ok=True)
-                t.extract("surreal", path=BIN, filter="data")  # nosec B202 - validated above
-            (BIN / "surreal").rename(target)
+                t.extract(  # nosec B202 - validated above
+                    "surreal", path=staging_dir, filter="data"
+                )
+            (staging_dir / "surreal").replace(target)
             target.chmod(0o755)
         finally:
-            if archive.exists():
-                archive.unlink()
+            archive.unlink(missing_ok=True)
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir)
     print(f"  surreal v{version} -> {BIN}/surreal-{arch}")
 
 
@@ -159,41 +178,28 @@ def fetch_node(
     version: str, url: str, arch: str, expected_sha256: str | None = None,
 ) -> None:
     out_dir = BIN / f"node-{arch}"
+    staging_dir = BIN / f".node-{arch}.{secrets.token_hex(8)}.extract"
 
-    if arch.startswith("windows"):
-        archive = BIN / "node.zip"
-        try:
+    archive = BIN / ("node.zip" if arch.startswith("windows") else "node.tar.gz")
+    try:
+        staging_dir.mkdir(parents=True)
+        if arch.startswith("windows"):
             download(url, archive, expected_sha256)
             with zipfile.ZipFile(archive) as z:
-                _validate_zip_members(z.infolist(), expected_root=_node_root(version, arch))
-                if out_dir.exists():
-                    shutil.rmtree(out_dir)
-                for stale in BIN.glob(f"node-v{version}-*"):
-                    if stale.is_dir():
-                        shutil.rmtree(stale)
-                z.extractall(BIN)  # nosec B202 - validated above
-            extracted = next(BIN.glob(f"node-v{version}-*"))
-            extracted.rename(out_dir)
-        finally:
-            if archive.exists():
-                archive.unlink()
-    else:
-        archive = BIN / "node.tar.gz"
-        try:
+                root = _node_root(version, arch)
+                _validate_zip_members(z.infolist(), expected_root=root)
+                z.extractall(staging_dir)  # nosec B202 - validated above
+        else:
             download(url, archive, expected_sha256)
             with tarfile.open(archive) as t:
-                _validate_tar_members(t, expected_root=_node_root(version, arch))
-                if out_dir.exists():
-                    shutil.rmtree(out_dir)
-                for stale in BIN.glob(f"node-v{version}-*"):
-                    if stale.is_dir():
-                        shutil.rmtree(stale)
-                t.extractall(BIN, filter="data")  # nosec B202 - validated above
-            extracted = next(BIN.glob(f"node-v{version}-*"))
-            extracted.rename(out_dir)
-        finally:
-            if archive.exists():
-                archive.unlink()
+                root = _node_root(version, arch)
+                _validate_tar_members(t, expected_root=root)
+                t.extractall(staging_dir, filter="data")  # nosec B202 - validated above
+        _replace_runtime_tree(staging_dir / root, out_dir)
+    finally:
+        archive.unlink(missing_ok=True)
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
     print(f"  node v{version} -> {out_dir}")
 
 
@@ -205,10 +211,13 @@ def fetch_uv(
     is_win = arch.startswith("windows")
     uv_name = "uv.exe" if is_win else "uv"
     target = BIN / uv_name
+    staging_dir = BIN / f".{uv_name}.{secrets.token_hex(8)}.extract"
 
-    if is_win:
-        archive = BIN / "uv.zip"
-        try:
+    archive = BIN / ("uv.zip" if is_win else "uv.tar.gz")
+    try:
+        staging_dir.mkdir(parents=True)
+        staged_target = staging_dir / uv_name
+        if is_win:
             download(url, archive, expected_sha256)
             with zipfile.ZipFile(archive) as z:
                 root = _uv_root(arch)
@@ -221,14 +230,9 @@ def fetch_uv(
                 # Find and extract it.
                 names = z.namelist()
                 exe_name = next(n for n in names if n.endswith("uv.exe"))
-                with z.open(exe_name) as src, target.open("wb") as dst:
+                with z.open(exe_name) as src, staged_target.open("wb") as dst:
                     shutil.copyfileobj(src, dst)
-        finally:
-            if archive.exists():
-                archive.unlink()
-    else:
-        archive = BIN / "uv.tar.gz"
-        try:
+        else:
             download(url, archive, expected_sha256)
             with tarfile.open(archive, "r:gz") as t:
                 root = _uv_root(arch)
@@ -238,16 +242,19 @@ def fetch_uv(
                     required_members={f"{root}/uv"},
                 )
                 # The tarball contains uv-aarch64-apple-darwin/uv (or similar).
-                # Find the member named */uv (not uvx).
+                # Find the member named */uv (not uvx), then stage it before
+                # atomically replacing the last verified runtime.
                 uv_member = next(
                     m for m in t.getmembers()
                     if m.name.endswith("/uv") or m.name == "uv"
                 )
                 uv_member.name = uv_name  # flatten to just "uv"
-                t.extract(uv_member, path=BIN, filter="data")
-        finally:
-            if archive.exists():
-                archive.unlink()
+                t.extract(uv_member, path=staging_dir, filter="data")
+        staged_target.replace(target)
+    finally:
+        archive.unlink(missing_ok=True)
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
     target.chmod(0o755)
     print(f"  uv v{version} -> {target}")
 
