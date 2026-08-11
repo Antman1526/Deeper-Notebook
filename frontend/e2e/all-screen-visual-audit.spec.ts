@@ -22,6 +22,32 @@ test('compact shell keeps the focus control clear of the command title', async (
   expect(overlaps).toBe(false)
 })
 
+test('request ledger records unmatched same-origin API calls while allowing explicit mocks', async ({ page }) => {
+  const unexpectedApiRequests: string[] = []
+  await installLuminousFolioFixture(page, {
+    theme: 'research-core-dark',
+    unexpectedApiRequests,
+  })
+  await page.route('**/api/explicit-request-ledger-probe', async route => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ mocked: true }) })
+  })
+
+  await page.goto('/')
+  const explicitResponse = await page.evaluate(async () => {
+    const response = await fetch('/api/explicit-request-ledger-probe')
+    return { status: response.status, body: await response.json() }
+  })
+  const unmatchedResponse = await page.evaluate(async () => {
+    const response = await fetch('/api/unmatched-request-ledger-probe')
+    return { status: response.status, body: await response.json() }
+  })
+
+  expect(explicitResponse).toEqual({ status: 200, body: { mocked: true } })
+  expect(unmatchedResponse).toEqual({ status: 200, body: {} })
+  expect(unexpectedApiRequests).toContain('GET /api/unmatched-request-ledger-probe')
+  expect(unexpectedApiRequests).not.toContain('GET /api/explicit-request-ledger-probe')
+})
+
 const routeInventory = [
   '/settings/local-models',
   '/settings/mcp',
@@ -82,6 +108,7 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
   const consoleErrors: string[] = []
   const pageErrors: string[] = []
   const externalRequests: string[] = []
+  const unexpectedApiRequests: string[] = []
   page.on('console', message => {
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
@@ -93,7 +120,10 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
     }
   })
 
-  await installLuminousFolioFixture(page, { theme: 'research-core-dark' })
+  await installLuminousFolioFixture(page, {
+    theme: 'research-core-dark',
+    unexpectedApiRequests,
+  })
   await page.route('**/api/notebooks/notebook-fixture-001', async route => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(researchWorkbenchFixtures.notebook) })
   })
@@ -257,6 +287,7 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
   expect(consoleErrors).toEqual([])
   expect(pageErrors).toEqual([])
   expect(externalRequests).toEqual([])
+  expect(unexpectedApiRequests).toEqual([])
 })
 
 test('login retains a named main landmark and page heading', async ({ page }) => {

@@ -13,6 +13,7 @@ export interface LuminousFolioFixtureOptions {
   wallpaper?: WallpaperPreference
   motion?: MotionPreference
   transparency?: TransparencyPreference
+  unexpectedApiRequests?: string[]
 }
 
 /**
@@ -26,9 +27,10 @@ export async function installLuminousFolioFixture(
     wallpaper = 'static',
     motion = 'reduced',
     transparency = 'solid',
+    unexpectedApiRequests = [],
   }: LuminousFolioFixtureOptions,
 ): Promise<void> {
-  await installResearchWorkbenchMocks(page)
+  await installResearchWorkbenchMocks(page, unexpectedApiRequests)
   await page.context().addCookies([
     { name: 'wizard_completed', value: 'true', domain: '127.0.0.1', path: '/' },
     { name: 'onp_intro_seen', value: '1', domain: '127.0.0.1', path: '/' },

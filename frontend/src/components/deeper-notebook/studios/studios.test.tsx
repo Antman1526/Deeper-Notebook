@@ -1,8 +1,12 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { EvidenceStudioFolio } from './EvidenceStudioFolio'
 import { PodcastStudioFolio } from './PodcastStudioFolio'
+
+afterEach(() => {
+  delete process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO
+})
 
 describe('EvidenceStudioFolio', () => {
   it('lays out existing source, brief, artifact, trust, and status slots without owning actions', () => {
@@ -22,6 +26,23 @@ describe('EvidenceStudioFolio', () => {
     expect(screen.getByLabelText('Artifact pages')).toHaveTextContent('Generate notebook')
     expect(screen.getByLabelText('Trust margin')).toHaveTextContent('3 citations retained')
     expect(screen.getByText('Ready for explicit generation')).toBeInTheDocument()
+  })
+
+  it('uses a named region when the legacy shell already owns the main landmark', () => {
+    process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
+
+    render(
+      <main aria-label="Legacy application shell">
+        <EvidenceStudioFolio
+          sourceDesk={<p>Upload sources</p>}
+          editorialBrief={<p>Notebook mode</p>}
+          artifactPages={<p>Generate notebook</p>}
+        />
+      </main>,
+    )
+
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getByRole('region', { name: 'Evidence Studio folio' })).toBeInTheDocument()
   })
 })
 

@@ -1,4 +1,4 @@
-import { test as base, expect, type Page } from '@playwright/test'
+import { test as base, expect, type Page, type Route } from '@playwright/test'
 
 export const researchWorkbenchFixtures = {
   notebook: {
@@ -50,6 +50,11 @@ export const researchWorkbenchFixtures = {
   },
 } as const
 
+function requestLabel(route: Route): string {
+  const request = route.request()
+  return `${request.method()} ${new URL(request.url()).pathname}`
+}
+
 async function fulfillJson(page: Page, pathname: string, body: unknown): Promise<void> {
   await page.route(`**${pathname}`, async (route) => {
     await route.fulfill({
@@ -59,7 +64,10 @@ async function fulfillJson(page: Page, pathname: string, body: unknown): Promise
   })
 }
 
-export async function installResearchWorkbenchMocks(page: Page): Promise<void> {
+export async function installResearchWorkbenchMocks(
+  page: Page,
+  unexpectedApiRequests: string[] = [],
+): Promise<void> {
   await page.context().grantPermissions(['microphone'])
   await page.context().addCookies([
     { name: 'wizard_completed', value: '1', domain: '127.0.0.1', path: '/' },
@@ -69,6 +77,7 @@ export async function installResearchWorkbenchMocks(page: Page): Promise<void> {
   // Keep the baseline hermetic when layout-only integrations add a request.
   // Specific fixture routes below are registered afterwards and win first.
   await page.route('**/api/**', async (route) => {
+    unexpectedApiRequests.push(requestLabel(route))
     await route.fulfill({
       contentType: 'application/json',
       body: '{}',
