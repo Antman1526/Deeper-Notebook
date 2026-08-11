@@ -1,7 +1,7 @@
 # Reliability Experience Task 7 — Integrated proof receipt
 
 Date: 2026-08-11
-Checkout: `/Users/Antman/Documents/Open Notebook/Deeper-Notebook`
+Checkout: `Deeper-Notebook` (the enclosing workspace path is intentionally omitted from this receipt)
 Visual evidence commit: `2a2eefc0` (`test(visual): refresh reliability experience evidence`)
 
 ## Scope and claim boundary
@@ -26,7 +26,7 @@ this proof pass was the separately committed, reviewed visual evidence update
 | Mocked visual baselines | `PLAYWRIGHT_PORT=3117 npx playwright test --project=mocked-browser e2e/luminous-folio-visual.spec.ts e2e/theme-gallery-visual.spec.ts` | **PASS** — 17 passed after manual review and refresh of exactly 14 coherent PNGs. Deltas were the approved Focus hint and Task 6 Runtime/Backup/Provenance panels. |
 | Rollback Focus proof | `NEXT_PUBLIC_DN_LUMINOUS_FOLIO=0 PLAYWRIGHT_PORT=3117 npx playwright test --project=mocked-browser e2e/focus-mode-rollback.spec.ts` | **PASS** — 2 passed at phone and tablet widths. |
 | Native API/Surreal/Supervisor smoke | Task-owned data root `/private/tmp/deeper-notebook-task7-native.3tXa9a`; ports 51395/5055/51397–51403 | **PASS** — `/livez`, `/readyz`, authenticated `runtime-snapshot-v1`, dashboard/settings routes, redaction checks, Focus/backup/provenance browser assertions, startup receipt, and unchanged external fixture SHA. All child processes terminated cleanly. |
-| Package contents and DMG | `verify_package_contents.py`; `codesign --verify --deep --strict`; `hdiutil verify` | **PASS** — canonical `upstream/deeper_notebook` runtime plus exact `open_notebook` shim; deep strict signature verification passed; DMG checksum valid. DMG SHA-256: `a823fda3997ab219e58136e091399f4f3a3322e60e2f1999cc112ca3d5a82035`. |
+| Package contents and DMG | `verify_package_contents.py`; `codesign --verify --deep --strict`; `hdiutil verify` | **PASS** — canonical `upstream/deeper_notebook` runtime plus the exact legacy compatibility shim required by migration; deep strict signature verification passed; DMG checksum valid. DMG SHA-256: `a823fda3997ab219e58136e091399f4f3a3322e60e2f1999cc112ca3d5a82035`. |
 | Packaged app smoke | Task-owned package root and readiness marker | **PASS** — bundled app reached API/frontend readiness, `/livez`, `/readyz`, snapshot/settings, `__next_f`, redaction, backup/provenance, and unchanged external SHA; SIGTERM returned 143. |
 | Recoverable installed swap | `/Applications/Deeper Notebook.backup-20260811-014426.app` retained while staged app moved into `/Applications/Deeper Notebook.app` | **PASS** — pre/post deep codesign verification passed; timestamped prior app backup remains available. |
 | Installed app smoke | Current installed bundle with task-owned HOME/data root; API 57042, frontend 57043 | **PASS** — readiness marker matched the current PID, API/frontend/settings/snapshot all returned 200, `__next_f` and redaction checks passed, external SHA stayed unchanged, SIGTERM returned 143. |
