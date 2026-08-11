@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -27,6 +27,10 @@ _EXEMPT_PREFIXES = (
     "/api/version", "/api/config",
 )
 _WINDOW_SEC = 60.0
+# The limiter is opt-in, but an exposed process must still tolerate a stream
+# of one-shot source addresses.  Keep the in-memory client table finite even
+# when no client sends a second request that would otherwise trigger cleanup.
+_MAX_CLIENTS = 4096
 
 
 def _limit_per_min() -> int:
@@ -44,7 +48,34 @@ def _limit_per_min() -> int:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
-        self._hits: dict[str, deque] = defaultdict(deque)
+        # OrderedDict gives us a small LRU eviction policy when a new client
+        # arrives at capacity while retaining the existing mapping-like test
+        # and diagnostic surface.
+        self._hits: OrderedDict[str, deque] = OrderedDict()
+
+    def _prune_clients(self, cutoff: float) -> None:
+        """Drop clients whose whole sliding window has expired."""
+        for key, dq in list(self._hits.items()):
+            while dq and dq[0] < cutoff:
+                dq.popleft()
+            if not dq:
+                self._hits.pop(key, None)
+
+    def _client_hits(self, ip: str, cutoff: float) -> deque:
+        self._prune_clients(cutoff)
+        dq = self._hits.get(ip)
+        if dq is None:
+            while len(self._hits) >= _MAX_CLIENTS:
+                self._hits.popitem(last=False)
+            dq = deque()
+            self._hits[ip] = dq
+        else:
+            # Requests from an existing client make it the newest eviction
+            # candidate; this does not alter the response/rate-limit shape.
+            self._hits.move_to_end(ip)
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        return dq
 
     async def dispatch(self, request: Request, call_next):
         limit = _limit_per_min()
@@ -57,10 +88,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         ip = request.client.host if request.client else "unknown"
         now = time.monotonic()
-        dq = self._hits[ip]
         cutoff = now - _WINDOW_SEC
-        while dq and dq[0] < cutoff:
-            dq.popleft()
+        dq = self._client_hits(ip, cutoff)
 
         if len(dq) >= limit:
             retry = max(1, int(_WINDOW_SEC - (now - dq[0])))
@@ -71,8 +100,4 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         dq.append(now)
-        # Bound memory: drop emptied per-IP deques once the table gets large.
-        if len(self._hits) > 4096:
-            for k in [k for k, v in self._hits.items() if not v]:
-                self._hits.pop(k, None)
         return await call_next(request)
