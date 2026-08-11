@@ -46,4 +46,52 @@ describe('runtimeApi', () => {
     vi.mocked(apiClient.get).mockRejectedValueOnce(new Error('raw transport error'))
     await expect(runtimeApi.getSnapshot()).resolves.toEqual(UNKNOWN_RUNTIME_SNAPSHOT)
   })
+
+  it('projects a valid snapshot without retaining hostile fields at any level', () => {
+    const hostileSnapshot = {
+      ...validSnapshot,
+      error: 'secret-canary',
+      path: '/Users/private/runtime',
+      readiness: { ...validSnapshot.readiness, details: 'database://user:token@private' },
+      startup: {
+        ...validSnapshot.startup,
+        stack: 'stack-canary',
+        stages: [{ ...validSnapshot.startup.stages[0], file: '/private/startup.log' }],
+      },
+      updates: { ...validSnapshot.updates, release_url: 'https://token@example.test/release' },
+      vault: { ...validSnapshot.vault, root: '/Volumes/private-vault' },
+      knowledge: { ...validSnapshot.knowledge, source_text: 'private-source-canary' },
+      backup: { ...validSnapshot.backup, directory: '/private/backups' },
+    }
+
+    const projected = normalizeRuntimeSnapshot(hostileSnapshot)
+
+    expect(projected).toEqual(validSnapshot)
+    expect(projected).not.toBe(hostileSnapshot)
+    expect(JSON.stringify(projected)).not.toMatch(/secret-canary|private|token|stack-canary/i)
+  })
+
+  it('deduplicates a bounded allowlisted reason list', () => {
+    expect(normalizeRuntimeSnapshot({
+      ...validSnapshot,
+      reasons: ['database_offline', 'database_offline', 'migrations_pending'],
+    }).reasons).toEqual(['database_offline', 'migrations_pending'])
+  })
+
+  it.each([
+    ['an oversized reason list', { ...validSnapshot, reasons: Array(16).fill('readiness_unknown') }],
+    [
+      'an oversized startup stage list',
+      {
+        ...validSnapshot,
+        startup: {
+          ...validSnapshot.startup,
+          stages: Array.from({ length: 17 }, () => ({ stage: 'core_ready', elapsed_ms: 42 })),
+        },
+      },
+    ],
+    ['an unknown reason code', { ...validSnapshot, reasons: ['untrusted_provider_error'] }],
+  ])('fails closed for %s', (_label, snapshot) => {
+    expect(normalizeRuntimeSnapshot(snapshot)).toEqual(UNKNOWN_RUNTIME_SNAPSHOT)
+  })
 })

@@ -47,6 +47,8 @@ const STARTUP_STAGES = new Set([
   'chat_model_scan',
   'core_ready',
 ])
+const MAX_RUNTIME_REASONS = REASON_CODES.size
+const MAX_STARTUP_STAGES = 16
 const VERSION_PATTERN = /^v?[0-9]+(?:\.[0-9]+){0,4}(?:[-+][A-Za-z0-9.-]{1,16})?$/
 
 export interface RuntimeReadiness {
@@ -146,7 +148,12 @@ function isReadiness(value: unknown): value is RuntimeReadiness {
 }
 
 function isStartup(value: unknown): value is RuntimeStartup {
-  if (!isRecord(value) || !RUNTIME_STATES.has(value.state as RuntimeState) || !Array.isArray(value.stages)) {
+  if (
+    !isRecord(value)
+    || !RUNTIME_STATES.has(value.state as RuntimeState)
+    || !Array.isArray(value.stages)
+    || value.stages.length > MAX_STARTUP_STAGES
+  ) {
     return false
   }
   return value.stages.every((stage) => {
@@ -189,7 +196,11 @@ function isBackup(value: unknown): value is RuntimeBackup {
 export function isRuntimeSnapshot(value: unknown): value is RuntimeSnapshot {
   if (!isRecord(value) || value.schema_version !== 'runtime-snapshot-v1') return false
   if (!RUNTIME_STATES.has(value.status as RuntimeState)) return false
-  if (!Array.isArray(value.reasons) || !value.reasons.every((reason) => REASON_CODES.has(reason as RuntimeReasonCode))) {
+  if (
+    !Array.isArray(value.reasons)
+    || value.reasons.length > MAX_RUNTIME_REASONS
+    || !value.reasons.every((reason) => REASON_CODES.has(reason as RuntimeReasonCode))
+  ) {
     return false
   }
   return isReadiness(value.readiness)
@@ -201,7 +212,57 @@ export function isRuntimeSnapshot(value: unknown): value is RuntimeSnapshot {
 }
 
 export function normalizeRuntimeSnapshot(value: unknown): RuntimeSnapshot {
-  return isRuntimeSnapshot(value) ? value : UNKNOWN_RUNTIME_SNAPSHOT
+  try {
+    if (!isRuntimeSnapshot(value)) return UNKNOWN_RUNTIME_SNAPSHOT
+
+    const reasons: RuntimeReasonCode[] = []
+    for (const reason of value.reasons) {
+      if (!reasons.includes(reason)) reasons.push(reason)
+    }
+
+    return {
+      schema_version: 'runtime-snapshot-v1',
+      status: value.status,
+      reasons,
+      readiness: {
+        state: value.readiness.state,
+        database: value.readiness.database,
+        migrations: value.readiness.migrations,
+      },
+      startup: {
+        state: value.startup.state,
+        stages: value.startup.stages.map((stage) => ({
+          stage: stage.stage,
+          elapsed_ms: stage.elapsed_ms,
+        })),
+      },
+      updates: {
+        state: value.updates.state,
+        enabled: value.updates.enabled,
+        update_available: value.updates.update_available,
+        current_version: value.updates.current_version,
+      },
+      vault: {
+        state: value.vault.state,
+        ready: value.vault.ready,
+        degraded: value.vault.degraded,
+        unavailable: value.vault.unavailable,
+      },
+      knowledge: {
+        state: value.knowledge.state,
+        projected: value.knowledge.projected,
+        unchanged: value.knowledge.unchanged,
+        failed: value.knowledge.failed,
+      },
+      backup: {
+        state: value.backup.state,
+        file_count: value.backup.file_count,
+        newest_age_seconds: value.backup.newest_age_seconds,
+      },
+    }
+  } catch {
+    return UNKNOWN_RUNTIME_SNAPSHOT
+  }
 }
 
 export const runtimeApi = {
