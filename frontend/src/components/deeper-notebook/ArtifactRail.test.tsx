@@ -15,6 +15,7 @@ const useUpdateStudioArtifact = vi.fn()
 const useComposeVideoOverview = vi.fn()
 const isEvidenceStudioEnabled = vi.fn()
 const isResearchRunsEnabled = vi.fn()
+const evidenceReviewProps = vi.fn()
 
 vi.mock('@/lib/hooks/use-studio', () => ({
   useStudioArtifacts: (...args: unknown[]) => useStudioArtifacts(...args),
@@ -31,6 +32,13 @@ vi.mock('@/lib/hooks/use-studio', () => ({
 vi.mock('@/lib/features', () => ({
   isEvidenceStudioEnabled: () => isEvidenceStudioEnabled(),
   isResearchRunsEnabled: () => isResearchRunsEnabled(),
+}))
+
+vi.mock('@/components/evaluation/EvidenceReview', () => ({
+  EvidenceReview: (props: Record<string, unknown>) => {
+    evidenceReviewProps(props)
+    return <span data-testid="evidence-review" />
+  },
 }))
 
 vi.mock('@tanstack/react-query', () => ({
@@ -56,6 +64,7 @@ describe('ArtifactRail', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.clearAllMocks()
+    evidenceReviewProps.mockClear()
     createArtifact.mockResolvedValue({ id: 'studio_artifact:new' })
     createWorkflowRun.mockResolvedValue({
       id: 'studio_workflow_run:new',
@@ -120,6 +129,36 @@ describe('ArtifactRail', () => {
       mutateAsync: vi.fn(),
       isPending: false,
     })
+  })
+
+  it('mounts evidence review only for the selected artifact', () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({
+      data: [
+        {
+          id: 'studio_artifact:one',
+          notebook_id: 'notebook:alpha',
+          artifact_type: 'report',
+          title: 'Report',
+          status: 'completed',
+          source_ids: [],
+          output_payload: {},
+          citations: [],
+          export_paths: {},
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<ArtifactRail notebookId="notebook:alpha" />)
+    expect(evidenceReviewProps).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Report' }))
+    expect(evidenceReviewProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notebookId: 'notebook:alpha',
+        artifactId: 'studio_artifact:one',
+      }),
+    )
   })
 
   it('renders nothing when Evidence Studio is disabled', () => {

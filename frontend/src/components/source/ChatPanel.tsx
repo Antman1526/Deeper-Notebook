@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useId } from 'react'
+import { useState, useRef, useEffect, useId, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -35,7 +35,9 @@ import { CitationPill } from '@/components/chat/CitationPill'
 import { ChatMessageProviderBadge } from '@/components/chat/ChatMessageProviderBadge'
 import { ChatMessagePrivacyBadge } from '@/components/chat/ChatMessagePrivacyBadge'
 import { ChatMessageAgentStateBadge } from '@/components/chat/ChatMessageAgentStateBadge'
+import { EvidenceReview } from '@/components/evaluation/EvidenceReview'
 import { RunTimeline } from '@/components/deeper-notebook'
+import { useLatestMessageEvaluations } from '@/lib/hooks/use-evaluation'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -159,6 +161,24 @@ export function ChatPanel({
   // v0.8.65g — ref so "Edit" can focus the input after loading a message into it.
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { openModal } = useModalManager()
+  const evaluationMessageIds = useMemo(
+    () => contextType === 'notebook' && notebookId
+      ? messages
+        .filter((message) => message.type === 'ai')
+        .map((message) => message.id)
+        .filter((messageId) => !messageId.startsWith('temp-') && !messageId.startsWith('streaming-'))
+        .slice(-100)
+      : [],
+    [contextType, messages, notebookId],
+  )
+  const evaluationMessageIdSet = useMemo(
+    () => new Set(evaluationMessageIds),
+    [evaluationMessageIds],
+  )
+  const messageEvaluations = useLatestMessageEvaluations(
+    contextType === 'notebook' ? notebookId : undefined,
+    evaluationMessageIds,
+  )
 
   useEffect(() => {
     const receiveContext = (event: Event) => {
@@ -430,6 +450,17 @@ export function ChatPanel({
                             null unless DEEPER_NOTEBOOK_AGENT_FSM surfaced a non-complete
                             terminal state on the done event. */}
                         <ChatMessageAgentStateBadge messageId={message.id} />
+                        {contextType === 'notebook' && notebookId && evaluationMessageIdSet.has(message.id) && (
+                          <EvidenceReview
+                            notebookId={notebookId}
+                            messageId={message.id}
+                            evaluation={messageEvaluations.data
+                              ? (messageEvaluations.data[message.id] ?? null)
+                              : undefined}
+                            batchLoading={messageEvaluations.isLoading}
+                            batchError={messageEvaluations.isError}
+                          />
+                        )}
                       </div>
                     )}
                   </div>

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { markEvaluationPersistencePending } from '@/lib/hooks/use-evaluation'
 import { chatApi } from '@/lib/api/chat'
 import { QUERY_KEYS, pruneMessageScopedQueries } from '@/lib/api/query-client'
 import {
@@ -513,6 +514,15 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
             // badge). The result is identical UI but the cache key's
             // presence is meaningful for debugging.
             if (lastAiMsg) {
+              // The server evaluates notebook replies after returning the
+              // completed turn. Mark this canonical ID before rendering it so
+              // an empty first lookup receives a bounded persistence-grace
+              // retry instead of remaining stale until remount.
+              markEvaluationPersistencePending(
+                queryClient,
+                notebookId,
+                lastAiMsg.id,
+              )
               queryClient.setQueryData(
                 ['chat', 'selected-provider', lastAiMsg.id],
                 {

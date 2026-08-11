@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { CitationDrawer, citationEvidenceFromRecord, type CitationEvidence } from '@/components/deeper-notebook/CitationDrawer'
 import { CitationCoverageBadge } from '@/components/deeper-notebook/CitationCoverageBadge'
 import { ArtifactExportMenu } from '@/components/deeper-notebook/ArtifactExportMenu'
+import { EvidenceReview } from '@/components/evaluation/EvidenceReview'
 import {
   Dialog,
   DialogContent,
@@ -853,6 +854,15 @@ export function ArtifactRail({
                       )}
                     </div>
                   )}
+                  <div className="mb-4 rounded-md border bg-background px-2 py-2">
+                    <div className="text-xs font-medium text-muted-foreground">Evidence review</div>
+                    <div className="mt-2">
+                      <EvidenceReview
+                        notebookId={notebookId}
+                        artifactId={selectedArtifact.id}
+                      />
+                    </div>
+                  </div>
                   <ArtifactExportMenu artifact={selectedArtifact} markdown={selectedMarkdown} />
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-medium">Citations</div>

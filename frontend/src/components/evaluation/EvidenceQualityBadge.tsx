@@ -19,14 +19,20 @@ export function EvidenceQualityBadge({
 }) {
   const critical = (counts.contradicted ?? 0) + (counts.unsupported ?? 0)
   const uncertain = (counts.partial ?? 0) + (counts.uncited ?? 0)
-  const label = status === 'pending' || status === 'running'
-    ? 'Checking evidence'
-    : critical > 0
-      ? `${critical} evidence issue${critical === 1 ? '' : 's'}`
-      : uncertain > 0
-        ? `${uncertain} claim${uncertain === 1 ? '' : 's'} need review`
-        : 'Evidence supported'
-  const Icon = critical > 0 ? ShieldAlert : uncertain > 0 ? ShieldQuestion : ShieldCheck
+  const total = Object.values(counts).reduce((sum, count) => sum + (count ?? 0), 0)
+  const label =
+    status === 'pending' || status === 'running'
+      ? 'Checking evidence'
+      : status === 'failed'
+      ? 'Evidence review failed'
+      : total === 0
+        ? 'No claims reviewed'
+        : critical > 0
+          ? `${critical} evidence issue${critical === 1 ? '' : 's'}`
+          : uncertain > 0
+            ? `${uncertain} claim${uncertain === 1 ? '' : 's'} need review`
+            : 'Evidence supported'
+  const Icon = critical > 0 ? ShieldAlert : uncertain > 0 || status === 'failed' ? ShieldQuestion : ShieldCheck
   const tone = critical > 0
     ? 'border-destructive/70 text-destructive'
     : uncertain > 0 || status === 'failed'
