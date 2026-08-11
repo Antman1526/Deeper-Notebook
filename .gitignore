@@ -1,5 +1,7 @@
 .env
 prompts/patterns/user/
+# Local shell/REPL history can contain credentials or notebook data.
+history.txt
 /notebooks/
 data/
 .uploads/
