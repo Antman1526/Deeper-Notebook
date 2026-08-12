@@ -8,6 +8,7 @@ from api.schemas.study_plans import (
     ApproveSyllabusRequest,
     CreateStudyPlanRequest,
     PatchStudyPlanRequest,
+    ProposeSyllabusRequest,
     RemoveSourceLinkRequest,
     RemoveSourceLinkResponse,
     SaveSyllabusRequest,
@@ -30,6 +31,14 @@ from deeper_notebook.study.source_service import (
     StudySourceService,
     StudySourceUnavailableError,
     normalize_source_id,
+)
+from deeper_notebook.study.syllabus_service import (
+    StudySyllabusConflict,
+    StudySyllabusError,
+    StudySyllabusGenerationError,
+    StudySyllabusMalformedOutput,
+    StudySyllabusNotFound,
+    StudySyllabusService,
 )
 
 
@@ -83,6 +92,43 @@ def _source_error(exc: StudySourceNotFoundError | StudySourceUnavailableError) -
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Sources are unavailable",
+    )
+
+
+def _syllabus_error(exc: StudySyllabusError) -> HTTPException:
+    """Map typed syllabus failures to bounded, non-disclosing HTTP details."""
+    if isinstance(exc, StudySyllabusNotFound):
+        return _not_found("Study syllabus not found")
+    if isinstance(exc, StudySyllabusMalformedOutput):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": exc.reason, "message": "Generated syllabus is invalid"},
+        )
+    if isinstance(exc, StudySyllabusConflict):
+        message = {
+            "sources_changed": "Study sources changed; review the syllabus again",
+            "sources_not_ready": "Study sources are not ready",
+            "no_evidence": "Study syllabus requires source evidence",
+            "invalid_lifecycle": "Study plan cannot approve this syllabus",
+            "already_approved": "Study syllabus is already approved",
+            "revision_conflict": "Study plan changed",
+        }.get(exc.reason, "Study syllabus changed")
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.reason, "message": message},
+        )
+    if isinstance(exc, StudySyllabusGenerationError) or exc.code in {
+        "syllabus_unavailable",
+        "model_unavailable",
+        "source_authority_unavailable",
+    }:
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.reason, "message": "Syllabus generation is unavailable"},
+        )
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={"code": "syllabus_unavailable", "message": "Syllabus generation is unavailable"},
     )
 
 
@@ -217,6 +263,21 @@ async def get_study_syllabus(
     return StudySyllabusResponse.from_syllabus(syllabus)
 
 
+@router.post("/{plan_id}/syllabus:propose", response_model=StudySyllabusResponse)
+async def propose_study_syllabus(
+    plan_id: str,
+    payload: ProposeSyllabusRequest,
+) -> StudySyllabusResponse:
+    try:
+        syllabus = await StudySyllabusService(repository=_repository()).propose(
+            plan_id,
+            expected_revision=payload.expected_revision,
+        )
+    except StudySyllabusError as exc:
+        raise _syllabus_error(exc) from None
+    return StudySyllabusResponse.from_syllabus(syllabus)
+
+
 @router.put("/{plan_id}/syllabus", response_model=StudySyllabusResponse)
 async def save_study_syllabus(
     plan_id: str,
@@ -241,11 +302,11 @@ async def approve_study_syllabus(
     if current.state != "editing":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study plan cannot approve syllabus")
     try:
-        plan = await _repository().approve_syllabus(
+        plan = await StudySyllabusService(repository=_repository()).approve(
             plan_id,
             syllabus_version=payload.syllabus_version,
             expected_revision=payload.expected_revision,
         )
-    except StudyPlanRepositoryError as exc:
-        raise _repository_error(exc) from None
+    except StudySyllabusError as exc:
+        raise _syllabus_error(exc) from None
     return StudyPlanResponse.from_plan(plan)

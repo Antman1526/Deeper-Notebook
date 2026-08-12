@@ -117,6 +117,12 @@ class SaveSyllabusRequest(_StrictRequest):
         )
 
 
+class ProposeSyllabusRequest(_StrictRequest):
+    """Optimistic revision guard for source-grounded syllabus proposals."""
+
+    expected_revision: StrictInt = Field(ge=1)
+
+
 class ApproveSyllabusRequest(_StrictRequest):
     syllabus_version: StrictInt = Field(ge=1)
     expected_revision: StrictInt = Field(ge=1)

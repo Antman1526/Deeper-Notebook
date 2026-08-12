@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import study_plans
+from api.schemas.study_plans import ProposeSyllabusRequest
 from deeper_notebook.study import source_service
 from deeper_notebook.study.plan_repository import (
     StudyPlanConflictError,
@@ -24,6 +25,11 @@ from deeper_notebook.study.plans import (
     StudyPlanSourceLink,
     StudySyllabus,
     StudySyllabusUnit,
+)
+from deeper_notebook.study.syllabus_service import (
+    StudySyllabusConflict,
+    StudySyllabusMalformedOutput,
+    StudySyllabusTimeout,
 )
 
 
@@ -554,3 +560,60 @@ def test_readiness_with_legacy_wrong_table_link_returns_safe_bounded_items(
         },
     ]
     query.assert_awaited_once()
+
+
+def test_propose_syllabus_returns_typed_version_without_approval(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Service:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+
+        async def propose(self, plan_id: str, *, expected_revision: int) -> StudySyllabus:
+            assert plan_id == "study_plan:one"
+            assert expected_revision == 1
+            return _syllabus()
+
+    monkeypatch.setattr(study_plans, "StudySyllabusService", Service)
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/syllabus:propose",
+        json={"expected_revision": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["version"] == 1
+    assert response.json()["approved_at"] is None
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code"),
+    [
+        (StudySyllabusConflict("sources_changed"), 409),
+        (StudySyllabusMalformedOutput("malformed_output"), 422),
+        (StudySyllabusTimeout("generation_timeout"), 503),
+    ],
+)
+def test_syllabus_domain_errors_are_safe_and_typed(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    status_code: int,
+) -> None:
+    class Service:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+
+        async def propose(self, plan_id: str, *, expected_revision: int) -> StudySyllabus:
+            del plan_id, expected_revision
+            raise error
+
+    monkeypatch.setattr(study_plans, "StudySyllabusService", Service)
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/syllabus:propose",
+        json={"expected_revision": 1},
+    )
+
+    assert response.status_code == status_code
+    assert "sources_changed" not in response.text or status_code == 409
+    assert "raw" not in response.text
