@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from fastapi import HTTPException, status
@@ -157,6 +159,41 @@ class ArtifactGenerationRequest:
     artifact_id: str
     source_ids: list[str]
     requested_model_id: str | None = None
+    # Study Workbench supplies these additive hooks to fence a long-running
+    # generation owner.  Existing Studio callers leave them unset and retain
+    # the established save behavior.
+    before_persist: Callable[[StudioArtifact], Awaitable[None] | None] | None = None
+    persist_artifact: Callable[
+        [StudioArtifact], Awaitable[StudioArtifact | None] | StudioArtifact | None
+    ] | None = None
+
+
+class ArtifactGenerationOwnershipLost(RuntimeError):
+    """The caller no longer owns the artifact's durable generation lease."""
+
+
+async def _before_persist(
+    request: ArtifactGenerationRequest, artifact: StudioArtifact
+) -> None:
+    callback = request.before_persist
+    if callback is None:
+        return
+    result = callback(artifact)
+    if inspect.isawaitable(result):
+        await result
+
+
+async def _persist_artifact(
+    request: ArtifactGenerationRequest, artifact: StudioArtifact
+) -> StudioArtifact:
+    await _before_persist(request, artifact)
+    callback = request.persist_artifact
+    if callback is None:
+        await artifact.save()
+        return artifact
+    result = callback(artifact)
+    persisted = await result if inspect.isawaitable(result) else result
+    return persisted if isinstance(persisted, StudioArtifact) else artifact
 
 
 def _set_workflow_step_status(
@@ -259,8 +296,9 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
         )
 
     await _snapshot_artifact_revision(artifact)
+    await _before_persist(request, artifact)
     artifact.status = "running"
-    await artifact.save()
+    await _persist_artifact(request, artifact)
     if workflow_run is not None:
         workflow_run.status = "running"
         _set_workflow_step_status(
@@ -279,8 +317,10 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
             raise InvalidInputError("No extracted source text is available")
 
         if request.requested_model_id is not None:
+            await _before_persist(request, artifact)
             artifact.model_id = request.requested_model_id
         model_id, provider = await context.resolve_artifact_model_route(artifact)
+        await _before_persist(request, artifact)
         artifact.model_id = model_id
         artifact.provider = provider
         chain = await context.provision_langchain_model(
@@ -296,6 +336,7 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
             timeout_seconds=context.env_int("DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC", 180),
         )
         content = render_artifact_markdown(result.document)
+        await _before_persist(request, artifact)
         _store_generated_output(artifact, result, content, citations)
         if _strict_evidence_required(artifact):
             critical = _critical_verdicts(content, sources)
@@ -322,6 +363,7 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
                     )
                     result = repaired
                     content = render_artifact_markdown(repaired.document)
+                    await _before_persist(request, artifact)
                     _store_generated_output(artifact, repaired, content, citations)
                     critical = _critical_verdicts(content, sources)
                 except Exception as repair_exc:
@@ -331,8 +373,9 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
                 # Keep the generated document reviewable, but do not publish it
                 # while a material claim remains contradicted or unsupported.
                 if critical:
+                    await _before_persist(request, artifact)
                     artifact.status = "failed"
-                    await artifact.save()
+                    await _persist_artifact(request, artifact)
                     _schedule_artifact_evaluation(
                         artifact=artifact, content=content, sources=sources
                     )
@@ -344,6 +387,7 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
                             "critical_claim_count": len(critical),
                         },
                     )
+        await _before_persist(request, artifact)
         artifact.status = "completed"
         try:
             artifact.export_paths = await asyncio.to_thread(
@@ -352,7 +396,7 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
         except Exception as export_exc:
             logger.warning("Evidence Studio artifact export failed: {}", export_exc)
             artifact.export_paths = {}
-        await artifact.save()
+        await _persist_artifact(request, artifact)
         if workflow_run is not None:
             workflow_run.status = "completed"
             _set_workflow_step_status(
@@ -363,14 +407,19 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
             artifact=artifact, content=content, sources=sources
         )
         return artifact
+    except ArtifactGenerationOwnershipLost:
+        # The Study adapter owns the conditional persistence boundary.  A
+        # reclaimed lease must escape without a stale failure/status write.
+        raise
     except HTTPException as exc:
         if (
             exc.status_code == status.HTTP_409_CONFLICT
             and isinstance(exc.detail, dict)
             and exc.detail.get("code") == "sources_not_ready"
         ):
+            await _before_persist(request, artifact)
             artifact.status = "pending"
-            await artifact.save()
+            await _persist_artifact(request, artifact)
             if workflow_run is not None:
                 workflow_run.status = "queued"
                 _set_workflow_step_status(
@@ -378,14 +427,16 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
                 )
                 await workflow_run.save()
             raise
+        await _before_persist(request, artifact)
         artifact.status = "failed"
-        await artifact.save()
+        await _persist_artifact(request, artifact)
         if workflow_run is not None:
             workflow_run.status = "failed"
             _set_workflow_step_status(workflow_run, {"artifact_generation"}, "failed")
             await workflow_run.save()
         raise
     except StructuredArtifactGenerationError as exc:
+        await _before_persist(request, artifact)
         artifact.status = "failed"
         artifact.output_payload = {
             "schema_version": 1,
@@ -396,7 +447,7 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
             },
             "error": "Artifact output did not match the required structure",
         }
-        await artifact.save()
+        await _persist_artifact(request, artifact)
         if workflow_run is not None:
             workflow_run.status = "failed"
             _set_workflow_step_status(workflow_run, {"artifact_generation"}, "failed")
@@ -406,9 +457,10 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
         ) from exc
     except Exception as exc:
         logger.exception("Evidence Studio artifact generation failed")
+        await _before_persist(request, artifact)
         artifact.status = "failed"
         artifact.output_payload = {"error": persistence._brief(exc)}
-        await artifact.save()
+        await _persist_artifact(request, artifact)
         if workflow_run is not None:
             workflow_run.status = "failed"
             _set_workflow_step_status(workflow_run, {"artifact_generation"}, "failed")

@@ -44,10 +44,14 @@ def _plan(*, state: str = "approved", version: int = 3, manifest: str | None = N
     )
 
 
-def _unit(*, source_ids: tuple[str, ...] = ("source:one",)) -> StudySyllabusUnit:
+def _unit(
+    *,
+    source_ids: tuple[str, ...] = ("source:one",),
+    title: str = "Foundations",
+) -> StudySyllabusUnit:
     return StudySyllabusUnit(
         unit_id="foundations",
-        title="Foundations",
+        title=title,
         objectives=("Explain the core idea",),
         estimated_minutes=30,
         source_ids=source_ids,
@@ -173,6 +177,71 @@ class LeasedArtifact:
         return None
 
 
+class FencedRaceArtifact:
+    """Detached objects with an unconditional legacy save and owner fence."""
+
+    records: dict[str, "FencedRaceArtifact"] = {}
+
+    def __init__(self, **values: object) -> None:
+        self.__dict__.update(values)
+        self.id = str(values["id"])
+        self.status = values.get("status", "pending")
+        self.output_payload = values.get("output_payload", {})
+        self.citations = values.get("citations", [])
+        self.export_paths = values.get("export_paths", {})
+
+    def _copy(self) -> "FencedRaceArtifact":
+        values = dict(self.__dict__)
+        values["output_payload"] = dict(self.output_payload)
+        values["citations"] = list(self.citations)
+        values["export_paths"] = dict(self.export_paths)
+        return type(self)(**values)
+
+    @classmethod
+    async def get(cls, artifact_id: str) -> "FencedRaceArtifact | None":
+        current = cls.records.get(artifact_id)
+        return current._copy() if current is not None else None
+
+    async def save(self) -> None:
+        # This models the pre-repair Studio save: a stale detached worker can
+        # overwrite a reclaimed row after a newer owner completes.
+        self.__class__.records[self.id] = self._copy()
+
+    async def claim(
+        self,
+        *,
+        owner: str | None = None,
+        started_at: datetime | None = None,
+        lease_until: datetime | None = None,
+        now: datetime | None = None,
+    ) -> bool:
+        current = self.__class__.records.get(self.id)
+        if current is None:
+            return False
+        expiry = getattr(current, "generation_claim_lease_until", None)
+        expired = (
+            current.status == "running"
+            and isinstance(expiry, datetime)
+            and isinstance(now, datetime)
+            and expiry <= now
+        )
+        if current.status != "pending" and not expired:
+            return False
+        self.status = "running"
+        self.generation_claim_owner = owner
+        self.generation_claim_started_at = started_at
+        self.generation_claim_lease_until = lease_until
+        self.__class__.records[self.id] = self._copy()
+        return True
+
+    async def persist_if_owner(self, owner: str | None) -> bool:
+        current = self.__class__.records.get(self.id)
+        if owner is None or current is None or current.generation_claim_owner != owner:
+            return False
+        self.__class__.records[self.id] = self._copy()
+        return True
+
+
 class FakeRepository:
     def __init__(self, *, plan: StudyPlan, syllabus: StudySyllabus) -> None:
         self.plan = plan
@@ -210,6 +279,7 @@ class FakeSourceService:
 def reset_artifacts() -> None:
     FakeArtifact.created.clear()
     PersistentRaceArtifact.records.clear()
+    FencedRaceArtifact.records.clear()
 
 
 @pytest.mark.asyncio
@@ -403,6 +473,161 @@ async def test_source_drift_after_durable_claim_aborts_before_generation(
     generated.assert_not_awaited()
     assert repository.links == []
     assert FakeArtifact.created[0].status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_reclaimed_owner_cannot_overwrite_completed_output_or_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source()
+    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FencedRaceArtifact)
+    old_started = asyncio.Event()
+    release_old = asyncio.Event()
+    generation_calls = 0
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    current_time = [now]
+
+    async def generate(request: object) -> FencedRaceArtifact:
+        nonlocal generation_calls
+        generation_calls += 1
+        artifact_id = str(request.artifact_id)
+        artifact = FencedRaceArtifact.records[artifact_id]._copy()
+        if generation_calls == 1:
+            old_started.set()
+            await release_old.wait()
+            artifact.output_payload = {"markdown": "old owner"}
+            artifact.status = "completed"
+        else:
+            artifact.output_payload = {"markdown": "fresh owner"}
+            artifact.status = "completed"
+        before = getattr(request, "before_persist", None)
+        if before is not None:
+            await before(artifact)
+        persist = getattr(request, "persist_artifact", None)
+        if persist is None:
+            await artifact.save()
+        else:
+            persisted = persist(artifact)
+            if asyncio.iscoroutine(persisted):
+                await persisted
+        current = await FencedRaceArtifact.get(artifact_id)
+        assert current is not None
+        return current
+
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    old_service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+        clock=lambda: current_time[0],
+        owner_token_factory=lambda: "old-owner",
+        lock_store={},
+    )
+    fresh_service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+        clock=lambda: current_time[0],
+        owner_token_factory=lambda: "fresh-owner",
+        lock_store={},
+    )
+    old_task = asyncio.create_task(
+        old_service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+    )
+    await old_started.wait()
+    current_time[0] = now + timedelta(seconds=241)
+    fresh_result = await fresh_service.generate_unit(
+        "study_plan:one", "foundations", ["quiz"], expected_revision=3
+    )
+    release_old.set()
+    with pytest.raises(StudyArtifactConflict, match="generation_claim_lost"):
+        await old_task
+
+    # The stale owner must not have been able to publish after takeover; the
+    # fresh owner remains reusable through the idempotent plan link.
+    operation_id = _artifact_identity(
+        "study_plan:one", 1, source_manifest([source]), "foundations", "quiz"
+    )
+    stored = FencedRaceArtifact.records[operation_id]
+    assert generation_calls == 2
+    assert stored.output_payload == {"markdown": "fresh owner"}
+    assert len(repository.links) == 1
+
+    reused = await fresh_service.generate_unit(
+        "study_plan:one", "foundations", ["quiz"], expected_revision=3
+    )
+    assert reused == fresh_result
+    assert generation_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_plan_authority_drift_after_claim_aborts_before_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source()
+    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    generated = AsyncMock(side_effect=lambda request: _complete(request.artifact_id))
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generated)
+    service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+    )
+    original_claim = service._claim_provisional
+
+    async def claim_then_revise(*args: object, **kwargs: object) -> tuple[object, str]:
+        claimed = await original_claim(*args, **kwargs)
+        repository.plan = StudyPlan.model_validate(
+            repository.plan.model_dump(mode="python") | {"version": 4}
+        )
+        repository.syllabus = repository.syllabus.model_copy(
+            update={"units": (_unit(title="Changed foundations"),)}
+        )
+        return claimed
+
+    service._claim_provisional = claim_then_revise  # type: ignore[method-assign]
+
+    with pytest.raises(StudyArtifactConflict, match="study_authority_changed"):
+        await service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+    generated.assert_not_awaited()
+    assert repository.links == []
+
+
+@pytest.mark.asyncio
+async def test_plan_authority_drift_during_generation_cannot_link_stale_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source()
+    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    generation_started = asyncio.Event()
+    release_generation = asyncio.Event()
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
+
+    async def generate(request: object) -> FakeArtifact:
+        generation_started.set()
+        await release_generation.wait()
+        return _complete(request.artifact_id)
+
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+    )
+    task = asyncio.create_task(
+        service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+    )
+    await generation_started.wait()
+    repository.plan = StudyPlan.model_validate(
+        repository.plan.model_dump(mode="python") | {"state": "editing"}
+    )
+    release_generation.set()
+
+    with pytest.raises(StudyArtifactConflict, match="study_authority_changed"):
+        await task
+    assert repository.links == []
 
 
 @pytest.mark.asyncio

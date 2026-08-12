@@ -23,6 +23,7 @@ from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.domain.notebook import Source, StudioArtifact
 from deeper_notebook.exceptions import NotFoundError
 from deeper_notebook.studio.generation import (
+    ArtifactGenerationOwnershipLost,
     ArtifactGenerationRequest,
     generate_artifact,
 )
@@ -151,6 +152,14 @@ def _unit_source_ids(unit: StudySyllabusUnit) -> tuple[str, ...]:
     return tuple(unique)
 
 
+def _canonical_linked_source_ids(plan: StudyPlan) -> tuple[str, ...]:
+    """Return the exact bounded source-link set used by the Study authority."""
+    values = tuple(link.source_id for link in plan.source_links)
+    if len(set(values)) != len(values):
+        raise StudyArtifactConflict("source_links_not_canonical")
+    return tuple(sorted(values))
+
+
 def _artifact_notebook_id(plan_id: str) -> str:
     """Use a stable, plan-scoped notebook-shaped owner for Studio's schema.
 
@@ -253,6 +262,7 @@ class StudyArtifactService:
             raise StudyArtifactNotFound("unit_not_found")
 
         linked_ids = {link.source_id for link in plan.source_links}
+        linked_source_set = _canonical_linked_source_ids(plan)
         unit_sources = _unit_source_ids(unit)
         if not unit_sources:
             raise StudyArtifactConflict("unit_sources_missing")
@@ -281,6 +291,7 @@ class StudyArtifactService:
                         revision,
                         bounded_context,
                         operation_id,
+                        linked_source_set,
                     )
                 )
         return receipts
@@ -295,6 +306,7 @@ class StudyArtifactService:
         revision: int,
         bounded_context: str | None,
         operation_id: str,
+        linked_source_set: tuple[str, ...],
     ) -> dict[str, str]:
         existing = await self._existing_link(
             plan.plan_id,
@@ -307,6 +319,15 @@ class StudyArtifactService:
             if isinstance(artifact_id, str) and artifact_id:
                 if artifact_id != operation_id:
                     raise StudyArtifactConflict("artifact_identity_mismatch")
+                await self._revalidate_claim_authority(
+                    plan,
+                    syllabus,
+                    unit,
+                    unit_sources,
+                    revision,
+                    linked_source_set,
+                    require_sources=True,
+                )
                 return {
                     "artifact_id": artifact_id,
                     "artifact_type": artifact_type,
@@ -340,6 +361,15 @@ class StudyArtifactService:
         )
         if str(getattr(provisional, "status", "pending")) == "completed":
             completed_id = str(getattr(provisional, "id", "") or operation_id)
+            await self._revalidate_claim_authority(
+                plan,
+                syllabus,
+                unit,
+                unit_sources,
+                revision,
+                linked_source_set,
+                require_sources=True,
+            )
             await self._link_completed(
                 plan.plan_id,
                 completed_id,
@@ -347,6 +377,9 @@ class StudyArtifactService:
                 syllabus,
                 artifact_type,
                 revision,
+                expected_plan=plan,
+                expected_unit_sources=unit_sources,
+                expected_linked_source_set=linked_source_set,
             )
             return {
                 "artifact_id": completed_id,
@@ -377,6 +410,11 @@ class StudyArtifactService:
                 syllabus,
                 artifact_type,
                 revision,
+                artifact=provisional,
+                owner_token=claim_owner,
+                expected_plan=plan,
+                expected_unit_sources=unit_sources,
+                expected_linked_source_set=linked_source_set,
             )
             return {
                 "artifact_id": completed_id,
@@ -390,6 +428,16 @@ class StudyArtifactService:
         # between the first guard and this point releases the claim and never
         # enters generation.
         try:
+            plan, syllabus, unit, unit_sources = await self._revalidate_claim_authority(
+                plan,
+                syllabus,
+                unit,
+                unit_sources,
+                revision,
+                linked_source_set,
+                require_sources=True,
+            )
+            await self._assert_claim_owner(provisional, operation_id, claim_owner)
             sources = await self._ready_sources(plan, syllabus, unit_sources)
             combined_context, _ = artifact_context(sources)
             if not combined_context.strip():
@@ -406,6 +454,12 @@ class StudyArtifactService:
         request = ArtifactGenerationRequest(
             artifact_id=artifact_id,
             source_ids=list(unit_sources),
+            before_persist=lambda _artifact: self._assert_generation_owner(
+                provisional, operation_id, claim_owner
+            ),
+            persist_artifact=lambda artifact: self._persist_claimed_artifact(
+                artifact, operation_id, claim_owner
+            ),
         )
         try:
             generated = await generate_artifact(request)
@@ -415,8 +469,16 @@ class StudyArtifactService:
             if isinstance(exc, asyncio.CancelledError):
                 await self._mark(provisional, "cancelled", owner_token=claim_owner)
                 raise StudyArtifactCancelled("generation_cancelled") from exc
+            if isinstance(exc, ArtifactGenerationOwnershipLost):
+                raise StudyArtifactConflict("generation_claim_lost") from exc
             await self._mark(provisional, "failed", owner_token=claim_owner)
             raise StudyArtifactGenerationError("artifact_generation_failed") from exc
+        await self._assert_claim_owner(
+            provisional,
+            operation_id,
+            claim_owner,
+            require_status="completed",
+        )
         if str(getattr(generated, "status", "")) != "completed":
             await self._mark(
                 provisional,
@@ -428,21 +490,47 @@ class StudyArtifactService:
         if completed_id != operation_id:
             await self._mark(provisional, "failed", owner_token=claim_owner)
             raise StudyArtifactGenerationError("artifact_identity_mismatch")
-        await self._assert_claim_owner(
-            provisional,
-            operation_id,
-            claim_owner,
-            require_status="completed",
-        )
+        try:
+            plan, syllabus, unit, unit_sources = await self._revalidate_claim_authority(
+                plan,
+                syllabus,
+                unit,
+                unit_sources,
+                revision,
+                linked_source_set,
+                require_sources=True,
+            )
+            await self._assert_claim_owner(
+                provisional,
+                operation_id,
+                claim_owner,
+                require_status="completed",
+            )
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            await self._release_claim(provisional, operation_id, claim_owner)
+            raise
+        try:
+            await self._link_completed(
+                plan.plan_id,
+                completed_id,
+                unit,
+                syllabus,
+                artifact_type,
+                revision,
+                artifact=provisional,
+                owner_token=claim_owner,
+                expected_plan=plan,
+                expected_unit_sources=unit_sources,
+                expected_linked_source_set=linked_source_set,
+            )
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            await self._release_claim(provisional, operation_id, claim_owner)
+            raise
         await self._clear_claim(provisional, operation_id, claim_owner)
-        await self._link_completed(
-            plan.plan_id,
-            completed_id,
-            unit,
-            syllabus,
-            artifact_type,
-            revision,
-        )
         return {
             "artifact_id": completed_id,
             "artifact_type": artifact_type,
@@ -710,6 +798,127 @@ class StudyArtifactService:
             raise StudyArtifactNotFound("study_plan_not_found")
         return plan
 
+    async def _persist_claimed_artifact(
+        self,
+        artifact: object,
+        operation_id: str,
+        owner_token: str | None,
+    ) -> object:
+        """Persist Studio mutations only while this worker still owns the lease."""
+        if owner_token is None:
+            save = getattr(artifact, "save", None)
+            if callable(save):
+                result = save()
+                if inspect.isawaitable(result):
+                    await result
+            return artifact
+        await self._assert_generation_owner(artifact, operation_id, owner_token)
+        conditional = getattr(artifact, "persist_if_owner", None)
+        if callable(conditional):
+            result = conditional(owner_token)
+            persisted = await result if inspect.isawaitable(result) else result
+            if not persisted:
+                raise ArtifactGenerationOwnershipLost("generation claim lost")
+            return artifact
+        if StudioArtifact is _REAL_STUDIO_ARTIFACT:
+            prepare = getattr(artifact, "_prepare_save_data", None)
+            if not callable(prepare):
+                raise ArtifactGenerationOwnershipLost("generation claim lost")
+            data = dict(prepare())
+            data.pop("id", None)
+            try:
+                rows = await repo_query(
+                    "UPDATE $artifact MERGE $data "
+                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    {
+                        "artifact": ensure_record_id(operation_id),
+                        "data": data,
+                        "owner": owner_token,
+                    },
+                )
+            except Exception as exc:
+                raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+            if not isinstance(rows, list) or not rows:
+                raise ArtifactGenerationOwnershipLost("generation claim lost")
+            return StudioArtifact(**rows[0])
+        current_owner = getattr(artifact, "generation_claim_owner", None)
+        if current_owner != owner_token:
+            raise ArtifactGenerationOwnershipLost("generation claim lost")
+        save = getattr(artifact, "save", None)
+        if callable(save):
+            result = save()
+            if inspect.isawaitable(result):
+                await result
+        return artifact
+
+    async def _assert_generation_owner(
+        self,
+        artifact: object,
+        operation_id: str,
+        owner_token: str | None,
+    ) -> object:
+        try:
+            return await self._assert_claim_owner(artifact, operation_id, owner_token)
+        except StudyArtifactConflict as exc:
+            raise ArtifactGenerationOwnershipLost("generation claim lost") from exc
+
+    async def _owned_artifact_for_update(
+        self,
+        artifact: object,
+        operation_id: str,
+        owner_token: str,
+    ) -> object:
+        current = artifact
+        if callable(getattr(StudioArtifact, "get", None)):
+            loaded = await self._existing_artifact(operation_id)
+            if loaded is None:
+                raise StudyArtifactConflict("generation_claim_lost")
+            current = loaded
+        if getattr(current, "generation_claim_owner", None) != owner_token:
+            raise StudyArtifactConflict("generation_claim_lost")
+        return current
+
+    async def _save_owned_state(
+        self,
+        artifact: object,
+        operation_id: str,
+        owner_token: str,
+    ) -> object:
+        conditional = getattr(artifact, "persist_if_owner", None)
+        if callable(conditional):
+            result = conditional(owner_token)
+            persisted = await result if inspect.isawaitable(result) else result
+            if not persisted:
+                raise StudyArtifactConflict("generation_claim_lost")
+            return artifact
+        if StudioArtifact is _REAL_STUDIO_ARTIFACT:
+            prepare = getattr(artifact, "_prepare_save_data", None)
+            if not callable(prepare):
+                raise StudyArtifactConflict("generation_claim_lost")
+            data = dict(prepare())
+            data.pop("id", None)
+            try:
+                rows = await repo_query(
+                    "UPDATE $artifact MERGE $data "
+                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    {
+                        "artifact": ensure_record_id(operation_id),
+                        "data": data,
+                        "owner": owner_token,
+                    },
+                )
+            except Exception as exc:
+                raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+            if not isinstance(rows, list) or not rows:
+                raise StudyArtifactConflict("generation_claim_lost")
+            return StudioArtifact(**rows[0])
+        save = getattr(artifact, "save", None)
+        if callable(save):
+            result = save()
+            if inspect.isawaitable(result):
+                await result
+        return artifact
+
     async def _load_syllabus(self, plan_id: str, version: int) -> StudySyllabus:
         try:
             syllabus = await self.repository.get_syllabus(plan_id, version=version)
@@ -718,6 +927,54 @@ class StudyArtifactService:
         if syllabus is None:
             raise StudyArtifactNotFound("syllabus_not_found")
         return syllabus
+
+    async def _revalidate_claim_authority(
+        self,
+        plan: StudyPlan,
+        syllabus: StudySyllabus,
+        unit: StudySyllabusUnit,
+        unit_sources: tuple[str, ...],
+        revision: int,
+        linked_source_set: tuple[str, ...],
+        *,
+        require_sources: bool,
+    ) -> tuple[StudyPlan, StudySyllabus, StudySyllabusUnit, tuple[str, ...]]:
+        """Re-read the exact Study authority at every publication boundary."""
+        current_plan = await self._load_plan(plan.plan_id)
+        if (
+            current_plan.version != revision
+            or current_plan.state != "approved"
+            or current_plan.approved_syllabus_version != syllabus.version
+            or current_plan.source_manifest_sha256 != syllabus.source_manifest_sha256
+            or _canonical_linked_source_ids(current_plan) != linked_source_set
+        ):
+            raise StudyArtifactConflict("study_authority_changed")
+        current_syllabus = await self._load_syllabus(
+            current_plan.plan_id, current_plan.approved_syllabus_version or 0
+        )
+        if (
+            current_syllabus.version != syllabus.version
+            or current_syllabus.approved_at is None
+            or current_syllabus.approved_at != syllabus.approved_at
+            or current_syllabus.source_manifest_sha256 != syllabus.source_manifest_sha256
+        ):
+            raise StudyArtifactConflict("study_authority_changed")
+        current_unit = next(
+            (candidate for candidate in current_syllabus.units if candidate.unit_id == unit.unit_id),
+            None,
+        )
+        if current_unit is None:
+            raise StudyArtifactConflict("study_authority_changed")
+        current_unit_sources = _unit_source_ids(current_unit)
+        if (
+            current_unit != unit
+            or current_unit_sources != unit_sources
+            or not set(current_unit_sources).issubset(set(linked_source_set))
+        ):
+            raise StudyArtifactConflict("study_authority_changed")
+        if require_sources:
+            await self._ready_sources(current_plan, current_syllabus, current_unit_sources)
+        return current_plan, current_syllabus, current_unit, current_unit_sources
 
     async def _ready_sources(
         self,
@@ -839,22 +1096,22 @@ class StudyArtifactService:
             except Exception:
                 return
             return
-        if getattr(artifact, "generation_claim_owner", None) != owner_token:
+        try:
+            current = await self._owned_artifact_for_update(
+                artifact, operation_id, owner_token
+            )
+        except StudyArtifactConflict:
             return
-        setattr(artifact, "status", "pending")
-        self._set_claim_metadata(artifact, owner=None, started_at=None, lease_until=None)
+        setattr(current, "status", "pending")
+        self._set_claim_metadata(current, owner=None, started_at=None, lease_until=None)
         for field_name, empty_value in (
             ("output_payload", {}),
             ("citations", []),
             ("export_paths", {}),
         ):
-            if hasattr(artifact, field_name):
-                setattr(artifact, field_name, empty_value)
-        save = getattr(artifact, "save", None)
-        if callable(save):
-            result = save()
-            if inspect.isawaitable(result):
-                await result
+            if hasattr(current, field_name):
+                setattr(current, field_name, empty_value)
+        await self._save_owned_state(current, operation_id, owner_token)
 
     async def _clear_claim(
         self,
@@ -882,14 +1139,9 @@ class StudyArtifactService:
             if not isinstance(rows, list) or not rows:
                 raise StudyArtifactConflict("generation_claim_lost")
             return
-        if getattr(artifact, "generation_claim_owner", None) != owner_token:
-            raise StudyArtifactConflict("generation_claim_lost")
-        self._set_claim_metadata(artifact, owner=None, started_at=None, lease_until=None)
-        save = getattr(artifact, "save", None)
-        if callable(save):
-            result = save()
-            if inspect.isawaitable(result):
-                await result
+        current = await self._owned_artifact_for_update(artifact, operation_id, owner_token)
+        self._set_claim_metadata(current, owner=None, started_at=None, lease_until=None)
+        await self._save_owned_state(current, operation_id, owner_token)
 
     async def _mark(
         self,
@@ -915,8 +1167,13 @@ class StudyArtifactService:
                     },
                 )
                 return
-            if owner_token is not None and getattr(artifact, "generation_claim_owner", None) != owner_token:
-                return
+            if owner_token is not None:
+                try:
+                    artifact = await self._owned_artifact_for_update(
+                        artifact, str(getattr(artifact, "id", "")), owner_token
+                    )
+                except StudyArtifactConflict:
+                    return
             setattr(artifact, "status", bounded_status)
             self._set_claim_metadata(artifact, owner=None, started_at=None, lease_until=None)
             for field_name, empty_value in (
@@ -926,11 +1183,16 @@ class StudyArtifactService:
             ):
                 if hasattr(artifact, field_name):
                     setattr(artifact, field_name, empty_value)
-            save = getattr(artifact, "save", None)
-            if callable(save):
-                result = save()
-                if inspect.isawaitable(result):
-                    await result
+            if owner_token is not None:
+                await self._save_owned_state(
+                    artifact, str(getattr(artifact, "id", "")), owner_token
+                )
+            else:
+                save = getattr(artifact, "save", None)
+                if callable(save):
+                    result = save()
+                    if inspect.isawaitable(result):
+                        await result
         except Exception:
             # A failed/cancelled provisional record must never become a plan
             # link; inability to persist its terminal status is non-authorizing.
@@ -944,7 +1206,33 @@ class StudyArtifactService:
         syllabus: StudySyllabus,
         artifact_type: str,
         revision: int,
+        *,
+        artifact: object | None = None,
+        owner_token: str | None = None,
+        expected_plan: StudyPlan | None = None,
+        expected_unit_sources: tuple[str, ...] | None = None,
+        expected_linked_source_set: tuple[str, ...] | None = None,
     ) -> object:
+        if (
+            expected_plan is not None
+            and expected_unit_sources is not None
+            and expected_linked_source_set is not None
+        ):
+            await self._revalidate_claim_authority(
+                expected_plan,
+                syllabus,
+                unit,
+                expected_unit_sources,
+                revision,
+                expected_linked_source_set,
+                require_sources=True,
+            )
+        if owner_token is not None and artifact is not None:
+            await self._assert_claim_owner(
+                artifact,
+                artifact_id,
+                owner_token,
+            )
         metadata = {
             "unit_id": unit.unit_id,
             "syllabus_version": syllabus.version,

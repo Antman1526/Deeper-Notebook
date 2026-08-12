@@ -284,19 +284,33 @@ async def test_real_studio_claim_serializes_independent_services(
             )
 
     started = asyncio.Event()
-    release = asyncio.Event()
+    release_old = asyncio.Event()
     generation_calls = 0
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    current_time = [now]
 
     async def generate(request):
         nonlocal generation_calls
         generation_calls += 1
-        started.set()
-        await release.wait()
         artifact = await StudioArtifact.get(request.artifact_id)
+        if generation_calls == 1:
+            started.set()
+            await release_old.wait()
+            artifact.output_payload = {"markdown": "old owner"}
+        else:
+            artifact.output_payload = {"markdown": "fresh owner"}
         artifact.status = "completed"
-        artifact.output_payload = {"markdown": "done"}
-        await artifact.save()
-        return artifact
+        before = getattr(request, "before_persist", None)
+        if before is not None:
+            await before(artifact)
+        persist = getattr(request, "persist_artifact", None)
+        if persist is None:
+            await artifact.save()
+        else:
+            result = persist(artifact)
+            if hasattr(result, "__await__"):
+                await result
+        return await StudioArtifact.get(request.artifact_id)
 
     monkeypatch.setattr(
         "deeper_notebook.study.artifact_service.generate_artifact", generate
@@ -305,23 +319,28 @@ async def test_real_studio_claim_serializes_independent_services(
         repository=repository,
         source_service=ReadySourceService(),
         source_loader=lambda _source_id: source,
+        clock=lambda: current_time[0],
+        owner_token_factory=lambda: "old-owner",
         lock_store={},
     )
     second_service = StudyArtifactService(
         repository=repository,
         source_service=ReadySourceService(),
         source_loader=lambda _source_id: source,
+        clock=lambda: current_time[0],
+        owner_token_factory=lambda: "fresh-owner",
         lock_store={},
     )
     first = asyncio.create_task(
         first_service.generate_unit(plan_id, "foundations", ["quiz"], approved.version)
     )
     await started.wait()
+    current_time[0] = now + timedelta(seconds=241)
     second = asyncio.create_task(
         second_service.generate_unit(plan_id, "foundations", ["quiz"], approved.version)
     )
     await asyncio.sleep(0)
-    release.set()
+    release_old.set()
     results = await asyncio.gather(first, second, return_exceptions=True)
 
     operation_id = _artifact_identity(plan_id, 2, manifest, "foundations", "quiz")
@@ -333,12 +352,28 @@ async def test_real_studio_claim_serializes_independent_services(
         "SELECT artifact_id FROM study_plan_artifact WHERE plan_id = $plan_id;",
         {"plan_id": plan_id},
     )
-    assert generation_calls == 1
+    assert generation_calls == 2
     assert len(artifact_rows) == 1
     assert artifact_rows[0]["status"] == "completed"
     assert link_rows == [{"artifact_id": operation_id}]
     assert sum(isinstance(result, StudyArtifactConflict) for result in results) == 1
     assert sum(isinstance(result, list) for result in results) == 1
+    payload_rows = await repo_query(
+        "SELECT status, output_payload, generation_claim_owner FROM $artifact;",
+        {"artifact": ensure_record_id(operation_id)},
+    )
+    assert payload_rows == [
+        {
+            "status": "completed",
+            "output_payload": {"markdown": "fresh owner"},
+            "generation_claim_owner": None,
+        }
+    ]
+    reused = await second_service.generate_unit(
+        plan_id, "foundations", ["quiz"], approved.version
+    )
+    assert reused == next(result for result in results if isinstance(result, list))
+    assert generation_calls == 2
 
 
 async def test_real_studio_stale_claim_takeover_is_atomic_and_owner_fenced(clean_namespace):

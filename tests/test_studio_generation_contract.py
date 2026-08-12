@@ -9,6 +9,7 @@ import pytest
 
 from deeper_notebook.studio import artifact_generation
 from deeper_notebook.studio.generation import ArtifactGenerationRequest
+from deeper_notebook.studio.generation import service as generation_service
 from deeper_notebook.studio.generation.context import (
     artifact_context,
     artifact_not_ready_sources,
@@ -100,3 +101,23 @@ async def test_legacy_adapter_delegates_to_the_request_service(monkeypatch) -> N
             source_ids=[],
         ),
     )
+
+
+@pytest.mark.asyncio
+async def test_additive_persistence_callback_accepts_async_result() -> None:
+    artifact = generation_service.StudioArtifact(
+        notebook_id="notebook:study_callback",
+        artifact_type="quiz",
+        title="Callback quiz",
+    )
+    persist = AsyncMock(return_value=artifact)
+    request = ArtifactGenerationRequest(
+        artifact_id="studio_artifact:callback",
+        source_ids=[],
+        persist_artifact=persist,
+    )
+
+    result = await generation_service._persist_artifact(request, artifact)
+
+    assert result is artifact
+    persist.assert_awaited_once_with(artifact)
