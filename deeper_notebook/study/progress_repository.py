@@ -26,6 +26,7 @@ from .progress import (
     MAX_PROJECTION_RECEIPTS,
     StudyMasteryProjection,
     StudyProgressReceipt,
+    decision_terminal_request_id,
     project_mastery,
 )
 
@@ -144,6 +145,22 @@ class StudyProgressRepository:
         except Exception as exc:
             raise StudyProgressRepositoryError("Study progress is unavailable") from exc
 
+    async def list_progress_by_requests(
+        self,
+        plan_id: str,
+        request_ids: list[str] | tuple[str, ...],
+    ) -> tuple[StudyProgressReceipt, ...]:
+        if isinstance(request_ids, (str, bytes)) or not isinstance(
+            request_ids, (list, tuple)
+        ) or len(request_ids) > 100:
+            raise StudyProgressRepositoryError("invalid progress request batch")
+        try:
+            return await self.assistant.list_progress_by_requests(plan_id, request_ids)
+        except StudyAssistantRepositoryError:
+            raise
+        except Exception as exc:
+            raise StudyProgressRepositoryError("Study progress is unavailable") from exc
+
     async def list_reviews(
         self,
         plan_id: str,
@@ -215,7 +232,19 @@ class StudyProgressRepository:
             )
         try:
             receipts, reviews = await self._load_inputs(plan_id, limit=limit)
-            return project_mastery(receipts, reviews, now=now)
+            baseline = project_mastery(receipts, reviews, now=now)
+            terminal_ids = tuple(
+                decision_terminal_request_id(plan_id, proposal.proposal_id)
+                for proposal in baseline.proposals
+            )
+            if not terminal_ids:
+                return baseline
+            terminal_receipts = await self.list_progress_by_requests(
+                plan_id, terminal_ids
+            )
+            return project_mastery(
+                (*terminal_receipts, *receipts), reviews, now=now
+            )
         except StudyProgressRepositoryError:
             raise
         except StudyAssistantRepositoryError as exc:

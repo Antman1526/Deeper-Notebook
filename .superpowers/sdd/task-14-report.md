@@ -56,3 +56,37 @@ accessible title-bearing dismissal, and stable retry request IDs.
 - Full repository-wide gates and staged gitleaks are run at closeout after
   staging the exact repair scope; supplied `.codex/agent-context` files remain
   untracked and are not part of the commit.
+
+## Decision serialization repair — 2026-08-12
+
+- RED before production: the progress and repository suites reported 7
+  expected failures for missing deterministic claim/terminal IDs, contention
+  and replay, corrupt receipt conflicts, terminal rehydration, and the missing
+  bounded batch lookup.
+- Added deterministic SHA-256 claim and terminal request IDs, strict claim and
+  terminal codecs, one shared per-proposal claim for Accept/Dismiss, and
+  deterministic terminal receipts. Retries validate the complete claim,
+  intent, terminal, client request, proposal, and plan-authority tuple before
+  resuming; no second weekly mutation is permitted.
+- Added the fixed-projection, parameterized
+  `StudyAssistantRepository.list_progress_by_requests` lookup capped at 100
+  IDs. Projection computes the bounded newest-page baseline, then prepends
+  exact terminal receipts so old decisions cannot age out. Task 10 migration43
+  `study_progress` remains the sole persistence authority.
+- Narrowly repaired `StudyPlanRepository.update`: SurrealDB does not accept
+  `MERGE ... SET`; the validated patch now carries next revision and aware
+  `updated_at` in one MERGE object while retaining the optimistic guard.
+- GREEN: scoped Study backend/API/FSRS suite = 273 passed; focused claim suite
+  = 34 passed; plan repository plus focused suite = 62 passed. Frontend
+  targeted API/types/workspace/panel suite = 165 passed; ESLint has 0 errors
+  and 2 pre-existing warnings; TypeScript and flag-on Next production build
+  pass.
+- Real Surreal combined study integration = 19 passed, including native review
+  projection, append race, independent deterministic claim contention, bounded
+  exact batch lookup, and real Accept preference mutation. Scoped Ruff,
+  compileall, diff-check, and the invalid `MERGE $patch SET` search pass.
+- Full non-integration backend run = 4,275 passed, 1 skipped, with two
+  pre-existing product-identity failures caused by stale `api/main.py`
+  compatibility-selector inventory (three extra `/api/onp`/`/onp/` selectors);
+  no Task14 file touches that module. Generated caches were removed and the
+  supplied task contexts remain untracked.

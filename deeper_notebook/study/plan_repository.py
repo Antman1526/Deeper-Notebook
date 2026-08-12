@@ -686,9 +686,13 @@ class StudyPlanRepository:
                 patch["preferences"] = patch["preferences"].model_dump(mode="python")
             if isinstance(patch.get("target_date"), date):
                 patch["target_date"] = patch["target_date"].isoformat()
+            # SurrealDB's MERGE clause accepts one complete object only; include
+            # the guarded revision/timestamp in that object rather than chaining
+            # a SET clause after MERGE (which is not valid SurrealQL).
+            patch["revision"] = expected_revision + 1
+            patch["updated_at"] = datetime.now(UTC)
             rows = await repo_query(
-                "UPDATE $plan MERGE $patch SET revision = revision + 1, "
-                "updated_at = time::now() WHERE revision = $expected_revision "
+                "UPDATE $plan MERGE $patch WHERE revision = $expected_revision "
                 "RETURN AFTER;",
                 {
                     "plan": _record_id(plan_id, "study_plan"),

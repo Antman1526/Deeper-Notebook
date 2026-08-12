@@ -14,6 +14,11 @@ from deeper_notebook.study.assistants import StudyProgressReceipt
 from deeper_notebook.study.contracts import StudyCard, StudyRating
 from deeper_notebook.study.plan_repository import StudyPlanRepository
 from deeper_notebook.study.plans import StudyPlan, StudyPlanPreferences
+from deeper_notebook.study.progress import (
+    decision_claim_request_id,
+    decision_terminal_request_id,
+    make_progress_receipt,
+)
 from deeper_notebook.study.progress_repository import StudyProgressRepository
 from deeper_notebook.study.repository import StudyRepository
 
@@ -110,3 +115,102 @@ async def test_progress_append_race_re_reads_unique_winner(clean_namespace):
     persisted = await assistant.list_progress(plan_id)
     assert len(persisted) == 1
     assert persisted[0].model_copy(update={"receipt_id": None}) == receipt
+
+
+async def test_real_surreal_decision_claim_serializes_independent_clients(clean_namespace):
+    """A shared deterministic claim permits at most one native mutation."""
+
+    plan_id = "study_plan:progress-decision-concurrency"
+    await StudyPlanRepository().create(
+        StudyPlan(
+            plan_id=plan_id,
+            goal="Verify serialized adaptation decisions",
+            starting_level="beginner",
+            preferences=StudyPlanPreferences(weekly_minutes=60, session_minutes=30),
+        )
+    )
+    proposal_id = "study_adaptation:extra"
+    claim_id = decision_claim_request_id(plan_id, proposal_id)
+    terminal_id = decision_terminal_request_id(plan_id, proposal_id)
+    claim_details = tuple(
+        {
+            "client_request_id": f"real-client-{index}",
+            "decision": "dismissed",
+            "phase": "claim",
+            "proposal_id": proposal_id,
+        }
+        for index in range(2)
+    )
+
+    async def contend(index: int):
+        assistant = StudyAssistantRepository()
+        claim = make_progress_receipt(
+            plan_id=plan_id,
+            request_id=claim_id,
+            event="decision",
+            created_at=NOW,
+            details=claim_details[index],
+        )
+        try:
+            await assistant.append_progress(claim)
+        except Exception as exc:  # one typed loser is expected
+            return index, exc
+        terminal = make_progress_receipt(
+            plan_id=plan_id,
+            request_id=terminal_id,
+            event="decision",
+            created_at=NOW,
+            details={
+                "claim_request_id": claim_id,
+                "client_request_id": claim_details[index]["client_request_id"],
+                "decision": "dismissed",
+                "phase": "terminal",
+                "proposal_id": proposal_id,
+            },
+        )
+        await assistant.append_progress(terminal)
+        return index, None
+
+    results = await asyncio.gather(contend(0), contend(1))
+    assert sum(error is None for _index, error in results) == 1
+
+    assistant = StudyAssistantRepository()
+    persisted = await assistant.list_progress(plan_id, limit=50)
+    assert [item.request_id for item in persisted].count(claim_id) == 1
+    assert [item.request_id for item in persisted].count(terminal_id) == 1
+
+    plan = await StudyPlanRepository().get(plan_id)
+    assert plan is not None
+    assert plan.preferences is not None
+    # A dismiss-only contention must never mutate the weekly budget; this is
+    # also the <=1-mutation bound for a shared proposal claim.
+    assert plan.preferences.weekly_minutes == 60
+
+
+async def test_real_surreal_accept_mutation_updates_plan_preferences(clean_namespace):
+    """The existing plan mutation used by Accept is executable on SurrealDB."""
+
+    plan_id = "study_plan:progress-accept-mutation"
+    repository = StudyPlanRepository()
+    await repository.create(
+        StudyPlan(
+            plan_id=plan_id,
+            goal="Verify accepted practice mutation",
+            starting_level="beginner",
+            preferences=StudyPlanPreferences(weekly_minutes=60, session_minutes=30),
+        )
+    )
+
+    updated = await repository.update(
+        plan_id,
+        {
+            "preferences": StudyPlanPreferences(
+                weekly_minutes=90, session_minutes=30
+            )
+        },
+        expected_revision=1,
+    )
+
+    assert updated.version == 2
+    assert updated.preferences is not None
+    assert updated.preferences.weekly_minutes == 90

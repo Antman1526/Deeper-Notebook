@@ -382,8 +382,12 @@ async def test_update_requires_exact_revision_and_returns_safe_conflict(monkeypa
 
     assert len(calls) == 2
     assert calls[1][0].startswith("UPDATE $plan")
+    assert "MERGE $patch WHERE revision = $expected_revision" in calls[1][0]
+    assert " SET " not in calls[1][0]
     assert "revision = $expected_revision" in calls[1][0]
     assert calls[1][1]["expected_revision"] == 2
+    assert calls[1][1]["patch"]["revision"] == 3
+    assert calls[1][1]["patch"]["updated_at"].tzinfo is not None
 
 
 @pytest.mark.asyncio

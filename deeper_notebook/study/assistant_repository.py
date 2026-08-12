@@ -39,6 +39,7 @@ _MAX_PAGE_SIZE = 50
 _MAX_HANDOFF_PAGE = 50
 _MAX_MEMORY_PAGE = 50
 _MAX_PROGRESS_PAGE = 50
+_MAX_PROGRESS_BATCH = 100
 _MAX_PAGE_OFFSET = 100_000
 _ASSISTANT_PLAN_STATES = frozenset({"approved", "generating", "active", "completed"})
 
@@ -1322,6 +1323,59 @@ class StudyAssistantRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to load study progress request")
+            raise StudyAssistantUnavailableError("Study progress is unavailable") from exc
+
+    async def list_progress_by_requests(
+        self,
+        plan_id: str,
+        request_ids: list[str] | tuple[str, ...],
+    ) -> tuple[StudyProgressReceipt, ...]:
+        """Read an exact, bounded set of progress identities in one query."""
+
+        if isinstance(request_ids, (str, bytes)) or not isinstance(
+            request_ids, (list, tuple)
+        ):
+            raise StudyAssistantRepositoryError("invalid progress request IDs")
+        if len(request_ids) > _MAX_PROGRESS_BATCH:
+            raise StudyAssistantRepositoryError("progress request batch is too large")
+        unique_ids: list[str] = []
+        seen: set[str] = set()
+        for request_id in request_ids:
+            if (
+                not isinstance(request_id, str)
+                or not request_id.strip()
+                or len(request_id) > 256
+                or any(ord(char) < 32 or ord(char) == 127 for char in request_id)
+            ):
+                raise StudyAssistantRepositoryError("invalid progress request ID")
+            if request_id not in seen:
+                seen.add(request_id)
+                unique_ids.append(request_id)
+        if len(unique_ids) > _MAX_PROGRESS_BATCH:
+            raise StudyAssistantRepositoryError("progress request batch is too large")
+        if not unique_ids:
+            return ()
+        plan = _table_record(plan_id, "study_plan")
+        plan_value = _record_value(plan_id, plan)
+        try:
+            rows = await repo_query(
+                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "
+                "WHERE plan_id = $plan_id AND request_id IN $request_ids "
+                "ORDER BY created_at DESC LIMIT $limit;",
+                {
+                    "plan_id": plan_value,
+                    "request_ids": unique_ids,
+                    "limit": _MAX_PROGRESS_BATCH,
+                },
+            )
+            return tuple(
+                _progress_from(row)
+                for row in _flatten_bounded(rows, limit=_MAX_PROGRESS_BATCH)
+            )
+        except StudyAssistantRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to batch-load study progress")
             raise StudyAssistantUnavailableError("Study progress is unavailable") from exc
 
 

@@ -51,6 +51,8 @@ from deeper_notebook.study.plan_repository import (
 from deeper_notebook.study.plans import StudyPlan, StudyPlanPreferences
 from deeper_notebook.study.progress import (
     StudyMasteryProjection,
+    decision_claim_request_id,
+    decision_terminal_request_id,
     make_progress_receipt,
 )
 from deeper_notebook.study.progress_repository import (
@@ -378,6 +380,65 @@ def _completion_payload(
     }
 
 
+def _claim_payload(
+    *,
+    client_request_id: str,
+    decision: str,
+    proposal_id: str,
+    base_revision: int | None = None,
+    base_plan_sha256: str | None = None,
+    target_plan_sha256: str | None = None,
+    target_weekly_minutes: int | None = None,
+) -> dict[str, object]:
+    if decision == "dismissed":
+        return {
+            "client_request_id": client_request_id,
+            "decision": decision,
+            "phase": "claim",
+            "proposal_id": proposal_id,
+        }
+    return {
+        "base_plan_sha256": base_plan_sha256,
+        "base_revision": base_revision,
+        "client_request_id": client_request_id,
+        "decision": "accepted",
+        "phase": "claim",
+        "proposal_id": proposal_id,
+        "target_plan_sha256": target_plan_sha256,
+        "target_weekly_minutes": target_weekly_minutes,
+    }
+
+
+def _terminal_payload(
+    *,
+    claim_request_id: str,
+    client_request_id: str,
+    decision: str,
+    proposal_id: str,
+    base_revision: int | None = None,
+    base_plan_sha256: str | None = None,
+    target_plan_sha256: str | None = None,
+    target_weekly_minutes: int | None = None,
+) -> dict[str, object]:
+    if decision == "dismissed":
+        return {
+            "claim_request_id": claim_request_id,
+            "client_request_id": client_request_id,
+            "decision": decision,
+            "phase": "terminal",
+            "proposal_id": proposal_id,
+        }
+    return {
+        "base_revision": base_revision,
+        "claim_request_id": claim_request_id,
+        "client_request_id": client_request_id,
+        "decision": "accepted",
+        "phase": "terminal",
+        "proposal_id": proposal_id,
+        "target_plan_sha256": target_plan_sha256,
+    }
+
+
 def _progress_details(receipt: object) -> dict[str, object] | None:
     from deeper_notebook.study.progress import decode_progress_event_details
 
@@ -446,6 +507,113 @@ def _strict_dismiss_details(receipt: object, *, proposal_id: str) -> bool:
     )
 
 
+def _strict_claim_details(
+    receipt: object,
+    *,
+    proposal_id: str,
+    client_request_id: str,
+    decision: str,
+) -> dict[str, object] | None:
+    details = _progress_details(receipt)
+    if details is None or details.get("phase") != "claim":
+        return None
+    expected = (
+        {"client_request_id", "decision", "phase", "proposal_id"}
+        if decision == "dismissed"
+        else {
+            "base_plan_sha256",
+            "base_revision",
+            "client_request_id",
+            "decision",
+            "phase",
+            "proposal_id",
+            "target_plan_sha256",
+            "target_weekly_minutes",
+        }
+    )
+    if decision not in {"accepted", "dismissed"} or set(details) != expected:
+        return None
+    if (
+        details.get("decision") != decision
+        or details.get("proposal_id") != proposal_id
+        or details.get("client_request_id") != client_request_id
+    ):
+        return None
+    if decision == "accepted":
+        base_revision = details.get("base_revision")
+        target_weekly = details.get("target_weekly_minutes")
+        if (
+            isinstance(base_revision, bool)
+            or not isinstance(base_revision, int)
+            or not 1 <= base_revision <= 100_000
+            or isinstance(target_weekly, bool)
+            or not isinstance(target_weekly, int)
+            or not 5 <= target_weekly <= 10_080
+        ):
+            return None
+        for key in ("base_plan_sha256", "target_plan_sha256"):
+            value = details.get(key)
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(char not in "0123456789abcdef" for char in value)
+            ):
+                return None
+    return details
+
+
+def _strict_terminal_details(
+    receipt: object,
+    *,
+    proposal_id: str,
+    client_request_id: str,
+    decision: str,
+    claim_request_id: str,
+) -> dict[str, object] | None:
+    details = _progress_details(receipt)
+    if details is None or details.get("phase") != "terminal":
+        return None
+    expected = (
+        {"claim_request_id", "client_request_id", "decision", "phase", "proposal_id"}
+        if decision == "dismissed"
+        else {
+            "base_revision",
+            "claim_request_id",
+            "client_request_id",
+            "decision",
+            "phase",
+            "proposal_id",
+            "target_plan_sha256",
+        }
+    )
+    if decision not in {"accepted", "dismissed"} or set(details) != expected:
+        return None
+    if (
+        details.get("decision") != decision
+        or details.get("proposal_id") != proposal_id
+        or details.get("client_request_id") != client_request_id
+        or details.get("claim_request_id") != claim_request_id
+    ):
+        return None
+    if decision == "accepted":
+        base_revision = details.get("base_revision")
+        if (
+            isinstance(base_revision, bool)
+            or not isinstance(base_revision, int)
+            or not 1 <= base_revision <= 100_000
+        ):
+            return None
+        for key in ("target_plan_sha256",):
+            value = details.get(key)
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(char not in "0123456789abcdef" for char in value)
+            ):
+                return None
+    return details
+
+
 async def _accept_study_plan_progress(
     *,
     plan_id: str,
@@ -457,39 +625,27 @@ async def _accept_study_plan_progress(
     visible_projection: StudyMasteryProjection,
     now: datetime,
 ) -> StudyProgressDecisionResponse:
-    """Apply only the existing weekly-budget mutation via two receipts."""
-    completion_id = _completion_request_id(plan_id, payload.request_id)
-    existing_completion = await repository.get_progress_by_request(plan_id, completion_id)
-    completion_details = (
-        _strict_decision_details(existing_completion, phase="completion")
-        if existing_completion
-        else None
-    )
-    if existing_completion is not None:
-        existing_intent = await repository.get_progress_by_request(
-            plan_id, payload.request_id
-        )
-        intent_details = (
-            _strict_decision_details(existing_intent, phase="intent")
-            if existing_intent
-            else None
+    """Serialize one proposal decision before any plan mutation."""
+
+    claim_id = decision_claim_request_id(plan_id, selected_id)
+    terminal_id = decision_terminal_request_id(plan_id, selected_id)
+
+    # A deterministic terminal is checked first so retries remain valid even
+    # when the proposal has aged out of the ordinary projection page.
+    existing_terminal = await repository.get_progress_by_request(plan_id, terminal_id)
+    if existing_terminal is not None:
+        terminal_details = _strict_terminal_details(
+            existing_terminal,
+            proposal_id=selected_id,
+            client_request_id=payload.request_id,
+            decision="accepted",
+            claim_request_id=claim_id,
         )
         if (
-            completion_details is None
-            or intent_details is None
-            or completion_details.get("phase") != "completion"
-            or completion_details.get("decision") != "accepted"
-            or completion_details.get("proposal_id") != selected_id
-            or completion_details.get("intent_request_id") != payload.request_id
-            or intent_details.get("phase") != "intent"
-            or intent_details.get("proposal_id") != selected_id
-            or intent_details.get("decision") != "accepted"
-            or completion_details.get("base_revision") != intent_details.get("base_revision")
-            or completion_details.get("base_plan_sha256") != intent_details.get("base_plan_sha256")
-            or completion_details.get("target_plan_sha256") != intent_details.get("target_plan_sha256")
-            or payload.expected_revision != intent_details.get("base_revision")
+            terminal_details is None
+            or payload.expected_revision != terminal_details.get("base_revision")
         ):
-            raise StudyAssistantConflictError("progress request ID was already used")
+            raise StudyAssistantConflictError("proposal decision was already used")
         return StudyProgressDecisionResponse(
             proposal_id=selected_id,
             decision="accepted",
@@ -498,33 +654,65 @@ async def _accept_study_plan_progress(
             ),
         )
 
+    claim = await repository.get_progress_by_request(plan_id, claim_id)
+    claim_details = (
+        _strict_claim_details(
+            claim,
+            proposal_id=selected_id,
+            client_request_id=payload.request_id,
+            decision="accepted",
+        )
+        if claim is not None
+        else None
+    )
+    if claim is not None and claim_details is None:
+        raise StudyAssistantConflictError("proposal decision claim was already used")
+
+    # Legacy client-keyed intent/completion records are retained for safe
+    # migration and corruption detection, but never bypass the deterministic
+    # claim identity.
+    completion_id = _completion_request_id(plan_id, payload.request_id)
+    legacy_completion = await repository.get_progress_by_request(plan_id, completion_id)
+    if legacy_completion is not None:
+        legacy_details = _strict_decision_details(legacy_completion, phase="completion")
+        legacy_intent = await repository.get_progress_by_request(plan_id, payload.request_id)
+        legacy_intent_details = (
+            _strict_decision_details(legacy_intent, phase="intent")
+            if legacy_intent is not None
+            else None
+        )
+        if (
+            legacy_details is None
+            or legacy_intent_details is None
+            or legacy_details.get("proposal_id") != selected_id
+            or legacy_details.get("intent_request_id") != payload.request_id
+            or legacy_intent_details.get("proposal_id") != selected_id
+            or payload.expected_revision != legacy_intent_details.get("base_revision")
+        ):
+            raise StudyAssistantConflictError("progress request ID was already used")
+        raise StudyAssistantConflictError("legacy proposal decision requires retry")
+
     existing_intent = await repository.get_progress_by_request(plan_id, payload.request_id)
     intent_details = (
         _strict_decision_details(existing_intent, phase="intent")
-        if existing_intent
+        if existing_intent is not None
         else None
     )
-    if existing_intent is not None:
-        if intent_details is None or intent_details.get("proposal_id") != selected_id:
-            raise StudyAssistantConflictError("progress request ID was already used")
+    if existing_intent is not None and (
+        intent_details is None or intent_details.get("proposal_id") != selected_id
+    ):
+        raise StudyAssistantConflictError("progress request ID was already used")
+
+    if claim_details is not None:
+        base_revision = claim_details.get("base_revision")
+        base_plan_sha256 = claim_details.get("base_plan_sha256")
+        target_plan_sha256 = claim_details.get("target_plan_sha256")
+        target_weekly_minutes = claim_details.get("target_weekly_minutes")
+    elif intent_details is not None:
         base_revision = intent_details.get("base_revision")
         base_plan_sha256 = intent_details.get("base_plan_sha256")
         target_plan_sha256 = intent_details.get("target_plan_sha256")
         target_weekly_minutes = intent_details.get("target_weekly_minutes")
-        if (
-            payload.expected_revision != base_revision
-            or not isinstance(base_revision, int)
-            or not isinstance(base_plan_sha256, str)
-            or not isinstance(target_plan_sha256, str)
-            or isinstance(target_weekly_minutes, bool)
-            or not isinstance(target_weekly_minutes, int)
-            or not 5 <= target_weekly_minutes <= 10_080
-            or plan.preferences is None
-        ):
-            raise StudyAssistantConflictError("progress request ID was already used")
-        target_preferences = plan.preferences.model_copy(
-            update={"weekly_minutes": target_weekly_minutes}
-        )
     else:
         proposal = next(
             (item for item in visible_projection.proposals if item.proposal_id == selected_id),
@@ -553,6 +741,45 @@ async def _accept_study_plan_progress(
         )
         target_weekly_minutes = target_preferences.weekly_minutes
         target_plan_sha256 = _plan_fingerprint(plan, preferences=target_preferences)
+
+    if (
+        not isinstance(base_revision, int)
+        or not isinstance(base_plan_sha256, str)
+        or not isinstance(target_plan_sha256, str)
+        or not isinstance(target_weekly_minutes, int)
+        or plan.preferences is None
+        or payload.expected_revision != base_revision
+    ):
+        raise StudyAssistantConflictError("proposal decision authority mismatch")
+    target_preferences = plan.preferences.model_copy(
+        update={"weekly_minutes": target_weekly_minutes}
+    )
+    if claim_details is not None:
+        if _plan_fingerprint(plan) not in {base_plan_sha256, target_plan_sha256}:
+            # The only permitted post-mutation state is the exact target.
+            if plan.version != base_revision + 1 or _plan_fingerprint(plan) != target_plan_sha256:
+                raise StudyAssistantConflictError("study plan authority changed")
+    else:
+        # The claim is the shared serialization point.  It is appended before
+        # intent and before update so a competing decision cannot mutate.
+        claim_receipt = make_progress_receipt(
+            plan_id=plan_id,
+            request_id=claim_id,
+            event="decision",
+            created_at=now,
+            details=_claim_payload(
+                client_request_id=payload.request_id,
+                decision="accepted",
+                proposal_id=selected_id,
+                base_revision=base_revision,
+                base_plan_sha256=base_plan_sha256,
+                target_plan_sha256=target_plan_sha256,
+                target_weekly_minutes=target_weekly_minutes,
+            ),
+        )
+        await repository.append_progress(claim_receipt)
+
+    if existing_intent is None:
         intent = make_progress_receipt(
             plan_id=plan_id,
             request_id=payload.request_id,
@@ -569,16 +796,11 @@ async def _accept_study_plan_progress(
         await repository.append_progress(intent)
 
     if plan.version == base_revision:
-        if _plan_fingerprint(plan) != base_plan_sha256:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"code": "progress_conflict", "message": "Study plan changed"},
-            )
-        if _plan_fingerprint(plan, preferences=target_preferences) != target_plan_sha256:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"code": "progress_conflict", "message": "Study plan changed"},
-            )
+        if (
+            _plan_fingerprint(plan) != base_plan_sha256
+            or _plan_fingerprint(plan, preferences=target_preferences) != target_plan_sha256
+        ):
+            raise StudyAssistantConflictError("study plan authority changed")
         try:
             current = await _repository().update(
                 plan_id,
@@ -588,34 +810,29 @@ async def _accept_study_plan_progress(
         except StudyPlanRepositoryError as exc:
             raise _repository_error(exc) from None
     elif plan.version == base_revision + 1:
-        # A retry after update-success may only reconcile an exact target
-        # fingerprint. Unrelated one-revision edits reject safely.
         if _plan_fingerprint(plan) != target_plan_sha256:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"code": "progress_conflict", "message": "Study plan changed"},
-            )
+            raise StudyAssistantConflictError("study plan authority changed")
         current = plan
     else:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "progress_conflict", "message": "Study plan changed"},
-        )
+        raise StudyAssistantConflictError("study plan authority changed")
 
-    completion = make_progress_receipt(
+    terminal = make_progress_receipt(
         plan_id=plan_id,
-        request_id=completion_id,
+        request_id=terminal_id,
         event="decision",
         created_at=now,
-        details=_completion_payload(
+        details=_terminal_payload(
+            claim_request_id=claim_id,
+            client_request_id=payload.request_id,
+            decision="accepted",
             proposal_id=selected_id,
             base_revision=base_revision,
             base_plan_sha256=base_plan_sha256,
             target_plan_sha256=target_plan_sha256,
-            intent_request_id=payload.request_id,
+            target_weekly_minutes=target_weekly_minutes,
         ),
     )
-    await repository.append_progress(completion)
+    await repository.append_progress(terminal)
     refreshed = await repository.project(plan_id, now=now)
     return StudyProgressDecisionResponse(
         proposal_id=selected_id,
@@ -697,27 +914,51 @@ async def _decide_study_plan_progress(
                 visible_projection=visible_projection,
                 now=now,
             )
-        existing = await repository.get_progress_by_request(plan_id, payload.request_id)
-        if existing is not None:
-            if not _strict_dismiss_details(existing, proposal_id=selected_id):
-                raise StudyAssistantConflictError("progress request ID was already used")
+        claim_id = decision_claim_request_id(plan_id, selected_id)
+        terminal_id = decision_terminal_request_id(plan_id, selected_id)
+        existing_terminal = await repository.get_progress_by_request(plan_id, terminal_id)
+        if existing_terminal is not None:
+            if (
+                _strict_terminal_details(
+                    existing_terminal,
+                    proposal_id=selected_id,
+                    client_request_id=payload.request_id,
+                    decision="dismissed",
+                    claim_request_id=claim_id,
+                )
+                is None
+            ):
+                raise StudyAssistantConflictError("proposal decision was already used")
             refreshed = await repository.project(plan_id, now=now)
             return StudyProgressDecisionResponse(
                 proposal_id=selected_id,
                 decision="dismissed",
                 projection=_projection_for_plan(refreshed, plan),
             )
-        proposal = next(
-            (
-                item
-                for item in visible_projection.proposals
-                if item.proposal_id == selected_id
-            ),
-            None,
-        )
-        if proposal is None:
-            raise StudyAssistantNotFoundError("study adaptation proposal not found")
-        if payload.decision == "dismissed":
+
+        existing_claim = await repository.get_progress_by_request(plan_id, claim_id)
+        if existing_claim is not None:
+            if (
+                _strict_claim_details(
+                    existing_claim,
+                    proposal_id=selected_id,
+                    client_request_id=payload.request_id,
+                    decision="dismissed",
+                )
+                is None
+            ):
+                raise StudyAssistantConflictError("proposal decision claim was already used")
+        else:
+            proposal = next(
+                (
+                    item
+                    for item in visible_projection.proposals
+                    if item.proposal_id == selected_id
+                ),
+                None,
+            )
+            if proposal is None:
+                raise StudyAssistantNotFoundError("study adaptation proposal not found")
             if proposal.status != "proposed":
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -726,24 +967,38 @@ async def _decide_study_plan_progress(
                         "message": "This study adaptation is no longer proposed",
                     },
                 )
-            receipt = make_progress_receipt(
+            claim = make_progress_receipt(
                 plan_id=plan_id,
-                request_id=payload.request_id,
+                request_id=claim_id,
                 event="decision",
                 created_at=now,
-                details={
-                    "decision": payload.decision,
-                    "phase": "completion",
-                    "proposal_id": selected_id,
-                },
+                details=_claim_payload(
+                    client_request_id=payload.request_id,
+                    decision="dismissed",
+                    proposal_id=selected_id,
+                ),
             )
-            await repository.append_progress(receipt)
-            refreshed = await repository.project(plan_id, now=now)
-            return StudyProgressDecisionResponse(
+            await repository.append_progress(claim)
+
+        terminal = make_progress_receipt(
+            plan_id=plan_id,
+            request_id=terminal_id,
+            event="decision",
+            created_at=now,
+            details=_terminal_payload(
+                claim_request_id=claim_id,
+                client_request_id=payload.request_id,
+                decision="dismissed",
                 proposal_id=selected_id,
-                decision=payload.decision,
-                projection=_projection_for_plan(refreshed, plan),
-            )
+            ),
+        )
+        await repository.append_progress(terminal)
+        refreshed = await repository.project(plan_id, now=now)
+        return StudyProgressDecisionResponse(
+            proposal_id=selected_id,
+            decision="dismissed",
+            projection=_projection_for_plan(refreshed, plan),
+        )
     except HTTPException:
         raise
     except ValueError as exc:

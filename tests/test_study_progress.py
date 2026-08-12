@@ -24,6 +24,8 @@ from deeper_notebook.study.progress import (
     StudyAdaptationProposal,
     StudyMasteryProjection,
     StudyProgressAssessment,
+    decision_claim_request_id,
+    decision_terminal_request_id,
     decode_progress_details,
     make_progress_receipt,
     project_mastery,
@@ -365,6 +367,25 @@ class _ApiProgressRepository:
         return receipt
 
 
+class _FailAfterClaimProgressRepository(_ApiProgressRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_claim_after_store = True
+
+    async def append_progress(self, receipt):
+        result = await super().append_progress(receipt)
+        if (
+            self.fail_claim_after_store
+            and receipt.request_id
+            == decision_claim_request_id(PLAN_ID, "study_adaptation:extra")
+        ):
+            self.fail_claim_after_store = False
+            raise progress_repository_module.StudyProgressRepositoryError(
+                "simulated claim response loss"
+            )
+        return result
+
+
 def _api_client(
     monkeypatch: pytest.MonkeyPatch,
     plans: _ApiPlanRepository,
@@ -561,6 +582,149 @@ def test_api_accept_completion_rejects_changed_expected_revision(
     assert len(plans.update_calls) == 1
 
 
+def test_api_distinct_dismiss_requests_share_one_proposal_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    client = _api_client(monkeypatch, plans, progress)
+
+    first = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": "study_adaptation:extra",
+            "decision": "dismissed",
+            "request_id": "dismiss-client-one",
+        },
+    )
+    second = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": "study_adaptation:extra",
+            "decision": "dismissed",
+            "request_id": "dismiss-client-two",
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert decision_claim_request_id(PLAN_ID, "study_adaptation:extra") in progress.receipts
+    assert decision_terminal_request_id(PLAN_ID, "study_adaptation:extra") in progress.receipts
+
+
+def test_api_accept_and_dismiss_contend_on_one_claim_without_double_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    client = _api_client(monkeypatch, plans, progress)
+
+    accepted = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": "study_adaptation:extra",
+            "decision": "accepted",
+            "request_id": "accept-client",
+            "expected_revision": 1,
+        },
+    )
+    dismissed = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": "study_adaptation:extra",
+            "decision": "dismissed",
+            "request_id": "dismiss-client",
+        },
+    )
+
+    assert accepted.status_code == 200
+    assert dismissed.status_code == 409
+    assert plans.plan.preferences is not None
+    assert plans.plan.preferences.weekly_minutes == 90
+    assert len(plans.update_calls) == 1
+
+
+def test_api_same_client_replays_after_claim_response_loss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _FailAfterClaimProgressRepository()
+    client = _api_client(monkeypatch, plans, progress)
+    payload = {
+        "proposal_id": "study_adaptation:extra",
+        "decision": "accepted",
+        "request_id": "accept-after-claim-loss",
+        "expected_revision": 1,
+    }
+
+    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    second = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+
+    assert first.status_code == 503
+    assert second.status_code == 200
+    assert plans.plan.preferences is not None
+    assert plans.plan.preferences.weekly_minutes == 90
+    assert len(plans.update_calls) == 1
+
+
+@pytest.mark.parametrize("receipt_kind", ["claim", "terminal"])
+def test_api_mismatched_deterministic_decision_receipt_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    receipt_kind: str,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    proposal_id = "study_adaptation:extra"
+    request_id = "decision-mismatch"
+    receipt_id = (
+        decision_claim_request_id(PLAN_ID, proposal_id)
+        if receipt_kind == "claim"
+        else decision_terminal_request_id(PLAN_ID, proposal_id)
+    )
+    details = (
+        {
+            "base_plan_sha256": "a" * 64,
+            "base_revision": 1,
+            "client_request_id": "different-client",
+            "decision": "accepted",
+            "phase": "claim",
+            "proposal_id": proposal_id,
+            "target_plan_sha256": "b" * 64,
+            "target_weekly_minutes": 90,
+        }
+        if receipt_kind == "claim"
+        else {
+            "claim_request_id": decision_claim_request_id(PLAN_ID, proposal_id),
+            "client_request_id": "different-client",
+            "decision": "accepted",
+            "phase": "terminal",
+            "proposal_id": proposal_id,
+            "target_plan_sha256": "b" * 64,
+        }
+    )
+    progress.receipts[receipt_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=receipt_id,
+        event="decision",
+        created_at=NOW,
+        details=details,
+    )
+    client = _api_client(monkeypatch, plans, progress)
+
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": proposal_id,
+            "decision": "accepted",
+            "request_id": request_id,
+            "expected_revision": 1,
+        },
+    )
+
+    assert response.status_code == 409
+    assert plans.update_calls == []
+
+
 @pytest.mark.parametrize("phase", ["intent", "completion"])
 def test_api_corrupt_decision_receipts_fail_closed_as_conflict(
     monkeypatch: pytest.MonkeyPatch,
@@ -635,7 +799,7 @@ def test_api_dismiss_retry_is_receipt_idempotent_without_second_append(
     second = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
 
     assert first.status_code == second.status_code == 200
-    assert progress.append_calls == append_count == 1
+    assert progress.append_calls == append_count == 2
 
 
 def test_api_accept_retry_rejects_unrelated_revision_change(
