@@ -172,4 +172,24 @@ describe('TutorDock', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(retry).toHaveBeenCalledTimes(1)
   })
+
+  it('repopulates an identical dictated transcript when its event id advances', () => {
+    const { rerender } = render(
+      <TutorDock
+        planId="study_plan:one"
+        voiceTranscript={{ id: 1, text: 'Repeat this exact question' }}
+      />,
+    )
+    const prompt = screen.getByRole('textbox', { name: 'Tutor prompt' })
+    expect(prompt).toHaveValue('Repeat this exact question')
+    fireEvent.change(prompt, { target: { value: 'Edited text' } })
+
+    rerender(
+      <TutorDock
+        planId="study_plan:one"
+        voiceTranscript={{ id: 2, text: 'Repeat this exact question' }}
+      />,
+    )
+    expect(screen.getByRole('textbox', { name: 'Tutor prompt' })).toHaveValue('Repeat this exact question')
+  })
 })

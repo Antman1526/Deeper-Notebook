@@ -44,6 +44,11 @@ const ROLE_LABELS: Record<StudyAssistantRole, string> = {
   progress_coach: 'Progress Coach',
 }
 
+export interface StudyVoiceTranscriptEvent {
+  id: number
+  text: string
+}
+
 interface TutorDockProps {
   planId: string
   sourceIds?: readonly string[]
@@ -54,7 +59,7 @@ interface TutorDockProps {
   sourceOnly?: boolean
   initialMode?: TutorMode
   onCitationNavigate?: (citation: StudyAssistantCitation) => void
-  voiceTranscript?: string | null
+  voiceTranscript?: StudyVoiceTranscriptEvent | null
   onAssistantAnswer?: (answer: string) => void
 }
 
@@ -135,10 +140,12 @@ export function TutorDock({
   const requiresWebPermission = config.requires_web_permission || role === 'research_scout'
   const hasApprovedScope = approvedNetworkScope.length > 0
   const sourceOnly = sourceOnlyProp || config.source_only || role === 'source_guide'
+  const transcriptEventId = voiceTranscript?.id
+  const transcriptEventText = voiceTranscript?.text
 
   useEffect(() => {
-    if (voiceTranscript !== null) setPrompt(voiceTranscript)
-  }, [voiceTranscript])
+    if (transcriptEventId !== undefined) setPrompt(transcriptEventText ?? '')
+  }, [transcriptEventId, transcriptEventText])
 
   useEffect(() => {
     const response = localResponse ?? invocation.data

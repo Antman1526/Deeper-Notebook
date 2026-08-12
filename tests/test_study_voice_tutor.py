@@ -7,7 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
+from esperanto.providers.stt.openai_compatible import OpenAICompatibleSpeechToTextModel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -56,8 +58,8 @@ class FakeSTT:
         self.duration = duration
         self.paths: list[Path] = []
 
-    async def atranscribe(self, *, audio_file: Path):
-        self.paths.append(audio_file)
+    async def atranscribe(self, *, audio_file: Path | str):
+        self.paths.append(Path(audio_file))
         return SimpleNamespace(text=self.text, duration=self.duration)
 
 
@@ -316,15 +318,15 @@ def test_env_fallback_local_provider_is_not_voice_authority(monkeypatch) -> None
     getter.assert_not_awaited()
 
 
-def test_capability_receipt_uses_persisted_local_policy_without_acquiring_models(monkeypatch) -> None:
+def test_capability_receipt_acquires_and_validates_runtime_models(monkeypatch) -> None:
     service = _service(stt=FakeSTT(), tts=FakeTTS())
     response = _client(monkeypatch, service).get(
         "/api/study/plans/study_plan:one/voice:capability",
     )
     assert response.status_code == 200
     assert response.json() == {"stt": "ready", "tts": "ready"}
-    service._speech_to_text_getter.assert_not_awaited()
-    service._text_to_speech_getter.assert_not_awaited()
+    service._speech_to_text_getter.assert_awaited_once()
+    service._text_to_speech_getter.assert_awaited_once()
 
 
 def test_capability_receipt_fails_closed_for_public_endpoint(monkeypatch) -> None:
@@ -341,6 +343,95 @@ def test_capability_receipt_fails_closed_for_public_endpoint(monkeypatch) -> Non
     assert response.json() == {"stt": "unavailable", "tts": "unavailable"}
     service._speech_to_text_getter.assert_not_awaited()
     service._text_to_speech_getter.assert_not_awaited()
+
+
+def test_capability_receipt_fails_closed_when_ollama_factory_is_unavailable(monkeypatch) -> None:
+    service = _service(stt=None, tts=None)
+    response = _client(monkeypatch, service).get(
+        "/api/study/plans/study_plan:one/voice:capability",
+    )
+    assert response.status_code == 200
+    assert response.json() == {"stt": "unavailable", "tts": "unavailable"}
+    service._speech_to_text_getter.assert_awaited_once()
+    service._text_to_speech_getter.assert_awaited_once()
+
+
+def test_capability_receipt_fails_closed_on_getter_error_without_leaking(monkeypatch) -> None:
+    service = _service(stt=FakeSTT(), tts=FakeTTS())
+    service._speech_to_text_getter = AsyncMock(side_effect=RuntimeError("factory detail must stay private"))
+    response = _client(monkeypatch, service).get(
+        "/api/study/plans/study_plan:one/voice:capability",
+    )
+    assert response.status_code == 200
+    assert response.json() == {"stt": "unavailable", "tts": "ready"}
+    assert "factory detail" not in response.text
+
+
+def test_capability_receipt_rejects_public_runtime_endpoint(monkeypatch) -> None:
+    runtime = FakeSTT()
+    runtime.base_url = "https://api.example.com/v1"
+    service = _service(stt=runtime)
+    response = _client(monkeypatch, service).get(
+        "/api/study/plans/study_plan:one/voice:capability",
+    )
+    assert response.status_code == 200
+    assert response.json() == {"stt": "unavailable", "tts": "unavailable"}
+
+
+def test_capability_receipt_accepts_a_valid_openai_compatible_runtime(monkeypatch) -> None:
+    stt = FakeSTT()
+    stt.provider = "openai-compatible"
+    tts = FakeTTS()
+    tts.provider = "openai-compatible"
+    service = _service(
+        stt=stt,
+        tts=tts,
+        stt_provider="openai_compatible",
+        tts_provider="openai_compatible",
+        credential_provider="openai_compatible",
+    )
+    response = _client(monkeypatch, service).get(
+        "/api/study/plans/study_plan:one/voice:capability",
+    )
+    assert response.status_code == 200
+    assert response.json() == {"stt": "ready", "tts": "ready"}
+
+
+@pytest.mark.asyncio
+async def test_capability_getter_probe_is_bounded() -> None:
+    service = _service(stt=FakeSTT(), tts=FakeTTS())
+    async def never_finishes():
+        await asyncio.Event().wait()
+
+    service._speech_to_text_getter = never_finishes
+    service.capability_timeout_seconds = 0.01
+    capability = await asyncio.wait_for(service.capability("study_plan:one"), timeout=0.2)
+    assert capability == {"stt": "unavailable", "tts": "ready"}
+
+
+@pytest.mark.asyncio
+async def test_concrete_esperanto_transcriber_receives_a_supported_string_path(tmp_path) -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"text": "A concrete local transcript."})
+
+    model = OpenAICompatibleSpeechToTextModel(
+        model_name="whisper-local",
+        api_key="not-required",
+        base_url="http://127.0.0.1:8000/v1",
+    )
+    await model.async_client.aclose()
+    model.async_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    path = tmp_path / "question.webm"
+    path.write_bytes(b"audio")
+    try:
+        result = await voice_service_module._invoke_transcriber(model, path)
+    finally:
+        await model.async_client.aclose()
+    assert result.text == "A concrete local transcript."
+    assert requests and requests[0].url.path.endswith("/audio/transcriptions")
 
 
 def test_feature_off_capability_is_uniform_404_before_plan_validation(monkeypatch) -> None:
@@ -525,8 +616,8 @@ async def test_voice_requires_approved_plan_and_cancellation_cleans_upload(monke
     assert not_approved.status_code == 404
 
     class WaitingSTT(FakeSTT):
-        async def atranscribe(self, *, audio_file: Path):
-            self.paths.append(audio_file)
+        async def atranscribe(self, *, audio_file: Path | str):
+            self.paths.append(Path(audio_file))
             await asyncio.Event().wait()
 
     model = WaitingSTT()

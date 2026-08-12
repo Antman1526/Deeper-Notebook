@@ -99,3 +99,35 @@ Final repair evidence:
 
 Repair open limits remain browser/device accessibility/runtime proof and real
 local Esperanto model execution; hosted/release gates are separate.
+
+## Task 13 third repair receipt — 2026-08-12
+
+Third repair started clean at `d3e228ac`. RED was captured before production
+changes: backend voice tests were 30 passed / 6 failed (concrete Esperanto
+Path incompatibility plus capability acquisition/runtime/timeout cases);
+frontend targeted tests were 19 passed / 2 failed (event envelope and strict
+audio MIME/size bounds).
+
+The concrete transcriber adapter now passes a string path, matching the
+installed Esperanto OpenAI-compatible STT contract. Capability readiness now
+uses a bounded common `_local_model` acquisition path after persisted loopback
+preflight, validating getter/factory availability and runtime provider/endpoint;
+unsupported Ollama speech, public runtime endpoints, getter errors, and timeout
+fail closed without exposing provider details. TutorDock receives a monotonic
+`{id,text}` transcript event so an identical successive dictation repopulates an
+edited composer without dispatch. The client TTS decoder mirrors the server
+allowlist and 10 MiB output cap.
+
+Third-repair GREEN/evidence:
+
+- Voice focused backend: 36 passed; adjoining filtered backend: 36 passed, 18
+  deselected.
+- All Study component plus Study API suites: 13 files / 64 passed.
+- Ruff, compileall, scoped ESLint (0 errors; 2 existing RecorderStub unused
+  argument warnings), TypeScript, and diff-check pass.
+- `NEXT_PUBLIC_DN_STUDY_WORKBENCH=enabled npm run build` passes.
+- Repair commit `9905c271` uses exact subject
+  `fix(study): verify local voice runtime`; staged and `d3e228ac..HEAD`
+  gitleaks scans report 0 leaks.
+- No provider, credential, database, media, network, or deployment mutation;
+  browser/device and real-model runtime proof remain separate.

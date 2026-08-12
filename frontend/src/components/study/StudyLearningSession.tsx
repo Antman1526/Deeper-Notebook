@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { TutorDock } from '@/components/study/TutorDock'
+import type { StudyVoiceTranscriptEvent } from '@/components/study/TutorDock'
 import { StudyVoiceTutor } from '@/components/study/StudyVoiceTutor'
 import { studyVoiceApi, type StudyVoiceCapability } from '@/lib/api/study-voice'
 
@@ -24,7 +25,8 @@ export function StudyLearningSession({
   const [discoveredCapability, setDiscoveredCapability] = useState<StudyVoiceCapability>(
     voiceCapability ?? { stt: 'unavailable', tts: 'unavailable' },
   )
-  const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null)
+  const [voiceTranscript, setVoiceTranscript] = useState<StudyVoiceTranscriptEvent | null>(null)
+  const voiceTranscriptIdRef = useRef(0)
   const [assistantText, setAssistantText] = useState<string | null>(null)
 
   useEffect(() => {
@@ -64,7 +66,10 @@ export function StudyLearningSession({
         planId={planId}
         capability={discoveredCapability}
         assistantText={assistantText}
-        onTranscript={setVoiceTranscript}
+        onTranscript={(transcript) => {
+          voiceTranscriptIdRef.current += 1
+          setVoiceTranscript({ id: voiceTranscriptIdRef.current, text: transcript })
+        }}
       />
     </section>
   )

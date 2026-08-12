@@ -237,8 +237,8 @@ def _call_arguments(call: Callable[..., object], *, path: Path | None = None, te
     if path is not None:
         for name in ("audio_file", "file", "audio", "path"):
             if name in parameters or accepts_kwargs:
-                return (), {name: path}
-        return (path,), {}
+                return (), {name: str(path)}
+        return (str(path),), {}
     if text is not None:
         kwargs: dict[str, object] = {"text": text} if "text" in parameters or accepts_kwargs else {}
         if "voice" in parameters:
@@ -318,6 +318,7 @@ class StudyVoiceService:
         defaults_getter: Callable[[], Awaitable[object]] | None = None,
         model_getter: Callable[[str], Awaitable[object | None]] | None = None,
         credential_getter: Callable[[str], Awaitable[object | None]] | None = None,
+        capability_timeout_seconds: float = 5.0,
         max_upload_bytes: int | None = None,
         max_tts_bytes: int | None = None,
     ) -> None:
@@ -340,6 +341,11 @@ class StudyVoiceService:
         self._defaults_getter = defaults_getter
         self._model_getter = model_getter
         self._credential_getter = credential_getter
+        self.capability_timeout_seconds = (
+            capability_timeout_seconds
+            if math.isfinite(capability_timeout_seconds) and capability_timeout_seconds > 0
+            else 5.0
+        )
         self.max_upload_bytes = max_upload_bytes if max_upload_bytes is not None else MAX_UPLOAD_BYTES
         self.max_tts_bytes = max_tts_bytes if max_tts_bytes is not None else MAX_TTS_BYTES
 
@@ -434,7 +440,8 @@ class StudyVoiceService:
         capability = {"stt": "unavailable", "tts": "unavailable"}
         for kind, key in (("speech_to_text", "stt"), ("text_to_speech", "tts")):
             try:
-                await self._resolve_local_record(kind)
+                async with asyncio.timeout(self.capability_timeout_seconds):
+                    await self._local_model(kind)
             except StudyVoiceError:
                 continue
             except Exception:

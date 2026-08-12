@@ -11,6 +11,19 @@ export interface StudyVoiceTranscription {
   transcript: string
 }
 
+const SAFE_AUDIO_TYPES = new Set([
+  'audio/aac',
+  'audio/flac',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/ogg',
+  'audio/wav',
+  'audio/webm',
+  'audio/x-flac',
+  'audio/x-wav',
+])
+const MAX_TTS_BYTES = 10 * 1024 * 1024
+
 function decodeCapability(value: unknown): StudyVoiceCapability {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Study voice capability')
   const candidate = value as { stt?: unknown; tts?: unknown }
@@ -78,7 +91,11 @@ export const studyVoiceApi = {
       responseType: 'blob',
       headers: { 'x-skip-error-toast': '1' },
     })
-    if (!(response.data instanceof Blob) || !response.data.type.startsWith('audio/')) throw new Error('Invalid Study voice audio')
+    if (
+      !(response.data instanceof Blob)
+      || !SAFE_AUDIO_TYPES.has(response.data.type.toLowerCase())
+      || response.data.size > MAX_TTS_BYTES
+    ) throw new Error('Invalid Study voice audio')
     return response.data
   },
 }

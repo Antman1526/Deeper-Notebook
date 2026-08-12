@@ -10,12 +10,12 @@ vi.mock('./TutorDock', () => ({
     onAssistantAnswer,
   }: {
     planId: string
-    voiceTranscript?: string | null
+    voiceTranscript?: { id: number; text: string } | null
     onAssistantAnswer?: (answer: string) => void
   }) => (
     <div role="region" aria-label="Tutor dock">
       <span>Tutor dock for {planId}</span>
-      <textarea aria-label="Tutor prompt" value={voiceTranscript ?? ''} readOnly />
+      <textarea aria-label="Tutor prompt" value={voiceTranscript?.text ?? ''} readOnly />
       <button type="button" onClick={() => onAssistantAnswer?.('Latest tutor answer')}>Complete answer</button>
       <button type="button" aria-label="Ask tutor">Ask tutor</button>
     </div>
