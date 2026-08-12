@@ -45,3 +45,32 @@ Task 9 lease already owns migration 42, so this task uses additive migration
 
 No Task 10 implementation blockers. Task 11 assistant orchestration/API work
 remains intentionally out of scope.
+
+## Task 10 review repair — 2026-08-12
+
+The review repair keeps assistant authority proposal-only and closes the three
+receipt/idempotency and memory-boundary findings. `plan` invocations reject
+direct syllabus edits and every source/card/schedule/syllabus mutation flag;
+`create` remains non-mutating and requires explicit bounded network scope for
+any network-enabled route. `assistant_inference` memory must remain inferred,
+confirmation-required, and unconfirmed until the user decision; migration 43
+mirrors the effective assertion for active/confirmed bypasses.
+
+Session, handoff, and memory writes now persist SHA-256 hashes of their full
+canonical request payloads (including effective request ID and memory expected
+revision). Exact hash retries replay; a concurrent uniqueness winner with a
+different hash raises `StudyAssistantConflictError` and never returns its
+receipt. All assistant list projections cap and flatten at 50 before model
+materialization, including memory/progress; the 43 down migration remains
+table-symmetric.
+
+Strict RED: 11 new failures / 13 existing passes. GREEN: focused contracts and
+repository 24 passed; Task 3–10 selection 209 passed, 7 warnings; real
+disposable Surreal integration 13 passed, 1 warning, including session,
+handoff, and memory mismatched concurrent winners. Scoped Ruff, compileall,
+diff-check, and migration invalid-write assertions passed.
+
+Changed files: `assistants.py`, `assistant_repository.py`, `43.surrealql`,
+focused assistant tests, and `tests/integration/test_study_plan_repository.py`.
+No Task 11 work or external mutation. Final staged/range gitleaks and commit
+receipts remain with the parent integration step.

@@ -99,6 +99,34 @@ def test_create_authority_cannot_enable_network_or_mutate_syllabus() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"authority": "plan", "syllabus_mutation": "edit"},
+        {"authority": "plan", "mutates_syllabus": True, "syllabus_mutation": "propose"},
+        {"authority": "plan", "mutates_sources": True},
+        {"authority": "plan", "publishes_cards": True},
+        {"authority": "plan", "changes_schedule": True},
+    ],
+)
+def test_plan_authority_only_proposes_bounded_actions(updates: dict[str, object]) -> None:
+    """Plan mode can describe a proposal, never perform a protected mutation."""
+    with pytest.raises(ValidationError):
+        _invocation(**updates)
+
+
+def test_plan_authority_accepts_only_a_proposal_without_protected_mutation() -> None:
+    invocation = _invocation(
+        authority="plan",
+        syllabus_mutation="propose",
+        proposed_actions=(
+            {"action": "revise_syllabus", "label": "Review proposed prerequisite"},
+        ),
+    )
+    assert invocation.syllabus_mutation == "propose"
+    assert invocation.mutates_syllabus is False
+
+
 def test_network_requires_explicit_approved_bounded_scope() -> None:
     with pytest.raises(ValidationError):
         _invocation(network_allowed=True)
@@ -202,3 +230,19 @@ def test_memory_provenance_status_and_inferred_confirmation_are_explicit() -> No
     assert confirmed.status == "confirmed"
     assert confirmed.confirmation_required is False
     assert confirmed.confirmed_at == NOW
+
+
+@pytest.mark.parametrize("status", ["active", "confirmed"])
+def test_assistant_inference_cannot_become_durable_without_user_decision(status: str) -> None:
+    with pytest.raises(ValidationError):
+        StudyPlanMemory(
+            plan_id=PLAN_ID,
+            memory_key="misconception.velocity",
+            value="Confuses speed and velocity",
+            provenance="assistant_inference",
+            status=status,
+            confirmation_required=False,
+            confirmed_at=NOW if status == "confirmed" else None,
+            created_at=NOW,
+            updated_at=NOW,
+        )

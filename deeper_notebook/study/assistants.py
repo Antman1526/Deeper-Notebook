@@ -219,7 +219,9 @@ class StudyAssistantInvocation(_FrozenContract):
         default_factory=tuple, max_length=_MAX_NETWORK_SCOPE
     )
     model_route: Literal["local", "cloud"] = "local"
-    syllabus_mutation: Literal["none", "propose", "edit"] = "none"
+    # ``plan`` authority can only describe a proposal.  Applying an edit is a
+    # separate, user-authorized plan mutation owned by the plan repository.
+    syllabus_mutation: Literal["none", "propose"] = "none"
     mutates_syllabus: bool = False
     mutates_sources: bool = False
     publishes_cards: bool = False
@@ -294,13 +296,18 @@ class StudyAssistantInvocation(_FrozenContract):
             self.mutates_sources
             or self.publishes_cards
             or self.changes_schedule
-            or self.syllabus_mutation != "none"
             or self.mutates_syllabus
         )
-        if self.mutates_syllabus and self.syllabus_mutation == "none":
-            raise ValueError("mutates_syllabus must name a proposed syllabus mutation")
+        if self.mutates_syllabus:
+            raise ValueError("assistant invocations cannot mutate the syllabus directly")
+        if self.syllabus_mutation not in {"none", "propose"}:
+            raise ValueError("assistant invocations can only propose syllabus changes")
         if self.authority != "plan" and self.syllabus_mutation != "none":
             raise ValueError("syllabus mutations require plan authority")
+        if self.authority == "plan" and protected:
+            raise ValueError(
+                "plan authority can only propose syllabus, source, card, and schedule changes"
+            )
         if self.authority == "create" and (self.network_allowed or protected):
             raise ValueError("create authority cannot expand network or mutate Study state")
         if self.authority in {"ask", "coach"} and protected:
@@ -518,6 +525,15 @@ class StudyPlanMemory(_FrozenContract):
 
     @model_validator(mode="after")
     def confirmation_is_explicit(self) -> "StudyPlanMemory":
+        if self.provenance == "assistant_inference":
+            if (
+                self.status != "inferred"
+                or not self.confirmation_required
+                or self.confirmed_at is not None
+            ):
+                raise ValueError(
+                    "assistant inference must remain inferred until user confirmation"
+                )
         if self.status == "inferred" and not self.confirmation_required:
             raise ValueError("inferred memory requires user confirmation")
         if self.status == "confirmed" and self.confirmation_required:
@@ -532,6 +548,9 @@ class StudyPlanMemory(_FrozenContract):
         confirmed_at = _aware(now or datetime.now(UTC), field_name="confirmed_at")
         return self.model_copy(
             update={
+                "provenance": "user_confirmed"
+                if self.provenance == "assistant_inference"
+                else self.provenance,
                 "status": "confirmed",
                 "confirmation_required": False,
                 "confirmed_at": confirmed_at,

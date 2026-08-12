@@ -15,7 +15,10 @@ from deeper_notebook.study.artifact_service import (
     StudyArtifactService,
     _artifact_identity,
 )
-from deeper_notebook.study.assistant_repository import StudyAssistantRepository
+from deeper_notebook.study.assistant_repository import (
+    StudyAssistantConflictError,
+    StudyAssistantRepository,
+)
 from deeper_notebook.study.assistants import (
     StudyAssistantHandoff,
     StudyAssistantInvocation,
@@ -229,25 +232,33 @@ async def test_assistant_session_handoff_memory_and_progress_are_durable(
     )
     assert await assistant.get_memory(plan_id, memory.memory_key) == persisted_memory
 
-    with pytest.raises(Exception):
-        await repo_query(
-            "CREATE $invalid_memory CONTENT $payload RETURN AFTER;",
-            {
-                "invalid_memory": ensure_record_id("study_plan_memory:invalid-inferred"),
-                "payload": {
-                    "plan_id": plan_id,
-                    "memory_key": "inferred.invalid",
-                    "value": "Needs confirmation",
-                    "provenance": "assistant_inference",
-                    "status": "inferred",
-                    "confirmation_required": False,
-                    "confirmed_at": None,
-                    "created_at": now,
-                    "updated_at": now,
-                    "revision": 1,
-                },
-            },
+    for index, invalid in enumerate(
+        (
+            {"status": "inferred", "confirmation_required": False, "confirmed_at": None},
+            {"status": "active", "confirmation_required": True, "confirmed_at": None},
+            {"status": "confirmed", "confirmation_required": False, "confirmed_at": now},
         )
+    ):
+        with pytest.raises(Exception):
+            await repo_query(
+                "CREATE $invalid_memory CONTENT $payload RETURN AFTER;",
+                {
+                    "invalid_memory": ensure_record_id(
+                        f"study_plan_memory:invalid-inferred-{index}"
+                    ),
+                    "payload": {
+                        "plan_id": plan_id,
+                        "memory_key": f"inferred.invalid.{index}",
+                        "value": "Needs confirmation",
+                        "provenance": "assistant_inference",
+                        **invalid,
+                        "idempotency_hash": "b" * 64,
+                        "created_at": now,
+                        "updated_at": now,
+                        "revision": 1,
+                    },
+                },
+            )
 
     progress = StudyProgressReceipt(
         plan_id=plan_id,
@@ -261,6 +272,133 @@ async def test_assistant_session_handoff_memory_and_progress_are_durable(
     retry_progress = await assistant.append_progress(progress)
     assert first_progress == retry_progress
     assert await assistant.list_progress(plan_id, limit=999) == (first_progress,)
+
+
+async def test_assistant_concurrent_mismatched_idempotency_winners_fail_closed(
+    clean_namespace,
+):
+    """Real Surreal uniqueness races return one receipt and typed conflicts."""
+    repository = StudyPlanRepository()
+    assistant = StudyAssistantRepository()
+    plan_id = "study_plan:assistant-concurrency"
+    await repository.create(
+        StudyPlan(plan_id=plan_id, goal="Verify concurrent receipts", starting_level="beginner")
+    )
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+
+    session_results = await asyncio.gather(
+        assistant.create_session(
+            StudyAssistantInvocation(
+                plan_id=plan_id,
+                role="source_guide",
+                authority="ask",
+                prompt="Same prompt",
+                created_at=now,
+            ),
+            request_id="concurrent-session",
+        ),
+        assistant.create_session(
+            StudyAssistantInvocation(
+                plan_id=plan_id,
+                role="concept_explainer",
+                authority="ask",
+                prompt="Same prompt",
+                created_at=now,
+            ),
+            request_id="concurrent-session",
+        ),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(result, StudyAssistantConflictError) for result in session_results) == 1
+    assert sum(not isinstance(result, BaseException) for result in session_results) == 1
+    winning_session = next(result for result in session_results if not isinstance(result, BaseException))
+    assert await assistant.create_session(
+        StudyAssistantInvocation(
+            plan_id=plan_id,
+            role=winning_session.role,
+            authority=winning_session.authority,
+            prompt="Same prompt",
+            created_at=now,
+        ),
+        request_id="concurrent-session",
+    ) == winning_session
+
+    session_id = winning_session.session_id
+    handoff_results = await asyncio.gather(
+        assistant.append_handoff(
+            StudyAssistantHandoff(
+                plan_id=plan_id,
+                session_id=session_id,
+                role="source_guide",
+                observation="Winner A",
+                origin="source_guide",
+                created_at=now,
+            ),
+            request_id="concurrent-handoff",
+        ),
+        assistant.append_handoff(
+            StudyAssistantHandoff(
+                plan_id=plan_id,
+                session_id=session_id,
+                role="source_guide",
+                observation="Winner B",
+                origin="source_guide",
+                created_at=now,
+            ),
+            request_id="concurrent-handoff",
+        ),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(result, StudyAssistantConflictError) for result in handoff_results) == 1
+    assert sum(not isinstance(result, BaseException) for result in handoff_results) == 1
+    winning_handoff = next(result for result in handoff_results if not isinstance(result, BaseException))
+    assert await assistant.append_handoff(
+        StudyAssistantHandoff(
+            plan_id=plan_id,
+            session_id=session_id,
+            role="source_guide",
+            observation=winning_handoff.observation,
+            origin="source_guide",
+            created_at=now,
+        ),
+        request_id="concurrent-handoff",
+    ) == winning_handoff
+
+    memory_results = await asyncio.gather(
+        assistant.upsert_memory(
+            StudyPlanMemory(
+                plan_id=plan_id,
+                memory_key="concurrent.memory",
+                value="Winner A",
+                provenance="user_confirmed",
+                status="confirmed",
+                confirmation_required=False,
+                confirmed_at=now,
+                created_at=now,
+                updated_at=now,
+            ),
+            expected_revision=0,
+            request_id="concurrent-memory",
+        ),
+        assistant.upsert_memory(
+            StudyPlanMemory(
+                plan_id=plan_id,
+                memory_key="concurrent.memory",
+                value="Winner B",
+                provenance="user_confirmed",
+                status="confirmed",
+                confirmation_required=False,
+                confirmed_at=now,
+                created_at=now,
+                updated_at=now,
+            ),
+            expected_revision=0,
+            request_id="concurrent-memory",
+        ),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(result, StudyAssistantConflictError) for result in memory_results) == 1
+    assert sum(not isinstance(result, BaseException) for result in memory_results) == 1
 
 
 async def test_plan_artifact_link_is_atomic_and_retry_idempotent(clean_namespace):

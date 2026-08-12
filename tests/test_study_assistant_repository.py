@@ -24,14 +24,16 @@ NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 PLAN_ID = "study_plan:one"
 
 
-def _invocation() -> StudyAssistantInvocation:
-    return StudyAssistantInvocation(
-        plan_id=PLAN_ID,
-        role="source_guide",
-        authority="ask",
-        prompt="Explain the selected source.",
-        created_at=NOW,
-    )
+def _invocation(**updates: object) -> StudyAssistantInvocation:
+    values: dict[str, object] = {
+        "plan_id": PLAN_ID,
+        "role": "source_guide",
+        "authority": "ask",
+        "prompt": "Explain the selected source.",
+        "created_at": NOW,
+    }
+    values.update(updates)
+    return StudyAssistantInvocation(**values)
 
 
 def _handoff() -> StudyAssistantHandoff:
@@ -80,6 +82,9 @@ async def test_create_session_uses_parameterized_record_id_and_projects_safe_fie
                 "selected_source_ids": [],
                 "created_at": NOW,
                 "updated_at": NOW,
+                "idempotency_hash": assistant_repository._invocation_hash(
+                    _invocation(), "request-one"
+                ),
                 "provider_payload": {"secret": "must not project"},
                 "chain_of_thought": "must not project",
             }
@@ -108,6 +113,9 @@ async def test_handoff_append_is_idempotent_and_page_is_capped(monkeypatch):
         "origin": "source_guide",
         "user_decision": "pending",
         "created_at": NOW,
+        "idempotency_hash": assistant_repository._handoff_hash(
+            _handoff(), "handoff-one"
+        ),
     }
 
     async def query(sql, params):
@@ -140,6 +148,9 @@ async def test_memory_upsert_requires_expected_revision_and_is_idempotent(monkey
         "created_at": NOW,
         "updated_at": NOW,
         "revision": 1,
+        "idempotency_hash": assistant_repository._memory_hash(
+            _memory(), expected_revision=1, request_id="memory-one"
+        ),
         "raw_provider_payload": {"secret": "must not project"},
     }
 
@@ -166,6 +177,158 @@ async def test_memory_upsert_requires_expected_revision_and_is_idempotent(monkey
     assert update_params["payload"]["revision"] == 2
 
 
+@pytest.mark.asyncio
+async def test_concurrent_mismatched_session_winner_is_a_typed_conflict(monkeypatch):
+    """A uniqueness loser must not receive a winner's receipt."""
+    loser = _invocation(role="concept_explainer")
+    winner_row = {
+        "id": "study_assistant_session:winner",
+        "plan_id": PLAN_ID,
+        "role": "source_guide",
+        "authority": "ask",
+        "status": "queued",
+        "request_id": "same-request",
+        "prompt_sha256": prompt_sha256(loser.prompt),
+        "selected_source_ids": [],
+        "created_at": NOW,
+        "updated_at": NOW,
+        "idempotency_hash": assistant_repository._invocation_hash(
+            _invocation(), "same-request"
+        ),
+    }
+    calls = {"initial": 0}
+
+    async def query(sql, params):
+        if sql.startswith("SELECT"):
+            if calls["initial"] == 0:
+                calls["initial"] += 1
+                return []
+            return [winner_row]
+        raise RuntimeError("unique request winner")
+
+    monkeypatch.setattr(assistant_repository, "repo_query", query)
+    with pytest.raises(StudyAssistantConflictError):
+        await StudyAssistantRepository().create_session(loser, request_id="same-request")
+
+
+@pytest.mark.asyncio
+async def test_concurrent_mismatched_handoff_winner_is_a_typed_conflict(monkeypatch):
+    handoff = _handoff()
+    winner_row = {
+        "id": "study_assistant_handoff:winner",
+        "plan_id": PLAN_ID,
+        "session_id": "study_assistant_session:one",
+        "role": "source_guide",
+        "request_id": "same-handoff",
+        "observation": "Different observation won concurrently.",
+        "evidence": [],
+        "proposed_action": "Ask one question.",
+        "origin": "source_guide",
+        "user_decision": "pending",
+        "created_at": NOW,
+        "idempotency_hash": assistant_repository._handoff_hash(
+            _handoff().model_copy(update={"observation": "Different observation won concurrently."}),
+            "same-handoff",
+        ),
+    }
+    calls = {"initial": 0}
+
+    async def query(sql, params):
+        if sql.startswith("SELECT"):
+            if calls["initial"] == 0:
+                calls["initial"] += 1
+                return []
+            return [winner_row]
+        raise RuntimeError("unique request winner")
+
+    monkeypatch.setattr(assistant_repository, "repo_query", query)
+    with pytest.raises(StudyAssistantConflictError):
+        await StudyAssistantRepository().append_handoff(handoff, request_id="same-handoff")
+
+
+@pytest.mark.asyncio
+async def test_concurrent_mismatched_memory_winner_is_a_typed_conflict(monkeypatch):
+    memory = _memory()
+    winner_row = {
+        "id": "study_plan_memory:winner",
+        "plan_id": PLAN_ID,
+        "memory_key": memory.memory_key,
+        "value": "Different value won concurrently.",
+        "provenance": "user_confirmed",
+        "status": "confirmed",
+        "confirmation_required": False,
+        "confirmed_at": NOW,
+        "created_at": NOW,
+        "updated_at": NOW,
+        "revision": 1,
+        "idempotency_hash": assistant_repository._memory_hash(
+            _memory().model_copy(update={"value": "Different value won concurrently."}),
+            expected_revision=0,
+            request_id="same-memory",
+        ),
+    }
+    calls = {"initial": 0}
+
+    async def query(sql, params):
+        if sql.startswith("SELECT"):
+            if calls["initial"] == 0:
+                calls["initial"] += 1
+                return []
+            return [winner_row]
+        raise RuntimeError("unique memory winner")
+
+    monkeypatch.setattr(assistant_repository, "repo_query", query)
+    with pytest.raises(StudyAssistantConflictError):
+        await StudyAssistantRepository().upsert_memory(
+            memory, expected_revision=0, request_id="same-memory"
+        )
+
+
+@pytest.mark.asyncio
+async def test_memory_and_progress_pages_cap_before_projection_materialization(monkeypatch):
+    memory_row = {
+        "id": "study_plan_memory:one",
+        "plan_id": PLAN_ID,
+        "memory_key": "preference.answer_style",
+        "value": "Prefer concise examples",
+        "provenance": "user_confirmed",
+        "status": "confirmed",
+        "confirmation_required": False,
+        "confirmed_at": NOW,
+        "created_at": NOW,
+        "updated_at": NOW,
+        "revision": 1,
+    }
+    progress_row = {
+        "id": "study_progress:one",
+        "plan_id": PLAN_ID,
+        "request_id": "progress-one",
+        "event": "started",
+        "details": "Session started",
+        "created_at": NOW,
+    }
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def query(sql, params):
+        calls.append((sql, params))
+        if "study_plan_memory" in sql:
+            return [dict(memory_row, memory_key=f"preference.answer_style.{i}") for i in range(500)]
+        return [dict(progress_row, request_id=f"progress-{i}") for i in range(500)]
+
+    monkeypatch.setattr(assistant_repository, "repo_query", query)
+    repository = StudyAssistantRepository()
+    memories = await repository.list_memory(PLAN_ID, limit=10**100)
+    progress = await repository.list_progress(PLAN_ID, limit=10**100)
+    assert len(memories) <= 50
+    assert len(progress) <= 50
+    assert [params["limit"] for _sql, params in calls] == [50, 50]
+
+
+def test_page_size_rejects_infinite_input() -> None:
+    with pytest.raises(StudyAssistantRepositoryError):
+        assistant_repository._page(float("inf"), 0)
+
+
 def test_migration_uses_bounded_assertions_and_down_is_symmetric() -> None:
     root = assistant_repository.__file__
     assert root is not None
@@ -181,3 +344,6 @@ def test_migration_uses_bounded_assertions_and_down_is_symmetric() -> None:
         assert f"REMOVE TABLE IF EXISTS {table}" in down
     assert "array::every" in migration
     assert "string::trim" in migration
+    assert migration.count("idempotency_hash") >= 3
+    assert 'provenance != "assistant_inference"' in migration
+    assert 'value = "inferred"' in migration

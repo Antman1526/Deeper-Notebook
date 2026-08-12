@@ -8,6 +8,7 @@ query parameter; only the fixed projection strings below are part of SQL.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,10 +35,10 @@ from .assistants import (
 MIGRATION_PATH = Path(__file__).resolve().parents[1] / "database" / "migrations" / "43.surrealql"
 MIGRATION_DOWN_PATH = MIGRATION_PATH.with_name("43_down.surrealql")
 
-_MAX_PAGE_SIZE = 500
+_MAX_PAGE_SIZE = 50
 _MAX_HANDOFF_PAGE = 50
-_MAX_MEMORY_PAGE = 100
-_MAX_PROGRESS_PAGE = 100
+_MAX_MEMORY_PAGE = 50
+_MAX_PROGRESS_PAGE = 50
 _MAX_PAGE_OFFSET = 100_000
 
 
@@ -73,6 +74,7 @@ _SESSION_FIELDS = (
     "created_at",
     "updated_at",
     "completed_at",
+    "idempotency_hash",
 )
 _HANDOFF_FIELDS = (
     "id",
@@ -88,6 +90,7 @@ _HANDOFF_FIELDS = (
     "user_decision",
     "created_at",
     "decided_at",
+    "idempotency_hash",
 )
 _MEMORY_FIELDS = (
     "id",
@@ -102,6 +105,7 @@ _MEMORY_FIELDS = (
     "created_at",
     "updated_at",
     "revision",
+    "idempotency_hash",
 )
 _PROGRESS_FIELDS = (
     "id",
@@ -137,6 +141,24 @@ def _flatten(value: object) -> list[dict[str, Any]]:
         for item in value:
             rows.extend(_flatten(item))
         return rows
+    return []
+
+
+def _flatten_bounded(value: object, *, limit: int) -> list[dict[str, Any]]:
+    """Flatten a driver envelope without materializing more than one page."""
+    if limit <= 0:
+        return []
+    if isinstance(value, dict):
+        if "result" in value and len(value) <= 3:
+            return _flatten_bounded(value["result"], limit=limit)
+        return [value]
+    if isinstance(value, (list, tuple)):
+        rows: list[dict[str, Any]] = []
+        for item in value:
+            if len(rows) >= limit:
+                break
+            rows.extend(_flatten_bounded(item, limit=limit - len(rows)))
+        return rows[:limit]
     return []
 
 
@@ -225,6 +247,56 @@ def _safe_optional_text(value: object, field_name: str, max_length: int) -> str 
 
 def _stable_token(*parts: str) -> str:
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:40]
+
+
+def _canonical_hash(payload: Mapping[str, Any]) -> str:
+    """Hash a bounded JSON payload with deterministic key and list ordering."""
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _invocation_hash(
+    invocation: StudyAssistantInvocation,
+    request_id: str,
+) -> str:
+    payload = invocation.model_dump(mode="json")
+    payload["effective_request_id"] = request_id
+    return _canonical_hash(payload)
+
+
+def _handoff_hash(
+    handoff: StudyAssistantHandoff,
+    request_id: str,
+) -> str:
+    payload = handoff.model_dump(mode="json", exclude={"handoff_id"})
+    payload["request_id"] = request_id
+    return _canonical_hash(payload)
+
+
+def _memory_hash(
+    memory: StudyPlanMemory,
+    *,
+    expected_revision: int,
+    request_id: str,
+) -> str:
+    payload = memory.model_dump(mode="json", exclude={"memory_id", "revision"})
+    payload["expected_revision"] = expected_revision
+    payload["request_id"] = request_id
+    return _canonical_hash(payload)
+
+
+def _row_hash(row: Mapping[str, Any]) -> str | None:
+    value = row.get("idempotency_hash")
+    if isinstance(value, str) and len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    ):
+        return value
+    return None
 
 
 def _conflict(exc: BaseException) -> bool:
@@ -386,6 +458,13 @@ class StudyAssistantRepository:
             "updated_at": now,
             "completed_at": None,
         }
+        idempotency_hash = _invocation_hash(invocation, request_id)
+        payload["idempotency_hash"] = idempotency_hash
+
+        def matches(row: Mapping[str, Any]) -> bool:
+            stored_hash = _row_hash(row)
+            return stored_hash == idempotency_hash
+
         try:
             existing = await repo_query(
                     f"SELECT {_SESSION_PROJECTION} FROM study_assistant_session "
@@ -393,16 +472,10 @@ class StudyAssistantRepository:
                 {"plan_id": plan_value, "request_id": request_id},
             )
             if existing:
-                session = _session_from(existing)
-                if (
-                    session.prompt_sha256 != payload["prompt_sha256"]
-                    or session.plan_id != payload["plan_id"]
-                    or session.role != payload["role"]
-                    or session.authority != payload["authority"]
-                    or session.selected_source_ids != tuple(payload["selected_source_ids"])
-                ):
+                row = _one(existing, kind="assistant session")
+                if not matches(row):
                     raise StudyAssistantConflictError("assistant request ID was already used")
-                return session
+                return _session_from(row)
             rows = await repo_query(
                 "CREATE $assistant_session CONTENT $payload RETURN AFTER;",
                 {
@@ -422,9 +495,12 @@ class StudyAssistantRepository:
                     {"plan_id": plan_value, "request_id": request_id},
                 )
                 if replay:
-                    session = _session_from(replay)
-                    if session.prompt_sha256 == payload["prompt_sha256"]:
-                        return session
+                    row = _one(replay, kind="assistant session")
+                    if matches(row):
+                        return _session_from(row)
+                    raise StudyAssistantConflictError("assistant request ID was already used")
+            except StudyAssistantRepositoryError:
+                raise
             except Exception:
                 pass
             logger.exception("Failed to create assistant session")
@@ -528,6 +604,13 @@ class StudyAssistantRepository:
         payload["request_id"] = request_id
         payload["evidence"] = [item.model_dump(mode="python") for item in handoff.evidence]
         payload["plan_id"] = handoff.plan_id
+        idempotency_hash = _handoff_hash(handoff, request_id)
+        payload["idempotency_hash"] = idempotency_hash
+
+        def matches(row: Mapping[str, Any]) -> bool:
+            stored_hash = _row_hash(row)
+            return stored_hash == idempotency_hash
+
         try:
             existing = await repo_query(
                 f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "
@@ -535,12 +618,10 @@ class StudyAssistantRepository:
                 {"plan_id": str(plan_id), "request_id": request_id},
             )
             if existing:
-                current = _handoff_from(existing)
-                if current.model_dump(exclude={"handoff_id", "request_id"}) != handoff.model_dump(
-                    exclude={"handoff_id", "request_id"}
-                ):
+                row = _one(existing, kind="assistant handoff")
+                if not matches(row):
                     raise StudyAssistantConflictError("handoff request ID was already used")
-                return current
+                return _handoff_from(row)
             rows = await repo_query(
                 "CREATE $assistant_handoff CONTENT $payload RETURN AFTER;",
                 {
@@ -560,7 +641,12 @@ class StudyAssistantRepository:
                     {"plan_id": plan_value, "request_id": request_id},
                 )
                 if replay:
-                    return _handoff_from(replay)
+                    row = _one(replay, kind="assistant handoff")
+                    if matches(row):
+                        return _handoff_from(row)
+                    raise StudyAssistantConflictError("handoff request ID was already used")
+            except StudyAssistantRepositoryError:
+                raise
             except Exception:
                 pass
             logger.exception("Failed to append assistant handoff")
@@ -597,7 +683,10 @@ class StudyAssistantRepository:
                 "WHERE plan_id = $plan_id ORDER BY created_at DESC LIMIT $limit START $offset;",
                 {"plan_id": plan_value, "limit": page_limit, "offset": page_offset},
             )
-            return tuple(_handoff_from(row) for row in _flatten(rows))
+            return tuple(
+                _handoff_from(row)
+                for row in _flatten_bounded(rows, limit=page_limit)
+            )
         except StudyAssistantRepositoryError:
             raise
         except Exception as exc:
@@ -614,11 +703,47 @@ class StudyAssistantRepository:
         expected_revision = _revision(expected_revision, allow_zero=True)
         plan = _table_record(memory.plan_id, "study_plan")
         plan_value = _record_value(memory.plan_id, plan)
+        if request_id is None:
+            request_id = _stable_token(
+                memory.plan_id,
+                memory.memory_key,
+                str(expected_revision),
+                _canonical_hash(
+                    memory.model_dump(mode="json", exclude={"memory_id", "revision"})
+                ),
+            )
+        if not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 256:
+            raise StudyAssistantRepositoryError("invalid memory request ID")
+        idempotency_hash = _memory_hash(
+            memory,
+            expected_revision=expected_revision,
+            request_id=request_id,
+        )
         memory_id = ensure_record_id(
             f"study_plan_memory:{_stable_token(memory.plan_id, memory.memory_key)}"
         )
         payload = memory.model_dump(mode="python", exclude={"memory_id", "revision"})
         payload["plan_id"] = memory.plan_id
+        payload["idempotency_hash"] = idempotency_hash
+
+        def matches(row: Mapping[str, Any]) -> bool:
+            stored_hash = _row_hash(row)
+            return stored_hash == idempotency_hash
+
+        async def replay_current() -> StudyPlanMemory | None:
+            replay = await repo_query(
+                f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory "
+                "WHERE plan_id = $plan_id AND memory_key = $memory_key LIMIT 1;",
+                {"plan_id": plan_value, "memory_key": memory.memory_key},
+            )
+            if not replay:
+                return None
+            row = _one(replay, kind="plan memory")
+            current = _memory_from(row)
+            if matches(row):
+                return current
+            raise StudyAssistantConflictError("plan memory request ID was already used")
+
         try:
             existing = await repo_query(
                 f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory "
@@ -626,12 +751,11 @@ class StudyAssistantRepository:
                 {"plan_id": plan_value, "memory_key": memory.memory_key},
             )
             if existing:
-                current = _memory_from(existing)
+                row = _one(existing, kind="plan memory")
+                current = _memory_from(row)
+                if current.revision != expected_revision and matches(row):
+                    return current
                 if current.revision != expected_revision:
-                    if current.model_dump(exclude={"memory_id", "revision"}) == memory.model_dump(
-                        exclude={"memory_id", "revision"}
-                    ):
-                        return current
                     raise StudyAssistantConflictError("plan memory revision conflict")
                 payload["revision"] = expected_revision + 1
                 payload["updated_at"] = memory.updated_at
@@ -648,6 +772,9 @@ class StudyAssistantRepository:
                 )
                 row = _one_or_none(rows, kind="plan memory")
                 if row is None:
+                    replay = await replay_current()
+                    if replay is not None:
+                        return replay
                     raise StudyAssistantConflictError("plan memory revision conflict")
                 return _memory_from(row)
             if expected_revision not in {0, 1}:
@@ -664,18 +791,16 @@ class StudyAssistantRepository:
         except StudyAssistantRepositoryError:
             raise
         except Exception as exc:
-            if _conflict(exc):
-                raise StudyAssistantConflictError("plan memory revision conflict") from exc
             try:
-                replay = await repo_query(
-                    f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory "
-                    "WHERE plan_id = $plan_id AND memory_key = $memory_key LIMIT 1;",
-                    {"plan_id": plan_value, "memory_key": memory.memory_key},
-                )
-                if replay:
-                    return _memory_from(replay)
+                replay = await replay_current()
+                if replay is not None:
+                    return replay
+            except StudyAssistantRepositoryError:
+                raise
             except Exception:
                 pass
+            if _conflict(exc):
+                raise StudyAssistantConflictError("plan memory revision conflict") from exc
             logger.exception("Failed to upsert plan memory")
             raise StudyAssistantUnavailableError("Study plan memory is unavailable") from exc
 
@@ -725,7 +850,10 @@ class StudyAssistantRepository:
                 f"{where} ORDER BY updated_at DESC LIMIT $limit START $offset;",
                 params,
             )
-            return tuple(_memory_from(row) for row in _flatten(rows))
+            return tuple(
+                _memory_from(row)
+                for row in _flatten_bounded(rows, limit=page_limit)
+            )
         except StudyAssistantRepositoryError:
             raise
         except Exception as exc:
@@ -801,7 +929,10 @@ class StudyAssistantRepository:
                 "ORDER BY created_at DESC LIMIT $limit START $offset;",
                 {"plan_id": plan_value, "limit": page_limit, "offset": page_offset},
             )
-            return tuple(_progress_from(row) for row in _flatten(rows))
+            return tuple(
+                _progress_from(row)
+                for row in _flatten_bounded(rows, limit=page_limit)
+            )
         except StudyAssistantRepositoryError:
             raise
         except Exception as exc:
