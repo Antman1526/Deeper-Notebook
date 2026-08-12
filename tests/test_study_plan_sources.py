@@ -404,6 +404,49 @@ async def test_readiness_keeps_valid_items_when_legacy_links_use_wrong_tables(mo
 
 
 @pytest.mark.asyncio
+async def test_readiness_treats_unescaped_bracketed_ids_as_missing_without_alias_query(
+    monkeypatch,
+):
+    """Malformed bracket syntax must not alias to a different Source row."""
+
+    query = AsyncMock(
+        return_value=[
+            _projection(
+                source_id="source:one",
+                title="Valid source",
+                kind="text",
+                command=None,
+                has_text=True,
+                text_length=12,
+            )
+        ]
+    )
+    monkeypatch.setattr(source_service, "repo_query", query)
+    links = (
+        StudyPlanSourceLink(source_id="source:⟨target⟩suffix⟩"),
+        LINK,
+    )
+
+    receipt = await source_service.StudySourceService().readiness(links)
+
+    assert [item.source_id for item in receipt.items] == [
+        "source:⟨target⟩suffix⟩",
+        "source:one",
+    ]
+    assert [item.reason for item in receipt.items] == ["missing", "ready"]
+    query.assert_awaited_once()
+    bound_id = query.await_args.args[1]["source_id"]
+    assert str(bound_id) == "source:one"
+
+
+def test_normalize_source_id_preserves_correctly_encoded_closing_bracket():
+    normalized = source_service.normalize_source_id("source:⟨target\\⟩suffix⟩")
+
+    assert normalized.canonical == "source:⟨target\\⟩suffix⟩"
+    assert normalized.record.id == "target⟩suffix"
+
+
+@pytest.mark.asyncio
 async def test_source_projection_query_error_is_unavailable_without_exception_inspection(monkeypatch):
     query = AsyncMock(side_effect=RuntimeError("opaque driver failure"))
     monkeypatch.setattr(source_service, "repo_query", query)

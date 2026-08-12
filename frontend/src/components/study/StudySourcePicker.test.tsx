@@ -13,7 +13,7 @@ describe('StudySourcePicker', () => {
   it('opens the existing source dialog instead of implementing a second uploader', () => {
     const openUpload = vi.fn()
 
-    render(<StudySourcePicker links={[]} onOpenUpload={openUpload} />)
+    render(<StudySourcePicker links={[]} onOpenUpload={openUpload} onLinkSource={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Upload PDF or video' }))
 
@@ -25,6 +25,7 @@ describe('StudySourcePicker', () => {
       <StudySourcePicker
         links={[]}
         onOpenUpload={vi.fn()}
+        onLinkSource={vi.fn()}
         sources={[
           {
             id: 'source:lecture',
@@ -111,7 +112,9 @@ describe('StudySourcePicker', () => {
     list.mockRejectedValueOnce(new Error('offline'))
     list.mockResolvedValueOnce([])
 
-    const { unmount } = render(<StudySourcePicker links={[]} onOpenUpload={vi.fn()} />)
+    const { unmount } = render(
+      <StudySourcePicker links={[]} onOpenUpload={vi.fn()} onLinkSource={vi.fn()} />,
+    )
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading sources')
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Unable to load sources'))
@@ -148,6 +151,27 @@ describe('StudySourcePicker', () => {
 
     resolveLink()
     await waitFor(() => expect(onLinked).toHaveBeenCalledWith('source:one'))
+  })
+
+  it('does not claim a source is linked when persistence is not supplied', async () => {
+    const onLinked = vi.fn()
+
+    render(
+      <StudySourcePicker
+        links={[]}
+        onOpenUpload={vi.fn()}
+        onLinkSource={undefined as unknown as (sourceId: string) => void}
+        sources={[{ id: 'source:one', title: 'Lecture', source_type: 'text', extraction_quality: 'ok' }]}
+        onSourceLinked={onLinked}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Link Lecture' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Unable to link source'))
+    expect(screen.getByRole('button', { name: 'Link Lecture' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Lecture linked' })).not.toBeInTheDocument()
+    expect(onLinked).not.toHaveBeenCalled()
   })
 
   it('surfaces link failures and does not call the post-link callback', async () => {
@@ -192,5 +216,39 @@ describe('StudySourcePicker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry link Lecture' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lecture linked' })).toBeInTheDocument())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('retains an early batch failure and retry action after later links succeed', async () => {
+    const onLinkSource = vi.fn()
+      .mockRejectedValueOnce(new Error('first link failed'))
+      .mockResolvedValueOnce(undefined)
+
+    const openUpload = vi.fn(
+      (
+        _onCreated?: (sourceId: string) => void,
+        onSourcesCreated?: (sourceIds: readonly string[]) => void,
+      ) => {
+        void onSourcesCreated?.(['source:first', 'source:second'])
+      },
+    )
+
+    render(
+      <StudySourcePicker
+        links={[]}
+        onOpenUpload={openUpload}
+        sources={[
+          { id: 'source:first', title: 'First source', source_type: 'text', extraction_quality: 'ok' },
+          { id: 'source:second', title: 'Second source', source_type: 'text', extraction_quality: 'ok' },
+        ]}
+        onLinkSource={onLinkSource}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upload PDF or video' }))
+
+    await waitFor(() => expect(onLinkSource).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('First source')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry link First source' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Second source linked' })).toBeInTheDocument()
   })
 })

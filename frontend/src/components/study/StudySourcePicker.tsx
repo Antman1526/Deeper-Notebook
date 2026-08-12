@@ -38,7 +38,8 @@ export interface StudySourcePickerProps {
     onSourceCreated?: (sourceId: string) => void | Promise<void>,
     onSourcesCreated?: (sourceIds: readonly string[]) => void | Promise<void>,
   ) => void
-  onLinkSource?: (sourceId: string) => void | Promise<void>
+  /** Persists the plan link; a source is not marked linked until this succeeds. */
+  onLinkSource: (sourceId: string) => void | Promise<void>
   onSourceCreated?: (sourceId: string) => void | Promise<void>
   onSourceLinked?: (sourceId: string) => void | Promise<void>
   sources?: readonly StudySourceOption[]
@@ -146,9 +147,20 @@ export function StudySourcePicker({
       if (linkedIdsRef.current.has(id) || pendingIdsRef.current.has(id)) return false
       pendingIdsRef.current.add(id)
       setPendingIds((current) => new Set(current).add(id))
-      setLinkError(null)
+      if (typeof onLinkSource !== 'function') {
+        pendingIdsRef.current.delete(id)
+        if (mountedRef.current) {
+          setLinkError({ sourceId: id })
+          setPendingIds((current) => {
+            const next = new Set(current)
+            next.delete(id)
+            return next
+          })
+        }
+        return false
+      }
       try {
-        await onLinkSource?.(id)
+        await onLinkSource(id)
       } catch {
         pendingIdsRef.current.delete(id)
         if (mountedRef.current) {

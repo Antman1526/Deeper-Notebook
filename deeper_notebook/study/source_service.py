@@ -96,6 +96,10 @@ def normalize_source_id(source_id: str) -> NormalizedSourceID:
     if not normalized or len(normalized) > 512:
         raise StudySourceNotFoundError("source not found")
 
+    table, separator, raw_token = normalized.partition(":")
+    if table != "source" or separator != ":" or not raw_token:
+        raise StudySourceNotFoundError("source not found")
+
     try:
         record = ensure_record_id(normalized)
     except Exception as exc:
@@ -103,12 +107,9 @@ def normalize_source_id(source_id: str) -> NormalizedSourceID:
         # Surreal ID may legitimately contain a colon inside angle brackets,
         # so recover only that unambiguous encoded form; raw ``source:a:b``
         # remains invalid.
-        table, separator, token = normalized.partition(":")
-        if table != "source" or separator != ":" or not (
-            token.startswith("⟨") and token.endswith("⟩")
-        ):
+        if not (raw_token.startswith("⟨") and raw_token.endswith("⟩")):
             raise StudySourceNotFoundError("source not found") from exc
-        record = RecordID(table, token)
+        record = RecordID(table, raw_token)
 
     if getattr(record, "table_name", None) != "source":
         raise StudySourceNotFoundError("source not found")
@@ -116,10 +117,23 @@ def normalize_source_id(source_id: str) -> NormalizedSourceID:
     if not isinstance(record_token, str):
         raise StudySourceNotFoundError("source not found")
 
-    if record_token.startswith("⟨") or record_token.endswith("⟩"):
-        if not (record_token.startswith("⟨") and record_token.endswith("⟩")):
+    if raw_token.startswith("⟨") or raw_token.endswith("⟩"):
+        if not (raw_token.startswith("⟨") and raw_token.endswith("⟩")):
             raise StudySourceNotFoundError("source not found")
-        record_token = record_token[1:-1].replace("\\⟩", "⟩")
+        encoded_body = raw_token[1:-1]
+        # Every closing bracket inside an encoded token must be escaped.  The
+        # permissive RecordID parser otherwise accepts
+        # ``source:⟨target⟩suffix⟩`` and aliases it to a different row.
+        if any(
+            character == "⟩"
+            and (index == 0 or encoded_body[index - 1] != "\\")
+            for index, character in enumerate(encoded_body)
+        ):
+            raise StudySourceNotFoundError("source not found")
+        record_token = encoded_body.replace("\\⟩", "⟩")
+        if str(RecordID("source", record_token)) != normalized:
+            raise StudySourceNotFoundError("source not found")
+
     if not record_token.strip():
         raise StudySourceNotFoundError("source not found")
 
