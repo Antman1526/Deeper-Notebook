@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from deeper_notebook.study.artifact_service import (
+    CLAIM_LEASE_SECONDS,
     StudyArtifactCancelled,
     StudyArtifactConflict,
     StudyArtifactGenerationError,
@@ -559,6 +560,126 @@ async def test_reclaimed_owner_cannot_overwrite_completed_output_or_link(
     )
     assert reused == fresh_result
     assert generation_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_expired_owner_cannot_publish_before_takeover_and_fresh_retry_is_eligible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source()
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])),
+        syllabus=_syllabus(source),
+    )
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FencedRaceArtifact)
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    current_time = [now]
+    generation_calls = 0
+
+    async def generate(request: object) -> FencedRaceArtifact:
+        nonlocal generation_calls
+        generation_calls += 1
+        artifact_id = str(request.artifact_id)
+        artifact = FencedRaceArtifact.records[artifact_id]._copy()
+        if generation_calls == 1:
+            # The owner token is unchanged, but its durable lease has expired
+            # before the shared generator tries to publish its result.
+            current_time[0] = now + timedelta(seconds=CLAIM_LEASE_SECONDS)
+            artifact.output_payload = {"markdown": "expired owner"}
+        else:
+            artifact.output_payload = {"markdown": "fresh owner"}
+        artifact.status = "completed"
+        before = getattr(request, "before_persist", None)
+        if before is not None:
+            await before(artifact)
+        persist = getattr(request, "persist_artifact", None)
+        if persist is None:
+            await artifact.save()
+        else:
+            result = persist(artifact)
+            if asyncio.iscoroutine(result):
+                await result
+        current = await FencedRaceArtifact.get(artifact_id)
+        assert current is not None
+        return current
+
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    stale_service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+        clock=lambda: current_time[0],
+        owner_token_factory=lambda: "same-owner",
+        lock_store={},
+    )
+    fresh_service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+        clock=lambda: current_time[0],
+        owner_token_factory=lambda: "fresh-owner",
+        lock_store={},
+    )
+
+    with pytest.raises(StudyArtifactConflict, match="generation_claim_lost"):
+        await stale_service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
+
+    operation_id = _artifact_identity(
+        "study_plan:one", 1, source_manifest([source]), "foundations", "quiz"
+    )
+    stored = FencedRaceArtifact.records[operation_id]
+    assert generation_calls == 1
+    assert stored.status == "running"
+    assert stored.output_payload == {}
+    assert stored.generation_claim_owner == "same-owner"
+    assert repository.links == []
+
+    retry = await fresh_service.generate_unit(
+        "study_plan:one", "foundations", ["quiz"], expected_revision=3
+    )
+    assert generation_calls == 2
+    assert retry[0]["status"] == "completed"
+    assert repository.links == [
+        {
+            "plan_id": "study_plan:one",
+            "artifact_id": operation_id,
+            "artifact_kind": "quiz",
+            "metadata": {
+                "unit_id": "foundations",
+                "syllabus_version": 1,
+                "source_manifest_sha256": source_manifest([source]),
+                "expected_revision": 3,
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "lease_until",
+    [None, "not-a-timestamp", datetime(2026, 8, 12, 12, 4)],
+)
+async def test_owner_fence_rejects_missing_malformed_or_naive_lease(
+    monkeypatch: pytest.MonkeyPatch,
+    lease_until: object,
+) -> None:
+    operation_id = "studio_artifact:invalid-lease"
+    artifact = FencedRaceArtifact(
+        id=operation_id,
+        status="running",
+        generation_claim_owner="worker",
+        generation_claim_lease_until=lease_until,
+    )
+    FencedRaceArtifact.records[operation_id] = artifact
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FencedRaceArtifact)
+    service = StudyArtifactService(
+        clock=lambda: datetime(2026, 8, 12, 12, 0, tzinfo=UTC),
+    )
+
+    with pytest.raises(StudyArtifactConflict, match="generation_claim_lost"):
+        await service._assert_claim_owner(artifact, operation_id, "worker")
 
 
 @pytest.mark.asyncio

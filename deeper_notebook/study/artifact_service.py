@@ -676,6 +676,9 @@ class StudyArtifactService:
             current = loaded
         if getattr(current, "generation_claim_owner", None) != owner_token:
             raise StudyArtifactConflict("generation_claim_lost")
+        expiry = self._claim_expiry(current)
+        if expiry is None or expiry <= self._claim_now():
+            raise StudyArtifactConflict("generation_claim_lost")
         if require_status is not None and str(getattr(current, "status", "")) != require_status:
             raise StudyArtifactConflict("generation_claim_lost")
         return current
@@ -829,11 +832,13 @@ class StudyArtifactService:
             try:
                 rows = await repo_query(
                     "UPDATE $artifact MERGE $data "
-                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    "WHERE generation_claim_owner = $owner "
+                    "AND generation_claim_lease_until > $now RETURN AFTER;",
                     {
                         "artifact": ensure_record_id(operation_id),
                         "data": data,
                         "owner": owner_token,
+                        "now": self._claim_now(),
                     },
                 )
             except Exception as exc:
@@ -876,6 +881,9 @@ class StudyArtifactService:
             current = loaded
         if getattr(current, "generation_claim_owner", None) != owner_token:
             raise StudyArtifactConflict("generation_claim_lost")
+        expiry = self._claim_expiry(current)
+        if expiry is None or expiry <= self._claim_now():
+            raise StudyArtifactConflict("generation_claim_lost")
         return current
 
     async def _save_owned_state(
@@ -900,11 +908,13 @@ class StudyArtifactService:
             try:
                 rows = await repo_query(
                     "UPDATE $artifact MERGE $data "
-                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    "WHERE generation_claim_owner = $owner "
+                    "AND generation_claim_lease_until > $now RETURN AFTER;",
                     {
                         "artifact": ensure_record_id(operation_id),
                         "data": data,
                         "owner": owner_token,
+                        "now": self._claim_now(),
                     },
                 )
             except Exception as exc:
@@ -1087,10 +1097,12 @@ class StudyArtifactService:
                     "generation_claim_started_at = NONE, "
                     "generation_claim_lease_until = NONE, "
                     "output_payload = {}, citations = [], export_paths = {} "
-                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    "WHERE generation_claim_owner = $owner "
+                    "AND generation_claim_lease_until > $now RETURN AFTER;",
                     {
                         "artifact": ensure_record_id(operation_id),
                         "owner": owner_token,
+                        "now": self._claim_now(),
                     },
                 )
             except Exception:
@@ -1128,10 +1140,12 @@ class StudyArtifactService:
                     "UPDATE $artifact SET generation_claim_owner = NONE, "
                     "generation_claim_started_at = NONE, "
                     "generation_claim_lease_until = NONE "
-                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    "WHERE generation_claim_owner = $owner "
+                    "AND generation_claim_lease_until > $now RETURN AFTER;",
                     {
                         "artifact": ensure_record_id(operation_id),
                         "owner": owner_token,
+                        "now": self._claim_now(),
                     },
                 )
             except Exception as exc:
@@ -1159,11 +1173,13 @@ class StudyArtifactService:
                     "generation_claim_owner = NONE, "
                     "generation_claim_started_at = NONE, "
                     "generation_claim_lease_until = NONE "
-                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    "WHERE generation_claim_owner = $owner "
+                    "AND generation_claim_lease_until > $now RETURN AFTER;",
                     {
                         "artifact": ensure_record_id(str(getattr(artifact, "id", ""))),
                         "owner": owner_token,
                         "status": bounded_status,
+                        "now": self._claim_now(),
                     },
                 )
                 return
