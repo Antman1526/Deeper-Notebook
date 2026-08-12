@@ -85,6 +85,49 @@ async def test_plan_create_list_link_version_and_optimistic_approval(clean_names
     assert current.approved_syllabus_version == 2
 
 
+async def test_syllabus_read_projects_exact_or_latest_ordered_immutable_version(clean_namespace):
+    repository = StudyPlanRepository()
+    created = await repository.create(_plan())
+    await repository.save_syllabus(_syllabus(1), expected_revision=created.version)
+    await repository.save_syllabus(_syllabus(2), expected_revision=created.version)
+    persisted_units = await repo_query(
+        "SELECT plan_id, syllabus_version, unit_id, position FROM study_unit "
+        "ORDER BY syllabus_version ASC, position ASC"
+    )
+    assert persisted_units == [
+        {
+            "plan_id": created.plan_id,
+            "syllabus_version": 1,
+            "unit_id": "foundations-1",
+            "position": 0,
+        },
+        {
+            "plan_id": created.plan_id,
+            "syllabus_version": 2,
+            "unit_id": "foundations-2",
+            "position": 0,
+        },
+    ]
+    exact_rows = await repo_query(
+        "SELECT plan_id, syllabus_version, unit_id, position FROM study_unit "
+        "WHERE type::string(plan_id) = $plan_id AND syllabus_version = $version "
+        "ORDER BY position ASC LIMIT 64",
+        {"plan_id": created.plan_id, "version": 1},
+    )
+    assert exact_rows == [persisted_units[0]]
+
+    exact = await repository.get_syllabus(created.plan_id, version=1)
+    latest = await repository.get_syllabus(created.plan_id)
+
+    assert exact is not None
+    assert exact.version == 1
+    assert [unit.unit_id for unit in exact.units] == ["foundations-1"]
+    assert latest is not None
+    assert latest.version == 2
+    assert [unit.unit_id for unit in latest.units] == ["foundations-2"]
+    assert await repository.get_syllabus("study_plan:missing") is None
+
+
 async def test_plan_source_removal_does_not_delete_source_record(clean_namespace):
     repository = StudyPlanRepository()
     await repository.create(_plan())

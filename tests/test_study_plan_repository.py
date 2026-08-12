@@ -142,6 +142,71 @@ async def test_get_missing_record_is_safe_and_malformed_id_is_a_domain_error(mon
 
 
 @pytest.mark.asyncio
+async def test_get_syllabus_projects_latest_or_exact_immutable_ordered_units(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+    syllabus_record = {
+        "id": "study_syllabus:one",
+        "schema_version": 1,
+        "plan_id": "study_plan:one",
+        "version": 2,
+        "source_manifest_sha256": "a" * 64,
+        "approved_at": None,
+        "private_source_body": "must not be projected",
+    }
+    unit_record = {
+        "id": "study_unit:one",
+        "schema_version": 1,
+        "plan_id": "study_plan:one",
+        "syllabus_version": 2,
+        "unit_id": "motion",
+        "position": 0,
+        "title": "Motion",
+        "objectives": ["Explain velocity"],
+        "prerequisite_unit_ids": [],
+        "estimated_minutes": 30,
+        "source_ids": ["source:one"],
+        "activities": [],
+        "private_notes": "must not be projected",
+    }
+
+    async def query(sql, params):
+        calls.append((sql, params))
+        if "FROM study_syllabus" in sql:
+            return [syllabus_record]
+        return [unit_record]
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+    repository = StudyPlanRepository()
+
+    latest = await repository.get_syllabus("study_plan:one")
+    exact = await repository.get_syllabus("study_plan:one", version=2)
+
+    assert latest == exact
+    assert latest is not None
+    assert latest.version == 2
+    assert latest.units[0].unit_id == "motion"
+    assert not hasattr(latest, "private_source_body")
+    assert "ORDER BY version DESC" in calls[0][0]
+    assert "LIMIT 1" in calls[0][0]
+    assert "ORDER BY position ASC" in calls[1][0]
+    assert "LIMIT 64" in calls[1][0]
+    assert calls[2][1]["version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_get_syllabus_missing_or_invalid_plan_is_safe_and_non_disclosing(monkeypatch):
+    async def query(sql, params):
+        return []
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+    repository = StudyPlanRepository()
+
+    assert await repository.get_syllabus("study_plan:missing") is None
+    with pytest.raises(StudyPlanRepositoryError, match="invalid study plan ID"):
+        await repository.get_syllabus("not a record id")
+
+
+@pytest.mark.asyncio
 async def test_add_source_uses_unique_link_and_never_mutates_source(monkeypatch):
     calls: list[tuple[str, dict[str, object]]] = []
 

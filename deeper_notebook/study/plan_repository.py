@@ -57,6 +57,29 @@ _PLAN_FIELDS = (
     "updated_at",
 )
 _PLAN_PROJECTION = ", ".join(_PLAN_FIELDS)
+_SYLLABUS_FIELDS = (
+    "id",
+    "schema_version",
+    "plan_id",
+    "version",
+    "source_manifest_sha256",
+    "approved_at",
+)
+_SYLLABUS_PROJECTION = ", ".join(_SYLLABUS_FIELDS)
+_UNIT_FIELDS = (
+    "schema_version",
+    "plan_id",
+    "syllabus_version",
+    "unit_id",
+    "position",
+    "title",
+    "objectives",
+    "prerequisite_unit_ids",
+    "estimated_minutes",
+    "source_ids",
+    "activities",
+)
+_UNIT_PROJECTION = ", ".join(_UNIT_FIELDS)
 
 
 def _record_id(value: str | RecordID, table: str) -> RecordID:
@@ -217,6 +240,71 @@ def _plan_from_record(record: object) -> StudyPlan:
         raise StudyPlanRepositoryError("invalid persisted study plan") from exc
 
 
+def _syllabus_from_records(
+    syllabus_record: object,
+    unit_records: object,
+    *,
+    plan_id: str,
+    version: int,
+) -> StudySyllabus:
+    """Decode one plan-bound syllabus and its bounded, ordered unit projection."""
+    syllabus = _one_record(syllabus_record, kind="syllabus")
+    raw_plan_id = syllabus.get("plan_id")
+    if isinstance(raw_plan_id, RecordID):
+        raw_plan_id = str(raw_plan_id)
+    if raw_plan_id != plan_id or syllabus.get("version") != version:
+        raise StudyPlanRepositoryError("invalid persisted study syllabus")
+
+    rows = _flatten_dicts(unit_records)
+    if len(rows) > 64:
+        raise StudyPlanRepositoryError("invalid persisted study syllabus units")
+    units: list[StudySyllabusUnit] = []
+    for position, row in enumerate(rows):
+        raw_unit_plan_id = row.get("plan_id")
+        if isinstance(raw_unit_plan_id, RecordID):
+            raw_unit_plan_id = str(raw_unit_plan_id)
+        if (
+            raw_unit_plan_id != plan_id
+            or row.get("syllabus_version") != version
+            or isinstance(row.get("position"), bool)
+            or row.get("position") != position
+        ):
+            raise StudyPlanRepositoryError("invalid persisted study syllabus units")
+        try:
+            units.append(
+                StudySyllabusUnit.model_validate(
+                    {
+                        field: row.get(field)
+                        for field in (
+                            "unit_id",
+                            "title",
+                            "objectives",
+                            "prerequisite_unit_ids",
+                            "estimated_minutes",
+                            "source_ids",
+                            "activities",
+                        )
+                    }
+                )
+            )
+        except Exception as exc:
+            raise StudyPlanRepositoryError("invalid persisted study syllabus units") from exc
+
+    try:
+        return StudySyllabus.model_validate(
+            {
+                "schema_version": syllabus.get("schema_version", 1),
+                "plan_id": plan_id,
+                "version": version,
+                "source_manifest_sha256": syllabus.get("source_manifest_sha256"),
+                "units": units,
+                "approved_at": syllabus.get("approved_at"),
+            }
+        )
+    except Exception as exc:
+        raise StudyPlanRepositoryError("invalid persisted study syllabus") from exc
+
+
 def _plan_data(plan: StudyPlan) -> dict[str, Any]:
     data = plan.model_dump(mode="python", exclude={"plan_id", "version", "approved_syllabus_version"})
     data["plan_id"] = plan.plan_id
@@ -294,6 +382,54 @@ class StudyPlanRepository:
         except Exception as exc:
             logger.exception("Failed to load study plan")
             raise StudyPlanRepositoryError("Failed to load study plan") from exc
+
+    async def get_syllabus(
+        self,
+        plan_id: str,
+        *,
+        version: int | None = None,
+    ) -> StudySyllabus | None:
+        """Read a projection-only exact or latest immutable syllabus snapshot."""
+        try:
+            plan = _record_id(plan_id, "study_plan")
+            canonical_plan_id = str(plan)
+            if version is not None:
+                if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+                    raise StudyPlanRepositoryError("invalid syllabus version")
+                syllabus_rows = await repo_query(
+                    f"SELECT {_SYLLABUS_PROJECTION} FROM study_syllabus "
+                    "WHERE plan_id = $plan_id AND version = $version LIMIT 1;",
+                    {"plan_id": canonical_plan_id, "version": version},
+                )
+            else:
+                syllabus_rows = await repo_query(
+                    f"SELECT {_SYLLABUS_PROJECTION} FROM study_syllabus "
+                    "WHERE plan_id = $plan_id ORDER BY version DESC LIMIT 1;",
+                    {"plan_id": canonical_plan_id},
+                )
+            syllabus_row = _record_or_none(syllabus_rows, kind="syllabus")
+            if syllabus_row is None:
+                return None
+            syllabus_version = syllabus_row.get("version")
+            if isinstance(syllabus_version, bool) or not isinstance(syllabus_version, int):
+                raise StudyPlanRepositoryError("invalid persisted study syllabus")
+            unit_rows = await repo_query(
+                f"SELECT {_UNIT_PROJECTION} FROM study_unit "
+                "WHERE type::string(plan_id) = $plan_id AND syllabus_version = $version "
+                "ORDER BY position ASC LIMIT 64;",
+                {"plan_id": canonical_plan_id, "version": syllabus_version},
+            )
+            return _syllabus_from_records(
+                syllabus_row,
+                unit_rows,
+                plan_id=canonical_plan_id,
+                version=syllabus_version,
+            )
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to load study syllabus")
+            raise StudyPlanRepositoryError("Failed to load study syllabus") from exc
 
     async def list(self, *, limit: int = 100, offset: int = 0) -> list[StudyPlan]:
         page_limit, page_offset = _bounded_page(limit, offset)
