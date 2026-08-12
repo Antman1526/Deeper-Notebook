@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useMemo, useRef, useState } from 'react'
 
 import { SyllabusEditor } from '@/components/study/SyllabusEditor'
+import { StudyLearningSession } from '@/components/study/StudyLearningSession'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -194,7 +195,14 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
 
         <TabsContent value="syllabus" className="space-y-4">{syllabusContent}</TabsContent>
 
-        {(['learn', 'guide', 'map', 'practice', 'flashcards', 'sources', 'progress'] as const).map((tab) => (
+        <TabsContent value="learn" className="space-y-4">
+          <StudyLearningSession
+            planId={planId}
+            sourceIds={currentPlan.source_links.map((link) => link.source_id)}
+          />
+        </TabsContent>
+
+        {(['guide', 'map', 'practice', 'flashcards', 'sources', 'progress'] as const).map((tab) => (
           <TabsContent key={tab} value={tab} className="space-y-4">
             <Card>
               <CardHeader>
