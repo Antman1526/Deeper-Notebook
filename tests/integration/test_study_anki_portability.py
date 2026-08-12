@@ -120,6 +120,7 @@ async def test_job_claim_is_atomic_rehydratable_and_fenced(clean_namespace) -> N
         "d" * 64,
         "study_anki_import:receipt",
         owner.owner_token,
+        package_sha256=package_sha256,
     )
     assert completed is not None and completed.status == "published"
     assert await second_repository.claim(
@@ -153,11 +154,90 @@ async def test_expired_owner_can_be_reclaimed_but_stale_fence_cannot_complete(cl
     )
     reclaimed = await repository.claim(job_id, plan_id, package_sha256, old_request, old_options)
     assert reclaimed == "owner" and reclaimed.owner_token != old_owner
-    assert await repository.fail(job_id, plan_id, old_request, old_options, old_owner) is None
+    assert await repository.fail(
+        job_id,
+        plan_id,
+        old_request,
+        old_options,
+        old_owner,
+        package_sha256=package_sha256,
+    ) is None
     completed = await repository.complete(
-        job_id, plan_id, old_request, old_options, "study_anki_import:reclaimed", reclaimed.owner_token
+        job_id,
+        plan_id,
+        old_request,
+        old_options,
+        "study_anki_import:reclaimed",
+        reclaimed.owner_token,
+        package_sha256=package_sha256,
     )
     assert completed is not None and completed.status == "published"
+
+
+async def test_terminal_job_writes_cannot_overwrite_published_or_failed(
+    clean_namespace,
+) -> None:
+    plan_id = "study_plan:durable-terminal-cas"
+    package_sha256 = "a" * 64
+    repository = AnkiJobRepository()
+
+    published_job = "anki_job:" + "3" * 64
+    await repository.create(_job(published_job, plan_id, package_sha256))
+    published_claim = await repository.claim(
+        published_job, plan_id, package_sha256, "published-request", "d" * 64
+    )
+    assert published_claim == "owner"
+    published = await repository.complete(
+        published_job,
+        plan_id,
+        "published-request",
+        "d" * 64,
+        "study_anki_import:published",
+        published_claim.owner_token,
+        package_sha256=package_sha256,
+    )
+    assert published is not None and published.status == "published"
+    assert await repository.fail(
+        published_job,
+        plan_id,
+        "published-request",
+        "d" * 64,
+        published_claim.owner_token,
+        package_sha256=package_sha256,
+    ) is None
+    current_published = await repository.get(published_job, plan_id)
+    assert current_published is not None
+    assert current_published.status == "published"
+    assert current_published.receipt_id == "study_anki_import:published"
+
+    failed_job = "anki_job:" + "4" * 64
+    await repository.create(_job(failed_job, plan_id, package_sha256))
+    failed_claim = await repository.claim(
+        failed_job, plan_id, package_sha256, "failed-request", "e" * 64
+    )
+    assert failed_claim == "owner"
+    failed = await repository.fail(
+        failed_job,
+        plan_id,
+        "failed-request",
+        "e" * 64,
+        failed_claim.owner_token,
+        package_sha256=package_sha256,
+    )
+    assert failed is not None and failed.status == "failed"
+    assert await repository.complete(
+        failed_job,
+        plan_id,
+        "failed-request",
+        "e" * 64,
+        "study_anki_import:should-not-publish",
+        failed_claim.owner_token,
+        package_sha256=package_sha256,
+    ) is None
+    current_failed = await repository.get(failed_job, plan_id)
+    assert current_failed is not None
+    assert current_failed.status == "failed"
+    assert current_failed.receipt_id is None
 
 
 async def test_export_metadata_rehydrates_and_downloads_only_hashed_owned_file(

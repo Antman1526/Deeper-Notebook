@@ -291,6 +291,47 @@ async def test_durable_job_claim_rejects_different_request_or_options(monkeypatc
     assert any("claim_request_id" in query for query in calls)
 
 
+@pytest.mark.asyncio
+async def test_terminal_job_writes_require_publishing_cas_and_exact_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deeper_notebook.study.anki_jobs import AnkiJobRepository
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_query(query: str, params: dict[str, object]):
+        calls.append((query, params))
+        return []
+
+    monkeypatch.setattr("deeper_notebook.study.anki_jobs.repo_query", fake_query)
+    repository = AnkiJobRepository()
+    package_sha256 = "b" * 64
+    assert await repository.complete(
+        "anki_job:" + "a" * 64,
+        "study_plan:one",
+        "request-one",
+        "c" * 64,
+        "study_anki_import:receipt",
+        "d" * 64,
+        package_sha256=package_sha256,
+    ) is None
+    assert await repository.fail(
+        "anki_job:" + "a" * 64,
+        "study_plan:one",
+        "request-one",
+        "c" * 64,
+        "d" * 64,
+        package_sha256=package_sha256,
+    ) is None
+
+    assert len(calls) == 2
+    for query, params in calls:
+        assert "status = 'publishing'" in query
+        assert "package_sha256 = $package_sha256" in query
+        assert "claim_package_sha256 = $package_sha256" in query
+        assert params["package_sha256"] == package_sha256
+
+
 def test_status_rehydrates_from_durable_metadata_after_cache_clear(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

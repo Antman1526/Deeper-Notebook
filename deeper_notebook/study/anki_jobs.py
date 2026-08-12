@@ -260,16 +260,22 @@ class AnkiJobRepository:
         options_sha256: str,
         receipt_id: str,
         owner_token: str,
+        *,
+        package_sha256: str,
     ) -> AnkiJobMetadata | None:
         result = await repo_query(
             "UPDATE $job SET status = 'published', receipt_id = $receipt_id, "
             "updated_at = time::now() WHERE plan_id = $plan_id "
+            "AND package_sha256 = $package_sha256 "
             "AND claim_request_id = $request_id AND claim_options_sha256 = $options_sha256 "
+            "AND claim_package_sha256 = $package_sha256 "
             "AND claim_owner_token = $owner_token AND claim_expires_at > time::now() "
+            "AND status = 'publishing' "
             "RETURN AFTER;",
             {
                 "job": _canonical_record("study_anki_job", job_id),
                 "plan_id": plan_id,
+                "package_sha256": package_sha256,
                 "request_id": request_id,
                 "options_sha256": options_sha256,
                 "receipt_id": receipt_id,
@@ -279,16 +285,27 @@ class AnkiJobRepository:
         return _metadata(result, AnkiJobMetadata)  # type: ignore[return-value]
 
     async def fail(
-        self, job_id: str, plan_id: str, request_id: str, options_sha256: str, owner_token: str
+        self,
+        job_id: str,
+        plan_id: str,
+        request_id: str,
+        options_sha256: str,
+        owner_token: str,
+        *,
+        package_sha256: str,
     ) -> AnkiJobMetadata | None:
         result = await repo_query(
             "UPDATE $job SET status = 'failed', updated_at = time::now() "
-            "WHERE plan_id = $plan_id AND claim_request_id = $request_id "
+            "WHERE plan_id = $plan_id AND package_sha256 = $package_sha256 "
+            "AND claim_request_id = $request_id "
             "AND claim_options_sha256 = $options_sha256 AND claim_owner_token = $owner_token "
-            "AND claim_expires_at > time::now() RETURN AFTER;",
+            "AND claim_package_sha256 = $package_sha256 "
+            "AND claim_expires_at > time::now() AND status = 'publishing' "
+            "RETURN AFTER;",
             {
                 "job": _canonical_record("study_anki_job", job_id),
                 "plan_id": plan_id,
+                "package_sha256": package_sha256,
                 "request_id": request_id,
                 "options_sha256": options_sha256,
                 "owner_token": owner_token,

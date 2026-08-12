@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from api.routers import study_anki
@@ -189,6 +189,8 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
             options_sha256: str,
             receipt_id: str,
             owner: str,
+            *,
+            package_sha256: str,
         ) -> AnkiJobMetadata | None:
             state["complete_calls"] = int(state["complete_calls"]) + 1
             if int(state["complete_calls"]) == 1:
@@ -239,6 +241,163 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
     assert repaired.status == "published"
     assert repaired.receipt_id == receipt.receipt_id
     assert state["complete_calls"] == 2
+
+
+@pytest.mark.asyncio
+async def test_replay_rejects_receipt_from_same_request_different_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package_a = build_apkg(tmp_path / "package-a.apkg", kind="basic")
+    package_b = build_apkg(tmp_path / "package-b.apkg", kind="reverse")
+    inspection_a = inspect_anki_package(package_a)
+    inspection_b = inspect_anki_package(package_b)
+    plan_id = "study_plan:authority"
+    job_id = "anki_job:" + "b" * 64
+    request_id = "same-request-different-package"
+    options = study_anki.AnkiImportOptions()
+    options_hash = study_anki._options_sha256(options)
+    now = datetime.now(UTC)
+    receipt_a = _receipt(package_a, request_id)
+    metadata = AnkiJobMetadata(
+        job_id=job_id,
+        plan_id=plan_id,
+        file_token="upload-" + "b" * 64 + ".apkg",
+        package_sha256=inspection_b.package_sha256,
+        collection_sha256=inspection_b.collection_sha256,
+        collection_member=inspection_b.collection_member,
+        card_count=len(inspection_b.cards),
+        transformed_count=inspection_b.transformed_count,
+        skipped_count=inspection_b.skipped_count,
+        rejected_count=inspection_b.skipped_count,
+        status="publishing",
+        claim_request_id=request_id,
+        claim_options_sha256=options_hash,
+        claim_package_sha256=inspection_b.package_sha256,
+        claim_owner_token="c" * 64,
+        claim_expires_at=now + timedelta(minutes=5),
+        created_at=now,
+        updated_at=now,
+        expires_at=now + timedelta(hours=1),
+    )
+    job = study_anki._ImportJob(
+        job_id,
+        plan_id,
+        package_b,
+        inspection_b,
+        status="publishing",
+        metadata=metadata,
+    )
+    complete_calls: list[tuple[object, ...]] = []
+
+    class FakeJobs:
+        async def claim(self, *args: object, **kwargs: object) -> AnkiClaimResult:
+            return AnkiClaimResult("replay")
+
+        async def get(self, job_id: str, plan_id: str) -> AnkiJobMetadata:
+            return metadata
+
+        async def complete(self, *args: object, **kwargs: object) -> AnkiJobMetadata:
+            complete_calls.append(args)
+            return metadata.model_copy(update={"status": "published", "receipt_id": receipt_a.receipt_id})
+
+    class FakeReceipts:
+        async def _find_by_request(self, plan_id: str, request_id: str) -> AnkiCompatibilityReceipt:
+            return receipt_a
+
+    monkeypatch.setattr(study_anki, "_durable_metadata_enabled", lambda: True)
+    monkeypatch.setattr(study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job))
+    monkeypatch.setattr(study_anki, "AnkiJobRepository", FakeJobs)
+    monkeypatch.setattr(study_anki, "AnkiImportRepository", FakeReceipts)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await study_anki.publish_anki_import(
+            plan_id,
+            job_id,
+            study_anki.AnkiImportPublishRequest(
+                upload_id=job_id,
+                request_id=request_id,
+                options=study_anki.AnkiHttpOptions(schema_version=1),
+            ),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert complete_calls == []
+    assert metadata.status == "publishing"
+    assert metadata.receipt_id is None
+
+
+@pytest.mark.asyncio
+async def test_published_replay_rejects_receipt_from_different_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package_a = build_apkg(tmp_path / "published-a.apkg", kind="basic")
+    package_b = build_apkg(tmp_path / "published-b.apkg", kind="reverse")
+    inspection_b = inspect_anki_package(package_b)
+    plan_id = "study_plan:published-authority"
+    job_id = "anki_job:" + "d" * 64
+    request_id = "published-replay-different-package"
+    options = study_anki.AnkiImportOptions()
+    options_hash = study_anki._options_sha256(options)
+    now = datetime.now(UTC)
+    receipt_a = _receipt(package_a, request_id)
+    metadata = AnkiJobMetadata(
+        job_id=job_id,
+        plan_id=plan_id,
+        file_token="upload-" + "d" * 64 + ".apkg",
+        package_sha256=inspection_b.package_sha256,
+        collection_sha256=inspection_b.collection_sha256,
+        collection_member=inspection_b.collection_member,
+        card_count=len(inspection_b.cards),
+        transformed_count=inspection_b.transformed_count,
+        skipped_count=inspection_b.skipped_count,
+        rejected_count=inspection_b.skipped_count,
+        status="published",
+        claim_request_id=request_id,
+        claim_options_sha256=options_hash,
+        claim_package_sha256=inspection_b.package_sha256,
+        claim_owner_token="e" * 64,
+        claim_expires_at=now + timedelta(minutes=5),
+        receipt_id=receipt_a.receipt_id,
+        created_at=now,
+        updated_at=now,
+        expires_at=now + timedelta(hours=1),
+    )
+    job = study_anki._ImportJob(
+        job_id,
+        plan_id,
+        package_b,
+        inspection_b,
+        status="published",
+        metadata=metadata,
+    )
+
+    class FakeJobs:
+        async def get(self, job_id: str, plan_id: str) -> AnkiJobMetadata:
+            return metadata
+
+    class FakeReceipts:
+        async def find_by_receipt(self, plan_id: str, receipt_id: str) -> AnkiCompatibilityReceipt:
+            return receipt_a
+
+    monkeypatch.setattr(study_anki, "_durable_metadata_enabled", lambda: True)
+    monkeypatch.setattr(study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job))
+    monkeypatch.setattr(study_anki, "AnkiJobRepository", FakeJobs)
+    monkeypatch.setattr(study_anki, "AnkiImportRepository", FakeReceipts)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await study_anki.publish_anki_import(
+            plan_id,
+            job_id,
+            study_anki.AnkiImportPublishRequest(
+                upload_id=job_id,
+                request_id=request_id,
+                options=study_anki.AnkiHttpOptions(schema_version=1),
+            ),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert metadata.status == "published"
+    assert metadata.receipt_id == receipt_a.receipt_id
 
 
 async def _async_return(value: object) -> object:
