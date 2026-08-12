@@ -382,7 +382,9 @@ async def test_real_studio_stale_claim_takeover_is_atomic_and_owner_fenced(clean
     )
     now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
     stale_started = now - timedelta(seconds=300)
-    stale_until = now - timedelta(seconds=1)
+    # Equality is the durable lease boundary: the old owner is expired and
+    # concurrent contenders must be able to converge on one fresh claim.
+    stale_until = now
     await repo_query(
         "CREATE $artifact CONTENT $data RETURN AFTER;",
         {

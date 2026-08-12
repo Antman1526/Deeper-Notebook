@@ -755,7 +755,7 @@ class StudyArtifactService:
                     "generation_claim_started_at = $started_at, "
                     "generation_claim_lease_until = $lease_until "
                     "WHERE status = 'pending' OR "
-                    "(status = 'running' AND generation_claim_lease_until < $now) "
+                    "(status = 'running' AND generation_claim_lease_until <= $now) "
                     "RETURN AFTER;",
                     {
                         "artifact": ensure_record_id(operation_id),
