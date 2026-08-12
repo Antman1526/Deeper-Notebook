@@ -115,11 +115,19 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
   }
+  .research-core-folio__spread:has(.research-core-utility-drawer) {
+    grid-template-columns: minmax(0, 1fr);
+  }
   /* The shell's compact editorial canvas has one rem of inline padding on
      each side. Keep the overlapping workspace track inside that content box
      so pane actions remain reachable at phone widths. */
   .research-core-folio__workspace {
-    max-width: calc(100vw - 2rem);
+    width: auto !important;
+    max-width: 100% !important;
+  }
+  .research-core-folio__workspace > .research-core-main {
+    width: auto !important;
+    max-width: 100% !important;
   }
   .research-core-folio__workspace { grid-column: 1; grid-row: 1; }
   .research-core-drawer-triggers {

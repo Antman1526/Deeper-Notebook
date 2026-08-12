@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { AppShell } from '@/components/layout/AppShell'
 import { NotebookList } from './components/NotebookList'
@@ -18,6 +18,7 @@ import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/K
 export default function NotebooksPage() {
   const { t } = useTranslation()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const createNotebookTriggerRef = useRef<HTMLButtonElement>(null)
   // v0.7.119 — Import dialog opens from the page header next to the
   // "New Notebook" button.
   const [importDialogOpen, setImportDialogOpen] = useState(false)
@@ -62,6 +63,12 @@ export default function NotebooksPage() {
 
   const hasArchived = (archivedNotebooks?.length ?? 0) > 0
   const isSearching = normalizedQuery.length > 0
+  const handleCreateDialogOpenChange = (open: boolean) => {
+    setCreateDialogOpen(open)
+    if (!open) {
+      requestAnimationFrame(() => createNotebookTriggerRef.current?.focus())
+    }
+  }
 
   return (
     <AppShell>
@@ -91,7 +98,7 @@ export default function NotebooksPage() {
               <Download className="h-4 w-4 mr-2" />
               {t('notebooks.import.button')}
             </Button>
-            <Button onClick={() => setCreateDialogOpen(true)}>
+            <Button ref={createNotebookTriggerRef} onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               {t('notebooks.newNotebook')}
             </Button>
@@ -143,7 +150,7 @@ export default function NotebooksPage() {
 
       <CreateNotebookDialog
         open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
+        onOpenChange={handleCreateDialogOpenChange}
       />
       <ImportNotebookDialog
         open={importDialogOpen}

@@ -84,6 +84,8 @@ describe('SourcesPage', () => {
     expect(await screen.findByRole('main', { name: 'Sources' })).toBeInTheDocument()
     expect(screen.getByText('Collect')).toBeInTheDocument()
     expect(screen.getByText('Field notes')).toBeInTheDocument()
+    expect(screen.getByRole('table')).toHaveClass('min-w-[288px]')
+    expect(screen.getByText('Field notes')).toHaveClass('block', 'min-w-0')
     fireEvent.click(screen.getByRole('button', { name: 'Add source' }))
     expect(openSourceDialog).toHaveBeenCalledWith(expect.objectContaining({
       onSourceCreated: expect.any(Function),

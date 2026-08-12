@@ -15,6 +15,7 @@ vi.mock('@/lib/hooks/use-translation', () => ({
     'transformations.desc': 'Reusable research transformations.',
     'transformations.workspace': 'Workspace',
     'transformations.title': 'Transformations',
+    'transformations.playground': 'Playground',
   })[key] ?? key }),
 }))
 
@@ -26,5 +27,7 @@ describe('TransformationsPage', () => {
     expect(screen.getByText('Create')).toBeInTheDocument()
     expect(screen.getByText('Prompt editor')).toBeInTheDocument()
     expect(screen.getByText('Transformation list')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Transformations/ })).toHaveClass('min-w-0', 'flex-1')
+    expect(screen.getByRole('tab', { name: /Playground/ })).toHaveClass('min-w-0', 'flex-1')
   })
 })

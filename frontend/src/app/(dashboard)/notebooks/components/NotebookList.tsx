@@ -44,7 +44,7 @@ export function NotebookList({
     // v0.8.70 — skeleton cards instead of a centered spinner: the layout
     // settles instantly (no jump when data lands) and reads as faster.
     return (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="space-y-3 rounded-lg border bg-card p-4">
             <div className="flex items-center gap-3">
@@ -109,7 +109,7 @@ export function NotebookList({
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
             {notebooks.map((notebook) => (
               <NotebookCard key={notebook.id} notebook={notebook} />
             ))}

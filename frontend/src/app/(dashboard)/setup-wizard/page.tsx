@@ -50,8 +50,8 @@ const SUBSYSTEM_ORDER: SubsystemKey[] = [
 // migrations have no in-app fix — they're shown with copy-paste
 // instructions instead of a deep-link button.
 const FIX_PATHS: Partial<Record<SubsystemKey, string>> = {
-  embedding_model: '/settings/models',
-  chat_model: '/settings/models',
+  embedding_model: '/settings/api-keys',
+  chat_model: '/settings/api-keys',
   command_registry: '/advanced',
 }
 

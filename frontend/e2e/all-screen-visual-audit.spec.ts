@@ -1,13 +1,25 @@
 import { installLuminousFolioFixture } from './fixtures/luminous-folio'
 import { expect, researchWorkbenchFixtures, test } from './fixtures/research-workbench'
+import {
+  isAllowedLoopbackHostname,
+  isExternalRequest,
+} from '../src/lib/visual-audit-request-policy'
+
+const rollbackBuild = process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO === '0'
 
 test('compact shell keeps the focus control clear of the command title', async ({ page }) => {
   await installLuminousFolioFixture(page, { theme: 'research-core-dark' })
   await page.setViewportSize({ width: 320, height: 844 })
   await page.goto('/notebooks')
 
-  const title = page.locator('.dn-command-title')
   const focusControl = page.getByRole('button', { name: 'Enter Focus mode' })
+  if (rollbackBuild) {
+    await expect(page.locator('.dn-legacy-shell')).toBeVisible()
+    await expect(focusControl).toBeVisible()
+    return
+  }
+
+  const title = page.locator('.dn-command-title')
   await expect(title).toBeVisible()
   await expect(focusControl).toBeVisible()
 
@@ -20,6 +32,16 @@ test('compact shell keeps the focus control clear of the command title', async (
     && titleBox.y < focusBox.y + focusBox.height
     && titleBox.y + titleBox.height > focusBox.y
   expect(overlaps).toBe(false)
+})
+
+test('external-request detector rejects hostile loopback-looking hostnames without network access', async () => {
+  expect(isExternalRequest('http://localhost:3117/api/health')).toBe(false)
+  expect(isExternalRequest('http://127.0.0.1:3117/api/health')).toBe(false)
+  expect(isExternalRequest('http://[::1]:3117/api/health')).toBe(false)
+  expect(isAllowedLoopbackHostname('attacker127.0.0.1')).toBe(false)
+  expect(isAllowedLoopbackHostname('notlocalhost')).toBe(false)
+  expect(isExternalRequest('http://attacker127.0.0.1.example/api/health')).toBe(true)
+  expect(isExternalRequest('http://notlocalhost/api/health')).toBe(true)
 })
 
 test('request ledger records unmatched same-origin API calls while allowing explicit mocks', async ({ page }) => {
@@ -77,6 +99,12 @@ const canonicalViewports = [
   { width: 1440, height: 900 },
 ] as const
 
+const legacyRoutesWithNestedMain = new Set(['/','/knowledge','/podcasts/studio'])
+
+function expectedMainLandmarks(route: string): number {
+  return rollbackBuild && legacyRoutesWithNestedMain.has(route) ? 2 : 1
+}
+
 const sourceListFixture = {
   id: 'source-fixture-001',
   title: 'Deterministic source',
@@ -103,6 +131,31 @@ const sourceDetailFixture = {
   notebooks: ['notebook-fixture-001'],
 } as const
 
+const sharedBackgroundResponses: ReadonlyArray<readonly [string, unknown]> = [
+  ['/api/system/db-repair-needed', { needs_repair: false }],
+  ['/api/updates/check', {
+    current: 'fixture', latest: null, update_available: false, skipped: false,
+    skipped_version: null, html_url: null, published_at: null, enabled: false, last_check: null,
+  }],
+  ['/api/system/network-status', {
+    status: 'online', forced_offline: false, local_fallback_model: null, checked_epoch_ms: 0,
+  }],
+  ['/api/deeper-notebook/vaults', []],
+  ['/api/deeper-notebook/overlay/notes', []],
+  ['/api/settings', {}],
+  ['/api/launcher-prefs', {}],
+  ['/api/mcp/web-search', { enabled: false, provider: null, tool_name: 'web_search' }],
+  ['/api/deeper-notebook/workspace/knowledge', {}],
+  ['/api/deeper-notebook/knowledge/bookmarks', { items: [], next_cursor: null }],
+  ['/api/deeper-notebook/knowledge/bookmark-folders', { items: [] }],
+  ['/api/deeper-notebook/knowledge/workspaces', { items: [] }],
+  ['/api/settings/observability', {}],
+  ['/api/deeper-notebook/gmail/status', { connected: false, configured: false }],
+  ['/api/credentials/status', { configured: {}, source: {}, encryption_configured: true }],
+  ['/api/credentials/env-status', {}],
+  ['/api/transformations', []],
+]
+
 test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser state', async ({ page }) => {
   test.setTimeout(240_000)
   const consoleErrors: string[] = []
@@ -114,8 +167,7 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
   })
   page.on('pageerror', error => pageErrors.push(error.message))
   page.on('request', request => {
-    const url = new URL(request.url())
-    if (!url.hostname.endsWith('127.0.0.1') && !url.hostname.endsWith('localhost')) {
+    if (isExternalRequest(request.url())) {
       externalRequests.push(request.url())
     }
   })
@@ -124,26 +176,6 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
     theme: 'research-core-dark',
     unexpectedApiRequests,
   })
-  const sharedBackgroundResponses: ReadonlyArray<readonly [string, unknown]> = [
-    ['/api/system/db-repair-needed', { needs_repair: false }],
-    ['/api/updates/check', {
-      current: 'fixture', latest: null, update_available: false, skipped: false,
-      skipped_version: null, html_url: null, published_at: null, enabled: false, last_check: null,
-    }],
-    ['/api/system/network-status', {
-      status: 'online', forced_offline: false, local_fallback_model: null, checked_epoch_ms: 0,
-    }],
-    ['/api/deeper-notebook/vaults', []],
-    ['/api/deeper-notebook/overlay/notes', []],
-    ['/api/settings', {}],
-    ['/api/launcher-prefs', {}],
-    ['/api/mcp/web-search', { enabled: false, provider: null, tool_name: 'web_search' }],
-    ['/api/deeper-notebook/workspace/knowledge', {}],
-    ['/api/deeper-notebook/knowledge/bookmarks', { items: [], next_cursor: null }],
-    ['/api/deeper-notebook/knowledge/bookmark-folders', { items: [] }],
-    ['/api/deeper-notebook/knowledge/workspaces', { items: [] }],
-    ['/api/settings/observability', {}],
-  ]
   for (const [pathname, body] of sharedBackgroundResponses) {
     await page.route(url => url.pathname === pathname, async route => {
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
@@ -281,10 +313,14 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
       await page.goto(route)
       await expect(page.locator('body')).toBeVisible()
       await expect(page.locator('h1'), `${route} ${viewport.width}px heading`).toHaveCount(1)
-      await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(1)
+      await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(expectedMainLandmarks(route))
+      await expect(
+        page.locator(rollbackBuild ? '.dn-legacy-shell' : '.dn-luminous-shell'),
+        `${route} ${viewport.width}px shell mode`,
+      ).toBeVisible()
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
       await expect.poll(
-        () => page.locator('main').evaluate(element => element.getBoundingClientRect().width > 0),
+        () => page.locator('main').first().evaluate(element => element.getBoundingClientRect().width > 0),
         `${route} ${viewport.width}px main width`,
       ).toBe(true)
 
@@ -302,7 +338,17 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
           })
         return controls.flatMap(element => {
           const rect = element.getBoundingClientRect()
-          return rect.width > 0 && (rect.left < -1 || rect.right > window.innerWidth + 1)
+          let scrollableAncestor: HTMLElement | null = element.parentElement
+          while (scrollableAncestor) {
+            const style = window.getComputedStyle(scrollableAncestor)
+            const horizontallyScrollable = ['auto', 'scroll'].includes(style.overflowX)
+              && scrollableAncestor.scrollWidth > scrollableAncestor.clientWidth + 1
+            if (horizontallyScrollable) break
+            scrollableAncestor = scrollableAncestor.parentElement
+          }
+          return rect.width > 0
+            && !scrollableAncestor
+            && (rect.left < -1 || rect.right > window.innerWidth + 1)
             ? [{
               label: element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName,
               tag: element.tagName,
@@ -335,18 +381,53 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
   expect(unexpectedApiRequests).toEqual([])
 })
 
-test('login retains a named main landmark and page heading', async ({ page }) => {
+test('login retains a named main landmark and page heading at every audit width', async ({ page }) => {
+  test.setTimeout(120_000)
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  const externalRequests: string[] = []
+  page.on('console', message => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  page.on('pageerror', error => pageErrors.push(error.message))
+  page.on('request', request => {
+    if (isExternalRequest(request.url())) externalRequests.push(request.url())
+  })
+
   await installLuminousFolioFixture(page, { theme: 'research-core-dark' })
   await page.route('**/api/auth/status', async route => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ auth_required: true }) })
   })
-  await page.goto('/login')
-  await expect(page.locator('main[aria-label="Deeper Notebook sign in"]')).toBeVisible()
-  await expect(page.locator('main h1')).toHaveCount(1)
+  for (const viewport of canonicalViewports) {
+    await page.setViewportSize(viewport)
+    await page.goto('/login')
+    await expect(page.locator('main[aria-label="Deeper Notebook sign in"]')).toBeVisible()
+    await expect(page.locator('main h1')).toHaveCount(1)
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+  expect(consoleErrors).toEqual([])
+  expect(pageErrors).toEqual([])
+  expect(externalRequests).toEqual([])
 })
 
-test('first-launch setup retains a named main landmark and page heading', async ({ page }) => {
-  await installLuminousFolioFixture(page, { theme: 'research-core-dark' })
+test('first-launch setup retains a named main landmark and page heading at every audit width', async ({ page }) => {
+  test.setTimeout(120_000)
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  const externalRequests: string[] = []
+  const unexpectedApiRequests: string[] = []
+  page.on('console', message => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  page.on('pageerror', error => pageErrors.push(error.message))
+  page.on('request', request => {
+    if (isExternalRequest(request.url())) externalRequests.push(request.url())
+  })
+
+  await installLuminousFolioFixture(page, {
+    theme: 'research-core-dark',
+    unexpectedApiRequests,
+  })
   await page.route('**/healthz/deep', async route => {
     await route.fulfill({
       contentType: 'application/json',
@@ -365,8 +446,170 @@ test('first-launch setup retains a named main landmark and page heading', async 
   await page.route('**/api/notebooks**', async route => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })
-  await page.goto('/setup-wizard')
-  await expect(page.getByRole('heading', { name: 'Setup Wizard', exact: true })).toBeVisible()
-  await expect(page.locator('main')).toHaveCount(1)
-  await expect(page.locator('h1')).toHaveCount(1)
+  for (const [pathname, body] of sharedBackgroundResponses) {
+    await page.route(url => url.pathname === pathname, async route => {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+    })
+  }
+  for (const viewport of canonicalViewports) {
+    await page.setViewportSize(viewport)
+    await page.goto('/setup-wizard')
+    await expect(page.getByRole('heading', { name: 'Setup Wizard', exact: true })).toBeVisible()
+    await expect(page.locator('main')).toHaveCount(1)
+    await expect(page.locator('h1')).toHaveCount(1)
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+  expect(consoleErrors).toEqual([])
+  expect(pageErrors).toEqual([])
+  expect(externalRequests).toEqual([])
+  expect(unexpectedApiRequests).toEqual([])
+})
+
+test('representative states and keyboard contracts remain bounded at every audit width', async ({ page }) => {
+  test.setTimeout(240_000)
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  const externalRequests: string[] = []
+  const unexpectedApiRequests: string[] = []
+  let notebookState: 'loading' | 'empty' | 'populated' = 'populated'
+  let sourceState: 'loading' | 'error' | 'populated' = 'populated'
+
+  page.on('console', message => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  page.on('pageerror', error => pageErrors.push(error.message))
+  page.on('request', request => {
+    if (isExternalRequest(request.url())) externalRequests.push(request.url())
+  })
+
+  await installLuminousFolioFixture(page, {
+    theme: 'research-core-dark',
+    motion: 'reduced',
+    unexpectedApiRequests,
+  })
+  for (const [pathname, body] of sharedBackgroundResponses) {
+    await page.route(url => url.pathname === pathname, async route => {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+    })
+  }
+  await page.route('**/api/notebooks**', async route => {
+    if (notebookState === 'loading') await new Promise(resolve => setTimeout(resolve, 900))
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(notebookState === 'populated' ? [researchWorkbenchFixtures.notebook] : []),
+    })
+  })
+  await page.route('**/api/sources**', async route => {
+    if (sourceState === 'loading') {
+      await new Promise(resolve => setTimeout(resolve, 900))
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify([sourceListFixture]) })
+      return
+    }
+    if (sourceState === 'error') {
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'fixture outage' }) })
+      return
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify([sourceListFixture]) })
+  })
+
+  const assertLayout = async (route: string, viewport: typeof canonicalViewports[number]) => {
+    await expect(page.locator('body')).toBeVisible()
+    await expect(page.locator('h1'), `${route} ${viewport.width}px heading`).toHaveCount(1)
+    await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(expectedMainLandmarks(route))
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await expect.poll(
+      () => page.locator('main').first().evaluate(element => element.getBoundingClientRect().width > 0),
+      `${route} ${viewport.width}px main width`,
+    ).toBe(true)
+    await expect(page.locator('html')).toHaveAttribute('data-dn-motion', 'reduced')
+
+    const focusables = page.locator('button:visible, a:visible, input:visible, textarea:visible, select:visible, [tabindex="0"]:visible')
+    await expect(focusables.first()).toBeVisible()
+    await focusables.first().focus()
+    const focusBefore = await page.evaluate(() => {
+      const element = document.activeElement as HTMLElement | null
+      if (!element) return null
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return {
+        tag: element.tagName,
+        text: element.textContent?.trim() ?? '',
+        visible: rect.width > 0 && rect.height > 0,
+        focusStyle: style.outlineWidth !== '0px' || style.boxShadow !== 'none',
+      }
+    })
+    expect(focusBefore?.visible, `${route} ${viewport.width}px focused control visible`).toBe(true)
+    expect(focusBefore?.focusStyle, `${route} ${viewport.width}px focused control has visible focus`).toBe(true)
+    await page.keyboard.press('Tab')
+    const focusAfter = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 160) ?? '')
+    expect(focusAfter).not.toBe('')
+
+    const undersizedTargets = await page.evaluate((isRollback) => Array.from(
+      document.querySelectorAll<HTMLElement>('button, a, [role="button"]'),
+    ).filter(element => {
+      const style = getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && rect.width > 0
+        && rect.height > 0
+        && !(element.matches('a') && element.querySelector('button, [role="button"]'))
+        && (rect.width < (isRollback ? 28 : 32) || rect.height < (isRollback ? 28 : 32))
+    }).map(element => element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName), rollbackBuild)
+    expect(undersizedTargets, `${route} ${viewport.width}px interactive target floor`).toEqual([])
+
+    // A half-width viewport is the deterministic equivalent of browser zoom
+    // for responsive proof. Keep the real viewport matrix intact above.
+    await page.setViewportSize({ width: Math.max(320, Math.floor(viewport.width / 2)), height: viewport.height })
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await expect.poll(() => page.locator('main').first().evaluate(element => element.getBoundingClientRect().width > 0)).toBe(true)
+    await page.setViewportSize(viewport)
+  }
+
+  for (const viewport of canonicalViewports) {
+    await page.setViewportSize(viewport)
+
+    notebookState = 'loading'
+    await page.goto('/')
+    await expect(page.getByRole('status', { name: 'Loading your notebook desk' })).toBeVisible()
+    await expect(page.getByRole('status', { name: 'Loading your notebook desk' })).toHaveAttribute('aria-live', 'polite')
+
+    notebookState = 'empty'
+    await page.goto('/notebooks')
+    await expect(page.getByRole('heading', { name: /No results|No notebooks/i })).toBeVisible()
+    await assertLayout('/notebooks (empty)', viewport)
+
+    notebookState = 'populated'
+    await page.goto('/notebooks')
+    await expect(page.getByText('Deterministic Research Notebook', { exact: true })).toBeVisible()
+    await assertLayout('/notebooks (populated)', viewport)
+
+    const createTrigger = page.getByRole('button', { name: /New Notebook/i }).first()
+    await expect(createTrigger).toBeVisible()
+    await createTrigger.click()
+    const dialog = page.getByRole('dialog').first()
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('input, textarea, button').first()).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(createTrigger).toBeFocused()
+
+    sourceState = 'loading'
+    await page.goto('/sources')
+    await expect(page.getByTestId('loading-spinner')).toBeVisible()
+    sourceState = 'error'
+    await page.goto('/sources')
+    await expect(page.locator('main').getByText('Failed to load sources', { exact: true })).toBeVisible()
+    sourceState = 'populated'
+    await page.reload()
+    await expect(page.getByText('Deterministic source', { exact: true })).toBeVisible()
+    await assertLayout('/sources (recovered)', viewport)
+  }
+
+  expect(pageErrors).toEqual([])
+  expect(externalRequests).toEqual([])
+  expect(unexpectedApiRequests).toEqual([])
+  expect(consoleErrors.filter(error => (
+    !error.includes('Failed to fetch sources') && !error.includes('status of 503')
+  ))).toEqual([])
 })

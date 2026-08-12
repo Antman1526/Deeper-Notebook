@@ -153,7 +153,11 @@ export function SmartRoutingPanel({ defaults }: SmartRoutingPanelProps) {
             onValueChange={v => savePref(v as 'auto' | 'local' | 'cloud')}
             disabled={!enabled || updateDefaults.isPending}
           >
-            <SelectTrigger id="smart-routing-pref" data-testid="smart-routing-pref">
+            <SelectTrigger
+              id="smart-routing-pref"
+              data-testid="smart-routing-pref"
+              className="w-full min-w-0 max-w-full"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

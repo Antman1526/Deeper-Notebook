@@ -40,6 +40,7 @@ export function TurnIntoPodcastAction({
         type="button"
         variant="outline"
         size="sm"
+        className="min-h-8 min-w-8"
         disabled={Boolean(unavailableReason)}
         aria-describedby={reasonId}
         onClick={(event) => {

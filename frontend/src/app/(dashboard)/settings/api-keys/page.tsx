@@ -811,19 +811,19 @@ function DefaultModelSelectors({
             const isValid = currentValue && available.some(m => m.id === currentValue)
 
             return (
-              <div key={config.key} className="space-y-1">
+              <div key={config.key} className="min-w-0 max-w-full space-y-1">
                 <Label htmlFor={config.id} className="text-xs">
                   {config.label}
                   {config.required && <span className="text-destructive ml-0.5">*</span>}
                 </Label>
-                <div className="flex gap-1">
+                <div className="flex min-w-0 max-w-full gap-1">
                   <Select
                     value={currentValue || ""}
                     onValueChange={(v) => handleChange(config.key, v)}
                   >
                     <SelectTrigger
                       id={config.id}
-                      className={`h-8 text-xs ${config.required && !isValid && available.length > 0 ? 'border-destructive' : ''}`}
+                      className={`h-8 w-full min-w-0 max-w-full text-xs ${config.required && !isValid && available.length > 0 ? 'border-destructive' : ''}`}
                     >
                       <SelectValue placeholder={
                         config.required && !isValid && available.length > 0
@@ -863,19 +863,19 @@ function DefaultModelSelectors({
                 const isValid = currentValue && available.some(m => m.id === currentValue)
 
                 return (
-                  <div key={config.key} className="space-y-1">
+                  <div key={config.key} className="min-w-0 max-w-full space-y-1">
                     <Label htmlFor={config.id} className="text-xs">
                       {config.label}
                       {config.required && <span className="text-destructive ml-0.5">*</span>}
                     </Label>
-                    <div className="flex gap-1">
+                    <div className="flex min-w-0 max-w-full gap-1">
                       <Select
                         value={currentValue || ""}
                         onValueChange={(v) => handleChange(config.key, v)}
                       >
                         <SelectTrigger
                           id={config.id}
-                          className={`h-8 text-xs ${config.required && !isValid && available.length > 0 ? 'border-destructive' : ''}`}
+                          className={`h-8 w-full min-w-0 max-w-full text-xs ${config.required && !isValid && available.length > 0 ? 'border-destructive' : ''}`}
                         >
                           <SelectValue placeholder={
                             config.required && !isValid && available.length > 0

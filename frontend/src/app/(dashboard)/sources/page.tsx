@@ -365,7 +365,7 @@ export default function SourcesPage() {
             ref={tableRef}
             tabIndex={0}
             data-dn-sources-table="true"
-            className="w-full min-w-0 outline-none table-fixed xl:min-w-[800px]"
+            className="w-full min-w-[288px] outline-none table-fixed xl:min-w-[800px]"
           >
             <colgroup>
               <col className="w-[7rem] sm:w-[120px]" />
@@ -435,8 +435,8 @@ export default function SourcesPage() {
                     </div>
                   </td>
                   <td className="h-12 px-4">
-                    <div className="flex flex-col overflow-hidden">
-                      <span className="font-medium truncate">
+                    <div className="flex min-w-0 w-full flex-col overflow-hidden">
+                      <span className="block min-w-0 truncate font-medium">
                         {source.title || t('sources.untitledSource')}
                       </span>
                       {source.asset?.url && (

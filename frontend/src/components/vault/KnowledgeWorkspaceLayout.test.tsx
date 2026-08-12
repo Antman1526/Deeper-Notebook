@@ -54,7 +54,7 @@ describe('KnowledgeWorkspaceLayout', () => {
 
   it('renders recursive right and down splits as accessible pane regions', () => {
     renderLayout()
-    expect(screen.getByRole('main', { name: 'Knowledge workspace' })).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'Knowledge workspace' })).toHaveClass('min-w-0', 'max-w-full')
     const firstPane = screen.getByRole('region', {
       name: /Knowledge pane pane-1/,
     })

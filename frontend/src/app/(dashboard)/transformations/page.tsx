@@ -51,13 +51,13 @@ export default function TransformationsPage() {
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('transformations.workspace')}</p>
             <TabsList aria-label={t('common.accessibility.transformationViews')} className="w-full max-w-xl">
-              <TabsTrigger value="transformations" className="flex items-center gap-2">
+              <TabsTrigger value="transformations" className="min-w-0 flex-1 gap-1 px-2 text-xs sm:gap-2 sm:px-4 sm:text-sm">
                 <Wand2 className="h-4 w-4" />
-                {t('transformations.title')}
+                <span className="min-w-0 truncate">{t('transformations.title')}</span>
               </TabsTrigger>
-              <TabsTrigger value="playground" className="flex items-center gap-2">
+              <TabsTrigger value="playground" className="min-w-0 flex-1 gap-1 px-2 text-xs sm:gap-2 sm:px-4 sm:text-sm">
                 <Play className="h-4 w-4" />
-                {t('transformations.playground')}
+                <span className="min-w-0 truncate">{t('transformations.playground')}</span>
               </TabsTrigger>
             </TabsList>
           </div>

@@ -82,6 +82,15 @@ describe('EpisodesTab', () => {
     expect(screen.getByRole('button', { name: 'podcasts.regenerating' })).toBeDisabled()
   })
 
+  it('keeps the compact episode header controls inside the available width', () => {
+    renderTab()
+
+    expect(screen.getByRole('heading', { name: 'podcasts.overviewTitle' }).parentElement)
+      .toHaveClass('min-w-0', 'max-w-full')
+    expect(screen.getByRole('button', { name: 'common.refresh' }).parentElement)
+      .toHaveClass('w-full', 'min-w-0', 'max-w-full')
+  })
+
   it('keeps Lab retry disabled while a parent-started retry is pending', () => {
     currentEpisode = { ...episode, job_status: 'failed' }
     retryMutation.isPending = true

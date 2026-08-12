@@ -23,6 +23,7 @@ describe('TurnIntoPodcastAction', () => {
 
     expect(onOpen).toHaveBeenCalledOnce()
     expect(onOpen).toHaveBeenCalledWith([selection], 'quick')
+    expect(screen.getByRole('button', { name: 'Turn into podcast' })).toHaveClass('min-h-8', 'min-w-8')
   })
 
   it('keeps an unavailable action visible with its exact reason', () => {

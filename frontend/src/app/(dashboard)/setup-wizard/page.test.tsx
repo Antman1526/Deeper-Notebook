@@ -130,9 +130,9 @@ describe('SetupWizardPage', () => {
     const fixButtons = screen.getAllByText('setupWizard.fixButton')
     expect(fixButtons.length).toBeGreaterThanOrEqual(1)
 
-    // Embedding fix link should deep-link to /settings/models.
+    // Embedding fix link should deep-link to the live model settings route.
     const fixLink = fixButtons[0].closest('a')
-    expect(fixLink).toHaveAttribute('href', '/settings/models')
+    expect(fixLink).toHaveAttribute('href', '/settings/api-keys')
 
     expect(screen.getByTestId('continue-button')).not.toBeDisabled()
   })

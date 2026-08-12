@@ -408,7 +408,7 @@ export function AppSidebar() {
               <>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div>
+                    <div className="w-full">
                       <ThemeToggle iconOnly />
                     </div>
                   </TooltipTrigger>
@@ -416,7 +416,7 @@ export function AppSidebar() {
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div>
+                    <div className="w-full">
                       <LanguageToggle iconOnly />
                     </div>
                   </TooltipTrigger>
@@ -425,7 +425,7 @@ export function AppSidebar() {
                 {/* ONP v0.6 — Gmail sign-in / status (icon-only when collapsed) */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div>
+                    <div className="w-full">
                       <GmailSidebarButton iconOnly />
                     </div>
                   </TooltipTrigger>

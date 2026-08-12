@@ -273,8 +273,8 @@ export function ChatPanel({
     <>
     <Card className="flex flex-col h-full flex-1 overflow-hidden">
       <CardHeader className="pb-3 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <CardTitle className="flex min-w-0 flex-1 items-center gap-2">
             <Bot className="h-5 w-5" />
             {title || (contextType === 'source' ? t('chat.chatWith').replace('{name}', t('navigation.sources')) : t('chat.chatWith').replace('{name}', t('common.notebook')))}
           </CardTitle>
@@ -283,7 +283,7 @@ export function ChatPanel({
               <Button
                 variant="ghost"
                 size="sm"
-                className="gap-2"
+                className="shrink-0 gap-2"
                 onClick={() => setSessionManagerOpen(true)}
                 disabled={loadingSessions}
               >
