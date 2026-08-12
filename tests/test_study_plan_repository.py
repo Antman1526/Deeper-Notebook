@@ -307,7 +307,7 @@ async def test_driver_outages_are_not_misclassified_as_domain_conflicts(
     monkeypatch, operation
 ):
     async def query(sql, params):
-        raise RuntimeError("database transport unavailable")
+        raise RuntimeError(f"database transport unavailable while executing query: {sql}")
 
     monkeypatch.setattr(plan_repository, "repo_query", query)
     repository = StudyPlanRepository()
@@ -326,7 +326,7 @@ async def test_driver_outages_are_not_misclassified_as_domain_conflicts(
 @pytest.mark.asyncio
 async def test_repository_owned_transaction_guard_is_a_typed_conflict(monkeypatch):
     async def query(sql, params):
-        raise RuntimeError("An error occurred: study_plan_guard_failed")
+        raise RuntimeError("study_plan_guard_failed")
 
     monkeypatch.setattr(plan_repository, "repo_query", query)
 

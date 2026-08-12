@@ -56,8 +56,11 @@ def _is_transaction_conflict(exc: BaseException) -> bool:
     seen: set[int] = set()
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        message = str(current)
-        if any(marker in message for marker in _TRANSACTION_CONFLICT_MARKERS):
+        # ``repo_query`` raises RuntimeError with the exact string returned by
+        # Surreal THROW. Do not use substring matching: transport errors may
+        # echo the submitted SQL, including every dormant THROW marker.
+        message = str(current).strip()
+        if message in _TRANSACTION_CONFLICT_MARKERS:
             return True
         current = current.__cause__ or current.__context__
     return False
