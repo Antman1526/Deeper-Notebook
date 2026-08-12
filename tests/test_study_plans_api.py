@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -183,6 +185,15 @@ def repository() -> FakeRepository:
 def client(monkeypatch: pytest.MonkeyPatch, repository: FakeRepository) -> TestClient:
     monkeypatch.setattr(study_plans, "study_workbench_enabled", lambda: True)
     monkeypatch.setattr(study_plans, "_repository", lambda: repository)
+    # These route-contract tests use an in-memory plan repository.  Keep the
+    # production source-authority validation enabled, while making the
+    # explicit seam deterministic so happy-path link requests can reach the
+    # fake repository instead of opening the local database.
+    monkeypatch.setattr(
+        study_plans.StudySourceService,
+        "validate_source",
+        AsyncMock(return_value=SimpleNamespace(id="source:one")),
+    )
     app = FastAPI()
     app.include_router(study_plans.router, prefix="/api")
     return TestClient(app)
