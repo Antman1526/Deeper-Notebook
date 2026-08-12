@@ -151,6 +151,14 @@ class AnkiImportRepository:
         )
         return _receipt_from(rows)
 
+    async def find_by_receipt(self, plan_id: str, receipt_id: str) -> AnkiCompatibilityReceipt | None:
+        rows = await repo_query(
+            f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "
+            "WHERE plan_id = $plan_id AND receipt_id = $receipt_id LIMIT 1;",
+            {"plan_id": plan_id, "receipt_id": receipt_id},
+        )
+        return _receipt_from(rows)
+
     async def publish(
         self,
         plan_id: str,
@@ -271,12 +279,29 @@ class AnkiImportRepository:
                     "syllabus_unit_id": options.syllabus_unit_id,
                     "created_at": now,
                 }
+                source_fields = preview.source_fields or (preview.front, preview.back)
+                params[f"compat_{index}"] = {
+                    "plan_id": canonical_plan_id,
+                    "card_id": str(record),
+                    "source_note_id": preview.source_note_id or preview.note_id,
+                    "source_model_kind": preview.source_model_kind or (
+                        "cloze" if preview.kind == "cloze" else "basic"
+                    ),
+                    "template_ord": preview.template_ord if preview.template_ord is not None else 0,
+                    "kind": preview.kind,
+                    "source_fields": list(source_fields),
+                    "deck_name": preview.deck_name,
+                    "tags": list(preview.tags),
+                    "package_sha256": inspection.package_sha256,
+                    "created_at": now,
+                }
                 fragments.extend(
                     [
                         f"LET $card_guard_{index} = SELECT VALUE id FROM ONLY $card_record_{index}; ",
                         f"IF $card_guard_{index} != NONE {{ THROW 'study_anki_card_conflict'; }}; ",
                         f"CREATE $card_record_{index} CONTENT $card_{index}; ",
                         f"CREATE study_plan_card CONTENT $link_{index}; ",
+                        f"CREATE study_anki_card_compat CONTENT $compat_{index}; ",
                     ]
                 )
                 card_ids.append(str(record))

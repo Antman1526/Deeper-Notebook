@@ -1,0 +1,4 @@
+-- Roll back only Task 16's additive Anki portability metadata.
+REMOVE TABLE IF EXISTS study_anki_export;
+REMOVE TABLE IF EXISTS study_anki_job;
+REMOVE TABLE IF EXISTS study_anki_card_compat;

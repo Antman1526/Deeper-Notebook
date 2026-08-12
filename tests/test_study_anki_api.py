@@ -18,6 +18,7 @@ from tests.test_study_anki_export import PLAN_EXPORT
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
+    monkeypatch.setattr(study_anki, "_test_in_memory_metadata", lambda: True)
     study_anki._IMPORT_JOBS.clear()
     study_anki._DOWNLOADS.clear()
     monkeypatch.setattr(study_anki, "study_workbench_enabled", lambda: True)

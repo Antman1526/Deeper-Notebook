@@ -128,6 +128,34 @@ class AnkiCardPreview(_Frozen):
     deck_name: str = Field(min_length=1, max_length=200)
     tags: tuple[str, ...] = Field(default_factory=tuple, max_length=100)
     media_names: tuple[str, ...] = Field(default_factory=tuple, max_length=100)
+    # Bounded compatibility projection retained from the inspected note.
+    # ``front``/``back`` are rendered-card projections; export needs the
+    # original note fields to rebuild reverse and Cloze notes losslessly.
+    source_note_id: str | None = Field(default=None, max_length=128)
+    source_model_kind: Literal["basic", "cloze"] | None = None
+    template_ord: int | None = Field(default=None, ge=0, le=1)
+    source_fields: tuple[str, ...] = Field(default_factory=tuple, max_length=4)
+
+    @field_validator("source_fields", mode="before")
+    @classmethod
+    def source_fields_are_immutable(cls, value: object) -> object:
+        return tuple(value) if isinstance(value, list) else value
+
+    @field_validator("source_fields")
+    @classmethod
+    def source_fields_are_bounded(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if values and not 2 <= len(values) <= 4:
+            raise ValueError("invalid source fields")
+        if any(not isinstance(value, str) or len(value.encode("utf-8")) > 16_384 for value in values):
+            raise ValueError("invalid source fields")
+        return values
+
+    @field_validator("source_note_id")
+    @classmethod
+    def source_note_id_is_bounded(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value)):
+            raise ValueError("invalid source note ID")
+        return value
 
 
 class AnkiPackageInspection(_Frozen):
@@ -656,13 +684,31 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
             _reject("invalid_card")
         model_id, fields, tags = notes[note_id]
         model_type, _field_names, template_ords = model_specs[model_id]
-        if ord_value not in template_ords:
+        if model_type == 0 and ord_value not in template_ords:
+            _reject("invalid_card")
+        if model_type == 1 and not 0 <= ord_value < 1_000:
             _reject("invalid_card")
         if model_type == 0:
+            source_front, source_front_media = _clean_text(
+                fields[0], media_names=media_set, limit=8_000
+            )
+            source_back, source_back_media = _clean_text(
+                fields[1], media_names=media_set, limit=16_000
+            )
             front_index, back_index = ((0, 1) if ord_value == 0 else (1, 0))
-            front, front_media = _clean_text(fields[front_index], media_names=media_set, limit=8_000)
-            back, back_media = _clean_text(fields[back_index], media_names=media_set, limit=16_000)
+            front, front_media = (
+                (source_front, source_front_media)
+                if front_index == 0
+                else (source_back, source_back_media)
+            )
+            back, back_media = (
+                (source_back, source_back_media)
+                if back_index == 1
+                else (source_front, source_front_media)
+            )
             kind: Literal["basic", "reverse", "cloze"] = "basic" if ord_value == 0 else "reverse"
+            source_fields = (source_front, source_back)
+            source_model_kind: Literal["basic", "cloze"] = "basic"
         else:
             text, text_media = _clean_text(fields[0], media_names=media_set, limit=16_000)
             extra, extra_media = _clean_text(
@@ -680,6 +726,8 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
             front_media = text_media
             back_media = tuple(sorted(set(text_media) | set(extra_media)))
             kind = "cloze"
+            source_fields = (text, extra)
+            source_model_kind = "cloze"
         cards.append(
             AnkiCardPreview(
                 card_id=str(card_id),
@@ -690,6 +738,10 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
                 deck_name=deck_names_by_id[deck_id],
                 tags=tags,
                 media_names=tuple(sorted(set(front_media) | set(back_media))),
+                source_note_id=str(note_id),
+                source_model_kind=source_model_kind,
+                template_ord=ord_value,
+                source_fields=source_fields,
             )
         )
     return AnkiPackageInspection(

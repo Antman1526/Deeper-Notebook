@@ -1,0 +1,63 @@
+-- Durable Study Anki portability metadata.  Archive bytes remain in the
+-- application-controlled data root; these tables hold only bounded hashes,
+-- opaque file tokens, compatibility projections, and job state.
+DEFINE TABLE IF NOT EXISTS study_anki_card_compat SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_anki_card_compat TYPE int DEFAULT 1 ASSERT $value = 1;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_anki_card_compat TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS card_id ON TABLE study_anki_card_compat TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS source_note_id ON TABLE study_anki_card_compat TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 128;
+DEFINE FIELD IF NOT EXISTS source_model_kind ON TABLE study_anki_card_compat TYPE string ASSERT $value IN ["basic", "cloze"];
+DEFINE FIELD IF NOT EXISTS template_ord ON TABLE study_anki_card_compat TYPE int ASSERT $value >= 0 AND $value <= 1;
+DEFINE FIELD IF NOT EXISTS kind ON TABLE study_anki_card_compat TYPE string ASSERT $value IN ["basic", "reverse", "cloze"];
+DEFINE FIELD IF NOT EXISTS source_fields ON TABLE study_anki_card_compat TYPE array<string> ASSERT array::len($value) >= 2 AND array::len($value) <= 4 AND array::every($value, |$item| string::len($item) <= 16384);
+DEFINE FIELD IF NOT EXISTS deck_name ON TABLE study_anki_card_compat TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 200;
+DEFINE FIELD IF NOT EXISTS tags ON TABLE study_anki_card_compat TYPE array<string> ASSERT array::len($value) <= 100 AND array::every($value, |$item| string::trim($item) != "" AND string::len($item) <= 128);
+DEFINE FIELD IF NOT EXISTS package_sha256 ON TABLE study_anki_card_compat TYPE string ASSERT string::matches($value, "^[0-9a-f]{64}$");
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_anki_card_compat TYPE datetime;
+DEFINE INDEX IF NOT EXISTS idx_study_anki_card_compat_card ON TABLE study_anki_card_compat COLUMNS plan_id, card_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_study_anki_card_compat_note ON TABLE study_anki_card_compat COLUMNS plan_id, source_note_id;
+
+DEFINE TABLE IF NOT EXISTS study_anki_job SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_anki_job TYPE int DEFAULT 1 ASSERT $value = 1;
+DEFINE FIELD IF NOT EXISTS job_id ON TABLE study_anki_job TYPE string ASSERT string::matches($value, "^anki_job:[a-f0-9]{64}$");
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_anki_job TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS file_token ON TABLE study_anki_job TYPE string ASSERT string::matches($value, "^upload-[a-f0-9]{64}\\.apkg$");
+DEFINE FIELD IF NOT EXISTS package_sha256 ON TABLE study_anki_job TYPE string ASSERT string::matches($value, "^[0-9a-f]{64}$");
+DEFINE FIELD IF NOT EXISTS collection_sha256 ON TABLE study_anki_job TYPE string ASSERT string::matches($value, "^[0-9a-f]{64}$");
+DEFINE FIELD IF NOT EXISTS collection_member ON TABLE study_anki_job TYPE string ASSERT $value IN ["collection.anki2", "collection.anki21"];
+DEFINE FIELD IF NOT EXISTS card_count ON TABLE study_anki_job TYPE int ASSERT $value >= 0 AND $value <= 10000;
+DEFINE FIELD IF NOT EXISTS transformed_count ON TABLE study_anki_job TYPE int ASSERT $value >= 0 AND $value <= 10000;
+DEFINE FIELD IF NOT EXISTS skipped_count ON TABLE study_anki_job TYPE int ASSERT $value >= 0 AND $value <= 10000;
+DEFINE FIELD IF NOT EXISTS rejected_count ON TABLE study_anki_job TYPE int ASSERT $value >= 0 AND $value <= 10000;
+DEFINE FIELD IF NOT EXISTS status ON TABLE study_anki_job TYPE string ASSERT $value IN ["preview_ready", "processing", "publishing", "failed", "cancelled", "published"];
+DEFINE FIELD IF NOT EXISTS claim_request_id ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) <= 256);
+DEFINE FIELD IF NOT EXISTS claim_options_sha256 ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
+DEFINE FIELD IF NOT EXISTS claim_package_sha256 ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
+DEFINE FIELD IF NOT EXISTS claim_owner_token ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
+DEFINE FIELD IF NOT EXISTS claim_expires_at ON TABLE study_anki_job TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS receipt_id ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) <= 512);
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_anki_job TYPE datetime;
+DEFINE FIELD IF NOT EXISTS updated_at ON TABLE study_anki_job TYPE datetime;
+DEFINE FIELD IF NOT EXISTS expires_at ON TABLE study_anki_job TYPE datetime;
+DEFINE INDEX IF NOT EXISTS idx_study_anki_job_id ON TABLE study_anki_job COLUMNS job_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_study_anki_job_plan ON TABLE study_anki_job COLUMNS plan_id, created_at;
+DEFINE INDEX IF NOT EXISTS idx_study_anki_job_expiry ON TABLE study_anki_job COLUMNS expires_at;
+
+DEFINE TABLE IF NOT EXISTS study_anki_export SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_anki_export TYPE int DEFAULT 1 ASSERT $value = 1;
+DEFINE FIELD IF NOT EXISTS download_id ON TABLE study_anki_export TYPE string ASSERT string::matches($value, "^anki_download:[a-f0-9]{64}$");
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_anki_export TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS file_token ON TABLE study_anki_export TYPE string ASSERT string::matches($value, "^export-[a-f0-9]{64}\\.apkg$");
+DEFINE FIELD IF NOT EXISTS plan_revision ON TABLE study_anki_export TYPE int ASSERT $value >= 1;
+DEFINE FIELD IF NOT EXISTS syllabus_version ON TABLE study_anki_export TYPE int ASSERT $value >= 1;
+DEFINE FIELD IF NOT EXISTS package_sha256 ON TABLE study_anki_export TYPE string ASSERT string::matches($value, "^[0-9a-f]{64}$");
+DEFINE FIELD IF NOT EXISTS receipt_id ON TABLE study_anki_export TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS card_count ON TABLE study_anki_export TYPE int ASSERT $value >= 0 AND $value <= 10000;
+DEFINE FIELD IF NOT EXISTS stable_note_guids ON TABLE study_anki_export TYPE array<string> ASSERT array::len($value) <= 10000 AND array::every($value, |$item| string::len($item) <= 64);
+DEFINE FIELD IF NOT EXISTS stable_model_ids ON TABLE study_anki_export TYPE array<int> ASSERT array::len($value) <= 16;
+DEFINE FIELD IF NOT EXISTS stable_deck_ids ON TABLE study_anki_export TYPE array<int> ASSERT array::len($value) <= 1000;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_anki_export TYPE datetime;
+DEFINE FIELD IF NOT EXISTS expires_at ON TABLE study_anki_export TYPE datetime;
+DEFINE INDEX IF NOT EXISTS idx_study_anki_export_id ON TABLE study_anki_export COLUMNS download_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_study_anki_export_plan ON TABLE study_anki_export COLUMNS plan_id, created_at;
+DEFINE INDEX IF NOT EXISTS idx_study_anki_export_expiry ON TABLE study_anki_export COLUMNS expires_at;
