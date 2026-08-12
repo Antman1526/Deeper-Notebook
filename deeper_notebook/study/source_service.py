@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from surrealdb import RecordID
 
 from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.study.plans import StudyPlan, StudyPlanSourceLink
@@ -39,6 +41,14 @@ _SOURCE_KINDS: frozenset[str] = frozenset(
 _PROCESSING_STATUSES: frozenset[str] = frozenset({"new", "queued", "running"})
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_LINKS = 100
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedSourceID:
+    """The stable wire ID and the exact RecordID bound to Source queries."""
+
+    canonical: str
+    record: RecordID
 
 # This is intentionally the only Source query in the Study authority.  It
 # excludes asset paths, source bodies, and the rest of provenance while still
@@ -70,6 +80,56 @@ class StudySourceInputLimitError(StudySourceError):
     """The caller supplied more than the bounded source-link limit."""
 
 
+def normalize_source_id(source_id: str) -> NormalizedSourceID:
+    """Parse one Source ID without double-encoding Surreal's canonical form.
+
+    ``RecordID.parse`` exposes an already escaped token (for example,
+    ``source:⟨lecture notes⟩`` becomes the literal token ``⟨lecture notes⟩``).
+    Re-parsing that token as a new RecordID would produce
+    ``source:⟨⟨lecture notes\⟩⟩`` and query a different row.  Strip exactly one
+    canonical escape layer, unescape escaped closing brackets, and retain the
+    resulting RecordID object for the bound query.
+    """
+    if not isinstance(source_id, str):
+        raise StudySourceNotFoundError("source not found")
+    normalized = source_id.strip()
+    if not normalized or len(normalized) > 512:
+        raise StudySourceNotFoundError("source not found")
+
+    try:
+        record = ensure_record_id(normalized)
+    except Exception as exc:
+        # The installed RecordID parser splits on every colon.  A canonical
+        # Surreal ID may legitimately contain a colon inside angle brackets,
+        # so recover only that unambiguous encoded form; raw ``source:a:b``
+        # remains invalid.
+        table, separator, token = normalized.partition(":")
+        if table != "source" or separator != ":" or not (
+            token.startswith("⟨") and token.endswith("⟩")
+        ):
+            raise StudySourceNotFoundError("source not found") from exc
+        record = RecordID(table, token)
+
+    if getattr(record, "table_name", None) != "source":
+        raise StudySourceNotFoundError("source not found")
+    record_token = getattr(record, "id", None)
+    if not isinstance(record_token, str):
+        raise StudySourceNotFoundError("source not found")
+
+    if record_token.startswith("⟨") or record_token.endswith("⟩"):
+        if not (record_token.startswith("⟨") and record_token.endswith("⟩")):
+            raise StudySourceNotFoundError("source not found")
+        record_token = record_token[1:-1].replace("\\⟩", "⟩")
+    if not record_token.strip():
+        raise StudySourceNotFoundError("source not found")
+
+    canonical_record = RecordID("source", record_token)
+    canonical = str(canonical_record)
+    if len(canonical) > 512:
+        raise StudySourceNotFoundError("source not found")
+    return NormalizedSourceID(canonical=canonical, record=canonical_record)
+
+
 class StudySourceReadinessItem(BaseModel):
     """Bounded source readiness projection safe for study-plan callers."""
 
@@ -98,7 +158,7 @@ class StudySourceService:
 
     async def validate_source(self, source_id: str) -> dict[str, Any]:
         """Require one existing source before a plan link is persisted."""
-        normalized_id = self._normalize_source_id(source_id)
+        normalized_id = normalize_source_id(source_id)
         projection = await self._read_projection(normalized_id)
         if projection is None:
             raise StudySourceNotFoundError("source not found")
@@ -159,12 +219,16 @@ class StudySourceService:
             reason=reason,
         )
 
-    async def _read_projection(self, source_id: str) -> dict[str, Any] | None:
-        normalized_id = self._normalize_source_id(source_id)
+    async def _read_projection(
+        self, source_id: str | NormalizedSourceID
+    ) -> dict[str, Any] | None:
+        normalized_id = (
+            source_id if isinstance(source_id, NormalizedSourceID) else normalize_source_id(source_id)
+        )
         try:
             rows = await repo_query(
                 SOURCE_PROJECTION,
-                {"source_id": ensure_record_id(normalized_id)},
+                {"source_id": normalized_id.record},
             )
         except Exception as exc:
             raise StudySourceUnavailableError("source authority unavailable") from exc
@@ -249,26 +313,6 @@ class StudySourceService:
             reason="unavailable",
         )
 
-    @staticmethod
-    def _normalize_source_id(source_id: str) -> str:
-        if not isinstance(source_id, str):
-            raise StudySourceNotFoundError("source not found")
-        normalized = source_id.strip()
-        if not normalized or len(normalized) > 512:
-            raise StudySourceNotFoundError("source not found")
-        try:
-            record = ensure_record_id(normalized)
-        except Exception as exc:
-            raise StudySourceNotFoundError("source not found") from exc
-        if getattr(record, "table_name", None) != "source":
-            raise StudySourceNotFoundError("source not found")
-        record_token = getattr(record, "id", None)
-        if not isinstance(record_token, str) or not record_token.strip():
-            raise StudySourceNotFoundError("source not found")
-        if len(str(record)) > 512:
-            raise StudySourceNotFoundError("source not found")
-        return normalized
-
     @classmethod
     def _links(
         cls,
@@ -297,4 +341,4 @@ class StudySourceService:
     @classmethod
     def _link_source_id(cls, link: StudyPlanSourceLink | str) -> str:
         raw_id = link.source_id if isinstance(link, StudyPlanSourceLink) else link
-        return cls._normalize_source_id(raw_id)
+        return normalize_source_id(raw_id).canonical

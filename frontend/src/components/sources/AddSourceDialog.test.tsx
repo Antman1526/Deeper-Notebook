@@ -54,30 +54,53 @@ describe('AddSourceDialog source-created callback', () => {
     mutateAsync.mockResolvedValue({ id: 'source:created' })
   })
 
-  it('passes the created source ID to the callback while zero-argument callers remain valid', async () => {
+  it('calls the legacy callback once and reports one bounded ID batch for a single source', async () => {
     const onSourceCreated = vi.fn()
-    render(<AddSourceDialog open onOpenChange={vi.fn()} onSourceCreated={onSourceCreated} />)
-
-    await waitFor(() => expect(screen.getByRole('button', { name: 'common.done' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: 'common.done' }))
-
-    await waitFor(() => expect(onSourceCreated).toHaveBeenCalledWith('source:created'))
-  })
-
-  it('passes each bounded created source ID to the callback for batch uploads', async () => {
-    testState.sourceType = 'link'
-    mutateAsync
-      .mockResolvedValueOnce({ id: 'source:first' })
-      .mockResolvedValueOnce({ id: 'source:second' })
-    const onSourceCreated = vi.fn()
-    render(<AddSourceDialog open onOpenChange={vi.fn()} onSourceCreated={onSourceCreated} />)
+    const onSourcesCreated = vi.fn()
+    render(
+      <AddSourceDialog
+        open
+        onOpenChange={vi.fn()}
+        onSourceCreated={onSourceCreated}
+        onSourcesCreated={onSourcesCreated}
+      />,
+    )
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'common.done' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: 'common.done' }))
 
     await waitFor(() => {
-      expect(onSourceCreated).toHaveBeenNthCalledWith(1, 'source:first')
-      expect(onSourceCreated).toHaveBeenNthCalledWith(2, 'source:second')
+      expect(onSourceCreated).toHaveBeenCalledOnce()
+      expect(onSourceCreated).toHaveBeenCalledWith()
+      expect(onSourcesCreated).toHaveBeenCalledOnce()
+      expect(onSourcesCreated).toHaveBeenCalledWith(['source:created'])
+    })
+  })
+
+  it('calls each callback once for a batch and reports all bounded IDs together', async () => {
+    testState.sourceType = 'link'
+    mutateAsync
+      .mockResolvedValueOnce({ id: 'source:first' })
+      .mockResolvedValueOnce({ id: 'source:second' })
+    const onSourceCreated = vi.fn()
+    const onSourcesCreated = vi.fn()
+    render(
+      <AddSourceDialog
+        open
+        onOpenChange={vi.fn()}
+        onSourceCreated={onSourceCreated}
+        onSourcesCreated={onSourcesCreated}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'common.done' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'common.done' }))
+
+    await waitFor(() => {
+      expect(onSourceCreated).toHaveBeenCalledOnce()
+      expect(onSourceCreated).toHaveBeenCalledWith()
+      expect(onSourcesCreated).toHaveBeenCalledOnce()
+      expect(onSourcesCreated).toHaveBeenCalledWith(['source:first', 'source:second'])
     })
   })
 })

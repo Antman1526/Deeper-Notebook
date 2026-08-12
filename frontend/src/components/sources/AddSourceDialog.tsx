@@ -39,8 +39,6 @@ function boundedSourceId(value: unknown): string | null {
   return normalized.length > 0 && normalized.length <= 512 ? normalized : null
 }
 
-type SourceCreatedCallback = ((sourceId: string) => void) | (() => void)
-
 const createSourceSchema = z.object({
   type: z.enum(['link', 'upload', 'text']),
   title: z.string().optional(),
@@ -85,11 +83,10 @@ interface AddSourceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultNotebookId?: string
-  /**
-   * Receives each bounded created source ID.  The optional argument keeps
-   * existing zero-argument refresh callbacks source-compatible.
-   */
-  onSourceCreated?: SourceCreatedCallback
+  /** Legacy refresh callback: exactly once after a successful operation. */
+  onSourceCreated?: () => void
+  /** Receives all bounded IDs exactly once after a successful operation. */
+  onSourcesCreated?: (sourceIds: readonly string[]) => void
   // v0.8.77 — files handed in by drag-drop (improvement roadmap, Batch 1).
   // When present and the dialog opens, the upload tab is preselected and these
   // files prefill the file input. Best-effort (see the prefill effect).
@@ -113,6 +110,7 @@ export function AddSourceDialog({
   onOpenChange,
   defaultNotebookId,
   onSourceCreated,
+  onSourcesCreated,
   initialFiles,
 }: AddSourceDialogProps) {
   const { t } = useTranslation()
@@ -456,12 +454,10 @@ export function AddSourceDialog({
     return results
   }
 
-  const notifySourceCreated = (sourceId?: string) => {
-    if (sourceId) {
-      onSourceCreated?.(sourceId)
-    } else {
-      ;(onSourceCreated as (() => void) | undefined)?.()
-    }
+  const notifySourcesCreated = (sourceIds: readonly string[]) => {
+    const boundedIds = sourceIds.slice(0, MAX_BATCH_SIZE)
+    onSourceCreated?.()
+    onSourcesCreated?.(boundedIds)
   }
 
   // Form submission
@@ -483,19 +479,13 @@ export function AddSourceDialog({
           toast.warning(t('sources.batchPartial').replace('{success}', results.success.toString()).replace('{failed}', results.failed.toString()))
         }
 
-        if (results.sourceIds.length > 0) {
-          results.sourceIds.forEach((sourceId) => notifySourceCreated(sourceId))
-        } else if (results.success > 0) {
-          // Preserve legacy refresh callbacks if an old/mock API response did
-          // not include an ID, without inventing an identifier.
-          notifySourceCreated()
-        }
+        if (results.success > 0) notifySourcesCreated(results.sourceIds)
         handleClose()
       } else {
         // Single source submission
         setProcessingStatus({ message: t('sources.submittingSource') })
         const sourceId = await submitSingleSource(data)
-        notifySourceCreated(sourceId ?? undefined)
+        notifySourcesCreated(sourceId ? [sourceId] : [])
         handleClose()
       }
     } catch (error) {

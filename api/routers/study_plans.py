@@ -29,6 +29,7 @@ from deeper_notebook.study.source_service import (
     StudySourceNotFoundError,
     StudySourceService,
     StudySourceUnavailableError,
+    normalize_source_id,
 )
 
 
@@ -131,6 +132,11 @@ async def patch_study_plan(plan_id: str, payload: PatchStudyPlanRequest) -> Stud
 async def add_study_plan_source(
     plan_id: str, payload: SourceLinkRequest
 ) -> StudyPlanSourceLinkResponse:
+    try:
+        source_id = normalize_source_id(payload.source_id).canonical
+    except StudySourceNotFoundError as exc:
+        raise _source_error(exc) from None
+
     repository = _repository()
     try:
         current = await repository.get(plan_id)
@@ -138,8 +144,14 @@ async def add_study_plan_source(
         raise _repository_error(exc) from None
     if current is None:
         raise _not_found()
-    source_id = payload.source_id.strip()
-    if source_id in {link.source_id.strip() for link in current.source_links}:
+    existing_source_ids: set[str] = set()
+    for link in current.source_links:
+        try:
+            existing_source_ids.add(normalize_source_id(link.source_id).canonical)
+        except StudySourceNotFoundError:
+            # A legacy malformed link must not make a valid retry unsafe.
+            continue
+    if source_id in existing_source_ids:
         # A retry of an already-persisted link is idempotent even when the
         # caller retained a stale revision.  Do this before source authority
         # access or revision checks so retries remain mutation-free.
@@ -154,14 +166,14 @@ async def add_study_plan_source(
         raise _source_error(exc) from None
 
     try:
-        link = await repository.add_source(
+        await repository.add_source(
             plan_id,
             source_id,
             expected_revision=payload.expected_revision,
         )
     except StudyPlanRepositoryError as exc:
         raise _repository_error(exc) from None
-    return StudyPlanSourceLinkResponse.from_link(link)
+    return StudyPlanSourceLinkResponse(source_id=source_id)
 
 
 @router.get(

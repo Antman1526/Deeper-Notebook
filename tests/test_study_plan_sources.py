@@ -138,6 +138,27 @@ async def test_validate_source_binds_a_canonical_source_record_id(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("requested_id", "expected_id"),
+    [
+        ("source:lecture notes", "source:⟨lecture notes⟩"),
+        ("source:⟨lecture notes⟩", "source:⟨lecture notes⟩"),
+    ],
+)
+async def test_validate_source_round_trips_driver_encoded_ids_without_double_encoding(
+    monkeypatch, requested_id, expected_id
+):
+    query = AsyncMock(return_value=[_projection()])
+    monkeypatch.setattr(source_service, "repo_query", query)
+
+    await source_service.StudySourceService().validate_source(requested_id)
+
+    bound_id = query.await_args.args[1]["source_id"]
+    assert str(bound_id) == expected_id
+    assert getattr(bound_id, "id", None) == "lecture notes"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     "invalid_source_id",
     ["note:private", "notebook:private", "source:", "source:one:two", "not-a-record-id"],
 )
@@ -232,6 +253,85 @@ async def test_link_deduplicates_existing_source_without_revision_bump(monkeypat
     assert result.source_id == "source:one"
     add_source.assert_not_awaited()
     query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_link_rejects_invalid_source_before_repository_construction_even_for_stale_legacy_plan(
+    monkeypatch,
+):
+    repository_calls = 0
+    source_validation = AsyncMock()
+
+    def forbidden_repository():
+        nonlocal repository_calls
+        repository_calls += 1
+        raise AssertionError("invalid source must be rejected before repository access")
+
+    monkeypatch.setattr(study_plans, "_repository", forbidden_repository)
+    monkeypatch.setattr(study_plans.StudySourceService, "validate_source", source_validation)
+
+    with pytest.raises(HTTPException) as raised:
+        await study_plans.add_study_plan_source(
+            "study_plan:one",
+            SourceLinkRequest(source_id="note:private", expected_revision=99),
+        )
+
+    assert raised.value.status_code == 404
+    assert repository_calls == 0
+    source_validation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_link_persists_and_returns_one_canonical_encoded_source_id(monkeypatch):
+    plan = _plan()
+    captured: list[str] = []
+
+    class Repository:
+        async def get(self, plan_id: str) -> StudyPlan:
+            return plan
+
+        async def add_source(
+            self, plan_id: str, source_id: str, *, expected_revision: int
+        ) -> StudyPlanSourceLink:
+            captured.append(source_id)
+            return StudyPlanSourceLink(source_id=source_id)
+
+    monkeypatch.setattr(study_plans, "_repository", Repository)
+    monkeypatch.setattr(study_plans.StudySourceService, "validate_source", AsyncMock())
+
+    result = await study_plans.add_study_plan_source(
+        "study_plan:one",
+        SourceLinkRequest(source_id="source:lecture notes", expected_revision=1),
+    )
+
+    assert captured == ["source:⟨lecture notes⟩"]
+    assert result.source_id == "source:⟨lecture notes⟩"
+
+
+@pytest.mark.asyncio
+async def test_encoded_duplicate_retry_is_idempotent_before_stale_revision_conflict(monkeypatch):
+    plan = _plan(StudyPlanSourceLink(source_id="source:⟨lecture notes⟩"))
+    repository_calls = AsyncMock()
+    validate_source = AsyncMock(side_effect=AssertionError("duplicate retry should not read source"))
+
+    class Repository:
+        async def get(self, plan_id: str) -> StudyPlan:
+            return plan
+
+        async def add_source(self, *args: object, **kwargs: object) -> object:
+            return await repository_calls(*args, **kwargs)
+
+    monkeypatch.setattr(study_plans, "_repository", Repository)
+    monkeypatch.setattr(study_plans.StudySourceService, "validate_source", validate_source)
+
+    result = await study_plans.add_study_plan_source(
+        "study_plan:one",
+        SourceLinkRequest(source_id="source:lecture notes", expected_revision=99),
+    )
+
+    assert result.source_id == "source:⟨lecture notes⟩"
+    repository_calls.assert_not_awaited()
+    validate_source.assert_not_awaited()
 
 
 @pytest.mark.asyncio

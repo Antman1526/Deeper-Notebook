@@ -29,7 +29,15 @@ export interface StudySourceOption {
 
 export interface StudySourcePickerProps {
   links: readonly StudySourceLink[] | readonly string[]
-  onOpenUpload: (onSourceCreated?: (sourceId: string) => void) => void
+  /**
+   * The first callback preserves existing per-source upload openers.  New
+   * AddSourceDialog composition may use the second callback to deliver one
+   * bounded batch without changing those existing callers.
+   */
+  onOpenUpload: (
+    onSourceCreated?: (sourceId: string) => void | Promise<void>,
+    onSourcesCreated?: (sourceIds: readonly string[]) => void | Promise<void>,
+  ) => void
   onLinkSource?: (sourceId: string) => void | Promise<void>
   onSourceCreated?: (sourceId: string) => void | Promise<void>
   onSourceLinked?: (sourceId: string) => void | Promise<void>
@@ -184,12 +192,21 @@ export function StudySourcePicker({
 
   const handleSourceCreated = useCallback(
     async (id: string) => {
-      const normalizedId = id.trim()
+      const normalizedId = typeof id === 'string' ? id.trim() : ''
       if (!normalizedId) return
       const linked = await linkSource(normalizedId)
       if (linked && mountedRef.current) await onSourceCreated?.(normalizedId)
     },
     [linkSource, onSourceCreated],
+  )
+
+  const handleSourcesCreated = useCallback(
+    async (ids: readonly string[]) => {
+      for (const id of ids.slice(0, 50)) {
+        await handleSourceCreated(id)
+      }
+    },
+    [handleSourceCreated],
   )
 
   return (
@@ -206,7 +223,11 @@ export function StudySourcePicker({
             Reuse a source from your library or add one with the existing source dialog.
           </p>
         </div>
-        <Button type="button" variant="outline" onClick={() => onOpenUpload(handleSourceCreated)}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onOpenUpload(handleSourceCreated, handleSourcesCreated)}
+        >
           Upload PDF or video
         </Button>
       </div>

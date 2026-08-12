@@ -74,6 +74,38 @@ describe('StudySourcePicker', () => {
     })
   })
 
+  it('consumes the batch upload callback and links every returned source ID', async () => {
+    const onLinkSource = vi.fn().mockResolvedValue(undefined)
+    const onLinked = vi.fn()
+    const openUpload = vi.fn(
+      (
+        _onCreated?: (sourceId: string) => void,
+        onSourcesCreated?: (sourceIds: readonly string[]) => void,
+      ) => {
+        void onSourcesCreated?.(['source:first', 'source:second'])
+      },
+    )
+
+    render(
+      <StudySourcePicker
+        links={[]}
+        sources={[]}
+        onOpenUpload={openUpload}
+        onLinkSource={onLinkSource}
+        onSourceLinked={onLinked}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upload PDF or video' }))
+
+    await waitFor(() => {
+      expect(onLinkSource).toHaveBeenNthCalledWith(1, 'source:first')
+      expect(onLinkSource).toHaveBeenNthCalledWith(2, 'source:second')
+      expect(onLinked).toHaveBeenNthCalledWith(1, 'source:first')
+      expect(onLinked).toHaveBeenNthCalledWith(2, 'source:second')
+    })
+  })
+
   it('distinguishes loading, empty, and fetch-error states with retry', async () => {
     const list = vi.mocked(sourcesApi.list)
     list.mockRejectedValueOnce(new Error('offline'))
