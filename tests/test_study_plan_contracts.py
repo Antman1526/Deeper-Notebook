@@ -15,23 +15,27 @@ from deeper_notebook.study.plans import (
 )
 
 
-def _activity() -> StudyActivity:
-    return StudyActivity(
-        activity_id="recall-quiz",
-        kind="quiz",
-        title="Recall quiz",
-        estimated_minutes=20,
-    )
+def _activity(**overrides: object) -> StudyActivity:
+    values: dict[str, object] = {
+        "activity_id": "recall-quiz",
+        "kind": "quiz",
+        "title": "Recall quiz",
+        "estimated_minutes": 20,
+    }
+    values.update(overrides)
+    return StudyActivity(**values)
 
 
-def _unit(unit_id: str = "foundations") -> StudySyllabusUnit:
-    return StudySyllabusUnit(
-        unit_id=unit_id,
-        title="Foundations",
-        objectives=["Explain the core idea"],
-        estimated_minutes=60,
-        activities=[_activity()],
-    )
+def _unit(unit_id: str = "foundations", **overrides: object) -> StudySyllabusUnit:
+    values: dict[str, object] = {
+        "unit_id": unit_id,
+        "title": "Foundations",
+        "objectives": ["Explain the core idea"],
+        "estimated_minutes": 60,
+        "activities": [_activity()],
+    }
+    values.update(overrides)
+    return StudySyllabusUnit(**values)
 
 
 def _plan(**overrides: object) -> StudyPlan:
@@ -90,7 +94,11 @@ def test_syllabus_is_bounded_versioned_and_requires_unique_units() -> None:
 
 def test_contracts_reject_blank_text_and_unknown_fields() -> None:
     with pytest.raises(ValidationError):
-        StudyPlan(plan_id="study_plan:one", goal="  ")
+        StudyPlan(
+            plan_id="study_plan:one",
+            goal="  ",
+            starting_level="beginner",
+        )
 
     with pytest.raises(ValidationError):
         StudySyllabusUnit(
@@ -108,6 +116,86 @@ def test_contracts_reject_blank_text_and_unknown_fields() -> None:
             estimated_minutes=20,
             untrusted=True,
         )
+
+
+def test_collections_are_deeply_immutable_and_accept_normal_list_inputs() -> None:
+    objectives = ["Explain the core idea"]
+    prerequisites = ["prior-unit"]
+    unit_source_ids = ["source:unit"]
+    activity_source_ids = ["source:activity"]
+    activities = [_activity(source_ids=activity_source_ids)]
+    unit = _unit(
+        objectives=objectives,
+        prerequisite_unit_ids=prerequisites,
+        source_ids=unit_source_ids,
+        activities=activities,
+    )
+    units = [unit]
+    syllabus = StudySyllabus(
+        plan_id="study_plan:one",
+        version=1,
+        source_manifest_sha256="a" * 64,
+        units=units,
+    )
+    source_links = [StudyPlanSourceLink(source_id="source:one")]
+    plan = _plan(source_links=source_links)
+
+    objectives.append("Mutated input")
+    prerequisites.append("mutated-unit")
+    unit_source_ids.append("source:mutated-unit")
+    activity_source_ids.append("source:mutated-activity")
+    activities.append(_activity(activity_id="second-activity"))
+    units.append(_unit("second-unit"))
+    source_links.append(StudyPlanSourceLink(source_id="source:two"))
+
+    assert unit.objectives == ("Explain the core idea",)
+    assert unit.prerequisite_unit_ids == ("prior-unit",)
+    assert unit.source_ids == ("source:unit",)
+    assert unit.activities[0].source_ids == ("source:activity",)
+    assert syllabus.units == (unit,)
+    assert plan.source_links == (StudyPlanSourceLink(source_id="source:one"),)
+
+    with pytest.raises(AttributeError):
+        unit.objectives.append("Bypass")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        unit.prerequisite_unit_ids.append("bypass")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        unit.source_ids.append("source:bypass")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        unit.activities[0].source_ids.append("source:bypass")  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        unit.activities.append(_activity())  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        syllabus.units.append(_unit("bypass-unit"))  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        plan.source_links.append(StudyPlanSourceLink(source_id="source:bypass"))  # type: ignore[attr-defined]
+
+
+def test_contracts_are_strict_and_bound_all_collection_string_elements() -> None:
+    oversized = "x" * 1_000_000
+
+    with pytest.raises(ValidationError):
+        StudyPlanPreferences(weekly_minutes="240", session_minutes=45)  # type: ignore[arg-type]
+
+    with pytest.raises(ValidationError):
+        StudySyllabus(
+            plan_id="study_plan:one",
+            version="1",  # type: ignore[arg-type]
+            source_manifest_sha256="a" * 64,
+            units=[_unit()],
+        )
+
+    with pytest.raises(ValidationError):
+        _unit(objectives=[oversized])
+
+    with pytest.raises(ValidationError):
+        _unit(prerequisite_unit_ids=["x" * 65])
+
+    with pytest.raises(ValidationError):
+        _unit(source_ids=[oversized])
+
+    with pytest.raises(ValidationError):
+        _activity(source_ids=[oversized])
 
 
 def test_contracts_are_frozen_and_reject_naive_datetimes() -> None:
@@ -162,6 +250,32 @@ def test_approval_requires_the_exact_syllabus_and_source_manifest() -> None:
     editing = _plan(state="editing", approved_syllabus_version=None)
     with pytest.raises(ValueError, match="approved syllabus version"):
         editing.transition("approved", expected_version=editing.version)
+
+
+def test_model_copy_cannot_bypass_lifecycle_or_approval_and_revalidates_updates() -> None:
+    unbound_plan = _plan(
+        source_manifest_sha256=None,
+        approved_syllabus_version=None,
+    )
+
+    with pytest.raises(ValueError, match="transition"):
+        unbound_plan.model_copy(
+            update={
+                "state": "approved",
+                "version": 999,
+                "source_manifest_sha256": "a" * 64,
+                "approved_syllabus_version": 1,
+            }
+        )
+
+    with pytest.raises(ValueError, match="transition"):
+        unbound_plan.model_copy(update={"version": 2})
+
+    updated_plan = _plan().model_copy(update={"goal": "A clearer goal"})
+    assert updated_plan.goal == "A clearer goal"
+
+    with pytest.raises(ValidationError, match="goal"):
+        _plan().model_copy(update={"goal": " "})
 
 
 def test_transition_requires_the_expected_version_and_returns_a_new_revision() -> None:

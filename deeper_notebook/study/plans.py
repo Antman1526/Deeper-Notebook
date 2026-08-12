@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Literal
+from typing import Annotated, Any, Literal, Mapping, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -33,6 +33,25 @@ _ALLOWED_TRANSITIONS: dict[StudyPlanState, frozenset[StudyPlanState]] = {
     "completed": frozenset(),
     "archived": frozenset(),
 }
+_PROTECTED_PLAN_COPY_FIELDS = frozenset(
+    {
+        "plan_id",
+        "source_links",
+        "source_manifest_sha256",
+        "approved_syllabus_version",
+        "state",
+        "version",
+        "created_at",
+        "updated_at",
+    }
+)
+
+_UnitId = Annotated[
+    str,
+    Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$"),
+]
+_Objective = Annotated[str, Field(min_length=1, max_length=2_000)]
+_SourceId = Annotated[str, Field(min_length=1, max_length=512)]
 
 
 def _require_nonblank(value: str, *, field_name: str) -> str:
@@ -47,12 +66,17 @@ def _require_timezone_aware(value: datetime, *, field_name: str) -> datetime:
     return value
 
 
+def _list_to_tuple(value: object) -> object:
+    """Accept documented list inputs while storing immutable tuples."""
+    return tuple(value) if isinstance(value, list) else value
+
+
 class StudyActivity(BaseModel):
     """One bounded planned learning activity within a syllabus unit."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    activity_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    activity_id: _UnitId
     kind: Literal[
         "reading",
         "lesson",
@@ -66,23 +90,28 @@ class StudyActivity(BaseModel):
     ]
     title: str = Field(min_length=1, max_length=200)
     estimated_minutes: int = Field(ge=5, le=10_080)
-    source_ids: list[str] = Field(default_factory=list, max_length=100)
+    source_ids: tuple[_SourceId, ...] = Field(default_factory=tuple, max_length=100)
 
     @field_validator("activity_id", "title")
     @classmethod
     def text_is_not_blank(cls, value: str, info: object) -> str:
         return _require_nonblank(value, field_name=str(info.field_name))
 
+    @field_validator("source_ids", mode="before")
+    @classmethod
+    def source_ids_use_immutable_storage(cls, value: object) -> object:
+        return _list_to_tuple(value)
+
     @field_validator("source_ids")
     @classmethod
-    def source_ids_are_not_blank(cls, values: list[str]) -> list[str]:
-        return [_require_nonblank(value, field_name="source_id") for value in values]
+    def source_ids_are_not_blank(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(_require_nonblank(value, field_name="source_id") for value in values)
 
 
 class StudyPlanPreferences(BaseModel):
     """User-confirmed time budget for a study plan."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     weekly_minutes: int = Field(ge=5, le=10_080)
     session_minutes: int = Field(ge=5, le=480)
@@ -91,7 +120,7 @@ class StudyPlanPreferences(BaseModel):
 class StudyPlanSourceLink(BaseModel):
     """A read-only link from a plan to an existing source record."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     source_id: str = Field(min_length=1, max_length=512)
 
@@ -104,44 +133,62 @@ class StudyPlanSourceLink(BaseModel):
 class StudySyllabusUnit(BaseModel):
     """An immutable, evidence-linked unit in a proposed syllabus."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    unit_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    unit_id: _UnitId
     title: str = Field(min_length=1, max_length=200)
-    objectives: list[str] = Field(min_length=1, max_length=20)
-    prerequisite_unit_ids: list[str] = Field(default_factory=list, max_length=20)
+    objectives: tuple[_Objective, ...] = Field(min_length=1, max_length=20)
+    prerequisite_unit_ids: tuple[_UnitId, ...] = Field(default_factory=tuple, max_length=20)
     estimated_minutes: int = Field(ge=5, le=10_080)
-    source_ids: list[str] = Field(default_factory=list, max_length=100)
-    activities: list[StudyActivity] = Field(default_factory=list, max_length=50)
+    source_ids: tuple[_SourceId, ...] = Field(default_factory=tuple, max_length=100)
+    activities: tuple[StudyActivity, ...] = Field(default_factory=tuple, max_length=50)
 
     @field_validator("unit_id", "title")
     @classmethod
     def text_is_not_blank(cls, value: str, info: object) -> str:
         return _require_nonblank(value, field_name=str(info.field_name))
 
+    @field_validator(
+        "objectives",
+        "prerequisite_unit_ids",
+        "source_ids",
+        "activities",
+        mode="before",
+    )
+    @classmethod
+    def collections_use_immutable_storage(cls, value: object) -> object:
+        return _list_to_tuple(value)
+
     @field_validator("objectives", "prerequisite_unit_ids", "source_ids")
     @classmethod
-    def list_text_is_not_blank(cls, values: list[str], info: object) -> list[str]:
+    def list_text_is_not_blank(
+        cls, values: tuple[str, ...], info: object
+    ) -> tuple[str, ...]:
         field_name = str(info.field_name).removesuffix("s")
-        return [_require_nonblank(value, field_name=field_name) for value in values]
+        return tuple(_require_nonblank(value, field_name=field_name) for value in values)
 
 
 class StudySyllabus(BaseModel):
     """A versioned immutable syllabus snapshot bound to its source manifest."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal[1] = 1
     plan_id: str = Field(min_length=1, max_length=512)
     version: int = Field(ge=1)
     source_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    units: list[StudySyllabusUnit] = Field(min_length=1, max_length=64)
+    units: tuple[StudySyllabusUnit, ...] = Field(min_length=1, max_length=64)
     approved_at: datetime | None = None
 
     @field_validator("plan_id")
     @classmethod
     def plan_id_is_not_blank(cls, value: str) -> str:
         return _require_nonblank(value, field_name="plan_id")
+
+    @field_validator("units", mode="before")
+    @classmethod
+    def units_use_immutable_storage(cls, value: object) -> object:
+        return _list_to_tuple(value)
 
     @field_validator("approved_at")
     @classmethod
@@ -160,7 +207,7 @@ class StudySyllabus(BaseModel):
 class StudyPlan(BaseModel):
     """An immutable plan whose lifecycle advances only through ``transition``."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal[1] = 1
     plan_id: str = Field(min_length=1, max_length=512)
@@ -168,7 +215,10 @@ class StudyPlan(BaseModel):
     starting_level: str = Field(min_length=1, max_length=200)
     target_date: date | None = None
     preferences: StudyPlanPreferences | None = None
-    source_links: list[StudyPlanSourceLink] = Field(default_factory=list, max_length=100)
+    source_links: tuple[StudyPlanSourceLink, ...] = Field(
+        default_factory=tuple,
+        max_length=100,
+    )
     source_manifest_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     approved_syllabus_version: int | None = Field(default=None, ge=1)
     state: StudyPlanState = "draft"
@@ -185,6 +235,11 @@ class StudyPlan(BaseModel):
     @classmethod
     def timestamps_are_timezone_aware(cls, value: datetime, info: object) -> datetime:
         return _require_timezone_aware(value, field_name=str(info.field_name))
+
+    @field_validator("source_links", mode="before")
+    @classmethod
+    def source_links_use_immutable_storage(cls, value: object) -> object:
+        return _list_to_tuple(value)
 
     @model_validator(mode="after")
     def validate_plan_contract(self) -> "StudyPlan":
@@ -220,6 +275,23 @@ class StudyPlan(BaseModel):
                 "updated_at": datetime.now(UTC),
             }
         )
+
+    def model_copy(
+        self,
+        *,
+        update: Mapping[str, Any] | None = None,
+        deep: bool = False,
+    ) -> Self:
+        """Revalidate non-lifecycle revisions without bypassing plan authority."""
+        _ = deep
+        update = update or {}
+        protected_fields = sorted(set(update) & _PROTECTED_PLAN_COPY_FIELDS)
+        if protected_fields:
+            raise ValueError(
+                "model_copy cannot change protected plan fields; "
+                "use transition for lifecycle changes"
+            )
+        return type(self).model_validate(self.model_dump() | dict(update))
 
     def _require_approval_binding(self) -> None:
         if self.source_manifest_sha256 is None:
