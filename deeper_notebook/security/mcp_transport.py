@@ -96,11 +96,16 @@ def _is_allowed_mcp_address(value: str) -> bool:
         address = ipaddress.ip_address(value)
     except ValueError:
         return False
-    # Private and loopback are deliberate MCP plugin support. Link-local is
-    # always denied (including IPv4-mapped IPv6 metadata addresses).
+    mapped = getattr(address, "ipv4_mapped", None)
+    # Explicit loopback is deliberate MCP plugin support. Python classifies
+    # IPv6 ``::1`` as reserved, so this positive check must precede the
+    # reserved-address rejection (and applies to IPv4-mapped loopback too).
+    if address.is_loopback or (mapped is not None and mapped.is_loopback):
+        return True
+    # Link-local is always denied (including IPv4-mapped IPv6 metadata
+    # addresses).
     if address.is_link_local:
         return False
-    mapped = getattr(address, "ipv4_mapped", None)
     if mapped is not None and mapped.is_link_local:
         return False
     return not any(
@@ -108,6 +113,14 @@ def _is_allowed_mcp_address(value: str) -> bool:
             address.is_unspecified,
             address.is_multicast,
             address.is_reserved,
+            mapped is not None
+            and any(
+                (
+                    mapped.is_unspecified,
+                    mapped.is_multicast,
+                    mapped.is_reserved,
+                )
+            ),
         )
     )
 

@@ -113,6 +113,97 @@ async def test_mcp_session_preserves_allowed_loopback_transport(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_mcp_validate_allows_ipv6_loopback(monkeypatch):
+    """The explicit IPv6 loopback endpoint remains a supported local plugin."""
+    import deeper_notebook.security.mcp_transport as policy
+
+    class _Loop:
+        async def getaddrinfo(self, hostname, port, *, type):
+            assert hostname == "::1"
+            assert port == 8742
+            return [(0, 1, 6, "", ("::1", port, 0, 0))]
+
+    monkeypatch.setattr(policy.asyncio, "get_running_loop", lambda: _Loop())
+
+    receipt = await policy.validate_mcp_url("http://[::1]:8742/mcp")
+
+    assert receipt.url == "http://[::1]:8742/mcp"
+    assert receipt.hostname == "::1"
+    assert receipt.port == 8742
+    assert receipt.addresses == ("::1",)
+
+
+@pytest.mark.asyncio
+async def test_mcp_ipv6_loopback_connect_and_factory_are_pinned():
+    """IPv6 loopback uses the approved address and the safe HTTPX factory."""
+    from deeper_notebook.security.mcp_transport import (
+        PinnedMCPHTTPTransport,
+        PinnedMCPNetworkBackend,
+        ValidatedMCPURL,
+        build_mcp_httpx_client_factory,
+    )
+
+    receipt = ValidatedMCPURL(
+        url="http://[::1]:8742/mcp",
+        hostname="::1",
+        port=8742,
+        addresses=("::1",),
+    )
+    calls: list[tuple[str, int]] = []
+
+    class _Delegate:
+        async def connect_tcp(self, host, port, **kwargs):
+            calls.append((host, port))
+            return object()
+
+    backend = PinnedMCPNetworkBackend(receipt, delegate=_Delegate())
+    await backend.connect_tcp("::1", 8742)
+    assert calls == [("::1", 8742)]
+
+    client = build_mcp_httpx_client_factory(receipt)()
+    try:
+        assert isinstance(client._transport, PinnedMCPHTTPTransport)
+        pinned = client._transport._pool._network_backend
+        assert isinstance(pinned, PinnedMCPNetworkBackend)
+        assert pinned._receipt == receipt
+        assert client.follow_redirects is False
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "address",
+    [
+        "0.0.0.0",
+        "169.254.169.254",
+        "224.0.0.1",
+        "240.0.0.1",
+        "::",
+        "::2",
+        "::ffff:169.254.169.254",
+        "ff02::1",
+        "fe80::1",
+    ],
+)
+async def test_mcp_validate_rejects_unsafe_ipv4_and_ipv6_addresses(
+    monkeypatch, address
+):
+    """Unspecified, multicast, link-local, and reserved answers stay blocked."""
+    import deeper_notebook.security.mcp_transport as policy
+
+    class _Loop:
+        async def getaddrinfo(self, hostname, port, *, type):
+            return [(0, 1, 6 if ":" in address else 2, "", (address, port, 0, 0))]
+
+    monkeypatch.setattr(policy.asyncio, "get_running_loop", lambda: _Loop())
+    host = f"[{address}]" if ":" in address else address
+
+    with pytest.raises(policy.MCPTransportPolicyError):
+        await policy.validate_mcp_url(f"http://{host}:8742/mcp")
+
+
+@pytest.mark.asyncio
 async def test_mcp_transport_does_not_follow_redirect_to_link_local_target():
     """The SDK's redirect-following default must not cross the MCP policy."""
     from deeper_notebook.mcp.client import _build_mcp_httpx_client_factory
