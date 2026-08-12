@@ -32,6 +32,13 @@ export const STUDY_PLAN_TABS = [
 
 export type StudyPlanTab = typeof STUDY_PLAN_TABS[number]['value']
 
+const ASSISTANT_PLAN_STATES = new Set<StudyPlanState>([
+  'approved',
+  'generating',
+  'active',
+  'completed',
+])
+
 export function normalizeStudyPlanTab(value: string | null | undefined): StudyPlanTab {
   return STUDY_PLAN_TABS.some((tab) => tab.value === value)
     ? value as StudyPlanTab
@@ -115,6 +122,8 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
   }
 
   const currentPlan = plan.data
+  const tutorAvailable = ASSISTANT_PLAN_STATES.has(currentPlan.state)
+    && currentPlan.approved_syllabus_version !== null
   const syllabusContent = syllabus.isLoading ? (
     <p role="status" className="rounded-lg border p-6 text-sm text-muted-foreground">Loading proposed syllabus…</p>
   ) : syllabus.isError ? (
@@ -196,13 +205,24 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
         <TabsContent value="syllabus" className="space-y-4">{syllabusContent}</TabsContent>
 
         <TabsContent value="learn" className="space-y-4">
-          <StudyLearningSession
-            planId={planId}
-            sourceIds={currentPlan.source_links.map((link) => link.source_id)}
-            approvedNetworkScope={currentPlan.preferences?.network_allowed
-              ? currentPlan.preferences.approved_network_scope
-              : []}
-          />
+          {tutorAvailable ? (
+            <StudyLearningSession
+              planId={planId}
+              sourceIds={currentPlan.source_links.map((link) => link.source_id)}
+              approvedNetworkScope={currentPlan.preferences?.network_allowed
+                ? currentPlan.preferences.approved_network_scope
+                : []}
+            />
+          ) : (
+            <Card role="status" aria-live="polite">
+              <CardHeader>
+                <CardTitle>Learning session unavailable</CardTitle>
+                <CardDescription>
+                  Tutor unavailable until the syllabus is approved. This plan is still being prepared or archived, so no learning session can start yet.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
         </TabsContent>
 
         {(['guide', 'map', 'practice', 'flashcards', 'sources', 'progress'] as const).map((tab) => (

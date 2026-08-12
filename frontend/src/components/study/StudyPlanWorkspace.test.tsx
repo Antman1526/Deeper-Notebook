@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StudyPlanWorkspace } from './StudyPlanWorkspace'
 
 const replace = vi.fn()
-const workspaceState = vi.hoisted(() => ({ activeTab: 'syllabus', networkAllowed: true }))
+const workspaceState = vi.hoisted(() => ({
+  activeTab: 'syllabus',
+  networkAllowed: true,
+  planState: 'approved',
+  approvedSyllabusVersion: 2 as number | null,
+}))
 const workspaceInvoke = vi.hoisted(() => vi.fn())
 
 vi.mock('next/navigation', () => ({
@@ -40,8 +45,8 @@ vi.mock('@/lib/hooks/use-study-plans', () => ({
         approved_network_scope: workspaceState.networkAllowed ? ['https://example.edu/course'] : [],
       },
       source_links: [],
-      approved_syllabus_version: null,
-      state: 'editing',
+      approved_syllabus_version: workspaceState.approvedSyllabusVersion,
+      state: workspaceState.planState,
       version: 4,
       created_at: '2026-08-12T12:00:00Z',
       updated_at: '2026-08-12T12:00:00Z',
@@ -80,6 +85,8 @@ describe('StudyPlanWorkspace', () => {
   beforeEach(() => {
     workspaceState.activeTab = 'syllabus'
     workspaceState.networkAllowed = true
+    workspaceState.planState = 'approved'
+    workspaceState.approvedSyllabusVersion = 2
     workspaceInvoke.mockReset()
     workspaceInvoke.mockResolvedValue(undefined)
     replace.mockReset()
@@ -127,4 +134,20 @@ describe('StudyPlanWorkspace', () => {
     expect(workspaceInvoke).toHaveBeenCalledTimes(1)
     expect(screen.getByText('A plan-approved HTTPS scope is required before web research can run.')).toBeInTheDocument()
   })
+
+  it.each(['draft', 'analyzing_sources', 'syllabus_proposed', 'editing', 'archived'] as const)(
+    'keeps Tutor unavailable for the %s plan lifecycle without an approved syllabus',
+    (planState) => {
+      workspaceState.activeTab = 'learn'
+      workspaceState.planState = planState
+      workspaceState.approvedSyllabusVersion = null
+
+      render(<StudyPlanWorkspace planId="study_plan:one" />)
+
+      expect(screen.getByRole('status')).toHaveTextContent(/Tutor unavailable|approved syllabus/i)
+      expect(screen.queryByRole('combobox', { name: 'Tutor mode' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Ask tutor' })).not.toBeInTheDocument()
+      expect(workspaceInvoke).not.toHaveBeenCalled()
+    },
+  )
 })
