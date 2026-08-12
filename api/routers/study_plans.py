@@ -14,6 +14,7 @@ from api.schemas.study_plans import (
     SourceLinkRequest,
     StudyPlanResponse,
     StudyPlanSourceLinkResponse,
+    StudySourceReadinessResponse,
     StudySyllabusResponse,
 )
 from deeper_notebook.feature_flags import study_workbench_enabled
@@ -22,6 +23,12 @@ from deeper_notebook.study.plan_repository import (
     StudyPlanNotFoundError,
     StudyPlanRepository,
     StudyPlanRepositoryError,
+)
+from deeper_notebook.study.plans import StudyPlan
+from deeper_notebook.study.source_service import (
+    StudySourceNotFoundError,
+    StudySourceService,
+    StudySourceUnavailableError,
 )
 
 
@@ -55,13 +62,27 @@ def _repository_error(exc: StudyPlanRepositoryError) -> HTTPException:
 
 
 async def _existing_plan(plan_id: str) -> StudyPlanResponse:
+    plan = await _load_plan(plan_id)
+    return StudyPlanResponse.from_plan(plan)
+
+
+async def _load_plan(plan_id: str) -> StudyPlan:
     try:
         plan = await _repository().get(plan_id)
     except StudyPlanRepositoryError as exc:
         raise _repository_error(exc) from None
     if plan is None:
         raise _not_found()
-    return StudyPlanResponse.from_plan(plan)
+    return plan
+
+
+def _source_error(exc: StudySourceNotFoundError | StudySourceUnavailableError) -> HTTPException:
+    if isinstance(exc, StudySourceNotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Sources are unavailable",
+    )
 
 
 @router.post("", response_model=StudyPlanResponse, status_code=status.HTTP_201_CREATED)
@@ -110,15 +131,46 @@ async def patch_study_plan(plan_id: str, payload: PatchStudyPlanRequest) -> Stud
 async def add_study_plan_source(
     plan_id: str, payload: SourceLinkRequest
 ) -> StudyPlanSourceLinkResponse:
+    repository = _repository()
     try:
-        link = await _repository().add_source(
+        current = await repository.get(plan_id)
+    except StudyPlanRepositoryError as exc:
+        raise _repository_error(exc) from None
+    if current is None:
+        raise _not_found()
+    if current.version != payload.expected_revision:
+        raise _repository_error(StudyPlanConflictError("study plan revision conflict"))
+
+    source_id = payload.source_id.strip()
+    try:
+        await StudySourceService().validate_source(source_id)
+    except (StudySourceNotFoundError, StudySourceUnavailableError) as exc:
+        raise _source_error(exc) from None
+
+    if source_id in {link.source_id for link in current.source_links}:
+        # The persisted source-links array is unique.  Treat retries as
+        # idempotent and avoid advancing the plan revision a second time.
+        return StudyPlanSourceLinkResponse(source_id=source_id)
+
+    try:
+        link = await repository.add_source(
             plan_id,
-            payload.source_id,
+            source_id,
             expected_revision=payload.expected_revision,
         )
     except StudyPlanRepositoryError as exc:
         raise _repository_error(exc) from None
     return StudyPlanSourceLinkResponse.from_link(link)
+
+
+@router.get(
+    "/{plan_id}/sources/readiness",
+    response_model=StudySourceReadinessResponse,
+)
+async def get_study_plan_source_readiness(plan_id: str) -> StudySourceReadinessResponse:
+    plan = await _load_plan(plan_id)
+    readiness = await StudySourceService().readiness(plan)
+    return StudySourceReadinessResponse.from_readiness(readiness)
 
 
 @router.delete("/{plan_id}/sources/{source_id}", response_model=RemoveSourceLinkResponse)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Self
+from typing import Literal, Self
 from uuid import uuid4
 
 from pydantic import (
@@ -22,6 +22,10 @@ from deeper_notebook.study.plans import (
     StudyPlanSourceLink,
     StudySyllabus,
     StudySyllabusUnit,
+)
+from deeper_notebook.study.source_service import (
+    StudySourceReadiness,
+    StudySourceReadinessItem,
 )
 
 
@@ -160,6 +164,49 @@ class StudyPlanSourceLinkResponse(BaseModel):
     @classmethod
     def from_link(cls, link: StudyPlanSourceLink) -> "StudyPlanSourceLinkResponse":
         return cls(source_id=link.source_id)
+
+
+class StudySourceReadinessItemResponse(BaseModel):
+    """Bounded source projection for the Study Workbench picker."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(min_length=1, max_length=512)
+    title: str = Field(min_length=1, max_length=200)
+    kind: Literal[
+        "link",
+        "upload",
+        "text",
+        "web_import",
+        "deep_research_report",
+    ]
+    ready: bool
+    command_id: str | None = Field(default=None, max_length=512)
+    fingerprint_status: Literal["available", "unknown"]
+    reason: Literal["ready", "processing", "processing_failed", "missing", "unavailable"]
+
+    @classmethod
+    def from_item(cls, item: StudySourceReadinessItem) -> "StudySourceReadinessItemResponse":
+        return cls.model_validate(item.model_dump())
+
+
+class StudySourceReadinessResponse(BaseModel):
+    """Readiness summary without source paths, bodies, or driver errors."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ready: bool
+    items: tuple[StudySourceReadinessItemResponse, ...] = Field(max_length=100)
+
+    @classmethod
+    def from_readiness(cls, readiness: StudySourceReadiness) -> "StudySourceReadinessResponse":
+        return cls(
+            ready=readiness.ready,
+            items=tuple(
+                StudySourceReadinessItemResponse.from_item(item)
+                for item in readiness.items
+            ),
+        )
 
 
 class RemoveSourceLinkResponse(BaseModel):
