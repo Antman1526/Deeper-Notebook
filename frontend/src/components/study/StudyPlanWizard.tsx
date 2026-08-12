@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { StudySourcePicker } from '@/components/study/StudySourcePicker'
+import type { StudySourcePickerProps } from '@/components/study/StudySourcePicker'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -41,6 +42,7 @@ export function StudyPlanWizard({ open, onOpenChange }: StudyPlanWizardProps) {
   const [step, setStep] = useState<1 | 2>(1)
   const [draftPlanId, setDraftPlanId] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const draftRevisionRef = useRef<number | null>(null)
   const createPlan = useCreateStudyPlan()
   const linkSource = useAddStudyPlanSource()
   const draftPlan = useStudyPlan(draftPlanId)
@@ -50,6 +52,14 @@ export function StudyPlanWizard({ open, onOpenChange }: StudyPlanWizardProps) {
     if (!open) return
     setStep(draftPlanId ? 2 : 1)
   }, [open, draftPlanId])
+
+  useEffect(() => {
+    const serverRevision = draftPlan.data?.version
+    if (typeof serverRevision !== 'number') return
+    draftRevisionRef.current = draftRevisionRef.current === null
+      ? serverRevision
+      : Math.max(draftRevisionRef.current, serverRevision)
+  }, [draftPlan.data?.version])
 
   const saveDraft = async () => {
     const normalizedGoal = goal.trim()
@@ -66,6 +76,7 @@ export function StudyPlanWizard({ open, onOpenChange }: StudyPlanWizardProps) {
         target_date: targetDate || null,
       })
       setDraftPlanId(plan.plan_id)
+      draftRevisionRef.current = typeof plan.version === 'number' ? plan.version : null
       // Once the server owns the draft, do not retain its raw fields in the
       // wizard.  Reopening reads the authoritative projection by ID.
       setGoal('')
@@ -79,12 +90,23 @@ export function StudyPlanWizard({ open, onOpenChange }: StudyPlanWizardProps) {
 
   const handleLinkSource = async (sourceId: string) => {
     if (!draftPlanId) throw new Error('Study plan draft is not ready')
-    const revision = draftPlan.data?.version
+    const revision = draftRevisionRef.current ?? draftPlan.data?.version
     if (!revision) throw new Error('Study plan draft is still loading')
     await linkSource.mutateAsync({
       planId: draftPlanId,
       input: { source_id: sourceId, expected_revision: revision },
     })
+    draftRevisionRef.current = revision + 1
+  }
+
+  const handleOpenUpload: StudySourcePickerProps['onOpenUpload'] = (
+    _onSourceCreated,
+    onSourcesCreated,
+  ) => {
+    // AddSourceDialog owns ingestion. Its bounded batch callback is the
+    // authoritative handoff used by StudySourcePicker to persist each link;
+    // the legacy zero-argument callback remains available to other callers.
+    openSourceDialog(onSourcesCreated ? { onSourcesCreated } : {})
   }
 
   return (
@@ -147,7 +169,7 @@ export function StudyPlanWizard({ open, onOpenChange }: StudyPlanWizardProps) {
             ) : (
               <StudySourcePicker
                 links={draftPlan.data.source_links}
-                onOpenUpload={() => openSourceDialog()}
+                onOpenUpload={handleOpenUpload}
                 onLinkSource={handleLinkSource}
               />
             )}

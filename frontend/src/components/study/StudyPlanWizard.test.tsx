@@ -1,9 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { StudyPlanWizard } from './StudyPlanWizard'
 
 const createPlan = vi.fn()
+const linkSource = vi.fn()
+const openSourceDialog = vi.fn()
 
 vi.mock('@/lib/hooks/use-study-plans', () => ({
   useCreateStudyPlan: () => ({ mutateAsync: createPlan, isPending: false, error: null }),
@@ -24,13 +26,46 @@ vi.mock('@/lib/hooks/use-study-plans', () => ({
     isLoading: false,
     isError: false,
   }),
-  useAddStudyPlanSource: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAddStudyPlanSource: () => ({ mutateAsync: linkSource, isPending: false }),
+}))
+vi.mock('@/lib/hooks/use-create-dialogs', () => ({
+  useCreateDialogs: () => ({ openSourceDialog }),
 }))
 vi.mock('./StudySourcePicker', () => ({
-  StudySourcePicker: () => <div>Source picker</div>,
+  StudySourcePicker: ({
+    onOpenUpload,
+    onLinkSource,
+  }: {
+    onOpenUpload: (
+      onSourceCreated?: (sourceId: string) => void | Promise<void>,
+      onSourcesCreated?: (sourceIds: readonly string[]) => void | Promise<void>,
+    ) => void
+    onLinkSource: (sourceId: string) => void | Promise<void>
+  }) => (
+    <>
+      <div>Source picker</div>
+      <button
+        type="button"
+        onClick={() => onOpenUpload(
+          (sourceId) => onLinkSource(sourceId),
+          async (sourceIds) => {
+            for (const sourceId of sourceIds) await onLinkSource(sourceId)
+          },
+        )}
+      >
+        Upload from study wizard
+      </button>
+    </>
+  ),
 }))
 
 describe('StudyPlanWizard', () => {
+  beforeEach(() => {
+    createPlan.mockReset()
+    linkSource.mockReset()
+    openSourceDialog.mockReset()
+  })
+
   it('saves a resumable draft before source selection', async () => {
     createPlan.mockResolvedValueOnce({
       plan_id: 'study_plan:one',
@@ -46,6 +81,39 @@ describe('StudyPlanWizard', () => {
       goal: 'Understand mechanics',
     }))
     expect(await screen.findByText('Source picker')).toBeInTheDocument()
+  })
+
+  it('forwards bounded source IDs from the existing source dialog into plan links', async () => {
+    createPlan.mockResolvedValueOnce({
+      plan_id: 'study_plan:one',
+      goal: 'Understand mechanics',
+      starting_level: 'beginner',
+    })
+    linkSource.mockImplementation(async () => {
+      return undefined
+    })
+    openSourceDialog.mockImplementationOnce((options: {
+      onSourcesCreated?: (sourceIds: readonly string[]) => void | Promise<void>
+    }) => {
+      void options.onSourcesCreated?.(['source:one', 'source:two'])
+    })
+    render(<StudyPlanWizard open onOpenChange={vi.fn()} />)
+
+    fireEvent.change(screen.getByLabelText('Learning goal'), { target: { value: 'Understand mechanics' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload from study wizard' }))
+
+    await waitFor(() => {
+      expect(openSourceDialog).toHaveBeenCalledWith(expect.objectContaining({ onSourcesCreated: expect.any(Function) }))
+      expect(linkSource).toHaveBeenNthCalledWith(1, {
+        planId: 'study_plan:one',
+        input: { source_id: 'source:one', expected_revision: 1 },
+      })
+      expect(linkSource).toHaveBeenNthCalledWith(2, {
+        planId: 'study_plan:one',
+        input: { source_id: 'source:two', expected_revision: 2 },
+      })
+    })
   })
 
   it('does not write draft details to browser storage', async () => {

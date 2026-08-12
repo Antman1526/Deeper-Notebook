@@ -9,6 +9,7 @@ import { QuickPodcastDialog } from '@/components/podcasts/QuickPodcastDialog'
 interface SourceDialogOptions {
   defaultNotebookId?: string
   onSourceCreated?: () => void
+  onSourcesCreated?: (sourceIds: readonly string[]) => void | Promise<void>
 }
 
 interface CreateDialogsContextType {
@@ -53,6 +54,7 @@ export function CreateDialogsProvider({ children }: { children: ReactNode }) {
         onOpenChange={handleSourceDialogOpenChange}
         defaultNotebookId={sourceDialogOptions.defaultNotebookId}
         onSourceCreated={sourceDialogOptions.onSourceCreated}
+        onSourcesCreated={sourceDialogOptions.onSourcesCreated}
       />
       <CreateNotebookDialog open={notebookDialogOpen} onOpenChange={setNotebookDialogOpen} />
       <GeneratePodcastDialog open={podcastDialogOpen} onOpenChange={setPodcastDialogOpen} />

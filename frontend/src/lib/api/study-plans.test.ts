@@ -61,4 +61,48 @@ describe('studyPlansApi', () => {
     await expect(studyPlansApi.get('study_plan:one')).rejects.toThrow('Invalid Study Plan response')
     await expect(studyPlansApi.get('study_plan:one')).rejects.not.toThrow('/private')
   })
+
+  it('rejects malformed runtime request values before touching the client', async () => {
+    await expect(studyPlansApi.create({
+      goal: undefined as never,
+      starting_level: 'beginner',
+    })).rejects.toThrow('Invalid Study Plan request')
+    await expect(studyPlansApi.get(undefined as never)).rejects.toThrow('Invalid Study Plan request')
+    await expect(studyPlansApi.update('study_plan:one', {
+      expected_revision: 1,
+      goal: 42 as never,
+    })).rejects.toThrow('Invalid Study Plan request')
+    await expect(studyPlansApi.addSource('study_plan:one', {
+      source_id: undefined as never,
+      expected_revision: 1,
+    })).rejects.toThrow('Invalid Study Plan request')
+    await expect(studyPlansApi.removeSource('study_plan:one', {
+      source_id: 'source:one',
+      expected_revision: '1' as never,
+    })).rejects.toThrow('Invalid Study Plan request')
+    await expect(studyPlansApi.readiness(undefined as never)).rejects.toThrow('Invalid Study Plan request')
+    await expect(studyPlansApi.proposeSyllabus('study_plan:one', undefined as never)).rejects.toThrow('Invalid Study Plan request')
+    await expect(studyPlansApi.saveSyllabus('study_plan:one', {
+      expected_revision: 1,
+      version: 1,
+      source_manifest_sha256: undefined as never,
+      units: [],
+    })).rejects.toThrow('Invalid Study Plan request')
+    await expect(studyPlansApi.approveSyllabus('study_plan:one', {
+      syllabus_version: 1,
+      expected_revision: undefined as never,
+    })).rejects.toThrow('Invalid Study Plan request')
+    expect(mockPost).not.toHaveBeenCalled()
+  })
+
+  it('rejects extra and oversized request fields without dispatching', async () => {
+    await expect(studyPlansApi.create({
+      goal: 'Understand mechanics',
+      starting_level: 'beginner',
+      secret: 'nope',
+    } as never)).rejects.toThrow('Invalid Study Plan request')
+    await expect(studyPlansApi.get(`study_plan:${'x'.repeat(513)}`)).rejects.toThrow('Invalid Study Plan request')
+    expect(mockGet).not.toHaveBeenCalled()
+    expect(mockPost).not.toHaveBeenCalled()
+  })
 })
