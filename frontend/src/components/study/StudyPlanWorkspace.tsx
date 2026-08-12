@@ -6,13 +6,16 @@ import { useMemo, useRef, useState } from 'react'
 
 import { SyllabusEditor } from '@/components/study/SyllabusEditor'
 import { StudyLearningSession } from '@/components/study/StudyLearningSession'
+import { StudyProgressPanel } from '@/components/study/StudyProgressPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   useProposeStudySyllabus,
+  useDecideStudyProgress,
   useStudyPlan,
+  useStudyPlanProgress,
   useStudyPlanReadiness,
   useStudySyllabus,
 } from '@/lib/hooks/use-study-plans'
@@ -68,11 +71,13 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
   const plan = useStudyPlan(planId)
   const syllabus = useStudySyllabus(planId)
   const readiness = useStudyPlanReadiness(planId)
+  const progress = useStudyPlanProgress(planId)
   const propose = useProposeStudySyllabus()
+  const decideProgress = useDecideStudyProgress()
   const [actionError, setActionError] = useState<string | null>(null)
 
   const refreshAll = async () => {
-    await Promise.all([plan.refetch(), syllabus.refetch(), readiness.refetch()])
+    await Promise.all([plan.refetch(), syllabus.refetch(), readiness.refetch(), progress.refetch()])
   }
 
   const handleTabChange = (value: string) => {
@@ -105,6 +110,26 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
     } catch (error) {
       setActionError(safeErrorMessage(error))
     }
+  }
+
+  const acceptProgress = async (proposalId: string, requestId: string) => {
+    if (!plan.data) return
+    await decideProgress.mutateAsync({
+      planId,
+      input: {
+        proposal_id: proposalId,
+        decision: 'accepted',
+        request_id: requestId,
+        expected_revision: plan.data.version,
+      },
+    })
+  }
+
+  const dismissProgress = async (proposalId: string, requestId: string) => {
+    await decideProgress.mutateAsync({
+      planId,
+      input: { proposal_id: proposalId, decision: 'dismissed', request_id: requestId },
+    })
   }
 
   if (plan.isLoading) {
@@ -225,7 +250,17 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
           )}
         </TabsContent>
 
-        {(['guide', 'map', 'practice', 'flashcards', 'sources', 'progress'] as const).map((tab) => (
+        <TabsContent value="progress" className="space-y-4">
+          <StudyProgressPanel
+            state={progress.isLoading ? 'loading' : progress.isError ? 'error' : progress.data ? 'ready' : 'empty'}
+            projection={progress.data}
+            onRetry={() => void progress.refetch()}
+            onAccept={acceptProgress}
+            onDismiss={dismissProgress}
+          />
+        </TabsContent>
+
+        {(['guide', 'map', 'practice', 'flashcards', 'sources'] as const).map((tab) => (
           <TabsContent key={tab} value={tab} className="space-y-4">
             <Card>
               <CardHeader>

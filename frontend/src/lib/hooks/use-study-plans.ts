@@ -16,6 +16,7 @@ import {
   SaveStudySyllabusInput,
   UpdateStudyPlanInput,
 } from '@/lib/types/study-plans'
+import { StudyProgressDecisionInput } from '@/lib/types/study-progress'
 import { studyPlansApi } from '@/lib/api/study-plans'
 
 export function useStudyPlans() {
@@ -47,6 +48,30 @@ export function useStudyPlanReadiness(planId: string | null | undefined) {
     queryKey: QUERY_KEYS.studyPlanReadiness(planId ?? ''),
     queryFn: () => studyPlansApi.readiness(planId as string),
     enabled: Boolean(planId),
+  })
+}
+
+export function useStudyPlanProgress(planId: string | null | undefined) {
+  return useQuery({
+    queryKey: QUERY_KEYS.studyPlanProgress(planId ?? ''),
+    queryFn: () => studyPlansApi.progress(planId as string),
+    enabled: Boolean(planId),
+  })
+}
+
+export function useDecideStudyProgress() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ planId, input }: { planId: string; input: StudyProgressDecisionInput }) =>
+      studyPlansApi.decideProgress(planId, input),
+    onSuccess: async (result, { planId }) => {
+      queryClient.setQueryData(QUERY_KEYS.studyPlanProgress(planId), result.projection)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlanProgress(planId) }),
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlan(planId) }),
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlans }),
+      ])
+    },
   })
 }
 

@@ -224,6 +224,26 @@ def test_projections_never_create_persistent_inferred_memory() -> None:
     )
 
 
+def test_future_decision_receipts_do_not_change_current_proposal_status() -> None:
+    baseline = project_mastery((_assessment("assessment-future"),), (), now=NOW)
+    proposal_id = baseline.proposals[0].proposal_id
+    future = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id="future-dismiss",
+        event="decision",
+        created_at=NOW + timedelta(minutes=5),
+        details={
+            "decision": "dismissed",
+            "phase": "completion",
+            "proposal_id": proposal_id,
+        },
+    )
+
+    projection = project_mastery((_assessment("assessment-future"), future), (), now=NOW)
+
+    assert next(item for item in projection.proposals if item.proposal_id == proposal_id).status == "proposed"
+
+
 def _api_plan(
     *, weekly_minutes: int = 60, version: int = 1, goal: str = "Learn motion"
 ) -> StudyPlan:
@@ -381,6 +401,42 @@ def test_api_accept_updates_existing_plan_and_appends_intent_and_completion(
     assert len(plans.update_calls) == 1
     assert "decision-one" in progress.receipts
     assert any(key.startswith("study_decision_completion:") for key in progress.receipts)
+    intent = progress.receipts["decision-one"]
+    assert "target_preferences" not in (study_plans._progress_details(intent) or {})
+    assert (study_plans._progress_details(intent) or {}).get("target_weekly_minutes") == 90
+
+
+def test_api_accept_with_maximum_network_scope_keeps_intent_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    plans.plan = _api_plan()
+    plans.plan = plans.plan.model_copy(update={
+        "preferences": plans.plan.preferences.model_copy(update={
+            "network_allowed": True,
+            "model_route": "cloud",
+            "approved_network_scope": tuple(
+                f"https://example.edu/{index}/{'x' * 470}" for index in range(8)
+            ),
+        })
+    })
+    progress = _ApiProgressRepository()
+    client = _api_client(monkeypatch, plans, progress)
+
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": "study_adaptation:extra",
+            "decision": "accepted",
+            "request_id": "decision-scopes",
+            "expected_revision": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    intent = progress.receipts["decision-scopes"]
+    assert len(intent.details.encode("utf-8")) <= 2_000
+    assert "target_preferences" not in intent.details
 
 
 def test_api_accept_retry_reconciles_after_completion_append_failure(
@@ -505,6 +561,63 @@ def test_api_accept_completion_rejects_changed_expected_revision(
     assert len(plans.update_calls) == 1
 
 
+@pytest.mark.parametrize("phase", ["intent", "completion"])
+def test_api_corrupt_decision_receipts_fail_closed_as_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+    phase: str,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    request_id = f"decision-corrupt-{phase}"
+    receipt_request_id = (
+        request_id
+        if phase == "intent"
+        else study_plans._completion_request_id(PLAN_ID, request_id)
+    )
+    details = (
+        {
+            "base_revision": 1,
+            "base_plan_sha256": "not-a-hash",
+            "decision": "accepted",
+            "phase": "intent",
+            "proposal_id": "study_adaptation:extra",
+            "target_plan_sha256": "b" * 64,
+            "target_weekly_minutes": 90,
+        }
+        if phase == "intent"
+        else {
+            "base_revision": 1,
+            "base_plan_sha256": "a" * 64,
+            "decision": "accepted",
+            "intent_request_id": request_id,
+            "phase": "completion",
+            "proposal_id": "study_adaptation:extra",
+            "target_plan_sha256": "not-a-hash",
+        }
+    )
+    progress.receipts[receipt_request_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=receipt_request_id,
+        event="decision",
+        created_at=NOW,
+        details=details,
+    )
+    client = _api_client(monkeypatch, plans, progress)
+
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": "study_adaptation:extra",
+            "decision": "accepted",
+            "request_id": request_id,
+            "expected_revision": 1,
+        },
+    )
+
+    assert response.status_code == 409
+    assert plans.update_calls == []
+
+
 def test_api_dismiss_retry_is_receipt_idempotent_without_second_append(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -545,6 +658,34 @@ def test_api_accept_retry_rejects_unrelated_revision_change(
 
     assert first.status_code == 503
     assert second.status_code == 409
+
+
+def test_api_dismiss_requires_proposed_and_replays_before_state_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    client = _api_client(monkeypatch, plans, progress)
+    payload = {
+        "proposal_id": "study_adaptation:extra",
+        "decision": "dismissed",
+        "request_id": "decision-dismiss-state",
+    }
+
+    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    assert first.status_code == 200
+    progress.projection = _api_projection().model_copy(update={
+        "proposals": (_api_projection().proposals[0].model_copy(update={"status": "accepted"}),)
+    })
+    replay = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    assert replay.status_code == 200
+
+    progress.receipts.pop("decision-dismiss-state", None)
+    rejected = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={**payload, "request_id": "decision-dismiss-new"},
+    )
+    assert rejected.status_code == 409
 
 
 def test_api_feature_off_returns_404_before_malformed_progress_validation(

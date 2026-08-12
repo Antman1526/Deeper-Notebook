@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { decodeStudyMasteryProjection, StudyProgressPanel } from './StudyProgressPanel'
+import { StudyProgressPanel } from './StudyProgressPanel'
+import { decodeStudyMasteryProjection } from '@/lib/types/study-progress'
 
 const projection = {
   schema_version: 1 as const,
@@ -61,7 +62,7 @@ describe('StudyProgressPanel', () => {
     fireEvent.click(accept)
     expect(onAccept).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-    expect(onAccept).toHaveBeenCalledWith('proposal:one')
+    expect(onAccept).toHaveBeenCalledWith('proposal:one', expect.stringMatching(/^study-decision:/))
   })
 
   it('renders unavailable proposals without a mutation control', () => {
@@ -90,10 +91,10 @@ describe('StudyProgressPanel', () => {
     const onDismiss = vi.fn()
     render(<StudyProgressPanel state="ready" projection={projection} onDismiss={onDismiss} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Review the prerequisite first' }))
     expect(onDismiss).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-    expect(onDismiss).toHaveBeenCalledWith('proposal:one')
+    expect(onDismiss).toHaveBeenCalledWith('proposal:one', expect.stringMatching(/^study-decision:/))
 
     expect(() => decodeStudyMasteryProjection({ ...projection, proposals: [{ ...projection.proposals[0], unexpected: true }] })).toThrow('Invalid Study progress response')
     expect(() => decodeStudyMasteryProjection({ ...projection, review_consistency: { ...projection.review_consistency, extra: true } })).toThrow('Invalid Study progress response')
@@ -101,14 +102,27 @@ describe('StudyProgressPanel', () => {
     expect(() => decodeStudyMasteryProjection({ ...projection, concepts: [{ ...projection.concepts[0], lapses: -1 }] })).toThrow('Invalid Study progress response')
   })
 
+  it('renders decoder failures as a retryable error instead of empty progress', () => {
+    const onRetry = vi.fn()
+    render(<StudyProgressPanel state="ready" projection={{ ...projection, generated_at: '2026-08-12T12:00:00' } as never} onRetry={onRetry} />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Study progress could not be read')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
   it('keeps the confirmation open and offers retry when a decision fails', async () => {
-    const onDismiss = vi.fn().mockRejectedValueOnce(new Error('offline'))
+    const onDismiss = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined)
     render(<StudyProgressPanel state="ready" projection={projection} onDismiss={onDismiss} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Review the prerequisite first' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
     await screen.findByRole('alert')
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
     expect(screen.getByRole('dialog')).toBeVisible()
+    const firstRequestId = onDismiss.mock.calls[0][1]
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(onDismiss).toHaveBeenCalledTimes(2))
+    expect(onDismiss.mock.calls[1][1]).toBe(firstRequestId)
   })
 })

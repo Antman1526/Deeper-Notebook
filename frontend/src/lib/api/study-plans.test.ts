@@ -138,4 +138,39 @@ describe('studyPlansApi', () => {
     expect(mockGet).not.toHaveBeenCalled()
     expect(mockPost).not.toHaveBeenCalled()
   })
+
+  it('loads bounded mastery progress and posts an explicit decision', async () => {
+    const progress = {
+      schema_version: 1,
+      concepts: [],
+      review_consistency: { reviews: 0, lapses: 0, due_reviews: 0, on_time_rate: 0 },
+      proposals: [],
+      generated_at: '2026-08-12T12:00:00Z',
+      memory_writes: [],
+    }
+    mockGet.mockResolvedValue({ data: progress } as never)
+    mockPost.mockResolvedValue({ data: { proposal_id: 'proposal:one', decision: 'dismissed', projection: progress } } as never)
+
+    await expect(studyPlansApi.progress('study_plan:one')).resolves.toEqual(progress)
+    await expect(studyPlansApi.decideProgress('study_plan:one', {
+      proposal_id: 'proposal:one',
+      decision: 'dismissed',
+      request_id: 'decision:one',
+    })).resolves.toMatchObject({ proposal_id: 'proposal:one', decision: 'dismissed' })
+    expect(mockGet).toHaveBeenCalledWith('/study/plans/study_plan%3Aone/progress')
+    expect(mockPost).toHaveBeenCalledWith('/study/plans/study_plan%3Aone/progress:decision', {
+      proposal_id: 'proposal:one',
+      decision: 'dismissed',
+      request_id: 'decision:one',
+    })
+  })
+
+  it('rejects malformed progress decisions before dispatch', async () => {
+    await expect(studyPlansApi.decideProgress('study_plan:one', {
+      proposal_id: 'proposal:one',
+      decision: 'accepted',
+      request_id: 'decision:one',
+    } as never)).rejects.toThrow('Invalid Study progress request')
+    expect(mockPost).not.toHaveBeenCalled()
+  })
 })

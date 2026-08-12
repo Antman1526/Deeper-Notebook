@@ -11,6 +11,7 @@ const workspaceState = vi.hoisted(() => ({
   approvedSyllabusVersion: 2 as number | null,
 }))
 const workspaceInvoke = vi.hoisted(() => vi.fn())
+const progressDecision = vi.hoisted(() => vi.fn())
 
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(`tab=${workspaceState.activeTab}`),
@@ -76,6 +77,20 @@ vi.mock('@/lib/hooks/use-study-plans', () => ({
     refetch: vi.fn(),
   }),
   useStudyPlanReadiness: () => ({ data: { ready: true, items: [] }, isLoading: false, isError: false, refetch: vi.fn() }),
+  useStudyPlanProgress: () => ({
+    data: {
+      schema_version: 1,
+      concepts: [{ concept_id: 'concept:one', unit_id: 'unit-one', score: 0.65, status: 'developing', attempts: 1, lapses: 0, last_activity_at: '2026-08-12T12:00:00Z' }],
+      review_consistency: { reviews: 0, lapses: 0, due_reviews: 0, on_time_rate: 0 },
+      proposals: [{ schema_version: 1, proposal_id: 'proposal:extra', concept_id: 'concept:one', unit_id: 'unit-one', action: 'extra_practice', title: 'Add a short practice block', rationale: 'More practice may help.', status: 'proposed', available: true }],
+      generated_at: '2026-08-12T12:00:00Z',
+      memory_writes: [],
+    },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useDecideStudyProgress: () => ({ mutateAsync: progressDecision, isPending: false }),
 }))
 vi.mock('./SyllabusEditor', () => ({
   SyllabusEditor: () => <div>Rendered syllabus editor</div>,
@@ -90,6 +105,8 @@ describe('StudyPlanWorkspace', () => {
     workspaceInvoke.mockReset()
     workspaceInvoke.mockResolvedValue(undefined)
     replace.mockReset()
+    progressDecision.mockReset()
+    progressDecision.mockResolvedValue(undefined)
   })
 
   it('keeps the selected known tab addressable and falls back unknown values to overview', () => {
@@ -150,4 +167,21 @@ describe('StudyPlanWorkspace', () => {
       expect(workspaceInvoke).not.toHaveBeenCalled()
     },
   )
+
+  it('mounts progress and sends one stable request with the current revision on Accept', async () => {
+    workspaceState.activeTab = 'progress'
+    render(<StudyPlanWorkspace planId="study_plan:one" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept Add a short practice block' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(progressDecision).toHaveBeenCalledWith({
+      planId: 'study_plan:one',
+      input: expect.objectContaining({
+        proposal_id: 'proposal:extra',
+        decision: 'accepted',
+        expected_revision: 4,
+        request_id: expect.stringMatching(/^study-decision:/),
+      }),
+    }))
+  })
 })

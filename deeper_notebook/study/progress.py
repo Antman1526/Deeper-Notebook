@@ -333,6 +333,86 @@ def decode_progress_event_details(details: str | None) -> dict[str, Any] | None:
                 return None
             if isinstance(value, str) and len(value.encode("utf-8")) > 512:
                 return None
+        phase = values.get("phase")
+        if phase == "intent":
+            if set(values) != {
+                "base_plan_sha256",
+                "base_revision",
+                "decision",
+                "phase",
+                "proposal_id",
+                "target_plan_sha256",
+                "target_weekly_minutes",
+            } or values.get("decision") != "accepted":
+                return None
+            base_revision = values.get("base_revision")
+            proposal_id = values.get("proposal_id")
+            target_weekly = values.get("target_weekly_minutes")
+            if (
+                isinstance(base_revision, bool)
+                or not isinstance(base_revision, int)
+                or not 1 <= base_revision <= 100_000
+                or not isinstance(proposal_id, str)
+                or not 1 <= len(proposal_id) <= 512
+                or any(ord(char) < 32 or ord(char) == 127 for char in proposal_id)
+                or isinstance(target_weekly, bool)
+                or not isinstance(target_weekly, int)
+                or not 5 <= target_weekly <= 10_080
+            ):
+                return None
+            hashes = (values.get("base_plan_sha256"), values.get("target_plan_sha256"))
+            if any(
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(char not in "0123456789abcdef" for char in value)
+                for value in hashes
+            ):
+                return None
+        elif phase == "completion":
+            if values.get("decision") == "dismissed":
+                if set(values) != {"decision", "phase", "proposal_id"}:
+                    return None
+                proposal_id = values.get("proposal_id")
+                if (
+                    not isinstance(proposal_id, str)
+                    or not 1 <= len(proposal_id) <= 512
+                    or any(ord(char) < 32 or ord(char) == 127 for char in proposal_id)
+                ):
+                    return None
+            else:
+                if set(values) != {
+                    "base_plan_sha256",
+                    "base_revision",
+                    "decision",
+                    "intent_request_id",
+                    "phase",
+                    "proposal_id",
+                    "target_plan_sha256",
+                } or values.get("decision") != "accepted":
+                    return None
+                base_revision = values.get("base_revision")
+                proposal_id = values.get("proposal_id")
+                intent_request_id = values.get("intent_request_id")
+                if (
+                    isinstance(base_revision, bool)
+                    or not isinstance(base_revision, int)
+                    or not 1 <= base_revision <= 100_000
+                    or not isinstance(proposal_id, str)
+                    or not 1 <= len(proposal_id) <= 512
+                    or any(ord(char) < 32 or ord(char) == 127 for char in proposal_id)
+                    or not isinstance(intent_request_id, str)
+                    or not 1 <= len(intent_request_id) <= 256
+                    or any(ord(char) < 32 or ord(char) == 127 for char in intent_request_id)
+                ):
+                    return None
+                hashes = (values.get("base_plan_sha256"), values.get("target_plan_sha256"))
+                if any(
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(char not in "0123456789abcdef" for char in value)
+                    for value in hashes
+                ):
+                    return None
         return dict(values)
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
@@ -415,6 +495,8 @@ def project_mastery(
     for item in sorted(
         by_request.values(), key=lambda value: (value.created_at, value.request_id)
     ):
+        if item.created_at > now:
+            continue
         if item.event != "decision":
             continue
         details = decode_progress_event_details(item.details)

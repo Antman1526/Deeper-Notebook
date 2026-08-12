@@ -346,7 +346,7 @@ def _intent_payload(
     base_revision: int,
     base_plan_sha256: str,
     target_plan_sha256: str,
-    target_preferences: StudyPlanPreferences,
+    target_weekly_minutes: int,
 ) -> dict[str, object]:
     return {
         "base_revision": base_revision,
@@ -355,7 +355,7 @@ def _intent_payload(
         "phase": "intent",
         "proposal_id": proposal_id,
         "target_plan_sha256": target_plan_sha256,
-        "target_preferences": target_preferences.model_dump(mode="json"),
+        "target_weekly_minutes": target_weekly_minutes,
     }
 
 
@@ -384,6 +384,68 @@ def _progress_details(receipt: object) -> dict[str, object] | None:
     return decode_progress_event_details(getattr(receipt, "details", None))
 
 
+def _strict_decision_details(
+    receipt: object,
+    *,
+    phase: str,
+) -> dict[str, object] | None:
+    details = _progress_details(receipt)
+    if details is None:
+        return None
+    expected = {
+        "intent": {
+            "base_plan_sha256",
+            "base_revision",
+            "decision",
+            "phase",
+            "proposal_id",
+            "target_plan_sha256",
+            "target_weekly_minutes",
+        },
+        "completion": {
+            "base_plan_sha256",
+            "base_revision",
+            "decision",
+            "intent_request_id",
+            "phase",
+            "proposal_id",
+            "target_plan_sha256",
+        },
+    }[phase]
+    if set(details) != expected or details.get("phase") != phase or details.get("decision") != "accepted":
+        return None
+    base_revision = details.get("base_revision")
+    if isinstance(base_revision, bool) or not isinstance(base_revision, int) or not 1 <= base_revision <= 100_000:
+        return None
+    proposal_id = details.get("proposal_id")
+    if not isinstance(proposal_id, str) or not 1 <= len(proposal_id) <= 512 or any(ord(char) < 32 for char in proposal_id):
+        return None
+    for key in ("base_plan_sha256", "target_plan_sha256"):
+        value = details.get(key)
+        if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+            return None
+    if phase == "intent":
+        target_weekly = details.get("target_weekly_minutes")
+        if isinstance(target_weekly, bool) or not isinstance(target_weekly, int) or not 5 <= target_weekly <= 10_080:
+            return None
+    else:
+        intent_request_id = details.get("intent_request_id")
+        if not isinstance(intent_request_id, str) or not 1 <= len(intent_request_id) <= 256 or any(ord(char) < 32 for char in intent_request_id):
+            return None
+    return details
+
+
+def _strict_dismiss_details(receipt: object, *, proposal_id: str) -> bool:
+    details = _progress_details(receipt)
+    return bool(
+        details is not None
+        and set(details) == {"decision", "phase", "proposal_id"}
+        and details.get("decision") == "dismissed"
+        and details.get("phase") == "completion"
+        and details.get("proposal_id") == proposal_id
+    )
+
+
 async def _accept_study_plan_progress(
     *,
     plan_id: str,
@@ -398,10 +460,20 @@ async def _accept_study_plan_progress(
     """Apply only the existing weekly-budget mutation via two receipts."""
     completion_id = _completion_request_id(plan_id, payload.request_id)
     existing_completion = await repository.get_progress_by_request(plan_id, completion_id)
-    completion_details = _progress_details(existing_completion) if existing_completion else None
+    completion_details = (
+        _strict_decision_details(existing_completion, phase="completion")
+        if existing_completion
+        else None
+    )
     if existing_completion is not None:
-        existing_intent = await repository.get_progress_by_request(plan_id, payload.request_id)
-        intent_details = _progress_details(existing_intent) if existing_intent else None
+        existing_intent = await repository.get_progress_by_request(
+            plan_id, payload.request_id
+        )
+        intent_details = (
+            _strict_decision_details(existing_intent, phase="intent")
+            if existing_intent
+            else None
+        )
         if (
             completion_details is None
             or intent_details is None
@@ -421,32 +493,38 @@ async def _accept_study_plan_progress(
         return StudyProgressDecisionResponse(
             proposal_id=selected_id,
             decision="accepted",
-            projection=visible_projection,
+            projection=_projection_for_plan(
+                await repository.project(plan_id, now=now), plan
+            ),
         )
 
     existing_intent = await repository.get_progress_by_request(plan_id, payload.request_id)
-    intent_details = _progress_details(existing_intent) if existing_intent else None
+    intent_details = (
+        _strict_decision_details(existing_intent, phase="intent")
+        if existing_intent
+        else None
+    )
     if existing_intent is not None:
-        if intent_details is None or intent_details.get("phase") != "intent":
-            raise StudyAssistantConflictError("progress request ID was already used")
-        if intent_details.get("proposal_id") != selected_id or intent_details.get("decision") != "accepted":
+        if intent_details is None or intent_details.get("proposal_id") != selected_id:
             raise StudyAssistantConflictError("progress request ID was already used")
         base_revision = intent_details.get("base_revision")
         base_plan_sha256 = intent_details.get("base_plan_sha256")
         target_plan_sha256 = intent_details.get("target_plan_sha256")
-        target_raw = intent_details.get("target_preferences")
+        target_weekly_minutes = intent_details.get("target_weekly_minutes")
         if (
             payload.expected_revision != base_revision
             or not isinstance(base_revision, int)
             or not isinstance(base_plan_sha256, str)
             or not isinstance(target_plan_sha256, str)
-            or not isinstance(target_raw, dict)
+            or isinstance(target_weekly_minutes, bool)
+            or not isinstance(target_weekly_minutes, int)
+            or not 5 <= target_weekly_minutes <= 10_080
+            or plan.preferences is None
         ):
             raise StudyAssistantConflictError("progress request ID was already used")
-        try:
-            target_preferences = StudyPlanPreferences.model_validate(target_raw)
-        except Exception as exc:
-            raise StudyAssistantConflictError("progress request ID was already used") from exc
+        target_preferences = plan.preferences.model_copy(
+            update={"weekly_minutes": target_weekly_minutes}
+        )
     else:
         proposal = next(
             (item for item in visible_projection.proposals if item.proposal_id == selected_id),
@@ -473,6 +551,7 @@ async def _accept_study_plan_progress(
                 + plan.preferences.session_minutes
             }
         )
+        target_weekly_minutes = target_preferences.weekly_minutes
         target_plan_sha256 = _plan_fingerprint(plan, preferences=target_preferences)
         intent = make_progress_receipt(
             plan_id=plan_id,
@@ -484,13 +563,18 @@ async def _accept_study_plan_progress(
                 base_revision=base_revision,
                 base_plan_sha256=base_plan_sha256,
                 target_plan_sha256=target_plan_sha256,
-                target_preferences=target_preferences,
+                target_weekly_minutes=target_weekly_minutes,
             ),
         )
         await repository.append_progress(intent)
 
     if plan.version == base_revision:
         if _plan_fingerprint(plan) != base_plan_sha256:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "progress_conflict", "message": "Study plan changed"},
+            )
+        if _plan_fingerprint(plan, preferences=target_preferences) != target_plan_sha256:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={"code": "progress_conflict", "message": "Study plan changed"},
@@ -613,6 +697,16 @@ async def _decide_study_plan_progress(
                 visible_projection=visible_projection,
                 now=now,
             )
+        existing = await repository.get_progress_by_request(plan_id, payload.request_id)
+        if existing is not None:
+            if not _strict_dismiss_details(existing, proposal_id=selected_id):
+                raise StudyAssistantConflictError("progress request ID was already used")
+            refreshed = await repository.project(plan_id, now=now)
+            return StudyProgressDecisionResponse(
+                proposal_id=selected_id,
+                decision="dismissed",
+                projection=_projection_for_plan(refreshed, plan),
+            )
         proposal = next(
             (
                 item
@@ -624,6 +718,14 @@ async def _decide_study_plan_progress(
         if proposal is None:
             raise StudyAssistantNotFoundError("study adaptation proposal not found")
         if payload.decision == "dismissed":
+            if proposal.status != "proposed":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "adaptation_unavailable",
+                        "message": "This study adaptation is no longer proposed",
+                    },
+                )
             receipt = make_progress_receipt(
                 plan_id=plan_id,
                 request_id=payload.request_id,
@@ -635,25 +737,23 @@ async def _decide_study_plan_progress(
                     "proposal_id": selected_id,
                 },
             )
-            existing = await repository.get_progress_by_request(
-                plan_id, payload.request_id
-            )
-            if existing is not None:
-                if existing.details != receipt.details:
-                    raise StudyAssistantConflictError("progress request ID was already used")
-                return StudyProgressDecisionResponse(
-                    proposal_id=selected_id,
-                    decision=payload.decision,
-                    projection=visible_projection,
-                )
             await repository.append_progress(receipt)
+            refreshed = await repository.project(plan_id, now=now)
             return StudyProgressDecisionResponse(
                 proposal_id=selected_id,
                 decision=payload.decision,
-                projection=visible_projection,
+                projection=_projection_for_plan(refreshed, plan),
             )
     except HTTPException:
         raise
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "invalid_progress_request",
+                "message": "Invalid study progress request",
+            },
+        ) from exc
     except (StudyProgressRepositoryError, StudyAssistantRepositoryError) as exc:
         raise _progress_error(exc) from None
 

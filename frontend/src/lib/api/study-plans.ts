@@ -19,6 +19,11 @@ import {
   StudySyllabus,
   UpdateStudyPlanInput,
 } from '@/lib/types/study-plans'
+import {
+  decodeStudyMasteryProjection,
+  StudyProgressDecisionInput,
+  StudyProgressDecisionResponse,
+} from '@/lib/types/study-progress'
 
 function planPath(planId: string): string {
   return `/study/plans/${encodeURIComponent(planId)}`
@@ -89,6 +94,45 @@ function validateCreateInput(input: CreateStudyPlanInput): CreateStudyPlanInput 
 function validateRevision(value: unknown): number {
   if (!Number.isInteger(value) || (value as number) < 1) invalidRequest()
   return value as number
+}
+
+function validateRequestId(value: unknown): string {
+  return validateText(value, 256)
+}
+
+function validateProgressDecision(input: StudyProgressDecisionInput): StudyProgressDecisionInput {
+  try {
+    const data = requestRecord(input, ['proposal_id', 'decision', 'request_id', 'expected_revision'])
+    const decision = data.decision
+    if (decision !== 'accepted' && decision !== 'dismissed') invalidRequest()
+    const result: StudyProgressDecisionInput = {
+      proposal_id: validateText(data.proposal_id, 512),
+      decision,
+      request_id: validateRequestId(data.request_id),
+    }
+    if (decision === 'accepted') {
+      result.expected_revision = validateRevision(data.expected_revision)
+    } else if (Object.prototype.hasOwnProperty.call(data, 'expected_revision') && data.expected_revision !== undefined) {
+      invalidRequest()
+    }
+    return result
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Invalid Study Plan request') {
+      throw new Error('Invalid Study progress request')
+    }
+    throw error
+  }
+}
+
+function decodeProgressDecision(value: unknown): StudyProgressDecisionResponse {
+  const record = requestRecord(value, ['proposal_id', 'decision', 'projection'])
+  const decision = record.decision
+  if (decision !== 'accepted' && decision !== 'dismissed') invalidRequest()
+  return {
+    proposal_id: validateText(record.proposal_id, 512),
+    decision,
+    projection: decodeStudyMasteryProjection(record.projection),
+  }
 }
 
 export const studyPlansApi = {
@@ -186,5 +230,15 @@ export const studyPlansApi = {
       expected_revision: validateRevision(data.expected_revision),
     })
     return decodeStudyPlan(response.data)
+  },
+
+  async progress(planId: string) {
+    const response = await apiClient.get(`${planPath(validatePlanId(planId))}/progress`)
+    return decodeStudyMasteryProjection(response.data)
+  },
+
+  async decideProgress(planId: string, input: StudyProgressDecisionInput): Promise<StudyProgressDecisionResponse> {
+    const response = await apiClient.post(`${planPath(validatePlanId(planId))}/progress:decision`, validateProgressDecision(input))
+    return decodeProgressDecision(response.data)
   },
 }
