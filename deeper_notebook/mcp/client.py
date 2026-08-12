@@ -16,6 +16,13 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from deeper_notebook.environment import resolve_env
+from deeper_notebook.security.mcp_transport import (
+    build_mcp_httpx_client_factory,
+)
+
+# Focused callers/tests use the private name while the security module keeps
+# the descriptive public helper for the transport seam.
+_build_mcp_httpx_client_factory = build_mcp_httpx_client_factory
 
 # MCP responses are third-party input.  Keep every projection finite before it
 # reaches the chat graph, while leaving ordinary valid responses unchanged.
@@ -240,19 +247,24 @@ async def _open_session(url: str, headers: Optional[dict[str, str]] = None):
     from mcp.client.session import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
 
-    from api.credentials_service import validate_url
+    from deeper_notebook.security.mcp_transport import (
+        build_mcp_httpx_client_factory,
+        validate_mcp_url,
+    )
 
-    # v0.8.?? — final outbound SSRF boundary. Registry rows can predate URL
-    # validation or be edited directly, so create/test validation is not
-    # sufficient. Reuse the credential URL policy immediately before opening
-    # the transport; this preserves explicitly allowed loopback/private local
-    # plugins while blocking link-local and unsupported schemes on every path.
-    await asyncio.to_thread(validate_url, url, "mcp")
+    # Registry rows can predate URL validation or be edited directly. Resolve
+    # and pin the destination at the transport boundary, preserving explicit
+    # loopback/private plugins while blocking link-local and redirect escapes.
+    checked = await validate_mcp_url(url)
+    factory = build_mcp_httpx_client_factory(checked)
 
     # v0.8.66 (audit MCP-4) — pass auth headers when provided (some MCP
     # transports reject an explicit `headers=None`, so only forward when set).
-    kwargs = {"headers": headers} if headers else {}
-    async with streamablehttp_client(url, **kwargs) as (read, write, _):
+    kwargs = {
+        "headers": headers,
+        "httpx_client_factory": factory,
+    }
+    async with streamablehttp_client(checked.url, **kwargs) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
             yield session

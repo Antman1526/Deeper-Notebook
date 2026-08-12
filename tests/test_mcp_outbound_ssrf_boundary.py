@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+import httpx
 import pytest
 
 
@@ -109,3 +110,105 @@ async def test_mcp_session_preserves_allowed_loopback_transport(monkeypatch):
         pass
 
     assert transport_calls == ["http://127.0.0.1:8742/mcp"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_does_not_follow_redirect_to_link_local_target():
+    """The SDK's redirect-following default must not cross the MCP policy."""
+    from deeper_notebook.mcp.client import _build_mcp_httpx_client_factory
+    from deeper_notebook.security.mcp_transport import ValidatedMCPURL
+
+    requests: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        if request.url.path == "/mcp":
+            return httpx.Response(
+                307,
+                headers={"location": "http://169.254.169.254/latest/meta-data/"},
+                request=request,
+            )
+        raise AssertionError("redirect target reached")
+
+    factory = _build_mcp_httpx_client_factory(
+        ValidatedMCPURL(
+            url="http://127.0.0.1:8742/mcp",
+            hostname="127.0.0.1",
+            port=8742,
+            addresses=("127.0.0.1",),
+        )
+    )
+    client = factory()
+    client._transport = httpx.MockTransport(handler)
+    try:
+        response = await client.get("http://127.0.0.1:8742/mcp")
+        assert response.status_code == 307
+        assert client.follow_redirects is False
+    finally:
+        await client.aclose()
+    assert requests == ["http://127.0.0.1:8742/mcp"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_connects_only_to_resolution_approved_before_rebinding(
+    monkeypatch,
+):
+    """A resolver answer changing after validation cannot steer the socket."""
+    import deeper_notebook.security.mcp_transport as policy
+    from deeper_notebook.security.mcp_transport import (
+        PinnedMCPNetworkBackend,
+    )
+
+    resolver_calls = 0
+
+    async def first_resolution(hostname, port):
+        nonlocal resolver_calls
+        resolver_calls += 1
+        return ("192.168.1.20",)
+
+    monkeypatch.setattr(policy, "resolve_mcp_addresses", first_resolution)
+    approved = await policy.validate_mcp_url("http://plugin.example.test/mcp")
+    calls: list[tuple[str, int]] = []
+
+    class _Delegate:
+        async def connect_tcp(self, host, port, **kwargs):
+            calls.append((host, port))
+            return object()
+
+    backend = PinnedMCPNetworkBackend(approved, delegate=_Delegate())
+    # Simulate a second DNS answer that would be link-local. The backend must
+    # use the immutable validation receipt rather than resolve again.
+    async def changed_resolution(hostname, port):
+        nonlocal resolver_calls
+        resolver_calls += 1
+        return ("169.254.169.254",)
+
+    monkeypatch.setattr(policy, "resolve_mcp_addresses", changed_resolution)
+    await backend.connect_tcp("plugin.example.test", 80)
+
+    assert calls == [("192.168.1.20", 80)]
+    assert resolver_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_mcp_transport_rejects_unapproved_authority_at_connect_boundary():
+    from deeper_notebook.security.mcp_transport import (
+        MCPTransportPolicyError,
+        PinnedMCPNetworkBackend,
+        ValidatedMCPURL,
+    )
+
+    approved = ValidatedMCPURL(
+        url="http://127.0.0.1:8742/mcp",
+        hostname="127.0.0.1",
+        port=8742,
+        addresses=("127.0.0.1",),
+    )
+
+    class _Delegate:
+        async def connect_tcp(self, host, port, **kwargs):  # pragma: no cover
+            raise AssertionError("unapproved authority reached delegate")
+
+    backend = PinnedMCPNetworkBackend(approved, delegate=_Delegate())
+    with pytest.raises(MCPTransportPolicyError):
+        await backend.connect_tcp("169.254.169.254", 80)

@@ -111,21 +111,14 @@ async def create_mcp_server(body: MCPServerCreate):
 
     Raises 409 if the mcp_server_name_unique index fires (Migration 17).
     """
-    import asyncio
-
-    from api.credentials_service import validate_url
     from deeper_notebook.database.repository import repo_create
+    from deeper_notebook.security.mcp_transport import validate_mcp_url
 
-    # v0.8.66 (audit H4) — SSRF validation. The stored URL is later fetched
-    # outbound by /test AND by the chat tool loop on every turn. Without this,
-    # an authenticated user could register `http://169.254.169.254/...` (cloud
-    # metadata) or an internal-service URL and have the server fetch it. We
-    # reuse the SAME validator credential URLs already use; it deliberately
-    # allows localhost/private IPs so self-hosted MCP servers still work, and
-    # blocks only bad schemes + link-local. `validate_url` does a blocking
-    # getaddrinfo, so run it off the event loop.
+    # v0.8.66 (audit H4) — validate and resolve before persisting. The stored
+    # URL is later fetched outbound by /test and the chat tool loop; the same
+    # lower-layer policy is also re-run at that transport boundary.
     try:
-        await asyncio.to_thread(validate_url, body.url, "mcp")
+        await validate_mcp_url(body.url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -219,11 +212,9 @@ async def test_mcp_server(server_id: str):
     can render a connectivity badge without catching exceptions on the
     client side.
     """
-    import asyncio
-
-    from api.credentials_service import validate_url
     from deeper_notebook.database.repository import ensure_record_id, repo_query
     from deeper_notebook.mcp.client import MCPClient
+    from deeper_notebook.security.mcp_transport import validate_mcp_url
 
     # v0.8.66 (audit H3) — bind a RecordID, not a string, or the SELECT matches
     # 0 rows and Test 404s on a server that genuinely exists.
@@ -242,7 +233,7 @@ async def test_mcp_server(server_id: str):
     # so a row that predates create-time validation (or was written by a direct
     # DB edit) can't be abused for SSRF via the Test button.
     try:
-        await asyncio.to_thread(validate_url, rows[0]["url"], "mcp")
+        await validate_mcp_url(rows[0]["url"])
     except ValueError as exc:
         return {"ok": False, "error": str(exc)[:200]}
 
