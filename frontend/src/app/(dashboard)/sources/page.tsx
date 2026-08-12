@@ -360,7 +360,11 @@ export default function SourcesPage() {
         actions={sourceAction()}
       >
         <div className="flex h-full min-h-0 w-full max-w-none flex-col">
-          <div ref={scrollContainerRef} className="flex-1 overflow-auto rounded-md border">
+          <div
+            ref={scrollContainerRef}
+            data-dn-horizontal-scroll="sources-table"
+            className="flex-1 overflow-auto rounded-md border"
+          >
           <table
             ref={tableRef}
             tabIndex={0}

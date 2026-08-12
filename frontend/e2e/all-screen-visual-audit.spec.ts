@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { installLuminousFolioFixture } from './fixtures/luminous-folio'
 import { expect, researchWorkbenchFixtures, test } from './fixtures/research-workbench'
 import {
@@ -99,10 +100,89 @@ const canonicalViewports = [
   { width: 1440, height: 900 },
 ] as const
 
-const legacyRoutesWithNestedMain = new Set(['/','/knowledge','/podcasts/studio'])
+function expectedMainLandmarks(_route: string): number {
+  return 1
+}
 
-function expectedMainLandmarks(route: string): number {
-  return rollbackBuild && legacyRoutesWithNestedMain.has(route) ? 2 : 1
+async function inspectClippedControls(page: Page) {
+  return page.evaluate(() => {
+    const markerSelector = '[data-dn-horizontal-scroll="sources-table"]'
+    const controls = Array.from(document.querySelectorAll<HTMLElement>('button, a, [role="button"]'))
+      .filter(element => {
+        const style = window.getComputedStyle(element)
+        return style.display !== 'none' && style.visibility !== 'hidden'
+      })
+    const inViewport = (rect: DOMRect) => (
+      rect.right > -1
+      && rect.left < window.innerWidth + 1
+      && rect.bottom > -1
+      && rect.top < window.innerHeight + 1
+    )
+    const horizontallyInViewport = (rect: DOMRect) => (
+      rect.right > -1 && rect.left < window.innerWidth + 1
+    )
+    const markedContainers = Array.from(document.querySelectorAll<HTMLElement>(markerSelector)).map(container => {
+      const rect = container.getBoundingClientRect()
+      const style = window.getComputedStyle(container)
+      return {
+        insideViewport: inViewport(rect),
+        overflowX: style.overflowX,
+        scrollable: ['auto', 'scroll'].includes(style.overflowX)
+          && container.scrollWidth > container.clientWidth + 1,
+        rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+      }
+    })
+    const violations: Array<{ label: string; reason: string }> = []
+    const unreachable: string[] = []
+
+    for (const element of controls) {
+      const rect = element.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) continue
+
+      let horizontalAncestor: HTMLElement | null = element.parentElement
+      while (horizontalAncestor) {
+        const style = window.getComputedStyle(horizontalAncestor)
+        const scrollable = ['auto', 'scroll'].includes(style.overflowX)
+          && horizontalAncestor.scrollWidth > horizontalAncestor.clientWidth + 1
+        if (scrollable) break
+        horizontalAncestor = horizontalAncestor.parentElement
+      }
+      const container = element.closest<HTMLElement>(markerSelector)
+      const containerStyle = container ? window.getComputedStyle(container) : null
+      const markedScrollable = Boolean(container && containerStyle
+        && ['auto', 'scroll'].includes(containerStyle.overflowX)
+        && container.scrollWidth > container.clientWidth + 1)
+      const outsideViewport = rect.right <= -1 || rect.left >= window.innerWidth + 1
+
+      if (outsideViewport) {
+        if (!container || !markedScrollable || horizontalAncestor !== container) {
+          violations.push({
+            label: element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName,
+            reason: 'outside viewport',
+          })
+          continue
+        }
+
+        const boundary = container.getBoundingClientRect()
+        const initial = container.scrollLeft
+        const max = Math.max(0, container.scrollWidth - container.clientWidth)
+        const positions = [...new Set([0, max, initial])]
+        const reachable = positions.some(position => {
+          container.scrollLeft = position
+          const candidate = element.getBoundingClientRect()
+          return candidate.right > boundary.left + 1
+            && candidate.left < boundary.right - 1
+            && horizontallyInViewport(candidate)
+        })
+        container.scrollLeft = initial
+        if (!reachable) {
+          unreachable.push(element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName)
+        }
+      }
+    }
+
+    return { markedContainers, violations, unreachable }
+  })
 }
 
 const sourceListFixture = {
@@ -176,6 +256,18 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
     theme: 'research-core-dark',
     unexpectedApiRequests,
   })
+  await page.setViewportSize({ width: 320, height: 240 })
+  await page.setContent(`
+    <main>
+      <div style="width: 100px; overflow-x: auto;">
+        <button style="margin-left: 500px; width: 80px;">Unmarked overflow canary</button>
+      </div>
+    </main>
+  `)
+  const canaryReport = await inspectClippedControls(page)
+  expect(canaryReport.markedContainers).toEqual([])
+  expect(canaryReport.violations.map(item => item.label)).toContain('Unmarked overflow canary')
+
   for (const [pathname, body] of sharedBackgroundResponses) {
     await page.route(url => url.pathname === pathname, async route => {
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
@@ -313,6 +405,7 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
       await page.goto(route)
       await expect(page.locator('body')).toBeVisible()
       await expect(page.locator('h1'), `${route} ${viewport.width}px heading`).toHaveCount(1)
+      await expect(page.locator('h1').first(), `${route} ${viewport.width}px visible heading`).toBeVisible()
       await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(expectedMainLandmarks(route))
       await expect(
         page.locator(rollbackBuild ? '.dn-legacy-shell' : '.dn-luminous-shell'),
@@ -330,48 +423,13 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
       })
       expect(duplicateIds, `${route} ${viewport.width}px duplicate IDs`).toEqual([])
 
-      const clippedControls = await page.evaluate(() => {
-        const controls = Array.from(document.querySelectorAll('button, a, [role="button"]'))
-          .filter(element => {
-            const style = window.getComputedStyle(element)
-            return style.display !== 'none' && style.visibility !== 'hidden'
-          })
-        return controls.flatMap(element => {
-          const rect = element.getBoundingClientRect()
-          let scrollableAncestor: HTMLElement | null = element.parentElement
-          while (scrollableAncestor) {
-            const style = window.getComputedStyle(scrollableAncestor)
-            const horizontallyScrollable = ['auto', 'scroll'].includes(style.overflowX)
-              && scrollableAncestor.scrollWidth > scrollableAncestor.clientWidth + 1
-            if (horizontallyScrollable) break
-            scrollableAncestor = scrollableAncestor.parentElement
-          }
-          return rect.width > 0
-            && !scrollableAncestor
-            && (rect.left < -1 || rect.right > window.innerWidth + 1)
-            ? [{
-              label: element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName,
-              tag: element.tagName,
-              className: element.getAttribute('class'),
-              rect: { left: rect.left, right: rect.right, top: rect.top, width: rect.width },
-              ancestors: Array.from({ length: 9 }, (_, index) => {
-                let node: Element | null = element
-                for (let step = 0; step <= index && node; step += 1) node = node.parentElement
-                if (!node) return null
-                const ancestorRect = node.getBoundingClientRect()
-                return {
-                  tag: node.tagName,
-                  className: node.getAttribute('class'),
-                  left: ancestorRect.left,
-                  width: ancestorRect.width,
-                  overflow: window.getComputedStyle(node).overflow,
-                }
-              }),
-            }]
-            : []
-        })
-      })
-      expect(clippedControls, `${route} ${viewport.width}px clipped controls`).toEqual([])
+      const clippedReport = await inspectClippedControls(page)
+      expect(
+        clippedReport.markedContainers.every(container => container.insideViewport),
+        `${route} ${viewport.width}px marked scroll container inside viewport`,
+      ).toBe(true)
+      expect(clippedReport.unreachable, `${route} ${viewport.width}px marked controls reachable`).toEqual([])
+      expect(clippedReport.violations, `${route} ${viewport.width}px clipped controls`).toEqual([])
     }
   }
 
@@ -403,6 +461,7 @@ test('login retains a named main landmark and page heading at every audit width'
     await page.goto('/login')
     await expect(page.locator('main[aria-label="Deeper Notebook sign in"]')).toBeVisible()
     await expect(page.locator('main h1')).toHaveCount(1)
+    await expect(page.locator('main h1').first()).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
   expect(consoleErrors).toEqual([])
@@ -457,6 +516,7 @@ test('first-launch setup retains a named main landmark and page heading at every
     await expect(page.getByRole('heading', { name: 'Setup Wizard', exact: true })).toBeVisible()
     await expect(page.locator('main')).toHaveCount(1)
     await expect(page.locator('h1')).toHaveCount(1)
+    await expect(page.locator('h1').first()).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
   expect(consoleErrors).toEqual([])
@@ -515,6 +575,7 @@ test('representative states and keyboard contracts remain bounded at every audit
   const assertLayout = async (route: string, viewport: typeof canonicalViewports[number]) => {
     await expect(page.locator('body')).toBeVisible()
     await expect(page.locator('h1'), `${route} ${viewport.width}px heading`).toHaveCount(1)
+    await expect(page.locator('h1').first(), `${route} ${viewport.width}px visible heading`).toBeVisible()
     await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(expectedMainLandmarks(route))
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await expect.poll(
@@ -558,8 +619,8 @@ test('representative states and keyboard contracts remain bounded at every audit
     }).map(element => element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName), rollbackBuild)
     expect(undersizedTargets, `${route} ${viewport.width}px interactive target floor`).toEqual([])
 
-    // A half-width viewport is the deterministic equivalent of browser zoom
-    // for responsive proof. Keep the real viewport matrix intact above.
+    // A half-width viewport is the deterministic responsive proxy for compact layout;
+    // it is not native browser-zoom proof. Keep the real viewport matrix above intact.
     await page.setViewportSize({ width: Math.max(320, Math.floor(viewport.width / 2)), height: viewport.height })
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await expect.poll(() => page.locator('main').first().evaluate(element => element.getBoundingClientRect().width > 0)).toBe(true)
@@ -603,6 +664,7 @@ test('representative states and keyboard contracts remain bounded at every audit
     sourceState = 'populated'
     await page.reload()
     await expect(page.getByText('Deterministic source', { exact: true })).toBeVisible()
+    await expect(page.locator('[data-dn-horizontal-scroll="sources-table"]')).toHaveCount(1)
     await assertLayout('/sources (recovered)', viewport)
   }
 

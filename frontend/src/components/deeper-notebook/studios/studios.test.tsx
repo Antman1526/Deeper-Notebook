@@ -28,21 +28,21 @@ describe('EvidenceStudioFolio', () => {
     expect(screen.getByText('Ready for explicit generation')).toBeInTheDocument()
   })
 
-  it('uses a named region when the legacy shell already owns the main landmark', () => {
+  it('retains one studio-owned main landmark in the rollback shell', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
 
     render(
-      <main aria-label="Legacy application shell">
+      <div data-testid="legacy-application-shell">
         <EvidenceStudioFolio
           sourceDesk={<p>Upload sources</p>}
           editorialBrief={<p>Notebook mode</p>}
           artifactPages={<p>Generate notebook</p>}
         />
-      </main>,
+      </div>,
     )
 
     expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getByRole('region', { name: 'Evidence Studio folio' })).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'Evidence Studio folio' })).toBeInTheDocument()
   })
 })
 

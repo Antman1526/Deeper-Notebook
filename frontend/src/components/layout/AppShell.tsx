@@ -25,7 +25,7 @@ function LegacyAppShell({ children }: AppShellProps) {
   return (
     <div className="dn-legacy-shell relative flex h-screen overflow-hidden">
       <AppSidebar />
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <SetupBanner />
         <DbRepairBanner />
         <UpdateBanner />
@@ -33,7 +33,7 @@ function LegacyAppShell({ children }: AppShellProps) {
         {children}
         <GuidedTipsProvider />
         <GlobalAudioPlayer />
-      </main>
+      </div>
       <FocusModeControl />
     </div>
   )

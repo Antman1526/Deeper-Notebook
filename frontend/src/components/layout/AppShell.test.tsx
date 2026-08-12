@@ -39,6 +39,7 @@ describe('AppShell feature switch', () => {
 
     expect(screen.getByTestId('legacy-sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('legacy-page')).toBeInTheDocument()
+    expect(screen.queryByRole('main')).toBeNull()
     expect(screen.queryByRole('navigation', { name: 'Primary tools' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
   })

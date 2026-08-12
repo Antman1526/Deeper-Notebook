@@ -146,7 +146,7 @@ export function LoginForm() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle>{t('auth.loginTitle')}</CardTitle>
+          <h1 className="leading-none font-semibold">{t('auth.loginTitle')}</h1>
           <CardDescription>
             {t('auth.loginDesc')}
           </CardDescription>

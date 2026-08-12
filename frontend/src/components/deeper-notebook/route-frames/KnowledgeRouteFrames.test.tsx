@@ -36,19 +36,19 @@ describe('knowledge route folio mapping', () => {
     expect(screen.getByText('Capture inbox')).toBeInTheDocument()
   })
 
-  it('uses the legacy shell landmark when the folio flag is disabled', () => {
+  it('retains one route-owned main landmark when the rollback shell is disabled', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
 
     render(
-      <main aria-label="Legacy application shell">
+      <div data-testid="legacy-application-shell">
         <KnowledgeRouteFrame route="/capture">
           <p>Capture inbox</p>
         </KnowledgeRouteFrame>
-      </main>,
+      </div>,
     )
 
     expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getByRole('region', { name: 'Capture' })).toHaveAttribute(
+    expect(screen.getByRole('main', { name: 'Capture' })).toHaveAttribute(
       'data-dn-folio-route-frame',
       'true',
     )

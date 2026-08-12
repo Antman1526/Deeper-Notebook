@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react'
 
-import { isLuminousFolioEnabled } from '@/lib/features'
-
 export interface EvidenceStudioFolioProps {
   sourceDesk: ReactNode
   editorialBrief: ReactNode
@@ -18,10 +16,8 @@ export function EvidenceStudioFolio({
   trustMargin,
   status,
 }: EvidenceStudioFolioProps) {
-  const Landmark = isLuminousFolioEnabled() ? 'main' : 'section'
-
   return (
-    <Landmark aria-label="Evidence Studio folio" data-dn-folio-page>
+    <main aria-label="Evidence Studio folio" data-dn-folio-page>
       {status ? <div data-dn-folio-margin-note>{status}</div> : null}
       <div data-dn-folio-spread>
         <section aria-label="Source desk" data-dn-folio-primary>{sourceDesk}</section>
@@ -31,6 +27,6 @@ export function EvidenceStudioFolio({
         <section aria-label="Artifact pages">{artifactPages}</section>
       </div>
       {trustMargin ? <aside aria-label="Trust margin" data-dn-folio-margin-note>{trustMargin}</aside> : null}
-    </Landmark>
+    </main>
   )
 }
