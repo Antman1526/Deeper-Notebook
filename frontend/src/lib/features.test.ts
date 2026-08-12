@@ -5,6 +5,7 @@ import {
   isLuminousFolioEnabled,
   isModelFleetEnabled,
   isResearchRunsEnabled,
+  isStudyWorkbenchEnabled,
   isVisualRefreshEnabled,
 } from './features'
 
@@ -13,6 +14,7 @@ const FEATURE_ENV = [
   'NEXT_PUBLIC_DN_EVIDENCE_STUDIO',
   'NEXT_PUBLIC_DN_MODEL_FLEET',
   'NEXT_PUBLIC_DN_RESEARCH_RUNS',
+  'NEXT_PUBLIC_DN_STUDY_WORKBENCH',
   'NEXT_PUBLIC_DN_LUMINOUS_FOLIO',
   'NEXT_PUBLIC_ONP_VISUAL_REFRESH',
   'NEXT_PUBLIC_ONP_EVIDENCE_STUDIO',
@@ -46,6 +48,16 @@ describe('frontend feature flags', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
 
     expect(isLuminousFolioEnabled()).toBe(false)
+  })
+
+  it('keeps the Study Workbench disabled by default and accepts its canonical flag', () => {
+    delete process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+
+    expect(isStudyWorkbenchEnabled()).toBe(false)
+
+    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = 'enabled'
+
+    expect(isStudyWorkbenchEnabled()).toBe(true)
   })
 
   it('reads canonical Deeper Notebook flags independently', () => {

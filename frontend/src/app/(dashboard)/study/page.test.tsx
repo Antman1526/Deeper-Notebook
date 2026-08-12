@@ -17,4 +17,13 @@ describe('StudyPage', () => {
     expect(screen.getByText('Study dashboard')).toBeInTheDocument()
     expect(screen.getByText('Study session')).toBeInTheDocument()
   })
+
+  it('keeps the current Study review surface when the workbench flag is off', () => {
+    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = '0'
+
+    render(<StudyPage />)
+
+    expect(screen.getByText('Study dashboard')).toBeInTheDocument()
+    expect(screen.getByText('Study session')).toBeInTheDocument()
+  })
 })

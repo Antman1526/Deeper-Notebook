@@ -29,3 +29,7 @@ def model_fleet_enabled() -> bool:
 
 def research_runs_enabled() -> bool:
     return _env_flag("DEEPER_NOTEBOOK_RESEARCH_RUNS")
+
+
+def study_workbench_enabled() -> bool:
+    return _env_flag("DEEPER_NOTEBOOK_STUDY_WORKBENCH")
