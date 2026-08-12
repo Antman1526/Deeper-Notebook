@@ -1,0 +1,3 @@
+REMOVE FIELD IF EXISTS generation_claim_lease_until ON TABLE studio_artifact;
+REMOVE FIELD IF EXISTS generation_claim_started_at ON TABLE studio_artifact;
+REMOVE FIELD IF EXISTS generation_claim_owner ON TABLE studio_artifact;

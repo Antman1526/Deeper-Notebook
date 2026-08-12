@@ -1,0 +1,8 @@
+-- Durable, bounded ownership metadata for Study's deterministic Studio claims.
+DEFINE FIELD IF NOT EXISTS generation_claim_owner ON TABLE studio_artifact
+    TYPE option<string>
+    ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) <= 128);
+DEFINE FIELD IF NOT EXISTS generation_claim_started_at ON TABLE studio_artifact
+    TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS generation_claim_lease_until ON TABLE studio_artifact
+    TYPE option<datetime>;

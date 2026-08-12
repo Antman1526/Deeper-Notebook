@@ -15,6 +15,8 @@ import inspect
 import re
 from collections.abc import Awaitable, Callable, Iterable, Mapping, MutableMapping
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 from weakref import WeakValueDictionary
 
 from deeper_notebook.database.repository import ensure_record_id, repo_query
@@ -40,6 +42,11 @@ SUPPORTED_ARTIFACT_TYPES = frozenset(
 MAX_ARTIFACT_TYPES = 5
 MAX_CONTEXT_CHARS = 8_000
 MAX_PROMPT_CHARS = 16_000
+# Evidence Studio's generation timeout is currently 180 seconds.  Keep the
+# durable lease longer than that timeout plus a bounded recovery margin so an
+# active worker is not stolen merely because generation is slow.
+CLAIM_LEASE_SECONDS = 240
+CLAIM_OWNER_MAX_CHARS = 128
 _UNIT_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _PLAN_ID = re.compile(r"^study_plan:.{1,511}$")
 _GENERATION_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
@@ -81,6 +88,8 @@ class StudyArtifactUnavailable(StudyArtifactError):
 
 
 SourceLoader = Callable[[str], object | Awaitable[object]]
+ClaimClock = Callable[[], datetime]
+ClaimOwnerFactory = Callable[[], str]
 
 
 def _safe_id(value: object, *, field_name: str, pattern: re.Pattern[str], limit: int) -> str:
@@ -204,11 +213,15 @@ class StudyArtifactService:
         source_service: StudySourceService | object | None = None,
         source_loader: SourceLoader | None = None,
         lock_store: MutableMapping[str, asyncio.Lock] | None = None,
+        clock: ClaimClock | None = None,
+        owner_token_factory: ClaimOwnerFactory | None = None,
     ) -> None:
         self.repository = repository or StudyPlanRepository()
         self.source_service = source_service or StudySourceService()
         self.source_loader = source_loader or Source.get
         self.lock_store = lock_store
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._owner_token_factory = owner_token_factory or (lambda: uuid4().hex)
 
     async def generate_unit(
         self,
@@ -341,12 +354,20 @@ class StudyArtifactService:
                 "status": "completed",
                 "unit_id": unit.unit_id,
             }
-        provisional = await self._claim_provisional(
+        claim_result = await self._claim_provisional(
             provisional,
             operation_id,
             artifact_type,
             unit_sources,
         )
+        if (
+            isinstance(claim_result, tuple)
+            and len(claim_result) == 2
+            and isinstance(claim_result[1], (str, type(None)))
+        ):
+            provisional, claim_owner = claim_result
+        else:  # Compatibility for alternate test authorities from Task 9.
+            provisional, claim_owner = claim_result, None
         if str(getattr(provisional, "status", "pending")) == "completed":
             completed_id = str(getattr(provisional, "id", "") or operation_id)
             await self._link_completed(
@@ -363,6 +384,22 @@ class StudyArtifactService:
                 "status": "completed",
                 "unit_id": unit.unit_id,
             }
+
+        # Re-read every linked source after the durable claim and immediately
+        # before handing the request to Evidence Studio.  A source mutation
+        # between the first guard and this point releases the claim and never
+        # enters generation.
+        try:
+            sources = await self._ready_sources(plan, syllabus, unit_sources)
+            combined_context, _ = artifact_context(sources)
+            if not combined_context.strip():
+                raise StudyArtifactNotReady("no_evidence")
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            await self._release_claim(provisional, operation_id, claim_owner)
+            raise
+
         artifact_id = str(getattr(provisional, "id", "") or "")
         if not artifact_id:
             raise StudyArtifactGenerationError("artifact_generation_failed")
@@ -376,17 +413,28 @@ class StudyArtifactService:
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
             if isinstance(exc, asyncio.CancelledError):
-                await self._mark(provisional, "cancelled")
+                await self._mark(provisional, "cancelled", owner_token=claim_owner)
                 raise StudyArtifactCancelled("generation_cancelled") from exc
-            await self._mark(provisional, "failed")
+            await self._mark(provisional, "failed", owner_token=claim_owner)
             raise StudyArtifactGenerationError("artifact_generation_failed") from exc
         if str(getattr(generated, "status", "")) != "completed":
-            await self._mark(provisional, str(getattr(generated, "status", "failed")))
+            await self._mark(
+                provisional,
+                str(getattr(generated, "status", "failed")),
+                owner_token=claim_owner,
+            )
             raise StudyArtifactGenerationError("artifact_generation_failed")
         completed_id = str(getattr(generated, "id", "") or artifact_id)
         if completed_id != operation_id:
-            await self._mark(provisional, "failed")
+            await self._mark(provisional, "failed", owner_token=claim_owner)
             raise StudyArtifactGenerationError("artifact_identity_mismatch")
+        await self._assert_claim_owner(
+            provisional,
+            operation_id,
+            claim_owner,
+            require_status="completed",
+        )
+        await self._clear_claim(provisional, operation_id, claim_owner)
         await self._link_completed(
             plan.plan_id,
             completed_id,
@@ -467,68 +515,189 @@ class StudyArtifactService:
     async def _reset_for_retry(self, artifact: object) -> None:
         await self._mark(artifact, "pending")
 
+    def _claim_now(self) -> datetime:
+        try:
+            now = self._clock()
+        except Exception as exc:
+            raise StudyArtifactUnavailable("claim_clock_unavailable") from exc
+        if not isinstance(now, datetime) or now.tzinfo is None:
+            raise StudyArtifactUnavailable("claim_clock_unavailable")
+        try:
+            now = now.astimezone(UTC)
+        except Exception as exc:
+            raise StudyArtifactUnavailable("claim_clock_unavailable") from exc
+        return now
+
+    def _claim_metadata(self) -> tuple[str, datetime, datetime]:
+        now = self._claim_now()
+        try:
+            owner = self._owner_token_factory()
+        except Exception as exc:
+            raise StudyArtifactUnavailable("claim_owner_unavailable") from exc
+        if not isinstance(owner, str):
+            raise StudyArtifactUnavailable("claim_owner_unavailable")
+        owner = owner.strip()
+        if not owner or len(owner) > CLAIM_OWNER_MAX_CHARS:
+            raise StudyArtifactUnavailable("claim_owner_unavailable")
+        return owner, now, now + timedelta(seconds=CLAIM_LEASE_SECONDS)
+
+    @staticmethod
+    def _claim_expiry(artifact: object) -> datetime | None:
+        value = getattr(artifact, "generation_claim_lease_until", None)
+        if isinstance(value, str):
+            try:
+                value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        if not isinstance(value, datetime) or value.tzinfo is None:
+            return None
+        try:
+            return value.astimezone(UTC)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _set_claim_metadata(
+        artifact: object,
+        *,
+        owner: str | None,
+        started_at: datetime | None,
+        lease_until: datetime | None,
+    ) -> None:
+        setattr(artifact, "generation_claim_owner", owner)
+        setattr(artifact, "generation_claim_started_at", started_at)
+        setattr(artifact, "generation_claim_lease_until", lease_until)
+
+    async def _assert_claim_owner(
+        self,
+        artifact: object,
+        operation_id: str,
+        owner_token: str | None,
+        *,
+        require_status: str | None = None,
+    ) -> object:
+        if owner_token is None:
+            if require_status is not None and str(getattr(artifact, "status", "")) != require_status:
+                raise StudyArtifactConflict("generation_claim_lost")
+            return artifact
+        current = artifact
+        if callable(getattr(StudioArtifact, "get", None)):
+            loaded = await self._existing_artifact(operation_id)
+            if loaded is None:
+                raise StudyArtifactConflict("generation_claim_lost")
+            current = loaded
+        if getattr(current, "generation_claim_owner", None) != owner_token:
+            raise StudyArtifactConflict("generation_claim_lost")
+        if require_status is not None and str(getattr(current, "status", "")) != require_status:
+            raise StudyArtifactConflict("generation_claim_lost")
+        return current
+
     async def _claim_provisional(
         self,
         artifact: object,
         operation_id: str,
         artifact_type: str,
         source_ids: tuple[str, ...],
-    ) -> object:
+    ) -> tuple[object, str | None]:
         """Atomically claim pending work before invoking Evidence Studio.
 
         The in-process lock is only a fast path.  Real Studio records use a
-        conditional persistent status transition, so separate workers cannot
-        both enter the generator for one deterministic artifact ID.  Test and
-        alternate authorities may expose a small ``claim`` method; otherwise
-        the object mutation remains protected by the caller's local lock.
+        conditional persistent status transition plus a bounded durable lease,
+        so separate workers and process restarts converge on one owner. Test
+        and alternate authorities may expose a small ``claim`` method;
+        otherwise the object mutation remains protected by the caller's local
+        lock.
         """
         status = str(getattr(artifact, "status", "pending"))
         if status == "completed":
-            return artifact
-        if status == "running":
-            raise StudyArtifactConflict("generation_in_progress")
+            return artifact, None
         if status in {"failed", "cancelled"}:
             await self._reset_for_retry(artifact)
             status = "pending"
-        if status != "pending":
+        if status == "running":
+            now = self._claim_now()
+            expiry = self._claim_expiry(artifact)
+            if expiry is None or expiry > now:
+                raise StudyArtifactConflict("generation_in_progress")
+        if status not in {"pending", "running"}:
             raise StudyArtifactConflict("generation_in_progress")
+
+        owner, started_at, lease_until = self._claim_metadata()
 
         claim = getattr(artifact, "claim", None)
         if callable(claim):
-            result = claim()
+            try:
+                result = claim(
+                    owner=owner,
+                    started_at=started_at,
+                    lease_until=lease_until,
+                    now=started_at,
+                )
+            except TypeError:
+                # Preserve compatibility with the tiny Task 9 alternate
+                # authority seam while still attaching the durable metadata.
+                result = claim()
             claimed = await result if inspect.isawaitable(result) else result
             if claimed:
-                return artifact
+                self._set_claim_metadata(
+                    artifact,
+                    owner=owner,
+                    started_at=started_at,
+                    lease_until=lease_until,
+                )
+                save = getattr(artifact, "save", None)
+                if callable(save):
+                    saved = save()
+                    if inspect.isawaitable(saved):
+                        await saved
+                return artifact, owner
             current = await self._existing_artifact(operation_id)
             if current is not None and str(getattr(current, "status", "")) == "completed":
-                return current
+                return current, None
             raise StudyArtifactConflict("generation_in_progress")
 
         if StudioArtifact is _REAL_STUDIO_ARTIFACT:
             try:
                 rows = await repo_query(
-                    "UPDATE $artifact SET status = 'running' "
-                    "WHERE status = 'pending' RETURN AFTER;",
-                    {"artifact": ensure_record_id(operation_id)},
+                    "UPDATE $artifact SET status = 'running', "
+                    "generation_claim_owner = $owner, "
+                    "generation_claim_started_at = $started_at, "
+                    "generation_claim_lease_until = $lease_until "
+                    "WHERE status = 'pending' OR "
+                    "(status = 'running' AND generation_claim_lease_until < $now) "
+                    "RETURN AFTER;",
+                    {
+                        "artifact": ensure_record_id(operation_id),
+                        "owner": owner,
+                        "started_at": started_at,
+                        "lease_until": lease_until,
+                        "now": started_at,
+                    },
                 )
             except Exception as exc:
                 raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
             if isinstance(rows, list) and rows and isinstance(rows[0], dict):
                 claimed = StudioArtifact(**rows[0])
                 self._validate_artifact_identity(claimed, artifact_type, source_ids)
-                return claimed
+                return claimed, owner
             current = await self._existing_artifact(operation_id)
             if current is not None and str(getattr(current, "status", "")) == "completed":
-                return current
+                return current, None
             raise StudyArtifactConflict("generation_in_progress")
 
         setattr(artifact, "status", "running")
+        self._set_claim_metadata(
+            artifact,
+            owner=owner,
+            started_at=started_at,
+            lease_until=lease_until,
+        )
         save = getattr(artifact, "save", None)
         if callable(save):
             result = save()
             if inspect.isawaitable(result):
                 await result
-        return artifact
+        return artifact, owner
 
     async def _load_plan(self, plan_id: str) -> StudyPlan:
         try:
@@ -644,13 +813,112 @@ class StudyArtifactService:
         except Exception as exc:
             raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
 
-    async def _mark(self, artifact: object, status: str) -> None:
+    async def _release_claim(
+        self,
+        artifact: object,
+        operation_id: str,
+        owner_token: str | None,
+    ) -> None:
+        """Return a claimed row to pending only when this worker owns it."""
+        if owner_token is None:
+            return
+        if StudioArtifact is _REAL_STUDIO_ARTIFACT:
+            try:
+                await repo_query(
+                    "UPDATE $artifact SET status = 'pending', "
+                    "generation_claim_owner = NONE, "
+                    "generation_claim_started_at = NONE, "
+                    "generation_claim_lease_until = NONE, "
+                    "output_payload = {}, citations = [], export_paths = {} "
+                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    {
+                        "artifact": ensure_record_id(operation_id),
+                        "owner": owner_token,
+                    },
+                )
+            except Exception:
+                return
+            return
+        if getattr(artifact, "generation_claim_owner", None) != owner_token:
+            return
+        setattr(artifact, "status", "pending")
+        self._set_claim_metadata(artifact, owner=None, started_at=None, lease_until=None)
+        for field_name, empty_value in (
+            ("output_payload", {}),
+            ("citations", []),
+            ("export_paths", {}),
+        ):
+            if hasattr(artifact, field_name):
+                setattr(artifact, field_name, empty_value)
+        save = getattr(artifact, "save", None)
+        if callable(save):
+            result = save()
+            if inspect.isawaitable(result):
+                await result
+
+    async def _clear_claim(
+        self,
+        artifact: object,
+        operation_id: str,
+        owner_token: str | None,
+    ) -> None:
+        """Clear a completed claim without allowing a reclaimed owner overwrite."""
+        if owner_token is None:
+            return
+        if StudioArtifact is _REAL_STUDIO_ARTIFACT:
+            try:
+                rows = await repo_query(
+                    "UPDATE $artifact SET generation_claim_owner = NONE, "
+                    "generation_claim_started_at = NONE, "
+                    "generation_claim_lease_until = NONE "
+                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    {
+                        "artifact": ensure_record_id(operation_id),
+                        "owner": owner_token,
+                    },
+                )
+            except Exception as exc:
+                raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+            if not isinstance(rows, list) or not rows:
+                raise StudyArtifactConflict("generation_claim_lost")
+            return
+        if getattr(artifact, "generation_claim_owner", None) != owner_token:
+            raise StudyArtifactConflict("generation_claim_lost")
+        self._set_claim_metadata(artifact, owner=None, started_at=None, lease_until=None)
+        save = getattr(artifact, "save", None)
+        if callable(save):
+            result = save()
+            if inspect.isawaitable(result):
+                await result
+
+    async def _mark(
+        self,
+        artifact: object,
+        status: str,
+        *,
+        owner_token: str | None = None,
+    ) -> None:
         try:
-            setattr(
-                artifact,
-                "status",
-                status if status in {"failed", "cancelled", "pending"} else "failed",
-            )
+            bounded_status = status if status in {"failed", "cancelled", "pending"} else "failed"
+            if owner_token is not None and StudioArtifact is _REAL_STUDIO_ARTIFACT:
+                await repo_query(
+                    "UPDATE $artifact SET status = $status, "
+                    "output_payload = {}, citations = [], export_paths = {}, "
+                    "generation_claim_owner = NONE, "
+                    "generation_claim_started_at = NONE, "
+                    "generation_claim_lease_until = NONE "
+                    "WHERE generation_claim_owner = $owner RETURN AFTER;",
+                    {
+                        "artifact": ensure_record_id(str(getattr(artifact, "id", ""))),
+                        "owner": owner_token,
+                        "status": bounded_status,
+                    },
+                )
+                return
+            if owner_token is not None and getattr(artifact, "generation_claim_owner", None) != owner_token:
+                return
+            setattr(artifact, "status", bounded_status)
+            self._set_claim_metadata(artifact, owner=None, started_at=None, lease_until=None)
             for field_name, empty_value in (
                 ("output_payload", {}),
                 ("citations", []),
@@ -749,6 +1017,8 @@ class StudyArtifactService:
 
 
 __all__ = [
+    "CLAIM_LEASE_SECONDS",
+    "CLAIM_OWNER_MAX_CHARS",
     "MAX_ARTIFACT_TYPES",
     "MAX_CONTEXT_CHARS",
     "SUPPORTED_ARTIFACT_TYPES",

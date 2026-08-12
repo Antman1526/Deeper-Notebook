@@ -1,6 +1,7 @@
 import asyncio
 import os
 import stat
+from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
@@ -1353,7 +1354,12 @@ StudioWorkflowRunStatus = Literal[
 
 class StudioArtifact(ObjectModel):
     table_name: ClassVar[str] = "studio_artifact"
-    nullable_fields: ClassVar[set[str]] = {"revision_of_id"}
+    nullable_fields: ClassVar[set[str]] = {
+        "revision_of_id",
+        "generation_claim_owner",
+        "generation_claim_started_at",
+        "generation_claim_lease_until",
+    }
 
     notebook_id: str
     artifact_type: StudioArtifactType
@@ -1368,6 +1374,9 @@ class StudioArtifact(ObjectModel):
     citations: list[dict[str, Any]] = Field(default_factory=list)
     export_paths: dict[str, str] = Field(default_factory=dict)
     revision_of_id: Optional[str] = None
+    generation_claim_owner: Optional[str] = Field(default=None, max_length=128)
+    generation_claim_started_at: Optional[datetime] = None
+    generation_claim_lease_until: Optional[datetime] = None
 
     def _prepare_save_data(self) -> dict[str, Any]:
         data = super()._prepare_save_data()

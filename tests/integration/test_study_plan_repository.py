@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -338,6 +339,79 @@ async def test_real_studio_claim_serializes_independent_services(
     assert link_rows == [{"artifact_id": operation_id}]
     assert sum(isinstance(result, StudyArtifactConflict) for result in results) == 1
     assert sum(isinstance(result, list) for result in results) == 1
+
+
+async def test_real_studio_stale_claim_takeover_is_atomic_and_owner_fenced(clean_namespace):
+    operation_id = _artifact_identity(
+        "study_plan:stale-claim", 1, "a" * 64, "foundations", "quiz"
+    )
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    stale_started = now - timedelta(seconds=300)
+    stale_until = now - timedelta(seconds=1)
+    await repo_query(
+        "CREATE $artifact CONTENT $data RETURN AFTER;",
+        {
+            "artifact": ensure_record_id(operation_id),
+            "data": {
+                "notebook_id": ensure_record_id("notebook:study_integration"),
+                "artifact_type": "quiz",
+                "title": "Stale claim",
+                "status": "running",
+                "source_ids": [],
+                "generation_claim_owner": "dead-worker",
+                "generation_claim_started_at": stale_started,
+                "generation_claim_lease_until": stale_until,
+            },
+        },
+    )
+    stale_snapshot = await StudioArtifact.get(operation_id)
+    first_service = StudyArtifactService(
+        repository=object(),
+        source_service=object(),
+        clock=lambda: now,
+        owner_token_factory=lambda: "worker-one",
+    )
+    second_service = StudyArtifactService(
+        repository=object(),
+        source_service=object(),
+        clock=lambda: now,
+        owner_token_factory=lambda: "worker-two",
+    )
+
+    async def claim(service: StudyArtifactService):
+        current = await StudioArtifact.get(operation_id)
+        return await service._claim_provisional(current, operation_id, "quiz", ())
+
+    results = await asyncio.gather(
+        claim(first_service), claim(second_service), return_exceptions=True
+    )
+
+    assert sum(isinstance(result, StudyArtifactConflict) for result in results) == 1
+    assert sum(isinstance(result, tuple) for result in results) == 1
+    rows = await repo_query(
+        "SELECT status, generation_claim_owner, generation_claim_started_at, "
+        "generation_claim_lease_until FROM $artifact;",
+        {"artifact": ensure_record_id(operation_id)},
+    )
+    assert len(rows) == 1
+    assert rows[0]["status"] == "running"
+    assert rows[0]["generation_claim_owner"] in {"worker-one", "worker-two"}
+    assert rows[0]["generation_claim_started_at"] == now
+    assert rows[0]["generation_claim_lease_until"] == now + timedelta(seconds=240)
+
+    # A stale owner that wakes after takeover cannot mark the new owner's row
+    # failed; the conditional mutation returns no row and remains non-authorizing.
+    await first_service._mark(stale_snapshot, "failed", owner_token="dead-worker")
+    after_fenced_mark = await repo_query(
+        "SELECT status, generation_claim_owner FROM $artifact;",
+        {"artifact": ensure_record_id(operation_id)},
+    )
+    assert after_fenced_mark == [
+        {
+            "status": "running",
+            "generation_claim_owner": rows[0]["generation_claim_owner"],
+        }
+    ]
 
 
 async def test_manifestless_plan_lifecycle_binds_exact_syllabus_manifest_atomically(

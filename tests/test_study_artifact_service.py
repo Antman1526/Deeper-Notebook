@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -132,12 +132,45 @@ class PersistentRaceArtifact:
             raise RuntimeError("duplicate deterministic artifact")
         self.records[self.id] = self
 
-    async def claim(self) -> bool:
+    async def claim(
+        self,
+        *,
+        owner: str | None = None,
+        started_at: datetime | None = None,
+        lease_until: datetime | None = None,
+        now: datetime | None = None,
+    ) -> bool:
         incumbent = self.records.get(self.id)
-        if incumbent is not self or self.status != "pending":
+        if incumbent is not self:
+            return False
+        expiry = getattr(self, "generation_claim_lease_until", None)
+        expired = (
+            self.status == "running"
+            and isinstance(expiry, datetime)
+            and isinstance(now, datetime)
+            and expiry <= now
+        )
+        if self.status != "pending" and not expired:
             return False
         self.status = "running"
+        self.generation_claim_owner = owner
+        self.generation_claim_started_at = started_at
+        self.generation_claim_lease_until = lease_until
         return True
+
+
+class LeasedArtifact:
+    """Small object authority used to exercise expired-claim recovery."""
+
+    def __init__(self, **values: object) -> None:
+        self.__dict__.update(values)
+        self.id = str(values["id"])
+        self.status = values.get("status", "pending")
+        self.artifact_type = values.get("artifact_type", "quiz")
+        self.source_ids = values.get("source_ids", [])
+
+    async def save(self) -> None:
+        return None
 
 
 class FakeRepository:
@@ -339,6 +372,159 @@ async def test_independent_services_converge_on_persistent_claim(monkeypatch: py
     assert len(repository.links) == 1
     assert sum(isinstance(result, StudyArtifactConflict) for result in results) == 1
     assert sum(isinstance(result, list) for result in results) == 1
+
+
+@pytest.mark.asyncio
+async def test_source_drift_after_durable_claim_aborts_before_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source()
+    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    generated = AsyncMock(side_effect=lambda request: _complete(request.artifact_id))
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generated)
+    service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+    )
+    original_claim = service._claim_provisional
+
+    async def claim_then_mutate(*args: object, **kwargs: object) -> tuple[object, str]:
+        claimed = await original_claim(*args, **kwargs)
+        source.full_text = "changed after the durable claim"
+        return claimed
+
+    service._claim_provisional = claim_then_mutate  # type: ignore[method-assign]
+
+    with pytest.raises(StudyArtifactConflict, match="sources_changed"):
+        await service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+
+    generated.assert_not_awaited()
+    assert repository.links == []
+    assert FakeArtifact.created[0].status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_expired_running_claim_is_reclaimed_with_bounded_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", LeasedArtifact)
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    stale = LeasedArtifact(
+        id="studio_artifact:stale",
+        artifact_type="quiz",
+        source_ids=["source:one"],
+        status="running",
+        generation_claim_owner="dead-worker",
+        generation_claim_started_at=now - timedelta(seconds=300),
+        generation_claim_lease_until=now - timedelta(seconds=1),
+    )
+    service = StudyArtifactService(
+        repository=object(),
+        source_service=object(),
+        clock=lambda: now,
+        owner_token_factory=lambda: "new-owner",
+    )
+
+    claimed, owner = await service._claim_provisional(
+        stale,
+        stale.id,
+        "quiz",
+        ("source:one",),
+    )
+
+    assert claimed is stale
+    assert owner == "new-owner"
+    assert stale.status == "running"
+    assert stale.generation_claim_owner == "new-owner"
+    assert stale.generation_claim_lease_until == now + timedelta(seconds=240)
+
+
+@pytest.mark.asyncio
+async def test_two_independent_expired_claimers_converge_on_one_owner() -> None:
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    operation_id = "studio_artifact:stale-race"
+    artifact = PersistentRaceArtifact(
+        id=operation_id,
+        artifact_type="quiz",
+        source_ids=["source:one"],
+        status="running",
+        generation_claim_owner="dead-worker",
+        generation_claim_started_at=now - timedelta(seconds=300),
+        generation_claim_lease_until=now - timedelta(seconds=1),
+    )
+    PersistentRaceArtifact.records[operation_id] = artifact
+    first_service = StudyArtifactService(
+        repository=object(),
+        source_service=object(),
+        clock=lambda: now,
+        owner_token_factory=lambda: "worker-one",
+    )
+    second_service = StudyArtifactService(
+        repository=object(),
+        source_service=object(),
+        clock=lambda: now,
+        owner_token_factory=lambda: "worker-two",
+    )
+
+    async def claim(service: StudyArtifactService) -> object:
+        current = await PersistentRaceArtifact.get(operation_id)
+        assert current is not None
+        return await service._claim_provisional(current, operation_id, "quiz", ("source:one",))
+
+    results = await asyncio.gather(claim(first_service), claim(second_service), return_exceptions=True)
+
+    assert sum(isinstance(result, StudyArtifactConflict) for result in results) == 1
+    successes = [result for result in results if isinstance(result, tuple)]
+    assert len(successes) == 1
+    assert artifact.generation_claim_owner in {"worker-one", "worker-two"}
+
+
+@pytest.mark.asyncio
+async def test_expired_claim_retry_generates_and_links_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = _source()
+    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    operation_id = _artifact_identity(
+        "study_plan:one", 1, source_manifest([source]), "foundations", "quiz"
+    )
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    stale = PersistentRaceArtifact(
+        id=operation_id,
+        artifact_type="quiz",
+        source_ids=["source:one"],
+        status="running",
+        generation_claim_owner="dead-worker",
+        generation_claim_started_at=now - timedelta(seconds=300),
+        generation_claim_lease_until=now - timedelta(seconds=1),
+    )
+    PersistentRaceArtifact.records[operation_id] = stale
+    generated = AsyncMock()
+
+    async def complete(request: object) -> PersistentRaceArtifact:
+        artifact = PersistentRaceArtifact.records[str(request.artifact_id)]
+        artifact.status = "completed"
+        artifact.output_payload = {"markdown": "completed"}
+        return artifact
+
+    generated.side_effect = complete
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", PersistentRaceArtifact)
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generated)
+    service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+        clock=lambda: now,
+        owner_token_factory=lambda: "retry-owner",
+    )
+
+    result = await service.generate_unit(
+        "study_plan:one", "foundations", ["quiz"], expected_revision=3
+    )
+
+    assert result[0]["artifact_id"] == operation_id
+    assert generated.await_count == 1
+    assert len(repository.links) == 1
+    assert stale.status == "completed"
+    assert stale.generation_claim_owner is None
 
 
 def test_artifact_identity_changes_for_every_authority_dimension() -> None:
