@@ -128,6 +128,56 @@ class ApproveSyllabusRequest(_StrictRequest):
     expected_revision: StrictInt = Field(ge=1)
 
 
+StudyArtifactType = Literal[
+    "study_guide",
+    "course_pack",
+    "flashcards",
+    "quiz",
+    "mind_map",
+]
+
+
+class GenerateStudyArtifactsRequest(_StrictRequest):
+    """Bounded request for one exact approved syllabus unit."""
+
+    unit_id: StrictStr = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$",
+    )
+    artifact_types: tuple[StudyArtifactType, ...] = Field(
+        min_length=1,
+        max_length=5,
+    )
+    expected_revision: StrictInt = Field(ge=1)
+    context: StrictStr | None = Field(default=None, max_length=8_000)
+
+    @model_validator(mode="after")
+    def artifact_types_are_unique(self) -> "GenerateStudyArtifactsRequest":
+        if len(set(self.artifact_types)) != len(self.artifact_types):
+            raise ValueError("artifact_types must not contain duplicates")
+        return self
+
+
+class StudyArtifactReceiptResponse(BaseModel):
+    """Metadata-only receipt; generated payloads remain in Evidence Studio."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_id: str = Field(min_length=1, max_length=512)
+    artifact_type: StudyArtifactType
+    status: Literal["completed"]
+    unit_id: str = Field(min_length=1, max_length=64)
+
+
+class GenerateStudyArtifactsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: str = Field(min_length=1, max_length=512)
+    unit_id: str = Field(min_length=1, max_length=64)
+    artifacts: tuple[StudyArtifactReceiptResponse, ...] = Field(max_length=5)
+
+
 class StudyPlanResponse(BaseModel):
     """Safe plan projection; no persisted database metadata is exposed."""
 

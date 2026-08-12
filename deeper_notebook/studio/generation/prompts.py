@@ -39,6 +39,39 @@ _ARTIFACT_TYPE_MODEL_ROLE: dict[str, str] = {
 }
 
 
+def study_unit_prompt(
+    artifact_type: str,
+    *,
+    plan_goal: str,
+    unit_title: str,
+    objectives: tuple[str, ...] | list[str],
+    prerequisite_unit_ids: tuple[str, ...] | list[str] = (),
+    source_ids: tuple[str, ...] | list[str] = (),
+    context: str | None = None,
+) -> str:
+    """Build the bounded steering prompt for one approved study unit.
+
+    The source body remains the responsibility of Evidence Studio's context
+    adapter.  This helper contributes only the typed syllabus metadata and a
+    caller-bounded steering note, keeping unit generation from becoming a
+    second prompt/generation pipeline.
+    """
+    objective_lines = "\n".join(f"- {item}" for item in objectives)
+    prerequisites = ", ".join(prerequisite_unit_ids) or "none"
+    linked_sources = ", ".join(source_ids)
+    steering = context.strip() if isinstance(context, str) and context.strip() else "none"
+    return (
+        f"Create a {artifact_type.replace('_', ' ')} for the approved study unit.\n"
+        f"Plan goal: {plan_goal}\n"
+        f"Unit: {unit_title}\n"
+        f"Objectives:\n{objective_lines}\n"
+        f"Prerequisite units: {prerequisites}\n"
+        f"Linked source IDs: {linked_sources}\n"
+        f"Additional learner context (bounded): {steering}\n"
+        "Use only the linked source evidence and preserve uncertainty or gaps."
+    )
+
+
 def artifact_instruction(artifact: object) -> str:
     artifact_type = str(getattr(artifact, "artifact_type", ""))
     base = _ARTIFACT_TYPE_INSTRUCTIONS.get(

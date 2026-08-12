@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from deeper_notebook.database.repository import ensure_record_id, repo_query
+from deeper_notebook.domain.notebook import StudioArtifact
 from deeper_notebook.study.plan_repository import StudyPlanRepository
 from deeper_notebook.study.plans import (
     StudyPlan,
@@ -124,6 +125,68 @@ async def test_plan_create_list_link_version_and_optimistic_approval(clean_names
     assert current.state == "approved"
     assert current.approved_syllabus_version == 2
     assert current.source_manifest_sha256 == "a" * 64
+
+
+async def test_plan_artifact_link_is_atomic_and_retry_idempotent(clean_namespace):
+    repository = StudyPlanRepository()
+    await repository.create(_plan())
+
+    first = await repository.link_artifact(
+        "study_plan:integration",
+        "studio_artifact:quiz-one",
+        artifact_kind="quiz",
+        metadata={"unit_id": "foundations", "syllabus_version": 1},
+    )
+    retry = await repository.link_artifact(
+        "study_plan:integration",
+        "studio_artifact:quiz-one",
+        artifact_kind="quiz",
+        metadata={"unit_id": "foundations", "syllabus_version": 1},
+    )
+    found = await repository.find_artifact_link(
+        "study_plan:integration",
+        unit_id="foundations",
+        artifact_kind="quiz",
+        syllabus_version=1,
+    )
+    rows = await repo_query(
+        "SELECT plan_id, artifact_id, artifact_kind, metadata "
+        "FROM study_plan_artifact WHERE plan_id = $plan_id",
+        {"plan_id": "study_plan:integration"},
+    )
+
+    assert first == retry
+    assert found == first
+    assert rows == [
+        {
+            "plan_id": "study_plan:integration",
+            "artifact_id": "studio_artifact:quiz-one",
+            "artifact_kind": "quiz",
+            "metadata": {"unit_id": "foundations", "syllabus_version": 1},
+        }
+    ]
+
+
+async def test_study_artifact_provisional_record_accepts_plan_owner_token(clean_namespace):
+    await repo_query(
+        "CREATE $source CONTENT $data RETURN AFTER;",
+        {
+            "source": ensure_record_id("source:artifact-owner"),
+            "data": {"title": "Artifact evidence", "full_text": "Evidence"},
+        },
+    )
+    artifact = StudioArtifact(
+        notebook_id="notebook:study_integration",
+        artifact_type="quiz",
+        title="Foundations quiz",
+        source_ids=["source:artifact-owner"],
+    )
+    await artifact.save()
+
+    assert artifact.id is not None
+    loaded = await StudioArtifact.get(artifact.id)
+    assert loaded.notebook_id == "notebook:study_integration"
+    assert loaded.source_ids == ["source:⟨artifact-owner⟩"]
 
 
 async def test_manifestless_plan_lifecycle_binds_exact_syllabus_manifest_atomically(

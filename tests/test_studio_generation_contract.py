@@ -16,6 +16,7 @@ from deeper_notebook.studio.generation.context import (
 from deeper_notebook.studio.generation.prompts import (
     artifact_instruction,
     artifact_model_role,
+    study_unit_prompt,
 )
 
 
@@ -28,6 +29,23 @@ def test_prompt_helpers_preserve_artifact_steering_and_model_roles() -> None:
     assert artifact_model_role("flashcards") == "study_fast"
     assert "source-grounded flashcards" in artifact_instruction(artifact)
     assert "Keep each answer compact." in artifact_instruction(artifact)
+
+
+def test_study_unit_prompt_is_metadata_bound_and_bounded_by_caller() -> None:
+    prompt = study_unit_prompt(
+        "study_guide",
+        plan_goal="Learn mechanics",
+        unit_title="Foundations",
+        objectives=("Explain the core idea",),
+        prerequisite_unit_ids=("intro",),
+        source_ids=("source:one",),
+        context="Prefer short examples.",
+    )
+
+    assert "Unit: Foundations" in prompt
+    assert "source:one" in prompt
+    assert "Prefer short examples." in prompt
+    assert "Provider secret" not in prompt
 
 
 def test_context_helpers_keep_stable_citation_markers_and_readiness_shape() -> None:

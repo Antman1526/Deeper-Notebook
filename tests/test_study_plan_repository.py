@@ -471,6 +471,67 @@ async def test_mutating_transactions_reject_zero_row_guards(monkeypatch):
         await repository.save_syllabus(_syllabus(), expected_revision=1)
 
 
+@pytest.mark.asyncio
+async def test_artifact_link_projection_is_idempotent_and_metadata_only(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def query(sql, params):
+        calls.append((sql, params))
+        if sql.startswith("SELECT"):
+            return []
+        return [
+            {
+                "id": "study_plan_artifact:link",
+                "plan_id": "study_plan:one",
+                "artifact_id": "studio_artifact:one",
+                "artifact_kind": "quiz",
+                "metadata": {"unit_id": "foundations", "syllabus_version": 1},
+            }
+        ]
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+    link = await StudyPlanRepository().link_artifact(
+        "study_plan:one",
+        "studio_artifact:one",
+        artifact_kind="quiz",
+        metadata={"unit_id": "foundations", "syllabus_version": 1},
+    )
+
+    assert link["artifact_id"] == "studio_artifact:one"
+    assert link["metadata"] == {"unit_id": "foundations", "syllabus_version": 1}
+    assert "output_payload" not in link
+    assert "CREATE $link CONTENT $payload" in calls[-1][0]
+    assert calls[-1][1]["payload"]["artifact_id"] == "studio_artifact:one"
+
+
+@pytest.mark.asyncio
+async def test_artifact_link_retry_reads_existing_without_duplicate_create(monkeypatch):
+    calls: list[str] = []
+
+    async def query(sql, params):
+        calls.append(sql)
+        return [
+            {
+                "id": "study_plan_artifact:link",
+                "plan_id": "study_plan:one",
+                "artifact_id": "studio_artifact:one",
+                "artifact_kind": "quiz",
+                "metadata": {"unit_id": "foundations", "syllabus_version": 1},
+            }
+        ]
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+    link = await StudyPlanRepository().link_artifact(
+        "study_plan:one",
+        "studio_artifact:one",
+        artifact_kind="quiz",
+        metadata={"unit_id": "foundations", "syllabus_version": 1},
+    )
+
+    assert link["artifact_id"] == "studio_artifact:one"
+    assert all("CREATE $link" not in sql for sql in calls)
+
+
 def test_task3_migration_contracts_are_schemafull_and_tightly_bounded():
     migration = Path(__file__).parents[1] / "deeper_notebook/database/migrations/41.surrealql"
     sql = migration.read_text()

@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from api.schemas.study_plans import (
     ApproveSyllabusRequest,
     CreateStudyPlanRequest,
+    GenerateStudyArtifactsRequest,
+    GenerateStudyArtifactsResponse,
     PatchStudyPlanRequest,
     ProposeSyllabusRequest,
     RemoveSourceLinkRequest,
@@ -19,6 +21,15 @@ from api.schemas.study_plans import (
     StudySyllabusResponse,
 )
 from deeper_notebook.feature_flags import study_workbench_enabled
+from deeper_notebook.study.artifact_service import (
+    StudyArtifactCancelled,
+    StudyArtifactConflict,
+    StudyArtifactError,
+    StudyArtifactGenerationError,
+    StudyArtifactNotFound,
+    StudyArtifactService,
+    StudyArtifactUnavailable,
+)
 from deeper_notebook.study.plan_repository import (
     StudyPlanConflictError,
     StudyPlanNotFoundError,
@@ -129,6 +140,53 @@ def _syllabus_error(exc: StudySyllabusError) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail={"code": "syllabus_unavailable", "message": "Syllabus generation is unavailable"},
+    )
+
+
+def _artifact_error(exc: StudyArtifactError) -> HTTPException:
+    """Map study-artifact domain failures without exposing provider details."""
+    if isinstance(exc, StudyArtifactNotFound):
+        return _not_found("Study artifact or unit not found")
+    if isinstance(exc, StudyArtifactConflict):
+        allowed_reasons = {
+            "syllabus_not_approved",
+            "revision_conflict",
+            "sources_not_ready",
+            "sources_changed",
+            "manifest_mismatch",
+            "unit_source_not_linked",
+        }
+        reason = exc.reason if exc.reason in allowed_reasons else exc.code
+        if reason.startswith("invalid_") or reason.endswith("_bounds"):
+            return HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={"code": reason, "message": "Invalid study artifact request"},
+            )
+        message = {
+            "syllabus_not_approved": "Study syllabus is not approved",
+            "revision_conflict": "Study plan changed",
+            "sources_not_ready": "Study sources are not ready",
+            "sources_changed": "Study sources changed; review the syllabus again",
+            "manifest_mismatch": "Study syllabus evidence binding is invalid",
+            "unit_source_not_linked": "Study unit source coverage is invalid",
+        }.get(reason, "Study artifact generation is not currently allowed")
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": reason, "message": message},
+        )
+    if isinstance(exc, StudyArtifactCancelled):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.reason, "message": "Study artifact generation was cancelled"},
+        )
+    if isinstance(exc, (StudyArtifactGenerationError, StudyArtifactUnavailable)):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code, "message": "Study artifact generation is unavailable"},
+        )
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={"code": "artifact_unavailable", "message": "Study artifact generation is unavailable"},
     )
 
 
@@ -311,3 +369,29 @@ async def approve_study_syllabus(
     except StudySyllabusError as exc:
         raise _syllabus_error(exc) from None
     return StudyPlanResponse.from_plan(plan)
+
+
+@router.post(
+    "/{plan_id}/generate",
+    response_model=GenerateStudyArtifactsResponse,
+)
+async def generate_study_plan_artifacts(
+    plan_id: str,
+    payload: GenerateStudyArtifactsRequest,
+) -> GenerateStudyArtifactsResponse:
+    """Generate unit-scoped Evidence Studio artifacts after approval only."""
+    try:
+        artifacts = await StudyArtifactService().generate_unit(
+            plan_id,
+            payload.unit_id,
+            payload.artifact_types,
+            payload.expected_revision,
+            context=payload.context,
+        )
+    except StudyArtifactError as exc:
+        raise _artifact_error(exc) from None
+    return GenerateStudyArtifactsResponse(
+        plan_id=plan_id,
+        unit_id=payload.unit_id,
+        artifacts=tuple(artifacts),
+    )

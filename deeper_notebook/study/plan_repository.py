@@ -187,6 +187,32 @@ def _record_or_none(value: object, *, kind: str) -> dict[str, Any] | None:
     return _one_record(value, kind=kind)
 
 
+def _artifact_link_record(value: object) -> dict[str, Any] | None:
+    """Decode a bounded study-plan-artifact projection without raw payloads."""
+    rows = _flatten_dicts(value)
+    candidates = [
+        row
+        for row in rows
+        if isinstance(row.get("plan_id"), str)
+        and isinstance(row.get("artifact_id"), str)
+        and isinstance(row.get("artifact_kind"), str)
+    ]
+    if not candidates:
+        return None
+    row = candidates[0]
+    metadata = row.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise StudyPlanRepositoryError("invalid persisted study artifact link")
+    return {
+        "id": str(row.get("id", "")),
+        "plan_id": row["plan_id"],
+        "artifact_id": row["artifact_id"],
+        "artifact_kind": row["artifact_kind"],
+        "metadata": dict(metadata),
+        "created_at": row.get("created_at"),
+    }
+
+
 def _guard_plan_sql(
     expected_revision: int | None,
     *,
@@ -474,6 +500,125 @@ class StudyPlanRepository:
         except Exception as exc:
             logger.exception("Failed to load study syllabus")
             raise StudyPlanRepositoryError("Failed to load study syllabus") from exc
+
+    async def get_artifact_link(
+        self,
+        plan_id: str,
+        artifact_id: str,
+    ) -> dict[str, Any] | None:
+        """Read one plan/artifact link as bounded metadata."""
+        if not isinstance(artifact_id, str) or not artifact_id or len(artifact_id) > 512:
+            raise StudyPlanRepositoryError("invalid artifact ID")
+        try:
+            _record_id(plan_id, "study_plan")
+            rows = await repo_query(
+                "SELECT id, plan_id, artifact_id, artifact_kind, metadata, created_at "
+                "FROM study_plan_artifact WHERE plan_id = $plan_id "
+                "AND artifact_id = $artifact_id LIMIT 1;",
+                {"plan_id": plan_id, "artifact_id": artifact_id},
+            )
+            return _artifact_link_record(rows)
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to load study artifact link")
+            raise StudyPlanRepositoryError("Failed to load study artifact link") from exc
+
+    async def find_artifact_link(
+        self,
+        plan_id: str,
+        *,
+        unit_id: str,
+        artifact_kind: str,
+        syllabus_version: int,
+    ) -> dict[str, Any] | None:
+        """Find an already-published unit artifact for idempotent retries."""
+        if (
+            not isinstance(unit_id, str)
+            or not unit_id
+            or len(unit_id) > 64
+            or not isinstance(artifact_kind, str)
+            or not artifact_kind
+            or len(artifact_kind) > 128
+            or isinstance(syllabus_version, bool)
+            or not isinstance(syllabus_version, int)
+            or syllabus_version < 1
+        ):
+            raise StudyPlanRepositoryError("invalid artifact link lookup")
+        try:
+            _record_id(plan_id, "study_plan")
+            rows = await repo_query(
+                "SELECT id, plan_id, artifact_id, artifact_kind, metadata, created_at "
+                "FROM study_plan_artifact WHERE plan_id = $plan_id "
+                "AND artifact_kind = $artifact_kind "
+                "AND metadata.unit_id = $unit_id "
+                "AND metadata.syllabus_version = $syllabus_version LIMIT 1;",
+                {
+                    "plan_id": plan_id,
+                    "artifact_kind": artifact_kind,
+                    "unit_id": unit_id,
+                    "syllabus_version": syllabus_version,
+                },
+            )
+            return _artifact_link_record(rows)
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to find study artifact link")
+            raise StudyPlanRepositoryError("Failed to find study artifact link") from exc
+
+    async def link_artifact(
+        self,
+        plan_id: str,
+        artifact_id: str,
+        *,
+        artifact_kind: str,
+        metadata: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically/idempotently publish one completed artifact pointer."""
+        if not isinstance(artifact_id, str) or not artifact_id or len(artifact_id) > 512:
+            raise StudyPlanRepositoryError("invalid artifact ID")
+        if not isinstance(artifact_kind, str) or not artifact_kind or len(artifact_kind) > 128:
+            raise StudyPlanRepositoryError("invalid artifact kind")
+        if not isinstance(metadata, Mapping) or len(metadata) > 16:
+            raise StudyPlanRepositoryError("invalid artifact metadata")
+        safe_metadata = dict(metadata)
+        try:
+            _record_id(plan_id, "study_plan")
+            existing = await self.get_artifact_link(plan_id, artifact_id)
+            if existing is not None:
+                return existing
+            link_id = ensure_record_id(
+                f"study_plan_artifact:{_stable_record_token(plan_id, artifact_id)}"
+            )
+            payload = {
+                "plan_id": plan_id,
+                "artifact_id": artifact_id,
+                "artifact_kind": artifact_kind,
+                "metadata": safe_metadata,
+                "created_at": datetime.now(UTC),
+            }
+            try:
+                rows = await repo_query(
+                    "CREATE $link CONTENT $payload RETURN AFTER;",
+                    {"link": link_id, "payload": payload},
+                )
+                created = _artifact_link_record(rows)
+                if created is not None:
+                    return created
+            except Exception:
+                # A concurrent retry may win the unique key. Re-read below and
+                # only surface a persistence error when no committed link exists.
+                pass
+            existing = await self.get_artifact_link(plan_id, artifact_id)
+            if existing is not None:
+                return existing
+            raise StudyPlanRepositoryError("study artifact link was not persisted")
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to link study artifact")
+            raise StudyPlanRepositoryError("Failed to link study artifact") from exc
 
     async def list(self, *, limit: int = 100, offset: int = 0) -> list[StudyPlan]:
         page_limit, page_offset = _bounded_page(limit, offset)

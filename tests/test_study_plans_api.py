@@ -14,6 +14,10 @@ from fastapi.testclient import TestClient
 from api.routers import study_plans
 from api.schemas.study_plans import ProposeSyllabusRequest
 from deeper_notebook.study import source_service
+from deeper_notebook.study.artifact_service import (
+    StudyArtifactConflict,
+    StudyArtifactGenerationError,
+)
 from deeper_notebook.study.plan_repository import (
     StudyPlanConflictError,
     StudyPlanNotFoundError,
@@ -389,10 +393,96 @@ def test_feature_off_returns_404_before_constructing_repository(monkeypatch: pyt
             client.get("/api/study/plans/not-a-plan/syllabus?version=wrong"),
             client.put("/api/study/plans/not-a-plan/syllabus", json={}),
             client.post("/api/study/plans/not-a-plan/syllabus:approve", json={}),
+            client.post("/api/study/plans/not-a-plan/generate", json={}),
         ]
 
     assert {response.status_code for response in responses} == {404}
     assert calls == 0
+
+
+def test_unit_artifact_generation_returns_metadata_only_and_rejects_bad_request(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Service:
+        async def generate_unit(
+            self,
+            plan_id: str,
+            unit_id: str,
+            artifact_types: tuple[str, ...],
+            expected_revision: int,
+            *,
+            context: str | None,
+        ) -> list[dict[str, str]]:
+            assert (plan_id, unit_id, artifact_types, expected_revision, context) == (
+                "study_plan:one",
+                "motion",
+                ("quiz",),
+                3,
+                None,
+            )
+            return [
+                {
+                    "artifact_id": "studio_artifact:quiz",
+                    "artifact_type": "quiz",
+                    "status": "completed",
+                    "unit_id": "motion",
+                }
+            ]
+
+    monkeypatch.setattr(study_plans, "StudyArtifactService", Service)
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/generate",
+        json={"unit_id": "motion", "artifact_types": ["quiz"], "expected_revision": 3},
+    )
+    malformed = client.post(
+        "/api/study/plans/study_plan%3Aone/generate",
+        json={"unit_id": "motion", "artifact_types": ["report"], "expected_revision": 3},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "plan_id": "study_plan:one",
+        "unit_id": "motion",
+        "artifacts": [
+            {
+                "artifact_id": "studio_artifact:quiz",
+                "artifact_type": "quiz",
+                "status": "completed",
+                "unit_id": "motion",
+            }
+        ],
+    }
+    assert "output_payload" not in response.text
+    assert malformed.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code"),
+    [
+        (StudyArtifactConflict("sources_changed"), 409),
+        (StudyArtifactGenerationError("provider password=secret"), 503),
+    ],
+)
+def test_unit_artifact_domain_errors_are_safe(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    status_code: int,
+) -> None:
+    class Service:
+        async def generate_unit(self, *args: object, **kwargs: object) -> list[dict[str, str]]:
+            del args, kwargs
+            raise error
+
+    monkeypatch.setattr(study_plans, "StudyArtifactService", Service)
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/generate",
+        json={"unit_id": "motion", "artifact_types": ["quiz"], "expected_revision": 1},
+    )
+
+    assert response.status_code == status_code
+    assert "password=secret" not in response.text
 
 
 @pytest.mark.parametrize(
