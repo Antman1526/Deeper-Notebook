@@ -65,6 +65,7 @@ from api.routers import (
     speaker_profiles,
     studio,
     study,
+    study_assistants,
     study_plans,
     transformations,
     vault,
@@ -1280,6 +1281,7 @@ app.include_router(research.router, prefix="/api", tags=["research"])
 app.include_router(capture.router, prefix="/api", tags=["capture"])
 app.include_router(study.router, prefix="/api", tags=["study"])
 app.include_router(study_plans.router, prefix="/api", tags=["study-plans"])
+app.include_router(study_assistants.router, prefix="/api", tags=["study-assistants"])
 app.include_router(video_overviews.router, prefix="/api", tags=["video-overviews"])
 app.include_router(
     _local_models_router.router, tags=["health"]

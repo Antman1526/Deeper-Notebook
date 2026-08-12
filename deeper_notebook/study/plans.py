@@ -128,10 +128,36 @@ class StudyActivity(_FrozenContract):
 
 
 class StudyPlanPreferences(_FrozenContract):
-    """User-confirmed time budget for a study plan."""
+    """User-confirmed time and model/network policy for a study plan."""
 
     weekly_minutes: int = Field(ge=5, le=10_080)
     session_minutes: int = Field(ge=5, le=480)
+    model_route: Literal["local", "cloud"] = "local"
+    network_allowed: bool = False
+    approved_network_scope: tuple[str, ...] = Field(default_factory=tuple, max_length=8)
+
+    @field_validator("approved_network_scope", mode="before")
+    @classmethod
+    def network_scope_uses_immutable_storage(cls, value: object) -> object:
+        return _list_to_tuple(value)
+
+    @field_validator("approved_network_scope")
+    @classmethod
+    def network_scope_is_bounded_https(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(values)) != len(values):
+            raise ValueError("approved network scope entries must be unique")
+        for value in values:
+            if not value.strip() or len(value) > 512 or not value.startswith("https://"):
+                raise ValueError("approved network scope must contain bounded HTTPS origins")
+        return values
+
+    @model_validator(mode="after")
+    def remote_authority_is_explicit(self) -> "StudyPlanPreferences":
+        if self.network_allowed != bool(self.approved_network_scope):
+            raise ValueError("network authority and approved scope must be supplied together")
+        if self.model_route == "cloud" and not self.network_allowed:
+            raise ValueError("cloud model route requires network authority")
+        return self
 
 
 class StudyPlanSourceLink(_FrozenContract):

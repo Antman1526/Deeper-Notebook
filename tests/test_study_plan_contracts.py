@@ -347,3 +347,26 @@ def test_transition_uses_only_the_allowlisted_lifecycle() -> None:
 
     with pytest.raises(ValueError, match="not allowed"):
         plan.transition("archived", expected_version=plan.version)
+
+
+def test_plan_preferences_bind_explicit_remote_authority() -> None:
+    with pytest.raises(ValueError, match="cloud model route requires network authority"):
+        StudyPlanPreferences(
+            weekly_minutes=120,
+            session_minutes=30,
+            model_route="cloud",
+        )
+    with pytest.raises(ValueError, match="supplied together"):
+        StudyPlanPreferences(
+            weekly_minutes=120,
+            session_minutes=30,
+            network_allowed=True,
+        )
+    preferences = StudyPlanPreferences(
+        weekly_minutes=120,
+        session_minutes=30,
+        model_route="cloud",
+        network_allowed=True,
+        approved_network_scope=("https://research.example.edu",),
+    )
+    assert preferences.model_route == "cloud"

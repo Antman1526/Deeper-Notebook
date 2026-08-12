@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -16,6 +17,7 @@ from deeper_notebook.study.artifact_service import (
     _artifact_identity,
 )
 from deeper_notebook.study.assistant_repository import (
+    StudyAssistantAuthorityConflictError,
     StudyAssistantConflictError,
     StudyAssistantRepository,
 )
@@ -274,6 +276,205 @@ async def test_assistant_session_handoff_memory_and_progress_are_durable(
     assert await assistant.list_progress(plan_id, limit=999) == (first_progress,)
 
 
+async def test_assistant_completion_publishes_one_atomic_replay_receipt(
+    clean_namespace,
+):
+    repository = StudyPlanRepository()
+    assistant = StudyAssistantRepository()
+    plan_id = "study_plan:assistant-completion"
+    await repository.create(
+        StudyPlan(
+            plan_id=plan_id,
+            goal="Verify atomic assistant completion",
+            starting_level="beginner",
+        )
+    )
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    approved_at = now
+    evidence_text = "Atomic assistant evidence"
+    evidence_sha256 = hashlib.sha256(evidence_text.encode("utf-8")).hexdigest()
+    evidence_id = "source:assistant-evidence"
+    await repo_query(
+        "CREATE $source CONTENT $payload RETURN AFTER;",
+        {
+            "source": ensure_record_id(evidence_id),
+            "payload": {
+                "title": "Assistant evidence",
+                "source_type": "text",
+                "full_text": evidence_text,
+            },
+        },
+    )
+    await repo_query(
+        'UPDATE $study_plan MERGE { state: "active", active_syllabus_version: 1, '
+        "source_manifest_sha256: $manifest, source_links: [$source_id] } RETURN AFTER;",
+        {
+            "study_plan": ensure_record_id(plan_id),
+            "manifest": "a" * 64,
+            "source_id": evidence_id,
+        },
+    )
+    await repo_query(
+        "CREATE $study_syllabus CONTENT $payload RETURN AFTER;",
+        {
+            "study_syllabus": ensure_record_id(
+                "study_syllabus:assistant-completion-v1"
+            ),
+            "payload": {
+                "schema_version": 1,
+                "plan_id": plan_id,
+                "version": 1,
+                "source_manifest_sha256": "a" * 64,
+                "approved_at": approved_at,
+                "created_at": now,
+            },
+        },
+    )
+    invocation = StudyAssistantInvocation(
+        plan_id=plan_id,
+        role="source_guide",
+        authority="ask",
+        prompt="Explain the selected source.",
+        created_at=now,
+    )
+    queued = await assistant.create_session(
+        invocation, request_id="assistant-completion"
+    )
+    running = await assistant.update_session(
+        queued.session_id,
+        status="running",
+        expected_revision=queued.revision,
+    )
+    handoff = StudyAssistantHandoff(
+        request_id="assistant-completion:handoff",
+        plan_id=plan_id,
+        session_id=running.session_id,
+        role="source_guide",
+        observation="The selected source supports the explanation.",
+        evidence=({"source_id": evidence_id, "locator": "page:1"},),
+        proposed_action='[{"action":"navigate.unit","label":"Open unit","unit_id":null,"expected_revision":null}]',
+        origin="source_guide",
+        created_at=now,
+    )
+    completed, persisted_handoff = await assistant.complete_session(
+        running.session_id,
+        handoff,
+        expected_revision=running.revision,
+        response_id="study_assistant_response:completion",
+        completed_at=now,
+        authority_guard={
+            "plan_revision": 1,
+            "plan_state": "active",
+            "syllabus_version": 1,
+            "source_ids": (evidence_id,),
+            "syllabus_approved_at": approved_at,
+            "source_manifest_sha256": "a" * 64,
+            "model_route": "local",
+            "network_allowed": False,
+            "network_scope": (),
+            "source_evidence": (
+                {
+                    "source_id": evidence_id,
+                    "full_text_sha256": evidence_sha256,
+                },
+            ),
+        },
+    )
+    assert completed.status == "completed"
+    assert completed.response_id == "study_assistant_response:completion"
+    assert persisted_handoff.observation == handoff.observation
+    assert await assistant.get_session(running.session_id) == completed
+    assert (
+        await assistant.complete_session(
+            running.session_id,
+            handoff,
+            expected_revision=running.revision,
+            response_id="study_assistant_response:completion",
+            completed_at=now,
+            authority_guard={
+                "plan_revision": 1,
+                "plan_state": "active",
+                "syllabus_version": 1,
+                "source_ids": (evidence_id,),
+                "syllabus_approved_at": approved_at,
+                "source_manifest_sha256": "a" * 64,
+                "model_route": "local",
+                "network_allowed": False,
+                "network_scope": (),
+                "source_evidence": (
+                    {
+                        "source_id": evidence_id,
+                        "full_text_sha256": evidence_sha256,
+                    },
+                ),
+            },
+        )
+        == (completed, persisted_handoff)
+    )
+
+    drift_invocation = invocation.model_copy(
+        update={
+            "invocation_id": "assistant-authority-drift",
+            "request_id": "assistant-authority-drift",
+        }
+    )
+    drift_queued = await assistant.create_session(
+        drift_invocation, request_id="assistant-authority-drift"
+    )
+    drift_running = await assistant.update_session(
+        drift_queued.session_id,
+        status="running",
+        expected_revision=drift_queued.revision,
+    )
+    drift_handoff = handoff.model_copy(
+        update={
+            "request_id": "assistant-authority-drift:handoff",
+            "session_id": drift_running.session_id,
+        }
+    )
+    await repo_query(
+        "UPDATE $source SET full_text = $changed RETURN AFTER;",
+        {
+            "source": ensure_record_id(evidence_id),
+            "changed": "Changed after the assistant evidence check",
+        },
+    )
+    with pytest.raises(
+        StudyAssistantAuthorityConflictError,
+        match="assistant completion authority changed",
+    ):
+        await assistant.complete_session(
+            drift_running.session_id,
+            drift_handoff,
+            expected_revision=drift_running.revision,
+            response_id="study_assistant_response:drift",
+            completed_at=now,
+            authority_guard={
+                "plan_revision": 1,
+                "plan_state": "active",
+                "syllabus_version": 1,
+                "source_ids": (evidence_id,),
+                "syllabus_approved_at": approved_at,
+                "source_manifest_sha256": "a" * 64,
+                "model_route": "local",
+                "network_allowed": False,
+                "network_scope": (),
+                "source_evidence": (
+                    {
+                        "source_id": evidence_id,
+                        "full_text_sha256": evidence_sha256,
+                    },
+                ),
+            },
+        )
+    persisted_drift = await assistant.get_session(drift_running.session_id)
+    assert persisted_drift is not None
+    assert persisted_drift.status == "running"
+    assert await assistant.get_handoff_by_request(
+        plan_id, "assistant-authority-drift:handoff"
+    ) is None
+
+
 async def test_assistant_concurrent_mismatched_idempotency_winners_fail_closed(
     clean_namespace,
 ):
@@ -322,6 +523,25 @@ async def test_assistant_concurrent_mismatched_idempotency_winners_fail_closed(
         ),
         request_id="concurrent-session",
     ) == winning_session
+
+    running_results = await asyncio.gather(
+        assistant.update_session(
+            winning_session.session_id,
+            status="running",
+            expected_revision=winning_session.revision,
+        ),
+        assistant.update_session(
+            winning_session.session_id,
+            status="running",
+            expected_revision=winning_session.revision,
+        ),
+        return_exceptions=True,
+    )
+    assert sum(
+        isinstance(result, StudyAssistantConflictError)
+        for result in running_results
+    ) == 1
+    assert sum(not isinstance(result, BaseException) for result in running_results) == 1
 
     session_id = winning_session.session_id
     handoff_results = await asyncio.gather(

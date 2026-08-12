@@ -40,6 +40,7 @@ _MAX_HANDOFF_PAGE = 50
 _MAX_MEMORY_PAGE = 50
 _MAX_PROGRESS_PAGE = 50
 _MAX_PAGE_OFFSET = 100_000
+_ASSISTANT_PLAN_STATES = frozenset({"approved", "generating", "active", "completed"})
 
 
 class StudyAssistantRepositoryError(RuntimeError):
@@ -52,6 +53,10 @@ class StudyAssistantNotFoundError(StudyAssistantRepositoryError):
 
 class StudyAssistantConflictError(StudyAssistantRepositoryError):
     """Optimistic or idempotency guard rejected a mutation."""
+
+
+class StudyAssistantAuthorityConflictError(StudyAssistantConflictError):
+    """Atomic publication rejected changed Study Plan authority."""
 
 
 class StudyAssistantUnavailableError(StudyAssistantRepositoryError):
@@ -127,6 +132,7 @@ _CONFLICT_MARKERS = frozenset(
         "study_assistant_handoff_guard_failed",
         "study_plan_memory_guard_failed",
         "study_progress_guard_failed",
+        "study_assistant_authority_guard_failed",
     }
 )
 
@@ -264,7 +270,9 @@ def _invocation_hash(
     invocation: StudyAssistantInvocation,
     request_id: str,
 ) -> str:
-    payload = invocation.model_dump(mode="json")
+    # ``created_at`` is receipt metadata, not request intent. API clients may
+    # omit it, in which case each retry receives a new server timestamp.
+    payload = invocation.model_dump(mode="json", exclude={"created_at"})
     payload["effective_request_id"] = request_id
     return _canonical_hash(payload)
 
@@ -304,7 +312,22 @@ def _conflict(exc: BaseException) -> bool:
     seen: set[int] = set()
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        if str(current).strip() in _CONFLICT_MARKERS:
+        message = str(current).strip()
+        if message in _CONFLICT_MARKERS or (
+            "failed transaction" in message.lower()
+            and "read or write conflict" in message.lower()
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _has_marker(exc: BaseException, marker: str) -> bool:
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if str(current).strip() == marker:
             return True
         current = current.__cause__ or current.__context__
     return False
@@ -556,6 +579,13 @@ class StudyAssistantRepository:
             )
             row = _one_or_none(rows, kind="assistant session")
             if row is None:
+                if status == "running":
+                    # queued -> running is a one-winner claim. Returning an
+                    # already-running replay would authorize duplicate model
+                    # work for concurrent identical retries.
+                    raise StudyAssistantConflictError(
+                        "assistant session is already running"
+                    )
                 replay = await repo_query(
                     f"SELECT {_SESSION_PROJECTION} FROM $assistant_session LIMIT 1;",
                     {"assistant_session": record},
@@ -578,6 +608,287 @@ class StudyAssistantRepository:
                 raise StudyAssistantConflictError("assistant session revision conflict") from exc
             logger.exception("Failed to update assistant session")
             raise StudyAssistantUnavailableError("Study assistant sessions are unavailable") from exc
+
+    async def complete_session(
+        self,
+        session_id: str,
+        handoff: StudyAssistantHandoff,
+        *,
+        expected_revision: int,
+        response_id: str,
+        completed_at: datetime,
+        authority_guard: Mapping[str, Any],
+    ) -> tuple[StudyAssistantSession, StudyAssistantHandoff]:
+        """Atomically publish one completed session and its replayable handoff."""
+        session_record = _table_record(session_id, "study_assistant_session")
+        expected_revision = _revision(expected_revision)
+        if handoff.session_id != session_id:
+            raise StudyAssistantRepositoryError("handoff session does not match")
+        if (
+            not isinstance(response_id, str)
+            or not response_id.strip()
+            or len(response_id) > 512
+        ):
+            raise StudyAssistantRepositoryError("invalid assistant response ID")
+        if completed_at.tzinfo is None or completed_at.utcoffset() is None:
+            raise StudyAssistantRepositoryError(
+                "session timestamp must be timezone-aware"
+            )
+        request_id = handoff.request_id
+        if (
+            not isinstance(request_id, str)
+            or not request_id.strip()
+            or len(request_id) > 256
+        ):
+            raise StudyAssistantRepositoryError("invalid handoff request ID")
+        plan_record = _table_record(handoff.plan_id, "study_plan")
+        plan_value = _record_value(handoff.plan_id, plan_record)
+        try:
+            plan_revision = _revision(authority_guard["plan_revision"])
+            plan_state = authority_guard["plan_state"]
+            syllabus_version = _revision(authority_guard["syllabus_version"])
+            source_ids = tuple(authority_guard["source_ids"])
+            syllabus_approved_at = authority_guard["syllabus_approved_at"]
+            source_manifest_sha256 = authority_guard["source_manifest_sha256"]
+            model_route = authority_guard["model_route"]
+            network_allowed = authority_guard["network_allowed"]
+            network_scope = tuple(authority_guard["network_scope"])
+            source_evidence = tuple(authority_guard["source_evidence"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise StudyAssistantRepositoryError(
+                "invalid assistant authority guard"
+            ) from exc
+        if (
+            plan_state not in _ASSISTANT_PLAN_STATES
+            or len(source_ids) > 100
+            or any(
+                not isinstance(value, str) or not value.strip() or len(value) > 512
+                for value in source_ids
+            )
+            or not isinstance(syllabus_approved_at, datetime)
+            or syllabus_approved_at.tzinfo is None
+            or syllabus_approved_at.utcoffset() is None
+            or not isinstance(source_manifest_sha256, str)
+            or len(source_manifest_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in source_manifest_sha256)
+            or model_route not in {"local", "cloud"}
+            or not isinstance(network_allowed, bool)
+            or len(network_scope) > 8
+            or any(
+                not isinstance(value, str) or not value.strip() or len(value) > 2_048
+                for value in network_scope
+            )
+            or len(source_evidence) > 100
+            or any(
+                not isinstance(item, Mapping)
+                or set(item) != {"source_id", "full_text_sha256"}
+                or not isinstance(item.get("source_id"), str)
+                or not str(item["source_id"]).strip()
+                or len(str(item["source_id"])) > 512
+                or not isinstance(item.get("full_text_sha256"), str)
+                or len(str(item["full_text_sha256"])) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in str(item["full_text_sha256"])
+                )
+                for item in source_evidence
+            )
+        ):
+            raise StudyAssistantRepositoryError("invalid assistant authority guard")
+        handoff_record = ensure_record_id(
+            f"study_assistant_handoff:{_stable_token(handoff.plan_id, request_id)}"
+        )
+        handoff_payload = handoff.model_dump(mode="python", exclude={"handoff_id"})
+        handoff_payload["request_id"] = request_id
+        handoff_payload["evidence"] = [
+            item.model_dump(mode="python") for item in handoff.evidence
+        ]
+        handoff_payload["plan_id"] = handoff.plan_id
+        handoff_hash = _handoff_hash(handoff, request_id)
+        handoff_payload["idempotency_hash"] = handoff_hash
+        session_patch = {
+            "status": "completed",
+            "response_id": response_id,
+            "error_code": None,
+            "completed_at": completed_at,
+            "updated_at": completed_at,
+            "revision": expected_revision + 1,
+        }
+        query_source_evidence = [
+            {
+                "source_record": _table_record(str(item["source_id"]), "source"),
+                "full_text_sha256": str(item["full_text_sha256"]),
+            }
+            for item in source_evidence
+        ]
+        params = {
+            "assistant_session": session_record,
+            "assistant_handoff": handoff_record,
+            "plan_id": plan_value,
+            "request_id": request_id,
+            "expected_revision": expected_revision,
+            "handoff_payload": handoff_payload,
+            "session_patch": session_patch,
+            "study_plan": plan_record,
+            "plan_revision": plan_revision,
+            "plan_state": plan_state,
+            "syllabus_version": syllabus_version,
+            "source_ids": list(source_ids),
+            "syllabus_approved_at": syllabus_approved_at,
+            "source_manifest_sha256": source_manifest_sha256,
+            "model_route": model_route,
+            "network_allowed": network_allowed,
+            "network_scope": list(network_scope),
+            # Bind real RecordID values rather than rendered strings: Surreal
+            # and the Python client use different display delimiters for IDs
+            # containing punctuation.
+            "source_evidence": query_source_evidence,
+        }
+        transaction = (
+            "BEGIN TRANSACTION; "
+            "LET $authority_plan = (SELECT id FROM $study_plan "
+            "WHERE revision = $plan_revision AND state = $plan_state "
+            "AND active_syllabus_version = $syllabus_version "
+            "AND source_links = $source_ids "
+            "AND (preferences.model_route ?? \"local\") = $model_route "
+            "AND (preferences.network_allowed ?? false) = $network_allowed "
+            "AND (preferences.approved_network_scope ?? []) = $network_scope)[0]; "
+            "LET $authority_syllabus = (SELECT id FROM study_syllabus "
+            "WHERE plan_id = $plan_id AND version = $syllabus_version "
+            "AND approved_at = $syllabus_approved_at "
+            "AND source_manifest_sha256 = $source_manifest_sha256)[0]; "
+            "IF $authority_plan = NONE OR $authority_syllabus = NONE { "
+            'THROW "study_assistant_authority_guard_failed"; }; '
+            "LET $source_guard = array::every($source_evidence, |$item| "
+            "array::len((SELECT id FROM source "
+            "WHERE id = $item.source_record "
+            "AND type::is::string(full_text) "
+            "AND crypto::sha256(full_text) = $item.full_text_sha256)) = 1); "
+            "IF $source_guard = false { "
+            'THROW "study_assistant_authority_guard_failed"; }; '
+            "LET $session_guard = (SELECT id FROM $assistant_session "
+            'WHERE status = "running" AND revision = $expected_revision)[0]; '
+            "IF $session_guard = NONE { "
+            'THROW "study_assistant_session_guard_failed"; }; '
+            "LET $handoff_guard = (SELECT id FROM study_assistant_handoff "
+            "WHERE plan_id = $plan_id AND request_id = $request_id)[0]; "
+            "IF $handoff_guard != NONE { "
+            'THROW "study_assistant_handoff_guard_failed"; }; '
+            "CREATE $assistant_handoff CONTENT $handoff_payload; "
+            "LET $completed_session = (UPDATE $assistant_session MERGE $session_patch "
+            'WHERE status = "running" AND revision = $expected_revision RETURN AFTER)[0]; '
+            "IF $completed_session = NONE { "
+            'THROW "study_assistant_session_guard_failed"; }; '
+            "COMMIT TRANSACTION; RETURN $completed_session;"
+        )
+
+        async def canonical_receipt() -> tuple[
+            StudyAssistantSession, StudyAssistantHandoff
+        ] | None:
+            session_rows = await repo_query(
+                f"SELECT {_SESSION_PROJECTION} FROM $assistant_session LIMIT 1;",
+                {"assistant_session": session_record},
+            )
+            handoff_rows = await repo_query(
+                f"SELECT {_HANDOFF_PROJECTION} FROM $assistant_handoff LIMIT 1;",
+                {"assistant_handoff": handoff_record},
+            )
+            if not session_rows or not handoff_rows:
+                return None
+            session_row = _one(session_rows, kind="assistant session")
+            handoff_row = _one(handoff_rows, kind="assistant handoff")
+            session = _session_from(session_row)
+            stored_handoff = _handoff_from(handoff_row)
+            if (
+                session.status == "completed"
+                and session.revision == expected_revision + 1
+                and session.response_id == response_id
+                and session.completed_at == completed_at
+                and _row_hash(handoff_row) == handoff_hash
+            ):
+                return session, stored_handoff
+            return None
+
+        async def authority_still_matches() -> bool:
+            plan_rows = await repo_query(
+                "SELECT id FROM $study_plan WHERE revision = $plan_revision "
+                "AND state = $plan_state "
+                "AND active_syllabus_version = $syllabus_version "
+                "AND source_links = $source_ids "
+                "AND (preferences.model_route ?? \"local\") = $model_route "
+                "AND (preferences.network_allowed ?? false) = $network_allowed "
+                "AND (preferences.approved_network_scope ?? []) = $network_scope "
+                "LIMIT 1;",
+                params,
+            )
+            syllabus_rows = await repo_query(
+                "SELECT id FROM study_syllabus WHERE plan_id = $plan_id "
+                "AND version = $syllabus_version "
+                "AND approved_at = $syllabus_approved_at "
+                "AND source_manifest_sha256 = $source_manifest_sha256 LIMIT 1;",
+                params,
+            )
+            source_rows = await repo_query(
+                "RETURN array::every($source_evidence, |$item| "
+                "array::len((SELECT id FROM source "
+                "WHERE id = $item.source_record "
+                "AND type::is::string(full_text) "
+                "AND crypto::sha256(full_text) = $item.full_text_sha256)) = 1);",
+                params,
+            )
+            source_matches = source_rows is True or any(
+                item is True
+                or (isinstance(item, Mapping) and True in item.values())
+                for item in (source_rows if isinstance(source_rows, list) else [])
+            )
+            return (
+                bool(_flatten(plan_rows))
+                and bool(_flatten(syllabus_rows))
+                and source_matches
+            )
+
+        try:
+            await repo_query(transaction, params)
+            receipt = await canonical_receipt()
+            if receipt is None:
+                raise StudyAssistantRepositoryError(
+                    "invalid assistant completion receipt"
+                )
+            return receipt
+        except StudyAssistantRepositoryError:
+            raise
+        except Exception as exc:
+            try:
+                receipt = await canonical_receipt()
+                if receipt is not None:
+                    return receipt
+            except StudyAssistantRepositoryError:
+                raise
+            except Exception:
+                pass
+            try:
+                if not await authority_still_matches():
+                    raise StudyAssistantAuthorityConflictError(
+                        "assistant completion authority changed"
+                    ) from exc
+            except StudyAssistantAuthorityConflictError:
+                raise
+            except StudyAssistantRepositoryError:
+                raise
+            except Exception:
+                pass
+            if _has_marker(exc, "study_assistant_authority_guard_failed"):
+                raise StudyAssistantAuthorityConflictError(
+                    "assistant completion authority changed"
+                ) from exc
+            if _conflict(exc):
+                raise StudyAssistantConflictError(
+                    "assistant session revision conflict"
+                ) from exc
+            logger.exception("Failed to complete assistant session")
+            raise StudyAssistantUnavailableError(
+                "Study assistant completion is unavailable"
+            ) from exc
 
     async def append_handoff(
         self,
@@ -666,6 +977,33 @@ class StudyAssistantRepository:
         except Exception as exc:
             logger.exception("Failed to load assistant handoff")
             raise StudyAssistantUnavailableError("Study assistant handoffs are unavailable") from exc
+
+    async def get_handoff_by_request(
+        self, plan_id: str, request_id: str
+    ) -> StudyAssistantHandoff | None:
+        if (
+            not isinstance(request_id, str)
+            or not request_id.strip()
+            or len(request_id) > 256
+        ):
+            raise StudyAssistantRepositoryError("invalid handoff request ID")
+        plan = _table_record(plan_id, "study_plan")
+        plan_value = _record_value(plan_id, plan)
+        try:
+            rows = await repo_query(
+                f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "
+                "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
+                {"plan_id": plan_value, "request_id": request_id},
+            )
+            row = _one_or_none(rows, kind="assistant handoff")
+            return _handoff_from(row) if row else None
+        except StudyAssistantRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to load assistant handoff request")
+            raise StudyAssistantUnavailableError(
+                "Study assistant handoffs are unavailable"
+            ) from exc
 
     async def list_handoffs(
         self,
@@ -943,6 +1281,7 @@ class StudyAssistantRepository:
 __all__ = [
     "MIGRATION_DOWN_PATH",
     "MIGRATION_PATH",
+    "StudyAssistantAuthorityConflictError",
     "StudyAssistantConflictError",
     "StudyAssistantNotFoundError",
     "StudyAssistantRepository",

@@ -64,6 +64,15 @@ def _memory() -> StudyPlanMemory:
     )
 
 
+def test_invocation_idempotency_ignores_server_generated_created_at() -> None:
+    later = NOW.replace(minute=NOW.minute + 1)
+    assert assistant_repository._invocation_hash(
+        _invocation(created_at=NOW), "request-one"
+    ) == assistant_repository._invocation_hash(
+        _invocation(created_at=later), "request-one"
+    )
+
+
 @pytest.mark.asyncio
 async def test_create_session_uses_parameterized_record_id_and_projects_safe_fields(monkeypatch):
     calls: list[tuple[str, dict[str, object]]] = []
@@ -131,6 +140,123 @@ async def test_handoff_append_is_idempotent_and_page_is_capped(monkeypatch):
     assert page == (first,)
     assert any(params.get("limit") == 50 for _sql, params in calls)
     assert all("provider_payload" not in sql for sql, _params in calls)
+
+
+@pytest.mark.asyncio
+async def test_handoff_request_lookup_is_exact_projection_only(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+    row = {
+        "id": "study_assistant_handoff:one",
+        "plan_id": PLAN_ID,
+        "session_id": "study_assistant_session:one",
+        "role": "source_guide",
+        "request_id": "request-one:handoff",
+        "observation": "Replay answer",
+        "evidence": [],
+        "proposed_action": None,
+        "origin": "source_guide",
+        "user_decision": "pending",
+        "created_at": NOW,
+        "idempotency_hash": "a" * 64,
+        "provider_payload": {"secret": "must not project"},
+    }
+
+    async def query(sql, params):
+        calls.append((sql, params))
+        return [row]
+
+    monkeypatch.setattr(assistant_repository, "repo_query", query)
+    result = await StudyAssistantRepository().get_handoff_by_request(
+        PLAN_ID, "request-one:handoff"
+    )
+    assert result is not None
+    assert result.observation == "Replay answer"
+    assert "provider_payload" not in calls[0][0]
+    assert calls[0][1]["request_id"] == "request-one:handoff"
+
+
+@pytest.mark.asyncio
+async def test_completion_persists_session_and_handoff_in_one_guarded_transaction(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+    handoff = _handoff().model_copy(
+        update={"request_id": "request-one:handoff"}
+    )
+    session_row = {
+        "id": "study_assistant_session:one",
+        "plan_id": PLAN_ID,
+        "role": "source_guide",
+        "authority": "ask",
+        "status": "completed",
+        "request_id": "request-one",
+        "prompt_sha256": prompt_sha256("Explain the selected source."),
+        "selected_source_ids": [],
+        "response_id": "study_assistant_response:one",
+        "revision": 3,
+        "created_at": NOW,
+        "updated_at": NOW,
+        "completed_at": NOW,
+        "idempotency_hash": assistant_repository._invocation_hash(
+            _invocation(), "request-one"
+        ),
+    }
+    handoff_row = {
+        "id": "study_assistant_handoff:one",
+        **handoff.model_dump(mode="python", exclude={"handoff_id"}),
+        "idempotency_hash": assistant_repository._handoff_hash(
+            handoff, "request-one:handoff"
+        ),
+    }
+
+    async def query(sql, params):
+        calls.append((sql, params))
+        if "BEGIN TRANSACTION" in sql:
+            return None
+        if "assistant_session" in params:
+            return [session_row]
+        if "assistant_handoff" in params:
+            return [handoff_row]
+        return []
+
+    monkeypatch.setattr(assistant_repository, "repo_query", query)
+    session, stored_handoff = await StudyAssistantRepository().complete_session(
+        "study_assistant_session:one",
+        handoff,
+        expected_revision=2,
+        response_id="study_assistant_response:one",
+        completed_at=NOW,
+        authority_guard={
+            "plan_revision": 3,
+            "plan_state": "approved",
+            "syllabus_version": 2,
+            "source_ids": ("source:one",),
+            "syllabus_approved_at": NOW,
+            "source_manifest_sha256": "a" * 64,
+            "model_route": "local",
+            "network_allowed": False,
+            "network_scope": (),
+            "source_evidence": (),
+        },
+    )
+    assert session.status == "completed"
+    assert stored_handoff == assistant_repository._handoff_from(handoff_row)
+    transaction, params = next(
+        (sql, params) for sql, params in calls if "BEGIN TRANSACTION" in sql
+    )
+    assert "status = \"running\"" in transaction
+    assert "revision = $expected_revision" in transaction
+    assert "CREATE $assistant_handoff CONTENT $handoff_payload" in transaction
+    assert "UPDATE $assistant_session MERGE $session_patch" in transaction
+    assert "study_assistant_authority_guard_failed" in transaction
+    assert "$study_plan" in transaction
+    assert "$syllabus_approved_at" in transaction
+    assert "crypto::sha256(full_text)" in transaction
+    assert params["expected_revision"] == 2
+    assert params["plan_revision"] == 3
+
+
+@pytest.mark.parametrize("state", ["approved", "generating", "active", "completed"])
+def test_completion_authority_guard_accepts_learning_lifecycle_states(state: str) -> None:
+    assert state in assistant_repository._ASSISTANT_PLAN_STATES
 
 
 @pytest.mark.asyncio
