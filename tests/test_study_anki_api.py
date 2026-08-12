@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import study_anki
+from deeper_notebook.study.anki_jobs import AnkiClaimResult, AnkiJobMetadata
 from deeper_notebook.study.anki_package import inspect_anki_package
 from deeper_notebook.study.anki_repository import AnkiCompatibilityReceipt
 from tests.fixtures.anki.build_fixtures import build_apkg
@@ -132,6 +133,116 @@ def test_valid_preview_requires_explicit_publish_and_replay_is_bound(
         json={"upload_id": job_id, "request_id": "different-request", "options": {"schema_version": 1}},
     )
     assert mismatch.status_code == 409
+
+
+def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = build_apkg(tmp_path / "crash-window.apkg")
+    request_id = "crash-window-request"
+    receipt = _receipt(package, request_id)
+    state: dict[str, object] = {"metadata": None, "complete_calls": 0, "native_committed": False}
+    owner_token = "a" * 64
+
+    class FakeJobs:
+        async def create(self, metadata: AnkiJobMetadata) -> AnkiJobMetadata:
+            state["metadata"] = metadata
+            return metadata
+
+        async def get(self, job_id: str, plan_id: str) -> AnkiJobMetadata | None:
+            metadata = state["metadata"]
+            if isinstance(metadata, AnkiJobMetadata) and metadata.job_id == job_id and metadata.plan_id == plan_id:
+                return metadata
+            return None
+
+        async def claim(
+            self,
+            job_id: str,
+            plan_id: str,
+            package_sha256: str,
+            request_id: str,
+            options_sha256: str,
+        ) -> AnkiClaimResult:
+            metadata = state["metadata"]
+            assert isinstance(metadata, AnkiJobMetadata)
+            if metadata.status == "preview_ready":
+                state["metadata"] = metadata.model_copy(
+                    update={
+                        "status": "publishing",
+                        "claim_request_id": request_id,
+                        "claim_options_sha256": options_sha256,
+                        "claim_package_sha256": package_sha256,
+                        "claim_owner_token": owner_token,
+                        "claim_expires_at": datetime.now(UTC) + timedelta(minutes=5),
+                    }
+                )
+                return AnkiClaimResult("owner", owner_token)
+            return AnkiClaimResult("replay")
+
+        async def complete(
+            self,
+            job_id: str,
+            plan_id: str,
+            request_id: str,
+            options_sha256: str,
+            receipt_id: str,
+            owner: str,
+        ) -> AnkiJobMetadata | None:
+            state["complete_calls"] = int(state["complete_calls"]) + 1
+            if int(state["complete_calls"]) == 1:
+                state["native_committed"] = True
+                raise RuntimeError("simulated crash after native publication")
+            metadata = state["metadata"]
+            assert isinstance(metadata, AnkiJobMetadata)
+            repaired = metadata.model_copy(update={"status": "published", "receipt_id": receipt_id})
+            state["metadata"] = repaired
+            return repaired
+
+    class FakeReceipts:
+        async def _find_by_request(self, plan_id: str, caller_request_id: str):
+            if state["native_committed"] and caller_request_id == request_id:
+                return receipt
+            return None
+
+    monkeypatch.setattr(study_anki, "_test_in_memory_metadata", lambda: False)
+    monkeypatch.setattr(study_anki, "AnkiJobRepository", FakeJobs)
+    monkeypatch.setattr(study_anki, "AnkiImportRepository", FakeReceipts)
+    monkeypatch.setattr(
+        study_anki,
+        "_publish_import",
+        lambda *args, **kwargs: _async_return(receipt),
+    )
+
+    preview = client.post(
+        "/api/study/plans/study_plan%3Aone/anki/import",
+        files={"file": ("crash-window.apkg", package.read_bytes(), "application/octet-stream")},
+        data={"options": json.dumps({"schema_version": 1})},
+    )
+    assert preview.status_code == 200
+    job_id = preview.json()["job_id"]
+    first = client.post(
+        f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}:publish",
+        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+    )
+    assert first.status_code == 503
+
+    retry = client.post(
+        f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}:publish",
+        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+    )
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "replayed"
+    repaired = state["metadata"]
+    assert isinstance(repaired, AnkiJobMetadata)
+    assert repaired.status == "published"
+    assert repaired.receipt_id == receipt.receipt_id
+    assert state["complete_calls"] == 2
+
+
+async def _async_return(value: object) -> object:
+    return value
 
 
 def test_upload_bound_and_download_symlink_are_rejected(

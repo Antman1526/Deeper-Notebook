@@ -61,6 +61,8 @@ def build_apkg(
     raw_collection: bytes | None = None,
     extra_sql: str | None = None,
     note_unique_constraints: int = 0,
+    cloze_text: str | None = None,
+    cloze_card_ords: tuple[int, ...] | None = None,
 ) -> Path:
     """Create one current-schema package with Basic/reverse/Cloze cards."""
 
@@ -129,13 +131,21 @@ def build_apkg(
             ("{}", json.dumps(models), json.dumps(decks), "{}", "{}"),
         )
         fields = (
-            f"{{{{c1::{front}}}}}\x1f{back}" if kind == "cloze" else f"{front}\x1f{back}"
+            f"{cloze_text if cloze_text is not None else f'{{{{c1::{front}}}}}'}\x1f{back}"
+            if kind == "cloze"
+            else f"{front}\x1f{back}"
         )
         connection.execute(
             "INSERT INTO notes VALUES (1001,'guid-one',1,0,0,?,?,0,0,0,'')",
             (tags, fields),
         )
-        card_ords = (0, 1) if kind == "reverse" else (0,)
+        card_ords = (
+            tuple(cloze_card_ords or (0,))
+            if kind == "cloze"
+            else (0, 1)
+            if kind == "reverse"
+            else (0,)
+        )
         for index, ord_value in enumerate(card_ords):
             connection.execute(
                 "INSERT INTO cards VALUES (?,?,?,?,0,0,0,0,0,0,2500,0,0,0,0,0,0,'')",

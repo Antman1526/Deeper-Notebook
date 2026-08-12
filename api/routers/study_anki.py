@@ -662,6 +662,39 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                     raise AnkiHttpError("study_anki_unavailable", 503) from exc
                 if replay is None:
                     raise AnkiHttpError("publish_in_progress", 409)
+                # Native publication and durable job completion are separate
+                # commits.  If the worker crashed after the receipt committed,
+                # a same-request replay must repair the durable job while the
+                # original owner lease still fences the write.  Returning the
+                # receipt alone would leave the job publishing forever.
+                try:
+                    current = await AnkiJobRepository().get(job_id, plan_id)
+                except Exception as exc:
+                    raise AnkiHttpError("study_anki_unavailable", 503) from exc
+                if current is None:
+                    raise AnkiHttpError("job_not_found", 404)
+                if current.status != "published":
+                    owner_token = current.claim_owner_token
+                    if not isinstance(owner_token, str):
+                        raise AnkiHttpError("publish_in_progress", 409)
+                    try:
+                        repaired = await AnkiJobRepository().complete(
+                            job_id,
+                            plan_id,
+                            payload.request_id,
+                            options_hash,
+                            replay.receipt_id,
+                            owner_token,
+                        )
+                    except Exception as exc:
+                        raise AnkiHttpError("study_anki_unavailable", 503) from exc
+                    if repaired is None:
+                        try:
+                            latest = await AnkiJobRepository().get(job_id, plan_id)
+                        except Exception as exc:
+                            raise AnkiHttpError("study_anki_unavailable", 503) from exc
+                        if latest is None or latest.status != "published" or latest.receipt_id != replay.receipt_id:
+                            raise AnkiHttpError("publish_in_progress", 409)
                 return AnkiImportPublishResponse(status="replayed", receipt=_http_receipt(replay))
             owner_token = getattr(claim, "owner_token", None)
             if not isinstance(owner_token, str):
@@ -857,13 +890,14 @@ def _bounded_card(card: object, index: int) -> dict[str, Any]:
         for value in source_fields
     ):
         raise AnkiHttpError("invalid_card_projection")
-    template_ord = card.get("template_ord")
-    if template_ord is not None and (
-        isinstance(template_ord, bool) or not isinstance(template_ord, int) or template_ord not in {0, 1}
-    ):
-        raise AnkiHttpError("invalid_card_projection")
     source_model_kind = card.get("source_model_kind")
     if source_model_kind is not None and source_model_kind not in {"basic", "cloze"}:
+        raise AnkiHttpError("invalid_card_projection")
+    template_ord = card.get("template_ord")
+    if template_ord is not None and (
+        isinstance(template_ord, bool) or not isinstance(template_ord, int) or not 0 <= template_ord <= 999
+        or ((kind != "cloze" or source_model_kind == "basic") and template_ord > 1)
+    ):
         raise AnkiHttpError("invalid_card_projection")
     deck_name = card.get("deck_name")
     if deck_name is not None and (
@@ -1040,6 +1074,20 @@ def _build_package(
         model = {"basic": basic_model, "reverse": reverse_model, "cloze": cloze_model}[kind]
         used_model_ids.add(int(model.model_id))
         source_fields = card.get("source_fields") or ()
+        if kind == "cloze" and len(source_fields) == 2 and isinstance(package_sha256, str):
+            source_ordinals = {
+                int(match.group(1)) for match in _CLOZE_TOKEN.finditer(source_fields[0])
+            }
+            observed_ordinals = {
+                int(candidate.get("template_ord")) + 1
+                for candidate in cards
+                if candidate.get("kind") == "cloze"
+                and candidate.get("package_sha256") == package_sha256
+                and candidate.get("source_note_id") == source_note_id
+                and isinstance(candidate.get("template_ord"), int)
+            }
+            if source_ordinals != observed_ordinals:
+                raise AnkiHttpError("cloze_template_subset_unsupported", 409)
         if kind == "reverse" and len(source_fields) == 2:
             fields = [_escape_field(source_fields[0]), _escape_field(source_fields[1])]
         elif kind == "cloze" and len(source_fields) == 2 and _CLOZE_TOKEN.search(source_fields[0]):

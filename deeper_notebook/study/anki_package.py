@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 512
@@ -133,7 +133,7 @@ class AnkiCardPreview(_Frozen):
     # original note fields to rebuild reverse and Cloze notes losslessly.
     source_note_id: str | None = Field(default=None, max_length=128)
     source_model_kind: Literal["basic", "cloze"] | None = None
-    template_ord: int | None = Field(default=None, ge=0, le=1)
+    template_ord: int | None = Field(default=None, ge=0, le=999)
     source_fields: tuple[str, ...] = Field(default_factory=tuple, max_length=4)
 
     @field_validator("source_fields", mode="before")
@@ -156,6 +156,14 @@ class AnkiCardPreview(_Frozen):
         if value is not None and (not value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value)):
             raise ValueError("invalid source note ID")
         return value
+
+    @model_validator(mode="after")
+    def template_ordinal_matches_model(self) -> "AnkiCardPreview":
+        if self.template_ord is not None and self.kind != "cloze" and self.template_ord > 1:
+            raise ValueError("invalid Basic/reverse template ordinal")
+        if self.template_ord is not None and self.source_model_kind == "basic" and self.template_ord > 1:
+            raise ValueError("invalid Basic/reverse template ordinal")
+        return self
 
 
 class AnkiPackageInspection(_Frozen):

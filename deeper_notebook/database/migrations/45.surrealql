@@ -7,7 +7,7 @@ DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_anki_card_compat TYPE string A
 DEFINE FIELD IF NOT EXISTS card_id ON TABLE study_anki_card_compat TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 512;
 DEFINE FIELD IF NOT EXISTS source_note_id ON TABLE study_anki_card_compat TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 128;
 DEFINE FIELD IF NOT EXISTS source_model_kind ON TABLE study_anki_card_compat TYPE string ASSERT $value IN ["basic", "cloze"];
-DEFINE FIELD IF NOT EXISTS template_ord ON TABLE study_anki_card_compat TYPE int ASSERT $value >= 0 AND $value <= 1;
+DEFINE FIELD IF NOT EXISTS template_ord ON TABLE study_anki_card_compat TYPE int ASSERT $value >= 0 AND $value <= 999 AND (($this.source_model_kind = "cloze") OR $value <= 1);
 DEFINE FIELD IF NOT EXISTS kind ON TABLE study_anki_card_compat TYPE string ASSERT $value IN ["basic", "reverse", "cloze"];
 DEFINE FIELD IF NOT EXISTS source_fields ON TABLE study_anki_card_compat TYPE array<string> ASSERT array::len($value) >= 2 AND array::len($value) <= 4 AND array::every($value, |$item| string::len($item) <= 16384);
 DEFINE FIELD IF NOT EXISTS deck_name ON TABLE study_anki_card_compat TYPE string ASSERT string::trim($value) != "" AND string::len($value) <= 200;

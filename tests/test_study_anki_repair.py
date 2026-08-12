@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import study_anki
+from api.routers.study_anki import AnkiHttpError
 from deeper_notebook.study.anki_package import AnkiImportOptions, inspect_anki_package
 from deeper_notebook.study.anki_repository import (
     AnkiImportRepository,
@@ -63,6 +64,87 @@ def test_cloze_export_round_trip_preserves_raw_tokens_and_extra(tmp_path: Path) 
     assert round_trip.cards[0].kind == "cloze"
     assert "{{c1::" in round_trip.cards[0].source_fields[0]
     assert round_trip.cards[0].source_fields[1] == "Mnemonic"
+
+
+def test_cloze_ordinal_three_round_trips_with_matching_native_receipt(tmp_path: Path) -> None:
+    from api.routers.study_anki import export_anki_package, inspect_export
+
+    package = build_apkg(
+        tmp_path / "cloze-c3.apkg",
+        kind="cloze",
+        cloze_text="{{c3::third}}",
+        cloze_card_ords=(2,),
+    )
+    original = inspect_anki_package(package)
+    assert original.cards[0].template_ord == 2
+
+    raw = original.cards[0]
+    result = export_anki_package(
+        {
+            "plan_id": "study_plan:cloze-c3",
+            "state": "approved",
+            "approved_syllabus_version": 1,
+            "cards": [
+                {
+                    "card_id": "study_card:cloze-c3",
+                    "version": 1,
+                    "front": raw.front,
+                    "back": raw.back,
+                    "kind": "cloze",
+                    "source_note_id": raw.source_note_id,
+                    "source_model_kind": raw.source_model_kind,
+                    "template_ord": raw.template_ord,
+                    "source_fields": raw.source_fields,
+                }
+            ],
+        },
+        tmp_path / "cloze-c3-export.apkg",
+    )
+
+    exported = inspect_anki_package(result.path)
+    assert result.receipt.card_count == inspect_export(result.path).card_count == 1
+    assert exported.cards[0].template_ord == 2
+
+
+def test_partial_multicloze_subset_fails_closed_without_expanding_cards(tmp_path: Path) -> None:
+    from api.routers.study_anki import export_anki_package
+
+    package = build_apkg(
+        tmp_path / "cloze-partial.apkg",
+        kind="cloze",
+        cloze_text="The {{c1::first}} and {{c2::second}}",
+        cloze_card_ords=(1,),
+    )
+    inspection = inspect_anki_package(package)
+    raw = inspection.cards[0]
+
+    with pytest.raises(AnkiHttpError) as exc_info:
+        export_anki_package(
+            {
+                "plan_id": "study_plan:cloze-partial",
+                "state": "approved",
+                "approved_syllabus_version": 1,
+                "cards": [
+                    {
+                        "card_id": "study_card:cloze-partial",
+                        "version": 1,
+                        "front": raw.front,
+                        "back": raw.back,
+                        "kind": "cloze",
+                        "source_note_id": raw.source_note_id,
+                        "source_model_kind": raw.source_model_kind,
+                        "template_ord": raw.template_ord,
+                        "source_fields": raw.source_fields,
+                        "package_sha256": inspection.package_sha256,
+                    }
+                ],
+            },
+            tmp_path / "cloze-partial-export.apkg",
+        )
+
+    assert exc_info.value.code == "cloze_template_subset_unsupported"
+    assert exc_info.value.status_code == 409
+    assert not (tmp_path / "cloze-partial-export.apkg").exists()
 
 
 def test_multicloze_export_receipt_counts_native_cards(tmp_path: Path) -> None:
@@ -138,6 +220,7 @@ def test_migration_45_is_additive_and_reversible() -> None:
     assert "study_anki_card_compat" in up
     assert "study_anki_job" in up
     assert "study_anki_export" in up
+    assert "template_ord ON TABLE study_anki_card_compat TYPE int ASSERT $value >= 0 AND $value <= 999" in up
     assert "REMOVE TABLE IF EXISTS study_anki_card_compat" in down
     assert "REMOVE TABLE IF EXISTS study_anki_job" in down
     assert "REMOVE TABLE IF EXISTS study_anki_export" in down
