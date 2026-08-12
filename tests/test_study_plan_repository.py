@@ -291,12 +291,32 @@ def test_task3_migration_contracts_are_schemafull_and_tightly_bounded():
     assert "string::len($value) >= 1" in sql
     assert "string::len($value) <= 512" in sql
     assert 'string::matches($value, "^[0-9a-f]{64}$")' in sql
-    assert "source_links.*" in sql
-    assert "prerequisite_unit_ids.*" in sql
-    assert "source_ids.*" in sql
-    assert "activities.*" in sql
+    assert "source_links ON TABLE study_plan TYPE array<string> ASSERT" in sql
+    assert "prerequisite_unit_ids ON TABLE study_unit TYPE array<string> ASSERT" in sql
+    assert "source_ids ON TABLE study_unit TYPE array<string> ASSERT" in sql
+    assert "activities ON TABLE study_unit FLEXIBLE TYPE array<object> ASSERT" in sql
     assert "$value >= 5" in sql
     assert "$value <= 10080" in sql
+
+
+def test_task3_migration_mirrors_strict_task2_text_and_id_contracts():
+    migration = Path(__file__).parents[1] / "deeper_notebook/database/migrations/41.surrealql"
+    sql = migration.read_text()
+    nonblank = 'string::trim($value) != ""'
+    stable_id = 'string::matches($value, "^[a-z0-9][a-z0-9_-]{0,63}$")'
+    activity_kinds = (
+        '$value IN ["reading", "lesson", "tutor_session", "quiz", "recall", '
+        '"exam", "project", "review", "custom"]'
+    )
+    assert sql.count(nonblank) >= 8
+    assert stable_id in sql
+    assert 'string::matches($item, "^[a-z0-9][a-z0-9_-]{0,63}$")' in sql
+    assert 'string::matches($activity.activity_id, "^[a-z0-9][a-z0-9_-]{0,63}$")' in sql
+    assert '"reading", "lesson", "tutor_session", "quiz", "recall", "exam", "project", "review", "custom"' in sql
+    assert "array::every($value, |$item| string::trim($item) != \"\" AND" in sql
+    assert "array::every($value, |$item| string::matches($item" in sql
+    assert "array::every($value, |$activity|" in sql
+    assert "string::len($value) <= 32" not in sql
 
 
 @pytest.mark.asyncio

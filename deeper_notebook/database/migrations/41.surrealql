@@ -4,13 +4,12 @@
 
 DEFINE TABLE IF NOT EXISTS study_plan SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_plan TYPE int DEFAULT 1;
-DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_plan TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
-DEFINE FIELD IF NOT EXISTS goal ON TABLE study_plan TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 2000;
-DEFINE FIELD IF NOT EXISTS starting_level ON TABLE study_plan TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 200;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_plan TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS goal ON TABLE study_plan TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 2000;
+DEFINE FIELD IF NOT EXISTS starting_level ON TABLE study_plan TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 200;
 DEFINE FIELD IF NOT EXISTS target_date ON TABLE study_plan TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS preferences ON TABLE study_plan FLEXIBLE TYPE option<object>;
-DEFINE FIELD IF NOT EXISTS source_links ON TABLE study_plan TYPE array<string> ASSERT array::len($value) <= 100;
-DEFINE FIELD IF NOT EXISTS source_links.* ON TABLE study_plan TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS source_links ON TABLE study_plan TYPE array<string> ASSERT array::len($value) <= 100 AND array::every($value, |$item| string::trim($item) != "" AND string::len($item) >= 1 AND string::len($item) <= 512);
 DEFINE FIELD IF NOT EXISTS source_manifest_sha256 ON TABLE study_plan TYPE option<string> ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
 DEFINE FIELD IF NOT EXISTS active_syllabus_version ON TABLE study_plan TYPE option<int> ASSERT $value = NONE OR $value >= 1;
 DEFINE FIELD IF NOT EXISTS state ON TABLE study_plan TYPE string ASSERT $value IN [
@@ -24,14 +23,14 @@ DEFINE INDEX IF NOT EXISTS idx_study_plan_state ON TABLE study_plan COLUMNS stat
 DEFINE INDEX IF NOT EXISTS idx_study_plan_updated ON TABLE study_plan COLUMNS updated_at;
 
 DEFINE TABLE IF NOT EXISTS study_plan_source SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_plan_source TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
-DEFINE FIELD IF NOT EXISTS source_id ON TABLE study_plan_source TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_plan_source TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS source_id ON TABLE study_plan_source TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_plan_source TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS idx_study_plan_source_unique ON TABLE study_plan_source COLUMNS plan_id, source_id UNIQUE;
 
 DEFINE TABLE IF NOT EXISTS study_syllabus SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_syllabus TYPE int DEFAULT 1;
-DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_syllabus TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_syllabus TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
 DEFINE FIELD IF NOT EXISTS version ON TABLE study_syllabus TYPE int ASSERT $value >= 1;
 DEFINE FIELD IF NOT EXISTS source_manifest_sha256 ON TABLE study_syllabus TYPE string ASSERT string::matches($value, "^[0-9a-f]{64}$");
 DEFINE FIELD IF NOT EXISTS approved_at ON TABLE study_syllabus TYPE option<datetime>;
@@ -40,39 +39,30 @@ DEFINE INDEX IF NOT EXISTS idx_study_syllabus_version ON TABLE study_syllabus CO
 
 DEFINE TABLE IF NOT EXISTS study_unit SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_unit TYPE int DEFAULT 1;
-DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_unit TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
 DEFINE FIELD IF NOT EXISTS syllabus_version ON TABLE study_unit TYPE int ASSERT $value >= 1;
-DEFINE FIELD IF NOT EXISTS unit_id ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 64;
+DEFINE FIELD IF NOT EXISTS unit_id ON TABLE study_unit TYPE string ASSERT string::matches($value, "^[a-z0-9][a-z0-9_-]{0,63}$");
 DEFINE FIELD IF NOT EXISTS position ON TABLE study_unit TYPE int ASSERT $value >= 0 AND $value < 64;
-DEFINE FIELD IF NOT EXISTS title ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 200;
-DEFINE FIELD IF NOT EXISTS objectives ON TABLE study_unit TYPE array<string> ASSERT array::len($value) <= 20;
-DEFINE FIELD IF NOT EXISTS objectives.* ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 2000;
-DEFINE FIELD IF NOT EXISTS prerequisite_unit_ids ON TABLE study_unit TYPE array<string> ASSERT array::len($value) <= 20;
-DEFINE FIELD IF NOT EXISTS prerequisite_unit_ids.* ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 64;
+DEFINE FIELD IF NOT EXISTS title ON TABLE study_unit TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 200;
+DEFINE FIELD IF NOT EXISTS objectives ON TABLE study_unit TYPE array<string> ASSERT array::len($value) <= 20 AND array::every($value, |$item| string::trim($item) != "" AND string::len($item) >= 1 AND string::len($item) <= 2000);
+DEFINE FIELD IF NOT EXISTS prerequisite_unit_ids ON TABLE study_unit TYPE array<string> ASSERT array::len($value) <= 20 AND array::every($value, |$item| string::matches($item, "^[a-z0-9][a-z0-9_-]{0,63}$"));
 DEFINE FIELD IF NOT EXISTS estimated_minutes ON TABLE study_unit TYPE int ASSERT $value >= 5 AND $value <= 10080;
-DEFINE FIELD IF NOT EXISTS source_ids ON TABLE study_unit TYPE array<string> ASSERT array::len($value) <= 100;
-DEFINE FIELD IF NOT EXISTS source_ids.* ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
-DEFINE FIELD IF NOT EXISTS activities ON TABLE study_unit FLEXIBLE TYPE array<object> ASSERT array::len($value) <= 50;
-DEFINE FIELD IF NOT EXISTS activities.*.activity_id ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 64;
-DEFINE FIELD IF NOT EXISTS activities.*.kind ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 32;
-DEFINE FIELD IF NOT EXISTS activities.*.title ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 200;
-DEFINE FIELD IF NOT EXISTS activities.*.estimated_minutes ON TABLE study_unit TYPE int ASSERT $value >= 5 AND $value <= 10080;
-DEFINE FIELD IF NOT EXISTS activities.*.source_ids ON TABLE study_unit TYPE array<string> ASSERT array::len($value) <= 100;
-DEFINE FIELD IF NOT EXISTS activities.*.source_ids.* ON TABLE study_unit TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS source_ids ON TABLE study_unit TYPE array<string> ASSERT array::len($value) <= 100 AND array::every($value, |$item| string::trim($item) != "" AND string::len($item) >= 1 AND string::len($item) <= 512);
+DEFINE FIELD IF NOT EXISTS activities ON TABLE study_unit FLEXIBLE TYPE array<object> ASSERT array::len($value) <= 50 AND array::every($value, |$activity| string::matches($activity.activity_id, "^[a-z0-9][a-z0-9_-]{0,63}$") AND $activity.kind IN ["reading", "lesson", "tutor_session", "quiz", "recall", "exam", "project", "review", "custom"] AND string::trim($activity.title) != "" AND string::len($activity.title) >= 1 AND string::len($activity.title) <= 200 AND $activity.estimated_minutes >= 5 AND $activity.estimated_minutes <= 10080 AND array::len($activity.source_ids) <= 100 AND array::every($activity.source_ids, |$source_id| string::trim($source_id) != "" AND string::len($source_id) >= 1 AND string::len($source_id) <= 512));
 DEFINE INDEX IF NOT EXISTS idx_study_unit_order ON TABLE study_unit COLUMNS plan_id, syllabus_version, position UNIQUE;
 DEFINE INDEX IF NOT EXISTS idx_study_unit_identity ON TABLE study_unit COLUMNS plan_id, syllabus_version, unit_id UNIQUE;
 
 DEFINE TABLE IF NOT EXISTS study_plan_artifact SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_plan_artifact TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
-DEFINE FIELD IF NOT EXISTS artifact_id ON TABLE study_plan_artifact TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
-DEFINE FIELD IF NOT EXISTS artifact_kind ON TABLE study_plan_artifact TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 128;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_plan_artifact TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS artifact_id ON TABLE study_plan_artifact TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS artifact_kind ON TABLE study_plan_artifact TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 128;
 DEFINE FIELD IF NOT EXISTS metadata ON TABLE study_plan_artifact FLEXIBLE TYPE object DEFAULT {};
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_plan_artifact TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS idx_study_plan_artifact_unique ON TABLE study_plan_artifact COLUMNS plan_id, artifact_id UNIQUE;
 
 DEFINE TABLE IF NOT EXISTS study_plan_card SCHEMAFULL;
-DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_plan_card TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
-DEFINE FIELD IF NOT EXISTS card_id ON TABLE study_plan_card TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
-DEFINE FIELD IF NOT EXISTS syllabus_unit_id ON TABLE study_plan_card TYPE option<string> ASSERT $value = NONE OR (string::len($value) >= 1 AND string::len($value) <= 64);
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_plan_card TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS card_id ON TABLE study_plan_card TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS syllabus_unit_id ON TABLE study_plan_card TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 64);
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_plan_card TYPE datetime DEFAULT time::now();
 DEFINE INDEX IF NOT EXISTS idx_study_plan_card_unique ON TABLE study_plan_card COLUMNS plan_id, card_id UNIQUE;
