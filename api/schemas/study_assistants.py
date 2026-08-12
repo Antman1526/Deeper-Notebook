@@ -96,4 +96,32 @@ class StudyAssistantResponseBody(StudyAssistantResponse):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
-__all__ = ["InvokeStudyAssistantRequest", "StudyAssistantResponseBody"]
+class SynthesizeStudyVoiceRequest(BaseModel):
+    """Strict assistant prose input for local Study speech synthesis."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    text: StrictStr = Field(min_length=1)
+
+    @field_validator("text")
+    @classmethod
+    def text_is_bounded_and_nonblank(cls, value: str) -> str:
+        if not value.strip() or len(value.encode("utf-8")) > 8 * 1024:
+            raise ValueError("voice text must be nonblank and at most 8 KiB UTF-8")
+        return value
+
+
+class StudyVoiceTranscriptionResponse(BaseModel):
+    """Bounded transcript projection; provider metadata never crosses HTTP."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    transcript: StrictStr = Field(min_length=1, max_length=16 * 1024)
+
+
+__all__ = [
+    "InvokeStudyAssistantRequest",
+    "StudyAssistantResponseBody",
+    "StudyVoiceTranscriptionResponse",
+    "SynthesizeStudyVoiceRequest",
+]

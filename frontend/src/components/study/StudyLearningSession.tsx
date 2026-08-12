@@ -1,12 +1,15 @@
 'use client'
 
 import { TutorDock } from '@/components/study/TutorDock'
+import { StudyVoiceTutor } from '@/components/study/StudyVoiceTutor'
+import type { StudyVoiceCapability } from '@/lib/api/study-voice'
 
 export interface StudyLearningSessionProps {
   planId: string
   sourceIds?: readonly string[]
   unitId?: string | null
   approvedNetworkScope?: readonly string[]
+  voiceCapability?: StudyVoiceCapability
 }
 /** The Learn tab's single foreground session; specialists are selected inside the dock. */
 export function StudyLearningSession({
@@ -14,6 +17,7 @@ export function StudyLearningSession({
   sourceIds = [],
   unitId = null,
   approvedNetworkScope = [],
+  voiceCapability = { stt: 'unavailable', tts: 'unavailable' },
 }: StudyLearningSessionProps) {
   return (
     <section aria-labelledby="study-learning-session-heading" className="space-y-4">
@@ -30,6 +34,7 @@ export function StudyLearningSession({
         unitId={unitId}
         approvedNetworkScope={approvedNetworkScope}
       />
+      <StudyVoiceTutor planId={planId} capability={voiceCapability} />
     </section>
   )
 }
