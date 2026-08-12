@@ -1,0 +1,66 @@
+-- Study Workbench assistant sessions, bounded handoffs, plan-local memory,
+-- and append-only progress receipts.  Migration 42 is owned by Task 9's
+-- durable artifact lease fields; these tables are intentionally additive.
+
+DEFINE TABLE IF NOT EXISTS study_assistant_session SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_assistant_session TYPE int DEFAULT 1 ASSERT $value = 1;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_assistant_session TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS role ON TABLE study_assistant_session TYPE string ASSERT $value IN ["study_director", "curriculum_architect", "socratic_tutor", "concept_explainer", "source_guide", "practice_coach", "exam_coach", "memory_coach", "research_scout", "project_mentor", "writing_coach", "progress_coach"];
+DEFINE FIELD IF NOT EXISTS authority ON TABLE study_assistant_session TYPE string ASSERT $value IN ["ask", "coach", "plan", "create"];
+DEFINE FIELD IF NOT EXISTS request_id ON TABLE study_assistant_session TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 256);
+DEFINE FIELD IF NOT EXISTS prompt_sha256 ON TABLE study_assistant_session TYPE string ASSERT string::matches($value, "^[0-9a-f]{64}$");
+DEFINE FIELD IF NOT EXISTS selected_source_ids ON TABLE study_assistant_session TYPE array<string> DEFAULT [] ASSERT array::len($value) <= 100 AND array::every($value, |$item| string::trim($item) != "" AND string::len($item) >= 1 AND string::len($item) <= 512);
+DEFINE FIELD IF NOT EXISTS status ON TABLE study_assistant_session TYPE string DEFAULT "queued" ASSERT $value IN ["queued", "running", "completed", "failed", "cancelled"];
+DEFINE FIELD IF NOT EXISTS response_id ON TABLE study_assistant_session TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512);
+DEFINE FIELD IF NOT EXISTS error_code ON TABLE study_assistant_session TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 96);
+DEFINE FIELD IF NOT EXISTS revision ON TABLE study_assistant_session TYPE int DEFAULT 1 ASSERT $value >= 1;
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_assistant_session TYPE datetime;
+DEFINE FIELD IF NOT EXISTS updated_at ON TABLE study_assistant_session TYPE datetime;
+DEFINE FIELD IF NOT EXISTS completed_at ON TABLE study_assistant_session TYPE option<datetime>;
+DEFINE INDEX IF NOT EXISTS idx_study_assistant_session_request ON TABLE study_assistant_session COLUMNS plan_id, request_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_study_assistant_session_plan_time ON TABLE study_assistant_session COLUMNS plan_id, created_at;
+DEFINE INDEX IF NOT EXISTS idx_study_assistant_session_status ON TABLE study_assistant_session COLUMNS plan_id, status;
+
+DEFINE TABLE IF NOT EXISTS study_assistant_handoff SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_assistant_handoff TYPE int DEFAULT 1 ASSERT $value = 1;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_assistant_handoff TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS session_id ON TABLE study_assistant_handoff TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS role ON TABLE study_assistant_handoff TYPE string ASSERT $value IN ["study_director", "curriculum_architect", "socratic_tutor", "concept_explainer", "source_guide", "practice_coach", "exam_coach", "memory_coach", "research_scout", "project_mentor", "writing_coach", "progress_coach"];
+DEFINE FIELD IF NOT EXISTS request_id ON TABLE study_assistant_handoff TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 256);
+DEFINE FIELD IF NOT EXISTS observation ON TABLE study_assistant_handoff TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 16384;
+DEFINE FIELD IF NOT EXISTS evidence ON TABLE study_assistant_handoff FLEXIBLE TYPE array<object> DEFAULT [] ASSERT array::len($value) <= 32 AND array::every($value, |$item| type::is::object($item) AND $item.source_id != NONE AND string::trim($item.source_id) != "" AND string::len($item.source_id) <= 512 AND ($item.locator = NONE OR string::len($item.locator) <= 256) AND ($item.quote = NONE OR string::len($item.quote) <= 2000));
+DEFINE FIELD IF NOT EXISTS proposed_action ON TABLE study_assistant_handoff TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 2000);
+DEFINE FIELD IF NOT EXISTS origin ON TABLE study_assistant_handoff TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 96;
+DEFINE FIELD IF NOT EXISTS user_decision ON TABLE study_assistant_handoff TYPE string DEFAULT "pending" ASSERT $value IN ["pending", "accepted", "rejected", "deferred"];
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_assistant_handoff TYPE datetime;
+DEFINE FIELD IF NOT EXISTS decided_at ON TABLE study_assistant_handoff TYPE option<datetime>;
+DEFINE INDEX IF NOT EXISTS idx_study_assistant_handoff_request ON TABLE study_assistant_handoff COLUMNS plan_id, request_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_study_assistant_handoff_plan_time ON TABLE study_assistant_handoff COLUMNS plan_id, created_at;
+
+DEFINE TABLE IF NOT EXISTS study_plan_memory SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_plan_memory TYPE int DEFAULT 1 ASSERT $value = 1;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_plan_memory TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS memory_key ON TABLE study_plan_memory TYPE string ASSERT string::matches($value, "^[a-z0-9][a-z0-9_.-]{0,127}$");
+DEFINE FIELD IF NOT EXISTS value ON TABLE study_plan_memory TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 4000;
+DEFINE FIELD IF NOT EXISTS provenance ON TABLE study_plan_memory TYPE string ASSERT $value IN ["user_confirmed", "assistant_observation", "assistant_inference", "source_evidence", "system_receipt"];
+DEFINE FIELD IF NOT EXISTS confirmation_required ON TABLE study_plan_memory TYPE bool;
+DEFINE FIELD IF NOT EXISTS confirmed_at ON TABLE study_plan_memory TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS status ON TABLE study_plan_memory TYPE string ASSERT $value IN ["inferred", "confirmed", "rejected", "superseded", "active", "cleared"] AND ($value != "inferred" OR $this.confirmation_required = true) AND ($value != "confirmed" OR ($this.confirmation_required = false AND $this.confirmed_at != NONE));
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_plan_memory TYPE datetime;
+DEFINE FIELD IF NOT EXISTS updated_at ON TABLE study_plan_memory TYPE datetime;
+DEFINE FIELD IF NOT EXISTS revision ON TABLE study_plan_memory TYPE int DEFAULT 1 ASSERT $value >= 1;
+DEFINE INDEX IF NOT EXISTS idx_study_plan_memory_key ON TABLE study_plan_memory COLUMNS plan_id, memory_key UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_study_plan_memory_plan_time ON TABLE study_plan_memory COLUMNS plan_id, updated_at;
+DEFINE INDEX IF NOT EXISTS idx_study_plan_memory_status ON TABLE study_plan_memory COLUMNS plan_id, status;
+
+DEFINE TABLE IF NOT EXISTS study_progress SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_progress TYPE int DEFAULT 1 ASSERT $value = 1;
+DEFINE FIELD IF NOT EXISTS plan_id ON TABLE study_progress TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS request_id ON TABLE study_progress TYPE string ASSERT string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 256;
+DEFINE FIELD IF NOT EXISTS unit_id ON TABLE study_progress TYPE option<string> ASSERT $value = NONE OR string::matches($value, "^[a-z0-9][a-z0-9_-]{0,63}$");
+DEFINE FIELD IF NOT EXISTS event ON TABLE study_progress TYPE string ASSERT $value IN ["started", "completed", "assessed", "mastery_updated", "intervention_proposed", "schedule_changed", "decision", "failed", "cancelled"];
+DEFINE FIELD IF NOT EXISTS details ON TABLE study_progress TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) >= 1 AND string::len($value) <= 2000);
+DEFINE FIELD IF NOT EXISTS created_at ON TABLE study_progress TYPE datetime;
+DEFINE INDEX IF NOT EXISTS idx_study_progress_request ON TABLE study_progress COLUMNS plan_id, request_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_study_progress_plan_time ON TABLE study_progress COLUMNS plan_id, created_at;
+DEFINE INDEX IF NOT EXISTS idx_study_progress_unit_time ON TABLE study_progress COLUMNS plan_id, unit_id, created_at;

@@ -15,6 +15,13 @@ from deeper_notebook.study.artifact_service import (
     StudyArtifactService,
     _artifact_identity,
 )
+from deeper_notebook.study.assistant_repository import StudyAssistantRepository
+from deeper_notebook.study.assistants import (
+    StudyAssistantHandoff,
+    StudyAssistantInvocation,
+    StudyPlanMemory,
+    StudyProgressReceipt,
+)
 from deeper_notebook.study.plan_repository import StudyPlanRepository
 from deeper_notebook.study.plans import (
     StudyPlan,
@@ -139,6 +146,121 @@ async def test_plan_create_list_link_version_and_optimistic_approval(clean_names
     assert current.state == "approved"
     assert current.approved_syllabus_version == 2
     assert current.source_manifest_sha256 == "a" * 64
+
+
+async def test_assistant_session_handoff_memory_and_progress_are_durable(
+    clean_namespace,
+):
+    repository = StudyPlanRepository()
+    assistant = StudyAssistantRepository()
+    plan_id = "study_plan:assistant-integration"
+    created = await repository.create(
+        StudyPlan(
+            plan_id=plan_id,
+            goal="Verify assistant receipts",
+            starting_level="beginner",
+        )
+    )
+    now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
+    invocation = StudyAssistantInvocation(
+        plan_id=plan_id,
+        role="source_guide",
+        authority="ask",
+        prompt="Explain the selected source.",
+        created_at=now,
+    )
+    session = await assistant.create_session(invocation, request_id="assistant-request")
+    assert session.plan_id == plan_id
+    assert session.prompt_sha256
+    assert session.status == "queued"
+    updated = await assistant.update_session(
+        session.session_id,
+        status="completed",
+        expected_revision=session.revision,
+        response_id="study_assistant_response:one",
+        completed_at=now,
+    )
+    assert updated.status == "completed"
+    assert (
+        await assistant.update_session(
+            session.session_id,
+            status="completed",
+            expected_revision=session.revision,
+            response_id="study_assistant_response:one",
+            completed_at=now,
+        )
+        == updated
+    )
+
+    handoff = StudyAssistantHandoff(
+        plan_id=plan_id,
+        session_id=session.session_id,
+        role="source_guide",
+        observation="The learner needs a smaller example.",
+        evidence=({"source_id": "source:integration", "locator": "page:1"},),
+        proposed_action="Ask one question.",
+        origin="source_guide",
+        user_decision="pending",
+        created_at=now,
+    )
+    first_handoff = await assistant.append_handoff(handoff, request_id="handoff-request")
+    retry_handoff = await assistant.append_handoff(handoff, request_id="handoff-request")
+    assert first_handoff == retry_handoff
+    assert await assistant.list_handoffs(plan_id, limit=999) == (first_handoff,)
+
+    memory = StudyPlanMemory(
+        plan_id=plan_id,
+        memory_key="preference.answer_style",
+        value="Prefer concise examples",
+        provenance="user_confirmed",
+        status="confirmed",
+        confirmation_required=False,
+        confirmed_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    persisted_memory = await assistant.upsert_memory(
+        memory, expected_revision=0, request_id="memory-request"
+    )
+    assert persisted_memory.memory_key == memory.memory_key
+    assert (
+        await assistant.upsert_memory(memory, expected_revision=0, request_id="memory-request")
+        == persisted_memory
+    )
+    assert await assistant.get_memory(plan_id, memory.memory_key) == persisted_memory
+
+    with pytest.raises(Exception):
+        await repo_query(
+            "CREATE $invalid_memory CONTENT $payload RETURN AFTER;",
+            {
+                "invalid_memory": ensure_record_id("study_plan_memory:invalid-inferred"),
+                "payload": {
+                    "plan_id": plan_id,
+                    "memory_key": "inferred.invalid",
+                    "value": "Needs confirmation",
+                    "provenance": "assistant_inference",
+                    "status": "inferred",
+                    "confirmation_required": False,
+                    "confirmed_at": None,
+                    "created_at": now,
+                    "updated_at": now,
+                    "revision": 1,
+                },
+            },
+        )
+
+    progress = StudyProgressReceipt(
+        plan_id=plan_id,
+        request_id="progress-request",
+        unit_id="foundations",
+        event="started",
+        details="Session started",
+        created_at=now,
+    )
+    first_progress = await assistant.append_progress(progress)
+    retry_progress = await assistant.append_progress(progress)
+    assert first_progress == retry_progress
+    assert await assistant.list_progress(plan_id, limit=999) == (first_progress,)
 
 
 async def test_plan_artifact_link_is_atomic_and_retry_idempotent(clean_namespace):

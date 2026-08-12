@@ -1,0 +1,19 @@
+-- Roll back only Task 10's additive assistant/session/progress projection.
+REMOVE INDEX IF EXISTS idx_study_progress_unit_time ON TABLE study_progress;
+REMOVE INDEX IF EXISTS idx_study_progress_plan_time ON TABLE study_progress;
+REMOVE INDEX IF EXISTS idx_study_progress_request ON TABLE study_progress;
+REMOVE TABLE IF EXISTS study_progress;
+
+REMOVE INDEX IF EXISTS idx_study_plan_memory_status ON TABLE study_plan_memory;
+REMOVE INDEX IF EXISTS idx_study_plan_memory_plan_time ON TABLE study_plan_memory;
+REMOVE INDEX IF EXISTS idx_study_plan_memory_key ON TABLE study_plan_memory;
+REMOVE TABLE IF EXISTS study_plan_memory;
+
+REMOVE INDEX IF EXISTS idx_study_assistant_handoff_plan_time ON TABLE study_assistant_handoff;
+REMOVE INDEX IF EXISTS idx_study_assistant_handoff_request ON TABLE study_assistant_handoff;
+REMOVE TABLE IF EXISTS study_assistant_handoff;
+
+REMOVE INDEX IF EXISTS idx_study_assistant_session_status ON TABLE study_assistant_session;
+REMOVE INDEX IF EXISTS idx_study_assistant_session_plan_time ON TABLE study_assistant_session;
+REMOVE INDEX IF EXISTS idx_study_assistant_session_request ON TABLE study_assistant_session;
+REMOVE TABLE IF EXISTS study_assistant_session;
