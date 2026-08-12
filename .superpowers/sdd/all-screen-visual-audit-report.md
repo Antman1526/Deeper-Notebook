@@ -27,10 +27,11 @@ dialog initial focus, Escape close, focus return, reduced-motion mode,
 half-width responsive-proxy overflow bounds, and interactive target floors.
 Console errors, page errors, external requests, and unexpected API requests
 are asserted at the end of each flow. Only controls inside the explicitly
-marked Sources table scroll container may be exempted from clipping; the
-container itself must be inside the viewport and genuinely scrollable, and
-each exempted control must enter the container and viewport after a bounded
-programmatic scroll. An unmarked overflow canary remains a failure.
+marked Sources table scroll container may be exempted from clipping; any used
+exemption requires the container to be fully contained in the viewport and
+genuinely horizontally scrollable, and each exempted control must enter the
+container and viewport after a bounded programmatic scroll. An unmarked
+overflow canary remains a failure.
 
 ## Product corrections in this repair
 

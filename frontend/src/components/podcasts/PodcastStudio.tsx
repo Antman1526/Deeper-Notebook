@@ -311,7 +311,7 @@ export function PodcastStudio({ seedDocumentIds, selections, headingLevel = 2, m
             <p className="text-sm text-muted-foreground">Readiness is checked only when you request review. Production still requires a separate confirmation.</p>
             {!readiness ? (
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" onClick={() => void prepareProductionReview()} disabled={isPreparing || resolvedSelections.length === 0}>
+                <Button className="max-w-full whitespace-normal text-left" type="button" onClick={() => void prepareProductionReview()} disabled={isPreparing || resolvedSelections.length === 0}>
                   {isPreparing ? 'Checking readiness…' : 'Prepare production review'}
                 </Button>
                 {resolvedSelections.length === 0 ? <p className="text-sm text-muted-foreground">Choose at least one readable source before production review.</p> : null}

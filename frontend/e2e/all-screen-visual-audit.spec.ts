@@ -118,14 +118,20 @@ async function inspectClippedControls(page: Page) {
       && rect.bottom > -1
       && rect.top < window.innerHeight + 1
     )
-    const horizontallyInViewport = (rect: DOMRect) => (
-      rect.right > -1 && rect.left < window.innerWidth + 1
+    const containedInViewport = (rect: DOMRect) => (
+      rect.left >= -1
+      && rect.right <= window.innerWidth + 1
+      && rect.top >= -1
+      && rect.bottom <= window.innerHeight + 1
     )
+    const exemptedContainers = new Set<HTMLElement>()
     const markedContainers = Array.from(document.querySelectorAll<HTMLElement>(markerSelector)).map(container => {
       const rect = container.getBoundingClientRect()
       const style = window.getComputedStyle(container)
       return {
+        element: container,
         insideViewport: inViewport(rect),
+        containedInViewport: containedInViewport(rect),
         overflowX: style.overflowX,
         scrollable: ['auto', 'scroll'].includes(style.overflowX)
           && container.scrollWidth > container.clientWidth + 1,
@@ -139,49 +145,71 @@ async function inspectClippedControls(page: Page) {
       const rect = element.getBoundingClientRect()
       if (rect.width <= 0 || rect.height <= 0) continue
 
-      let horizontalAncestor: HTMLElement | null = element.parentElement
-      while (horizontalAncestor) {
-        const style = window.getComputedStyle(horizontalAncestor)
-        const scrollable = ['auto', 'scroll'].includes(style.overflowX)
-          && horizontalAncestor.scrollWidth > horizontalAncestor.clientWidth + 1
-        if (scrollable) break
-        horizontalAncestor = horizontalAncestor.parentElement
-      }
+      const horizontallyClipped = rect.left < -1 || rect.right > window.innerWidth + 1
+      if (!horizontallyClipped) continue
+
       const container = element.closest<HTMLElement>(markerSelector)
       const containerStyle = container ? window.getComputedStyle(container) : null
       const markedScrollable = Boolean(container && containerStyle
         && ['auto', 'scroll'].includes(containerStyle.overflowX)
         && container.scrollWidth > container.clientWidth + 1)
-      const outsideViewport = rect.right <= -1 || rect.left >= window.innerWidth + 1
 
-      if (outsideViewport) {
-        if (!container || !markedScrollable || horizontalAncestor !== container) {
-          violations.push({
-            label: element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName,
-            reason: 'outside viewport',
-          })
-          continue
-        }
+      if (!container || !markedScrollable || !containedInViewport(container.getBoundingClientRect())) {
+        violations.push({
+          label: element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName,
+          reason: 'partially clipped outside the marked scroll container',
+        })
+        continue
+      }
+      exemptedContainers.add(container)
 
-        const boundary = container.getBoundingClientRect()
-        const initial = container.scrollLeft
-        const max = Math.max(0, container.scrollWidth - container.clientWidth)
-        const positions = [...new Set([0, max, initial])]
-        const reachable = positions.some(position => {
+      const boundary = container.getBoundingClientRect()
+      const initial = container.scrollLeft
+      const max = Math.max(0, container.scrollWidth - container.clientWidth)
+      const target = Math.min(
+        max,
+        Math.max(
+          0,
+          initial + rect.left - boundary.left - Math.max(0, (container.clientWidth - rect.width) / 2),
+        ),
+      )
+      const positions = [...new Set([0, max, initial, target])]
+      let reachable = false
+      try {
+        for (const position of positions) {
           container.scrollLeft = position
           const candidate = element.getBoundingClientRect()
-          return candidate.right > boundary.left + 1
-            && candidate.left < boundary.right - 1
-            && horizontallyInViewport(candidate)
-        })
-        container.scrollLeft = initial
-        if (!reachable) {
-          unreachable.push(element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName)
+          if (containedInViewport(candidate)
+            && candidate.left >= boundary.left - 1
+            && candidate.right <= boundary.right + 1) {
+            reachable = true
+            break
+          }
         }
+      } finally {
+        container.scrollLeft = initial
+      }
+      if (!reachable) {
+        unreachable.push(element.textContent?.trim() || element.getAttribute('aria-label') || element.tagName)
       }
     }
 
-    return { markedContainers, violations, unreachable }
+    const serializeContainer = (item: typeof markedContainers[number]) => ({
+      insideViewport: item.insideViewport,
+      containedInViewport: item.containedInViewport,
+      overflowX: item.overflowX,
+      scrollable: item.scrollable,
+      rect: item.rect,
+    })
+
+    return {
+      markedContainers: markedContainers.map(serializeContainer),
+      exemptedContainers: markedContainers
+        .filter(item => exemptedContainers.has(item.element))
+        .map(serializeContainer),
+      violations,
+      unreachable,
+    }
   })
 }
 
@@ -258,10 +286,10 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
   })
   await page.setViewportSize({ width: 320, height: 240 })
   await page.setContent(`
-    <main>
-      <div style="width: 100px; overflow-x: auto;">
-        <button style="margin-left: 500px; width: 80px;">Unmarked overflow canary</button>
-      </div>
+    <main style="position: relative; width: 320px; height: 120px; margin: 0;">
+      <button style="position: absolute; left: 280px; top: 24px; width: 80px; height: 40px;">
+        Unmarked overflow canary
+      </button>
     </main>
   `)
   const canaryReport = await inspectClippedControls(page)
@@ -425,8 +453,12 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
 
       const clippedReport = await inspectClippedControls(page)
       expect(
-        clippedReport.markedContainers.every(container => container.insideViewport),
-        `${route} ${viewport.width}px marked scroll container inside viewport`,
+        clippedReport.markedContainers.every(container => container.containedInViewport),
+        `${route} ${viewport.width}px marked scroll container fully contained in viewport`,
+      ).toBe(true)
+      expect(
+        clippedReport.exemptedContainers.every(container => container.scrollable),
+        `${route} ${viewport.width}px marked exemption is genuinely scrollable`,
       ).toBe(true)
       expect(clippedReport.unreachable, `${route} ${viewport.width}px marked controls reachable`).toEqual([])
       expect(clippedReport.violations, `${route} ${viewport.width}px clipped controls`).toEqual([])

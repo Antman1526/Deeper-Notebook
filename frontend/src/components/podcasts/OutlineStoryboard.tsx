@@ -103,7 +103,7 @@ export function OutlineStoryboard({ segments, onChange }: OutlineStoryboardProps
             onDrop={() => { if (dragIndex != null) reorder(dragIndex, index); setDragIndex(null) }}
           >
             <span>{label}</span>
-            <span className="flex gap-2">
+            <span className="flex flex-wrap gap-2">
               <Button ref={(element) => { buttonRefs.current[`${segmentId}:-1`] = element }} type="button" size="sm" variant="outline" disabled={index === 0} aria-label={`Move ${label} earlier`} onClick={() => move(index, -1)}>Move earlier</Button>
               <Button ref={(element) => { buttonRefs.current[`${segmentId}:1`] = element }} type="button" size="sm" variant="outline" disabled={index === labels.length - 1} aria-label={`Move ${label} later`} onClick={() => move(index, 1)}>Move later</Button>
             </span>
