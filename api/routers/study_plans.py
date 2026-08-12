@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from api.schemas.study_plans import (
     ApproveSyllabusRequest,
@@ -18,11 +18,11 @@ from api.schemas.study_plans import (
 )
 from deeper_notebook.feature_flags import study_workbench_enabled
 from deeper_notebook.study.plan_repository import (
+    StudyPlanConflictError,
+    StudyPlanNotFoundError,
     StudyPlanRepository,
     StudyPlanRepositoryError,
 )
-
-router = APIRouter(prefix="/study/plans", tags=["study-plans"])
 
 
 def _repository() -> StudyPlanRepository:
@@ -34,21 +34,22 @@ def _require_study_workbench() -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Study plan not found")
 
 
+router = APIRouter(
+    prefix="/study/plans",
+    tags=["study-plans"],
+    dependencies=[Depends(_require_study_workbench)],
+)
+
+
 def _not_found(detail: str = "Study plan not found") -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
 
 def _repository_error(exc: StudyPlanRepositoryError) -> HTTPException:
     """Project only safe, action-relevant persistence failures to HTTP."""
-    message = str(exc)
-    if message in {"study plan not found", "invalid study plan ID"}:
+    if isinstance(exc, StudyPlanNotFoundError):
         return _not_found()
-    if message in {
-        "study plan revision conflict",
-        "study plan revision conflict or syllabus version not found",
-        "study syllabus version already exists or is unavailable",
-        "Study source link already exists or plan is unavailable",
-    }:
+    if isinstance(exc, StudyPlanConflictError):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study plan changed")
     return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Study plans are unavailable")
 
@@ -65,7 +66,6 @@ async def _existing_plan(plan_id: str) -> StudyPlanResponse:
 
 @router.post("", response_model=StudyPlanResponse, status_code=status.HTTP_201_CREATED)
 async def create_study_plan(payload: CreateStudyPlanRequest) -> StudyPlanResponse:
-    _require_study_workbench()
     try:
         return StudyPlanResponse.from_plan(await _repository().create(payload.to_plan()))
     except StudyPlanRepositoryError as exc:
@@ -77,7 +77,6 @@ async def list_study_plans(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0, le=100_000),
 ) -> list[StudyPlanResponse]:
-    _require_study_workbench()
     try:
         plans = await _repository().list(limit=limit, offset=offset)
     except StudyPlanRepositoryError as exc:
@@ -87,13 +86,11 @@ async def list_study_plans(
 
 @router.get("/{plan_id}", response_model=StudyPlanResponse)
 async def get_study_plan(plan_id: str) -> StudyPlanResponse:
-    _require_study_workbench()
     return await _existing_plan(plan_id)
 
 
 @router.patch("/{plan_id}", response_model=StudyPlanResponse)
 async def patch_study_plan(plan_id: str, payload: PatchStudyPlanRequest) -> StudyPlanResponse:
-    _require_study_workbench()
     try:
         plan = await _repository().update(
             plan_id,
@@ -113,7 +110,6 @@ async def patch_study_plan(plan_id: str, payload: PatchStudyPlanRequest) -> Stud
 async def add_study_plan_source(
     plan_id: str, payload: SourceLinkRequest
 ) -> StudyPlanSourceLinkResponse:
-    _require_study_workbench()
     try:
         link = await _repository().add_source(
             plan_id,
@@ -131,7 +127,6 @@ async def remove_study_plan_source(
     source_id: str,
     payload: RemoveSourceLinkRequest,
 ) -> RemoveSourceLinkResponse:
-    _require_study_workbench()
     try:
         removed = await _repository().remove_source(
             plan_id,
@@ -148,7 +143,6 @@ async def get_study_syllabus(
     plan_id: str,
     version: int | None = Query(default=None, ge=1),
 ) -> StudySyllabusResponse:
-    _require_study_workbench()
     try:
         syllabus = await _repository().get_syllabus(plan_id, version=version)
     except StudyPlanRepositoryError as exc:
@@ -163,7 +157,6 @@ async def save_study_syllabus(
     plan_id: str,
     payload: SaveSyllabusRequest,
 ) -> StudySyllabusResponse:
-    _require_study_workbench()
     try:
         syllabus = await _repository().save_syllabus(
             payload.to_syllabus(plan_id),
@@ -179,7 +172,6 @@ async def approve_study_syllabus(
     plan_id: str,
     payload: ApproveSyllabusRequest,
 ) -> StudyPlanResponse:
-    _require_study_workbench()
     current = await _existing_plan(plan_id)
     if current.state != "editing":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study plan cannot approve syllabus")

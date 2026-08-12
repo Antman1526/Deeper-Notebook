@@ -6,7 +6,15 @@ from datetime import date, datetime
 from typing import Self
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    StrictStr,
+    field_validator,
+    model_validator,
+)
 
 from deeper_notebook.study.plans import (
     StudyPlan,
@@ -21,11 +29,22 @@ class _StrictRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _nonblank(value: str, *, field_name: str) -> str:
+    if not value.strip():
+        raise ValueError(f"{field_name} must not be blank")
+    return value
+
+
 class CreateStudyPlanRequest(_StrictRequest):
-    goal: str = Field(min_length=1, max_length=2_000)
-    starting_level: str = Field(min_length=1, max_length=200)
+    goal: StrictStr = Field(min_length=1, max_length=2_000)
+    starting_level: StrictStr = Field(min_length=1, max_length=200)
     target_date: date | None = None
     preferences: StudyPlanPreferences | None = None
+
+    @field_validator("goal", "starting_level")
+    @classmethod
+    def text_is_nonblank(cls, value: str, info: object) -> str:
+        return _nonblank(value, field_name=str(info.field_name))
 
     def to_plan(self) -> StudyPlan:
         return StudyPlan(
@@ -39,15 +58,26 @@ class CreateStudyPlanRequest(_StrictRequest):
 
 class PatchStudyPlanRequest(_StrictRequest):
     expected_revision: StrictInt = Field(ge=1)
-    goal: str | None = Field(default=None, min_length=1, max_length=2_000)
-    starting_level: str | None = Field(default=None, min_length=1, max_length=200)
+    goal: StrictStr | None = Field(default=None, min_length=1, max_length=2_000)
+    starting_level: StrictStr | None = Field(default=None, min_length=1, max_length=200)
     target_date: date | None = None
     preferences: StudyPlanPreferences | None = None
 
+    @field_validator("goal", "starting_level")
+    @classmethod
+    def text_is_nonblank(cls, value: str | None, info: object) -> str | None:
+        if value is None:
+            return value
+        return _nonblank(value, field_name=str(info.field_name))
+
     @model_validator(mode="after")
     def has_changes(self) -> Self:
-        if not self.model_fields_set - {"expected_revision"}:
+        changes = self.model_fields_set - {"expected_revision"}
+        if not changes:
             raise ValueError("study plan patch must contain a change")
+        forbidden_nulls = changes & {"goal", "starting_level", "preferences"}
+        if any(getattr(self, field_name) is None for field_name in forbidden_nulls):
+            raise ValueError("study plan patch field must not be null")
         return self
 
     def changes(self) -> dict[str, object]:
@@ -55,8 +85,13 @@ class PatchStudyPlanRequest(_StrictRequest):
 
 
 class SourceLinkRequest(_StrictRequest):
-    source_id: str = Field(min_length=1, max_length=512)
+    source_id: StrictStr = Field(min_length=1, max_length=512)
     expected_revision: StrictInt = Field(ge=1)
+
+    @field_validator("source_id")
+    @classmethod
+    def source_id_is_nonblank(cls, value: str) -> str:
+        return _nonblank(value, field_name="source_id")
 
 
 class RemoveSourceLinkRequest(_StrictRequest):

@@ -35,6 +35,34 @@ class StudyPlanRepositoryError(RuntimeError):
     """Safe persistence/domain error suitable for an API boundary."""
 
 
+class StudyPlanNotFoundError(StudyPlanRepositoryError):
+    """The requested plan identifier has no accessible plan projection."""
+
+
+class StudyPlanConflictError(StudyPlanRepositoryError):
+    """A validated optimistic or lifecycle guard rejected the mutation."""
+
+
+_TRANSACTION_CONFLICT_MARKERS = (
+    "study_plan_guard_failed",
+    "study_plan_update_failed",
+    "study_syllabus_guard_failed",
+)
+
+
+def _is_transaction_conflict(exc: BaseException) -> bool:
+    """Recognize only repository-owned Surreal THROW markers as conflicts."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        message = str(current)
+        if any(marker in message for marker in _TRANSACTION_CONFLICT_MARKERS):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 _MAX_PAGE_SIZE = 500
 _MAX_PAGE_OFFSET = 100_000
 _PLAN_UPDATE_FIELDS = frozenset(
@@ -88,11 +116,13 @@ def _record_id(value: str | RecordID, table: str) -> RecordID:
         record = ensure_record_id(value)
     except Exception as exc:  # pragma: no cover - exact driver exception varies
         label = "study plan" if table == "study_plan" else table.replace("_", " ")
-        raise StudyPlanRepositoryError(f"invalid {label} ID") from exc
+        error_type = StudyPlanNotFoundError if table == "study_plan" else StudyPlanRepositoryError
+        raise error_type(f"invalid {label} ID") from exc
     rendered = str(record)
     if rendered.split(":", 1)[0] != table:
         label = "study plan" if table == "study_plan" else table.replace("_", " ")
-        raise StudyPlanRepositoryError(f"invalid {label} ID")
+        error_type = StudyPlanNotFoundError if table == "study_plan" else StudyPlanRepositoryError
+        raise error_type(f"invalid {label} ID")
     return record
 
 
@@ -468,7 +498,7 @@ class StudyPlanRepository:
         try:
             current = await self.get(plan_id)
             if current is None:
-                raise StudyPlanRepositoryError("study plan not found")
+                raise StudyPlanNotFoundError("study plan not found")
             patch = dict(raw_patch)
             if "preferences" in patch:
                 preferences = patch["preferences"]
@@ -509,7 +539,7 @@ class StudyPlanRepository:
             )
             row = _record_or_none(rows, kind="plan")
             if row is None:
-                raise StudyPlanRepositoryError("study plan revision conflict")
+                raise StudyPlanConflictError("study plan revision conflict")
             return _plan_from_record(row)
         except StudyPlanRepositoryError:
             raise
@@ -553,14 +583,16 @@ class StudyPlanRepository:
             await repo_query(transaction, params)
             updated = await self.get(plan_id)
             if updated is None or link.source_id not in {item.source_id for item in updated.source_links}:
-                raise StudyPlanRepositoryError("study plan revision conflict")
+                raise StudyPlanConflictError("study plan revision conflict")
             if expected_revision is not None and updated.version != expected_revision + 1:
-                raise StudyPlanRepositoryError("study plan revision conflict")
+                raise StudyPlanConflictError("study plan revision conflict")
             return link
         except StudyPlanRepositoryError:
             raise
         except Exception as exc:
             logger.exception("Failed to add study source link")
+            if _is_transaction_conflict(exc):
+                raise StudyPlanConflictError("study plan revision conflict") from exc
             raise StudyPlanRepositoryError("Study source link already exists or plan is unavailable") from exc
 
     async def remove_source(
@@ -584,7 +616,7 @@ class StudyPlanRepository:
             where_revision = " AND revision = $expected_revision" if expected_revision is not None else ""
             before = await self.get(plan_id)
             if before is None:
-                raise StudyPlanRepositoryError("study plan not found")
+                raise StudyPlanNotFoundError("study plan not found")
             await repo_query(
                 "BEGIN TRANSACTION; "
                 + _guard_plan_sql(expected_revision)
@@ -613,6 +645,8 @@ class StudyPlanRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to remove study source link")
+            if _is_transaction_conflict(exc):
+                raise StudyPlanConflictError("study plan revision conflict") from exc
             raise StudyPlanRepositoryError("Failed to remove study source link") from exc
 
     async def save_syllabus(
@@ -659,6 +693,8 @@ class StudyPlanRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to save study syllabus")
+            if _is_transaction_conflict(exc):
+                raise StudyPlanConflictError("study plan revision conflict") from exc
             raise StudyPlanRepositoryError("study syllabus version already exists or is unavailable") from exc
 
     async def approve_syllabus(
@@ -711,13 +747,24 @@ class StudyPlanRepository:
                 or approved.approved_syllabus_version != syllabus_version
                 or approved.version != expected_revision + 1
             ):
-                raise StudyPlanRepositoryError("study plan revision conflict or syllabus version not found")
+                raise StudyPlanConflictError(
+                    "study plan revision conflict or syllabus version not found"
+                )
             return approved
         except StudyPlanRepositoryError:
             raise
         except Exception as exc:
             logger.exception("Failed to approve study syllabus")
+            if _is_transaction_conflict(exc):
+                raise StudyPlanConflictError(
+                    "study plan revision conflict or syllabus version not found"
+                ) from exc
             raise StudyPlanRepositoryError("Failed to approve study syllabus") from exc
 
 
-__all__ = ["StudyPlanRepository", "StudyPlanRepositoryError"]
+__all__ = [
+    "StudyPlanConflictError",
+    "StudyPlanNotFoundError",
+    "StudyPlanRepository",
+    "StudyPlanRepositoryError",
+]

@@ -9,6 +9,8 @@ import pytest
 
 from deeper_notebook.study import plan_repository
 from deeper_notebook.study.plan_repository import (
+    StudyPlanConflictError,
+    StudyPlanNotFoundError,
     StudyPlanRepository,
     StudyPlanRepositoryError,
 )
@@ -137,7 +139,7 @@ async def test_get_missing_record_is_safe_and_malformed_id_is_a_domain_error(mon
 
     assert await repository.get("study_plan:missing") is None
 
-    with pytest.raises(StudyPlanRepositoryError, match="invalid study plan ID"):
+    with pytest.raises(StudyPlanNotFoundError, match="invalid study plan ID"):
         await repository.get("not a record id")
 
 
@@ -202,7 +204,7 @@ async def test_get_syllabus_missing_or_invalid_plan_is_safe_and_non_disclosing(m
     repository = StudyPlanRepository()
 
     assert await repository.get_syllabus("study_plan:missing") is None
-    with pytest.raises(StudyPlanRepositoryError, match="invalid study plan ID"):
+    with pytest.raises(StudyPlanNotFoundError, match="invalid study plan ID"):
         await repository.get_syllabus("not a record id")
 
 
@@ -286,7 +288,7 @@ async def test_update_requires_exact_revision_and_returns_safe_conflict(monkeypa
 
     monkeypatch.setattr(plan_repository, "repo_query", query)
 
-    with pytest.raises(StudyPlanRepositoryError, match="revision conflict"):
+    with pytest.raises(StudyPlanConflictError, match="revision conflict"):
         await StudyPlanRepository().update(
             "study_plan:one",
             {"goal": "New goal"},
@@ -297,6 +299,41 @@ async def test_update_requires_exact_revision_and_returns_safe_conflict(monkeypa
     assert calls[1][0].startswith("UPDATE $plan")
     assert "revision = $expected_revision" in calls[1][0]
     assert calls[1][1]["expected_revision"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["add_source", "save_syllabus"])
+async def test_driver_outages_are_not_misclassified_as_domain_conflicts(
+    monkeypatch, operation
+):
+    async def query(sql, params):
+        raise RuntimeError("database transport unavailable")
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+    repository = StudyPlanRepository()
+
+    with pytest.raises(StudyPlanRepositoryError) as caught:
+        if operation == "add_source":
+            await repository.add_source(
+                "study_plan:one", "source:one", expected_revision=1
+            )
+        else:
+            await repository.save_syllabus(_syllabus(), expected_revision=1)
+
+    assert not isinstance(caught.value, StudyPlanConflictError)
+
+
+@pytest.mark.asyncio
+async def test_repository_owned_transaction_guard_is_a_typed_conflict(monkeypatch):
+    async def query(sql, params):
+        raise RuntimeError("An error occurred: study_plan_guard_failed")
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+
+    with pytest.raises(StudyPlanConflictError, match="revision conflict"):
+        await StudyPlanRepository().add_source(
+            "study_plan:one", "source:one", expected_revision=1
+        )
 
 
 @pytest.mark.asyncio

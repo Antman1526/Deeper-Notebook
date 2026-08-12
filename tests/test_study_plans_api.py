@@ -10,7 +10,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import study_plans
-from deeper_notebook.study.plan_repository import StudyPlanRepositoryError
+from deeper_notebook.study.plan_repository import (
+    StudyPlanConflictError,
+    StudyPlanNotFoundError,
+    StudyPlanRepositoryError,
+)
 from deeper_notebook.study.plans import (
     StudyPlan,
     StudyPlanPreferences,
@@ -91,9 +95,9 @@ class FakeRepository:
         self.calls += 1
         current = self.plans.get(plan_id)
         if current is None:
-            raise StudyPlanRepositoryError("study plan not found")
+            raise StudyPlanNotFoundError("study plan not found")
         if current.version != expected_revision:
-            raise StudyPlanRepositoryError("study plan revision conflict")
+            raise StudyPlanConflictError("study plan revision conflict")
         updated = StudyPlan.model_validate(
             current.model_dump() | changes | {"version": current.version + 1}
         )
@@ -106,7 +110,7 @@ class FakeRepository:
         self.calls += 1
         current = self.plans.get(plan_id)
         if current is None or current.version != expected_revision:
-            raise StudyPlanRepositoryError("study plan revision conflict")
+            raise StudyPlanConflictError("study plan revision conflict")
         link = StudyPlanSourceLink(source_id=source_id)
         self.plans[plan_id] = StudyPlan.model_validate(
             current.model_dump()
@@ -123,7 +127,7 @@ class FakeRepository:
         self.calls += 1
         current = self.plans.get(plan_id)
         if current is None or current.version != expected_revision:
-            raise StudyPlanRepositoryError("study plan revision conflict")
+            raise StudyPlanConflictError("study plan revision conflict")
         links = tuple(link for link in current.source_links if link.source_id != source_id)
         removed = len(links) != len(current.source_links)
         if removed:
@@ -145,7 +149,7 @@ class FakeRepository:
         self.calls += 1
         current = self.plans.get(syllabus.plan_id)
         if current is None or current.version != expected_revision:
-            raise StudyPlanRepositoryError("study plan revision conflict")
+            raise StudyPlanConflictError("study plan revision conflict")
         self.syllabi[(syllabus.plan_id, syllabus.version)] = syllabus
         return syllabus
 
@@ -156,7 +160,7 @@ class FakeRepository:
         current = self.plans.get(plan_id)
         syllabus = self.syllabi.get((plan_id, syllabus_version))
         if current is None or current.version != expected_revision or syllabus is None:
-            raise StudyPlanRepositoryError("study plan revision conflict")
+            raise StudyPlanConflictError("study plan revision conflict")
         approved = StudyPlan.model_validate(
             current.model_dump()
             | {
@@ -328,10 +332,102 @@ def test_feature_off_returns_404_before_constructing_repository(monkeypatch: pyt
     monkeypatch.setattr(study_plans, "_repository", forbidden_repository)
 
     with TestClient(app) as client:
-        response = client.get("/api/study/plans")
+        responses = [
+            client.get("/api/study/plans?limit=not-an-integer"),
+            client.post("/api/study/plans", json={"goal": 7}),
+            client.get("/api/study/plans/not-a-plan"),
+            client.patch("/api/study/plans/not-a-plan", json={"expected_revision": 0}),
+            client.post(
+                "/api/study/plans/not-a-plan/sources",
+                json={"source_id": "   ", "expected_revision": "wrong"},
+            ),
+            client.request(
+                "DELETE",
+                "/api/study/plans/not-a-plan/sources/not-a-source",
+                json={"expected_revision": 0},
+            ),
+            client.get("/api/study/plans/not-a-plan/syllabus?version=wrong"),
+            client.put("/api/study/plans/not-a-plan/syllabus", json={}),
+            client.post("/api/study/plans/not-a-plan/syllabus:approve", json={}),
+        ]
 
-    assert response.status_code == 404
+    assert {response.status_code for response in responses} == {404}
     assert calls == 0
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("POST", "/api/study/plans", {"goal": "   ", "starting_level": "Beginner"}),
+        ("POST", "/api/study/plans", {"goal": "Learn", "starting_level": "\t"}),
+        (
+            "PATCH",
+            "/api/study/plans/study_plan%3Aone",
+            {"expected_revision": 1, "goal": "  "},
+        ),
+        (
+            "PATCH",
+            "/api/study/plans/study_plan%3Aone",
+            {"expected_revision": 1, "goal": None},
+        ),
+        (
+            "PATCH",
+            "/api/study/plans/study_plan%3Aone",
+            {"expected_revision": 1, "starting_level": None},
+        ),
+        (
+            "PATCH",
+            "/api/study/plans/study_plan%3Aone",
+            {"expected_revision": 1, "preferences": None},
+        ),
+        (
+            "POST",
+            "/api/study/plans/study_plan%3Aone/sources",
+            {"source_id": " \n ", "expected_revision": 1},
+        ),
+    ],
+)
+def test_invalid_text_and_explicit_null_updates_fail_before_repository(
+    client: TestClient,
+    repository: FakeRepository,
+    method: str,
+    path: str,
+    payload: dict[str, object],
+) -> None:
+    calls_before = repository.calls
+
+    response = client.request(method, path, json=payload)
+
+    assert response.status_code == 422
+    assert repository.calls == calls_before
+
+
+def test_patch_allows_explicit_null_target_date_to_clear_it(client: TestClient) -> None:
+    response = client.patch(
+        "/api/study/plans/study_plan%3Aone",
+        json={"expected_revision": 1, "target_date": None},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["target_date"] is None
+
+
+def test_syllabus_nested_text_is_strictly_nonblank_before_repository(
+    client: TestClient, repository: FakeRepository
+) -> None:
+    payload = {
+        "expected_revision": 1,
+        **_syllabus().model_dump(
+            mode="json", exclude={"plan_id", "schema_version", "approved_at"}
+        ),
+    }
+    payload["units"][0]["title"] = "   "
+    calls_before = repository.calls
+
+    response = client.put("/api/study/plans/study_plan%3Aone/syllabus", json=payload)
+
+    assert response.status_code == 422
+    assert repository.calls == calls_before
 
 
 def test_repository_failure_returns_generic_safe_503(
@@ -344,6 +440,48 @@ def test_repository_failure_returns_generic_safe_503(
     monkeypatch.setattr(study_plans, "_repository", FailingRepository)
 
     response = client.get("/api/study/plans")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Study plans are unavailable"}
+
+
+@pytest.mark.parametrize("operation", ["add_source", "save_syllabus"])
+def test_conflict_like_driver_failures_remain_safe_503(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    class FailingRepository(FakeRepository):
+        async def add_source(
+            self, plan_id: str, source_id: str, *, expected_revision: int
+        ) -> StudyPlanSourceLink:
+            raise StudyPlanRepositoryError(
+                "Study source link already exists or plan is unavailable"
+            )
+
+        async def save_syllabus(
+            self, syllabus: StudySyllabus, *, expected_revision: int
+        ) -> StudySyllabus:
+            raise StudyPlanRepositoryError(
+                "study syllabus version already exists or is unavailable"
+            )
+
+    monkeypatch.setattr(study_plans, "_repository", FailingRepository)
+    if operation == "add_source":
+        response = client.post(
+            "/api/study/plans/study_plan%3Aone/sources",
+            json={"source_id": "source:one", "expected_revision": 1},
+        )
+    else:
+        response = client.put(
+            "/api/study/plans/study_plan%3Aone/syllabus",
+            json={
+                "expected_revision": 1,
+                **_syllabus().model_dump(
+                    mode="json", exclude={"plan_id", "schema_version", "approved_at"}
+                ),
+            },
+        )
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Study plans are unavailable"}
