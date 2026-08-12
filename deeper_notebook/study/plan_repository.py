@@ -1,0 +1,500 @@
+"""Additive SurrealDB persistence for Study Workbench plans and syllabi.
+
+The repository deliberately stores only plan-owned projections.  Existing source
+records are linked by bounded string IDs and are never read, updated, or deleted
+by this module; source readiness and authority belong to the established source
+store/service.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Mapping
+from datetime import UTC, date, datetime
+from typing import Any
+
+from loguru import logger
+from surrealdb import RecordID  # type: ignore[import-untyped]
+
+from deeper_notebook.database.repository import (
+    ensure_record_id,
+    repo_query,
+)
+
+from .plans import (
+    StudyActivity,
+    StudyPlan,
+    StudyPlanPreferences,
+    StudyPlanSourceLink,
+    StudySyllabus,
+    StudySyllabusUnit,
+)
+
+
+class StudyPlanRepositoryError(RuntimeError):
+    """Safe persistence/domain error suitable for an API boundary."""
+
+
+_MAX_PAGE_SIZE = 500
+_MAX_PAGE_OFFSET = 100_000
+_PLAN_UPDATE_FIELDS = frozenset(
+    {"goal", "starting_level", "target_date", "preferences"}
+)
+_PLAN_FIELDS = (
+    "id",
+    "schema_version",
+    "plan_id",
+    "goal",
+    "starting_level",
+    "target_date",
+    "preferences",
+    "source_links",
+    "source_manifest_sha256",
+    "active_syllabus_version",
+    "state",
+    "revision",
+    "created_at",
+    "updated_at",
+)
+_PLAN_PROJECTION = ", ".join(_PLAN_FIELDS)
+
+
+def _record_id(value: str | RecordID, table: str) -> RecordID:
+    """Parse and table-bind a Surreal record ID before query parameter binding."""
+    try:
+        record = ensure_record_id(value)
+    except Exception as exc:  # pragma: no cover - exact driver exception varies
+        label = "study plan" if table == "study_plan" else table.replace("_", " ")
+        raise StudyPlanRepositoryError(f"invalid {label} ID") from exc
+    rendered = str(record)
+    if rendered.split(":", 1)[0] != table:
+        label = "study plan" if table == "study_plan" else table.replace("_", " ")
+        raise StudyPlanRepositoryError(f"invalid {label} ID")
+    return record
+
+
+def _bounded_page(limit: int, offset: int) -> tuple[int, int]:
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        raise StudyPlanRepositoryError("invalid pagination")
+    if isinstance(offset, bool) or not isinstance(offset, int):
+        raise StudyPlanRepositoryError("invalid pagination")
+    return min(max(limit, 1), _MAX_PAGE_SIZE), min(max(offset, 0), _MAX_PAGE_OFFSET)
+
+
+def _flatten_dicts(value: object) -> list[dict[str, Any]]:
+    """Collect record dictionaries from all common Surreal result shapes."""
+    if isinstance(value, dict):
+        # Some client versions return a statement envelope with ``result``.
+        if "result" in value and len(value) <= 3:
+            return _flatten_dicts(value.get("result"))
+        return [value]
+    if isinstance(value, (list, tuple)):
+        records: list[dict[str, Any]] = []
+        for item in value:
+            records.extend(_flatten_dicts(item))
+        return records
+    return []
+
+
+def _one_record(value: object, *, kind: str) -> dict[str, Any]:
+    records = _flatten_dicts(value)
+    if kind == "plan":
+        candidates = [
+            row
+            for row in records
+            if "revision" in row and ("goal" in row or "plan_id" in row)
+        ]
+    elif kind == "syllabus":
+        candidates = [row for row in records if "version" in row and "plan_id" in row]
+    elif kind == "link":
+        candidates = [row for row in records if "source_id" in row and "plan_id" in row]
+    else:
+        candidates = records
+    if len(candidates) != 1:
+        raise StudyPlanRepositoryError(f"invalid persisted {kind} record")
+    row = candidates[0]
+    if "id" not in row and "plan_id" not in row:
+        raise StudyPlanRepositoryError(f"invalid persisted {kind} record")
+    return row
+
+
+def _record_or_none(value: object, *, kind: str) -> dict[str, Any] | None:
+    if not _flatten_dicts(value):
+        return None
+    return _one_record(value, kind=kind)
+
+
+def _as_datetime(value: object, field_name: str) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise StudyPlanRepositoryError(f"invalid persisted {field_name}") from exc
+    else:
+        raise StudyPlanRepositoryError(f"invalid persisted {field_name}")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _source_ids(value: object) -> tuple[StudyPlanSourceLink, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, (list, tuple)):
+        raise StudyPlanRepositoryError("invalid persisted source links")
+    links: list[StudyPlanSourceLink] = []
+    seen: set[str] = set()
+    for item in value:
+        source_id = item.get("source_id") if isinstance(item, dict) else item
+        if not isinstance(source_id, str) or source_id in seen:
+            raise StudyPlanRepositoryError("invalid persisted source links")
+        seen.add(source_id)
+        try:
+            links.append(StudyPlanSourceLink(source_id=source_id))
+        except Exception as exc:
+            raise StudyPlanRepositoryError("invalid persisted source links") from exc
+    return tuple(links)
+
+
+def _plan_from_record(record: object) -> StudyPlan:
+    """Decode only the public StudyPlan projection from a database row."""
+    row = _one_record(record, kind="plan")
+    raw_id = row.get("plan_id", row.get("id"))
+    if isinstance(raw_id, RecordID):
+        raw_id = str(raw_id)
+    if not isinstance(raw_id, str):
+        raise StudyPlanRepositoryError("invalid persisted study plan")
+    created = row.get("created_at", row.get("created"))
+    updated = row.get("updated_at", row.get("updated"))
+    if created is None or updated is None:
+        raise StudyPlanRepositoryError("invalid persisted study plan timestamps")
+    source_links = _source_ids(row.get("source_links", []))
+    target_date = row.get("target_date")
+    if isinstance(target_date, str):
+        try:
+            target_date = date.fromisoformat(target_date)
+        except ValueError as exc:
+            raise StudyPlanRepositoryError("invalid persisted target_date") from exc
+    values: dict[str, Any] = {
+        "schema_version": row.get("schema_version", 1),
+        "plan_id": raw_id,
+        "goal": row.get("goal"),
+        "starting_level": row.get("starting_level"),
+        "target_date": target_date,
+        "preferences": row.get("preferences"),
+        "source_links": source_links,
+        "source_manifest_sha256": row.get("source_manifest_sha256"),
+        "approved_syllabus_version": row.get(
+            "approved_syllabus_version", row.get("active_syllabus_version")
+        ),
+        "state": row.get("state", "draft"),
+        "version": row.get("version", row.get("revision", 1)),
+        "created_at": _as_datetime(created, "created_at"),
+        "updated_at": _as_datetime(updated, "updated_at"),
+    }
+    try:
+        return StudyPlan.model_validate(values)
+    except Exception as exc:
+        raise StudyPlanRepositoryError("invalid persisted study plan") from exc
+
+
+def _plan_data(plan: StudyPlan) -> dict[str, Any]:
+    data = plan.model_dump(mode="python", exclude={"plan_id", "version", "approved_syllabus_version"})
+    data["plan_id"] = plan.plan_id
+    data["revision"] = plan.version
+    data["active_syllabus_version"] = plan.approved_syllabus_version
+    data["source_links"] = [link.source_id for link in plan.source_links]
+    if isinstance(data.get("target_date"), date):
+        data["target_date"] = data["target_date"].isoformat()
+    return data
+
+
+def _source_link_data(plan_id: str, source_id: str) -> dict[str, Any]:
+    return {"plan_id": plan_id, "source_id": source_id, "created_at": datetime.now(UTC)}
+
+
+def _stable_record_token(*parts: str) -> str:
+    return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:40]
+
+
+def _syllabus_data(syllabus: StudySyllabus) -> dict[str, Any]:
+    return {
+        "schema_version": syllabus.schema_version,
+        "plan_id": syllabus.plan_id,
+        "version": syllabus.version,
+        "source_manifest_sha256": syllabus.source_manifest_sha256,
+        "approved_at": syllabus.approved_at,
+        "created_at": datetime.now(UTC),
+    }
+
+
+def _unit_data(syllabus: StudySyllabus, unit: StudySyllabusUnit, position: int) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "plan_id": syllabus.plan_id,
+        "syllabus_version": syllabus.version,
+        "unit_id": unit.unit_id,
+        "position": position,
+        "title": unit.title,
+        "objectives": list(unit.objectives),
+        "prerequisite_unit_ids": list(unit.prerequisite_unit_ids),
+        "estimated_minutes": unit.estimated_minutes,
+        "source_ids": list(unit.source_ids),
+        "activities": [activity.model_dump(mode="python") for activity in unit.activities],
+    }
+
+
+class StudyPlanRepository:
+    """Persist plan-owned records with bounded, optimistic mutations."""
+
+    async def create(self, plan: StudyPlan) -> StudyPlan:
+        try:
+            plan_id = _record_id(plan.plan_id, "study_plan")
+            rows = await repo_query(
+                f"CREATE $plan CONTENT $data RETURN AFTER;",
+                {"plan": plan_id, "data": _plan_data(plan)},
+            )
+            return _plan_from_record(_one_record(rows, kind="plan"))
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to create study plan")
+            raise StudyPlanRepositoryError("Failed to create study plan") from exc
+
+    async def get(self, plan_id: str) -> StudyPlan | None:
+        try:
+            record = _record_id(plan_id, "study_plan")
+            rows = await repo_query(
+                f"SELECT {_PLAN_PROJECTION} FROM $plan;",
+                {"plan": record},
+            )
+            row = _record_or_none(rows, kind="plan")
+            return _plan_from_record(row) if row is not None else None
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to load study plan")
+            raise StudyPlanRepositoryError("Failed to load study plan") from exc
+
+    async def list(self, *, limit: int = 100, offset: int = 0) -> list[StudyPlan]:
+        page_limit, page_offset = _bounded_page(limit, offset)
+        try:
+            rows = await repo_query(
+                f"SELECT {_PLAN_PROJECTION} FROM study_plan "
+                "ORDER BY updated_at DESC LIMIT $limit START $offset;",
+                {"limit": page_limit, "offset": page_offset},
+            )
+            records = _flatten_dicts(rows)
+            return [_plan_from_record(record) for record in records if "revision" in record]
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to list study plans")
+            raise StudyPlanRepositoryError("Failed to list study plans") from exc
+
+    async def update(
+        self,
+        plan_id: str,
+        changes: Mapping[str, Any] | StudyPlan,
+        *,
+        expected_revision: int,
+    ) -> StudyPlan:
+        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 1:
+            raise StudyPlanRepositoryError("invalid expected revision")
+        if isinstance(changes, StudyPlan):
+            patch = _plan_data(changes)
+            patch = {key: patch[key] for key in _PLAN_UPDATE_FIELDS if key in patch}
+        elif isinstance(changes, Mapping):
+            unknown = set(changes) - _PLAN_UPDATE_FIELDS
+            if unknown:
+                raise StudyPlanRepositoryError("study plan update contains protected fields")
+            patch = dict(changes)
+        else:
+            raise StudyPlanRepositoryError("invalid study plan update")
+        if "preferences" in patch and isinstance(patch["preferences"], StudyPlanPreferences):
+            patch["preferences"] = patch["preferences"].model_dump(mode="python")
+        if isinstance(patch.get("target_date"), date):
+            patch["target_date"] = patch["target_date"].isoformat()
+        try:
+            rows = await repo_query(
+                "UPDATE $plan MERGE $patch SET revision = revision + 1, "
+                "updated_at = time::now() WHERE revision = $expected_revision "
+                "RETURN AFTER;",
+                {
+                    "plan": _record_id(plan_id, "study_plan"),
+                    "patch": patch,
+                    "expected_revision": expected_revision,
+                },
+            )
+            row = _record_or_none(rows, kind="plan")
+            if row is None:
+                raise StudyPlanRepositoryError("study plan revision conflict")
+            return _plan_from_record(row)
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to update study plan")
+            raise StudyPlanRepositoryError("Failed to update study plan") from exc
+
+    async def add_source(
+        self,
+        plan_id: str,
+        source_id: str,
+        *,
+        expected_revision: int | None = None,
+    ) -> StudyPlanSourceLink:
+        try:
+            plan_record = _record_id(plan_id, "study_plan")
+            link = StudyPlanSourceLink(source_id=source_id)
+            link_record = ensure_record_id(
+                f"study_plan_source:{_stable_record_token(plan_id, link.source_id)}"
+            )
+            where_revision = " AND revision = $expected_revision" if expected_revision is not None else ""
+            params: dict[str, Any] = {
+                "plan": plan_record,
+                "link": link_record,
+                "link_data": _source_link_data(plan_id, link.source_id),
+                "source_id": link.source_id,
+            }
+            if expected_revision is not None:
+                params["expected_revision"] = expected_revision
+            await repo_query(
+                "BEGIN TRANSACTION; CREATE $link CONTENT $link_data; "
+                "UPDATE $plan SET source_links = array::distinct(array::append("
+                "source_links, $source_id)), revision = revision + 1, "
+                f"updated_at = time::now() WHERE id = $plan{where_revision}; "
+                "COMMIT TRANSACTION;",
+                params,
+            )
+            return link
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to add study source link")
+            raise StudyPlanRepositoryError("Study source link already exists or plan is unavailable") from exc
+
+    async def remove_source(
+        self,
+        plan_id: str,
+        source_id: str,
+        *,
+        expected_revision: int | None = None,
+    ) -> bool:
+        try:
+            plan_record = _record_id(plan_id, "study_plan")
+            link = StudyPlanSourceLink(source_id=source_id)
+            params: dict[str, Any] = {
+                "plan_id": plan_id,
+                "plan": plan_record,
+                "source_id": link.source_id,
+            }
+            where_revision = " AND revision = $expected_revision" if expected_revision is not None else ""
+            if expected_revision is not None:
+                params["expected_revision"] = expected_revision
+            rows = await repo_query(
+                "BEGIN TRANSACTION; DELETE study_plan_source WHERE plan_id = $plan_id "
+                "AND source_id = $source_id RETURN BEFORE; "
+                "UPDATE $plan SET source_links = array::filter(source_links, "
+                "|$value| $value != $source_id), "
+                "revision = revision + 1, updated_at = time::now() "
+                f"WHERE id = $plan{where_revision} RETURN AFTER; COMMIT TRANSACTION;",
+                params,
+            )
+            return any(
+                "source_id" in row and "plan_id" in row
+                for row in _flatten_dicts(rows)
+            )
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to remove study source link")
+            raise StudyPlanRepositoryError("Failed to remove study source link") from exc
+
+    async def save_syllabus(
+        self,
+        syllabus: StudySyllabus,
+        *,
+        expected_revision: int | None = None,
+    ) -> StudySyllabus:
+        try:
+            _record_id(syllabus.plan_id, "study_plan")
+            syllabus_record = ensure_record_id(
+                f"study_syllabus:{_stable_record_token(syllabus.plan_id, str(syllabus.version))}"
+            )
+            params: dict[str, Any] = {
+                "syllabus": syllabus_record,
+                "syllabus_data": _syllabus_data(syllabus),
+            }
+            statements = ["BEGIN TRANSACTION; CREATE $syllabus CONTENT $syllabus_data RETURN AFTER;"]
+            for index, unit in enumerate(syllabus.units):
+                unit_record = ensure_record_id(
+                    f"study_unit:{_stable_record_token(syllabus.plan_id, str(syllabus.version), unit.unit_id)}"
+                )
+                key = f"unit_{index}"
+                data_key = f"unit_data_{index}"
+                params[key] = unit_record
+                params[data_key] = _unit_data(syllabus, unit, index)
+                statements.append(f"CREATE ${key} CONTENT ${data_key} RETURN AFTER;")
+            statements.append("COMMIT TRANSACTION;")
+            await repo_query(" ".join(statements), params)
+            # The immutable input is the complete validated projection.  Return
+            # it rather than trusting a driver-specific transaction result shape.
+            return syllabus
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to save study syllabus")
+            raise StudyPlanRepositoryError("Study syllabus version already exists or is unavailable") from exc
+
+    async def approve_syllabus(
+        self,
+        plan_id: str,
+        *,
+        syllabus_version: int,
+        expected_revision: int,
+    ) -> StudyPlan:
+        if isinstance(syllabus_version, bool) or not isinstance(syllabus_version, int) or syllabus_version < 1:
+            raise StudyPlanRepositoryError("invalid syllabus version")
+        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 1:
+            raise StudyPlanRepositoryError("invalid expected revision")
+        try:
+            plan_record = _record_id(plan_id, "study_plan")
+            syllabus_record = ensure_record_id(
+                f"study_syllabus:{_stable_record_token(plan_id, str(syllabus_version))}"
+            )
+            await repo_query(
+                "BEGIN TRANSACTION; UPDATE $syllabus SET approved_at = time::now() "
+                "WHERE plan_id = $plan_id AND version = $version; "
+                "UPDATE $plan MERGE $plan_patch WHERE revision = $expected_revision "
+                "RETURN AFTER; COMMIT TRANSACTION;",
+                {
+                    "syllabus": syllabus_record,
+                    "plan": plan_record,
+                    "plan_id": plan_id,
+                    "version": syllabus_version,
+                    "expected_revision": expected_revision,
+                    "plan_patch": {
+                        "state": "approved",
+                        "active_syllabus_version": syllabus_version,
+                        "revision": expected_revision + 1,
+                    },
+                },
+            )
+            # SurrealDB returns the first statement's RETURN payload for some
+            # client/server combinations (the syllabus row), even though the
+            # plan UPDATE committed. Re-read the canonical plan projection so
+            # transaction result ordering cannot authorize a stale response.
+            approved = await self.get(plan_id)
+            if approved is None or approved.approved_syllabus_version != syllabus_version:
+                raise StudyPlanRepositoryError("study plan revision conflict or syllabus version not found")
+            return approved
+        except StudyPlanRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to approve study syllabus")
+            raise StudyPlanRepositoryError("Failed to approve study syllabus") from exc
+
+
+__all__ = ["StudyPlanRepository", "StudyPlanRepositoryError"]

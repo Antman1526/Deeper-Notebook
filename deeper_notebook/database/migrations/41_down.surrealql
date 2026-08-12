@@ -1,0 +1,7 @@
+-- Roll back only the additive Study Workbench plan-owned tables.
+REMOVE TABLE IF EXISTS study_plan_card;
+REMOVE TABLE IF EXISTS study_plan_artifact;
+REMOVE TABLE IF EXISTS study_unit;
+REMOVE TABLE IF EXISTS study_syllabus;
+REMOVE TABLE IF EXISTS study_plan_source;
+REMOVE TABLE IF EXISTS study_plan;
