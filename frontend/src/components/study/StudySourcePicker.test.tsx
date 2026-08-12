@@ -136,4 +136,29 @@ describe('StudySourcePicker', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Unable to link source'))
     expect(onLinked).not.toHaveBeenCalled()
   })
+
+  it('keeps source cards visible and supports retrying a failed link', async () => {
+    const onLinkSource = vi.fn()
+      .mockRejectedValueOnce(new Error('conflict'))
+      .mockResolvedValueOnce(undefined)
+
+    render(
+      <StudySourcePicker
+        links={[]}
+        onOpenUpload={vi.fn()}
+        sources={[{ id: 'source:one', title: 'Lecture', source_type: 'text', extraction_quality: 'ok' }]}
+        onLinkSource={onLinkSource}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Link Lecture' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Unable to link source'))
+    expect(screen.getByText('Lecture')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry link Lecture' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dismiss link error' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry link Lecture' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lecture linked' })).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 })

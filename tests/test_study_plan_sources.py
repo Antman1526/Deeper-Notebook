@@ -109,6 +109,66 @@ async def test_validate_source_rejects_missing_source_before_linking(monkeypatch
         await source_service.StudySourceService().validate_source("source:missing")
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_source_id",
+    ["note:private", "notebook:private", "source:", "source:one:two", "not-a-record-id"],
+)
+async def test_validate_source_rejects_non_source_ids_before_projection(monkeypatch, invalid_source_id):
+    query = AsyncMock(return_value=[_projection()])
+    monkeypatch.setattr(source_service, "repo_query", query)
+
+    with pytest.raises(source_service.StudySourceNotFoundError):
+        await source_service.StudySourceService().validate_source(invalid_source_id)
+
+    query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_validate_source_binds_a_canonical_source_record_id(monkeypatch):
+    query = AsyncMock(return_value=[_projection()])
+    monkeypatch.setattr(source_service, "repo_query", query)
+
+    await source_service.StudySourceService().validate_source("source:lecture notes")
+
+    bound_id = query.await_args.args[1]["source_id"]
+    assert getattr(bound_id, "table_name", None) == "source"
+    assert getattr(bound_id, "id", None) == "lecture notes"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_source_id",
+    ["note:private", "notebook:private", "source:", "source:one:two", "not-a-record-id"],
+)
+async def test_link_invalid_source_id_is_safe_source_404_without_projection_or_mutation(
+    monkeypatch, invalid_source_id
+):
+    plan = _plan()
+    query = AsyncMock(return_value=[_projection()])
+    add_source = AsyncMock()
+
+    class Repository:
+        async def get(self, plan_id: str) -> StudyPlan:
+            return plan
+
+        async def add_source(self, *args: object, **kwargs: object) -> object:
+            return await add_source(*args, **kwargs)
+
+    monkeypatch.setattr(study_plans, "_repository", Repository)
+    monkeypatch.setattr(source_service, "repo_query", query)
+
+    with pytest.raises(HTTPException) as raised:
+        await study_plans.add_study_plan_source(
+            "study_plan:one",
+            SourceLinkRequest(source_id=invalid_source_id, expected_revision=1),
+        )
+
+    assert raised.value.status_code == 404
+    query.assert_not_awaited()
+    add_source.assert_not_awaited()
+
+
 def _plan(*links: StudyPlanSourceLink) -> StudyPlan:
     from datetime import UTC, datetime
 

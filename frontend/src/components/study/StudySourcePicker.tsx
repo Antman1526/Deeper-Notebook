@@ -84,7 +84,7 @@ export function StudySourcePicker({
     providedSources === undefined ? 'loading' : 'ready',
   )
   const [retryCount, setRetryCount] = useState(0)
-  const [linkError, setLinkError] = useState(false)
+  const [linkError, setLinkError] = useState<{ sourceId: string } | null>(null)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const initialLinkedIds = new Set(links.map(sourceId))
   const [linkedIds, setLinkedIds] = useState<Set<string>>(initialLinkedIds)
@@ -138,13 +138,13 @@ export function StudySourcePicker({
       if (linkedIdsRef.current.has(id) || pendingIdsRef.current.has(id)) return false
       pendingIdsRef.current.add(id)
       setPendingIds((current) => new Set(current).add(id))
-      setLinkError(false)
+      setLinkError(null)
       try {
         await onLinkSource?.(id)
       } catch {
         pendingIdsRef.current.delete(id)
-        if (mountedRef.current) setLinkError(true)
         if (mountedRef.current) {
+          setLinkError({ sourceId: id })
           setPendingIds((current) => {
             const next = new Set(current)
             next.delete(id)
@@ -156,6 +156,7 @@ export function StudySourcePicker({
       if (!mountedRef.current) return false
       linkedIdsRef.current.add(id)
       pendingIdsRef.current.delete(id)
+      setLinkError((current) => (current?.sourceId === id ? null : current))
       setLinkedIds((current) => new Set(current).add(id))
       setPendingIds((current) => {
         const next = new Set(current)
@@ -172,6 +173,14 @@ export function StudySourcePicker({
     },
     [onLinkSource, onSourceLinked],
   )
+
+  const failedSourceTitle = linkError
+    ? sources.find((source) => source.id === linkError.sourceId)?.title?.trim() || 'source'
+    : 'source'
+
+  const retryFailedLink = useCallback(() => {
+    if (linkError) void linkSource(linkError.sourceId)
+  }, [linkError, linkSource])
 
   const handleSourceCreated = useCallback(
     async (id: string) => {
@@ -215,49 +224,74 @@ export function StudySourcePicker({
             Retry sources
           </Button>
         </div>
-      ) : linkError ? (
-        <p role="alert" className="rounded-md border border-destructive/40 p-4 text-sm text-destructive">
-          Unable to link source.
-        </p>
-      ) : sources.length === 0 ? (
-        <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          No sources are available yet.
-        </p>
       ) : (
-        <ul role="list" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {sources.map((source) => {
-            const id = source.id
-            const linked = linkedIds.has(id)
-            const pending = pendingIds.has(id)
-            const state = readiness(source)
-            return (
-              <li
-                key={id}
-                className="flex min-w-0 flex-col justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm"
-              >
-                <div className="min-w-0 space-y-2">
-                  <p className="truncate font-medium" title={source.title ?? undefined}>
-                    {source.title?.trim() || 'Untitled source'}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span className="capitalize">{sourceKind(source).replaceAll('_', ' ')}</span>
-                    <Badge variant={state.variant}>{state.label}</Badge>
-                  </div>
-                </div>
+        <>
+          {linkError ? (
+            <div className="space-y-3 rounded-md border border-destructive/40 p-4">
+              <p role="alert" className="text-sm text-destructive">
+                Unable to link source.
+              </p>
+              <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  variant={linked ? 'secondary' : 'default'}
-                  size="sm"
-                  disabled={linked || pending}
-                  aria-label={linked ? `${source.title || 'Source'} linked` : `Link ${source.title || 'source'}`}
-                  onClick={() => void linkSource(id)}
+                  variant="outline"
+                  disabled={pendingIds.has(linkError.sourceId)}
+                  onClick={retryFailedLink}
                 >
-                  {linked ? 'Linked' : pending ? 'Linking…' : 'Link source'}
+                  Retry link {failedSourceTitle}
                 </Button>
-              </li>
-            )
-          })}
-        </ul>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label="Dismiss link error"
+                  onClick={() => setLinkError(null)}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          {sources.length === 0 ? (
+            <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+              No sources are available yet.
+            </p>
+          ) : (
+            <ul role="list" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {sources.map((source) => {
+                const id = source.id
+                const linked = linkedIds.has(id)
+                const pending = pendingIds.has(id)
+                const state = readiness(source)
+                return (
+                  <li
+                    key={id}
+                    className="flex min-w-0 flex-col justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm"
+                  >
+                    <div className="min-w-0 space-y-2">
+                      <p className="truncate font-medium" title={source.title ?? undefined}>
+                        {source.title?.trim() || 'Untitled source'}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="capitalize">{sourceKind(source).replaceAll('_', ' ')}</span>
+                        <Badge variant={state.variant}>{state.label}</Badge>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant={linked ? 'secondary' : 'default'}
+                      size="sm"
+                      disabled={linked || pending}
+                      aria-label={linked ? `${source.title || 'Source'} linked` : `Link ${source.title || 'source'}`}
+                      onClick={() => void linkSource(id)}
+                    >
+                      {linked ? 'Linked' : pending ? 'Linking…' : 'Link source'}
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </>
       )}
     </section>
   )

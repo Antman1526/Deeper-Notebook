@@ -160,10 +160,11 @@ class StudySourceService:
         )
 
     async def _read_projection(self, source_id: str) -> dict[str, Any] | None:
+        normalized_id = self._normalize_source_id(source_id)
         try:
             rows = await repo_query(
                 SOURCE_PROJECTION,
-                {"source_id": ensure_record_id(source_id)},
+                {"source_id": ensure_record_id(normalized_id)},
             )
         except Exception as exc:
             raise StudySourceUnavailableError("source authority unavailable") from exc
@@ -254,6 +255,17 @@ class StudySourceService:
             raise StudySourceNotFoundError("source not found")
         normalized = source_id.strip()
         if not normalized or len(normalized) > 512:
+            raise StudySourceNotFoundError("source not found")
+        try:
+            record = ensure_record_id(normalized)
+        except Exception as exc:
+            raise StudySourceNotFoundError("source not found") from exc
+        if getattr(record, "table_name", None) != "source":
+            raise StudySourceNotFoundError("source not found")
+        record_token = getattr(record, "id", None)
+        if not isinstance(record_token, str) or not record_token.strip():
+            raise StudySourceNotFoundError("source not found")
+        if len(str(record)) > 512:
             raise StudySourceNotFoundError("source not found")
         return normalized
 
