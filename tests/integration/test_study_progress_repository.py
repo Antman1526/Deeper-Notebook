@@ -6,7 +6,10 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
+from fastapi import HTTPException
 
+from api.routers import study_plans
+from api.schemas.study_plans import StudyProgressDecisionRequest
 from deeper_notebook.database.repository import repo_query
 from deeper_notebook.evaluation.schemas import EvidenceSpan, hash_source_text
 from deeper_notebook.study.assistant_repository import StudyAssistantRepository
@@ -214,3 +217,59 @@ async def test_real_surreal_accept_mutation_updates_plan_preferences(clean_names
     assert updated.version == 2
     assert updated.preferences is not None
     assert updated.preferences.weekly_minutes == 90
+
+
+async def test_real_surreal_orphan_terminal_is_rejected_by_api_authority(
+    clean_namespace,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A persisted terminal without its deterministic claim cannot authorize replay."""
+
+    plan_id = "study_plan:progress-orphan-terminal"
+    plan_repository = StudyPlanRepository()
+    await plan_repository.create(
+        StudyPlan(
+            plan_id=plan_id,
+            goal="Reject orphan adaptation terminal",
+            starting_level="beginner",
+            preferences=StudyPlanPreferences(weekly_minutes=60, session_minutes=30),
+        )
+    )
+    proposal_id = "study_adaptation:extra"
+    client_request_id = "real-orphan-terminal"
+    terminal_id = decision_terminal_request_id(plan_id, proposal_id)
+    claim_id = decision_claim_request_id(plan_id, proposal_id)
+    terminal = make_progress_receipt(
+        plan_id=plan_id,
+        request_id=terminal_id,
+        event="decision",
+        created_at=NOW,
+        details={
+            "base_revision": 1,
+            "claim_request_id": claim_id,
+            "client_request_id": client_request_id,
+            "decision": "accepted",
+            "phase": "terminal",
+            "proposal_id": proposal_id,
+            "target_plan_sha256": "a" * 64,
+        },
+    )
+    await StudyAssistantRepository().append_progress(terminal)
+
+    monkeypatch.setattr(study_plans, "_repository", lambda: plan_repository)
+    monkeypatch.setattr(
+        study_plans,
+        "_progress_repository",
+        lambda: StudyProgressRepository(),
+    )
+    payload = StudyProgressDecisionRequest(
+        proposal_id=proposal_id,
+        decision="accepted",
+        request_id=client_request_id,
+        expected_revision=1,
+    )
+
+    with pytest.raises(HTTPException) as raised:
+        await study_plans._decide_study_plan_progress(plan_id, payload)
+
+    assert raised.value.status_code == 409

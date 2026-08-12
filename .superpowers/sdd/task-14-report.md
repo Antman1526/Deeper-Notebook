@@ -90,3 +90,52 @@ accessible title-bearing dismissal, and stable retry request IDs.
   compatibility-selector inventory (three extra `/api/onp`/`/onp/` selectors);
   no Task14 file touches that module. Generated caches were removed and the
   supplied task contexts remain untracked.
+
+## Receipt authority repair — 2026-08-12
+
+### Review findings and RED
+
+The final serial review identified that decision recovery trusted valid detail
+JSON in failed/cancelled/assessed envelopes, and that terminal replay did not
+prove the deterministic claim, receipt ordering, or the current plan's exact
+post-mutation revision/fingerprint. New regressions were written before the
+production repair; the focused selector reached **9 failures / 1 valid replay
+pass** against `955c05e8`.
+
+### Repair
+
+- `_strict_decision_details`, `_strict_claim_details`, and
+  `_strict_terminal_details` now require `event="decision"`, exact plan and
+  deterministic request IDs, aware `created_at <= now`, and strict decoded
+  details.
+- Accept and dismiss terminal replay now require a matching deterministic
+  claim, exact client/proposal/decision binding, terminal-at-or-after-claim
+  ordering, and no future receipt. Accepted replay reloads the current plan
+  and requires `version == base_revision + 1` plus exact
+  `_plan_fingerprint(plan) == target_plan_sha256`; dismiss replay reloads the
+  plan for its response projection without claiming mutation authority.
+- Normal post-terminal responses reload the current plan after persistence so
+  a stale initial plan cannot authorize a stale projection. Terminal payloads
+  retain only the fields needed to bind the claim and target mutation.
+
+### Verification
+
+- New API regressions: **14 passed** (event/envelope authority, orphan,
+  unmutated/wrong revision/fingerprint, ordering/future, valid replay, and
+  dismiss claim binding).
+- Scoped Study backend/API/FSRS selection (all Task 3–14 Study test modules):
+  **287 passed, 7 warnings**.
+- Real combined Study Surreal selection (`test_study_plan_repository`,
+  `test_study_progress_repository`, `test_study_source_readiness`): **20
+  passed, 1 warning**, including a real orphan-terminal 409 authority test.
+- Frontend Study/API/hooks/types regression: **46 files / 291 passed**;
+  focused workspace/progress/session subset: **6 files / 32 passed**.
+- Scoped Ruff, compileall, `git diff --check`, ESLint, and TypeScript passed;
+  `NEXT_PUBLIC_DN_STUDY_WORKBENCH=enabled npm run build` passed with all Study
+  routes generated.
+
+Only `api/routers/study_plans.py`,
+`tests/test_study_progress.py`, and
+`tests/integration/test_study_progress_repository.py` are implementation/test
+changes in this repair; supplied `.codex/agent-context` files remain
+untracked and are not staged.

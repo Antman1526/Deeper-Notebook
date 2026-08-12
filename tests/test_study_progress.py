@@ -852,6 +852,388 @@ def test_api_dismiss_requires_proposed_and_replays_before_state_gate(
     assert rejected.status_code == 409
 
 
+def _decision_receipt_details(
+    plans: _ApiPlanRepository,
+    *,
+    proposal_id: str,
+    client_request_id: str,
+    decision: str,
+    base_revision: int = 1,
+    target_plan_sha256: str | None = None,
+) -> tuple[dict[str, object], dict[str, object]]:
+    base_plan = _api_plan(version=base_revision)
+    target_preferences = base_plan.preferences.model_copy(
+        update={"weekly_minutes": base_plan.preferences.weekly_minutes + base_plan.preferences.session_minutes}
+    )
+    claim_target = target_plan_sha256 or study_plans._plan_fingerprint(
+        base_plan, preferences=target_preferences
+    )
+    claim = study_plans._claim_payload(
+        client_request_id=client_request_id,
+        decision=decision,
+        proposal_id=proposal_id,
+        base_revision=base_revision if decision == "accepted" else None,
+        base_plan_sha256=study_plans._plan_fingerprint(base_plan) if decision == "accepted" else None,
+        target_plan_sha256=claim_target if decision == "accepted" else None,
+        target_weekly_minutes=target_preferences.weekly_minutes if decision == "accepted" else None,
+    )
+    terminal = study_plans._terminal_payload(
+        claim_request_id=decision_claim_request_id(PLAN_ID, proposal_id),
+        client_request_id=client_request_id,
+        decision=decision,
+        proposal_id=proposal_id,
+        base_revision=base_revision if decision == "accepted" else None,
+        target_plan_sha256=claim_target if decision == "accepted" else None,
+    )
+    return claim, terminal
+
+
+@pytest.mark.parametrize("event", ["failed", "cancelled", "assessed"])
+def test_api_decision_receipts_require_decision_event(
+    monkeypatch: pytest.MonkeyPatch,
+    event: str,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    proposal_id = "study_adaptation:extra"
+    client_request_id = "bad-event"
+    claim_details, terminal_details = _decision_receipt_details(
+        plans,
+        proposal_id=proposal_id,
+        client_request_id=client_request_id,
+        decision="accepted",
+    )
+    claim_id = decision_claim_request_id(PLAN_ID, proposal_id)
+    terminal_id = decision_terminal_request_id(PLAN_ID, proposal_id)
+    progress.receipts[claim_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=claim_id,
+        event=event,
+        created_at=NOW,
+        details=claim_details,
+    )
+    progress.receipts[terminal_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=terminal_id,
+        event=event,
+        created_at=NOW + timedelta(seconds=1),
+        details=terminal_details,
+    )
+    client = _api_client(monkeypatch, plans, progress)
+
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": proposal_id,
+            "decision": "accepted",
+            "request_id": client_request_id,
+            "expected_revision": 1,
+        },
+    )
+
+    assert response.status_code == 409
+    assert plans.update_calls == []
+
+
+@pytest.mark.parametrize("envelope", ["plan_id", "request_id", "created_at"])
+def test_api_decision_receipts_require_exact_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+    envelope: str,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    proposal_id = "study_adaptation:extra"
+    client_request_id = "bad-envelope"
+    claim_details, terminal_details = _decision_receipt_details(
+        plans,
+        proposal_id=proposal_id,
+        client_request_id=client_request_id,
+        decision="accepted",
+    )
+    claim_id = decision_claim_request_id(PLAN_ID, proposal_id)
+    terminal_id = decision_terminal_request_id(PLAN_ID, proposal_id)
+    claim = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=claim_id,
+        event="decision",
+        created_at=NOW,
+        details=claim_details,
+    )
+    terminal = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=terminal_id,
+        event="decision",
+        created_at=NOW + timedelta(seconds=1),
+        details=terminal_details,
+    )
+    if envelope == "plan_id":
+        claim = claim.model_copy(update={"plan_id": "study_plan:other"})
+    elif envelope == "request_id":
+        claim = claim.model_copy(update={"request_id": "not-the-claim-id"})
+    else:
+        claim = claim.model_copy(update={"created_at": NOW + timedelta(days=1)})
+    progress.receipts[claim_id] = claim
+    progress.receipts[terminal_id] = terminal
+    client = _api_client(monkeypatch, plans, progress)
+
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": proposal_id,
+            "decision": "accepted",
+            "request_id": client_request_id,
+            "expected_revision": 1,
+        },
+    )
+
+    assert response.status_code == 409
+    assert plans.update_calls == []
+
+
+def test_api_accepted_terminal_requires_matching_claim_and_mutated_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    proposal_id = "study_adaptation:extra"
+    client_request_id = "orphan-terminal"
+    _claim, terminal_details = _decision_receipt_details(
+        plans,
+        proposal_id=proposal_id,
+        client_request_id=client_request_id,
+        decision="accepted",
+    )
+    terminal_id = decision_terminal_request_id(PLAN_ID, proposal_id)
+    progress.receipts[terminal_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=terminal_id,
+        event="decision",
+        created_at=NOW,
+        details=terminal_details,
+    )
+    client = _api_client(monkeypatch, plans, progress)
+
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": proposal_id,
+            "decision": "accepted",
+            "request_id": client_request_id,
+            "expected_revision": 1,
+        },
+    )
+
+    assert response.status_code == 409
+    assert plans.update_calls == []
+
+
+@pytest.mark.parametrize(
+    "mutate_plan, terminal_base_revision, target_hash",
+    [
+        (False, 1, None),
+        (True, 2, None),
+        (True, 1, "c" * 64),
+    ],
+)
+def test_api_accepted_terminal_replay_binds_revision_and_target_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+    mutate_plan: bool,
+    terminal_base_revision: int,
+    target_hash: str | None,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    proposal_id = "study_adaptation:extra"
+    client_request_id = "terminal-authority"
+    claim_details, terminal_details = _decision_receipt_details(
+        plans,
+        proposal_id=proposal_id,
+        client_request_id=client_request_id,
+        decision="accepted",
+        base_revision=1,
+        target_plan_sha256=target_hash,
+    )
+    if mutate_plan:
+        plans.plan = _api_plan(version=2, weekly_minutes=90)
+    claim_id = decision_claim_request_id(PLAN_ID, proposal_id)
+    terminal_id = decision_terminal_request_id(PLAN_ID, proposal_id)
+    progress.receipts[claim_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=claim_id,
+        event="decision",
+        created_at=NOW,
+        details=claim_details,
+    )
+    if terminal_base_revision != 1:
+        terminal_details["base_revision"] = terminal_base_revision
+    progress.receipts[terminal_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=terminal_id,
+        event="decision",
+        created_at=NOW + timedelta(seconds=1),
+        details=terminal_details,
+    )
+    client = _api_client(monkeypatch, plans, progress)
+
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": proposal_id,
+            "decision": "accepted",
+            "request_id": client_request_id,
+            "expected_revision": 1,
+        },
+    )
+
+    assert response.status_code == 409
+    assert plans.update_calls == []
+
+
+@pytest.mark.parametrize("claim_at, terminal_at", [
+    (NOW - timedelta(seconds=1), NOW - timedelta(seconds=2)),
+    (NOW - timedelta(seconds=1), NOW + timedelta(days=1)),
+])
+def test_api_accepted_terminal_replay_requires_claim_before_terminal_and_not_future(
+    monkeypatch: pytest.MonkeyPatch,
+    claim_at: datetime,
+    terminal_at: datetime,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan(version=2, weekly_minutes=90))
+    progress = _ApiProgressRepository()
+    proposal_id = "study_adaptation:extra"
+    client_request_id = "terminal-order"
+    claim_details, terminal_details = _decision_receipt_details(
+        plans,
+        proposal_id=proposal_id,
+        client_request_id=client_request_id,
+        decision="accepted",
+    )
+    claim_id = decision_claim_request_id(PLAN_ID, proposal_id)
+    terminal_id = decision_terminal_request_id(PLAN_ID, proposal_id)
+    target_plan = _api_plan(version=2, weekly_minutes=90)
+    terminal_details["target_plan_sha256"] = study_plans._plan_fingerprint(target_plan)
+    progress.receipts[claim_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=claim_id,
+        event="decision",
+        created_at=claim_at,
+        details=claim_details,
+    )
+    progress.receipts[terminal_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=terminal_id,
+        event="decision",
+        created_at=terminal_at,
+        details=terminal_details,
+    )
+    client = _api_client(monkeypatch, plans, progress)
+
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": proposal_id,
+            "decision": "accepted",
+            "request_id": client_request_id,
+            "expected_revision": 1,
+        },
+    )
+
+    assert response.status_code == 409
+
+
+def test_api_accepted_terminal_replay_returns_valid_current_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan(version=2, weekly_minutes=90))
+    progress = _ApiProgressRepository()
+    proposal_id = "study_adaptation:extra"
+    client_request_id = "terminal-valid-replay"
+    claim_details, terminal_details = _decision_receipt_details(
+        plans,
+        proposal_id=proposal_id,
+        client_request_id=client_request_id,
+        decision="accepted",
+    )
+    target_plan = plans.plan
+    target_hash = study_plans._plan_fingerprint(target_plan)
+    claim_details["target_plan_sha256"] = target_hash
+    terminal_details["target_plan_sha256"] = target_hash
+    claim_id = decision_claim_request_id(PLAN_ID, proposal_id)
+    terminal_id = decision_terminal_request_id(PLAN_ID, proposal_id)
+    progress.receipts[claim_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=claim_id,
+        event="decision",
+        created_at=NOW,
+        details=claim_details,
+    )
+    progress.receipts[terminal_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=terminal_id,
+        event="decision",
+        created_at=NOW + timedelta(seconds=1),
+        details=terminal_details,
+    )
+    client = _api_client(monkeypatch, plans, progress)
+
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={
+            "proposal_id": proposal_id,
+            "decision": "accepted",
+            "request_id": client_request_id,
+            "expected_revision": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["decision"] == "accepted"
+    assert plans.update_calls == []
+
+
+def test_api_dismiss_terminal_replay_requires_matching_claim_and_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plans = _ApiPlanRepository(_api_plan())
+    progress = _ApiProgressRepository()
+    proposal_id = "study_adaptation:extra"
+    client_request_id = "dismiss-terminal"
+    claim_details, terminal_details = _decision_receipt_details(
+        plans,
+        proposal_id=proposal_id,
+        client_request_id=client_request_id,
+        decision="dismissed",
+    )
+    claim_id = decision_claim_request_id(PLAN_ID, proposal_id)
+    terminal_id = decision_terminal_request_id(PLAN_ID, proposal_id)
+    progress.receipts[terminal_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=terminal_id,
+        event="decision",
+        created_at=NOW,
+        details=terminal_details,
+    )
+    client = _api_client(monkeypatch, plans, progress)
+    orphan = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={"proposal_id": proposal_id, "decision": "dismissed", "request_id": client_request_id},
+    )
+    assert orphan.status_code == 409
+
+    progress.receipts[claim_id] = make_progress_receipt(
+        plan_id=PLAN_ID,
+        request_id=claim_id,
+        event="decision",
+        created_at=NOW - timedelta(seconds=1),
+        details=claim_details,
+    )
+    valid = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision",
+        json={"proposal_id": proposal_id, "decision": "dismissed", "request_id": client_request_id},
+    )
+    assert valid.status_code == 200
+
+
 def test_api_feature_off_returns_404_before_malformed_progress_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

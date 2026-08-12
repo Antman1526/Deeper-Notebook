@@ -416,9 +416,7 @@ def _terminal_payload(
     decision: str,
     proposal_id: str,
     base_revision: int | None = None,
-    base_plan_sha256: str | None = None,
     target_plan_sha256: str | None = None,
-    target_weekly_minutes: int | None = None,
 ) -> dict[str, object]:
     if decision == "dismissed":
         return {
@@ -445,11 +443,44 @@ def _progress_details(receipt: object) -> dict[str, object] | None:
     return decode_progress_event_details(getattr(receipt, "details", None))
 
 
+def _receipt_envelope_matches(
+    receipt: object,
+    *,
+    plan_id: str,
+    request_id: str,
+    now: datetime,
+) -> bool:
+    """Require a deterministic decision receipt envelope before its details."""
+
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        return False
+    if getattr(receipt, "event", None) != "decision":
+        return False
+    if str(getattr(receipt, "plan_id", "")) != plan_id:
+        return False
+    if getattr(receipt, "request_id", None) != request_id:
+        return False
+    created_at = getattr(receipt, "created_at", None)
+    return bool(
+        isinstance(created_at, datetime)
+        and created_at.tzinfo is not None
+        and created_at.utcoffset() is not None
+        and created_at <= now
+    )
+
+
 def _strict_decision_details(
     receipt: object,
     *,
     phase: str,
+    plan_id: str,
+    request_id: str,
+    now: datetime,
 ) -> dict[str, object] | None:
+    if not _receipt_envelope_matches(
+        receipt, plan_id=plan_id, request_id=request_id, now=now
+    ):
+        return None
     details = _progress_details(receipt)
     if details is None:
         return None
@@ -510,10 +541,17 @@ def _strict_dismiss_details(receipt: object, *, proposal_id: str) -> bool:
 def _strict_claim_details(
     receipt: object,
     *,
+    plan_id: str,
+    request_id: str,
     proposal_id: str,
     client_request_id: str,
     decision: str,
+    now: datetime,
 ) -> dict[str, object] | None:
+    if not _receipt_envelope_matches(
+        receipt, plan_id=plan_id, request_id=request_id, now=now
+    ):
+        return None
     details = _progress_details(receipt)
     if details is None or details.get("phase") != "claim":
         return None
@@ -565,11 +603,18 @@ def _strict_claim_details(
 def _strict_terminal_details(
     receipt: object,
     *,
+    plan_id: str,
+    request_id: str,
     proposal_id: str,
     client_request_id: str,
     decision: str,
     claim_request_id: str,
+    now: datetime,
 ) -> dict[str, object] | None:
+    if not _receipt_envelope_matches(
+        receipt, plan_id=plan_id, request_id=request_id, now=now
+    ):
+        return None
     details = _progress_details(receipt)
     if details is None or details.get("phase") != "terminal":
         return None
@@ -614,6 +659,25 @@ def _strict_terminal_details(
     return details
 
 
+def _terminal_matches_claim(
+    terminal_details: dict[str, object],
+    claim_details: dict[str, object],
+    *,
+    decision: str,
+) -> bool:
+    """Bind the terminal receipt to the exact earlier proposal claim."""
+
+    shared = ("client_request_id", "decision", "proposal_id")
+    if any(terminal_details.get(key) != claim_details.get(key) for key in shared):
+        return False
+    if decision == "accepted":
+        return all(
+            terminal_details.get(key) == claim_details.get(key)
+            for key in ("base_revision", "target_plan_sha256")
+        )
+    return True
+
+
 async def _accept_study_plan_progress(
     *,
     plan_id: str,
@@ -636,21 +700,52 @@ async def _accept_study_plan_progress(
     if existing_terminal is not None:
         terminal_details = _strict_terminal_details(
             existing_terminal,
+            plan_id=plan_id,
+            request_id=terminal_id,
             proposal_id=selected_id,
             client_request_id=payload.request_id,
             decision="accepted",
             claim_request_id=claim_id,
+            now=now,
+        )
+        terminal_claim = await repository.get_progress_by_request(plan_id, claim_id)
+        terminal_claim_details = (
+            _strict_claim_details(
+                terminal_claim,
+                plan_id=plan_id,
+                request_id=claim_id,
+                proposal_id=selected_id,
+                client_request_id=payload.request_id,
+                decision="accepted",
+                now=now,
+            )
+            if terminal_claim is not None
+            else None
         )
         if (
             terminal_details is None
-            or payload.expected_revision != terminal_details.get("base_revision")
+            or terminal_claim_details is None
+            or not _terminal_matches_claim(
+                terminal_details, terminal_claim_details, decision="accepted"
+            )
+            or payload.expected_revision != terminal_claim_details.get("base_revision")
+            or getattr(existing_terminal, "created_at", None)
+            < getattr(terminal_claim, "created_at", None)
         ):
             raise StudyAssistantConflictError("proposal decision was already used")
+        current_plan = await _load_plan(plan_id)
+        base_revision = terminal_claim_details.get("base_revision")
+        target_plan_sha256 = terminal_claim_details.get("target_plan_sha256")
+        if (
+            current_plan.version != base_revision + 1
+            or _plan_fingerprint(current_plan) != target_plan_sha256
+        ):
+            raise StudyAssistantConflictError("study plan authority changed")
         return StudyProgressDecisionResponse(
             proposal_id=selected_id,
             decision="accepted",
             projection=_projection_for_plan(
-                await repository.project(plan_id, now=now), plan
+                await repository.project(plan_id, now=now), current_plan
             ),
         )
 
@@ -658,9 +753,12 @@ async def _accept_study_plan_progress(
     claim_details = (
         _strict_claim_details(
             claim,
+            plan_id=plan_id,
+            request_id=claim_id,
             proposal_id=selected_id,
             client_request_id=payload.request_id,
             decision="accepted",
+            now=now,
         )
         if claim is not None
         else None
@@ -674,10 +772,22 @@ async def _accept_study_plan_progress(
     completion_id = _completion_request_id(plan_id, payload.request_id)
     legacy_completion = await repository.get_progress_by_request(plan_id, completion_id)
     if legacy_completion is not None:
-        legacy_details = _strict_decision_details(legacy_completion, phase="completion")
+        legacy_details = _strict_decision_details(
+            legacy_completion,
+            phase="completion",
+            plan_id=plan_id,
+            request_id=completion_id,
+            now=now,
+        )
         legacy_intent = await repository.get_progress_by_request(plan_id, payload.request_id)
         legacy_intent_details = (
-            _strict_decision_details(legacy_intent, phase="intent")
+            _strict_decision_details(
+                legacy_intent,
+                phase="intent",
+                plan_id=plan_id,
+                request_id=payload.request_id,
+                now=now,
+            )
             if legacy_intent is not None
             else None
         )
@@ -694,7 +804,13 @@ async def _accept_study_plan_progress(
 
     existing_intent = await repository.get_progress_by_request(plan_id, payload.request_id)
     intent_details = (
-        _strict_decision_details(existing_intent, phase="intent")
+        _strict_decision_details(
+            existing_intent,
+            phase="intent",
+            plan_id=plan_id,
+            request_id=payload.request_id,
+            now=now,
+        )
         if existing_intent is not None
         else None
     )
@@ -827,17 +943,16 @@ async def _accept_study_plan_progress(
             decision="accepted",
             proposal_id=selected_id,
             base_revision=base_revision,
-            base_plan_sha256=base_plan_sha256,
             target_plan_sha256=target_plan_sha256,
-            target_weekly_minutes=target_weekly_minutes,
         ),
     )
     await repository.append_progress(terminal)
     refreshed = await repository.project(plan_id, now=now)
+    current_plan = await _load_plan(plan_id)
     return StudyProgressDecisionResponse(
         proposal_id=selected_id,
         decision="accepted",
-        projection=_projection_for_plan(refreshed, current),
+        projection=_projection_for_plan(refreshed, current_plan),
     )
 
 
@@ -918,22 +1033,46 @@ async def _decide_study_plan_progress(
         terminal_id = decision_terminal_request_id(plan_id, selected_id)
         existing_terminal = await repository.get_progress_by_request(plan_id, terminal_id)
         if existing_terminal is not None:
-            if (
-                _strict_terminal_details(
-                    existing_terminal,
+            terminal_details = _strict_terminal_details(
+                existing_terminal,
+                plan_id=plan_id,
+                request_id=terminal_id,
+                proposal_id=selected_id,
+                client_request_id=payload.request_id,
+                decision="dismissed",
+                claim_request_id=claim_id,
+                now=now,
+            )
+            terminal_claim = await repository.get_progress_by_request(plan_id, claim_id)
+            terminal_claim_details = (
+                _strict_claim_details(
+                    terminal_claim,
+                    plan_id=plan_id,
+                    request_id=claim_id,
                     proposal_id=selected_id,
                     client_request_id=payload.request_id,
                     decision="dismissed",
-                    claim_request_id=claim_id,
+                    now=now,
                 )
-                is None
+                if terminal_claim is not None
+                else None
+            )
+            if (
+                terminal_details is None
+                or terminal_claim_details is None
+                or not _terminal_matches_claim(
+                    terminal_details, terminal_claim_details, decision="dismissed"
+                )
+                or getattr(existing_terminal, "created_at", None)
+                < getattr(terminal_claim, "created_at", None)
             ):
                 raise StudyAssistantConflictError("proposal decision was already used")
+            current_plan = await _load_plan(plan_id)
             refreshed = await repository.project(plan_id, now=now)
             return StudyProgressDecisionResponse(
                 proposal_id=selected_id,
                 decision="dismissed",
-                projection=_projection_for_plan(refreshed, plan),
+                projection=_projection_for_plan(refreshed, current_plan),
             )
 
         existing_claim = await repository.get_progress_by_request(plan_id, claim_id)
@@ -941,9 +1080,12 @@ async def _decide_study_plan_progress(
             if (
                 _strict_claim_details(
                     existing_claim,
+                    plan_id=plan_id,
+                    request_id=claim_id,
                     proposal_id=selected_id,
                     client_request_id=payload.request_id,
                     decision="dismissed",
+                    now=now,
                 )
                 is None
             ):
@@ -994,10 +1136,11 @@ async def _decide_study_plan_progress(
         )
         await repository.append_progress(terminal)
         refreshed = await repository.project(plan_id, now=now)
+        current_plan = await _load_plan(plan_id)
         return StudyProgressDecisionResponse(
             proposal_id=selected_id,
             decision="dismissed",
-            projection=_projection_for_plan(refreshed, plan),
+            projection=_projection_for_plan(refreshed, current_plan),
         )
     except HTTPException:
         raise
