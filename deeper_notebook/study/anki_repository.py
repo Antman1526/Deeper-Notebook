@@ -236,7 +236,14 @@ class AnkiImportRepository:
             for index, preview in enumerate(selected):
                 snapshot = f"{preview.front}\n{preview.back}"[:1200]
                 snapshot_hash = hash_source_text(snapshot)
-                artifact_card_id = f"anki_card:{preview.card_id}"
+                # Preserve the bounded native note kind for Task 16 export.
+                # Basic keeps the historical identifier; transformed cards
+                # carry an explicit finite marker in the opaque artifact ID.
+                artifact_card_id = (
+                    f"anki_card:{preview.card_id}"
+                    if preview.kind == "basic"
+                    else f"anki_card:{preview.kind}:{preview.card_id}"
+                )
                 card_token = hashlib.sha256(
                     f"{canonical_plan_id}|{payload_sha256}|{artifact_card_id}".encode()
                 ).hexdigest()

@@ -396,6 +396,40 @@ def test_sqlite_is_opened_immutable_query_only_and_trusted_schema_off(
     assert any("trusted_schema=OFF" in sql for sql in pragmas)
 
 
+def test_genanki_native_indexes_and_numeric_string_ids_remain_strictly_bound(
+    tmp_path: Path,
+) -> None:
+    """Task 16 output is accepted, while add-on indexes remain rejected."""
+    from api.routers.study_anki import export_anki_package
+
+    result = export_anki_package(
+        {
+            "plan_id": "study_plan:generated",
+            "state": "approved",
+            "approved_syllabus_version": 1,
+            "cards": [
+                {
+                    "card_id": "study_card:generated",
+                    "version": 1,
+                    "front": "Front",
+                    "back": "Back",
+                    "kind": "basic",
+                }
+            ],
+        },
+        tmp_path / "generated.apkg",
+    )
+    inspection = inspect_anki_package(result.path)
+    assert inspection.cards[0].front == "Front"
+
+    hostile = build_apkg(
+        tmp_path / "addon-index.apkg",
+        extra_sql="CREATE INDEX addon_index ON notes (guid);",
+    )
+    with pytest.raises(AnkiPackageRejected, match="unsafe_sqlite_schema"):
+        inspect_anki_package(hostile)
+
+
 def test_import_is_explicit_atomic_and_replay_compares_full_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -421,6 +455,7 @@ def test_import_is_explicit_atomic_and_replay_compares_full_payload(
     assert "CREATE $card_record_0" in mutation and "study_plan_card" in mutation
     assert str(mutation_params["card_record_0"]).startswith("study_card:")
     assert "CREATE $receipt_record" in mutation
+    assert mutation_params["card_1"]["artifact_card_id"].startswith("anki_card:reverse:")
     assert str(mutation_params["receipt_record"]).startswith("study_anki_import:")
     assert "state IN ['approved', 'generating', 'active', 'completed']" in mutation
     assert "active_syllabus_version != NONE" in mutation

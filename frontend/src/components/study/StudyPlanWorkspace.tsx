@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useMemo, useRef, useState } from 'react'
 
 import { SyllabusEditor } from '@/components/study/SyllabusEditor'
+import { AnkiPackagePanel } from '@/components/study/AnkiPackagePanel'
 import { StudyLearningSession } from '@/components/study/StudyLearningSession'
 import { StudyProgressPanel } from '@/components/study/StudyProgressPanel'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +32,7 @@ export const STUDY_PLAN_TABS = [
   { value: 'flashcards', label: 'Flashcards' },
   { value: 'sources', label: 'Sources' },
   { value: 'progress', label: 'Progress' },
+  { value: 'package', label: 'Anki package' },
 ] as const
 
 export type StudyPlanTab = typeof STUDY_PLAN_TABS[number]['value']
@@ -258,6 +260,10 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
             onAccept={acceptProgress}
             onDismiss={dismissProgress}
           />
+        </TabsContent>
+
+        <TabsContent value="package" className="space-y-4">
+          <AnkiPackagePanel planId={planId} lifecycleState={currentPlan.state} />
         </TabsContent>
 
         {(['guide', 'map', 'practice', 'flashcards', 'sources'] as const).map((tab) => (

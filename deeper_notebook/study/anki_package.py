@@ -36,6 +36,28 @@ MAX_SQLITE_SECONDS = 5.0
 MAX_SQLITE_PROGRESS_CALLS = 25_000
 
 _COLLECTION_MEMBERS = frozenset({"collection.anki2", "collection.anki21"})
+# genanki 0.13.1 emits these fixed native indexes.  They are part of the
+# canonical Anki schema; arbitrary package/add-on indexes remain rejected.
+_ALLOWED_NATIVE_INDEXES = frozenset(
+    {
+        "ix_cards_nid",
+        "ix_cards_sched",
+        "ix_cards_usn",
+        "ix_notes_csum",
+        "ix_notes_usn",
+        "ix_revlog_cid",
+        "ix_revlog_usn",
+    }
+)
+_NATIVE_INDEX_SQL = {
+    "ix_cards_nid": "create index ix_cards_nid on cards (nid)",
+    "ix_cards_sched": "create index ix_cards_sched on cards (did, queue, due)",
+    "ix_cards_usn": "create index ix_cards_usn on cards (usn)",
+    "ix_notes_csum": "create index ix_notes_csum on notes (csum)",
+    "ix_notes_usn": "create index ix_notes_usn on notes (usn)",
+    "ix_revlog_cid": "create index ix_revlog_cid on revlog (cid)",
+    "ix_revlog_usn": "create index ix_revlog_usn on revlog (usn)",
+}
 _ALLOWED_ZIP_METHODS = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
 _VISIBLE_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _MEDIA_NAME = re.compile(r"^[^/\\\x00-\x1f\x7f]{1,512}$")
@@ -378,7 +400,20 @@ def _numeric_json_id(key: object, value: object, *, code: str) -> int:
     numeric = int(key)
     if not 1 <= numeric <= 9_223_372_036_854_775_807:
         _reject(code)
-    if isinstance(value, bool) or not isinstance(value, int) or value != numeric:
+    if isinstance(value, bool):
+        _reject(code)
+    if isinstance(value, int):
+        valid_value = value == numeric
+    elif isinstance(value, str):
+        valid_value = (
+            value.isascii()
+            and value.isdecimal()
+            and not value.startswith("0")
+            and int(value) == numeric
+        )
+    else:
+        valid_value = False
+    if not valid_value:
         _reject(code)
     return numeric
 
@@ -504,8 +539,15 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
             tables = {row[1] for row in schema_rows if row[0] == "table"}
             if tables != allowed_tables or any(row[0] not in {"table", "index"} for row in schema_rows):
                 _reject("unsafe_sqlite_schema")
-            if any(row[0] == "index" and not str(row[1]).startswith("sqlite_autoindex_") for row in schema_rows):
-                _reject("unsafe_sqlite_schema")
+            for row in schema_rows:
+                if row[0] != "index" or str(row[1]).startswith("sqlite_autoindex_"):
+                    continue
+                index_name = str(row[1])
+                if index_name not in _ALLOWED_NATIVE_INDEXES:
+                    _reject("unsafe_sqlite_schema")
+                normalized_sql = re.sub(r"\s+", " ", str(row[3] or "").strip().lower())
+                if normalized_sql != _NATIVE_INDEX_SQL[index_name]:
+                    _reject("unsafe_sqlite_schema")
             expected_columns = {
                 "col": {"id", "crt", "mod", "scm", "ver", "dty", "usn", "ls", "conf", "models", "decks", "dconf", "tags"},
                 "notes": {"id", "guid", "mid", "mod", "usn", "tags", "flds", "sfld", "csum", "flags", "data"},

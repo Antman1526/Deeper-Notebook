@@ -99,6 +99,8 @@ dependencies = [
     # Deterministic local Video Overview composition uses the package-managed
     # FFmpeg executable; no system FFmpeg installation is assumed.
     "imageio-ffmpeg>=0.6.0,<1.0",
+    # Task 16 — native Anki package writer; pinned for deterministic model/note semantics.
+    "genanki==0.13.1",
 ]
 
 [tool.setuptools.packages.find]
