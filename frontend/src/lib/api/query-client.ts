@@ -51,6 +51,10 @@ export const QUERY_KEYS = {
   speakerProfiles: ['podcasts', 'speaker-profiles'] as const,
   languages: ['languages'] as const,
   studyDue: ['study', 'due'] as const,
+  studyPlans: ['study', 'plans'] as const,
+  studyPlan: (id: string) => ['study', 'plans', id] as const,
+  studyPlanSources: (id: string) => ['study', 'plans', id, 'sources'] as const,
+  studySyllabus: (id: string) => ['study', 'plans', id, 'syllabus'] as const,
   captureRoots: ['capture', 'roots'] as const,
   captureItems: ['capture', 'items'] as const,
 }
