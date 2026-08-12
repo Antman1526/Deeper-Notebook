@@ -278,6 +278,43 @@ def test_model_copy_cannot_bypass_lifecycle_or_approval_and_revalidates_updates(
         _plan().model_copy(update={"goal": " "})
 
 
+def test_model_copy_revalidates_every_frozen_contract() -> None:
+    activity = _activity()
+    with pytest.raises(ValidationError, match="estimated_minutes"):
+        activity.model_copy(update={"estimated_minutes": 0})
+    copied_activity = activity.model_copy(update={"source_ids": ["source:two"]})
+    assert copied_activity.source_ids == ("source:two",)
+
+    preferences = StudyPlanPreferences(weekly_minutes=240, session_minutes=45)
+    with pytest.raises(ValidationError, match="weekly_minutes"):
+        preferences.model_copy(update={"weekly_minutes": 0})
+    assert preferences.model_copy(update={"session_minutes": 30}).session_minutes == 30
+
+    source_link = StudyPlanSourceLink(source_id="source:one")
+    with pytest.raises(ValidationError, match="source_id"):
+        source_link.model_copy(update={"source_id": ""})
+    assert source_link.model_copy(update={"source_id": "source:two"}).source_id == "source:two"
+
+    unit = _unit()
+    with pytest.raises(ValidationError, match="objectives"):
+        unit.model_copy(update={"objectives": []})
+    copied_unit = unit.model_copy(update={"activities": [_activity()]})
+    assert copied_unit.activities == (_activity(),)
+    deep_copied_unit = unit.model_copy(deep=True)
+    assert deep_copied_unit.activities[0] is not unit.activities[0]
+
+    syllabus = StudySyllabus(
+        plan_id="study_plan:one",
+        version=1,
+        source_manifest_sha256="a" * 64,
+        units=[unit],
+    )
+    with pytest.raises(ValidationError, match="units"):
+        syllabus.model_copy(update={"units": []})
+    copied_syllabus = syllabus.model_copy(update={"units": [_unit("second-unit")]})
+    assert copied_syllabus.units == (_unit("second-unit"),)
+
+
 def test_transition_requires_the_expected_version_and_returns_a_new_revision() -> None:
     plan = _plan()
 

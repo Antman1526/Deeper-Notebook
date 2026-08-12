@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal, Mapping, Self
 
@@ -71,10 +72,28 @@ def _list_to_tuple(value: object) -> object:
     return tuple(value) if isinstance(value, list) else value
 
 
-class StudyActivity(BaseModel):
-    """One bounded planned learning activity within a syllabus unit."""
+class _FrozenContract(BaseModel):
+    """Strict immutable contract base that cannot skip validators on copies."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    def model_copy(
+        self,
+        *,
+        update: Mapping[str, Any] | None = None,
+        deep: bool = False,
+    ) -> Self:
+        """Return a revalidated copy, preserving Pydantic's deep-copy option."""
+        values = dict(self.__dict__)
+        if deep:
+            values = deepcopy(values)
+        if update:
+            values.update(dict(update))
+        return type(self).model_validate(values)
+
+
+class StudyActivity(_FrozenContract):
+    """One bounded planned learning activity within a syllabus unit."""
 
     activity_id: _UnitId
     kind: Literal[
@@ -108,19 +127,15 @@ class StudyActivity(BaseModel):
         return tuple(_require_nonblank(value, field_name="source_id") for value in values)
 
 
-class StudyPlanPreferences(BaseModel):
+class StudyPlanPreferences(_FrozenContract):
     """User-confirmed time budget for a study plan."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     weekly_minutes: int = Field(ge=5, le=10_080)
     session_minutes: int = Field(ge=5, le=480)
 
 
-class StudyPlanSourceLink(BaseModel):
+class StudyPlanSourceLink(_FrozenContract):
     """A read-only link from a plan to an existing source record."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     source_id: str = Field(min_length=1, max_length=512)
 
@@ -130,10 +145,8 @@ class StudyPlanSourceLink(BaseModel):
         return _require_nonblank(value, field_name="source_id")
 
 
-class StudySyllabusUnit(BaseModel):
+class StudySyllabusUnit(_FrozenContract):
     """An immutable, evidence-linked unit in a proposed syllabus."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     unit_id: _UnitId
     title: str = Field(min_length=1, max_length=200)
@@ -168,10 +181,8 @@ class StudySyllabusUnit(BaseModel):
         return tuple(_require_nonblank(value, field_name=field_name) for value in values)
 
 
-class StudySyllabus(BaseModel):
+class StudySyllabus(_FrozenContract):
     """A versioned immutable syllabus snapshot bound to its source manifest."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal[1] = 1
     plan_id: str = Field(min_length=1, max_length=512)
@@ -204,10 +215,8 @@ class StudySyllabus(BaseModel):
         return self
 
 
-class StudyPlan(BaseModel):
+class StudyPlan(_FrozenContract):
     """An immutable plan whose lifecycle advances only through ``transition``."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal[1] = 1
     plan_id: str = Field(min_length=1, max_length=512)
@@ -283,7 +292,6 @@ class StudyPlan(BaseModel):
         deep: bool = False,
     ) -> Self:
         """Revalidate non-lifecycle revisions without bypassing plan authority."""
-        _ = deep
         update = update or {}
         protected_fields = sorted(set(update) & _PROTECTED_PLAN_COPY_FIELDS)
         if protected_fields:
@@ -291,7 +299,7 @@ class StudyPlan(BaseModel):
                 "model_copy cannot change protected plan fields; "
                 "use transition for lifecycle changes"
             )
-        return type(self).model_validate(self.model_dump() | dict(update))
+        return super().model_copy(update=update, deep=deep)
 
     def _require_approval_binding(self) -> None:
         if self.source_manifest_sha256 is None:
