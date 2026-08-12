@@ -14,6 +14,7 @@ from deeper_notebook.study.artifact_service import (
     StudyArtifactConflict,
     StudyArtifactGenerationError,
     StudyArtifactService,
+    _artifact_identity,
 )
 from deeper_notebook.study.plans import (
     StudyPlan,
@@ -107,6 +108,38 @@ class FakeArtifact:
         return None
 
 
+class PersistentRaceArtifact:
+    """Tiny persistent-authority double for independent service instances."""
+
+    records: dict[str, "PersistentRaceArtifact"] = {}
+
+    def __init__(self, **values: object) -> None:
+        self.__dict__.update(values)
+        self.id = str(values["id"])
+        self.status = values.get("status", "pending")
+        self.output_payload = values.get("output_payload", {})
+        self.citations = values.get("citations", [])
+        self.export_paths = values.get("export_paths", {})
+
+    @classmethod
+    async def get(cls, artifact_id: str) -> "PersistentRaceArtifact | None":
+        return cls.records.get(artifact_id)
+
+    async def save(self) -> None:
+        await asyncio.sleep(0)
+        incumbent = self.records.get(self.id)
+        if incumbent is not None and incumbent is not self:
+            raise RuntimeError("duplicate deterministic artifact")
+        self.records[self.id] = self
+
+    async def claim(self) -> bool:
+        incumbent = self.records.get(self.id)
+        if incumbent is not self or self.status != "pending":
+            return False
+        self.status = "running"
+        return True
+
+
 class FakeRepository:
     def __init__(self, *, plan: StudyPlan, syllabus: StudySyllabus) -> None:
         self.plan = plan
@@ -143,6 +176,7 @@ class FakeSourceService:
 @pytest.fixture(autouse=True)
 def reset_artifacts() -> None:
     FakeArtifact.created.clear()
+    PersistentRaceArtifact.records.clear()
 
 
 @pytest.mark.asyncio
@@ -215,6 +249,104 @@ async def test_cancellation_marks_provisional_artifact_cancelled_without_link(mo
         await service.generate_unit("study_plan:one", "foundations", ["mind_map"], expected_revision=3)
     assert repository.links == []
     assert FakeArtifact.created[0].status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_identical_generation_serializes_to_one_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = _source()
+    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    generation_calls = 0
+
+    async def generate(request: object) -> FakeArtifact:
+        nonlocal generation_calls
+        generation_calls += 1
+        started.set()
+        await release.wait()
+        return _complete(request.artifact_id)
+
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+    )
+    first = asyncio.create_task(
+        service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+    )
+    await started.wait()
+    second = asyncio.create_task(
+        service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+    )
+    await asyncio.sleep(0)
+    release.set()
+
+    first_result, second_result = await asyncio.gather(first, second)
+
+    assert generation_calls == 1
+    assert len(FakeArtifact.created) == 1
+    assert len(repository.links) == 1
+    assert first_result == second_result
+
+
+@pytest.mark.asyncio
+async def test_independent_services_converge_on_persistent_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = _source()
+    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", PersistentRaceArtifact)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    generation_calls = 0
+
+    async def generate(request: object) -> PersistentRaceArtifact:
+        nonlocal generation_calls
+        generation_calls += 1
+        started.set()
+        await release.wait()
+        artifact = PersistentRaceArtifact.records[str(request.artifact_id)]
+        artifact.status = "completed"
+        artifact.output_payload = {"markdown": "completed"}
+        return artifact
+
+    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    first_service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+        lock_store={},
+    )
+    second_service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+        lock_store={},
+    )
+    first = asyncio.create_task(
+        first_service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+    )
+    await started.wait()
+    second = asyncio.create_task(
+        second_service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+    )
+    await asyncio.sleep(0)
+    release.set()
+    results = await asyncio.gather(first, second, return_exceptions=True)
+
+    assert generation_calls == 1
+    assert len(PersistentRaceArtifact.records) == 1
+    assert len(repository.links) == 1
+    assert sum(isinstance(result, StudyArtifactConflict) for result in results) == 1
+    assert sum(isinstance(result, list) for result in results) == 1
+
+
+def test_artifact_identity_changes_for_every_authority_dimension() -> None:
+    base = _artifact_identity("study_plan:one", 1, "a" * 64, "foundations", "quiz")
+    assert _artifact_identity("study_plan:one", 2, "a" * 64, "foundations", "quiz") != base
+    assert _artifact_identity("study_plan:one", 1, "b" * 64, "foundations", "quiz") != base
+    assert _artifact_identity("study_plan:one", 1, "a" * 64, "advanced", "quiz") != base
+    assert _artifact_identity("study_plan:one", 1, "a" * 64, "foundations", "flashcards") != base
 
 
 def _complete(artifact_id: str) -> FakeArtifact:

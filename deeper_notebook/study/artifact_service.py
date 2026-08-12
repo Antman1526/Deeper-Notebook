@@ -13,9 +13,13 @@ import asyncio
 import hashlib
 import inspect
 import re
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping, MutableMapping
+from contextlib import asynccontextmanager
+from weakref import WeakValueDictionary
 
+from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.domain.notebook import Source, StudioArtifact
+from deeper_notebook.exceptions import NotFoundError
 from deeper_notebook.studio.generation import (
     ArtifactGenerationRequest,
     generate_artifact,
@@ -38,6 +42,8 @@ MAX_CONTEXT_CHARS = 8_000
 MAX_PROMPT_CHARS = 16_000
 _UNIT_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _PLAN_ID = re.compile(r"^study_plan:.{1,511}$")
+_GENERATION_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+_REAL_STUDIO_ARTIFACT = StudioArtifact
 
 
 class StudyArtifactError(RuntimeError):
@@ -148,6 +154,46 @@ def _artifact_notebook_id(plan_id: str) -> str:
     return f"notebook:study_{token}"
 
 
+def _artifact_identity(
+    plan_id: str,
+    syllabus_version: int,
+    source_manifest_sha256: str,
+    unit_id: str,
+    artifact_type: str,
+) -> str:
+    """Return one stable operation/artifact ID for the approved unit request."""
+    token = hashlib.sha256(
+        "\x1f".join(
+            (
+                plan_id,
+                str(syllabus_version),
+                source_manifest_sha256,
+                unit_id,
+                artifact_type,
+            )
+        ).encode("utf-8")
+    ).hexdigest()[:40]
+    return f"studio_artifact:study_{token}"
+
+
+@asynccontextmanager
+async def _generation_lock(
+    operation_id: str,
+    lock_store: MutableMapping[str, asyncio.Lock] | None = None,
+):
+    """Serialize identical work in this process without retaining unbounded keys."""
+    store = _GENERATION_LOCKS if lock_store is None else lock_store
+    lock = store.get(operation_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        store[operation_id] = lock
+    await lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
+
+
 class StudyArtifactService:
     """Validate and generate one approved syllabus unit through Evidence Studio."""
 
@@ -157,10 +203,12 @@ class StudyArtifactService:
         repository: StudyPlanRepository | object | None = None,
         source_service: StudySourceService | object | None = None,
         source_loader: SourceLoader | None = None,
+        lock_store: MutableMapping[str, asyncio.Lock] | None = None,
     ) -> None:
         self.repository = repository or StudyPlanRepository()
         self.source_service = source_service or StudySourceService()
         self.source_loader = source_loader or Source.get
+        self.lock_store = lock_store
 
     async def generate_unit(
         self,
@@ -202,96 +250,285 @@ class StudyArtifactService:
         # same readiness/fingerprint guard immediately before its generation.
         receipts: list[dict[str, str]] = []
         for artifact_type in types:
-            existing = await self._existing_link(
+            operation_id = _artifact_identity(
                 plan_key,
-                unit_id=unit.unit_id,
-                artifact_kind=artifact_type,
-                syllabus_version=syllabus.version,
-            )
-            if existing is not None:
-                artifact_id = _value(existing, "artifact_id")
-                if isinstance(artifact_id, str) and artifact_id:
-                    receipts.append(
-                        {
-                            "artifact_id": artifact_id,
-                            "artifact_type": artifact_type,
-                            "status": "completed",
-                            "unit_id": unit.unit_id,
-                        }
-                    )
-                    continue
-
-            sources = await self._ready_sources(plan, syllabus, unit_sources)
-            prompt = study_unit_prompt(
+                syllabus.version,
+                syllabus.source_manifest_sha256,
+                unit.unit_id,
                 artifact_type,
-                plan_goal=plan.goal,
-                unit_title=unit.title,
-                objectives=unit.objectives,
-                prerequisite_unit_ids=unit.prerequisite_unit_ids,
-                source_ids=unit_sources,
-                context=bounded_context,
             )
-            prompt = prompt[:MAX_PROMPT_CHARS]
-            # Calling artifact_context here is deliberate: it is the existing
-            # bounded context/citation adapter, not a second generator.  The
-            # generation service loads the same sources again by IDs.
-            combined_context, _ = artifact_context(sources)
-            if not combined_context.strip():
-                raise StudyArtifactNotReady("no_evidence")
-            provisional = await self._create_provisional(
-                plan,
-                artifact_type=artifact_type,
-                unit=unit,
-                source_ids=unit_sources,
-                prompt=prompt,
-            )
-            artifact_id = str(getattr(provisional, "id", "") or "")
-            if not artifact_id:
-                raise StudyArtifactGenerationError("artifact_generation_failed")
-            request = ArtifactGenerationRequest(
-                artifact_id=artifact_id,
-                source_ids=list(unit_sources),
-            )
-            try:
-                generated = await generate_artifact(request)
-            except BaseException as exc:
-                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                    raise
-                if isinstance(exc, asyncio.CancelledError):
-                    await self._mark(provisional, "cancelled")
-                    raise StudyArtifactCancelled("generation_cancelled") from exc
-                await self._mark(provisional, "failed")
-                raise StudyArtifactGenerationError("artifact_generation_failed") from exc
-            if str(getattr(generated, "status", "")) != "completed":
-                await self._mark(provisional, str(getattr(generated, "status", "failed")))
-                raise StudyArtifactGenerationError("artifact_generation_failed")
-            completed_id = str(getattr(generated, "id", "") or artifact_id)
-            metadata = {
-                "unit_id": unit.unit_id,
-                "syllabus_version": syllabus.version,
-                "source_manifest_sha256": syllabus.source_manifest_sha256,
-                "expected_revision": revision,
-            }
-            try:
-                await self._link(
-                    plan_key,
-                    completed_id,
-                    artifact_kind=artifact_type,
-                    metadata=metadata,
+            async with _generation_lock(operation_id, self.lock_store):
+                receipts.append(
+                    await self._generate_one(
+                        plan,
+                        syllabus,
+                        unit,
+                        unit_sources,
+                        artifact_type,
+                        revision,
+                        bounded_context,
+                        operation_id,
+                    )
                 )
-            except StudyArtifactError:
-                raise
-            except Exception as exc:
-                raise StudyArtifactUnavailable("artifact_link_unavailable") from exc
-            receipts.append(
-                {
-                    "artifact_id": completed_id,
+        return receipts
+
+    async def _generate_one(
+        self,
+        plan: StudyPlan,
+        syllabus: StudySyllabus,
+        unit: StudySyllabusUnit,
+        unit_sources: tuple[str, ...],
+        artifact_type: str,
+        revision: int,
+        bounded_context: str | None,
+        operation_id: str,
+    ) -> dict[str, str]:
+        existing = await self._existing_link(
+            plan.plan_id,
+            unit_id=unit.unit_id,
+            artifact_kind=artifact_type,
+            syllabus_version=syllabus.version,
+        )
+        if existing is not None:
+            artifact_id = _value(existing, "artifact_id")
+            if isinstance(artifact_id, str) and artifact_id:
+                if artifact_id != operation_id:
+                    raise StudyArtifactConflict("artifact_identity_mismatch")
+                return {
+                    "artifact_id": artifact_id,
                     "artifact_type": artifact_type,
                     "status": "completed",
                     "unit_id": unit.unit_id,
                 }
+
+        sources = await self._ready_sources(plan, syllabus, unit_sources)
+        prompt = study_unit_prompt(
+            artifact_type,
+            plan_goal=plan.goal,
+            unit_title=unit.title,
+            objectives=unit.objectives,
+            prerequisite_unit_ids=unit.prerequisite_unit_ids,
+            source_ids=unit_sources,
+            context=bounded_context,
+        )[:MAX_PROMPT_CHARS]
+        # Calling artifact_context here is deliberate: it is the existing
+        # bounded context/citation adapter, not a second generator.
+        combined_context, _ = artifact_context(sources)
+        if not combined_context.strip():
+            raise StudyArtifactNotReady("no_evidence")
+        provisional = await self._get_or_create_provisional(
+            plan,
+            syllabus,
+            unit,
+            artifact_type,
+            unit_sources,
+            prompt,
+            operation_id,
+        )
+        if str(getattr(provisional, "status", "pending")) == "completed":
+            completed_id = str(getattr(provisional, "id", "") or operation_id)
+            await self._link_completed(
+                plan.plan_id,
+                completed_id,
+                unit,
+                syllabus,
+                artifact_type,
+                revision,
             )
-        return receipts
+            return {
+                "artifact_id": completed_id,
+                "artifact_type": artifact_type,
+                "status": "completed",
+                "unit_id": unit.unit_id,
+            }
+        provisional = await self._claim_provisional(
+            provisional,
+            operation_id,
+            artifact_type,
+            unit_sources,
+        )
+        if str(getattr(provisional, "status", "pending")) == "completed":
+            completed_id = str(getattr(provisional, "id", "") or operation_id)
+            await self._link_completed(
+                plan.plan_id,
+                completed_id,
+                unit,
+                syllabus,
+                artifact_type,
+                revision,
+            )
+            return {
+                "artifact_id": completed_id,
+                "artifact_type": artifact_type,
+                "status": "completed",
+                "unit_id": unit.unit_id,
+            }
+        artifact_id = str(getattr(provisional, "id", "") or "")
+        if not artifact_id:
+            raise StudyArtifactGenerationError("artifact_generation_failed")
+        request = ArtifactGenerationRequest(
+            artifact_id=artifact_id,
+            source_ids=list(unit_sources),
+        )
+        try:
+            generated = await generate_artifact(request)
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            if isinstance(exc, asyncio.CancelledError):
+                await self._mark(provisional, "cancelled")
+                raise StudyArtifactCancelled("generation_cancelled") from exc
+            await self._mark(provisional, "failed")
+            raise StudyArtifactGenerationError("artifact_generation_failed") from exc
+        if str(getattr(generated, "status", "")) != "completed":
+            await self._mark(provisional, str(getattr(generated, "status", "failed")))
+            raise StudyArtifactGenerationError("artifact_generation_failed")
+        completed_id = str(getattr(generated, "id", "") or artifact_id)
+        if completed_id != operation_id:
+            await self._mark(provisional, "failed")
+            raise StudyArtifactGenerationError("artifact_identity_mismatch")
+        await self._link_completed(
+            plan.plan_id,
+            completed_id,
+            unit,
+            syllabus,
+            artifact_type,
+            revision,
+        )
+        return {
+            "artifact_id": completed_id,
+            "artifact_type": artifact_type,
+            "status": "completed",
+            "unit_id": unit.unit_id,
+        }
+
+    async def _get_or_create_provisional(
+        self,
+        plan: StudyPlan,
+        syllabus: StudySyllabus,
+        unit: StudySyllabusUnit,
+        artifact_type: str,
+        source_ids: tuple[str, ...],
+        prompt: str,
+        operation_id: str,
+    ) -> object:
+        existing = await self._existing_artifact(operation_id)
+        if existing is not None:
+            self._validate_artifact_identity(existing, artifact_type, source_ids)
+            current_status = str(getattr(existing, "status", "pending"))
+            if current_status in {"failed", "cancelled"}:
+                await self._reset_for_retry(existing)
+            return existing
+        try:
+            return await self._create_provisional(
+                plan,
+                artifact_type=artifact_type,
+                unit=unit,
+                source_ids=source_ids,
+                prompt=prompt,
+                operation_id=operation_id,
+            )
+        except Exception as exc:
+            # Another process may have won the deterministic CREATE. Re-read
+            # that record and converge on its state rather than creating a
+            # second artifact or leaking a driver conflict.
+            existing = await self._existing_artifact(operation_id)
+            if existing is not None:
+                self._validate_artifact_identity(existing, artifact_type, source_ids)
+                return existing
+            if isinstance(exc, StudyArtifactError):
+                raise
+            raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+
+    async def _existing_artifact(self, artifact_id: str) -> object | None:
+        getter = getattr(StudioArtifact, "get", None)
+        if not callable(getter):
+            return None
+        try:
+            result = getter(artifact_id)
+            return await result if inspect.isawaitable(result) else result
+        except NotFoundError:
+            return None
+        except Exception as exc:
+            raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+
+    @staticmethod
+    def _validate_artifact_identity(
+        artifact: object,
+        artifact_type: str,
+        source_ids: tuple[str, ...],
+    ) -> None:
+        if str(getattr(artifact, "artifact_type", artifact_type)) != artifact_type:
+            raise StudyArtifactConflict("artifact_identity_mismatch")
+        existing_sources = tuple(str(item) for item in getattr(artifact, "source_ids", ()))
+        if existing_sources and existing_sources != source_ids:
+            raise StudyArtifactConflict("artifact_identity_mismatch")
+
+    async def _reset_for_retry(self, artifact: object) -> None:
+        await self._mark(artifact, "pending")
+
+    async def _claim_provisional(
+        self,
+        artifact: object,
+        operation_id: str,
+        artifact_type: str,
+        source_ids: tuple[str, ...],
+    ) -> object:
+        """Atomically claim pending work before invoking Evidence Studio.
+
+        The in-process lock is only a fast path.  Real Studio records use a
+        conditional persistent status transition, so separate workers cannot
+        both enter the generator for one deterministic artifact ID.  Test and
+        alternate authorities may expose a small ``claim`` method; otherwise
+        the object mutation remains protected by the caller's local lock.
+        """
+        status = str(getattr(artifact, "status", "pending"))
+        if status == "completed":
+            return artifact
+        if status == "running":
+            raise StudyArtifactConflict("generation_in_progress")
+        if status in {"failed", "cancelled"}:
+            await self._reset_for_retry(artifact)
+            status = "pending"
+        if status != "pending":
+            raise StudyArtifactConflict("generation_in_progress")
+
+        claim = getattr(artifact, "claim", None)
+        if callable(claim):
+            result = claim()
+            claimed = await result if inspect.isawaitable(result) else result
+            if claimed:
+                return artifact
+            current = await self._existing_artifact(operation_id)
+            if current is not None and str(getattr(current, "status", "")) == "completed":
+                return current
+            raise StudyArtifactConflict("generation_in_progress")
+
+        if StudioArtifact is _REAL_STUDIO_ARTIFACT:
+            try:
+                rows = await repo_query(
+                    "UPDATE $artifact SET status = 'running' "
+                    "WHERE status = 'pending' RETURN AFTER;",
+                    {"artifact": ensure_record_id(operation_id)},
+                )
+            except Exception as exc:
+                raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+            if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+                claimed = StudioArtifact(**rows[0])
+                self._validate_artifact_identity(claimed, artifact_type, source_ids)
+                return claimed
+            current = await self._existing_artifact(operation_id)
+            if current is not None and str(getattr(current, "status", "")) == "completed":
+                return current
+            raise StudyArtifactConflict("generation_in_progress")
+
+        setattr(artifact, "status", "running")
+        save = getattr(artifact, "save", None)
+        if callable(save):
+            result = save()
+            if inspect.isawaitable(result):
+                await result
+        return artifact
 
     async def _load_plan(self, plan_id: str) -> StudyPlan:
         try:
@@ -375,16 +612,33 @@ class StudyArtifactService:
         unit: StudySyllabusUnit,
         source_ids: tuple[str, ...],
         prompt: str,
-    ) -> StudioArtifact:
+        operation_id: str,
+    ) -> object:
         try:
-            artifact = StudioArtifact(
-                notebook_id=_artifact_notebook_id(plan.plan_id),
-                artifact_type=artifact_type,
-                title=f"{unit.title} — {artifact_type.replace('_', ' ')}",
-                status="pending",
-                source_ids=list(source_ids),
-                prompt=prompt,
-            )
+            values = {
+                "id": operation_id,
+                "notebook_id": _artifact_notebook_id(plan.plan_id),
+                "artifact_type": artifact_type,
+                "title": f"{unit.title} — {artifact_type.replace('_', ' ')}",
+                "status": "pending",
+                "source_ids": list(source_ids),
+                "prompt": prompt,
+            }
+            if StudioArtifact is _REAL_STUDIO_ARTIFACT:
+                draft = StudioArtifact(**values)
+                data = draft._prepare_save_data()
+                data.pop("id", None)
+                rows = await repo_query(
+                    "CREATE $artifact CONTENT $data RETURN AFTER;",
+                    {"artifact": ensure_record_id(operation_id), "data": data},
+                )
+                if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+                    return StudioArtifact(**rows[0])
+                loaded = await self._existing_artifact(operation_id)
+                if loaded is not None:
+                    return loaded
+                raise StudyArtifactUnavailable("artifact_persistence_unavailable")
+            artifact = StudioArtifact(**values)
             await artifact.save()
             return artifact
         except Exception as exc:
@@ -392,7 +646,11 @@ class StudyArtifactService:
 
     async def _mark(self, artifact: object, status: str) -> None:
         try:
-            setattr(artifact, "status", status if status in {"failed", "cancelled"} else "failed")
+            setattr(
+                artifact,
+                "status",
+                status if status in {"failed", "cancelled", "pending"} else "failed",
+            )
             for field_name, empty_value in (
                 ("output_payload", {}),
                 ("citations", []),
@@ -409,6 +667,33 @@ class StudyArtifactService:
             # A failed/cancelled provisional record must never become a plan
             # link; inability to persist its terminal status is non-authorizing.
             return
+
+    async def _link_completed(
+        self,
+        plan_id: str,
+        artifact_id: str,
+        unit: StudySyllabusUnit,
+        syllabus: StudySyllabus,
+        artifact_type: str,
+        revision: int,
+    ) -> object:
+        metadata = {
+            "unit_id": unit.unit_id,
+            "syllabus_version": syllabus.version,
+            "source_manifest_sha256": syllabus.source_manifest_sha256,
+            "expected_revision": revision,
+        }
+        try:
+            return await self._link(
+                plan_id,
+                artifact_id,
+                artifact_kind=artifact_type,
+                metadata=metadata,
+            )
+        except StudyArtifactError:
+            raise
+        except Exception as exc:
+            raise StudyArtifactUnavailable("artifact_link_unavailable") from exc
 
     async def _existing_link(
         self,

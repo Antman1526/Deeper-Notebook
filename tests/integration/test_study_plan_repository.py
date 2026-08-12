@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 
 from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.domain.notebook import StudioArtifact
+from deeper_notebook.study.artifact_service import (
+    StudyArtifactConflict,
+    StudyArtifactService,
+    _artifact_identity,
+)
 from deeper_notebook.study.plan_repository import StudyPlanRepository
 from deeper_notebook.study.plans import (
     StudyPlan,
@@ -13,6 +21,11 @@ from deeper_notebook.study.plans import (
     StudySyllabus,
     StudySyllabusUnit,
 )
+from deeper_notebook.study.source_service import (
+    StudySourceReadiness,
+    StudySourceReadinessItem,
+)
+from deeper_notebook.study.syllabus_service import source_manifest
 
 pytestmark = pytest.mark.integration_surreal
 
@@ -187,6 +200,144 @@ async def test_study_artifact_provisional_record_accepts_plan_owner_token(clean_
     loaded = await StudioArtifact.get(artifact.id)
     assert loaded.notebook_id == "notebook:study_integration"
     assert loaded.source_ids == ["source:⟨artifact-owner⟩"]
+
+
+async def test_real_studio_claim_serializes_independent_services(
+    clean_namespace, monkeypatch
+):
+    repository = StudyPlanRepository()
+    plan_id = "study_plan:artifactconcurrency"
+    source = SimpleNamespace(
+        id="source:artifactconcurrency",
+        title="Concurrency evidence",
+        full_text="Persistent evidence for one generated artifact.",
+        provenance={},
+        command=None,
+    )
+    manifest = source_manifest([source])
+    await repo_query(
+        "CREATE $source CONTENT $data RETURN AFTER;",
+        {
+            "source": ensure_record_id(source.id),
+            "data": {"title": source.title, "full_text": source.full_text},
+        },
+    )
+    created = await repository.create(
+        StudyPlan(
+            plan_id=plan_id,
+            goal="Verify persistent artifact claims",
+            starting_level="beginner",
+        )
+    )
+    await repository.add_source(plan_id, source.id, expected_revision=created.version)
+    linked_plan = await repository.get(plan_id)
+    assert linked_plan is not None
+    syllabus_one = StudySyllabus(
+        plan_id=plan_id,
+        version=1,
+        source_manifest_sha256=manifest,
+        units=[
+            StudySyllabusUnit(
+                unit_id="foundations",
+                title="Foundations",
+                objectives=["Keep one persistent claim"],
+                estimated_minutes=30,
+                source_ids=[source.id],
+            )
+        ],
+    )
+    await repository.save_syllabus(
+        syllabus_one,
+        expected_revision=linked_plan.version,
+        lifecycle_action="propose",
+    )
+    syllabus_two = syllabus_one.model_copy(update={"version": 2})
+    await repository.save_syllabus(
+        syllabus_two,
+        expected_revision=linked_plan.version + 1,
+        lifecycle_action="edit",
+    )
+    approved = await repository.approve_syllabus(
+        plan_id,
+        syllabus_version=2,
+        expected_revision=linked_plan.version + 2,
+    )
+    stored_syllabus = await repository.get_syllabus(plan_id, version=2)
+    assert stored_syllabus is not None
+
+    class ReadySourceService:
+        async def readiness(self, _plan):
+            return StudySourceReadiness(
+                ready=True,
+                items=(
+                    StudySourceReadinessItem(
+                        source_id=source.id,
+                        title=source.title,
+                        kind="text",
+                        ready=True,
+                        command_id=None,
+                        fingerprint_status="available",
+                        reason="ready",
+                    ),
+                ),
+            )
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+    generation_calls = 0
+
+    async def generate(request):
+        nonlocal generation_calls
+        generation_calls += 1
+        started.set()
+        await release.wait()
+        artifact = await StudioArtifact.get(request.artifact_id)
+        artifact.status = "completed"
+        artifact.output_payload = {"markdown": "done"}
+        await artifact.save()
+        return artifact
+
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generate
+    )
+    first_service = StudyArtifactService(
+        repository=repository,
+        source_service=ReadySourceService(),
+        source_loader=lambda _source_id: source,
+        lock_store={},
+    )
+    second_service = StudyArtifactService(
+        repository=repository,
+        source_service=ReadySourceService(),
+        source_loader=lambda _source_id: source,
+        lock_store={},
+    )
+    first = asyncio.create_task(
+        first_service.generate_unit(plan_id, "foundations", ["quiz"], approved.version)
+    )
+    await started.wait()
+    second = asyncio.create_task(
+        second_service.generate_unit(plan_id, "foundations", ["quiz"], approved.version)
+    )
+    await asyncio.sleep(0)
+    release.set()
+    results = await asyncio.gather(first, second, return_exceptions=True)
+
+    operation_id = _artifact_identity(plan_id, 2, manifest, "foundations", "quiz")
+    artifact_rows = await repo_query(
+        "SELECT id, status FROM studio_artifact WHERE id = $artifact_id;",
+        {"artifact_id": ensure_record_id(operation_id)},
+    )
+    link_rows = await repo_query(
+        "SELECT artifact_id FROM study_plan_artifact WHERE plan_id = $plan_id;",
+        {"plan_id": plan_id},
+    )
+    assert generation_calls == 1
+    assert len(artifact_rows) == 1
+    assert artifact_rows[0]["status"] == "completed"
+    assert link_rows == [{"artifact_id": operation_id}]
+    assert sum(isinstance(result, StudyArtifactConflict) for result in results) == 1
+    assert sum(isinstance(result, list) for result in results) == 1
 
 
 async def test_manifestless_plan_lifecycle_binds_exact_syllabus_manifest_atomically(
