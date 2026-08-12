@@ -42,10 +42,26 @@ export function useStudyPlanSources(planId: string | null | undefined) {
   })
 }
 
+export function useStudyPlanReadiness(planId: string | null | undefined) {
+  return useQuery({
+    queryKey: QUERY_KEYS.studyPlanReadiness(planId ?? ''),
+    queryFn: () => studyPlansApi.readiness(planId as string),
+    enabled: Boolean(planId),
+  })
+}
+
 export function useStudySyllabus(planId: string | null | undefined, version?: number) {
   return useQuery({
     queryKey: [...QUERY_KEYS.studySyllabus(planId ?? ''), version ?? 'active'] as const,
-    queryFn: () => studyPlansApi.syllabus(planId as string, version),
+    queryFn: async () => {
+      try {
+        return await studyPlansApi.syllabus(planId as string, version)
+      } catch (error) {
+        const status = (error as { response?: { status?: number } })?.response?.status
+        if (status === 404) return null
+        throw error
+      }
+    },
     enabled: Boolean(planId),
   })
 }
@@ -83,6 +99,7 @@ export function useAddStudyPlanSource() {
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlans }),
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlan(planId) }),
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlanSources(planId) }),
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlanReadiness(planId) }),
       ])
     },
   })
@@ -98,6 +115,7 @@ export function useRemoveStudyPlanSource() {
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlans }),
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlan(planId) }),
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlanSources(planId) }),
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlanReadiness(planId) }),
       ])
     },
   })
