@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import study_plans
+from deeper_notebook.study import source_service
 from deeper_notebook.study.plan_repository import (
     StudyPlanConflictError,
     StudyPlanNotFoundError,
@@ -496,3 +497,60 @@ def test_conflict_like_driver_failures_remain_safe_503(
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Study plans are unavailable"}
+
+
+def test_readiness_with_legacy_wrong_table_link_returns_safe_bounded_items(
+    client: TestClient,
+    repository: FakeRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository.plans["study_plan:one"] = _plan(
+        source_links=(
+            StudyPlanSourceLink(source_id="note:legacy"),
+            StudyPlanSourceLink(source_id="source:one"),
+        )
+    )
+    query = AsyncMock(
+        return_value=[
+            {
+                "id": "source:one",
+                "title": "Valid source",
+                "source_type": "text",
+                "command": None,
+                "has_text": True,
+                "text_length": 12,
+                "fingerprint": None,
+                "content_fingerprint": None,
+                "source_fingerprint": None,
+            }
+        ]
+    )
+    monkeypatch.setattr(source_service, "repo_query", query)
+
+    response = client.get(
+        "/api/study/plans/study_plan%3Aone/sources/readiness"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ready"] is False
+    assert response.json()["items"] == [
+        {
+            "source_id": "note:legacy",
+            "title": "Source unavailable",
+            "kind": "text",
+            "ready": False,
+            "command_id": None,
+            "fingerprint_status": "unknown",
+            "reason": "missing",
+        },
+        {
+            "source_id": "source:one",
+            "title": "Valid source",
+            "kind": "text",
+            "ready": True,
+            "command_id": None,
+            "fingerprint_status": "unknown",
+            "reason": "ready",
+        },
+    ]
+    query.assert_awaited_once()

@@ -354,6 +354,55 @@ async def test_source_readiness_uses_fixed_projection_without_materializing_sour
     query.assert_awaited_once()
 
 
+def test_source_projection_guards_optional_full_text_before_string_functions():
+    """The Surreal 2.x projection must not call string functions on NONE."""
+
+    statement = source_service.SOURCE_PROJECTION
+
+    assert "type::is::string(full_text)" in statement
+    assert "IF type::is::string(full_text) THEN string::len(full_text) ELSE 0 END" in statement
+    assert "IF type::is::string(full_text) THEN string::len(string::trim(full_text)) > 0 ELSE false END" in statement
+
+
+@pytest.mark.asyncio
+async def test_readiness_keeps_valid_items_when_legacy_links_use_wrong_tables(monkeypatch):
+    """Malformed legacy links become bounded missing items without a wrong-table query."""
+
+    query = AsyncMock(
+        return_value=[
+            _projection(
+                source_id="source:one",
+                title="Valid source",
+                kind="text",
+                command=None,
+                has_text=True,
+                text_length=12,
+            )
+        ]
+    )
+    monkeypatch.setattr(source_service, "repo_query", query)
+    links = (
+        StudyPlanSourceLink(source_id="note:legacy"),
+        LINK,
+        StudyPlanSourceLink(source_id="not-a-record-id"),
+        LINK,
+    )
+
+    receipt = await source_service.StudySourceService().readiness(links)
+
+    assert receipt.ready is False
+    assert [item.source_id for item in receipt.items] == [
+        "note:legacy",
+        "source:one",
+        "not-a-record-id",
+    ]
+    assert [item.reason for item in receipt.items] == ["missing", "ready", "missing"]
+    assert query.await_count == 1
+    bound_id = query.await_args.args[1]["source_id"]
+    assert getattr(bound_id, "table_name", None) == "source"
+    assert getattr(bound_id, "id", None) == "one"
+
+
 @pytest.mark.asyncio
 async def test_source_projection_query_error_is_unavailable_without_exception_inspection(monkeypatch):
     query = AsyncMock(side_effect=RuntimeError("opaque driver failure"))

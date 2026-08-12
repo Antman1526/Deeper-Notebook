@@ -55,8 +55,8 @@ class NormalizedSourceID:
 # allowing the UI to report bounded readiness and fingerprint availability.
 SOURCE_PROJECTION = """
 SELECT id, title, source_type, command,
-    string::len(full_text) AS text_length,
-    string::len(string::trim(full_text)) > 0 AS has_text,
+    IF type::is::string(full_text) THEN string::len(full_text) ELSE 0 END AS text_length,
+    IF type::is::string(full_text) THEN string::len(string::trim(full_text)) > 0 ELSE false END AS has_text,
     provenance.fingerprint AS fingerprint,
     provenance.content_fingerprint AS content_fingerprint,
     provenance.source_fingerprint AS source_fingerprint
@@ -184,6 +184,10 @@ class StudySourceService:
     async def _readiness_item(self, source_id: str) -> StudySourceReadinessItem:
         try:
             projection = await self._read_projection(source_id)
+        except StudySourceNotFoundError:
+            # Legacy plans may contain a malformed or wrong-table source ID.
+            # Treat it as a bounded missing item without issuing a query for it.
+            return self._missing_item(source_id)
         except StudySourceUnavailableError:
             return self._unavailable_item(source_id)
         if projection is None:
@@ -341,4 +345,13 @@ class StudySourceService:
     @classmethod
     def _link_source_id(cls, link: StudyPlanSourceLink | str) -> str:
         raw_id = link.source_id if isinstance(link, StudyPlanSourceLink) else link
-        return normalize_source_id(raw_id).canonical
+        try:
+            return normalize_source_id(raw_id).canonical
+        except StudySourceNotFoundError:
+            # Preserve a bounded receipt for legacy links while keeping the
+            # invalid value out of the bound Surreal query path.
+            if isinstance(raw_id, str):
+                bounded = raw_id.strip()[:512]
+                if bounded:
+                    return bounded
+            return "Source unavailable"
