@@ -81,6 +81,12 @@ def _bounded_page(limit: int, offset: int) -> tuple[int, int]:
     return min(max(limit, 1), _MAX_PAGE_SIZE), min(max(offset, 0), _MAX_PAGE_OFFSET)
 
 
+def _expected_revision(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise StudyPlanRepositoryError("invalid expected revision")
+    return value
+
+
 def _flatten_dicts(value: object) -> list[dict[str, Any]]:
     """Collect record dictionaries from all common Surreal result shapes."""
     if isinstance(value, dict):
@@ -122,6 +128,17 @@ def _record_or_none(value: object, *, kind: str) -> dict[str, Any] | None:
     if not _flatten_dicts(value):
         return None
     return _one_record(value, kind=kind)
+
+
+def _guard_plan_sql(expected_revision: int | None) -> str:
+    predicate = "id = $plan"
+    if expected_revision is not None:
+        predicate += " AND revision = $expected_revision"
+    return (
+        "LET $plan_guard = (SELECT id, revision FROM $plan WHERE "
+        f"{predicate})[0]; IF $plan_guard = NONE {{ "
+        'THROW "study_plan_guard_failed"; }; '
+    )
 
 
 def _as_datetime(value: object, field_name: str) -> datetime:
@@ -301,23 +318,49 @@ class StudyPlanRepository:
         *,
         expected_revision: int,
     ) -> StudyPlan:
-        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 1:
-            raise StudyPlanRepositoryError("invalid expected revision")
+        expected_revision = _expected_revision(expected_revision)
         if isinstance(changes, StudyPlan):
-            patch = _plan_data(changes)
-            patch = {key: patch[key] for key in _PLAN_UPDATE_FIELDS if key in patch}
+            raw_patch = _plan_data(changes)
+            raw_patch = {key: raw_patch[key] for key in _PLAN_UPDATE_FIELDS if key in raw_patch}
         elif isinstance(changes, Mapping):
             unknown = set(changes) - _PLAN_UPDATE_FIELDS
             if unknown:
                 raise StudyPlanRepositoryError("study plan update contains protected fields")
-            patch = dict(changes)
+            raw_patch = dict(changes)
         else:
             raise StudyPlanRepositoryError("invalid study plan update")
-        if "preferences" in patch and isinstance(patch["preferences"], StudyPlanPreferences):
-            patch["preferences"] = patch["preferences"].model_dump(mode="python")
-        if isinstance(patch.get("target_date"), date):
-            patch["target_date"] = patch["target_date"].isoformat()
         try:
+            current = await self.get(plan_id)
+            if current is None:
+                raise StudyPlanRepositoryError("study plan not found")
+            patch = dict(raw_patch)
+            if "preferences" in patch:
+                preferences = patch["preferences"]
+                if preferences is not None and not isinstance(preferences, StudyPlanPreferences):
+                    try:
+                        preferences = StudyPlanPreferences.model_validate(preferences)
+                    except Exception as exc:
+                        raise StudyPlanRepositoryError("invalid study plan update") from exc
+                patch["preferences"] = (
+                    preferences.model_dump(mode="python") if preferences is not None else None
+                )
+            if isinstance(patch.get("target_date"), str):
+                try:
+                    patch["target_date"] = date.fromisoformat(patch["target_date"])
+                except ValueError as exc:
+                    raise StudyPlanRepositoryError("invalid study plan update") from exc
+            # Construct the complete candidate before issuing any mutation. This
+            # applies the same strict/immutable contract as create and prevents
+            # malformed mappings from reaching SurrealDB.
+            try:
+                candidate = current.model_copy(update=patch)
+            except Exception as exc:
+                raise StudyPlanRepositoryError("invalid study plan update") from exc
+            patch = {key: getattr(candidate, key) for key in _PLAN_UPDATE_FIELDS if key in patch}
+            if isinstance(patch.get("preferences"), StudyPlanPreferences):
+                patch["preferences"] = patch["preferences"].model_dump(mode="python")
+            if isinstance(patch.get("target_date"), date):
+                patch["target_date"] = patch["target_date"].isoformat()
             rows = await repo_query(
                 "UPDATE $plan MERGE $patch SET revision = revision + 1, "
                 "updated_at = time::now() WHERE revision = $expected_revision "
@@ -359,15 +402,24 @@ class StudyPlanRepository:
                 "source_id": link.source_id,
             }
             if expected_revision is not None:
-                params["expected_revision"] = expected_revision
-            await repo_query(
-                "BEGIN TRANSACTION; CREATE $link CONTENT $link_data; "
-                "UPDATE $plan SET source_links = array::distinct(array::append("
-                "source_links, $source_id)), revision = revision + 1, "
-                f"updated_at = time::now() WHERE id = $plan{where_revision}; "
-                "COMMIT TRANSACTION;",
-                params,
+                params["expected_revision"] = _expected_revision(expected_revision)
+            transaction = (
+                "BEGIN TRANSACTION; "
+                + _guard_plan_sql(expected_revision)
+                + "CREATE $link CONTENT $link_data; "
+                "LET $updated_plan = (UPDATE $plan SET source_links = "
+                "array::distinct(array::append(source_links, $source_id)), "
+                "revision = revision + 1, updated_at = time::now() "
+                f"WHERE id = $plan{where_revision} RETURN AFTER)[0]; "
+                'IF $updated_plan = NONE { THROW "study_plan_update_failed"; }; '
+                "COMMIT TRANSACTION; RETURN $updated_plan;"
             )
+            await repo_query(transaction, params)
+            updated = await self.get(plan_id)
+            if updated is None or link.source_id not in {item.source_id for item in updated.source_links}:
+                raise StudyPlanRepositoryError("study plan revision conflict")
+            if expected_revision is not None and updated.version != expected_revision + 1:
+                raise StudyPlanRepositoryError("study plan revision conflict")
             return link
         except StudyPlanRepositoryError:
             raise
@@ -390,22 +442,37 @@ class StudyPlanRepository:
                 "plan": plan_record,
                 "source_id": link.source_id,
             }
-            where_revision = " AND revision = $expected_revision" if expected_revision is not None else ""
             if expected_revision is not None:
+                expected_revision = _expected_revision(expected_revision)
                 params["expected_revision"] = expected_revision
-            rows = await repo_query(
-                "BEGIN TRANSACTION; DELETE study_plan_source WHERE plan_id = $plan_id "
-                "AND source_id = $source_id RETURN BEFORE; "
-                "UPDATE $plan SET source_links = array::filter(source_links, "
-                "|$value| $value != $source_id), "
+            where_revision = " AND revision = $expected_revision" if expected_revision is not None else ""
+            before = await self.get(plan_id)
+            if before is None:
+                raise StudyPlanRepositoryError("study plan not found")
+            await repo_query(
+                "BEGIN TRANSACTION; "
+                + _guard_plan_sql(expected_revision)
+                + "LET $link_guard = (SELECT id FROM study_plan_source "
+                "WHERE plan_id = $plan_id AND source_id = $source_id)[0]; "
+                "IF $link_guard != NONE { "
+                "DELETE study_plan_source WHERE plan_id = $plan_id AND source_id = $source_id; "
+                "LET $updated_plan = (UPDATE $plan SET source_links = "
+                "array::filter(source_links, |$value| $value != $source_id), "
                 "revision = revision + 1, updated_at = time::now() "
-                f"WHERE id = $plan{where_revision} RETURN AFTER; COMMIT TRANSACTION;",
+                f"WHERE id = $plan{where_revision} RETURN AFTER)[0]; "
+                'IF $updated_plan = NONE { THROW "study_plan_update_failed"; }; '
+                "}; LET $removed = $link_guard != NONE; "
+                "COMMIT TRANSACTION; RETURN { removed: $removed };",
                 params,
             )
-            return any(
-                "source_id" in row and "plan_id" in row
-                for row in _flatten_dicts(rows)
-            )
+            after = await self.get(plan_id)
+            if after is None:
+                raise StudyPlanRepositoryError("invalid source link transaction receipt")
+            before_had_link = link.source_id in {item.source_id for item in before.source_links}
+            after_has_link = link.source_id in {item.source_id for item in after.source_links}
+            if before_had_link and after_has_link:
+                raise StudyPlanRepositoryError("invalid source link transaction receipt")
+            return before_had_link
         except StudyPlanRepositoryError:
             raise
         except Exception as exc:
@@ -416,18 +483,23 @@ class StudyPlanRepository:
         self,
         syllabus: StudySyllabus,
         *,
-        expected_revision: int | None = None,
+        expected_revision: int,
     ) -> StudySyllabus:
         try:
             _record_id(syllabus.plan_id, "study_plan")
+            expected_revision = _expected_revision(expected_revision)
             syllabus_record = ensure_record_id(
                 f"study_syllabus:{_stable_record_token(syllabus.plan_id, str(syllabus.version))}"
             )
             params: dict[str, Any] = {
                 "syllabus": syllabus_record,
                 "syllabus_data": _syllabus_data(syllabus),
+                "plan": _record_id(syllabus.plan_id, "study_plan"),
+                "plan_id": syllabus.plan_id,
+                "expected_revision": expected_revision,
             }
-            statements = ["BEGIN TRANSACTION; CREATE $syllabus CONTENT $syllabus_data RETURN AFTER;"]
+            statements = ["BEGIN TRANSACTION; ", _guard_plan_sql(expected_revision),
+                          "CREATE $syllabus CONTENT $syllabus_data RETURN AFTER;"]
             for index, unit in enumerate(syllabus.units):
                 unit_record = ensure_record_id(
                     f"study_unit:{_stable_record_token(syllabus.plan_id, str(syllabus.version), unit.unit_id)}"
@@ -437,8 +509,13 @@ class StudyPlanRepository:
                 params[key] = unit_record
                 params[data_key] = _unit_data(syllabus, unit, index)
                 statements.append(f"CREATE ${key} CONTENT ${data_key} RETURN AFTER;")
-            statements.append("COMMIT TRANSACTION;")
+            statements.append("COMMIT TRANSACTION; RETURN { saved: true };")
             await repo_query(" ".join(statements), params)
+            persisted = await repo_query(
+                "SELECT id, plan_id, version FROM $syllabus;", {"syllabus": syllabus_record}
+            )
+            if _record_or_none(persisted, kind="syllabus") is None:
+                raise StudyPlanRepositoryError("invalid syllabus transaction receipt")
             # The immutable input is the complete validated projection.  Return
             # it rather than trusting a driver-specific transaction result shape.
             return syllabus
@@ -446,7 +523,7 @@ class StudyPlanRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to save study syllabus")
-            raise StudyPlanRepositoryError("Study syllabus version already exists or is unavailable") from exc
+            raise StudyPlanRepositoryError("study syllabus version already exists or is unavailable") from exc
 
     async def approve_syllabus(
         self,
@@ -457,18 +534,23 @@ class StudyPlanRepository:
     ) -> StudyPlan:
         if isinstance(syllabus_version, bool) or not isinstance(syllabus_version, int) or syllabus_version < 1:
             raise StudyPlanRepositoryError("invalid syllabus version")
-        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 1:
-            raise StudyPlanRepositoryError("invalid expected revision")
+        expected_revision = _expected_revision(expected_revision)
         try:
             plan_record = _record_id(plan_id, "study_plan")
             syllabus_record = ensure_record_id(
                 f"study_syllabus:{_stable_record_token(plan_id, str(syllabus_version))}"
             )
             await repo_query(
-                "BEGIN TRANSACTION; UPDATE $syllabus SET approved_at = time::now() "
-                "WHERE plan_id = $plan_id AND version = $version; "
-                "UPDATE $plan MERGE $plan_patch WHERE revision = $expected_revision "
-                "RETURN AFTER; COMMIT TRANSACTION;",
+                "BEGIN TRANSACTION; "
+                + _guard_plan_sql(expected_revision)
+                + "LET $syllabus_guard = (SELECT id, plan_id, version FROM $syllabus "
+                "WHERE id = $syllabus AND plan_id = $plan_id AND version = $version)[0]; "
+                'IF $syllabus_guard = NONE { THROW "study_syllabus_guard_failed"; }; '
+                "UPDATE $syllabus SET approved_at = time::now() WHERE id = $syllabus; "
+                "LET $updated_plan = (UPDATE $plan MERGE $plan_patch "
+                "WHERE id = $plan AND revision = $expected_revision RETURN AFTER)[0]; "
+                'IF $updated_plan = NONE { THROW "study_plan_update_failed"; }; '
+                "COMMIT TRANSACTION; RETURN $updated_plan;",
                 {
                     "syllabus": syllabus_record,
                     "plan": plan_record,
@@ -487,7 +569,12 @@ class StudyPlanRepository:
             # plan UPDATE committed. Re-read the canonical plan projection so
             # transaction result ordering cannot authorize a stale response.
             approved = await self.get(plan_id)
-            if approved is None or approved.approved_syllabus_version != syllabus_version:
+            if (
+                approved is None
+                or approved.state != "approved"
+                or approved.approved_syllabus_version != syllabus_version
+                or approved.version != expected_revision + 1
+            ):
                 raise StudyPlanRepositoryError("study plan revision conflict or syllabus version not found")
             return approved
         except StudyPlanRepositoryError:
