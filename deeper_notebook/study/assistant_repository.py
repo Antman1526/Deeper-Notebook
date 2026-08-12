@@ -1248,6 +1248,30 @@ class StudyAssistantRepository:
         except StudyAssistantRepositoryError:
             raise
         except Exception as exc:
+            # A concurrent caller may have won the unique
+            # (plan_id, request_id) index between our pre-read and CREATE.
+            # Re-read that winner and converge only when the complete
+            # canonical receipt payload matches.  A different payload is a
+            # typed idempotency conflict; do not report it as an outage.
+            try:
+                replay_rows = await repo_query(
+                    f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "
+                    "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
+                    {"plan_id": plan_value, "request_id": receipt.request_id},
+                )
+                if replay_rows:
+                    replay = _progress_from(replay_rows)
+                    if replay.model_dump(exclude={"receipt_id"}) == receipt.model_dump(
+                        exclude={"receipt_id"}
+                    ):
+                        return replay
+                    raise StudyAssistantConflictError(
+                        "progress request ID was already used"
+                    )
+            except StudyAssistantConflictError:
+                raise
+            except Exception:
+                pass
             logger.exception("Failed to append study progress")
             raise StudyAssistantUnavailableError("Study progress is unavailable") from exc
 
@@ -1275,6 +1299,29 @@ class StudyAssistantRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to list study progress")
+            raise StudyAssistantUnavailableError("Study progress is unavailable") from exc
+
+    async def get_progress_by_request(
+        self,
+        plan_id: str,
+        request_id: str,
+    ) -> StudyProgressReceipt | None:
+        """Read one append-only progress receipt for retry reconciliation."""
+        plan = _table_record(plan_id, "study_plan")
+        plan_value = _record_value(plan_id, plan)
+        if not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 256:
+            raise StudyAssistantRepositoryError("invalid progress request ID")
+        try:
+            rows = await repo_query(
+                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "
+                "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
+                {"plan_id": plan_value, "request_id": request_id},
+            )
+            return _progress_from(rows) if rows else None
+        except StudyAssistantRepositoryError:
+            raise
+        except Exception as exc:
+            logger.exception("Failed to load study progress request")
             raise StudyAssistantUnavailableError("Study progress is unavailable") from exc
 
 

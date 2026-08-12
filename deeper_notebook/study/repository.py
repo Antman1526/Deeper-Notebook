@@ -183,11 +183,14 @@ class StudyRepository:
 
     @staticmethod
     def _card_data(card: StudyCard) -> dict[str, Any]:
-        return card.model_dump(exclude={"id", "created", "updated"}, mode="json")
+        # Surreal schema fields ``due``/FSRS timestamps are native datetimes;
+        # JSON mode turns them into strings that Surreal rejects.  Keep Python
+        # datetime values for the driver while still dumping nested contracts.
+        return card.model_dump(exclude={"id", "created", "updated"}, mode="python")
 
     @staticmethod
     def _review_data(review: StudyReview) -> dict[str, Any]:
-        data = review.model_dump(exclude={"id", "created"}, mode="json")
+        data = review.model_dump(exclude={"id", "created"}, mode="python")
         data["card_id"] = ensure_record_id(review.card_id)
         return data
 

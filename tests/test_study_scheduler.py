@@ -81,6 +81,21 @@ def test_again_from_a_review_card_increments_lapse_count() -> None:
     assert lapsed.card.lapse_count == 1
 
 
+def test_native_persistence_keeps_fsrs_datetimes_for_surreal() -> None:
+    reviewed_at = datetime(2026, 7, 18, 12, 0, tzinfo=UTC)
+    scheduled = StudyScheduler().schedule(
+        _card(), StudyRating.GOOD, reviewed_at=reviewed_at
+    )
+
+    card_data = StudyRepository._card_data(scheduled.card)
+    review_data = StudyRepository._review_data(scheduled.review)
+
+    assert isinstance(card_data["due"], datetime)
+    assert isinstance(card_data["fsrs_state"]["due"], datetime)
+    assert isinstance(review_data["reviewed_at"], datetime)
+    assert isinstance(review_data["fsrs_state_before"]["due"], datetime)
+
+
 class _MemoryRepository:
     def __init__(self) -> None:
         self.card = _card()

@@ -23,6 +23,7 @@ from deeper_notebook.study.plans import (
     StudySyllabus,
     StudySyllabusUnit,
 )
+from deeper_notebook.study.progress import StudyMasteryProjection
 from deeper_notebook.study.source_service import (
     StudySourceReadiness,
     StudySourceReadinessItem,
@@ -126,6 +127,34 @@ class ProposeSyllabusRequest(_StrictRequest):
 class ApproveSyllabusRequest(_StrictRequest):
     syllabus_version: StrictInt = Field(ge=1)
     expected_revision: StrictInt = Field(ge=1)
+
+
+class StudyProgressDecisionRequest(_StrictRequest):
+    """An explicit user decision over one inert adaptation proposal."""
+
+    proposal_id: StrictStr = Field(min_length=1, max_length=512)
+    decision: Literal["accepted", "dismissed"]
+    request_id: StrictStr = Field(min_length=1, max_length=256)
+    expected_revision: StrictInt | None = Field(default=None, ge=1)
+
+    @field_validator("proposal_id", "request_id")
+    @classmethod
+    def decision_ids_are_nonblank(cls, value: str, info: object) -> str:
+        return _nonblank(value, field_name=str(info.field_name))
+
+    @model_validator(mode="after")
+    def accepted_decisions_need_revision(self) -> "StudyProgressDecisionRequest":
+        if self.decision == "accepted" and self.expected_revision is None:
+            raise ValueError("accepted study adaptations require expected_revision")
+        return self
+
+
+class StudyProgressDecisionResponse(_StrictRequest):
+    """Safe decision receipt projection; no plan internals are exposed."""
+
+    proposal_id: str
+    decision: Literal["accepted", "dismissed"]
+    projection: StudyMasteryProjection
 
 
 StudyArtifactType = Literal[
@@ -239,10 +268,14 @@ class StudySourceReadinessItemResponse(BaseModel):
     ready: bool
     command_id: str | None = Field(default=None, max_length=512)
     fingerprint_status: Literal["available", "unknown"]
-    reason: Literal["ready", "processing", "processing_failed", "missing", "unavailable"]
+    reason: Literal[
+        "ready", "processing", "processing_failed", "missing", "unavailable"
+    ]
 
     @classmethod
-    def from_item(cls, item: StudySourceReadinessItem) -> "StudySourceReadinessItemResponse":
+    def from_item(
+        cls, item: StudySourceReadinessItem
+    ) -> "StudySourceReadinessItemResponse":
         return cls.model_validate(item.model_dump())
 
 
@@ -255,7 +288,9 @@ class StudySourceReadinessResponse(BaseModel):
     items: tuple[StudySourceReadinessItemResponse, ...] = Field(max_length=100)
 
     @classmethod
-    def from_readiness(cls, readiness: StudySourceReadiness) -> "StudySourceReadinessResponse":
+    def from_readiness(
+        cls, readiness: StudySourceReadiness
+    ) -> "StudySourceReadinessResponse":
         return cls(
             ready=readiness.ready,
             items=tuple(
