@@ -125,6 +125,7 @@ class FakeRepository:
             current.model_dump()
             | {
                 "source_links": current.source_links + (link,),
+                "state": "analyzing_sources" if current.state == "draft" else current.state,
                 "version": current.version + 1,
             }
         )
@@ -153,13 +154,31 @@ class FakeRepository:
         return self.syllabi.get((plan_id, version)) if version is not None else None
 
     async def save_syllabus(
-        self, syllabus: StudySyllabus, *, expected_revision: int
+        self,
+        syllabus: StudySyllabus,
+        *,
+        expected_revision: int,
+        lifecycle_action: str | None = None,
     ) -> StudySyllabus:
         self.calls += 1
         current = self.plans.get(syllabus.plan_id)
         if current is None or current.version != expected_revision:
             raise StudyPlanConflictError("study plan revision conflict")
+        if lifecycle_action == "propose" and current.state != "analyzing_sources":
+            raise StudyPlanConflictError("study plan lifecycle conflict")
+        if lifecycle_action == "edit" and current.state not in {"syllabus_proposed", "editing"}:
+            raise StudyPlanConflictError("study plan lifecycle conflict")
         self.syllabi[(syllabus.plan_id, syllabus.version)] = syllabus
+        if lifecycle_action == "propose":
+            self.plans[syllabus.plan_id] = StudyPlan.model_validate(
+                current.model_dump()
+                | {"state": "syllabus_proposed", "version": current.version + 1}
+            )
+        elif lifecycle_action == "edit":
+            self.plans[syllabus.plan_id] = StudyPlan.model_validate(
+                current.model_dump()
+                | {"state": "editing", "version": current.version + 1}
+            )
         return syllabus
 
     async def approve_syllabus(
@@ -285,7 +304,9 @@ def test_source_links_require_exact_revision_and_only_project_source_id(client: 
     assert removed.json() == {"removed": True}
 
 
-def test_syllabus_read_and_update_require_exact_plan_revision(client: TestClient) -> None:
+def test_syllabus_read_and_update_require_exact_plan_revision(
+    client: TestClient, repository: FakeRepository
+) -> None:
     fetched = client.get("/api/study/plans/study_plan%3Aone/syllabus?version=1")
     forbidden_schema_version = client.put(
         "/api/study/plans/study_plan%3Aone/syllabus",
@@ -300,6 +321,7 @@ def test_syllabus_read_and_update_require_exact_plan_revision(client: TestClient
             ),
         },
     )
+    repository.plans["study_plan:one"] = _plan(state="syllabus_proposed")
     saved = client.put(
         "/api/study/plans/study_plan%3Aone/syllabus",
         json={
@@ -478,8 +500,13 @@ def test_conflict_like_driver_failures_remain_safe_503(
             )
 
         async def save_syllabus(
-            self, syllabus: StudySyllabus, *, expected_revision: int
+            self,
+            syllabus: StudySyllabus,
+            *,
+            expected_revision: int,
+            lifecycle_action: str | None = None,
         ) -> StudySyllabus:
+            del lifecycle_action
             raise StudyPlanRepositoryError(
                 "study syllabus version already exists or is unavailable"
             )
@@ -584,6 +611,79 @@ def test_propose_syllabus_returns_typed_version_without_approval(
     assert response.status_code == 200
     assert response.json()["version"] == 1
     assert response.json()["approved_at"] is None
+
+
+def test_manifestless_api_plan_can_complete_explicit_syllabus_lifecycle(
+    client: TestClient,
+    repository: FakeRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class LifecycleService:
+        def __init__(self, *, repository: FakeRepository) -> None:
+            self.repository = repository
+
+        async def propose(self, plan_id: str, *, expected_revision: int) -> StudySyllabus:
+            syllabus = _syllabus(plan_id=plan_id, version=2)
+            return await self.repository.save_syllabus(
+                syllabus,
+                expected_revision=expected_revision,
+                lifecycle_action="propose",
+            )
+
+        async def approve(
+            self,
+            plan_id: str,
+            *,
+            syllabus_version: int,
+            expected_revision: int,
+        ) -> StudyPlan:
+            return await self.repository.approve_syllabus(
+                plan_id,
+                syllabus_version=syllabus_version,
+                expected_revision=expected_revision,
+            )
+
+    monkeypatch.setattr(study_plans, "StudySyllabusService", LifecycleService)
+    assert repository.plans["study_plan:one"].source_manifest_sha256 is None
+
+    linked = client.post(
+        "/api/study/plans/study_plan%3Aone/sources",
+        json={"source_id": "source:one", "expected_revision": 1},
+    )
+    proposed = client.post(
+        "/api/study/plans/study_plan%3Aone/syllabus:propose",
+        json={"expected_revision": 2},
+    )
+    edited = client.put(
+        "/api/study/plans/study_plan%3Aone/syllabus",
+        json={
+            "expected_revision": 3,
+            **_syllabus(version=3).model_dump(
+                mode="json", exclude={"plan_id", "schema_version", "approved_at"}
+            ),
+        },
+    )
+    approved = client.post(
+        "/api/study/plans/study_plan%3Aone/syllabus:approve",
+        json={"syllabus_version": 3, "expected_revision": 4},
+    )
+
+    assert linked.status_code == 201
+    assert proposed.status_code == 200
+    assert edited.status_code == 200
+    assert approved.status_code == 200
+    final = repository.plans["study_plan:one"]
+    assert final.state == "approved"
+    assert final.version == 5
+    assert final.approved_syllabus_version == 3
+    assert final.source_manifest_sha256 == "a" * 64
+
+    stale = client.post(
+        "/api/study/plans/study_plan%3Aone/syllabus:approve",
+        json={"syllabus_version": 3, "expected_revision": 4},
+    )
+    assert stale.status_code == 409
+    assert repository.plans["study_plan:one"] == final
 
 
 @pytest.mark.parametrize(

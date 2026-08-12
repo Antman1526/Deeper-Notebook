@@ -287,6 +287,7 @@ async def save_study_syllabus(
         syllabus = await _repository().save_syllabus(
             payload.to_syllabus(plan_id),
             expected_revision=payload.expected_revision,
+            lifecycle_action="edit",
         )
     except StudyPlanRepositoryError as exc:
         raise _repository_error(exc) from None

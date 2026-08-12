@@ -108,6 +108,91 @@ async def test_approval_uses_expected_plan_and_syllabus_versions(monkeypatch):
     assert "LET $plan_guard" in calls[0][0]
     assert "LET $syllabus_guard" in calls[0][0]
     assert "THROW" in calls[0][0]
+    assert "$syllabus_guard.source_manifest_sha256" in calls[0][0]
+    assert all("source_manifest_sha256" not in key for key in calls[0][1])
+
+
+@pytest.mark.asyncio
+async def test_add_source_advances_draft_to_analyzing_sources_atomically(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def query(sql, params):
+        calls.append((sql, params))
+        return [{**PLAN_RECORD, "source_links": ["source:one"], "state": "analyzing_sources", "revision": 2}]
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+
+    await StudyPlanRepository().add_source(
+        "study_plan:one", "source:one", expected_revision=1
+    )
+
+    transaction_sql = calls[0][0]
+    assert 'state = IF state = "draft" THEN "analyzing_sources" ELSE state END' in transaction_sql
+    assert "revision = revision + 1" in transaction_sql
+
+
+@pytest.mark.asyncio
+async def test_save_syllabus_propose_advances_lifecycle_and_revision_atomically(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def query(sql, params):
+        calls.append((sql, params))
+        if sql.startswith("SELECT"):
+            return [{"id": "study_syllabus:one", "plan_id": "study_plan:one", "version": 1}]
+        return [{"saved": True}]
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+
+    await StudyPlanRepository().save_syllabus(
+        _syllabus(), expected_revision=1, lifecycle_action="propose"
+    )
+
+    transaction_sql = calls[0][0]
+    assert "state = \"syllabus_proposed\"" in transaction_sql
+    assert "revision = revision + 1" in transaction_sql
+
+
+@pytest.mark.asyncio
+async def test_save_syllabus_edit_advances_proposed_lifecycle_atomically(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def query(sql, params):
+        calls.append((sql, params))
+        if sql.startswith("SELECT"):
+            return [{"id": "study_syllabus:one", "plan_id": "study_plan:one", "version": 1}]
+        return [{"saved": True}]
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+
+    await StudyPlanRepository().save_syllabus(
+        _syllabus(), expected_revision=1, lifecycle_action="edit"
+    )
+
+    transaction_sql = calls[0][0]
+    assert "state = \"editing\"" in transaction_sql
+    assert "revision = revision + 1" in transaction_sql
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["propose", "edit", "approve"])
+async def test_lifecycle_state_guard_is_a_typed_conflict(monkeypatch, operation):
+    async def query(sql, params):
+        raise RuntimeError("study_plan_state_guard_failed")
+
+    monkeypatch.setattr(plan_repository, "repo_query", query)
+    repository = StudyPlanRepository()
+
+    with pytest.raises(StudyPlanConflictError, match="revision conflict"):
+        if operation == "approve":
+            await repository.approve_syllabus(
+                "study_plan:one", syllabus_version=1, expected_revision=1
+            )
+        else:
+            await repository.save_syllabus(
+                _syllabus(),
+                expected_revision=1,
+                lifecycle_action=operation,
+            )
 
 
 @pytest.mark.asyncio

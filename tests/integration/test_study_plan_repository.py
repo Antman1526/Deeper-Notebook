@@ -43,6 +43,32 @@ def _syllabus(version: int) -> StudySyllabus:
     )
 
 
+def _manifestless_plan() -> StudyPlan:
+    return StudyPlan(
+        plan_id="study_plan:lifecycle",
+        goal="Verify atomic syllabus lifecycle",
+        starting_level="beginner",
+        preferences=StudyPlanPreferences(weekly_minutes=120, session_minutes=30),
+    )
+
+
+def _manifest_syllabus(version: int, manifest: str) -> StudySyllabus:
+    return StudySyllabus(
+        plan_id="study_plan:lifecycle",
+        version=version,
+        source_manifest_sha256=manifest,
+        units=[
+            StudySyllabusUnit(
+                unit_id=f"lifecycle-{version}",
+                title=f"Lifecycle {version}",
+                objectives=["Verify lifecycle binding"],
+                estimated_minutes=30,
+                source_ids=["source:lifecycle"],
+            )
+        ],
+    )
+
+
 async def test_plan_create_list_link_version_and_optimistic_approval(clean_namespace):
     repository = StudyPlanRepository()
 
@@ -61,8 +87,22 @@ async def test_plan_create_list_link_version_and_optimistic_approval(clean_names
     listed = await repository.list(limit=10)
     assert [plan.plan_id for plan in listed] == ["study_plan:integration"]
 
-    await repository.save_syllabus(_syllabus(1), expected_revision=2)
-    await repository.save_syllabus(_syllabus(2), expected_revision=2)
+    proposed = await repository.save_syllabus(
+        _syllabus(1), expected_revision=2, lifecycle_action="propose"
+    )
+    assert proposed.version == 1
+    proposed_plan = await repository.get(created.plan_id)
+    assert proposed_plan is not None
+    assert proposed_plan.state == "syllabus_proposed"
+    assert proposed_plan.version == 3
+
+    await repository.save_syllabus(
+        _syllabus(2), expected_revision=3, lifecycle_action="edit"
+    )
+    editing_plan = await repository.get(created.plan_id)
+    assert editing_plan is not None
+    assert editing_plan.state == "editing"
+    assert editing_plan.version == 4
     syllabus_rows = await repo_query(
         "SELECT plan_id, version FROM study_syllabus WHERE plan_id = $plan_id "
         "ORDER BY version ASC",
@@ -73,16 +113,99 @@ async def test_plan_create_list_link_version_and_optimistic_approval(clean_names
     approved = await repository.approve_syllabus(
         created.plan_id,
         syllabus_version=2,
-        expected_revision=2,
+        expected_revision=4,
     )
     assert approved.state == "approved"
     assert approved.approved_syllabus_version == 2
-    assert approved.version == 3
+    assert approved.version == 5
 
     current = await repository.get(created.plan_id)
     assert current is not None
     assert current.state == "approved"
     assert current.approved_syllabus_version == 2
+    assert current.source_manifest_sha256 == "a" * 64
+
+
+async def test_manifestless_plan_lifecycle_binds_exact_syllabus_manifest_atomically(
+    clean_namespace,
+):
+    repository = StudyPlanRepository()
+    created = await repository.create(_manifestless_plan())
+    assert created.source_manifest_sha256 is None
+
+    await repo_query(
+        "CREATE $source CONTENT $data RETURN AFTER;",
+        {
+            "source": ensure_record_id("source:lifecycle"),
+            "data": {"title": "Lifecycle source", "full_text": "Initial evidence"},
+        },
+    )
+    await repository.add_source(created.plan_id, "source:lifecycle", expected_revision=1)
+    analyzing = await repository.get(created.plan_id)
+    assert analyzing is not None
+    assert analyzing.state == "analyzing_sources"
+    assert analyzing.version == 2
+
+    with pytest.raises(Exception, match="study syllabus|revision"):
+        await repository.save_syllabus(
+            _manifest_syllabus(99, "d" * 64),
+            expected_revision=2,
+            lifecycle_action="edit",
+        )
+    assert await repo_query(
+        "SELECT id FROM study_syllabus WHERE plan_id = $plan_id",
+        {"plan_id": created.plan_id},
+    ) == []
+
+    await repository.save_syllabus(
+        _manifest_syllabus(1, "b" * 64),
+        expected_revision=2,
+        lifecycle_action="propose",
+    )
+    proposed = await repository.get(created.plan_id)
+    assert proposed is not None
+    assert proposed.state == "syllabus_proposed"
+    assert proposed.version == 3
+
+    with pytest.raises(Exception, match="study syllabus|revision"):
+        await repository.approve_syllabus(
+            created.plan_id, syllabus_version=1, expected_revision=3
+        )
+    still_proposed = await repository.get(created.plan_id)
+    assert still_proposed == proposed
+    assert (await repo_query(
+        "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 1",
+        {"plan_id": created.plan_id},
+    ))[0].get("approved_at") is None
+
+    await repository.save_syllabus(
+        _manifest_syllabus(2, "c" * 64),
+        expected_revision=3,
+        lifecycle_action="edit",
+    )
+    editing = await repository.get(created.plan_id)
+    assert editing is not None
+    assert editing.state == "editing"
+    assert editing.version == 4
+
+    with pytest.raises(Exception, match="study syllabus|revision"):
+        await repository.approve_syllabus(
+            created.plan_id, syllabus_version=2, expected_revision=3
+        )
+    stale = await repository.get(created.plan_id)
+    assert stale == editing
+    assert (await repo_query(
+        "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 2",
+        {"plan_id": created.plan_id},
+    ))[0].get("approved_at") is None
+
+    approved = await repository.approve_syllabus(
+        created.plan_id, syllabus_version=2, expected_revision=4
+    )
+    assert approved.state == "approved"
+    assert approved.version == 5
+    assert approved.approved_syllabus_version == 2
+    assert approved.source_manifest_sha256 == "c" * 64
 
 
 async def test_syllabus_read_projects_exact_or_latest_ordered_immutable_version(clean_namespace):
@@ -178,33 +301,38 @@ async def test_guarded_approval_missing_or_stale_is_atomic(clean_namespace):
         {"plan_id": created.plan_id},
     ) == []
 
-    await repository.save_syllabus(_syllabus(1), expected_revision=1)
+    await repository.add_source(created.plan_id, "source:guard", expected_revision=1)
+    await repository.save_syllabus(
+        _syllabus(1), expected_revision=2, lifecycle_action="propose"
+    )
     with pytest.raises(Exception, match="study syllabus|revision"):
         await repository.approve_syllabus(
             created.plan_id, syllabus_version=1, expected_revision=99
         )
     still_pending = await repository.get(created.plan_id)
     assert still_pending is not None
-    assert still_pending.version == 1
-    assert still_pending.state == "draft"
+    assert still_pending.version == 3
+    assert still_pending.state == "syllabus_proposed"
     assert (await repo_query(
         "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 1",
         {"plan_id": created.plan_id},
     ))[0].get("approved_at") is None
 
+    await repository.save_syllabus(
+        _syllabus(2), expected_revision=3, lifecycle_action="edit"
+    )
     approved = await repository.approve_syllabus(
-        created.plan_id, syllabus_version=1, expected_revision=1
+        created.plan_id, syllabus_version=1, expected_revision=4
     )
     assert approved.approved_syllabus_version == 1
-    await repository.save_syllabus(_syllabus(2), expected_revision=2)
     with pytest.raises(Exception, match="study syllabus|revision"):
         await repository.approve_syllabus(
-            created.plan_id, syllabus_version=2, expected_revision=1
+            created.plan_id, syllabus_version=2, expected_revision=3
         )
     unchanged = await repository.get(created.plan_id)
     assert unchanged is not None
     assert unchanged.approved_syllabus_version == 1
-    assert unchanged.version == 2
+    assert unchanged.version == 5
     assert (await repo_query(
         "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 2",
         {"plan_id": created.plan_id},

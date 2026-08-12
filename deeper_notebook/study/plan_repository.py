@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from loguru import logger
 from surrealdb import RecordID  # type: ignore[import-untyped]
@@ -45,6 +45,7 @@ class StudyPlanConflictError(StudyPlanRepositoryError):
 
 _TRANSACTION_CONFLICT_MARKERS = (
     "study_plan_guard_failed",
+    "study_plan_state_guard_failed",
     "study_plan_update_failed",
     "study_syllabus_guard_failed",
 )
@@ -186,14 +187,24 @@ def _record_or_none(value: object, *, kind: str) -> dict[str, Any] | None:
     return _one_record(value, kind=kind)
 
 
-def _guard_plan_sql(expected_revision: int | None) -> str:
+def _guard_plan_sql(
+    expected_revision: int | None,
+    *,
+    expected_state: str | tuple[str, ...] | None = None,
+) -> str:
     predicate = "id = $plan"
     if expected_revision is not None:
         predicate += " AND revision = $expected_revision"
+    state_guard = ""
+    if expected_state is not None:
+        states = (expected_state,) if isinstance(expected_state, str) else expected_state
+        checks = " AND ".join(f'$plan_guard.state != "{state}"' for state in states)
+        state_guard = f'IF {checks} {{ THROW "study_plan_state_guard_failed"; }}; '
     return (
-        "LET $plan_guard = (SELECT id, revision FROM $plan WHERE "
+        "LET $plan_guard = (SELECT id, revision, state FROM $plan WHERE "
         f"{predicate})[0]; IF $plan_guard = NONE {{ "
         'THROW "study_plan_guard_failed"; }; '
+        + state_guard
     )
 
 
@@ -578,6 +589,7 @@ class StudyPlanRepository:
                 + "CREATE $link CONTENT $link_data; "
                 "LET $updated_plan = (UPDATE $plan SET source_links = "
                 "array::distinct(array::append(source_links, $source_id)), "
+                'state = IF state = "draft" THEN "analyzing_sources" ELSE state END, '
                 "revision = revision + 1, updated_at = time::now() "
                 f"WHERE id = $plan{where_revision} RETURN AFTER)[0]; "
                 'IF $updated_plan = NONE { THROW "study_plan_update_failed"; }; '
@@ -657,10 +669,13 @@ class StudyPlanRepository:
         syllabus: StudySyllabus,
         *,
         expected_revision: int,
+        lifecycle_action: Literal["propose", "edit"] | None = None,
     ) -> StudySyllabus:
         try:
             _record_id(syllabus.plan_id, "study_plan")
             expected_revision = _expected_revision(expected_revision)
+            if lifecycle_action not in {None, "propose", "edit"}:
+                raise StudyPlanRepositoryError("invalid syllabus lifecycle action")
             syllabus_record = ensure_record_id(
                 f"study_syllabus:{_stable_record_token(syllabus.plan_id, str(syllabus.version))}"
             )
@@ -671,8 +686,38 @@ class StudyPlanRepository:
                 "plan_id": syllabus.plan_id,
                 "expected_revision": expected_revision,
             }
-            statements = ["BEGIN TRANSACTION; ", _guard_plan_sql(expected_revision),
-                          "CREATE $syllabus CONTENT $syllabus_data RETURN AFTER;"]
+            if lifecycle_action == "propose":
+                guard = _guard_plan_sql(
+                    expected_revision,
+                    expected_state="analyzing_sources",
+                )
+                lifecycle_update = (
+                    "LET $updated_plan = (UPDATE $plan SET "
+                    'state = "syllabus_proposed", '
+                    "revision = revision + 1, updated_at = time::now() "
+                    "WHERE id = $plan AND revision = $expected_revision RETURN AFTER)[0]; "
+                    'IF $updated_plan = NONE { THROW "study_plan_update_failed"; }; '
+                )
+            elif lifecycle_action == "edit":
+                guard = _guard_plan_sql(
+                    expected_revision,
+                    expected_state=("syllabus_proposed", "editing"),
+                )
+                lifecycle_update = (
+                    "LET $updated_plan = (UPDATE $plan SET "
+                    'state = "editing", '
+                    "revision = revision + 1, updated_at = time::now() "
+                    "WHERE id = $plan AND revision = $expected_revision RETURN AFTER)[0]; "
+                    'IF $updated_plan = NONE { THROW "study_plan_update_failed"; }; '
+                )
+            else:
+                guard = _guard_plan_sql(expected_revision)
+                lifecycle_update = ""
+            statements = [
+                "BEGIN TRANSACTION; ",
+                guard,
+                "CREATE $syllabus CONTENT $syllabus_data RETURN AFTER;",
+            ]
             for index, unit in enumerate(syllabus.units):
                 unit_record = ensure_record_id(
                     f"study_unit:{_stable_record_token(syllabus.plan_id, str(syllabus.version), unit.unit_id)}"
@@ -682,6 +727,8 @@ class StudyPlanRepository:
                 params[key] = unit_record
                 params[data_key] = _unit_data(syllabus, unit, index)
                 statements.append(f"CREATE ${key} CONTENT ${data_key} RETURN AFTER;")
+            if lifecycle_update:
+                statements.append(lifecycle_update)
             statements.append("COMMIT TRANSACTION; RETURN { saved: true };")
             await repo_query(" ".join(statements), params)
             persisted = await repo_query(
@@ -717,12 +764,16 @@ class StudyPlanRepository:
             )
             await repo_query(
                 "BEGIN TRANSACTION; "
-                + _guard_plan_sql(expected_revision)
-                + "LET $syllabus_guard = (SELECT id, plan_id, version FROM $syllabus "
+                + _guard_plan_sql(expected_revision, expected_state="editing")
+                + "LET $syllabus_guard = (SELECT id, plan_id, version, source_manifest_sha256 FROM $syllabus "
                 "WHERE id = $syllabus AND plan_id = $plan_id AND version = $version)[0]; "
                 'IF $syllabus_guard = NONE { THROW "study_syllabus_guard_failed"; }; '
                 "UPDATE $syllabus SET approved_at = time::now() WHERE id = $syllabus; "
-                "LET $updated_plan = (UPDATE $plan MERGE $plan_patch "
+                "LET $updated_plan = (UPDATE $plan SET "
+                'state = "approved", '
+                "active_syllabus_version = $version, "
+                "source_manifest_sha256 = $syllabus_guard.source_manifest_sha256, "
+                "revision = revision + 1, updated_at = time::now() "
                 "WHERE id = $plan AND revision = $expected_revision RETURN AFTER)[0]; "
                 'IF $updated_plan = NONE { THROW "study_plan_update_failed"; }; '
                 "COMMIT TRANSACTION; RETURN $updated_plan;",
@@ -732,11 +783,6 @@ class StudyPlanRepository:
                     "plan_id": plan_id,
                     "version": syllabus_version,
                     "expected_revision": expected_revision,
-                    "plan_patch": {
-                        "state": "approved",
-                        "active_syllabus_version": syllabus_version,
-                        "revision": expected_revision + 1,
-                    },
                 },
             )
             # SurrealDB returns the first statement's RETURN payload for some

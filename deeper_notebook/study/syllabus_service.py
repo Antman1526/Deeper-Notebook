@@ -335,6 +335,7 @@ class StudySyllabusService:
             return await self.repository.save_syllabus(
                 syllabus,
                 expected_revision=expected_revision,
+                lifecycle_action="propose",
             )
         except StudySyllabusError:
             raise

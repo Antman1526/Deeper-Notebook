@@ -129,13 +129,33 @@ class FakeRepository:
             return self.syllabi[max(self.syllabi)] if self.syllabi else None
         return self.syllabi.get(version)
 
-    async def save_syllabus(self, syllabus: StudySyllabus, *, expected_revision: int) -> StudySyllabus:
+    async def save_syllabus(
+        self,
+        syllabus: StudySyllabus,
+        *,
+        expected_revision: int,
+        lifecycle_action: str | None = None,
+    ) -> StudySyllabus:
         if expected_revision != self.plan.version:
             raise StudySyllabusConflict("revision_conflict")
         if syllabus.version in self.syllabi:
             raise StudySyllabusConflict("version_exists")
+        if lifecycle_action == "propose" and self.plan.state != "analyzing_sources":
+            raise StudySyllabusConflict("invalid_lifecycle")
+        if lifecycle_action == "edit" and self.plan.state not in {"syllabus_proposed", "editing"}:
+            raise StudySyllabusConflict("invalid_lifecycle")
         self.syllabi[syllabus.version] = syllabus
         self.saved.append(syllabus)
+        if lifecycle_action == "propose":
+            self.plan = StudyPlan.model_validate(
+                self.plan.model_dump()
+                | {"state": "syllabus_proposed", "version": self.plan.version + 1}
+            )
+        elif lifecycle_action == "edit":
+            self.plan = StudyPlan.model_validate(
+                self.plan.model_dump()
+                | {"state": "editing", "version": self.plan.version + 1}
+            )
         return syllabus
 
     async def approve_syllabus(self, plan_id: str, *, syllabus_version: int, expected_revision: int) -> StudyPlan:
@@ -166,7 +186,7 @@ class FakeSourceService:
 
 @pytest.mark.asyncio
 async def test_proposal_is_typed_and_does_not_approve_or_generate_artifacts():
-    repository = FakeRepository()
+    repository = FakeRepository(plan=_plan(state="analyzing_sources"))
     service = StudySyllabusService(
         repository=repository,
         source_service=FakeSourceService(),
@@ -182,13 +202,15 @@ async def test_proposal_is_typed_and_does_not_approve_or_generate_artifacts():
     assert repository.saved_artifacts == []
     assert repository.approved == []
     assert syllabus.units[0].source_ids == ("source:one",)
+    assert repository.plan.state == "syllabus_proposed"
+    assert repository.plan.version == 3
 
 
 @pytest.mark.asyncio
 async def test_proposal_requires_current_revision_before_reading_sources():
     source_service = FakeSourceService()
     service = StudySyllabusService(
-        repository=FakeRepository(),
+        repository=FakeRepository(plan=_plan(state="analyzing_sources")),
         source_service=source_service,
         source_loader=lambda _source_id: _source(),
         model_resolver=lambda _: FakeModel([_document()]),
@@ -205,7 +227,7 @@ async def test_proposal_rejects_not_ready_sources_and_no_evidence():
         items=(_ready().items[0].model_copy(update={"ready": False, "reason": "processing"}),),
     )
     service = StudySyllabusService(
-        repository=FakeRepository(),
+        repository=FakeRepository(plan=_plan(state="analyzing_sources")),
         source_service=FakeSourceService(readiness=not_ready),
         source_loader=lambda _source_id: _source(text=""),
         model_resolver=lambda _: FakeModel([_document()]),
@@ -215,7 +237,7 @@ async def test_proposal_rejects_not_ready_sources_and_no_evidence():
         await service.propose("study_plan:one", expected_revision=2)
 
     service = StudySyllabusService(
-        repository=FakeRepository(),
+        repository=FakeRepository(plan=_plan(state="analyzing_sources")),
         source_service=FakeSourceService(),
         source_loader=lambda _source_id: _source(text=""),
         model_resolver=lambda _: FakeModel([_document()]),
@@ -227,7 +249,7 @@ async def test_proposal_rejects_not_ready_sources_and_no_evidence():
 @pytest.mark.asyncio
 async def test_generation_uses_bounded_context_120_second_timeout_and_one_repair():
     model = FakeModel(["not json", _document()])
-    repository = FakeRepository()
+    repository = FakeRepository(plan=_plan(state="analyzing_sources"))
     service = StudySyllabusService(
         repository=repository,
         source_service=FakeSourceService(),
@@ -246,7 +268,7 @@ async def test_generation_uses_bounded_context_120_second_timeout_and_one_repair
 @pytest.mark.asyncio
 async def test_generation_timeout_and_malformed_output_are_typed():
     timeout_service = StudySyllabusService(
-        repository=FakeRepository(),
+        repository=FakeRepository(plan=_plan(state="analyzing_sources")),
         source_service=FakeSourceService(),
         source_loader=lambda _source_id: _source(),
         model_resolver=lambda _: FakeModel([asyncio.TimeoutError()]),
@@ -255,7 +277,7 @@ async def test_generation_timeout_and_malformed_output_are_typed():
         await timeout_service.propose("study_plan:one", expected_revision=2)
 
     malformed_service = StudySyllabusService(
-        repository=FakeRepository(),
+        repository=FakeRepository(plan=_plan(state="analyzing_sources")),
         source_service=FakeSourceService(),
         source_loader=lambda _source_id: _source(),
         model_resolver=lambda _: FakeModel(["bad", "still bad"]),
@@ -364,4 +386,5 @@ async def test_approval_is_explicit_and_binds_exact_version():
 
     assert approved.state == "approved"
     assert approved.approved_syllabus_version == 1
+    assert approved.source_manifest_sha256 == syllabus.source_manifest_sha256
     assert repository.approved == [("study_plan:one", 1, 2)]
