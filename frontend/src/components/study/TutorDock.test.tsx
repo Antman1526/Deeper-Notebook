@@ -72,6 +72,21 @@ describe('TutorDock', () => {
     expect(screen.getAllByRole('region', { name: /Tutor dock/i })).toHaveLength(1)
   })
 
+  it('changes role and mode together using a compatible default mode policy', () => {
+    render(<TutorDock planId="study_plan:one" />)
+
+    const role = screen.getByRole('combobox', { name: 'Tutor role' })
+    const mode = screen.getByRole('combobox', { name: 'Tutor mode' })
+
+    fireEvent.change(role, { target: { value: 'curriculum_architect' } })
+    expect(role).toHaveValue('curriculum_architect')
+    expect(mode).toHaveValue('plan_today')
+
+    fireEvent.change(role, { target: { value: 'research_scout' } })
+    expect(role).toHaveValue('research_scout')
+    expect(mode).toHaveValue('research_gap')
+  })
+
   it('requests web permission explicitly and maps it to an approved scope', async () => {
     render(<TutorDock planId="study_plan:one" approvedNetworkScope={['https://example.edu/']} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Tutor mode' }), { target: { value: 'research_gap' } })
@@ -82,8 +97,33 @@ describe('TutorDock', () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
       planId: 'study_plan:one',
       role: 'research_scout',
-      input: expect.objectContaining({ model_route: 'cloud', network_allowed: true, approved_network_scope: ['https://example.edu/'] }),
+      input: expect.objectContaining({
+        request_id: expect.stringMatching(/^study-assistant-request:/),
+        model_route: 'cloud',
+        network_allowed: true,
+        approved_network_scope: ['https://example.edu/'],
+      }),
     })))
+  })
+
+  it('gives each new submission an explicit bounded request id', async () => {
+    render(<TutorDock planId="study_plan:one" />)
+    const prompt = screen.getByRole('textbox', { name: 'Tutor prompt' })
+    const ask = screen.getByRole('button', { name: 'Ask tutor' })
+    fireEvent.change(prompt, { target: { value: 'Explain this once' } })
+    fireEvent.click(ask)
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1))
+    const firstRequestId = invoke.mock.calls[0]?.[0]?.input?.request_id
+    expect(firstRequestId).toEqual(expect.stringMatching(/^study-assistant-request:/))
+    expect(typeof firstRequestId).toBe('string')
+    expect((firstRequestId as string).length).toBeLessThanOrEqual(128)
+
+    fireEvent.change(prompt, { target: { value: 'Explain this again' } })
+    fireEvent.click(ask)
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2))
+    const secondRequestId = invoke.mock.calls[1]?.[0]?.input?.request_id
+    expect(secondRequestId).toEqual(expect.stringMatching(/^study-assistant-request:/))
+    expect(secondRequestId).not.toBe(firstRequestId)
   })
 
   it('requires approval before a tutor proposal changes the syllabus', async () => {

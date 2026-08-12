@@ -54,7 +54,10 @@ export function useStudyAssistantInvocation() {
     try {
       const data = await studyAssistantsApi.invoke(variables.planId, variables.role, variables.input, controller.signal)
       if (mountedRef.current && runId === runIdRef.current) setState({ status: 'success', data, error: null })
-      return data
+      // A transport may resolve after abort (for example, a provider that does
+      // not observe AbortSignal). Never surface that stale response to the
+      // dock as the current foreground result.
+      return runId === runIdRef.current && !controller.signal.aborted ? data : undefined
     } catch (error) {
       const cancelled = controller.signal.aborted || isAbortError(error)
       if (mountedRef.current && runId === runIdRef.current) {
@@ -63,7 +66,10 @@ export function useStudyAssistantInvocation() {
       if (cancelled) return undefined
       throw error
     } finally {
-      if (runId === runIdRef.current) {
+      // Keep the single-flight lock until this exact transport settles. The
+      // run id intentionally changes on cancel to suppress stale state, so it
+      // cannot also decide when the transport lock is safe to release.
+      if (controllerRef.current === controller) {
         activeRef.current = false
         controllerRef.current = null
       }
@@ -77,9 +83,7 @@ export function useStudyAssistantInvocation() {
   const cancel = useCallback(() => {
     if (!activeRef.current) return
     runIdRef.current += 1
-    activeRef.current = false
     controllerRef.current?.abort()
-    controllerRef.current = null
     if (mountedRef.current) setState({ status: 'cancelled', data: null, error: null })
   }, [])
 

@@ -38,7 +38,24 @@ export const studyPlanStateSchema = z.enum([
 export const studyPlanPreferencesSchema = z.object({
   weekly_minutes: z.number().int().min(5).max(10_080),
   session_minutes: z.number().int().min(5).max(480),
-}).strict()
+  // Task 11 supplies defaults for these fields when callers use the older
+  // two-field preference shape. Responses still project the persisted values.
+  model_route: z.enum(['local', 'cloud']).default('local'),
+  network_allowed: z.boolean().default(false),
+  approved_network_scope: z.array(
+    visibleText(512).refine((value) => value.startsWith('https://'), 'scope must use HTTPS'),
+  ).max(8).default([]),
+}).strict().superRefine((preferences, context) => {
+  if (preferences.network_allowed !== (preferences.approved_network_scope.length > 0)) {
+    context.addIssue({ code: 'custom', path: ['approved_network_scope'], message: 'network authority and scope must be supplied together' })
+  }
+  if (preferences.model_route === 'cloud' && !preferences.network_allowed) {
+    context.addIssue({ code: 'custom', path: ['model_route'], message: 'cloud route requires network authority' })
+  }
+  if (new Set(preferences.approved_network_scope).size !== preferences.approved_network_scope.length) {
+    context.addIssue({ code: 'custom', path: ['approved_network_scope'], message: 'approved network scope entries must be unique' })
+  }
+})
 
 export const studyPlanSourceLinkSchema = z.object({
   source_id: boundedId,

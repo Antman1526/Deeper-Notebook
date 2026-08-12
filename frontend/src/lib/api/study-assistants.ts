@@ -25,6 +25,13 @@ function visibleText(value: unknown, max: number): string {
   return value
 }
 
+/** Prompt prose follows Task 11's bounded nonblank UTF-8 contract. */
+function boundedFreeText(value: unknown, maxBytes: number): string {
+  if (typeof value !== 'string' || !value.trim()) invalidRequest()
+  if (new TextEncoder().encode(value).byteLength > maxBytes) invalidRequest()
+  return value
+}
+
 function validatePlanId(value: unknown): string {
   const planId = visibleText(value, 512)
   if (!planId.startsWith('study_plan:')) invalidRequest()
@@ -72,7 +79,7 @@ function validateInput(input: StudyAssistantRequest): StudyAssistantRequest {
   if (Object.keys(data).some((key) => !allowed.has(key))) invalidRequest()
 
   const authority = validateAuthority(data.authority)
-  const prompt = visibleText(data.prompt, 16_384)
+  const prompt = boundedFreeText(data.prompt, 16_384)
   const unitId = data.unit_id === undefined || data.unit_id === null
     ? data.unit_id
     : visibleText(data.unit_id, 64)

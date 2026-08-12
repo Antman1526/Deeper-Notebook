@@ -19,6 +19,7 @@ import { useProposeStudySyllabus, useStudyPlan } from '@/lib/hooks/use-study-pla
 import { useStudyAssistantInvocation } from '@/lib/hooks/use-study-assistants'
 import {
   STUDY_ASSISTANT_ROLES,
+  ROLE_DEFAULT_MODES,
   TUTOR_MODES,
   modeConfig,
   type StudyAssistantCitation,
@@ -76,6 +77,13 @@ function modeLabel(mode: TutorMode): string {
 function citationLabel(citation: StudyAssistantCitation): string {
   const title = citation.title ?? citation.source_id
   return citation.locator ? `${title}, ${citation.locator}` : title
+}
+
+function createRequestId(): string {
+  const randomUuid = typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  return `study-assistant-request:${randomUuid}`.slice(0, 256)
 }
 
 function navigationTarget(action: StudyProposedAction, planId: string, sourceId?: string): string | null {
@@ -137,6 +145,13 @@ export function TutorDock({
     setActionStatus(null)
   }
 
+  const changeRole = (nextRole: StudyAssistantRole) => {
+    setRole(nextRole)
+    setMode(ROLE_DEFAULT_MODES[nextRole])
+    setWebPermissionRequested(false)
+    setActionStatus(null)
+  }
+
   const closeDock = () => {
     focusAfterOpenRef.current = true
     setIsOpen(false)
@@ -162,6 +177,7 @@ export function TutorDock({
         planId,
         role,
         input: {
+          request_id: createRequestId(),
           authority: config.authority,
           prompt: prompt.trim(),
           ...(unitId ? { unit_id: unitId } : {}),
@@ -254,7 +270,7 @@ export function TutorDock({
                   id="tutor-role"
                   aria-label="Tutor role"
                   value={role}
-                  onChange={(event) => setRole(event.target.value as StudyAssistantRole)}
+                  onChange={(event) => changeRole(event.target.value as StudyAssistantRole)}
                   className="border-input bg-background mt-1 flex h-9 w-full rounded-md border px-3 text-sm"
                   disabled={invocation.isPending}
                 >

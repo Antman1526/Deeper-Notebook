@@ -69,6 +69,26 @@ export const TUTOR_MODE_CONFIG: Record<TutorMode, TutorModeConfig> = {
   research_gap: { label: 'Research this gap', role: 'research_scout', authority: 'ask', model_route: 'cloud', source_only: false, requires_web_permission: true },
 }
 
+/**
+ * Role selection is an atomic policy choice. A role that is not the mode's
+ * built-in specialist uses this explicit compatible mode rather than creating
+ * an impossible role/authority/model/network combination.
+ */
+export const ROLE_DEFAULT_MODES: Record<StudyAssistantRole, TutorMode> = {
+  study_director: 'plan_today',
+  curriculum_architect: 'plan_today',
+  socratic_tutor: 'socratic',
+  concept_explainer: 'teach_me',
+  source_guide: 'ask_question',
+  practice_coach: 'quiz_me',
+  exam_coach: 'oral_exam',
+  memory_coach: 'flashcards',
+  research_scout: 'research_gap',
+  project_mentor: 'create_project',
+  writing_coach: 'review_writing',
+  progress_coach: 'plan_today',
+}
+
 export interface StudyAssistantCitation {
   source_id: string
   locator: string | null
@@ -119,10 +139,14 @@ export interface StudyAssistantRequest {
 }
 
 const boundedText = (max: number) => z.string().min(1).max(max).refine(
-  (value) => value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value),
-    'text must be visible and trimmed',
+  (value) => value.trim().length > 0,
+  'text must not be blank',
 )
-const boundedId = boundedText(512)
+const boundedIdentifier = (max: number) => z.string().min(1).max(max).refine(
+  (value) => value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value),
+  'identifier must be visible and trimmed',
+)
+const boundedId = boundedIdentifier(512)
 const unitId = boundedText(64).refine((value) => /^[a-z0-9][a-z0-9_-]{0,63}$/.test(value), 'invalid unit id')
 
 export const studyAssistantCitationSchema = z.object({

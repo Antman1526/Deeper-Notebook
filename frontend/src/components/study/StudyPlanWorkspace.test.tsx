@@ -1,13 +1,28 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { StudyPlanWorkspace } from './StudyPlanWorkspace'
 
 const replace = vi.fn()
+const workspaceState = vi.hoisted(() => ({ activeTab: 'syllabus', networkAllowed: true }))
+const workspaceInvoke = vi.hoisted(() => vi.fn())
 
 vi.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams('tab=syllabus'),
+  useSearchParams: () => new URLSearchParams(`tab=${workspaceState.activeTab}`),
   useRouter: () => ({ replace }),
+}))
+vi.mock('@/lib/hooks/use-study-assistants', () => ({
+  useStudyAssistantInvocation: () => ({
+    mutateAsync: workspaceInvoke,
+    cancel: vi.fn(),
+    retry: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+    data: null,
+    reset: vi.fn(),
+    isCancelled: false,
+  }),
 }))
 vi.mock('@/lib/hooks/use-study-plans', () => ({
   useProposeStudySyllabus: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -17,7 +32,13 @@ vi.mock('@/lib/hooks/use-study-plans', () => ({
       goal: 'Understand mechanics',
       starting_level: 'beginner',
       target_date: null,
-      preferences: null,
+      preferences: {
+        weekly_minutes: 240,
+        session_minutes: 45,
+        model_route: workspaceState.networkAllowed ? 'cloud' : 'local',
+        network_allowed: workspaceState.networkAllowed,
+        approved_network_scope: workspaceState.networkAllowed ? ['https://example.edu/course'] : [],
+      },
       source_links: [],
       approved_syllabus_version: null,
       state: 'editing',
@@ -56,6 +77,14 @@ vi.mock('./SyllabusEditor', () => ({
 }))
 
 describe('StudyPlanWorkspace', () => {
+  beforeEach(() => {
+    workspaceState.activeTab = 'syllabus'
+    workspaceState.networkAllowed = true
+    workspaceInvoke.mockReset()
+    workspaceInvoke.mockResolvedValue(undefined)
+    replace.mockReset()
+  })
+
   it('keeps the selected known tab addressable and falls back unknown values to overview', () => {
     render(<StudyPlanWorkspace planId="study_plan:one" />)
 
@@ -70,5 +99,32 @@ describe('StudyPlanWorkspace', () => {
     render(<StudyPlanWorkspace planId="study_plan:one" />)
     expect(screen.getByRole('heading', { name: 'Understand mechanics' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Sources' })).toBeInTheDocument()
+  })
+
+  it('passes persisted approved scope to Research Gap only when the plan authorizes web access', async () => {
+    workspaceState.activeTab = 'learn'
+    const { unmount } = render(<StudyPlanWorkspace planId="study_plan:one" />)
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Tutor mode' }), { target: { value: 'research_gap' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Request web research permission' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Tutor prompt' }), { target: { value: 'Find this gap' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ask tutor' }))
+    await waitFor(() => expect(workspaceInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({
+        network_allowed: true,
+        model_route: 'cloud',
+        approved_network_scope: ['https://example.edu/course'],
+      }),
+    })))
+    unmount()
+
+    workspaceState.networkAllowed = false
+    render(<StudyPlanWorkspace planId="study_plan:one" />)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Tutor mode' }), { target: { value: 'research_gap' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Request web research permission' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Tutor prompt' }), { target: { value: 'Do not dispatch' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ask tutor' }))
+    expect(workspaceInvoke).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('A plan-approved HTTPS scope is required before web research can run.')).toBeInTheDocument()
   })
 })

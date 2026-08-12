@@ -52,6 +52,31 @@ describe('studyAssistantsApi', () => {
     )
   })
 
+  it('accepts backend-compatible multiline answer and citation text', () => {
+    const multiline = {
+      ...RESPONSE,
+      answer: 'Use the selected source.\n\nThen compare its claim with the next passage.',
+      citations: [{
+        source_id: 'source:one',
+        locator: 'page:2',
+        quote: 'A useful excerpt\ncontinued on the next line',
+        title: 'Notes\nchapter two',
+      }],
+    }
+
+    expect(decodeStudyAssistantResponse(multiline)).toEqual(multiline)
+  })
+
+  it('keeps identifiers and action names strict while allowing response prose formatting', () => {
+    expect(() => decodeStudyAssistantResponse({ ...RESPONSE, response_id: 'response\nunsafe' })).toThrow(
+      'Invalid Study Assistant response',
+    )
+    expect(() => decodeStudyAssistantResponse({
+      ...RESPONSE,
+      proposed_actions: [{ action: 'plan\nunsafe', label: 'Visible label', unit_id: null, expected_revision: null }],
+    })).toThrow('Invalid Study Assistant response')
+  })
+
   it('posts only explicit authority, model, and network fields', async () => {
     mockPost.mockResolvedValue({ data: RESPONSE } as never)
     const signal = new AbortController().signal
@@ -61,6 +86,21 @@ describe('studyAssistantsApi', () => {
       '/study/plans/study_plan%3Aone/assistants/source_guide:invoke',
       REQUEST,
       expect.objectContaining({ signal }),
+    )
+  })
+
+  it('accepts a bounded multiline prompt with tabs', async () => {
+    const prompt = 'Compare the two claims.\n\tStart with the evidence boundary.'
+    mockPost.mockResolvedValue({ data: RESPONSE } as never)
+
+    await expect(studyAssistantsApi.invoke('study_plan:one', 'source_guide', {
+      ...REQUEST,
+      prompt,
+    }, new AbortController().signal)).resolves.toEqual(RESPONSE)
+    expect(mockPost).toHaveBeenCalledWith(
+      '/study/plans/study_plan%3Aone/assistants/source_guide:invoke',
+      expect.objectContaining({ prompt }),
+      expect.anything(),
     )
   })
 

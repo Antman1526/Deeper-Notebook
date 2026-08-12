@@ -53,6 +53,39 @@ describe('studyPlansApi', () => {
     })
   })
 
+  it('projects persisted model and approved web scope preferences', async () => {
+    const persistedPlan = {
+      ...PLAN,
+      preferences: {
+        weekly_minutes: 240,
+        session_minutes: 45,
+        model_route: 'cloud' as const,
+        network_allowed: true,
+        approved_network_scope: ['https://example.edu/course'],
+      },
+    }
+    mockGet.mockResolvedValue({ data: persistedPlan } as never)
+
+    await expect(studyPlansApi.get('study_plan:one')).resolves.toEqual(persistedPlan)
+  })
+
+  it('fails closed on an impossible persisted network preference', async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        ...PLAN,
+        preferences: {
+          weekly_minutes: 240,
+          session_minutes: 45,
+          model_route: 'local',
+          network_allowed: false,
+          approved_network_scope: ['https://example.edu/course'],
+        },
+      },
+    } as never)
+
+    await expect(studyPlansApi.get('study_plan:one')).rejects.toThrow('Invalid Study Plan response')
+  })
+
   it('rejects malformed bounded plan collections without exposing payload details', async () => {
     mockGet.mockResolvedValue({
       data: { ...PLAN, source_links: Array.from({ length: 101 }, (_, index) => ({ source_id: `source:${index}` })) },

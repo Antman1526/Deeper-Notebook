@@ -199,6 +199,9 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
           <StudyLearningSession
             planId={planId}
             sourceIds={currentPlan.source_links.map((link) => link.source_id)}
+            approvedNetworkScope={currentPlan.preferences?.network_allowed
+              ? currentPlan.preferences.approved_network_scope
+              : []}
           />
         </TabsContent>
 
