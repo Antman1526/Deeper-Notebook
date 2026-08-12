@@ -33,6 +33,14 @@ import { getConfig } from '@/lib/config'
 
 const MAX_BATCH_SIZE = 50
 
+function boundedSourceId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  return normalized.length > 0 && normalized.length <= 512 ? normalized : null
+}
+
+type SourceCreatedCallback = ((sourceId: string) => void) | (() => void)
+
 const createSourceSchema = z.object({
   type: z.enum(['link', 'upload', 'text']),
   title: z.string().optional(),
@@ -77,7 +85,11 @@ interface AddSourceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultNotebookId?: string
-  onSourceCreated?: () => void
+  /**
+   * Receives each bounded created source ID.  The optional argument keeps
+   * existing zero-argument refresh callbacks source-compatible.
+   */
+  onSourceCreated?: SourceCreatedCallback
   // v0.8.77 — files handed in by drag-drop (improvement roadmap, Batch 1).
   // When present and the dialog opens, the upload tab is preselected and these
   // files prefill the file input. Best-effort (see the prefill effect).
@@ -352,7 +364,7 @@ export function AddSourceDialog({
   }
 
   // Single source submission
-  const submitSingleSource = async (data: CreateSourceFormData): Promise<void> => {
+  const submitSingleSource = async (data: CreateSourceFormData): Promise<string | null> => {
     const createRequest: CreateSourceRequest = {
       type: data.type,
       notebooks: selectedNotebooks,
@@ -371,12 +383,17 @@ export function AddSourceDialog({
       requestWithFile.file = file
     }
 
-    await createSource.mutateAsync(createRequest)
+    const created = await createSource.mutateAsync(createRequest)
+    return boundedSourceId(created?.id)
   }
 
   // Batch submission
-  const submitBatch = async (data: CreateSourceFormData): Promise<{ success: number; failed: number }> => {
-    const results = { success: 0, failed: 0 }
+  const submitBatch = async (data: CreateSourceFormData): Promise<{
+    success: number
+    failed: number
+    sourceIds: string[]
+  }> => {
+    const results = { success: 0, failed: 0, sourceIds: [] as string[] }
     const items: { type: 'url' | 'file'; value: string | File }[] = []
 
     // Collect items to process
@@ -420,7 +437,9 @@ export function AddSourceDialog({
           requestWithFile.file = item.value as File
         }
 
-        await createSource.mutateAsync(createRequest)
+        const created = await createSource.mutateAsync(createRequest)
+        const sourceId = boundedSourceId(created?.id)
+        if (sourceId) results.sourceIds.push(sourceId)
         results.success++
       } catch (error) {
         console.error(`Error creating source for ${itemLabel}:`, error)
@@ -435,6 +454,14 @@ export function AddSourceDialog({
     }
 
     return results
+  }
+
+  const notifySourceCreated = (sourceId?: string) => {
+    if (sourceId) {
+      onSourceCreated?.(sourceId)
+    } else {
+      ;(onSourceCreated as (() => void) | undefined)?.()
+    }
   }
 
   // Form submission
@@ -456,15 +483,19 @@ export function AddSourceDialog({
           toast.warning(t('sources.batchPartial').replace('{success}', results.success.toString()).replace('{failed}', results.failed.toString()))
         }
 
-        if (results.success > 0) {
-          onSourceCreated?.()
+        if (results.sourceIds.length > 0) {
+          results.sourceIds.forEach((sourceId) => notifySourceCreated(sourceId))
+        } else if (results.success > 0) {
+          // Preserve legacy refresh callbacks if an old/mock API response did
+          // not include an ID, without inventing an identifier.
+          notifySourceCreated()
         }
         handleClose()
       } else {
         // Single source submission
         setProcessingStatus({ message: t('sources.submittingSource') })
-        await submitSingleSource(data)
-        onSourceCreated?.()
+        const sourceId = await submitSingleSource(data)
+        notifySourceCreated(sourceId ?? undefined)
         handleClose()
       }
     } catch (error) {

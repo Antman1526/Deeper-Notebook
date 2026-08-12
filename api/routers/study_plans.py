@@ -138,19 +138,20 @@ async def add_study_plan_source(
         raise _repository_error(exc) from None
     if current is None:
         raise _not_found()
+    source_id = payload.source_id.strip()
+    if source_id in {link.source_id.strip() for link in current.source_links}:
+        # A retry of an already-persisted link is idempotent even when the
+        # caller retained a stale revision.  Do this before source authority
+        # access or revision checks so retries remain mutation-free.
+        return StudyPlanSourceLinkResponse(source_id=source_id)
+
     if current.version != payload.expected_revision:
         raise _repository_error(StudyPlanConflictError("study plan revision conflict"))
 
-    source_id = payload.source_id.strip()
     try:
         await StudySourceService().validate_source(source_id)
     except (StudySourceNotFoundError, StudySourceUnavailableError) as exc:
         raise _source_error(exc) from None
-
-    if source_id in {link.source_id for link in current.source_links}:
-        # The persisted source-links array is unique.  Treat retries as
-        # idempotent and avoid advancing the plan revision a second time.
-        return StudyPlanSourceLinkResponse(source_id=source_id)
 
     try:
         link = await repository.add_source(

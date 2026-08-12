@@ -1,8 +1,9 @@
-"""Read-only source authority for the Study Workbench.
+"""Read-only Source authority for the Study Workbench.
 
-Study plans link existing ``Source`` records.  This module deliberately keeps
-the projection small: callers can learn whether a source is usable without
-receiving its body, local path, processing error, or other ingestion details.
+Study plans link existing ``source`` records.  The workbench must not load a
+whole Source object (which contains bodies, paths, and provenance), so this
+module owns one fixed, bounded projection used for both validation and
+readiness.
 """
 
 from __future__ import annotations
@@ -13,8 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from deeper_notebook.domain.notebook import Source
-from deeper_notebook.exceptions import NotFoundError
+from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.study.plans import StudyPlan, StudyPlanSourceLink
 
 SourceKind = Literal[
@@ -38,6 +38,20 @@ _SOURCE_KINDS: frozenset[str] = frozenset(
 )
 _PROCESSING_STATUSES: frozenset[str] = frozenset({"new", "queued", "running"})
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_MAX_LINKS = 100
+
+# This is intentionally the only Source query in the Study authority.  It
+# excludes asset paths, source bodies, and the rest of provenance while still
+# allowing the UI to report bounded readiness and fingerprint availability.
+SOURCE_PROJECTION = """
+SELECT id, title, source_type, command,
+    string::len(full_text) AS text_length,
+    string::len(string::trim(full_text)) > 0 AS has_text,
+    provenance.fingerprint AS fingerprint,
+    provenance.content_fingerprint AS content_fingerprint,
+    provenance.source_fingerprint AS source_fingerprint
+FROM $source_id LIMIT 1;
+"""
 
 
 class StudySourceError(RuntimeError):
@@ -50,6 +64,10 @@ class StudySourceNotFoundError(StudySourceError):
 
 class StudySourceUnavailableError(StudySourceError):
     """The source authority could not be read."""
+
+
+class StudySourceInputLimitError(StudySourceError):
+    """The caller supplied more than the bounded source-link limit."""
 
 
 class StudySourceReadinessItem(BaseModel):
@@ -72,26 +90,19 @@ class StudySourceReadiness(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     ready: bool
-    items: tuple[StudySourceReadinessItem, ...] = Field(max_length=100)
+    items: tuple[StudySourceReadinessItem, ...] = Field(max_length=_MAX_LINKS)
 
 
 class StudySourceService:
-    """Resolve existing Source records without duplicating ingestion logic."""
+    """Resolve existing source records through a fixed projection only."""
 
-    async def validate_source(self, source_id: str) -> Source:
+    async def validate_source(self, source_id: str) -> dict[str, Any]:
         """Require one existing source before a plan link is persisted."""
         normalized_id = self._normalize_source_id(source_id)
-        try:
-            source = await Source.get(normalized_id)
-        except NotFoundError as exc:
-            if self._looks_unavailable(exc):
-                raise StudySourceUnavailableError("source authority unavailable") from exc
-            raise StudySourceNotFoundError("source not found") from exc
-        except Exception as exc:
-            raise StudySourceUnavailableError("source authority unavailable") from exc
-        if source is None:
+        projection = await self._read_projection(normalized_id)
+        if projection is None:
             raise StudySourceNotFoundError("source not found")
-        return source
+        return projection
 
     async def readiness(
         self,
@@ -99,19 +110,12 @@ class StudySourceService:
     ) -> StudySourceReadiness:
         """Return one safe readiness item per unique linked source.
 
-        Missing records are represented as a bounded ``missing`` item.  A
-        transient authority failure is represented as ``unavailable`` so this
-        read-only projection never leaks driver details to an API caller.
+        Inputs are consumed and bounded before the first database call.  This
+        both protects an accidental infinite iterable and prevents a caller
+        from causing a partial fan-out before an over-limit request fails.
         """
-        links = self._links(plan_or_links)
-        items: list[StudySourceReadinessItem] = []
-        seen: set[str] = set()
-        for raw_link in links:
-            source_id = self._link_source_id(raw_link)
-            if source_id in seen:
-                continue
-            seen.add(source_id)
-            items.append(await self._readiness_item(source_id))
+        source_ids = self._collect_source_ids(self._links(plan_or_links))
+        items = [await self._readiness_item(source_id) for source_id in source_ids]
         return StudySourceReadiness(
             ready=bool(items) and all(item.ready for item in items),
             items=tuple(items),
@@ -119,24 +123,18 @@ class StudySourceService:
 
     async def _readiness_item(self, source_id: str) -> StudySourceReadinessItem:
         try:
-            source = await Source.get(source_id)
-        except NotFoundError as exc:
-            if self._looks_unavailable(exc):
-                return self._unavailable_item(source_id)
-            return self._missing_item(source_id)
-        except Exception:
+            projection = await self._read_projection(source_id)
+        except StudySourceUnavailableError:
             return self._unavailable_item(source_id)
-        if source is None:
+        if projection is None:
             return self._missing_item(source_id)
 
-        title = self._title(source)
-        kind = self._kind(source)
-        command_id = self._command_id(source)
-        fingerprint_status = self._fingerprint_status(source)
-        status = await self._status(source)
-        full_text = getattr(source, "full_text", None)
-        has_text = isinstance(full_text, str) and bool(full_text.strip())
-        extraction_quality = getattr(source, "extraction_quality", None)
+        title = self._title(projection)
+        kind = self._kind(projection)
+        command_id = self._command_id(projection.get("command"))
+        fingerprint_status = self._fingerprint_status(projection)
+        status = await self._status(command_id)
+        has_text = self._has_text(projection)
 
         if status == "failed":
             ready = False
@@ -144,9 +142,7 @@ class StudySourceService:
         elif status in _PROCESSING_STATUSES or status == "unknown":
             ready = False
             reason = "processing"
-        elif extraction_quality in {"pending", "no_text", "low_text"} or not has_text:
-            # Source processing owns extraction.  The study service only
-            # observes the existing text/status fields; it never re-ingests.
+        elif not has_text:
             ready = False
             reason = "processing"
         else:
@@ -163,57 +159,70 @@ class StudySourceService:
             reason=reason,
         )
 
-    @staticmethod
-    async def _status(source: Any) -> str | None:
-        get_status = getattr(source, "get_status", None)
-        if not callable(get_status):
-            return None
+    async def _read_projection(self, source_id: str) -> dict[str, Any] | None:
         try:
-            status = await get_status()
-        except Exception:
-            return "unknown"
-        return status if isinstance(status, str) else None
+            rows = await repo_query(
+                SOURCE_PROJECTION,
+                {"source_id": ensure_record_id(source_id)},
+            )
+        except Exception as exc:
+            raise StudySourceUnavailableError("source authority unavailable") from exc
+        if not rows:
+            return None
+        first = rows[0]
+        if not isinstance(first, dict):
+            raise StudySourceUnavailableError("source authority unavailable")
+        return first
 
     @staticmethod
-    def _title(source: Any) -> str:
-        title = getattr(source, "title", None)
+    async def _status(command_id: str | None) -> str | None:
+        if not command_id:
+            return None
+        try:
+            from surreal_commands import get_command_status
+
+            result = await get_command_status(command_id)
+            status = getattr(result, "status", None)
+            return status if isinstance(status, str) else None
+        except Exception:
+            return "unknown"
+
+    @staticmethod
+    def _title(projection: dict[str, Any]) -> str:
+        title = projection.get("title")
         if isinstance(title, str) and title.strip():
             return title.strip()[:200]
         return "Untitled source"
 
     @classmethod
-    def _kind(cls, source: Any) -> SourceKind:
-        source_type = getattr(source, "source_type", None)
+    def _kind(cls, projection: dict[str, Any]) -> SourceKind:
+        source_type = projection.get("source_type")
         if isinstance(source_type, str) and source_type in _SOURCE_KINDS:
             return source_type  # type: ignore[return-value]
-        asset = getattr(source, "asset", None)
-        if getattr(asset, "url", None):
-            return "link"
-        if getattr(asset, "file_path", None):
-            return "upload"
         return "text"
 
     @staticmethod
-    def _command_id(source: Any) -> str | None:
-        command = getattr(source, "command", None)
+    def _command_id(command: Any) -> str | None:
         if command is None:
             return None
         value = str(command).strip()
         return value[:512] if value else None
 
     @classmethod
-    def _fingerprint_status(cls, source: Any) -> FingerprintStatus:
-        for attribute in ("fingerprint", "content_fingerprint", "source_fingerprint"):
-            value = getattr(source, attribute, None)
+    def _fingerprint_status(cls, projection: dict[str, Any]) -> FingerprintStatus:
+        for key in ("fingerprint", "content_fingerprint", "source_fingerprint"):
+            value = projection.get(key)
             if isinstance(value, str) and _SHA256.fullmatch(value):
                 return "available"
-        provenance = getattr(source, "provenance", None)
-        if isinstance(provenance, dict):
-            for key in ("fingerprint", "content_fingerprint", "source_fingerprint"):
-                value = provenance.get(key)
-                if isinstance(value, str) and _SHA256.fullmatch(value):
-                    return "available"
         return "unknown"
+
+    @staticmethod
+    def _has_text(projection: dict[str, Any]) -> bool:
+        value = projection.get("has_text")
+        if isinstance(value, bool):
+            return value
+        length = projection.get("text_length")
+        return isinstance(length, (int, float)) and not isinstance(length, bool) and length > 0
 
     @staticmethod
     def _missing_item(source_id: str) -> StudySourceReadinessItem:
@@ -248,17 +257,6 @@ class StudySourceService:
             raise StudySourceNotFoundError("source not found")
         return normalized
 
-    @staticmethod
-    def _looks_unavailable(exc: Exception) -> bool:
-        # ObjectModel.get wraps driver failures in NotFoundError.  Preserve a
-        # safe distinction between a genuine missing record and an unavailable
-        # source authority without returning the wrapped driver message.
-        message = str(exc).lower()
-        return any(
-            marker in message
-            for marker in ("authentication", "connection", "database", "timeout")
-        )
-
     @classmethod
     def _links(
         cls,
@@ -267,6 +265,22 @@ class StudySourceService:
         if isinstance(plan_or_links, StudyPlan):
             return plan_or_links.source_links
         return plan_or_links
+
+    @classmethod
+    def _collect_source_ids(
+        cls,
+        links: Iterable[StudyPlanSourceLink | str],
+    ) -> tuple[str, ...]:
+        source_ids: list[str] = []
+        seen: set[str] = set()
+        for index, link in enumerate(links):
+            if index >= _MAX_LINKS:
+                raise StudySourceInputLimitError("too many source links")
+            source_id = cls._link_source_id(link)
+            if source_id not in seen:
+                seen.add(source_id)
+                source_ids.append(source_id)
+        return tuple(source_ids)
 
     @classmethod
     def _link_source_id(cls, link: StudyPlanSourceLink | str) -> str:

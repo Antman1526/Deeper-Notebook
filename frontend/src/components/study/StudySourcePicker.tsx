@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { sourcesApi } from '@/lib/api/sources'
 import { Badge } from '@/components/ui/badge'
@@ -32,6 +32,7 @@ export interface StudySourcePickerProps {
   onOpenUpload: (onSourceCreated?: (sourceId: string) => void) => void
   onLinkSource?: (sourceId: string) => void | Promise<void>
   onSourceCreated?: (sourceId: string) => void | Promise<void>
+  onSourceLinked?: (sourceId: string) => void | Promise<void>
   sources?: readonly StudySourceOption[]
   className?: string
 }
@@ -74,45 +75,110 @@ export function StudySourcePicker({
   onOpenUpload,
   onLinkSource,
   onSourceCreated,
+  onSourceLinked,
   sources: providedSources,
   className,
 }: StudySourcePickerProps) {
   const [loadedSources, setLoadedSources] = useState<StudySourceOption[]>([])
+  const [fetchState, setFetchState] = useState<'loading' | 'ready' | 'error'>(
+    providedSources === undefined ? 'loading' : 'ready',
+  )
+  const [retryCount, setRetryCount] = useState(0)
+  const [linkError, setLinkError] = useState(false)
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
+  const initialLinkedIds = new Set(links.map(sourceId))
+  const [linkedIds, setLinkedIds] = useState<Set<string>>(initialLinkedIds)
+  const linkedIdsRef = useRef<Set<string>>(initialLinkedIds)
+  const pendingIdsRef = useRef<Set<string>>(new Set())
+  const mountedRef = useRef(true)
 
   useEffect(() => {
-    if (providedSources !== undefined) return
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (providedSources !== undefined) {
+      setFetchState('ready')
+      setLoadedSources([])
+      return
+    }
     let active = true
+    setFetchState('loading')
     void sourcesApi
       .list()
       .then((result) => {
-        if (active) setLoadedSources(result as StudySourceOption[])
+        if (active && mountedRef.current) {
+          setLoadedSources(result as StudySourceOption[])
+          setFetchState('ready')
+        }
       })
       .catch(() => {
-        // The picker remains usable for upload/link callbacks when the list
-        // endpoint is unavailable; the API owns the eventual error contract.
+        if (active && mountedRef.current) setFetchState('error')
       })
     return () => {
       active = false
     }
-  }, [providedSources])
+  }, [providedSources, retryCount])
 
   const sources = providedSources ?? loadedSources
-  const linkedIds = useMemo(() => new Set(links.map(sourceId)), [links])
+  useEffect(() => {
+    setLinkedIds((current) => {
+      const next = new Set(current)
+      links.forEach((link) => next.add(sourceId(link)))
+      linkedIdsRef.current = next
+      return next
+    })
+  }, [links])
 
   const linkSource = useCallback(
-    (id: string) => {
-      if (linkedIds.has(id)) return
-      void onLinkSource?.(id)
+    async (id: string): Promise<boolean> => {
+      if (linkedIdsRef.current.has(id) || pendingIdsRef.current.has(id)) return false
+      pendingIdsRef.current.add(id)
+      setPendingIds((current) => new Set(current).add(id))
+      setLinkError(false)
+      try {
+        await onLinkSource?.(id)
+      } catch {
+        pendingIdsRef.current.delete(id)
+        if (mountedRef.current) setLinkError(true)
+        if (mountedRef.current) {
+          setPendingIds((current) => {
+            const next = new Set(current)
+            next.delete(id)
+            return next
+          })
+        }
+        return false
+      }
+      if (!mountedRef.current) return false
+      linkedIdsRef.current.add(id)
+      pendingIdsRef.current.delete(id)
+      setLinkedIds((current) => new Set(current).add(id))
+      setPendingIds((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+      try {
+        await onSourceLinked?.(id)
+      } catch {
+        // A post-link refresh callback must not turn a successful link into a
+        // false link failure.
+      }
+      return true
     },
-    [linkedIds, onLinkSource],
+    [onLinkSource, onSourceLinked],
   )
 
   const handleSourceCreated = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const normalizedId = id.trim()
       if (!normalizedId) return
-      linkSource(normalizedId)
-      void onSourceCreated?.(normalizedId)
+      const linked = await linkSource(normalizedId)
+      if (linked && mountedRef.current) await onSourceCreated?.(normalizedId)
     },
     [linkSource, onSourceCreated],
   )
@@ -136,7 +202,24 @@ export function StudySourcePicker({
         </Button>
       </div>
 
-      {sources.length === 0 ? (
+      {fetchState === 'loading' ? (
+        <p role="status" className="rounded-md border p-4 text-sm text-muted-foreground">
+          Loading sources…
+        </p>
+      ) : fetchState === 'error' ? (
+        <div className="space-y-3 rounded-md border border-destructive/40 p-4">
+          <p role="alert" className="text-sm text-destructive">
+            Unable to load sources.
+          </p>
+          <Button type="button" variant="outline" onClick={() => setRetryCount((count) => count + 1)}>
+            Retry sources
+          </Button>
+        </div>
+      ) : linkError ? (
+        <p role="alert" className="rounded-md border border-destructive/40 p-4 text-sm text-destructive">
+          Unable to link source.
+        </p>
+      ) : sources.length === 0 ? (
         <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
           No sources are available yet.
         </p>
@@ -145,6 +228,7 @@ export function StudySourcePicker({
           {sources.map((source) => {
             const id = source.id
             const linked = linkedIds.has(id)
+            const pending = pendingIds.has(id)
             const state = readiness(source)
             return (
               <li
@@ -164,11 +248,11 @@ export function StudySourcePicker({
                   type="button"
                   variant={linked ? 'secondary' : 'default'}
                   size="sm"
-                  disabled={linked}
+                  disabled={linked || pending}
                   aria-label={linked ? `${source.title || 'Source'} linked` : `Link ${source.title || 'source'}`}
-                  onClick={() => linkSource(id)}
+                  onClick={() => void linkSource(id)}
                 >
-                  {linked ? 'Linked' : 'Link source'}
+                  {linked ? 'Linked' : pending ? 'Linking…' : 'Link source'}
                 </Button>
               </li>
             )

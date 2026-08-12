@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -16,21 +15,45 @@ from deeper_notebook.study.plans import StudyPlan, StudyPlanSourceLink
 LINK = StudyPlanSourceLink(source_id="source:one")
 
 
+def _projection(
+    *,
+    source_id: str = "source:one",
+    title: str = "Lecture",
+    kind: str = "upload",
+    command: str | None = "command:one",
+    has_text: bool = True,
+    text_length: int = 256,
+    fingerprint: str | None = None,
+) -> dict[str, object]:
+    return {
+        "id": source_id,
+        "title": title,
+        "source_type": kind,
+        "command": command,
+        "has_text": has_text,
+        "text_length": text_length,
+        "fingerprint": fingerprint,
+        "content_fingerprint": None,
+        "source_fingerprint": None,
+    }
+
+
 @pytest.mark.asyncio
 async def test_readiness_marks_missing_text_without_reading_or_copying_source(monkeypatch):
     """A source without extracted text is bounded as processing, not exposed."""
 
     get_source = AsyncMock(
-        return_value=SimpleNamespace(
-            id="source:one",
-            title="Lecture",
-            full_text="",
-            command="command:one",
-            source_type="upload",
-            asset=SimpleNamespace(file_path="/private/lecture.pdf"),
-        )
+        return_value=[
+            _projection(
+                title="Lecture",
+                kind="upload",
+                command="command:one",
+                has_text=False,
+                text_length=0,
+            )
+        ]
     )
-    monkeypatch.setattr(source_service.Source, "get", get_source)
+    monkeypatch.setattr(source_service, "repo_query", get_source)
 
     receipt = await source_service.StudySourceService().readiness([LINK])
 
@@ -43,22 +66,23 @@ async def test_readiness_marks_missing_text_without_reading_or_copying_source(mo
     assert receipt.items[0].fingerprint_status == "unknown"
     assert "full_text" not in receipt.items[0].model_dump()
     assert "file_path" not in receipt.items[0].model_dump()
-    get_source.assert_awaited_once_with("source:one")
+    get_source.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_readiness_deduplicates_links_and_exposes_only_bounded_projection(monkeypatch):
-    source = SimpleNamespace(
-        id="source:one",
-        title="Lecture",
-        full_text="A complete extracted lecture.",
-        command=None,
-        source_type="text",
-        provenance={"fingerprint": "a" * 64},
-        asset=SimpleNamespace(file_path="/private/lecture.txt"),
+    get_source = AsyncMock(
+        return_value=[
+            _projection(
+                kind="text",
+                command=None,
+                has_text=True,
+                text_length=256,
+                fingerprint="a" * 64,
+            )
+        ]
     )
-    get_source = AsyncMock(return_value=source)
-    monkeypatch.setattr(source_service.Source, "get", get_source)
+    monkeypatch.setattr(source_service, "repo_query", get_source)
 
     receipt = await source_service.StudySourceService().readiness([LINK, LINK])
 
@@ -74,12 +98,12 @@ async def test_readiness_deduplicates_links_and_exposes_only_bounded_projection(
         "fingerprint_status",
         "reason",
     }
-    get_source.assert_awaited_once_with("source:one")
+    get_source.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_validate_source_rejects_missing_source_before_linking(monkeypatch):
-    monkeypatch.setattr(source_service.Source, "get", AsyncMock(return_value=None))
+    monkeypatch.setattr(source_service, "repo_query", AsyncMock(return_value=[]))
 
     with pytest.raises(source_service.StudySourceNotFoundError):
         await source_service.StudySourceService().validate_source("source:missing")
@@ -112,7 +136,7 @@ async def test_link_validates_source_before_repository_mutation(monkeypatch):
             return await add_source(*args, **kwargs)
 
     monkeypatch.setattr(study_plans, "_repository", Repository)
-    monkeypatch.setattr(source_service.Source, "get", AsyncMock(return_value=None))
+    monkeypatch.setattr(source_service, "repo_query", AsyncMock(return_value=[]))
 
     with pytest.raises(HTTPException) as raised:
         await study_plans.add_study_plan_source(
@@ -137,11 +161,8 @@ async def test_link_deduplicates_existing_source_without_revision_bump(monkeypat
             return await add_source(*args, **kwargs)
 
     monkeypatch.setattr(study_plans, "_repository", Repository)
-    monkeypatch.setattr(
-        source_service.Source,
-        "get",
-        AsyncMock(return_value=SimpleNamespace(full_text="existing source")),
-    )
+    query = AsyncMock(return_value=[_projection(has_text=True, text_length=16)])
+    monkeypatch.setattr(source_service, "repo_query", query)
 
     result = await study_plans.add_study_plan_source(
         "study_plan:one",
@@ -150,3 +171,101 @@ async def test_link_deduplicates_existing_source_without_revision_bump(monkeypat
 
     assert result.source_id == "source:one"
     add_source.assert_not_awaited()
+    query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_source_readiness_uses_fixed_projection_without_materializing_source(monkeypatch):
+    query = AsyncMock(return_value=[_projection(command=None, fingerprint="a" * 64)])
+    monkeypatch.setattr(source_service, "repo_query", query)
+
+    receipt = await source_service.StudySourceService().readiness([LINK])
+
+    assert receipt.ready is True
+    assert receipt.items[0].fingerprint_status == "available"
+    statement = query.await_args.args[0]
+    assert "SELECT *" not in statement.upper()
+    assert " ASSET" not in statement.upper()
+    assert "PROVENANCE.FINGERPRINT" in statement.upper()
+    assert "PROVENANCE.CONTENT_FINGERPRINT" in statement.upper()
+    assert "PROVENANCE.SOURCE_FINGERPRINT" in statement.upper()
+    assert "full_text" in statement
+    assert "has_text" in statement
+    query.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_source_projection_query_error_is_unavailable_without_exception_inspection(monkeypatch):
+    query = AsyncMock(side_effect=RuntimeError("opaque driver failure"))
+    monkeypatch.setattr(source_service, "repo_query", query)
+
+    with pytest.raises(source_service.StudySourceUnavailableError):
+        await source_service.StudySourceService().validate_source("source:one")
+
+
+@pytest.mark.asyncio
+async def test_source_projection_empty_result_is_not_found(monkeypatch):
+    query = AsyncMock(return_value=[])
+    monkeypatch.setattr(source_service, "repo_query", query)
+
+    with pytest.raises(source_service.StudySourceNotFoundError):
+        await source_service.StudySourceService().validate_source("source:missing")
+
+
+@pytest.mark.asyncio
+async def test_readiness_rejects_more_than_100_links_before_any_source_projection(monkeypatch):
+    query = AsyncMock(return_value=[_projection()])
+    monkeypatch.setattr(source_service, "repo_query", query)
+    links = (StudyPlanSourceLink(source_id=f"source:{index}") for index in range(101))
+
+    with pytest.raises(source_service.StudySourceInputLimitError):
+        await source_service.StudySourceService().readiness(links)
+
+    query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_readiness_consumes_infinite_links_only_until_bounded_limit(monkeypatch):
+    query = AsyncMock(return_value=[_projection()])
+    monkeypatch.setattr(source_service, "repo_query", query)
+    consumed = 0
+
+    def infinite_links():
+        nonlocal consumed
+        index = 0
+        while True:
+            consumed += 1
+            yield StudyPlanSourceLink(source_id=f"source:{index}")
+            index += 1
+
+    with pytest.raises(source_service.StudySourceInputLimitError):
+        await source_service.StudySourceService().readiness(infinite_links())
+
+    assert consumed == 101
+    query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_retry_is_idempotent_before_stale_revision_conflict(monkeypatch):
+    plan = _plan(LINK)
+    repository_calls = AsyncMock()
+
+    class Repository:
+        async def get(self, plan_id: str) -> StudyPlan:
+            return plan
+
+        async def add_source(self, *args: object, **kwargs: object) -> object:
+            return await repository_calls(*args, **kwargs)
+
+    validate_source = AsyncMock(side_effect=AssertionError("duplicate retry should not read source"))
+    monkeypatch.setattr(study_plans, "_repository", Repository)
+    monkeypatch.setattr(study_plans.StudySourceService, "validate_source", validate_source)
+
+    result = await study_plans.add_study_plan_source(
+        "study_plan:one",
+        SourceLinkRequest(source_id="source:one", expected_revision=99),
+    )
+
+    assert result.source_id == "source:one"
+    repository_calls.assert_not_awaited()
+    validate_source.assert_not_awaited()
