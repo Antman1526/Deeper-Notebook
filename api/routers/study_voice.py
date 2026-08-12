@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from fastapi.responses import StreamingResponse
 
 from api.schemas.study_assistants import (
+    StudyVoiceCapabilityResponse,
     StudyVoiceTranscriptionResponse,
     SynthesizeStudyVoiceRequest,
 )
@@ -89,7 +90,21 @@ async def transcribe_study_voice(
         )
     except StudyVoiceError as exc:
         raise _voice_error(exc) from None
+    finally:
+        await audio.close()
     return StudyVoiceTranscriptionResponse(transcript=transcript)
+
+
+@router.get(
+    "/{plan_id}/voice:capability",
+    response_model=StudyVoiceCapabilityResponse,
+)
+async def study_voice_capability(plan_id: str) -> StudyVoiceCapabilityResponse:
+    try:
+        capability = await _service().capability(plan_id)
+    except StudyVoiceError as exc:
+        raise _voice_error(exc) from None
+    return StudyVoiceCapabilityResponse(**capability)
 
 
 @router.post("/{plan_id}/voice:synthesize")

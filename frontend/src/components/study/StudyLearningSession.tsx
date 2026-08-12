@@ -1,8 +1,10 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+
 import { TutorDock } from '@/components/study/TutorDock'
 import { StudyVoiceTutor } from '@/components/study/StudyVoiceTutor'
-import type { StudyVoiceCapability } from '@/lib/api/study-voice'
+import { studyVoiceApi, type StudyVoiceCapability } from '@/lib/api/study-voice'
 
 export interface StudyLearningSessionProps {
   planId: string
@@ -17,8 +19,30 @@ export function StudyLearningSession({
   sourceIds = [],
   unitId = null,
   approvedNetworkScope = [],
-  voiceCapability = { stt: 'unavailable', tts: 'unavailable' },
+  voiceCapability,
 }: StudyLearningSessionProps) {
+  const [discoveredCapability, setDiscoveredCapability] = useState<StudyVoiceCapability>(
+    voiceCapability ?? { stt: 'unavailable', tts: 'unavailable' },
+  )
+  const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null)
+  const [assistantText, setAssistantText] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (voiceCapability) {
+      setDiscoveredCapability(voiceCapability)
+      return
+    }
+    const controller = new AbortController()
+    setDiscoveredCapability({ stt: 'unavailable', tts: 'unavailable' })
+    void studyVoiceApi.capability(planId, controller.signal)
+      .then((capability) => setDiscoveredCapability(capability))
+      .catch(() => {
+        // Voice is optional. A capability/network error must leave the text
+        // tutor usable and keep every speech control closed.
+      })
+    return () => controller.abort()
+  }, [planId, voiceCapability])
+
   return (
     <section aria-labelledby="study-learning-session-heading" className="space-y-4">
       <div>
@@ -33,8 +57,15 @@ export function StudyLearningSession({
         sourceIds={sourceIds}
         unitId={unitId}
         approvedNetworkScope={approvedNetworkScope}
+        voiceTranscript={voiceTranscript}
+        onAssistantAnswer={setAssistantText}
       />
-      <StudyVoiceTutor planId={planId} capability={voiceCapability} />
+      <StudyVoiceTutor
+        planId={planId}
+        capability={discoveredCapability}
+        assistantText={assistantText}
+        onTranscript={setVoiceTranscript}
+      />
     </section>
   )
 }

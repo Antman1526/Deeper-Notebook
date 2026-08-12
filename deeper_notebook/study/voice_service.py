@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import ipaddress
 import math
 import tempfile
 from collections.abc import Awaitable, Callable, Mapping
+from numbers import Real
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from loguru import logger
 
 from deeper_notebook.ai.offline_gate import LOCAL_PROVIDERS
+from deeper_notebook.database.repository import ensure_record_id, repo_query
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_TRANSCRIPT_BYTES = 16 * 1024
@@ -104,6 +108,83 @@ def _safe_model_provider(model: object) -> str:
     return str(_value(model, "provider", "")).strip().lower().replace("-", "_")
 
 
+def _is_local_speech_endpoint(endpoint: object) -> bool:
+    """Return True only for an exact loopback speech endpoint.
+
+    Provider names are not authority: both Ollama and OpenAI-compatible
+    records can be configured with a public or LAN URL.  Keep this policy
+    deliberately narrow and side-effect free so it can run before a model
+    getter constructs an Esperanto client.
+    """
+    if not isinstance(endpoint, str) or not endpoint.strip():
+        return False
+    raw = endpoint.strip()
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in raw):
+        return False
+    try:
+        parsed = urlsplit(raw)
+        hostname = parsed.hostname
+        # Credentials in an endpoint are never needed for a local sidecar and
+        # allow confusing userinfo/spoof forms such as user@localhost.
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or parsed.username is not None
+            or parsed.password is not None
+            or not hostname
+        ):
+            return False
+        # Force validation of malformed ports without retaining or exposing
+        # the endpoint value.
+        _ = parsed.port
+    except ValueError:
+        return False
+    hostname = hostname.casefold()
+    if hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _first_value(item: object, names: tuple[str, ...]) -> object:
+    for name in names:
+        value = _value(item, name)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+async def _load_credential_metadata(credential_id: str) -> Mapping[str, object] | None:
+    """Load only non-secret endpoint metadata for a linked credential.
+
+    ``Credential.get`` decrypts ``api_key`` as part of its domain contract;
+    Study voice locality must not need or materialize that secret.  Keep this
+    fixed projection narrow and use a validated RecordID parameter so neither
+    identifiers nor query text can expand the authority surface.
+    """
+    if (
+        not isinstance(credential_id, str)
+        or not credential_id.startswith("credential:")
+        or not credential_id[len("credential:") :].strip()
+        or any(char in credential_id for char in "\r\n\x00")
+    ):
+        return None
+    try:
+        rows = await repo_query(
+            "SELECT id, provider, base_url, endpoint, endpoint_stt, endpoint_tts "
+            "FROM ONLY $credential_id LIMIT 1",
+            {"credential_id": ensure_record_id(credential_id)},
+        )
+    except Exception:
+        return None
+    if isinstance(rows, Mapping):
+        return rows
+    if not rows or not isinstance(rows[0], Mapping):
+        return None
+    return rows[0]
+
+
 def _validate_plan_id(plan_id: str) -> str:
     if (
         not isinstance(plan_id, str)
@@ -183,6 +264,17 @@ async def _invoke_synthesizer(model: object, text: str) -> object:
 
 
 def _result_text(result: object) -> str:
+    returned_duration = _value(result, "duration", None)
+    if returned_duration is None:
+        returned_duration = _value(result, "duration_seconds", None)
+    if returned_duration is not None:
+        if isinstance(returned_duration, bool) or not isinstance(returned_duration, Real):
+            raise StudyVoiceResultError("invalid_audio_duration")
+        duration = float(returned_duration)
+        if not math.isfinite(duration) or duration < 0:
+            raise StudyVoiceResultError("invalid_audio_duration")
+        if duration > MAX_AUDIO_DURATION_SECONDS:
+            raise StudyVoiceResultError("audio_duration_too_long")
     value = _value(result, "text", result)
     if isinstance(value, bytes):
         try:
@@ -225,6 +317,7 @@ class StudyVoiceService:
         text_to_speech_getter: Callable[[], Awaitable[object | None]] | None = None,
         defaults_getter: Callable[[], Awaitable[object]] | None = None,
         model_getter: Callable[[str], Awaitable[object | None]] | None = None,
+        credential_getter: Callable[[str], Awaitable[object | None]] | None = None,
         max_upload_bytes: int | None = None,
         max_tts_bytes: int | None = None,
     ) -> None:
@@ -239,11 +332,14 @@ class StudyVoiceService:
             text_to_speech_getter = text_to_speech_getter or model_manager.get_text_to_speech
             defaults_getter = defaults_getter or model_manager.get_defaults
             model_getter = model_getter or Model.get
+        if credential_getter is None:
+            credential_getter = _load_credential_metadata
         self.plan_repository = plan_repository
         self._speech_to_text_getter = speech_to_text_getter
         self._text_to_speech_getter = text_to_speech_getter
         self._defaults_getter = defaults_getter
         self._model_getter = model_getter
+        self._credential_getter = credential_getter
         self.max_upload_bytes = max_upload_bytes if max_upload_bytes is not None else MAX_UPLOAD_BYTES
         self.max_tts_bytes = max_tts_bytes if max_tts_bytes is not None else MAX_TTS_BYTES
 
@@ -265,17 +361,54 @@ class StudyVoiceService:
         except Exception as exc:
             raise StudyVoiceUnavailable("study_voice_unavailable") from exc
 
+    async def _resolve_local_record(self, kind: str) -> tuple[object, object]:
+        """Resolve a persisted local speech record and its loopback config.
+
+        A Model without a linked Credential is the legacy env-fallback path.
+        It has no persisted endpoint authority, so Study voice rejects it
+        rather than allowing environment state to select a remote service.
+        """
+        defaults = await _maybe_await(self._defaults_getter())
+        field = "default_speech_to_text_model" if kind == "speech_to_text" else "default_text_to_speech_model"
+        model_id = _value(defaults, field)
+        if not isinstance(model_id, str) or not model_id.strip():
+            raise StudyVoiceUnavailable("local_speech_unavailable")
+        record = await _maybe_await(self._model_getter(model_id))
+        provider = _safe_model_provider(record)
+        if record is None or _value(record, "type") != kind or provider not in LOCAL_PROVIDERS:
+            raise StudyVoiceUnavailable("local_speech_unavailable")
+
+        credential_id = _value(record, "credential")
+        if not isinstance(credential_id, str) or not credential_id.strip():
+            # Do not consult OLLAMA_API_BASE/OPENAI_COMPATIBLE_BASE_URL here:
+            # those env fallbacks are not a persisted local-authority receipt.
+            raise StudyVoiceUnavailable("local_speech_unavailable")
+        credential = await _maybe_await(self._credential_getter(credential_id))
+        if credential is None:
+            raise StudyVoiceUnavailable("local_speech_unavailable")
+        credential_provider = _safe_model_provider(credential)
+        if credential_provider != provider:
+            raise StudyVoiceUnavailable("local_speech_unavailable")
+
+        endpoint_name = "endpoint_stt" if kind == "speech_to_text" else "endpoint_tts"
+        # Credential fields mirror Credential.to_esperanto_config() but are
+        # read directly so no API key or decrypted payload is ever materialized
+        # in this policy path.
+        endpoint = _first_value(credential, (endpoint_name, "base_url", "endpoint"))
+        if endpoint is None:
+            for config_name in ("config", "settings"):
+                config = _value(credential, config_name)
+                if isinstance(config, Mapping):
+                    endpoint = _first_value(config, (endpoint_name, "base_url", "endpoint"))
+                    if endpoint is not None:
+                        break
+        if not _is_local_speech_endpoint(endpoint):
+            raise StudyVoiceUnavailable("local_speech_unavailable")
+        return record, credential
+
     async def _local_model(self, kind: str) -> object:
         try:
-            defaults = await _maybe_await(self._defaults_getter())
-            field = "default_speech_to_text_model" if kind == "speech_to_text" else "default_text_to_speech_model"
-            model_id = _value(defaults, field)
-            if not isinstance(model_id, str) or not model_id.strip():
-                raise StudyVoiceUnavailable("local_speech_unavailable")
-            record = await _maybe_await(self._model_getter(model_id))
-            provider = _safe_model_provider(record)
-            if record is None or _value(record, "type") != kind or provider not in LOCAL_PROVIDERS:
-                raise StudyVoiceUnavailable("local_speech_unavailable")
+            record, _credential = await self._resolve_local_record(kind)
             getter = self._speech_to_text_getter if kind == "speech_to_text" else self._text_to_speech_getter
             model = await _maybe_await(getter())
             model_provider = _value(model, "provider")
@@ -284,12 +417,32 @@ class StudyVoiceService:
                 and str(model_provider).strip().lower().replace("-", "_") not in LOCAL_PROVIDERS
             ):
                 raise StudyVoiceUnavailable("local_speech_unavailable")
+            endpoint_name = "endpoint_stt" if kind == "speech_to_text" else "endpoint_tts"
+            runtime_endpoint = _first_value(model, (endpoint_name, "base_url", "endpoint"))
+            if runtime_endpoint is not None and not _is_local_speech_endpoint(runtime_endpoint):
+                raise StudyVoiceUnavailable("local_speech_unavailable")
             return model
         except StudyVoiceError:
             raise
         except Exception as exc:
             logger.warning("Local Study speech capability was unavailable")
             raise StudyVoiceUnavailable("local_speech_unavailable") from exc
+
+    async def capability(self, plan_id: str) -> dict[str, str]:
+        """Return a fail-closed persisted local speech capability receipt."""
+        await self._authorized_plan(plan_id)
+        capability = {"stt": "unavailable", "tts": "unavailable"}
+        for kind, key in (("speech_to_text", "stt"), ("text_to_speech", "tts")):
+            try:
+                await self._resolve_local_record(kind)
+            except StudyVoiceError:
+                continue
+            except Exception:
+                # A capability probe is advisory; configuration/DB failures
+                # must not become a broad error or cause a fallback provider.
+                continue
+            capability[key] = "ready"
+        return capability
 
     async def _write_upload(self, upload: object, mime: str) -> Path:
         size = _value(upload, "size")

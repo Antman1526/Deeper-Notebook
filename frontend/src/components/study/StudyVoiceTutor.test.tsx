@@ -80,4 +80,26 @@ describe('StudyVoiceTutor', () => {
     fireEvent.ended(screen.getByLabelText('Tutor response audio'))
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:study-audio')
   })
+
+  it('ignores a cancelled stale synthesis while allowing the next synthesis to complete', async () => {
+    const first = Promise.withResolvers<Blob>()
+    const second = Promise.withResolvers<Blob>()
+    const createObjectURL = vi.fn(() => 'blob:latest-audio')
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    synthesize.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    render(<StudyVoiceTutor planId="study_plan:one" capability={{ stt: 'unavailable', tts: 'ready' }} assistantText="A local answer." />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play tutor response' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel voice' })).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel voice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play tutor response' }))
+    await waitFor(() => expect(synthesize).toHaveBeenCalledTimes(2))
+
+    first.resolve(new Blob([new Uint8Array([1])], { type: 'audio/wav' }))
+    await Promise.resolve()
+    expect(createObjectURL).not.toHaveBeenCalled()
+
+    second.resolve(new Blob([new Uint8Array([2])], { type: 'audio/wav' }))
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
+  })
 })

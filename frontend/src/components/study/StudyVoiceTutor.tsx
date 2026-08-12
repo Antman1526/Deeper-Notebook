@@ -39,7 +39,17 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
   const startedAtRef = useRef<number>(0)
   const controllerRef = useRef<AbortController | null>(null)
   const cancelledRef = useRef(false)
+  const operationIdRef = useRef(0)
   const audioUrlRef = useRef<string | null>(null)
+
+  const beginOperation = () => {
+    const operationId = operationIdRef.current + 1
+    operationIdRef.current = operationId
+    cancelledRef.current = false
+    return operationId
+  }
+
+  const isCurrentOperation = (operationId: number) => operationId === operationIdRef.current && !cancelledRef.current
 
   const releaseStream = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -53,6 +63,7 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
   }
 
   useEffect(() => () => {
+    operationIdRef.current += 1
     cancelledRef.current = true
     controllerRef.current?.abort()
     try {
@@ -65,6 +76,7 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
   }, [])
 
   const cancel = () => {
+    operationIdRef.current += 1
     cancelledRef.current = true
     controllerRef.current?.abort()
     controllerRef.current = null
@@ -92,14 +104,14 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
   const startRecording = async () => {
     if (capability.stt !== 'ready' || state !== 'idle') return
     setError(null)
-    cancelledRef.current = false
+    const operationId = beginOperation()
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setError('Microphone access is unavailable.')
       return
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      if (cancelledRef.current) {
+      if (!isCurrentOperation(operationId)) {
         stream.getTracks().forEach((track) => track.stop())
         return
       }
@@ -118,15 +130,17 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
         if (event.data.size > 0) chunksRef.current.push(event.data)
       }
       recorder.onerror = () => {
-        if (!cancelledRef.current) setError('The recording could not be completed.')
-        releaseStream()
-        setState('idle')
+        if (isCurrentOperation(operationId)) {
+          setError('The recording could not be completed.')
+          releaseStream()
+          setState('idle')
+        }
       }
       recorder.onstop = () => {
         const recordedType = recorder.mimeType || mimeType || 'audio/webm'
         const blob = new Blob(chunksRef.current, { type: recordedType })
         const duration = (Date.now() - startedAtRef.current) / 1000
-        const wasCancelled = cancelledRef.current
+        const wasCancelled = !isCurrentOperation(operationId)
         chunksRef.current = []
         recorderRef.current = null
         releaseStream()
@@ -139,28 +153,30 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
         controllerRef.current = controller
         void studyVoiceApi.transcribe(planId, blob, duration, controller.signal)
           .then((result) => {
-            if (cancelledRef.current) return
+            if (!isCurrentOperation(operationId)) return
             setTranscript(result.transcript)
             onTranscript?.(result.transcript)
             setState('idle')
           })
           .catch((requestError: unknown) => {
-            if (!cancelledRef.current) setError(safeVoiceError(requestError, 'Local transcription was unavailable.'))
-            if (!cancelledRef.current) setState('idle')
+            if (isCurrentOperation(operationId)) setError(safeVoiceError(requestError, 'Local transcription was unavailable.'))
+            if (isCurrentOperation(operationId)) setState('idle')
           })
           .finally(() => {
-            controllerRef.current = null
+            if (controllerRef.current === controller) controllerRef.current = null
           })
       }
       recorder.start()
       setState('recording')
     } catch (requestError: unknown) {
-      releaseStream()
-      setState('idle')
-      if (requestError instanceof DOMException && requestError.name === 'NotAllowedError') {
-        setError('Microphone access was denied.')
-      } else {
-        setError('Microphone access could not be started.')
+      if (isCurrentOperation(operationId)) {
+        releaseStream()
+        setState('idle')
+        if (requestError instanceof DOMException && requestError.name === 'NotAllowedError') {
+          setError('Microphone access was denied.')
+        } else {
+          setError('Microphone access could not be started.')
+        }
       }
     }
   }
@@ -168,21 +184,22 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
   const synthesize = async () => {
     if (capability.tts !== 'ready' || !assistantText?.trim() || state !== 'idle') return
     setError(null)
+    const operationId = beginOperation()
     revokeAudioUrl()
     const controller = new AbortController()
     controllerRef.current = controller
     setState('synthesizing')
     try {
       const blob = await studyVoiceApi.synthesize(planId, assistantText, controller.signal)
-      if (cancelledRef.current) return
+      if (!isCurrentOperation(operationId)) return
       const url = URL.createObjectURL(blob)
       audioUrlRef.current = url
       setAudioUrl(url)
     } catch (requestError: unknown) {
-      if (!cancelledRef.current) setError(safeVoiceError(requestError, 'Local speech synthesis was unavailable.'))
+      if (isCurrentOperation(operationId)) setError(safeVoiceError(requestError, 'Local speech synthesis was unavailable.'))
     } finally {
-      controllerRef.current = null
-      if (!cancelledRef.current) setState('idle')
+      if (controllerRef.current === controller) controllerRef.current = null
+      if (isCurrentOperation(operationId)) setState('idle')
     }
   }
 

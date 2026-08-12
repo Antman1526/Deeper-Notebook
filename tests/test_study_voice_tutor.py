@@ -12,10 +12,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import study_voice
+from deeper_notebook.study import voice_service as voice_service_module
 from deeper_notebook.study.voice_service import (
     MAX_AUDIO_DURATION_SECONDS,
-    MAX_UPLOAD_BYTES,
     MAX_TTS_BYTES,
+    MAX_UPLOAD_BYTES,
     StudyVoiceService,
 )
 
@@ -50,13 +51,14 @@ class FakePlanRepository:
 class FakeSTT:
     provider = "ollama"
 
-    def __init__(self, text: str = "What is spaced repetition?") -> None:
+    def __init__(self, text: str = "What is spaced repetition?", duration: object = None) -> None:
         self.text = text
+        self.duration = duration
         self.paths: list[Path] = []
 
     async def atranscribe(self, *, audio_file: Path):
         self.paths.append(audio_file)
-        return SimpleNamespace(text=self.text, duration=None)
+        return SimpleNamespace(text=self.text, duration=self.duration)
 
 
 class FakeTTS:
@@ -78,9 +80,32 @@ class FakeDefaults:
 
 
 class FakeModelRecord:
-    def __init__(self, model_type: str, provider: str) -> None:
+    def __init__(
+        self,
+        model_type: str,
+        provider: str,
+        *,
+        credential: str | None = "credential:local",
+    ) -> None:
         self.type = model_type
         self.provider = provider
+        self.credential = credential
+
+
+class FakeCredentialRecord:
+    def __init__(
+        self,
+        *,
+        provider: str,
+        base_url: str | None = None,
+        endpoint_stt: str | None = None,
+        endpoint_tts: str | None = None,
+    ) -> None:
+        self.provider = provider
+        self.base_url = base_url
+        self.endpoint = None
+        self.endpoint_stt = endpoint_stt
+        self.endpoint_tts = endpoint_tts
 
 
 def _client(monkeypatch, service: StudyVoiceService, *, enabled: bool = True) -> TestClient:
@@ -100,17 +125,33 @@ def _service(
     tts_provider: str = "ollama",
     max_upload_bytes: int | None = None,
     max_tts_bytes: int | None = None,
+    credential_base_url: str | None = "http://127.0.0.1:11434",
+    credential_provider: str | None = None,
+    credential_id: str | None = "credential:local",
+    credential_getter=None,
 ) -> StudyVoiceService:
     records = {
-        "model:stt": FakeModelRecord("speech_to_text", stt_provider),
-        "model:tts": FakeModelRecord("text_to_speech", tts_provider),
+        "model:stt": FakeModelRecord("speech_to_text", stt_provider, credential=credential_id),
+        "model:tts": FakeModelRecord("text_to_speech", tts_provider, credential=credential_id),
     }
+    provider = credential_provider or stt_provider
+    credentials = (
+        {
+            credential_id: FakeCredentialRecord(
+                provider=provider,
+                base_url=credential_base_url,
+            )
+        }
+        if credential_id
+        else {}
+    )
     return StudyVoiceService(
         plan_repository=FakePlanRepository(state=state),
         speech_to_text_getter=AsyncMock(return_value=stt),
         text_to_speech_getter=AsyncMock(return_value=tts),
         defaults_getter=AsyncMock(return_value=FakeDefaults()),
         model_getter=AsyncMock(side_effect=lambda model_id: records.get(model_id)),
+        credential_getter=credential_getter or AsyncMock(side_effect=lambda credential_id: credentials.get(credential_id)),
         max_upload_bytes=max_upload_bytes,
         max_tts_bytes=max_tts_bytes,
     )
@@ -132,7 +173,7 @@ def test_configured_remote_default_never_acquires_or_falls_back_to_cloud(monkeyp
         speech_to_text_getter=remote_getter,
         defaults_getter=AsyncMock(return_value=FakeDefaults()),
         model_getter=AsyncMock(
-            return_value=FakeModelRecord("speech_to_text", "openai")
+            return_value=FakeModelRecord("speech_to_text", "openai", credential=None)
         ),
     )
     response = _client(monkeypatch, service).post(
@@ -142,6 +183,172 @@ def test_configured_remote_default_never_acquires_or_falls_back_to_cloud(monkeyp
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "local_speech_unavailable"
     remote_getter.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "provider,base_url",
+    [
+        ("openai_compatible", "https://api.example.com/v1"),
+        ("ollama", "http://192.168.1.25:11434"),
+    ],
+)
+def test_public_or_remote_local_provider_never_acquires_speech_getter(
+    monkeypatch,
+    provider: str,
+    base_url: str,
+) -> None:
+    getter = AsyncMock(return_value=FakeSTT())
+    service = _service(
+        stt=FakeSTT(),
+        stt_provider=provider,
+        credential_provider=provider,
+        credential_base_url=base_url,
+    )
+    service._speech_to_text_getter = getter
+    response = _client(monkeypatch, service).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "local_speech_unavailable"
+    getter.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost.evil:11434",
+        "http://127.0.0.1.evil:11434",
+        "http://user:secret@localhost:11434",
+        "http://169.254.1.1:11434",
+    ],
+)
+def test_local_endpoint_host_spoofs_fail_closed_before_getter(monkeypatch, base_url: str) -> None:
+    getter = AsyncMock(return_value=FakeSTT())
+    service = _service(credential_base_url=base_url)
+    service._speech_to_text_getter = getter
+    response = _client(monkeypatch, service).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "local_speech_unavailable"
+    getter.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    ["http://localhost:11434/v1", "http://127.42.0.7:8080/v1", "http://[::1]:9000/v1"],
+)
+def test_loopback_local_endpoints_are_accepted(monkeypatch, base_url: str) -> None:
+    model = FakeSTT()
+    response = _client(
+        monkeypatch,
+        _service(stt=model, stt_provider="openai_compatible", credential_provider="openai_compatible", credential_base_url=base_url),
+    ).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 200
+    assert model.paths
+
+
+def test_missing_or_unreadable_credential_fails_closed_without_getter(monkeypatch) -> None:
+    getter = AsyncMock(return_value=FakeSTT())
+    service = _service(
+        credential_getter=AsyncMock(side_effect=RuntimeError("credential unavailable")),
+    )
+    service._speech_to_text_getter = getter
+    response = _client(monkeypatch, service).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "local_speech_unavailable"
+    getter.assert_not_awaited()
+
+
+def test_credential_missing_provider_fails_closed_without_getter(monkeypatch) -> None:
+    getter = AsyncMock(return_value=FakeSTT())
+    service = _service(
+        credential_getter=AsyncMock(
+            return_value=FakeCredentialRecord(provider="", base_url="http://127.0.0.1:11434")
+        ),
+    )
+    service._speech_to_text_getter = getter
+    response = _client(monkeypatch, service).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "local_speech_unavailable"
+    getter.assert_not_awaited()
+
+
+def test_runtime_public_endpoint_is_rejected_before_transcription(monkeypatch) -> None:
+    model = FakeSTT()
+    model.base_url = "https://api.example.com/v1"
+    response = _client(monkeypatch, _service(stt=model)).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "local_speech_unavailable"
+    assert model.paths == []
+
+
+def test_env_fallback_local_provider_is_not_voice_authority(monkeypatch) -> None:
+    monkeypatch.setenv("OLLAMA_API_BASE", "http://127.0.0.1:11434")
+    getter = AsyncMock(return_value=FakeSTT())
+    service = _service(
+        stt_provider="ollama",
+        credential_provider="ollama",
+        credential_id=None,
+        credential_getter=AsyncMock(return_value=None),
+    )
+    service._speech_to_text_getter = getter
+    response = _client(monkeypatch, service).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "local_speech_unavailable"
+    getter.assert_not_awaited()
+
+
+def test_capability_receipt_uses_persisted_local_policy_without_acquiring_models(monkeypatch) -> None:
+    service = _service(stt=FakeSTT(), tts=FakeTTS())
+    response = _client(monkeypatch, service).get(
+        "/api/study/plans/study_plan:one/voice:capability",
+    )
+    assert response.status_code == 200
+    assert response.json() == {"stt": "ready", "tts": "ready"}
+    service._speech_to_text_getter.assert_not_awaited()
+    service._text_to_speech_getter.assert_not_awaited()
+
+
+def test_capability_receipt_fails_closed_for_public_endpoint(monkeypatch) -> None:
+    service = _service(
+        stt=FakeSTT(),
+        tts=FakeTTS(),
+        credential_base_url="https://api.example.com/v1",
+        credential_provider="openai_compatible",
+    )
+    response = _client(monkeypatch, service).get(
+        "/api/study/plans/study_plan:one/voice:capability",
+    )
+    assert response.status_code == 200
+    assert response.json() == {"stt": "unavailable", "tts": "unavailable"}
+    service._speech_to_text_getter.assert_not_awaited()
+    service._text_to_speech_getter.assert_not_awaited()
+
+
+def test_feature_off_capability_is_uniform_404_before_plan_validation(monkeypatch) -> None:
+    response = _client(monkeypatch, _service(), enabled=False).get(
+        "/api/study/plans/not-a-plan/voice:capability",
+    )
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Study plan not found"}
 
 
 def test_openai_compatible_local_runtime_provider_is_normalized(monkeypatch) -> None:
@@ -230,6 +437,43 @@ def test_transcription_never_falls_back_to_cloud_and_rejects_empty_output(monkey
     assert oversized.json()["detail"]["code"] == "transcript_too_large"
 
 
+def test_model_returned_duration_is_authoritative_and_bounded(monkeypatch) -> None:
+    response = _client(
+        monkeypatch,
+        _service(stt=FakeSTT(duration=MAX_AUDIO_DURATION_SECONDS + 1)),
+    ).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        data={"duration_seconds": "1"},
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "audio_duration_too_long"
+
+
+def test_invalid_model_returned_duration_fails_safe(monkeypatch) -> None:
+    response = _client(
+        monkeypatch,
+        _service(stt=FakeSTT(duration=-1)),
+    ).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_audio_duration"
+
+
+def test_non_numeric_model_returned_duration_fails_safe(monkeypatch) -> None:
+    response = _client(
+        monkeypatch,
+        _service(stt=FakeSTT(duration="301")),
+    ).post(
+        "/api/study/plans/study_plan:one/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "invalid_audio_duration"
+
+
 def test_synthesis_bounds_text_output_and_projects_safe_audio(monkeypatch) -> None:
     tts = FakeTTS()
     api = _client(monkeypatch, _service(tts=tts))
@@ -315,3 +559,51 @@ class _Upload:
         chunk = self.payload[self.offset : self.offset + size]
         self.offset += len(chunk)
         return chunk
+
+
+@pytest.mark.asyncio
+async def test_default_credential_metadata_loader_projects_endpoint_without_secrets(monkeypatch) -> None:
+    query = AsyncMock(
+        return_value=[
+            {
+                "id": "credential:local",
+                "provider": "ollama",
+                "base_url": "http://127.0.0.1:11434",
+            }
+        ]
+    )
+    monkeypatch.setattr(voice_service_module, "repo_query", query)
+
+    metadata = await voice_service_module._load_credential_metadata("credential:local")
+
+    assert metadata["provider"] == "ollama"
+    assert metadata["base_url"] == "http://127.0.0.1:11434"
+    query.assert_awaited_once()
+    statement = query.await_args.args[0]
+    assert "SELECT id, provider, base_url, endpoint, endpoint_stt, endpoint_tts" in statement
+    assert "api_key" not in statement
+    assert "config" not in statement
+
+
+@pytest.mark.asyncio
+async def test_default_credential_metadata_loader_rejects_cross_table_link(monkeypatch) -> None:
+    query = AsyncMock()
+    monkeypatch.setattr(voice_service_module, "repo_query", query)
+
+    metadata = await voice_service_module._load_credential_metadata("note:local")
+
+    assert metadata is None
+    query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_default_credential_metadata_loader_accepts_projected_mapping(monkeypatch) -> None:
+    monkeypatch.setattr(
+        voice_service_module,
+        "repo_query",
+        AsyncMock(return_value={"provider": "ollama", "base_url": "http://localhost:11434"}),
+    )
+
+    metadata = await voice_service_module._load_credential_metadata("credential:local")
+
+    assert metadata == {"provider": "ollama", "base_url": "http://localhost:11434"}

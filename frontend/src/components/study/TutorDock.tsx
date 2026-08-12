@@ -1,6 +1,6 @@
 'use client'
 
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { Badge } from '@/components/ui/badge'
@@ -54,6 +54,8 @@ interface TutorDockProps {
   sourceOnly?: boolean
   initialMode?: TutorMode
   onCitationNavigate?: (citation: StudyAssistantCitation) => void
+  voiceTranscript?: string | null
+  onAssistantAnswer?: (answer: string) => void
 }
 
 function safeErrorMessage(error: unknown): string {
@@ -106,6 +108,8 @@ export function TutorDock({
   sourceOnly: sourceOnlyProp = false,
   initialMode = 'teach_me',
   onCitationNavigate,
+  voiceTranscript = null,
+  onAssistantAnswer,
 }: TutorDockProps) {
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(true)
@@ -131,6 +135,15 @@ export function TutorDock({
   const requiresWebPermission = config.requires_web_permission || role === 'research_scout'
   const hasApprovedScope = approvedNetworkScope.length > 0
   const sourceOnly = sourceOnlyProp || config.source_only || role === 'source_guide'
+
+  useEffect(() => {
+    if (voiceTranscript !== null) setPrompt(voiceTranscript)
+  }, [voiceTranscript])
+
+  useEffect(() => {
+    const response = localResponse ?? invocation.data
+    if (response) onAssistantAnswer?.(response.answer)
+  }, [invocation.data, localResponse, onAssistantAnswer])
 
   useLayoutEffect(() => {
     if (!isOpen || !focusAfterOpenRef.current) return

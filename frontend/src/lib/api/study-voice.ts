@@ -11,6 +11,19 @@ export interface StudyVoiceTranscription {
   transcript: string
 }
 
+function decodeCapability(value: unknown): StudyVoiceCapability {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Study voice capability')
+  const candidate = value as { stt?: unknown; tts?: unknown }
+  if (
+    Object.keys(value).sort().join(',') !== 'stt,tts'
+    || (candidate.stt !== 'ready' && candidate.stt !== 'unavailable')
+    || (candidate.tts !== 'ready' && candidate.tts !== 'unavailable')
+  ) {
+    throw new Error('Invalid Study voice capability')
+  }
+  return { stt: candidate.stt as StudyVoiceCapabilityState, tts: candidate.tts as StudyVoiceCapabilityState }
+}
+
 function validatePlanId(planId: string): string {
   if (typeof planId !== 'string' || !planId.startsWith('study_plan:') || planId.length > 512 || !planId.slice('study_plan:'.length).trim()) {
     throw new Error('Invalid Study voice plan')
@@ -21,13 +34,26 @@ function validatePlanId(planId: string): string {
 function decodeTranscription(value: unknown): StudyVoiceTranscription {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid Study voice response')
   const transcript = (value as { transcript?: unknown }).transcript
-  if (typeof transcript !== 'string' || !transcript.trim() || new TextEncoder().encode(transcript).byteLength > 16 * 1024) {
+  if (
+    Object.keys(value).sort().join(',') !== 'transcript'
+    || typeof transcript !== 'string'
+    || !transcript.trim()
+    || new TextEncoder().encode(transcript).byteLength > 16 * 1024
+  ) {
     throw new Error('Invalid Study voice response')
   }
   return { transcript }
 }
 
 export const studyVoiceApi = {
+  async capability(planId: string, signal?: AbortSignal): Promise<StudyVoiceCapability> {
+    const response = await apiClient.get(`/study/plans/${encodeURIComponent(validatePlanId(planId))}/voice:capability`, {
+      signal,
+      headers: { 'x-skip-error-toast': '1' },
+    })
+    return decodeCapability(response.data)
+  },
+
   async transcribe(
     planId: string,
     audio: Blob,

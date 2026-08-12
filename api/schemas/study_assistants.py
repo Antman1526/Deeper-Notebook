@@ -119,9 +119,19 @@ class StudyVoiceTranscriptionResponse(BaseModel):
     transcript: StrictStr = Field(min_length=1, max_length=16 * 1024)
 
 
+class StudyVoiceCapabilityResponse(BaseModel):
+    """Persisted local speech readiness; no provider details cross HTTP."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    stt: Literal["ready", "unavailable"]
+    tts: Literal["ready", "unavailable"]
+
+
 __all__ = [
     "InvokeStudyAssistantRequest",
     "StudyAssistantResponseBody",
+    "StudyVoiceCapabilityResponse",
     "StudyVoiceTranscriptionResponse",
     "SynthesizeStudyVoiceRequest",
 ]
