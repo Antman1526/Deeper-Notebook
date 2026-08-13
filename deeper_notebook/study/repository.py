@@ -84,17 +84,66 @@ class StudyRepository:
         return str(owners[0]["plan_id"]), owners[0].get("syllabus_unit_id")
 
     async def create_card_version_with_artifact_owner(self, card: StudyCard) -> StudyCard:
-        """Create/link a card while failing before publication on owner conflicts.
+        """Create a card snapshot and owner edge in one DB transaction.
 
-        Known ambiguous owners are rejected before card creation. The link
-        transaction re-checks ownership after creation; a concurrent owner
-        change is compensated by removing only the exact newly-created,
-        unlinked snapshot and restoring its prior current version.
+        The transaction reads the owner and current snapshot, retires a
+        predecessor, creates the next version, and publishes the plan-card
+        edge before committing. A failed owner guard or version race rolls
+        back the complete unit; no compensating delete can remove a card that
+        another concurrent request has already linked.
         """
-        owner = await self._artifact_owner(card.artifact_id)
-        previous_id: str | None = None
+        card_data = self._card_data(card)
+        # Keep the legacy typed ambiguity error for callers while retaining a
+        # second owner guard inside the write transaction for races.
+        await self._artifact_owner(card.artifact_id)
+        transaction = (
+            "BEGIN TRANSACTION; "
+            "LET $owners = (SELECT plan_id, metadata.unit_id AS syllabus_unit_id "
+            "FROM study_plan_artifact WHERE artifact_id = $artifact_id LIMIT 2); "
+            'IF array::len($owners) > 1 { THROW "study_card_artifact_owner_ambiguous"; }; '
+            "LET $current = (SELECT * FROM study_card "
+            "WHERE artifact_id = $artifact_id AND artifact_card_id = $artifact_card_id "
+            "AND current = true ORDER BY version DESC LIMIT 1)[0]; "
+            "LET $same = $current != NONE AND $current.front = $card_data.front "
+            "AND $current.back = $card_data.back "
+            "AND $current.citations = $card_data.citations; "
+            "IF $same = false AND $current != NONE { UPDATE $current SET current = false; }; "
+            "LET $card = IF $same THEN $current ELSE (CREATE study_card SET "
+            "schema_version = $card_data.schema_version, "
+            "artifact_id = $card_data.artifact_id, "
+            "artifact_card_id = $card_data.artifact_card_id, "
+            "version = IF $current = NONE THEN 1 ELSE $current.version + 1 END, "
+            "front = $card_data.front, back = $card_data.back, "
+            "citations = $card_data.citations, fsrs_state = $card_data.fsrs_state, "
+            "due = $card_data.due, stability = $card_data.stability, "
+            "difficulty = $card_data.difficulty, lapse_count = $card_data.lapse_count, "
+            "current = true RETURN AFTER)[0] END; "
+            "LET $card_id = type::string($card.id); "
+            "IF array::len($owners) = 1 { "
+            "LET $existing = (SELECT id FROM study_plan_card "
+            "WHERE plan_id = $owners[0].plan_id AND card_id = $card_id)[0]; "
+            "IF $existing = NONE { CREATE study_plan_card CONTENT { "
+            "plan_id: $owners[0].plan_id, card_id: $card_id, "
+            "syllabus_unit_id: $owners[0].syllabus_unit_id, created_at: time::now() }; }; "
+            "}; COMMIT TRANSACTION; RETURN $card;"
+        )
         try:
-            previous_rows = await repo_query(
+            result = await repo_query(
+                transaction,
+                {
+                    "artifact_id": card.artifact_id,
+                    "artifact_card_id": card.artifact_card_id,
+                    "card_data": card_data,
+                },
+            )
+            if result:
+                try:
+                    return self._card_from_record(_one_record(result))
+                except StudyRepositoryError:
+                    # A driver may omit a multi-statement RETURN projection;
+                    # the committed read below remains authoritative.
+                    pass
+            current_rows = await repo_query(
                 "SELECT * FROM study_card WHERE artifact_id = $artifact_id "
                 "AND artifact_card_id = $artifact_card_id AND current = true "
                 "ORDER BY version DESC LIMIT 1",
@@ -103,54 +152,22 @@ class StudyRepository:
                     "artifact_card_id": card.artifact_card_id,
                 },
             )
-            if previous_rows and isinstance(previous_rows[0], dict):
-                raw_id = previous_rows[0].get("id")
-                previous_id = str(raw_id) if raw_id is not None else None
-        except Exception as exc:
-            raise StudyCardArtifactOwnerConflict(
-                "Failed to inspect existing study card"
-            ) from exc
-        created = await self.create_card_version(card)
-        if owner is None:
-            return created
-        try:
-            await self._link_card_to_owner_transaction(
-                created,
-                expected_plan_id=owner[0],
-            )
+            return self._card_from_record(_one_record(current_rows))
         except StudyCardArtifactOwnerError:
-            if isinstance(created.id, str) and created.id and created.id != previous_id:
-                await self._rollback_unlinked_card(created.id, previous_id)
             raise
-        return created
-
-    async def _rollback_unlinked_card(
-        self, card_id: str, previous_id: str | None
-    ) -> None:
-        """Remove only an exact unlinked failed-attempt snapshot."""
-        try:
-            await repo_query(
-                "BEGIN TRANSACTION; "
-                "LET $links = (SELECT id FROM study_plan_card "
-                "WHERE card_id = $card_id LIMIT 1); "
-                "LET $reviews = (SELECT id FROM study_review "
-                "WHERE card_id = $card_id LIMIT 1); "
-                "IF array::len($links) = 0 AND array::len($reviews) = 0 { "
-                "DELETE $card_record; "
-                "IF $previous_record != NONE { UPDATE $previous_record SET current = true; }; "
-                "}; COMMIT TRANSACTION;",
-                {
-                    "card_id": card_id,
-                    "card_record": ensure_record_id(card_id),
-                    "previous_record": (
-                        ensure_record_id(previous_id) if previous_id else None
-                    ),
-                },
-            )
         except Exception as exc:
-            logger.exception("Failed to roll back orphan Study card")
+            marker = str(exc)
+            if "study_card_artifact_owner_ambiguous" in marker:
+                raise StudyCardArtifactOwnerAmbiguous(
+                    "card artifact owner is ambiguous"
+                ) from exc
+            if "study_card_artifact_owner_conflict" in marker:
+                raise StudyCardArtifactOwnerConflict(
+                    "card artifact owner changed"
+                ) from exc
+            logger.exception("Failed to create/link study card atomically")
             raise StudyCardArtifactOwnerConflict(
-                "card artifact owner changed and orphan cleanup failed"
+                "Failed to create/link card artifact owner atomically"
             ) from exc
 
     async def _link_card_to_owner_transaction(

@@ -93,6 +93,8 @@ def test_explicit_loopback_url_rejects_credentials_and_non_loopback():
 
 def test_receipt_rejects_stale_pid_nonce_and_source_hash(tmp_path: Path):
     from scripts.verify_study_workbench import (
+        AssistantReceipt,
+        ProcessIdentity,
         ProofRefusal,
         RestartReceipt,
         validate_restart_receipt,
@@ -111,6 +113,37 @@ def test_receipt_rejects_stale_pid_nonce_and_source_hash(tmp_path: Path):
         source_hashes={"pdf": "b" * 64, "video": "c" * 64},
         external_hashes={"sentinel.txt": "d" * 64},
         external_writes=0,
+        previous_processes=(
+            ProcessIdentity("api", 1001, "start-a", "a" * 64, 43121),
+        ),
+        source_ids=("source:pdf", "source:video"),
+        plan_id="study_plan:fixture",
+        syllabus_version=1,
+        artifact_ids=("study_artifact:fixture",),
+        card_id="study_card:fixture",
+        anki_job_id="study_anki_import:fixture",
+        anki_receipt_id="study_anki_export:fixture",
+        frontend_port=43122,
+        surreal_port=43123,
+        model_port=43124,
+        surreal_container_name="dn-study-aaaaaaaaaaaa",
+        surreal_container_id="a" * 12,
+        anki_download_id="study_anki_download:fixture",
+        anki_publish_receipt_id="study_anki_import:published",
+        assistant_receipts=(
+            AssistantReceipt(
+                role="source_guide",
+                invocation_id="study-proof-source-guide",
+                session_id="study_assistant_session:source-guide",
+                response_id="study_assistant_response:source-guide",
+            ),
+            AssistantReceipt(
+                role="practice_coach",
+                invocation_id="study-proof-practice-coach",
+                session_id="study_assistant_session:practice-coach",
+                response_id="study_assistant_response:practice-coach",
+            ),
+        ),
     )
     assert validate_restart_receipt(receipt, tmp_path) == receipt
     with pytest.raises(ProofRefusal, match="stale|mismatch"):
@@ -123,6 +156,121 @@ def test_receipt_rejects_stale_pid_nonce_and_source_hash(tmp_path: Path):
             ),
             tmp_path,
         )
+
+
+def test_restart_receipt_is_awaiting_restart_and_has_exact_parity_identities(tmp_path: Path):
+    from scripts.verify_study_workbench import (
+        ProofRefusal,
+        RestartReceipt,
+        validate_restart_receipt,
+    )
+
+    receipt = RestartReceipt(
+        version=1,
+        phase="complete",
+        task_root_sha256=hashlib.sha256(str(tmp_path).encode()).hexdigest(),
+        namespace="study_ns_abc",
+        database="study_db_abc",
+        previous_api_pid=1001,
+        previous_api_start_token="start-a",
+        previous_api_argv_sha256="a" * 64,
+        previous_listener_port=43121,
+        source_hashes={"pdf": "b" * 64, "video": "c" * 64},
+        external_hashes={"sentinel.txt": "d" * 64},
+        external_writes=0,
+    )
+    with pytest.raises(ProofRefusal, match="invalid"):
+        validate_restart_receipt(receipt, tmp_path)
+
+    with pytest.raises(ProofRefusal, match="invalid"):
+        validate_restart_receipt(
+            receipt.__class__(**{**receipt.__dict__, "phase": "awaiting_restart"}),
+            tmp_path,
+        )
+
+
+def test_authoritative_source_evidence_uses_full_hash_and_returned_offsets():
+    from scripts.verify_study_workbench import (
+        ProofRefusal,
+        _authoritative_source_evidence,
+    )
+
+    full_text = "header " * 80 + "Authoritative evidence target." + " trailer" * 80
+    start = full_text.index("Authoritative")
+    match = {
+        "match": {
+            "start": start,
+            "end": start + len("Authoritative evidence target."),
+            "score": 1.0,
+            "snippet": "Authoritative evidence target.",
+        }
+    }
+    source = {
+        "id": "source:long",
+        "full_text": full_text,
+        "provenance": {"content_fingerprint": hashlib.sha256(full_text.encode()).hexdigest()},
+    }
+
+    evidence = _authoritative_source_evidence(source, match)
+
+    assert evidence.content_fingerprint == hashlib.sha256(full_text.encode()).hexdigest()
+    assert evidence.start == start
+    assert evidence.end == start + len("Authoritative evidence target.")
+    assert evidence.quote == full_text[evidence.start:evidence.end]
+
+    with pytest.raises(ProofRefusal, match="hash_mismatch"):
+        _authoritative_source_evidence(
+            source | {"provenance": {"content_fingerprint": "a" * 64}}, match
+        )
+    with pytest.raises(ProofRefusal, match="quote_mismatch"):
+        _authoritative_source_evidence(
+            source,
+            {
+                "match": {
+                    **match["match"],
+                    "snippet": "a different snippet",
+                }
+            },
+        )
+
+
+def test_stack_stop_runs_exact_cleanup_assertions(monkeypatch, tmp_path: Path):
+    from types import SimpleNamespace
+
+    from scripts.verify_study_workbench import Stack
+
+    stack = object.__new__(Stack)
+    stack.children = []
+    stack.inputs = SimpleNamespace(
+        api_port=43121,
+        frontend_port=43122,
+        surreal_port=43123,
+        model_port=43124,
+        task_root=tmp_path,
+        namespace="study_ns_abc",
+        database="study_db_abc",
+    )
+    stack.container_id = "a" * 12
+    stack.container_removed = False
+    called = {}
+
+    def fake_cleanup(*args, **kwargs):
+        called["args"] = args
+        called["kwargs"] = kwargs
+        return SimpleNamespace(owned_processes=0, ports=0, roots=0)
+
+    monkeypatch.setattr("scripts.verify_study_workbench.cleanup_owned", fake_cleanup)
+    def fake_remove_surreal():
+        stack.container_removed = True
+        called["removed"] = True
+
+    monkeypatch.setattr(stack, "_remove_surreal", fake_remove_surreal)
+
+    stack.stop()
+
+    assert called["removed"] is True
+    assert called["kwargs"]["remove_root"] is False
+    assert called["args"][1] == [43121, 43122, 43123, 43124]
 
 
 def test_sanitized_receipts_do_not_leak_secrets_paths_or_payloads():

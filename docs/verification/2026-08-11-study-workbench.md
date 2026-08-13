@@ -15,7 +15,41 @@
   processes. No user vault, credential, document, external source, or hosted
   provider was used.
 
-## Two-phase real proof
+## Review repair correction — 2026-08-13
+
+The fresh Task 18 review findings are closed by the repair slice. The verifier
+now persists and re-reads syllabus version, artifact IDs, card/Anki download
+and publish receipts, and exact Source Guide/Practice Coach invocation,
+session, and response IDs. Only `awaiting_restart` receipts with exact source
+hash keys, non-empty owned process identities, and required parity fields are
+accepted. Source citations use the authoritative full-text SHA-256 and the
+returned Unicode-codepoint bounds; hash, quote, ID, or offset mismatches fail
+closed. The production source detail endpoint normalizes Surreal aggregate
+rows so the authoritative read remains available.
+
+The real repair proof used a fresh mode-0700 disposable root with namespace
+`study_ns_repair20260813d` / database `study_db_repair20260813d` and ports
+`47171`–`47174`: prepare exited `5`, verify exited `0`, and the sanitized
+report was `PASSED`/`none`. Cleanup proved `owned_processes=0`, `ports=0`,
+`container_removed=true`, `root_removed=true`; the task root and all four
+listeners were gone, while the external sentinel remained unchanged.
+
+Card version creation and owner linking now share one Surreal transaction;
+real concurrent races prove one current/due snapshot, complete links, and no
+card/link on an ambiguous owner. The canonical
+`NEXT_TELEMETRY_DISABLED=1 npm run test:feature-build-contract` command now
+returns `0` through a bounded wrapper that stages a disposable project and
+hard-link dependency tree outside the worktree when Turbopack sees the shared
+symlink. It does not rename or mutate the caller's `node_modules`, disable
+Turbopack, or skip the feature-environment verifier; stale stage/lock pairs
+from a crashed invocation are recovered only after the recorded owner is gone.
+
+Repair gates: verifier/scheduler `29 passed`; source/detail API and aggregate
+normalization `28 passed`; wrapper safety `2 passed`; real Study Plan/Progress
+Surreal matrix `22 passed`; frontend config `3 passed`; canonical feature-build
+contract `RC0`; Ruff, compileall, diff-check, lint, and TypeScript `RC0`.
+
+## Two-phase real proof (original Task 18 receipt)
 
 The prepare and verify phases were separate process invocations over the same
 task-owned database. The verifier-local supervisor launched the production API,
@@ -63,11 +97,12 @@ external write count, frontend Study marker, and exact-owned cleanup.
 | Full mocked browser gate | `env -u NEXT_PUBLIC_DN_STUDY_WORKBENCH npm run test:e2e:mocked -- --workers=1` — **71 passed, 5 skipped**, exit `0`; six stale Luminous desktop baselines were refreshed against the current committed UI and the focused nine-test visual subset passed. |
 | Feature flag contracts | Backend/frontend focused flag tests passed for default-on and explicit `0`. |
 
-The canonical `npm run test:feature-build-contract` remains a known worktree
-boundary: Next/Turbopack rejects the repository's `frontend/node_modules`
-symlink as outside the filesystem root. The repository-equivalent Webpack
-contract build and `node scripts/verify-feature-env-build.mjs` both passed RC0;
-the canonical symlink diagnostic is retained honestly rather than relabeled.
+The canonical feature-build contract is now green in this worktree. Its
+wrapper preserves the production Turbopack build and runs
+`node scripts/verify-feature-env-build.mjs` after the build; only a temporary
+project/hard-link materialization outside the worktree is used to keep the
+shared `node_modules` symlink out of the Turbopack project boundary. The
+caller symlink is never renamed or mutated.
 
 The desktop exact gate required local-only build-environment remediation:
 `httpx2`/`httpcore2` were removed from `.build-venv` after the regenerated lock
@@ -78,8 +113,8 @@ No source or lockfile bypass was used; `.build-venv` is ignored local state.
 
 The implementation preserves the flag-off Study dashboard/review surface and
 keeps all cleanup fail-closed. Source and artifact IDs are bounded to the
-disposable proof namespace, and owner-link conflicts roll back newly-created
-cards without exposing orphan due cards. Code Review Graph evidence was
+disposable proof namespace, and owner-link conflicts roll back the complete
+atomic version/create/link transaction without exposing orphan due cards. Code Review Graph evidence was
 unavailable because no graph artifact exists; direct source tracing and the
 listed tests are the review evidence. This receipt does not claim native-device
 browser, signed/notarized packaging, hosted CI, deployment, or public release.

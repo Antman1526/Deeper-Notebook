@@ -25,6 +25,7 @@ from deeper_notebook.study.progress import (
 from deeper_notebook.study.progress_repository import StudyProgressRepository
 from deeper_notebook.study.repository import (
     StudyCardArtifactOwnerConflict,
+    StudyCardArtifactOwnerError,
     StudyRepository,
     StudyRepositoryError,
 )
@@ -144,48 +145,109 @@ async def test_card_creation_links_unique_artifact_owner_and_rejects_cross_plan(
     )
     assert orphan_rows == []
 
-    # Exercise the post-create race/rollback boundary against the real
-    # database: a link failure must remove both the exact new card and any
-    # plan-card edge rather than exposing an orphan due card.
-    rollback_artifact = "studio_artifact:post-create-owner-conflict"
+
+
+async def test_card_version_owner_race_keeps_one_current_and_one_due_card(
+    clean_namespace,
+):
+    plans = StudyPlanRepository()
+    repository = StudyRepository()
+    plan_id = "study_plan:card-version-race"
+    artifact_id = "studio_artifact:card-version-race"
+    await plans.create(
+        StudyPlan(plan_id=plan_id, goal="Verify atomic card race", starting_level="beginner")
+    )
     await plans.link_artifact(
-        owner,
-        rollback_artifact,
+        plan_id,
+        artifact_id,
         artifact_kind="study_guide",
-        metadata={"unit_id": "rollback-unit", "syllabus_version": 1},
+        metadata={"unit_id": "race-unit", "syllabus_version": 1},
     )
 
-    async def fail_link(_card: StudyCard, *, expected_plan_id: str) -> None:
-        assert expected_plan_id == owner
-        raise StudyCardArtifactOwnerConflict("forced post-create owner conflict")
-
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(repository, "_link_card_to_owner_transaction", fail_link)
-    try:
-        with pytest.raises(StudyCardArtifactOwnerConflict):
-            await repository.create_card_version_with_artifact_owner(
-                _card().model_copy(
-                    update={
-                        "artifact_id": rollback_artifact,
-                        "artifact_card_id": "post-create-card",
-                    }
-                )
+    first, second = await asyncio.gather(
+        repository.create_card_version_with_artifact_owner(
+            _card().model_copy(
+                update={
+                    "artifact_id": artifact_id,
+                    "front": "Race winner one",
+                    "artifact_card_id": "race-card",
+                }
             )
-    finally:
-        monkeypatch.undo()
-    rolled_back_cards = await repo_query(
-        "SELECT id FROM study_card WHERE artifact_id = $artifact_id "
-        "AND artifact_card_id = 'post-create-card'",
-        {"artifact_id": rollback_artifact},
+        ),
+        repository.create_card_version_with_artifact_owner(
+            _card().model_copy(
+                update={
+                    "artifact_id": artifact_id,
+                    "front": "Race winner two",
+                    "artifact_card_id": "race-card",
+                }
+            )
+        ),
+        return_exceptions=True,
     )
-    rolled_back_links = await repo_query(
+    assert all(
+        isinstance(result, (StudyCard, StudyCardArtifactOwnerConflict))
+        for result in (first, second)
+    )
+
+    cards = await repo_query(
+        "SELECT id, version, current, due FROM study_card WHERE artifact_id = $artifact_id "
+        "AND artifact_card_id = 'race-card' ORDER BY version ASC",
+        {"artifact_id": artifact_id},
+    )
+    current = [row for row in cards if row.get("current") is True]
+    assert len(current) == 1
+    links = await repo_query(
+        "SELECT plan_id, card_id FROM study_plan_card WHERE plan_id = $plan_id",
+        {"plan_id": plan_id},
+    )
+    assert {row["card_id"] for row in links} == {row["id"] for row in cards}
+    due = await repository.list_due(datetime(2026, 8, 14, tzinfo=UTC), limit=100)
+    assert [card.artifact_card_id for card in due].count("race-card") == 1
+
+
+async def test_ambiguous_owner_transaction_leaves_no_card_due_or_link(
+    clean_namespace,
+):
+    plans = StudyPlanRepository()
+    repository = StudyRepository()
+    artifact_id = "studio_artifact:owner-conflict-race"
+    for plan_id in ("study_plan:owner-conflict-one", "study_plan:owner-conflict-two"):
+        await plans.create(StudyPlan(plan_id=plan_id, goal="Owner conflict", starting_level="beginner"))
+        await plans.link_artifact(
+            plan_id,
+            artifact_id,
+            artifact_kind="study_guide",
+            metadata={"unit_id": plan_id.split(":")[-1], "syllabus_version": 1},
+        )
+
+    results = await asyncio.gather(
+        repository.create_card_version_with_artifact_owner(
+            _card().model_copy(
+                update={"artifact_id": artifact_id, "artifact_card_id": "conflict-card"}
+            )
+        ),
+        repository.create_card_version_with_artifact_owner(
+            _card().model_copy(
+                update={"artifact_id": artifact_id, "artifact_card_id": "conflict-card"}
+            )
+        ),
+        return_exceptions=True,
+    )
+    assert all(isinstance(result, StudyCardArtifactOwnerError) for result in results)
+    cards = await repo_query(
+        "SELECT id FROM study_card WHERE artifact_id = $artifact_id "
+        "AND artifact_card_id = 'conflict-card'",
+        {"artifact_id": artifact_id},
+    )
+    assert cards == []
+    links = await repo_query(
         "SELECT id FROM study_plan_card WHERE card_id IN "
         "(SELECT VALUE id FROM study_card WHERE artifact_id = $artifact_id "
-        "AND artifact_card_id = 'post-create-card')",
-        {"artifact_id": rollback_artifact},
+        "AND artifact_card_id = 'conflict-card')",
+        {"artifact_id": artifact_id},
     )
-    assert rolled_back_cards == []
-    assert rolled_back_links == []
+    assert links == []
 
 
 async def test_progress_append_race_re_reads_unique_winner(clean_namespace):

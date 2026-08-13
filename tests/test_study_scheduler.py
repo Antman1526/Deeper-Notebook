@@ -194,6 +194,42 @@ async def test_source_edit_creates_a_new_version_in_one_transaction(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_card_version_and_artifact_owner_link_share_one_atomic_transaction(monkeypatch) -> None:
+    """Owner publication cannot be repaired after a version commit."""
+    import deeper_notebook.study.repository as repository_module
+
+    card_record = _card().model_copy(update={"id": "study_card:atomic"}).model_dump(
+        mode="python"
+    )
+    queries: list[str] = []
+    repo_created = False
+
+    async def fake_query(query: str, values: dict[str, object]):
+        queries.append(query)
+        if "BEGIN TRANSACTION" in query:
+            return [card_record]
+        if "study_plan_artifact" in query:
+            return [{"plan_id": "study_plan:owner", "syllabus_unit_id": "unit-one"}]
+        return []
+
+    async def fake_create(*_args, **_kwargs):
+        nonlocal repo_created
+        repo_created = True
+        return [card_record]
+
+    monkeypatch.setattr(repository_module, "repo_query", fake_query)
+    monkeypatch.setattr(repository_module, "repo_create", fake_create)
+
+    await repository_module.StudyRepository().create_card_version_with_artifact_owner(_card())
+
+    atomic_queries = [query for query in queries if "BEGIN TRANSACTION" in query]
+    assert len(atomic_queries) == 1
+    assert "CREATE study_card" in atomic_queries[0]
+    assert "CREATE study_plan_card" in atomic_queries[0]
+    assert repo_created is False
+
+
+@pytest.mark.asyncio
 async def test_card_artifact_link_rejects_ambiguous_plan_owner(monkeypatch) -> None:
     async def fake_query(query: str, values: dict[str, object]):
         assert "study_plan_artifact" in query

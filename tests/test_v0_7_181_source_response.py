@@ -98,6 +98,16 @@ def test_get_source_endpoint_computes_insights_count():
     )
 
 
+def test_detail_insights_count_normalizes_surreal_aggregate_shapes():
+    """Surreal aggregate rows may be scalar or ``{"count": n}`` objects."""
+    from api.routers.sources import _normalize_insights_count
+
+    assert _normalize_insights_count([3]) == 3
+    assert _normalize_insights_count([{"count": 4}]) == 4
+    assert _normalize_insights_count([{"count": "not-a-count"}]) == 0
+    assert _normalize_insights_count([]) == 0
+
+
 def test_list_endpoint_still_includes_insights_count():
     """v0.7.181 forward-guard: don't accidentally drop the
     list endpoint's insights_count while reconciling. The list

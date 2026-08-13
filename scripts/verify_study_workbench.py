@@ -130,6 +130,16 @@ class ProcessIdentity:
 
 
 @dataclass(frozen=True)
+class AssistantReceipt:
+    """Durable identity of one assistant invocation and its completed response."""
+
+    role: str
+    invocation_id: str
+    session_id: str
+    response_id: str
+
+
+@dataclass(frozen=True)
 class RestartReceipt:
     version: int
     phase: str
@@ -159,6 +169,7 @@ class RestartReceipt:
     surreal_container_id: str | None = None
     anki_download_id: str | None = None
     anki_publish_receipt_id: str | None = None
+    assistant_receipts: tuple[AssistantReceipt, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -204,6 +215,15 @@ class HttpResult:
     payload: Any
     headers: dict[str, str]
     body: bytes = b""
+
+
+@dataclass(frozen=True)
+class AuthoritativeSourceEvidence:
+    content_fingerprint: str
+    start: int
+    end: int
+    quote: str
+    snippet: str
 
 
 @dataclass
@@ -653,6 +673,8 @@ def cleanup_owned(
     task_root: Path,
     namespace: str,
     database: str,
+    *,
+    remove_root: bool = True,
 ) -> CleanupReceipt:
     children_list = list(children)
     stopped = stop_owned(children_list)
@@ -664,7 +686,7 @@ def cleanup_owned(
     busy = [port for port in ports if _listener_pids(port)]
     if busy:
         raise ProofRefusal("owned_listeners_remain")
-    if task_root.exists():
+    if remove_root and task_root.exists():
         validate_task_root(task_root)
         shutil.rmtree(task_root)
     return CleanupReceipt(
@@ -713,6 +735,7 @@ def _receipt_dict(receipt: RestartReceipt) -> dict[str, Any]:
         "surreal_container_id": receipt.surreal_container_id,
         "anki_download_id": receipt.anki_download_id,
         "anki_publish_receipt_id": receipt.anki_publish_receipt_id,
+        "assistant_receipts": [item.__dict__ for item in receipt.assistant_receipts],
     }
 
 
@@ -757,6 +780,31 @@ def _receipt_from_dict(payload: object) -> RestartReceipt:
                 listener_port=item.get("listener_port"),
             )
         )
+    raw_assistant_receipts = payload.get("assistant_receipts")
+    if not isinstance(raw_assistant_receipts, list):
+        raise ProofRefusal("restart_receipt_invalid")
+    assistant_receipts: list[AssistantReceipt] = []
+    for item in raw_assistant_receipts:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"role", "invocation_id", "session_id", "response_id"}
+            or any(
+                not isinstance(item.get(key), str)
+                or not item[key].strip()
+                or len(item[key]) > 512
+                or any(ord(character) < 32 for character in item[key])
+                for key in ("role", "invocation_id", "session_id", "response_id")
+            )
+        ):
+            raise ProofRefusal("restart_receipt_invalid")
+        assistant_receipts.append(
+            AssistantReceipt(
+                role=item["role"],
+                invocation_id=item["invocation_id"],
+                session_id=item["session_id"],
+                response_id=item["response_id"],
+            )
+        )
     return RestartReceipt(
         version=payload["version"],
         phase=payload["phase"],
@@ -786,6 +834,7 @@ def _receipt_from_dict(payload: object) -> RestartReceipt:
         surreal_container_id=payload.get("surreal_container_id"),
         anki_download_id=payload.get("anki_download_id"),
         anki_publish_receipt_id=payload.get("anki_publish_receipt_id"),
+        assistant_receipts=tuple(assistant_receipts),
     )
 
 
@@ -793,37 +842,112 @@ def validate_restart_receipt(
     receipt: RestartReceipt, task_root: Path, inputs: Inputs | None = None
 ) -> RestartReceipt:
     expected_root = _sha256_bytes(str(task_root.resolve(strict=True)).encode())
-    if receipt.version != 1 or receipt.phase not in {"awaiting_restart", "complete"}:
+    # Only an unfinished prepare receipt is a valid input to verify.  A
+    # completed receipt must never be accepted for a second proof invocation.
+    if receipt.version != 1 or receipt.phase != "awaiting_restart":
         raise ProofRefusal("restart_receipt_invalid")
     if receipt.task_root_sha256 != expected_root:
         raise ProofRefusal("restart_state_root_mismatch")
     _validate_namespace(receipt.namespace)
     _validate_database(receipt.database)
-    if (
-        receipt.external_writes != 0
-        or receipt.previous_api_pid <= 1
-        or receipt.previous_listener_port < 1
-    ):
+    if receipt.external_writes != 0 or receipt.previous_api_pid <= 1:
         raise ProofRefusal("restart_receipt_invalid")
     if not receipt.previous_api_start_token or not _is_sha256(
         receipt.previous_api_argv_sha256
     ):
         raise ProofRefusal("restart_receipt_invalid")
+    if set(receipt.source_hashes) != {"pdf", "video"}:
+        raise ProofRefusal("restart_source_hash_mismatch")
     for collection in (receipt.source_hashes, receipt.external_hashes):
-        if (
-            not isinstance(collection, dict)
-            or not collection
-            or any(
-                not isinstance(key, str) or not _is_sha256(value)
-                for key, value in collection.items()
-            )
+        if not isinstance(collection, dict) or any(
+            not isinstance(key, str) or not _is_sha256(value)
+            for key, value in collection.items()
         ):
             raise ProofRefusal("restart_source_hash_mismatch")
+    if not receipt.previous_processes:
+        raise ProofRefusal("restart_receipt_invalid")
+    if len({item.role for item in receipt.previous_processes}) != len(
+        receipt.previous_processes
+    ) or not any(item.role == "api" for item in receipt.previous_processes):
+        raise ProofRefusal("restart_receipt_invalid")
+    api_identities = [item for item in receipt.previous_processes if item.role == "api"]
+    if len(api_identities) != 1 or (
+        api_identities[0].pid != receipt.previous_api_pid
+        or api_identities[0].start_token != receipt.previous_api_start_token
+        or api_identities[0].argv_sha256 != receipt.previous_api_argv_sha256
+        or api_identities[0].listener_port != receipt.previous_listener_port
+    ):
+        raise ProofRefusal("restart_receipt_invalid")
     if any(
         not _is_sha256(item.argv_sha256) or item.pid <= 1 or not item.start_token
+        or (item.listener_port is not None and not 1 <= item.listener_port <= 65535)
         for item in receipt.previous_processes
     ):
         raise ProofRefusal("restart_receipt_invalid")
+    if not receipt.source_ids or any(
+        not isinstance(item, str) or not item.strip() or len(item) > 512
+        or any(ord(character) < 32 for character in item)
+        for item in receipt.source_ids
+    ):
+        raise ProofRefusal("restart_receipt_invalid")
+    if (
+        not isinstance(receipt.plan_id, str)
+        or not receipt.plan_id.strip()
+        or receipt.syllabus_version is None
+        or isinstance(receipt.syllabus_version, bool)
+        or not isinstance(receipt.syllabus_version, int)
+        or receipt.syllabus_version < 1
+        or not receipt.artifact_ids
+        or any(not isinstance(item, str) or not item.strip() for item in receipt.artifact_ids)
+        or not isinstance(receipt.card_id, str)
+        or not receipt.card_id.strip()
+        or not isinstance(receipt.anki_job_id, str)
+        or not receipt.anki_job_id.strip()
+        or not isinstance(receipt.anki_receipt_id, str)
+        or not receipt.anki_receipt_id.strip()
+        or receipt.frontend_marker != "study"
+        or not isinstance(receipt.frontend_port, int)
+        or not isinstance(receipt.surreal_port, int)
+        or not isinstance(receipt.model_port, int)
+        or not isinstance(receipt.surreal_container_name, str)
+        or not isinstance(receipt.surreal_container_id, str)
+        or not isinstance(receipt.anki_download_id, str)
+        or not receipt.anki_download_id.strip()
+        or not isinstance(receipt.anki_publish_receipt_id, str)
+        or not receipt.anki_publish_receipt_id.strip()
+    ):
+        raise ProofRefusal("restart_receipt_invalid")
+    if len(receipt.assistant_receipts) != 2 or {
+        item.role for item in receipt.assistant_receipts
+    } != {"source_guide", "practice_coach"}:
+        raise ProofRefusal("restart_receipt_invalid")
+    if any(
+        not item.invocation_id.strip()
+        or not item.session_id.strip()
+        or not item.response_id.strip()
+        for item in receipt.assistant_receipts
+    ):
+        raise ProofRefusal("restart_receipt_invalid")
+    for port, label in (
+        (receipt.previous_listener_port, "api"),
+        (receipt.frontend_port, "frontend"),
+        (receipt.surreal_port, "surreal"),
+        (receipt.model_port, "model"),
+    ):
+        _validate_port(port, label)
+    if len(
+        {
+            receipt.previous_listener_port,
+            receipt.frontend_port,
+            receipt.surreal_port,
+            receipt.model_port,
+        }
+    ) != 4:
+        raise ProofRefusal("restart_receipt_ports_not_unique")
+    if not re.fullmatch(r"dn-study-[a-f0-9]{12}", receipt.surreal_container_name):
+        raise ProofRefusal("restart_inputs_mismatch")
+    if not re.fullmatch(r"[a-f0-9]{12,64}", receipt.surreal_container_id):
+        raise ProofRefusal("restart_inputs_mismatch")
     if inputs is not None and (
         receipt.frontend_port is None
         or receipt.surreal_port is None
@@ -836,23 +960,6 @@ def validate_restart_receipt(
         or not re.fullmatch(r"[a-f0-9]{12,64}", receipt.surreal_container_id or "")
     ):
         raise ProofRefusal("restart_inputs_mismatch")
-    if inputs is not None:
-        _validate_port(receipt.previous_listener_port, "api")
-        _validate_port(receipt.frontend_port or 0, "frontend")
-        _validate_port(receipt.surreal_port or 0, "surreal")
-        _validate_port(receipt.model_port or 0, "model")
-        if (
-            len(
-                {
-                    receipt.previous_listener_port,
-                    receipt.frontend_port,
-                    receipt.surreal_port,
-                    receipt.model_port,
-                }
-            )
-            != 4
-        ):
-            raise ProofRefusal("restart_receipt_ports_not_unique")
     if inputs is not None and (
         receipt.namespace != inputs.namespace
         or receipt.database != inputs.database
@@ -1127,6 +1234,47 @@ def _source_hashes(fixtures: Mapping[str, Path]) -> dict[str, str]:
     return {name: _sha256_bytes(path.read_bytes()) for name, path in fixtures.items()}
 
 
+def _authoritative_source_evidence(
+    source_payload: Mapping[str, Any], located_payload: Mapping[str, Any]
+) -> AuthoritativeSourceEvidence:
+    """Bind a citation to the authoritative full source and returned bounds.
+
+    Locate-passage intentionally returns only a bounded snippet.  The source
+    detail response is the authority for both the full-text fingerprint and
+    the exact Unicode-codepoint slice; a snippet/hash mismatch fails closed.
+    """
+    full_text = source_payload.get("full_text")
+    provenance = source_payload.get("provenance")
+    declared = provenance.get("content_fingerprint") if isinstance(provenance, Mapping) else None
+    if not isinstance(full_text, str) or not full_text.strip():
+        raise ProofRefusal("source_evidence_full_text_missing")
+    computed = _sha256_bytes(full_text.encode("utf-8"))
+    if not _is_sha256(declared) or declared != computed:
+        raise ProofRefusal("source_evidence_hash_mismatch")
+    match = located_payload.get("match")
+    if not isinstance(match, Mapping):
+        raise ProofRefusal("source_evidence_missing")
+    start = match.get("start")
+    end = match.get("end")
+    snippet = match.get("snippet")
+    if (
+        isinstance(start, bool)
+        or isinstance(end, bool)
+        or not isinstance(start, int)
+        or not isinstance(end, int)
+        or not isinstance(snippet, str)
+        or not snippet.strip()
+        or start < 0
+        or end <= start
+        or end > len(full_text)
+    ):
+        raise ProofRefusal("source_evidence_offsets_invalid")
+    quote = full_text[start:end]
+    if quote.strip() != snippet:
+        raise ProofRefusal("source_evidence_quote_mismatch")
+    return AuthoritativeSourceEvidence(computed, start, end, quote, snippet)
+
+
 def _workflow(
     api_url: str,
     frontend_url: str,
@@ -1299,6 +1447,7 @@ def _workflow(
         state["source_ids"] = upload_ids
         source_evidence: dict[str, str] = {}
         source_hashes: dict[str, str] = {}
+        source_offsets: dict[str, dict[str, object]] = {}
         mark("source_evidence")
         for source_id in upload_ids:
             kind = uploaded_kinds.get(source_id)
@@ -1318,14 +1467,32 @@ def _workflow(
                 {200},
                 "source_evidence_locate",
             )
-            match = located.get("match") if isinstance(located, dict) else None
-            snippet = match.get("snippet") if isinstance(match, dict) else None
-            if not isinstance(snippet, str) or not snippet.strip():
-                raise ProofRefusal("source_evidence_missing")
-            source_evidence[source_id] = snippet
-            source_hashes[source_id] = _sha256_bytes(snippet.encode("utf-8"))
+            source_payload = _expect(
+                _http_request(
+                    api_url,
+                    "GET",
+                    f"/api/sources/{urllib.parse.quote(source_id, safe='')}",
+                    token=token,
+                ),
+                {200},
+                "source_evidence_source_read",
+            )
+            if (
+                not isinstance(source_payload, Mapping)
+                or source_payload.get("id") != source_id
+            ):
+                raise ProofRefusal("source_evidence_source_read_invalid")
+            evidence = _authoritative_source_evidence(source_payload, located)
+            source_evidence[source_id] = evidence.snippet
+            source_hashes[source_id] = evidence.content_fingerprint
+            source_offsets[source_id] = {
+                "start": evidence.start,
+                "end": evidence.end,
+                "quote": evidence.quote,
+            }
         state["source_evidence"] = source_evidence
         state["source_content_hashes"] = source_hashes
+        state["source_offsets"] = source_offsets
         mark("plan_lifecycle")
         plan = _expect(
             _http_request(
@@ -1503,8 +1670,10 @@ def _workflow(
             for item in artifacts
             if isinstance(item, dict) and isinstance(item.get("artifact_id"), str)
         ]
+        assistant_receipts: list[AssistantReceipt] = []
         for role, authority in (("source_guide", "ask"), ("practice_coach", "coach")):
             mark("assistant_invocation")
+            invocation_id = f"study-proof-assistant-{role}"
             assistant = _expect(
                 _http_request(
                     api_url,
@@ -1520,18 +1689,44 @@ def _workflow(
                         "network_allowed": False,
                         "approved_network_scope": [],
                         "timeout_seconds": 60,
+                        "request_id": invocation_id,
                     },
                 ),
                 {200},
                 f"{role}_invoke",
             )
-            if not isinstance(assistant, dict) or not assistant.get("answer"):
+            if (
+                not isinstance(assistant, dict)
+                or not assistant.get("answer")
+                or assistant.get("role") != role
+                or not isinstance(assistant.get("response_id"), str)
+                or not assistant.get("response_id")
+                or not isinstance(assistant.get("session_id"), str)
+                or not assistant.get("session_id")
+            ):
                 raise ProofRefusal(f"{role}_answer_missing")
+            assistant_receipts.append(
+                AssistantReceipt(
+                    role=role,
+                    invocation_id=invocation_id,
+                    session_id=assistant["session_id"],
+                    response_id=assistant["response_id"],
+                )
+            )
+        state["assistant_receipts"] = assistant_receipts
+        if not state.get("artifact_ids"):
+            raise ProofRefusal("artifact_ids_missing")
         evidence_text = str(
             state.get("source_evidence", {}).get(upload_ids[0], "Synthetic")
         )
-        quote = "Synthetic" if "Synthetic" in evidence_text else evidence_text[:32]
-        start = evidence_text.index(quote)
+        source_offset = state.get("source_offsets", {}).get(upload_ids[0])
+        if (
+            not isinstance(source_offset, Mapping)
+            or not isinstance(source_offset.get("start"), int)
+            or not isinstance(source_offset.get("end"), int)
+            or not isinstance(source_offset.get("quote"), str)
+        ):
+            raise ProofRefusal("card_evidence_authority_missing")
         mark("card_lifecycle")
         card = _expect(
             _http_request(
@@ -1557,9 +1752,9 @@ def _workflow(
                             ),
                             "source_state": "current",
                             "offset_encoding": "unicode_codepoint",
-                            "start": start,
-                            "end": start + len(quote),
-                            "quote": quote,
+                            "start": source_offset["start"],
+                            "end": source_offset["end"],
+                            "quote": source_offset["quote"],
                         }
                     ],
                 },
@@ -1611,6 +1806,8 @@ def _workflow(
             if isinstance(exported, dict)
             else None
         )
+        if not isinstance(state["anki_receipt_id"], str) or not state["anki_receipt_id"]:
+            raise ProofRefusal("anki_receipt_id_missing")
         download_id = (
             exported.get("download_id") if isinstance(exported, dict) else None
         )
@@ -1768,6 +1965,8 @@ def _workflow(
         artifact_ids = tuple(
             item for item in state.get("artifact_ids", ()) if isinstance(item, str)
         )
+        if not artifact_ids:
+            raise ProofRefusal("restart_artifact_parity_inputs_missing")
         units = syllabus_payload.get("units") if isinstance(syllabus_payload, dict) else None
         if artifact_ids:
             unit_id = (
@@ -1800,6 +1999,55 @@ def _workflow(
             )
             if set(returned_artifact_ids) != set(artifact_ids):
                 raise ProofRefusal("restart_artifact_parity_mismatch")
+        assistant_receipts = state.get("assistant_receipts")
+        if (
+            not isinstance(assistant_receipts, (tuple, list))
+            or len(assistant_receipts) != 2
+            or {item.role for item in assistant_receipts if isinstance(item, AssistantReceipt)}
+            != {"source_guide", "practice_coach"}
+        ):
+            raise ProofRefusal("restart_assistant_parity_inputs_missing")
+        units = syllabus_payload.get("units") if isinstance(syllabus_payload, dict) else None
+        unit_id = (
+            units[0].get("unit_id")
+            if isinstance(units, list) and units and isinstance(units[0], dict)
+            else None
+        )
+        if not isinstance(unit_id, str):
+            raise ProofRefusal("restart_assistant_parity_inputs_missing")
+        for expected in assistant_receipts:
+            if not isinstance(expected, AssistantReceipt):
+                raise ProofRefusal("restart_assistant_parity_inputs_missing")
+            authority = "ask" if expected.role == "source_guide" else "coach"
+            assistant = _expect(
+                _http_request(
+                    api_url,
+                    "POST",
+                    f"/api/study/plans/{urllib.parse.quote(plan_id, safe='')}/assistants/{expected.role}:invoke",
+                    token=token,
+                    payload={
+                        "authority": authority,
+                        "prompt": f"Explain the selected source for {expected.role}",
+                        "unit_id": unit_id,
+                        "selected_source_ids": list(state["source_ids"]),
+                        "model_route": "local",
+                        "network_allowed": False,
+                        "approved_network_scope": [],
+                        "timeout_seconds": 60,
+                        "request_id": expected.invocation_id,
+                    },
+                ),
+                {200},
+                "restart_assistant_read",
+            )
+            if (
+                not isinstance(assistant, dict)
+                or assistant.get("role") != expected.role
+                or assistant.get("response_id") != expected.response_id
+                or assistant.get("session_id") != expected.session_id
+                or not assistant.get("answer")
+            ):
+                raise ProofRefusal("restart_assistant_parity_mismatch")
         if isinstance(state.get("card_id"), str):
             reviewed = _expect(
                 _http_request(
@@ -2160,6 +2408,8 @@ class Stack:
             "dn-study-" + _sha256_bytes(str(inputs.task_root.resolve()).encode())[:12]
         )
         self.container_id: str | None = None
+        self.cleanup_receipt: CleanupReceipt | None = None
+        self.container_removed = False
         self.seed: dict[str, str] = {}
         self.model_path = _prepare_local_model_fixture(inputs.task_root)
 
@@ -2274,6 +2524,7 @@ class Stack:
         docker = self._docker()
         current = self._container_identity(docker)
         if current is None:
+            self.container_removed = True
             return
         if self.container_id is not None and current[0] != self.container_id:
             raise ProofRefusal("surreal_container_identity_mismatch")
@@ -2286,6 +2537,9 @@ class Stack:
         )
         if result.returncode != 0 and self._container_identity(docker) is not None:
             raise ProofRefusal("surreal_container_cleanup_failed")
+        if self._container_identity(docker) is not None:
+            raise ProofRefusal("surreal_container_cleanup_failed")
+        self.container_removed = True
 
     def start(self, *, seed_model: bool = False, token: str | None = None) -> None:
         root = self.inputs.task_root
@@ -2431,6 +2685,22 @@ class Stack:
     def stop(self) -> int:
         stopped = stop_owned(self.children)
         self._remove_surreal()
+        cleanup = cleanup_owned(
+            self.children,
+            [
+                self.inputs.api_port,
+                self.inputs.frontend_port,
+                self.inputs.surreal_port,
+                self.inputs.model_port,
+            ],
+            self.inputs.task_root,
+            self.inputs.namespace,
+            self.inputs.database,
+            remove_root=False,
+        )
+        if cleanup.owned_processes or cleanup.ports or not self.container_removed:
+            raise ProofRefusal("owned_cleanup_incomplete")
+        self.cleanup_receipt = cleanup
         return stopped
 
 
@@ -2620,6 +2890,7 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
                 surreal_container_id=stack.container_id,
                 anki_download_id=state.get("anki_download_id"),
                 anki_publish_receipt_id=state.get("anki_publish_receipt_id"),
+                assistant_receipts=tuple(state.get("assistant_receipts", [])),
             )
             validate_restart_receipt(receipt, inputs.task_root, inputs)
             _write_receipt(receipt_path, receipt)
@@ -2661,8 +2932,14 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
             state = {
                 "plan_id": receipt.plan_id,
                 "source_ids": receipt.source_ids,
+                "syllabus_version": receipt.syllabus_version,
+                "artifact_ids": receipt.artifact_ids,
                 "card_id": receipt.card_id,
                 "anki_job_id": receipt.anki_job_id,
+                "anki_receipt_id": receipt.anki_receipt_id,
+                "anki_download_id": receipt.anki_download_id,
+                "anki_publish_receipt_id": receipt.anki_publish_receipt_id,
+                "assistant_receipts": receipt.assistant_receipts,
             }
             trace["code"] = "restart_workflow"
             _workflow(
@@ -2697,10 +2974,30 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
     finally:
         interrupt_cleanup.cleanup()
         interrupt_cleanup.restore()
+        cleanup_receipt = (
+            getattr(stack, "cleanup_receipt", None) if stack is not None else None
+        )
         if interrupt_cleanup.error is not None:
             outcome = "BLOCKED"
             blocker = "owned_cleanup_failed"
             return_code = 3
+        root_removed = False
+        if phase == "verify" and return_code == 0:
+            try:
+                # Stack.stop has already proved exact child/container
+                # identities and all four listeners are gone. Only then is
+                # this task-owned root eligible for deletion.
+                if cleanup_receipt is None or cleanup_receipt.owned_processes or cleanup_receipt.ports:
+                    raise ProofRefusal("owned_cleanup_incomplete")
+                validate_task_root(inputs.task_root)
+                shutil.rmtree(inputs.task_root)
+                if inputs.task_root.exists() or inputs.task_root.is_symlink():
+                    raise ProofRefusal("task_root_cleanup_failed")
+                root_removed = True
+            except Exception:
+                outcome = "BLOCKED"
+                blocker = "task_root_cleanup_failed"
+                return_code = 3
         report_payload = {
             "phase": phase,
             "outcome": outcome,
@@ -2712,6 +3009,16 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
             "source_hashes": source_before,
             "external_hashes": external_before,
             "external_writes": 0,
+            "cleanup": {
+                "owned_processes": cleanup_receipt.owned_processes
+                if cleanup_receipt is not None
+                else None,
+                "ports": cleanup_receipt.ports if cleanup_receipt is not None else None,
+                "root_removed": root_removed,
+                "container_removed": getattr(stack, "container_removed", None)
+                if stack is not None
+                else None,
+            },
             "processes": [
                 {
                     "role": child.identity.role,
@@ -2732,13 +3039,6 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
             outcome = "BLOCKED"
             blocker = "report_write_failed"
             return_code = 3
-        if phase == "verify" and return_code == 0:
-            try:
-                validate_task_root(inputs.task_root)
-                inputs.task_root / RECEIPT_NAME
-                shutil.rmtree(inputs.task_root)
-            except Exception:
-                return_code = 3
     return return_code
 
 
@@ -2800,6 +3100,13 @@ class _FixtureHandler(http.server.BaseHTTPRequestHandler):
                     "full_text": self.state.sources.get(
                         source_id, "Synthetic evidence."
                     ),
+                    "provenance": {
+                        "content_fingerprint": _sha256_bytes(
+                            self.state.sources.get(source_id, "Synthetic evidence.").encode(
+                                "utf-8"
+                            )
+                        )
+                    },
                     "status": "completed",
                 },
             )
@@ -2857,7 +3164,7 @@ class _FixtureHandler(http.server.BaseHTTPRequestHandler):
                 200,
                 {
                     "plan_id": self.state.plan_id,
-                    "version": 1,
+                    "version": 2,
                     "source_manifest_sha256": "b" * 64,
                     "units": [
                         {
@@ -2987,7 +3294,7 @@ class _FixtureHandler(http.server.BaseHTTPRequestHandler):
             )
         elif "/assistants/" in path:
             role = path.split("/assistants/", 1)[1].split(":", 1)[0]
-            self._payload()
+            payload = self._payload()
             self._json(
                 200,
                 {
@@ -2997,6 +3304,11 @@ class _FixtureHandler(http.server.BaseHTTPRequestHandler):
                     "answer": "Synthetic cited explanation.",
                     "citations": [{"source_id": "source:pdf", "quote": "Synthetic"}],
                     "proposed_actions": [],
+                    "invocation_id": payload.get(
+                        "request_id", f"study-proof-assistant-{role}"
+                    ),
+                    "session_id": f"study_assistant_session:{role}",
+                    "response_id": f"study_assistant_response:{role}",
                 },
             )
         elif path == "/api/study/cards":
@@ -3089,31 +3401,42 @@ def run_verifier_fixture(tmp_path: Path) -> FixtureResult:
                     role=role,
                     cwd=task,
                     env=os.environ.copy(),
+                    listener_port=(server.server_address[1] if role == "api" else None),
                 )
             )
         state = _workflow(url, url, fixtures)
         api_child = next(item for item in children if item.identity.role == "api")
+        fixture_api_port = server.server_address[1]
         receipt = RestartReceipt(
-            1,
-            "awaiting_restart",
-            _sha256_bytes(str(task.resolve()).encode()),
-            "study_ns_fixture000000",
-            "study_db_fixture000000",
-            api_child.identity.pid,
-            api_child.identity.start_token,
-            api_child.identity.argv_sha256,
-            server.server_address[1],
-            source_manifest,
-            external_before,
-            0,
-            tuple(item.identity for item in children),
-            tuple(state["source_ids"]),
-            state["plan_id"],
-            1,
-            tuple(state.get("artifact_ids", [])),
-            state.get("card_id"),
-            state.get("anki_job_id"),
-            state.get("anki_receipt_id"),
+            version=1,
+            phase="awaiting_restart",
+            task_root_sha256=_sha256_bytes(str(task.resolve()).encode()),
+            namespace="study_ns_fixture000000",
+            database="study_db_fixture000000",
+            previous_api_pid=api_child.identity.pid,
+            previous_api_start_token=api_child.identity.start_token,
+            previous_api_argv_sha256=api_child.identity.argv_sha256,
+            previous_listener_port=fixture_api_port,
+            source_hashes=source_manifest,
+            external_hashes=external_before,
+            external_writes=0,
+            previous_processes=tuple(item.identity for item in children),
+            source_ids=tuple(state["source_ids"]),
+            plan_id=state["plan_id"],
+            syllabus_version=2,
+            artifact_ids=tuple(state["artifact_ids"]),
+            card_id=state["card_id"],
+            anki_job_id=state["anki_job_id"],
+            anki_receipt_id=state["anki_receipt_id"],
+            frontend_marker="study",
+            frontend_port=fixture_api_port + 1,
+            surreal_port=fixture_api_port + 2,
+            model_port=fixture_api_port + 3,
+            surreal_container_name="dn-study-" + "a" * 12,
+            surreal_container_id="a" * 12,
+            anki_download_id=state["anki_download_id"],
+            anki_publish_receipt_id=state["anki_publish_receipt_id"],
+            assistant_receipts=tuple(state["assistant_receipts"]),
         )
         _write_receipt(task / RECEIPT_NAME, receipt)
         prepare_exit = 5
@@ -3138,8 +3461,14 @@ def run_verifier_fixture(tmp_path: Path) -> FixtureResult:
             existing={
                 "plan_id": loaded.plan_id,
                 "source_ids": loaded.source_ids,
+                "syllabus_version": loaded.syllabus_version,
+                "artifact_ids": loaded.artifact_ids,
                 "card_id": loaded.card_id,
                 "anki_job_id": loaded.anki_job_id,
+                "anki_receipt_id": loaded.anki_receipt_id,
+                "anki_download_id": loaded.anki_download_id,
+                "anki_publish_receipt_id": loaded.anki_publish_receipt_id,
+                "assistant_receipts": loaded.assistant_receipts,
             },
         )
         stop_owned(children)

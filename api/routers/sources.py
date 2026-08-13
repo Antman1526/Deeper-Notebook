@@ -1200,11 +1200,7 @@ async def get_source(source_id: str):
             "WHERE source = $source_id GROUP ALL",
             {"source_id": ensure_record_id(source.id or source_id)},
         )
-        insights_count = (
-            int(insights_count_rows[0])
-            if insights_count_rows and insights_count_rows[0] is not None
-            else 0
-        )
+        insights_count = _normalize_insights_count(insights_count_rows)
 
         extracted_char_count = (
             len(source.full_text)
@@ -1253,6 +1249,21 @@ async def get_source(source_id: str):
     except Exception as e:
         logger.error(f"Error fetching source {source_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching source")
+
+
+def _normalize_insights_count(rows: Any) -> int:
+    """Normalize Surreal aggregate rows from scalar or object responses."""
+    if not isinstance(rows, list) or not rows or rows[0] is None:
+        return 0
+    value = rows[0]
+    if isinstance(value, dict):
+        value = value.get("count", 0)
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 @router.head("/sources/{source_id}/download")
