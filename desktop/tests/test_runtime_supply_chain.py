@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import stat
+import subprocess
 import sys
 import tarfile
 import tomllib
@@ -16,6 +18,36 @@ import pytest
 
 from desktop import bootstrap
 from desktop.build import archive_validation, fetch_runtimes
+
+
+def test_direct_runtime_fetch_resolves_repo_from_script_path_without_network(
+    tmp_path: Path,
+):
+    """Direct execution must import the package before entering the fetch path."""
+    # Keep this subprocess off the real platform path so ``main`` exits before
+    # any runtime URL is read or opened.  This is an exact script invocation,
+    # from a cwd that is not the repository, with no network access required.
+    (tmp_path / "sitecustomize.py").write_text(
+        "import sys\n"
+        "sys.platform = 'task19-import-probe'\n",
+        encoding="utf-8",
+    )
+    script = Path(__file__).resolve().parents[2] / "desktop" / "build" / "fetch_runtimes.py"
+    env = os.environ.copy()
+    env.update({"PYTHONNOUSERSITE": "1", "PYTHONPATH": str(tmp_path)})
+
+    completed = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert "Unsupported platform: task19-import-probe" in completed.stderr
+    assert "ModuleNotFoundError: No module named 'desktop'" not in completed.stderr
 
 
 def _tar_bytes(entries: list[tuple[str, bytes, str | None]]) -> bytes:

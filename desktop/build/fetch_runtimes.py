@@ -14,6 +14,16 @@ import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
+# ``python desktop/build/fetch_runtimes.py`` puts only this file's directory on
+# ``sys.path``.  Resolve the repository from the file itself before importing
+# the package so direct execution does not depend on the caller's cwd (or on a
+# symlinked invocation path).
+if __name__ == "__main__":
+    _REPO_ROOT = Path(__file__).resolve().parents[2]
+    _REPO_ROOT_STR = str(_REPO_ROOT)
+    if _REPO_ROOT_STR not in sys.path:
+        sys.path.insert(0, _REPO_ROOT_STR)
+
 from desktop.build.archive_validation import (
     validate_tar_members,
     validate_zip_members,
