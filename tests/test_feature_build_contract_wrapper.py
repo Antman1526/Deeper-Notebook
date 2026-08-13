@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import signal
 import subprocess
@@ -27,6 +28,25 @@ def _wait_for(path: Path, timeout: float = 5.0) -> None:
             return
         time.sleep(0.02)
     raise AssertionError(f"timed out waiting for {path}")
+
+
+def _wait_for_group_gone(pgid: int, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pgid, 0)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            raise AssertionError(f"process group {pgid} is not inspectable")
+        time.sleep(0.02)
+    raise AssertionError(f"timed out waiting for process group {pgid}")
+
+
+def _stage_from_lock(lock: Path) -> Path:
+    stage = Path(json.loads(lock.read_text(encoding="utf-8"))["stage"])
+    _wait_for(stage)
+    return stage
 
 
 def test_wrapper_recovers_crashed_stage_without_mutating_shared_symlink(tmp_path: Path):
@@ -70,15 +90,29 @@ def test_wrapper_recovers_crashed_stage_without_mutating_shared_symlink(tmp_path
         env=env,
         start_new_session=True,
     )
+    helper_group = None
     try:
         _wait_for(lock)
-        stage = next(temp_dir.glob("deeper-notebook-feature-contract-*"))
+        stage = _stage_from_lock(lock)
+        helper_group = json.loads(lock.read_text(encoding="utf-8"))["pgid"]
         os.killpg(crashed.pid, signal.SIGKILL)
         assert crashed.wait(timeout=5) == -signal.SIGKILL
         assert node_modules.is_symlink()
         assert node_modules.resolve() == shared.resolve()
         assert stage.exists()
 
+        blocked = subprocess.run(
+            ["node", str(scripts / "run-feature-build-contract.mjs")],
+            cwd=frontend,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert blocked.returncode != 0
+        assert stage.exists()
+        os.killpg(helper_group, signal.SIGKILL)
+        _wait_for_group_gone(helper_group)
         env["NEXT_SLEEP"] = "0"
         completed = subprocess.run(
             ["node", str(scripts / "run-feature-build-contract.mjs")],
@@ -97,6 +131,106 @@ def test_wrapper_recovers_crashed_stage_without_mutating_shared_symlink(tmp_path
         if crashed.poll() is None:
             os.killpg(crashed.pid, signal.SIGKILL)
             crashed.wait(timeout=5)
+        if helper_group is not None:
+            try:
+                os.killpg(helper_group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def test_wrapper_recovers_stale_group_lock_with_no_live_child(tmp_path: Path):
+    frontend = tmp_path / "frontend"
+    scripts = frontend / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "run-feature-build-contract.mjs").write_bytes(WRAPPER.read_bytes())
+    (scripts / "verify-feature-env-build.mjs").write_text(
+        "process.exit(0)\n", encoding="utf-8"
+    )
+
+    shared = tmp_path / "shared-node-modules"
+    next_bin = shared / ".bin" / "next"
+    next_bin.parent.mkdir(parents=True)
+    next_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    next_bin.chmod(0o755)
+    node_modules = frontend / "node_modules"
+    node_modules.symlink_to(shared, target_is_directory=True)
+
+    temp_dir = tmp_path / "tmp"
+    temp_dir.mkdir()
+    lock = temp_dir / (
+        "deeper-notebook-feature-build-"
+        + hashlib.sha256(frontend.as_posix().encode()).hexdigest()[:24]
+        + ".lock"
+    )
+    stale_stage = temp_dir / "deeper-notebook-feature-contract-stale"
+    stale_stage.mkdir()
+    lock.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "pid": 4_000_000,
+                "pgid": 4_000_000,
+                "nonce": "0" * 32,
+                "stage": str(stale_stage),
+                "state": "running",
+            }
+        ),
+        encoding="utf-8",
+    )
+    env = {**os.environ, "TMPDIR": str(temp_dir), "RSYNC_BIN": "/usr/bin/rsync"}
+    completed = subprocess.run(
+        ["node", str(scripts / "run-feature-build-contract.mjs")],
+        cwd=frontend,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert node_modules.is_symlink()
+    assert node_modules.resolve() == shared.resolve()
+    assert not lock.exists()
+    assert not stale_stage.exists()
+    assert list(temp_dir.glob("deeper-notebook-feature-contract-*")) == []
+
+
+def test_wrapper_malformed_lock_fails_closed_without_deleting_stage(tmp_path: Path):
+    frontend = tmp_path / "frontend"
+    scripts = frontend / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "run-feature-build-contract.mjs").write_bytes(WRAPPER.read_bytes())
+    (scripts / "verify-feature-env-build.mjs").write_text(
+        "process.exit(0)\n", encoding="utf-8"
+    )
+    shared = tmp_path / "shared-node-modules"
+    next_bin = shared / ".bin" / "next"
+    next_bin.parent.mkdir(parents=True)
+    next_bin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    next_bin.chmod(0o755)
+    node_modules = frontend / "node_modules"
+    node_modules.symlink_to(shared, target_is_directory=True)
+    temp_dir = tmp_path / "tmp"
+    temp_dir.mkdir()
+    lock = temp_dir / (
+        "deeper-notebook-feature-build-"
+        + hashlib.sha256(frontend.as_posix().encode()).hexdigest()[:24]
+        + ".lock"
+    )
+    stage = temp_dir / "deeper-notebook-feature-contract-malformed"
+    stage.mkdir()
+    lock.write_text("{malformed", encoding="utf-8")
+    completed = subprocess.run(
+        ["node", str(scripts / "run-feature-build-contract.mjs")],
+        cwd=frontend,
+        env={**os.environ, "TMPDIR": str(temp_dir), "RSYNC_BIN": "/usr/bin/rsync"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode != 0
+    assert lock.read_text(encoding="utf-8") == "{malformed"
+    assert stage.exists()
+    assert node_modules.is_symlink()
 
 
 def test_wrapper_parent_sigkill_does_not_delete_stage_with_surviving_build_child(
@@ -118,7 +252,7 @@ def test_wrapper_parent_sigkill_does_not_delete_stage_with_surviving_build_child
     next_bin.write_text(
         "#!/bin/sh\n"
         f"echo $$ > {child_pid_file}\n"
-        "sleep 30\n"
+        "if [ \"${NEXT_SLEEP:-30}\" != 0 ]; then sleep \"${NEXT_SLEEP:-30}\"; fi\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -147,7 +281,7 @@ def test_wrapper_parent_sigkill_does_not_delete_stage_with_surviving_build_child
     child_pid = None
     try:
         _wait_for(lock)
-        stage = next(temp_dir.glob("deeper-notebook-feature-contract-*"))
+        stage = _stage_from_lock(lock)
         _wait_for(child_pid_file)
         child_pid = int(child_pid_file.read_text(encoding="utf-8").strip())
         os.kill(crashed.pid, signal.SIGKILL)
@@ -168,8 +302,12 @@ def test_wrapper_parent_sigkill_does_not_delete_stage_with_surviving_build_child
         assert stage.exists()
         # The owned child is a process group; terminate the exact recorded
         # group before allowing stale-stage recovery, never a broad pattern.
-        os.killpg(child_pid, signal.SIGKILL)
+        recorded_group = json.loads(lock.read_text(encoding="utf-8"))["pgid"]
+        assert recorded_group > 1
+        os.killpg(recorded_group, signal.SIGKILL)
+        _wait_for_group_gone(recorded_group)
 
+        env["NEXT_SLEEP"] = "0"
         recovered = subprocess.run(
             ["node", str(scripts / "run-feature-build-contract.mjs")],
             cwd=frontend,
@@ -189,6 +327,8 @@ def test_wrapper_parent_sigkill_does_not_delete_stage_with_surviving_build_child
             crashed.wait(timeout=5)
         if child_pid is not None:
             try:
-                os.killpg(child_pid, signal.SIGKILL)
+                if lock.exists():
+                    recorded_group = json.loads(lock.read_text(encoding="utf-8"))["pgid"]
+                    os.killpg(recorded_group, signal.SIGKILL)
             except ProcessLookupError:
                 pass

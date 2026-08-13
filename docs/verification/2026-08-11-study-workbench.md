@@ -15,6 +15,34 @@
   processes. No user vault, credential, document, external source, or hosted
   provider was used.
 
+## Task 19 feature-build recovery repair — 2026-08-13
+
+The exact pre-edit RED was the stale-wrapper recovery race: after the wrapper
+parent died, its lock had `child: null` even though the child-registration
+window was not provably empty, so the next invocation failed closed with RC1.
+The caller's `frontend/node_modules` symlink was never renamed or mutated.
+
+The wrapper now spawns one detached, exact helper process that becomes its own
+process-group leader. The helper writes a versioned lock containing its PID,
+PGID, nonce, and bounded stage before it can create staging/build children;
+all children inherit that group and the lock never uses `child: null` as a
+safety signal. Recovery removes only the exact stage after both recorded
+helper PID and process group are absent. Missing, malformed, ambiguous, or
+symlinked lock/stage state remains fail-closed. Parent SIGKILL therefore
+leaves a live helper/group that blocks concurrent recovery until that exact
+group is gone; a stale lock with no live child/group recovers successfully.
+
+Fresh evidence: `uv run pytest -q tests/test_feature_build_contract_wrapper.py`
+passed `5`; the same wrapper matrix passed five consecutive runs (`25/25`).
+`NEXT_TELEMETRY_DISABLED=1 npm run test:feature-build-contract` returned RC0
+with the production Turbopack build and verifier. Test Ruff passed; frontend
+lint returned RC0 with the two pre-existing `_stream`/`_options` warnings;
+`git diff --check`, the rebrand audit (unexpected `0`, stale `0`), and the
+diff-pipe gitleaks scan all passed. No Stage0-specific subset was present.
+No package/install, desktop build, listener, app, or user-data mutation was
+performed. This repair is source/test scope only; Task 19 native packaging
+and installation remain open.
+
 ## Review repair correction — 2026-08-13
 
 The fresh Task 18 review findings are closed by the repair slice. The verifier
