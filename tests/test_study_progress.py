@@ -1089,15 +1089,29 @@ def test_api_accepted_terminal_replay_binds_revision_and_target_fingerprint(
     assert plans.update_calls == []
 
 
-@pytest.mark.parametrize("claim_at, terminal_at", [
-    (NOW - timedelta(seconds=1), NOW - timedelta(seconds=2)),
-    (NOW - timedelta(seconds=1), NOW + timedelta(days=1)),
-])
+@pytest.mark.parametrize(
+    "claim_offset, terminal_offset",
+    [
+        pytest.param(
+            timedelta(seconds=-1),
+            timedelta(seconds=-2),
+            id="terminal-before-claim",
+        ),
+        pytest.param(
+            timedelta(seconds=-1),
+            timedelta(days=1),
+            id="terminal-in-future",
+        ),
+    ],
+)
 def test_api_accepted_terminal_replay_requires_claim_before_terminal_and_not_future(
     monkeypatch: pytest.MonkeyPatch,
-    claim_at: datetime,
-    terminal_at: datetime,
+    claim_offset: timedelta,
+    terminal_offset: timedelta,
 ) -> None:
+    now = datetime.now(UTC)
+    claim_at = now + claim_offset
+    terminal_at = now + terminal_offset
     plans = _ApiPlanRepository(_api_plan(version=2, weekly_minutes=90))
     progress = _ApiProgressRepository()
     proposal_id = "study_adaptation:extra"
