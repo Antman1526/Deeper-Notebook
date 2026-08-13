@@ -102,7 +102,10 @@ function HorizonActions({
   'onOpenStudio' | 'onCreateNotebook' | 'onCreatePodcast' | 'onAsk'
 >) {
   return (
-    <nav aria-label="Horizon actions" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <nav
+      aria-label="Horizon actions"
+      data-dn-horizon-actions="true"
+    >
       <Link
         href="/studio"
         aria-label="Studio"
@@ -197,6 +200,7 @@ export function IntelligenceHorizon({
         eyebrow="Intelligence Horizon"
         title="Deeper Notebook"
         subtitle="Think further with every source"
+        data-dn-horizon-page="true"
         className="mx-auto w-full max-w-7xl"
       >
       <div

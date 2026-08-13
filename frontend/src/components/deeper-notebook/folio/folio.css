@@ -9,6 +9,22 @@
   color: var(--dn-folio-ink);
 }
 
+[data-dn-horizon-page] {
+  container: horizon-page / inline-size;
+}
+
+[data-dn-horizon-actions] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: var(--dn-space-3);
+}
+
+@container horizon-page (min-width: 64rem) {
+  [data-dn-horizon-actions] {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  }
+}
+
 [data-dn-folio-page-header] {
   display: flex;
   flex-wrap: wrap;
@@ -245,6 +261,23 @@
 
   [data-dn-folio-spread] {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-height: 42rem) {
+  [data-dn-horizon-page] {
+    gap: clamp(var(--dn-space-3), 2vh, var(--dn-space-5));
+    padding-block: clamp(var(--dn-space-3), 2vh, var(--dn-space-5));
+    padding-inline: clamp(var(--dn-space-3), 3vw, var(--dn-space-6));
+  }
+
+  [data-dn-horizon-page] [data-dn-horizon-cover] {
+    padding: clamp(var(--dn-space-4), 3vh, var(--dn-space-6));
+  }
+
+  [data-dn-horizon-page] [data-dn-folio-spread] {
+    gap: clamp(var(--dn-space-3), 2vw, var(--dn-space-5));
+    margin-block-start: clamp(var(--dn-space-3), 2vh, var(--dn-space-5));
   }
 }
 

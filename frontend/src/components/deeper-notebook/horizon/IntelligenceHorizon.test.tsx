@@ -54,6 +54,13 @@ describe('IntelligenceHorizon', () => {
   it('keeps the four dashboard actions, recent notebook links, and mount quiet', () => {
     const { props } = renderHorizon()
 
+    const horizonPage = screen.getByRole('main', { name: 'Deeper Notebook' })
+    expect(horizonPage).toHaveAttribute('data-dn-horizon-page', 'true')
+    expect(screen.getByRole('navigation', { name: 'Horizon actions' })).toHaveAttribute(
+      'data-dn-horizon-actions',
+      'true',
+    )
+
     expect(screen.getByRole('link', { name: 'Studio' })).toHaveAttribute('href', '/studio')
     expect(screen.getByRole('button', { name: 'New Notebook' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Podcast' })).toBeEnabled()
@@ -87,6 +94,7 @@ describe('IntelligenceHorizon', () => {
       'min-h-0',
       'overflow-y-auto',
     )
+    expect(screen.getByTestId('horizon-scroll-region').querySelector('[data-dn-horizon-page="true"]')).not.toBeNull()
   })
 
   it('shows ready trust status, command hint, and local data path', () => {
