@@ -52,7 +52,7 @@ contract `RC0`; Ruff, compileall, diff-check, lint, and TypeScript `RC0`.
 ## Final narrow repair — 2026-08-13
 
 The final review's rebrand receipt was stale at `902fb89f`: a strict audit
-reported four unexpected and four stale `ONP_` compatibility aliases at the
+reported four unexpected and four stale legacy compatibility aliases at the
 single `frontend/package.json:12` script line. The exact four allowlist context
 hashes, the `frontend-env-alias-v1` coverage digest, and the pinned selector
 inventory digest were refreshed after the final line position. The fresh direct
