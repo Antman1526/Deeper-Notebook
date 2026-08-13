@@ -36,6 +36,8 @@ const lockName = `${basename(lockPath)}`;
 const lockQuarantinePrefix = `${lockName}.quarantine-`;
 const lockCleanupPrefix = `${lockName}.cleanup-`;
 const helperMode = process.argv[2] === "--feature-build-helper";
+let activeOwner = null;
+let helperDrainSafe = true;
 
 function basename(value) {
   return value.slice(value.lastIndexOf("/") + 1);
@@ -105,17 +107,21 @@ function processIsAlive(pid) {
 function processGroupMembers(pgid) {
   if (!Number.isInteger(pgid) || pgid <= 1) return null;
   try {
-    const output = execFileSync("ps", ["-axo", "pid=,pgid=,stat="], {
+    const output = execFileSync("ps", ["-axo", "pid=,pgid=,stat=,comm="], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
     const members = [];
     for (const line of output.split("\n")) {
-      const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)/);
+      const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);
       if (!match) {
         if (line.trim()) return null;
         continue;
       }
+      // The inspection command inherits the helper's process group. It can
+      // therefore appear in its own `ps` snapshot even though it has already
+      // exited by the time the snapshot is consumed.
+      if (match[4].trim().split("/").pop() === "ps") continue;
       if (Number(match[2]) === pgid) {
         members.push({ pid: Number(match[1]), stat: match[3] });
       }
@@ -125,6 +131,64 @@ function processGroupMembers(pgid) {
     if (error?.code === "EPERM") throw error;
     return null;
   }
+}
+
+function waitFor(milliseconds) {
+  return new Promise((resolvePromise) => {
+    setTimeout(resolvePromise, milliseconds);
+  });
+}
+
+function signalOwnedProcess(pid, signal) {
+  try {
+    process.kill(pid, signal);
+  } catch (error) {
+    if (error?.code !== "ESRCH") throw error;
+  }
+}
+
+async function drainHelperDescendants(owner) {
+  const deadline = Date.now() + 2_000;
+  let sentTermination = false;
+  let sentKill = false;
+  while (Date.now() < deadline) {
+    const members = processGroupMembers(owner.pgid);
+    if (!members) {
+      throw new Error("feature build helper process group could not be inspected");
+    }
+    const descendants = members.filter((member) => member.pid !== process.pid);
+    if (descendants.length === 0) return;
+    const signal = sentTermination ? "SIGKILL" : "SIGTERM";
+    for (const member of descendants) {
+      const snapshot = processSnapshot(member.pid);
+      if (!snapshot) continue;
+      if (snapshot.pgid !== owner.pgid) {
+        throw new Error(
+          "feature build helper process group contains an ambiguous descendant",
+        );
+      }
+      if (snapshot.zombie) continue;
+      signalOwnedProcess(member.pid, signal);
+    }
+    if (sentTermination) {
+      sentKill = true;
+    } else {
+      sentTermination = true;
+    }
+    await waitFor(sentKill ? 25 : 100);
+  }
+  throw new Error("feature build helper descendants did not exit safely");
+}
+
+function helperGroupIsClear(owner) {
+  let members;
+  try {
+    members = processGroupMembers(owner.pgid);
+  } catch {
+    return false;
+  }
+  if (!members) return false;
+  return members.every((member) => member.pid === process.pid);
 }
 
 function currentProcessGroupId(pid) {
@@ -491,6 +555,12 @@ function releaseLock(owner) {
   ) {
     return;
   }
+  // The helper's group is the final ownership boundary. A direct build child
+  // may have exited while a background descendant still holds the group; do
+  // not quarantine the stage or lock until the group proves empty except for
+  // this helper. Recovery makes the same proof after a helper crash.
+  if (!helperDrainSafe) return;
+  if (!helperGroupIsClear(owner)) return;
   const quarantine = quarantineName(owner, "cleanup");
   try {
     renameSync(lockPath, quarantine);
@@ -500,6 +570,7 @@ function releaseLock(owner) {
   try {
     const quarantinedOwner = readOwner(quarantine);
     if (!sameOwner(quarantinedOwner, owner)) return;
+    if (!helperGroupIsClear(quarantinedOwner)) return;
     removeOwnedStage(quarantinedOwner.stage, quarantinedOwner);
     removeOwnedLockDirectory(quarantine, quarantinedOwner);
   } catch {
@@ -524,7 +595,15 @@ function run(command, args, cwd) {
       return;
     }
     child.once("error", reject);
-    child.once("close", (status) => resolvePromise(status ?? 1));
+    child.once("close", (status) => {
+      Promise.resolve()
+        .then(() => (activeOwner ? drainHelperDescendants(activeOwner) : null))
+        .then(() => resolvePromise(status ?? 1))
+        .catch((error) => {
+          if (activeOwner) helperDrainSafe = false;
+          reject(error);
+        });
+    });
   });
 }
 
@@ -595,12 +674,17 @@ async function runHelper() {
   let owner;
   try {
     owner = acquireLock(stage, nonce);
+    activeOwner = owner;
+    helperDrainSafe = true;
     mkdirSync(stage, { mode: 0o700 });
     owner = { ...owner, state: "running" };
     writeOwnerAtomically(lockPath, owner);
     return await materializeStage(stage, target);
   } finally {
-    if (owner) releaseLock(owner);
+    if (owner) {
+      releaseLock(owner);
+      activeOwner = null;
+    }
   }
 }
 

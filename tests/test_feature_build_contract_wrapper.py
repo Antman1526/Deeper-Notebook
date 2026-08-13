@@ -356,6 +356,52 @@ def test_wrapper_parent_sigkill_does_not_delete_stage_with_surviving_build_child
                 pass
 
 
+def test_wrapper_drains_lingering_descendant_before_releasing_stage(tmp_path: Path):
+    """A successful direct child must not leave a descendant in the helper group."""
+    next_script = (
+        "#!/bin/sh\n"
+        'sleep "${DESCENDANT_SLEEP:-30}" &\n'
+        'echo "$!" > "$DESCENDANT_PID_FILE"\n'
+        "exit 0\n"
+    )
+    frontend, shared, node_modules, temp_dir, lock, env = _fixture(
+        tmp_path, next_script
+    )
+    descendant_pid_file = tmp_path / "descendant.pid"
+    env["DESCENDANT_PID_FILE"] = str(descendant_pid_file)
+    env["DESCENDANT_SLEEP"] = "30"
+    completed = subprocess.run(
+        ["node", str(frontend / "scripts/run-feature-build-contract.mjs")],
+        cwd=frontend,
+        env=env,
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    descendant_pid = None
+    try:
+        assert completed.returncode == 0
+        _wait_for(descendant_pid_file)
+        descendant_pid = int(descendant_pid_file.read_text(encoding="utf-8"))
+        assert descendant_pid > 1
+        assert node_modules.is_symlink()
+        assert node_modules.resolve() == shared.resolve()
+        assert not lock.exists()
+        assert list(temp_dir.glob("deeper-notebook-feature-contract-*")) == []
+        with subprocess.Popen(
+            ["kill", "-0", str(descendant_pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ) as probe:
+            assert probe.wait(timeout=2) != 0
+    finally:
+        if descendant_pid is not None:
+            try:
+                os.kill(descendant_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
 def _fixture(tmp_path: Path, next_script: str = "#!/bin/sh\nexit 0\n"):
     frontend = tmp_path / "frontend"
     scripts = frontend / "scripts"
