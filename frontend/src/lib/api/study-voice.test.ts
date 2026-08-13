@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const client = vi.hoisted(() => ({
   get: vi.fn(),
@@ -10,6 +10,8 @@ vi.mock('./client', () => ({ default: client }))
 import { studyVoiceApi } from './study-voice'
 
 describe('studyVoiceApi strict response boundaries', () => {
+  beforeEach(() => vi.clearAllMocks())
+
   it('normalizes an encoded route-param plan id before capability dispatch', async () => {
     client.get.mockResolvedValueOnce({ data: { stt: 'unavailable', tts: 'unavailable' } })
 
@@ -18,6 +20,53 @@ describe('studyVoiceApi strict response boundaries', () => {
       '/study/plans/study_plan%3Aone/voice:capability',
       expect.anything(),
     )
+  })
+
+  it('normalizes an encoded route-param plan id before transcription dispatch', async () => {
+    client.post.mockResolvedValueOnce({ data: { transcript: 'Question' } })
+
+    await expect(
+      studyVoiceApi.transcribe('study_plan%3Aone', new Blob(['audio'], { type: 'audio/webm' })),
+    ).resolves.toEqual({ transcript: 'Question' })
+    expect(client.post).toHaveBeenCalledWith(
+      '/study/plans/study_plan%3Aone/voice:transcribe',
+      expect.any(FormData),
+      expect.anything(),
+    )
+  })
+
+  it('normalizes an encoded route-param plan id before synthesis dispatch', async () => {
+    const audio = new Blob(['audio'], { type: 'audio/wav' })
+    client.post.mockResolvedValueOnce({ data: audio })
+
+    await expect(studyVoiceApi.synthesize('study_plan%3Aone', 'Answer')).resolves.toBe(audio)
+    expect(client.post).toHaveBeenCalledWith(
+      '/study/plans/study_plan%3Aone/voice:synthesize',
+      { text: 'Answer' },
+      expect.anything(),
+    )
+  })
+
+  it('rejects malformed plan ids before dispatch', async () => {
+    await expect(studyVoiceApi.capability('study_plan%ZZone')).rejects.toThrow('Invalid Study voice plan')
+    await expect(studyVoiceApi.transcribe('study_plan%ZZone', new Blob(['audio'], { type: 'audio/webm' }))).rejects.toThrow(
+      'Invalid Study voice plan',
+    )
+    await expect(studyVoiceApi.synthesize('study_plan%ZZone', 'Answer')).rejects.toThrow('Invalid Study voice plan')
+    expect(client.get).not.toHaveBeenCalled()
+    expect(client.post).not.toHaveBeenCalled()
+  })
+
+  it('rejects plan ids encoded more than twice before dispatch', async () => {
+    const overEncodedPlanId = 'study_plan%25253Aone'
+
+    await expect(studyVoiceApi.capability(overEncodedPlanId)).rejects.toThrow('Invalid Study voice plan')
+    await expect(studyVoiceApi.transcribe(overEncodedPlanId, new Blob(['audio'], { type: 'audio/webm' }))).rejects.toThrow(
+      'Invalid Study voice plan',
+    )
+    await expect(studyVoiceApi.synthesize(overEncodedPlanId, 'Answer')).rejects.toThrow('Invalid Study voice plan')
+    expect(client.get).not.toHaveBeenCalled()
+    expect(client.post).not.toHaveBeenCalled()
   })
 
   it('rejects capability provider metadata outside the exact receipt', async () => {

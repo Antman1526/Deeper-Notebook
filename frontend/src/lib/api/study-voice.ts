@@ -97,9 +97,9 @@ export const studyVoiceApi = {
   },
 
   async synthesize(planId: string, text: string, signal?: AbortSignal): Promise<Blob> {
-    validatePlanId(planId)
+    const normalizedPlanId = validatePlanId(planId)
     if (typeof text !== 'string' || !text.trim() || new TextEncoder().encode(text).byteLength > 8 * 1024) throw new Error('Invalid Study voice text')
-    const response = await apiClient.post(`/study/plans/${encodeURIComponent(planId)}/voice:synthesize`, { text }, {
+    const response = await apiClient.post(`/study/plans/${encodeURIComponent(normalizedPlanId)}/voice:synthesize`, { text }, {
       signal,
       responseType: 'blob',
       headers: { 'x-skip-error-toast': '1' },
