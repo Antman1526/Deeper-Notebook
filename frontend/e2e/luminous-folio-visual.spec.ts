@@ -64,9 +64,9 @@ for (const viewport of [
     await page.goto('/')
 
     const horizon = page.getByRole('main', { name: 'Deeper Notebook' })
-    const scrollRegion = page.getByTestId('horizon-scroll-region')
     const actionNavigation = horizon.getByRole('navigation', { name: 'Horizon actions' })
     const actions = actionNavigation.locator(':scope > :is(a, button)')
+    const lowerTarget = horizon.getByRole('heading', { name: 'Recent folios', exact: true })
     await expect(horizon).toBeVisible()
     await expect(actions).toHaveCount(4)
 
@@ -86,7 +86,14 @@ for (const viewport of [
           return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
         })
       return {
-        action: { left: action.left, right: action.right, width: action.width },
+        action: {
+          left: action.left,
+          right: action.right,
+          top: action.top,
+          bottom: action.bottom,
+          width: action.width,
+          height: action.height,
+        },
         visibleText,
       }
     }))
@@ -94,33 +101,81 @@ for (const viewport of [
     expect(geometry).toHaveLength(4)
     for (const item of geometry) {
       expect(item.action.width).toBeGreaterThanOrEqual(112)
+      expect(item.action.height).toBeGreaterThanOrEqual(44)
+      expect(item.visibleText.length).toBeGreaterThan(0)
       for (const text of item.visibleText) {
         expect(text.left).toBeGreaterThanOrEqual(item.action.left - 1)
         expect(text.right).toBeLessThanOrEqual(item.action.right + 1)
+        expect(text.top).toBeGreaterThanOrEqual(item.action.top - 1)
+        expect(text.bottom).toBeLessThanOrEqual(item.action.bottom + 1)
       }
     }
 
     const overflow = await page.evaluate(() => ({
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
+      scrollOwner: document.scrollingElement?.tagName ?? document.documentElement.tagName,
     }))
     expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth + 1)
 
-    const scrollState = await scrollRegion.evaluate(element => ({
-      clientHeight: element.clientHeight,
-      scrollHeight: element.scrollHeight,
-      initialScrollTop: element.scrollTop,
-    }))
-    expect(scrollState.scrollHeight).toBeGreaterThanOrEqual(scrollState.clientHeight)
-
-    await scrollRegion.evaluate(element => {
-      element.scrollTop = element.scrollHeight
+    const initialScrollState = await page.evaluate(() => {
+      const owner = document.scrollingElement ?? document.documentElement
+      const target = document.querySelector<HTMLElement>('#recent-folios-title')
+      const rect = target?.getBoundingClientRect()
+      return {
+        clientHeight: owner.clientHeight,
+        scrollHeight: owner.scrollHeight,
+        scrollTop: owner.scrollTop,
+        target: rect ? {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+          height: rect.height,
+        } : null,
+        viewportHeight: window.visualViewport?.height ?? window.innerHeight,
+        viewportWidth: window.visualViewport?.width ?? window.innerWidth,
+      }
     })
-    await expect(horizon.getByRole('heading', { name: 'Recent folios', exact: true })).toBeVisible()
+    expect(overflow.scrollOwner).toBe('HTML')
+    expect(initialScrollState.target).not.toBeNull()
+    expect(initialScrollState.target!.height).toBeGreaterThan(0)
+
+    const targetInitiallyOutsideViewport = initialScrollState.target!.top >= initialScrollState.viewportHeight
+      || initialScrollState.target!.bottom > initialScrollState.viewportHeight
+    expect(targetInitiallyOutsideViewport).toBe(true)
+    expect(initialScrollState.scrollHeight).toBeGreaterThan(initialScrollState.clientHeight)
+
+    const initialScrollTop = initialScrollState.scrollTop
+    await page.evaluate(() => {
+      const owner = document.scrollingElement ?? document.documentElement
+      owner.scrollTop = owner.scrollHeight
+    })
+    const finalScrollState = await page.evaluate(() => {
+      const owner = document.scrollingElement ?? document.documentElement
+      const target = document.querySelector<HTMLElement>('#recent-folios-title')
+      const rect = target?.getBoundingClientRect()
+      return {
+        scrollTop: owner.scrollTop,
+        target: rect ? {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+        } : null,
+        viewportHeight: window.visualViewport?.height ?? window.innerHeight,
+        viewportWidth: window.visualViewport?.width ?? window.innerWidth,
+      }
+    })
+    expect(finalScrollState.scrollTop).toBeGreaterThan(initialScrollTop)
+    expect(finalScrollState.target).not.toBeNull()
+    expect(finalScrollState.target!.bottom).toBeGreaterThan(0)
+    expect(finalScrollState.target!.top).toBeGreaterThanOrEqual(0)
+    expect(finalScrollState.target!.bottom).toBeLessThanOrEqual(finalScrollState.viewportHeight)
+    expect(finalScrollState.target!.left).toBeGreaterThanOrEqual(0)
+    expect(finalScrollState.target!.right).toBeLessThanOrEqual(finalScrollState.viewportWidth)
+    await expect(lowerTarget).toBeVisible()
     await expect(actions.nth(3)).toBeVisible()
-    expect(await scrollRegion.evaluate(element => element.scrollTop)).toBeGreaterThanOrEqual(
-      scrollState.initialScrollTop,
-    )
     expect(consoleErrors).toEqual([])
     expect(pageErrors).toEqual([])
   })
