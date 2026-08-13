@@ -23,7 +23,11 @@ from deeper_notebook.study.progress import (
     make_progress_receipt,
 )
 from deeper_notebook.study.progress_repository import StudyProgressRepository
-from deeper_notebook.study.repository import StudyRepository
+from deeper_notebook.study.repository import (
+    StudyCardArtifactOwnerConflict,
+    StudyRepository,
+    StudyRepositoryError,
+)
 
 pytestmark = pytest.mark.integration_surreal
 
@@ -86,6 +90,102 @@ async def test_native_review_projection_resolves_plan_card_record_ids(clean_name
     assert reviews[0].card_id == card_id
     assert reviews[0].request_id == "review-progress-integration"
     assert reviews[0].rating == StudyRating.GOOD
+
+
+async def test_card_creation_links_unique_artifact_owner_and_rejects_cross_plan(
+    clean_namespace,
+):
+    plans = StudyPlanRepository()
+    repository = StudyRepository()
+    owner = "study_plan:card-artifact-owner"
+    other = "study_plan:card-artifact-other"
+    artifact_id = "studio_artifact:shared-card-artifact"
+    for plan_id in (owner, other):
+        await plans.create(
+            StudyPlan(
+                plan_id=plan_id,
+                goal="Verify artifact card ownership",
+                starting_level="beginner",
+            )
+        )
+
+    await plans.link_artifact(
+        owner,
+        artifact_id,
+        artifact_kind="study_guide",
+        metadata={"unit_id": "owner-unit", "syllabus_version": 1},
+    )
+    card = await repository.create_card_version_with_artifact_owner(
+        _card().model_copy(update={"artifact_id": artifact_id})
+    )
+    links = await repo_query(
+        "SELECT plan_id, card_id, syllabus_unit_id FROM study_plan_card "
+        "WHERE card_id = $card_id",
+        {"card_id": card.id},
+    )
+    assert links == [{"plan_id": owner, "card_id": card.id, "syllabus_unit_id": "owner-unit"}]
+
+    await plans.link_artifact(
+        other,
+        artifact_id,
+        artifact_kind="study_guide",
+        metadata={"unit_id": "other-unit", "syllabus_version": 1},
+    )
+    with pytest.raises(StudyRepositoryError, match="artifact owner is ambiguous"):
+        await repository.create_card_version_with_artifact_owner(
+            _card().model_copy(
+                update={"artifact_id": artifact_id, "artifact_card_id": "second-card"}
+            )
+        )
+    orphan_rows = await repo_query(
+        "SELECT id FROM study_card WHERE artifact_id = $artifact_id "
+        "AND artifact_card_id = 'second-card'",
+        {"artifact_id": artifact_id},
+    )
+    assert orphan_rows == []
+
+    # Exercise the post-create race/rollback boundary against the real
+    # database: a link failure must remove both the exact new card and any
+    # plan-card edge rather than exposing an orphan due card.
+    rollback_artifact = "studio_artifact:post-create-owner-conflict"
+    await plans.link_artifact(
+        owner,
+        rollback_artifact,
+        artifact_kind="study_guide",
+        metadata={"unit_id": "rollback-unit", "syllabus_version": 1},
+    )
+
+    async def fail_link(_card: StudyCard, *, expected_plan_id: str) -> None:
+        assert expected_plan_id == owner
+        raise StudyCardArtifactOwnerConflict("forced post-create owner conflict")
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(repository, "_link_card_to_owner_transaction", fail_link)
+    try:
+        with pytest.raises(StudyCardArtifactOwnerConflict):
+            await repository.create_card_version_with_artifact_owner(
+                _card().model_copy(
+                    update={
+                        "artifact_id": rollback_artifact,
+                        "artifact_card_id": "post-create-card",
+                    }
+                )
+            )
+    finally:
+        monkeypatch.undo()
+    rolled_back_cards = await repo_query(
+        "SELECT id FROM study_card WHERE artifact_id = $artifact_id "
+        "AND artifact_card_id = 'post-create-card'",
+        {"artifact_id": rollback_artifact},
+    )
+    rolled_back_links = await repo_query(
+        "SELECT id FROM study_plan_card WHERE card_id IN "
+        "(SELECT VALUE id FROM study_card WHERE artifact_id = $artifact_id "
+        "AND artifact_card_id = 'post-create-card')",
+        {"artifact_id": rollback_artifact},
+    )
+    assert rolled_back_cards == []
+    assert rolled_back_links == []
 
 
 async def test_progress_append_race_re_reads_unique_winner(clean_namespace):

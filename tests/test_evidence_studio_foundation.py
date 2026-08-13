@@ -53,14 +53,14 @@ def test_evidence_studio_feature_flags_parse_truthy_and_falsey(monkeypatch):
     assert feature_flags.evidence_studio_enabled() is False
 
 
-def test_study_workbench_flag_defaults_off_and_accepts_canonical_name(monkeypatch):
+def test_study_workbench_flag_defaults_on_and_accepts_explicit_rollback(monkeypatch):
     import deeper_notebook.feature_flags as feature_flags
 
     monkeypatch.delenv("DEEPER_NOTEBOOK_STUDY_WORKBENCH", raising=False)
-    assert feature_flags.study_workbench_enabled() is False
-
-    monkeypatch.setenv("DEEPER_NOTEBOOK_STUDY_WORKBENCH", "enabled")
     assert feature_flags.study_workbench_enabled() is True
+
+    monkeypatch.setenv("DEEPER_NOTEBOOK_STUDY_WORKBENCH", "0")
+    assert feature_flags.study_workbench_enabled() is False
 
 
 def test_studio_artifact_domain_contract():

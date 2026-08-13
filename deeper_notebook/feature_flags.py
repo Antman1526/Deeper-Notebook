@@ -32,4 +32,4 @@ def research_runs_enabled() -> bool:
 
 
 def study_workbench_enabled() -> bool:
-    return _env_flag("DEEPER_NOTEBOOK_STUDY_WORKBENCH")
+    return _env_flag("DEEPER_NOTEBOOK_STUDY_WORKBENCH", default=True)

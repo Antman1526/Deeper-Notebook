@@ -13,7 +13,11 @@ from api.schemas.study import (
     StudyReviewResponse,
     StudyReviewResultResponse,
 )
-from deeper_notebook.study.repository import StudyRepository, StudyRepositoryError
+from deeper_notebook.study.repository import (
+    StudyCardArtifactOwnerError,
+    StudyRepository,
+    StudyRepositoryError,
+)
 
 router = APIRouter(prefix="/study", tags=["study"])
 
@@ -24,9 +28,23 @@ def _repository() -> StudyRepository:
 
 @router.post("/cards", response_model=StudyCardResponse, status_code=status.HTTP_201_CREATED)
 async def create_study_card(payload: CreateStudyCardRequest) -> StudyCardResponse:
+    repository = _repository()
     try:
-        card = await _repository().create_card_version(payload.to_card())
-    except StudyRepositoryError:
+        requested = payload.to_card()
+        atomic_creator = getattr(repository, "create_card_version_with_artifact_owner", None)
+        if callable(atomic_creator):
+            card = await atomic_creator(requested)
+        else:
+            card = await repository.create_card_version(requested)
+            linker = getattr(repository, "link_card_to_artifact_owner", None)
+            if callable(linker):
+                await linker(card)
+    except StudyRepositoryError as exc:
+        if isinstance(exc, StudyCardArtifactOwnerError):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Study card artifact owner changed",
+            ) from None
         raise HTTPException(status_code=503, detail="Study cards are unavailable") from None
     return StudyCardResponse.from_card(card)
 

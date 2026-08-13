@@ -12,7 +12,11 @@ from pydantic import ValidationError
 from api.routers import study as study_router
 from deeper_notebook.evaluation.schemas import EvidenceSpan
 from deeper_notebook.study.contracts import StudyCard, StudyRating
-from deeper_notebook.study.repository import StudyRepository
+from deeper_notebook.study.repository import (
+    StudyCardArtifactOwnerConflict,
+    StudyRepository,
+    StudyRepositoryError,
+)
 from deeper_notebook.study.scheduler import StudyScheduler
 
 
@@ -100,6 +104,7 @@ class _MemoryRepository:
     def __init__(self) -> None:
         self.card = _card()
         self.requests: dict[str, tuple[StudyCard, object]] = {}
+        self.linked_plan_id: str | None = None
 
     async def create_card_version(self, card: StudyCard) -> StudyCard:
         if (card.front, card.back, card.citations) == (
@@ -110,6 +115,10 @@ class _MemoryRepository:
             return self.card
         self.card = card.model_copy(update={"id": "study_card:two", "version": 2})
         return self.card
+
+    async def link_card_to_artifact_owner(self, card: StudyCard) -> str:
+        self.linked_plan_id = "study_plan:owner"
+        return self.linked_plan_id
 
     async def get(self, card_id: str) -> StudyCard | None:
         return self.card if self.card.id == card_id else None
@@ -148,6 +157,7 @@ def test_study_api_accepts_evidence_cards_and_replays_review_requests(monkeypatc
         )
         assert card.status_code == 201
         assert card.json()["citations"][0]["quote"] == "Private fact"
+        assert store.linked_plan_id == "study_plan:owner"
 
         request = {"request_id": "review-1", "rating": "good", "reviewed_at": "2026-07-18T12:00:00Z"}
         first = client.post("/api/study/cards/study_card:one/reviews", json=request)
@@ -181,3 +191,54 @@ async def test_source_edit_creates_a_new_version_in_one_transaction(monkeypatch)
     assert updated.id == "study_card:two"
     assert updated.version == 2
     assert any("BEGIN TRANSACTION" in query for query in queries)
+
+
+@pytest.mark.asyncio
+async def test_card_artifact_link_rejects_ambiguous_plan_owner(monkeypatch) -> None:
+    async def fake_query(query: str, values: dict[str, object]):
+        assert "study_plan_artifact" in query
+        return [
+            {"plan_id": "study_plan:one", "syllabus_unit_id": "unit-one"},
+            {"plan_id": "study_plan:two", "syllabus_unit_id": "unit-two"},
+        ]
+
+    monkeypatch.setattr("deeper_notebook.study.repository.repo_query", fake_query)
+    with pytest.raises(StudyRepositoryError, match="artifact owner"):
+        await StudyRepository().link_card_to_artifact_owner(_card())
+
+
+class _OrphanConflictRepository(_MemoryRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.created_cards: list[StudyCard] = []
+
+    async def create_card_version_with_artifact_owner(self, card: StudyCard) -> StudyCard:
+        self.created_cards.append(card)
+        raise StudyCardArtifactOwnerConflict("card artifact owner changed")
+
+    async def list_due(self, now: datetime, *, limit: int) -> list[StudyCard]:
+        return []
+
+
+@pytest.mark.asyncio
+async def test_study_api_does_not_expose_orphan_card_when_owner_link_conflicts(monkeypatch) -> None:
+    store = _OrphanConflictRepository()
+    monkeypatch.setattr(study_router, "_repository", lambda: store)
+    app = FastAPI()
+    app.include_router(study_router.router, prefix="/api")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/study/cards",
+            json={
+                "artifact_id": "studio_artifact:one",
+                "artifact_card_id": "card-1",
+                "front": "What is the private fact?",
+                "back": "It is cited evidence.",
+                "citations": [_citation().model_dump(mode="json")],
+            },
+        )
+
+    assert response.status_code == 409
+    assert store.created_cards
+    assert await store.list_due(datetime.now(UTC), limit=100) == []

@@ -50,14 +50,14 @@ describe('frontend feature flags', () => {
     expect(isLuminousFolioEnabled()).toBe(false)
   })
 
-  it('keeps the Study Workbench disabled by default and accepts its canonical flag', () => {
+  it('enables the Study Workbench by default and accepts its canonical rollback flag', () => {
     delete process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
 
-    expect(isStudyWorkbenchEnabled()).toBe(false)
-
-    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = 'enabled'
-
     expect(isStudyWorkbenchEnabled()).toBe(true)
+
+    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = '0'
+
+    expect(isStudyWorkbenchEnabled()).toBe(false)
   })
 
   it('reads canonical Deeper Notebook flags independently', () => {

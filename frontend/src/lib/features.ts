@@ -41,7 +41,7 @@ export function isResearchRunsEnabled(): boolean {
 }
 
 export function isStudyWorkbenchEnabled(): boolean {
-  return envFlag(process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH, undefined)
+  return envFlag(process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH, undefined, true)
 }
 
 export function isLuminousFolioEnabled(): boolean {

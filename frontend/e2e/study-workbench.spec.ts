@@ -17,6 +17,11 @@ const viewports = [
 ] as const
 const planUrl = `/study/plans/${encodeURIComponent(STUDY_PLAN_ID)}`
 const planApiPath = `/api/study/plans/${STUDY_PLAN_ID}`
+// The production flag is default-on.  Only an explicit `0` is a rollback
+// build; an unset value (and the canonical enabled values) must exercise the
+// full workbench matrix.
+const studyWorkbenchRollbackBuild = process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH === '0'
+const studyWorkbenchEnabledBuild = !studyWorkbenchRollbackBuild
 
 function expectedStateCalls(state: StudyFixtureState): string[] {
   if (state === 'empty' || state === 'loading') {
@@ -167,7 +172,7 @@ test.describe.configure({ mode: 'serial' })
 
 for (const state of STUDY_STATES) {
   test(`Study ${state} state is accessible and hermetic at every canonical width`, async ({ browser }) => {
-    test.skip(process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH !== '1', 'run only against the explicit enabled build')
+    test.skip(!studyWorkbenchEnabledBuild, 'run only against a Study Workbench-enabled build')
     test.setTimeout(180_000)
     const context = await browser.newContext({ locale: 'en-US' })
     const page = await context.newPage()
@@ -344,7 +349,7 @@ for (const state of STUDY_STATES) {
 }
 
 test('Study fixture rejects every declared custom route with an unexpected method', async ({ page }) => {
-  test.skip(process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH !== '1', 'run only against the explicit enabled build')
+  test.skip(!studyWorkbenchEnabledBuild, 'run only against a Study Workbench-enabled build')
   const ledger: StudyRequestLedger = { expected: [], seen: [], unexpected: [], expectedByViewport: {}, seenByViewport: {} }
   await installStudyWorkbenchFixture(page, { state: 'import-receipt', ledger })
   await page.setViewportSize({ width: 320, height: 844 })
@@ -377,7 +382,7 @@ test('Study fixture rejects every declared custom route with an unexpected metho
 })
 
 test('Study feature-off build is a real rollback with no Study plan navigation or API calls', async ({ page }) => {
-  test.skip(process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH !== '0', 'run only against the exact rollback build')
+  test.skip(!studyWorkbenchRollbackBuild, 'run only against the exact rollback build')
   const ledger: StudyRequestLedger = { expected: [], seen: [], unexpected: [], expectedByViewport: {}, seenByViewport: {} }
   await installStudyWorkbenchFixture(page, { state: 'empty', ledger })
   await page.setViewportSize({ width: 320, height: 844 })

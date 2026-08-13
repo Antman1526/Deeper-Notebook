@@ -6,25 +6,22 @@ ai-prompter==0.4.0
     #   content-core
     #   podcast-creator
 aiofile==3.9.0
-    # via
-    #   py-key-value-aio
+    # via py-key-value-aio
 aiohappyeyeballs==2.6.1
-    # via
-    #   aiohttp
-aiohttp==3.13.5
+    # via aiohttp
+aiohttp==3.14.3
     # via
     #   -r desktop/requirements.txt
+    #   deeper-notebook (pyproject.toml)
     #   content-core
     #   firecrawl-py
     #   langchain-community
     #   pytubefix
     #   surrealdb
 aiosignal==1.4.0
-    # via
-    #   aiohttp
+    # via aiohttp
 aiosqlite==0.22.1
-    # via
-    #   langgraph-checkpoint-sqlite
+    # via langgraph-checkpoint-sqlite
 altgraph==0.17.5
     # via
     #   macholib
@@ -34,17 +31,16 @@ annotated-doc==0.0.4
     #   fastapi
     #   typer
 annotated-types==0.7.0
-    # via
-    #   pydantic
-anthropic==0.100.0
-    # via
-    #   langchain-anthropic
+    # via pydantic
+anthropic==0.121.0
+    # via langchain-anthropic
 anyio==4.13.0
     # via
     #   anthropic
     #   google-genai
     #   groq
     #   httpx
+    #   langsmith
     #   mcp
     #   openai
     #   py-key-value-aio
@@ -52,8 +48,7 @@ anyio==4.13.0
     #   starlette
     #   watchfiles
 asciidoc==10.2.1
-    # via
-    #   content-core
+    # via content-core
 attrs==26.1.0
     # via
     #   aiohttp
@@ -62,42 +57,36 @@ attrs==26.1.0
     #   referencing
 authlib==1.7.2
     # via
+    #   deeper-notebook (pyproject.toml)
     #   fastmcp
 av==17.0.1
-    # via
-    #   faster-whisper
+    # via faster-whisper
 azure-core==1.41.0
     # via
     #   azure-identity
     #   skillopt
 azure-identity==1.25.3
-    # via
-    #   skillopt
+    # via skillopt
 babel==2.18.0
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 backoff==2.2.1
-    # via
-    #   posthog
+    # via posthog
 beartype==0.22.9
-    # via
-    #   py-key-value-aio
+    # via py-key-value-aio
 beautifulsoup4==4.14.3
     # via
     #   bs4
     #   markdownify
 bottle==0.13.4
-    # via
-    #   pywebview
+    # via pywebview
 bs4==0.0.2
-    # via
-    #   content-core
+    # via content-core
+cached-property==2.0.1
+    # via genanki
 cachetools==7.1.1
-    # via
-    #   py-key-value-aio
+    # via py-key-value-aio
 caio==0.9.25
-    # via
-    #   aiofile
+    # via aiofile
 certifi==2026.4.22
     # via
     #   httpcore
@@ -108,13 +97,14 @@ cffi==2.0.0 ; platform_python_implementation != 'PyPy' or sys_platform == 'win32
     #   clr-loader
     #   cryptography
 chardet==7.4.3
-    # via
-    #   readability-lxml
+    # via readability-lxml
 charset-normalizer==3.4.7
-    # via
-    #   requests
+    # via requests
+chevron==0.14.0
+    # via genanki
 click==8.3.3
     # via
+    #   deeper-notebook (pyproject.toml)
     #   podcast-creator
     #   typer
     #   uvicorn
@@ -130,8 +120,9 @@ content-core==1.14.1
     # via
     #   deeper-notebook (pyproject.toml)
     #   podcast-creator
-cryptography==48.0.0
+cryptography==50.0.0
     # via
+    #   deeper-notebook (pyproject.toml)
     #   authlib
     #   azure-identity
     #   google-auth
@@ -140,83 +131,68 @@ cryptography==48.0.0
     #   pyjwt
     #   secretstorage
 cssselect==1.4.0
-    # via
-    #   readability-lxml
+    # via readability-lxml
 ctranslate2==4.7.2
-    # via
-    #   faster-whisper
+    # via faster-whisper
 cyclopts==4.11.2
-    # via
-    #   fastmcp
+    # via fastmcp
 dataclasses-json==0.6.7
-    # via
-    #   langchain-community
+    # via langchain-community
 decorator==5.2.1
-    # via
-    #   moviepy
+    # via moviepy
 defusedxml==0.7.1
-    # via
-    #   youtube-transcript-api
+    # via youtube-transcript-api
 dicttoxml==1.7.16
-    # via
-    #   content-core
+    # via content-core
 diskcache==5.6.3
-    # via
-    #   llama-cpp-python
+    # via llama-cpp-python
 distro==1.9.0
     # via
     #   anthropic
     #   google-genai
     #   groq
+    #   langsmith
     #   openai
     #   posthog
 dnspython==2.8.0
-    # via
-    #   email-validator
+    # via email-validator
 docstring-parser==0.18.0
     # via
     #   anthropic
     #   cyclopts
 docutils==0.22.4
-    # via
-    #   rich-rst
+    # via rich-rst
 email-validator==2.3.0
-    # via
-    #   pydantic
+    # via pydantic
 esperanto==2.20.1
     # via
     #   deeper-notebook (pyproject.toml)
     #   content-core
     #   podcast-creator
 et-xmlfile==2.0.0
-    # via
-    #   openpyxl
+    # via openpyxl
 exceptiongroup==1.3.1
-    # via
-    #   fastmcp
+    # via fastmcp
 fastapi==0.138.0
     # via
     #   deeper-notebook (pyproject.toml)
     #   llama-cpp-python
 faster-whisper==1.2.1
-    # via
-    #   -r desktop/requirements.txt
+    # via -r desktop/requirements.txt
 fastmcp==3.2.4
     # via
     #   -r desktop/requirements.txt
     #   content-core
 filelock==3.29.0
-    # via
-    #   huggingface-hub
+    # via huggingface-hub
 filetype==1.2.0
-    # via
-    #   langchain-google-genai
+    # via langchain-google-genai
 firecrawl-py==4.25.2
-    # via
-    #   content-core
+    # via content-core
 flatbuffers==25.12.19
-    # via
-    #   onnxruntime
+    # via onnxruntime
+frozendict==2.4.7
+    # via genanki
 frozenlist==1.8.0
     # via
     #   aiohttp
@@ -226,41 +202,33 @@ fsrs==6.3.1
     #   -r desktop/requirements.txt
     #   deeper-notebook (pyproject.toml)
 fsspec==2026.4.0
-    # via
-    #   huggingface-hub
+    # via huggingface-hub
+genanki==0.13.1
+    # via deeper-notebook (pyproject.toml)
 google-auth==2.52.0
-    # via
-    #   google-genai
+    # via google-genai
 google-genai==1.75.0
-    # via
-    #   langchain-google-genai
+    # via langchain-google-genai
 greenlet==3.5.4 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
     # via sqlalchemy
 griffelib==2.0.2
-    # via
-    #   fastmcp
+    # via fastmcp
 groq==0.37.1
-    # via
-    #   langchain-groq
+    # via langchain-groq
 grpcio==1.80.0
-    # via
-    #   qdrant-client
+    # via qdrant-client
 h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
 h2==4.3.0
-    # via
-    #   httpx
+    # via httpx
 hf-xet==1.5.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
-    # via
-    #   huggingface-hub
+    # via huggingface-hub
 hpack==4.1.0
-    # via
-    #   h2
+    # via h2
 httpcore==1.0.9
-    # via
-    #   httpx
+    # via httpx
 httpx==0.28.1
     # via
     #   -r desktop/requirements.txt
@@ -292,41 +260,34 @@ huggingface-hub==1.14.0
     #   tokenizers
     #   transformers
 humanize==4.15.0
-    # via
-    #   surreal-commands
+    # via surreal-commands
 hyperframe==6.1.0
+    # via h2
+idna==3.18
     # via
-    #   h2
-idna==3.14
-    # via
+    #   deeper-notebook (pyproject.toml)
     #   anyio
     #   email-validator
     #   httpx
     #   requests
     #   yarl
 imageio==2.37.3
-    # via
-    #   moviepy
+    # via moviepy
 imageio-ffmpeg==0.6.0
     # via
     #   -r desktop/requirements.txt
     #   deeper-notebook (pyproject.toml)
     #   moviepy
 importlib-metadata==8.7.1
-    # via
-    #   opentelemetry-api
+    # via opentelemetry-api
 iniconfig==2.3.0
-    # via
-    #   pytest
+    # via pytest
 jaraco-classes==3.4.0
-    # via
-    #   keyring
+    # via keyring
 jaraco-context==6.1.2
-    # via
-    #   keyring
+    # via keyring
 jaraco-functools==4.4.0
-    # via
-    #   keyring
+    # via keyring
 jeepney==0.9.0 ; sys_platform == 'linux'
     # via
     #   keyring
@@ -342,42 +303,32 @@ jiter==0.14.0
     #   anthropic
     #   openai
 joserfc==1.6.5
-    # via
-    #   authlib
+    # via authlib
 jsonpatch==1.33
-    # via
-    #   langchain-core
+    # via langchain-core
 jsonpointer==3.1.1
-    # via
-    #   jsonpatch
+    # via jsonpatch
 jsonref==1.1.0
-    # via
-    #   fastmcp
+    # via fastmcp
 jsonschema==4.26.0
-    # via
-    #   mcp
+    # via mcp
 jsonschema-path==0.4.6
-    # via
-    #   fastmcp
+    # via fastmcp
 jsonschema-specifications==2025.9.1
-    # via
-    #   jsonschema
+    # via jsonschema
 keyring==25.7.0
-    # via
-    #   py-key-value-aio
-langchain==1.2.18
-    # via
-    #   deeper-notebook (pyproject.toml)
-langchain-anthropic==1.4.3
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via py-key-value-aio
+langchain==1.3.15
+    # via deeper-notebook (pyproject.toml)
+langchain-anthropic==1.5.6
+    # via deeper-notebook (pyproject.toml)
 langchain-classic==1.0.7
     # via
+    #   deeper-notebook (pyproject.toml)
     #   langchain-community
 langchain-community==0.4.1
-    # via
-    #   deeper-notebook (pyproject.toml)
-langchain-core==1.3.3
+    # via deeper-notebook (pyproject.toml)
+langchain-core==1.5.4
     # via
     #   deeper-notebook (pyproject.toml)
     #   langchain
@@ -394,116 +345,102 @@ langchain-core==1.3.3
     #   langgraph
     #   langgraph-checkpoint
     #   langgraph-prebuilt
+    #   langgraph-sdk
     #   surreal-commands
 langchain-deepseek==1.0.1
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-google-genai==4.2.2
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-groq==1.1.2
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-mistralai==1.1.4
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-ollama==1.1.0
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 langchain-openai==1.2.1
     # via
     #   deeper-notebook (pyproject.toml)
     #   langchain-deepseek
-langchain-protocol==0.0.15
+langchain-protocol==0.0.18
     # via
     #   langchain-core
+    #   langgraph-sdk
 langchain-text-splitters==1.1.2
-    # via
-    #   langchain-classic
+    # via langchain-classic
 langdetect==1.0.9
-    # via
-    #   content-core
-langgraph==1.1.10
+    # via content-core
+langgraph==1.2.11
     # via
     #   deeper-notebook (pyproject.toml)
     #   content-core
     #   langchain
     #   podcast-creator
-langgraph-checkpoint==4.0.3
+langgraph-checkpoint==4.2.0
     # via
+    #   deeper-notebook (pyproject.toml)
     #   langgraph
     #   langgraph-checkpoint-sqlite
     #   langgraph-prebuilt
-langgraph-checkpoint-sqlite==3.0.3
+langgraph-checkpoint-sqlite==3.1.1
+    # via deeper-notebook (pyproject.toml)
+langgraph-prebuilt==1.1.0
+    # via langgraph
+langgraph-sdk==0.4.2
     # via
     #   deeper-notebook (pyproject.toml)
-langgraph-prebuilt==1.0.13
-    # via
     #   langgraph
-langgraph-sdk==0.3.14
-    # via
-    #   langgraph
-langsmith==0.8.3
+langsmith==0.10.18
     # via
     #   deeper-notebook (pyproject.toml)
     #   langchain-classic
     #   langchain-community
     #   langchain-core
 llama-cpp-python==0.3.23
-    # via
-    #   -r desktop/requirements.txt
+    # via -r desktop/requirements.txt
 loguru==0.7.3
     # via
     #   deeper-notebook (pyproject.toml)
     #   content-core
     #   podcast-creator
     #   surreal-commands
-lxml==6.1.0
+lxml==6.1.1
     # via
     #   deeper-notebook (pyproject.toml)
     #   lxml-html-clean
     #   python-docx
     #   python-pptx
     #   readability-lxml
-lxml-html-clean==0.4.4
+lxml-html-clean==0.4.5
     # via
+    #   deeper-notebook (pyproject.toml)
     #   lxml
 macholib==1.16.4 ; sys_platform == 'darwin'
-    # via
-    #   pyinstaller
+    # via pyinstaller
 markdown-it-py==4.2.0
     # via
     #   deeper-notebook (pyproject.toml)
     #   rich
 markdownify==1.2.2
-    # via
-    #   content-core
+    # via content-core
 markupsafe==3.0.3
-    # via
-    #   jinja2
+    # via jinja2
 marshmallow==3.26.2
-    # via
-    #   dataclasses-json
-mcp==1.27.1
+    # via dataclasses-json
+mcp==1.29.0
     # via
     #   -r desktop/requirements.txt
     #   deeper-notebook (pyproject.toml)
     #   fastmcp
 mdurl==0.1.2
-    # via
-    #   markdown-it-py
+    # via markdown-it-py
 mem0ai==1.0.11
-    # via
-    #   -r desktop/requirements.txt
+    # via -r desktop/requirements.txt
 mlx==0.31.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'
-    # via
-    #   mlx-lm
+    # via mlx-lm
 mlx-lm==0.26.4 ; platform_machine == 'arm64' and sys_platform == 'darwin'
-    # via
-    #   -r desktop/requirements.txt
+    # via -r desktop/requirements.txt
 mlx-metal==0.31.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'
-    # via
-    #   mlx
+    # via mlx
 more-itertools==11.0.2
     # via
     #   jaraco-classes
@@ -517,22 +454,19 @@ msal==1.37.0
     #   azure-identity
     #   msal-extensions
 msal-extensions==1.3.1
-    # via
-    #   azure-identity
+    # via azure-identity
 multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
 mypy-extensions==1.1.0
-    # via
-    #   typing-inspect
+    # via typing-inspect
 nest-asyncio==1.6.0
     # via
     #   firecrawl-py
     #   podcast-creator
 nodejs-wheel-binaries==24.15.0
-    # via
-    #   pytubefix
+    # via pytubefix
 numpy==2.4.4
     # via
     #   deeper-notebook (pyproject.toml)
@@ -548,8 +482,7 @@ numpy==2.4.4
     #   skillopt
     #   transformers
 ollama==0.6.2
-    # via
-    #   langchain-ollama
+    # via langchain-ollama
 onnxruntime==1.26.0
     # via
     #   faster-whisper
@@ -560,8 +493,7 @@ openai==2.36.0
     #   mem0ai
     #   skillopt
 openapi-pydantic==0.5.1
-    # via
-    #   fastmcp
+    # via fastmcp
 openpyxl==3.1.5
     # via
     #   -r desktop/requirements.txt
@@ -569,15 +501,13 @@ openpyxl==3.1.5
     #   content-core
     #   skillopt
 opentelemetry-api==1.41.1
-    # via
-    #   fastmcp
+    # via fastmcp
 orjson==3.11.9
     # via
     #   langgraph-sdk
     #   langsmith
 ormsgpack==1.12.2
-    # via
-    #   langgraph-checkpoint
+    # via langgraph-checkpoint
 packaging==26.2
     # via
     #   fastmcp
@@ -592,14 +522,11 @@ packaging==26.2
     #   qtpy
     #   transformers
 pandas==3.0.2
-    # via
-    #   content-core
+    # via content-core
 pathable==0.5.0
-    # via
-    #   jsonschema-path
+    # via jsonschema-path
 pathvalidate==3.3.1
-    # via
-    #   piper-tts
+    # via piper-tts
 pefile==2024.8.26 ; sys_platform == 'win32'
     # via pyinstaller
 pillow==11.3.0
@@ -609,33 +536,26 @@ pillow==11.3.0
     #   imageio
     #   moviepy
     #   python-pptx
-pip==26.1.1
+pip==26.2.1
     # via
+    #   deeper-notebook (pyproject.toml)
     #   ai-prompter
 piper-tts==1.4.2
-    # via
-    #   -r desktop/requirements.txt
+    # via -r desktop/requirements.txt
 platformdirs==4.9.6
-    # via
-    #   fastmcp
+    # via fastmcp
 pluggy==1.6.0
-    # via
-    #   pytest
+    # via pytest
 podcast-creator==0.12.0
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 portalocker==3.2.0
-    # via
-    #   qdrant-client
+    # via qdrant-client
 posthog==7.15.3
-    # via
-    #   mem0ai
+    # via mem0ai
 proglog==0.1.12
-    # via
-    #   moviepy
+    # via moviepy
 prometheus-client==0.25.0
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 propcache==0.5.2
     # via
     #   aiohttp
@@ -647,24 +567,21 @@ protobuf==6.33.6
     #   onnxruntime
     #   qdrant-client
 proxy-tools==0.1.0
-    # via
-    #   pywebview
+    # via pywebview
 py-key-value-aio==0.4.4
+    # via fastmcp
+pyasn1==0.6.4
     # via
-    #   fastmcp
-pyasn1==0.6.3
-    # via
+    #   deeper-notebook (pyproject.toml)
     #   pyasn1-modules
 pyasn1-modules==0.4.2
-    # via
-    #   google-auth
+    # via google-auth
 pycountry==26.2.16
     # via
     #   deeper-notebook (pyproject.toml)
     #   podcast-creator
 pycparser==3.0 ; (implementation_name != 'PyPy' and platform_python_implementation != 'PyPy') or (implementation_name != 'PyPy' and sys_platform == 'win32')
-    # via
-    #   cffi
+    # via cffi
 pydantic==2.13.4
     # via
     #   deeper-notebook (pyproject.toml)
@@ -696,30 +613,27 @@ pydantic-core==2.46.4
     # via
     #   pydantic
     #   surrealdb
-pydantic-settings==2.14.1
+pydantic-settings==2.15.0
     # via
+    #   deeper-notebook (pyproject.toml)
     #   langchain-community
     #   llama-cpp-python
     #   mcp
 pydub==0.25.1
-    # via
-    #   podcast-creator
+    # via podcast-creator
 pygments==2.20.0
-    # via
-    #   rich
+    # via rich
 pyinstaller==6.20.0
-    # via
-    #   -r desktop/requirements.txt
+    # via -r desktop/requirements.txt
 pyinstaller-hooks-contrib==2026.5
+    # via pyinstaller
+pyjwt==2.13.0
     # via
-    #   pyinstaller
-pyjwt==2.12.1
-    # via
+    #   deeper-notebook (pyproject.toml)
     #   mcp
     #   msal
 pymupdf==1.27.2.3
-    # via
-    #   content-core
+    # via content-core
 pyobjc-core==12.1 ; sys_platform == 'darwin'
     # via
     #   pyobjc-framework-cocoa
@@ -734,27 +648,21 @@ pyobjc-framework-cocoa==12.1 ; sys_platform == 'darwin'
     #   pyobjc-framework-webkit
     #   pywebview
 pyobjc-framework-quartz==12.1 ; sys_platform == 'darwin'
-    # via
-    #   pywebview
+    # via pywebview
 pyobjc-framework-security==12.1 ; sys_platform == 'darwin'
-    # via
-    #   pywebview
+    # via pywebview
 pyobjc-framework-webkit==12.1 ; sys_platform == 'darwin'
-    # via
-    #   pywebview
+    # via pywebview
 pyperclip==1.11.0
-    # via
-    #   fastmcp
+    # via fastmcp
 pytest==8.3.4
     # via
     #   -r desktop/requirements.txt
     #   pytest-asyncio
 pytest-asyncio==0.24.0
-    # via
-    #   -r desktop/requirements.txt
+    # via -r desktop/requirements.txt
 python-dateutil==2.9.0.post0
-    # via
-    #   pandas
+    # via pandas
 python-docx==1.2.0
     # via
     #   -r desktop/requirements.txt
@@ -770,7 +678,7 @@ python-dotenv==1.2.2
     #   podcast-creator
     #   pydantic-settings
     #   surreal-commands
-python-multipart==0.0.28
+python-multipart==0.0.32
     # via
     #   deeper-notebook (pyproject.toml)
     #   mcp
@@ -781,14 +689,11 @@ python-pptx==1.0.2
 pythonnet==3.1.0 ; sys_platform == 'win32'
     # via pywebview
 pytubefix==10.6.1
-    # via
-    #   content-core
+    # via content-core
 pytz==2026.2
-    # via
-    #   mem0ai
+    # via mem0ai
 pywebview==5.4
-    # via
-    #   -r desktop/requirements.txt
+    # via -r desktop/requirements.txt
 pywin32==312 ; sys_platform == 'win32'
     # via
     #   mcp
@@ -802,6 +707,7 @@ pyyaml==6.0.3
     #   deeper-notebook (pyproject.toml)
     #   ctranslate2
     #   fastmcp
+    #   genanki
     #   huggingface-hub
     #   jsonschema-path
     #   langchain-classic
@@ -812,13 +718,11 @@ pyyaml==6.0.3
     #   skillopt
     #   transformers
 qdrant-client==1.18.0
-    # via
-    #   mem0ai
+    # via mem0ai
 qtpy==2.4.3 ; sys_platform == 'openbsd6'
     # via pywebview
 readability-lxml==0.8.4.1
-    # via
-    #   content-core
+    # via content-core
 referencing==0.37.0
     # via
     #   jsonschema
@@ -845,8 +749,7 @@ requests==2.33.1
     #   tiktoken
     #   youtube-transcript-api
 requests-toolbelt==1.0.0
-    # via
-    #   langsmith
+    # via langsmith
 rich==15.0.0
     # via
     #   cyclopts
@@ -855,15 +758,13 @@ rich==15.0.0
     #   surreal-commands
     #   typer
 rich-rst==1.3.2
-    # via
-    #   cyclopts
+    # via cyclopts
 rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
 safetensors==0.8.0 ; platform_machine == 'arm64' and sys_platform == 'darwin'
-    # via
-    #   transformers
+    # via transformers
 secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
 setuptools==82.0.1
@@ -872,27 +773,26 @@ setuptools==82.0.1
     #   pyinstaller
     #   pyinstaller-hooks-contrib
 shellingham==1.5.4
-    # via
-    #   typer
+    # via typer
 six==1.17.0
     # via
     #   langdetect
     #   markdownify
     #   python-dateutil
 skillopt==0.1.0
-    # via
-    #   -r desktop/requirements.txt
+    # via -r desktop/requirements.txt
 sniffio==1.3.1
     # via
     #   anthropic
     #   google-genai
     #   groq
+    #   langsmith
     #   openai
 socksio==1.0.0
+    # via httpx
+soupsieve==2.9.2
     # via
-    #   httpx
-soupsieve==2.8.3
-    # via
+    #   deeper-notebook (pyproject.toml)
     #   beautifulsoup4
 sqlalchemy==2.0.49
     # via
@@ -900,8 +800,7 @@ sqlalchemy==2.0.49
     #   langchain-community
     #   mem0ai
 sqlite-vec==0.1.9
-    # via
-    #   langgraph-checkpoint-sqlite
+    # via langgraph-checkpoint-sqlite
 sse-starlette==3.4.2
     # via
     #   llama-cpp-python
@@ -914,11 +813,9 @@ starlette==1.3.1
     #   sse-starlette
     #   starlette-context
 starlette-context==0.3.6
-    # via
-    #   llama-cpp-python
+    # via llama-cpp-python
 surreal-commands==1.3.1
-    # via
-    #   deeper-notebook (pyproject.toml)
+    # via deeper-notebook (pyproject.toml)
 surrealdb==2.0.0
     # via
     #   deeper-notebook (pyproject.toml)
@@ -953,8 +850,7 @@ tqdm==4.67.3
     #   proglog
     #   transformers
 transformers==5.12.1 ; platform_machine == 'arm64' and sys_platform == 'darwin'
-    # via
-    #   mlx-lm
+    # via mlx-lm
 typer==0.25.1
     # via
     #   huggingface-hub
@@ -962,6 +858,7 @@ typer==0.25.1
     #   transformers
 typing-extensions==4.15.0
     # via
+    #   aiohttp
     #   aiosignal
     #   anthropic
     #   anyio
@@ -977,6 +874,7 @@ typing-extensions==4.15.0
     #   huggingface-hub
     #   langchain-core
     #   langchain-protocol
+    #   langsmith
     #   llama-cpp-python
     #   mcp
     #   openai
@@ -994,8 +892,7 @@ typing-extensions==4.15.0
     #   typing-inspect
     #   typing-inspection
 typing-inspect==0.9.0
-    # via
-    #   dataclasses-json
+    # via dataclasses-json
 typing-inspection==0.4.2
     # via
     #   fastapi
@@ -1005,8 +902,7 @@ typing-inspection==0.4.2
 tzdata==2026.3 ; sys_platform == 'emscripten' or sys_platform == 'win32'
     # via pandas
 uncalled-for==0.3.2
-    # via
-    #   fastmcp
+    # via fastmcp
 urllib3==2.7.0
     # via
     #   deeper-notebook (pyproject.toml)
@@ -1023,39 +919,34 @@ uvicorn==0.46.0
     #   llama-cpp-python
     #   mcp
 validators==0.35.0
-    # via
-    #   content-core
+    # via content-core
 watchdog==6.0.0
     # via
     #   -r desktop/requirements.txt
     #   deeper-notebook (pyproject.toml)
 watchfiles==1.1.1
-    # via
-    #   fastmcp
-websockets==16.0
+    # via fastmcp
+websockets==15.0.1
     # via
     #   fastmcp
     #   firecrawl-py
     #   google-genai
+    #   langgraph-sdk
+    #   langsmith
     #   surrealdb
 win32-setctime==1.2.0 ; sys_platform == 'win32'
     # via loguru
 xlsxwriter==3.2.9
-    # via
-    #   python-pptx
+    # via python-pptx
 xxhash==3.7.0
     # via
     #   langgraph
     #   langsmith
 yarl==1.23.0
-    # via
-    #   aiohttp
+    # via aiohttp
 youtube-transcript-api==1.2.4
-    # via
-    #   content-core
+    # via content-core
 zipp==3.23.1
-    # via
-    #   importlib-metadata
+    # via importlib-metadata
 zstandard==0.25.0
-    # via
-    #   langsmith
+    # via langsmith

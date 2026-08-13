@@ -1,3 +1,4 @@
+import hashlib
 import operator
 import os
 import tempfile
@@ -251,6 +252,12 @@ async def save_source(state: SourceState) -> dict:
         **(getattr(source, "provenance", None) or {}),
         "extraction": extraction_provenance,
     }
+    # Study source readiness and artifact generation require an evidence
+    # fingerprint.  Derive it from the actual extracted UTF-8 text at the
+    # publication boundary; never trust a client-supplied provenance value.
+    source.provenance["content_fingerprint"] = hashlib.sha256(
+        source.full_text.encode("utf-8")
+    ).hexdigest()
 
     # Preserve user-set title; only overwrite placeholder or empty titles
     if content_state.title and (not source.title or source.title == "Processing..."):

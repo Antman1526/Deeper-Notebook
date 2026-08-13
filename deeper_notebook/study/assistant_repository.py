@@ -756,7 +756,11 @@ class StudyAssistantRepository:
             "AND (preferences.approved_network_scope ?? []) = $network_scope)[0]; "
             "LET $authority_syllabus = (SELECT id FROM study_syllabus "
             "WHERE plan_id = $plan_id AND version = $syllabus_version "
-            "AND approved_at = $syllabus_approved_at "
+            # Surreal stores datetimes at nanosecond precision, while the
+            # Python driver decodes/binds datetimes at microsecond precision.
+            # Compare the canonical microsecond value without relaxing any
+            # other authority predicate.
+            "AND time::floor(approved_at, 1us) = time::floor($syllabus_approved_at, 1us) "
             "AND source_manifest_sha256 = $source_manifest_sha256)[0]; "
             "IF $authority_plan = NONE OR $authority_syllabus = NONE { "
             'THROW "study_assistant_authority_guard_failed"; }; '
@@ -825,7 +829,7 @@ class StudyAssistantRepository:
             syllabus_rows = await repo_query(
                 "SELECT id FROM study_syllabus WHERE plan_id = $plan_id "
                 "AND version = $syllabus_version "
-                "AND approved_at = $syllabus_approved_at "
+                "AND time::floor(approved_at, 1us) = time::floor($syllabus_approved_at, 1us) "
                 "AND source_manifest_sha256 = $source_manifest_sha256 LIMIT 1;",
                 params,
             )

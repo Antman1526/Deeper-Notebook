@@ -249,6 +249,7 @@ async def test_completion_persists_session_and_handoff_in_one_guarded_transactio
     assert "study_assistant_authority_guard_failed" in transaction
     assert "$study_plan" in transaction
     assert "$syllabus_approved_at" in transaction
+    assert "time::floor(approved_at, 1us) = time::floor($syllabus_approved_at, 1us)" in transaction
     assert "crypto::sha256(full_text)" in transaction
     assert params["expected_revision"] == 2
     assert params["plan_revision"] == 3

@@ -21,6 +21,18 @@ class StudyRepositoryError(RuntimeError):
     """A safe study persistence failure suitable for API callers."""
 
 
+class StudyCardArtifactOwnerError(StudyRepositoryError):
+    """Base class for typed Study-card artifact-owner conflicts."""
+
+
+class StudyCardArtifactOwnerConflict(StudyCardArtifactOwnerError):
+    """The artifact owner changed or could not be linked atomically."""
+
+
+class StudyCardArtifactOwnerAmbiguous(StudyCardArtifactOwnerError):
+    """More than one Study plan owns the referenced artifact."""
+
+
 def _one_record(value: dict[str, Any] | list[dict[str, Any]]) -> dict[str, Any]:
     if isinstance(value, list):
         if len(value) != 1:
@@ -33,6 +45,177 @@ def _one_record(value: dict[str, Any] | list[dict[str, Any]]) -> dict[str, Any]:
 
 class StudyRepository:
     """Keep card snapshots immutable while allowing scheduling fields to advance."""
+
+    async def _artifact_owner(self, artifact_id: str) -> tuple[str, str | None] | None:
+        """Resolve one plan owner without exposing driver rows to callers."""
+        try:
+            owner_rows = await repo_query(
+                "SELECT plan_id, metadata.unit_id AS syllabus_unit_id "
+                "FROM study_plan_artifact WHERE artifact_id = $artifact_id "
+                "LIMIT 2",
+                {"artifact_id": artifact_id},
+            )
+        except Exception as exc:
+            logger.exception("Failed to resolve study card artifact owner")
+            raise StudyCardArtifactOwnerConflict(
+                "Failed to resolve card artifact owner"
+            ) from exc
+        if not isinstance(owner_rows, list):
+            raise StudyCardArtifactOwnerConflict(
+                "Failed to resolve card artifact owner"
+            )
+        owners = [
+            row
+            for row in owner_rows
+            if isinstance(row, dict) and isinstance(row.get("plan_id"), str)
+        ]
+        if not owners:
+            if owner_rows:
+                raise StudyCardArtifactOwnerConflict(
+                    "Card artifact owner data is malformed"
+                )
+            return None
+        if len(owners) != len(owner_rows):
+            raise StudyCardArtifactOwnerConflict(
+                "Card artifact owner data is malformed"
+            )
+        if len(owners) != 1:
+            raise StudyCardArtifactOwnerAmbiguous("card artifact owner is ambiguous")
+        return str(owners[0]["plan_id"]), owners[0].get("syllabus_unit_id")
+
+    async def create_card_version_with_artifact_owner(self, card: StudyCard) -> StudyCard:
+        """Create/link a card while failing before publication on owner conflicts.
+
+        Known ambiguous owners are rejected before card creation. The link
+        transaction re-checks ownership after creation; a concurrent owner
+        change is compensated by removing only the exact newly-created,
+        unlinked snapshot and restoring its prior current version.
+        """
+        owner = await self._artifact_owner(card.artifact_id)
+        previous_id: str | None = None
+        try:
+            previous_rows = await repo_query(
+                "SELECT * FROM study_card WHERE artifact_id = $artifact_id "
+                "AND artifact_card_id = $artifact_card_id AND current = true "
+                "ORDER BY version DESC LIMIT 1",
+                {
+                    "artifact_id": card.artifact_id,
+                    "artifact_card_id": card.artifact_card_id,
+                },
+            )
+            if previous_rows and isinstance(previous_rows[0], dict):
+                raw_id = previous_rows[0].get("id")
+                previous_id = str(raw_id) if raw_id is not None else None
+        except Exception as exc:
+            raise StudyCardArtifactOwnerConflict(
+                "Failed to inspect existing study card"
+            ) from exc
+        created = await self.create_card_version(card)
+        if owner is None:
+            return created
+        try:
+            await self._link_card_to_owner_transaction(
+                created,
+                expected_plan_id=owner[0],
+            )
+        except StudyCardArtifactOwnerError:
+            if isinstance(created.id, str) and created.id and created.id != previous_id:
+                await self._rollback_unlinked_card(created.id, previous_id)
+            raise
+        return created
+
+    async def _rollback_unlinked_card(
+        self, card_id: str, previous_id: str | None
+    ) -> None:
+        """Remove only an exact unlinked failed-attempt snapshot."""
+        try:
+            await repo_query(
+                "BEGIN TRANSACTION; "
+                "LET $links = (SELECT id FROM study_plan_card "
+                "WHERE card_id = $card_id LIMIT 1); "
+                "LET $reviews = (SELECT id FROM study_review "
+                "WHERE card_id = $card_id LIMIT 1); "
+                "IF array::len($links) = 0 AND array::len($reviews) = 0 { "
+                "DELETE $card_record; "
+                "IF $previous_record != NONE { UPDATE $previous_record SET current = true; }; "
+                "}; COMMIT TRANSACTION;",
+                {
+                    "card_id": card_id,
+                    "card_record": ensure_record_id(card_id),
+                    "previous_record": (
+                        ensure_record_id(previous_id) if previous_id else None
+                    ),
+                },
+            )
+        except Exception as exc:
+            logger.exception("Failed to roll back orphan Study card")
+            raise StudyCardArtifactOwnerConflict(
+                "card artifact owner changed and orphan cleanup failed"
+            ) from exc
+
+    async def _link_card_to_owner_transaction(
+        self, card: StudyCard, *, expected_plan_id: str
+    ) -> None:
+        try:
+            card_record = ensure_record_id(card.id or "")
+        except Exception as exc:
+            raise StudyCardArtifactOwnerConflict(
+                "card artifact owner has invalid card ID"
+            ) from exc
+        try:
+            await repo_query(
+                "BEGIN TRANSACTION; "
+                "LET $owners = (SELECT plan_id, metadata.unit_id AS syllabus_unit_id "
+                "FROM study_plan_artifact WHERE artifact_id = $artifact_id LIMIT 2); "
+                "IF array::len($owners) != 1 OR $owners[0].plan_id != $expected_plan_id { "
+                'THROW "study_card_artifact_owner_conflict"; }; '
+                "LET $card_guard = (SELECT id FROM $card_record)[0]; "
+                'IF $card_guard = NONE { THROW "study_card_artifact_owner_conflict"; }; '
+                "LET $existing = (SELECT id FROM study_plan_card "
+                "WHERE plan_id = $expected_plan_id AND card_id = $card_id)[0]; "
+                "IF $existing = NONE { "
+                "CREATE study_plan_card CONTENT { "
+                "plan_id: $expected_plan_id, card_id: $card_id, "
+                "syllabus_unit_id: $owners[0].syllabus_unit_id, "
+                "created_at: time::now() }; }; "
+                "COMMIT TRANSACTION;",
+                {
+                    "artifact_id": card.artifact_id,
+                    "expected_plan_id": expected_plan_id,
+                    "card_record": card_record,
+                    "card_id": str(card_record),
+                },
+            )
+        except Exception as exc:
+            if "study_card_artifact_owner_conflict" in str(exc):
+                raise StudyCardArtifactOwnerConflict(
+                    "card artifact owner changed"
+                ) from exc
+            logger.exception("Failed to link study card to artifact owner")
+            raise StudyCardArtifactOwnerConflict(
+                "Failed to link card artifact owner"
+            ) from exc
+
+    async def link_card_to_artifact_owner(self, card: StudyCard) -> str | None:
+        """Link a card to its unique Study plan artifact owner, if one exists.
+
+        Legacy cards may reference artifacts that predate Study Workbench and
+        therefore have no ``study_plan_artifact`` owner; those cards remain
+        intentionally unlinked.  When an owner exists, the link is published
+        in an idempotent transaction that re-checks the artifact owner and card
+        identity, preventing a cross-plan link during concurrent changes.
+        """
+        if not isinstance(card.id, str) or not card.id.strip():
+            raise StudyRepositoryError("card artifact owner requires a persisted card")
+        owner = await self._artifact_owner(card.artifact_id)
+        if owner is None:
+            return None
+        expected_plan_id = owner[0]
+        await self._link_card_to_owner_transaction(
+            card,
+            expected_plan_id=expected_plan_id,
+        )
+        return expected_plan_id
 
     async def create_card_version(self, card: StudyCard) -> StudyCard:
         """Create a new version only when an artifact's card snapshot changed."""

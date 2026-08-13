@@ -290,7 +290,10 @@ async def test_assistant_completion_publishes_one_atomic_replay_receipt(
         )
     )
     now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
-    approved_at = now
+    # Surreal stores datetimes with nanosecond precision while the Python
+    # driver decodes them to microseconds. The completion guard must compare
+    # canonical microsecond values without weakening any other authority field.
+    approved_at = datetime(2026, 8, 12, 12, 0, 0, 123456, tzinfo=UTC)
     evidence_text = "Atomic assistant evidence"
     evidence_sha256 = hashlib.sha256(evidence_text.encode("utf-8")).hexdigest()
     evidence_id = "source:assistant-evidence"
@@ -315,19 +318,16 @@ async def test_assistant_completion_publishes_one_atomic_replay_receipt(
         },
     )
     await repo_query(
-        "CREATE $study_syllabus CONTENT $payload RETURN AFTER;",
+        'CREATE $study_syllabus CONTENT { schema_version: 1, plan_id: $plan_id, '
+        'version: 1, source_manifest_sha256: $manifest, '
+        'approved_at: d"2026-08-12T12:00:00.123456789Z", created_at: $created_at } RETURN AFTER;',
         {
             "study_syllabus": ensure_record_id(
                 "study_syllabus:assistant-completion-v1"
             ),
-            "payload": {
-                "schema_version": 1,
-                "plan_id": plan_id,
-                "version": 1,
-                "source_manifest_sha256": "a" * 64,
-                "approved_at": approved_at,
-                "created_at": now,
-            },
+            "plan_id": plan_id,
+            "manifest": "a" * 64,
+            "created_at": now,
         },
     )
     invocation = StudyAssistantInvocation(

@@ -20,12 +20,23 @@ describe('StudyPage', () => {
   })
 
   it('keeps the existing local study dashboard and session inside a Discover folio', () => {
+    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = '0'
+
     render(<StudyPage />)
 
     expect(screen.getByRole('main', { name: 'Study' })).toBeInTheDocument()
     expect(screen.getByText('Discover')).toBeInTheDocument()
     expect(screen.getByText('Study dashboard')).toBeInTheDocument()
     expect(screen.getByText('Study session')).toBeInTheDocument()
+  })
+
+  it('enables the Study Workbench by default while keeping due-card loading bounded', () => {
+    delete process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+
+    render(<StudyPage />)
+
+    expect(screen.getByText('Study workbench')).toBeInTheDocument()
+    expect(studyHook.useDueStudyCards).toHaveBeenCalledWith(true)
   })
 
   it('keeps the current Study review surface when the workbench flag is off', () => {

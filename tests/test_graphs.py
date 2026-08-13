@@ -5,6 +5,7 @@ This test suite focuses on testing graph structures, tools, and validation
 without heavy mocking of the actual processing logic.
 """
 
+import hashlib
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -289,6 +290,45 @@ class TestSaveSourceTitlePreservation:
 
         assert mock_source.title == "Extracted Title"
         mock_source.save.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch("deeper_notebook.graphs.source.Source.get")
+    async def test_extracted_content_persists_content_fingerprint(self, mock_get):
+        """Processed source evidence exposes the hash required by Study readiness."""
+        from deeper_notebook.graphs.source import save_source
+
+        mock_source = MagicMock(spec=Source)
+        mock_source.title = "Processing..."
+        mock_source.provenance = {
+            "origin": "upload",
+            "content_fingerprint": "client-value",
+        }
+        mock_source.save = AsyncMock()
+        mock_get.return_value = mock_source
+
+        content_state = MagicMock()
+        content_state.title = "Extracted Title"
+        content_state.url = None
+        content_state.file_path = "/tmp/file.pdf"
+        content_state.content = "Actual extracted evidence"
+        content_state.source_type = "upload"
+        content_state.identified_type = "application/pdf"
+        content_state.metadata = None
+
+        await save_source(
+            {
+                "source_id": "source:123",
+                "content_state": content_state,
+                "embed": False,
+                "apply_transformations": [],
+            }
+        )
+
+        assert (
+            mock_source.provenance["content_fingerprint"]
+            == hashlib.sha256(content_state.content.encode("utf-8")).hexdigest()
+        )
+        assert mock_source.provenance["content_fingerprint"] != "client-value"
 
 
 if __name__ == "__main__":
