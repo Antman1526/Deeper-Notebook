@@ -51,7 +51,11 @@ function validatePlanId(planId: string): string {
       throw new Error('Invalid Study voice plan')
     }
   }
-  if (!normalized.startsWith('study_plan:') || !normalized.slice('study_plan:'.length).trim()) {
+  if (
+    !normalized.startsWith('study_plan:')
+    || !normalized.slice('study_plan:'.length).trim()
+    || /[%\u0000-\u001f\u007f]/.test(normalized)
+  ) {
     throw new Error('Invalid Study voice plan')
   }
   return normalized

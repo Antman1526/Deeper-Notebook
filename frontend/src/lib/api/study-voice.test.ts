@@ -22,6 +22,16 @@ describe('studyVoiceApi strict response boundaries', () => {
     )
   })
 
+  it('normalizes at most two encoded route-param layers', async () => {
+    client.get.mockResolvedValueOnce({ data: { stt: 'unavailable', tts: 'unavailable' } })
+
+    await expect(studyVoiceApi.capability('study_plan%253Aone')).resolves.toEqual({ stt: 'unavailable', tts: 'unavailable' })
+    expect(client.get).toHaveBeenCalledWith(
+      '/study/plans/study_plan%3Aone/voice:capability',
+      expect.anything(),
+    )
+  })
+
   it('normalizes an encoded route-param plan id before transcription dispatch', async () => {
     client.post.mockResolvedValueOnce({ data: { transcript: 'Question' } })
 
@@ -65,6 +75,26 @@ describe('studyVoiceApi strict response boundaries', () => {
       'Invalid Study voice plan',
     )
     await expect(studyVoiceApi.synthesize(overEncodedPlanId, 'Answer')).rejects.toThrow('Invalid Study voice plan')
+    expect(client.get).not.toHaveBeenCalled()
+    expect(client.post).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'study_plan:one%25252Ftwo',
+    'study_plan:one%2525ZZ',
+    'study_plan:one%25',
+    'study_plan:one\r',
+    'study_plan:one\n',
+    'study_plan:one\0',
+    'study_plan:one%0D',
+    'study_plan:one%0A',
+    'study_plan:one%00',
+  ])('rejects residual escapes and control characters before dispatch: %j', async (unsafePlanId) => {
+    await expect(studyVoiceApi.capability(unsafePlanId)).rejects.toThrow('Invalid Study voice plan')
+    await expect(
+      studyVoiceApi.transcribe(unsafePlanId, new Blob(['audio'], { type: 'audio/webm' })),
+    ).rejects.toThrow('Invalid Study voice plan')
+    await expect(studyVoiceApi.synthesize(unsafePlanId, 'Answer')).rejects.toThrow('Invalid Study voice plan')
     expect(client.get).not.toHaveBeenCalled()
     expect(client.post).not.toHaveBeenCalled()
   })
