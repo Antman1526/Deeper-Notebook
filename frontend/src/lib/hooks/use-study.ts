@@ -8,8 +8,8 @@ function reviewRequestId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `review-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-export function useDueStudyCards() {
-  return useQuery({ queryKey: QUERY_KEYS.studyDue, queryFn: studyApi.listDue })
+export function useDueStudyCards(enabled = true) {
+  return useQuery({ queryKey: QUERY_KEYS.studyDue, queryFn: studyApi.listDue, enabled })
 }
 
 export function useReviewStudyCard() {

@@ -9,9 +9,9 @@ import { isStudyWorkbenchEnabled } from '@/lib/features'
 import { useDueStudyCards } from '@/lib/hooks/use-study'
 
 export default function StudyPage() {
-  const due = useDueStudyCards()
-  const cards = due.data ?? []
   const studyWorkbenchEnabled = isStudyWorkbenchEnabled()
+  const due = useDueStudyCards(studyWorkbenchEnabled)
+  const cards = due.data ?? []
 
   return (
     <AppShell>

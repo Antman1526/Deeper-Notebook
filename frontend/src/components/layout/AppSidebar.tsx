@@ -82,7 +82,7 @@ export const getNavigation = (t: TFunction) => [
       // a new notebook or podcast from uploaded docs).
       { name: 'Studio', href: '/studio', icon: Sparkles },
       { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic },
-      { name: 'Study', href: '/study', icon: GraduationCap },
+      { name: t('navigation.study'), href: '/study', icon: GraduationCap },
     ],
   },
   {

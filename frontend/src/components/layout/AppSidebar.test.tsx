@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
-import { AppSidebar } from './AppSidebar'
+import { AppSidebar, getNavigation } from './AppSidebar'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
 
 // v0.8.0 — mock the LocalModelHealthBadges component so the
@@ -30,6 +30,20 @@ vi.mock('@/lib/hooks/use-media-query', () => ({
 }))
 
 describe('AppSidebar', () => {
+  it('offers the translated Study destination in the sidebar navigation', () => {
+    const translate = (key: string) => ({
+      'navigation.study': 'Study',
+    }[key] ?? key)
+
+    const navigation = getNavigation(translate as never) as ReadonlyArray<{
+      items: ReadonlyArray<{ href: string; name: string }>
+    }>
+    expect(navigation
+      .flatMap(section => section.items)
+      .some(item => item.href === '/study' && item.name === 'Study'))
+      .toBe(true)
+  })
+
   it('renders correctly when expanded', () => {
     render(<AppSidebar />)
 

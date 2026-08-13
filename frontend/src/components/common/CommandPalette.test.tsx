@@ -143,7 +143,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuSeparator: () => <hr />,
 }))
 
-import { CommandPalette } from './CommandPalette'
+import { CommandPalette, getNavigationItems } from './CommandPalette'
 import { ThemeGallery } from '@/components/deeper-notebook/ThemeGallery'
 import { ThemeSwitcher } from '@/components/deeper-notebook/ThemeSwitcher'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
@@ -151,6 +151,18 @@ import { ThemeProvider } from '@/components/providers/ThemeProvider'
 function renderPalette() {
   return render(<CommandPalette />)
 }
+
+describe('Command navigation destinations', () => {
+  it('offers the translated Study destination', () => {
+    const translate = (key: string) => ({
+      'navigation.study': 'Study',
+    }[key] ?? key)
+
+    expect(getNavigationItems(translate as never)
+      .some(item => item.href === '/study' && item.name === 'Study'))
+      .toBe(true)
+  })
+})
 
 function registerKnowledgeContext(options: {
   scanSelectedVault?: () => Promise<void>

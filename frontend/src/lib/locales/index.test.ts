@@ -31,6 +31,20 @@ describe('Locale Parity', () => {
       expect(extra, `Extra keys in ${code}: ${extra.join(', ')}`).toEqual([])
     },
   )
+
+  it.each(Object.entries(resources))(
+    '%s provides a human-readable translated Study navigation label',
+    (code, resource) => {
+      const value = getTranslation(
+        resource.translation as Record<string, unknown>,
+        'navigation.study',
+      )
+
+      expect(value, `${code} is missing navigation.study`).toEqual(expect.any(String))
+      expect((value as string).trim(), `${code} has an empty navigation.study`).not.toBe('')
+      expect(value, `${code} falls back to the raw navigation.study key`).not.toBe('navigation.study')
+    },
+  )
 })
 
 const getTranslation = (translation: Record<string, unknown>, key: string): unknown =>

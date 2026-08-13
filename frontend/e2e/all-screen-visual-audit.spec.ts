@@ -415,6 +415,9 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
   await page.route('**/api/study/cards/due', async route => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })
+  await page.route(url => url.pathname === '/api/study/plans', async route => {
+    await route.fulfill({ contentType: 'application/json', body: '[]' })
+  })
   await page.route('**/api/podcasts/episodes', async route => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })

@@ -121,7 +121,8 @@ describe('StudyPlanWorkspace', () => {
 
   it('renders loading, empty, error, and retry states without hiding the plan heading', () => {
     render(<StudyPlanWorkspace planId="study_plan:one" />)
-    expect(screen.getByRole('heading', { name: 'Understand mechanics' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Understand mechanics', level: 2 })).toBeInTheDocument()
+    expect(screen.queryAllByRole('heading', { level: 1 })).toHaveLength(0)
     expect(screen.getByRole('tab', { name: 'Sources' })).toBeInTheDocument()
   })
 

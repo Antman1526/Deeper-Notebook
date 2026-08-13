@@ -141,7 +141,7 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
   if (plan.isError || !plan.data) {
     return (
       <div className="space-y-4 rounded-lg border border-destructive/40 bg-destructive/5 p-6" role="alert">
-        <h1 className="text-xl font-semibold">Study plan unavailable</h1>
+        <h2 className="text-xl font-semibold">Study plan unavailable</h2>
         <p className="text-sm text-destructive">This plan could not be loaded. Your existing study cards and sources are unchanged.</p>
         <Button type="button" variant="outline" onClick={() => void refreshAll()}>Retry</Button>
       </div>
@@ -191,7 +191,7 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
         <div className="min-w-0 space-y-2">
           <Link href="/study" className="text-sm text-muted-foreground underline-offset-4 hover:underline">Back to Study</Link>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">{currentPlan.goal}</h1>
+            <h2 className="text-2xl font-semibold tracking-tight">{currentPlan.goal}</h2>
             <Badge variant={currentPlan.state === 'approved' ? 'default' : 'outline'}>{stateLabel(currentPlan.state)}</Badge>
           </div>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -202,7 +202,7 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
       </header>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
-        <TabsList aria-label="Study plan sections" className="w-full justify-start overflow-x-auto">
+        <TabsList aria-label="Study plan sections" data-dn-horizontal-scroll="study-tabs" className="w-full justify-start overflow-x-auto">
           {STUDY_PLAN_TABS.map((tab) => (
             <TabsTrigger
               key={tab.value}
