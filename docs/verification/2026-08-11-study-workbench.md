@@ -49,6 +49,39 @@ normalization `28 passed`; wrapper safety `2 passed`; real Study Plan/Progress
 Surreal matrix `22 passed`; frontend config `3 passed`; canonical feature-build
 contract `RC0`; Ruff, compileall, diff-check, lint, and TypeScript `RC0`.
 
+## Final narrow repair — 2026-08-13
+
+The final review's rebrand receipt was stale at `902fb89f`: a strict audit
+reported four unexpected and four stale `ONP_` compatibility aliases at the
+single `frontend/package.json:12` script line. The exact four allowlist context
+hashes, the `frontend-env-alias-v1` coverage digest, and the pinned selector
+inventory digest were refreshed after the final line position. The fresh direct
+audit is RC0 with compatibility `825`, historical `1749`, migration `584`,
+unexpected `0`, upstream `99`, and stale `0`; product identity tests pass.
+
+The verifier now performs a bounded worker process liveness/identity check
+before workflow and at handoff, proves exact `api`, `worker`, `frontend`, and
+`model` identities at the prepare receipt boundary, and proves exact listener
+ownership for every applicable port. Verify requires fresh PID/start/argv
+identity for every role and rejects any replacement that reuses another prior
+role's identity. The strict handoff REDs cover dead worker, changed identity,
+missing listener, reused replacement identity, and fresh all-role replacement.
+
+Fresh two-phase proof after this repair used namespace/database
+`study_ns_task18r` / `study_db_task18r` and ports `47321`–`47324`: prepare exited
+`5` (`external_restart_required`), verify exited `0` (`PASSED`/`none`), PDF
+SHA-256 `42dc1986c574ad8bfd6289eaf67440b58611d138d95552e97955bbba87d20b1d`,
+video SHA-256
+`b9ed66ed0da82b86c39ef04173cfaae8c573b3ab3cfea0d63a273923816f5c47`, and
+external sentinel SHA-256
+`eabb19967c401072f9705a861e318d0939699ba5aca184beab869bd79fa329f` unchanged.
+Cleanup proved owned processes `0`, listeners `0`, container removed, task
+root removed, and external writes `0`; all four replacement roles were fresh.
+
+Final focused verifier/repository/scheduler/wrapper matrix is `73 passed,
+7 warnings`; scoped Ruff and diff-check are RC0. No Task 19 or packaging work
+was performed.
+
 ## Two-phase real proof (original Task 18 receipt)
 
 The prepare and verify phases were separate process invocations over the same
@@ -86,7 +119,7 @@ external write count, frontend Study marker, and exact-owned cleanup.
 | Rebrand audit | `uv run python scripts/rebrand_audit.py --check` — RC0; compatibility `825`, historical `1749`, migration `584`, unexpected `0`, upstream `99`, stale `0`. |
 | Desktop | `./.build-venv/bin/python -m pytest desktop/tests/ desktop/memory/tests/ -q` — **823 passed, 2 skipped, 3 warnings**. |
 | Real Surreal | `SURREAL_INTEGRATION=1 uv run pytest -q tests/integration/test_study_plan_repository.py tests/integration/test_study_progress_repository.py -m integration_surreal` — **20 passed, 1 warning**. |
-| Verifier unit | `uv run pytest -q tests/test_verify_study_workbench.py` — **17 passed, 6 warnings**. |
+| Verifier unit | `uv run pytest -q tests/test_verify_study_workbench.py` — **28 passed, 6 warnings**. |
 | Frontend unit | `npm test -- --run` — **229 files, 1624 tests passed**. |
 | Frontend lint | `npm run lint` — exit `0`; two existing `_stream`/`_options` warnings in `StudyVoiceTutor.test.tsx`. |
 | TypeScript | `npx tsc --noEmit` — exit `0`. |
@@ -141,10 +174,11 @@ regression — **3 passed**. Fresh real Surreal matrix runs twice, each
 state (namespace/database `study_ns_task18d6f0` / `study_db_task18d6f0`, ports
 `47221`–`47224`): prepare RC5, verify RC0, report `PASSED`/`none`, owned
 processes 0, listeners 0, container removed, task root removed, external
-writes 0. The exact canonical feature command returned RC0; scoped Ruff,
-rebrand audit, and diff-check returned RC0. The earlier full backend run was
-`4395 passed, 1 skipped, 14 warnings, 7 failed`; its only failures were the
-wrapper stale-recovery regression and stale rebrand metadata, both corrected
-and covered by the focused GREEN gates. Remaining limits are native-device,
+writes 0. The exact canonical feature command returned RC0. The earlier full
+backend run was `4395 passed, 1 skipped, 14 warnings, 7 failed`; its only
+failures were the wrapper stale-recovery regression and stale rebrand metadata.
+The latter remained false at the subsequent review HEAD and is superseded by
+the final narrow repair above, which refreshed the exact allowlist/coverage/
+inventory and recorded a fresh RC0 audit. Remaining limits are native-device,
 signed/notarized, hosted-CI, deployment/public-release, and unavailable Code
 Review Graph proof; no Task 19 or packaging work was performed.

@@ -567,6 +567,132 @@ def _process_matches(identity: ProcessIdentity) -> bool:
     )
 
 
+def _wait_owned_process(
+    child: OwnedChild,
+    *,
+    timeout: float = 8.0,
+) -> ProcessIdentity:
+    """Bounded liveness/readiness proof for one exact owned child.
+
+    A worker has no listener contract, so process identity plus a non-zero
+    ``poll`` result is its readiness boundary.  The check never searches for
+    or terminates another process.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if child.process.poll() is not None:
+            raise ProofRefusal(f"{child.identity.role}_process_not_alive")
+        try:
+            current = process_identity(
+                child.identity.pid,
+                child.identity.role,
+                child.identity.listener_port,
+            )
+        except ProofRefusal:
+            time.sleep(0.05)
+            continue
+        if (
+            current.pid != child.identity.pid
+            or current.start_token != child.identity.start_token
+            or current.argv_sha256 != child.identity.argv_sha256
+        ):
+            raise ProofRefusal(f"{child.identity.role}_identity_changed")
+        return current
+    if child.process.poll() is not None:
+        raise ProofRefusal(f"{child.identity.role}_process_not_alive")
+    raise ProofRefusal(f"{child.identity.role}_readiness_timeout")
+
+
+def _role_children(children: Iterable[OwnedChild]) -> dict[str, OwnedChild]:
+    by_role: dict[str, OwnedChild] = {}
+    for child in children:
+        role = child.identity.role
+        if role not in _EXPECTED_STACK_ROLES:
+            continue
+        if role in by_role:
+            raise ProofRefusal("stack_role_set_invalid")
+        by_role[role] = child
+    if set(by_role) != _EXPECTED_STACK_ROLES:
+        raise ProofRefusal("stack_role_set_invalid")
+    return by_role
+
+
+def assert_stack_handoff(
+    children: Iterable[OwnedChild],
+    listener_ports: Mapping[str, int],
+) -> dict[str, ProcessIdentity]:
+    """Prove the exact application-role identities at a phase handoff.
+
+    The returned identities are snapshots; callers must not refresh them after
+    this proof.  Listener roles are required to own their exact loopback port,
+    while the worker is required to remain alive without a listener.
+    """
+    expected_listener_roles = {"api", "frontend", "model"}
+    if set(listener_ports) != expected_listener_roles:
+        raise ProofRefusal("stack_listener_role_set_invalid")
+    role_children = _role_children(children)
+    identities: dict[str, ProcessIdentity] = {}
+    for role in ("api", "worker", "frontend", "model"):
+        child = role_children[role]
+        if child.process.poll() is not None:
+            raise ProofRefusal(f"{role}_process_not_alive")
+        expected = child.identity
+        try:
+            current = process_identity(expected.pid, role, expected.listener_port)
+        except ProofRefusal as exc:
+            raise ProofRefusal(f"{role}_identity_unavailable") from exc
+        if (
+            current.pid != expected.pid
+            or current.start_token != expected.start_token
+            or current.argv_sha256 != expected.argv_sha256
+        ):
+            raise ProofRefusal(f"{role}_identity_changed")
+        if role == "worker":
+            if expected.listener_port is not None:
+                raise ProofRefusal("worker_listener_mismatch")
+        else:
+            port = listener_ports[role]
+            if expected.listener_port != port:
+                raise ProofRefusal(f"{role}_listener_mismatch")
+            if _listener_pids(port) != {expected.pid}:
+                raise ProofRefusal(f"{role}_listener_not_owned")
+        identities[role] = current
+    return identities
+
+
+def assert_replacement_identities(
+    previous: Mapping[str, ProcessIdentity] | Iterable[ProcessIdentity],
+    current: Mapping[str, ProcessIdentity] | Iterable[ProcessIdentity],
+) -> None:
+    """Require a fresh process identity for every exact application role."""
+    previous_by_role = (
+        dict(previous)
+        if isinstance(previous, Mapping)
+        else {item.role: item for item in previous}
+    )
+    current_by_role = (
+        dict(current)
+        if isinstance(current, Mapping)
+        else {item.role: item for item in current}
+    )
+    if set(previous_by_role) != _EXPECTED_STACK_ROLES or set(current_by_role) != _EXPECTED_STACK_ROLES:
+        raise ProofRefusal("restart_role_set_invalid")
+    previous_tokens = {
+        (item.pid, item.start_token) for item in previous_by_role.values()
+    }
+    for role in ("api", "worker", "frontend", "model"):
+        old = previous_by_role[role]
+        new = current_by_role[role]
+        if (new.pid, new.start_token) in previous_tokens:
+            raise ProofRefusal(f"replacement_identity_reused:{role}")
+        if new.pid == old.pid or new.start_token == old.start_token:
+            raise ProofRefusal(f"replacement_identity_not_new:{role}")
+        if new.argv_sha256 != old.argv_sha256:
+            raise ProofRefusal(f"replacement_identity_command_mismatch:{role}")
+        if new.listener_port != old.listener_port:
+            raise ProofRefusal(f"replacement_identity_listener_mismatch:{role}")
+
+
 def _listener_pids(port: int) -> set[int]:
     try:
         result = subprocess.run(
@@ -2460,6 +2586,11 @@ class Stack:
         self.container_removed = False
         self.seed: dict[str, str] = {}
         self.model_path = _prepare_local_model_fixture(inputs.task_root)
+        self.listener_ports = {
+            "api": inputs.api_port,
+            "frontend": inputs.frontend_port,
+            "model": inputs.model_port,
+        }
 
     def _refresh(self, child: OwnedChild, *, listener_port: int | None = None) -> None:
         child.identity = process_identity(
@@ -2655,23 +2786,23 @@ class Stack:
         _wait_port(self.inputs.api_port, time.monotonic() + 90)
         self._refresh(api_child, listener_port=self.inputs.api_port)
         self._require_owned_listener(api_child, self.inputs.api_port, "api")
-        self.children.append(
-            _spawn_owned(
-                [
-                    python,
-                    "-m",
-                    "surreal_commands.cli.worker",
-                    "--import-modules",
-                    "commands",
-                    "--max-tasks",
-                    "1",
-                ],
-                role="worker",
-                cwd=Path(__file__).resolve().parents[1],
-                env=env,
-                log_dir=self.inputs.task_root,
-            )
+        worker_child = _spawn_owned(
+            [
+                python,
+                "-m",
+                "surreal_commands.cli.worker",
+                "--import-modules",
+                "commands",
+                "--max-tasks",
+                "1",
+            ],
+            role="worker",
+            cwd=Path(__file__).resolve().parents[1],
+            env=env,
+            log_dir=self.inputs.task_root,
         )
+        self.children.append(worker_child)
+        _wait_owned_process(worker_child)
         if seed_model:
             self.seed = _seed_model(self.inputs.api_url, self.model_url, token=token)
             _write_local_benchmark_proof(
@@ -2714,6 +2845,7 @@ class Stack:
         _wait_port(self.inputs.frontend_port, time.monotonic() + 90)
         self._refresh(frontend_child, listener_port=self.inputs.frontend_port)
         self._require_owned_listener(frontend_child, self.inputs.frontend_port, "frontend")
+        assert_stack_handoff(self.children, self.listener_ports)
 
     def _start_model(self, env: Mapping[str, str]) -> None:
         script = self.inputs.task_root / "study-proof-model-server.py"
@@ -2904,15 +3036,17 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
             # The Surreal docker client is an owned transport process, but the
             # durable role contract is emitted by the application stack only.
             # Persist its name/container ID separately so the receipt cannot
-            # silently accept a missing/extra application role.
-            identities = tuple(
-                item.identity
-                for item in children
-                if item.identity.role in _EXPECTED_STACK_ROLES
+            # silently accept a missing/extra application role.  This snapshot
+            # is taken only after a final live/identity/listener handoff proof.
+            handoff_identities = assert_stack_handoff(
+                children,
+                stack.listener_ports,
             )
-            if {item.role for item in identities} != _EXPECTED_STACK_ROLES or len(identities) != len(
-                _EXPECTED_STACK_ROLES
-            ):
+            identities = tuple(
+                handoff_identities[role]
+                for role in ("api", "worker", "frontend", "model")
+            )
+            if {item.role for item in identities} != _EXPECTED_STACK_ROLES:
                 raise ProofRefusal("stack_role_set_invalid")
             api_identity = next(
                 (item for item in identities if item.role == "api"), None
@@ -2981,16 +3115,14 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
             trace["code"] = "new_stack_start"
             stack.start(seed_model=False, token=token)
             children = stack.children
-            current_api = next(
-                (item.identity for item in children if item.identity.role == "api"),
-                None,
+            current_identities = assert_stack_handoff(
+                children,
+                stack.listener_ports,
             )
-            if (
-                current_api is None
-                or current_api.pid == receipt.previous_api_pid
-                or current_api.start_token == receipt.previous_api_start_token
-            ):
-                raise ProofRefusal("native_restart_identity_not_new")
+            previous_identities = {
+                item.role: item for item in receipt.previous_processes
+            }
+            assert_replacement_identities(previous_identities, current_identities)
             state = {
                 "plan_id": receipt.plan_id,
                 "source_ids": receipt.source_ids,
@@ -3013,6 +3145,7 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
                 model_url=stack.model_url,
                 trace=trace,
             )
+            assert_stack_handoff(children, stack.listener_ports)
             trace["code"] = "restart_finalization"
             if hash_tree(inputs.external_root) != receipt.external_hashes:
                 raise ProofRefusal("external_fixture_changed")

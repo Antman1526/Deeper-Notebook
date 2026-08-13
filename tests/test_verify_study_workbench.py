@@ -285,6 +285,139 @@ def test_restart_receipt_binds_exact_owned_roles_and_listener_ports(tmp_path: Pa
         validate_restart_receipt(wrong_port, tmp_path)
 
 
+def _handoff_children():
+    from types import SimpleNamespace
+
+    from scripts.verify_study_workbench import ProcessIdentity
+
+    identities = {
+        "api": ProcessIdentity("api", 1001, "api-start", "a" * 64, 43121),
+        "worker": ProcessIdentity("worker", 1002, "worker-start", "b" * 64, None),
+        "frontend": ProcessIdentity("frontend", 1003, "frontend-start", "c" * 64, 43122),
+        "model": ProcessIdentity("model", 1004, "model-start", "d" * 64, 43124),
+    }
+    children = [
+        SimpleNamespace(
+            identity=identity,
+            process=SimpleNamespace(poll=lambda: None),
+        )
+        for identity in identities.values()
+    ]
+    return identities, children
+
+
+def test_handoff_rejects_dead_worker_before_receipt(monkeypatch):
+    from scripts.verify_study_workbench import ProofRefusal, assert_stack_handoff
+
+    _identities, children = _handoff_children()
+    worker = next(item for item in children if item.identity.role == "worker")
+    worker.process = type("DeadProcess", (), {"poll": lambda _self: 1})()
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench.process_identity",
+        lambda pid, role, listener_port=None: next(
+            item.identity
+            for item in children
+            if item.identity.pid == pid and item.identity.role == role
+        ),
+    )
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench._listener_pids",
+        lambda port: {43121: {1001}, 43122: {1003}, 43124: {1004}}[port],
+    )
+
+    with pytest.raises(ProofRefusal, match="worker.*alive|worker.*dead|worker.*exit"):
+        assert_stack_handoff(children, {"api": 43121, "frontend": 43122, "model": 43124})
+
+
+def test_handoff_rejects_changed_identity(monkeypatch):
+    from scripts.verify_study_workbench import (
+        ProcessIdentity,
+        ProofRefusal,
+        assert_stack_handoff,
+    )
+
+    identities, children = _handoff_children()
+    changed = ProcessIdentity("worker", 1002, "worker-replaced", "b" * 64, None)
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench.process_identity",
+        lambda pid, role, listener_port=None: changed
+        if role == "worker"
+        else identities[role],
+    )
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench._listener_pids",
+        lambda port: {43121: {1001}, 43122: {1003}, 43124: {1004}}[port],
+    )
+
+    with pytest.raises(ProofRefusal, match="worker.*identity|identity.*worker"):
+        assert_stack_handoff(children, {"api": 43121, "frontend": 43122, "model": 43124})
+
+
+def test_handoff_rejects_missing_listener(monkeypatch):
+    from scripts.verify_study_workbench import ProofRefusal, assert_stack_handoff
+
+    identities, children = _handoff_children()
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench.process_identity",
+        lambda pid, role, listener_port=None: identities[role],
+    )
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench._listener_pids",
+        lambda _port: set(),
+    )
+
+    with pytest.raises(ProofRefusal, match="listener"):
+        assert_stack_handoff(children, {"api": 43121, "frontend": 43122, "model": 43124})
+
+
+def test_replacement_reusing_any_old_role_identity_is_rejected():
+    from scripts.verify_study_workbench import (
+        ProcessIdentity,
+        ProofRefusal,
+        assert_replacement_identities,
+    )
+
+    previous = {
+        role: identity
+        for role, identity in _handoff_children()[0].items()
+    }
+    current = {
+        role: ProcessIdentity(
+            role,
+            identity.pid + 100,
+            identity.start_token + "-new",
+            identity.argv_sha256,
+            identity.listener_port,
+        )
+        for role, identity in previous.items()
+    }
+    current["model"] = previous["worker"]
+
+    with pytest.raises(ProofRefusal, match="replacement|identity|model"):
+        assert_replacement_identities(previous, current)
+
+
+def test_fresh_replacement_identities_for_all_roles_are_accepted():
+    from scripts.verify_study_workbench import (
+        ProcessIdentity,
+        assert_replacement_identities,
+    )
+
+    previous = _handoff_children()[0]
+    current = {
+        role: ProcessIdentity(
+            role,
+            identity.pid + 100,
+            identity.start_token + "-new",
+            identity.argv_sha256,
+            identity.listener_port,
+        )
+        for role, identity in previous.items()
+    }
+
+    assert_replacement_identities(previous, current) is None
+
+
 def test_listener_probe_distinguishes_empty_and_probe_failures(monkeypatch):
     from scripts.verify_study_workbench import ProofRefusal, _listener_pids
 
