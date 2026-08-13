@@ -10,6 +10,16 @@ vi.mock('./client', () => ({ default: client }))
 import { studyVoiceApi } from './study-voice'
 
 describe('studyVoiceApi strict response boundaries', () => {
+  it('normalizes an encoded route-param plan id before capability dispatch', async () => {
+    client.get.mockResolvedValueOnce({ data: { stt: 'unavailable', tts: 'unavailable' } })
+
+    await expect(studyVoiceApi.capability('study_plan%3Aone')).resolves.toEqual({ stt: 'unavailable', tts: 'unavailable' })
+    expect(client.get).toHaveBeenCalledWith(
+      '/study/plans/study_plan%3Aone/voice:capability',
+      expect.anything(),
+    )
+  })
+
   it('rejects capability provider metadata outside the exact receipt', async () => {
     client.get.mockResolvedValueOnce({ data: { stt: 'ready', tts: 'ready', provider: 'ollama' } })
     await expect(studyVoiceApi.capability('study_plan:one')).rejects.toThrow('Invalid Study voice capability')

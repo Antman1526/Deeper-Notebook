@@ -97,8 +97,8 @@ export function StudyProgressPanel({ state, projection, onRetry, onAccept, onDis
                   <p className="mt-1 text-sm text-muted-foreground">{proposal.rationale}</p>
                   {proposal.available && proposal.status === 'proposed' && (onAccept || onDismiss) ? (
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {onAccept ? <Button type="button" size="sm" onClick={() => setPending({ proposal, decision: 'accepted', requestId: newDecisionRequestId() })} aria-label={`Accept ${proposal.title}`}>Accept {proposal.title}</Button> : null}
-                      {onDismiss ? <Button type="button" size="sm" variant="outline" onClick={() => setPending({ proposal, decision: 'dismissed', requestId: newDecisionRequestId() })} aria-label={`Dismiss ${proposal.title}`}>Dismiss</Button> : null}
+                      {onAccept ? <Button type="button" size="sm" className="h-auto min-h-8 max-w-full min-w-0 whitespace-normal text-left" onClick={() => setPending({ proposal, decision: 'accepted', requestId: newDecisionRequestId() })} aria-label={`Accept ${proposal.title}`}>Accept {proposal.title}</Button> : null}
+                      {onDismiss ? <Button type="button" size="sm" variant="outline" className="h-auto min-h-8 max-w-full min-w-0 whitespace-normal text-left" onClick={() => setPending({ proposal, decision: 'dismissed', requestId: newDecisionRequestId() })} aria-label={`Dismiss ${proposal.title}`}>Dismiss</Button> : null}
                     </div>
                   ) : <p className="mt-3 text-xs text-muted-foreground">This adaptation is unavailable.</p>}
                 </li>

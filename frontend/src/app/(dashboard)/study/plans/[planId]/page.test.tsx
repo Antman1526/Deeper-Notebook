@@ -1,7 +1,13 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import StudyPlanPage from './page'
+
+const featureFlags = vi.hoisted(() => ({
+  isStudyWorkbenchEnabled: vi.fn(() => true),
+}))
+
+vi.mock('@/lib/features', () => featureFlags)
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ planId: 'study_plan:one' }),
@@ -13,11 +19,25 @@ vi.mock('@/components/study/StudyPlanWorkspace', () => ({
 }))
 
 describe('StudyPlanPage', () => {
+  beforeEach(() => {
+    featureFlags.isStudyWorkbenchEnabled.mockReturnValue(true)
+  })
+
   it('provides one named main landmark and a bounded plan workspace in either shell mode', () => {
     render(<StudyPlanPage />)
 
     expect(screen.getAllByRole('main')).toHaveLength(1)
     expect(screen.getByRole('main', { name: 'Study' })).toBeInTheDocument()
     expect(screen.getByTestId('workspace')).toHaveTextContent('study_plan:one')
+  })
+
+  it('does not mount the dynamic workbench route when the Study flag is off', () => {
+    featureFlags.isStudyWorkbenchEnabled.mockReturnValue(false)
+
+    render(<StudyPlanPage />)
+
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getByRole('heading', { level: 1 })).toBeVisible()
+    expect(screen.queryByTestId('workspace')).toBeNull()
   })
 })

@@ -53,6 +53,18 @@ describe('studyPlansApi', () => {
     })
   })
 
+  it('treats a product-compatible empty syllabus response as no proposal', async () => {
+    mockGet.mockResolvedValue({ data: undefined, status: 204 } as never)
+
+    await expect(studyPlansApi.syllabus('study_plan:one')).resolves.toBeNull()
+  })
+
+  it('still rejects an empty 200 syllabus payload', async () => {
+    mockGet.mockResolvedValue({ data: undefined, status: 200 } as never)
+
+    await expect(studyPlansApi.syllabus('study_plan:one')).rejects.toThrow('Invalid Study Plan response')
+  })
+
   it('projects persisted model and approved web scope preferences', async () => {
     const persistedPlan = {
       ...PLAN,

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import {
+  addExpectedStudyCalls,
   installStudyWorkbenchFixture,
   canonicalStudyApiPath,
   STUDY_PLAN_ID,
@@ -15,6 +16,36 @@ const viewports = [
   { width: 1440, height: 900 },
 ] as const
 const planUrl = `/study/plans/${encodeURIComponent(STUDY_PLAN_ID)}`
+const planApiPath = `/api/study/plans/${STUDY_PLAN_ID}`
+
+function expectedStateCalls(state: StudyFixtureState): string[] {
+  if (state === 'empty' || state === 'loading') {
+    return ['GET /api/study/cards/due', 'GET /api/study/plans']
+  }
+  if (state === 'error-retry') {
+    return [
+      ...Array.from({ length: 4 }, () => `GET ${planApiPath}`),
+      ...Array.from({ length: 2 }, () => `GET ${planApiPath}/syllabus`),
+      ...Array.from({ length: 2 }, () => `GET ${planApiPath}/sources/readiness`),
+      ...Array.from({ length: 2 }, () => `GET ${planApiPath}/progress`),
+    ]
+  }
+  const calls = [
+    `GET ${planApiPath}`,
+    `GET ${planApiPath}/syllabus`,
+    `GET ${planApiPath}/sources/readiness`,
+    `GET ${planApiPath}/progress`,
+  ]
+  if (state === 'tutor') calls.push(`GET ${planApiPath}/voice:capability`)
+  return calls
+}
+
+function callCounts(calls: readonly string[]): Record<string, number> {
+  return calls.reduce<Record<string, number>>((counts, call) => {
+    counts[call] = (counts[call] ?? 0) + 1
+    return counts
+  }, {})
+}
 
 async function assertNoClippedControls(page: Page, label: string): Promise<void> {
   const report = await page.evaluate(() => {
@@ -145,7 +176,7 @@ for (const state of STUDY_STATES) {
     const externalRequests: string[] = []
     const apiRequests: string[] = []
     const failedResponses: string[] = []
-    const ledger: StudyRequestLedger = { expected: [], seen: [], unexpected: [] }
+    const ledger: StudyRequestLedger = { expected: [], seen: [], unexpected: [], expectedByViewport: {}, seenByViewport: {} }
     const manualRetryState = { enabled: false }
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrors.push({ text: message.text(), url: message.location().url })
@@ -165,6 +196,7 @@ for (const state of STUDY_STATES) {
 
     for (const viewport of viewports) {
       await page.setViewportSize(viewport)
+      addExpectedStudyCalls(ledger, viewport.width, ...expectedStateCalls(state))
       if (state === 'error-retry') {
         // A successful manual retry is cached by React Query. Use a unique
         // query-string navigation before each canonical width so every width
@@ -189,6 +221,12 @@ for (const state of STUDY_STATES) {
         await expect(page.getByText('No syllabus proposal yet')).toBeVisible()
         await expect(page.getByText('Syllabus proposal is available after source analysis')).toBeVisible()
       }
+      if (state === 'empty') {
+        await expect(page.getByText('Start a focused plan')).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Create your first plan' })).toBeVisible()
+        await expect(page.getByText('Build a reliable study habit')).toHaveCount(0)
+        await expect(page.getByRole('link', { name: 'Open plan' })).toHaveCount(0)
+      }
       if (state === 'syllabus-proposed') await expect(page.getByText('Version 1 is immutable')).toBeVisible()
       if (state === 'approved' || state === 'generating' || state === 'active') {
         await expect(page.locator('main').getByText(state, { exact: true }).first()).toBeVisible()
@@ -210,14 +248,46 @@ for (const state of STUDY_STATES) {
       if (state === 'tutor') {
         await expect(page.getByRole('region', { name: 'Tutor dock' })).toBeVisible()
         await expect(page.getByRole('textbox', { name: 'Tutor prompt' })).toBeVisible()
+        addExpectedStudyCalls(ledger, viewport.width, `POST ${planApiPath}/assistants/source_guide:invoke`)
+        await page.getByLabel('Tutor role').selectOption('source_guide')
+        await page.getByRole('textbox', { name: 'Tutor prompt' }).fill('Explain the fixture source finding.')
+        await page.getByRole('button', { name: 'Ask tutor' }).click()
+        await expect(page.getByText('A bounded fixture answer grounded in the selected source.')).toBeVisible()
+        await expect(page.getByRole('region', { name: 'Tutor citations' })).toContainText('Fixture source')
       }
-      if (state === 'progress') await expect(page.locator('[aria-label="Study progress"]')).toBeVisible()
+      if (state === 'progress') {
+        await expect(page.locator('[aria-label="Study progress"]')).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Accept Add one more foundation exercise' })).toBeVisible()
+        addExpectedStudyCalls(
+          ledger,
+          viewport.width,
+          `POST ${planApiPath}/progress:decision`,
+          ...Array.from({ length: 2 }, () => `GET ${planApiPath}`),
+          ...Array.from({ length: 2 }, () => `GET ${planApiPath}/syllabus`),
+          ...Array.from({ length: 2 }, () => `GET ${planApiPath}/sources/readiness`),
+          ...Array.from({ length: 3 }, () => `GET ${planApiPath}/progress`),
+        )
+        await page.getByRole('button', { name: 'Accept Add one more foundation exercise' }).click()
+        await expect(page.getByRole('dialog')).toBeVisible()
+        await page.getByRole('dialog').getByRole('button', { name: 'Confirm' }).click()
+        await expect(page.getByRole('dialog')).toBeHidden()
+      }
       if (state === 'anki-preview' || state === 'import-receipt') {
         await expect(page.locator('[aria-label="Anki package portability"]')).toBeVisible()
         if (state === 'anki-preview' || state === 'import-receipt') {
+          addExpectedStudyCalls(ledger, viewport.width, `POST ${planApiPath}/anki/import`)
           await page.getByRole('tabpanel', { name: 'Anki package' }).locator('input[type="file"]').setInputFiles({ name: 'fixture.apkg', mimeType: 'application/octet-stream', buffer: Buffer.from('fixture') })
           await expect(page.getByRole('heading', { name: 'Import preview' })).toBeVisible()
           if (state === 'import-receipt') {
+            addExpectedStudyCalls(
+              ledger,
+              viewport.width,
+              `POST ${planApiPath}/anki/import/${'anki_job:' + 'a'.repeat(32)}:publish`,
+              ...Array.from({ length: 2 }, () => `GET ${planApiPath}`),
+              ...Array.from({ length: 2 }, () => `GET ${planApiPath}/syllabus`),
+              ...Array.from({ length: 2 }, () => `GET ${planApiPath}/sources/readiness`),
+              ...Array.from({ length: 3 }, () => `GET ${planApiPath}/progress`),
+            )
             await page.getByText('Confirm explicit import into this Study Plan').click()
             await page.getByRole('button', { name: 'Import cards' }).click()
             await expect(page.getByText('Cards imported into the native Study deck.')).toBeVisible()
@@ -234,21 +304,11 @@ for (const state of STUDY_STATES) {
       }
     }
 
-    const expectedSyllabus404Path = canonicalStudyApiPath(`/api/study/plans/${STUDY_PLAN_ID}/syllabus`)
     const expectedPlan503Path = canonicalStudyApiPath(`/api/study/plans/${STUDY_PLAN_ID}`)
-    const expectedConsoleErrorText = 'Failed to load resource: the server responded with a status of 404 (Not Found)'
     const expectedPlan503ConsoleErrorText = 'Failed to load resource: the server responded with a status of 503 (Service Unavailable)'
     const allowedConsoleErrors = state === 'source-processing' || state === 'error-retry'
       ? consoleErrors.filter((entry) => (
-        (state === 'source-processing' && entry.text === expectedConsoleErrorText
-        && (() => {
-          try {
-            return canonicalStudyApiPath(new URL(entry.url).pathname) === expectedSyllabus404Path
-          } catch {
-            return false
-          }
-        })())
-        || (state === 'error-retry' && entry.text === expectedPlan503ConsoleErrorText
+        (state === 'error-retry' && entry.text === expectedPlan503ConsoleErrorText
           && (() => {
             try {
               return canonicalStudyApiPath(new URL(entry.url).pathname) === expectedPlan503Path
@@ -260,16 +320,12 @@ for (const state of STUDY_STATES) {
       : []
     const unexpectedConsoleErrors = consoleErrors.filter((entry) => !allowedConsoleErrors.includes(entry))
     const unexpectedFailedResponses = failedResponses.filter((entry) => (
-      !((state === 'source-processing' && entry === `404 GET ${expectedSyllabus404Path}`)
-        || (state === 'error-retry' && entry === `503 GET ${expectedPlan503Path}`))
+      !(state === 'error-retry' && entry === `503 GET ${expectedPlan503Path}`)
     ))
-    if (state === 'source-processing') {
-      expect(allowedConsoleErrors.length, `${state}: expected one syllabus 404 console error per viewport`).toBe(viewports.length)
-    }
     if (state === 'error-retry') {
       const observed503Count = failedResponses.filter((entry) => entry === `503 GET ${expectedPlan503Path}`).length
       expect(observed503Count, `${state}: bounded expected 503 responses`).toBeGreaterThan(0)
-      expect(observed503Count, `${state}: bounded expected 503 responses`).toBeLessThanOrEqual(viewports.length * 8)
+      expect(observed503Count, `${state}: exact expected 503 responses`).toBe(viewports.length * 3)
     }
     expect(unexpectedConsoleErrors, `${state}: console errors; failed responses: ${failedResponses.join(', ')}`).toEqual([])
     expect(unexpectedFailedResponses, `${state}: unexpected failed responses`).toEqual([])
@@ -278,19 +334,51 @@ for (const state of STUDY_STATES) {
     expect(apiRequests.filter((call) => !ledger.seen.includes(call))).toEqual([])
     expect(ledger.unexpected).toEqual([])
     expect(ledger.seen.length).toBeGreaterThan(0)
-    for (const expectedCall of ledger.expected) {
-      expect(ledger.seen, `${state}: expected ${expectedCall}`).toContain(expectedCall)
-    }
-    if (state === 'error-retry') {
-      expect(ledger.seen.filter((call) => call === `GET ${'/api/study/plans/' + STUDY_PLAN_ID}`).length).toBeGreaterThanOrEqual(2)
+    for (const viewport of viewports) {
+      const expected = ledger.expectedByViewport?.[String(viewport.width)] ?? []
+      const seen = ledger.seenByViewport?.[String(viewport.width)] ?? []
+      expect(callCounts(seen), `${state} ${viewport.width}px: exact study request ledger`).toEqual(callCounts(expected))
     }
     await context.close()
   })
 }
 
+test('Study fixture rejects every declared custom route with an unexpected method', async ({ page }) => {
+  test.skip(process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH !== '1', 'run only against the explicit enabled build')
+  const ledger: StudyRequestLedger = { expected: [], seen: [], unexpected: [], expectedByViewport: {}, seenByViewport: {} }
+  await installStudyWorkbenchFixture(page, { state: 'import-receipt', ledger })
+  await page.setViewportSize({ width: 320, height: 844 })
+  await page.goto(`${planUrl}?tab=package`)
+  const wrongMethodProbes: Array<[string, string]> = [
+    ['/api/study/cards/due', 'POST'],
+    ['/api/study/plans', 'POST'],
+    [planApiPath, 'POST'],
+    [`${planApiPath}/sources/readiness`, 'POST'],
+    [`${planApiPath}/syllabus`, 'POST'],
+    [`${planApiPath}/progress`, 'POST'],
+    [`${planApiPath}/progress:decision`, 'GET'],
+    [`${planApiPath}/anki/import`, 'GET'],
+    [`${planApiPath}/anki/import/${'anki_job:' + 'a'.repeat(32)}`, 'POST'],
+    [`${planApiPath}/anki/import/${'anki_job:' + 'a'.repeat(32)}:publish`, 'GET'],
+    [`${planApiPath}/assistants/source_guide:invoke`, 'GET'],
+    [`${planApiPath}/assistants/practice_coach:invoke`, 'GET'],
+    [`${planApiPath}/voice:capability`, 'POST'],
+    [`${planApiPath}/voice:transcribe`, 'GET'],
+    [`${planApiPath}/voice:synthesize`, 'GET'],
+  ]
+
+  const statuses = await page.evaluate(async (probes) => {
+    const responses: number[] = []
+    for (const [path, method] of probes) responses.push((await fetch(path, { method })).status)
+    return responses
+  }, wrongMethodProbes)
+  expect(statuses).toEqual(wrongMethodProbes.map(() => 405))
+  expect(ledger.unexpected).toEqual(wrongMethodProbes.map(([path, method]) => `${method} ${path}`))
+})
+
 test('Study feature-off build is a real rollback with no Study plan navigation or API calls', async ({ page }) => {
   test.skip(process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH !== '0', 'run only against the exact rollback build')
-  const ledger: StudyRequestLedger = { expected: [], seen: [], unexpected: [] }
+  const ledger: StudyRequestLedger = { expected: [], seen: [], unexpected: [], expectedByViewport: {}, seenByViewport: {} }
   await installStudyWorkbenchFixture(page, { state: 'empty', ledger })
   await page.setViewportSize({ width: 320, height: 844 })
   await page.goto('/study')
@@ -299,12 +387,17 @@ test('Study feature-off build is a real rollback with no Study plan navigation o
   await expect(page.locator('h1:visible')).toHaveCount(1)
   await expect(page.getByText('Nothing is due')).toBeVisible()
   await expect(page.getByRole('link', { name: 'Study' })).toHaveCount(0)
-  const commandTrigger = page.getByRole('button', { name: 'Open command palette' })
-  if (await commandTrigger.count()) {
-    await commandTrigger.click()
-    await expect(page.getByRole('dialog')).toBeVisible()
-    await expect(page.getByRole('option', { name: 'Study' })).toHaveCount(0)
-    await page.keyboard.press('Escape')
-  }
+  await page.keyboard.press('Control+k')
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('option', { name: 'Study' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.goto(planUrl)
+  await expect(page.locator('[data-study-workbench="enabled"]')).toHaveCount(0)
+  await expect(page.locator('main')).toHaveCount(1)
+  await expect(page.locator('h1:visible')).toHaveCount(1)
+  await page.keyboard.press('Control+k')
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('option', { name: 'Study' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
   expect(ledger.seen.filter((call) => call.includes('/api/study/'))).toEqual([])
 })

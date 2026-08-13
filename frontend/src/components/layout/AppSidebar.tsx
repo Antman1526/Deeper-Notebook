@@ -8,6 +8,7 @@ import { motion } from 'framer-motion'
 
 import { cn } from '@/lib/utils'
 import { readDesktopVersion } from '@/lib/desktop-version'
+import { isStudyWorkbenchEnabled } from '@/lib/features'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
@@ -82,7 +83,9 @@ export const getNavigation = (t: TFunction) => [
       // a new notebook or podcast from uploaded docs).
       { name: 'Studio', href: '/studio', icon: Sparkles },
       { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic },
-      { name: t('navigation.study'), href: '/study', icon: GraduationCap },
+      ...(isStudyWorkbenchEnabled()
+        ? [{ name: t('navigation.study'), href: '/study', icon: GraduationCap }]
+        : []),
     ],
   },
   {

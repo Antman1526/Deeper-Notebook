@@ -38,10 +38,23 @@ function decodeCapability(value: unknown): StudyVoiceCapability {
 }
 
 function validatePlanId(planId: string): string {
-  if (typeof planId !== 'string' || !planId.startsWith('study_plan:') || planId.length > 512 || !planId.slice('study_plan:'.length).trim()) {
+  if (typeof planId !== 'string' || planId.length > 512) {
     throw new Error('Invalid Study voice plan')
   }
-  return planId
+  let normalized = planId
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const decoded = decodeURIComponent(normalized)
+      if (decoded === normalized) break
+      normalized = decoded
+    } catch {
+      throw new Error('Invalid Study voice plan')
+    }
+  }
+  if (!normalized.startsWith('study_plan:') || !normalized.slice('study_plan:'.length).trim()) {
+    throw new Error('Invalid Study voice plan')
+  }
+  return normalized
 }
 
 function decodeTranscription(value: unknown): StudyVoiceTranscription {

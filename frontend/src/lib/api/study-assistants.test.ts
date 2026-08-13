@@ -89,6 +89,17 @@ describe('studyAssistantsApi', () => {
     )
   })
 
+  it('normalizes an encoded route-param plan id before dispatching', async () => {
+    mockPost.mockResolvedValue({ data: RESPONSE } as never)
+
+    await expect(studyAssistantsApi.invoke('study_plan%3Aone', 'source_guide', REQUEST)).resolves.toEqual(RESPONSE)
+    expect(mockPost).toHaveBeenCalledWith(
+      '/study/plans/study_plan%3Aone/assistants/source_guide:invoke',
+      REQUEST,
+      expect.anything(),
+    )
+  })
+
   it('accepts a bounded multiline prompt with tabs', async () => {
     const prompt = 'Compare the two claims.\n\tStart with the evidence boundary.'
     mockPost.mockResolvedValue({ data: RESPONSE } as never)

@@ -356,7 +356,7 @@ export function TutorDock({
               <div className="space-y-4 border-t pt-4">
                 <div className="whitespace-pre-wrap text-sm leading-6">{(localResponse ?? invocation.data)?.answer}</div>
                 {(localResponse ?? invocation.data)?.citations.length ? (
-                  <div className="space-y-2" aria-label="Tutor citations">
+                  <div className="space-y-2" aria-label="Tutor citations" role="region">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Evidence</p>
                     <div className="flex flex-wrap gap-2">
                       {(localResponse ?? invocation.data)?.citations.map((citation, index) => (

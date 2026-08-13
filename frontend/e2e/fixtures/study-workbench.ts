@@ -31,6 +31,8 @@ export interface StudyRequestLedger {
   expected: string[]
   seen: string[]
   unexpected: string[]
+  expectedByViewport?: Record<string, string[]>
+  seenByViewport?: Record<string, string[]>
 }
 
 export interface StudyWorkbenchFixtureOptions {
@@ -38,6 +40,31 @@ export interface StudyWorkbenchFixtureOptions {
   ledger?: StudyRequestLedger
   unexpectedExternalRequests?: string[]
   manualRetryState?: { enabled: boolean }
+}
+
+function viewportKey(page: Page): string {
+  return String(page.viewportSize()?.width ?? 'unknown')
+}
+
+function recordRequest(page: Page, ledger: StudyRequestLedger, route: Route, method: string): string {
+  const label = requestLabel(route)
+  ledger.seen.push(label)
+  const width = viewportKey(page)
+  if (canonicalStudyApiPath(new URL(route.request().url()).pathname).startsWith('/api/study/')) {
+    ledger.seenByViewport ??= {}
+    ledger.seenByViewport[width] ??= []
+    ledger.seenByViewport[width].push(label)
+  }
+  if (route.request().method() !== method) ledger.unexpected.push(label)
+  return label
+}
+
+export function addExpectedStudyCalls(ledger: StudyRequestLedger, width: number, ...calls: string[]): void {
+  ledger.expected.push(...calls)
+  ledger.expectedByViewport ??= {}
+  const key = String(width)
+  ledger.expectedByViewport[key] ??= []
+  ledger.expectedByViewport[key].push(...calls)
 }
 
 export const studyWorkbenchFixtures = {
@@ -105,7 +132,17 @@ export const studyWorkbenchFixtures = {
       lapses: 1,
     }],
     review_consistency: { reviews: 3, lapses: 1, due_reviews: 2, on_time_rate: 0.8 },
-    proposals: [],
+    proposals: [{
+      schema_version: 1,
+      proposal_id: 'proposal:fixture',
+      concept_id: 'core-idea',
+      unit_id: 'foundations',
+      action: 'extra_practice',
+      title: 'Add one more foundation exercise',
+      rationale: 'A short additional recall block will reinforce the developing concept.',
+      status: 'proposed',
+      available: true,
+    }],
     generated_at: NOW,
     memory_writes: [],
   },
@@ -204,10 +241,8 @@ async function jsonRoute(
   method = 'GET',
 ): Promise<void> {
   await page.route((url) => matchesPath(url.pathname, pathname), async (route) => {
-    const label = requestLabel(route)
-    ledger.seen.push(label)
+    recordRequest(page, ledger, route, method)
     if (route.request().method() !== method) {
-      ledger.unexpected.push(label)
       await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ detail: 'method not allowed' }) })
       return
     }
@@ -281,17 +316,24 @@ export async function installStudyWorkbenchFixture(
   await jsonRoute(page, ledger, '/api/models/defaults', {})
 
   const cardsPath = '/api/study/cards/due'
-  if (state === 'empty' || state === 'loading') await jsonRoute(page, ledger, cardsPath, studyWorkbenchFixtures.cards)
+  await jsonRoute(page, ledger, cardsPath, studyWorkbenchFixtures.cards)
   const plansPath = '/api/study/plans'
   await page.route((url) => matchesPath(url.pathname, plansPath), async (route) => {
-    ledger.seen.push(requestLabel(route))
+    recordRequest(page, ledger, route, 'GET')
+    if (route.request().method() !== 'GET') {
+      await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ detail: 'method not allowed' }) })
+      return
+    }
     if (state === 'loading') await new Promise((resolve) => setTimeout(resolve, 900))
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(state === 'empty' ? [] : [statePlan(state)]) })
   })
 
   await page.route((url) => matchesPath(url.pathname, PLAN_PATH), async (route) => {
-    const label = requestLabel(route)
-    ledger.seen.push(label)
+    recordRequest(page, ledger, route, 'GET')
+    if (route.request().method() !== 'GET') {
+      await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ detail: 'method not allowed' }) })
+      return
+    }
     // Keep every automatic React Query retry in the explicit error state. The
     // test flips this gate immediately before clicking the visible Retry
     // control, proving that recovery is user initiated rather than incidental.
@@ -303,19 +345,37 @@ export async function installStudyWorkbenchFixture(
   })
   const readinessPath = `${PLAN_PATH}/sources/readiness`
   await page.route((url) => matchesPath(url.pathname, readinessPath), async (route) => {
-    ledger.seen.push(requestLabel(route))
+    recordRequest(page, ledger, route, 'GET')
+    if (route.request().method() !== 'GET') {
+      await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ detail: 'method not allowed' }) })
+      return
+    }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(stateReadiness(state)) })
   })
   await page.route((url) => matchesPath(url.pathname, `${PLAN_PATH}/syllabus`), async (route) => {
-    ledger.seen.push(requestLabel(route))
+    recordRequest(page, ledger, route, 'GET')
+    if (route.request().method() !== 'GET') {
+      await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ detail: 'method not allowed' }) })
+      return
+    }
     const body = stateSyllabus(state)
     if (body === null) {
-      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ detail: 'no syllabus' }) })
+      // 204 is the browser-safe representation of an absent optional
+      // proposal. The real API keeps its 404 contract; the client adapter
+      // treats this fixture-only response as `null` without a resource error.
+      await route.fulfill({ status: 204 })
       return
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
   })
   if (state !== 'empty' && state !== 'loading') await jsonRoute(page, ledger, `${PLAN_PATH}/progress`, studyWorkbenchFixtures.progress)
+  if (state !== 'empty' && state !== 'loading') {
+    await jsonRoute(page, ledger, `${PLAN_PATH}/progress:decision`, {
+      proposal_id: 'proposal:fixture',
+      decision: 'accepted',
+      projection: studyWorkbenchFixtures.progress,
+    }, 'POST')
+  }
   if (state === 'anki-preview' || state === 'import-receipt') {
     await jsonRoute(page, ledger, `${PLAN_PATH}/anki/import`, studyWorkbenchFixtures.ankiPreview, 'POST')
     await jsonRoute(page, ledger, `${PLAN_PATH}/anki/import/${studyWorkbenchFixtures.ankiPreview.job_id}`, { ...studyWorkbenchFixtures.ankiPreview, receipt_id: null })
@@ -323,14 +383,19 @@ export async function installStudyWorkbenchFixture(
   }
 
   await page.route((url) => matchesPath(url.pathname, `${PLAN_PATH}/assistants/source_guide:invoke`) || matchesPath(url.pathname, `${PLAN_PATH}/assistants/practice_coach:invoke`), async (route) => {
-    ledger.seen.push(requestLabel(route))
+    const method = 'POST'
+    recordRequest(page, ledger, route, method)
+    if (route.request().method() !== method) {
+      await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ detail: 'method not allowed' }) })
+      return
+    }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
       schema_version: 1,
       response_id: 'study_assistant_response:fixture',
       session_id: 'study_assistant_session:fixture',
       plan_id: STUDY_PLAN_ID,
       role: route.request().url().includes('practice_coach') ? 'practice_coach' : 'source_guide',
-      authority: 'source_only',
+      authority: 'ask',
       status: 'completed',
       answer: 'A bounded fixture answer grounded in the selected source.',
       citations: [{ source_id: 'source:fixture', locator: null, quote: 'Fixture source text.', title: 'Fixture source' }],
@@ -342,27 +407,16 @@ export async function installStudyWorkbenchFixture(
     }) })
   })
 
-  // The ledger's required set is intentionally limited to the study calls
-  // that define each state. Shell telemetry is mocked for hermeticity but is
-  // not a contract of this state matrix.
-  if (state === 'empty' || state === 'loading') {
-    ledger.expected.push(`GET ${cardsPath}`, `GET ${plansPath}`)
-  } else {
-    ledger.expected.push(
-      `GET ${PLAN_PATH}`,
-      `GET ${PLAN_PATH}/syllabus`,
-      `GET ${PLAN_PATH}/sources/readiness`,
-      `GET ${PLAN_PATH}/progress`,
-    )
-  }
-  if (state === 'anki-preview' || state === 'import-receipt') {
-    const importPath = `${PLAN_PATH}/anki/import`
-    const jobPath = `${importPath}/${studyWorkbenchFixtures.ankiPreview.job_id}`
-    ledger.expected.push(`POST ${importPath}`)
-    if (state === 'import-receipt') {
-      ledger.expected.push(`POST ${jobPath}:publish`)
+  await jsonRoute(page, ledger, `${PLAN_PATH}/voice:capability`, { stt: 'unavailable', tts: 'unavailable' })
+  await jsonRoute(page, ledger, `${PLAN_PATH}/voice:transcribe`, { transcript: 'Fixture transcript.' }, 'POST')
+  await page.route((url) => matchesPath(url.pathname, `${PLAN_PATH}/voice:synthesize`), async (route) => {
+    recordRequest(page, ledger, route, 'POST')
+    if (route.request().method() !== 'POST') {
+      await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ detail: 'method not allowed' }) })
+      return
     }
-  }
+    await route.fulfill({ status: 200, contentType: 'audio/mpeg', body: Buffer.from('fixture-audio') })
+  })
 
   return ledger
 }

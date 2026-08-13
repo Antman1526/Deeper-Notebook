@@ -154,6 +154,8 @@ function renderPalette() {
 
 describe('Command navigation destinations', () => {
   it('offers the translated Study destination', () => {
+    const previousFlag = process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = '1'
     const translate = (key: string) => ({
       'navigation.study': 'Study',
     }[key] ?? key)
@@ -161,6 +163,23 @@ describe('Command navigation destinations', () => {
     expect(getNavigationItems(translate as never)
       .some(item => item.href === '/study' && item.name === 'Study'))
       .toBe(true)
+    if (previousFlag === undefined) delete process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+    else process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = previousFlag
+  })
+
+  it.each([
+    ['0', false],
+    ['1', true],
+  ] as const)('gates the Study command destination by the workbench flag (%s)', (flag, expected) => {
+    const previousFlag = process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = flag
+    try {
+      const translate = (key: string) => key === 'navigation.study' ? 'Study' : key
+      expect(getNavigationItems(translate as never).some(item => item.href === '/study')).toBe(expected)
+    } finally {
+      if (previousFlag === undefined) delete process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+      else process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = previousFlag
+    }
   })
 })
 

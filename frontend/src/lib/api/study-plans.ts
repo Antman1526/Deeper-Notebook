@@ -194,10 +194,11 @@ export const studyPlansApi = {
     return decodeStudySourceReadiness(response.data)
   },
 
-  async syllabus(planId: string, version?: number): Promise<StudySyllabus> {
+  async syllabus(planId: string, version?: number): Promise<StudySyllabus | null> {
     const response = await apiClient.get(`${planPath(validatePlanId(planId))}/syllabus`, {
       params: version === undefined ? undefined : { version: validateRevision(version) },
     })
+    if (response.status === 204) return null
     return decodeStudySyllabus(response.data)
   },
 

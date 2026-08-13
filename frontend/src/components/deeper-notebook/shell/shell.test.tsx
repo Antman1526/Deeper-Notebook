@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LuminousAppShell } from './LuminousAppShell'
 import { FolioPage } from '../folio/FolioPage'
@@ -12,6 +12,7 @@ const openNotebookDialog = vi.fn()
 const openPodcastDialog = vi.fn()
 const logout = vi.fn()
 let currentPathname = '/knowledge/workspace'
+let previousStudyWorkbenchFlag: string | undefined
 
 vi.mock('next/navigation', () => ({
   usePathname: () => currentPathname,
@@ -99,6 +100,8 @@ describe('LuminousAppShell', () => {
   }
 
   beforeEach(() => {
+    previousStudyWorkbenchFlag = process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = '1'
     vi.clearAllMocks()
     currentPathname = '/knowledge/workspace'
     vi.mocked(useAuth).mockReturnValue({ logout } as never)
@@ -107,6 +110,11 @@ describe('LuminousAppShell', () => {
       openNotebookDialog,
       openPodcastDialog,
     })
+  })
+
+  afterEach(() => {
+    if (previousStudyWorkbenchFlag === undefined) delete process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+    else process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = previousStudyWorkbenchFlag
   })
 
   it('preserves the navigation, utilities, and one editorial page slot', () => {

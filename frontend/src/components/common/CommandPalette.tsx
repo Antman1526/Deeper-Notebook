@@ -59,13 +59,16 @@ import { useKnowledgeWorkspaceStore } from '@/lib/stores/knowledge-workspace-sto
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import { useDisplayPreferencesStore } from '@/lib/stores/display-preferences-store'
 import { useTheme } from '@/lib/stores/theme-store'
+import { isStudyWorkbenchEnabled } from '@/lib/features'
 
 export const getNavigationItems = (t: TFunction) => [
   { name: t('navigation.sources'), href: '/sources', icon: FileText, keywords: ['files', 'documents', 'upload'] },
   { name: t('navigation.notebooks'), href: '/notebooks', icon: Book, keywords: ['notes', 'research', 'projects'] },
   { name: t('navigation.askAndSearch'), href: '/search', icon: Search, keywords: ['find', 'query'] },
   { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic, keywords: ['audio', 'episodes', 'generate'] },
-  { name: t('navigation.study'), href: '/study', icon: GraduationCap, keywords: ['learning', 'courses', 'flashcards', 'review'] },
+  ...(isStudyWorkbenchEnabled()
+    ? [{ name: t('navigation.study'), href: '/study', icon: GraduationCap, keywords: ['learning', 'courses', 'flashcards', 'review'] }]
+    : []),
   { name: t('navigation.models'), href: '/settings/api-keys', icon: Bot, keywords: ['ai', 'llm', 'providers', 'openai', 'anthropic'] },
   { name: t('navigation.transformations'), href: '/transformations', icon: Shuffle, keywords: ['prompts', 'templates', 'actions'] },
   { name: t('navigation.settings'), href: '/settings', icon: Settings, keywords: ['preferences', 'config', 'options'] },

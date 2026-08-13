@@ -31,6 +31,8 @@ vi.mock('@/lib/hooks/use-media-query', () => ({
 
 describe('AppSidebar', () => {
   it('offers the translated Study destination in the sidebar navigation', () => {
+    const previousFlag = process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = '1'
     const translate = (key: string) => ({
       'navigation.study': 'Study',
     }[key] ?? key)
@@ -42,6 +44,26 @@ describe('AppSidebar', () => {
       .flatMap(section => section.items)
       .some(item => item.href === '/study' && item.name === 'Study'))
       .toBe(true)
+    if (previousFlag === undefined) delete process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+    else process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = previousFlag
+  })
+
+  it.each([
+    ['0', false],
+    ['1', true],
+  ] as const)('gates the Study sidebar item by the workbench flag (%s)', (flag, expected) => {
+    const previousFlag = process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+    process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = flag
+    try {
+      const translate = (key: string) => key === 'navigation.study' ? 'Study' : key
+      const navigation = getNavigation(translate as never) as ReadonlyArray<{
+        items: ReadonlyArray<{ href: string; name: string }>
+      }>
+      expect(navigation.flatMap(section => section.items).some(item => item.href === '/study')).toBe(expected)
+    } finally {
+      if (previousFlag === undefined) delete process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
+      else process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = previousFlag
+    }
   })
 
   it('renders correctly when expanded', () => {

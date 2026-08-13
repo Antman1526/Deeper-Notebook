@@ -33,7 +33,20 @@ function boundedFreeText(value: unknown, maxBytes: number): string {
 }
 
 function validatePlanId(value: unknown): string {
-  const planId = visibleText(value, 512)
+  let planId = visibleText(value, 512)
+  // Next route params can preserve an encoded identifier layer while the
+  // study-plan API receives the same value from the route. Normalize the
+  // bounded value before applying the typed Study identifier contract so a
+  // route-param round trip cannot fail closed before dispatching the request.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const decoded = decodeURIComponent(planId)
+      if (decoded === planId) break
+      planId = decoded
+    } catch {
+      invalidRequest()
+    }
+  }
   if (!planId.startsWith('study_plan:')) invalidRequest()
   return planId
 }
