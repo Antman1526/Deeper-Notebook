@@ -17,25 +17,43 @@
 
 ## Task 19 feature-build recovery repair — 2026-08-13
 
-The exact pre-edit RED was the stale-wrapper recovery race: after the wrapper
-parent died, its lock had `child: null` even though the child-registration
-window was not provably empty, so the next invocation failed closed with RC1.
-The caller's `frontend/node_modules` symlink was never renamed or mutated.
+The strict pre-edit RED was the stale-wrapper ownership race. The former
+`readLock` → stage delete → lock unlink → `open(..., "wx")` sequence allowed a
+contender that had read one stale record to delete or replace a successor, and
+the named lock file was written directly so a reader could observe empty or
+partial JSON. The pre-edit focused wrapper run was `4 passed, 1 failed`; the
+failure was the existing parent-SIGKILL process-group probe, while direct
+source inspection identified the unlink/reacquire race. The caller's
+`frontend/node_modules` symlink was never renamed or mutated.
 
-The wrapper now spawns one detached, exact helper process that becomes its own
-process-group leader. The helper writes a versioned lock containing its PID,
-PGID, nonce, and bounded stage before it can create staging/build children;
-all children inherit that group and the lock never uses `child: null` as a
-safety signal. Recovery removes only the exact stage after both recorded
-helper PID and process group are absent. Missing, malformed, ambiguous, or
-symlinked lock/stage state remains fail-closed. Parent SIGKILL therefore
-leaves a live helper/group that blocks concurrent recovery until that exact
-group is gone; a stale lock with no live child/group recovers successfully.
+The wrapper now uses an atomic lock directory acquired by `mkdir`. Its
+`owner.json` is written to a nonce-named temporary file, fsynced, and atomically
+renamed, so readers see either no record or complete metadata. The v4 owner
+binds a random nonce, helper PID, macOS `ps` start token, command/argv hash,
+PGID, exact nonce-derived stage, and state. The detached helper remains the
+process-group leader and all rsync/Next children inherit that group.
+
+Stale recovery first proves the recorded PID/start/argv identity and every
+member of the recorded PGID are gone, then wins a sibling nonce recovery claim
+with atomic `mkdir` before renaming the stale lock directory to a unique
+quarantine. A contender that loses the claim re-reads current ownership and
+never renames or removes a successor. Cleanup applies the same exact nonce,
+identity, and atomic-quarantine checks; stage removal is bounded to the
+validated exact stage and unlinks nested symlinks without following them.
+Malformed, partial, ambiguous, stale-claim, zombie, EPERM, PID-reuse, and
+lock/stage/owner symlink states fail closed. Parent SIGKILL leaves the live
+helper/group refusing recovery; a stale no-child lock recovers only after the
+group is absent.
 
 Fresh evidence: `uv run pytest -q tests/test_feature_build_contract_wrapper.py`
-passed `5`; the same wrapper matrix passed five consecutive runs (`25/25`).
-`NEXT_TELEMETRY_DISABLED=1 npm run test:feature-build-contract` returned RC0
-with the production Turbopack build and verifier. Test Ruff passed; frontend
+passed `13`; the same wrapper matrix passed ten consecutive runs (`130/130`).
+The deterministic regressions cover two simultaneous stale recoverers (one
+owner/one refusal), successor-preserving cleanup, complete-metadata readers,
+PID start/argv mismatch with and without a live group, parent SIGKILL/live
+helper refusal, stale no-child recovery, malformed and symlinked lock/owner/
+stage state, and unchanged caller symlink identity. The exact
+`NEXT_TELEMETRY_DISABLED=1 npm run test:feature-build-contract` command returned
+RC0 with the production Turbopack build and verifier. Test Ruff passed; frontend
 lint returned RC0 with the two pre-existing `_stream`/`_options` warnings;
 `git diff --check`, the rebrand audit (unexpected `0`, stale `0`), and the
 diff-pipe gitleaks scan all passed. No Stage0-specific subset was present.
