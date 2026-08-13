@@ -33,6 +33,7 @@ DEFINE FIELD IF NOT EXISTS status ON TABLE study_anki_job TYPE string ASSERT $va
 DEFINE FIELD IF NOT EXISTS claim_request_id ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) <= 256);
 DEFINE FIELD IF NOT EXISTS claim_options_sha256 ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
 DEFINE FIELD IF NOT EXISTS claim_package_sha256 ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
+DEFINE FIELD IF NOT EXISTS claim_payload_sha256 ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
 DEFINE FIELD IF NOT EXISTS claim_owner_token ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR string::matches($value, "^[0-9a-f]{64}$");
 DEFINE FIELD IF NOT EXISTS claim_expires_at ON TABLE study_anki_job TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS receipt_id ON TABLE study_anki_job TYPE option<string> ASSERT $value = NONE OR (string::trim($value) != "" AND string::len($value) <= 512);

@@ -104,3 +104,26 @@ Open maintainability concerns remain the bounded N+1 export projection and combi
   pip-audit remains environment-blocked as previously documented.
 - No deploy, migration mutation, external publication, or unrelated work was
   performed. Exact commit target: `fix(study): bind Anki replay package authority`.
+
+## Task 16 canonical payload authority repair — 2026-08-12
+
+- Strict RED first: crash-repair and already-published same package/request but
+  different options returned a cross-bound receipt; repository contracts lacked
+  a claimed payload hash, and real-Surreal claim/CAS calls rejected the missing
+  argument. The direct canonical-plan regression covered `study_plan:<id>`
+  normalization before the durable claim.
+- `study_anki_job.claim_payload_sha256` is an optional, strictly lowercase
+  SHA-256 migration-45 field. Claim/replay/conflict and terminal CAS operations
+  bind it atomically. The shared repository payload helper canonicalizes the
+  plan record exactly as publication does, includes full inspection/options and
+  selected card IDs, and is used by both repository and router.
+- Replay/recovery now requires receipt payload hash == claimed payload hash in
+  addition to the existing package/request/options authority. Published and
+  crash-repair paths fail closed on missing/mismatch. A newly returned receipt
+  is also checked against the expected payload before durable completion.
+- GREEN: focused Task15/16 Anki 73 passed (one known Starlette/httpx warning),
+  all Study 360 passed (7 existing warnings), real-Surreal import+portability
+  12 passed, and frontend targeted tests 14 passed; scoped ESLint/tsc, Ruff,
+  compileall, `uv lock --check`, migration test, and diff-check passed. Bandit
+  reports only the existing four low-confidence B608 query findings; no new
+  findings. No deployment or external publication occurred.

@@ -62,7 +62,24 @@ _RECEIPT_FIELDS = (
 )
 
 
-def _canonical_payload(plan_id: str, inspection: AnkiPackageInspection, options: AnkiImportOptions) -> tuple[str, tuple[Any, ...]]:
+def _canonical_study_plan_id(plan_id: str) -> str:
+    try:
+        plan_record = ensure_record_id(plan_id)
+    except Exception as exc:
+        raise AnkiImportRepositoryError("Invalid Study Plan ID") from exc
+    if (
+        getattr(plan_record, "table_name", None) != "study_plan"
+        or not isinstance(getattr(plan_record, "id", None), str)
+        or not getattr(plan_record, "id").strip()
+    ):
+        raise AnkiImportRepositoryError("Invalid Study Plan ID")
+    return str(plan_record)
+
+
+def canonical_anki_import_payload(
+    plan_id: str, inspection: AnkiPackageInspection, options: AnkiImportOptions
+) -> tuple[str, tuple[Any, ...]]:
+    """Return the exact shared authority hash and selected import cards."""
     selected = tuple(
         card
         for card in inspection.cards
@@ -72,13 +89,17 @@ def _canonical_payload(plan_id: str, inspection: AnkiPackageInspection, options:
         raise AnkiImportRepositoryError("Anki import contains no selected cards")
     payload = {
         "schema_version": 1,
-        "plan_id": plan_id,
+        "plan_id": _canonical_study_plan_id(plan_id),
         "inspection": inspection.model_dump(mode="json"),
         "options": options.model_dump(mode="json"),
         "selected_card_ids": [card.card_id for card in selected],
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest(), selected
+
+
+# Retain the existing private name for focused Task 15/16 test compatibility.
+_canonical_payload = canonical_anki_import_payload
 
 
 def _validated_inputs(
@@ -174,17 +195,10 @@ class AnkiImportRepository:
             or any(ord(char) < 32 or ord(char) == 127 for char in plan_id)
         ):
             raise AnkiImportRepositoryError("Invalid Study Plan ID")
-        try:
-            plan_record = ensure_record_id(plan_id)
-        except Exception as exc:
-            raise AnkiImportRepositoryError("Invalid Study Plan ID") from exc
-        if (
-            getattr(plan_record, "table_name", None) != "study_plan"
-            or not isinstance(getattr(plan_record, "id", None), str)
-            or not getattr(plan_record, "id").strip()
-        ):
-            raise AnkiImportRepositoryError("Invalid Study Plan ID")
-        canonical_plan_id = str(plan_record)
+        canonical_plan_id = _canonical_study_plan_id(plan_id)
+        # The atomic native-publication transaction requires the RecordID
+        # object, while the receipt/claim authority uses its canonical string.
+        plan_record = ensure_record_id(plan_id)
         if (
             not isinstance(request_id, str)
             or not request_id.strip()
@@ -194,9 +208,7 @@ class AnkiImportRepository:
         ):
             raise AnkiImportRepositoryError("Invalid Anki import request ID")
         inspection, options = _validated_inputs(inspection, options)
-        payload_sha256, selected = _canonical_payload(
-            canonical_plan_id, inspection, options
-        )
+        payload_sha256, selected = canonical_anki_import_payload(plan_id, inspection, options)
         try:
             existing = await self._find_by_request(canonical_plan_id, request_id)
             if existing is not None:
@@ -382,5 +394,6 @@ __all__ = [
     "AnkiImportConflict",
     "AnkiImportRepository",
     "AnkiImportRepositoryError",
+    "canonical_anki_import_payload",
     "import_anki_package",
 ]

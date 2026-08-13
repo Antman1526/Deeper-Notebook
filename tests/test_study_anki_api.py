@@ -10,9 +10,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from api.routers import study_anki
+from deeper_notebook.database.repository import ensure_record_id
 from deeper_notebook.study.anki_jobs import AnkiClaimResult, AnkiJobMetadata
-from deeper_notebook.study.anki_package import inspect_anki_package
-from deeper_notebook.study.anki_repository import AnkiCompatibilityReceipt
+from deeper_notebook.study.anki_package import AnkiImportOptions, inspect_anki_package
+from deeper_notebook.study.anki_repository import (
+    AnkiCompatibilityReceipt,
+    canonical_anki_import_payload,
+)
 from tests.fixtures.anki.build_fixtures import build_apkg
 from tests.test_study_anki_export import PLAN_EXPORT
 
@@ -31,13 +35,23 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
     return TestClient(app)
 
 
-def _receipt(package: Path, request_id: str) -> AnkiCompatibilityReceipt:
+def _receipt(
+    package: Path,
+    request_id: str,
+    *,
+    plan_id: str = "study_plan:one",
+    options: AnkiImportOptions | None = None,
+) -> AnkiCompatibilityReceipt:
     inspection = inspect_anki_package(package)
+    canonical_plan_id = str(ensure_record_id(plan_id))
+    payload_sha256, _ = canonical_anki_import_payload(
+        plan_id, inspection, options or AnkiImportOptions()
+    )
     return AnkiCompatibilityReceipt(
         receipt_id="study_anki_import:" + "a" * 64,
-        plan_id="study_plan:one",
+        plan_id=canonical_plan_id,
         request_id=request_id,
-        payload_sha256="b" * 64,
+        payload_sha256=payload_sha256,
         package_sha256=inspection.package_sha256,
         collection_sha256=inspection.collection_sha256,
         collection_member=inspection.collection_member,
@@ -164,6 +178,7 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
             package_sha256: str,
             request_id: str,
             options_sha256: str,
+            payload_sha256: str,
         ) -> AnkiClaimResult:
             metadata = state["metadata"]
             assert isinstance(metadata, AnkiJobMetadata)
@@ -172,8 +187,9 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
                     update={
                         "status": "publishing",
                         "claim_request_id": request_id,
-                        "claim_options_sha256": options_sha256,
-                        "claim_package_sha256": package_sha256,
+                            "claim_options_sha256": options_sha256,
+                            "claim_package_sha256": package_sha256,
+                            "claim_payload_sha256": payload_sha256,
                         "claim_owner_token": owner_token,
                         "claim_expires_at": datetime.now(UTC) + timedelta(minutes=5),
                     }
@@ -191,6 +207,7 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
             owner: str,
             *,
             package_sha256: str,
+            payload_sha256: str,
         ) -> AnkiJobMetadata | None:
             state["complete_calls"] = int(state["complete_calls"]) + 1
             if int(state["complete_calls"]) == 1:
@@ -241,6 +258,112 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
     assert repaired.status == "published"
     assert repaired.receipt_id == receipt.receipt_id
     assert state["complete_calls"] == 2
+
+
+def test_durable_claim_uses_repository_canonical_plan_payload(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = build_apkg(tmp_path / "canonical-plan.apkg")
+    plan_id = "study_plan:canonical-plan"
+    request_id = "canonical-plan-request"
+    receipt = _receipt(package, request_id, plan_id=plan_id)
+    claims: list[str] = []
+    state: dict[str, AnkiJobMetadata] = {}
+
+    class FakeJobs:
+        async def create(self, metadata: AnkiJobMetadata) -> AnkiJobMetadata:
+            state["metadata"] = metadata
+            return metadata
+
+        async def get(self, _job_id: str, _plan_id: str) -> AnkiJobMetadata:
+            return state["metadata"]
+
+        async def claim(
+            self,
+            _job_id: str,
+            _plan_id: str,
+            _package_sha256: str,
+            _request_id: str,
+            _options_sha256: str,
+            payload_sha256: str,
+        ) -> AnkiClaimResult:
+            claims.append(payload_sha256)
+            return AnkiClaimResult("owner", "c" * 64)
+
+        async def complete(self, *args: object, **kwargs: object) -> AnkiJobMetadata:
+            return state["metadata"].model_copy(
+                update={"status": "published", "receipt_id": receipt.receipt_id}
+            )
+
+    monkeypatch.setattr(study_anki, "_test_in_memory_metadata", lambda: False)
+    monkeypatch.setattr(study_anki, "AnkiJobRepository", FakeJobs)
+    monkeypatch.setattr(
+        study_anki, "_publish_import", lambda *args, **kwargs: _async_return(receipt)
+    )
+    encoded_plan_id = plan_id.replace(":", "%3A")
+    preview = client.post(
+        f"/api/study/plans/{encoded_plan_id}/anki/import",
+        files={"file": ("canonical-plan.apkg", package.read_bytes(), "application/octet-stream")},
+        data={"options": json.dumps({"schema_version": 1})},
+    )
+    assert preview.status_code == 200
+    job_id = preview.json()["job_id"]
+    response = client.post(
+        f"/api/study/plans/{encoded_plan_id}/anki/import/{job_id}:publish",
+        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+    )
+    assert response.status_code == 200
+    assert claims == [receipt.payload_sha256]
+
+
+def test_publish_rejects_divergent_receipt_payload_before_durable_complete(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = build_apkg(tmp_path / "divergent-receipt.apkg")
+    request_id = "divergent-receipt-request"
+    receipt = _receipt(package, request_id).model_copy(update={"payload_sha256": "f" * 64})
+    complete_calls: list[tuple[object, ...]] = []
+    state: dict[str, AnkiJobMetadata] = {}
+
+    class FakeJobs:
+        async def create(self, metadata: AnkiJobMetadata) -> AnkiJobMetadata:
+            state["metadata"] = metadata
+            return metadata
+
+        async def get(self, _job_id: str, _plan_id: str) -> AnkiJobMetadata:
+            return state["metadata"]
+
+        async def claim(self, *args: object, **kwargs: object) -> AnkiClaimResult:
+            return AnkiClaimResult("owner", "c" * 64)
+
+        async def complete(self, *args: object, **kwargs: object) -> AnkiJobMetadata:
+            complete_calls.append(args)
+            return state["metadata"].model_copy(
+                update={"status": "published", "receipt_id": receipt.receipt_id}
+            )
+
+    monkeypatch.setattr(study_anki, "_test_in_memory_metadata", lambda: False)
+    monkeypatch.setattr(study_anki, "AnkiJobRepository", FakeJobs)
+    monkeypatch.setattr(
+        study_anki, "_publish_import", lambda *args, **kwargs: _async_return(receipt)
+    )
+    preview = client.post(
+        "/api/study/plans/study_plan%3Aone/anki/import",
+        files={"file": ("divergent-receipt.apkg", package.read_bytes(), "application/octet-stream")},
+        data={"options": json.dumps({"schema_version": 1})},
+    )
+    assert preview.status_code == 200
+    job_id = preview.json()["job_id"]
+    response = client.post(
+        f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}:publish",
+        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+    )
+    assert response.status_code == 409
+    assert complete_calls == []
 
 
 @pytest.mark.asyncio

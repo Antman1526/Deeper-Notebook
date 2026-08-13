@@ -57,6 +57,7 @@ from deeper_notebook.study.anki_repository import (
     AnkiImportConflict,
     AnkiImportRepository,
     AnkiImportRepositoryError,
+    canonical_anki_import_payload,
 )
 from deeper_notebook.study.plan_repository import (
     StudyPlanNotFoundError,
@@ -213,7 +214,8 @@ def _assert_replay_authority(
 
     Request IDs are plan-scoped idempotency keys, not package authority.  A
     receipt found by request ID is usable only when the current job's package,
-    claim package, request, and options all agree with it.
+    claim package, request, options, and exact canonical payload all agree
+    with it. Older durable rows without a payload claim fail closed.
     """
     if (
         receipt.request_id != request_id
@@ -222,6 +224,8 @@ def _assert_replay_authority(
         or metadata.package_sha256 != receipt.package_sha256
         or metadata.claim_package_sha256 != metadata.package_sha256
         or receipt.package_sha256 != metadata.claim_package_sha256
+        or metadata.claim_payload_sha256 is None
+        or receipt.payload_sha256 != metadata.claim_payload_sha256
     ):
         raise AnkiHttpError("request_id_conflict", 409)
 
@@ -653,6 +657,7 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
             raise AnkiHttpError("upload_id_mismatch")
         options = AnkiImportOptions.model_validate(payload.options.model_dump(mode="python"))
         options_hash = _options_sha256(options)
+        payload_sha256: str | None = None
         if _durable_metadata_enabled() and job.metadata is not None:
             if job.metadata.status == "published" and job.metadata.receipt_id:
                 try:
@@ -665,6 +670,20 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                     replay, job.metadata, payload.request_id, options_hash
                 )
                 return AnkiImportPublishResponse(status="replayed", receipt=_http_receipt(replay))
+        if not (
+            _durable_metadata_enabled()
+            and job.metadata is not None
+            and job.metadata.status == "published"
+        ):
+            try:
+                payload_sha256, _ = canonical_anki_import_payload(
+                    plan_id, job.inspection, options
+                )
+            except AnkiImportRepositoryError as exc:
+                raise AnkiHttpError("invalid_options") from exc
+        if _durable_metadata_enabled() and job.metadata is not None:
+            if payload_sha256 is None:
+                raise AnkiHttpError("request_id_conflict", 409)
             try:
                 claim = await AnkiJobRepository().claim(
                     job_id,
@@ -672,6 +691,7 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                     job.metadata.package_sha256,
                     payload.request_id,
                     options_hash,
+                    payload_sha256,
                 )
             except Exception as exc:
                 raise AnkiHttpError("study_anki_unavailable", 503) from exc
@@ -713,6 +733,7 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                             replay.receipt_id,
                             owner_token,
                             package_sha256=current.package_sha256,
+                            payload_sha256=payload_sha256,
                         )
                     except Exception as exc:
                         raise AnkiHttpError("study_anki_unavailable", 503) from exc
@@ -735,6 +756,7 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                 existing.request_id != payload.request_id
                 or job.publish_options_sha256 != options_hash
                 or existing.package_sha256 != job.inspection.package_sha256
+                or existing.payload_sha256 != payload_sha256
             ):
                 raise AnkiHttpError("request_id_conflict", 409)
             return AnkiImportPublishResponse(status="replayed", receipt=_http_receipt(existing))
@@ -749,6 +771,7 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                     options_hash,
                     owner_token,
                     package_sha256=job.inspection.package_sha256,
+                    payload_sha256=payload_sha256,
                 )
             raise _package_error(exc) from None
         except AnkiImportConflict as exc:
@@ -760,6 +783,7 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                     options_hash,
                     owner_token,
                     package_sha256=job.inspection.package_sha256,
+                    payload_sha256=payload_sha256,
                 )
             raise AnkiHttpError("request_id_conflict", 409) from exc
         except AnkiImportRepositoryError as exc:
@@ -771,8 +795,11 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                     options_hash,
                     owner_token,
                     package_sha256=job.inspection.package_sha256,
+                    payload_sha256=payload_sha256,
                 )
             raise AnkiHttpError("study_anki_unavailable", 503) from exc
+        if receipt.payload_sha256 != payload_sha256:
+            raise AnkiHttpError("request_id_conflict", 409)
         if owner_token is not None:
             try:
                 completed = await AnkiJobRepository().complete(
@@ -783,6 +810,7 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                     receipt.receipt_id,
                     owner_token,
                     package_sha256=job.inspection.package_sha256,
+                    payload_sha256=payload_sha256,
                 )
             except Exception as exc:
                 raise AnkiHttpError("study_anki_unavailable", 503) from exc

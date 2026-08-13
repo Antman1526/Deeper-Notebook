@@ -41,6 +41,7 @@ class AnkiJobMetadata(BaseModel):
     claim_request_id: str | None = Field(default=None, max_length=256)
     claim_options_sha256: str | None = Field(default=None, pattern=_HEX64)
     claim_package_sha256: str | None = Field(default=None, pattern=_HEX64)
+    claim_payload_sha256: str | None = Field(default=None, pattern=_HEX64)
     claim_owner_token: str | None = Field(default=None, pattern=_HEX64)
     claim_expires_at: datetime | None = None
     receipt_id: str | None = Field(default=None, max_length=512)
@@ -186,7 +187,7 @@ class AnkiJobRepository:
             "SELECT schema_version, job_id, plan_id, file_token, package_sha256, "
             "collection_sha256, collection_member, card_count, transformed_count, "
             "skipped_count, rejected_count, status, claim_request_id, "
-            "claim_options_sha256, claim_package_sha256, claim_owner_token, "
+            "claim_options_sha256, claim_package_sha256, claim_payload_sha256, claim_owner_token, "
             "claim_expires_at, receipt_id, created_at, updated_at, expires_at "
             "FROM $job WHERE job_id = $job_id AND plan_id = $plan_id LIMIT 1;",
             {
@@ -204,8 +205,9 @@ class AnkiJobRepository:
         package_sha256: str,
         request_id: str,
         options_sha256: str,
+        payload_sha256: str,
     ) -> "AnkiClaimResult":
-        """Atomically bind request/options/package to one job.
+        """Atomically bind request/options/package/payload to one job.
 
         The owner token distinguishes the first claimant from a same-request
         retry without exposing it through the API.  A different request or
@@ -216,14 +218,17 @@ class AnkiJobRepository:
         updated = await repo_query(
             "UPDATE $job SET claim_request_id = $request_id, "
             "claim_options_sha256 = $options_sha256, claim_package_sha256 = $package_sha256, "
+            "claim_payload_sha256 = $payload_sha256, "
             "claim_owner_token = $owner_token, claim_expires_at = $claim_expires_at, "
             "status = 'publishing', updated_at = time::now() "
             "WHERE plan_id = $plan_id AND package_sha256 = $package_sha256 "
             "AND (claim_request_id = NONE OR "
             "(claim_request_id = $request_id AND claim_options_sha256 = $options_sha256 "
+            "AND claim_payload_sha256 = $payload_sha256 "
             "AND status IN ['failed', 'cancelled']) OR "
             "(claim_expires_at != NONE AND claim_expires_at <= time::now() "
-            "AND claim_request_id = $request_id AND claim_options_sha256 = $options_sha256)) "
+            "AND claim_request_id = $request_id AND claim_options_sha256 = $options_sha256 "
+            "AND claim_payload_sha256 = $payload_sha256)) "
             "AND status IN ['preview_ready', 'processing', 'publishing', 'failed', 'cancelled'] "
             "RETURN AFTER;",
             {
@@ -232,6 +237,7 @@ class AnkiJobRepository:
                 "package_sha256": package_sha256,
                 "request_id": request_id,
                 "options_sha256": options_sha256,
+                "payload_sha256": payload_sha256,
                 "owner_token": owner_token,
                 "claim_expires_at": datetime.now(UTC) + CLAIM_TTL,
             },
@@ -242,12 +248,21 @@ class AnkiJobRepository:
         current = await self.get(job_id, plan_id)
         if current is None:
             return AnkiClaimResult("missing")
-        if current.status == "published" and current.claim_request_id == request_id and current.claim_options_sha256 == options_sha256:
+        if (
+            current.status == "published"
+            and current.package_sha256 == package_sha256
+            and current.claim_package_sha256 == package_sha256
+            and current.claim_request_id == request_id
+            and current.claim_options_sha256 == options_sha256
+            and current.claim_payload_sha256 == payload_sha256
+        ):
             return AnkiClaimResult("replay")
         if (
             current.package_sha256 == package_sha256
+            and current.claim_package_sha256 == package_sha256
             and current.claim_request_id == request_id
             and current.claim_options_sha256 == options_sha256
+            and current.claim_payload_sha256 == payload_sha256
         ):
             return AnkiClaimResult("replay")
         return AnkiClaimResult("conflict")
@@ -262,6 +277,7 @@ class AnkiJobRepository:
         owner_token: str,
         *,
         package_sha256: str,
+        payload_sha256: str,
     ) -> AnkiJobMetadata | None:
         result = await repo_query(
             "UPDATE $job SET status = 'published', receipt_id = $receipt_id, "
@@ -269,6 +285,7 @@ class AnkiJobRepository:
             "AND package_sha256 = $package_sha256 "
             "AND claim_request_id = $request_id AND claim_options_sha256 = $options_sha256 "
             "AND claim_package_sha256 = $package_sha256 "
+            "AND claim_payload_sha256 = $payload_sha256 "
             "AND claim_owner_token = $owner_token AND claim_expires_at > time::now() "
             "AND status = 'publishing' "
             "RETURN AFTER;",
@@ -278,6 +295,7 @@ class AnkiJobRepository:
                 "package_sha256": package_sha256,
                 "request_id": request_id,
                 "options_sha256": options_sha256,
+                "payload_sha256": payload_sha256,
                 "receipt_id": receipt_id,
                 "owner_token": owner_token,
             },
@@ -293,6 +311,7 @@ class AnkiJobRepository:
         owner_token: str,
         *,
         package_sha256: str,
+        payload_sha256: str,
     ) -> AnkiJobMetadata | None:
         result = await repo_query(
             "UPDATE $job SET status = 'failed', updated_at = time::now() "
@@ -300,6 +319,7 @@ class AnkiJobRepository:
             "AND claim_request_id = $request_id "
             "AND claim_options_sha256 = $options_sha256 AND claim_owner_token = $owner_token "
             "AND claim_package_sha256 = $package_sha256 "
+            "AND claim_payload_sha256 = $payload_sha256 "
             "AND claim_expires_at > time::now() AND status = 'publishing' "
             "RETURN AFTER;",
             {
@@ -308,6 +328,7 @@ class AnkiJobRepository:
                 "package_sha256": package_sha256,
                 "request_id": request_id,
                 "options_sha256": options_sha256,
+                "payload_sha256": payload_sha256,
                 "owner_token": owner_token,
             },
         )

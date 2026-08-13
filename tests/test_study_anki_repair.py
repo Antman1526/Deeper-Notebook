@@ -220,6 +220,7 @@ def test_migration_45_is_additive_and_reversible() -> None:
     assert "study_anki_card_compat" in up
     assert "study_anki_job" in up
     assert "study_anki_export" in up
+    assert "claim_payload_sha256 ON TABLE study_anki_job TYPE option<string>" in up
     assert "template_ord ON TABLE study_anki_card_compat TYPE int ASSERT $value >= 0 AND $value <= 999" in up
     assert "REMOVE TABLE IF EXISTS study_anki_card_compat" in down
     assert "REMOVE TABLE IF EXISTS study_anki_job" in down
@@ -286,6 +287,7 @@ async def test_durable_job_claim_rejects_different_request_or_options(monkeypatc
         "b" * 64,
         "request-two",
         "d" * 64,
+        "f" * 64,
     )
     assert decision == "conflict"
     assert any("claim_request_id" in query for query in calls)
@@ -314,6 +316,7 @@ async def test_terminal_job_writes_require_publishing_cas_and_exact_package(
         "study_anki_import:receipt",
         "d" * 64,
         package_sha256=package_sha256,
+        payload_sha256="f" * 64,
     ) is None
     assert await repository.fail(
         "anki_job:" + "a" * 64,
@@ -322,6 +325,7 @@ async def test_terminal_job_writes_require_publishing_cas_and_exact_package(
         "c" * 64,
         "d" * 64,
         package_sha256=package_sha256,
+        payload_sha256="f" * 64,
     ) is None
 
     assert len(calls) == 2
@@ -329,7 +333,9 @@ async def test_terminal_job_writes_require_publishing_cas_and_exact_package(
         assert "status = 'publishing'" in query
         assert "package_sha256 = $package_sha256" in query
         assert "claim_package_sha256 = $package_sha256" in query
+        assert "claim_payload_sha256 = $payload_sha256" in query
         assert params["package_sha256"] == package_sha256
+        assert params["payload_sha256"] == "f" * 64
 
 
 def test_status_rehydrates_from_durable_metadata_after_cache_clear(
