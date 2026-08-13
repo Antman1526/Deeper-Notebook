@@ -153,6 +153,25 @@ async def test_plan_create_list_link_version_and_optimistic_approval(clean_names
     assert current.source_manifest_sha256 == "a" * 64
 
 
+async def test_real_surreal_plan_timestamp_precision_boundary_is_ordered(
+    clean_namespace,
+):
+    """One clock sample remains ordered through Surreal nanosecond storage."""
+    boundary = datetime(2026, 8, 12, 12, 0, 0, 123456, tzinfo=UTC)
+    plan = StudyPlan(
+        plan_id="study_plan:timestamp-boundary",
+        goal="Verify timestamp ordering at precision boundary",
+        starting_level="beginner",
+        created_at=boundary,
+    )
+    assert plan.updated_at == boundary
+    created = await StudyPlanRepository().create(plan)
+    loaded = await StudyPlanRepository().get(created.plan_id)
+    assert loaded is not None
+    assert loaded.updated_at >= loaded.created_at
+    assert loaded.updated_at == loaded.created_at
+
+
 async def test_assistant_session_handoff_memory_and_progress_are_durable(
     clean_namespace,
 ):

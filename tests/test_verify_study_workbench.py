@@ -115,6 +115,9 @@ def test_receipt_rejects_stale_pid_nonce_and_source_hash(tmp_path: Path):
         external_writes=0,
         previous_processes=(
             ProcessIdentity("api", 1001, "start-a", "a" * 64, 43121),
+            ProcessIdentity("worker", 1002, "start-w", "e" * 64, None),
+            ProcessIdentity("frontend", 1003, "start-f", "f" * 64, 43122),
+            ProcessIdentity("model", 1004, "start-m", "1" * 64, 43124),
         ),
         source_ids=("source:pdf", "source:video"),
         plan_id="study_plan:fixture",
@@ -187,6 +190,170 @@ def test_restart_receipt_is_awaiting_restart_and_has_exact_parity_identities(tmp
             receipt.__class__(**{**receipt.__dict__, "phase": "awaiting_restart"}),
             tmp_path,
         )
+
+
+def test_restart_receipt_binds_exact_owned_roles_and_listener_ports(tmp_path: Path):
+    from scripts.verify_study_workbench import (
+        AssistantReceipt,
+        ProcessIdentity,
+        ProofRefusal,
+        RestartReceipt,
+        validate_restart_receipt,
+    )
+
+    def make_receipt(processes):
+        return RestartReceipt(
+            version=1,
+            phase="awaiting_restart",
+            task_root_sha256=hashlib.sha256(str(tmp_path).encode()).hexdigest(),
+            namespace="study_ns_abc",
+            database="study_db_abc",
+            previous_api_pid=1001,
+            previous_api_start_token="start-a",
+            previous_api_argv_sha256="a" * 64,
+            previous_listener_port=43121,
+            source_hashes={"pdf": "b" * 64, "video": "c" * 64},
+            external_hashes={"sentinel.txt": "d" * 64},
+            external_writes=0,
+            previous_processes=tuple(processes),
+            source_ids=("source:pdf", "source:video"),
+            plan_id="study_plan:fixture",
+            syllabus_version=1,
+            artifact_ids=("study_artifact:fixture",),
+            card_id="study_card:fixture",
+            anki_job_id="study_anki_import:fixture",
+            anki_receipt_id="study_anki_export:fixture",
+            frontend_port=43122,
+            surreal_port=43123,
+            model_port=43124,
+            surreal_container_name="dn-study-aaaaaaaaaaaa",
+            surreal_container_id="a" * 12,
+            anki_download_id="study_anki_download:fixture",
+            anki_publish_receipt_id="study_anki_import:published",
+            assistant_receipts=(),
+        )
+
+    exact = (
+        ProcessIdentity("api", 1001, "start-a", "a" * 64, 43121),
+        ProcessIdentity("worker", 1002, "start-w", "b" * 64, None),
+        ProcessIdentity("frontend", 1003, "start-f", "c" * 64, 43122),
+        ProcessIdentity("model", 1004, "start-m", "d" * 64, 43124),
+    )
+    receipt = make_receipt(exact)
+    # The unit receipt omits assistant calls; this assertion isolates stack
+    # role/port validation from the assistant parity contract.
+    with pytest.raises(ProofRefusal, match="assistant"):
+        validate_restart_receipt(receipt, tmp_path)
+
+    assistant_receipts = (
+        AssistantReceipt(
+            role="source_guide",
+            invocation_id="study-proof-source-guide",
+            session_id="study_assistant_session:source-guide",
+            response_id="study_assistant_response:source-guide",
+        ),
+        AssistantReceipt(
+            role="practice_coach",
+            invocation_id="study-proof-practice-coach",
+            session_id="study_assistant_session:practice-coach",
+            response_id="study_assistant_response:practice-coach",
+        ),
+    )
+    receipt = receipt.__class__(
+        **{**receipt.__dict__, "assistant_receipts": assistant_receipts}
+    )
+    assert validate_restart_receipt(receipt, tmp_path) == receipt
+
+    wrong_role = receipt.__class__(
+        **{
+            **receipt.__dict__,
+            "previous_processes": exact[:-1]
+            + (ProcessIdentity("surreal", 1004, "start-m", "d" * 64, 43123),),
+        }
+    )
+    with pytest.raises(ProofRefusal, match="role|listener"):
+        validate_restart_receipt(wrong_role, tmp_path)
+
+    wrong_port = receipt.__class__(
+        **{
+            **receipt.__dict__,
+            "previous_processes": exact[:-1]
+            + (ProcessIdentity("model", 1004, "start-m", "d" * 64, 43123),),
+        }
+    )
+    with pytest.raises(ProofRefusal, match="role|listener"):
+        validate_restart_receipt(wrong_port, tmp_path)
+
+
+def test_listener_probe_distinguishes_empty_and_probe_failures(monkeypatch):
+    from scripts.verify_study_workbench import ProofRefusal, _listener_pids
+
+    class Result:
+        stdout = ""
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: Result())
+    assert _listener_pids(43121) == set()
+
+    class LsofEmpty:
+        stdout = ""
+        stderr = ""
+        returncode = 1
+
+    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: LsofEmpty())
+    assert _listener_pids(43121) == set()
+
+    for failure in (
+        OSError("lsof unavailable"),
+        subprocess.TimeoutExpired("lsof", 3),
+    ):
+        def raise_failure(*_args, _failure=failure, **_kwargs):
+            raise _failure
+
+        monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", raise_failure)
+        with pytest.raises(ProofRefusal, match="listener_probe"):
+            _listener_pids(43121)
+
+    class Nonzero:
+        stdout = ""
+        stderr = "permission denied"
+        returncode = 1
+
+    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: Nonzero())
+    with pytest.raises(ProofRefusal, match="listener_probe"):
+        _listener_pids(43121)
+
+    class Malformed:
+        stdout = "not-a-pid\n"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: Malformed())
+    with pytest.raises(ProofRefusal, match="listener_probe"):
+        _listener_pids(43121)
+
+    class MacOSFraming:
+        stdout = "p43121\nf3\n"
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: MacOSFraming())
+    assert _listener_pids(43121) == {43121}
+
+
+def test_assistant_response_must_echo_request_invocation_id():
+    from scripts.verify_study_workbench import ProofRefusal, _assistant_receipt
+
+    response = {
+        "role": "source_guide",
+        "invocation_id": "different-request",
+        "session_id": "study_assistant_session:source-guide",
+        "response_id": "study_assistant_response:source-guide",
+        "answer": "Synthetic cited explanation.",
+    }
+    with pytest.raises(ProofRefusal, match="invocation"):
+        _assistant_receipt("source_guide", "expected-request", response)
 
 
 def test_authoritative_source_evidence_uses_full_hash_and_returned_offsets():

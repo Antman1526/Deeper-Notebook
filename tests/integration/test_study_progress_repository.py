@@ -8,9 +8,10 @@ from datetime import UTC, datetime
 import pytest
 from fastapi import HTTPException
 
+import deeper_notebook.study.repository as study_repository_module
 from api.routers import study_plans
 from api.schemas.study_plans import StudyProgressDecisionRequest
-from deeper_notebook.database.repository import repo_query
+from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.evaluation.schemas import EvidenceSpan, hash_source_text
 from deeper_notebook.study.assistant_repository import StudyAssistantRepository
 from deeper_notebook.study.assistants import StudyProgressReceipt
@@ -248,6 +249,129 @@ async def test_ambiguous_owner_transaction_leaves_no_card_due_or_link(
         {"artifact_id": artifact_id},
     )
     assert links == []
+
+
+@pytest.mark.parametrize("race", ("disappear", "replace", "appear"))
+async def test_real_owner_resolution_races_leave_existing_current_unchanged(
+    clean_namespace,
+    monkeypatch: pytest.MonkeyPatch,
+    race: str,
+):
+    """A real Surreal owner change between preflight and transaction is fenced."""
+    plans = StudyPlanRepository()
+    repository = StudyRepository()
+    artifact_id = f"studio_artifact:owner-race-{race}"
+    owner = "study_plan:owner-race-one"
+    replacement = "study_plan:owner-race-two"
+    for plan_id in (owner, replacement):
+        await plans.create(
+            StudyPlan(plan_id=plan_id, goal="Owner race", starting_level="beginner")
+        )
+    if race != "appear":
+        await plans.link_artifact(
+            owner,
+            artifact_id,
+            artifact_kind="study_guide",
+            metadata={"unit_id": "owner-unit", "syllabus_version": 1},
+        )
+
+    baseline = await repository.create_card_version_with_artifact_owner(
+        _card().model_copy(
+            update={
+                "artifact_id": artifact_id,
+                "artifact_card_id": "owner-race-card",
+                "front": "Baseline current",
+            }
+        )
+    )
+    original_query = study_repository_module.repo_query
+    intercepted = False
+
+    async def race_query(query: str, params=None):
+        nonlocal intercepted
+        result = await original_query(query, params)
+        if (
+            not intercepted
+            and query.lstrip().startswith("SELECT plan_id")
+            and "FROM study_plan_artifact" in query
+        ):
+            intercepted = True
+            if race == "disappear":
+                await original_query(
+                    "DELETE study_plan_artifact WHERE plan_id = $plan_id "
+                    "AND artifact_id = $artifact_id;",
+                    {"plan_id": owner, "artifact_id": artifact_id},
+                )
+            elif race == "replace":
+                await original_query(
+                    "DELETE study_plan_artifact WHERE plan_id = $plan_id "
+                    "AND artifact_id = $artifact_id;",
+                    {"plan_id": owner, "artifact_id": artifact_id},
+                )
+                await original_query(
+                    "CREATE $link CONTENT $payload RETURN AFTER;",
+                    {
+                        "link": ensure_record_id(f"study_plan_artifact:owner-race-{race}"),
+                        "payload": {
+                            "plan_id": replacement,
+                            "artifact_id": artifact_id,
+                            "artifact_kind": "study_guide",
+                            "metadata": {
+                                "unit_id": "replacement-unit",
+                                "syllabus_version": 1,
+                            },
+                            "created_at": NOW,
+                        },
+                    },
+                )
+            else:
+                await original_query(
+                    "CREATE $link CONTENT $payload RETURN AFTER;",
+                    {
+                        "link": ensure_record_id(f"study_plan_artifact:owner-race-{race}"),
+                        "payload": {
+                            "plan_id": replacement,
+                            "artifact_id": artifact_id,
+                            "artifact_kind": "study_guide",
+                            "metadata": {
+                                "unit_id": "appeared-unit",
+                                "syllabus_version": 1,
+                            },
+                            "created_at": NOW,
+                        },
+                    },
+                )
+        return result
+
+    monkeypatch.setattr(study_repository_module, "repo_query", race_query)
+    with pytest.raises(StudyCardArtifactOwnerConflict):
+        await repository.create_card_version_with_artifact_owner(
+            _card().model_copy(
+                update={
+                    "artifact_id": artifact_id,
+                    "artifact_card_id": "owner-race-card",
+                    "front": "Must not publish",
+                }
+            )
+        )
+    assert intercepted
+    cards = await original_query(
+        "SELECT id, version, current, front FROM study_card WHERE artifact_id = $artifact_id "
+        "AND artifact_card_id = $artifact_card_id ORDER BY version ASC",
+        {"artifact_id": artifact_id, "artifact_card_id": "owner-race-card"},
+    )
+    assert len(cards) == 1
+    assert cards[0]["id"] == baseline.id
+    assert cards[0]["current"] is True
+    assert cards[0]["front"] == "Baseline current"
+    links = await original_query(
+        "SELECT plan_id, card_id FROM study_plan_card WHERE card_id = $card_id",
+        {"card_id": baseline.id},
+    )
+    if race == "appear":
+        assert links == []
+    else:
+        assert links == [{"plan_id": owner, "card_id": baseline.id}]
 
 
 async def test_progress_append_race_re_reads_unique_winner(clean_namespace):

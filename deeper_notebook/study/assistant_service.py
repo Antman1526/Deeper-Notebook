@@ -387,6 +387,7 @@ class StudyAssistantService:
         )
         response_id = f"study_assistant_response:{_safe_id(plan_id, invocation.request_id or invocation.invocation_id or invocation.prompt, document.answer)}"
         response = StudyAssistantResponse(
+            invocation_id=invocation.request_id or invocation.invocation_id,
             response_id=response_id,
             session_id=str(_value(session, "session_id")),
             plan_id=plan_id,
@@ -938,6 +939,7 @@ class StudyAssistantService:
         proposed_actions = self._decode_actions(_value(handoff, "proposed_action"))
         completed_at = _value(session, "completed_at") or _value(handoff, "created_at")
         return StudyAssistantResponse(
+            invocation_id=invocation.request_id or invocation.invocation_id,
             response_id=str(_value(session, "response_id")),
             session_id=session_id,
             plan_id=invocation.plan_id,

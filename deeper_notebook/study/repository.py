@@ -93,14 +93,21 @@ class StudyRepository:
         another concurrent request has already linked.
         """
         card_data = self._card_data(card)
-        # Keep the legacy typed ambiguity error for callers while retaining a
-        # second owner guard inside the write transaction for races.
-        await self._artifact_owner(card.artifact_id)
+        # Resolve the expected owner before opening the write transaction, then
+        # bind that exact result as a transaction parameter.  The transaction
+        # repeats the read and refuses both disappearance and cross-plan
+        # replacement before it can retire/create any card snapshot.
+        owner = await self._artifact_owner(card.artifact_id)
+        expected_plan_id = owner[0] if owner is not None else None
         transaction = (
             "BEGIN TRANSACTION; "
             "LET $owners = (SELECT plan_id, metadata.unit_id AS syllabus_unit_id "
             "FROM study_plan_artifact WHERE artifact_id = $artifact_id LIMIT 2); "
-            'IF array::len($owners) > 1 { THROW "study_card_artifact_owner_ambiguous"; }; '
+            "IF $expected_plan_id = NONE { "
+            'IF array::len($owners) != 0 { THROW "study_card_artifact_owner_conflict"; }; '
+            "} ELSE { "
+            'IF array::len($owners) != 1 OR $owners[0].plan_id != $expected_plan_id { THROW "study_card_artifact_owner_conflict"; }; '
+            "}; "
             "LET $current = (SELECT * FROM study_card "
             "WHERE artifact_id = $artifact_id AND artifact_card_id = $artifact_card_id "
             "AND current = true ORDER BY version DESC LIMIT 1)[0]; "
@@ -119,11 +126,11 @@ class StudyRepository:
             "difficulty = $card_data.difficulty, lapse_count = $card_data.lapse_count, "
             "current = true RETURN AFTER)[0] END; "
             "LET $card_id = type::string($card.id); "
-            "IF array::len($owners) = 1 { "
+            "IF $expected_plan_id != NONE { "
             "LET $existing = (SELECT id FROM study_plan_card "
-            "WHERE plan_id = $owners[0].plan_id AND card_id = $card_id)[0]; "
+            "WHERE plan_id = $expected_plan_id AND card_id = $card_id)[0]; "
             "IF $existing = NONE { CREATE study_plan_card CONTENT { "
-            "plan_id: $owners[0].plan_id, card_id: $card_id, "
+            "plan_id: $expected_plan_id, card_id: $card_id, "
             "syllabus_unit_id: $owners[0].syllabus_unit_id, created_at: time::now() }; }; "
             "}; COMMIT TRANSACTION; RETURN $card;"
         )
@@ -134,6 +141,7 @@ class StudyRepository:
                     "artifact_id": card.artifact_id,
                     "artifact_card_id": card.artifact_card_id,
                     "card_data": card_data,
+                    "expected_plan_id": expected_plan_id,
                 },
             )
             if result:

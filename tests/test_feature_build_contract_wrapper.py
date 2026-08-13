@@ -97,3 +97,98 @@ def test_wrapper_recovers_crashed_stage_without_mutating_shared_symlink(tmp_path
         if crashed.poll() is None:
             os.killpg(crashed.pid, signal.SIGKILL)
             crashed.wait(timeout=5)
+
+
+def test_wrapper_parent_sigkill_does_not_delete_stage_with_surviving_build_child(
+    tmp_path: Path,
+):
+    """A dead wrapper is not enough evidence that its build descendants are gone."""
+    frontend = tmp_path / "frontend"
+    scripts = frontend / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "run-feature-build-contract.mjs").write_bytes(WRAPPER.read_bytes())
+    (scripts / "verify-feature-env-build.mjs").write_text(
+        "process.exit(0)\n", encoding="utf-8"
+    )
+
+    shared = tmp_path / "shared-node-modules"
+    next_bin = shared / ".bin" / "next"
+    next_bin.parent.mkdir(parents=True)
+    child_pid_file = tmp_path / "child.pid"
+    next_bin.write_text(
+        "#!/bin/sh\n"
+        f"echo $$ > {child_pid_file}\n"
+        "sleep 30\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    next_bin.chmod(0o755)
+    node_modules = frontend / "node_modules"
+    node_modules.symlink_to(shared, target_is_directory=True)
+
+    temp_dir = tmp_path / "tmp"
+    temp_dir.mkdir()
+    lock = temp_dir / (
+        "deeper-notebook-feature-build-"
+        + hashlib.sha256(frontend.as_posix().encode()).hexdigest()[:24]
+        + ".lock"
+    )
+    env = {
+        **os.environ,
+        "TMPDIR": str(temp_dir),
+        "RSYNC_BIN": "/usr/bin/rsync",
+    }
+    crashed = subprocess.Popen(
+        ["node", str(scripts / "run-feature-build-contract.mjs")],
+        cwd=frontend,
+        env=env,
+        start_new_session=True,
+    )
+    child_pid = None
+    try:
+        _wait_for(lock)
+        stage = next(temp_dir.glob("deeper-notebook-feature-contract-*"))
+        _wait_for(child_pid_file)
+        child_pid = int(child_pid_file.read_text(encoding="utf-8").strip())
+        os.kill(crashed.pid, signal.SIGKILL)
+        assert crashed.wait(timeout=5) == -signal.SIGKILL
+        assert node_modules.is_symlink()
+        assert stage.exists()
+        os.kill(child_pid, 0)
+
+        blocked = subprocess.run(
+            ["node", str(scripts / "run-feature-build-contract.mjs")],
+            cwd=frontend,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert blocked.returncode != 0
+        assert stage.exists()
+        # The owned child is a process group; terminate the exact recorded
+        # group before allowing stale-stage recovery, never a broad pattern.
+        os.killpg(child_pid, signal.SIGKILL)
+
+        recovered = subprocess.run(
+            ["node", str(scripts / "run-feature-build-contract.mjs")],
+            cwd=frontend,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert recovered.returncode == 0, recovered.stderr
+        assert node_modules.is_symlink()
+        assert node_modules.resolve() == shared.resolve()
+        assert not lock.exists()
+        assert list(temp_dir.glob("deeper-notebook-feature-contract-*")) == []
+    finally:
+        if crashed.poll() is None:
+            os.kill(crashed.pid, signal.SIGKILL)
+            crashed.wait(timeout=5)
+        if child_pid is not None:
+            try:
+                os.killpg(child_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass

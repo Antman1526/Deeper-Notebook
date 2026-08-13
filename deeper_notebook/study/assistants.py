@@ -319,6 +319,7 @@ class StudyAssistantResponse(_FrozenContract):
     """Public assistant result; provider payloads and hidden reasoning are absent."""
 
     schema_version: Literal[1] = 1
+    invocation_id: str | None = Field(default=None, max_length=256)
     response_id: str | None = Field(default=None, max_length=512)
     session_id: str | None = Field(default=None, max_length=512)
     plan_id: _RecordID
@@ -342,7 +343,7 @@ class StudyAssistantResponse(_FrozenContract):
     def response_plan_id_is_exact(cls, value: str) -> str:
         return _record_id_text(value, field_name="plan_id", table="study_plan")
 
-    @field_validator("response_id", "session_id", "error_code")
+    @field_validator("invocation_id", "response_id", "session_id", "error_code")
     @classmethod
     def response_optional_text_is_safe(cls, value: str | None, info: object) -> str | None:
         if value is None:

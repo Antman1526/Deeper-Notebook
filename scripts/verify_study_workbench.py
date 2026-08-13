@@ -120,6 +120,18 @@ class ProofRefusal(RuntimeError):
     """Stable, sanitized refusal code for an unsafe or incomplete proof."""
 
 
+class ListenerProbeRefusal(ProofRefusal):
+    """The port probe could not establish an authoritative empty/listening set."""
+
+
+_EXPECTED_STACK_ROLES = frozenset({"api", "worker", "frontend", "model"})
+_ROLE_LISTENER_PORT = {
+    "api": "previous_listener_port",
+    "frontend": "frontend_port",
+    "model": "model_port",
+}
+
+
 @dataclass(frozen=True)
 class ProcessIdentity:
     role: str
@@ -564,13 +576,30 @@ def _listener_pids(port: int) -> set[int]:
             check=False,
             timeout=3,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return set()
-    return {
-        int(line[1:])
-        for line in result.stdout.splitlines()
-        if line.startswith("p") and line[1:].isdigit()
-    }
+    except OSError as exc:
+        raise ListenerProbeRefusal("listener_probe_failed:os_error") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ListenerProbeRefusal("listener_probe_failed:timeout") from exc
+    # lsof returns 1 for the normal "no matching open files" result.  Treat
+    # that exact empty result as a successful proof of an unused port, while
+    # preserving fail-closed behavior for all other nonzero outcomes.
+    if result.returncode != 0 and not (
+        result.returncode == 1 and not result.stdout and not result.stderr
+    ):
+        raise ListenerProbeRefusal("listener_probe_failed:nonzero")
+    pids: set[int] = set()
+    for line in result.stdout.splitlines():
+        if not line:
+            continue
+        # macOS emits a file-descriptor record alongside the requested PID
+        # field (for example ``f3``).  It is valid lsof framing, not a PID;
+        # reject every other unparseable record instead of guessing.
+        if line.startswith("f") and line[1:].isdigit():
+            continue
+        if not line.startswith("p") or not line[1:].isdigit() or int(line[1:]) <= 1:
+            raise ListenerProbeRefusal("listener_probe_failed:malformed")
+        pids.add(int(line[1:]))
+    return pids
 
 
 def _wait_port(port: int, deadline: float) -> None:
@@ -866,10 +895,11 @@ def validate_restart_receipt(
             raise ProofRefusal("restart_source_hash_mismatch")
     if not receipt.previous_processes:
         raise ProofRefusal("restart_receipt_invalid")
-    if len({item.role for item in receipt.previous_processes}) != len(
-        receipt.previous_processes
-    ) or not any(item.role == "api" for item in receipt.previous_processes):
-        raise ProofRefusal("restart_receipt_invalid")
+    roles = {item.role for item in receipt.previous_processes}
+    if roles != _EXPECTED_STACK_ROLES or len(receipt.previous_processes) != len(
+        _EXPECTED_STACK_ROLES
+    ):
+        raise ProofRefusal("restart_role_set_invalid")
     api_identities = [item for item in receipt.previous_processes if item.role == "api"]
     if len(api_identities) != 1 or (
         api_identities[0].pid != receipt.previous_api_pid
@@ -884,6 +914,14 @@ def validate_restart_receipt(
         for item in receipt.previous_processes
     ):
         raise ProofRefusal("restart_receipt_invalid")
+    for item in receipt.previous_processes:
+        if item.role == "worker":
+            if item.listener_port is not None:
+                raise ProofRefusal("restart_role_listener_mismatch")
+            continue
+        expected_port = getattr(receipt, _ROLE_LISTENER_PORT[item.role])
+        if item.listener_port != expected_port:
+            raise ProofRefusal("restart_role_listener_mismatch")
     if not receipt.source_ids or any(
         not isinstance(item, str) or not item.strip() or len(item) > 512
         or any(ord(character) < 32 for character in item)
@@ -920,14 +958,14 @@ def validate_restart_receipt(
     if len(receipt.assistant_receipts) != 2 or {
         item.role for item in receipt.assistant_receipts
     } != {"source_guide", "practice_coach"}:
-        raise ProofRefusal("restart_receipt_invalid")
+        raise ProofRefusal("restart_assistant_receipt_invalid")
     if any(
         not item.invocation_id.strip()
         or not item.session_id.strip()
         or not item.response_id.strip()
         for item in receipt.assistant_receipts
     ):
-        raise ProofRefusal("restart_receipt_invalid")
+        raise ProofRefusal("restart_assistant_receipt_invalid")
     for port, label in (
         (receipt.previous_listener_port, "api"),
         (receipt.frontend_port, "frontend"),
@@ -1273,6 +1311,30 @@ def _authoritative_source_evidence(
     if quote.strip() != snippet:
         raise ProofRefusal("source_evidence_quote_mismatch")
     return AuthoritativeSourceEvidence(computed, start, end, quote, snippet)
+
+
+def _assistant_receipt(
+    role: str, expected_invocation_id: str, response: object
+) -> AssistantReceipt:
+    """Bind the response identity to the exact request sent by the verifier."""
+    if not isinstance(response, Mapping):
+        raise ProofRefusal(f"{role}_answer_missing")
+    if (
+        response.get("role") != role
+        or response.get("invocation_id") != expected_invocation_id
+        or not isinstance(response.get("session_id"), str)
+        or not response.get("session_id")
+        or not isinstance(response.get("response_id"), str)
+        or not response.get("response_id")
+        or not response.get("answer")
+    ):
+        raise ProofRefusal(f"{role}_invocation_identity_mismatch")
+    return AssistantReceipt(
+        role=role,
+        invocation_id=expected_invocation_id,
+        session_id=response["session_id"],
+        response_id=response["response_id"],
+    )
 
 
 def _workflow(
@@ -1695,23 +1757,8 @@ def _workflow(
                 {200},
                 f"{role}_invoke",
             )
-            if (
-                not isinstance(assistant, dict)
-                or not assistant.get("answer")
-                or assistant.get("role") != role
-                or not isinstance(assistant.get("response_id"), str)
-                or not assistant.get("response_id")
-                or not isinstance(assistant.get("session_id"), str)
-                or not assistant.get("session_id")
-            ):
-                raise ProofRefusal(f"{role}_answer_missing")
             assistant_receipts.append(
-                AssistantReceipt(
-                    role=role,
-                    invocation_id=invocation_id,
-                    session_id=assistant["session_id"],
-                    response_id=assistant["response_id"],
-                )
+                _assistant_receipt(role, invocation_id, assistant)
             )
         state["assistant_receipts"] = assistant_receipts
         if not state.get("artifact_ids"):
@@ -2043,6 +2090,7 @@ def _workflow(
             if (
                 not isinstance(assistant, dict)
                 or assistant.get("role") != expected.role
+                or assistant.get("invocation_id") != expected.invocation_id
                 or assistant.get("response_id") != expected.response_id
                 or assistant.get("session_id") != expected.session_id
                 or not assistant.get("answer")
@@ -2420,6 +2468,11 @@ class Stack:
             listener_port or child.identity.listener_port,
         )
 
+    @staticmethod
+    def _require_owned_listener(child: OwnedChild, port: int, role: str) -> None:
+        if _listener_pids(port) != {child.identity.pid}:
+            raise ProofRefusal(f"{role}_listener_not_owned")
+
     def _docker(self) -> Path:
         docker = shutil.which("docker")
         if not docker:
@@ -2601,8 +2654,7 @@ class Stack:
         self.children.append(api_child)
         _wait_port(self.inputs.api_port, time.monotonic() + 90)
         self._refresh(api_child, listener_port=self.inputs.api_port)
-        if not _listener_pids(self.inputs.api_port):
-            raise ProofRefusal("api_listener_not_owned")
+        self._require_owned_listener(api_child, self.inputs.api_port, "api")
         self.children.append(
             _spawn_owned(
                 [
@@ -2661,8 +2713,7 @@ class Stack:
         self.children.append(frontend_child)
         _wait_port(self.inputs.frontend_port, time.monotonic() + 90)
         self._refresh(frontend_child, listener_port=self.inputs.frontend_port)
-        if not _listener_pids(self.inputs.frontend_port):
-            raise ProofRefusal("frontend_listener_not_owned")
+        self._require_owned_listener(frontend_child, self.inputs.frontend_port, "frontend")
 
     def _start_model(self, env: Mapping[str, str]) -> None:
         script = self.inputs.task_root / "study-proof-model-server.py"
@@ -2679,8 +2730,7 @@ class Stack:
         self.children.append(child)
         _wait_port(self.inputs.model_port, time.monotonic() + 20)
         self._refresh(child, listener_port=self.inputs.model_port)
-        if not _listener_pids(self.inputs.model_port):
-            raise ProofRefusal("model_listener_not_owned")
+        self._require_owned_listener(child, self.inputs.model_port, "model")
 
     def stop(self) -> int:
         stopped = stop_owned(self.children)
@@ -2851,7 +2901,19 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
                 seed=stack.seed,
                 trace=trace,
             )
-            identities = tuple(item.identity for item in children)
+            # The Surreal docker client is an owned transport process, but the
+            # durable role contract is emitted by the application stack only.
+            # Persist its name/container ID separately so the receipt cannot
+            # silently accept a missing/extra application role.
+            identities = tuple(
+                item.identity
+                for item in children
+                if item.identity.role in _EXPECTED_STACK_ROLES
+            )
+            if {item.role for item in identities} != _EXPECTED_STACK_ROLES or len(identities) != len(
+                _EXPECTED_STACK_ROLES
+            ):
+                raise ProofRefusal("stack_role_set_invalid")
             api_identity = next(
                 (item for item in identities if item.role == "api"), None
             )
@@ -3394,14 +3456,18 @@ def run_verifier_fixture(tmp_path: Path) -> FixtureResult:
     url = f"http://127.0.0.1:{server.server_address[1]}"
     children: list[OwnedChild] = []
     try:
-        for role in ("api", "frontend", "model"):
+        for role in ("api", "worker", "frontend", "model"):
             children.append(
                 _spawn_owned(
                     [sys.executable, "-c", "import time; time.sleep(30)"],
                     role=role,
                     cwd=task,
                     env=os.environ.copy(),
-                    listener_port=(server.server_address[1] if role == "api" else None),
+                    listener_port={
+                        "api": server.server_address[1],
+                        "frontend": server.server_address[1] + 1,
+                        "model": server.server_address[1] + 3,
+                    }.get(role),
                 )
             )
         state = _workflow(url, url, fixtures)
@@ -3420,7 +3486,11 @@ def run_verifier_fixture(tmp_path: Path) -> FixtureResult:
             source_hashes=source_manifest,
             external_hashes=external_before,
             external_writes=0,
-            previous_processes=tuple(item.identity for item in children),
+            previous_processes=tuple(
+                item.identity
+                for item in children
+                if item.identity.role in _EXPECTED_STACK_ROLES
+            ),
             source_ids=tuple(state["source_ids"]),
             plan_id=state["plan_id"],
             syllabus_version=2,
@@ -3445,13 +3515,18 @@ def run_verifier_fixture(tmp_path: Path) -> FixtureResult:
         loaded = _read_receipt(task / RECEIPT_NAME, task)
         if any(_process_matches(item) for item in loaded.previous_processes):
             raise ProofRefusal("native_restart_previous_process_alive")
-        for role in ("api", "frontend", "model"):
+        for role in ("api", "worker", "frontend", "model"):
             children.append(
                 _spawn_owned(
                     [sys.executable, "-c", "import time; time.sleep(30)"],
                     role=role,
                     cwd=task,
                     env=os.environ.copy(),
+                    listener_port={
+                        "api": fixture_api_port,
+                        "frontend": fixture_api_port + 1,
+                        "model": fixture_api_port + 3,
+                    }.get(role),
                 )
             )
         _workflow(

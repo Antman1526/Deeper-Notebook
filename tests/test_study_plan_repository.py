@@ -75,6 +75,29 @@ def _syllabus(version: int = 1) -> StudySyllabus:
     )
 
 
+def test_plan_default_timestamps_share_one_authoritative_clock_sample(monkeypatch):
+    class BoundaryClock:
+        calls = 0
+
+        @classmethod
+        def now(cls, tz):
+            cls.calls += 1
+            # The second call is one microsecond earlier, matching the
+            # precision boundary exposed when Surreal nanoseconds round-trip
+            # through the Python driver's microsecond datetime.
+            return NOW.replace(microsecond=123456 - cls.calls + 1)
+
+    monkeypatch.setattr("deeper_notebook.study.plans.datetime", BoundaryClock)
+    plan = StudyPlan(
+        plan_id="study_plan:clock-boundary",
+        goal="Preserve timestamp order",
+        starting_level="beginner",
+    )
+    assert BoundaryClock.calls == 1
+    assert plan.created_at == plan.updated_at
+    assert plan.updated_at >= plan.created_at
+
+
 @pytest.mark.asyncio
 async def test_approval_uses_expected_plan_and_syllabus_versions(monkeypatch):
     calls: list[tuple[str, dict[str, object]]] = []

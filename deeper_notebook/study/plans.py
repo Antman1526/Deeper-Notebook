@@ -261,6 +261,30 @@ class StudyPlan(_FrozenContract):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    @model_validator(mode="before")
+    @classmethod
+    def default_timestamps_from_one_clock_sample(cls, value: object) -> object:
+        """Capture creation/update defaults together at the precision boundary.
+
+        SurrealDB persists nanoseconds while the Python driver commonly
+        decodes microseconds.  Two adjacent ``now()`` calls can therefore
+        round-trip in the opposite order.  A newly-created plan has one
+        authoritative timestamp; later lifecycle mutations explicitly set
+        only ``updated_at``.
+        """
+        if not isinstance(value, Mapping):
+            return value
+        values = dict(value)
+        if "created_at" not in values and "updated_at" not in values:
+            now = datetime.now(UTC)
+            values["created_at"] = now
+            values["updated_at"] = now
+        elif "created_at" in values and "updated_at" not in values:
+            values["updated_at"] = values["created_at"]
+        elif "updated_at" in values and "created_at" not in values:
+            values["created_at"] = values["updated_at"]
+        return values
+
     @field_validator("plan_id", "goal", "starting_level")
     @classmethod
     def text_is_not_blank(cls, value: str, info: object) -> str:

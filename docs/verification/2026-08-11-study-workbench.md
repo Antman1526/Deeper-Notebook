@@ -118,3 +118,33 @@ atomic version/create/link transaction without exposing orphan due cards. Code R
 unavailable because no graph artifact exists; direct source tracing and the
 listed tests are the review evidence. This receipt does not claim native-device
 browser, signed/notarized packaging, hosted CI, deployment, or public release.
+
+## Second strict repair receipt — 2026-08-13
+
+The second strict RED reproduced 9 failures in the focused verifier/repository/
+wrapper matrix (`59 passed, 9 failed`) before production edits. The repair now
+binds the exact Stack role set (`api`, `worker`, `frontend`, `model`), listener
+ports, and assistant invocation IDs on prepare and restart; enforces the
+preflight owner identity inside the same Surreal transaction; and keeps the
+legacy no-owner path transactional with an explicit zero-owner guard. The
+wrapper records its owned process group and child identity, proves both are
+gone before stale-stage deletion, and fails closed for ambiguous recovery.
+Listener probing distinguishes an empty `lsof` result from OSError, timeout,
+nonzero, and malformed output. Timestamp-boundary coverage captures one UTC
+instant for paired plan fields and passes the real ordering matrix.
+
+Focused GREEN: `uv run pytest -q tests/test_verify_study_workbench.py
+tests/test_study_scheduler.py tests/test_study_plan_repository.py
+tests/test_feature_build_contract_wrapper.py` — **68 passed**; wrapper-only
+regression — **3 passed**. Fresh real Surreal matrix runs twice, each
+**26 passed, 1 warning**. Fresh two-phase proof used disposable mode-0700
+state (namespace/database `study_ns_task18d6f0` / `study_db_task18d6f0`, ports
+`47221`–`47224`): prepare RC5, verify RC0, report `PASSED`/`none`, owned
+processes 0, listeners 0, container removed, task root removed, external
+writes 0. The exact canonical feature command returned RC0; scoped Ruff,
+rebrand audit, and diff-check returned RC0. The earlier full backend run was
+`4395 passed, 1 skipped, 14 warnings, 7 failed`; its only failures were the
+wrapper stale-recovery regression and stale rebrand metadata, both corrected
+and covered by the focused GREEN gates. Remaining limits are native-device,
+signed/notarized, hosted-CI, deployment/public-release, and unavailable Code
+Review Graph proof; no Task 19 or packaging work was performed.

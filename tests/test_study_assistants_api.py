@@ -12,6 +12,7 @@ from deeper_notebook.study.assistants import StudyAssistantResponse
 class FakeService:
     async def invoke(self, plan_id, role, invocation):
         return StudyAssistantResponse(
+            invocation_id=invocation.request_id or invocation.invocation_id,
             response_id="response-one",
             session_id="study_assistant_session:one",
             plan_id=plan_id,
@@ -41,6 +42,7 @@ def payload() -> dict[str, object]:
         "network_allowed": False,
         "approved_network_scope": [],
         "timeout_seconds": 30,
+        "request_id": "assistant-request",
         "created_at": "2026-08-12T00:00:00Z",
     }
 
@@ -52,6 +54,7 @@ def test_invocation_route_is_additive_and_strict(monkeypatch) -> None:
     )
     assert response.status_code == 200
     assert response.json()["role"] == "source_guide"
+    assert response.json()["invocation_id"] == "assistant-request"
     bad = payload() | {"provider_payload": "secret"}
     assert (
         client(monkeypatch)

@@ -230,6 +230,90 @@ async def test_card_version_and_artifact_owner_link_share_one_atomic_transaction
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("preflight_owner", "transaction_owners", "expected_error"),
+    [
+        (None, [{"plan_id": "study_plan:appeared", "syllabus_unit_id": "unit"}], True),
+        (("study_plan:expected", "unit"), [], True),
+        (("study_plan:expected", "unit"), [{"plan_id": "study_plan:other", "syllabus_unit_id": "unit"}], True),
+    ],
+)
+async def test_card_owner_preflight_is_bound_before_any_card_mutation(
+    monkeypatch, preflight_owner, transaction_owners, expected_error
+) -> None:
+    """Owner disappearance/appearance/cross-plan races cannot publish a card."""
+    import deeper_notebook.study.repository as repository_module
+
+    card_record = _card().model_copy(update={"id": "study_card:race"}).model_dump(
+        mode="python"
+    )
+    calls: list[tuple[str, dict[str, object]]] = []
+    preflight_calls = 0
+
+    async def fake_query(query: str, values: dict[str, object]):
+        nonlocal preflight_calls
+        calls.append((query, values))
+        if "BEGIN TRANSACTION" in query:
+            # The transaction must reject the owner race before returning a
+            # card projection; emulate Surreal's THROW with a typed marker.
+            if expected_error:
+                raise RuntimeError("study_card_artifact_owner_conflict")
+            return [card_record]
+        if "study_plan_artifact" in query:
+            preflight_calls += 1
+            return (
+                [{"plan_id": preflight_owner[0], "syllabus_unit_id": preflight_owner[1]}]
+                if preflight_owner
+                else []
+            )
+        return []
+
+    monkeypatch.setattr(repository_module, "repo_query", fake_query)
+    repository = repository_module.StudyRepository()
+    with pytest.raises(repository_module.StudyCardArtifactOwnerConflict):
+        await repository.create_card_version_with_artifact_owner(_card())
+    assert preflight_calls == 1
+    transaction_sql, transaction_values = next(
+        (query, values) for query, values in calls if "BEGIN TRANSACTION" in query
+    )
+    assert "$expected_plan_id" in transaction_sql
+    assert "array::len($owners) != 1" in transaction_sql
+    assert transaction_values["expected_plan_id"] == (
+        preflight_owner[0] if preflight_owner else None
+    )
+
+
+@pytest.mark.asyncio
+async def test_card_owner_preflight_none_preserves_legacy_unlinked_card(monkeypatch) -> None:
+    import deeper_notebook.study.repository as repository_module
+
+    card_record = _card().model_copy(update={"id": "study_card:legacy"}).model_dump(
+        mode="python"
+    )
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_query(query: str, values: dict[str, object]):
+        calls.append((query, values))
+        if "BEGIN TRANSACTION" in query:
+            return [card_record]
+        if "study_plan_artifact" in query:
+            return []
+        if "SELECT * FROM study_card" in query:
+            return [card_record]
+        return []
+
+    monkeypatch.setattr(repository_module, "repo_query", fake_query)
+    created = await repository_module.StudyRepository().create_card_version_with_artifact_owner(_card())
+    assert created.id == "study_card:legacy"
+    transaction_sql, transaction_values = next(
+        (query, values) for query, values in calls if "BEGIN TRANSACTION" in query
+    )
+    assert "$expected_plan_id" in transaction_sql
+    assert "array::len($owners) != 0" in transaction_sql
+    assert transaction_values["expected_plan_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_card_artifact_link_rejects_ambiguous_plan_owner(monkeypatch) -> None:
     async def fake_query(query: str, values: dict[str, object]):
         assert "study_plan_artifact" in query

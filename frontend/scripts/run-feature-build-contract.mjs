@@ -13,7 +13,7 @@ import {
 } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -27,24 +27,48 @@ const lockPath = join(
   `deeper-notebook-feature-build-${frontendKey}.lock`,
 )
 
-function run(command, args, cwd) {
-  const result = spawnSync(command, args, {
-    cwd,
-    env: process.env,
-    stdio: 'inherit',
+function processGroupIsAlive(pgid) {
+  if (!Number.isInteger(pgid) || pgid <= 1) return false
+  try {
+    process.kill(-pgid, 0)
+    return true
+  } catch (error) {
+    return error?.code === 'EPERM'
+  }
+}
+
+function run(command, args, cwd, { onSpawn, onExit, detached = true } = {}) {
+  return new Promise((resolvePromise, reject) => {
+    let child
+    try {
+      child = spawn(command, args, {
+        cwd,
+        env: process.env,
+        stdio: 'inherit',
+        detached: process.platform !== 'win32' && detached,
+      })
+    } catch (error) {
+      reject(error)
+      return
+    }
+    child.once('spawn', () => onSpawn?.(child))
+    child.once('error', reject)
+    child.once('close', (status) => {
+      onExit?.(child)
+      resolvePromise(status ?? 1)
+    })
   })
-  if (result.error) throw result.error
-  return result.status ?? 1
 }
 
-function verify(rootDir) {
-  return run(process.execPath, [join(rootDir, verifyScriptName)], rootDir)
+async function verify(rootDir, runCommand = run) {
+  return runCommand(process.execPath, [join(rootDir, verifyScriptName)], rootDir)
 }
 
-function directBuild(rootDir) {
-  const next = join(rootDir, 'node_modules', '.bin', 'next')
-  const status = run(next, ['build', 'tests/build-contract'], rootDir)
-  return status === 0 ? verify(rootDir) : status
+async function directBuild(rootDir, runCommand = run) {
+  const canonicalRoot = realpathSync(rootDir)
+  const next = join(canonicalRoot, 'node_modules', '.bin', 'next')
+  const status = await runCommand(next, ['build', 'tests/build-contract'], canonicalRoot)
+  return status === 0 ? verify(canonicalRoot, runCommand) : status
 }
 
 function isSafeStagePath(candidate) {
@@ -64,7 +88,13 @@ function readLock() {
       !Number.isInteger(value.pid) ||
       value.pid <= 1 ||
       typeof value.stage !== 'string' ||
-      !isSafeStagePath(value.stage)
+      !isSafeStagePath(value.stage) ||
+      (value.child !== null &&
+        (!value.child ||
+          !Number.isInteger(value.child.pid) ||
+          value.child.pid <= 1 ||
+          !Number.isInteger(value.child.pgid) ||
+          value.child.pgid <= 1))
     ) {
       throw new Error('invalid feature build lock')
     }
@@ -84,6 +114,20 @@ function processIsAlive(pid) {
   }
 }
 
+function writeLock(fd, value) {
+  // Keep the exclusive descriptor open for ownership, but update the named
+  // lock path so a spawned child cannot invalidate the descriptor. A partial
+  // write is fail-closed by readLock's strict JSON/identity validation.
+  writeFileSync(lockPath, JSON.stringify(value), { mode: 0o600 })
+}
+
+function recordedOwnerAndChildAreGone(lock) {
+  if (processIsAlive(lock.pid)) return false
+  const child = lock.child
+  if (!child) return false
+  return !processIsAlive(child.pid) && !processGroupIsAlive(child.pgid)
+}
+
 function acquireLock(stage) {
   let lockFd
   try {
@@ -91,7 +135,7 @@ function acquireLock(stage) {
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error
     const stale = readLock()
-    if (!stale || processIsAlive(stale.pid)) {
+    if (!stale || !recordedOwnerAndChildAreGone(stale)) {
       throw new Error('feature build contract is already materializing shared node_modules')
     }
     // A crashed invocation leaves only its exact stage and lock. Recover both
@@ -100,11 +144,18 @@ function acquireLock(stage) {
     unlinkSync(lockPath)
     lockFd = openSync(lockPath, 'wx', 0o600)
   }
-  writeFileSync(lockFd, JSON.stringify({ pid: process.pid, stage }), 'utf8')
+  writeLock(lockFd, {
+    pid: process.pid,
+    stage,
+    // Until a child is spawned, the wrapper's own process group is the
+    // recorded owner. This makes a parent-group crash recoverable while
+    // keeping the stale-stage proof bounded to one owned group.
+    child: { pid: process.pid, pgid: process.pid },
+  })
   return lockFd
 }
 
-function materializeSharedDependencies() {
+async function materializeSharedDependencies() {
   if (!lstatSync(nodeModules).isSymbolicLink()) return directBuild(frontendDir)
   const target = realpathSync(nodeModules)
   if (target === frontendDir || target.startsWith(`${frontendDir}/`)) {
@@ -119,7 +170,7 @@ function materializeSharedDependencies() {
   if (!existsSync(stageParent)) {
     throw new Error('feature build temporary directory does not exist')
   }
-  const stage = mkdtempSync(join(stageParent, stagePrefix))
+  const stage = realpathSync(mkdtempSync(join(stageParent, stagePrefix)))
   let lockFd
   try {
     lockFd = acquireLock(stage)
@@ -128,10 +179,29 @@ function materializeSharedDependencies() {
     throw error
   }
   try {
+    const ownedRun = (command, args, cwd) =>
+      run(command, args, cwd, {
+        detached: command !== rsync,
+        onSpawn(child) {
+          writeLock(lockFd, {
+            pid: process.pid,
+            stage,
+            child: {
+              pid: child.pid,
+              pgid: process.platform === 'win32' || command === rsync
+                ? process.pid
+                : child.pid,
+            },
+          })
+        },
+        onExit() {
+          writeLock(lockFd, { pid: process.pid, stage, child: null })
+        },
+      })
     // Build from a disposable project copy instead of renaming the caller's
     // node_modules symlink. A SIGINT/SIGTERM/SIGKILL can therefore leave only
     // this bounded stage/lock pair, which the next invocation safely recovers.
-    const syncProject = run(
+    const syncProject = await ownedRun(
       rsync,
       [
         '-a',
@@ -150,7 +220,7 @@ function materializeSharedDependencies() {
 
     const stageNodeModules = join(stage, 'node_modules')
     mkdirSync(stageNodeModules)
-    const syncDependencies = run(
+    const syncDependencies = await ownedRun(
       rsync,
       ['-a', '--link-dest', target, `${target}/`, `${stageNodeModules}/`],
       frontendDir,
@@ -158,7 +228,7 @@ function materializeSharedDependencies() {
     if (syncDependencies !== 0) {
       throw new Error(`rsync dependency materialization failed (${syncDependencies})`)
     }
-    return directBuild(stage)
+    return await directBuild(stage, ownedRun)
   } finally {
     try {
       rmSync(stage, { recursive: true, force: true })
@@ -169,5 +239,9 @@ function materializeSharedDependencies() {
   }
 }
 
-const status = materializeSharedDependencies()
-process.exitCode = status
+try {
+  process.exitCode = await materializeSharedDependencies()
+} catch (error) {
+  console.error(error?.message || 'feature build contract failed')
+  process.exitCode = 1
+}
