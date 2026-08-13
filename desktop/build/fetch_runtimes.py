@@ -21,8 +21,25 @@ from urllib.parse import urlparse
 if __name__ == "__main__":
     _REPO_ROOT = Path(__file__).resolve().parents[2]
     _REPO_ROOT_STR = str(_REPO_ROOT)
-    if _REPO_ROOT_STR not in sys.path:
-        sys.path.insert(0, _REPO_ROOT_STR)
+    _DIRECT_SYS_PATH: list[object] = []
+    for _path_entry in sys.path:
+        # Empty entries intentionally retain their normal cwd semantics, but
+        # must remain behind the exact script-derived repository root.  Do not
+        # resolve arbitrary missing entries: a caller controls sys.path and a
+        # nonexistent path cannot be equivalent to this existing repository.
+        if not isinstance(_path_entry, str) or not _path_entry:
+            _DIRECT_SYS_PATH.append(_path_entry)
+            continue
+        try:
+            _candidate = Path(_path_entry)
+            if _candidate.exists() and _candidate.resolve() == _REPO_ROOT:
+                continue
+        except (OSError, RuntimeError, TypeError, ValueError):
+            # Preserve unusual interpreter-provided entries without allowing
+            # path inspection failures to prevent the direct bootstrap.
+            pass
+        _DIRECT_SYS_PATH.append(_path_entry)
+    sys.path[:] = [_REPO_ROOT_STR, *_DIRECT_SYS_PATH]
 
 from desktop.build.archive_validation import (
     validate_tar_members,

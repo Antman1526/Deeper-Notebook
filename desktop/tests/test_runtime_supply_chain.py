@@ -26,15 +26,36 @@ def test_direct_runtime_fetch_resolves_repo_from_script_path_without_network(
     """Direct execution must import the package before entering the fetch path."""
     # Keep this subprocess off the real platform path so ``main`` exits before
     # any runtime URL is read or opened.  This is an exact script invocation,
-    # from a cwd that is not the repository, with no network access required.
+    # from a hostile cwd whose package is also present before the real root in
+    # PYTHONPATH, with no network access required.
+    marker = tmp_path / "hostile-desktop-imported"
+    network_marker = tmp_path / "unexpected-runtime-network"
+    hostile_package = tmp_path / "desktop"
+    hostile_package.mkdir()
+    hostile_package.joinpath("__init__.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('imported', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
     (tmp_path / "sitecustomize.py").write_text(
         "import sys\n"
-        "sys.platform = 'task19-import-probe'\n",
+        "import urllib.request\n"
+        "from pathlib import Path\n"
+        "sys.platform = 'task19-import-probe'\n"
+        "def _unexpected_urlopen(*args, **kwargs):\n"
+        f"    Path({str(network_marker)!r}).write_text('opened', encoding='utf-8')\n"
+        "    raise AssertionError('runtime URL opened before platform rejection')\n"
+        "urllib.request.urlopen = _unexpected_urlopen\n",
         encoding="utf-8",
     )
     script = Path(__file__).resolve().parents[2] / "desktop" / "build" / "fetch_runtimes.py"
     env = os.environ.copy()
-    env.update({"PYTHONNOUSERSITE": "1", "PYTHONPATH": str(tmp_path)})
+    env.update(
+        {
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONPATH": os.pathsep.join((str(tmp_path), str(script.parents[2]))),
+        }
+    )
 
     completed = subprocess.run(
         [sys.executable, str(script)],
@@ -48,6 +69,8 @@ def test_direct_runtime_fetch_resolves_repo_from_script_path_without_network(
     assert completed.returncode != 0
     assert "Unsupported platform: task19-import-probe" in completed.stderr
     assert "ModuleNotFoundError: No module named 'desktop'" not in completed.stderr
+    assert not marker.exists(), completed.stderr
+    assert not network_marker.exists(), completed.stderr
 
 
 def _tar_bytes(entries: list[tuple[str, bytes, str | None]]) -> bytes:
