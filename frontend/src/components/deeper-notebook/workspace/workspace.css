@@ -1,5 +1,331 @@
 /* Presentation-only workspace primitives. Domain routes retain data and action authority. */
 
+/*
+ * V2 shell layout. The shell only places the existing authorities; navigation,
+ * creation, utilities, guided tips, audio, and focus behavior remain owned by
+ * their existing components.
+ */
+.dn-workspace-shell {
+  position: relative;
+  display: grid;
+  grid-template-areas: "dock body";
+  grid-template-columns: 4.25rem minmax(0, 1fr);
+  min-width: 0;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  isolation: isolate;
+  background: var(--dn-shell, var(--background));
+  color: var(--foreground);
+}
+
+.dn-workspace-shell > .dn-instrument-dock {
+  grid-area: dock;
+  width: 4.25rem;
+  min-height: 100dvh;
+}
+
+.dn-workspace-shell-body {
+  grid-area: body;
+  position: relative;
+  display: grid;
+  grid-template-areas:
+    "command command command"
+    "navigator canvas lens";
+  grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr) minmax(17.5rem, 20rem);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+.dn-workspace-shell-body > .dn-command-bar {
+  grid-area: command;
+}
+
+.dn-workspace-shell-body > .dn-adaptive-navigator {
+  grid-area: navigator;
+}
+
+.dn-workspace-canvas {
+  grid-area: canvas;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: color-mix(in oklab, var(--dn-canvas) 92%, transparent);
+  padding: var(--dn-space-6);
+}
+
+.dn-workspace-shell-body > .dn-context-lens {
+  grid-area: lens;
+}
+
+.dn-workspace-shell > .dn-shell-utilities {
+  grid-area: body;
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .dn-workspace-shell {
+    grid-template-columns: 4.25rem minmax(0, 1fr);
+    min-height: 100dvh;
+  }
+
+  .dn-workspace-shell > .dn-instrument-dock {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    display: flex;
+    width: 4.25rem;
+    min-height: 100dvh;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    border-top: 0;
+    border-right: 1px solid var(--dn-glass-border);
+    padding: var(--dn-space-3);
+  }
+
+  .dn-workspace-shell .dn-dock-brand {
+    display: flex;
+  }
+
+  .dn-workspace-shell .dn-dock-utilities {
+    display: grid;
+    min-width: 0;
+    flex: initial;
+    align-items: initial;
+    justify-content: initial;
+    gap: var(--dn-space-2);
+    margin-top: auto;
+  }
+
+  .dn-workspace-shell .dn-dock-utility-row {
+    flex-direction: column;
+    gap: var(--dn-space-2);
+  }
+
+  .dn-workspace-shell .dn-dock-utility-row > * {
+    width: 100%;
+  }
+
+  .dn-workspace-shell .dn-dock-utility-row button,
+  .dn-workspace-shell .dn-dock-utilities > button {
+    width: 100%;
+    min-width: 2.5rem;
+  }
+
+  .dn-workspace-shell .dn-dock-health {
+    max-width: none;
+  }
+
+  .dn-workspace-shell-body {
+    grid-template-areas:
+      "command command"
+      "navigator canvas";
+    grid-template-columns: 4.25rem minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .dn-workspace-shell-body > .dn-adaptive-navigator {
+    display: block;
+    max-height: none;
+    overflow: hidden auto;
+    border-right: 1px solid var(--dn-glass-border);
+    border-bottom: 0;
+    padding: var(--dn-space-2) 0.25rem;
+  }
+
+  .dn-workspace-shell .dn-navigator-heading,
+  .dn-workspace-shell .dn-navigator-section-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .dn-workspace-shell .dn-navigator-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+
+  .dn-workspace-shell .dn-navigator-link {
+    justify-content: center;
+    padding-inline: 0.25rem;
+  }
+
+  .dn-workspace-shell .dn-navigator-link > span:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .dn-workspace-shell .dn-navigator-toggle {
+    display: none;
+  }
+
+  .dn-workspace-shell .dn-context-lens {
+    display: none;
+  }
+
+  .dn-workspace-shell .dn-context-lens.is-open {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 4.25rem;
+    z-index: 5;
+    display: block;
+    max-height: min(55vh, 30rem);
+    border: 1px solid var(--dn-glass-border);
+    box-shadow: var(--dn-elevation-md);
+  }
+
+  .dn-workspace-shell .dn-context-lens-toggle {
+    position: fixed;
+    right: var(--dn-space-3);
+    bottom: var(--dn-space-3);
+    z-index: 6;
+    display: inline-flex;
+  }
+
+  .dn-workspace-canvas {
+    padding: var(--dn-space-4);
+  }
+}
+
+@media (max-width: 767px) {
+  .dn-workspace-shell {
+    display: block;
+    min-height: 100dvh;
+    padding-bottom: 4.5rem;
+    overflow-y: hidden;
+  }
+
+  .dn-workspace-shell > .dn-instrument-dock {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 4;
+    display: flex;
+    width: auto;
+    min-height: 4.5rem;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--dn-glass-border);
+    border-right: 0;
+    padding: var(--dn-space-2) var(--dn-space-3);
+  }
+
+  .dn-workspace-shell .dn-dock-brand {
+    display: none;
+  }
+
+  .dn-workspace-shell .dn-dock-utilities {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--dn-space-2);
+    margin-top: 0;
+  }
+
+  .dn-workspace-shell .dn-dock-utility-row {
+    flex: 0 1 auto;
+    flex-direction: row;
+    gap: var(--dn-space-1);
+  }
+
+  .dn-workspace-shell .dn-dock-utility-row > * {
+    width: auto;
+    min-width: 0;
+  }
+
+  .dn-workspace-shell .dn-dock-utility-row button,
+  .dn-workspace-shell .dn-dock-utilities > button {
+    width: 2.25rem;
+    min-width: 2.25rem;
+    padding-inline: 0.5rem;
+  }
+
+  .dn-workspace-shell .dn-dock-health {
+    max-width: 4.5rem;
+    overflow: hidden;
+  }
+
+  .dn-workspace-shell .dn-dock-version {
+    flex: 0 0 auto;
+  }
+
+  .dn-workspace-shell .dn-dock-create {
+    width: auto;
+  }
+
+  .dn-workspace-shell .dn-dock-create > button {
+    width: auto;
+  }
+
+  .dn-workspace-shell-body {
+    display: grid;
+    grid-template-areas:
+      "command"
+      "toggle"
+      "navigator"
+      "canvas";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    min-height: calc(100dvh - 4.5rem);
+    overflow: hidden;
+  }
+
+  .dn-workspace-shell-body > .dn-command-bar {
+    grid-area: command;
+  }
+
+  .dn-workspace-shell .dn-navigator-toggle {
+    grid-area: toggle;
+    display: inline-flex;
+    justify-self: start;
+    margin: var(--dn-space-3) var(--dn-space-3) 0;
+  }
+
+  .dn-workspace-shell-body > .dn-adaptive-navigator {
+    display: none;
+    grid-area: navigator;
+    max-height: min(40vh, 22rem);
+    border-right: 0;
+    border-bottom: 1px solid var(--dn-glass-border);
+    padding: var(--dn-space-3);
+  }
+
+  .dn-workspace-shell-body > .dn-adaptive-navigator.is-open {
+    display: block;
+  }
+
+  .dn-workspace-shell .dn-navigator-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: 0.2rem;
+  }
+
+  .dn-workspace-shell .dn-navigator-section + .dn-navigator-section {
+    margin-top: 0;
+  }
+
+  .dn-workspace-canvas {
+    grid-area: canvas;
+    padding: var(--dn-space-4);
+  }
+}
+
 .dn-workspace-page {
   container: dn-workspace / inline-size;
   container-type: inline-size;

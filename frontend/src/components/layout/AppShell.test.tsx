@@ -31,6 +31,27 @@ describe('AppShell feature switch', () => {
 
   afterEach(() => {
     delete process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO
+    delete process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2
+  })
+
+  it('gives the V2 shell precedence over both rollback branches when enabled', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
+    process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
+    render(<AppShell><div data-testid="v2-page">V2 page</div></AppShell>)
+
+    expect(screen.getByTestId('visual-system-v2-shell')).toBeInTheDocument()
+    expect(screen.getByTestId('v2-page')).toBeInTheDocument()
+    expect(screen.queryByTestId('legacy-sidebar')).not.toBeInTheDocument()
+  })
+
+  it('keeps the Luminous branch selected when V2 is explicitly off', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
+    process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '1'
+    render(<AppShell><div data-testid="luminous-page">Luminous page</div></AppShell>)
+
+    expect(screen.getByRole('navigation', { name: 'Primary tools' })).toBeInTheDocument()
+    expect(screen.getByTestId('luminous-page')).toBeInTheDocument()
+    expect(screen.queryByTestId('visual-system-v2-shell')).not.toBeInTheDocument()
   })
 
   it('retains the private legacy shell when the flag is off', () => {

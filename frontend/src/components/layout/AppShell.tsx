@@ -9,13 +9,16 @@ import { GlobalAudioPlayer } from '@/components/podcasts/GlobalAudioPlayer'
 import { GuidedTipsProvider } from '@/components/guided-tips'
 import { LuminousAppShell } from '@/components/deeper-notebook/shell/LuminousAppShell'
 import { FocusModeControl } from '@/components/deeper-notebook/shell/FocusModeControl'
-import { isLuminousFolioEnabled } from '@/lib/features'
+import { WorkspaceAppShell } from '@/components/deeper-notebook/workspace/WorkspaceAppShell'
+import { isLuminousFolioEnabled, isVisualSystemV2Enabled } from '@/lib/features'
 
 interface AppShellProps {
   children: React.ReactNode
 }
 
 export function AppShell({ children }: AppShellProps) {
+  if (isVisualSystemV2Enabled()) return <WorkspaceAppShell>{children}</WorkspaceAppShell>
+
   return isLuminousFolioEnabled()
     ? <LuminousAppShell>{children}</LuminousAppShell>
     : <LegacyAppShell>{children}</LegacyAppShell>

@@ -9,12 +9,37 @@ import { ResponsiveActionBar } from './ResponsiveActionBar'
 import { StatePanel } from './StatePanel'
 import { VisualCard } from './VisualCard'
 import { VisualCardGrid } from './VisualCardGrid'
+import { WorkspaceAppShell } from './WorkspaceAppShell'
 import { WorkspaceHero } from './WorkspaceHero'
 import { WorkspacePage } from './WorkspacePage'
+
+vi.mock('@/components/chat/LocalModelHealthBadges', () => ({
+  LocalModelHealthBadges: () => <div data-testid="local-model-health" />,
+}))
+vi.mock('@/components/layout/SetupBanner', () => ({ SetupBanner: () => null }))
+vi.mock('@/components/layout/DbRepairBanner', () => ({ DbRepairBanner: () => null }))
+vi.mock('@/components/layout/UpdateBanner', () => ({ UpdateBanner: () => null }))
+vi.mock('@/components/layout/NetworkStatusBadge', () => ({ NetworkStatusBadge: () => null }))
+vi.mock('@/components/guided-tips', () => ({ GuidedTipsProvider: () => null }))
+vi.mock('@/components/podcasts/GlobalAudioPlayer', () => ({ GlobalAudioPlayer: () => null }))
 
 const workspaceStyles = fs.readFileSync(path.resolve(__dirname, 'workspace.css'), 'utf8')
 
 describe('shared workspace primitives', () => {
+  it('mounts one V2 page slot and one shared Focus authority', () => {
+    render(
+      <WorkspaceAppShell>
+        <div data-testid="v2-page-slot">Page content</div>
+      </WorkspaceAppShell>,
+    )
+
+    expect(screen.getAllByTestId('v2-page-slot')).toHaveLength(1)
+    expect(screen.getAllByTestId('focus-mode-control')).toHaveLength(1)
+    expect(screen.getAllByRole('navigation', { name: 'Primary tools' })).toHaveLength(1)
+    expect(screen.getAllByRole('navigation', { name: 'Notebook index' })).toHaveLength(1)
+    expect(document.querySelectorAll('.dn-workspace-canvas')).toHaveLength(1)
+  })
+
   it('owns one named main landmark and one page heading while preserving caller actions', () => {
     render(
       <WorkspacePage title="Sources" actions={<button type="button">Add source</button>}>
@@ -195,5 +220,16 @@ describe('shared workspace primitives', () => {
     const pageBlock = workspaceStyles.match(/\.dn-workspace-page\s*\{([^}]*)\}/)?.[1] ?? ''
     expect(pageBlock).toContain('width: 100%')
     expect(pageBlock).not.toMatch(/(?<!-)width:\s*\d+px/)
+  })
+
+  it('provides the V2 shell grid, compact rail, mobile navigator, and canvas scroll contracts', () => {
+    expect(workspaceStyles).toContain('.dn-workspace-shell')
+    expect(workspaceStyles).toContain('grid-template-areas:')
+    expect(workspaceStyles).toMatch(
+      /\.dn-workspace-canvas\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
+    )
+    expect(workspaceStyles).toContain('@media (min-width: 768px) and (max-width: 1023px)')
+    expect(workspaceStyles).toContain('@media (max-width: 767px)')
+    expect(workspaceStyles).toMatch(/\.dn-workspace-shell\s*\{[\s\S]*?overflow-x:\s*hidden;/)
   })
 })
