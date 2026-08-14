@@ -355,6 +355,73 @@
   }
 }
 
+.dn-workspace-auth-frame {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: clamp(1rem, 5vw, 4rem);
+  background: var(--dn-canvas);
+  color: var(--foreground);
+}
+
+.dn-workspace-auth-panel {
+  width: min(100%, 38rem);
+  padding: clamp(1.25rem, 4vw, 2.5rem);
+  border: 1px solid var(--border);
+  border-radius: var(--dn-radius-hero);
+  background: var(--dn-panel);
+  box-shadow: var(--dn-shadow-medium);
+}
+
+.dn-workspace-auth-eyebrow {
+  margin: 0;
+  color: var(--primary);
+  font-size: var(--dn-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dn-workspace-auth-title {
+  margin-block: 0.75rem 0;
+  font-size: clamp(1.75rem, 5vw, 2.75rem);
+  line-height: 1.08;
+}
+
+.dn-workspace-auth-description {
+  max-inline-size: 56ch;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--dn-text-base);
+  line-height: 1.55;
+}
+
+.dn-workspace-auth-content {
+  min-width: 0;
+  margin-block-start: 1.5rem;
+}
+
+/* LoginForm keeps its own state and controls; this wrapper only normalizes its
+ * legacy full-screen presentation inside the V2 frame. The frame's heading is
+ * the one visible page heading. */
+.dn-workspace-auth-content h1 {
+  display: none;
+}
+
+.dn-workspace-auth-content > div {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.dn-workspace-auth-content > div > div {
+  width: 100%;
+  max-width: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .dn-workspace-page {
   container: dn-workspace / inline-size;
   container-type: inline-size;
@@ -433,11 +500,106 @@
 
 .dn-workspace-page-actions,
 .dn-workspace-hero-actions,
-.dn-state-panel-action {
+.dn-state-panel-action,
+.dn-workspace-section-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
+}
+
+.dn-workspace-section {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+}
+
+.dn-workspace-section-heading {
+  justify-content: space-between;
+}
+
+.dn-workspace-section-title {
+  margin: 0;
+  font-size: clamp(1.25rem, 3cqi, 1.75rem);
+  line-height: 1.2;
+}
+
+.dn-workspace-section-description {
+  max-inline-size: 68ch;
+  margin: 0.5rem 0 0;
+  color: var(--muted-foreground);
+  font-size: var(--dn-text-base);
+  line-height: 1.55;
+}
+
+.dn-workspace-secondary-link,
+.dn-workspace-notebook-link {
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 44px;
+  align-items: center;
+  border-radius: var(--dn-radius-control);
+  color: var(--foreground);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.dn-workspace-secondary-link {
+  padding-inline: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--dn-panel-raised);
+}
+
+.dn-workspace-notebook-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.dn-workspace-notebook-link {
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  background: var(--dn-panel);
+}
+
+.dn-workspace-notebook-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dn-workspace-notebook-time {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-size: var(--dn-text-sm);
+}
+
+.dn-workspace-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--dn-radius-card);
+  background: var(--dn-panel-raised);
+  color: var(--muted-foreground);
+  font-size: var(--dn-text-sm);
+  line-height: 1.5;
+}
+
+.dn-workspace-note kbd,
+.dn-workspace-note code {
+  border: 1px solid var(--border);
+  border-radius: var(--dn-radius-control);
+  background: var(--dn-panel);
+  padding-inline: 0.25rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
 }
 
 .dn-workspace-hero {
@@ -623,12 +785,21 @@
 }
 
 .dn-visual-card-action:focus-visible,
+.dn-workspace-secondary-link:focus-visible,
+.dn-workspace-notebook-link:focus-visible,
 .dn-responsive-action-bar > :is(button, a):focus-visible,
 .dn-state-panel-action > :is(button, a):focus-visible,
 .dn-workspace-page-actions > :is(button, a):focus-visible,
 .dn-workspace-hero-actions > :is(button, a):focus-visible {
   outline: 3px solid var(--dn-focus);
   outline-offset: 2px;
+}
+
+.dn-workspace-secondary-link:hover,
+.dn-workspace-notebook-link:hover,
+.dn-visual-card-action:hover {
+  border-color: var(--primary);
+  background: var(--dn-selection);
 }
 
 @media (max-width: 52rem) {

@@ -37,6 +37,8 @@ import { useDeepHealth } from '@/lib/hooks/use-deep-health'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import type { SubsystemKey, SubsystemCheck } from '@/lib/api/health'
 import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
+import { WorkspacePage } from '@/components/deeper-notebook/workspace/WorkspacePage'
+import { isVisualSystemV2Enabled } from '@/lib/features'
 
 const SUBSYSTEM_ORDER: SubsystemKey[] = [
   'database',
@@ -205,9 +207,7 @@ export default function SetupWizardPage() {
         ? t('setupWizard.statusDegraded')
         : t('setupWizard.statusNotReady')
 
-  return (
-    <AppShell>
-      <SystemRouteFrame route="/setup-wizard" title={t('setupWizard.title')} description={t('setupWizard.subtitle')}>
+  const wizardContent = (
         <div className="mx-auto max-w-3xl space-y-6 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
           <Card>
@@ -284,7 +284,29 @@ export default function SetupWizardPage() {
             </Button>
           </div>
         </div>
-      </SystemRouteFrame>
+  )
+
+  return (
+    <AppShell>
+      {isVisualSystemV2Enabled() ? (
+        <WorkspacePage
+          title={t('setupWizard.title')}
+          eyebrow="Setup"
+          description={t('setupWizard.subtitle')}
+          data-testid="visual-system-v2-setup"
+          data-dn-visual-system="v2"
+        >
+          {wizardContent}
+        </WorkspacePage>
+      ) : (
+        <SystemRouteFrame
+          route="/setup-wizard"
+          title={t('setupWizard.title')}
+          description={t('setupWizard.subtitle')}
+        >
+          {wizardContent}
+        </SystemRouteFrame>
+      )}
     </AppShell>
   )
 }

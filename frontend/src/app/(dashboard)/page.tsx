@@ -11,7 +11,9 @@ import { useRouter } from 'next/navigation'
 
 import { IntelligenceHorizon } from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
 import type { HorizonNotebook } from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
+import { WorkspaceHome } from '@/components/deeper-notebook/workspace/WorkspaceHome'
 import { AppShell } from '@/components/layout/AppShell'
+import { isVisualSystemV2Enabled } from '@/lib/features'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import { UNKNOWN_RUNTIME_SNAPSHOT } from '@/lib/api/runtime'
@@ -33,28 +35,31 @@ export default function DashboardPage() {
   }))
 
   const runtimeSnapshot = runtime.data ?? UNKNOWN_RUNTIME_SNAPSHOT
-  const horizonStatus =
+  const horizonStatus: 'loading' | 'ready' | 'offline' =
     runtime.isLoading
     ? 'loading'
     : runtimeSnapshot.status === 'ready'
       ? 'ready'
       : 'offline'
 
+  const presentationProps = {
+    status: horizonStatus,
+    recentNotebooks,
+    notebooksLoading,
+    runtimeSnapshot,
+    runtimeSnapshotLoading: runtime.isLoading,
+    onRefreshRuntime: () => void runtime.refetch(),
+    onOpenStudio: () => router.push('/studio'),
+    onCreateNotebook: openNotebookDialog,
+    onCreatePodcast: openPodcastDialog,
+    onAsk: () => router.push('/search'),
+    dataPath: '~/.deeper-notebook/',
+  }
+  const Presentation = isVisualSystemV2Enabled() ? WorkspaceHome : IntelligenceHorizon
+
   return (
     <AppShell>
-      <IntelligenceHorizon
-        status={horizonStatus}
-        recentNotebooks={recentNotebooks}
-        notebooksLoading={notebooksLoading}
-        runtimeSnapshot={runtimeSnapshot}
-        runtimeSnapshotLoading={runtime.isLoading}
-        onRefreshRuntime={() => void runtime.refetch()}
-        onOpenStudio={() => router.push('/studio')}
-        onCreateNotebook={openNotebookDialog}
-        onCreatePodcast={openPodcastDialog}
-        onAsk={() => router.push('/search')}
-        dataPath="~/.deeper-notebook/"
-      />
+      <Presentation {...presentationProps} />
     </AppShell>
   )
 }

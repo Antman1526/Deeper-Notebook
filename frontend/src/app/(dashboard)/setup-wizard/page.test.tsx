@@ -13,6 +13,8 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import React from 'react'
 
+import { useNotebooks } from '@/lib/hooks/use-notebooks'
+
 vi.mock('@/components/layout/AppShell', () => ({
   AppShell: ({ children }: { children: React.ReactNode }) =>
     React.createElement('div', { 'data-testid': 'app-shell' }, children),
@@ -27,7 +29,11 @@ vi.mock('@/lib/hooks/use-deep-health', () => ({
 // Mutable holder (mock-prefixed so vitest's hoist allows the factory ref).
 const mockNotebooks: { value: unknown[] } = { value: [] }
 vi.mock('@/lib/hooks/use-notebooks', () => ({
-  useNotebooks: () => ({ data: mockNotebooks.value }),
+  useNotebooks: vi.fn(() => ({ data: mockNotebooks.value })),
+}))
+
+vi.mock('@/lib/features', () => ({
+  isVisualSystemV2Enabled: () => process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 === '1',
 }))
 
 const pushMock = vi.fn()
@@ -103,6 +109,7 @@ describe('SetupWizardPage', () => {
       window.localStorage.clear()
       document.cookie = `${WIZARD_COMPLETED_KEY}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
     }
+    delete process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2
   })
 
   it('renders the healthy state with Continue enabled and no fix buttons', () => {
@@ -212,5 +219,30 @@ describe('SetupWizardPage', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(replaceMock).not.toHaveBeenCalled()
+  })
+
+  it('uses the V2 setup frame without duplicating health or notebook hooks', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
+    mockDeepHealth(DEGRADED)
+    render(<SetupWizardPage />)
+
+    expect(screen.getByRole('main')).toHaveAttribute('data-dn-visual-system', 'v2')
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getByTestId('continue-button')).toBeEnabled()
+    expect(useDeepHealth).toHaveBeenCalledTimes(1)
+    expect(useNotebooks).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains the SystemRouteFrame marker and setup behavior when V2 is explicitly off', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
+    mockDeepHealth(DEGRADED)
+    render(<SetupWizardPage />)
+
+    expect(screen.getByRole('main')).toHaveAttribute('data-dn-folio-route-frame', 'true')
+    expect(screen.queryByTestId('visual-system-v2-setup')).toBeNull()
+    expect(screen.getByTestId('continue-button')).toBeEnabled()
+    expect(useDeepHealth).toHaveBeenCalledTimes(1)
+    expect(useNotebooks).toHaveBeenCalledTimes(1)
   })
 })

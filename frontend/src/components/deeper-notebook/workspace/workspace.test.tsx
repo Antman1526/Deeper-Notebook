@@ -11,7 +11,9 @@ import { StatePanel } from './StatePanel'
 import { VisualCard } from './VisualCard'
 import { VisualCardGrid } from './VisualCardGrid'
 import { WorkspaceAppShell } from './WorkspaceAppShell'
+import { WorkspaceAuthFrame } from './WorkspaceAuthFrame'
 import { WorkspaceHero } from './WorkspaceHero'
+import { WorkspaceHome } from './WorkspaceHome'
 import { WorkspacePage } from './WorkspacePage'
 
 vi.mock('@/components/chat/LocalModelHealthBadges', () => ({
@@ -26,8 +28,97 @@ vi.mock('@/components/podcasts/GlobalAudioPlayer', () => ({ GlobalAudioPlayer: (
 
 const workspaceStyles = fs.readFileSync(path.resolve(__dirname, 'workspace.css'), 'utf8')
 const shellStyles = fs.readFileSync(path.resolve(__dirname, '../shell/shell.css'), 'utf8')
+const workspaceHomeSource = fs.readFileSync(path.resolve(__dirname, 'WorkspaceHome.tsx'), 'utf8')
 
 describe('shared workspace primitives', () => {
+  it('owns the V2 auth landmark and heading while preserving the form action', () => {
+    render(
+      <WorkspaceAuthFrame>
+        <form>
+          <button type="submit">Sign in</button>
+        </form>
+      </WorkspaceAuthFrame>,
+    )
+
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getByTestId('visual-system-v2-auth-frame')).toHaveAttribute(
+      'data-dn-visual-system',
+      'v2',
+    )
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
+  })
+
+  it('renders a fetch-free V2 home with four cards and one dispatch per action', () => {
+    const onOpenStudio = vi.fn()
+    const onCreateNotebook = vi.fn()
+    const onCreatePodcast = vi.fn()
+    const onAsk = vi.fn()
+
+    render(
+      <WorkspaceHome
+        status="ready"
+        recentNotebooks={[]}
+        notebooksLoading={false}
+        onOpenStudio={onOpenStudio}
+        onCreateNotebook={onCreateNotebook}
+        onCreatePodcast={onCreatePodcast}
+        onAsk={onAsk}
+        dataPath="~/.deeper-notebook/"
+      />,
+    )
+
+    expect(screen.getByTestId('visual-system-v2-home')).toHaveAttribute(
+      'data-dn-visual-system',
+      'v2',
+    )
+    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getByRole('link', { name: 'Studio' })).toHaveAttribute('href', '/studio')
+    expect(screen.getByRole('button', { name: 'New Notebook' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Podcast' })).toBeEnabled()
+    expect(screen.getByRole('link', { name: 'Ask' })).toHaveAttribute('href', '/search')
+
+    fireEvent.click(screen.getByRole('link', { name: 'Studio' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New Notebook' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Podcast' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Ask' }))
+
+    expect(onOpenStudio).toHaveBeenCalledTimes(1)
+    expect(onCreateNotebook).toHaveBeenCalledTimes(1)
+    expect(onCreatePodcast).toHaveBeenCalledTimes(1)
+    expect(onAsk).toHaveBeenCalledTimes(1)
+    expect(workspaceHomeSource).not.toMatch(/\bfetch\s*\(/)
+    expect(workspaceHomeSource).not.toMatch(/use(?:Effect|Query|Mutation)\s*\(/)
+  })
+
+  it('keeps loaded notebook links and runtime/state surfaces independent', () => {
+    const onOpenStudio = vi.fn()
+
+    render(
+      <WorkspaceHome
+        status="ready"
+        recentNotebooks={[{ id: 'notebook:one', name: 'Research notebook', href: '/notebooks/notebook%3Aone' }]}
+        notebooksLoading={false}
+        onOpenStudio={onOpenStudio}
+        onCreateNotebook={vi.fn()}
+        onCreatePodcast={vi.fn()}
+        onAsk={vi.fn()}
+        runtimeSnapshot={{ status: 'ready' }}
+      />,
+    )
+
+    expect(screen.getByRole('link', { name: 'Research notebook' })).toHaveAttribute(
+      'href',
+      '/notebooks/notebook%3Aone',
+    )
+    expect(screen.getByTestId('runtime-status-panel')).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Your notebook is ready to begin' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('link', { name: 'Studio' }))
+    expect(onOpenStudio).toHaveBeenCalledTimes(1)
+  })
+
   it('mounts one V2 page slot and one shared Focus authority', () => {
     render(
       <WorkspaceAppShell>
