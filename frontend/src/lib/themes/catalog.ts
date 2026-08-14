@@ -24,10 +24,13 @@ export interface ThemeDefinition {
   }
 }
 
-export const DEFAULT_THEME_ID = 'research-core-dark' as const
+export const LEGACY_DEFAULT_THEME_ID = 'research-core-dark' as const
+export const VISUAL_SYSTEM_DEFAULT_THEME_ID = 'gemini-forward-light' as const
+export const DEFAULT_THEME_ID = LEGACY_DEFAULT_THEME_ID
 
 export const THEME_CATALOG = [
   { id: 'research-core-dark', label: 'Research Core Dark', group: 'featured', dark: true, description: 'Signature deep-teal research instrument.', preview: { canvas: '#071B1D', panel: '#0B292B', text: '#D8FFF8', primary: '#2DD4BF', accent: '#38BDF8', border: '#225053' } },
+  { id: 'gemini-forward-light', label: 'Gemini-Forward Light', group: 'featured', dark: false, description: 'Airy mineral canvas with original indigo, violet, cyan, and mint research accents.', preview: { canvas: '#F7F7FC', panel: '#FFFFFF', text: '#202235', primary: '#5367D9', accent: '#7B5BD6', border: '#D9DDF0' } },
   { id: 'research-core-light', label: 'Research Core Light', group: 'featured', dark: false, description: 'Warm mineral paper with precise teal structure.', preview: { canvas: '#F5FBF9', panel: '#FFFFFF', text: '#102A2A', primary: '#0F766E', accent: '#0284C7', border: '#C9DED8' } },
   { id: 'deep-ocean', label: 'Deep Ocean', group: 'dark', dark: true, description: 'Navy depth with bioluminescent teal and cyan.', preview: { canvas: '#06151F', panel: '#0B2432', text: '#D8F3F8', primary: '#2DD4BF', accent: '#38BDF8', border: '#21485A' } },
   { id: 'graphite-lab', label: 'Graphite Lab', group: 'dark', dark: true, description: 'Neutral charcoal with restrained Research Core accents.', preview: { canvas: '#151A1D', panel: '#20272B', text: '#EDF7F5', primary: '#5EEAD4', accent: '#67E8F9', border: '#3B494E' } },
@@ -55,6 +58,10 @@ export const THEME_CATALOG = [
 ] as const satisfies readonly ThemeDefinition[]
 
 export type ThemeId = (typeof THEME_CATALOG)[number]['id']
+
+export function getFreshThemeDefault(visualSystemEnabled: boolean): ThemeId {
+  return visualSystemEnabled ? VISUAL_SYSTEM_DEFAULT_THEME_ID : LEGACY_DEFAULT_THEME_ID
+}
 
 export const THEME_BY_ID = Object.fromEntries(
   THEME_CATALOG.map(theme => [theme.id, theme]),

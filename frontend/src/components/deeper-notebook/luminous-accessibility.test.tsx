@@ -40,6 +40,7 @@ describe('Luminous Folio accessibility', () => {
   it('meets the minimum contrast contract for flagship and high-contrast themes', () => {
     for (const themeId of [
       'research-core-dark',
+      'gemini-forward-light',
       'archive-paper',
       'high-contrast-dark',
       'high-contrast-light',
@@ -47,6 +48,19 @@ describe('Luminous Folio accessibility', () => {
       const theme = THEME_BY_ID[themeId]
       expect(contrastRatio(theme.preview.canvas, theme.preview.text)).toBeGreaterThanOrEqual(4.5)
       expect(contrastRatio(theme.preview.canvas, theme.preview.primary)).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('exposes semantic visual-system roles for imagery, evidence, focus, and shape', () => {
+    const tokens = source('./tokens.css')
+
+    for (const token of [
+      '--dn-canvas', '--dn-panel', '--dn-panel-raised', '--dn-selection',
+      '--dn-focus', '--dn-image-overlay', '--dn-image-placeholder',
+      '--dn-evidence-supported', '--dn-evidence-mixed', '--dn-evidence-unsupported',
+      '--dn-radius-control', '--dn-radius-card', '--dn-radius-hero',
+    ]) {
+      expect(tokens).toContain(token)
     }
   })
 

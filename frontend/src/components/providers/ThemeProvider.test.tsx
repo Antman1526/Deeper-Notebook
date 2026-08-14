@@ -43,6 +43,16 @@ describe('ThemeProvider catalog compatibility', () => {
     expect(document.documentElement).not.toHaveClass('dark')
   })
 
+  it('preserves the pre-hydrated Gemini-forward light catalog default', () => {
+    document.documentElement.dataset.theme = 'gemini-forward-light'
+    document.documentElement.classList.add('dark')
+
+    render(<ThemeProvider><div>Gemini-forward light</div></ThemeProvider>)
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'gemini-forward-light')
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
   it('keeps legacy system behavior when no catalog ID was pre-hydrated', () => {
     render(<ThemeProvider><div>Legacy system</div></ThemeProvider>)
 

@@ -11,6 +11,17 @@
   --dn-separator: var(--border);
   --dn-focus: var(--ring);
   --dn-selection: color-mix(in oklab, var(--primary) 22%, transparent);
+  --dn-image-overlay: linear-gradient(to top, rgb(20 23 45 / 72%), transparent 72%);
+  --dn-image-placeholder: color-mix(in oklab, var(--card) 84%, var(--primary) 16%);
+  --dn-image-generated-label: color-mix(in oklab, var(--card) 92%, var(--accent) 8%);
+  --dn-evidence-supported: var(--success);
+  --dn-evidence-mixed: var(--warning);
+  --dn-evidence-unsupported: var(--destructive);
+  --dn-radius-control: 0.75rem;
+  --dn-radius-card: 1rem;
+  --dn-radius-hero: 1.5rem;
+  --dn-shadow-low: var(--shadow-sm);
+  --dn-shadow-medium: var(--shadow-md);
   --dn-evidence: var(--accent);
   --dn-warning: var(--warning);
   --dn-editable: var(--primary);
@@ -191,4 +202,9 @@ html[data-dn-motion="reduced"] .dn-aurora-bg::before {
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
+}
+
+@media (forced-colors: active) {
+  [data-dn-visual-system="v2"] * { forced-color-adjust: auto; }
+  [data-dn-visual-system="v2"] :focus-visible { outline: 2px solid CanvasText; }
 }

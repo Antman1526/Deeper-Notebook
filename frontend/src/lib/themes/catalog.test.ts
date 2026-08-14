@@ -3,14 +3,17 @@ import { describe, expect, it } from 'vitest'
 import {
   DARK_THEME_IDS,
   DEFAULT_THEME_ID,
+  getFreshThemeDefault,
+  LEGACY_DEFAULT_THEME_ID,
   THEME_BY_ID,
   THEME_CATALOG,
   THEME_GROUPS,
+  VISUAL_SYSTEM_DEFAULT_THEME_ID,
   isThemeId,
 } from './catalog'
 
 const expectedIds = [
-  'research-core-dark', 'research-core-light',
+  'research-core-dark', 'gemini-forward-light', 'research-core-light',
   'deep-ocean', 'graphite-lab', 'arctic-research', 'archive-paper',
   'high-contrast-dark', 'high-contrast-light',
   'light-blue', 'system', 'solarized-light', 'github-light', 'paper',
@@ -20,10 +23,21 @@ const expectedIds = [
 ] as const
 
 describe('Research Core OS theme catalog', () => {
-  it('contains the exact 25 unique IDs and the approved fresh default', () => {
+  it('contains the exact 26 unique IDs and the approved fresh defaults', () => {
     expect(THEME_CATALOG.map(theme => theme.id)).toEqual(expectedIds)
-    expect(new Set(THEME_CATALOG.map(theme => theme.id)).size).toBe(25)
+    expect(THEME_CATALOG).toHaveLength(26)
+    expect(new Set(THEME_CATALOG.map(theme => theme.id)).size).toBe(26)
     expect(DEFAULT_THEME_ID).toBe('research-core-dark')
+    expect(LEGACY_DEFAULT_THEME_ID).toBe('research-core-dark')
+    expect(VISUAL_SYSTEM_DEFAULT_THEME_ID).toBe('gemini-forward-light')
+    expect(getFreshThemeDefault(false)).toBe('research-core-dark')
+    expect(getFreshThemeDefault(true)).toBe('gemini-forward-light')
+  })
+
+  it('puts Gemini-forward light first among featured light themes', () => {
+    expect(THEME_BY_ID['gemini-forward-light']).toMatchObject({ group: 'featured', dark: false })
+    expect(THEME_CATALOG.find(theme => theme.group === 'featured' && !theme.dark)?.id)
+      .toBe('gemini-forward-light')
   })
 
   it('marks the flagship and accessibility themes explicitly', () => {

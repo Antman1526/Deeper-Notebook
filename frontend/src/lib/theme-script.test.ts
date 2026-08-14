@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { themeScript } from './theme-script'
 
 describe('pre-hydration Research Core theme script', () => {
+  afterEach(() => {
+    delete process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2
+    localStorage.clear()
+    document.documentElement.dataset.theme = ''
+    document.documentElement.className = ''
+  })
+
   it('prefers canonical storage, then legacy, then old Zustand storage', () => {
     expect(themeScript.indexOf("getItem('dn-theme')")).toBeLessThan(themeScript.indexOf("getItem('onp-theme')"))
     expect(themeScript.indexOf("getItem('onp-theme')")).toBeLessThan(themeScript.indexOf("getItem('theme-storage')"))
@@ -54,12 +61,46 @@ describe('pre-hydration Research Core theme script', () => {
 
     window.eval(themeScript)
 
-    expect(document.documentElement.dataset.theme).toBe('research-core-dark')
+    expect(document.documentElement.dataset.theme).toBe('archive-paper')
     expect(document.documentElement.dataset.dnWallpaper).toBe('aurora')
     expect(document.documentElement.dataset.dnMotion).toBe('system')
     expect(document.documentElement.dataset.dnTransparency).toBe('frosted')
     expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
     expect(localStorage.getItem('theme-storage')).toBe('{malformed')
+  })
+
+  it.each([
+    ['1', 'gemini-forward-light'],
+    ['0', 'research-core-dark'],
+  ] as const)('uses the build-time %s fresh default with empty storage', async (flag, expectedTheme) => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = flag
+    vi.resetModules()
+    const { themeScript: buildThemeScript } = await import('./theme-script')
+
+    localStorage.clear()
+    document.documentElement.dataset.theme = ''
+    document.documentElement.className = ''
+    window.eval(buildThemeScript)
+
+    expect(document.documentElement.dataset.theme).toBe(expectedTheme)
+    expect(document.documentElement.classList.contains('dark')).toBe(expectedTheme === 'research-core-dark')
+  })
+
+  it.each(['1', '0'] as const)('preserves an explicit archive-paper selection in build %s', async flag => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = flag
+    vi.resetModules()
+    const { themeScript: buildThemeScript } = await import('./theme-script')
+
+    localStorage.clear()
+    localStorage.setItem('dn-theme', 'archive-paper')
+    localStorage.setItem('onp-theme', 'research-core-dark')
+    document.documentElement.dataset.theme = ''
+    document.documentElement.className = ''
+    window.eval(buildThemeScript)
+
+    expect(document.documentElement.dataset.theme).toBe('archive-paper')
+    expect(localStorage.getItem('dn-theme')).toBe('archive-paper')
+    expect(localStorage.getItem('onp-theme')).toBe('research-core-dark')
   })
 
   it('resolves system reduced motion before React hydration', () => {
