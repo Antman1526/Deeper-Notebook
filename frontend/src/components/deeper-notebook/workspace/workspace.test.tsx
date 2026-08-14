@@ -232,4 +232,47 @@ describe('shared workspace primitives', () => {
     expect(workspaceStyles).toContain('@media (max-width: 767px)')
     expect(workspaceStyles).toMatch(/\.dn-workspace-shell\s*\{[\s\S]*?overflow-x:\s*hidden;/)
   })
+
+  it('bounds each V2 shell tier so the canvas owns route scrolling', () => {
+    const shellBlock = workspaceStyles.match(/\.dn-workspace-shell\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
+    const bodyBlock = workspaceStyles.match(/\.dn-workspace-shell-body\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
+    const compactStyles = workspaceStyles.slice(
+      workspaceStyles.indexOf('@media (min-width: 768px) and (max-width: 1023px)'),
+      workspaceStyles.indexOf('@media (max-width: 767px)'),
+    )
+    const mobileStyles = workspaceStyles.slice(
+      workspaceStyles.indexOf('@media (max-width: 767px)'),
+      workspaceStyles.indexOf('.dn-workspace-page'),
+    )
+
+    expect(shellBlock).toMatch(/height:\s*100dvh;/)
+    expect(shellBlock).toMatch(/max-height:\s*100dvh;/)
+    expect(bodyBlock).toMatch(/height:\s*100dvh;/)
+    expect(bodyBlock).toMatch(/max-height:\s*100dvh;/)
+    expect(compactStyles).toMatch(
+      /\.dn-workspace-shell\s*\{[\s\S]*?height:\s*100dvh;[\s\S]*?max-height:\s*100dvh;/,
+    )
+    expect(compactStyles).toMatch(
+      /\.dn-workspace-shell-body\s*\{[\s\S]*?height:\s*100dvh;[\s\S]*?max-height:\s*100dvh;/,
+    )
+    expect(mobileStyles).toMatch(
+      /\.dn-workspace-shell\s*\{[\s\S]*?height:\s*100dvh;[\s\S]*?max-height:\s*100dvh;[\s\S]*?padding-bottom:\s*4\.5rem;/,
+    )
+    expect(mobileStyles).toMatch(
+      /\.dn-workspace-shell-body\s*\{[\s\S]*?height:\s*calc\(100dvh\s*-\s*4\.5rem\);[\s\S]*?max-height:\s*calc\(100dvh\s*-\s*4\.5rem\);/,
+    )
+  })
+
+  it('maps V2 desktop Focus tracks to the keyboard-revealable focus rail', () => {
+    const desktopStyles = workspaceStyles.slice(
+      workspaceStyles.indexOf('@media (min-width: 1024px)'),
+    )
+
+    expect(desktopStyles).toMatch(
+      /html\[data-dn-focus-mode="true"\]\s+\.dn-workspace-shell\s*\{[\s\S]*?grid-template-columns:\s*var\(--dn-focus-rail\)\s+minmax\(0,\s*1fr\);/,
+    )
+    expect(desktopStyles).toMatch(
+      /html\[data-dn-focus-mode="true"\]\s+\.dn-workspace-shell-body\s*\{[\s\S]*?grid-template-columns:\s*var\(--dn-focus-rail\)\s+minmax\(0,\s*1fr\)\s+var\(--dn-focus-rail\);/,
+    )
+  })
 })
