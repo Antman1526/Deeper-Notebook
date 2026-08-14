@@ -29,8 +29,7 @@ describe('ResearchCoreHeader', () => {
     expect(header).toHaveTextContent('Memory pressure elevated')
     expect(header).toHaveTextContent('3 queued')
 
-    const readiness = screen.getByText(/Two local models are ready/)
-    expect(readiness).toBeInTheDocument()
+    const readiness = screen.getByRole('button', { name: /Local readiness: ready — Two local models are ready/ })
     fireEvent.click(readiness)
     expect(screen.getByRole('listitem')).toHaveTextContent('qwen-research')
     expect(screen.getByRole('listitem')).toHaveTextContent('MLX')

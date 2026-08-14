@@ -49,6 +49,79 @@ describe('shared workspace primitives', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
   })
 
+  it('reserves the V2 auth form geometry before LoginForm content mounts', async () => {
+    const browser = await chromium.launch({ headless: true })
+
+    try {
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 } })
+      await page.setContent(`
+        <!doctype html>
+        <html>
+          <head><style>${workspaceStyles}</style></head>
+          <body>
+            <main class="dn-workspace-auth-frame" data-dn-visual-system="v2">
+              <section class="dn-workspace-auth-panel">
+                <p class="dn-workspace-auth-eyebrow">Deeper Notebook</p>
+                <h1 class="dn-workspace-auth-title">Welcome back</h1>
+                <p class="dn-workspace-auth-description">Continue working with your local sources, notebooks, and grounded questions.</p>
+                <div class="dn-workspace-auth-content" data-testid="auth-content"></div>
+              </section>
+            </main>
+          </body>
+        </html>
+      `)
+
+      const before = await page.locator('.dn-workspace-auth-panel').boundingBox()
+      await page.locator('[data-testid="auth-content"]').evaluate((element) => {
+        const form = document.createElement('form')
+        form.style.blockSize = '255px'
+        element.appendChild(form)
+      })
+      const after = await page.locator('.dn-workspace-auth-panel').boundingBox()
+      const minBlockSize = await page.locator('[data-testid="auth-content"]').evaluate(
+        (element) => getComputedStyle(element).minBlockSize,
+      )
+
+      expect(minBlockSize).toBe('256px')
+      expect(before).not.toBeNull()
+      expect(after).not.toBeNull()
+      expect(after!.height).toBeCloseTo(before!.height, 0)
+      expect(Math.abs(after!.y - before!.y)).toBeLessThanOrEqual(1)
+    } finally {
+      await browser.close()
+    }
+  })
+
+  it('reserves setup health geometry in short desktop windows without affecting roomy desktops', async () => {
+    const browser = await chromium.launch({ headless: true })
+
+    try {
+      const shortPage = await browser.newPage({ viewport: { width: 1020, height: 631 } })
+      const roomyPage = await browser.newPage({ viewport: { width: 1020, height: 900 } })
+      const markup = `
+        <!doctype html>
+        <html>
+          <head><style>${workspaceStyles}</style></head>
+          <body data-dn-visual-system="v2">
+            <div class="dn-workspace-setup-card-content">Setup health</div>
+          </body>
+        </html>
+      `
+
+      await shortPage.setContent(markup)
+      await roomyPage.setContent(markup)
+
+      await expect(shortPage.locator('.dn-workspace-setup-card-content').evaluate(
+        (element) => getComputedStyle(element).minBlockSize,
+      )).resolves.toBe('880px')
+      await expect(roomyPage.locator('.dn-workspace-setup-card-content').evaluate(
+        (element) => getComputedStyle(element).minBlockSize,
+      )).resolves.toBe('0px')
+    } finally {
+      await browser.close()
+    }
+  })
+
   it('renders a fetch-free V2 home with four cards and one dispatch per action', () => {
     const onOpenStudio = vi.fn()
     const onCreateNotebook = vi.fn()
@@ -369,6 +442,115 @@ describe('shared workspace primitives', () => {
     )
   })
 
+  it('applies logical 44px touch targets only to enabled V2 action candidates', async () => {
+    const browser = await chromium.launch({ headless: true })
+
+    try {
+      const page = await browser.newPage()
+      await page.setContent(`
+        <!doctype html>
+        <html>
+          <head><style>${workspaceStyles}</style></head>
+          <body>
+            <div data-dn-visual-system="v2">
+              <button id="v2-native" type="button">Create</button>
+              <a id="v2-anchor" href="/settings">Configure settings</a>
+              <div id="v2-role" role="button">Custom action</div>
+              <div id="v2-tabindex" tabindex="0">Focusable action</div>
+              <button id="v2-disabled" type="button" disabled>Disabled</button>
+            </div>
+            <div>
+              <button id="legacy-native" type="button">Legacy action</button>
+            </div>
+          </body>
+        </html>
+      `)
+
+      const minimums = await page.evaluate(() => Object.fromEntries(
+        ['v2-native', 'v2-anchor', 'v2-role', 'v2-tabindex', 'v2-disabled', 'legacy-native'].map((id) => {
+          const element = document.getElementById(id)!
+          const style = window.getComputedStyle(element)
+          return [id, {
+            inline: style.minInlineSize,
+            block: style.minBlockSize,
+            renderedBlock: element.getBoundingClientRect().height,
+          }]
+        }),
+      ))
+
+      expect(minimums['v2-native']).toEqual({ inline: '44px', block: '44px', renderedBlock: 44 })
+      expect(minimums['v2-anchor']).toEqual({ inline: '44px', block: '44px', renderedBlock: 44 })
+      expect(minimums['v2-role']).toEqual({ inline: '44px', block: '44px', renderedBlock: 44 })
+      expect(minimums['v2-tabindex']).toEqual({ inline: '44px', block: '44px', renderedBlock: 44 })
+      expect(minimums['v2-disabled']).toEqual({ inline: '0px', block: '0px', renderedBlock: 21 })
+      expect(minimums['legacy-native']).toEqual({ inline: '0px', block: '0px', renderedBlock: 21 })
+    } finally {
+      await browser.close()
+    }
+  })
+
+  it('contains a V2 alert action label when the alert narrows on mobile', async () => {
+    const browser = await chromium.launch({ headless: true })
+
+    try {
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 } })
+      await page.setContent(`
+        <!doctype html>
+        <html>
+          <head>
+            <style>
+              ${workspaceStyles}
+              .w-full { inline-size: 100%; }
+              .inline-flex { display: inline-flex; }
+              .items-center { align-items: center; }
+              .justify-center { justify-content: center; }
+              .h-8 { block-size: 2rem; }
+              .gap-1\\.5 { gap: 0.375rem; }
+              .px-2\\.5 { padding-inline: 0.625rem; }
+              .icon { inline-size: 0.875rem; block-size: 0.875rem; flex: none; }
+              .whitespace-nowrap { white-space: nowrap; }
+            </style>
+          </head>
+          <body>
+            <div data-dn-visual-system="v2">
+              <div role="alert" style="inline-size: 112px">
+                <button id="auto-assign" class="inline-flex items-center justify-center h-8 w-full gap-1.5 px-2.5 whitespace-nowrap" type="button"><svg class="icon" aria-hidden="true"></svg>Auto-assign Defaults</button>
+              </div>
+            </div>
+          </body>
+        </html>
+      `)
+
+      const report = await page.evaluate(() => {
+        const control = document.getElementById('auto-assign')!
+        const range = document.createRange()
+        range.selectNodeContents(control)
+        const outer = control.getBoundingClientRect()
+        const content = Array.from(range.getClientRects())
+        return {
+          display: window.getComputedStyle(control).display,
+          flexWrap: window.getComputedStyle(control).flexWrap,
+          whiteSpace: window.getComputedStyle(control).whiteSpace,
+          height: outer.height,
+          contained: content.every((rect) => (
+            rect.left >= outer.left - 1
+            && rect.right <= outer.right + 1
+            && rect.top >= outer.top - 1
+            && rect.bottom <= outer.bottom + 1
+          )),
+        }
+      })
+
+      expect(report.display).toBe('flex')
+      expect(report.flexWrap).toBe('wrap')
+      expect(report.whiteSpace).toBe('normal')
+      expect(report.height).toBeGreaterThan(44)
+      expect(report.contained).toBe(true)
+    } finally {
+      await browser.close()
+    }
+  })
+
   it('keeps an opened Context Lens fully visible when desktop V2 Focus is active', async () => {
     const browser = await chromium.launch({ headless: true })
 
@@ -417,5 +599,25 @@ describe('shared workspace primitives', () => {
     } finally {
       await browser.close()
     }
+  })
+
+  it('turns the Context Lens into an on-demand drawer when the desktop canvas is compact', () => {
+    const compactDesktopStyles = workspaceStyles.slice(
+      workspaceStyles.indexOf('@media (min-width: 1024px) and (max-width: 1535px)'),
+      workspaceStyles.indexOf('@media (min-width: 1024px) {'),
+    )
+
+    expect(compactDesktopStyles).toMatch(
+      /\.dn-workspace-shell-body\s*\{[\s\S]*?grid-template-areas:\s*"command command"\s*"navigator canvas";/,
+    )
+    expect(compactDesktopStyles).toMatch(
+      /\.dn-workspace-shell\s+\.dn-context-lens\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?visibility:\s*hidden;[\s\S]*?pointer-events:\s*none;[\s\S]*?transform:\s*translateX/,
+    )
+    expect(compactDesktopStyles).toMatch(
+      /\.dn-workspace-shell\s+\.dn-context-lens\.is-open\s*\{[\s\S]*?visibility:\s*visible;[\s\S]*?pointer-events:\s*auto;[\s\S]*?transform:\s*translateX\(0\);/,
+    )
+    expect(compactDesktopStyles).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.dn-workspace-shell\s+\.dn-context-lens\s*\{[\s\S]*?transition:\s*none;/,
+    )
   })
 })

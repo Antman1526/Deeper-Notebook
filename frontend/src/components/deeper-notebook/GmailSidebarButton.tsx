@@ -83,6 +83,7 @@ export function GmailSidebarButton({ iconOnly = false }: GmailSidebarButtonProps
           ? 'h-9 w-full sidebar-menu-item'
           : 'w-full justify-start gap-2 sidebar-menu-item'
       }
+      aria-label={label}
       title={connected
         ? `Connected as ${status?.email_address}`
         : 'Connect Gmail for activity digests'}
@@ -95,7 +96,6 @@ export function GmailSidebarButton({ iconOnly = false }: GmailSidebarButtonProps
         )}
       </div>
       {!iconOnly && <span className="truncate">{label}</span>}
-      <span className="sr-only">{label}</span>
     </Button>
   )
 }

@@ -426,6 +426,7 @@ export function KnowledgeExplorer() {
   const intelligenceDrawerTriggerRef = useRef<HTMLButtonElement>(null)
   const fileTreeRef = useRef<HTMLElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
+  const measuredSidebarElementRef = useRef<HTMLElement | null>(null)
   const linksRef = useRef<HTMLDivElement>(null)
   const paneElementsRef = useRef<Record<string, HTMLElement | null>>({})
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null)
@@ -934,8 +935,18 @@ export function KnowledgeExplorer() {
     if (!workspaceHydrated) return
     const sidebar = sidebarRef.current
     if (!sidebar || !navigation.sidebarVisible) return
+    let skipInitialMeasurement = measuredSidebarElementRef.current !== sidebar
+    measuredSidebarElementRef.current = sidebar
     const clampWidth = (value: number) => Math.min(640, Math.max(240, Math.round(value)))
     const observer = new ResizeObserver((entries) => {
+      // The first observation reports CSS layout, not a user resize. Persisting
+      // it made a read-only visit issue a timing-dependent PUT at some
+      // viewports. Establish the local baseline first; subsequent observations
+      // still capture genuine resizes of the mounted rail.
+      if (skipInitialMeasurement) {
+        skipInitialMeasurement = false
+        return
+      }
       const width = entries[0]?.contentRect.width
       if (width && clampWidth(width) !== navigation.sidebarWidth) {
         setNavigation({ sidebarWidth: clampWidth(width) })

@@ -57,4 +57,10 @@ describe('visual system route manifest', () => {
       '/setup-wizard',
     ])
   })
+
+  it('keeps every route on a deterministic browser path for the visual matrix', () => {
+    expect(VISUAL_ROUTE_MANIFEST.every((entry) => entry.browserPath.startsWith('/'))).toBe(true)
+    expect(VISUAL_ROUTE_MANIFEST.map((entry) => entry.browserPath)).toHaveLength(22)
+    expect(new Set(VISUAL_ROUTE_MANIFEST.map((entry) => entry.browserPath)).size).toBe(22)
+  })
 })

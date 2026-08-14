@@ -56,4 +56,15 @@ describe('Evidence Studio folio integration', () => {
     })))
     expect(state.push).toHaveBeenCalledWith('/notebooks/notebook%3Agenerated')
   })
+
+  it('sizes the mode picker from its own available width instead of the viewport', () => {
+    render(<StudioPage />)
+
+    const notebookMode = screen.getByRole('button', {
+      name: /studio\.notebookModeTitle studio\.notebookModeDescription/,
+    })
+    expect(notebookMode.parentElement).toHaveStyle({
+      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 12rem), 1fr))',
+    })
+  })
 })

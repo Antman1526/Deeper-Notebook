@@ -42,6 +42,7 @@ vi.mock('@/lib/hooks/use-translation', () => ({
     t: (key: string) => ({
       'sources.allSources': 'All sources',
       'sources.allSourcesDesc': 'Research sources ready to use.',
+      'navigation.sources': 'Sources',
       'sources.addNew': 'Add source',
       'sources.delete': 'Delete source',
       'common.type': 'Type',
@@ -84,7 +85,7 @@ describe('SourcesPage', () => {
     expect(await screen.findByRole('main', { name: 'Sources' })).toBeInTheDocument()
     expect(screen.getByText('Collect')).toBeInTheDocument()
     expect(screen.getByText('Field notes')).toBeInTheDocument()
-    expect(screen.getByRole('table')).toHaveClass('min-w-[288px]')
+    expect(screen.getByRole('grid', { name: 'Sources' })).toHaveClass('min-w-[288px]')
     expect(screen.getByText('Field notes')).toHaveClass('block', 'min-w-0')
     fireEvent.click(screen.getByRole('button', { name: 'Add source' }))
     expect(openSourceDialog).toHaveBeenCalledWith(expect.objectContaining({

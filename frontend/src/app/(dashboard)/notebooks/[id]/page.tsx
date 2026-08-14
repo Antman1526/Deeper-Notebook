@@ -284,7 +284,7 @@ export default function NotebookPage() {
               Sources/Notes panels are collapsible and stay in sync with the
               notebook-columns store (the in-column collapse buttons still work;
               dragging a pane shut also updates the store via onCollapse). */}
-          <div className="hidden lg:flex h-full min-h-0 flex-1">
+          {isDesktop && <div className="hidden lg:flex h-full min-h-0 flex-1">
             <ResizablePanelGroup
               direction="horizontal"
               autoSaveId="onp-notebook-workspace"
@@ -355,7 +355,7 @@ export default function NotebookPage() {
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>
-          </div>
+          </div>}
         </div>
       </div>
       </FolioRouteFrame>

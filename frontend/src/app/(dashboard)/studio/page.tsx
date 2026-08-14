@@ -476,7 +476,10 @@ export default function StudioPage() {
             glance). Inner card spacing bumped to `space-y-6` so the
             dropdowns below don't crowd the tiles. */}
         <CardContent className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div
+            className="grid gap-4"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 12rem), 1fr))' }}
+          >
             <button
               type="button"
               onClick={() => setMode('notebook')}

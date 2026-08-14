@@ -5,11 +5,12 @@ import { WorkspaceAuthFrame } from '@/components/deeper-notebook/workspace/Works
 import { isVisualSystemV2Enabled } from '@/lib/features'
 
 export default function LoginPage() {
-  const Presentation = isVisualSystemV2Enabled() ? WorkspaceAuthFrame : AuthFolio
+  const visualSystemV2Enabled = isVisualSystemV2Enabled()
+  const Presentation = visualSystemV2Enabled ? WorkspaceAuthFrame : AuthFolio
 
   return (
     <ErrorBoundary>
-      <Presentation><LoginForm /></Presentation>
+      <Presentation><LoginForm headingLevel={visualSystemV2Enabled ? 2 : 1} /></Presentation>
     </ErrorBoundary>
   )
 }

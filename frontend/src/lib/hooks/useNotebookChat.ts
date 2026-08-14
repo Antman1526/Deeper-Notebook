@@ -22,9 +22,16 @@ interface UseNotebookChatParams {
   sources: SourceListResponse[]
   notes: NoteResponse[]
   contextSelections: ContextSelections
+  contextCountsEnabled: boolean
 }
 
-export function useNotebookChat({ notebookId, sources, notes, contextSelections }: UseNotebookChatParams) {
+export function useNotebookChat({
+  notebookId,
+  sources,
+  notes,
+  contextSelections,
+  contextCountsEnabled,
+}: UseNotebookChatParams) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
@@ -717,6 +724,8 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   }, [])
 
   useEffect(() => {
+    if (!contextCountsEnabled) return
+
     const mySeq = ++contextRequestSeq.current
     const updateContextCounts = async () => {
       try {
@@ -733,7 +742,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
       }
     }
     updateContextCounts()
-  }, [buildContext])
+  }, [buildContext, contextCountsEnabled])
 
   // v0.7.191 — public cancelStreaming, parity with useSourceChat
   // (audit finding #3). Previously useNotebookChat had the

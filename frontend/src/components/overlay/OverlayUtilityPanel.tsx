@@ -69,12 +69,12 @@ export function OverlayUtilityPanel({
         </div>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
-        <Button type="button" className="min-h-11" onClick={() => void openToday()} disabled={todayPending}>
-          <CalendarDays className="mr-2 h-4 w-4" aria-hidden="true" />
+        <Button type="button" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onClick={() => void openToday()} disabled={todayPending}>
+          <CalendarDays className="h-4 w-4" aria-hidden="true" />
           {t('knowledge.overlay.today')}
         </Button>
-        <Button type="button" variant="outline" className="min-h-11" onClick={onNewUnique}>
-          <FilePlus2 className="mr-2 h-4 w-4" aria-hidden="true" />
+        <Button type="button" variant="outline" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onClick={onNewUnique}>
+          <FilePlus2 className="h-4 w-4" aria-hidden="true" />
           {t('knowledge.overlay.newUnique')}
         </Button>
       </div>

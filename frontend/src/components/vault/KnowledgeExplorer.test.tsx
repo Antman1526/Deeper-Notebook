@@ -1035,7 +1035,9 @@ describe('KnowledgeExplorer durable workspace integration', () => {
   it('waits for Current Session hydration before measuring and persisting the utility rail', async () => {
     const observe = vi.fn()
     const disconnect = vi.fn()
-    const ResizeObserverMock = vi.fn(function ResizeObserverMock() {
+    let resizeCallback: ResizeObserverCallback | undefined
+    const ResizeObserverMock = vi.fn(function ResizeObserverMock(callback: ResizeObserverCallback) {
+      resizeCallback = callback
       return { observe, disconnect }
     })
     const originalResizeObserver = globalThis.ResizeObserver
@@ -1050,6 +1052,14 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       })
       await waitFor(() => expect(ResizeObserverMock).toHaveBeenCalledTimes(1))
       expect(observe).toHaveBeenCalled()
+
+      const initialWidth = useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth
+      const entry = { contentRect: { width: initialWidth - 32 } } as ResizeObserverEntry
+      act(() => resizeCallback?.([entry], {} as ResizeObserver))
+      expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(initialWidth)
+
+      act(() => resizeCallback?.([entry], {} as ResizeObserver))
+      expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(initialWidth - 32)
     } finally {
       if (originalResizeObserver) vi.stubGlobal('ResizeObserver', originalResizeObserver)
       else vi.unstubAllGlobals()

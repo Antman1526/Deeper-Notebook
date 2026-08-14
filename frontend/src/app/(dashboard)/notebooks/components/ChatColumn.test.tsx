@@ -58,6 +58,9 @@ describe('ChatColumn', () => {
 
     // Should show loading spinner
     expect(screen.getByTestId('loading-spinner')).toBeInTheDocument()
+    expect(useNotebookChat).toHaveBeenCalledWith(expect.objectContaining({
+      contextCountsEnabled: false,
+    }))
   })
 
   it('renders chat panel when data is loaded', () => {
@@ -68,5 +71,25 @@ describe('ChatColumn', () => {
 
     // Should show chat panel
     expect(screen.getByTestId('chat-panel')).toBeInTheDocument()
+    expect(useNotebookChat).toHaveBeenCalledWith(expect.objectContaining({
+      contextCountsEnabled: true,
+    }))
+  })
+
+  it('waits for every loaded source to receive an explicit context mode', () => {
+    vi.mocked(useNotes).mockReturnValue(createNotesMock({ isLoading: false }))
+    vi.mocked(useNotebookChat).mockReturnValue(createChatMock())
+
+    renderWithClient(
+      <ChatColumn
+        {...baseProps}
+        sourcesLoading={false}
+        sources={[{ id: 'source:one', title: 'Source one' } as never]}
+      />,
+    )
+
+    expect(useNotebookChat).toHaveBeenCalledWith(expect.objectContaining({
+      contextCountsEnabled: false,
+    }))
   })
 })

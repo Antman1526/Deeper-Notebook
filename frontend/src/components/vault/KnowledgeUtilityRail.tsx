@@ -100,20 +100,20 @@ export function KnowledgeUtilityRail({
         </div>
       ) : null}
       <div className="grid grid-cols-2 gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={onToday}>
-          <CalendarDays aria-hidden="true" className="mr-1.5 h-4 w-4" />
+        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onClick={onToday}>
+          <CalendarDays aria-hidden="true" className="h-4 w-4" />
           Today
         </Button>
-        <Button type="button" size="sm" variant="outline" onPointerDown={capturePointerFocus} onClick={() => selectMode('bookmarks')}>
-          <Bookmark aria-hidden="true" className="mr-1.5 h-4 w-4" />
+        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onPointerDown={capturePointerFocus} onClick={() => selectMode('bookmarks')}>
+          <Bookmark aria-hidden="true" className="h-4 w-4" />
           Bookmarks
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onRandomNote} disabled={randomPending}>
-          <Dices aria-hidden="true" className="mr-1.5 h-4 w-4" />
+        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onClick={onRandomNote} disabled={randomPending}>
+          <Dices aria-hidden="true" className="h-4 w-4" />
           Random Note
         </Button>
-        <Button type="button" size="sm" variant="outline" onPointerDown={capturePointerFocus} onClick={() => selectMode('workspaces')}>
-          <FolderKanban aria-hidden="true" className="mr-1.5 h-4 w-4" />
+        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onPointerDown={capturePointerFocus} onClick={() => selectMode('workspaces')}>
+          <FolderKanban aria-hidden="true" className="h-4 w-4" />
           Workspaces
         </Button>
       </div>
@@ -128,7 +128,7 @@ export function KnowledgeUtilityRail({
             aria-selected={displayMode === id}
             onPointerDown={capturePointerFocus}
             onClick={() => selectMode(id)}
-            className="min-w-0 flex-1"
+            className="h-auto min-h-11 min-w-0 flex-1 whitespace-normal px-1 py-2 leading-tight"
           >
             {label}
           </Button>
@@ -141,8 +141,9 @@ export function KnowledgeUtilityRail({
           variant="outline"
           onClick={onBookmarkCurrent}
           disabled={!canBookmarkCurrent}
+          className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight"
         >
-          <Bookmark aria-hidden="true" className="mr-1.5 h-4 w-4" />
+          <Bookmark aria-hidden="true" className="h-4 w-4" />
           Bookmark Current Target
         </Button>
         <Button

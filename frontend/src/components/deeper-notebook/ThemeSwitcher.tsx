@@ -142,10 +142,10 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
               ? 'h-9 w-full sidebar-menu-item'
               : 'w-full justify-start gap-2 sidebar-menu-item'
           }
+          aria-label="Switch theme"
         >
           <Palette className="h-[1.2rem] w-[1.2rem]" aria-hidden="true" />
           {!iconOnly && <span>Theme</span>}
-          <span className="sr-only">Switch theme</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] min-w-56">

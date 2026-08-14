@@ -241,7 +241,13 @@ export default function SetupWizardPage() {
                 <span className="ml-2">{t('setupWizard.recheckButton')}</span>
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent
+              className={
+                isVisualSystemV2Enabled()
+                  ? 'dn-workspace-setup-card-content'
+                  : undefined
+              }
+            >
               {isLoading || !data ? (
                 <div className="py-6 text-center text-muted-foreground">
                   {t('common.loading')}

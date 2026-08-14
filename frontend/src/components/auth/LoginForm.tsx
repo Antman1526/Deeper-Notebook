@@ -12,7 +12,11 @@ import { AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
-export function LoginForm() {
+type LoginFormProps = {
+  headingLevel?: 1 | 2
+}
+
+export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
   const { t, language } = useTranslation()
   const [password, setPassword] = useState('')
   // v0.7.198 — show/hide toggle. Standard password-field affordance;
@@ -142,11 +146,13 @@ export function LoginForm() {
     }
   }
 
+  const Heading = headingLevel === 1 ? 'h1' : 'h2'
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <h1 className="leading-none font-semibold">{t('auth.loginTitle')}</h1>
+          <Heading className="leading-none font-semibold">{t('auth.loginTitle')}</Heading>
           <CardDescription>
             {t('auth.loginDesc')}
           </CardDescription>

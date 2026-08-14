@@ -105,3 +105,67 @@ Both commands exited `0` with no diagnostics.
 - Changed files: this verification receipt; `frontend/package.json`; `frontend/src/lib/features.ts`; its two focused tests; and the new `frontend/src/lib/visual-system/route-manifest.ts` plus test.
 - Post-commit status contains only the supplied untracked `.codex/agent-context/gemini-forward-workspace.md`; no unrelated files were staged.
 - No Task 2–7 implementation, browser matrix run, network/provider action, or domain/API/persisted-authority change was performed. Those remain the planned downstream work.
+
+## Task 6 visual-system matrix receipt
+
+Task 6 hardened the fail-closed browser fixture, exact request-frequency maps,
+browser-role inspection, 44px target floor, action/text containment, horizontal
+overflow checks, and explicit lower-content scroll ownership. Route-level
+repairs keep compact controls readable without changing API or persisted-data
+authority.
+
+### RED evidence
+
+- The initial boundary suite counted landmark, disabled, aria-disabled, and
+  inert nodes as actions; the hostile fixture observed 9 candidates instead of
+  the 4 genuine controls.
+- The 1280x631 Studio route rendered four 34px mode cards with visible text
+  extending beyond card bounds.
+- The 320px Local Models route rendered `Save local execution policy` at
+  158x44 with its no-wrap label outside the action bounds.
+- Route-by-route request ledgers rejected missing stable reads for Study plan,
+  Podcast Studio, Launcher Preferences, MCP, and Advanced.
+- The first explicit V2-off rollback rejected an incorrectly shared V2-on
+  local-model health expectation for the legacy Working Desk and Setup Wizard.
+
+### GREEN evidence
+
+Focused component regressions:
+
+```text
+12 test files / 104 tests passed
+```
+
+Authoritative V2 production-build matrix:
+
+```text
+280 passed / 1 expected rollback skip
+```
+
+That run contains 16 fail-closed harness contracts plus all 264 cells from the
+exact 22 routes x 3 themes x 4 viewports matrix. Each active cell validates the
+canonical route, theme, one visible main and h1, exact same-origin requests,
+zero external requests, reduced-motion parity, image integrity, unique IDs,
+44px targets, browser-derived action semantics/names, card/action/text bounds,
+horizontal containment, and route-owned lower-content reachability.
+
+The independent V2-off production build passed, followed by the explicit
+legacy rollback contract:
+
+```text
+1 passed
+```
+
+Both V2-on and V2-off Next.js production builds compiled, completed TypeScript,
+and generated all 23 routes. Scoped ESLint exited with no errors; TypeScript
+`--noEmit` and `git diff --check` exited 0.
+
+### Flagship visual inspection
+
+Captured and inspected 27 full-resolution combinations for Login, Working
+Desk, and Setup Wizard across Gemini-Forward Light, Research Core Dark, and
+High Contrast Light at 320x844, 1020x631, and 1440x900. All retained readable
+hierarchy, coherent palette behavior, lower-content reachability, and bounded
+controls without gradients, glass, decorative motion, or generated imagery.
+Phase 2 source-derived imagery and local cache work remains intentionally out
+of scope.

@@ -338,6 +338,59 @@
   }
 }
 
+/* Keep medium desktop canvases useful. A persistent navigator, context lens,
+ * and three-pane notebook workspace cannot all remain readable at once below
+ * 1536px. Preserve the familiar Context lens control, but present the lens as
+ * an on-demand drawer until the shell has enough inline space for three rails. */
+@media (min-width: 1024px) and (max-width: 1535px) {
+  .dn-workspace-shell-body {
+    grid-template-areas:
+      "command command"
+      "navigator canvas";
+    grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr);
+  }
+
+  .dn-workspace-shell .dn-context-lens {
+    position: fixed;
+    inset: 4.25rem 0 0 auto;
+    z-index: 5;
+    display: block;
+    width: min(20rem, calc(100vw - 5rem));
+    border-left: 1px solid var(--dn-glass-border);
+    box-shadow: var(--dn-elevation-md);
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(calc(100% + 1rem));
+    transition:
+      transform var(--dn-motion-interface),
+      opacity var(--dn-motion-interface),
+      visibility 0s linear 200ms;
+  }
+
+  .dn-workspace-shell .dn-context-lens.is-open {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+    transition-delay: 0s;
+  }
+
+  .dn-workspace-shell .dn-context-lens-toggle {
+    position: fixed;
+    right: var(--dn-space-4);
+    bottom: var(--dn-space-4);
+    z-index: 6;
+    display: inline-flex;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dn-workspace-shell .dn-context-lens {
+      transition: none;
+    }
+  }
+}
+
 @media (min-width: 1024px) {
   html[data-dn-focus-mode="true"] .dn-workspace-shell {
     grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr);
@@ -398,6 +451,7 @@
 
 .dn-workspace-auth-content {
   min-width: 0;
+  min-block-size: 16rem;
   margin-block-start: 1.5rem;
 }
 
@@ -434,6 +488,16 @@
   padding-inline: clamp(1rem, 4cqi, 3rem);
   background: var(--dn-canvas);
   color: var(--foreground);
+}
+
+@media (max-width: 767px), (max-height: 700px) {
+  /* Setup health data replaces a short loading state with five wrapped rows.
+   * Keep the V2 card's content track reserved in narrow or short windows so
+   * the CTA does not jump while the existing health hook resolves. The legacy
+   * route remains untouched. */
+  [data-dn-visual-system='v2'] .dn-workspace-setup-card-content {
+    min-block-size: 55rem;
+  }
 }
 
 .dn-workspace-page-header,
@@ -817,4 +881,62 @@
     scroll-behavior: auto;
     transition-duration: 0.01ms;
   }
+}
+
+/* V2 presentation raises reachable controls without changing legacy or disabled behavior. */
+[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']) {
+  display: inline-flex;
+  max-inline-size: 100%;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-create > button > span:not(.sr-only),
+[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-utilities > button > span:not(.sr-only),
+[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-utility-row button > .sr-only {
+  display: none;
+}
+
+[data-dn-visual-system='v2'] [role='alert'] button.w-full {
+  display: flex;
+  max-inline-size: 100%;
+  block-size: auto;
+  min-block-size: 2.75rem;
+  padding-block: 0.5rem;
+  white-space: normal;
+  flex-wrap: wrap;
+  align-content: center;
+}
+
+[data-dn-visual-system='v2'] :is(
+  button,
+  a[href],
+  input:not([type='hidden']),
+  textarea,
+  select,
+  summary,
+  [contenteditable=''],
+  [contenteditable='true'],
+  [contenteditable='plaintext-only'],
+  [tabindex]:not([tabindex='-1']):not([role]),
+  [role='button'],
+  [role='checkbox'],
+  [role='combobox'],
+  [role='link'],
+  [role='listbox'],
+  [role='menuitem'],
+  [role='menuitemcheckbox'],
+  [role='menuitemradio'],
+  [role='option'],
+  [role='radio'],
+  [role='searchbox'],
+  [role='slider'],
+  [role='spinbutton'],
+  [role='switch'],
+  [role='tab'],
+  [role='textbox'],
+  [role='treeitem']
+):not(:disabled):not([aria-disabled='true']) {
+  min-inline-size: 2.75rem;
+  min-block-size: 2.75rem;
 }

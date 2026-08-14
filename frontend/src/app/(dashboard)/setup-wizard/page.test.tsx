@@ -234,6 +234,14 @@ describe('SetupWizardPage', () => {
     expect(useNotebooks).toHaveBeenCalledTimes(1)
   })
 
+  it('marks only the V2 setup content for async geometry reservation', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
+    mockDeepHealth(NOT_READY)
+    render(<SetupWizardPage />)
+
+    expect(document.querySelector('.dn-workspace-setup-card-content')).toBeInTheDocument()
+  })
+
   it('retains the SystemRouteFrame marker and setup behavior when V2 is explicitly off', () => {
     process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
     mockDeepHealth(DEGRADED)

@@ -368,6 +368,8 @@ export default function SourcesPage() {
           <table
             ref={tableRef}
             tabIndex={0}
+            role="grid"
+            aria-label={t('navigation.sources')}
             data-dn-sources-table="true"
             className="w-full min-w-[288px] outline-none table-fixed xl:min-w-[800px]"
           >

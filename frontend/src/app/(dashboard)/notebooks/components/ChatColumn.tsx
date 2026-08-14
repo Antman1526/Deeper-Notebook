@@ -25,12 +25,18 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
   // Fetch notes for this notebook
   const { data: notes = [], isLoading: notesLoading } = useNotes(notebookId)
 
+  const contextCountsEnabled = !sourcesLoading
+    && !notesLoading
+    && sources.every((source) => Object.hasOwn(contextSelections.sources, source.id))
+    && notes.every((note) => Object.hasOwn(contextSelections.notes, note.id))
+
   // Initialize notebook chat hook
   const chat = useNotebookChat({
     notebookId,
     sources,
     notes,
-    contextSelections
+    contextSelections,
+    contextCountsEnabled,
   })
 
   // v0.8.74 — corpus-grounded starter questions for the empty chat state

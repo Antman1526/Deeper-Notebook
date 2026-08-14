@@ -56,7 +56,9 @@ export function ResearchCoreHeader({
       </dl>
       {actions ? <div className="shrink-0">{actions}</div> : null}
       <details className="basis-full text-sm">
-        <summary>{readinessLabel} — {readinessDetail}</summary>
+        <summary role="button" aria-label={`${readinessLabel} — ${readinessDetail}`}>
+          {readinessLabel} — {readinessDetail}
+        </summary>
         {readiness.models?.length ? (
           <ul className="mt-2 flex flex-wrap gap-x-3 text-muted-foreground" aria-label="Local readiness details">
             {readiness.models.map((model) => (

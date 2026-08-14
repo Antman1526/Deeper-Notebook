@@ -68,6 +68,10 @@ describe('LocalExecutionPolicyPanel', () => {
     expect(screen.getByText('Strict Local blocks cloud routes.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Review pending cloud fallback' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save local execution policy' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Save local execution policy' })).toHaveClass('w-full', 'sm:w-auto')
+    expect(screen.getByRole('button', { name: 'Save local execution policy' })).toHaveClass(
+      'w-full',
+      'whitespace-normal',
+      'sm:w-auto',
+    )
   })
 })

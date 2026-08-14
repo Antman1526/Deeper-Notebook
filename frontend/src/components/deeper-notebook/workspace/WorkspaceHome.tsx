@@ -45,12 +45,10 @@ function actionLinkHandler(callback: () => void) {
 function ActionLink({
   href,
   label,
-  description,
   onNavigate,
 }: {
   href: string
   label: string
-  description: string
   onNavigate(): void
 }) {
   return (
@@ -61,18 +59,15 @@ function ActionLink({
       className="dn-visual-card-action"
     >
       <span>{label}</span>
-      <span className="sr-only">{description}</span>
     </Link>
   )
 }
 
 function ActionButton({
   label,
-  description,
   onActivate,
 }: {
   label: string
-  description: string
   onActivate(): void
 }) {
   return (
@@ -83,7 +78,6 @@ function ActionButton({
       className="dn-visual-card-action"
     >
       <span>{label}</span>
-      <span className="sr-only">{description}</span>
     </button>
   )
 }
@@ -144,7 +138,6 @@ export function WorkspaceHome({
             <ActionLink
               href="/studio"
               label="Studio"
-              description="Open Studio"
               onNavigate={onOpenStudio}
             />
           </VisualCard>
@@ -154,7 +147,6 @@ export function WorkspaceHome({
           >
             <ActionButton
               label="New Notebook"
-              description="Create a notebook"
               onActivate={onCreateNotebook}
             />
           </VisualCard>
@@ -164,7 +156,6 @@ export function WorkspaceHome({
           >
             <ActionButton
               label="Podcast"
-              description="Create a podcast"
               onActivate={onCreatePodcast}
             />
           </VisualCard>
@@ -175,7 +166,6 @@ export function WorkspaceHome({
             <ActionLink
               href="/search"
               label="Ask"
-              description="Open search"
               onNavigate={onAsk}
             />
           </VisualCard>
