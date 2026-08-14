@@ -44,3 +44,18 @@ export { FocusModeControl } from './shell/FocusModeControl'
 export { InstrumentDock } from './shell/InstrumentDock'
 export { LuminousAppShell } from './shell/LuminousAppShell'
 export { ShellUtilities } from './shell/ShellUtilities'
+
+export { ResponsiveActionBar } from './workspace/ResponsiveActionBar'
+export { StatePanel } from './workspace/StatePanel'
+export { VisualCard } from './workspace/VisualCard'
+export { VisualCardGrid } from './workspace/VisualCardGrid'
+export { WorkspaceHero } from './workspace/WorkspaceHero'
+export { WorkspacePage } from './workspace/WorkspacePage'
+export type {
+  ResponsiveActionBarProps,
+} from './workspace/ResponsiveActionBar'
+export type { StatePanelKind, StatePanelProps } from './workspace/StatePanel'
+export type { VisualCardInteraction, VisualCardProps } from './workspace/VisualCard'
+export type { VisualCardGridProps } from './workspace/VisualCardGrid'
+export type { WorkspaceHeroProps } from './workspace/WorkspaceHero'
+export type { WorkspacePageProps } from './workspace/WorkspacePage'

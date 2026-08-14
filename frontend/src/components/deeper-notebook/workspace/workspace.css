@@ -1,0 +1,287 @@
+/* Presentation-only workspace primitives. Domain routes retain data and action authority. */
+
+.dn-workspace-page {
+  container: dn-workspace / inline-size;
+  container-type: inline-size;
+  min-width: 0;
+  min-inline-size: 0;
+  width: 100%;
+  display: grid;
+  gap: clamp(1.25rem, 3cqi, 2rem);
+  padding-block: clamp(1.25rem, 4cqi, 3rem);
+  padding-inline: clamp(1rem, 4cqi, 3rem);
+  background: var(--dn-canvas);
+  color: var(--foreground);
+}
+
+.dn-workspace-page-header,
+.dn-workspace-hero,
+.dn-visual-card,
+.dn-state-panel {
+  min-width: 0;
+}
+
+.dn-workspace-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dn-workspace-page-heading,
+.dn-workspace-page-content,
+.dn-workspace-hero-copy,
+.dn-visual-card-body,
+.dn-state-panel {
+  min-inline-size: 0;
+}
+
+.dn-workspace-page-eyebrow,
+.dn-workspace-hero-eyebrow,
+.dn-state-panel-kind {
+  margin-block: 0 0.5rem;
+  color: var(--primary);
+  font-size: var(--dn-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dn-workspace-page-title,
+.dn-workspace-hero-title,
+.dn-visual-card-title,
+.dn-state-panel-title {
+  margin-block: 0;
+  overflow-wrap: anywhere;
+}
+
+.dn-workspace-page-title {
+  font-size: clamp(1.75rem, 4cqi, 2.75rem);
+  line-height: 1.08;
+}
+
+.dn-workspace-page-description,
+.dn-workspace-hero-description,
+.dn-visual-card-description,
+.dn-state-panel-description,
+.dn-state-panel-preservation {
+  color: var(--muted-foreground);
+  font-size: var(--dn-text-base);
+  line-height: 1.55;
+}
+
+.dn-workspace-page-description {
+  max-inline-size: 68ch;
+  margin-block-start: 0.75rem;
+}
+
+.dn-workspace-page-actions,
+.dn-workspace-hero-actions,
+.dn-state-panel-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dn-workspace-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(1rem, 3cqi, 2rem);
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--dn-radius-hero);
+  background: var(--dn-panel);
+  box-shadow: var(--dn-shadow-low);
+}
+
+.dn-workspace-hero-media {
+  min-width: 0;
+  min-height: 12rem;
+  overflow: hidden;
+  background: var(--dn-image-placeholder);
+}
+
+.dn-workspace-hero-media > :is(img, picture, video) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dn-workspace-hero-copy {
+  display: grid;
+  align-content: center;
+  gap: 0.75rem;
+  padding: clamp(1.25rem, 4cqi, 2.5rem);
+}
+
+.dn-workspace-hero-title {
+  font-size: clamp(1.5rem, 3cqi, 2.25rem);
+  line-height: 1.12;
+}
+
+.dn-visual-card-grid {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: clamp(0.75rem, 2cqi, 1.25rem);
+  min-width: 0;
+}
+
+.dn-visual-card-grid-compact {
+  --dn-visual-card-minimum: 12rem;
+}
+
+.dn-visual-card-grid-standard {
+  --dn-visual-card-minimum: 16rem;
+}
+
+.dn-visual-card-grid-wide {
+  --dn-visual-card-minimum: 20rem;
+}
+
+.dn-visual-card {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: var(--dn-radius-card);
+  background: var(--dn-panel);
+  box-shadow: var(--dn-shadow-low);
+}
+
+.dn-visual-card-media {
+  min-height: 8rem;
+  overflow: hidden;
+  background: var(--dn-image-placeholder);
+}
+
+.dn-visual-card-media > :is(img, picture, video) {
+  display: block;
+  width: 100%;
+  max-height: 18rem;
+  object-fit: cover;
+}
+
+.dn-visual-card-body {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.dn-visual-card-title {
+  font-size: 1.125rem;
+  line-height: 1.2;
+}
+
+.dn-visual-card-content,
+.dn-visual-card-metadata {
+  color: var(--muted-foreground);
+  font-size: var(--dn-text-sm);
+  line-height: 1.5;
+}
+
+.dn-visual-card-action,
+.dn-state-panel-action > :is(button, a),
+.dn-workspace-page-actions > :is(button, a),
+.dn-workspace-hero-actions > :is(button, a) {
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 44px;
+  align-items: center;
+  justify-content: center;
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--dn-radius-control);
+  background: var(--dn-panel-raised);
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dn-responsive-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.dn-responsive-action-bar > :is(button, a) {
+  min-height: 44px;
+}
+
+.dn-state-panel {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  padding: clamp(1rem, 3cqi, 1.75rem);
+  border: 1px dashed var(--border);
+  border-radius: var(--dn-radius-card);
+  background: var(--dn-panel);
+}
+
+.dn-state-panel-description,
+.dn-state-panel-preservation {
+  margin-block: 0;
+}
+
+.dn-state-panel-action {
+  margin-block-start: 0.25rem;
+}
+
+.dn-state-panel-details {
+  max-inline-size: 100%;
+  color: var(--muted-foreground);
+  font-size: var(--dn-text-sm);
+}
+
+.dn-state-panel-details summary {
+  min-height: 44px;
+  padding-block: 0.5rem;
+  cursor: pointer;
+}
+
+.dn-state-panel-error {
+  border-color: var(--destructive);
+}
+
+.dn-state-panel-offline,
+.dn-state-panel-unavailable,
+.dn-state-panel-degraded {
+  border-color: var(--warning);
+}
+
+.dn-visual-card-action:focus-visible,
+.dn-responsive-action-bar > :is(button, a):focus-visible,
+.dn-state-panel-action > :is(button, a):focus-visible,
+.dn-workspace-page-actions > :is(button, a):focus-visible,
+.dn-workspace-hero-actions > :is(button, a):focus-visible {
+  outline: 3px solid var(--dn-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 52rem) {
+  .dn-workspace-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dn-workspace-page-header {
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dn-workspace-page * {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+  }
+}

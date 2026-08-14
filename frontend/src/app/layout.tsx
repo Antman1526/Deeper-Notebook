@@ -7,6 +7,7 @@ import "katex/dist/katex.min.css";
 import "@/components/deeper-notebook/tokens.css";
 import "@/components/deeper-notebook/folio/folio.css";
 import "@/components/deeper-notebook/shell/shell.css";
+import "@/components/deeper-notebook/workspace/workspace.css";
 import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
