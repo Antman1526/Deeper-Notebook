@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import * as React from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import { ResponsiveActionBar } from './ResponsiveActionBar'
 import { StatePanel } from './StatePanel'
@@ -40,6 +40,23 @@ describe('shared workspace primitives', () => {
     expect(screen.getAllByRole('button')).toHaveLength(1)
     fireEvent.click(action)
     expect(onActivate).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps nested activation to one dispatch and excludes outer activation props', () => {
+    const onActivate = vi.fn()
+    const outerOnClick = vi.fn()
+    const cardProps = {
+      title: 'Paper C',
+      onActivate,
+      onClick: outerOnClick,
+    } as React.ComponentProps<typeof VisualCard>
+
+    render(<VisualCard {...cardProps}>Grounded summary</VisualCard>)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Paper C' }))
+    expect(onActivate).toHaveBeenCalledTimes(1)
+    expect(outerOnClick).not.toHaveBeenCalled()
+    expectTypeOf<React.ComponentProps<typeof VisualCard>>().not.toHaveProperty('onClick')
   })
 
   it('renders a link action without creating a second action tree', () => {
@@ -138,6 +155,36 @@ describe('shared workspace primitives', () => {
     expect(gridRef.current).toHaveAttribute('data-dn-visual-card-grid', 'true')
     expect(stateRef.current).toHaveAttribute('data-dn-state-panel', 'true')
     expect(actionsRef.current).toHaveAttribute('data-dn-responsive-action-bar', 'true')
+  })
+
+  it('maps compact, standard, and wide grid minimums to their sizing contracts', () => {
+    const { container, rerender } = render(
+      <VisualCardGrid minimum="compact">Compact grid</VisualCardGrid>,
+    )
+    const grid = () => container.querySelector('[data-dn-visual-card-grid]')
+
+    expect(grid()).toHaveClass('dn-visual-card-grid-compact')
+    expect(grid()).toHaveAttribute('data-dn-visual-card-grid-minimum', 'compact')
+
+    rerender(<VisualCardGrid minimum="standard">Standard grid</VisualCardGrid>)
+    expect(grid()).toHaveClass('dn-visual-card-grid-standard')
+    expect(grid()).toHaveAttribute('data-dn-visual-card-grid-minimum', 'standard')
+
+    rerender(<VisualCardGrid minimum="wide">Wide grid</VisualCardGrid>)
+    expect(grid()).toHaveClass('dn-visual-card-grid-wide')
+    expect(grid()).toHaveAttribute('data-dn-visual-card-grid-minimum', 'wide')
+    expect(workspaceStyles).toContain(
+      'grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--dn-visual-card-minimum)), 1fr));',
+    )
+  })
+
+  it('keeps card body content at base text size while metadata remains small', () => {
+    expect(workspaceStyles).toMatch(
+      /\.dn-visual-card-content\s*\{\s*font-size:\s*var\(--dn-text-base\)/,
+    )
+    expect(workspaceStyles).toMatch(
+      /\.dn-visual-card-metadata\s*\{\s*font-size:\s*var\(--dn-text-sm\)/,
+    )
   })
 
   it('provides adaptive and reduced-motion CSS contracts without a fixed page width', () => {

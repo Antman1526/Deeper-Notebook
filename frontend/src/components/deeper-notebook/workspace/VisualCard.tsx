@@ -9,14 +9,22 @@ export type VisualCardInteraction =
   | { href?: never; onActivate(): void }
   | { href?: never; onActivate?: never }
 
+type VisualCardHostProps = Omit<
+  React.HTMLAttributes<HTMLElement>,
+  'children' | 'title' | 'onClick'
+>
+
 export type VisualCardProps = VisualCardInteraction &
-  Omit<React.HTMLAttributes<HTMLElement>, 'children' | 'title'> & {
+  VisualCardHostProps & {
     title: string
     description?: React.ReactNode
     media?: React.ReactNode
     metadata?: React.ReactNode
     children?: React.ReactNode
   }
+
+type VisualCardRuntimeProps = VisualCardProps &
+  Pick<React.HTMLAttributes<HTMLElement>, 'onClick'>
 
 /** Shared article geometry with at most one caller-owned activation action. */
 export const VisualCard = React.forwardRef<HTMLElement, VisualCardProps>(
@@ -31,10 +39,12 @@ export const VisualCard = React.forwardRef<HTMLElement, VisualCardProps>(
       onActivate,
       className,
       'aria-labelledby': labelledByOverride,
+      onClick: outerOnClick,
       ...rest
-    },
+    }: VisualCardRuntimeProps,
     ref,
-  ) {
+  ): React.ReactElement {
+    void outerOnClick
     const generatedId = React.useId()
     const titleId = `${generatedId}-title`
     const labelledBy = labelledByOverride ?? titleId

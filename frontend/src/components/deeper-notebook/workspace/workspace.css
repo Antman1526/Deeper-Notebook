@@ -126,7 +126,7 @@
 .dn-visual-card-grid {
   container-type: inline-size;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--dn-visual-card-minimum)), 1fr));
   gap: clamp(0.75rem, 2cqi, 1.25rem);
   min-width: 0;
 }
@@ -182,8 +182,15 @@
 .dn-visual-card-content,
 .dn-visual-card-metadata {
   color: var(--muted-foreground);
-  font-size: var(--dn-text-sm);
   line-height: 1.5;
+}
+
+.dn-visual-card-content {
+  font-size: var(--dn-text-base);
+}
+
+.dn-visual-card-metadata {
+  font-size: var(--dn-text-sm);
 }
 
 .dn-visual-card-action,
