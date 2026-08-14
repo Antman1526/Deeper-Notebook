@@ -6,10 +6,12 @@ import {
   isModelFleetEnabled,
   isResearchRunsEnabled,
   isStudyWorkbenchEnabled,
+  isVisualSystemV2Enabled,
   isVisualRefreshEnabled,
 } from './features'
 
 const FEATURE_ENV = [
+  'NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2',
   'NEXT_PUBLIC_DN_VISUAL_REFRESH',
   'NEXT_PUBLIC_DN_EVIDENCE_STUDIO',
   'NEXT_PUBLIC_DN_MODEL_FLEET',
@@ -48,6 +50,17 @@ describe('frontend feature flags', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
 
     expect(isLuminousFolioEnabled()).toBe(false)
+  })
+
+  it('keeps the Gemini-forward visual system disabled until explicitly enabled', () => {
+    delete process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2
+    expect(isVisualSystemV2Enabled()).toBe(false)
+
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
+    expect(isVisualSystemV2Enabled()).toBe(true)
+
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
+    expect(isVisualSystemV2Enabled()).toBe(false)
   })
 
   it('enables the Study Workbench by default and accepts its canonical rollback flag', () => {

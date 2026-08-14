@@ -51,3 +51,7 @@ export function isLuminousFolioEnabled(): boolean {
     true,
   )
 }
+
+export function isVisualSystemV2Enabled(): boolean {
+  return envFlag(process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2, undefined, false)
+}
