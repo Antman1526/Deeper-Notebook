@@ -169,3 +169,59 @@ hierarchy, coherent palette behavior, lower-content reachability, and bounded
 controls without gradients, glass, decorative motion, or generated imagery.
 Phase 2 source-derived imagery and local cache work remains intentionally out
 of scope.
+
+## Task 7 Phase 1 closeout
+
+Phase 1 closes at `fa7c7ae1` plus this receipt. The implementation remains
+strictly presentation-scoped: the complete change set contains frontend UI,
+tests, browser fixtures, and verification metadata only. No backend route,
+database schema, provider, credential, source authority, or persisted domain
+contract changed. `frontend/package.json` adds only the dedicated Playwright
+matrix command; dependency manifests and lockfiles are unchanged.
+
+### Final verification
+
+```text
+Focused Phase 1 unit contracts:      11 files / 89 tests passed
+Full frontend unit suite:            233 files / 1,674 tests passed
+Full visual-system browser matrix:   280 passed / 1 expected rollback skip
+Explicit V2-off rollback:            1 passed
+Product identity suite:              141 passed
+```
+
+Full ESLint completed with zero errors and the two unchanged unused-argument
+warnings in `StudyVoiceTutor.test.tsx`. `npx tsc --noEmit`, V2-on and V2-off
+production builds, and `npm run test:feature-build-contract` all exited 0.
+The flagship browser cells remained at or below the 0.05 CLS budget.
+
+The final V2-on/V2-off compressed asset comparison was effectively neutral:
+
+```text
+V2 on:   JavaScript 2,326,340 bytes gzip; CSS 47,810 bytes gzip
+V2 off:  JavaScript 2,326,341 bytes gzip; CSS 47,810 bytes gzip
+Delta:   JavaScript -1 byte; CSS 0 bytes
+Budgets: JavaScript +30,720 bytes; CSS +20,480 bytes
+```
+
+The strict rebrand audit closes with 827 compatibility aliases, 1,749
+historical references, 586 migration references, 99 upstream references,
+zero unexpected active identities, and zero stale allowlist selectors. Its
+dedicated 141-test identity suite passed after the exact selector inventory
+and coverage hashes were refreshed.
+
+### Final review
+
+Native Sol review of `c98e6a23..fa7c7ae1` found no Critical or Important
+correctness, accessibility, security, rollback, or authority defect. The
+review checked the route/flag boundary, theme hydration fail-closed behavior,
+exact request ledgers, responsive text/action/card containment, semantic
+browser action naming, target size, scroll reachability, reduced motion,
+external asset isolation, dependency scope, and V2-off parity. Open Code
+Review could not run because no review model endpoint is configured; Code
+Review Graph output was absent, so neither helper is represented as evidence.
+The native review, full unit suite, exact 264-cell route matrix, production
+builds, rebrand audit, and leak scans remain the authoritative proof.
+
+Phase 2 is not started. Source-derived imagery, provenance labels, local cache
+management, and any broader Gemini-inspired visual enrichment remain behind a
+separate design and approval boundary.
