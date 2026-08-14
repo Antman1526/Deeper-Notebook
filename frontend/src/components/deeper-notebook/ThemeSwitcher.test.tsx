@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { THEME_SELECTION_CHANGE_EVENT } from '@/lib/theme-storage'
 import { useThemeStore } from '@/lib/stores/theme-store'
+import { THEME_CATALOG } from '@/lib/themes/catalog'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 
 const { deeperNotebookFetch } = vi.hoisted(() => ({
@@ -128,7 +129,7 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     expect(screen.getAllByText('Dark')).toHaveLength(2)
     expect(screen.getByText('Accessibility')).toBeVisible()
     expect(screen.getByText('Classics')).toBeVisible()
-    expect(screen.getAllByRole('button')).toHaveLength(26)
+    expect(screen.getAllByRole('button')).toHaveLength(THEME_CATALOG.length + 1)
 
     fireEvent.click(screen.getByRole('button', { name: 'Research Core Light' }))
 
