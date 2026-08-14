@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { chromium } from '@playwright/test'
 import { fireEvent, render, screen } from '@testing-library/react'
 import * as React from 'react'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
@@ -24,6 +25,7 @@ vi.mock('@/components/guided-tips', () => ({ GuidedTipsProvider: () => null }))
 vi.mock('@/components/podcasts/GlobalAudioPlayer', () => ({ GlobalAudioPlayer: () => null }))
 
 const workspaceStyles = fs.readFileSync(path.resolve(__dirname, 'workspace.css'), 'utf8')
+const shellStyles = fs.readFileSync(path.resolve(__dirname, '../shell/shell.css'), 'utf8')
 
 describe('shared workspace primitives', () => {
   it('mounts one V2 page slot and one shared Focus authority', () => {
@@ -274,5 +276,55 @@ describe('shared workspace primitives', () => {
     expect(desktopStyles).toMatch(
       /html\[data-dn-focus-mode="true"\]\s+\.dn-workspace-shell-body\s*\{[\s\S]*?grid-template-columns:\s*var\(--dn-focus-rail\)\s+minmax\(0,\s*1fr\)\s+var\(--dn-focus-rail\);/,
     )
+  })
+
+  it('keeps an opened Context Lens fully visible when desktop V2 Focus is active', async () => {
+    const browser = await chromium.launch({ headless: true })
+
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+      await page.setContent(`
+        <!doctype html>
+        <html data-dn-focus-mode="true">
+          <head>
+            <style>
+              html, body { margin: 0; width: 100%; height: 100%; }
+              ${shellStyles}
+              ${workspaceStyles}
+            </style>
+          </head>
+          <body>
+            <div class="dn-workspace-shell">
+              <div class="dn-instrument-dock"></div>
+              <div class="dn-workspace-shell-body">
+                <div class="dn-command-bar"></div>
+                <nav class="dn-adaptive-navigator"></nav>
+                <main class="dn-workspace-canvas"></main>
+                <aside class="dn-context-lens is-open">Context lens</aside>
+              </div>
+            </div>
+          </body>
+        </html>
+      `)
+
+      const geometry = await page.locator('.dn-context-lens').evaluate((element) => {
+        const lens = element.getBoundingClientRect()
+        const shell = element.parentElement?.getBoundingClientRect()
+
+        return {
+          left: lens.left,
+          right: lens.right,
+          width: lens.width,
+          shellRight: shell?.right ?? Number.NaN,
+        }
+      })
+
+      expect(geometry.width).toBeGreaterThanOrEqual(17 * 16)
+      expect(geometry.left).toBeGreaterThanOrEqual(0)
+      expect(geometry.right).toBeLessThanOrEqual(1280)
+      expect(geometry.right).toBeCloseTo(geometry.shellRight, 0)
+    } finally {
+      await browser.close()
+    }
   })
 })

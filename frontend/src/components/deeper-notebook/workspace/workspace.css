@@ -346,6 +346,13 @@
   html[data-dn-focus-mode="true"] .dn-workspace-shell-body {
     grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr) var(--dn-focus-rail);
   }
+
+  /* The shared Focus reveal is wider than V2's right rail; anchor it to the
+   * track's inward edge so the full lens stays inside the shell viewport. */
+  html[data-dn-focus-mode="true"] .dn-workspace-shell-body > .dn-context-lens.is-open,
+  html[data-dn-focus-mode="true"] .dn-workspace-shell-body > .dn-context-lens:focus-within {
+    justify-self: end;
+  }
 }
 
 .dn-workspace-page {
