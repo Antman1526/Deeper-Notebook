@@ -1,0 +1,3 @@
+REMOVE TABLE IF EXISTS source_visual_operation;
+REMOVE TABLE IF EXISTS source_visual_claim;
+REMOVE TABLE IF EXISTS source_visual_cache;

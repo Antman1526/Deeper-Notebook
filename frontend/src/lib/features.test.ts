@@ -5,6 +5,7 @@ import {
   isLuminousFolioEnabled,
   isModelFleetEnabled,
   isResearchRunsEnabled,
+  isSourceVisualsEnabled,
   isStudyWorkbenchEnabled,
   isVisualSystemV2Enabled,
   isVisualRefreshEnabled,
@@ -12,6 +13,7 @@ import {
 
 const FEATURE_ENV = [
   'NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2',
+  'NEXT_PUBLIC_DN_SOURCE_VISUALS',
   'NEXT_PUBLIC_DN_VISUAL_REFRESH',
   'NEXT_PUBLIC_DN_EVIDENCE_STUDIO',
   'NEXT_PUBLIC_DN_MODEL_FLEET',
@@ -61,6 +63,17 @@ describe('frontend feature flags', () => {
 
     process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
     expect(isVisualSystemV2Enabled()).toBe(false)
+  })
+
+  it('keeps source visuals off unless explicitly enabled', () => {
+    delete process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS
+    expect(isSourceVisualsEnabled()).toBe(false)
+
+    process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS = '1'
+    expect(isSourceVisualsEnabled()).toBe(true)
+
+    process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS = '0'
+    expect(isSourceVisualsEnabled()).toBe(false)
   })
 
   it('enables the Study Workbench by default and accepts its canonical rollback flag', () => {

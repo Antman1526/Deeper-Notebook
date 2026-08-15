@@ -147,6 +147,19 @@ def test_default_migration_discovery_includes_navigation_39_and_down():
     assert downs[38].version == 39
 
 
+def test_migration_46_is_symmetric_and_schema_full():
+    ups, downs = AsyncMigrationManager._discover_migrations()
+
+    assert ups[45].version == 46
+    assert "DEFINE TABLE IF NOT EXISTS source_visual_cache SCHEMAFULL" in ups[45].sql
+    assert "DEFINE TABLE IF NOT EXISTS source_visual_claim SCHEMAFULL" in ups[45].sql
+    assert "DEFINE TABLE IF NOT EXISTS source_visual_operation SCHEMAFULL" in ups[45].sql
+    assert downs[45] is not None
+    assert "REMOVE TABLE IF EXISTS source_visual_operation" in downs[45].sql
+    assert "REMOVE TABLE IF EXISTS source_visual_claim" in downs[45].sql
+    assert "REMOVE TABLE IF EXISTS source_visual_cache" in downs[45].sql
+
+
 def test_discover_ignores_non_numeric_files(tmp_path):
     """README.md / *.txt in the migrations dir must not break discovery."""
     _write_migration_files(tmp_path, ns=[1, 2])

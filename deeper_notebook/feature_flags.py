@@ -33,3 +33,11 @@ def research_runs_enabled() -> bool:
 
 def study_workbench_enabled() -> bool:
     return _env_flag("DEEPER_NOTEBOOK_STUDY_WORKBENCH", default=True)
+
+
+def source_visuals_enabled() -> bool:
+    """Return whether source-derived visual extraction is explicitly enabled."""
+    raw = os.environ.get("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED")
+    if raw is None:
+        return False
+    return raw.strip().lower() in _TRUTHY

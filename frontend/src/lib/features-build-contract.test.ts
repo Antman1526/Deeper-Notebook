@@ -17,6 +17,7 @@ const PUBLIC_FLAG_NAMES = [
   'NEXT_PUBLIC_DN_STUDY_WORKBENCH',
   'NEXT_PUBLIC_DN_LUMINOUS_FOLIO',
   'NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2',
+  'NEXT_PUBLIC_DN_SOURCE_VISUALS',
 ] as const
 
 describe('Next production feature-flag contract', () => {

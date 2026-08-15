@@ -63,6 +63,19 @@ def test_study_workbench_flag_defaults_on_and_accepts_explicit_rollback(monkeypa
     assert feature_flags.study_workbench_enabled() is False
 
 
+def test_source_visual_flag_defaults_off_and_accepts_explicit_enable(monkeypatch):
+    import deeper_notebook.feature_flags as flags
+
+    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED", raising=False)
+    assert flags.source_visuals_enabled() is False
+
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED", "1")
+    assert flags.source_visuals_enabled() is True
+
+    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED", "0")
+    assert flags.source_visuals_enabled() is False
+
+
 def test_studio_artifact_domain_contract():
     from deeper_notebook.domain.notebook import StudioArtifact
 
