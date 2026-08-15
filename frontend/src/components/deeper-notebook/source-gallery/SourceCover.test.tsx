@@ -6,6 +6,7 @@ import type { SourceListResponse } from '@/lib/types/api'
 import type { SourceVisualReceipt, SourceVisualStatus } from '@/lib/types/source-visuals'
 
 const hash = 'a'.repeat(64)
+const opaqueToken = 'b'.repeat(64)
 const timestamp = '2026-08-15T12:00:00Z'
 
 function visual(overrides: Partial<SourceVisualReceipt> = {}): SourceVisualReceipt {
@@ -67,6 +68,15 @@ describe('SourceCover', () => {
     expect(container.querySelector('[data-dn-source-cover-aspect]')).toBeInTheDocument()
   })
 
+  it('accepts the backend source-bound opaque URL token independently of the asset hash', () => {
+    render(<SourceCover source={source({ visual: visual({ asset_url: `/api/sources/source%3Aone/visual?v=${opaqueToken}` }) })} />)
+
+    expect(screen.getByRole('img')).toHaveAttribute(
+      'src',
+      `/api/sources/source%3Aone/visual?v=${opaqueToken}`,
+    )
+  })
+
   it('uses intentional typographic fallbacks for missing, invalid, and broken visuals', () => {
     const { container, rerender } = render(<SourceCover source={source({ visual: null })} />)
 
@@ -78,7 +88,7 @@ describe('SourceCover', () => {
     rerender(<SourceCover source={source({ visual: { asset_url: 'https://untrusted.invalid/image.webp' } as never })} />)
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
 
-    rerender(<SourceCover source={source({ visual: visual({ asset_url: `/api/sources/source%3Aone/visual?v=${'b'.repeat(64)}` }) })} />)
+    rerender(<SourceCover source={source({ visual: visual({ asset_url: `/api/sources/source%3Atwo/visual?v=${opaqueToken}` }) })} />)
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
 
     rerender(<SourceCover source={source()} />)

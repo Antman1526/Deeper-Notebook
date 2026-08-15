@@ -6,6 +6,7 @@ import type { SourceListResponse } from '@/lib/types/api'
 import { RecentSourceStrip } from './RecentSourceStrip'
 
 const hash = 'a'.repeat(64)
+const opaqueToken = 'b'.repeat(64)
 
 const source: SourceListResponse = {
   id: 'source:one',
@@ -25,7 +26,7 @@ const source: SourceListResponse = {
     width: 640,
     height: 360,
     mime_type: 'image/webp',
-    asset_url: `/api/sources/source%3Aone/visual?v=${hash}`,
+    asset_url: `/api/sources/source%3Aone/visual?v=${opaqueToken}`,
     created_at: '2026-08-10T00:00:00Z',
     updated_at: '2026-08-10T00:01:00Z',
     origin: 'embedded',

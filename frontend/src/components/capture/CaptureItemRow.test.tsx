@@ -99,6 +99,7 @@ describe('CaptureItemRow', () => {
 
   it('renders an actionless compact cover only from an exact linked source', () => {
     const hash = 'c'.repeat(64)
+    const opaqueToken = 'd'.repeat(64)
     render(
       <CaptureItemRow
         showVisualCover
@@ -108,7 +109,7 @@ describe('CaptureItemRow', () => {
           byte_size: 4_096, modified_ns: 1, reason: null,
           linked_source: {
             id: 'source:linked',
-            visual: { source_id: 'source:linked', content_sha256: hash, asset_sha256: hash, alt_text: 'Imported field notes', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Alinked/visual?v=${hash}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
+            visual: { source_id: 'source:linked', content_sha256: hash, asset_sha256: hash, alt_text: 'Imported field notes', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Alinked/visual?v=${opaqueToken}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
           },
         }}
       />,
@@ -160,6 +161,7 @@ describe('CaptureItemRow', () => {
     ['source visuals off', true, false, false],
   ])('passes the exact Capture route visual gate when %s', (_label, visualSystem, sourceVisuals, visible) => {
     const hash = 'f'.repeat(64)
+    const opaqueToken = '0'.repeat(64)
     mockVisualSystemEnabled.mockReturnValue(visualSystem)
     mockSourceVisualsEnabled.mockReturnValue(sourceVisuals)
     mockCaptureItems.current = [{
@@ -168,7 +170,7 @@ describe('CaptureItemRow', () => {
       byte_size: 4_096, modified_ns: 1, reason: null,
       linked_source: {
         id: 'source:linked',
-        visual: { source_id: 'source:linked', content_sha256: hash, asset_sha256: hash, alt_text: 'Imported field notes', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Alinked/visual?v=${hash}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
+        visual: { source_id: 'source:linked', content_sha256: hash, asset_sha256: hash, alt_text: 'Imported field notes', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Alinked/visual?v=${opaqueToken}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
       },
     }]
 

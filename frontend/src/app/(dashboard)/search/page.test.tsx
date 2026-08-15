@@ -63,6 +63,7 @@ describe('SearchPage', () => {
 
   it('adds a compact cover and exact first-match Evidence Peek only to source results', async () => {
     const hash = 'b'.repeat(64)
+    const opaqueToken = 'c'.repeat(64)
     mockVisualSystemEnabled.mockReturnValue(true)
     mockSourceVisualsEnabled.mockReturnValue(true)
     mockSearchParams.current = 'mode=search'
@@ -73,12 +74,12 @@ describe('SearchPage', () => {
         {
           id: 'source:one', title: 'Source result', parent_id: '', final_score: 0.9,
           matches: ['first exact match', 'second match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z',
-          visual: { source_id: 'source:one', content_sha256: hash, asset_sha256: hash, alt_text: 'Source evidence cover', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Aone/visual?v=${hash}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
+          visual: { source_id: 'source:one', content_sha256: hash, asset_sha256: hash, alt_text: 'Source evidence cover', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Aone/visual?v=${opaqueToken}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
         },
         {
           id: 'source_insight:two', title: 'Insight result', parent_id: 'source:one', final_score: 0.8,
           matches: ['insight match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z',
-          visual: { source_id: 'source:two', content_sha256: hash, asset_sha256: hash, alt_text: 'Must not render', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Atwo/visual?v=${hash}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
+          visual: { source_id: 'source:two', content_sha256: hash, asset_sha256: hash, alt_text: 'Must not render', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Atwo/visual?v=${opaqueToken}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
         },
         {
           id: 'note:three', title: 'Note result', parent_id: 'source:one', final_score: 0.7,

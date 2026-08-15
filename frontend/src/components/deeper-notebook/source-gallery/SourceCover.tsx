@@ -70,8 +70,11 @@ function isReceiptForSource(value: SourceVisualReceipt | null | undefined, sourc
   if (!value || value.source_id !== sourceId || value.mime_type !== 'image/webp') return false
   if (!Number.isInteger(value.width) || !Number.isInteger(value.height) || value.width < 1 || value.height < 1) return false
   if (!/^[0-9a-f]{64}$/.test(value.content_sha256) || !/^[0-9a-f]{64}$/.test(value.asset_sha256) || !value.alt_text.trim()) return false
-  const expectedUrl = `/api/sources/${encodeURIComponent(sourceId)}/visual?v=${value.asset_sha256}`
-  return value.asset_url === expectedUrl && hasValidLocator(value)
+  const expectedPrefix = `/api/sources/${encodeURIComponent(sourceId)}/visual?v=`
+  const opaqueVersion = value.asset_url.startsWith(expectedPrefix)
+    ? value.asset_url.slice(expectedPrefix.length)
+    : ''
+  return /^[0-9a-f]{64}$/.test(opaqueVersion) && hasValidLocator(value)
 }
 
 export function SourceCover({
