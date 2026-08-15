@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Treat `docs/superpowers/specs/2026-08-14-gemini-forward-phase-2a-source-gallery-design.md` at commit `35a6026b` as the approved authority.
+- Treat `docs/superpowers/specs/2026-08-14-gemini-forward-phase-2a-source-gallery-design.md` at commit `bbd67220d6f942eba23e3eea08e1caa3686de9e6` as the approved authority.
 - Preserve `source` as the sole content/evidence authority; all visual rows and files are derived and disposable.
 - Backend flag `DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED` and frontend flag `NEXT_PUBLIC_DN_SOURCE_VISUALS` both default off; explicit `0` disables them.
 - Frontend Source Gallery also requires `NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2`; either flag off preserves the current UI and request ledger.
