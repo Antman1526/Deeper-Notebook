@@ -151,9 +151,30 @@ def test_migration_46_is_symmetric_and_schema_full():
     ups, downs = AsyncMigrationManager._discover_migrations()
 
     assert ups[45].version == 46
-    assert "DEFINE TABLE IF NOT EXISTS source_visual_cache SCHEMAFULL" in ups[45].sql
-    assert "DEFINE TABLE IF NOT EXISTS source_visual_claim SCHEMAFULL" in ups[45].sql
-    assert "DEFINE TABLE IF NOT EXISTS source_visual_operation SCHEMAFULL" in ups[45].sql
+    sql = ups[45].sql
+    assert "DEFINE TABLE IF NOT EXISTS source_visual_cache SCHEMAFULL" in sql
+    assert "DEFINE TABLE IF NOT EXISTS source_visual_claim SCHEMAFULL" in sql
+    assert "DEFINE TABLE IF NOT EXISTS source_visual_operation SCHEMAFULL" in sql
+    assert (
+        "DEFINE FIELD IF NOT EXISTS source_locator ON TABLE source_visual_cache TYPE object"
+        in sql
+    )
+    assert "source_locator ON TABLE source_visual_cache FLEXIBLE TYPE object" not in sql
+    assert (
+        "DEFINE FIELD IF NOT EXISTS source_locator.page ON TABLE source_visual_cache TYPE option<int> "
+        "ASSERT $value = NONE OR ($value >= 1 AND $value <= 24);"
+    ) in sql
+    assert (
+        "DEFINE FIELD IF NOT EXISTS source_locator.timestamp_ms ON TABLE source_visual_cache TYPE option<int> "
+        "ASSERT $value = NONE OR $value >= 0;"
+    ) in sql
+    assert (
+        "DEFINE FIELD IF NOT EXISTS source_locator.resource_id ON TABLE source_visual_cache TYPE option<string> "
+        "ASSERT $value = NONE OR (string::len($value) >= 1 AND string::len($value) <= 128);"
+    ) in sql
+    assert "($value.page != NONE AND $value.timestamp_ms = NONE AND $value.resource_id = NONE)" in sql
+    assert "($value.page = NONE AND $value.timestamp_ms != NONE AND $value.resource_id = NONE)" in sql
+    assert "($value.page = NONE AND $value.timestamp_ms = NONE AND $value.resource_id != NONE)" in sql
     assert downs[45] is not None
     assert "REMOVE TABLE IF EXISTS source_visual_operation" in downs[45].sql
     assert "REMOVE TABLE IF EXISTS source_visual_claim" in downs[45].sql

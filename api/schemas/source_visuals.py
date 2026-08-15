@@ -5,12 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from deeper_notebook.source_visuals.contracts import (
     SHA256,
     SourceVisualLocator,
     SourceVisualOrigin,
+    validate_source_visual_origin_locator,
 )
 
 ERROR_CODE = r"^[a-z0-9][a-z0-9_.-]{0,63}$"
@@ -45,6 +46,11 @@ class SourceVisualReceiptResponse(_StrictSourceVisualSchema):
     asset_url: str = Field(min_length=1, max_length=4096)
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def origin_matches_source_locator(self) -> "SourceVisualReceiptResponse":
+        validate_source_visual_origin_locator(self.origin, self.source_locator)
+        return self
 
 
 class SourceVisualStatusResponse(_StrictSourceVisualSchema):

@@ -11,6 +11,55 @@ HASH = "a" * 64
 OTHER_HASH = "b" * 64
 NOW = datetime(2026, 8, 14, tzinfo=timezone.utc)
 
+VALID_ORIGIN_LOCATORS = (
+    ("embedded", {"page": 1}),
+    ("embedded", {"resource_id": "embedded-image-1"}),
+    ("video_frame", {"timestamp_ms": 0}),
+    ("audio_artwork", {"resource_id": "album-art-1"}),
+)
+INVALID_ORIGIN_LOCATORS = (
+    ("embedded", {"timestamp_ms": 0}),
+    ("video_frame", {"page": 1}),
+    ("video_frame", {"resource_id": "video-poster-1"}),
+    ("audio_artwork", {"page": 1}),
+    ("audio_artwork", {"timestamp_ms": 0}),
+)
+
+
+def _record_payload(origin: str, source_locator: object) -> dict[str, object]:
+    return {
+        "source_id": "source:one",
+        "source_updated_at": NOW,
+        "source_file_sha256": None,
+        "content_sha256": HASH,
+        "asset_sha256": OTHER_HASH,
+        "asset_relpath": "ab/" + HASH + "/" + OTHER_HASH + ".webp",
+        "origin": origin,
+        "source_locator": source_locator,
+        "extractor_version": "source-visual-v1",
+        "alt_text": "Source one visual",
+        "width": 1280,
+        "height": 720,
+        "created_at": NOW,
+        "updated_at": NOW,
+    }
+
+
+def _receipt_payload(origin: str, source_locator: object) -> dict[str, object]:
+    return {
+        "source_id": "source:one",
+        "content_sha256": HASH,
+        "asset_sha256": OTHER_HASH,
+        "origin": origin,
+        "source_locator": source_locator,
+        "alt_text": "Source one visual",
+        "width": 640,
+        "height": 360,
+        "asset_url": "/api/sources/source%3Aone/visual?v=" + HASH,
+        "created_at": NOW,
+        "updated_at": NOW,
+    }
+
 
 def test_source_visual_locator_requires_exactly_one_bounded_value():
     from deeper_notebook.source_visuals.contracts import SourceVisualLocator
@@ -86,6 +135,37 @@ def test_internal_source_visual_records_are_frozen_and_hash_strict():
             height=1,
             created_at=NOW,
             updated_at=NOW,
+        )
+
+
+@pytest.mark.parametrize(("origin", "locator_payload"), VALID_ORIGIN_LOCATORS)
+def test_internal_source_visual_records_accept_origin_appropriate_locators(
+    origin: str, locator_payload: dict[str, int | str]
+):
+    from deeper_notebook.source_visuals.contracts import (
+        SourceVisualLocator,
+        SourceVisualRecord,
+    )
+
+    locator = SourceVisualLocator(**locator_payload)
+    record = SourceVisualRecord(**_record_payload(origin, locator))
+
+    assert record.origin == origin
+    assert record.source_locator == locator
+
+
+@pytest.mark.parametrize(("origin", "locator_payload"), INVALID_ORIGIN_LOCATORS)
+def test_internal_source_visual_records_reject_origin_locator_mismatches(
+    origin: str, locator_payload: dict[str, int | str]
+):
+    from deeper_notebook.source_visuals.contracts import (
+        SourceVisualLocator,
+        SourceVisualRecord,
+    )
+
+    with pytest.raises(ValidationError, match="does not support"):
+        SourceVisualRecord(
+            **_record_payload(origin, SourceVisualLocator(**locator_payload))
         )
 
 
@@ -222,3 +302,30 @@ def test_prepared_asset_and_api_contracts_are_bounded_and_private():
     assert job.outcome == "replayed"
     with pytest.raises(ValidationError):
         SourceVisualJobResponse(**{**job.model_dump(), "source_text": "private"})
+
+
+@pytest.mark.parametrize(("origin", "locator_payload"), VALID_ORIGIN_LOCATORS)
+def test_http_source_visual_receipts_accept_origin_appropriate_locators(
+    origin: str, locator_payload: dict[str, int | str]
+):
+    from api.schemas.source_visuals import SourceVisualReceiptResponse
+    from deeper_notebook.source_visuals.contracts import SourceVisualLocator
+
+    locator = SourceVisualLocator(**locator_payload)
+    receipt = SourceVisualReceiptResponse(**_receipt_payload(origin, locator))
+
+    assert receipt.origin == origin
+    assert receipt.source_locator == locator
+
+
+@pytest.mark.parametrize(("origin", "locator_payload"), INVALID_ORIGIN_LOCATORS)
+def test_http_source_visual_receipts_reject_origin_locator_mismatches(
+    origin: str, locator_payload: dict[str, int | str]
+):
+    from api.schemas.source_visuals import SourceVisualReceiptResponse
+    from deeper_notebook.source_visuals.contracts import SourceVisualLocator
+
+    with pytest.raises(ValidationError, match="does not support"):
+        SourceVisualReceiptResponse(
+            **_receipt_payload(origin, SourceVisualLocator(**locator_payload))
+        )

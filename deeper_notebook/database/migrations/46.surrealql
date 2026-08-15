@@ -7,7 +7,14 @@ DEFINE FIELD IF NOT EXISTS content_sha256 ON TABLE source_visual_cache TYPE stri
 DEFINE FIELD IF NOT EXISTS asset_sha256 ON TABLE source_visual_cache TYPE string ASSERT string::matches($value, "^[0-9a-f]{64}$");
 DEFINE FIELD IF NOT EXISTS asset_relpath ON TABLE source_visual_cache TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
 DEFINE FIELD IF NOT EXISTS origin ON TABLE source_visual_cache TYPE string ASSERT $value IN ["embedded", "video_frame", "audio_artwork"];
-DEFINE FIELD IF NOT EXISTS source_locator ON TABLE source_visual_cache FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS source_locator ON TABLE source_visual_cache TYPE object ASSERT (
+    ($value.page != NONE AND $value.timestamp_ms = NONE AND $value.resource_id = NONE)
+    OR ($value.page = NONE AND $value.timestamp_ms != NONE AND $value.resource_id = NONE)
+    OR ($value.page = NONE AND $value.timestamp_ms = NONE AND $value.resource_id != NONE)
+);
+DEFINE FIELD IF NOT EXISTS source_locator.page ON TABLE source_visual_cache TYPE option<int> ASSERT $value = NONE OR ($value >= 1 AND $value <= 24);
+DEFINE FIELD IF NOT EXISTS source_locator.timestamp_ms ON TABLE source_visual_cache TYPE option<int> ASSERT $value = NONE OR $value >= 0;
+DEFINE FIELD IF NOT EXISTS source_locator.resource_id ON TABLE source_visual_cache TYPE option<string> ASSERT $value = NONE OR (string::len($value) >= 1 AND string::len($value) <= 128);
 DEFINE FIELD IF NOT EXISTS extractor_version ON TABLE source_visual_cache TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 64;
 DEFINE FIELD IF NOT EXISTS alt_text ON TABLE source_visual_cache TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 300;
 DEFINE FIELD IF NOT EXISTS width ON TABLE source_visual_cache TYPE int ASSERT $value >= 1 AND $value <= 1280;

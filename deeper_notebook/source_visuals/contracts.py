@@ -31,6 +31,32 @@ class SourceVisualLocator(BaseModel):
         return self
 
 
+def validate_source_visual_origin_locator(
+    origin: SourceVisualOrigin, source_locator: SourceVisualLocator
+) -> None:
+    """Bind each source visual origin to its supported locator kind."""
+
+    supported_locator_fields = {
+        "embedded": {"page", "resource_id"},
+        "video_frame": {"timestamp_ms"},
+        "audio_artwork": {"resource_id"},
+    }
+    locator_field = next(
+        (
+            field
+            for field in ("page", "timestamp_ms", "resource_id")
+            if getattr(source_locator, field) is not None
+        ),
+        None,
+    )
+    if locator_field is None:
+        raise ValueError("source visual locator must contain exactly one value")
+    if locator_field not in supported_locator_fields[origin]:
+        raise ValueError(
+            f"source visual origin {origin!r} does not support {locator_field!r}"
+        )
+
+
 class SourceVisualAuthority(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -64,6 +90,11 @@ class SourceVisualRecord(BaseModel):
     mime_type: Literal["image/webp"] = "image/webp"
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def origin_matches_source_locator(self) -> "SourceVisualRecord":
+        validate_source_visual_origin_locator(self.origin, self.source_locator)
+        return self
 
 
 class SourceVisualClaim(BaseModel):
