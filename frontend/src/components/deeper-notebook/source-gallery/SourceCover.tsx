@@ -82,11 +82,12 @@ export function SourceCover({
   onRefresh,
   onRemove,
 }: SourceCoverProps) {
-  const [imageFailed, setImageFailed] = useState(false)
+  const [failedAssetIdentity, setFailedAssetIdentity] = useState<string | null>(null)
   const [pendingIdentity, setPendingIdentity] = useState<string | null>(null)
   const title = source.title?.trim() || 'Untitled source'
-  const validVisual = isReceiptForSource(source.visual, source.id)
-  const visual = validVisual && !imageFailed ? source.visual : null
+  const validVisual = isReceiptForSource(source.visual, source.id) ? source.visual : null
+  const assetIdentity = validVisual ? `${source.id}|${validVisual.asset_sha256}` : null
+  const visual = validVisual && failedAssetIdentity !== assetIdentity ? validVisual : null
   const identity = useMemo(
     () => [source.id, source.updated, source.visual?.content_sha256 ?? '', source.visual_status?.updated_at ?? ''].join('|'),
     [source.id, source.updated, source.visual?.content_sha256, source.visual_status?.updated_at],
@@ -113,7 +114,7 @@ export function SourceCover({
               height={visual.height}
               loading={priority ? 'eager' : 'lazy'}
               decoding="async"
-              onError={() => setImageFailed(true)}
+              onError={() => setFailedAssetIdentity(assetIdentity)}
             />
             <SourceVisualProvenance origin={visual.origin} />
           </>

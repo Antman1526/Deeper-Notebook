@@ -166,6 +166,10 @@
     grid-column: 1 / -1;
   }
 
+  .dn-source-cover {
+    grid-column: 1 / -1;
+  }
+
   .dn-source-cover--card {
     grid-template-columns: 6rem minmax(0, 1fr);
     align-items: start;

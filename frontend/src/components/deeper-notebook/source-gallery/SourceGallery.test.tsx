@@ -54,6 +54,9 @@ describe('SourceGallery', () => {
     expect(css).toContain('container: source-gallery / inline-size')
     expect(css).toContain('repeat(auto-fit, minmax(min(100%, 14rem), 1fr))')
     expect(css).toContain('@container source-gallery (max-width: 34rem)')
+    expect(css).toMatch(
+      /@container source-gallery \(max-width: 34rem\)[\s\S]*?\.dn-source-cover \{[\s\S]*?grid-column: 1 \/ -1/,
+    )
     expect(css).toContain('min-height: 44px')
     expect(css).toContain('min-width: 0')
     expect(css).toContain('@media (forced-colors: active)')

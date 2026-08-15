@@ -87,6 +87,32 @@ describe('SourceCover', () => {
     expect(screen.getByText('Field notes')).toBeVisible()
   })
 
+  it('keeps a broken asset suppressed but accepts a newly generated visual receipt', () => {
+    const { rerender } = render(<SourceCover source={source()} />)
+
+    fireEvent.error(screen.getByRole('img'))
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+
+    rerender(<SourceCover source={source()} />)
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+
+    const nextHash = 'b'.repeat(64)
+    rerender(
+      <SourceCover
+        source={source({
+          visual: visual({
+            asset_sha256: nextHash,
+            asset_url: `/api/sources/source%3Aone/visual?v=${nextHash}`,
+          }),
+        })}
+      />,
+    )
+    expect(screen.getByRole('img')).toHaveAttribute(
+      'src',
+      `/api/sources/source%3Aone/visual?v=${nextHash}`,
+    )
+  })
+
   it.each([
     ['queued', 'Visual cover queued'],
     ['processing', 'Preparing visual cover'],
