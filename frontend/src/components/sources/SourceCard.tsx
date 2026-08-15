@@ -35,6 +35,8 @@ import type { TFunction } from 'i18next'
 import { cn } from '@/lib/utils'
 import { ContextToggle } from '@/components/common/ContextToggle'
 import { ContextMode } from '@/app/(dashboard)/notebooks/[id]/page'
+import { SourceCover } from '@/components/deeper-notebook/source-gallery/SourceCover'
+import { isSourceVisualsEnabled, isVisualSystemV2Enabled } from '@/lib/features'
 
 interface SourceCardProps {
   source: SourceListResponse
@@ -45,6 +47,7 @@ interface SourceCardProps {
   onRefresh?: () => void
   className?: string
   showRemoveFromNotebook?: boolean
+  showVisualCover?: boolean
   contextMode?: ContextMode
   onContextModeChange?: (mode: ContextMode) => void
 }
@@ -191,10 +194,13 @@ export function SourceCard({
   onRefresh,
   className,
   showRemoveFromNotebook = false,
+  showVisualCover,
   contextMode,
   onContextModeChange
 }: SourceCardProps) {
   const { t } = useTranslation()
+  const visualCoversEnabled = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
+  const shouldShowVisualCover = visualCoversEnabled && (showVisualCover ?? true)
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const statusConfigMap = getStatusConfig(t)
   
@@ -336,6 +342,11 @@ export function SourceCard({
         {/* Header with status indicator */}
         <div className="flex items-start justify-between gap-3 mb-1">
           <div className="flex-1 min-w-0">
+            {shouldShowVisualCover && (
+              <div className="mb-2">
+                <SourceCover source={source} variant="compact" />
+              </div>
+            )}
             {/* Status badge - only show if not completed */}
             {!isCompleted && (
               <div className="flex items-center gap-2 mb-2">

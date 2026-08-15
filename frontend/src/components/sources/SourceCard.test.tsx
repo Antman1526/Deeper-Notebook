@@ -6,9 +6,16 @@ import type { SourceListResponse } from '@/lib/types/api'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 const mockUseSourceStatus = vi.hoisted(() => vi.fn())
+const mockVisualSystemEnabled = vi.hoisted(() => vi.fn(() => false))
+const mockSourceVisualsEnabled = vi.hoisted(() => vi.fn(() => false))
 
 vi.mock('@/lib/hooks/use-sources', () => ({
   useSourceStatus: mockUseSourceStatus,
+}))
+
+vi.mock('@/lib/features', () => ({
+  isVisualSystemV2Enabled: mockVisualSystemEnabled,
+  isSourceVisualsEnabled: mockSourceVisualsEnabled,
 }))
 
 function source(overrides: Partial<SourceListResponse> = {}): SourceListResponse {
@@ -30,6 +37,8 @@ function source(overrides: Partial<SourceListResponse> = {}): SourceListResponse
 describe('SourceCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockVisualSystemEnabled.mockReturnValue(false)
+    mockSourceVisualsEnabled.mockReturnValue(false)
     usePodcastStudioStore.getState().dismiss()
     mockUseSourceStatus.mockReturnValue({
       data: {
@@ -317,5 +326,41 @@ describe('SourceCard', () => {
 
     expect(screen.getByText('sources.fileUnavailable')).toBeInTheDocument()
     expect(onRetry).not.toHaveBeenCalled()
+  })
+
+  it('renders a compact source-derived cover only when both visual gates are enabled, without nested cover actions', () => {
+    const hash = 'a'.repeat(64)
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    mockUseSourceStatus.mockReturnValue({ data: undefined, isLoading: false })
+
+    const { rerender } = render(
+      <SourceCard source={source({
+        id: 'source:visual', title: 'Visual source', command_id: undefined, status: 'completed',
+        visual: {
+          source_id: 'source:visual', content_sha256: hash, asset_sha256: hash,
+          alt_text: 'Neutral source cover', width: 640, height: 360, mime_type: 'image/webp',
+          asset_url: `/api/sources/source%3Avisual/visual?v=${hash}`,
+          created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:00:00Z',
+          origin: 'embedded', source_locator: { page: 1 },
+        },
+      } as never)} />,
+    )
+
+    expect(screen.getByRole('img', { name: 'Visual source — Embedded image: Neutral source cover' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Refresh visual|Remove visual|Open Visual source/ })).not.toBeInTheDocument()
+
+    mockSourceVisualsEnabled.mockReturnValue(false)
+    rerender(<SourceCard source={source({
+      id: 'source:visual', title: 'Visual source', command_id: undefined, status: 'completed',
+      visual: {
+        source_id: 'source:visual', content_sha256: hash, asset_sha256: hash,
+        alt_text: 'Neutral source cover', width: 640, height: 360, mime_type: 'image/webp',
+        asset_url: `/api/sources/source%3Avisual/visual?v=${hash}`,
+        created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:00:00Z',
+        origin: 'embedded', source_locator: { page: 1 },
+      },
+    } as never)} />)
+    expect(screen.queryByRole('img', { name: 'Visual source — Embedded image: Neutral source cover' })).not.toBeInTheDocument()
   })
 })

@@ -19,11 +19,16 @@ import { toast } from 'sonner'
 import { getApiErrorKey } from '@/lib/utils/error-handler'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
+import { SourceGallery } from '@/components/deeper-notebook/source-gallery/SourceGallery'
+import { isSourceVisualsEnabled, isVisualSystemV2Enabled } from '@/lib/features'
+import { useRefreshSourceVisual, useRemoveSourceVisual } from '@/lib/hooks/use-source-visuals'
 
 export default function SourcesPage() {
   const { t, language } = useTranslation()
   const failedToLoadMessage = t('sources.failedToLoad')
   const { openSourceDialog } = useCreateDialogs()
+  const refreshSourceVisual = useRefreshSourceVisual()
+  const removeSourceVisual = useRemoveSourceVisual()
   const [sources, setSources] = useState<SourceListResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -42,6 +47,7 @@ export default function SourcesPage() {
   const loadingMoreRef = useRef(false)
   const hasMoreRef = useRef(true)
   const PAGE_SIZE = 30
+  const visualGalleryEnabled = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
 
   const fetchSources = useCallback(async (reset = false) => {
     try {
@@ -175,21 +181,23 @@ export default function SourcesPage() {
     const scrollContainer = scrollContainerRef.current
     if (!scrollContainer) return
 
-    // Find the selected row element
-    const rows = scrollContainer.querySelectorAll('tbody tr')
-    const selectedRow = rows[index] as HTMLElement
-    if (!selectedRow) return
+    // The legacy table and enabled gallery use different selectable elements,
+    // but keyboard navigation keeps their shared source-index ordering.
+    const selectedElement = visualGalleryEnabled
+      ? scrollContainer.querySelectorAll('[data-dn-source-gallery] [role="listitem"]')[index] as HTMLElement
+      : scrollContainer.querySelectorAll('tbody tr')[index] as HTMLElement
+    if (!selectedElement) return
 
     const containerRect = scrollContainer.getBoundingClientRect()
-    const rowRect = selectedRow.getBoundingClientRect()
+    const elementRect = selectedElement.getBoundingClientRect()
 
     // Check if row is above visible area
-    if (rowRect.top < containerRect.top) {
-      selectedRow.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (elementRect.top < containerRect.top) {
+      selectedElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
     // Check if row is below visible area
-    else if (rowRect.bottom > containerRect.bottom) {
-      selectedRow.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    else if (elementRect.bottom > containerRect.bottom) {
+      selectedElement.scrollIntoView({ behavior: 'smooth', block: 'end' })
     }
   }
 
@@ -268,6 +276,15 @@ export default function SourcesPage() {
 
   const handleRowClick = useCallback((index: number, sourceId: string) => {
     setSelectedIndex(index)
+    router.push(`/sources/${sourceId}`)
+  }, [router])
+
+  const handleGallerySelect = useCallback((sourceId: string) => {
+    const index = sources.findIndex(source => source.id === sourceId)
+    if (index >= 0) setSelectedIndex(index)
+  }, [sources])
+
+  const handleGalleryOpen = useCallback((sourceId: string) => {
     router.push(`/sources/${sourceId}`)
   }, [router])
 
@@ -360,11 +377,44 @@ export default function SourcesPage() {
         actions={sourceAction()}
       >
         <div className="flex h-full min-h-0 w-full max-w-none flex-col">
-          <div
-            ref={scrollContainerRef}
-            data-dn-horizontal-scroll="sources-table"
-            className="flex-1 overflow-auto rounded-md border"
-          >
+          {visualGalleryEnabled ? (
+            <div
+              ref={scrollContainerRef}
+              data-dn-horizontal-scroll="sources-gallery"
+              className="flex-1 overflow-auto rounded-md border"
+            >
+              <SourceGallery
+                sources={sources}
+                selectedId={sources[selectedIndex]?.id ?? null}
+                filters={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleSort('created')}
+                    className="h-8 px-2 hover:bg-muted"
+                  >
+                    {t('common.created_label')}
+                    <ArrowUpDown className={cn(
+                      'ml-2 h-3 w-3',
+                      sortBy === 'created' ? 'opacity-100' : 'opacity-30'
+                    )} />
+                    {sortBy === 'created' && (
+                      <span className="ml-1 text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </Button>
+                }
+                onSelect={handleGallerySelect}
+                onOpen={handleGalleryOpen}
+                onRefresh={refreshSourceVisual.mutate}
+                onRemove={removeSourceVisual.mutate}
+              />
+            </div>
+          ) : (
+            <div
+              ref={scrollContainerRef}
+              data-dn-horizontal-scroll="sources-table"
+              className="flex-1 overflow-auto rounded-md border"
+            >
           <table
             ref={tableRef}
             tabIndex={0}
@@ -512,6 +562,7 @@ export default function SourcesPage() {
             </tbody>
           </table>
           </div>
+          )}
 
           <ConfirmDialog
             open={deleteDialog.open}
