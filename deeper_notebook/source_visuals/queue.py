@@ -217,6 +217,39 @@ async def _operation_response(
     )
 
 
+async def _post_delete_refresh_needs_reacquire(
+    repository: object,
+    *,
+    authority: object,
+    request_id: str,
+    receipt: object,
+    explicit: bool,
+) -> bool:
+    """Atomically reject a pre-delete claim for a post-delete queued receipt."""
+
+    if (
+        not explicit
+        or getattr(receipt, "command_id", None) is not None
+        or getattr(receipt, "outcome", None) != "queued"
+        or getattr(receipt, "error_code", None) is not None
+    ):
+        return False
+    reconcile = getattr(repository, "post_delete_refresh_needs_reacquire", None)
+    if not callable(reconcile):
+        return False
+    return bool(
+        await _await_if_needed(
+            reconcile(
+                source_id=authority.source_id,
+                content_sha256=authority.content_sha256,
+                extractor_version=authority.extractor_version,
+                request_id=request_id,
+                source_updated_at=authority.source_updated_at,
+            )
+        )
+    )
+
+
 async def _suppressed_auto_ingest_response(
     repository: object,
     *,
@@ -473,12 +506,19 @@ async def submit_source_visual(
         repository.get_operation(source_id, request_id, "refresh")
     )
     if existing is not None:
-        return await _operation_response(
+        if not await _post_delete_refresh_needs_reacquire(
             repository,
             authority=authority,
             request_id=request_id,
             receipt=existing,
-        )
+            explicit=explicit,
+        ):
+            return await _operation_response(
+                repository,
+                authority=authority,
+                request_id=request_id,
+                receipt=existing,
+            )
 
     suppressed = await _suppressed_auto_ingest_response(
         repository,
@@ -519,6 +559,25 @@ async def submit_source_visual(
                 authority=authority,
                 request_id=request_id,
                 receipt=existing,
+            )
+        current = await _await_if_needed(
+            repository.get_operation(authority.source_id, request_id, "refresh")
+        )
+        if current is not None and await _post_delete_refresh_needs_reacquire(
+            repository,
+            authority=authority,
+            request_id=request_id,
+            receipt=current,
+            explicit=explicit,
+        ):
+            # The only live command belongs to a claim from before the latest
+            # accepted delete. Keep the durable post-delete receipt commandless
+            # until that owner releases; an exact replay will acquire anew.
+            return SourceVisualJobResponse(
+                source_id=authority.source_id,
+                command_id=None,
+                content_sha256=authority.content_sha256,
+                outcome="replayed",
             )
         return await _live_claim_response(
             repository,

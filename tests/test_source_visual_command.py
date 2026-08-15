@@ -67,6 +67,29 @@ class InMemoryQueueRepository:
                 return receipt
         return None
 
+    async def post_delete_refresh_needs_reacquire(
+        self,
+        *,
+        source_id,
+        content_sha256,
+        extractor_version,
+        request_id,
+        source_updated_at,
+    ):
+        del request_id
+        deleted = any(
+            receipt.source_id == source_id
+            and receipt.source_updated_at == source_updated_at
+            and receipt.content_sha256 == content_sha256
+            and receipt.operation == "delete"
+            and receipt.outcome in {"queued", "deleted"}
+            for receipt in self.operations.values()
+        )
+        if not deleted:
+            return False
+        claim = self.claims.get((source_id, content_sha256, extractor_version))
+        return claim is None or claim.get("command_id") != "command:post-delete"
+
     async def acquire_claim(
         self,
         source_id=None,
@@ -619,6 +642,125 @@ async def test_explicit_delete_suppresses_only_deterministic_auto_ingest_replay(
 
 
 @pytest.mark.asyncio
+async def test_post_delete_commandless_refresh_reacquires_without_replaying_predelete_command(
+    queue_context, monkeypatch
+):
+    """A post-delete receipt must never adopt the live pre-delete command."""
+
+    queue, repo, _source = queue_context
+    queue._PENDING_SUBMISSIONS.clear()
+    identity = ("source:one", HASH, "source-visual-v1")
+    await repo.record_operation(
+        "source:one",
+        "delete-request",
+        "delete",
+        source_updated_at=NOW,
+        content_sha256=HASH,
+        command_id=None,
+        outcome="deleted",
+    )
+    repo.claims[identity] = {
+        "source_id": identity[0],
+        "content_sha256": identity[1],
+        "extractor_version": identity[2],
+        "owner_token": "1" * 64,
+        "lease_until": NOW + timedelta(seconds=90),
+        "command_id": "command:pre-delete",
+    }
+    submitted: list[str] = []
+    monkeypatch.setattr(
+        queue,
+        "submit_command",
+        lambda *_args: submitted.append("submitted") or "command:post-delete",
+    )
+
+    blocked = await queue.submit_source_visual(
+        "source:one", "post-delete-refresh", explicit=True
+    )
+    await repo.release_claim(*identity, owner_token="1" * 64)
+    queue._PENDING_SUBMISSIONS.clear()
+    replay = await queue.submit_source_visual(
+        "source:one", "post-delete-refresh", explicit=True
+    )
+
+    assert blocked.command_id is None
+    assert replay.command_id == "command:post-delete"
+    assert submitted == ["submitted"]
+    assert repo.operations[("source:one", "post-delete-refresh", "refresh")].command_id == (
+        "command:post-delete"
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_delete_same_request_losers_converge_on_the_one_new_command(
+    queue_context, monkeypatch
+):
+    queue, repo, _source = queue_context
+    queue._PENDING_SUBMISSIONS.clear()
+    identity = ("source:one", HASH, "source-visual-v1")
+    await repo.record_operation(
+        "source:one", "delete-request", "delete",
+        source_updated_at=NOW, content_sha256=HASH, command_id=None, outcome="deleted"
+    )
+    repo.claims[identity] = {
+        "source_id": identity[0], "content_sha256": identity[1],
+        "extractor_version": identity[2], "owner_token": "1" * 64,
+        "lease_until": NOW + timedelta(seconds=90), "command_id": "command:pre-delete",
+    }
+    submitted: list[str] = []
+    monkeypatch.setattr(
+        queue, "submit_command", lambda *_args: submitted.append("submit") or "command:post-delete"
+    )
+
+    assert (
+        await queue.submit_source_visual("source:one", "same-request", explicit=True)
+    ).command_id is None
+    await repo.release_claim(*identity, owner_token="1" * 64)
+    queue._PENDING_SUBMISSIONS.clear()
+    first, second = await asyncio.gather(
+        queue.submit_source_visual("source:one", "same-request", explicit=True),
+        queue.submit_source_visual("source:one", "same-request", explicit=True),
+    )
+
+    assert first.command_id == "command:post-delete"
+    assert second.command_id is None
+    replay = await queue.submit_source_visual("source:one", "same-request", explicit=True)
+    assert replay.command_id == "command:post-delete"
+    assert submitted == ["submit"]
+
+
+@pytest.mark.asyncio
+async def test_post_delete_replay_never_uses_an_identity_only_predelete_pending_entry(
+    queue_context,
+):
+    queue, repo, _source = queue_context
+    queue._PENDING_SUBMISSIONS.clear()
+    identity = ("source:one", HASH, "source-visual-v1")
+    await repo.record_operation(
+        "source:one", "delete-request", "delete",
+        source_updated_at=NOW, content_sha256=HASH, command_id=None, outcome="deleted"
+    )
+    await repo.record_operation(
+        "source:one", "post-delete", "refresh",
+        source_updated_at=NOW, content_sha256=HASH, command_id=None, outcome="queued"
+    )
+    repo.claims[identity] = {
+        "source_id": identity[0], "content_sha256": identity[1],
+        "extractor_version": identity[2], "owner_token": "1" * 64,
+        "lease_until": NOW + timedelta(seconds=90), "command_id": "command:pre-delete",
+    }
+    pending_receipt = asyncio.get_running_loop().create_future()
+    pending_receipt.set_result("command:pre-delete")
+    queue._PENDING_SUBMISSIONS["\0".join(identity)] = SimpleNamespace(
+        receipt=pending_receipt
+    )
+
+    response = await queue.submit_source_visual("source:one", "post-delete", explicit=True)
+
+    assert response.command_id is None
+
+
+@pytest.mark.asyncio
 async def test_timeout_keeps_claim_until_late_submit_is_bound(queue_context, monkeypatch):
     queue, repo, _source = queue_context
     started = threading.Event()
@@ -776,6 +918,7 @@ class InMemoryServiceStore:
         self.staged = []
         self.published = []
         self.removed = []
+        self.orphaned = []
         self.cleaned = 0
 
     def stage(self, source_id, content_sha256, prepared):
@@ -813,6 +956,9 @@ class InMemoryServiceStore:
 
     def remove_tombstone(self, tombstone):
         self.removed.append(("remove", tombstone.asset_relpath))
+
+    def mark_delete_fenced_orphan(self, record):
+        self.orphaned.append(record.asset_relpath)
 
 
 class InMemoryCleanup:
@@ -1251,9 +1397,54 @@ async def test_service_delete_fence_after_publish_never_removes_newer_canonical(
 
     assert result.outcome == "failed"
     assert result.error_code == "delete_requested"
-    assert store.removed == []
+    assert store.removed == [("tombstone", "aa/" + HASH + "/" + ASSET_HASH + ".webp")]
+    assert store.orphaned == []
     assert repo.released == 1
     assert repo.publish_kwargs["request_id"] == "request-one"
+
+
+@pytest.mark.asyncio
+async def test_service_delete_fence_owner_loss_keeps_a_durable_orphan_marker(monkeypatch):
+    import deeper_notebook.source_visuals.service as service
+    from deeper_notebook.source_visuals.contracts import PreparedVisualAsset
+    from deeper_notebook.source_visuals.repository import SourceVisualConflictError
+
+    source = SimpleNamespace(id="source:one", source_type="upload", full_text="unchanged", asset=SimpleNamespace(file_path="/controlled/one.pdf"), updated=NOW, title="Source one")
+
+    class Repo(InMemoryServiceRepository):
+        async def renew_claim(self, *args, **kwargs):
+            await super().renew_claim(*args, **kwargs)
+            if self.renewed == 4:
+                raise SourceVisualConflictError("LEASE_EXPIRED")
+
+        async def publish_ready(self, record, **_kwargs):
+            raise SourceVisualConflictError("DELETE_REQUESTED")
+
+    repo = Repo()
+    store = InMemoryServiceStore()
+    monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
+    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
+    monkeypatch.setattr(service, "extract_pdf_candidates", lambda _path: [SimpleNamespace(origin="embedded", locator={"page": 1}, encoded_bytes=b"x", score=1.0, stable_key="x")])
+    monkeypatch.setattr(service, "select_candidate", lambda values: list(values)[0])
+    monkeypatch.setattr(service, "prepare_webp", lambda _value: PreparedVisualAsset(encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1))
+    monkeypatch.setattr(service, "build_alt_text", lambda *_args: "safe")
+
+    result = await service.SourceVisualService(
+        repository=repo, store=store, cleanup=InMemoryCleanup()
+    ).execute(
+        service.ExtractSourceVisualInput(
+            source_id="source:one",
+            request_id="request-one",
+            expected_content_sha256=HASH,
+            extractor_version="source-visual-v1",
+            claim_owner_token="c" * 64,
+        )
+    )
+
+    assert result.error_code == "delete_requested"
+    assert store.removed == []
+    assert store.orphaned == ["aa/" + HASH + "/" + ASSET_HASH + ".webp"]
+    assert repo.released == 1
 
 
 @pytest.mark.asyncio

@@ -215,6 +215,36 @@ async def test_conditional_cleanup_delete_atomically_rejects_new_live_claim(
 
 
 @pytest.mark.asyncio
+async def test_post_delete_reconciliation_requires_a_command_receipt_created_after_delete(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A heartbeat update cannot make a pre-delete command eligible again."""
+
+    repository = _repository()
+    captured: dict[str, object] = {}
+
+    async def query(query_text: str, variables: dict[str, object]):
+        captured["query"] = query_text
+        captured["variables"] = variables
+        return {"reacquire": True}
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    assert await repository.post_delete_refresh_needs_reacquire(
+        source_id="source:one",
+        content_sha256="a" * 64,
+        extractor_version="source-visual-v1",
+        request_id="post-delete-refresh",
+        source_updated_at=SOURCE_UPDATED,
+        now=SOURCE_UPDATED,
+    )
+    query_text = str(captured["query"])
+    assert "LET $command_refresh" in query_text
+    assert "$command_refresh.created_at > $delete_intent.created_at" in query_text
+    assert "$operation.created_at > $delete_intent.created_at" in query_text
+
+
+@pytest.mark.asyncio
 async def test_list_current_omits_malformed_and_stale_rows(monkeypatch: pytest.MonkeyPatch):
     repository = _repository()
     query = AsyncMock(

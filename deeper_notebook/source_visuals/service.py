@@ -232,6 +232,30 @@ class SourceVisualService:
         if tombstone is not None:
             await _run_boundary(self._store.remove_tombstone, tombstone)
 
+    async def _retain_delete_fenced_derivative(
+        self,
+        record: SourceVisualRecord,
+        *,
+        authority: object,
+        owner_token: str,
+    ) -> None:
+        """Leave delete-fenced bytes under durable cleanup authority.
+
+        The exact owner may tombstone its own canonical before release.  If that
+        owner is already lost, preserve the canonical and write a private orphan
+        marker instead, so a future owner-fenced reconciler can decide safely.
+        """
+
+        try:
+            await self._renew(authority, owner_token)
+        except SourceVisualConflictError:
+            marker = getattr(self._store, "mark_delete_fenced_orphan", None)
+            if not callable(marker):
+                raise
+            await _run_boundary(marker, record)
+            return
+        await _run_boundary(self._store.tombstone, record)
+
     async def _release_exact(
         self,
         *,
@@ -409,11 +433,12 @@ class SourceVisualService:
             return failed(_safe_error_code(exc))
         except SourceVisualConflictError as exc:
             if exc.code == "DELETE_REQUESTED":
-                # Publication crossed the shared canonical boundary before the
-                # transaction rejected it. Do not tombstone here: a newer
-                # owner can have published the same canonical path meanwhile.
-                # The delete fence keeps it invisible in the DB, and Task 3's
-                # owner-safe reconciliation retains cleanup authority.
+                if record is not None and authority is not None:
+                    await self._retain_delete_fenced_derivative(
+                        record,
+                        authority=authority,
+                        owner_token=input_data.claim_owner_token,
+                    )
                 await self._cleanup_task_temp()
                 await self._release_input_claim(input_data)
                 return failed("delete_requested")

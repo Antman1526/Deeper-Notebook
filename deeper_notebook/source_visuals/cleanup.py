@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+import secrets
 from collections.abc import Sequence
 from typing import Protocol
 
 from deeper_notebook.source_visuals.contracts import SourceVisualRecord
 from deeper_notebook.source_visuals.storage import (
+    DeleteFencedOrphan,
     SourceVisualStorageError,
     SourceVisualStore,
     TombstoneDeletionClaim,
@@ -15,6 +18,12 @@ from deeper_notebook.source_visuals.storage import (
 )
 
 _DELETION_CLAIM_HEARTBEAT_SECONDS = 60
+
+
+async def _await_if_needed(value):
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 class _DeletionClaimHeartbeatLost(Exception):
@@ -250,6 +259,73 @@ class SourceVisualCleanup:
             processed += 1
         return processed
 
+    async def reconcile_delete_fenced_orphans(self, *, limit: int = 100) -> int:
+        """Retire lost-owner publication markers only under a fresh exact claim."""
+
+        lister = getattr(self._store, "list_delete_fenced_orphans", None)
+        remover = getattr(self._store, "remove_delete_fenced_orphan", None)
+        acquire = getattr(self._repository, "acquire_claim", None)
+        release = getattr(self._repository, "release_claim", None)
+        if not all(callable(value) for value in (lister, remover, acquire, release)):
+            return 0
+        processed = 0
+        for orphan in await _await_if_needed(lister(limit=limit)):
+            if not isinstance(orphan, DeleteFencedOrphan):
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            record = orphan.record
+            owner_token = secrets.token_hex(32)
+            try:
+                await _await_if_needed(
+                    acquire(
+                        source_id=record.source_id,
+                        content_sha256=record.content_sha256,
+                        extractor_version=record.extractor_version,
+                        owner_token=owner_token,
+                        lease_seconds=90,
+                    )
+                )
+            except Exception:
+                # A live extractor owns this exact identity, or the durable
+                # authority is temporarily unavailable. Preserve the marker.
+                continue
+            try:
+                current = await _await_if_needed(
+                    self._repository.find_ready_by_asset_relpath(record.asset_relpath)
+                )
+                if current is None:
+                    tombstone = self._store.tombstone(record)
+                    if tombstone is not None:
+                        self._store.remove_tombstone(tombstone)
+                    await _await_if_needed(remover(orphan))
+                    processed += 1
+                elif current == record:
+                    # The newer authoritative publisher retained this exact
+                    # canonical; its row restores ownership, so only retire
+                    # the stale marker.
+                    if len(self._store.read_exact(record)) != orphan.byte_size:
+                        continue
+                    await _await_if_needed(remover(orphan))
+                    processed += 1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Malformed/foreign marker state or a DB failure retains the
+                # durable marker for a later bounded reconciliation.
+                continue
+            finally:
+                try:
+                    await _await_if_needed(
+                        release(
+                            source_id=record.source_id,
+                            content_sha256=record.content_sha256,
+                            extractor_version=record.extractor_version,
+                            owner_token=owner_token,
+                        )
+                    )
+                except Exception:
+                    pass
+        return processed
+
     async def evict_to_budget(
         self,
         *,
@@ -266,8 +342,13 @@ class SourceVisualCleanup:
         ):
             raise SourceVisualStorageError("INVALID_INPUT")
         self._store.reconcile_staged_files(limit=page_size)
+        # Delete-fenced publication leaves an exact durable tombstone even
+        # when publication never created a ready row. Reconcile it before the
+        # ready-row page, otherwise a zero-row repository cannot reclaim the
+        # physical bytes at any budget.
+        removed = await self.reconcile_tombstones(limit=page_size)
+        removed += await self.reconcile_delete_fenced_orphans(limit=page_size)
         current_bytes = self._store.cache_size_bytes()
-        removed = 0
         while current_bytes > max_bytes:
             page = list(await self._repository.list_ready_for_eviction(limit=page_size))
             if len(page) > page_size:

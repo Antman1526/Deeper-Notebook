@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import hashlib
+import json
 import multiprocessing as mp
 import os
 import threading
@@ -1411,6 +1412,223 @@ async def test_eviction_stops_when_bounded_page_makes_no_progress(tmp_path: Path
         == 0
     )
     assert repository.records == [record]
+
+
+@pytest.mark.asyncio
+async def test_delete_fenced_unreferenced_canonical_is_reclaimed_at_zero_budget(
+    tmp_path: Path,
+):
+    """A post-publication delete fence cannot leave unaccounted cache bytes."""
+
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store, b"delete-fenced-orphan")
+    record = _record(stored)
+    cleanup = SourceVisualCleanup(store, _Repository([]))
+
+    assert store.tombstone(record) is not None
+    assert store.cache_size_bytes() == len(b"delete-fenced-orphan")
+    assert await cleanup.evict_to_budget(max_bytes=0) == 1
+    assert store.cache_size_bytes() == 0
+    with pytest.raises(SourceVisualStorageError):
+        store.read_exact(record)
+
+
+def test_delete_fenced_orphan_marker_preserves_current_bytes_without_deleting_them(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store, b"lost-owner-canonical")
+    record = _record(stored)
+
+    marker = store.mark_delete_fenced_orphan(record)
+
+    assert marker.record == record
+    assert marker.byte_size == len(b"lost-owner-canonical")
+    assert store.read_exact(record) == b"lost-owner-canonical"
+    assert store.cache_size_bytes() >= len(b"lost-owner-canonical")
+
+
+def test_delete_fenced_orphan_partial_write_leaves_no_final_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    record = _record(_publish(store, b"partial-orphan-marker"))
+    original_write = os.write
+    calls = 0
+
+    def fail_after_first_write(fd: int, data: object) -> int:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise OSError("interrupted marker write")
+        partial = memoryview(data)[:-1]
+        return original_write(fd, partial)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.write", fail_after_first_write)
+    with pytest.raises(SourceVisualStorageError):
+        store.mark_delete_fenced_orphan(record)
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.write", original_write)
+
+    assert store.list_delete_fenced_orphans() == ()
+
+
+@pytest.mark.parametrize("linked_final", (False, True))
+def test_fresh_store_reconciles_bounded_orphan_write_residue(
+    tmp_path: Path, linked_final: bool
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    record = _record(_publish(store, b"orphan-write-crash"))
+    parent = (store.root / record.asset_relpath).parent
+    marker_name = f".delete-fenced-{record.asset_sha256}.orphan"
+    write_name = f".orphan-write-{record.asset_sha256}-{'f' * 32}.tmp"
+    payload = json.dumps(
+        {"record": record.model_dump(mode="json"), "byte_size": len(b"orphan-write-crash")},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    write_path = parent / write_name
+    write_path.write_bytes(payload)
+    os.chmod(write_path, 0o600)
+    if linked_final:
+        os.link(write_path, parent / marker_name)
+
+    fresh = SourceVisualStore(data_folder=tmp_path)
+    fresh.reconcile_staged_files(limit=100)
+
+    assert not write_path.exists()
+    if linked_final:
+        assert len(fresh.list_delete_fenced_orphans()) == 1
+
+
+def test_fresh_store_retires_truncated_unlinked_orphan_write_after_prelink_crash(
+    tmp_path: Path,
+):
+    """A crash during the private write cannot make recovery fail forever."""
+
+    store = SourceVisualStore(data_folder=tmp_path)
+    record = _record(_publish(store, b"truncated-orphan-write"))
+    parent = (store.root / record.asset_relpath).parent
+    write_path = parent / f".orphan-write-{record.asset_sha256}-{'e' * 32}.tmp"
+    write_path.write_bytes(b'{"record":')
+    os.chmod(write_path, 0o600)
+
+    fresh = SourceVisualStore(data_folder=tmp_path)
+    fresh.reconcile_staged_files(limit=100)
+
+    assert not write_path.exists()
+    assert fresh.list_delete_fenced_orphans() == ()
+
+
+def test_delete_fenced_orphan_removal_preserves_foreign_marker_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    record = _record(_publish(store, b"marker-replacement"))
+    orphan = store.mark_delete_fenced_orphan(record)
+    marker_path = (store.root / record.asset_relpath).parent / orphan.marker_name
+    held_path = marker_path.with_name(marker_path.name + ".held")
+    original_rename = os.rename
+    original_stat = os.stat
+    exchanged = False
+
+    def exchange_before_stat(name: str, *args: object, **kwargs: object):
+        nonlocal exchanged
+        if name == orphan.marker_name and not exchanged:
+            exchanged = True
+            original_rename(marker_path, held_path)
+            marker_path.write_bytes(b"foreign-marker")
+        return original_stat(name, *args, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.stat", exchange_before_stat)
+    with pytest.raises(SourceVisualStorageError):
+        store.remove_delete_fenced_orphan(orphan)
+
+    parent = marker_path.parent
+    assert any(
+        candidate.is_file() and candidate.read_bytes() == b"foreign-marker"
+        for candidate in parent.iterdir()
+    )
+    assert held_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_orphan_reconciliation_claims_exact_identity_before_removing_absent_row(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store, b"reconcile-lost-owner")
+    record = _record(stored)
+
+    class MarkerRepository(_Repository):
+        def __init__(self):
+            super().__init__([])
+            self.claims: list[dict[str, object]] = []
+            self.releases: list[dict[str, object]] = []
+
+        async def acquire_claim(self, **kwargs):
+            self.claims.append(kwargs)
+
+        async def release_claim(self, **kwargs):
+            self.releases.append(kwargs)
+
+    repository = MarkerRepository()
+    store.mark_delete_fenced_orphan(record)
+
+    assert await SourceVisualCleanup(store, repository).reconcile_delete_fenced_orphans() == 1
+    assert repository.claims[0]["source_id"] == record.source_id
+    assert repository.claims[0]["content_sha256"] == record.content_sha256
+    assert repository.claims[0]["extractor_version"] == record.extractor_version
+    assert repository.releases[0]["owner_token"] == repository.claims[0]["owner_token"]
+    assert store.list_delete_fenced_orphans() == ()
+    with pytest.raises(SourceVisualStorageError):
+        store.read_exact(record)
+
+
+@pytest.mark.asyncio
+async def test_orphan_reconciliation_preserves_marker_when_repository_fails(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    record = _record(_publish(store, b"marker-db-failure"))
+
+    class FailingRepository(_Repository):
+        async def acquire_claim(self, **_kwargs):
+            return None
+
+        async def release_claim(self, **_kwargs):
+            return None
+
+        async def find_ready_by_asset_relpath(self, _relpath: str):
+            raise RuntimeError("database unavailable")
+
+    store.mark_delete_fenced_orphan(record)
+    assert await SourceVisualCleanup(store, FailingRepository([])).reconcile_delete_fenced_orphans() == 0
+    assert len(store.list_delete_fenced_orphans()) == 1
+
+
+@pytest.mark.asyncio
+async def test_orphan_reconciliation_revalidates_matching_ready_bytes_before_retiring_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    record = _record(_publish(store, b"marker-ready-row"))
+
+    class MatchingRepository(_Repository):
+        async def acquire_claim(self, **_kwargs):
+            return None
+
+        async def release_claim(self, **_kwargs):
+            return None
+
+    store.mark_delete_fenced_orphan(record)
+    monkeypatch.setattr(
+        store,
+        "read_exact",
+        lambda _record: (_ for _ in ()).throw(SourceVisualStorageError("ASSET_HASH_MISMATCH")),
+    )
+
+    assert await SourceVisualCleanup(store, MatchingRepository([record])).reconcile_delete_fenced_orphans() == 0
+    assert len(store.list_delete_fenced_orphans()) == 1
 
 
 @pytest.mark.asyncio

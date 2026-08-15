@@ -46,6 +46,10 @@ _UNLINK_RECOVERY_NAME = re.compile(r"^\.unlink-recovery-[0-9a-f]{32}$")
 _UNLINK_JOURNAL = ".journal"
 _DELETION_CLAIM_PREFIX = ".deleting-"
 _DELETION_CLAIM_NAME = re.compile(r"^\.deleting-([0-9a-f]{64})\.claim$")
+_DELETE_FENCED_ORPHAN_PREFIX = ".delete-fenced-"
+_DELETE_FENCED_ORPHAN_NAME = re.compile(r"^\.delete-fenced-([0-9a-f]{64})\.orphan$")
+_ORPHAN_WRITE_PREFIX = ".orphan-write-"
+_ORPHAN_WRITE_NAME = re.compile(r"^\.orphan-write-([0-9a-f]{64})-([0-9a-f]{32})\.tmp$")
 _CLAIM_WRITE_PREFIX = ".claim-write-"
 _CLAIM_WRITE_NAME = re.compile(r"^\.claim-write-([0-9a-f]{64})-([0-9a-f]{32})\.tmp$")
 _MAX_ASSET_BYTES = 1_572_864
@@ -148,6 +152,15 @@ class TombstonedVisualAsset:
     asset_relpath: str
     tombstone_name: str
     asset_sha256: str
+    byte_size: int
+
+
+@dataclass(frozen=True, slots=True)
+class DeleteFencedOrphan:
+    """Private recovery marker for a canonical published after delete fencing."""
+
+    marker_name: str
+    record: SourceVisualRecord
     byte_size: int
 
 
@@ -490,8 +503,10 @@ class SourceVisualStore:
             _TEMP_NAME.fullmatch(name) is not None
             or _UNVERIFIED_STAGE_NAME.fullmatch(name) is not None
             or TOMBSTONE.fullmatch(name) is not None
+            or _DELETE_FENCED_ORPHAN_NAME.fullmatch(name) is not None
             or _UNLINK_RECOVERY_NAME.fullmatch(name) is not None
             or _DELETION_CLAIM_NAME.fullmatch(name) is not None
+            or _ORPHAN_WRITE_NAME.fullmatch(name) is not None
             or re.fullmatch(r"[0-9a-f]{64}\.webp", name) is not None
         )
 
@@ -826,8 +841,10 @@ class SourceVisualStore:
         unverified_count: list[int],
         deletion_claim_count: list[int],
         claim_write_count: list[int],
+        orphan_write_count: list[int],
         fences: list[tuple[str | None, str | None, str]],
         claim_writes: list[tuple[str | None, str | None, str]],
+        orphan_writes: list[tuple[str | None, str | None, str]],
         unverified_stages: list[str],
         prefix: str | None,
         content: str | None,
@@ -859,6 +876,13 @@ class SourceVisualStore:
                 self._validate_pending_file(parent_fd, entry.name)
                 claim_write_count[0] += 1
                 claim_writes.append((prefix, content, entry.name))
+                continue
+            if entry.name.startswith(_ORPHAN_WRITE_PREFIX):
+                if temp_parent or _ORPHAN_WRITE_NAME.fullmatch(entry.name) is None:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                self._validate_pending_file(parent_fd, entry.name)
+                orphan_write_count[0] += 1
+                orphan_writes.append((prefix, content, entry.name))
                 continue
             if temp_parent and _UNVERIFIED_STAGE_NAME.fullmatch(entry.name) is not None:
                 self._validate_pending_file(parent_fd, entry.name)
@@ -893,6 +917,42 @@ class SourceVisualStore:
             raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
         self._retire_non_authoritative_file_at(parent_fd, name, write_stat)
 
+    def _reconcile_orphan_write_at(self, parent_fd: int, name: str) -> None:
+        match = _ORPHAN_WRITE_NAME.fullmatch(name)
+        if match is None:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        write_stat = self._validate_pending_file(parent_fd, name)
+        if (
+            write_stat.st_size > 16 * 1024
+            or stat.S_IMODE(write_stat.st_mode) != 0o600
+        ):
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        marker_name = f"{_DELETE_FENCED_ORPHAN_PREFIX}{match.group(1)}.orphan"
+        try:
+            marker_fd = self._open_regular_file(parent_fd, marker_name)
+        except SourceVisualStorageError as exc:
+            if exc.code != "ASSET_MISSING":
+                raise
+            # Before the no-replace publish succeeds, this single-link 0600
+            # file is only a private write buffer.  It may be truncated by a
+            # crash, so its payload is intentionally not parsed here.
+            if write_stat.st_nlink != 1:
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            self._retire_non_authoritative_file_at(parent_fd, name, write_stat)
+            return
+        try:
+            marker_stat = os.fstat(marker_fd)
+        finally:
+            _safe_close(marker_fd)
+        # Once an authoritative final name exists, validate it rather than the
+        # possibly partial private buffer.  The matching bounded filename hash
+        # and either linked identity or a private single link prove it can be
+        # retired without disturbing the final marker.
+        self._read_delete_fenced_orphan_at(parent_fd, marker_name)
+        if not _same_identity(write_stat, marker_stat) and write_stat.st_nlink != 1:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        self._retire_non_authoritative_file_at(parent_fd, name, write_stat)
+
     def _reconcile_recovery_at(self, root_fd: int) -> int:
         """Bound and retire durable unlink journals while the mutation lock is held."""
 
@@ -900,8 +960,10 @@ class SourceVisualStore:
         unverified_count = [0]
         deletion_claim_count = [0]
         claim_write_count = [0]
+        orphan_write_count = [0]
         fences: list[tuple[str | None, str | None, str]] = []
         claim_writes: list[tuple[str | None, str | None, str]] = []
+        orphan_writes: list[tuple[str | None, str | None, str]] = []
         unverified_stages: list[str] = []
         visited = [0]
         temp_fd = None
@@ -914,8 +976,10 @@ class SourceVisualStore:
                 unverified_count=unverified_count,
                 deletion_claim_count=deletion_claim_count,
                 claim_write_count=claim_write_count,
+                orphan_write_count=orphan_write_count,
                 fences=fences,
                 claim_writes=claim_writes,
+                orphan_writes=orphan_writes,
                 unverified_stages=unverified_stages,
                 prefix=None,
                 content=None,
@@ -944,8 +1008,10 @@ class SourceVisualStore:
                                 unverified_count=unverified_count,
                                 deletion_claim_count=deletion_claim_count,
                                 claim_write_count=claim_write_count,
+                                orphan_write_count=orphan_write_count,
                                 fences=fences,
                                 claim_writes=claim_writes,
+                                orphan_writes=orphan_writes,
                                 unverified_stages=unverified_stages,
                                 prefix=prefix_entry.name,
                                 content=content_entry.name,
@@ -961,6 +1027,7 @@ class SourceVisualStore:
                 or unverified_count[0] > 1
                 or deletion_claim_count[0] > _MAX_RECOVERY_ENTRIES
                 or claim_write_count[0] > _MAX_RECOVERY_ENTRIES
+                or orphan_write_count[0] > _MAX_RECOVERY_ENTRIES
             ):
                 raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
 
@@ -979,6 +1046,21 @@ class SourceVisualStore:
                     )
                     parent_fd = content_fd
                     self._reconcile_claim_write_at(parent_fd, name)
+                finally:
+                    if parent_fd is not content_fd:
+                        _safe_close(parent_fd)
+                    _safe_close(content_fd)
+                    _safe_close(prefix_fd)
+
+            for prefix, content, name in orphan_writes:
+                prefix_fd = content_fd = parent_fd = None
+                try:
+                    prefix_fd = self._open_child_dir(root_fd, prefix or "", create=False)
+                    content_fd = self._open_child_dir(
+                        prefix_fd, content or "", create=False
+                    )
+                    parent_fd = content_fd
+                    self._reconcile_orphan_write_at(parent_fd, name)
                 finally:
                     if parent_fd is not content_fd:
                         _safe_close(parent_fd)
@@ -1452,6 +1534,202 @@ class SourceVisualStore:
             raise
         except OSError as exc:
             raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+
+    @staticmethod
+    def _delete_fenced_orphan_name(record: SourceVisualRecord) -> str:
+        return f"{_DELETE_FENCED_ORPHAN_PREFIX}{record.asset_sha256}.orphan"
+
+    @staticmethod
+    def _validate_delete_fenced_orphan(value: DeleteFencedOrphan) -> None:
+        if not isinstance(value, DeleteFencedOrphan):
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        match = _DELETE_FENCED_ORPHAN_NAME.fullmatch(value.marker_name)
+        if (
+            match is None
+            or not isinstance(value.record, SourceVisualRecord)
+            or isinstance(value.byte_size, bool)
+            or not isinstance(value.byte_size, int)
+            or not 1 <= value.byte_size <= _MAX_ASSET_BYTES
+            or match.group(1) != value.record.asset_sha256
+        ):
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+
+    def _read_delete_fenced_orphan_at(
+        self, parent_fd: int, marker_name: str
+    ) -> DeleteFencedOrphan:
+        if _DELETE_FENCED_ORPHAN_NAME.fullmatch(marker_name) is None:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        marker_fd = None
+        try:
+            marker_fd = self._open_regular_file(parent_fd, marker_name)
+            marker_stat = os.fstat(marker_fd)
+            if (
+                marker_stat.st_size > 16 * 1024
+                or stat.S_IMODE(marker_stat.st_mode) != 0o600
+                or marker_stat.st_nlink not in {1, 2}
+            ):
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            raw = os.read(marker_fd, 16 * 1024 + 1)
+            if len(raw) > 16 * 1024:
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+                if not isinstance(payload, dict) or set(payload) != {"record", "byte_size"}:
+                    raise ValueError("invalid orphan marker")
+                record = SourceVisualRecord.model_validate(payload["record"])
+                byte_size = payload["byte_size"]
+            except (TypeError, ValueError, UnicodeDecodeError) as exc:
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+            if isinstance(byte_size, bool) or not isinstance(byte_size, int):
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            value = DeleteFencedOrphan(marker_name, record, byte_size)
+            self._validate_delete_fenced_orphan(value)
+            return value
+        finally:
+            _safe_close(marker_fd)
+
+    def mark_delete_fenced_orphan(self, record: SourceVisualRecord) -> DeleteFencedOrphan:
+        """Durably retain a lost-owner canonical without mutating its pathname."""
+
+        relpath = self._validate_record(record)
+        marker_name = self._delete_fenced_orphan_name(record)
+        parent_fd = asset_fd = marker_fd = None
+        temporary_name: str | None = None
+        try:
+            with self.mutation_guard() as root_fd:
+                parent_fd, filename = self._open_asset_parent_at(
+                    root_fd, relpath, create=False
+                )
+                asset_fd = self._open_regular_file(parent_fd, filename)
+                digest, byte_size = _hash_fd(asset_fd)
+                if digest != record.asset_sha256:
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                payload = json.dumps(
+                    {"record": record.model_dump(mode="json"), "byte_size": byte_size},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                if len(payload) > 16 * 1024:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                temporary_name = (
+                    f"{_ORPHAN_WRITE_PREFIX}{record.asset_sha256}-{secrets.token_hex(16)}.tmp"
+                )
+                try:
+                    marker_fd = os.open(
+                        temporary_name,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                        0o600,
+                        dir_fd=parent_fd,
+                    )
+                    os.fchmod(marker_fd, 0o600)
+                except FileExistsError:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from None
+                view = memoryview(payload)
+                while view:
+                    written = os.write(marker_fd, view)
+                    if written <= 0:
+                        raise SourceVisualStorageError("ASSET_IO_FAILED")
+                    view = view[written:]
+                os.fsync(marker_fd)
+                _safe_close(marker_fd)
+                marker_fd = None
+                try:
+                    os.link(
+                        temporary_name,
+                        marker_name,
+                        src_dir_fd=parent_fd,
+                        dst_dir_fd=parent_fd,
+                        follow_symlinks=False,
+                    )
+                except FileExistsError:
+                    existing = self._read_delete_fenced_orphan_at(parent_fd, marker_name)
+                    if existing.record != record or existing.byte_size != byte_size:
+                        raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                    return existing
+                os.fsync(parent_fd)
+                os.unlink(temporary_name, dir_fd=parent_fd)
+                temporary_name = None
+                os.fsync(parent_fd)
+                return DeleteFencedOrphan(marker_name, record, byte_size)
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+        finally:
+            _safe_close(marker_fd)
+            if temporary_name is not None and parent_fd is not None:
+                try:
+                    os.unlink(temporary_name, dir_fd=parent_fd)
+                    os.fsync(parent_fd)
+                except OSError:
+                    pass
+            _safe_close(asset_fd)
+            _safe_close(parent_fd)
+
+    def list_delete_fenced_orphans(
+        self, *, limit: int = 100
+    ) -> tuple[DeleteFencedOrphan, ...]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise SourceVisualStorageError("INVALID_INPUT")
+        found: list[DeleteFencedOrphan] = []
+        visited = [0]
+        try:
+            with self.mutation_guard() as root_fd:
+                for prefix in self._iter_bounded_entries(root_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"):
+                    if re.fullmatch(r"[0-9a-f]{2}", prefix.name) is None:
+                        continue
+                    prefix_fd = self._open_child_dir(root_fd, prefix.name, create=False)
+                    try:
+                        for content in self._iter_bounded_entries(prefix_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"):
+                            if _SHA256.fullmatch(content.name) is None:
+                                continue
+                            content_fd = self._open_child_dir(prefix_fd, content.name, create=False)
+                            try:
+                                for entry in self._iter_bounded_entries(content_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"):
+                                    if entry.name.startswith(_DELETE_FENCED_ORPHAN_PREFIX):
+                                        found.append(self._read_delete_fenced_orphan_at(content_fd, entry.name))
+                                        if len(found) >= limit:
+                                            return tuple(found)
+                            finally:
+                                _safe_close(content_fd)
+                    finally:
+                        _safe_close(prefix_fd)
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        return tuple(found)
+
+    def remove_delete_fenced_orphan(self, orphan: DeleteFencedOrphan) -> None:
+        self._validate_delete_fenced_orphan(orphan)
+        parent_fd = marker_fd = None
+        try:
+            with self.mutation_guard() as root_fd:
+                parent_fd, _filename = self._open_asset_parent_at(
+                    root_fd, orphan.record.asset_relpath, create=False
+                )
+                marker_fd = self._open_regular_file(parent_fd, orphan.marker_name)
+                marker_stat = os.fstat(marker_fd)
+                _safe_close(marker_fd)
+                marker_fd = None
+                existing = self._read_delete_fenced_orphan_at(parent_fd, orphan.marker_name)
+                if existing != orphan:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                current_stat = os.stat(
+                    orphan.marker_name,
+                    dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+                if not _same_identity(current_stat, marker_stat):
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                self._unlink_verified(parent_fd, orphan.marker_name, marker_stat)
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+        finally:
+            _safe_close(marker_fd)
+            _safe_close(parent_fd)
 
     @staticmethod
     def _validate_tombstone(value: TombstonedVisualAsset) -> None:
@@ -2280,6 +2558,23 @@ class SourceVisualStore:
                                                     entry.name,
                                                     invalid_code="CACHE_RECOVERY_REQUIRED",
                                                 )
+                                            elif _DELETE_FENCED_ORPHAN_NAME.fullmatch(
+                                                entry.name
+                                            ) is not None:
+                                                self._read_delete_fenced_orphan_at(
+                                                    content_fd, entry.name
+                                                )
+                                                add_owned_file(
+                                                    content_fd,
+                                                    entry.name,
+                                                    invalid_code="CACHE_RECOVERY_REQUIRED",
+                                                )
+                                            elif _ORPHAN_WRITE_NAME.fullmatch(entry.name) is not None:
+                                                add_owned_file(
+                                                    content_fd,
+                                                    entry.name,
+                                                    invalid_code="CACHE_RECOVERY_REQUIRED",
+                                                )
                                             elif _CLAIM_WRITE_NAME.fullmatch(
                                                 entry.name
                                             ) is not None:
@@ -2320,6 +2615,7 @@ __all__ = [
     "StagedVisualAsset",
     "StoredVisualAsset",
     "TOMBSTONE",
+    "DeleteFencedOrphan",
     "TombstoneDeletionClaim",
     "TombstonedVisualAsset",
     "asset_relpath",

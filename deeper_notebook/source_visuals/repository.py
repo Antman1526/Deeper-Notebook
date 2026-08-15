@@ -1309,6 +1309,104 @@ class SourceVisualRepository:
             now=_now(None),
         )
 
+    async def post_delete_refresh_needs_reacquire(
+        self,
+        *,
+        source_id: str,
+        content_sha256: str,
+        extractor_version: str,
+        request_id: str,
+        source_updated_at: datetime,
+        now: datetime | None = None,
+    ) -> bool:
+        """Atomically fence a queued explicit refresh from pre-delete work.
+
+        ``True`` means the exact queued receipt was created after the latest
+        accepted delete but the current claim has no command created after that
+        delete.  Callers must try claim acquisition and must not expose or bind
+        the pre-delete command.
+        """
+
+        source_id, content_sha256, extractor_version, _ = _identity(
+            source_id, content_sha256, extractor_version, None
+        )
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 256:
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        source_updated_at = _datetime(source_updated_at)
+        if source_updated_at is None:
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        current = _now(now)
+        claim_id = claim_identity(source_id, content_sha256, extractor_version)
+        operation_id = operation_identity(source_id, request_id, "refresh")
+        row = _row(
+            await _transaction(
+                """
+                BEGIN TRANSACTION;
+                LET $operation = (SELECT * FROM $operation_record)[0];
+                LET $claim = (SELECT * FROM $claim_record)[0];
+                LET $delete_intent = (
+                    SELECT * FROM source_visual_operation
+                    WHERE source_id = $source_record
+                        AND source_updated_at = $source_updated_at
+                        AND content_sha256 = $content_sha256
+                        AND operation = "delete"
+                        AND outcome IN ["queued", "deleted"]
+                    ORDER BY created_at DESC, updated_at DESC
+                    LIMIT 1
+                )[0];
+                LET $command_refresh = (
+                    SELECT * FROM source_visual_operation
+                    WHERE source_id = $source_record
+                        AND source_updated_at = $source_updated_at
+                        AND content_sha256 = $content_sha256
+                        AND operation = "refresh"
+                        AND command_id = $claim.command_id
+                    ORDER BY created_at DESC, updated_at DESC
+                    LIMIT 1
+                )[0];
+                IF $operation = NONE OR $operation.source_id != $source_record
+                    OR $operation.request_id != $request_id
+                    OR $operation.operation != "refresh"
+                    OR $operation.source_updated_at != $source_updated_at
+                    OR $operation.content_sha256 != $content_sha256
+                    OR $operation.command_id != NONE
+                    OR $operation.outcome != "queued"
+                    OR $operation.error_code != NONE THEN
+                    RETURN { request_conflict: true, existing: $operation };
+                ELSE IF $delete_intent != NONE
+                    AND $operation.created_at > $delete_intent.created_at
+                    AND $claim != NONE
+                    AND $claim.source_id = $source_record
+                    AND $claim.content_sha256 = $content_sha256
+                    AND $claim.extractor_version = $extractor_version
+                    AND $claim.command_id != NONE
+                    AND $command_refresh != NONE
+                    AND $command_refresh.created_at > $delete_intent.created_at THEN
+                    RETURN { reacquire: false };
+                ELSE IF $delete_intent != NONE
+                    AND $operation.created_at > $delete_intent.created_at THEN
+                    RETURN { reacquire: true };
+                END;
+                RETURN { reacquire: false };
+                COMMIT TRANSACTION;
+                """,
+                {
+                    "operation_record": _record("source_visual_operation", operation_id),
+                    "claim_record": _record("source_visual_claim", claim_id),
+                    "source_record": _source_record(source_id),
+                    "request_id": request_id,
+                    "source_updated_at": source_updated_at,
+                    "content_sha256": content_sha256,
+                    "now": current,
+                },
+            )
+        )
+        if row.get("request_conflict"):
+            raise SourceVisualConflictError("REQUEST_CONFLICT")
+        if not isinstance(row.get("reacquire"), bool):
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        return row["reacquire"]
+
     async def list_current(
         self, revisions: Mapping[str, datetime]
     ) -> dict[str, SourceVisualRecord]:
