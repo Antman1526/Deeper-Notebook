@@ -95,6 +95,32 @@ async def _run_boundary(function, *args):
     return await _await_if_needed(value)
 
 
+async def _settle_owned_task(task: asyncio.Task[_AwaitableValue]) -> _AwaitableValue:
+    """Await a thread-owning task even when its command caller is cancelled."""
+
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # Cancelling an asyncio wrapper never stops its thread. Settle the
+        # exact storage operation before cleanup can inspect its result.
+        try:
+            await asyncio.shield(task)
+        except Exception:
+            pass
+        raise
+
+
+def _settled_task_result(task: asyncio.Task[object] | None) -> object | None:
+    """Return a successful owned task result without surfacing its failure."""
+
+    if task is None or not task.done() or task.cancelled():
+        return None
+    try:
+        return task.result()
+    except Exception:
+        return None
+
+
 async def _fingerprint_lock(identity: str) -> asyncio.Lock:
     async with _FINGERPRINT_LOCKS_GUARD:
         lock = _FINGERPRINT_LOCKS.get(identity)
@@ -123,6 +149,33 @@ def _source_locator(candidate: object) -> dict[str, int | str]:
     if "resource_id" in locator:
         return {"resource_id": str(locator["resource_id"])}
     return {"page": int(locator["page"])}
+
+
+def _record_for_stored_asset(
+    *,
+    authority: object,
+    candidate: object,
+    stored: object,
+    alt_text: str,
+) -> SourceVisualRecord:
+    now = datetime.now(timezone.utc)
+    return SourceVisualRecord(
+        source_id=authority.source_id,
+        source_updated_at=authority.source_updated_at,
+        source_file_sha256=authority.source_file_sha256,
+        content_sha256=authority.content_sha256,
+        asset_sha256=stored.asset_sha256,
+        asset_relpath=stored.asset_relpath,
+        origin=candidate.origin,
+        source_locator=_source_locator(candidate),
+        extractor_version=authority.extractor_version,
+        alt_text=alt_text,
+        width=stored.width,
+        height=stored.height,
+        mime_type=stored.mime_type,
+        created_at=now,
+        updated_at=now,
+    )
 
 
 class SourceVisualService:
@@ -172,6 +225,13 @@ class SourceVisualService:
             except SourceVisualStorageError:
                 pass
 
+    async def _remove_unpublished_derivative(self, record: SourceVisualRecord) -> None:
+        """Remove only the exact canonical derivative that lacks a ready row."""
+
+        tombstone = await _run_boundary(self._store.tombstone, record)
+        if tombstone is not None:
+            await _run_boundary(self._store.remove_tombstone, tombstone)
+
     async def _release(self, authority: object, owner_token: str) -> None:
         try:
             await _await_if_needed(
@@ -190,6 +250,14 @@ class SourceVisualService:
 
         started = time.monotonic()
         authority = None
+        source = None
+        candidate = None
+        alt_text = None
+        stored = None
+        record = None
+        ready_published = False
+        stage_task: asyncio.Task[object] | None = None
+        publish_task: asyncio.Task[object] | None = None
 
         def failed(error_code: str) -> ExtractSourceVisualOutput:
             return ExtractSourceVisualOutput(
@@ -223,36 +291,33 @@ class SourceVisualService:
                     if candidate is None:
                         raise SourceVisualMediaError("NO_ELIGIBLE_CANDIDATE")
                     prepared = await _run_boundary(prepare_webp, candidate.encoded_bytes)
-                    staged = await _run_boundary(
-                        self._store.stage,
-                        authority.source_id,
-                        authority.content_sha256,
-                        prepared,
+                    alt_text = await _run_boundary(
+                        build_alt_text,
+                        str(getattr(source, "title", "") or "Source"),
+                        authority.normalized_source_type,
+                        candidate,
                     )
-                    stored = await _run_boundary(self._store.publish, staged)
+                    stage_task = asyncio.create_task(
+                        _run_boundary(
+                            self._store.stage,
+                            authority.source_id,
+                            authority.content_sha256,
+                            prepared,
+                        )
+                    )
+                    staged = await _settle_owned_task(stage_task)
+                    # Renew immediately before a canonical publish. The old
+                    # ordering renewed only after publication had happened.
                     await self._renew(authority, input_data.claim_owner_token)
-                    now = datetime.now(timezone.utc)
-                    record = SourceVisualRecord(
-                        source_id=authority.source_id,
-                        source_updated_at=authority.source_updated_at,
-                        source_file_sha256=authority.source_file_sha256,
-                        content_sha256=authority.content_sha256,
-                        asset_sha256=stored.asset_sha256,
-                        asset_relpath=stored.asset_relpath,
-                        origin=candidate.origin,
-                        source_locator=_source_locator(candidate),
-                        extractor_version=authority.extractor_version,
-                        alt_text=await _run_boundary(
-                            build_alt_text,
-                            str(getattr(source, "title", "") or "Source"),
-                            authority.normalized_source_type,
-                            candidate,
-                        ),
-                        width=stored.width,
-                        height=stored.height,
-                        mime_type=stored.mime_type,
-                        created_at=now,
-                        updated_at=now,
+                    publish_task = asyncio.create_task(
+                        _run_boundary(self._store.publish, staged)
+                    )
+                    stored = await _settle_owned_task(publish_task)
+                    record = _record_for_stored_asset(
+                        authority=authority,
+                        candidate=candidate,
+                        stored=stored,
+                        alt_text=alt_text,
                     )
                     await _await_if_needed(
                         self._repository.publish_ready(
@@ -264,6 +329,7 @@ class SourceVisualService:
                             source_updated_at=authority.source_updated_at,
                         )
                     )
+                    ready_published = True
                     await _await_if_needed(
                         self._repository.complete_claim(
                             source_id=authority.source_id,
@@ -288,24 +354,55 @@ class SourceVisualService:
                     )
         except asyncio.CancelledError:
             if authority is not None:
+                stored = stored or _settled_task_result(publish_task)
+                if (
+                    record is None
+                    and stored is not None
+                    and source is not None
+                    and candidate is not None
+                    and alt_text is not None
+                ):
+                    record = _record_for_stored_asset(
+                        authority=authority,
+                        candidate=candidate,
+                        stored=stored,
+                        alt_text=alt_text,
+                    )
+                if record is not None and not ready_published:
+                    await self._remove_unpublished_derivative(record)
                 await self._cleanup_task_temp()
                 await self._release(authority, input_data.claim_owner_token)
             return failed("cancelled")
-        except (
-            SourceVisualAuthorityError,
-            SourceVisualMediaError,
-            SourceVisualRepositoryError,
-            SourceVisualStorageError,
-        ) as exc:
+        except (SourceVisualAuthorityError, SourceVisualMediaError) as exc:
             if authority is not None:
+                if record is not None and not ready_published:
+                    await self._remove_unpublished_derivative(record)
                 await self._cleanup_task_temp()
                 await self._release(authority, input_data.claim_owner_token)
             return failed(_safe_error_code(exc))
         except Exception:
             if authority is not None:
+                if record is None:
+                    stored = stored or _settled_task_result(publish_task)
+                    if (
+                        stored is not None
+                        and source is not None
+                        and candidate is not None
+                        and alt_text is not None
+                    ):
+                        record = _record_for_stored_asset(
+                            authority=authority,
+                            candidate=candidate,
+                            stored=stored,
+                            alt_text=alt_text,
+                        )
+                if record is not None and not ready_published:
+                    await self._remove_unpublished_derivative(record)
                 await self._cleanup_task_temp()
-                await self._release(authority, input_data.claim_owner_token)
-            return failed("extraction_failed")
+            # Repository, storage, and unexpected failures are intentionally
+            # transient: Surreal Commands retries them with the same owner
+            # fence instead of converting them into terminal failed receipts.
+            raise
 
 
 __all__ = [

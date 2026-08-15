@@ -28,7 +28,19 @@ from deeper_notebook.source_visuals.service import (
 async def extract_source_visual_command(
     input_data: ExtractSourceVisualInput,
 ) -> ExtractSourceVisualOutput:
-    return await SourceVisualService().execute(input_data)
+    try:
+        return await SourceVisualService().execute(input_data)
+    except (SourceVisualAuthorityError, SourceVisualMediaError) as exc:
+        # These two error classes are terminal under the command retry policy;
+        # preserve a bounded public receipt even if an adapter raises directly.
+        error_code = str(getattr(exc, "code", "extraction_failed")).lower()
+        return ExtractSourceVisualOutput(
+            source_id=input_data.source_id,
+            content_sha256=input_data.expected_content_sha256,
+            duration_ms=0,
+            outcome="failed",
+            error_code=error_code,
+        )
 
 
 __all__ = [

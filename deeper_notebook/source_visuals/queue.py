@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import secrets
+from dataclasses import dataclass
 from typing import Awaitable, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,12 +23,25 @@ from deeper_notebook.source_visuals.repository import (
 _AwaitableValue = TypeVar("_AwaitableValue")
 _QUEUE_TIMEOUT_SECONDS = 10
 _CLAIM_LEASE_SECONDS = 90
-_PENDING_SUBMISSIONS: dict[str, asyncio.Future[str | None]] = {}
+_CLAIM_HEARTBEAT_SECONDS = 30
+_PENDING_RETENTION_SECONDS = 1
 
 
-def _retire_pending_submission(
-    identity: str, pending: asyncio.Future[str | None]
-) -> None:
+@dataclass(slots=True)
+class _PendingSubmission:
+    """One side-effecting submission that remains owner-fenced after timeout."""
+
+    receipt: asyncio.Future[str | None]
+    submit_task: asyncio.Task[object]
+    heartbeat_stop: asyncio.Event
+    heartbeat_task: asyncio.Task[None]
+    finalizer_task: asyncio.Task[None] | None = None
+
+
+_PENDING_SUBMISSIONS: dict[str, _PendingSubmission] = {}
+
+
+def _retire_pending_submission(identity: str, pending: _PendingSubmission) -> None:
     if _PENDING_SUBMISSIONS.get(identity) is pending:
         _PENDING_SUBMISSIONS.pop(identity, None)
 
@@ -54,18 +68,114 @@ async def _await_if_needed(value: _AwaitableValue | Awaitable[_AwaitableValue]) 
     return value
 
 
-def _safe_error_code(value: object, *, fallback: str) -> str:
-    raw = str(getattr(value, "code", fallback)).strip().lower()
-    safe = "".join(character if character.isalnum() else "_" for character in raw)
-    safe = safe.strip("_")[:64]
-    return safe or fallback
-
-
 async def _load_source(source_id: str) -> object:
     source = await _await_if_needed(Source.get(source_id))
     if source is None:
         raise SourceVisualRepositoryError("INVALID_INPUT")
     return source
+
+
+async def _record_queued_operation(
+    repository: object,
+    *,
+    authority: object,
+    request_id: str,
+) -> None:
+    """Persist this caller's idempotency receipt before its handoff response."""
+
+    await _await_if_needed(
+        repository.record_operation(
+            source_id=authority.source_id,
+            request_id=request_id,
+            operation="refresh",
+            source_updated_at=authority.source_updated_at,
+            content_sha256=authority.content_sha256,
+            command_id=None,
+            outcome="queued",
+        )
+    )
+
+
+async def _heartbeat_claim(
+    repository: object,
+    *,
+    authority: object,
+    owner_token: str,
+    stop: asyncio.Event,
+) -> None:
+    """Retain the exact owner fence while an uncancellable thread can submit."""
+
+    try:
+        while True:
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=_CLAIM_HEARTBEAT_SECONDS)
+                return
+            except asyncio.TimeoutError:
+                await _await_if_needed(
+                    repository.renew_claim(
+                        source_id=authority.source_id,
+                        content_sha256=authority.content_sha256,
+                        extractor_version=authority.extractor_version,
+                        owner_token=owner_token,
+                        lease_seconds=_CLAIM_LEASE_SECONDS,
+                    )
+                )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        # The original 90-second claim and owner fence remain the safe crash /
+        # takeover boundary. Do not release a claim while a submit thread may
+        # still return an unbound command.
+        return
+
+
+async def _finalize_submission(
+    repository: object,
+    *,
+    authority: object,
+    owner_token: str,
+    pending: _PendingSubmission,
+    identity: str,
+) -> None:
+    """Bind a late command without treating its claim as side-effect free."""
+
+    command_id: str | None = None
+    try:
+        submitted = await asyncio.shield(pending.submit_task)
+        command_id = str(submitted)
+        if not command_id:
+            raise RuntimeError("queue did not return a command id")
+        await _await_if_needed(
+            repository.bind_command(
+                source_id=authority.source_id,
+                content_sha256=authority.content_sha256,
+                extractor_version=authority.extractor_version,
+                owner_token=owner_token,
+                command_id=command_id,
+            )
+        )
+    except asyncio.CancelledError:
+        # Loop shutdown is the only expected cancellation of this detached
+        # finalizer. Lease expiry and owner fencing protect any later takeover.
+        raise
+    except Exception:
+        # A command may have been created even when its bind failed; never
+        # release this claim or write a failed receipt in that situation.
+        command_id = None
+    finally:
+        if not pending.receipt.done():
+            pending.receipt.set_result(command_id)
+        pending.heartbeat_stop.set()
+        try:
+            await asyncio.shield(pending.heartbeat_task)
+        except Exception:
+            pass
+        asyncio.get_running_loop().call_later(
+            _PENDING_RETENTION_SECONDS,
+            _retire_pending_submission,
+            identity,
+            pending,
+        )
 
 
 async def _live_claim_response(
@@ -75,27 +185,23 @@ async def _live_claim_response(
     content_sha256: str,
     extractor_version: str,
 ) -> SourceVisualJobResponse:
-    """Return a bounded receipt for a durable claim we do not own.
-
-    Task 2 intentionally does not expose a general claim-read API.  Test and
-    future repository adapters may provide one; otherwise the queue receipt
-    remains useful but does not disclose or invent a command identifier.
-    """
+    """Return a bounded receipt for a durable claim this caller does not own."""
 
     identity = f"{source_id}\0{content_sha256}\0{extractor_version}"
     pending = _PENDING_SUBMISSIONS.get(identity)
     if pending is not None:
         try:
-            command_id = await asyncio.wait_for(asyncio.shield(pending), timeout=_QUEUE_TIMEOUT_SECONDS)
+            command_id = await asyncio.wait_for(
+                asyncio.shield(pending.receipt), timeout=_QUEUE_TIMEOUT_SECONDS
+            )
         except asyncio.TimeoutError:
             command_id = None
-        if command_id:
-            return SourceVisualJobResponse(
-                source_id=source_id,
-                command_id=command_id,
-                content_sha256=content_sha256,
-                outcome="replayed",
-            )
+        return SourceVisualJobResponse(
+            source_id=source_id,
+            command_id=command_id,
+            content_sha256=content_sha256,
+            outcome="replayed",
+        )
 
     get_claim = getattr(repository, "get_claim", None)
     claim = None
@@ -111,37 +217,31 @@ async def _live_claim_response(
     )
 
 
-async def _record_failure(
+async def _release_unsubmitted_claim(
     repository: object,
     *,
-    source_id: str,
-    request_id: str,
-    source_updated_at: object,
-    content_sha256: str,
-    error_code: str,
+    authority: object,
+    owner_token: str,
 ) -> None:
+    """Release only before a submission thread has been created."""
+
     try:
         await _await_if_needed(
-            repository.record_operation(
-                source_id=source_id,
-                request_id=request_id,
-                operation="refresh",
-                source_updated_at=source_updated_at,
-                content_sha256=content_sha256,
-                outcome="failed",
-                error_code=error_code,
+            repository.release_claim(
+                source_id=authority.source_id,
+                content_sha256=authority.content_sha256,
+                extractor_version=authority.extractor_version,
+                owner_token=owner_token,
             )
         )
-    except (SourceVisualConflictError, SourceVisualRepositoryError):
-        # A concurrent, valid receipt wins; do not overwrite it with a local
-        # failure from a claim we no longer own.
-        return
+    except Exception:
+        pass
 
 
 async def submit_source_visual(
     source_id: str, request_id: str, *, explicit: bool
 ) -> SourceVisualJobResponse:
-    """Acquire a 90-second owner-fenced claim before creating a queue row."""
+    """Durably claim, receipt, submit, and bind one owner-fenced queue job."""
 
     if (
         not isinstance(source_id, str)
@@ -177,9 +277,7 @@ async def submit_source_visual(
         )
 
     owner_token = secrets.token_hex(32)
-    claim_acquired = False
-    pending_identity = f"{authority.source_id}\0{authority.content_sha256}\0{authority.extractor_version}"
-    pending: asyncio.Future[str | None] | None = None
+    identity = f"{authority.source_id}\0{authority.content_sha256}\0{authority.extractor_version}"
     try:
         await _await_if_needed(
             repository.acquire_claim(
@@ -190,10 +288,12 @@ async def submit_source_visual(
                 lease_seconds=_CLAIM_LEASE_SECONDS,
             )
         )
-        claim_acquired = True
-        pending = asyncio.get_running_loop().create_future()
-        _PENDING_SUBMISSIONS[pending_identity] = pending
     except SourceVisualConflictError:
+        # A losing caller records its own durable receipt before it can replay
+        # the winner's bounded response.
+        await _record_queued_operation(
+            repository, authority=authority, request_id=request_id
+        )
         return await _live_claim_response(
             repository,
             source_id=authority.source_id,
@@ -202,99 +302,70 @@ async def submit_source_visual(
         )
 
     try:
-        payload = {
-            "source_id": authority.source_id,
-            "request_id": request_id,
-            "expected_content_sha256": authority.content_sha256,
-            "extractor_version": authority.extractor_version,
-            "claim_owner_token": owner_token,
-        }
-        command_id = await asyncio.wait_for(
-            asyncio.to_thread(
-                submit_command,
-                LEGACY_COMMAND_APP,
-                "extract_source_visual",
-                payload,
-            ),
-            timeout=_QUEUE_TIMEOUT_SECONDS,
+        # This record exists before an uncancellable worker thread can create
+        # a command. Its command ID remains absent until the fenced bind wins.
+        await _record_queued_operation(
+            repository, authority=authority, request_id=request_id
         )
-        command_id = str(command_id)
-        if not command_id:
-            raise RuntimeError("queue did not return a command id")
-        await _await_if_needed(
-            repository.bind_command(
-                source_id=authority.source_id,
-                content_sha256=authority.content_sha256,
-                extractor_version=authority.extractor_version,
-                owner_token=owner_token,
-                command_id=command_id,
-            )
+    except Exception:
+        await _release_unsubmitted_claim(
+            repository, authority=authority, owner_token=owner_token
         )
-        await _await_if_needed(
-            repository.record_operation(
-                source_id=authority.source_id,
-                request_id=request_id,
-                operation="refresh",
-                source_updated_at=authority.source_updated_at,
-                content_sha256=authority.content_sha256,
-                command_id=command_id,
-                outcome="queued",
-            )
-        )
-        if pending is not None and not pending.done():
-            pending.set_result(command_id)
-        if pending is not None:
-            asyncio.get_running_loop().call_later(
-                1,
-                _retire_pending_submission,
-                pending_identity,
-                pending,
-            )
-        return SourceVisualJobResponse(
-            source_id=authority.source_id,
-            command_id=command_id,
-            content_sha256=authority.content_sha256,
-            outcome="queued",
-        )
-    except asyncio.TimeoutError as exc:
-        error_code = "queue_timeout"
-        failure = exc
-    except Exception as exc:
-        error_code = _safe_error_code(exc, fallback="queue_failed")
-        if error_code not in {"queue_timeout", "queue_failed"}:
-            error_code = "queue_failed"
-        failure = exc
+        raise
 
-    if claim_acquired:
-        try:
-            await _await_if_needed(
-                repository.release_claim(
-                    source_id=authority.source_id,
-                    content_sha256=authority.content_sha256,
-                    extractor_version=authority.extractor_version,
-                    owner_token=owner_token,
-                )
-            )
-        except Exception:
-            pass
-    await _record_failure(
-        repository,
-        source_id=authority.source_id,
-        request_id=request_id,
-        source_updated_at=authority.source_updated_at,
-        content_sha256=authority.content_sha256,
-        error_code=error_code,
+    loop = asyncio.get_running_loop()
+    receipt: asyncio.Future[str | None] = loop.create_future()
+    heartbeat_stop = asyncio.Event()
+    submit_task = asyncio.create_task(
+        asyncio.to_thread(
+            submit_command,
+            LEGACY_COMMAND_APP,
+            "extract_source_visual",
+            {
+                "source_id": authority.source_id,
+                "request_id": request_id,
+                "expected_content_sha256": authority.content_sha256,
+                "extractor_version": authority.extractor_version,
+                "claim_owner_token": owner_token,
+            },
+        )
     )
-    if pending is not None and not pending.done():
-        pending.set_result(None)
-    if pending is not None and _PENDING_SUBMISSIONS.get(pending_identity) is pending:
-        _PENDING_SUBMISSIONS.pop(pending_identity, None)
-    del failure
+    heartbeat_task = asyncio.create_task(
+        _heartbeat_claim(
+            repository,
+            authority=authority,
+            owner_token=owner_token,
+            stop=heartbeat_stop,
+        )
+    )
+    pending = _PendingSubmission(
+        receipt=receipt,
+        submit_task=submit_task,
+        heartbeat_stop=heartbeat_stop,
+        heartbeat_task=heartbeat_task,
+    )
+    _PENDING_SUBMISSIONS[identity] = pending
+    pending.finalizer_task = asyncio.create_task(
+        _finalize_submission(
+            repository,
+            authority=authority,
+            owner_token=owner_token,
+            pending=pending,
+            identity=identity,
+        )
+    )
+
+    try:
+        command_id = await asyncio.wait_for(
+            asyncio.shield(receipt), timeout=_QUEUE_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        command_id = None
     return SourceVisualJobResponse(
         source_id=authority.source_id,
+        command_id=command_id,
         content_sha256=authority.content_sha256,
-        outcome="failed",
-        error_code=error_code,
+        outcome="queued",
     )
 
 
