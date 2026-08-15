@@ -21,12 +21,12 @@ from deeper_notebook.source_visuals.contracts import (
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_ID = re.compile(r"^source:[A-Za-z0-9_-]+$")
 _RELPATH = re.compile(r"^([0-9a-f]{2})/([0-9a-f]{64})/([0-9a-f]{64})\.webp$")
-_TEMP_NAME = re.compile(r"^stage-([0-9a-f]{64})-([0-9a-f]{64})-([0-9a-f]{64})\.tmp$")
+_TEMP_NAME = re.compile(r"^stage-([0-9a-f]{64})-([0-9a-f]{64})\.tmp$")
 TOMBSTONE = re.compile(r"^\.expired-([0-9a-f]{16})-([0-9a-f]{64})\.webp$")
 _TEMP_DIR = ".tmp"
 _TEMP_MARKER = ".deeper-notebook-source-visual-cache-v1"
 _MAX_ASSET_BYTES = 1_572_864
-_MAX_CACHE_FILES = 8192
+_MAX_CACHE_FILES = 4096
 _OPEN_DIRECTORY = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 )
@@ -111,6 +111,12 @@ def asset_relpath(source_id: str, content_sha256: str, asset_sha256: str) -> str
     asset_sha256 = _validate_hash(asset_sha256)
     prefix = hashlib.sha256(source_id.encode("utf-8")).hexdigest()[:2]
     return f"{prefix}/{content_sha256}/{asset_sha256}.webp"
+
+
+def _stage_identity(source_id: str, content_sha256: str, asset_sha256: str) -> str:
+    return hashlib.sha256(
+        f"{source_id}\0{content_sha256}\0{asset_sha256}".encode("utf-8")
+    ).hexdigest()
 
 
 def _hash_fd(fd: int) -> tuple[str, int]:
@@ -295,7 +301,7 @@ class SourceVisualStore:
         root_fd = temp_fd = file_fd = verify_fd = None
         created = False
         temp_name = (
-            f"stage-{content_sha256}-{prepared.asset_sha256}-"
+            f"stage-{_stage_identity(source_id, content_sha256, prepared.asset_sha256)}-"
             f"{secrets.token_hex(32)}.tmp"
         )
         try:
@@ -347,10 +353,13 @@ class SourceVisualStore:
             _safe_close(root_fd)
 
     def publish(self, staged: StagedVisualAsset) -> StoredVisualAsset:
-        if (
-            not isinstance(staged, StagedVisualAsset)
-            or _TEMP_NAME.fullmatch(staged.temp_name) is None
-        ):
+        if not isinstance(staged, StagedVisualAsset):
+            raise SourceVisualStorageError("TEMP_INVALID")
+        temp_identity = _TEMP_NAME.fullmatch(staged.temp_name)
+        expected_identity = _stage_identity(
+            staged.source_id, staged.content_sha256, staged.asset_sha256
+        )
+        if temp_identity is None or temp_identity.group(1) != expected_identity:
             raise SourceVisualStorageError("TEMP_INVALID")
         relpath = asset_relpath(
             staged.source_id, staged.content_sha256, staged.asset_sha256
@@ -569,40 +578,57 @@ class SourceVisualStore:
         found: list[TombstonedVisualAsset] = []
         visited = 0
         try:
-            for prefix in os.scandir(self._root):
-                visited += 1
-                if visited > 4096:
-                    raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
-                if not re.fullmatch(r"[0-9a-f]{2}", prefix.name) or not prefix.is_dir(
-                    follow_symlinks=False
-                ):
-                    continue
-                for content in os.scandir(prefix.path):
+            with os.scandir(root_fd) as prefixes:
+                for prefix in prefixes:
                     visited += 1
                     if visited > 4096:
                         raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
-                    if _SHA256.fullmatch(content.name) is None or not content.is_dir(
-                        follow_symlinks=False
-                    ):
+                    if re.fullmatch(r"[0-9a-f]{2}", prefix.name) is None:
                         continue
-                    for entry in os.scandir(content.path):
-                        visited += 1
-                        if visited > 4096:
-                            raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
-                        match = TOMBSTONE.fullmatch(entry.name)
-                        if match is None or not entry.is_file(follow_symlinks=False):
-                            continue
-                        size = entry.stat(follow_symlinks=False).st_size
-                        found.append(
-                            TombstonedVisualAsset(
-                                f"{prefix.name}/{content.name}/{match.group(2)}.webp",
-                                entry.name,
-                                match.group(2),
-                                size,
-                            )
-                        )
-                        if len(found) >= limit:
-                            return tuple(found)
+                    prefix_fd = self._open_child_dir(root_fd, prefix.name, create=False)
+                    try:
+                        with os.scandir(prefix_fd) as contents:
+                            for content in contents:
+                                visited += 1
+                                if visited > 4096:
+                                    raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
+                                if _SHA256.fullmatch(content.name) is None:
+                                    continue
+                                content_fd = self._open_child_dir(
+                                    prefix_fd, content.name, create=False
+                                )
+                                try:
+                                    with os.scandir(content_fd) as entries:
+                                        for entry in entries:
+                                            visited += 1
+                                            if visited > 4096:
+                                                raise SourceVisualStorageError(
+                                                    "CACHE_SCAN_LIMIT"
+                                                )
+                                            match = TOMBSTONE.fullmatch(entry.name)
+                                            if match is None:
+                                                continue
+                                            tombstone_fd = self._open_regular_file(
+                                                content_fd, entry.name
+                                            )
+                                            try:
+                                                size = os.fstat(tombstone_fd).st_size
+                                            finally:
+                                                os.close(tombstone_fd)
+                                            found.append(
+                                                TombstonedVisualAsset(
+                                                    f"{prefix.name}/{content.name}/{match.group(2)}.webp",
+                                                    entry.name,
+                                                    match.group(2),
+                                                    size,
+                                                )
+                                            )
+                                            if len(found) >= limit:
+                                                return tuple(found)
+                                finally:
+                                    os.close(content_fd)
+                    finally:
+                        os.close(prefix_fd)
         except SourceVisualStorageError:
             raise
         except OSError as exc:
@@ -614,29 +640,53 @@ class SourceVisualStore:
     def cache_size_bytes(self) -> int:
         root_fd = self._ensure_root()
         total = 0
-        count = 0
+        visited = 0
         try:
-            for prefix in os.scandir(self._root):
-                if not re.fullmatch(r"[0-9a-f]{2}", prefix.name) or not prefix.is_dir(
-                    follow_symlinks=False
-                ):
-                    continue
-                for content in os.scandir(prefix.path):
-                    if _SHA256.fullmatch(content.name) is None or not content.is_dir(
-                        follow_symlinks=False
-                    ):
+            with os.scandir(root_fd) as prefixes:
+                for prefix in prefixes:
+                    visited += 1
+                    if visited > _MAX_CACHE_FILES:
+                        raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
+                    if re.fullmatch(r"[0-9a-f]{2}", prefix.name) is None:
                         continue
-                    for entry in os.scandir(content.path):
-                        if re.fullmatch(r"[0-9a-f]{64}\.webp", entry.name) is None:
-                            continue
-                        if entry.is_symlink():
-                            raise SourceVisualStorageError("ASSET_SYMLINK")
-                        if not entry.is_file(follow_symlinks=False):
-                            raise SourceVisualStorageError("ASSET_NOT_REGULAR")
-                        count += 1
-                        if count > _MAX_CACHE_FILES:
-                            raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
-                        total += entry.stat(follow_symlinks=False).st_size
+                    prefix_fd = self._open_child_dir(root_fd, prefix.name, create=False)
+                    try:
+                        with os.scandir(prefix_fd) as contents:
+                            for content in contents:
+                                visited += 1
+                                if visited > _MAX_CACHE_FILES:
+                                    raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
+                                if _SHA256.fullmatch(content.name) is None:
+                                    continue
+                                content_fd = self._open_child_dir(
+                                    prefix_fd, content.name, create=False
+                                )
+                                try:
+                                    with os.scandir(content_fd) as entries:
+                                        for entry in entries:
+                                            visited += 1
+                                            if visited > _MAX_CACHE_FILES:
+                                                raise SourceVisualStorageError(
+                                                    "CACHE_SCAN_LIMIT"
+                                                )
+                                            if (
+                                                re.fullmatch(
+                                                    r"[0-9a-f]{64}\.webp", entry.name
+                                                )
+                                                is None
+                                            ):
+                                                continue
+                                            asset_fd = self._open_regular_file(
+                                                content_fd, entry.name
+                                            )
+                                            try:
+                                                total += os.fstat(asset_fd).st_size
+                                            finally:
+                                                os.close(asset_fd)
+                                finally:
+                                    os.close(content_fd)
+                    finally:
+                        os.close(prefix_fd)
         except SourceVisualStorageError:
             raise
         except OSError as exc:

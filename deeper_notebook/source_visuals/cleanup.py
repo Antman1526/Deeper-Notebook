@@ -74,7 +74,16 @@ class SourceVisualCleanup:
                     and record.asset_relpath == tombstone.asset_relpath
                     and record.asset_sha256 == tombstone.asset_sha256
                 ):
-                    self._store.restore_tombstone(tombstone)
+                    try:
+                        self._store.restore_tombstone(tombstone)
+                    except SourceVisualStorageError as exc:
+                        if exc.code != "TOMBSTONE_INVALID":
+                            raise
+                        # A crash-safe replacement may already occupy the
+                        # canonical name. Validate it before removing the old
+                        # duplicate tombstone.
+                        self._store.read_exact(record)
+                        self._store.remove_tombstone(tombstone)
                 elif record is None:
                     self._store.remove_tombstone(tombstone)
                 else:

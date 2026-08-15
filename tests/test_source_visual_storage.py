@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import os
 import threading
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -121,6 +122,16 @@ def test_stage_rejects_asset_hash_mismatch(tmp_path: Path):
     assert error.value.code == "ASSET_HASH_MISMATCH"
 
 
+def test_publish_binds_temp_identity_to_staged_content_and_asset_hash(tmp_path: Path):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.publish(replace(staged, content_sha256="b" * 64))
+
+    assert error.value.code == "TEMP_INVALID"
+
+
 def test_store_rejects_symlinked_root_segment_file_and_nonregular_file(tmp_path: Path):
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -206,6 +217,48 @@ def test_bounded_cache_scans_close_the_owned_root_descriptor(
 
     assert opened
     assert set(opened).issubset(closed)
+
+
+def test_cache_scan_uses_the_open_root_descriptor_after_path_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    expected_size = stored.byte_size
+    outside = tmp_path / "outside"
+    outside_asset = outside / Path(stored.asset_relpath)
+    outside_asset.parent.mkdir(parents=True)
+    outside_asset.write_bytes(b"outside-controlled-root" * 2)
+    original_ensure_root = store._ensure_root
+    swapped = False
+
+    def ensure_and_swap() -> int:
+        nonlocal swapped
+        descriptor = original_ensure_root()
+        if not swapped:
+            held = tmp_path / "held-cache-root"
+            store.root.rename(held)
+            store.root.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        return descriptor
+
+    monkeypatch.setattr(store, "_ensure_root", ensure_and_swap)
+
+    assert store.cache_size_bytes() == expected_size
+    assert outside_asset.read_bytes() == b"outside-controlled-root" * 2
+
+
+def test_cache_scan_bounds_noncanonical_entries(tmp_path: Path):
+    store = SourceVisualStore(data_folder=tmp_path)
+    root_fd = store._ensure_root()
+    os.close(root_fd)
+    for index in range(4097):
+        (store.root / f"junk-{index:04d}").touch()
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.cache_size_bytes()
+
+    assert error.value.code == "CACHE_SCAN_LIMIT"
 
 
 def test_tombstone_restore_remove_and_replacement_window(tmp_path: Path):
@@ -335,6 +388,28 @@ async def test_reconcile_restores_referenced_tombstone_and_ignores_malformed_nam
     assert await cleanup.reconcile_tombstones(limit=100) == 1
     assert store.read_exact(record) == b"derived-webp"
     assert (parent / ".expired-bad.webp").read_bytes() == b"unowned"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_removes_old_tombstone_when_exact_replacement_exists(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    replacement = store.root / record.asset_relpath
+    replacement.write_bytes(b"derived-webp")
+    repository = _Repository([record])
+
+    processed = await SourceVisualCleanup(store, repository).reconcile_tombstones(
+        limit=100
+    )
+
+    assert processed == 1
+    assert store.read_exact(record) == b"derived-webp"
+    assert store.list_tombstones(limit=100) == ()
 
 
 @pytest.mark.asyncio

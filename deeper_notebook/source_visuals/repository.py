@@ -17,6 +17,7 @@ from deeper_notebook.source_visuals.contracts import (
 )
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_ASSET_RELPATH_RE = re.compile(r"^[0-9a-f]{2}/[0-9a-f]{64}/[0-9a-f]{64}\.webp$")
 _MAX_REVISIONS = 200
 _PUBLIC_ERROR_CODES = frozenset(
     {
@@ -203,7 +204,9 @@ def _identity(
 
 def _record(table: str, identity: str) -> object:
     try:
-        record_id = identity if identity.startswith(f"{table}:") else f"{table}:{identity}"
+        record_id = (
+            identity if identity.startswith(f"{table}:") else f"{table}:{identity}"
+        )
         return ensure_record_id(record_id)
     except (TypeError, ValueError):
         raise SourceVisualRepositoryError("INVALID_INPUT") from None
@@ -397,7 +400,11 @@ class SourceVisualRepository:
         owner_token = _hash(owner_token)
         current = _now(now)
         if lease_until is None:
-            if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or lease_seconds <= 0:
+            if (
+                isinstance(lease_seconds, bool)
+                or not isinstance(lease_seconds, int)
+                or lease_seconds <= 0
+            ):
                 raise SourceVisualRepositoryError("INVALID_INPUT")
             lease_until = current + timedelta(seconds=lease_seconds)
         lease_until = _datetime(lease_until)
@@ -442,9 +449,8 @@ class SourceVisualRepository:
             if not isinstance(existing, Mapping):
                 existing = row
             existing_until = _datetime(existing.get("lease_until"))
-            if (
-                existing.get("owner_token") != owner_token
-                and (existing_until is None or existing_until > current)
+            if existing.get("owner_token") != owner_token and (
+                existing_until is None or existing_until > current
             ):
                 raise SourceVisualConflictError("CLAIM_HELD")
             row = dict(existing)
@@ -496,7 +502,11 @@ class SourceVisualRepository:
         owner_token = _hash(owner_token)
         current = _now(now)
         if lease_until is None:
-            if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or lease_seconds <= 0:
+            if (
+                isinstance(lease_seconds, bool)
+                or not isinstance(lease_seconds, int)
+                or lease_seconds <= 0
+            ):
                 raise SourceVisualRepositoryError("INVALID_INPUT")
             lease_until = current + timedelta(seconds=lease_seconds)
         lease_until = _datetime(lease_until)
@@ -755,17 +765,20 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
-        if row and (row.get("request_conflict") or not _operation_matches(
-            row,
-            source_id=source_id,
-            request_id=request_id,
-            source_updated_at=source_updated_at,
-            content_sha256=content_sha256,
-            operation=operation,
-            command_id=canonical_command_id,
-            outcome=outcome,
-            error_code=error_code,
-        )):
+        if row and (
+            row.get("request_conflict")
+            or not _operation_matches(
+                row,
+                source_id=source_id,
+                request_id=request_id,
+                source_updated_at=source_updated_at,
+                content_sha256=content_sha256,
+                operation=operation,
+                command_id=canonical_command_id,
+                outcome=outcome,
+                error_code=error_code,
+            )
+        ):
             raise SourceVisualConflictError("REQUEST_CONFLICT")
         fallback = self._operation_cache.get(identity)
         receipt = _receipt_from_row(
@@ -837,7 +850,9 @@ class SourceVisualRepository:
             WHERE [source_id, source_updated_at] IN $source_revision_pairs;
             """,
             {
-                "source_records": [_source_record(source_id) for source_id in normalised],
+                "source_records": [
+                    _source_record(source_id) for source_id in normalised
+                ],
                 "source_revision_values": list(normalised.values()),
                 "source_revision_pairs": [
                     [_source_record(source_id), revision]
@@ -856,6 +871,107 @@ class SourceVisualRepository:
                 continue
             current[record.source_id] = record
         return current
+
+    async def find_ready_by_asset_relpath(
+        self, asset_relpath: str
+    ) -> SourceVisualRecord | None:
+        if (
+            not isinstance(asset_relpath, str)
+            or _ASSET_RELPATH_RE.fullmatch(asset_relpath) is None
+        ):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        rows = _rows(
+            await _transaction(
+                "SELECT * FROM source_visual_cache "
+                "WHERE asset_relpath = $asset_relpath LIMIT 2;",
+                {"asset_relpath": asset_relpath},
+            )
+        )
+        if len(rows) > 1:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        if not rows:
+            return None
+        record = _record_from_row(rows[0])
+        if record.asset_relpath != asset_relpath:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        return record
+
+    async def list_ready_for_eviction(self, *, limit: int) -> list[SourceVisualRecord]:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 100
+        ):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        rows = _rows(
+            await _transaction(
+                "SELECT * FROM source_visual_cache "
+                "ORDER BY updated_at ASC LIMIT $limit;",
+                {"limit": limit},
+            )
+        )
+        if len(rows) > limit:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        records: list[SourceVisualRecord] = []
+        for row in rows:
+            try:
+                records.append(_record_from_row(row))
+            except SourceVisualRepositoryError:
+                continue
+        return records
+
+    async def delete_ready_if_current(self, record: SourceVisualRecord) -> bool:
+        if not isinstance(record, SourceVisualRecord):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        rows = _rows(
+            await _transaction(
+                "DELETE $cache_record WHERE source_id = $source_record "
+                "AND source_updated_at = $source_updated_at "
+                "AND content_sha256 = $content_sha256 "
+                "AND asset_sha256 = $asset_sha256 "
+                "AND asset_relpath = $asset_relpath "
+                "AND updated_at = $updated_at RETURN BEFORE;",
+                {
+                    "cache_record": _record(
+                        "source_visual_cache",
+                        _cache_identity(record.source_id, record.content_sha256),
+                    ),
+                    "source_record": _source_record(record.source_id),
+                    "source_updated_at": record.source_updated_at,
+                    "content_sha256": record.content_sha256,
+                    "asset_sha256": record.asset_sha256,
+                    "asset_relpath": record.asset_relpath,
+                    "updated_at": record.updated_at,
+                },
+            )
+        )
+        if not rows:
+            return False
+        if len(rows) != 1:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        deleted = _record_from_row(rows[0])
+        if deleted != record:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        return True
+
+    async def is_claim_active(self, record: SourceVisualRecord) -> bool:
+        if not isinstance(record, SourceVisualRecord):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        identity = claim_identity(
+            record.source_id, record.content_sha256, record.extractor_version
+        )
+        rows = _rows(
+            await _transaction(
+                "SELECT claim_id FROM $claim_record "
+                "WHERE lease_until > time::now() LIMIT 1;",
+                {"claim_record": _record("source_visual_claim", identity)},
+            )
+        )
+        if not rows:
+            return False
+        if len(rows) != 1 or _plain_id(rows[0].get("claim_id")) != identity:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        return True
 
     async def publish_ready(
         self,
@@ -1020,7 +1136,10 @@ class SourceVisualRepository:
     def _normalise_record_argument(
         record: SourceVisualRecord | Mapping[str, Any] | str | None,
         source_id: str | SourceVisualAuthority | None,
-    ) -> tuple[SourceVisualRecord | Mapping[str, Any] | None, str | SourceVisualAuthority | None]:
+    ) -> tuple[
+        SourceVisualRecord | Mapping[str, Any] | None,
+        str | SourceVisualAuthority | None,
+    ]:
         if isinstance(record, str) and source_id is None:
             return None, record
         return record if record is not None else None, source_id
@@ -1048,7 +1167,10 @@ class SourceVisualRepository:
             and extractor_version != authority.extractor_version
         ):
             raise SourceVisualRepositoryError("INVALID_INPUT")
-        if source_updated_at is not None and _datetime(source_updated_at) != authority.source_updated_at:
+        if (
+            source_updated_at is not None
+            and _datetime(source_updated_at) != authority.source_updated_at
+        ):
             raise SourceVisualConflictError("SOURCE_STALE")
 
     @staticmethod
@@ -1094,7 +1216,8 @@ class SourceVisualRepository:
             source_file_sha256=authority.source_file_sha256 if authority else None,
             content_sha256=content_sha256,
             asset_sha256=content_sha256,
-            asset_relpath=f"{content_sha256[:2]}/{content_sha256}/" + f"{content_sha256}.webp",
+            asset_relpath=f"{content_sha256[:2]}/{content_sha256}/"
+            + f"{content_sha256}.webp",
             origin="embedded",
             source_locator={"page": 1},
             extractor_version=extractor_version,

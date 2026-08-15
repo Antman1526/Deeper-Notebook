@@ -13,6 +13,7 @@ from deeper_notebook.source_visuals.repository import (
     SourceVisualConflictError,
     SourceVisualRepository,
     SourceVisualRepositoryError,
+    claim_identity,
     operation_identity,
 )
 
@@ -46,7 +47,9 @@ def _repository() -> SourceVisualRepository:
 
 
 @pytest.mark.asyncio
-async def test_list_current_uses_source_revision_without_hashing(monkeypatch: pytest.MonkeyPatch):
+async def test_list_current_uses_source_revision_without_hashing(
+    monkeypatch: pytest.MonkeyPatch,
+):
     repository = _repository()
     query = AsyncMock(return_value=[READY_ROW])
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
@@ -133,18 +136,80 @@ async def test_list_current_matches_source_revision_pairs_not_independent_sets(
     result = await repository.list_current(requested)
 
     assert set(result) == set(requested)
-    assert all(result[source].source_updated_at == revision for source, revision in requested.items())
+    assert all(
+        result[source].source_updated_at == revision
+        for source, revision in requested.items()
+    )
     assert len(calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_list_current_omits_malformed_and_stale_rows(monkeypatch: pytest.MonkeyPatch):
+async def test_cleanup_repository_adapter_is_bounded_parameterized_and_exact(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repository = _repository()
+    query = AsyncMock(
+        side_effect=[
+            [READY_ROW],
+            [READY_ROW],
+            [READY_ROW],
+            [{"claim_id": claim_identity("source:one", "a" * 64, "source-visual-v1")}],
+        ]
+    )
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+    record = SourceVisualRecord.model_validate(
+        {key: value for key, value in READY_ROW.items() if key != "id"}
+    )
+
+    found = await repository.find_ready_by_asset_relpath(record.asset_relpath)
+    page = await repository.list_ready_for_eviction(limit=100)
+    deleted = await repository.delete_ready_if_current(record)
+    active = await repository.is_claim_active(record)
+
+    assert found == record
+    assert page == [record]
+    assert deleted is True
+    assert active is True
+    find_call, list_call, delete_call, claim_call = query.await_args_list
+    assert "$asset_relpath" in find_call.args[0]
+    assert find_call.args[1]["asset_relpath"] == record.asset_relpath
+    assert "ORDER BY updated_at ASC" in list_call.args[0]
+    assert list_call.args[1]["limit"] == 100
+    assert "$cache_record" in delete_call.args[0]
+    assert delete_call.args[1]["asset_relpath"] == record.asset_relpath
+    assert "$claim_record" in claim_call.args[0]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_repository_adapter_rejects_unbounded_or_malformed_input(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repository = _repository()
+    query = AsyncMock(return_value=[])
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    with pytest.raises(SourceVisualRepositoryError):
+        await repository.list_ready_for_eviction(limit=101)
+    with pytest.raises(SourceVisualRepositoryError):
+        await repository.find_ready_by_asset_relpath("../outside.webp")
+
+    assert query.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_list_current_omits_malformed_and_stale_rows(
+    monkeypatch: pytest.MonkeyPatch,
+):
     repository = _repository()
     query = AsyncMock(
         return_value=[
             READY_ROW,
             {**READY_ROW, "source_id": "source:bad", "asset_relpath": ""},
-            {**READY_ROW, "source_id": "source:stale", "source_updated_at": SOURCE_UPDATED - timedelta(days=1)},
+            {
+                **READY_ROW,
+                "source_id": "source:stale",
+                "source_updated_at": SOURCE_UPDATED - timedelta(days=1),
+            },
         ]
     )
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
@@ -155,12 +220,17 @@ async def test_list_current_omits_malformed_and_stale_rows(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
-async def test_claim_lease_supports_first_acquire_renewal_and_expired_takeover(monkeypatch: pytest.MonkeyPatch):
+async def test_claim_lease_supports_first_acquire_renewal_and_expired_takeover(
+    monkeypatch: pytest.MonkeyPatch,
+):
     repository = _repository()
     query = AsyncMock(
         side_effect=[
             None,
-            {"owner_token": OWNER_A, "lease_until": SOURCE_UPDATED + timedelta(minutes=5)},
+            {
+                "owner_token": OWNER_A,
+                "lease_until": SOURCE_UPDATED + timedelta(minutes=5),
+            },
         ]
     )
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
@@ -186,9 +256,16 @@ async def test_claim_lease_supports_first_acquire_renewal_and_expired_takeover(m
 
 
 @pytest.mark.asyncio
-async def test_live_owner_contention_and_old_owner_fencing(monkeypatch: pytest.MonkeyPatch):
+async def test_live_owner_contention_and_old_owner_fencing(
+    monkeypatch: pytest.MonkeyPatch,
+):
     repository = _repository()
-    query = AsyncMock(return_value={"owner_token": OWNER_A, "lease_until": SOURCE_UPDATED + timedelta(minutes=5)})
+    query = AsyncMock(
+        return_value={
+            "owner_token": OWNER_A,
+            "lease_until": SOURCE_UPDATED + timedelta(minutes=5),
+        }
+    )
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
     with pytest.raises(SourceVisualConflictError) as error:
         await repository.acquire_claim(
@@ -212,7 +289,9 @@ async def test_live_owner_contention_and_old_owner_fencing(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
-async def test_expired_claim_is_taken_over_by_the_new_owner(monkeypatch: pytest.MonkeyPatch):
+async def test_expired_claim_is_taken_over_by_the_new_owner(
+    monkeypatch: pytest.MonkeyPatch,
+):
     repository = _repository()
     query = AsyncMock(
         return_value={
@@ -270,7 +349,9 @@ async def test_command_binding_is_compare_and_set(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_operation_replay_requires_an_exact_payload(monkeypatch: pytest.MonkeyPatch):
+async def test_operation_replay_requires_an_exact_payload(
+    monkeypatch: pytest.MonkeyPatch,
+):
     repository = _repository()
     payload = {
         "source_id": "source:one",
@@ -296,7 +377,9 @@ async def test_operation_replay_requires_an_exact_payload(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_publish_and_delete_require_owner_and_current_source(monkeypatch: pytest.MonkeyPatch):
+async def test_publish_and_delete_require_owner_and_current_source(
+    monkeypatch: pytest.MonkeyPatch,
+):
     repository = _repository()
     query = AsyncMock(
         return_value={
@@ -341,7 +424,9 @@ def _authority(**overrides: object) -> SourceVisualAuthority:
     return SourceVisualAuthority(**values)
 
 
-def _ready_record(authority: SourceVisualAuthority, **overrides: object) -> SourceVisualRecord:
+def _ready_record(
+    authority: SourceVisualAuthority, **overrides: object
+) -> SourceVisualRecord:
     values: dict[str, object] = {
         "source_id": authority.source_id,
         "source_updated_at": authority.source_updated_at,
@@ -461,7 +546,9 @@ async def test_operation_command_id_is_bound_and_replay_normalizes_record_id(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mutation", ["renew", "bind", "complete", "release", "publish", "delete"])
+@pytest.mark.parametrize(
+    "mutation", ["renew", "bind", "complete", "release", "publish", "delete"]
+)
 async def test_lease_mutations_reject_expired_owner(
     monkeypatch: pytest.MonkeyPatch, mutation: str
 ):
