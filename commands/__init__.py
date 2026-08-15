@@ -47,6 +47,7 @@ from .example_commands import analyze_data_command, process_text_command
 from .podcast_commands import generate_podcast_command
 from .prompt_optimizer_commands import optimize_prompt_command  # v0.8.68
 from .source_commands import process_source_command
+from .source_visual_commands import extract_source_visual_command
 from .studio_commands import generate_studio_artifact_command
 
 # v0.7.47 — memory_commands.py is RUNTIME-COPIED into this package by
@@ -94,6 +95,7 @@ __all__ = [
     "generate_podcast_command",
     "generate_studio_artifact_command",
     "process_source_command",
+    "extract_source_visual_command",
     "process_text_command",
     "analyze_data_command",
 ]

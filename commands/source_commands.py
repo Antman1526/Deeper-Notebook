@@ -1,3 +1,4 @@
+import inspect
 import time
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +18,9 @@ from deeper_notebook.domain.transformation import (
 )
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import ConfigurationError
+from deeper_notebook.feature_flags import source_visuals_enabled
+from deeper_notebook.source_visuals.authority import compute_source_visual_authority
+from deeper_notebook.source_visuals.queue import submit_source_visual
 
 try:
     from deeper_notebook.graphs.source import source_graph
@@ -35,6 +39,20 @@ def full_model_dump(model):
         return [full_model_dump(item) for item in model]
     else:
         return model
+
+
+async def _await_if_needed(value):
+    """Keep the existing production awaits while supporting synchronous test seams."""
+
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+def _visual_handoff_error_code(error: object) -> str:
+    raw = str(getattr(error, "code", "handoff_failed")).strip().lower()
+    safe = "".join(character if character.isalnum() else "_" for character in raw)
+    return safe.strip("_")[:64] or "handoff_failed"
 
 
 class SourceProcessingInput(CommandInput):
@@ -118,7 +136,7 @@ async def process_source_command(
             logger.warning(f"Auto-summary/topics setup skipped (non-fatal): {e}")
 
         # 2. Get existing source record to update its command field
-        source = await Source.get(input_data.source_id)
+        source = await _await_if_needed(Source.get(input_data.source_id))
         if not source:
             raise ValueError(f"Source '{input_data.source_id}' not found")
 
@@ -136,7 +154,7 @@ async def process_source_command(
         logger.info(f"Processing source with {len(input_data.notebook_ids)} notebooks")
 
         # Execute source_graph with all notebooks
-        result = await source_graph.ainvoke(
+        result = await _await_if_needed(source_graph.ainvoke(
             {  # type: ignore[arg-type]
                 "content_state": input_data.content_state,
                 "notebook_ids": input_data.notebook_ids,  # Use notebook_ids (plural) as expected by SourceState
@@ -144,7 +162,7 @@ async def process_source_command(
                 "embed": input_data.embed,
                 "source_id": input_data.source_id,  # Add the source_id to the state
             }
-        )
+        ))
 
         processed_source = result["source"]
 
@@ -185,6 +203,24 @@ async def process_source_command(
         logger.info(
             f"Created {insights_created} insights, embedding {embed_status}"
         )
+
+        if source_visuals_enabled():
+            try:
+                visual_authority = await _await_if_needed(
+                    compute_source_visual_authority(processed_source)
+                )
+                await _await_if_needed(
+                    submit_source_visual(
+                        str(processed_source.id),
+                        f"ingest:{visual_authority.content_sha256}",
+                        explicit=False,
+                    )
+                )
+            except Exception as visual_error:
+                logger.warning(
+                    "Source visual handoff failed with bounded code {}",
+                    _visual_handoff_error_code(visual_error),
+                )
 
         return SourceProcessingOutput(
             success=True,
