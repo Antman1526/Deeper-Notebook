@@ -281,6 +281,20 @@ class SourceVisualStore:
             raise SourceVisualStorageError("ASSET_RELPATH_INVALID")
         return expected
 
+    @staticmethod
+    def _require_path_identity(
+        parent_fd: int, name: str, expected_stat: os.stat_result
+    ) -> None:
+        try:
+            current_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_HASH_MISMATCH") from exc
+        if (current_stat.st_dev, current_stat.st_ino) != (
+            expected_stat.st_dev,
+            expected_stat.st_ino,
+        ):
+            raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+
     def stage(
         self,
         source_id: str,
@@ -512,6 +526,7 @@ class SourceVisualStore:
                     if exc.code == "ASSET_MISSING":
                         return None
                     raise
+                verified_stat = os.fstat(file_fd)
                 digest, size = _hash_fd(file_fd)
                 if digest != record.asset_sha256:
                     raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
@@ -524,6 +539,7 @@ class SourceVisualStore:
                     pass
                 else:
                     raise SourceVisualStorageError("TOMBSTONE_INVALID")
+                self._require_path_identity(parent_fd, filename, verified_stat)
                 os.rename(
                     filename,
                     tombstone_name,
@@ -568,11 +584,23 @@ class SourceVisualStore:
                 raise SourceVisualStorageError("TOMBSTONE_INVALID")
             tombstone_fd = self._open_regular_file(parent_fd, tombstone.tombstone_name)
             try:
+                tombstone_stat = os.fstat(tombstone_fd)
                 digest, size = _hash_fd(tombstone_fd)
             finally:
                 os.close(tombstone_fd)
             if digest != tombstone.asset_sha256 or size != tombstone.byte_size:
                 raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+            self._require_path_identity(
+                parent_fd, tombstone.tombstone_name, tombstone_stat
+            )
+            try:
+                os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise SourceVisualStorageError("ASSET_HASH_MISMATCH") from exc
+            else:
+                raise SourceVisualStorageError("TOMBSTONE_INVALID")
             os.replace(
                 tombstone.tombstone_name,
                 filename,
@@ -595,9 +623,13 @@ class SourceVisualStore:
                 tombstone.asset_relpath, create=False
             )
             tombstone_fd = self._open_regular_file(parent_fd, tombstone.tombstone_name)
+            tombstone_stat = os.fstat(tombstone_fd)
             digest, size = _hash_fd(tombstone_fd)
             if digest != tombstone.asset_sha256 or size != tombstone.byte_size:
                 raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+            self._require_path_identity(
+                parent_fd, tombstone.tombstone_name, tombstone_stat
+            )
             os.unlink(tombstone.tombstone_name, dir_fd=parent_fd)
             os.fsync(parent_fd)
         except SourceVisualStorageError:

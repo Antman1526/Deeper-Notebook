@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -67,6 +68,37 @@ def _publish(
 ):
     staged = store.stage(source_id, content_sha256, _prepared(payload))
     return store.publish(staged)
+
+
+def _install_hash_exchange(
+    monkeypatch: pytest.MonkeyPatch, exchange: Callable[[], None]
+) -> None:
+    storage = __import__(
+        "deeper_notebook.source_visuals.storage", fromlist=["_hash_fd"]
+    )
+    original_hash_fd = storage._hash_fd
+    original_read = os.read
+    exchanged = False
+
+    def exchange_during_hash(fd: int, count: int) -> bytes:
+        nonlocal exchanged
+        if not exchanged:
+            exchange()
+            exchanged = True
+        return original_read(fd, count)
+
+    def hash_fd(fd: int) -> tuple[str, int]:
+        monkeypatch.setattr(
+            "deeper_notebook.source_visuals.storage.os.read", exchange_during_hash
+        )
+        try:
+            return original_hash_fd(fd)
+        finally:
+            monkeypatch.setattr(
+                "deeper_notebook.source_visuals.storage.os.read", original_read
+            )
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage._hash_fd", hash_fd)
 
 
 def test_asset_relpath_contains_only_derived_hash_segments():
@@ -459,6 +491,107 @@ def test_cache_scan_bounds_noncanonical_entries(tmp_path: Path):
         store.cache_size_bytes()
 
     assert error.value.code == "CACHE_SCAN_LIMIT"
+
+
+def test_tombstone_revalidates_canonical_path_after_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    canonical = store.root / record.asset_relpath
+    held = canonical.with_name(f"{canonical.name}.held")
+
+    def exchange() -> None:
+        canonical.rename(held)
+        canonical.write_bytes(b"foreign-canonical-replacement")
+
+    _install_hash_exchange(monkeypatch, exchange)
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.tombstone(record)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert canonical.read_bytes() == b"foreign-canonical-replacement"
+    assert held.read_bytes() == b"derived-webp"
+    assert store.list_tombstones(limit=100) == ()
+
+
+def test_restore_revalidates_tombstone_path_after_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    canonical = store.root / record.asset_relpath
+    tombstone_path = canonical.with_name(tombstone.tombstone_name)
+    held = tombstone_path.with_name(f"{tombstone_path.name}.held")
+
+    def exchange() -> None:
+        tombstone_path.rename(held)
+        tombstone_path.write_bytes(b"foreign-tombstone-replacement")
+
+    _install_hash_exchange(monkeypatch, exchange)
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.restore_tombstone(tombstone)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert not canonical.exists()
+    assert tombstone_path.read_bytes() == b"foreign-tombstone-replacement"
+    assert held.read_bytes() == b"derived-webp"
+
+
+def test_restore_revalidates_destination_absence_after_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    canonical = store.root / record.asset_relpath
+    tombstone_path = canonical.with_name(tombstone.tombstone_name)
+
+    def exchange() -> None:
+        canonical.write_bytes(b"new-canonical-asset")
+
+    _install_hash_exchange(monkeypatch, exchange)
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.restore_tombstone(tombstone)
+
+    assert error.value.code == "TOMBSTONE_INVALID"
+    assert canonical.read_bytes() == b"new-canonical-asset"
+    assert tombstone_path.read_bytes() == b"derived-webp"
+
+
+def test_remove_revalidates_tombstone_path_after_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    tombstone_path = store.root / record.asset_relpath
+    tombstone_path = tombstone_path.with_name(tombstone.tombstone_name)
+    held = tombstone_path.with_name(f"{tombstone_path.name}.held")
+
+    def exchange() -> None:
+        tombstone_path.rename(held)
+        tombstone_path.write_bytes(b"foreign-tombstone-replacement")
+
+    _install_hash_exchange(monkeypatch, exchange)
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.remove_tombstone(tombstone)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert tombstone_path.read_bytes() == b"foreign-tombstone-replacement"
+    assert held.read_bytes() == b"derived-webp"
 
 
 def test_tombstone_restore_remove_and_replacement_window(tmp_path: Path):
