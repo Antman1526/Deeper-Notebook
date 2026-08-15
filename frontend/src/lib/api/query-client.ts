@@ -32,6 +32,10 @@ export const QUERY_KEYS = {
   sourcesInfinite: (notebookId: string) => ['sources', 'infinite', notebookId] as const,
   source: (id: string) => ['sources', 'detail', id] as const,
   sourceStatus: (id: string) => ['sources', 'status', id] as const,
+  sourceVisual: (id: string) => ['sources', 'visual', id] as const,
+  recentVisualSources: (limit: number) => ['sources', 'visual', 'recent', limit] as const,
+  searchSources: ['search', 'sources'] as const,
+  knowledgeSourceSearch: ['knowledge-command-search'] as const,
   settings: ['settings'] as const,
   // v0.7.136 — Read-only observability config from /settings/observability.
   // Separate key from `settings` because the underlying endpoint is

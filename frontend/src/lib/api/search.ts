@@ -1,11 +1,12 @@
 import apiClient from './client'
 import { SearchRequest, SearchResponse, AskRequest } from '@/lib/types/search'
+import { decodeSearchResponse } from '@/lib/types/source-visuals'
 
 export const searchApi = {
   // Standard search (non-streaming)
   search: async (params: SearchRequest) => {
     const response = await apiClient.post<SearchResponse>('/search', params)
-    return response.data
+    return decodeSearchResponse(response.data) as SearchResponse
   },
 
   // Ask with streaming (uses relative URL for Docker compatibility)

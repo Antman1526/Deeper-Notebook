@@ -1,3 +1,5 @@
+import type { SourceVisualReceipt, SourceVisualStatus } from './source-visuals'
+
 // Search types
 export interface SearchRequest {
   query: string
@@ -25,6 +27,8 @@ export interface SearchResult {
   source_type?: string
   created: string
   updated: string
+  visual?: SourceVisualReceipt | null
+  visual_status?: SourceVisualStatus | null
   vault_provenance?: {
     canonical_external: true
     vault_id: string

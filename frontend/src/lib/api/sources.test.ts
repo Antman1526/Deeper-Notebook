@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiPost = vi.fn()
+const apiGet = vi.fn()
 
 vi.mock('@/lib/api/client', () => ({
   default: {
     post: (...args: unknown[]) => apiPost(...args),
+    get: (...args: unknown[]) => apiGet(...args),
   },
 }))
 
@@ -27,6 +29,26 @@ function sourceResponse() {
 describe('sourcesApi source creation helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('strictly decodes list and detail visuals but fails soft only for visual fields', async () => {
+    const base = sourceResponse()
+    const { full_text: _fullText, ...listBase } = base
+    const visual = {
+      source_id: 'source:1', content_sha256: 'a'.repeat(64), asset_sha256: 'b'.repeat(64),
+      origin: 'embedded', source_locator: { page: 1 }, alt_text: 'A useful figure',
+      width: 640, height: 360, mime_type: 'image/webp',
+      asset_url: `/api/sources/source%3A1/visual?v=${'c'.repeat(64)}`,
+      created_at: base.created, updated_at: base.updated,
+    }
+    apiGet.mockResolvedValueOnce({ data: [{ ...listBase, visual, visual_status: null }] })
+    await expect(sourcesApi.list()).resolves.toEqual([expect.objectContaining({ visual })])
+
+    apiGet.mockResolvedValueOnce({ data: { ...base, visual: { ...visual, mime_type: 'image/svg+xml' }, visual_status: { state: 'bad' } } })
+    await expect(sourcesApi.get('source:1')).resolves.toEqual(expect.objectContaining({ id: 'source:1', visual: null, visual_status: null }))
+
+    apiGet.mockResolvedValueOnce({ data: [{ ...listBase, private_path: '/tmp/source' }] })
+    await expect(sourcesApi.list()).rejects.toThrow()
   })
 
   it('uses the multi-notebook upload contract and keeps embedding enabled', async () => {

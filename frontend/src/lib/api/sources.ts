@@ -1,6 +1,7 @@
 import type { AxiosResponse } from 'axios'
 
 import apiClient from './client'
+import { decodeSourceWithVisual } from '@/lib/types/source-visuals'
 import { 
   SourceListResponse, 
   SourceDetailResponse, 
@@ -22,12 +23,12 @@ export const sourcesApi = {
     origin?: string
   }) => {
     const response = await apiClient.get<SourceListResponse[]>('/sources', { params })
-    return response.data
+    return response.data.map(source => decodeSourceWithVisual(source, 'list')) as SourceListResponse[]
   },
 
   get: async (id: string) => {
     const response = await apiClient.get<SourceDetailResponse>(`/sources/${id}`)
-    return response.data
+    return decodeSourceWithVisual(response.data, 'detail') as SourceDetailResponse
   },
 
   // v0.8.78 — locate the passage in a source's text best matching a citing

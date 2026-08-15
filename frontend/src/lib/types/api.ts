@@ -18,6 +18,8 @@ export interface NoteResponse {
   updated: string
 }
 
+import type { SourceVisualReceipt, SourceVisualStatus } from './source-visuals'
+
 export interface SourceListResponse {
   id: string
   title: string | null
@@ -44,6 +46,8 @@ export interface SourceListResponse {
   command_id?: string
   status?: string
   processing_info?: Record<string, unknown>
+  visual?: SourceVisualReceipt | null
+  visual_status?: SourceVisualStatus | null
 }
 
 export interface SourceDetailResponse extends SourceListResponse {
