@@ -377,9 +377,23 @@ class SourceVisualStore:
                     raise
             else:
                 try:
+                    existing_stat = os.fstat(existing_fd)
                     existing_hash, existing_size = _hash_fd(existing_fd)
+                    try:
+                        canonical_stat = os.stat(
+                            filename, dir_fd=parent_fd, follow_symlinks=False
+                        )
+                    except OSError as exc:
+                        raise SourceVisualStorageError(
+                            "ASSET_HASH_MISMATCH"
+                        ) from exc
                 finally:
                     os.close(existing_fd)
+                if (
+                    (canonical_stat.st_dev, canonical_stat.st_ino)
+                    != (existing_stat.st_dev, existing_stat.st_ino)
+                ):
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
                 if existing_hash == staged.asset_sha256 and existing_size == size:
                     os.unlink(staged.temp_name, dir_fd=temp_fd)
                     os.fsync(temp_fd)
