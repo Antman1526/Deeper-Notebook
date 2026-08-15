@@ -1632,6 +1632,38 @@ async def test_orphan_reconciliation_revalidates_matching_ready_bytes_before_ret
 
 
 @pytest.mark.asyncio
+async def test_newer_ready_timestamps_retire_marker_and_zero_budget_reclaims_both(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    record = _record(_publish(store, b"newer-ready-row"))
+    newer = record.model_copy(
+        update={
+            "created_at": NOW + timedelta(minutes=1),
+            "updated_at": NOW + timedelta(minutes=1),
+        }
+    )
+
+    class TimestampRepository(_Repository):
+        async def acquire_claim(self, **_kwargs):
+            return object()
+
+        async def release_claim(self, **_kwargs):
+            return None
+
+    repository = TimestampRepository([newer])
+    store.mark_delete_fenced_orphan(record)
+    cleanup = SourceVisualCleanup(store, repository)
+
+    removed = await cleanup.evict_to_budget(max_bytes=0)
+
+    assert removed == 2
+    assert repository.records == []
+    assert store.cache_size_bytes() == 0
+    assert store.list_delete_fenced_orphans() == ()
+
+
+@pytest.mark.asyncio
 async def test_eviction_remeasures_physical_bytes_when_tombstone_cleanup_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

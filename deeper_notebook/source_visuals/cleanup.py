@@ -26,6 +26,29 @@ async def _await_if_needed(value):
     return value
 
 
+def _matches_delete_fenced_orphan_authority(
+    orphan_record: SourceVisualRecord, current_record: SourceVisualRecord
+) -> bool:
+    """Match one canonical record while ignoring regenerated receipt times."""
+
+    return (
+        current_record.schema_version == orphan_record.schema_version
+        and current_record.source_id == orphan_record.source_id
+        and current_record.source_updated_at == orphan_record.source_updated_at
+        and current_record.source_file_sha256 == orphan_record.source_file_sha256
+        and current_record.content_sha256 == orphan_record.content_sha256
+        and current_record.asset_sha256 == orphan_record.asset_sha256
+        and current_record.asset_relpath == orphan_record.asset_relpath
+        and current_record.origin == orphan_record.origin
+        and current_record.source_locator == orphan_record.source_locator
+        and current_record.extractor_version == orphan_record.extractor_version
+        and current_record.alt_text == orphan_record.alt_text
+        and current_record.width == orphan_record.width
+        and current_record.height == orphan_record.height
+        and current_record.mime_type == orphan_record.mime_type
+    )
+
+
 class _DeletionClaimHeartbeatLost(Exception):
     """A DB await lost its owner lease and must defer to durable recovery."""
 
@@ -298,11 +321,13 @@ class SourceVisualCleanup:
                         self._store.remove_tombstone(tombstone)
                     await _await_if_needed(remover(orphan))
                     processed += 1
-                elif current == record:
+                elif isinstance(current, SourceVisualRecord) and _matches_delete_fenced_orphan_authority(
+                    record, current
+                ):
                     # The newer authoritative publisher retained this exact
                     # canonical; its row restores ownership, so only retire
                     # the stale marker.
-                    if len(self._store.read_exact(record)) != orphan.byte_size:
+                    if len(self._store.read_exact(current)) != orphan.byte_size:
                         continue
                     await _await_if_needed(remover(orphan))
                     processed += 1

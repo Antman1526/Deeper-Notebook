@@ -31,6 +31,7 @@ _PENDING_RETENTION_SECONDS = 1
 class _PendingSubmission:
     """One side-effecting submission that remains owner-fenced after timeout."""
 
+    request_id: str
     receipt: asyncio.Future[str | None]
     submit_task: asyncio.Task[object]
     heartbeat_stop: asyncio.Event
@@ -428,11 +429,24 @@ async def _live_claim_response(
     source_id: str,
     content_sha256: str,
     extractor_version: str,
+    pending_request_id: str | None = None,
 ) -> SourceVisualJobResponse:
     """Return a bounded receipt for a durable claim this caller does not own."""
 
     identity = f"{source_id}\0{content_sha256}\0{extractor_version}"
     pending = _PENDING_SUBMISSIONS.get(identity)
+    if pending_request_id is not None and (
+        pending is None or getattr(pending, "request_id", None) != pending_request_id
+    ):
+        # A post-delete receipt may only await its own pending submission.
+        # An identity match alone could expose a pre-delete command or a
+        # different request generation.
+        return SourceVisualJobResponse(
+            source_id=source_id,
+            command_id=None,
+            content_sha256=content_sha256,
+            outcome="replayed",
+        )
     if pending is not None:
         try:
             command_id = await asyncio.wait_for(
@@ -554,6 +568,20 @@ async def submit_source_visual(
             )
             if existing is None:
                 raise
+            if await _post_delete_refresh_needs_reacquire(
+                repository,
+                authority=authority,
+                request_id=request_id,
+                receipt=existing,
+                explicit=explicit,
+            ):
+                return await _live_claim_response(
+                    repository,
+                    source_id=authority.source_id,
+                    content_sha256=authority.content_sha256,
+                    extractor_version=authority.extractor_version,
+                    pending_request_id=request_id,
+                )
             return await _operation_response(
                 repository,
                 authority=authority,
@@ -570,14 +598,15 @@ async def submit_source_visual(
             receipt=current,
             explicit=explicit,
         ):
-            # The only live command belongs to a claim from before the latest
-            # accepted delete. Keep the durable post-delete receipt commandless
-            # until that owner releases; an exact replay will acquire anew.
-            return SourceVisualJobResponse(
+            # A same-request submission may already be fencing and binding a
+            # new command. Its exact pending receipt can converge; every
+            # other request remains commandless until it reacquires.
+            return await _live_claim_response(
+                repository,
                 source_id=authority.source_id,
-                command_id=None,
                 content_sha256=authority.content_sha256,
-                outcome="replayed",
+                extractor_version=authority.extractor_version,
+                pending_request_id=request_id,
             )
         return await _live_claim_response(
             repository,
@@ -624,6 +653,7 @@ async def submit_source_visual(
         )
     )
     pending = _PendingSubmission(
+        request_id=request_id,
         receipt=receipt,
         submit_task=submit_task,
         heartbeat_stop=heartbeat_stop,

@@ -723,7 +723,7 @@ async def test_post_delete_same_request_losers_converge_on_the_one_new_command(
     )
 
     assert first.command_id == "command:post-delete"
-    assert second.command_id is None
+    assert second.command_id == "command:post-delete"
     replay = await queue.submit_source_visual("source:one", "same-request", explicit=True)
     assert replay.command_id == "command:post-delete"
     assert submitted == ["submit"]
