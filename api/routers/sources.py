@@ -31,6 +31,7 @@ from api.models import (
     SourceStatusResponse,
     SourceUpdate,
 )
+from api.source_visual_projection import project_source_visuals
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
 from commands.source_commands import SourceProcessingInput
 from deeper_notebook.config import UPLOADS_FOLDER
@@ -39,6 +40,7 @@ from deeper_notebook.domain.notebook import Asset, Notebook, Source
 from deeper_notebook.domain.transformation import Transformation
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.feature_flags import source_visuals_enabled
 from deeper_notebook.identity import LEGACY_COMMAND_APP
 
 router = APIRouter()
@@ -633,6 +635,19 @@ async def get_sources(
                 )
             )
 
+        if source_visuals_enabled():
+            projected = await project_source_visuals(result)
+            response_list = [
+                item.model_copy(
+                    update={
+                        "visual": projected[item.id].visual,
+                        "visual_status": projected[item.id].visual_status,
+                    }
+                )
+                if item.id in projected
+                else item
+                for item in response_list
+            ]
         return response_list
     except HTTPException:
         raise
@@ -1208,6 +1223,15 @@ async def get_source(source_id: str):
             else None
         )
 
+        visual = visual_status = None
+        if source_visuals_enabled():
+            projected = await project_source_visuals(
+                [{"id": source.id or source_id, "updated": source.updated}]
+            )
+            receipt = projected.get(source.id or source_id)
+            if receipt is not None:
+                visual, visual_status = receipt.visual, receipt.visual_status
+
         return SourceResponse(
             id=source.id or "",
             title=source.title,
@@ -1241,6 +1265,8 @@ async def get_source(source_id: str):
             processing_info=processing_info,
             # Notebook associations
             notebooks=notebook_ids,
+            visual=visual,
+            visual_status=visual_status,
         )
     except HTTPException:
         raise

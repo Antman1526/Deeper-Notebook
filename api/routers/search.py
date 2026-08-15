@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from api.models import AskRequest, AskResponse, SearchRequest, SearchResponse
+from api.source_visual_projection import project_search_source_visuals
 from deeper_notebook.ai.models import Model, model_manager
 from deeper_notebook.domain.notebook import text_search, vector_search
 from deeper_notebook.environment import resolve_env
@@ -14,6 +15,7 @@ from deeper_notebook.exceptions import (
     InvalidInputError,
     NotFoundError,
 )
+from deeper_notebook.feature_flags import source_visuals_enabled
 from deeper_notebook.graphs.ask import graph as ask_graph
 
 router = APIRouter()
@@ -103,6 +105,11 @@ async def search_knowledge_base(search_request: SearchRequest):
         normalized_results = results or []
         if search_request.match_mode == "exact":
             normalized_results = _exact_results(normalized_results, search_request.query)
+        if source_visuals_enabled():
+            normalized_results = await project_search_source_visuals(
+                normalized_results,
+                source_rows=normalized_results,
+            )
         return SearchResponse(
             results=normalized_results,
             total_count=len(normalized_results),

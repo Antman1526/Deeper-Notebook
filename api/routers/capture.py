@@ -18,6 +18,7 @@ from api.schemas.capture import (
     CaptureScanResponse,
     RegisterCaptureRootRequest,
 )
+from api.source_visual_projection import project_capture_linked_sources
 from deeper_notebook.ai.models import Model, model_manager
 from deeper_notebook.ai.offline_gate import LOCAL_PROVIDERS
 from deeper_notebook.capture.routing import (
@@ -34,6 +35,7 @@ from deeper_notebook.capture.watcher import (
     _resolved_root,
 )
 from deeper_notebook.domain.notebook import Notebook
+from deeper_notebook.feature_flags import source_visuals_enabled
 
 router = APIRouter(prefix="/capture", tags=["capture"])
 
@@ -132,7 +134,10 @@ async def register_capture_root(
 @router.get("/items", response_model=list[CaptureItemResponse])
 async def list_capture_items(limit: int = 200) -> list[CaptureItemResponse]:
     items = await SurrealCaptureRepository().list_items(limit=limit)
-    return [CaptureItemResponse(**item.model_dump()) for item in items]
+    payloads = [item.model_dump() for item in items]
+    if source_visuals_enabled():
+        payloads = await project_capture_linked_sources(payloads)
+    return [CaptureItemResponse(**item) for item in payloads]
 
 
 @router.post("/scan", response_model=CaptureScanResponse)

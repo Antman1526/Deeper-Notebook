@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -34,6 +34,14 @@ _PUBLIC_ERROR_CODES = frozenset(
         "LEASE_EXPIRED",
     }
 )
+
+
+class _CurrentVisualRows(dict[str, SourceVisualRecord]):
+    """Mapping-compatible ready rows with bounded non-ready status hints."""
+
+    def __init__(self, *args: object, statuses: Mapping[str, Mapping[str, object]] | None = None, **kwargs: object):
+        super().__init__(*args, **kwargs)
+        self.statuses = dict(statuses or {})
 
 
 class SourceVisualRepositoryError(ValueError):
@@ -1054,7 +1062,9 @@ class SourceVisualRepository:
             or expected_error_code is not None
         ):
             raise SourceVisualRepositoryError("INVALID_INPUT")
-        if command_id is not None:
+        if operation == "delete" and command_id is None and outcome == "deleted" and error_code is None:
+            pass
+        elif command_id is not None:
             if outcome != "queued" or error_code is not None:
                 raise SourceVisualRepositoryError("INVALID_INPUT")
         elif (
@@ -1251,8 +1261,20 @@ class SourceVisualRepository:
             return {}
         result = await _transaction(
             """
-            SELECT * FROM source_visual_cache
-            WHERE [source_id, source_updated_at] IN $source_revision_pairs;
+            LET $ready = (
+                SELECT * FROM source_visual_cache
+                WHERE [source_id, source_updated_at] IN $source_revision_pairs
+                LIMIT $limit
+            );
+            LET $statuses = (
+                SELECT *, command_id.status AS command_status
+                FROM source_visual_operation
+                WHERE [source_id, source_updated_at] IN $source_revision_pairs
+                    AND operation = "refresh"
+                ORDER BY updated_at DESC
+                LIMIT $limit
+            );
+            RETURN { ready: $ready, statuses: $statuses };
             """,
             {
                 "source_records": [_source_record(source_id) for source_id in normalised],
@@ -1261,10 +1283,20 @@ class SourceVisualRepository:
                     [_source_record(source_id), revision]
                     for source_id, revision in normalised.items()
                 ],
+                "limit": _MAX_REVISIONS,
             },
         )
+        envelope = _row(result)
+        if isinstance(envelope, Mapping) and isinstance(envelope.get("ready"), list):
+            ready_rows = _rows(envelope.get("ready"))
+            status_rows = _rows(envelope.get("statuses"))
+        else:
+            # Keep the repository adapter compatible with commandless test
+            # fixtures and older driver result envelopes.
+            ready_rows = _rows(result)
+            status_rows = []
         current: dict[str, SourceVisualRecord] = {}
-        for raw_row in _rows(result):
+        for raw_row in ready_rows:
             try:
                 record = _record_from_row(raw_row)
             except SourceVisualRepositoryError:
@@ -1273,7 +1305,85 @@ class SourceVisualRepository:
             if expected is None or record.source_updated_at != expected:
                 continue
             current[record.source_id] = record
-        return current
+        statuses: dict[str, Mapping[str, object]] = {}
+        for raw in status_rows:
+            source_id = _string(raw.get("source_id", ""))
+            revision = _datetime(raw.get("source_updated_at"))
+            if (
+                source_id not in normalised
+                or revision != normalised[source_id]
+                or source_id in current
+                or source_id in statuses
+            ):
+                continue
+            outcome = raw.get("outcome")
+            command = raw.get("command_id")
+            command_id = _command_text(command)
+            command_status = raw.get("command_status")
+            if isinstance(command, Mapping):
+                command_id = _command_text(command.get("id"))
+                command_status = command.get("status", command_status)
+            if outcome == "failed" or command_status == "failed":
+                state = "failed"
+            elif command_status in {"running", "processing"}:
+                state = "processing"
+            elif command_status in {"queued", "pending"} or outcome in {"queued", "replayed"}:
+                state = "queued"
+            else:
+                state = "unavailable"
+            error_code = raw.get("error_code") if state == "failed" else None
+            statuses[source_id] = {
+                "state": state,
+                "command_id": command_id,
+                "error_code": error_code,
+                "updated_at": raw.get("updated_at"),
+            }
+        return _CurrentVisualRows(current, statuses=statuses)
+
+    async def list_current_by_source_file_sha256(
+        self, values: Sequence[str] | tuple[str, ...]
+    ) -> list[SourceVisualRecord]:
+        """Batch-match Capture's existing file digests to current cache rows.
+
+        The query binds only full SHA-256 values and verifies the cache row
+        against the linked source's present revision.  It never reads a capture
+        path or creates source/visual state.
+        """
+
+        hashes = tuple(dict.fromkeys(values))
+        if len(hashes) > _MAX_REVISIONS or any(_hash(value) is None for value in hashes):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        if not hashes:
+            return []
+        rows = _rows(
+            await _transaction(
+                """
+                SELECT *, source_id.updated AS source_current_updated
+                FROM source_visual_cache
+                WHERE source_file_sha256 IN $source_file_sha256s
+                LIMIT $limit;
+                """,
+                {"source_file_sha256s": list(hashes), "limit": _MAX_REVISIONS},
+            )
+        )
+        if len(rows) > _MAX_REVISIONS:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        current: dict[str, SourceVisualRecord] = {}
+        for raw in rows:
+            candidate = dict(raw)
+            live_updated = _datetime(candidate.pop("source_current_updated", None))
+            try:
+                record = _record_from_row(candidate)
+            except SourceVisualRepositoryError:
+                continue
+            if (
+                record.source_file_sha256 not in hashes
+                or live_updated is None
+                or live_updated != record.source_updated_at
+            ):
+                continue
+            current.setdefault(record.source_file_sha256, record)
+        return list(current.values())
 
     async def find_ready_by_asset_relpath(
         self, asset_relpath: str

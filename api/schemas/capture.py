@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from deeper_notebook.capture.contracts import CaptureState
@@ -41,6 +43,7 @@ class CaptureItemResponse(BaseModel):
     byte_size: int | None = None
     modified_ns: int | None = None
     reason: str | None = None
+    linked_source: dict[str, Any] | None = None
 
 
 class CaptureScanRequest(BaseModel):

@@ -2,6 +2,11 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from api.schemas.source_visuals import (
+    SourceVisualReceiptResponse,
+    SourceVisualStatusResponse,
+)
+
 
 # Notebook models
 class NotebookCreate(BaseModel):
@@ -532,6 +537,8 @@ class SourceResponse(BaseModel):
     )
     # Notebook associations
     notebooks: Optional[list[str]] = None
+    visual: SourceVisualReceiptResponse | None = None
+    visual_status: SourceVisualStatusResponse | None = None
 
 
 class SourceListResponse(BaseModel):
@@ -562,6 +569,8 @@ class SourceListResponse(BaseModel):
     command_id: Optional[str] = None
     status: Optional[str] = None
     processing_info: Optional[dict[str, Any]] = None
+    visual: SourceVisualReceiptResponse | None = None
+    visual_status: SourceVisualStatusResponse | None = None
 
 
 # Context API models

@@ -61,6 +61,7 @@ from api.routers import (
     search,
     settings,
     source_chat,
+    source_visuals,
     sources,
     speaker_profiles,
     studio,
@@ -1262,6 +1263,7 @@ app.include_router(
 app.include_router(settings.router, prefix="/api", tags=["settings"])
 app.include_router(context.router, prefix="/api", tags=["context"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
+app.include_router(source_visuals.router, prefix="/api", tags=["source-visuals"])
 app.include_router(insights.router, prefix="/api", tags=["insights"])
 app.include_router(commands_router.router, prefix="/api", tags=["commands"])
 app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
