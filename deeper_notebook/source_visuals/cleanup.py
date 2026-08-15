@@ -59,6 +59,7 @@ class SourceVisualCleanup:
         self._store.restore_tombstone(tombstone)
 
     async def reconcile_tombstones(self, *, limit: int = 100) -> int:
+        self._store.reconcile_staged_files(limit=limit)
         tombstones = self._store.list_tombstones(limit=limit)
         processed = 0
         for tombstone in tombstones:
@@ -108,6 +109,7 @@ class SourceVisualCleanup:
             or not 1 <= page_size <= 100
         ):
             raise SourceVisualStorageError("INVALID_INPUT")
+        self._store.reconcile_staged_files(limit=page_size)
         current_bytes = self._store.cache_size_bytes()
         removed = 0
         while current_bytes > max_bytes:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import hashlib
 import multiprocessing as mp
 import os
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -127,6 +129,15 @@ def _crash_in_store_mutation(
     with store.mutation_guard():
         entered.set()
         os._exit(0)
+
+
+def _stage_inside_mutation_guard(
+    data_folder: str, completed: "mp.synchronize.Event"
+) -> None:
+    store = SourceVisualStore(data_folder=data_folder)
+    with store.mutation_guard():
+        store.stage("source:one", "a" * 64, _prepared())
+    completed.set()
 
 
 def test_asset_relpath_contains_only_derived_hash_segments():
@@ -1153,3 +1164,153 @@ async def test_eviction_stops_when_bounded_page_makes_no_progress(tmp_path: Path
         == 0
     )
     assert repository.records == [record]
+
+
+def test_stage_maps_write_failure_and_removes_only_the_owned_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+
+    def fail_write(_fd: int, _payload: object) -> int:
+        raise OSError("write failed")
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.write", fail_write)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:one", "a" * 64, _prepared())
+
+    assert error.value.code == "ASSET_IO_FAILED"
+    assert not list((store.root / ".tmp").glob("stage-*.tmp"))
+
+
+def test_stage_failure_preserves_a_foreign_temp_path_exchange(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    held: Path | None = None
+
+    def exchange_then_fail(_fd: int, _payload: object) -> int:
+        nonlocal held
+        temp_path = next((store.root / ".tmp").glob("stage-*.tmp"))
+        held = temp_path.with_suffix(".held")
+        temp_path.rename(held)
+        temp_path.write_bytes(b"foreign-temp")
+        raise OSError("write failed")
+
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.write", exchange_then_fail
+    )
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:one", "a" * 64, _prepared())
+
+    assert error.value.code == "ASSET_IO_FAILED"
+    assert held is not None and held.exists()
+    assert next((store.root / ".tmp").glob("stage-*.tmp")).read_bytes() == b"foreign-temp"
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_removes_only_old_owned_staged_files(tmp_path: Path):
+    store = SourceVisualStore(data_folder=tmp_path)
+    old = store.stage("source:one", "a" * 64, _prepared(b"old-stage"))
+    recent = store.stage("source:two", "b" * 64, _prepared(b"recent-stage"))
+    old_path = store.root / ".tmp" / old.temp_name
+    recent_path = store.root / ".tmp" / recent.temp_name
+    now = time.time()
+    os.utime(old_path, (now - 601, now - 601))
+    cleanup = SourceVisualCleanup(store, _Repository([]))
+
+    assert await cleanup.reconcile_tombstones(limit=100) == 0
+    assert not old_path.exists()
+    assert recent_path.exists()
+    assert store.cache_size_bytes() == recent.byte_size
+
+
+def test_staged_reconciliation_rejects_exact_owned_symlinks_and_keeps_malformed(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    temp_dir = store.root / ".tmp"
+    (temp_dir / staged.temp_name).unlink()
+    malformed = temp_dir / "stage-not-owned.tmp"
+    malformed.write_bytes(b"malformed")
+    outside = tmp_path / "outside-stage"
+    outside.write_bytes(b"outside")
+    exact_name = f"stage-{'a' * 64}-{'b' * 64}.tmp"
+    (temp_dir / exact_name).symlink_to(outside)
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.reconcile_staged_files(limit=100, now=time.time() + 601)
+
+    assert error.value.code == "TEMP_INVALID"
+    assert malformed.read_bytes() == b"malformed"
+    assert (temp_dir / exact_name).is_symlink()
+
+
+def test_cache_size_counts_owned_stage_tombstone_and_quarantine_inodes_once(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store, b"persistent-asset")
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    canonical = store.root / record.asset_relpath
+    tombstone_path = canonical.with_name(tombstone.tombstone_name)
+    os.link(tombstone_path, canonical)
+    quarantine = canonical.with_name(
+        f".expired-{'c' * 16}-{record.asset_sha256}.webp"
+    )
+    os.link(tombstone_path, quarantine)
+    staged = store.stage("source:two", "b" * 64, _prepared(b"staged-bytes"))
+
+    assert store.cache_size_bytes() == stored.byte_size + staged.byte_size
+
+
+def test_mutation_guard_is_reentrant_for_stage_in_the_same_thread(tmp_path: Path):
+    context = mp.get_context("fork")
+    completed = context.Event()
+    child = context.Process(
+        target=_stage_inside_mutation_guard,
+        args=(str(tmp_path), completed),
+    )
+    child.start()
+    try:
+        assert completed.wait(timeout=3)
+    finally:
+        child.join(timeout=3)
+        if child.is_alive():
+            child.kill()
+            child.join(timeout=3)
+    assert child.exitcode == 0
+
+
+def test_storage_fails_closed_before_mutation_when_locking_is_unsupported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    storage = __import__(
+        "deeper_notebook.source_visuals.storage", fromlist=["fcntl"]
+    )
+    monkeypatch.setattr(storage, "fcntl", None)
+    store = SourceVisualStore(data_folder=tmp_path)
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:one", "a" * 64, _prepared())
+
+    assert error.value.code == "CACHE_LOCK_UNSUPPORTED"
+    assert not store.root.exists()
+
+
+def test_process_mutation_guard_registry_retires_unused_roots(tmp_path: Path):
+    storage = __import__(
+        "deeper_notebook.source_visuals.storage", fromlist=["_PROCESS_MUTATION_GUARDS"]
+    )
+    storage._PROCESS_MUTATION_GUARDS.clear()
+    stores = [SourceVisualStore(data_folder=tmp_path / str(index)) for index in range(24)]
+    for store in stores:
+        with store.mutation_guard():
+            pass
+
+    del store
+    del stores
+    gc.collect()
+    assert len(storage._PROCESS_MUTATION_GUARDS) == 0

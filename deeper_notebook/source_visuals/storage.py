@@ -3,17 +3,23 @@
 from __future__ import annotations
 
 import errno
-import fcntl
 import hashlib
 import os
 import re
 import secrets
 import stat
 import threading
+import time
+import weakref
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - exercised through platform capability checks.
+    fcntl = None
 
 from deeper_notebook.config import DATA_FOLDER
 from deeper_notebook.source_visuals.contracts import (
@@ -31,6 +37,7 @@ _TEMP_MARKER = ".deeper-notebook-source-visual-cache-v1"
 _MUTATION_LOCK = ".mutation.lock"
 _MAX_ASSET_BYTES = 1_572_864
 _MAX_CACHE_FILES = 4096
+_STALE_STAGE_SECONDS = 300
 _OPEN_DIRECTORY = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 )
@@ -41,6 +48,7 @@ _PUBLIC_CODES = frozenset(
         "CACHE_ROOT_INVALID",
         "CACHE_ROOT_SYMLINK",
         "CACHE_LOCK_INVALID",
+        "CACHE_LOCK_UNSUPPORTED",
         "CACHE_PATH_SYMLINK",
         "CACHE_SCAN_LIMIT",
         "TEMP_CREATE_FAILED",
@@ -58,7 +66,27 @@ _PUBLIC_CODES = frozenset(
 )
 
 _PROCESS_MUTATION_LOCK = threading.Lock()
-_PROCESS_MUTATION_GUARDS: dict[tuple[int, int, int, int], threading.RLock] = {}
+_PROCESS_MUTATION_GUARDS: weakref.WeakValueDictionary[
+    tuple[int, int, int, int], Any
+] = weakref.WeakValueDictionary()
+_MUTATION_STATE = threading.local()
+_HAS_DESCRIPTOR_RELATIVE_PRIMITIVES = (
+    bool(getattr(os, "O_NOFOLLOW", None))
+    and bool(getattr(os, "O_DIRECTORY", None))
+    and all(
+        operation in os.supports_dir_fd
+        for operation in (os.open, os.mkdir, os.link, os.stat, os.unlink)
+    )
+    and os.link in os.supports_follow_symlinks
+)
+
+
+@dataclass(slots=True)
+class _HeldMutation:
+    root_fd: int
+    lock_fd: int
+    process_guard: Any
+    depth: int = 1
 
 
 class SourceVisualStorageError(ValueError):
@@ -156,10 +184,19 @@ def _same_identity(left: os.stat_result, right: os.stat_result) -> bool:
 
 def _process_mutation_guard(
     root_stat: os.stat_result, lock_stat: os.stat_result
-) -> threading.RLock:
+) -> Any:
     key = (root_stat.st_dev, root_stat.st_ino, lock_stat.st_dev, lock_stat.st_ino)
     with _PROCESS_MUTATION_LOCK:
         return _PROCESS_MUTATION_GUARDS.setdefault(key, threading.RLock())
+
+
+def _require_supported_platform() -> None:
+    if (
+        fcntl is None
+        or not hasattr(fcntl, "flock")
+        or not _HAS_DESCRIPTOR_RELATIVE_PRIMITIVES
+    ):
+        raise SourceVisualStorageError("CACHE_LOCK_UNSUPPORTED")
 
 
 class SourceVisualStore:
@@ -208,17 +245,42 @@ class SourceVisualStore:
         root_fd = lock_fd = None
         process_guard = None
         locked = False
+        key = None
+        held: _HeldMutation | None = None
         try:
             root_fd = self._ensure_root()
             lock_fd = self._open_mutation_lock(root_fd)
-            process_guard = _process_mutation_guard(os.fstat(root_fd), os.fstat(lock_fd))
+            root_stat = os.fstat(root_fd)
+            lock_stat = os.fstat(lock_fd)
+            key = (root_stat.st_dev, root_stat.st_ino, lock_stat.st_dev, lock_stat.st_ino)
+            held_mutations = getattr(_MUTATION_STATE, "held", None)
+            if held_mutations is None:
+                held_mutations = {}
+                _MUTATION_STATE.held = held_mutations
+            held = held_mutations.get(key)
+            if held is not None:
+                _safe_close(lock_fd)
+                _safe_close(root_fd)
+                lock_fd = root_fd = None
+                held.depth += 1
+                try:
+                    yield held.root_fd
+                finally:
+                    held.depth -= 1
+                return
+            process_guard = _process_mutation_guard(root_stat, lock_stat)
             process_guard.acquire()
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_EX)
                 locked = True
             except (AttributeError, OSError) as exc:
                 raise SourceVisualStorageError("CACHE_LOCK_INVALID") from exc
-            yield root_fd
+            held = _HeldMutation(root_fd, lock_fd, process_guard)
+            held_mutations[key] = held
+            try:
+                yield root_fd
+            finally:
+                held_mutations.pop(key, None)
         finally:
             if locked and lock_fd is not None:
                 try:
@@ -233,6 +295,7 @@ class SourceVisualStore:
     def _ensure_root(self) -> int:
         data_fd = cache_fd = None
         try:
+            _require_supported_platform()
             if self._data_folder.is_symlink():
                 raise SourceVisualStorageError("CACHE_ROOT_SYMLINK")
             self._data_folder.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -376,6 +439,18 @@ class SourceVisualStore:
         except OSError as exc:
             raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
 
+    def _discard_staged_file_at(
+        self, parent_fd: int, name: str, expected_stat: os.stat_result
+    ) -> bool:
+        """Remove only a still-identical failed staging inode while guarded."""
+
+        try:
+            self._unlink_verified(parent_fd, name, expected_stat)
+            os.fsync(parent_fd)
+        except SourceVisualStorageError:
+            return False
+        return True
+
     @staticmethod
     def _new_tombstone_name(asset_sha256: str) -> str:
         return f".expired-{secrets.token_hex(8)}-{asset_sha256}.webp"
@@ -446,6 +521,7 @@ class SourceVisualStore:
         if hashlib.sha256(prepared.encoded_bytes).hexdigest() != prepared.asset_sha256:
             raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
         temp_fd = file_fd = verify_fd = None
+        temp_stat = None
         temp_name = (
             f"stage-{_stage_identity(source_id, content_sha256, prepared.asset_sha256)}-"
             f"{secrets.token_hex(32)}.tmp"
@@ -463,35 +539,97 @@ class SourceVisualStore:
                         0o600,
                         dir_fd=temp_fd,
                     )
+                    temp_stat = os.fstat(file_fd)
                 except OSError as exc:
                     raise SourceVisualStorageError("TEMP_CREATE_FAILED") from exc
-                view = memoryview(prepared.encoded_bytes)
-                while view:
-                    written = os.write(file_fd, view)
-                    if written <= 0:
-                        raise SourceVisualStorageError("ASSET_IO_FAILED")
-                    view = view[written:]
-                os.fsync(file_fd)
-                os.close(file_fd)
-                file_fd = None
-                verify_fd = self._open_regular_file(temp_fd, temp_name)
-                digest, size = _hash_fd(verify_fd)
-                if digest != prepared.asset_sha256:
-                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-                return StagedVisualAsset(
-                    source_id=source_id,
-                    content_sha256=content_sha256,
-                    asset_sha256=prepared.asset_sha256,
-                    temp_name=temp_name,
-                    byte_size=size,
-                    width=prepared.width,
-                    height=prepared.height,
-                    mime_type=prepared.mime_type,
-                )
+                try:
+                    view = memoryview(prepared.encoded_bytes)
+                    while view:
+                        written = os.write(file_fd, view)
+                        if written <= 0:
+                            raise SourceVisualStorageError("ASSET_IO_FAILED")
+                        view = view[written:]
+                    os.fsync(file_fd)
+                    os.close(file_fd)
+                    file_fd = None
+                    verify_fd = self._open_regular_file(temp_fd, temp_name)
+                    digest, size = _hash_fd(verify_fd)
+                    if digest != prepared.asset_sha256:
+                        raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                    return StagedVisualAsset(
+                        source_id=source_id,
+                        content_sha256=content_sha256,
+                        asset_sha256=prepared.asset_sha256,
+                        temp_name=temp_name,
+                        byte_size=size,
+                        width=prepared.width,
+                        height=prepared.height,
+                        mime_type=prepared.mime_type,
+                    )
+                except SourceVisualStorageError:
+                    self._discard_staged_file_at(temp_fd, temp_name, temp_stat)
+                    raise
+                except OSError as exc:
+                    self._discard_staged_file_at(temp_fd, temp_name, temp_stat)
+                    raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
         finally:
             _safe_close(verify_fd)
             _safe_close(file_fd)
             _safe_close(temp_fd)
+
+    def reconcile_staged_files(
+        self,
+        *,
+        limit: int = 100,
+        now: float | None = None,
+    ) -> int:
+        """Remove a bounded set of old, exact task-owned staging files."""
+
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 100
+            or (now is not None and (isinstance(now, bool) or not isinstance(now, float)))
+        ):
+            raise SourceVisualStorageError("INVALID_INPUT")
+        current_time = time.time() if now is None else now
+        temp_fd = None
+        removed = visited = 0
+        try:
+            with self.mutation_guard() as root_fd:
+                temp_fd = self._open_temp_at(root_fd)
+                with os.scandir(temp_fd) as entries:
+                    for entry in entries:
+                        visited += 1
+                        if visited > _MAX_CACHE_FILES:
+                            raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
+                        if _TEMP_NAME.fullmatch(entry.name) is None:
+                            continue
+                        try:
+                            stage_fd = self._open_regular_file(temp_fd, entry.name)
+                        except SourceVisualStorageError as exc:
+                            if exc.code in {"ASSET_SYMLINK", "ASSET_NOT_REGULAR"}:
+                                raise SourceVisualStorageError("TEMP_INVALID") from exc
+                            raise
+                        try:
+                            stage_stat = os.fstat(stage_fd)
+                        finally:
+                            _safe_close(stage_fd)
+                        if current_time - stage_stat.st_mtime < _STALE_STAGE_SECONDS:
+                            continue
+                        if self._discard_staged_file_at(
+                            temp_fd, entry.name, stage_stat
+                        ):
+                            removed += 1
+                        if removed >= limit:
+                            break
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+        finally:
+            _safe_close(temp_fd)
+        return removed
 
     def publish(self, staged: StagedVisualAsset) -> StoredVisualAsset:
         if not isinstance(staged, StagedVisualAsset):
@@ -855,12 +993,52 @@ class SourceVisualStore:
         root_fd = self._ensure_root()
         total = 0
         visited = 0
+        seen_inodes: set[tuple[int, int]] = set()
+
+        def add_owned_file(parent_fd: int, name: str, *, invalid_code: str) -> None:
+            nonlocal total
+            try:
+                asset_fd = self._open_regular_file(parent_fd, name)
+            except SourceVisualStorageError as exc:
+                if exc.code in {"ASSET_SYMLINK", "ASSET_NOT_REGULAR"}:
+                    raise SourceVisualStorageError(invalid_code) from exc
+                raise
+            try:
+                metadata = os.fstat(asset_fd)
+            finally:
+                _safe_close(asset_fd)
+            identity = (metadata.st_dev, metadata.st_ino)
+            if identity not in seen_inodes:
+                seen_inodes.add(identity)
+                total += metadata.st_size
+
         try:
             with os.scandir(root_fd) as prefixes:
                 for prefix in prefixes:
                     visited += 1
                     if visited > _MAX_CACHE_FILES:
                         raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
+                    if prefix.name == _TEMP_DIR:
+                        temp_fd = self._open_child_dir(
+                            root_fd, _TEMP_DIR, create=False
+                        )
+                        try:
+                            with os.scandir(temp_fd) as entries:
+                                for entry in entries:
+                                    visited += 1
+                                    if visited > _MAX_CACHE_FILES:
+                                        raise SourceVisualStorageError(
+                                            "CACHE_SCAN_LIMIT"
+                                        )
+                                    if _TEMP_NAME.fullmatch(entry.name) is not None:
+                                        add_owned_file(
+                                            temp_fd,
+                                            entry.name,
+                                            invalid_code="TEMP_INVALID",
+                                        )
+                        finally:
+                            _safe_close(temp_fd)
+                        continue
                     if re.fullmatch(r"[0-9a-f]{2}", prefix.name) is None:
                         continue
                     prefix_fd = self._open_child_dir(root_fd, prefix.name, create=False)
@@ -883,20 +1061,22 @@ class SourceVisualStore:
                                                 raise SourceVisualStorageError(
                                                     "CACHE_SCAN_LIMIT"
                                                 )
-                                            if (
-                                                re.fullmatch(
-                                                    r"[0-9a-f]{64}\.webp", entry.name
+                                            if re.fullmatch(
+                                                r"[0-9a-f]{64}\.webp", entry.name
+                                            ) is not None:
+                                                add_owned_file(
+                                                    content_fd,
+                                                    entry.name,
+                                                    invalid_code="ASSET_NOT_REGULAR",
                                                 )
-                                                is None
-                                            ):
+                                            elif TOMBSTONE.fullmatch(entry.name) is not None:
+                                                add_owned_file(
+                                                    content_fd,
+                                                    entry.name,
+                                                    invalid_code="TOMBSTONE_INVALID",
+                                                )
+                                            else:
                                                 continue
-                                            asset_fd = self._open_regular_file(
-                                                content_fd, entry.name
-                                            )
-                                            try:
-                                                total += os.fstat(asset_fd).st_size
-                                            finally:
-                                                os.close(asset_fd)
                                 finally:
                                     os.close(content_fd)
                     finally:
