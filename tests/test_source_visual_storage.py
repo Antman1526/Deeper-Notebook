@@ -248,6 +248,47 @@ def test_cache_scan_uses_the_open_root_descriptor_after_path_swap(
     assert outside_asset.read_bytes() == b"outside-controlled-root" * 2
 
 
+def test_cache_root_descent_stays_on_open_parent_after_parent_path_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    outside = tmp_path / "outside-parent"
+    outside_asset = outside / "v1" / Path(stored.asset_relpath)
+    outside_asset.parent.mkdir(parents=True)
+    outside_asset.write_bytes(b"outside")
+    cache_parent = tmp_path / "source-visual-cache"
+    held_parent = tmp_path / "held-cache-parent"
+    swapped = False
+    original_open_child_dir = store._open_child_dir
+    original_path_mkdir = Path.mkdir
+
+    def swap_parent() -> None:
+        nonlocal swapped
+        if swapped:
+            return
+        cache_parent.rename(held_parent)
+        cache_parent.symlink_to(outside, target_is_directory=True)
+        swapped = True
+
+    def path_mkdir(path: Path, *args: object, **kwargs: object) -> None:
+        original_path_mkdir(path, *args, **kwargs)
+        if path == cache_parent:
+            swap_parent()
+
+    def open_child_dir(parent_fd: int, name: str, *, create: bool) -> int:
+        descriptor = original_open_child_dir(parent_fd, name, create=create)
+        if name == "source-visual-cache":
+            swap_parent()
+        return descriptor
+
+    monkeypatch.setattr(Path, "mkdir", path_mkdir)
+    monkeypatch.setattr(store, "_open_child_dir", open_child_dir)
+
+    assert store.cache_size_bytes() == stored.byte_size
+    assert outside_asset.read_bytes() == b"outside"
+
+
 def test_cache_scan_bounds_noncanonical_entries(tmp_path: Path):
     store = SourceVisualStore(data_folder=tmp_path)
     root_fd = store._ensure_root()

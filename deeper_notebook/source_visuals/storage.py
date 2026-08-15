@@ -156,46 +156,28 @@ class SourceVisualStore:
     def root(self) -> Path:
         return self._root
 
-    @staticmethod
-    def _ensure_owned_dir(path: Path, *, root: bool = False) -> None:
-        try:
-            if path.is_symlink():
-                raise SourceVisualStorageError(
-                    "CACHE_ROOT_SYMLINK" if root else "CACHE_PATH_SYMLINK"
-                )
-            path.mkdir(mode=0o700, parents=False, exist_ok=True)
-            metadata = path.lstat()
-        except SourceVisualStorageError:
-            raise
-        except OSError as exc:
-            if exc.errno == errno.ELOOP:
-                raise SourceVisualStorageError(
-                    "CACHE_ROOT_SYMLINK" if root else "CACHE_PATH_SYMLINK"
-                ) from None
-            raise SourceVisualStorageError("CACHE_ROOT_INVALID") from exc
-        if stat.S_ISLNK(metadata.st_mode):
-            raise SourceVisualStorageError(
-                "CACHE_ROOT_SYMLINK" if root else "CACHE_PATH_SYMLINK"
-            )
-        if not stat.S_ISDIR(metadata.st_mode):
-            raise SourceVisualStorageError("CACHE_ROOT_INVALID")
-
     def _ensure_root(self) -> int:
+        data_fd = cache_fd = None
         try:
             if self._data_folder.is_symlink():
                 raise SourceVisualStorageError("CACHE_ROOT_SYMLINK")
             self._data_folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-            self._ensure_owned_dir(self._data_folder)
-            cache_parent = self._data_folder / "source-visual-cache"
-            self._ensure_owned_dir(cache_parent, root=True)
-            self._ensure_owned_dir(self._root, root=True)
-            return os.open(self._root, _OPEN_DIRECTORY)
-        except SourceVisualStorageError:
+            data_fd = os.open(self._data_folder, _OPEN_DIRECTORY)
+            cache_fd = self._open_child_dir(
+                data_fd, "source-visual-cache", create=True
+            )
+            return self._open_child_dir(cache_fd, "v1", create=True)
+        except SourceVisualStorageError as exc:
+            if exc.code == "CACHE_PATH_SYMLINK":
+                raise SourceVisualStorageError("CACHE_ROOT_SYMLINK") from None
             raise
         except OSError as exc:
             if exc.errno == errno.ELOOP:
                 raise SourceVisualStorageError("CACHE_ROOT_SYMLINK") from None
             raise SourceVisualStorageError("CACHE_ROOT_INVALID") from exc
+        finally:
+            _safe_close(cache_fd)
+            _safe_close(data_fd)
 
     @staticmethod
     def _open_child_dir(parent_fd: int, name: str, *, create: bool) -> int:
