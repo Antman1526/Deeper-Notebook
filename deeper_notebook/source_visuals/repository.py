@@ -204,9 +204,7 @@ def _identity(
 
 def _record(table: str, identity: str) -> object:
     try:
-        record_id = (
-            identity if identity.startswith(f"{table}:") else f"{table}:{identity}"
-        )
+        record_id = identity if identity.startswith(f"{table}:") else f"{table}:{identity}"
         return ensure_record_id(record_id)
     except (TypeError, ValueError):
         raise SourceVisualRepositoryError("INVALID_INPUT") from None
@@ -400,11 +398,7 @@ class SourceVisualRepository:
         owner_token = _hash(owner_token)
         current = _now(now)
         if lease_until is None:
-            if (
-                isinstance(lease_seconds, bool)
-                or not isinstance(lease_seconds, int)
-                or lease_seconds <= 0
-            ):
+            if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or lease_seconds <= 0:
                 raise SourceVisualRepositoryError("INVALID_INPUT")
             lease_until = current + timedelta(seconds=lease_seconds)
         lease_until = _datetime(lease_until)
@@ -449,8 +443,9 @@ class SourceVisualRepository:
             if not isinstance(existing, Mapping):
                 existing = row
             existing_until = _datetime(existing.get("lease_until"))
-            if existing.get("owner_token") != owner_token and (
-                existing_until is None or existing_until > current
+            if (
+                existing.get("owner_token") != owner_token
+                and (existing_until is None or existing_until > current)
             ):
                 raise SourceVisualConflictError("CLAIM_HELD")
             row = dict(existing)
@@ -502,11 +497,7 @@ class SourceVisualRepository:
         owner_token = _hash(owner_token)
         current = _now(now)
         if lease_until is None:
-            if (
-                isinstance(lease_seconds, bool)
-                or not isinstance(lease_seconds, int)
-                or lease_seconds <= 0
-            ):
+            if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or lease_seconds <= 0:
                 raise SourceVisualRepositoryError("INVALID_INPUT")
             lease_until = current + timedelta(seconds=lease_seconds)
         lease_until = _datetime(lease_until)
@@ -765,20 +756,17 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
-        if row and (
-            row.get("request_conflict")
-            or not _operation_matches(
-                row,
-                source_id=source_id,
-                request_id=request_id,
-                source_updated_at=source_updated_at,
-                content_sha256=content_sha256,
-                operation=operation,
-                command_id=canonical_command_id,
-                outcome=outcome,
-                error_code=error_code,
-            )
-        ):
+        if row and (row.get("request_conflict") or not _operation_matches(
+            row,
+            source_id=source_id,
+            request_id=request_id,
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            operation=operation,
+            command_id=canonical_command_id,
+            outcome=outcome,
+            error_code=error_code,
+        )):
             raise SourceVisualConflictError("REQUEST_CONFLICT")
         fallback = self._operation_cache.get(identity)
         receipt = _receipt_from_row(
@@ -850,9 +838,7 @@ class SourceVisualRepository:
             WHERE [source_id, source_updated_at] IN $source_revision_pairs;
             """,
             {
-                "source_records": [
-                    _source_record(source_id) for source_id in normalised
-                ],
+                "source_records": [_source_record(source_id) for source_id in normalised],
                 "source_revision_values": list(normalised.values()),
                 "source_revision_pairs": [
                     [_source_record(source_id), revision]
@@ -1136,10 +1122,7 @@ class SourceVisualRepository:
     def _normalise_record_argument(
         record: SourceVisualRecord | Mapping[str, Any] | str | None,
         source_id: str | SourceVisualAuthority | None,
-    ) -> tuple[
-        SourceVisualRecord | Mapping[str, Any] | None,
-        str | SourceVisualAuthority | None,
-    ]:
+    ) -> tuple[SourceVisualRecord | Mapping[str, Any] | None, str | SourceVisualAuthority | None]:
         if isinstance(record, str) and source_id is None:
             return None, record
         return record if record is not None else None, source_id
@@ -1167,10 +1150,7 @@ class SourceVisualRepository:
             and extractor_version != authority.extractor_version
         ):
             raise SourceVisualRepositoryError("INVALID_INPUT")
-        if (
-            source_updated_at is not None
-            and _datetime(source_updated_at) != authority.source_updated_at
-        ):
+        if source_updated_at is not None and _datetime(source_updated_at) != authority.source_updated_at:
             raise SourceVisualConflictError("SOURCE_STALE")
 
     @staticmethod
@@ -1216,8 +1196,7 @@ class SourceVisualRepository:
             source_file_sha256=authority.source_file_sha256 if authority else None,
             content_sha256=content_sha256,
             asset_sha256=content_sha256,
-            asset_relpath=f"{content_sha256[:2]}/{content_sha256}/"
-            + f"{content_sha256}.webp",
+            asset_relpath=f"{content_sha256[:2]}/{content_sha256}/" + f"{content_sha256}.webp",
             origin="embedded",
             source_locator={"page": 1},
             extractor_version=extractor_version,
