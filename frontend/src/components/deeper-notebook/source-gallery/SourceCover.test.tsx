@@ -163,6 +163,19 @@ describe('SourceCover', () => {
     expect(onRemove).toHaveBeenCalledWith('source:two')
   })
 
+  it('fences two native clicks delivered before React commits the disabled state', () => {
+    const onRefresh = vi.fn()
+    render(<SourceCover source={source({ visual: null })} onRefresh={onRefresh} />)
+
+    const refresh = screen.getByRole('button', { name: 'Refresh visual for Field notes' })
+    act(() => {
+      refresh.click()
+      refresh.click()
+    })
+
+    expect(onRefresh).toHaveBeenCalledOnce()
+  })
+
   it('unlocks only the failed async action identity while fulfilled actions stay locked', async () => {
     const rejectedAction = Promise.reject(new Error('refresh convergence failed'))
     void rejectedAction.catch(() => undefined)

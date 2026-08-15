@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { SourceVisualProvenance, sourceVisualOriginLabel } from './SourceVisualProvenance'
 import type { SourceListResponse } from '@/lib/types/api'
@@ -87,6 +87,7 @@ export function SourceCover({
 }: SourceCoverProps) {
   const [failedAssetIdentity, setFailedAssetIdentity] = useState<string | null>(null)
   const [pendingIdentity, setPendingIdentity] = useState<string | null>(null)
+  const pendingIdentityRef = useRef<string | null>(null)
   const title = source.title?.trim() || 'Untitled source'
   const validVisual = isReceiptForSource(source.visual, source.id) ? source.visual : null
   const assetIdentity = validVisual ? `${source.id}|${validVisual.asset_sha256}` : null
@@ -98,18 +99,25 @@ export function SourceCover({
   const pending = pendingIdentity === identity
 
   function dispatch(action: ((sourceId: string) => void | Promise<void>) | undefined) {
-    if (!action || pending) return
+    if (!action || pending || pendingIdentityRef.current === identity) return
     const dispatchedIdentity = identity
+    pendingIdentityRef.current = dispatchedIdentity
     setPendingIdentity(dispatchedIdentity)
 
     try {
       const result = action(source.id)
       if (result) {
         void result.catch(() => {
+          if (pendingIdentityRef.current === dispatchedIdentity) {
+            pendingIdentityRef.current = null
+          }
           setPendingIdentity(current => current === dispatchedIdentity ? null : current)
         })
       }
     } catch {
+      if (pendingIdentityRef.current === dispatchedIdentity) {
+        pendingIdentityRef.current = null
+      }
       setPendingIdentity(current => current === dispatchedIdentity ? null : current)
     }
   }
