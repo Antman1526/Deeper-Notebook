@@ -27,8 +27,8 @@ export default function SourcesPage() {
   const { t, language } = useTranslation()
   const failedToLoadMessage = t('sources.failedToLoad')
   const { openSourceDialog } = useCreateDialogs()
-  const refreshSourceVisual = useRefreshSourceVisual()
-  const removeSourceVisual = useRemoveSourceVisual()
+  const { mutate: refreshVisual } = useRefreshSourceVisual()
+  const { mutate: removeVisual } = useRemoveSourceVisual()
   const [sources, setSources] = useState<SourceListResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -129,7 +129,9 @@ export default function SourcesPage() {
       if (
         target &&
         (target.isContentEditable ||
-          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
+          (typeof target.closest === 'function' &&
+            target.closest('button, a, input, textarea, select, option, summary, [role="button"], [role="link"]')))
       ) {
         return
       }
@@ -288,10 +290,27 @@ export default function SourcesPage() {
     router.push(`/sources/${sourceId}`)
   }, [router])
 
+  const refetchSourcesAfterVisualMutation = useCallback(() => {
+    void fetchSources(true)
+  }, [fetchSources])
+
+  const handleGalleryRefresh = useCallback((sourceId: string) => {
+    refreshVisual(sourceId, { onSuccess: refetchSourcesAfterVisualMutation })
+  }, [refreshVisual, refetchSourcesAfterVisualMutation])
+
+  const handleGalleryRemove = useCallback((sourceId: string) => {
+    removeVisual(sourceId, { onSuccess: refetchSourcesAfterVisualMutation })
+  }, [removeVisual, refetchSourcesAfterVisualMutation])
+
   const handleDeleteClick = useCallback((e: React.MouseEvent, source: SourceListResponse) => {
     e.stopPropagation() // Prevent row click
     setDeleteDialog({ open: true, source })
   }, [])
+
+  const handleGalleryDelete = useCallback(() => {
+    const source = sources[selectedIndex]
+    if (source) setDeleteDialog({ open: true, source })
+  }, [selectedIndex, sources])
 
   const handleDeleteConfirm = async () => {
     if (!deleteDialog.source) return
@@ -387,26 +406,37 @@ export default function SourcesPage() {
                 sources={sources}
                 selectedId={sources[selectedIndex]?.id ?? null}
                 filters={
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleSort('created')}
-                    className="h-8 px-2 hover:bg-muted"
-                  >
-                    {t('common.created_label')}
-                    <ArrowUpDown className={cn(
-                      'ml-2 h-3 w-3',
-                      sortBy === 'created' ? 'opacity-100' : 'opacity-30'
-                    )} />
-                    {sortBy === 'created' && (
-                      <span className="ml-1 text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </Button>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleSort('created')}
+                      className="h-11 min-w-11 px-2 hover:bg-muted"
+                    >
+                      {t('common.created_label')}
+                      <ArrowUpDown className={cn(
+                        'ml-2 h-3 w-3',
+                        sortBy === 'created' ? 'opacity-100' : 'opacity-30'
+                      )} />
+                      {sortBy === 'created' && (
+                        <span className="ml-1 text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleGalleryDelete}
+                      className="h-11 min-w-11 px-2 text-destructive hover:bg-muted hover:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-3 w-3" />
+                      {t('sources.delete')}
+                    </Button>
+                  </div>
                 }
                 onSelect={handleGallerySelect}
                 onOpen={handleGalleryOpen}
-                onRefresh={refreshSourceVisual.mutate}
-                onRemove={removeSourceVisual.mutate}
+                onRefresh={handleGalleryRefresh}
+                onRemove={handleGalleryRemove}
               />
             </div>
           ) : (
