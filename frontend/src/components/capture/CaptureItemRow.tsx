@@ -3,11 +3,13 @@ import { AudioLines, Sparkles } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { SourceCover } from '@/components/deeper-notebook/source-gallery/SourceCover'
 import {
   captureApi,
   type CaptureItem,
   type CaptureRoutePreview,
 } from '@/lib/api/capture'
+import type { SourceListResponse } from '@/lib/types/api'
 
 const stateVariant = (state: CaptureItem['state']) =>
   state === 'failed' ? 'destructive' : state === 'imported' ? 'secondary' : 'outline'
@@ -24,13 +26,31 @@ const mediaExtensions = new Set([
   '.webm',
 ])
 
-export function CaptureItemRow({ item }: { item: CaptureItem }) {
+function sourceFromLinkedItem(item: CaptureItem): SourceListResponse | null {
+  if (!item.linked_source) return null
+  const timestamp = item.modified_ns === null ? '' : String(item.modified_ns)
+  return {
+    id: item.linked_source.id,
+    title: item.filename,
+    source_type: 'upload',
+    asset: null,
+    embedded: false,
+    embedded_chunks: 0,
+    insights_count: 0,
+    created: timestamp,
+    updated: timestamp,
+    visual: item.linked_source.visual,
+  }
+}
+
+export function CaptureItemRow({ item, showVisualCover = false }: { item: CaptureItem; showVisualCover?: boolean }) {
   const [preview, setPreview] = useState<CaptureRoutePreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isRouting, setIsRouting] = useState(false)
   const canPreview =
     mediaExtensions.has(item.extension.toLowerCase()) &&
     (item.state === 'ready' || item.state === 'duplicate')
+  const linkedSource = showVisualCover ? sourceFromLinkedItem(item) : null
 
   async function previewRoute() {
     setIsRouting(true)
@@ -48,6 +68,11 @@ export function CaptureItemRow({ item }: { item: CaptureItem }) {
 
   return (
     <article className="border-b py-3 last:border-0">
+      {linkedSource ? (
+        <div className="mb-3 max-w-xs" data-testid="capture-linked-source-cover">
+          <SourceCover source={linkedSource} variant="compact" />
+        </div>
+      ) : null}
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{item.filename}</p>

@@ -24,6 +24,27 @@ import { StreamingResponse } from '@/components/search/StreamingResponse'
 import { AdvancedModelsDialog } from '@/components/search/AdvancedModelsDialog'
 import { SaveToNotebooksDialog } from '@/components/search/SaveToNotebooksDialog'
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
+import { EvidencePeek } from '@/components/deeper-notebook/source-gallery/EvidencePeek'
+import { SourceCover } from '@/components/deeper-notebook/source-gallery/SourceCover'
+import { isSourceVisualsEnabled, isVisualSystemV2Enabled } from '@/lib/features'
+import type { SourceListResponse } from '@/lib/types/api'
+import type { SearchResult } from '@/lib/types/search'
+
+function sourceCoverFromResult(result: SearchResult): SourceListResponse {
+  return {
+    id: result.parent_id,
+    title: result.title,
+    source_type: result.source_type ?? null,
+    asset: null,
+    embedded: true,
+    embedded_chunks: 0,
+    insights_count: 0,
+    created: result.created,
+    updated: result.updated,
+    visual: result.visual ?? null,
+    visual_status: result.visual_status ?? null,
+  }
+}
 
 export default function SearchPage() {
   const { t } = useTranslation()
@@ -64,6 +85,8 @@ export default function SearchPage() {
   const { data: modelDefaults, isLoading: modelsLoading } = useModelDefaults()
   const { data: availableModels } = useModels()
   const { openModal } = useModalManager()
+  const visualGalleryEnabled = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
+  const [evidenceResult, setEvidenceResult] = useState<SearchResult | null>(null)
 
   const modelNameById = useMemo(() => {
     if (!availableModels) {
@@ -481,49 +504,79 @@ export default function SearchPage() {
                           }
                           const [type, id] = result.parent_id.split(':')
                           const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
+                          const sourceResult = visualGalleryEnabled && type === 'source'
 
                           return (
-                          <Card key={index}>
-                            <CardContent className="pt-4">
-                              <div className="flex items-start justify-between gap-4">
-                                <div className="flex-1">
-                                  <button
-                                    onClick={() => openModal(modalType, id)}
-                                    className="text-primary hover:underline font-medium"
-                                  >
-                                    {result.title}
-                                  </button>
-                                  <Badge variant="secondary" className="ml-2">
-                                    {result.final_score.toFixed(2)}
-                                  </Badge>
-                                  {result.vault_provenance && (
-                                    <p className="mt-1 text-xs text-muted-foreground">
-                                      {result.vault_provenance.relative_path}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-
-                              {result.matches && result.matches.length > 0 && (
-                                <Collapsible className="mt-3">
-                                  <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-                                    <ChevronDown className="h-4 w-4" />
-                                    {t('searchPage.matches').replace('{count}', result.matches.length.toString())}
-                                  </CollapsibleTrigger>
-                                  <CollapsibleContent className="mt-2 space-y-1">
-                                    {result.matches.map((match, i) => (
-                                      <div key={i} className="text-sm pl-6 py-1 border-l-2 border-muted">
-                                        {match}
+                            <Card key={index}>
+                              <CardContent className="pt-4">
+                                <div className={sourceResult ? 'grid min-w-0 gap-4 sm:grid-cols-[10rem_minmax(0,1fr)]' : ''}>
+                                  {sourceResult ? (
+                                    <div className="min-w-0" data-testid={`search-result-cover-${result.parent_id}`}>
+                                      <SourceCover source={sourceCoverFromResult(result)} variant="compact" />
+                                    </div>
+                                  ) : null}
+                                  <div className="min-w-0">
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="min-w-0 flex-1">
+                                        <button
+                                          onClick={() => openModal(modalType, id)}
+                                          className="min-h-11 min-w-11 text-primary hover:underline font-medium"
+                                        >
+                                          {result.title}
+                                        </button>
+                                        <Badge variant="secondary" className="ml-2">
+                                          {result.final_score.toFixed(2)}
+                                        </Badge>
+                                        {result.vault_provenance && (
+                                          <p className="mt-1 text-xs text-muted-foreground">
+                                            {result.vault_provenance.relative_path}
+                                          </p>
+                                        )}
                                       </div>
-                                    ))}
-                                  </CollapsibleContent>
-                                </Collapsible>
-                              )}
-                            </CardContent>
-                          </Card>
-                        )})}
+                                    </div>
+                                    {sourceResult && result.matches?.[0] ? (
+                                      <Button
+                                        className="mt-3 min-h-11 min-w-11"
+                                        onClick={() => setEvidenceResult(result)}
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                      >
+                                        View evidence for {result.title}
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                {result.matches && result.matches.length > 0 && (
+                                  <Collapsible className="mt-3">
+                                    <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+                                      <ChevronDown className="h-4 w-4" />
+                                      {t('searchPage.matches').replace('{count}', result.matches.length.toString())}
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent className="mt-2 space-y-1">
+                                      {result.matches.map((match, i) => (
+                                        <div key={i} className="text-sm pl-6 py-1 border-l-2 border-muted">
+                                          {match}
+                                        </div>
+                                      ))}
+                                    </CollapsibleContent>
+                                  </Collapsible>
+                                )}
+                              </CardContent>
+                            </Card>
+                          )
+                        })}
                       </div>
                     )}
+                    {evidenceResult ? (
+                      <EvidencePeek
+                        evidenceQuery={evidenceResult.matches?.[0]}
+                        onClose={() => setEvidenceResult(null)}
+                        sourceId={evidenceResult.parent_id}
+                        title={evidenceResult.title}
+                      />
+                    ) : null}
                   </div>
                 )}
               </CardContent>

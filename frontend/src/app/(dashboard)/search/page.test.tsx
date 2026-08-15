@@ -1,26 +1,51 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { isLuminousFolioEnabled } from '@/lib/features'
+import { sourcesApi } from '@/lib/api/sources'
 
 import SearchPage from './page'
 
-vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams() }))
+vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(mockSearchParams.current) }))
 vi.mock('@/components/layout/AppShell', () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</> }))
-vi.mock('@/lib/hooks/use-search', () => ({ useSearch: () => ({ mutate: vi.fn(), isPending: false, data: undefined }) }))
+const { mockSearchData, mockSearchParams, mockVisualSystemEnabled, mockSourceVisualsEnabled, mockOpenModal } = vi.hoisted(() => ({
+  mockSearchData: { current: undefined as unknown },
+  mockSearchParams: { current: '' },
+  mockVisualSystemEnabled: vi.fn(() => false),
+  mockSourceVisualsEnabled: vi.fn(() => false),
+  mockOpenModal: vi.fn(),
+}))
+
+vi.mock('@/lib/hooks/use-search', () => ({ useSearch: () => ({ mutate: vi.fn(), isPending: false, data: mockSearchData.current }) }))
 vi.mock('@/lib/hooks/use-ask', () => ({ useAsk: () => ({ isStreaming: false, strategy: '', answers: [], finalAnswer: null, sendAsk: vi.fn() }) }))
 vi.mock('@/lib/hooks/use-models', () => ({
   useModelDefaults: () => ({ data: { default_embedding_model: 'embed', default_chat_model: 'chat' }, isLoading: false }),
   useModels: () => ({ data: [] }),
 }))
-vi.mock('@/lib/hooks/use-modal-manager', () => ({ useModalManager: () => ({ openModal: vi.fn() }) }))
+vi.mock('@/lib/hooks/use-modal-manager', () => ({ useModalManager: () => ({ openModal: mockOpenModal }) }))
 vi.mock('@/components/search/StreamingResponse', () => ({ StreamingResponse: () => <div>Streaming response</div> }))
 vi.mock('@/components/search/AdvancedModelsDialog', () => ({ AdvancedModelsDialog: () => null }))
 vi.mock('@/components/search/SaveToNotebooksDialog', () => ({ SaveToNotebooksDialog: () => null }))
 vi.mock('@/components/common/LoadingSpinner', () => ({ LoadingSpinner: () => <div>Loading</div> }))
 vi.mock('@/lib/hooks/use-translation', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('@/lib/features', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/features')>()
+  return {
+    ...actual,
+    isVisualSystemV2Enabled: mockVisualSystemEnabled,
+    isSourceVisualsEnabled: mockSourceVisualsEnabled,
+  }
+})
 
 describe('SearchPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockSearchData.current = undefined
+    mockSearchParams.current = ''
+    mockVisualSystemEnabled.mockReturnValue(false)
+    mockSourceVisualsEnabled.mockReturnValue(false)
+  })
+
   it('keeps ask controls inside the Discover folio without auto-running a request', () => {
     render(<SearchPage />)
 
@@ -34,5 +59,68 @@ describe('SearchPage', () => {
     expect(screen.getByText('Discover')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'searchPage.askBeta' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'common.accessibility.enterQuestion' })).toBeInTheDocument()
+  })
+
+  it('adds a compact cover and exact first-match Evidence Peek only to source results', async () => {
+    const hash = 'b'.repeat(64)
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    mockSearchParams.current = 'mode=search'
+    mockSearchData.current = {
+      total_count: 3,
+      search_type: 'text',
+      results: [
+        {
+          id: 'result:source', title: 'Source result', parent_id: 'source:one', final_score: 0.9,
+          matches: ['first exact match', 'second match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z',
+          visual: { source_id: 'source:one', content_sha256: hash, asset_sha256: hash, alt_text: 'Source evidence cover', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Aone/visual?v=${hash}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
+        },
+        {
+          id: 'result:insight', title: 'Insight result', parent_id: 'source_insight:two', final_score: 0.8,
+          matches: ['insight match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z',
+          visual: { source_id: 'source:two', content_sha256: hash, asset_sha256: hash, alt_text: 'Must not render', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Atwo/visual?v=${hash}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
+        },
+        {
+          id: 'result:note', title: 'Note result', parent_id: 'note:three', final_score: 0.7,
+          matches: ['note match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z', visual: null,
+        },
+      ],
+    }
+    const locate = vi.spyOn(sourcesApi, 'locatePassage').mockResolvedValue({ start: 0, end: 5, score: 0.95, snippet: 'Exact passage' })
+
+    render(<SearchPage />)
+
+    expect(screen.getAllByRole('img')).toHaveLength(1)
+    expect(screen.getByRole('img', { name: /Source evidence cover/ })).toBeVisible()
+    expect(screen.queryByRole('img', { name: /Must not render/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /View evidence/ })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Source result' }))
+    expect(mockOpenModal).toHaveBeenCalledWith('source', 'one')
+    fireEvent.click(screen.getByRole('button', { name: 'Insight result' }))
+    expect(mockOpenModal).toHaveBeenCalledWith('insight', 'two')
+    fireEvent.click(screen.getByRole('button', { name: 'Note result' }))
+    expect(mockOpenModal).toHaveBeenCalledWith('note', 'three')
+    fireEvent.click(screen.getByRole('button', { name: 'View evidence for Source result' }))
+    await waitFor(() => expect(locate).toHaveBeenCalledWith('source:one', 'first exact match'))
+    expect(screen.getByRole('dialog', { name: 'Evidence in Source result' })).toBeInTheDocument()
+
+    locate.mockRestore()
+  })
+
+  it('keeps source visuals absent when either visual gate is off', () => {
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(false)
+    mockSearchParams.current = 'mode=search'
+    mockSearchData.current = {
+      total_count: 1, search_type: 'text', results: [{
+        id: 'result:source', title: 'Source result', parent_id: 'source:one', final_score: 0.9,
+        matches: ['match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z', visual: null,
+      }],
+    }
+
+    render(<SearchPage />)
+
+    expect(screen.queryByTestId('search-result-cover-source:one')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /View evidence/ })).not.toBeInTheDocument()
   })
 })
