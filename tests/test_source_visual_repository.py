@@ -586,6 +586,66 @@ async def test_operation_finalization_is_a_strict_queued_receipt_compare_and_set
 
 
 @pytest.mark.asyncio
+async def test_command_bind_and_queued_receipt_finalization_share_one_fenced_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repository = _repository()
+    payload = {
+        "operation_id": operation_identity("source:one", "request:atomic", "refresh"),
+        "source_id": "source:one",
+        "request_id": "request:atomic",
+        "source_updated_at": SOURCE_UPDATED,
+        "content_sha256": "a" * 64,
+        "operation": "refresh",
+        "command_id": "command:one",
+        "outcome": "queued",
+        "error_code": None,
+        "created_at": SOURCE_UPDATED,
+        "updated_at": SOURCE_UPDATED,
+    }
+    query = AsyncMock(
+        return_value={
+            "owner_token": OWNER_A,
+            "lease_until": SOURCE_UPDATED + timedelta(minutes=5),
+            **payload,
+        }
+    )
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    receipt = await repository.bind_command_and_finalize_operation(
+        source_id="source:one",
+        content_sha256="a" * 64,
+        extractor_version="source-visual-v1",
+        owner_token=OWNER_A,
+        command_id="command:one",
+        request_id="request:atomic",
+        source_updated_at=SOURCE_UPDATED,
+        now=SOURCE_UPDATED,
+    )
+
+    assert receipt.command_id == "command:one"
+    query_text, variables = query.await_args.args
+    assert "UPDATE $claim_record" in query_text
+    assert "UPDATE $operation_record" in query_text
+    assert variables["command_record"] != "command:one"
+    assert variables["operation_record"] != "source_visual_operation"
+
+    query.return_value = {"request_conflict": True}
+    with pytest.raises(SourceVisualConflictError) as error:
+        await repository.bind_command_and_finalize_operation(
+            source_id="source:one",
+            content_sha256="a" * 64,
+            extractor_version="source-visual-v1",
+            owner_token=OWNER_A,
+            command_id="command:one",
+            request_id="request:atomic",
+            source_updated_at=SOURCE_UPDATED,
+            now=SOURCE_UPDATED,
+        )
+    assert error.value.code == "REQUEST_CONFLICT"
+
+
+@pytest.mark.asyncio
 async def test_completed_delete_lookup_is_exactly_fingerprint_and_revision_bound(
     monkeypatch: pytest.MonkeyPatch,
 ):

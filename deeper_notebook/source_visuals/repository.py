@@ -596,6 +596,133 @@ class SourceVisualRepository:
             command_id=requested_command,
         )
 
+    async def bind_command_and_finalize_operation(
+        self,
+        source_id: str | SourceVisualAuthority | None = None,
+        content_sha256: str | None = None,
+        extractor_version: str | None = None,
+        owner_token: str | None = None,
+        command_id: str | None = None,
+        *,
+        request_id: str | None = None,
+        source_updated_at: datetime | None = None,
+        authority: SourceVisualAuthority | None = None,
+        now: datetime | None = None,
+    ) -> SourceVisualOperationReceipt:
+        """Atomically bind one owner-fenced command and its queued receipt."""
+
+        source_id, content_sha256, extractor_version, authority = _identity(
+            source_id, content_sha256, extractor_version, authority
+        )
+        owner_token = _hash(owner_token)
+        if not command_id or not request_id:
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        if authority is not None and source_updated_at is None:
+            source_updated_at = authority.source_updated_at
+        source_updated_at = _datetime(source_updated_at)
+        if source_updated_at is None:
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        current = _now(now)
+        claim_id = claim_identity(source_id, content_sha256, extractor_version)
+        operation_id = operation_identity(source_id, request_id, "refresh")
+        command_record = _command_record(command_id)
+        canonical_command_id = _command_text(command_id)
+        result = await _transaction(
+            """
+            BEGIN TRANSACTION;
+            LET $claim = (SELECT * FROM $claim_record)[0];
+            LET $operation = (SELECT * FROM $operation_record)[0];
+            IF $claim = NONE OR $claim.owner_token != $owner_token
+                    OR $claim.lease_until <= $now THEN
+                RETURN { owner_mismatch: true, existing: $claim };
+            ELSE IF $claim.command_id != NONE AND $claim.command_id != $command_record THEN
+                RETURN { command_conflict: true, existing: $claim };
+            ELSE IF $operation = NONE OR $operation.source_id != $source_record
+                    OR $operation.request_id != $request_id
+                    OR $operation.operation != "refresh"
+                    OR $operation.content_sha256 != $content_sha256
+                    OR $operation.source_updated_at != $source_updated_at
+                    OR ($operation.command_id != NONE AND $operation.command_id != $command_record)
+                    OR ($operation.command_id = NONE AND ($operation.outcome != "queued"
+                        OR $operation.error_code != NONE))
+                    OR ($operation.command_id = $command_record AND ($operation.outcome != "queued"
+                        OR $operation.error_code != NONE)) THEN
+                RETURN { request_conflict: true, existing: $operation };
+            END;
+            UPDATE $claim_record MERGE { command_id: $command_record, updated_at: $now };
+            UPDATE $operation_record MERGE {
+                command_id: $command_record,
+                outcome: "queued",
+                error_code: NONE,
+                updated_at: $now
+            };
+            SELECT {
+                owner_token: $claim.owner_token,
+                lease_until: $claim.lease_until,
+                operation_id: $operation.operation_id,
+                source_id: $operation.source_id,
+                request_id: $operation.request_id,
+                source_updated_at: $operation.source_updated_at,
+                content_sha256: $operation.content_sha256,
+                operation: $operation.operation,
+                command_id: $command_record,
+                outcome: "queued",
+                error_code: NONE,
+                created_at: $operation.created_at,
+                updated_at: $now
+            };
+            COMMIT TRANSACTION;
+            """,
+            {
+                "claim_record": _record("source_visual_claim", claim_id),
+                "operation_record": _record("source_visual_operation", operation_id),
+                "source_record": _source_record(source_id),
+                "owner_token": owner_token,
+                "command_record": command_record,
+                "request_id": request_id,
+                "source_updated_at": source_updated_at,
+                "content_sha256": content_sha256,
+                "now": current,
+            },
+        )
+        row = _row(result)
+        if row and row.get("command_conflict"):
+            raise SourceVisualConflictError("COMMAND_CONFLICT")
+        if row and row.get("request_conflict"):
+            raise SourceVisualConflictError("REQUEST_CONFLICT")
+        _require_live_lease(row, owner_token, current)
+        operation_row = dict(row)
+        operation_row.pop("owner_token", None)
+        operation_row.pop("lease_until", None)
+        if not _operation_matches(
+            operation_row,
+            source_id=source_id,
+            request_id=request_id,
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            operation="refresh",
+            command_id=canonical_command_id,
+            outcome="queued",
+            error_code=None,
+        ):
+            raise SourceVisualConflictError("REQUEST_CONFLICT")
+        receipt = _receipt_from_row(
+            operation_row,
+            operation_id=operation_id,
+            source_id=source_id,
+            request_id=request_id,
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            operation="refresh",
+            command_id=canonical_command_id,
+            outcome="queued",
+            error_code=None,
+            now=current,
+            fallback=self._operation_cache.get(operation_id),
+        )
+        self._operation_cache[operation_id] = receipt
+        return receipt
+
     async def complete_claim(
         self,
         source_id: str | SourceVisualAuthority | None = None,

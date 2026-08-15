@@ -10,6 +10,8 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+from deeper_notebook.source_visuals.repository import SourceVisualConflictError
+
 HASH = "a" * 64
 ASSET_HASH = "b" * 64
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
@@ -115,6 +117,39 @@ class InMemoryQueueRepository:
         self.bound.append((identity, owner_token, str(command_id)))
         return SimpleNamespace(**row)
 
+    async def bind_command_and_finalize_operation(
+        self,
+        source_id=None,
+        content_sha256=None,
+        extractor_version=None,
+        owner_token=None,
+        command_id=None,
+        request_id=None,
+        source_updated_at=None,
+        **_kwargs,
+    ):
+        await self.bind_command(
+            source_id=source_id,
+            content_sha256=content_sha256,
+            extractor_version=extractor_version,
+            owner_token=owner_token,
+            command_id=command_id,
+        )
+        return await InMemoryQueueRepository.finalize_operation(
+            self,
+            source_id=source_id,
+            request_id=request_id,
+            operation="refresh",
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            expected_command_id=None,
+            expected_outcome="queued",
+            expected_error_code=None,
+            command_id=command_id,
+            outcome="queued",
+            error_code=None,
+        )
+
     async def release_claim(
         self,
         source_id=None,
@@ -157,6 +192,17 @@ class InMemoryQueueRepository:
             updated_at=NOW,
         )
         key = (source_id, request_id, operation)
+        existing = self.operations.get(key)
+        if existing is not None:
+            if (
+                existing.source_updated_at != receipt.source_updated_at
+                or existing.content_sha256 != receipt.content_sha256
+                or existing.command_id != receipt.command_id
+                or existing.outcome != receipt.outcome
+                or existing.error_code != receipt.error_code
+            ):
+                raise SourceVisualConflictError("REQUEST_CONFLICT")
+            return existing
         self.operations[key] = receipt
         self.recorded.append(receipt)
         return receipt
@@ -299,6 +345,81 @@ async def test_successful_bind_finalizes_the_durable_operation_for_restart_repla
     assert replay.outcome == "replayed"
     assert repo.operations[("source:one", "request-one", "refresh")].command_id == "command:durable"
     assert submitted == ["submitted"]
+
+
+@pytest.mark.asyncio
+async def test_restart_reconciles_command_from_exact_claim_after_finalize_transient(
+    queue_context, monkeypatch
+):
+    queue, _repo, _source = queue_context
+    from deeper_notebook.source_visuals.repository import SourceVisualRepositoryError
+
+    class Repo(InMemoryQueueRepository):
+        async def finalize_operation(self, *args, **kwargs):
+            raise SourceVisualRepositoryError("DATABASE_ERROR")
+
+    repo = Repo()
+    monkeypatch.setattr(queue, "SourceVisualRepository", lambda: repo)
+    monkeypatch.setattr(queue, "submit_command", lambda *_args: "command:created")
+
+    first = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    queue._PENDING_SUBMISSIONS.clear()
+    replay = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+
+    assert repo.claims[("source:one", HASH, "source-visual-v1")]["command_id"] == "command:created"
+    assert first.command_id == replay.command_id == "command:created"
+    assert replay.outcome == "replayed"
+
+
+@pytest.mark.asyncio
+async def test_same_request_concurrent_loser_converges_after_winner_receipt_finalizes(
+    queue_context, monkeypatch
+):
+    queue, _repo, _source = queue_context
+
+    class Repo(InMemoryQueueRepository):
+        def __init__(self):
+            super().__init__()
+            self.winner_acquired = False
+            self.winner_finalized = asyncio.Event()
+            self.initial_operation_checks = 0
+
+        async def get_operation(self, source_id, request_id, operation):
+            if operation == "refresh" and self.initial_operation_checks < 2:
+                self.initial_operation_checks += 1
+                if self.initial_operation_checks == 2:
+                    await self.winner_finalized.wait()
+                return None
+            return await super().get_operation(source_id, request_id, operation)
+
+        async def acquire_claim(self, *args, **kwargs):
+            if not self.winner_acquired:
+                self.winner_acquired = True
+                return await super().acquire_claim(*args, **kwargs)
+            await self.winner_finalized.wait()
+            raise SourceVisualConflictError("CLAIM_HELD")
+
+        async def finalize_operation(self, *args, **kwargs):
+            receipt = await super().finalize_operation(*args, **kwargs)
+            self.winner_finalized.set()
+            return receipt
+
+        async def bind_command_and_finalize_operation(self, *args, **kwargs):
+            receipt = await super().bind_command_and_finalize_operation(*args, **kwargs)
+            self.winner_finalized.set()
+            return receipt
+
+    repo = Repo()
+    monkeypatch.setattr(queue, "SourceVisualRepository", lambda: repo)
+    monkeypatch.setattr(queue, "submit_command", lambda *_args: "command:winner")
+
+    first, second = await asyncio.gather(
+        queue.submit_source_visual("source:one", "request-one", explicit=True),
+        queue.submit_source_visual("source:one", "request-one", explicit=True),
+    )
+
+    assert {first.outcome, second.outcome} <= {"queued", "replayed"}
+    assert first.command_id == second.command_id == "command:winner"
 
 
 @pytest.mark.asyncio

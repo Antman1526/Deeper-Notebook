@@ -105,10 +105,10 @@ async def _finalize_queued_operation(
     command_id: str | None,
     outcome: str,
     error_code: str | None,
-) -> None:
+) -> object:
     """Advance only this caller's initially unbound queued receipt."""
 
-    await _await_if_needed(
+    return await _await_if_needed(
         repository.finalize_operation(
             source_id=authority.source_id,
             request_id=request_id,
@@ -122,6 +122,84 @@ async def _finalize_queued_operation(
             outcome=outcome,
             error_code=error_code,
         )
+    )
+
+
+async def _reconcile_bound_claim_command(
+    repository: object,
+    *,
+    authority: object,
+    request_id: str,
+    receipt: object,
+) -> object:
+    """Repair only an exact queued receipt from its exact durable claim."""
+
+    if (
+        getattr(receipt, "command_id", None) is not None
+        or getattr(receipt, "outcome", None) != "queued"
+        or getattr(receipt, "error_code", None) is not None
+    ):
+        return receipt
+    claim = await _await_if_needed(
+        repository.get_claim(
+            authority.source_id,
+            authority.content_sha256,
+            authority.extractor_version,
+        )
+    )
+    command_id = getattr(claim, "command_id", None)
+    if (
+        not command_id
+        or getattr(claim, "source_id", None) != authority.source_id
+        or getattr(claim, "content_sha256", None) != authority.content_sha256
+        or getattr(claim, "extractor_version", None) != authority.extractor_version
+    ):
+        return receipt
+    try:
+        return await _finalize_queued_operation(
+            repository,
+            authority=authority,
+            request_id=request_id,
+            command_id=str(command_id),
+            outcome="queued",
+            error_code=None,
+        )
+    except SourceVisualConflictError:
+        repaired = await _await_if_needed(
+            repository.get_operation(authority.source_id, request_id, "refresh")
+        )
+        if repaired is None:
+            raise
+        return repaired
+
+
+async def _operation_response(
+    repository: object,
+    *,
+    authority: object,
+    request_id: str,
+    receipt: object,
+) -> SourceVisualJobResponse:
+    """Validate and project one current idempotency receipt."""
+
+    receipt = await _reconcile_bound_claim_command(
+        repository,
+        authority=authority,
+        request_id=request_id,
+        receipt=receipt,
+    )
+    if (
+        getattr(receipt, "content_sha256", None) != authority.content_sha256
+        or getattr(receipt, "source_updated_at", None) != authority.source_updated_at
+    ):
+        raise SourceVisualConflictError("REQUEST_CONFLICT")
+    outcome = "failed" if getattr(receipt, "outcome", None) == "failed" else "replayed"
+    return SourceVisualJobResponse(
+        source_id=authority.source_id,
+        command_id=getattr(receipt, "command_id", None),
+        content_sha256=authority.content_sha256,
+        outcome=outcome,
+        error_code=getattr(receipt, "error_code", None) if outcome == "failed" else None,
     )
 
 
@@ -229,21 +307,15 @@ async def _finalize_submission(
         if not command_id:
             raise RuntimeError("queue did not return a command id")
         await _await_if_needed(
-            repository.bind_command(
+            repository.bind_command_and_finalize_operation(
                 source_id=authority.source_id,
                 content_sha256=authority.content_sha256,
                 extractor_version=authority.extractor_version,
                 owner_token=owner_token,
                 command_id=command_id,
+                request_id=request_id,
+                source_updated_at=authority.source_updated_at,
             )
-        )
-        await _finalize_queued_operation(
-            repository,
-            authority=authority,
-            request_id=request_id,
-            command_id=command_id,
-            outcome="queued",
-            error_code=None,
         )
     except asyncio.CancelledError:
         # Loop shutdown is the only expected cancellation of this detached
@@ -383,18 +455,11 @@ async def submit_source_visual(
         repository.get_operation(source_id, request_id, "refresh")
     )
     if existing is not None:
-        if (
-            getattr(existing, "content_sha256", None) != authority.content_sha256
-            or getattr(existing, "source_updated_at", None) != authority.source_updated_at
-        ):
-            raise SourceVisualConflictError("REQUEST_CONFLICT")
-        outcome = "failed" if getattr(existing, "outcome", None) == "failed" else "replayed"
-        return SourceVisualJobResponse(
-            source_id=source_id,
-            command_id=getattr(existing, "command_id", None),
-            content_sha256=authority.content_sha256,
-            outcome=outcome,
-            error_code=getattr(existing, "error_code", None) if outcome == "failed" else None,
+        return await _operation_response(
+            repository,
+            authority=authority,
+            request_id=request_id,
+            receipt=existing,
         )
 
     suppressed = await _suppressed_auto_ingest_response(
@@ -421,9 +486,22 @@ async def submit_source_visual(
     except SourceVisualConflictError:
         # A losing caller records its own durable receipt before it can replay
         # the winner's bounded response.
-        await _record_queued_operation(
-            repository, authority=authority, request_id=request_id
-        )
+        try:
+            await _record_queued_operation(
+                repository, authority=authority, request_id=request_id
+            )
+        except SourceVisualConflictError:
+            existing = await _await_if_needed(
+                repository.get_operation(authority.source_id, request_id, "refresh")
+            )
+            if existing is None:
+                raise
+            return await _operation_response(
+                repository,
+                authority=authority,
+                request_id=request_id,
+                receipt=existing,
+            )
         return await _live_claim_response(
             repository,
             source_id=authority.source_id,
