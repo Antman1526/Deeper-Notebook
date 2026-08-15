@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 import { renameSync, writeFileSync } from 'node:fs'
 
 import { SOURCE_GALLERY_CELLS } from '../src/lib/visual-system/route-manifest'
@@ -11,7 +11,7 @@ import {
 } from './fixtures/source-gallery'
 
 const SOURCE_GALLERY_LOWER_CONTENT_SELECTOR_BY_ROUTE = {
-  '/sources': 'main [data-dn-source-gallery="true"] [role="listitem"]:last-child',
+  '/sources': 'main [data-dn-source-gallery="true"] [data-dn-source-cover] .dn-source-cover__actions button:last-child',
   '/notebooks/[id]': 'main [data-dn-source-cover="true"]',
   '/knowledge': '[data-dn-recent-source-slot="true"] [role="listitem"]:last-child',
   '/search': 'main [data-dn-source-cover="true"]',
@@ -21,7 +21,7 @@ const SOURCE_GALLERY_LOWER_CONTENT_SELECTOR_BY_ROUTE = {
 const ROLLBACK_LEGACY_LANDMARK_BY_ROUTE = {
   '/sources': '[data-dn-sources-table="true"]',
   '/notebooks/[id]': 'role=button[name="Add Source"]',
-  '/knowledge': 'role=main[name="Knowledge workspace"]',
+  '/knowledge': 'role=button[name="Split pane right"]',
   '/search': 'main #search-query',
   '/capture': 'main input[aria-label="Capture folder path"]',
 } as const
@@ -113,9 +113,11 @@ type GeometryReceipt = {
   sourceSurfaceFailures: string[]
   sourceSurfaces: Array<{
     label: string
-    owner: string
-    ownerClientHeight: number
-    ownerScrollHeight: number
+    horizontalClippingOwner: string
+    verticalClippingOwner: string
+    verticalScrollOwner: string
+    verticalScrollClientHeight: number
+    verticalScrollHeight: number
     initialContained: boolean
     finallyContained: boolean
   }>
@@ -123,9 +125,11 @@ type GeometryReceipt = {
   cumulativeLayoutShift: number
   scroll: {
     marker: string
-    owner: string
-    ownerClientHeight: number
-    ownerScrollHeight: number
+    horizontalClippingOwner: string
+    verticalClippingOwner: string
+    verticalScrollOwner: string
+    verticalScrollClientHeight: number
+    verticalScrollHeight: number
     max: number
     before: number
     after: number
@@ -152,10 +156,29 @@ async function expectRollbackLegacyLandmark(
   const landmark = route === '/notebooks/[id]'
     ? page.getByRole('button', { name: 'Add Source', exact: true })
     : route === '/knowledge'
-      ? page.getByRole('main', { name: 'Knowledge workspace', exact: true })
+      ? page.getByRole('button', { name: 'Split pane right', exact: true })
       : page.locator(selector)
   await expect(landmark, `${route} usable legacy landmark`).toHaveCount(1)
   await expect(landmark, `${route} usable legacy landmark`).toBeVisible()
+
+  if (route === '/sources') {
+    const action = landmark.locator(
+      'button:enabled:visible, a[href]:visible, input:enabled:visible, select:enabled:visible, textarea:enabled:visible, [role="button"]:not([aria-disabled="true"]):visible',
+    ).first()
+    await expectEnabledFocusable(action, `${route} legacy table action`)
+    return
+  }
+
+  if (route === '/search' || route === '/capture') {
+    await expect(landmark, `${route} editable legacy field`).toBeEditable({ timeout: 1_000 })
+  }
+  await expectEnabledFocusable(landmark, `${route} usable legacy landmark`)
+}
+
+async function expectEnabledFocusable(control: Locator, label: string): Promise<void> {
+  await expect(control, label).toBeEnabled({ timeout: 1_000 })
+  await control.focus()
+  await expect(control, `${label} focus`).toBeFocused()
 }
 
 async function inspectSourceGalleryGeometry(page: import('@playwright/test').Page): Promise<GeometryReceipt> {
@@ -184,11 +207,22 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
       || element.tagName.toLowerCase()
     )
 
-    const clippingOwner = (element: HTMLElement): ScrollOwner => {
+    const clippingOwner = (element: HTMLElement, axis: 'x' | 'y'): ScrollOwner => {
       let current = element.parentElement
       while (current) {
         const style = window.getComputedStyle(current)
-        if (['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowY)) return current
+        const overflow = axis === 'x' ? style.overflowX : style.overflowY
+        if (['hidden', 'clip', 'auto', 'scroll'].includes(overflow)) return current
+        current = current.parentElement
+      }
+      return null
+    }
+    const verticalScrollOwner = (element: HTMLElement): ScrollOwner => {
+      let current = element.parentElement
+      while (current) {
+        const style = window.getComputedStyle(current)
+        if (['auto', 'scroll'].includes(style.overflowY)
+          && current.scrollHeight > current.clientHeight + 1) return current
         current = current.parentElement
       }
       return null
@@ -224,6 +258,29 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
       const metrics = ownerMetrics(owner)
       return Math.max(0, metrics.scrollHeight - metrics.clientHeight)
     }
+    const containedByOwners = (
+      element: HTMLElement,
+      horizontalOwner: ScrollOwner,
+      verticalOwner: ScrollOwner,
+      requireDocumentViewport = false,
+    ): boolean => {
+      const rect = element.getBoundingClientRect()
+      const documentViewport = new DOMRect(0, 0, window.innerWidth, window.innerHeight)
+      const horizontalViewport = ownerViewport(horizontalOwner)
+      const verticalViewport = ownerViewport(verticalOwner)
+      return (
+        (!requireDocumentViewport || (
+          rect.left >= documentViewport.left - 1
+          && rect.right <= documentViewport.right + 1
+          && rect.top >= documentViewport.top - 1
+          && rect.bottom <= documentViewport.bottom + 1
+        ))
+        && rect.left >= horizontalViewport.left - 1
+        && rect.right <= horizontalViewport.right + 1
+        && rect.top >= verticalViewport.top - 1
+        && rect.bottom <= verticalViewport.bottom + 1
+      )
+    }
 
     const roots = Array.from(document.querySelectorAll('[data-dn-source-cover]')).filter(visible)
     const cardOverflow: string[] = []
@@ -254,28 +311,32 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
     ])
     const sourceSurfaceFailures: string[] = []
     const sourceSurfaces = Array.from(sourceSurfaceSet).map((surface) => {
-      const owner = clippingOwner(surface)
-      const original = readScrollTop(owner)
-      const max = maxScrollTop(owner)
-      writeScrollTop(owner, 0)
-      const initialContained = contained(surface.getBoundingClientRect(), ownerViewport(owner))
+      const horizontalOwner = clippingOwner(surface, 'x')
+      const verticalOwner = clippingOwner(surface, 'y')
+      const scrollOwner = verticalScrollOwner(surface)
+      const original = readScrollTop(scrollOwner)
+      const max = maxScrollTop(scrollOwner)
+      writeScrollTop(scrollOwner, 0)
+      const initialContained = containedByOwners(surface, horizontalOwner, verticalOwner)
       if (!initialContained && max > 0) {
         surface.scrollIntoView({ block: 'nearest', inline: 'nearest' })
       }
-      const finallyContained = contained(surface.getBoundingClientRect(), ownerViewport(owner))
-      writeScrollTop(owner, original)
-      const metrics = ownerMetrics(owner)
+      const finallyContained = containedByOwners(surface, horizontalOwner, verticalOwner)
+      writeScrollTop(scrollOwner, original)
+      const metrics = ownerMetrics(scrollOwner)
       const result = {
         label: describe(surface),
-        owner: ownerName(owner),
-        ownerClientHeight: metrics.clientHeight,
-        ownerScrollHeight: metrics.scrollHeight,
+        horizontalClippingOwner: ownerName(horizontalOwner),
+        verticalClippingOwner: ownerName(verticalOwner),
+        verticalScrollOwner: ownerName(scrollOwner),
+        verticalScrollClientHeight: metrics.clientHeight,
+        verticalScrollHeight: metrics.scrollHeight,
         initialContained,
         finallyContained,
       }
       if (!finallyContained) {
         sourceSurfaceFailures.push(
-          `${result.label} within ${result.owner} (${result.ownerScrollHeight}/${result.ownerClientHeight})`,
+          `${result.label} within x=${result.horizontalClippingOwner} y=${result.verticalClippingOwner} scroll=${result.verticalScrollOwner} (${result.verticalScrollHeight}/${result.verticalScrollClientHeight})`,
         )
       }
       return result
@@ -290,17 +351,19 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
 
     const markers = Array.from(document.querySelectorAll<HTMLElement>('[data-dn-source-gallery-lower]')).filter(visible)
     const lower = markers.length === 1 ? markers[0] : null
-    const owner = lower ? clippingOwner(lower) : null
-    const original = readScrollTop(owner)
-    const max = maxScrollTop(owner)
-    writeScrollTop(owner, 0)
-    const before = readScrollTop(owner)
-    const initiallyContained = Boolean(lower) && contained(lower!.getBoundingClientRect(), ownerViewport(owner))
+    const horizontalOwner = lower ? clippingOwner(lower, 'x') : null
+    const verticalOwner = lower ? clippingOwner(lower, 'y') : null
+    const scrollOwner = lower ? verticalScrollOwner(lower) : null
+    const original = readScrollTop(scrollOwner)
+    const max = maxScrollTop(scrollOwner)
+    writeScrollTop(scrollOwner, 0)
+    const before = readScrollTop(scrollOwner)
+    const initiallyContained = Boolean(lower) && containedByOwners(lower!, horizontalOwner, verticalOwner, true)
     if (lower && !initiallyContained) lower.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    const after = readScrollTop(owner)
-    const finallyContained = Boolean(lower) && contained(lower!.getBoundingClientRect(), ownerViewport(owner))
-    const metrics = ownerMetrics(owner)
-    writeScrollTop(owner, original)
+    const after = readScrollTop(scrollOwner)
+    const finallyContained = Boolean(lower) && containedByOwners(lower!, horizontalOwner, verticalOwner, true)
+    const metrics = ownerMetrics(scrollOwner)
+    writeScrollTop(scrollOwner, original)
 
     const shift = (window as Window & {
       __dnVisualSystemLayoutShift?: { value: number }
@@ -317,9 +380,11 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
       cumulativeLayoutShift: shift,
       scroll: {
         marker: lower ? describe(lower) : '',
-        owner: ownerName(owner),
-        ownerClientHeight: metrics.clientHeight,
-        ownerScrollHeight: metrics.scrollHeight,
+        horizontalClippingOwner: ownerName(horizontalOwner),
+        verticalClippingOwner: ownerName(verticalOwner),
+        verticalScrollOwner: ownerName(scrollOwner),
+        verticalScrollClientHeight: metrics.clientHeight,
+        verticalScrollHeight: metrics.scrollHeight,
         max,
         before,
         after,
@@ -501,14 +566,65 @@ test.describe('source gallery visual contract', () => {
 
     const geometry = await inspectSourceGalleryGeometry(page)
     expect(geometry.scroll.marker).toBe('Target cover action')
-    expect(geometry.scroll.owner).toBe('source-owner')
+    expect(geometry.scroll.horizontalClippingOwner).toBe('source-owner')
+    expect(geometry.scroll.verticalClippingOwner).toBe('source-owner')
     expect(geometry.sourceSurfaces).toEqual([
       expect.objectContaining({
-        owner: 'source-owner',
+        horizontalClippingOwner: 'source-owner',
+        verticalClippingOwner: 'source-owner',
         initialContained: false,
         finallyContained: false,
       }),
     ])
+  })
+
+  test('geometry rejects a SourceCover clipped only on the horizontal axis', async ({ page }) => {
+    await page.goto('/')
+    await page.setViewportSize({ width: 320, height: 160 })
+    await page.setContent(`
+      <style>
+        html, body { margin: 0; overflow: visible; }
+        #horizontal-owner { width: 80px; height: 120px; overflow-x: clip; overflow-y: visible; }
+        [data-dn-source-cover] { display: block; width: 120px; height: 80px; }
+        [data-dn-source-cover] button { width: 44px; height: 44px; }
+      </style>
+      <main>
+        <div id="horizontal-owner">
+          <article data-dn-source-cover="true">
+            <button type="button">Horizontally clipped cover action</button>
+          </article>
+        </div>
+      </main>
+    `)
+
+    const geometry = await inspectSourceGalleryGeometry(page)
+    expect(geometry.sourceSurfaces).toEqual([
+      expect.objectContaining({
+        horizontalClippingOwner: 'horizontal-owner',
+        finallyContained: false,
+      }),
+    ])
+    expect(geometry.sourceSurfaceFailures).toEqual([
+      expect.stringContaining('horizontal-owner'),
+    ])
+  })
+
+  test('rollback landmarks reject visible disabled, read-only, and actionless route surfaces', async ({ page }) => {
+    const hostileMarkupByRoute: Record<(typeof SOURCE_GALLERY_CELLS)[number]['route'], string> = {
+      '/sources': '<main><section data-dn-sources-table="true"><button disabled>Open source</button></section></main>',
+      '/notebooks/[id]': '<main><button disabled>Add Source</button></main>',
+      '/knowledge': '<main aria-label="Knowledge workspace"><button disabled>Split pane right</button></main>',
+      '/search': '<main><input id="search-query" readonly value="fixture" /></main>',
+      '/capture': '<main><input aria-label="Capture folder path" disabled value="/fixture" /></main>',
+    }
+
+    for (const [route, markup] of Object.entries(hostileMarkupByRoute) as Array<[
+      (typeof SOURCE_GALLERY_CELLS)[number]['route'],
+      string,
+    ]>) {
+      await page.setContent(markup)
+      await expect(expectRollbackLegacyLandmark(page, route)).rejects.toThrow()
+    }
   })
 
   for (const cell of SOURCE_GALLERY_CELLS.filter(candidate => candidate.flags === 'enabled')) {
@@ -564,16 +680,22 @@ test.describe('source gallery visual contract', () => {
           expect(geometry.sourceSurfaceFailures, `${cell.id}/${theme}/${viewport.name} SourceCover/card clipping owners`).toEqual([])
           expect(geometry.sourceSurfaces.length, `${cell.id}/${theme}/${viewport.name} visible SourceCover/card count`).toBeGreaterThan(0)
           for (const surface of geometry.sourceSurfaces) {
-            expect(surface.ownerClientHeight, `${cell.id}/${theme}/${viewport.name} ${surface.label} owner client height`).toBeGreaterThan(0)
-            expect(surface.ownerScrollHeight, `${cell.id}/${theme}/${viewport.name} ${surface.label} owner scroll height`).toBeGreaterThanOrEqual(surface.ownerClientHeight)
+            expect(surface.horizontalClippingOwner, `${cell.id}/${theme}/${viewport.name} ${surface.label} horizontal clipping owner`).not.toBe('')
+            expect(surface.verticalClippingOwner, `${cell.id}/${theme}/${viewport.name} ${surface.label} vertical clipping owner`).not.toBe('')
+            expect(surface.verticalScrollOwner, `${cell.id}/${theme}/${viewport.name} ${surface.label} vertical scroll owner`).not.toBe('')
+            expect(surface.verticalScrollClientHeight, `${cell.id}/${theme}/${viewport.name} ${surface.label} scroll owner client height`).toBeGreaterThan(0)
+            expect(surface.verticalScrollHeight, `${cell.id}/${theme}/${viewport.name} ${surface.label} scroll owner scroll height`).toBeGreaterThanOrEqual(surface.verticalScrollClientHeight)
             expect(surface.finallyContained, `${cell.id}/${theme}/${viewport.name} ${surface.label} final four-edge containment`).toBe(true)
           }
           expect(geometry.undersizedActions, `${cell.id}/${theme}/${viewport.name} 44px targets`).toEqual([])
           expect(Number.isFinite(geometry.cumulativeLayoutShift)).toBe(true)
           expect(geometry.cumulativeLayoutShift, `${cell.id}/${theme}/${viewport.name} CLS`).toBeLessThanOrEqual(0.05)
           expect(geometry.scroll.marker, `${cell.id}/${theme}/${viewport.name} route-specific lower marker`).not.toBe('')
-          expect(geometry.scroll.ownerClientHeight, `${cell.id}/${theme}/${viewport.name} scroll owner client height`).toBeGreaterThan(0)
-          expect(geometry.scroll.ownerScrollHeight, `${cell.id}/${theme}/${viewport.name} scroll owner scroll height`).toBeGreaterThanOrEqual(geometry.scroll.ownerClientHeight)
+          expect(geometry.scroll.horizontalClippingOwner, `${cell.id}/${theme}/${viewport.name} horizontal clipping owner`).not.toBe('')
+          expect(geometry.scroll.verticalClippingOwner, `${cell.id}/${theme}/${viewport.name} vertical clipping owner`).not.toBe('')
+          expect(geometry.scroll.verticalScrollOwner, `${cell.id}/${theme}/${viewport.name} vertical scroll owner`).not.toBe('')
+          expect(geometry.scroll.verticalScrollClientHeight, `${cell.id}/${theme}/${viewport.name} scroll owner client height`).toBeGreaterThan(0)
+          expect(geometry.scroll.verticalScrollHeight, `${cell.id}/${theme}/${viewport.name} scroll owner scroll height`).toBeGreaterThanOrEqual(geometry.scroll.verticalScrollClientHeight)
           if (!geometry.scroll.initiallyContained) {
             expect(geometry.scroll.after, `${cell.id}/${theme}/${viewport.name} scroll advance`).toBeGreaterThan(geometry.scroll.before)
           }
