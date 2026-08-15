@@ -36,6 +36,7 @@ class _PendingSubmission:
     heartbeat_stop: asyncio.Event
     heartbeat_task: asyncio.Task[None]
     finalizer_task: asyncio.Task[None] | None = None
+    error_code: str | None = None
 
 
 _PENDING_SUBMISSIONS: dict[str, _PendingSubmission] = {}
@@ -96,6 +97,87 @@ async def _record_queued_operation(
     )
 
 
+async def _finalize_queued_operation(
+    repository: object,
+    *,
+    authority: object,
+    request_id: str,
+    command_id: str | None,
+    outcome: str,
+    error_code: str | None,
+) -> None:
+    """Advance only this caller's initially unbound queued receipt."""
+
+    await _await_if_needed(
+        repository.finalize_operation(
+            source_id=authority.source_id,
+            request_id=request_id,
+            operation="refresh",
+            source_updated_at=authority.source_updated_at,
+            content_sha256=authority.content_sha256,
+            expected_command_id=None,
+            expected_outcome="queued",
+            expected_error_code=None,
+            command_id=command_id,
+            outcome=outcome,
+            error_code=error_code,
+        )
+    )
+
+
+async def _suppressed_auto_ingest_response(
+    repository: object,
+    *,
+    authority: object,
+    request_id: str,
+    explicit: bool,
+) -> SourceVisualJobResponse | None:
+    """Replay a completed delete for automatic ingestion of the same version."""
+
+    if explicit or request_id != f"ingest:{authority.content_sha256}":
+        return None
+    deleted = await _await_if_needed(
+        repository.find_completed_delete(
+            authority.source_id,
+            authority.source_updated_at,
+            authority.content_sha256,
+        )
+    )
+    if deleted is None:
+        return None
+    try:
+        await _await_if_needed(
+            repository.record_operation(
+                source_id=authority.source_id,
+                request_id=request_id,
+                operation="refresh",
+                source_updated_at=authority.source_updated_at,
+                content_sha256=authority.content_sha256,
+                command_id=None,
+                outcome="deleted",
+            )
+        )
+    except SourceVisualConflictError:
+        # A concurrent automatic caller may have written the deterministic
+        # receipt after this caller's initial replay lookup.
+        existing = await _await_if_needed(
+            repository.get_operation(authority.source_id, request_id, "refresh")
+        )
+        if existing is None:
+            raise
+        if (
+            getattr(existing, "source_updated_at", None) != authority.source_updated_at
+            or getattr(existing, "content_sha256", None) != authority.content_sha256
+        ):
+            raise SourceVisualConflictError("REQUEST_CONFLICT")
+    return SourceVisualJobResponse(
+        source_id=authority.source_id,
+        command_id=None,
+        content_sha256=authority.content_sha256,
+        outcome="replayed",
+    )
+
+
 async def _heartbeat_claim(
     repository: object,
     *,
@@ -133,6 +215,7 @@ async def _finalize_submission(
     repository: object,
     *,
     authority: object,
+    request_id: str,
     owner_token: str,
     pending: _PendingSubmission,
     identity: str,
@@ -154,13 +237,51 @@ async def _finalize_submission(
                 command_id=command_id,
             )
         )
+        await _finalize_queued_operation(
+            repository,
+            authority=authority,
+            request_id=request_id,
+            command_id=command_id,
+            outcome="queued",
+            error_code=None,
+        )
     except asyncio.CancelledError:
         # Loop shutdown is the only expected cancellation of this detached
         # finalizer. Lease expiry and owner fencing protect any later takeover.
         raise
     except Exception:
-        # A command may have been created even when its bind failed; never
-        # release this claim or write a failed receipt in that situation.
+        submission_error = (
+            pending.submit_task.exception()
+            if pending.submit_task.done() and not pending.submit_task.cancelled()
+            else None
+        )
+        if submission_error is not None:
+            # The submission itself failed before it returned any command ID,
+            # so this exact owner may safely finalize the durable receipt and
+            # release its unbound claim. A bind/finalize failure remains
+            # fail-closed because a command may already exist.
+            try:
+                await _finalize_queued_operation(
+                    repository,
+                    authority=authority,
+                    request_id=request_id,
+                    command_id=None,
+                    outcome="failed",
+                    error_code="queue_submit_failed",
+                )
+                pending.error_code = "queue_submit_failed"
+                pending.heartbeat_stop.set()
+                try:
+                    await asyncio.shield(pending.heartbeat_task)
+                except Exception:
+                    pass
+                await _release_unsubmitted_claim(
+                    repository, authority=authority, owner_token=owner_token
+                )
+            except Exception:
+                pending.error_code = None
+        # A command may have been created when bind/finalization fails; never
+        # release this claim or overwrite its still-queued operation receipt.
         command_id = None
     finally:
         if not pending.receipt.done():
@@ -276,6 +397,15 @@ async def submit_source_visual(
             error_code=getattr(existing, "error_code", None) if outcome == "failed" else None,
         )
 
+    suppressed = await _suppressed_auto_ingest_response(
+        repository,
+        authority=authority,
+        request_id=request_id,
+        explicit=explicit,
+    )
+    if suppressed is not None:
+        return suppressed
+
     owner_token = secrets.token_hex(32)
     identity = f"{authority.source_id}\0{authority.content_sha256}\0{authority.extractor_version}"
     try:
@@ -349,6 +479,7 @@ async def submit_source_visual(
         _finalize_submission(
             repository,
             authority=authority,
+            request_id=request_id,
             owner_token=owner_token,
             pending=pending,
             identity=identity,
@@ -365,7 +496,8 @@ async def submit_source_visual(
         source_id=authority.source_id,
         command_id=command_id,
         content_sha256=authority.content_sha256,
-        outcome="queued",
+        outcome="failed" if pending.error_code else "queued",
+        error_code=pending.error_code,
     )
 
 

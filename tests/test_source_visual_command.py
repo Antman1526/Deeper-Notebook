@@ -51,6 +51,20 @@ class InMemoryQueueRepository:
     async def get_operation(self, source_id, request_id, operation):
         return self.operations.get((source_id, request_id, operation))
 
+    async def find_completed_delete(
+        self, source_id, source_updated_at, content_sha256
+    ):
+        for receipt in self.operations.values():
+            if (
+                receipt.source_id == source_id
+                and receipt.source_updated_at == source_updated_at
+                and receipt.content_sha256 == content_sha256
+                and receipt.operation == "delete"
+                and receipt.outcome == "deleted"
+            ):
+                return receipt
+        return None
+
     async def acquire_claim(
         self,
         source_id=None,
@@ -143,6 +157,32 @@ class InMemoryQueueRepository:
             updated_at=NOW,
         )
         key = (source_id, request_id, operation)
+        self.operations[key] = receipt
+        self.recorded.append(receipt)
+        return receipt
+
+    async def finalize_operation(
+        self,
+        source_id=None,
+        request_id=None,
+        operation=None,
+        **kwargs,
+    ):
+        key = (source_id, request_id, operation)
+        receipt = self.operations[key]
+        assert receipt.source_updated_at == kwargs["source_updated_at"]
+        assert receipt.content_sha256 == kwargs["content_sha256"]
+        assert receipt.command_id == kwargs["expected_command_id"]
+        assert receipt.outcome == kwargs["expected_outcome"]
+        assert receipt.error_code == kwargs["expected_error_code"]
+        receipt = receipt.model_copy(
+            update={
+                "command_id": kwargs["command_id"],
+                "outcome": kwargs["outcome"],
+                "error_code": kwargs["error_code"],
+                "updated_at": NOW,
+            }
+        )
         self.operations[key] = receipt
         self.recorded.append(receipt)
         return receipt
@@ -240,6 +280,28 @@ async def test_replay_after_winner_completion_never_submits_again(queue_context,
 
 
 @pytest.mark.asyncio
+async def test_successful_bind_finalizes_the_durable_operation_for_restart_replay(
+    queue_context, monkeypatch
+):
+    queue, repo, _source = queue_context
+    submitted = []
+    monkeypatch.setattr(
+        queue,
+        "submit_command",
+        lambda *_args: submitted.append("submitted") or "command:durable",
+    )
+
+    first = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    queue._PENDING_SUBMISSIONS.clear()
+    replay = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+
+    assert first.command_id == replay.command_id == "command:durable"
+    assert replay.outcome == "replayed"
+    assert repo.operations[("source:one", "request-one", "refresh")].command_id == "command:durable"
+    assert submitted == ["submitted"]
+
+
+@pytest.mark.asyncio
 async def test_expired_claim_takeover_rejects_a_late_old_submit(queue_context, monkeypatch):
     queue, repo, _source = queue_context
     old_started = threading.Event()
@@ -293,7 +355,7 @@ async def test_conflicting_operation_payload_is_a_409_domain_error(queue_context
 
 
 @pytest.mark.asyncio
-async def test_submission_exception_retains_claim_and_queued_receipt(
+async def test_submission_exception_releases_exact_owner_and_finalizes_failed_receipt(
     queue_context, monkeypatch
 ):
     queue, repo, _source = queue_context
@@ -304,10 +366,48 @@ async def test_submission_exception_retains_claim_and_queued_receipt(
     monkeypatch.setattr(queue, "submit_command", fail_submit)
     result = await queue.submit_source_visual("source:one", "request-one", explicit=True)
 
-    assert result.outcome == "queued"
+    assert result.outcome == "failed"
     assert result.command_id is None
-    assert repo.released == []
-    assert repo.recorded[-1].outcome == "queued"
+    assert result.error_code == "queue_submit_failed"
+    assert len(repo.released) == 1
+    assert repo.recorded[-1].outcome == "failed"
+    assert repo.recorded[-1].error_code == "queue_submit_failed"
+
+
+@pytest.mark.asyncio
+async def test_explicit_delete_suppresses_only_deterministic_auto_ingest_replay(
+    queue_context, monkeypatch
+):
+    queue, repo, _source = queue_context
+    await repo.record_operation(
+        "source:one",
+        "delete-request",
+        "delete",
+        source_updated_at=NOW,
+        content_sha256=HASH,
+        command_id=None,
+        outcome="deleted",
+    )
+    submitted = []
+    monkeypatch.setattr(
+        queue,
+        "submit_command",
+        lambda *_args: submitted.append("submitted") or "command:manual-refresh",
+    )
+
+    auto = await queue.submit_source_visual(
+        "source:one", f"ingest:{HASH}", explicit=False
+    )
+    manual = await queue.submit_source_visual(
+        "source:one", "manual-refresh", explicit=True
+    )
+
+    assert auto.outcome == "replayed"
+    assert auto.command_id is None
+    assert repo.operations[("source:one", f"ingest:{HASH}", "refresh")].outcome == "deleted"
+    assert manual.outcome == "queued"
+    assert manual.command_id == "command:manual-refresh"
+    assert submitted == ["submitted"]
 
 
 @pytest.mark.asyncio
@@ -875,7 +975,7 @@ async def test_service_lease_loss_before_publish_creates_no_canonical_or_row(mon
 
 
 @pytest.mark.asyncio
-async def test_service_publish_ready_lease_failure_removes_asset_and_reraises(
+async def test_service_publish_ready_owner_loss_never_removes_new_owner_canonical(
     monkeypatch,
 ):
     import deeper_notebook.source_visuals.service as service
@@ -890,6 +990,7 @@ async def test_service_publish_ready_lease_failure_removes_asset_and_reraises(
             self.ready_rows = []
 
         async def publish_ready(self, record, **kwargs):
+            self.ready_rows.append(record)
             raise SourceVisualConflictError("LEASE_EXPIRED")
 
     repo = Repo()
@@ -905,12 +1006,87 @@ async def test_service_publish_ready_lease_failure_removes_asset_and_reraises(
         await service.SourceVisualService(repository=repo, store=store, cleanup=InMemoryCleanup()).execute(
             service.ExtractSourceVisualInput(source_id="source:one", request_id="request-one", expected_content_sha256=HASH, extractor_version="source-visual-v1", claim_owner_token="c" * 64)
         )
-    assert store.removed == [
-        ("tombstone", "aa/" + HASH + "/" + ASSET_HASH + ".webp"),
-        ("remove", "aa/" + HASH + "/" + ASSET_HASH + ".webp"),
-    ]
-    assert repo.ready_rows == []
+    assert store.removed == []
+    assert len(repo.ready_rows) == 1
     assert repo.released == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("scenario", "expected_error"),
+    (
+        ("missing", "source_missing"),
+        ("stale", "source_stale"),
+        ("authority", "source_file_invalid"),
+    ),
+)
+async def test_service_pre_authority_terminal_results_release_the_exact_input_claim(
+    monkeypatch, scenario, expected_error
+):
+    import deeper_notebook.source_visuals.service as service
+    from deeper_notebook.source_visuals.authority import SourceVisualAuthorityError
+
+    source = SimpleNamespace(
+        id="source:one",
+        source_type="upload",
+        asset=SimpleNamespace(file_path="/controlled/one.pdf"),
+        updated=NOW,
+    )
+
+    class Repo(InMemoryServiceRepository):
+        def __init__(self):
+            super().__init__()
+            self.release_calls = []
+
+        async def release_claim(self, **kwargs):
+            self.release_calls.append(kwargs)
+            await super().release_claim(**kwargs)
+
+    repo = Repo()
+    monkeypatch.setattr(
+        service,
+        "Source",
+        SimpleNamespace(get=lambda _id: None if scenario == "missing" else source),
+    )
+    if scenario == "authority":
+        monkeypatch.setattr(
+            service,
+            "compute_source_visual_authority",
+            lambda _source: (_ for _ in ()).throw(
+                SourceVisualAuthorityError("SOURCE_FILE_INVALID")
+            ),
+        )
+    elif scenario == "stale":
+        monkeypatch.setattr(
+            service,
+            "compute_source_visual_authority",
+            lambda _source: _authority(content="c" * 64),
+        )
+    else:
+        monkeypatch.setattr(service, "compute_source_visual_authority", lambda _source: _authority())
+
+    result = await service.SourceVisualService(
+        repository=repo, store=InMemoryServiceStore(), cleanup=InMemoryCleanup()
+    ).execute(
+        service.ExtractSourceVisualInput(
+            source_id="source:one",
+            request_id="request-one",
+            expected_content_sha256=HASH,
+            extractor_version="source-visual-v1",
+            claim_owner_token="c" * 64,
+        )
+    )
+
+    assert result.outcome == "failed"
+    assert result.error_code == expected_error
+    assert repo.release_calls == [
+        {
+            "source_id": "source:one",
+            "content_sha256": HASH,
+            "extractor_version": "source-visual-v1",
+            "owner_token": "c" * 64,
+        }
+    ]
 
 
 @pytest.mark.asyncio

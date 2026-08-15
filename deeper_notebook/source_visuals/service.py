@@ -232,18 +232,35 @@ class SourceVisualService:
         if tombstone is not None:
             await _run_boundary(self._store.remove_tombstone, tombstone)
 
-    async def _release(self, authority: object, owner_token: str) -> None:
+    async def _release_exact(
+        self,
+        *,
+        source_id: str,
+        content_sha256: str,
+        extractor_version: str,
+        owner_token: str,
+    ) -> None:
         try:
             await _await_if_needed(
                 self._repository.release_claim(
-                    source_id=authority.source_id,
-                    content_sha256=authority.content_sha256,
-                    extractor_version=authority.extractor_version,
+                    source_id=source_id,
+                    content_sha256=content_sha256,
+                    extractor_version=extractor_version,
                     owner_token=owner_token,
                 )
             )
         except Exception:
             pass
+
+    async def _release_input_claim(self, input_data: ExtractSourceVisualInput) -> None:
+        """Release only the exact durable identity carried by this command."""
+
+        await self._release_exact(
+            source_id=input_data.source_id,
+            content_sha256=input_data.expected_content_sha256,
+            extractor_version=input_data.extractor_version,
+            owner_token=input_data.claim_owner_token,
+        )
 
     async def execute(self, input_data: ExtractSourceVisualInput) -> ExtractSourceVisualOutput:
         """Execute bounded extraction without changing source content or paths."""
@@ -256,6 +273,7 @@ class SourceVisualService:
         stored = None
         record = None
         ready_published = False
+        ready_publication_attempted = False
         stage_task: asyncio.Task[object] | None = None
         publish_task: asyncio.Task[object] | None = None
 
@@ -271,12 +289,14 @@ class SourceVisualService:
         try:
             source = await _await_if_needed(Source.get(input_data.source_id))
             if source is None:
+                await self._release_input_claim(input_data)
                 return failed("source_missing")
             authority = await _await_if_needed(compute_source_visual_authority(source))
             if (
                 authority.content_sha256 != input_data.expected_content_sha256
                 or authority.extractor_version != input_data.extractor_version
             ):
+                await self._release_input_claim(input_data)
                 return failed("source_stale")
 
             lock = await _fingerprint_lock(
@@ -319,6 +339,7 @@ class SourceVisualService:
                         stored=stored,
                         alt_text=alt_text,
                     )
+                    ready_publication_attempted = True
                     await _await_if_needed(
                         self._repository.publish_ready(
                             record,
@@ -369,16 +390,21 @@ class SourceVisualService:
                         alt_text=alt_text,
                     )
                 if record is not None and not ready_published:
-                    await self._remove_unpublished_derivative(record)
+                    if not ready_publication_attempted:
+                        await self._remove_unpublished_derivative(record)
                 await self._cleanup_task_temp()
-                await self._release(authority, input_data.claim_owner_token)
+                await self._release_input_claim(input_data)
             return failed("cancelled")
         except (SourceVisualAuthorityError, SourceVisualMediaError) as exc:
             if authority is not None:
-                if record is not None and not ready_published:
+                if (
+                    record is not None
+                    and not ready_published
+                    and not ready_publication_attempted
+                ):
                     await self._remove_unpublished_derivative(record)
                 await self._cleanup_task_temp()
-                await self._release(authority, input_data.claim_owner_token)
+            await self._release_input_claim(input_data)
             return failed(_safe_error_code(exc))
         except Exception:
             if authority is not None:
@@ -396,7 +422,11 @@ class SourceVisualService:
                             stored=stored,
                             alt_text=alt_text,
                         )
-                if record is not None and not ready_published:
+                if (
+                    record is not None
+                    and not ready_published
+                    and not ready_publication_attempted
+                ):
                     await self._remove_unpublished_derivative(record)
                 await self._cleanup_task_temp()
             # Repository, storage, and unexpected failures are intentionally

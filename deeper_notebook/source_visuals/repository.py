@@ -786,6 +786,132 @@ class SourceVisualRepository:
         self._operation_cache[identity] = receipt
         return receipt
 
+    async def finalize_operation(
+        self,
+        source_id: str | SourceVisualAuthority | None = None,
+        request_id: str | None = None,
+        operation: str | None = None,
+        *,
+        authority: SourceVisualAuthority | None = None,
+        source_updated_at: datetime | None = None,
+        content_sha256: str | None = None,
+        expected_command_id: str | None = None,
+        expected_outcome: str = "queued",
+        expected_error_code: str | None = None,
+        command_id: str | None = None,
+        outcome: str = "queued",
+        error_code: str | None = None,
+        now: datetime | None = None,
+    ) -> SourceVisualOperationReceipt:
+        """Compare-and-set one queued receipt to its terminal queue outcome."""
+
+        source_id, content_sha256, extractor_version, authority = _identity(
+            source_id,
+            content_sha256,
+            "source-visual-v1",
+            authority,
+        )
+        del extractor_version
+        if not request_id or operation not in {"refresh", "delete"}:
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        if authority is not None and source_updated_at is None:
+            source_updated_at = authority.source_updated_at
+        source_updated_at = _datetime(source_updated_at)
+        if source_updated_at is None:
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        if (
+            expected_command_id is not None
+            or expected_outcome != "queued"
+            or expected_error_code is not None
+        ):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        if command_id is not None:
+            if outcome != "queued" or error_code is not None:
+                raise SourceVisualRepositoryError("INVALID_INPUT")
+        elif (
+            outcome != "failed"
+            or not isinstance(error_code, str)
+            or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,63}", error_code)
+        ):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+
+        expected_command_record = _command_record(expected_command_id)
+        command_record = _command_record(command_id)
+        canonical_command_id = _command_text(command_id)
+        current = _now(now)
+        identity = operation_identity(source_id, request_id, operation)
+        result = await _transaction(
+            """
+            BEGIN TRANSACTION;
+            LET $existing = (SELECT * FROM $operation_record)[0];
+            IF $existing = NONE OR $existing.source_id != $source_record
+                    OR $existing.request_id != $request_id
+                    OR $existing.operation != $operation
+                    OR $existing.content_sha256 != $content_sha256
+                    OR $existing.source_updated_at != $source_updated_at
+                    OR $existing.command_id != $expected_command_record
+                    OR $existing.outcome != $expected_outcome
+                    OR $existing.error_code != $expected_error_code THEN
+                RETURN { request_conflict: true, existing: $existing };
+            END;
+            UPDATE $operation_record MERGE {
+                command_id: $command_record,
+                outcome: $outcome,
+                error_code: $error_code,
+                updated_at: $now
+            };
+            SELECT * FROM $operation_record;
+            COMMIT TRANSACTION;
+            """,
+            {
+                "operation_record": _record("source_visual_operation", identity),
+                "source_record": _source_record(source_id),
+                "request_id": request_id,
+                "source_updated_at": source_updated_at,
+                "content_sha256": content_sha256,
+                "operation": operation,
+                "expected_command_record": expected_command_record,
+                "expected_outcome": expected_outcome,
+                "expected_error_code": expected_error_code,
+                "command_record": command_record,
+                "outcome": outcome,
+                "error_code": error_code,
+                "now": current,
+            },
+        )
+        row = _row(result)
+        if row and (
+            row.get("request_conflict")
+            or not _operation_matches(
+                row,
+                source_id=source_id,
+                request_id=request_id,
+                source_updated_at=source_updated_at,
+                content_sha256=content_sha256,
+                operation=operation,
+                command_id=canonical_command_id,
+                outcome=outcome,
+                error_code=error_code,
+            )
+        ):
+            raise SourceVisualConflictError("REQUEST_CONFLICT")
+        receipt = _receipt_from_row(
+            row,
+            operation_id=identity,
+            source_id=source_id,
+            request_id=request_id,
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            operation=operation,
+            command_id=canonical_command_id,
+            outcome=outcome,
+            error_code=error_code,
+            now=current,
+            fallback=self._operation_cache.get(identity),
+        )
+        self._operation_cache[identity] = receipt
+        return receipt
+
     async def get_operation(
         self,
         source_id: str,
@@ -816,6 +942,68 @@ class SourceVisualRepository:
             error_code=row.get("error_code"),
             now=_now(None),
             fallback=self._operation_cache.get(identity),
+        )
+
+    async def find_completed_delete(
+        self,
+        source_id: str,
+        source_updated_at: datetime,
+        content_sha256: str,
+    ) -> SourceVisualOperationReceipt | None:
+        """Find one exact successful deletion that suppresses auto-ingest."""
+
+        source_id = _source_id(source_id)
+        source_updated_at = _datetime(source_updated_at)
+        _hash(content_sha256)
+        if source_updated_at is None:
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        rows = _rows(
+            await _transaction(
+                """
+                SELECT * FROM source_visual_operation
+                WHERE source_id = $source_record
+                    AND source_updated_at = $source_updated_at
+                    AND content_sha256 = $content_sha256
+                    AND operation = "delete"
+                    AND outcome = "deleted"
+                ORDER BY updated_at DESC LIMIT 1;
+                """,
+                {
+                    "source_record": _source_record(source_id),
+                    "source_updated_at": source_updated_at,
+                    "content_sha256": content_sha256,
+                },
+            )
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        row = rows[0]
+        if not _operation_matches(
+            row,
+            source_id=source_id,
+            request_id=row.get("request_id", ""),
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            operation="delete",
+            command_id=None,
+            outcome="deleted",
+            error_code=None,
+        ):
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        return _receipt_from_row(
+            row,
+            operation_id=operation_identity(source_id, row["request_id"], "delete"),
+            source_id=source_id,
+            request_id=row["request_id"],
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            operation="delete",
+            command_id=None,
+            outcome="deleted",
+            error_code=None,
+            now=_now(None),
         )
 
     async def list_current(

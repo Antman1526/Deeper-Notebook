@@ -538,6 +538,87 @@ async def test_operation_command_id_is_bound_and_replay_normalizes_record_id(
 
 
 @pytest.mark.asyncio
+async def test_operation_finalization_is_a_strict_queued_receipt_compare_and_set(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repository = _repository()
+    payload = {
+        "source_id": "source:one",
+        "request_id": "request:command",
+        "source_updated_at": SOURCE_UPDATED,
+        "content_sha256": "a" * 64,
+        "operation": "refresh",
+        "command_id": None,
+        "outcome": "queued",
+        "error_code": None,
+    }
+    operation_id = operation_identity("source:one", "request:command", "refresh")
+    query = AsyncMock(
+        return_value={
+            "id": operation_id,
+            **payload,
+            "command_id": "command:one",
+        }
+    )
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    finalized = await repository.finalize_operation(
+        **{key: value for key, value in payload.items() if key != "command_id"},
+        expected_command_id=None,
+        expected_outcome="queued",
+        expected_error_code=None,
+        command_id="command:one",
+    )
+
+    assert finalized.command_id == "command:one"
+    variables = query.await_args.args[1]
+    assert variables["expected_command_record"] is None
+    assert variables["command_record"] != "command:one"
+    query.return_value = {"request_conflict": True}
+    with pytest.raises(SourceVisualConflictError):
+        await repository.finalize_operation(
+            **{key: value for key, value in payload.items() if key != "command_id"},
+            expected_command_id=None,
+            expected_outcome="queued",
+            expected_error_code=None,
+            command_id="command:one",
+        )
+
+
+@pytest.mark.asyncio
+async def test_completed_delete_lookup_is_exactly_fingerprint_and_revision_bound(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repository = _repository()
+    payload = {
+        "operation_id": operation_identity("source:one", "delete-request", "delete"),
+        "source_id": "source:one",
+        "request_id": "delete-request",
+        "source_updated_at": SOURCE_UPDATED,
+        "content_sha256": "a" * 64,
+        "operation": "delete",
+        "command_id": None,
+        "outcome": "deleted",
+        "error_code": None,
+        "created_at": SOURCE_UPDATED,
+        "updated_at": SOURCE_UPDATED,
+    }
+    query = AsyncMock(return_value=[payload])
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    receipt = await repository.find_completed_delete(
+        "source:one", SOURCE_UPDATED, "a" * 64
+    )
+
+    assert receipt is not None
+    assert receipt.operation == "delete"
+    assert receipt.outcome == "deleted"
+    variables = query.await_args.args[1]
+    assert variables["source_updated_at"] == SOURCE_UPDATED
+    assert variables["content_sha256"] == "a" * 64
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("mutation", ["renew", "bind", "complete", "release", "publish", "delete"])
 async def test_lease_mutations_reject_expired_owner(
     monkeypatch: pytest.MonkeyPatch, mutation: str
