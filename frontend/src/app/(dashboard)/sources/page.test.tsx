@@ -417,8 +417,9 @@ describe('SourcesPage', () => {
 
     render(<SourcesPage />)
 
-    expect(await screen.findByRole('grid', { name: 'Sources' })).toBeInTheDocument()
+    const grid = await screen.findByRole('grid', { name: 'Sources' })
     expect(screen.queryByLabelText('Source gallery')).not.toBeInTheDocument()
+    await waitFor(() => expect(document.activeElement).toBe(grid))
     fireEvent.keyDown(window, { key: 'Enter' })
     expect(mockRouterPush).toHaveBeenCalledWith('/sources/source:one')
     fireEvent.click(screen.getByRole('button', { name: 'Delete source' }))

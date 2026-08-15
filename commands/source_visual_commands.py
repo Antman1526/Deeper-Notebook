@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from surreal_commands import command
 
-from deeper_notebook.identity import LEGACY_COMMAND_APP
 from deeper_notebook.source_visuals.authority import SourceVisualAuthorityError
 from deeper_notebook.source_visuals.media import SourceVisualMediaError
 from deeper_notebook.source_visuals.service import (
@@ -16,7 +15,8 @@ from deeper_notebook.source_visuals.service import (
 
 @command(
     "extract_source_visual",
-    app=LEGACY_COMMAND_APP,
+    # Persisted queue identity: never derive or rename this literal.
+    app="open_notebook",
     retry={
         "max_attempts": 3,
         "wait_strategy": "exponential_jitter",

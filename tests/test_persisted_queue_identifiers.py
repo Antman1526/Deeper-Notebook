@@ -32,8 +32,8 @@ def test_production_queue_inventory_has_exact_shape_and_legacy_mappings():
     actual = production_queue_inventory(ROOT)
 
     assert Counter(entry["kind"] for entry in actual) == {
-        "registration": 18,
-        "submission": 20,
+        "registration": 19,
+        "submission": 21,
         "lookup": 2,
     }
     assert {
@@ -81,7 +81,7 @@ def test_queue_compatibility_occurrences_come_only_from_ast_inventory():
         for entry in production_queue_occurrence_inventory(ROOT)
     }
 
-    assert len(actual) == 37
+    assert len(actual) == 39
     assert actual == allowlisted
 
 

@@ -67,6 +67,8 @@ def _payload(value: object, model: type[SourceVisualRefreshRequest] | type[Sourc
         if not isinstance(value, Mapping):
             raise ValueError
         return model.model_validate(dict(value)).request_id
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=422, detail="Invalid source visual request") from None
 

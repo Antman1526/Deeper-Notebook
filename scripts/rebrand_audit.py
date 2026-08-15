@@ -669,6 +669,7 @@ _KIND_SCOPE_EXACT_PATHS = {
             "commands/podcast_commands.py",
             "commands/prompt_optimizer_commands.py",
             "commands/source_commands.py",
+            "commands/source_visual_commands.py",
             "commands/studio_commands.py",
             ".github/workflows/test.yml",
             "desktop/db_repair.py",
@@ -689,6 +690,7 @@ _KIND_SCOPE_EXACT_PATHS = {
             "deeper_notebook/ai/models.py",
             "deeper_notebook/domain/content_settings.py",
             "deeper_notebook/domain/notebook.py",
+            "deeper_notebook/source_visuals/queue.py",
             "deeper_notebook/domain/provider_config.py",
             "deeper_notebook/domain/transformation.py",
             "deeper_notebook/graphs/source.py",
@@ -790,7 +792,7 @@ _KIND_SCOPE_PREFIXES = {
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _PINNED_SELECTOR_INVENTORY_SHA256 = (
-    "3a262867e119e7e080cc6541f72ead72784f54a23f0e712533ae45d347e55c0b"
+    "05773aa1c452afe0f4fc4207df7b9963dbd3068a546c96198df6e5162ff62443"
 )
 _SEMANTIC_SELECTOR_PATHS = frozenset(
     {
@@ -2591,6 +2593,19 @@ def regenerate_allowlist(
         category_sets.setdefault((path, pattern), set()).add(category)
     split_category_policy_keys = {
         (".github/ISSUE_TEMPLATE/installation_issue.yml", "open_notebook"),
+        ("docs/recreation/PROJECT-DEEP-DIVE.md", "Open Notebook Plus"),
+    }
+    split_category_policy = {
+        (
+            entry["path"],
+            entry["pattern"],
+            entry["source"],
+            entry.get("line"),
+            entry["column"],
+            entry["context_sha256"],
+        ): entry["category"]
+        for entry in entries
+        if (entry["path"], entry["pattern"]) in split_category_policy_keys
     }
     ambiguous = {
         key: categories
@@ -2633,15 +2648,27 @@ def regenerate_allowlist(
             )
             == "compose-service-identifier-v1"
         )
-        category = (
-            "compatibility_alias"
-            if compose_service_occurrence
-            else (
-                "upstream_reference"
-                if policy_key in split_category_policy_keys
+        if policy_key in split_category_policy_keys:
+            split_key = (
+                match["path"],
+                match["pattern"],
+                match["source"],
+                match.get("line"),
+                match["column"],
+                match["context_sha256"],
+            )
+            category = split_category_policy.get(split_key)
+            if category is None:
+                raise ValueError(
+                    "ambiguous split-category occurrence requires exact review: "
+                    f"{match}"
+                )
+        else:
+            category = (
+                "compatibility_alias"
+                if compose_service_occurrence
                 else category_policy.get(policy_key)
             )
-        )
         match_path = Path(str(match["path"]))
         if category is None:
             if (

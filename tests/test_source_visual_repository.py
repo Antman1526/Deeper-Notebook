@@ -53,7 +53,7 @@ async def test_list_current_uses_source_revision_without_hashing(monkeypatch: py
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
     result = await repository.list_current({"source:one": SOURCE_UPDATED})
     assert result["source:one"].source_updated_at == SOURCE_UPDATED
-    assert query.await_count == 1
+    assert query.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -67,12 +67,12 @@ async def test_list_current_binds_revision_values_not_the_revision_mapping(
         calls.append(variables)
         if not isinstance(variables.get("source_revision_values"), list):
             return []
-        return [READY_ROW]
+        return [READY_ROW] if "source_visual_cache" in _query else []
 
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
     result = await repository.list_current({"source:one": SOURCE_UPDATED})
     assert result["source:one"].source_updated_at == SOURCE_UPDATED
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert calls[0]["source_revision_values"] == [SOURCE_UPDATED]
 
 
@@ -107,6 +107,8 @@ async def test_list_current_matches_source_revision_pairs_not_independent_sets(
 
     async def query(query_text: str, variables: dict[str, object]):
         calls.append((query_text, variables))
+        if "source_visual_operation" in query_text:
+            return []
         pairs = variables.get("source_revision_pairs")
         if pairs is None:
             source_records = {str(value) for value in variables["source_records"]}
@@ -135,7 +137,7 @@ async def test_list_current_matches_source_revision_pairs_not_independent_sets(
 
     assert set(result) == set(requested)
     assert all(result[source].source_updated_at == revision for source, revision in requested.items())
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 @pytest.mark.asyncio
@@ -145,6 +147,7 @@ async def test_cleanup_repository_adapter_is_bounded_parameterized_and_exact(
     repository = _repository()
     query = AsyncMock(
         side_effect=[
+            [READY_ROW],
             [READY_ROW],
             [READY_ROW],
             [READY_ROW],
@@ -165,13 +168,14 @@ async def test_cleanup_repository_adapter_is_bounded_parameterized_and_exact(
     assert page == [record]
     assert deleted is True
     assert active is True
-    find_call, list_call, delete_call, claim_call = query.await_args_list
+    find_call, list_call, before_call, delete_call, claim_call = query.await_args_list
     assert "$asset_relpath" in find_call.args[0]
     assert find_call.args[1]["asset_relpath"] == record.asset_relpath
     assert "ORDER BY updated_at ASC" in list_call.args[0]
     assert list_call.args[1]["limit"] == 100
     assert "$cache_record" in delete_call.args[0]
     assert delete_call.args[1]["asset_relpath"] == record.asset_relpath
+    assert "SELECT * FROM $record" in before_call.args[0]
     assert "$claim_record" in claim_call.args[0]
 
 
@@ -226,7 +230,20 @@ async def test_post_delete_reconciliation_requires_a_command_receipt_created_aft
     async def query(query_text: str, variables: dict[str, object]):
         captured["query"] = query_text
         captured["variables"] = variables
-        return {"reacquire": True}
+        return {
+            "source_id": "source:one",
+            "request_id": "post-delete-refresh",
+            "source_updated_at": SOURCE_UPDATED,
+            "content_sha256": "a" * 64,
+            "operation": "refresh",
+            "command_id": None,
+            "outcome": "queued",
+            "error_code": None,
+            "created_at": SOURCE_UPDATED + timedelta(seconds=2),
+            "delete_intent": {"created_at": SOURCE_UPDATED + timedelta(seconds=1)},
+            "exact_claim": None,
+            "command_refresh": None,
+        }
 
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
 
@@ -239,9 +256,9 @@ async def test_post_delete_reconciliation_requires_a_command_receipt_created_aft
         now=SOURCE_UPDATED,
     )
     query_text = str(captured["query"])
-    assert "LET $command_refresh" in query_text
-    assert "$command_refresh.created_at > $delete_intent.created_at" in query_text
-    assert "$operation.created_at > $delete_intent.created_at" in query_text
+    assert "AS command_refresh" in query_text
+    assert "SELECT VALUE command_id FROM $claim_record" in query_text
+    assert "AS delete_intent" in query_text
 
 
 @pytest.mark.asyncio
@@ -268,6 +285,7 @@ async def test_claim_lease_supports_first_acquire_renewal_and_expired_takeover(m
         side_effect=[
             None,
             {"owner_token": OWNER_A, "lease_until": SOURCE_UPDATED + timedelta(minutes=5)},
+            {"owner_token": OWNER_A, "lease_until": SOURCE_UPDATED + timedelta(minutes=10)},
         ]
     )
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
@@ -289,7 +307,7 @@ async def test_claim_lease_supports_first_acquire_renewal_and_expired_takeover(m
         lease_until=SOURCE_UPDATED + timedelta(minutes=10),
     )
     assert renewed.owner_token == OWNER_A
-    assert query.await_count == 2
+    assert query.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -345,7 +363,7 @@ async def test_command_binding_is_compare_and_set(monkeypatch: pytest.MonkeyPatc
     repository = _repository()
     query = AsyncMock(
         return_value={
-            "command_id": None,
+            "command_id": "command:one",
             "owner_token": OWNER_A,
             "lease_until": SOURCE_UPDATED + timedelta(minutes=5),
         }
@@ -377,6 +395,39 @@ async def test_command_binding_is_compare_and_set(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
+async def test_bind_command_never_synthesizes_an_unpersisted_command(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A dropped transaction result is not proof that its command binding committed."""
+
+    repository = _repository()
+    query = AsyncMock(
+        side_effect=[
+            None,
+            {
+                "owner_token": OWNER_A,
+                "lease_until": SOURCE_UPDATED + timedelta(minutes=5),
+                "command_id": None,
+            },
+        ]
+    )
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    with pytest.raises(SourceVisualRepositoryError) as error:
+        await repository.bind_command(
+            source_id="source:one",
+            content_sha256="a" * 64,
+            extractor_version="source-visual-v1",
+            owner_token=OWNER_A,
+            command_id="command:one",
+            now=SOURCE_UPDATED,
+        )
+
+    assert error.value.code == "DATABASE_ERROR"
+    assert query.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_operation_replay_requires_an_exact_payload(monkeypatch: pytest.MonkeyPatch):
     repository = _repository()
     payload = {
@@ -390,7 +441,13 @@ async def test_operation_replay_requires_an_exact_payload(monkeypatch: pytest.Mo
         "error_code": None,
     }
     operation_id = operation_identity("source:one", "request:one", "delete")
-    query = AsyncMock(side_effect=[None, {"id": operation_id, **payload}])
+    query = AsyncMock(
+        side_effect=[
+            None,
+            {"id": operation_id, **payload},
+            {"id": operation_id, **payload},
+        ]
+    )
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
     first = await repository.record_operation(**payload)
     replay = await repository.record_operation(**payload)
@@ -554,7 +611,7 @@ async def test_operation_command_id_is_bound_and_replay_normalizes_record_id(
     query = AsyncMock(return_value=None)
     monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
     await repository.record_operation(**payload)
-    variables = query.await_args.args[1]
+    variables = query.await_args_list[0].args[1]
     assert variables["operation_data"]["command_id"] == variables["command_record"]
     assert not isinstance(variables["operation_data"]["command_id"], str)
 
@@ -726,6 +783,101 @@ async def test_legacy_receipt_repair_checks_current_claim_command_in_same_transa
             now=SOURCE_UPDATED,
         )
     assert error.value.code == "COMMAND_CONFLICT"
+
+
+@pytest.mark.asyncio
+async def test_finalize_from_current_claim_rejects_an_expired_claim(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A current command cannot repair a queued receipt after its lease expired."""
+
+    repository = _repository()
+    operation = {
+        "operation_id": operation_identity("source:one", "request:expired", "refresh"),
+        "source_id": "source:one",
+        "request_id": "request:expired",
+        "source_updated_at": SOURCE_UPDATED,
+        "content_sha256": "a" * 64,
+        "operation": "refresh",
+        "command_id": "command:current",
+        "outcome": "queued",
+        "error_code": None,
+        "created_at": SOURCE_UPDATED,
+        "updated_at": SOURCE_UPDATED,
+    }
+    query = AsyncMock(
+        side_effect=[
+            None,
+            {
+                "source_id": "source:one",
+                "content_sha256": "a" * 64,
+                "extractor_version": "source-visual-v1",
+                "command_id": "command:current",
+                "lease_until": SOURCE_UPDATED - timedelta(seconds=1),
+            },
+            operation,
+        ]
+    )
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    with pytest.raises(SourceVisualConflictError) as error:
+        await repository.finalize_operation_from_current_claim(
+            source_id="source:one",
+            content_sha256="a" * 64,
+            extractor_version="source-visual-v1",
+            command_id="command:current",
+            request_id="request:expired",
+            source_updated_at=SOURCE_UPDATED,
+            now=SOURCE_UPDATED,
+        )
+
+    assert error.value.code == "COMMAND_CONFLICT"
+
+
+@pytest.mark.asyncio
+async def test_post_delete_refresh_requires_reacquire_when_claim_is_expired(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """An expired matching claim never clears the post-delete reacquire fence."""
+
+    repository = _repository()
+    query = AsyncMock(
+        return_value={
+            "operation_id": operation_identity("source:one", "request:expired", "refresh"),
+            "source_id": "source:one",
+            "request_id": "request:expired",
+            "source_updated_at": SOURCE_UPDATED,
+            "content_sha256": "a" * 64,
+            "operation": "refresh",
+            "command_id": "command:current",
+            "outcome": "queued",
+            "error_code": None,
+            "created_at": SOURCE_UPDATED + timedelta(seconds=2),
+            "updated_at": SOURCE_UPDATED + timedelta(seconds=2),
+            "delete_intent": {"created_at": SOURCE_UPDATED + timedelta(seconds=1)},
+            "exact_claim": {
+                "source_id": "source:one",
+                "content_sha256": "a" * 64,
+                "extractor_version": "source-visual-v1",
+                "command_id": "command:current",
+                "lease_until": SOURCE_UPDATED - timedelta(seconds=1),
+            },
+            "command_refresh": {
+                "command_id": "command:current",
+                "created_at": SOURCE_UPDATED + timedelta(seconds=2),
+            },
+        }
+    )
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    assert await repository.post_delete_refresh_needs_reacquire(
+        source_id="source:one",
+        content_sha256="a" * 64,
+        extractor_version="source-visual-v1",
+        request_id="request:expired",
+        source_updated_at=SOURCE_UPDATED,
+        now=SOURCE_UPDATED,
+    )
 
 
 @pytest.mark.asyncio

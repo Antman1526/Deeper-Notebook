@@ -1187,8 +1187,6 @@ async def get_source(source_id: str):
                 status = await source.get_status()
                 processing_info = await source.get_processing_progress()
             except HTTPException:
-                # v0.7.108 — re-raise typed HTTPExceptions so the next
-                # `except Exception` doesn't clobber them to 500.
                 raise
             except Exception as e:
                 logger.warning(f"Failed to get status for source {source_id}: {e}")
@@ -1206,10 +1204,7 @@ async def get_source(source_id: str):
         )
         notebook_count = len(notebook_ids)
 
-        # v0.7.181 — Fast insights_count via aggregate query. Same
-        # SurrealQL shape the /sources list endpoint uses (sources.py:289)
-        # so the detail and list responses report consistent numbers.
-        # Cheap — single aggregate on the source_insight table by source.
+        # Keep detail/list insight counts consistent with one aggregate.
         insights_count_rows = await repo_query(
             "SELECT VALUE count() FROM source_insight "
             "WHERE source = $source_id GROUP ALL",
@@ -1249,21 +1244,18 @@ async def get_source(source_id: str):
             full_text=source.full_text,
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
-            insights_count=insights_count,  # v0.7.181 — parity with list endpoint
+            insights_count=insights_count,
             file_available=_is_source_file_available(source),
             extracted_char_count=extracted_char_count,
             extraction_quality=_extraction_quality(
                 extracted_char_count,
                 status=status,
             ),
-            # v0.7.181 — iso() instead of str() for Safari new Date() compat.
             created=iso(source.created),
             updated=iso(source.updated),
-            # Status fields
             command_id=str(source.command) if source.command else None,
             status=status,
             processing_info=processing_info,
-            # Notebook associations
             notebooks=notebook_ids,
             visual=visual,
             visual_status=visual_status,

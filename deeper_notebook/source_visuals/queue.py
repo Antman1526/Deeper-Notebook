@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from surreal_commands import submit_command
 
 from deeper_notebook.domain.notebook import Source
-from deeper_notebook.identity import LEGACY_COMMAND_APP
 from deeper_notebook.source_visuals.authority import compute_source_visual_authority
 from deeper_notebook.source_visuals.repository import (
     SourceVisualConflictError,
@@ -633,7 +632,8 @@ async def submit_source_visual(
     submit_task = asyncio.create_task(
         asyncio.to_thread(
             submit_command,
-            LEGACY_COMMAND_APP,
+            # Persisted queue identity: never derive or rename this literal.
+            "open_notebook",
             "extract_source_visual",
             {
                 "source_id": authority.source_id,

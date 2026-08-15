@@ -244,7 +244,33 @@ async def _transaction(query: str, variables: dict[str, object]) -> object:
     except SourceVisualRepositoryError:
         raise
     except Exception as exc:
+        if (
+            "DN_SOURCE_VISUAL_" in query
+            and "failed transaction" in str(exc).lower()
+        ):
+            # SurrealDB 2.x rolls back a transaction aborted by THROW but its
+            # Python driver exposes only this generic message, not the thrown
+            # marker.  Guarded callers perform exact persisted-state
+            # postcondition reads and recover the bounded public conflict.
+            return None
         raise SourceVisualRepositoryError("DATABASE_ERROR") from exc
+
+
+async def _read_exact_row(table: str, identity: str) -> dict[str, Any] | None:
+    """Read one deterministic repository record after a fenced transaction.
+
+    SurrealDB's Python driver returns ``None`` for multi-statement transactions
+    containing a top-level ``IF``, even when the transaction committed.  The
+    write remains atomic; this bounded read supplies the authoritative
+    postcondition instead of manufacturing a success row from caller input.
+    """
+
+    return _row(
+        await _transaction(
+            "SELECT * FROM $record;",
+            {"record": _record(table, identity)},
+        )
+    )
 
 
 def _claim_from_row(
@@ -447,6 +473,8 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
+        if row is None:
+            row = await _read_exact_row("source_visual_claim", identity)
         if row and (row.get("conflict") or row.get("existing")):
             existing = row.get("existing")
             if not isinstance(existing, Mapping):
@@ -518,9 +546,9 @@ class SourceVisualRepository:
             BEGIN TRANSACTION;
             LET $existing = (SELECT * FROM $claim_record)[0];
             IF $existing = NONE OR $existing.owner_token != $owner_token
-                    OR $existing.lease_until <= $now THEN
-                RETURN { owner_mismatch: true, existing: $existing };
-            END;
+                    OR $existing.lease_until <= $now {
+                THROW "DN_SOURCE_VISUAL_OWNER_MISMATCH";
+            };
             UPDATE $claim_record MERGE { lease_until: $lease_until, updated_at: $now };
             SELECT * FROM $claim_record;
             COMMIT TRANSACTION;
@@ -533,7 +561,11 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
+        if row is None:
+            row = await _read_exact_row("source_visual_claim", identity)
         _require_live_lease(row, owner_token, current)
+        if _datetime(row.get("lease_until")) != lease_until:
+            raise SourceVisualRepositoryError("DATABASE_ERROR")
         return _claim_from_row(
             row,
             claim_id=identity,
@@ -569,11 +601,12 @@ class SourceVisualRepository:
             BEGIN TRANSACTION;
             LET $existing = (SELECT * FROM $claim_record)[0];
             IF $existing = NONE OR $existing.owner_token != $owner_token
-                    OR $existing.lease_until <= $now THEN
-                RETURN { owner_mismatch: true, existing: $existing };
-            ELSE IF $existing.command_id != NONE AND $existing.command_id != $command_record THEN
-                RETURN { command_conflict: true, existing: $existing };
-            END;
+                    OR $existing.lease_until <= $now {
+                THROW "DN_SOURCE_VISUAL_OWNER_MISMATCH";
+            };
+            IF $existing.command_id != NONE AND $existing.command_id != $command_record {
+                THROW "DN_SOURCE_VISUAL_COMMAND_CONFLICT";
+            };
             UPDATE $claim_record MERGE { command_id: $command_record, updated_at: $now };
             SELECT * FROM $claim_record;
             COMMIT TRANSACTION;
@@ -586,13 +619,15 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
+        if row is None:
+            row = await _read_exact_row("source_visual_claim", identity)
         _require_live_lease(row, owner_token, current)
         existing_command = _command_text(row.get("command_id"))
         requested_command = _command_text(command_id)
-        if existing_command is not None and existing_command != requested_command:
+        if existing_command != requested_command:
+            if existing_command is None:
+                raise SourceVisualRepositoryError("DATABASE_ERROR")
             raise SourceVisualConflictError("COMMAND_CONFLICT")
-        row = dict(row)
-        row["command_id"] = requested_command
         return _claim_from_row(
             row,
             claim_id=identity,
@@ -642,11 +677,13 @@ class SourceVisualRepository:
             LET $claim = (SELECT * FROM $claim_record)[0];
             LET $operation = (SELECT * FROM $operation_record)[0];
             IF $claim = NONE OR $claim.owner_token != $owner_token
-                    OR $claim.lease_until <= $now THEN
-                RETURN { owner_mismatch: true, existing: $claim };
-            ELSE IF $claim.command_id != NONE AND $claim.command_id != $command_record THEN
-                RETURN { command_conflict: true, existing: $claim };
-            ELSE IF $operation = NONE OR $operation.source_id != $source_record
+                    OR $claim.lease_until <= $now {
+                THROW "DN_SOURCE_VISUAL_OWNER_MISMATCH";
+            };
+            IF $claim.command_id != NONE AND $claim.command_id != $command_record {
+                THROW "DN_SOURCE_VISUAL_COMMAND_CONFLICT";
+            };
+            IF $operation = NONE OR $operation.source_id != $source_record
                     OR $operation.request_id != $request_id
                     OR $operation.operation != "refresh"
                     OR $operation.content_sha256 != $content_sha256
@@ -655,29 +692,14 @@ class SourceVisualRepository:
                     OR ($operation.command_id = NONE AND ($operation.outcome != "queued"
                         OR $operation.error_code != NONE))
                     OR ($operation.command_id = $command_record AND ($operation.outcome != "queued"
-                        OR $operation.error_code != NONE)) THEN
-                RETURN { request_conflict: true, existing: $operation };
-            END;
+                        OR $operation.error_code != NONE)) {
+                THROW "DN_SOURCE_VISUAL_REQUEST_CONFLICT";
+            };
             UPDATE $claim_record MERGE { command_id: $command_record, updated_at: $now };
             UPDATE $operation_record MERGE {
                 command_id: $command_record,
                 outcome: "queued",
                 error_code: NONE,
-                updated_at: $now
-            };
-            SELECT {
-                owner_token: $claim.owner_token,
-                lease_until: $claim.lease_until,
-                operation_id: $operation.operation_id,
-                source_id: $operation.source_id,
-                request_id: $operation.request_id,
-                source_updated_at: $operation.source_updated_at,
-                content_sha256: $operation.content_sha256,
-                operation: $operation.operation,
-                command_id: $command_record,
-                outcome: "queued",
-                error_code: NONE,
-                created_at: $operation.created_at,
                 updated_at: $now
             };
             COMMIT TRANSACTION;
@@ -699,8 +721,19 @@ class SourceVisualRepository:
             raise SourceVisualConflictError("COMMAND_CONFLICT")
         if row and row.get("request_conflict"):
             raise SourceVisualConflictError("REQUEST_CONFLICT")
-        _require_live_lease(row, owner_token, current)
-        operation_row = dict(row)
+        if row is None:
+            claim_row = await _read_exact_row("source_visual_claim", claim_id)
+            _require_live_lease(claim_row, owner_token, current)
+            if _command_text(claim_row.get("command_id")) != canonical_command_id:
+                raise SourceVisualConflictError("COMMAND_CONFLICT")
+            operation_row = await _read_exact_row(
+                "source_visual_operation", operation_id
+            )
+            if operation_row is None:
+                raise SourceVisualConflictError("REQUEST_CONFLICT")
+        else:
+            _require_live_lease(row, owner_token, current)
+            operation_row = dict(row)
         operation_row.pop("owner_token", None)
         operation_row.pop("lease_until", None)
         if not _operation_matches(
@@ -769,18 +802,20 @@ class SourceVisualRepository:
             IF $claim = NONE OR $claim.source_id != $source_record
                     OR $claim.content_sha256 != $content_sha256
                     OR $claim.extractor_version != $extractor_version
-                    OR $claim.command_id != $command_record THEN
-                RETURN { claim_changed: true, existing: $claim };
-            ELSE IF $operation = NONE OR $operation.source_id != $source_record
+                    OR $claim.command_id != $command_record
+                    OR $claim.lease_until <= $now {
+                THROW "DN_SOURCE_VISUAL_COMMAND_CONFLICT";
+            };
+            IF $operation = NONE OR $operation.source_id != $source_record
                     OR $operation.request_id != $request_id
                     OR $operation.operation != "refresh"
                     OR $operation.content_sha256 != $content_sha256
                     OR $operation.source_updated_at != $source_updated_at
                     OR $operation.command_id != NONE
                     OR $operation.outcome != "queued"
-                    OR $operation.error_code != NONE THEN
-                RETURN { request_conflict: true, existing: $operation };
-            END;
+                    OR $operation.error_code != NONE {
+                THROW "DN_SOURCE_VISUAL_REQUEST_CONFLICT";
+            };
             UPDATE $operation_record MERGE {
                 command_id: $command_record,
                 outcome: "queued",
@@ -803,6 +838,18 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
+        if row is None:
+            claim_row = await _read_exact_row("source_visual_claim", claim_id)
+            if (
+                claim_row is None
+                or _string(claim_row.get("source_id", "")) != source_id
+                or claim_row.get("content_sha256") != content_sha256
+                or claim_row.get("extractor_version") != extractor_version
+                or _command_text(claim_row.get("command_id")) != canonical_command_id
+                or (_datetime(claim_row.get("lease_until")) or current) <= current
+            ):
+                raise SourceVisualConflictError("COMMAND_CONFLICT")
+            row = await _read_exact_row("source_visual_operation", operation_id)
         if not row or row.get("claim_changed"):
             raise SourceVisualConflictError("COMMAND_CONFLICT")
         if row.get("request_conflict") or not _operation_matches(
@@ -888,16 +935,14 @@ class SourceVisualRepository:
         owner_token = _hash(owner_token)
         current = _now(now)
         identity = claim_identity(source_id, content_sha256, extractor_version)
+        existing = await _read_exact_row("source_visual_claim", identity)
+        _require_live_lease(existing, owner_token, current)
         result = await _transaction(
-            f"""
+            """
             BEGIN TRANSACTION;
-            LET $existing = (SELECT * FROM $claim_record)[0];
-            IF $existing = NONE OR $existing.owner_token != $owner_token
-                    OR $existing.lease_until <= $now THEN
-                RETURN {{ owner_mismatch: true, existing: $existing }};
-            END;
-            SELECT $existing;
-            DELETE $claim_record;
+            DELETE $claim_record
+                WHERE owner_token = $owner_token AND lease_until > $now
+                RETURN BEFORE;
             COMMIT TRANSACTION;
             """,
             {
@@ -907,6 +952,12 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
+        if row is None:
+            remaining = await _read_exact_row("source_visual_claim", identity)
+            if remaining is not None:
+                _require_live_lease(remaining, owner_token, current)
+                raise SourceVisualRepositoryError("DATABASE_ERROR")
+            row = existing
         _require_live_lease(row, owner_token, current)
         return _claim_from_row(
             row,
@@ -994,6 +1045,8 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
+        if row is None:
+            row = await _read_exact_row("source_visual_operation", identity)
         if row and (row.get("request_conflict") or not _operation_matches(
             row,
             source_id=source_id,
@@ -1091,9 +1144,9 @@ class SourceVisualRepository:
                     OR $existing.source_updated_at != $source_updated_at
                     OR $existing.command_id != $expected_command_record
                     OR $existing.outcome != $expected_outcome
-                    OR $existing.error_code != $expected_error_code THEN
-                RETURN { request_conflict: true, existing: $existing };
-            END;
+                    OR $existing.error_code != $expected_error_code {
+                THROW "DN_SOURCE_VISUAL_REQUEST_CONFLICT";
+            };
             UPDATE $operation_record MERGE {
                 command_id: $command_record,
                 outcome: $outcome,
@@ -1120,6 +1173,8 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
+        if row is None:
+            row = await _read_exact_row("source_visual_operation", identity)
         if row and (
             row.get("request_conflict")
             or not _operation_matches(
@@ -1341,10 +1396,9 @@ class SourceVisualRepository:
         row = _row(
             await _transaction(
                 """
-                BEGIN TRANSACTION;
-                LET $operation = (SELECT * FROM $operation_record)[0];
-                LET $claim = (SELECT * FROM $claim_record)[0];
-                LET $delete_intent = (
+                SELECT *,
+                    (SELECT * FROM $claim_record)[0] AS exact_claim,
+                    (
                     SELECT * FROM source_visual_operation
                     WHERE source_id = $source_record
                         AND source_updated_at = $source_updated_at
@@ -1353,42 +1407,20 @@ class SourceVisualRepository:
                         AND outcome IN ["queued", "deleted"]
                     ORDER BY created_at DESC, updated_at DESC
                     LIMIT 1
-                )[0];
-                LET $command_refresh = (
+                    )[0] AS delete_intent,
+                    (
                     SELECT * FROM source_visual_operation
                     WHERE source_id = $source_record
                         AND source_updated_at = $source_updated_at
                         AND content_sha256 = $content_sha256
                         AND operation = "refresh"
-                        AND command_id = $claim.command_id
+                        AND command_id = (
+                            SELECT VALUE command_id FROM $claim_record
+                        )[0]
                     ORDER BY created_at DESC, updated_at DESC
                     LIMIT 1
-                )[0];
-                IF $operation = NONE OR $operation.source_id != $source_record
-                    OR $operation.request_id != $request_id
-                    OR $operation.operation != "refresh"
-                    OR $operation.source_updated_at != $source_updated_at
-                    OR $operation.content_sha256 != $content_sha256
-                    OR $operation.command_id != NONE
-                    OR $operation.outcome != "queued"
-                    OR $operation.error_code != NONE THEN
-                    RETURN { request_conflict: true, existing: $operation };
-                ELSE IF $delete_intent != NONE
-                    AND $operation.created_at > $delete_intent.created_at
-                    AND $claim != NONE
-                    AND $claim.source_id = $source_record
-                    AND $claim.content_sha256 = $content_sha256
-                    AND $claim.extractor_version = $extractor_version
-                    AND $claim.command_id != NONE
-                    AND $command_refresh != NONE
-                    AND $command_refresh.created_at > $delete_intent.created_at THEN
-                    RETURN { reacquire: false };
-                ELSE IF $delete_intent != NONE
-                    AND $operation.created_at > $delete_intent.created_at THEN
-                    RETURN { reacquire: true };
-                END;
-                RETURN { reacquire: false };
-                COMMIT TRANSACTION;
+                    )[0] AS command_refresh
+                FROM $operation_record;
                 """,
                 {
                     "operation_record": _record("source_visual_operation", operation_id),
@@ -1397,15 +1429,61 @@ class SourceVisualRepository:
                     "request_id": request_id,
                     "source_updated_at": source_updated_at,
                     "content_sha256": content_sha256,
-                    "now": current,
                 },
             )
         )
-        if row.get("request_conflict"):
+        operation_row = dict(row or {})
+        claim = operation_row.pop("exact_claim", None)
+        delete_intent = operation_row.pop("delete_intent", None)
+        command_refresh = operation_row.pop("command_refresh", None)
+        operation_command = _command_text(operation_row.get("command_id"))
+        claim_command = (
+            _command_text(claim.get("command_id"))
+            if isinstance(claim, Mapping)
+            else None
+        )
+        if not operation_row or not _operation_matches(
+            operation_row,
+            source_id=source_id,
+            request_id=request_id,
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            operation="refresh",
+            command_id=operation_command,
+            outcome="queued",
+            error_code=None,
+        ) or (operation_command is not None and operation_command != claim_command):
             raise SourceVisualConflictError("REQUEST_CONFLICT")
-        if not isinstance(row.get("reacquire"), bool):
+
+        if delete_intent is None:
+            return False
+        if not isinstance(delete_intent, Mapping):
             raise SourceVisualRepositoryError("MALFORMED_ROW")
-        return row["reacquire"]
+        operation_created_at = _datetime(operation_row.get("created_at"))
+        delete_created_at = _datetime(delete_intent.get("created_at"))
+        if operation_created_at is None or delete_created_at is None:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        if operation_created_at <= delete_created_at:
+            return False
+
+        newer_bound_command = (
+            isinstance(claim, Mapping)
+            and _string(claim.get("source_id", "")) == source_id
+            and claim.get("content_sha256") == content_sha256
+            and claim.get("extractor_version") == extractor_version
+            and claim_command is not None
+            and (lease_until := _datetime(claim.get("lease_until"))) is not None
+            and lease_until > current
+            and isinstance(command_refresh, Mapping)
+            and _command_text(command_refresh.get("command_id"))
+            == claim_command
+            and (
+                command_created_at := _datetime(command_refresh.get("created_at"))
+            )
+            is not None
+            and command_created_at > delete_created_at
+        )
+        return not newer_bound_command
 
     async def list_current(
         self, revisions: Mapping[str, datetime]
@@ -1421,42 +1499,47 @@ class SourceVisualRepository:
             normalised[source_key] = parsed
         if not normalised:
             return {}
-        result = await _transaction(
-            """
-            LET $ready = (
-                SELECT * FROM source_visual_cache
-                WHERE [source_id, source_updated_at] IN $source_revision_pairs
-                LIMIT $limit
-            );
-            LET $statuses = (
-                SELECT *, command_id.status AS command_status
-                FROM source_visual_operation
-                WHERE [source_id, source_updated_at] IN $source_revision_pairs
-                    AND operation = "refresh"
-                ORDER BY updated_at DESC
-                LIMIT $limit
-            );
-            RETURN { ready: $ready, statuses: $statuses };
-            """,
-            {
-                "source_records": [_source_record(source_id) for source_id in normalised],
-                "source_revision_values": list(normalised.values()),
-                "source_revision_pairs": [
-                    [_source_record(source_id), revision]
-                    for source_id, revision in normalised.items()
-                ],
-                "limit": _MAX_REVISIONS,
-            },
+        variables = {
+            "source_records": [_source_record(source_id) for source_id in normalised],
+            "source_revision_values": list(normalised.values()),
+            "source_revision_pairs": [
+                [_source_record(source_id), revision]
+                for source_id, revision in normalised.items()
+            ],
+            "limit": _MAX_REVISIONS,
+        }
+        # The SurrealDB Python driver discards a top-level ``RETURN`` envelope
+        # containing subqueries.  Keep both reads bounded and parameterized,
+        # but issue them separately so ready rows cannot disappear in real DB
+        # execution while the exact source/revision pair filter is preserved.
+        ready_result = await _transaction(
+            "SELECT * FROM source_visual_cache "
+            "WHERE [source_id, source_updated_at] IN $source_revision_pairs "
+            "LIMIT $limit;",
+            variables,
         )
-        envelope = _row(result)
-        if isinstance(envelope, Mapping) and isinstance(envelope.get("ready"), list):
-            ready_rows = _rows(envelope.get("ready"))
-            status_rows = _rows(envelope.get("statuses"))
+        legacy_envelope = _row(ready_result)
+        if (
+            isinstance(legacy_envelope, Mapping)
+            and isinstance(legacy_envelope.get("ready"), list)
+            and isinstance(legacy_envelope.get("statuses"), list)
+        ):
+            # Preserve the bounded combined envelope accepted by older adapters
+            # and unit fakes while real SurrealDB uses the two explicit reads.
+            ready_rows = _rows(legacy_envelope["ready"])
+            status_rows = _rows(legacy_envelope["statuses"])
         else:
-            # Keep the repository adapter compatible with commandless test
-            # fixtures and older driver result envelopes.
-            ready_rows = _rows(result)
-            status_rows = []
+            ready_rows = _rows(ready_result)
+            status_rows = _rows(
+                await _transaction(
+                "SELECT *, command_id.status AS command_status "
+                "FROM source_visual_operation "
+                "WHERE [source_id, source_updated_at] IN $source_revision_pairs "
+                'AND operation = "refresh" '
+                "ORDER BY updated_at DESC LIMIT $limit;",
+                variables,
+            )
+            )
         current: dict[str, SourceVisualRecord] = {}
         for raw_row in ready_rows:
             try:
@@ -1598,23 +1681,31 @@ class SourceVisualRepository:
     async def delete_ready_if_current(self, record: SourceVisualRecord) -> bool:
         if not isinstance(record, SourceVisualRecord):
             raise SourceVisualRepositoryError("INVALID_INPUT")
+        cache_id = _cache_identity(record.source_id, record.content_sha256)
+        before = await _read_exact_row("source_visual_cache", cache_id)
+        if before is None:
+            return False
+        try:
+            if _record_from_row(before) != record:
+                return False
+        except SourceVisualRepositoryError:
+            return False
         rows = _rows(
             await _transaction(
                 "BEGIN TRANSACTION; "
                 "LET $claim = (SELECT lease_until FROM $claim_record)[0]; "
-                "IF $claim != NONE AND $claim.lease_until > time::now() THEN "
-                "RETURN { claim_active: true }; END; "
                 "DELETE $cache_record WHERE source_id = $source_record "
                 "AND source_updated_at = $source_updated_at "
                 "AND content_sha256 = $content_sha256 "
                 "AND asset_sha256 = $asset_sha256 "
                 "AND asset_relpath = $asset_relpath "
+                "AND NOT ($claim != NONE AND $claim.lease_until > time::now()) "
                 "AND updated_at = $updated_at RETURN BEFORE; "
                 "COMMIT TRANSACTION;",
                 {
                     "cache_record": _record(
                         "source_visual_cache",
-                        _cache_identity(record.source_id, record.content_sha256),
+                        cache_id,
                     ),
                     "source_record": _source_record(record.source_id),
                     "claim_record": _record(
@@ -1636,7 +1727,19 @@ class SourceVisualRepository:
         if any(row.get("claim_active") is True for row in rows):
             return False
         if not rows:
-            return False
+            claim = await _read_exact_row(
+                "source_visual_claim",
+                claim_identity(
+                    record.source_id,
+                    record.content_sha256,
+                    record.extractor_version,
+                ),
+            )
+            if claim is not None:
+                lease_until = _datetime(claim.get("lease_until"))
+                if lease_until is None or lease_until > _now(None):
+                    return False
+            return await _read_exact_row("source_visual_cache", cache_id) is None
         if len(rows) != 1:
             raise SourceVisualRepositoryError("MALFORMED_ROW")
         deleted = _record_from_row(rows[0])
@@ -1739,17 +1842,18 @@ class SourceVisualRepository:
                 OR $refresh.outcome != "queued"
                 OR $refresh.error_code != NONE
                 OR $refresh.created_at <= $delete_intent.created_at
-            ) THEN
-                RETURN { delete_requested: true };
-            ELSE IF $source_row.updated != $source_updated_at THEN
-                RETURN { source_stale: true };
-            ELSE IF $claim = NONE OR $claim.owner_token != $owner_token
-                    OR $claim.lease_until <= $now THEN
-                RETURN { owner_mismatch: true, existing: $claim };
-            END;
+            ) {
+                THROW "DN_SOURCE_VISUAL_DELETE_REQUESTED";
+            };
+            IF time::floor($source_row.updated, 1us)
+                    != time::floor($source_updated_at, 1us) {
+                THROW "DN_SOURCE_VISUAL_SOURCE_STALE";
+            };
+            IF $claim = NONE OR $claim.owner_token != $owner_token
+                    OR $claim.lease_until <= $now {
+                THROW "DN_SOURCE_VISUAL_OWNER_MISMATCH";
+            };
             UPSERT $cache_record CONTENT $record_data;
-            SELECT { published: true, owner_token: $claim.owner_token,
-                     lease_until: $claim.lease_until, source_updated_at: $source_updated_at };
             COMMIT TRANSACTION;
             """,
             {
@@ -1782,6 +1886,73 @@ class SourceVisualRepository:
             raise SourceVisualConflictError("DELETE_REQUESTED")
         if row and row.get("source_stale"):
             raise SourceVisualConflictError("SOURCE_STALE")
+        if row is None:
+            claim_row = await _read_exact_row(
+                "source_visual_claim",
+                claim_identity(source_id, content_sha256, extractor_version),
+            )
+            _require_live_lease(claim_row, owner_token, current)
+            source_row = _row(
+                await _transaction(
+                    "SELECT updated FROM $source_record;",
+                    {"source_record": _source_record(source_id)},
+                )
+            )
+            if _datetime(source_row.get("updated") if source_row else None) != source_updated_at:
+                raise SourceVisualConflictError("SOURCE_STALE")
+            delete_rows = _rows(
+                await _transaction(
+                    "SELECT * FROM source_visual_operation "
+                    "WHERE source_id = $source_record "
+                    "AND source_updated_at = $source_updated_at "
+                    "AND content_sha256 = $content_sha256 "
+                    'AND operation = "delete" '
+                    'AND outcome IN ["queued", "deleted"] '
+                    "ORDER BY created_at DESC, updated_at DESC LIMIT 1;",
+                    {
+                        "source_record": _source_record(source_id),
+                        "source_updated_at": source_updated_at,
+                        "content_sha256": content_sha256,
+                    },
+                )
+            )
+            if delete_rows:
+                refresh_row = (
+                    await _read_exact_row(
+                        "source_visual_operation",
+                        operation_identity(source_id, request_id, "refresh"),
+                    )
+                    if request_id
+                    else None
+                )
+                delete_created_at = _datetime(delete_rows[0].get("created_at"))
+                refresh_created_at = _datetime(
+                    refresh_row.get("created_at") if refresh_row else None
+                )
+                if not (
+                    refresh_row is not None
+                    and _string(refresh_row.get("source_id", "")) == source_id
+                    and refresh_row.get("request_id") == request_id
+                    and refresh_row.get("operation") == "refresh"
+                    and _datetime(refresh_row.get("source_updated_at"))
+                    == source_updated_at
+                    and refresh_row.get("content_sha256") == content_sha256
+                    and _command_text(refresh_row.get("command_id"))
+                    == _command_text(claim_row.get("command_id"))
+                    and refresh_row.get("outcome") == "queued"
+                    and refresh_row.get("error_code") is None
+                    and delete_created_at is not None
+                    and refresh_created_at is not None
+                    and refresh_created_at > delete_created_at
+                ):
+                    raise SourceVisualConflictError("DELETE_REQUESTED")
+            cache_row = await _read_exact_row(
+                "source_visual_cache", _cache_identity(source_id, content_sha256)
+            )
+            if cache_row is None or _record_from_row(cache_row) != ready:
+                raise SourceVisualRepositoryError("DATABASE_ERROR")
+            row = dict(claim_row or {})
+            row["source_updated_at"] = source_updated_at
         _require_live_lease(row, owner_token, current)
         return ready
 
@@ -1832,15 +2003,15 @@ class SourceVisualRepository:
             BEGIN TRANSACTION;
             LET $source_row = (SELECT updated FROM $source_record)[0];
             LET $claim = (SELECT * FROM $claim_record)[0];
-            IF $source_row.updated != $source_updated_at THEN
-                RETURN { source_stale: true };
-            ELSE IF $claim = NONE OR $claim.owner_token != $owner_token
-                    OR $claim.lease_until <= $now THEN
-                RETURN { owner_mismatch: true, existing: $claim };
-            END;
+            IF time::floor($source_row.updated, 1us)
+                    != time::floor($source_updated_at, 1us) {
+                THROW "DN_SOURCE_VISUAL_SOURCE_STALE";
+            };
+            IF $claim = NONE OR $claim.owner_token != $owner_token
+                    OR $claim.lease_until <= $now {
+                THROW "DN_SOURCE_VISUAL_OWNER_MISMATCH";
+            };
             DELETE $cache_record;
-            SELECT { deleted: true, owner_token: $claim.owner_token,
-                     lease_until: $claim.lease_until, source_updated_at: $source_updated_at };
             COMMIT TRANSACTION;
             """,
             {
@@ -1860,6 +2031,27 @@ class SourceVisualRepository:
         row = _row(result)
         if row and row.get("source_stale"):
             raise SourceVisualConflictError("SOURCE_STALE")
+        if row is None:
+            claim_row = await _read_exact_row(
+                "source_visual_claim",
+                claim_identity(source_id, content_sha256, extractor_version),
+            )
+            _require_live_lease(claim_row, owner_token, current)
+            source_row = _row(
+                await _transaction(
+                    "SELECT updated FROM $source_record;",
+                    {"source_record": _source_record(source_id)},
+                )
+            )
+            if _datetime(source_row.get("updated") if source_row else None) != source_updated_at:
+                raise SourceVisualConflictError("SOURCE_STALE")
+            cache_row = await _read_exact_row(
+                "source_visual_cache", _cache_identity(source_id, content_sha256)
+            )
+            if cache_row is not None:
+                raise SourceVisualRepositoryError("DATABASE_ERROR")
+            row = dict(claim_row or {})
+            row["source_updated_at"] = source_updated_at
         _require_live_lease(row, owner_token, current)
         return ready
 
