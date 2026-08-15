@@ -129,14 +129,15 @@ class SourceVisualCleanup:
                 try:
                     if await self._repository.is_claim_active(record):
                         continue
-                    asset_size = len(self._store.read_exact(record))
+                    self._store.read_exact(record)
                     deleted = await self.delete_record(record)
                 except SourceVisualStorageError:
                     continue
                 if deleted:
-                    current_bytes = max(0, current_bytes - asset_size)
                     removed += 1
-                    progressed = True
+                    measured_bytes = self._store.cache_size_bytes()
+                    progressed = progressed or measured_bytes < current_bytes
+                    current_bytes = measured_bytes
             if not progressed:
                 break
         return removed

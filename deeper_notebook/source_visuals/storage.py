@@ -452,6 +452,16 @@ class SourceVisualStore:
         return True
 
     @staticmethod
+    def _discard_new_stage_file_at(parent_fd: int, name: str) -> None:
+        """Best-effort removal of an O_EXCL-created name while the guard is held."""
+
+        try:
+            os.unlink(name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except OSError:
+            pass
+
+    @staticmethod
     def _new_tombstone_name(asset_sha256: str) -> str:
         return f".expired-{secrets.token_hex(8)}-{asset_sha256}.webp"
 
@@ -521,6 +531,7 @@ class SourceVisualStore:
         if hashlib.sha256(prepared.encoded_bytes).hexdigest() != prepared.asset_sha256:
             raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
         temp_fd = file_fd = verify_fd = None
+        temp_created = False
         temp_stat = None
         temp_name = (
             f"stage-{_stage_identity(source_id, content_sha256, prepared.asset_sha256)}-"
@@ -539,8 +550,11 @@ class SourceVisualStore:
                         0o600,
                         dir_fd=temp_fd,
                     )
+                    temp_created = True
                     temp_stat = os.fstat(file_fd)
                 except OSError as exc:
+                    if temp_created:
+                        self._discard_new_stage_file_at(temp_fd, temp_name)
                     raise SourceVisualStorageError("TEMP_CREATE_FAILED") from exc
                 try:
                     view = memoryview(prepared.encoded_bytes)
@@ -698,36 +712,39 @@ class SourceVisualStore:
 
     def read_exact(self, record: SourceVisualRecord) -> bytes:
         relpath = self._validate_record(record)
-        with self._active_lock:
-            self._active_reads[relpath] = self._active_reads.get(relpath, 0) + 1
         parent_fd = file_fd = None
-        try:
-            parent_fd, filename = self._open_asset_parent(relpath, create=False)
-            file_fd = self._open_regular_file(parent_fd, filename)
-            digest = hashlib.sha256()
-            chunks: list[bytes] = []
-            total = 0
-            while True:
-                chunk = os.read(file_fd, 64 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > _MAX_ASSET_BYTES:
-                    raise SourceVisualStorageError("ASSET_TOO_LARGE")
-                digest.update(chunk)
-                chunks.append(chunk)
-            if digest.hexdigest() != record.asset_sha256:
-                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-            return b"".join(chunks)
-        finally:
-            _safe_close(file_fd)
-            _safe_close(parent_fd)
+        with self.mutation_guard() as root_fd:
             with self._active_lock:
-                remaining = self._active_reads.get(relpath, 1) - 1
-                if remaining > 0:
-                    self._active_reads[relpath] = remaining
-                else:
-                    self._active_reads.pop(relpath, None)
+                self._active_reads[relpath] = self._active_reads.get(relpath, 0) + 1
+            try:
+                parent_fd, filename = self._open_asset_parent_at(
+                    root_fd, relpath, create=False
+                )
+                file_fd = self._open_regular_file(parent_fd, filename)
+                digest = hashlib.sha256()
+                chunks: list[bytes] = []
+                total = 0
+                while True:
+                    chunk = os.read(file_fd, 64 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > _MAX_ASSET_BYTES:
+                        raise SourceVisualStorageError("ASSET_TOO_LARGE")
+                    digest.update(chunk)
+                    chunks.append(chunk)
+                if digest.hexdigest() != record.asset_sha256:
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                return b"".join(chunks)
+            finally:
+                _safe_close(file_fd)
+                _safe_close(parent_fd)
+                with self._active_lock:
+                    remaining = self._active_reads.get(relpath, 1) - 1
+                    if remaining > 0:
+                        self._active_reads[relpath] = remaining
+                    else:
+                        self._active_reads.pop(relpath, None)
 
     def is_read_active(self, record: SourceVisualRecord) -> bool:
         relpath = self._validate_record(record)

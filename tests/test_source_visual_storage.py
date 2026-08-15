@@ -988,6 +988,69 @@ def test_active_read_fences_tombstone(tmp_path: Path, monkeypatch: pytest.Monkey
     assert not thread.is_alive()
 
 
+def test_cross_store_read_holds_mutation_guard_until_tombstone_waits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    reader_store = SourceVisualStore(data_folder=tmp_path)
+    mutator_store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(reader_store, b"x" * (256 * 1024))
+    record = _record(stored)
+    canonical = reader_store.root / record.asset_relpath
+    entered = threading.Event()
+    release = threading.Event()
+    tombstone_finished = threading.Event()
+    original_read = os.read
+    read_blocked = False
+    reader_results: list[bytes] = []
+    reader_errors: list[BaseException] = []
+    tombstone_errors: list[BaseException] = []
+    tombstones: list[object] = []
+
+    def blocked_read(descriptor: int, count: int) -> bytes:
+        nonlocal read_blocked
+        if not read_blocked:
+            read_blocked = True
+            entered.set()
+            release.wait(timeout=5)
+        return original_read(descriptor, count)
+
+    def read_asset() -> None:
+        try:
+            reader_results.append(reader_store.read_exact(record))
+        except BaseException as exc:  # pragma: no cover - failure is asserted below.
+            reader_errors.append(exc)
+
+    def tombstone_asset() -> None:
+        try:
+            tombstones.append(mutator_store.tombstone(record))
+        except BaseException as exc:  # pragma: no cover - failure is asserted below.
+            tombstone_errors.append(exc)
+        finally:
+            tombstone_finished.set()
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.read", blocked_read)
+    reader = threading.Thread(target=read_asset, daemon=True)
+    mutator = threading.Thread(target=tombstone_asset, daemon=True)
+    reader.start()
+    try:
+        assert entered.wait(timeout=5)
+        mutator.start()
+        assert not tombstone_finished.wait(timeout=0.25)
+        assert canonical.exists()
+    finally:
+        release.set()
+        reader.join(timeout=5)
+        mutator.join(timeout=5)
+
+    assert not reader.is_alive()
+    assert not mutator.is_alive()
+    assert reader_errors == []
+    assert tombstone_errors == []
+    assert reader_results == [b"x" * (256 * 1024)]
+    assert len(tombstones) == 1
+    assert not canonical.exists()
+
+
 class _Repository:
     def __init__(self, records: list[SourceVisualRecord]):
         self.records = list(records)
@@ -1166,6 +1229,49 @@ async def test_eviction_stops_when_bounded_page_makes_no_progress(tmp_path: Path
     assert repository.records == [record]
 
 
+@pytest.mark.asyncio
+async def test_eviction_remeasures_physical_bytes_when_tombstone_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    records = [
+        _record(
+            _publish(
+                store,
+                payload,
+                content_sha256=f"{index + 1:064x}",
+            ),
+            content_sha256=f"{index + 1:064x}",
+        )
+        for index, payload in enumerate((b"a" * 100, b"b" * 100))
+    ]
+    repository = _Repository(records)
+    cleanup = SourceVisualCleanup(store, repository)
+    original_cache_size = store.cache_size_bytes
+    observed_sizes: list[int] = []
+
+    def cache_size() -> int:
+        size = original_cache_size()
+        observed_sizes.append(size)
+        return size
+
+    def fail_remove(_tombstone: object) -> None:
+        raise OSError("unlink failed")
+
+    monkeypatch.setattr(store, "cache_size_bytes", cache_size)
+    monkeypatch.setattr(store, "remove_tombstone", fail_remove)
+
+    removed = await asyncio.wait_for(
+        cleanup.evict_to_budget(max_bytes=150, page_size=100), timeout=1
+    )
+
+    assert removed == 2
+    assert repository.records == []
+    assert observed_sizes[0] == observed_sizes[-1] == 200
+    assert len(observed_sizes) == 3
+    assert store.cache_size_bytes() > 150
+
+
 def test_stage_maps_write_failure_and_removes_only_the_owned_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -1179,6 +1285,36 @@ def test_stage_maps_write_failure_and_removes_only_the_owned_temp(
         store.stage("source:one", "a" * 64, _prepared())
 
     assert error.value.code == "ASSET_IO_FAILED"
+    assert not list((store.root / ".tmp").glob("stage-*.tmp"))
+
+
+def test_stage_removes_exclusive_temp_when_initial_fstat_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    original_open = os.open
+    original_fstat = os.fstat
+    created_stage_fds: set[int] = set()
+
+    def open_file(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if str(path).startswith("stage-") and flags & os.O_EXCL:
+            created_stage_fds.add(descriptor)
+        return descriptor
+
+    def fail_initial_stage_fstat(descriptor: int) -> os.stat_result:
+        if descriptor in created_stage_fds:
+            raise OSError("initial stage stat failed")
+        return original_fstat(descriptor)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.open", open_file)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fstat", fail_initial_stage_fstat
+    )
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:one", "a" * 64, _prepared())
+
+    assert error.value.code == "TEMP_CREATE_FAILED"
     assert not list((store.root / ".tmp").glob("stage-*.tmp"))
 
 
