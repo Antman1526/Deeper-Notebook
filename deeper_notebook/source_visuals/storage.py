@@ -402,11 +402,16 @@ class SourceVisualStore:
             try:
                 published_stat = os.fstat(published_fd)
                 published_hash, published_size = _hash_fd(published_fd)
+                canonical_stat = os.stat(
+                    filename, dir_fd=parent_fd, follow_symlinks=False
+                )
             finally:
                 os.close(published_fd)
             if (
                 (published_stat.st_dev, published_stat.st_ino)
                 != (verified_stat.st_dev, verified_stat.st_ino)
+                or (canonical_stat.st_dev, canonical_stat.st_ino)
+                != (published_stat.st_dev, published_stat.st_ino)
                 or published_hash != staged.asset_sha256
                 or published_size != size
             ):

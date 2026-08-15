@@ -171,6 +171,56 @@ def test_publish_rejects_temp_path_exchange_after_descriptor_verification(
     assert not (store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)).exists()
 
 
+def test_publish_revalidates_canonical_path_after_installed_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    canonical = store.root / asset_relpath(
+        "source:one", "a" * 64, staged.asset_sha256
+    )
+    held = canonical.with_name(f"{canonical.name}.held")
+    original_hash_fd = __import__(
+        "deeper_notebook.source_visuals.storage", fromlist=["_hash_fd"]
+    )._hash_fd
+    original_read = os.read
+    hash_calls = 0
+    exchanged = False
+
+    def exchange_during_hash(fd: int, count: int) -> bytes:
+        nonlocal exchanged
+        if not exchanged:
+            canonical.rename(held)
+            canonical.write_bytes(b"canonical-path-replacement")
+            exchanged = True
+        return original_read(fd, count)
+
+    def hash_fd(fd: int) -> tuple[str, int]:
+        nonlocal hash_calls
+        hash_calls += 1
+        if hash_calls == 2:
+            monkeypatch.setattr(
+                "deeper_notebook.source_visuals.storage.os.read", exchange_during_hash
+            )
+            try:
+                return original_hash_fd(fd)
+            finally:
+                monkeypatch.setattr(
+                    "deeper_notebook.source_visuals.storage.os.read", original_read
+                )
+        return original_hash_fd(fd)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage._hash_fd", hash_fd)
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.publish(staged)
+
+    assert hash_calls == 2
+    assert exchanged
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert canonical.read_bytes() == b"canonical-path-replacement"
+
+
 def test_stage_rejects_asset_hash_mismatch(tmp_path: Path):
     store = SourceVisualStore(data_folder=tmp_path)
     prepared = _prepared().model_copy(update={"asset_sha256": "f" * 64})
