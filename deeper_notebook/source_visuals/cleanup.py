@@ -133,8 +133,13 @@ class SourceVisualCleanup:
             # future reconciler rechecks the row before moving either byte set.
             raise exc.error
         except _DeletionClaimDatabaseError as exc:
-            self._restore_after_failed_delete(tombstone)
-            self._store.release_tombstone_deletion_claim(exc.claim)
+            try:
+                self._restore_after_failed_delete(tombstone)
+                self._store.release_tombstone_deletion_claim(exc.claim)
+            except (OSError, SourceVisualStorageError):
+                # Preserve the original repository failure.  Any unfinished
+                # byte/claim transition remains durable for reconciliation.
+                pass
             raise exc.error
         except Exception:
             self._restore_after_failed_delete(tombstone)

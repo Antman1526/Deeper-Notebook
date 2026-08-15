@@ -46,6 +46,8 @@ _UNLINK_RECOVERY_NAME = re.compile(r"^\.unlink-recovery-[0-9a-f]{32}$")
 _UNLINK_JOURNAL = ".journal"
 _DELETION_CLAIM_PREFIX = ".deleting-"
 _DELETION_CLAIM_NAME = re.compile(r"^\.deleting-([0-9a-f]{64})\.claim$")
+_CLAIM_WRITE_PREFIX = ".claim-write-"
+_CLAIM_WRITE_NAME = re.compile(r"^\.claim-write-([0-9a-f]{64})-([0-9a-f]{32})\.tmp$")
 _MAX_ASSET_BYTES = 1_572_864
 _MAX_CACHE_FILES = 4096
 _MAX_RECOVERY_ENTRIES = 8
@@ -762,14 +764,34 @@ class SourceVisualStore:
         finally:
             _safe_close(fence_fd)
 
-    def _validate_pending_file(self, parent_fd: int, name: str) -> None:
+    def _validate_pending_file(self, parent_fd: int, name: str) -> os.stat_result:
         pending_fd = None
         try:
             pending_fd = self._open_regular_file(parent_fd, name)
+            return os.fstat(pending_fd)
         except SourceVisualStorageError as exc:
             raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
         finally:
             _safe_close(pending_fd)
+
+    def _retire_non_authoritative_file_at(
+        self, parent_fd: int, name: str, expected_stat: os.stat_result
+    ) -> None:
+        """Retire a verified private write artifact while the trusted lock is held.
+
+        These names are created only in the controlled root before they become
+        authoritative.  The cooperative mutation lock is the boundary here;
+        same-UID processes bypassing it are outside this cache's threat model.
+        """
+
+        try:
+            self._require_path_identity(parent_fd, name, expected_stat)
+            os.unlink(name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
 
     @staticmethod
     def _iter_bounded_entries(
@@ -803,7 +825,10 @@ class SourceVisualStore:
         recovery_count: list[int],
         unverified_count: list[int],
         deletion_claim_count: list[int],
+        claim_write_count: list[int],
         fences: list[tuple[str | None, str | None, str]],
+        claim_writes: list[tuple[str | None, str | None, str]],
+        unverified_stages: list[str],
         prefix: str | None,
         content: str | None,
         visited: list[int],
@@ -828,9 +853,45 @@ class SourceVisualStore:
                 self._read_deletion_claim_at(parent_fd, entry.name)
                 deletion_claim_count[0] += 1
                 continue
+            if entry.name.startswith(_CLAIM_WRITE_PREFIX):
+                if temp_parent or _CLAIM_WRITE_NAME.fullmatch(entry.name) is None:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                self._validate_pending_file(parent_fd, entry.name)
+                claim_write_count[0] += 1
+                claim_writes.append((prefix, content, entry.name))
+                continue
             if temp_parent and _UNVERIFIED_STAGE_NAME.fullmatch(entry.name) is not None:
                 self._validate_pending_file(parent_fd, entry.name)
                 unverified_count[0] += 1
+                unverified_stages.append(entry.name)
+
+    def _reconcile_claim_write_at(self, parent_fd: int, name: str) -> None:
+        """Retire a complete, partial, or post-link private claim write file."""
+
+        match = _CLAIM_WRITE_NAME.fullmatch(name)
+        if match is None:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        write_stat = self._validate_pending_file(parent_fd, name)
+        if write_stat.st_size > 1024:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        claim_name = f"{_DELETION_CLAIM_PREFIX}{match.group(1)}.claim"
+        try:
+            claim, claim_stat = self._read_deletion_claim_at(parent_fd, claim_name)
+        except SourceVisualStorageError as exc:
+            if exc.code != "ASSET_MISSING":
+                raise
+            if write_stat.st_nlink != 1:
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            self._retire_non_authoritative_file_at(parent_fd, name, write_stat)
+            return
+        if claim.claim_name != claim_name:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        if _same_identity(write_stat, claim_stat):
+            self._retire_non_authoritative_file_at(parent_fd, name, write_stat)
+            return
+        if write_stat.st_nlink != 1:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        self._retire_non_authoritative_file_at(parent_fd, name, write_stat)
 
     def _reconcile_recovery_at(self, root_fd: int) -> int:
         """Bound and retire durable unlink journals while the mutation lock is held."""
@@ -838,7 +899,10 @@ class SourceVisualStore:
         recovery_count = [0]
         unverified_count = [0]
         deletion_claim_count = [0]
+        claim_write_count = [0]
         fences: list[tuple[str | None, str | None, str]] = []
+        claim_writes: list[tuple[str | None, str | None, str]] = []
+        unverified_stages: list[str] = []
         visited = [0]
         temp_fd = None
         try:
@@ -849,7 +913,10 @@ class SourceVisualStore:
                 recovery_count=recovery_count,
                 unverified_count=unverified_count,
                 deletion_claim_count=deletion_claim_count,
+                claim_write_count=claim_write_count,
                 fences=fences,
+                claim_writes=claim_writes,
+                unverified_stages=unverified_stages,
                 prefix=None,
                 content=None,
                 visited=visited,
@@ -876,7 +943,10 @@ class SourceVisualStore:
                                 recovery_count=recovery_count,
                                 unverified_count=unverified_count,
                                 deletion_claim_count=deletion_claim_count,
+                                claim_write_count=claim_write_count,
                                 fences=fences,
+                                claim_writes=claim_writes,
+                                unverified_stages=unverified_stages,
                                 prefix=prefix_entry.name,
                                 content=content_entry.name,
                                 visited=visited,
@@ -890,8 +960,30 @@ class SourceVisualStore:
                 or len(fences) > _MAX_RECOVERY_ENTRIES
                 or unverified_count[0] > 1
                 or deletion_claim_count[0] > _MAX_RECOVERY_ENTRIES
+                or claim_write_count[0] > _MAX_RECOVERY_ENTRIES
             ):
                 raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+
+            for name in unverified_stages:
+                self._retire_non_authoritative_file_at(
+                    temp_fd,
+                    name,
+                    self._validate_pending_file(temp_fd, name),
+                )
+            for prefix, content, name in claim_writes:
+                parent_fd = prefix_fd = content_fd = None
+                try:
+                    prefix_fd = self._open_child_dir(root_fd, prefix or "", create=False)
+                    content_fd = self._open_child_dir(
+                        prefix_fd, content or "", create=False
+                    )
+                    parent_fd = content_fd
+                    self._reconcile_claim_write_at(parent_fd, name)
+                finally:
+                    if parent_fd is not content_fd:
+                        _safe_close(parent_fd)
+                    _safe_close(content_fd)
+                    _safe_close(prefix_fd)
 
             for prefix, content, fence_name in fences:
                 parent_fd = prefix_fd = content_fd = None
@@ -1419,7 +1511,7 @@ class SourceVisualStore:
             if (
                 claim_stat.st_size > 1024
                 or stat.S_IMODE(claim_stat.st_mode) != 0o600
-                or claim_stat.st_nlink != 1
+                or claim_stat.st_nlink not in {1, 2}
             ):
                 raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
             payload = os.read(claim_fd, 1025)
@@ -1461,9 +1553,22 @@ class SourceVisualStore:
             raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from None
         return claim, claim_stat
 
+    @staticmethod
+    def _deletion_claim_write_name(claim: TombstoneDeletionClaim) -> str:
+        match = _DELETION_CLAIM_NAME.fullmatch(claim.claim_name)
+        if match is None:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        return f"{_CLAIM_WRITE_PREFIX}{match.group(1)}-{secrets.token_hex(16)}.tmp"
+
     def _write_deletion_claim_at(
-        self, parent_fd: int, claim: TombstoneDeletionClaim
+        self,
+        parent_fd: int,
+        claim: TombstoneDeletionClaim,
+        *,
+        replace_current: os.stat_result | None = None,
     ) -> None:
+        """Publish a fully-durable claim without exposing a partial exact name."""
+
         self._validate_deletion_claim(claim)
         payload = json.dumps(
             {
@@ -1479,18 +1584,20 @@ class SourceVisualStore:
             sort_keys=True,
         ).encode("ascii")
         claim_fd = None
+        write_name = self._deletion_claim_write_name(claim)
+        write_stat = None
         try:
             claim_fd = os.open(
-                claim.claim_name,
+                write_name,
                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
                 0o600,
                 dir_fd=parent_fd,
             )
-            claim_stat = os.fstat(claim_fd)
+            write_stat = os.fstat(claim_fd)
             if (
-                not stat.S_ISREG(claim_stat.st_mode)
-                or stat.S_IMODE(claim_stat.st_mode) != 0o600
-                or claim_stat.st_nlink != 1
+                not stat.S_ISREG(write_stat.st_mode)
+                or stat.S_IMODE(write_stat.st_mode) != 0o600
+                or write_stat.st_nlink != 1
             ):
                 raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
             view = memoryview(payload)
@@ -1500,7 +1607,39 @@ class SourceVisualStore:
                     raise OSError("claim write did not progress")
                 view = view[written:]
             os.fsync(claim_fd)
+            _safe_close(claim_fd)
+            claim_fd = None
+            if replace_current is None:
+                try:
+                    os.link(
+                        write_name,
+                        claim.claim_name,
+                        src_dir_fd=parent_fd,
+                        dst_dir_fd=parent_fd,
+                        follow_symlinks=False,
+                    )
+                except FileExistsError as exc:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+                os.fsync(parent_fd)
+                self._retire_non_authoritative_file_at(
+                    parent_fd, write_name, write_stat
+                )
+            else:
+                self._require_path_identity(
+                    parent_fd, claim.claim_name, replace_current
+                )
+                os.replace(
+                    write_name,
+                    claim.claim_name,
+                    src_dir_fd=parent_fd,
+                    dst_dir_fd=parent_fd,
+                )
             os.fsync(parent_fd)
+            published, _published_stat = self._read_deletion_claim_at(
+                parent_fd, claim.claim_name
+            )
+            if published != claim:
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
         except SourceVisualStorageError:
             raise
         except OSError as exc:
@@ -1525,6 +1664,7 @@ class SourceVisualStore:
     ) -> TombstoneDeletionClaim | None:
         self._validate_tombstone(tombstone)
         parent_fd = None
+        existing_stat: os.stat_result | None = None
         try:
             parent_fd, _filename = self._open_asset_parent_at(
                 root_fd, tombstone.asset_relpath, create=False
@@ -1546,7 +1686,6 @@ class SourceVisualStore:
                     raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
                 if existing.phase == "pending" and existing.expires_at > now:
                     return None
-                self._unlink_verified(parent_fd, claim_name, existing_stat)
             claim = TombstoneDeletionClaim(
                 tombstone=tombstone,
                 claim_name=claim_name,
@@ -1554,7 +1693,11 @@ class SourceVisualStore:
                 expires_at=now + _DELETION_CLAIM_SECONDS,
                 phase="pending",
             )
-            self._write_deletion_claim_at(parent_fd, claim)
+            self._write_deletion_claim_at(
+                parent_fd,
+                claim,
+                replace_current=existing_stat,
+            )
             return claim
         except SourceVisualStorageError:
             raise
@@ -1620,8 +1763,9 @@ class SourceVisualStore:
                 if current != claim:
                     raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
                 completed = replace(claim, phase="db_deleted")
-                self._unlink_verified(parent_fd, claim.claim_name, current_stat)
-                self._write_deletion_claim_at(parent_fd, completed)
+                self._write_deletion_claim_at(
+                    parent_fd, completed, replace_current=current_stat
+                )
                 return completed
         except SourceVisualStorageError:
             raise
@@ -1652,8 +1796,9 @@ class SourceVisualStore:
                 renewed = replace(
                     claim, expires_at=int(time.time()) + _DELETION_CLAIM_SECONDS
                 )
-                self._unlink_verified(parent_fd, claim.claim_name, current_stat)
-                self._write_deletion_claim_at(parent_fd, renewed)
+                self._write_deletion_claim_at(
+                    parent_fd, renewed, replace_current=current_stat
+                )
                 return renewed
         except SourceVisualStorageError:
             raise
@@ -2135,11 +2280,20 @@ class SourceVisualStore:
                                                     entry.name,
                                                     invalid_code="CACHE_RECOVERY_REQUIRED",
                                                 )
+                                            elif _CLAIM_WRITE_NAME.fullmatch(
+                                                entry.name
+                                            ) is not None:
+                                                add_owned_file(
+                                                    content_fd,
+                                                    entry.name,
+                                                    invalid_code="CACHE_RECOVERY_REQUIRED",
+                                                )
                                             elif entry.name.startswith(
                                                 (
                                                     _UNLINK_FENCE_PREFIX,
                                                     _UNLINK_RECOVERY_PREFIX,
                                                     _DELETION_CLAIM_PREFIX,
+                                                    _CLAIM_WRITE_PREFIX,
                                                 )
                                             ):
                                                 raise SourceVisualStorageError(
