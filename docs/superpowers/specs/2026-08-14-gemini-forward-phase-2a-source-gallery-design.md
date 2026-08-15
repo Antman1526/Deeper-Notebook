@@ -96,15 +96,31 @@ The record field remains named `content_sha256` to match the approved entire-app
 design; it stores this versioned source-visual fingerprint rather than a hash of
 one arbitrary source field.
 
+The fingerprint is computed only for extraction, explicit refresh, and exact
+asset authority checks. Source list/detail projection does not re-read or hash
+the full source body or controlled media file. Instead, every cache record also
+binds the exact persisted `source.updated` revision captured when the
+fingerprint was computed. A projection is current only when both source ID and
+that revision match; any source update makes the derived row stale until a
+bounded extraction recomputes the full fingerprint.
+
 ## 5. Persistence Model
 
-Migration `46` adds `source_visual_cache` as a schema-full table. Migration
-`46_down` removes only that table and its indexes.
+Migration `46` adds three schema-full derived-authority tables:
+
+- `source_visual_cache` for ready presentation metadata;
+- `source_visual_claim` for one durable cross-worker lease per source
+  fingerprint; and
+- `source_visual_operation` for bounded refresh/delete idempotency receipts.
+
+Migration `46_down` removes only those tables and their indexes.
 
 Each ready record contains:
 
 - `schema_version: int` fixed to `1`;
 - `source_id: record<source>`;
+- `source_updated_at: datetime` matching the source revision used to compute
+  the fingerprint;
 - `content_sha256: string` matching lowercase SHA-256;
 - `asset_sha256: string` matching lowercase SHA-256;
 - `asset_relpath: string` containing a bounded relative cache path only;
@@ -121,7 +137,21 @@ Each ready record contains:
 
 The unique key is `(source_id, content_sha256)`. An index on `updated_at`
 supports derived-only cache eviction. No pending or failed row is stored in the
-cache table; job state remains in the existing command infrastructure.
+cache table; command status remains in the existing command infrastructure.
+
+Each `source_visual_claim` row is keyed by the SHA-256 identity over source ID,
+content fingerprint, and extractor version. It stores only that identity,
+source ID, fingerprint, extractor version, an opaque owner token, a bounded
+lease deadline, optional `record<command>`, and timestamps. Claim acquisition,
+renewal, completion, stale-owner takeover, and release compare the exact owner
+token and lease. The claim is serialization authority, not source authority and
+not a second job-status system.
+
+Each `source_visual_operation` row is keyed by SHA-256 over canonical source ID,
+caller request ID, and operation (`refresh` or `delete`). It strictly binds the
+source revision, content fingerprint, operation, optional command ID, bounded
+outcome, and timestamps. A replay must match the complete bound payload;
+mismatches fail closed. Receipts never contain source text or filesystem paths.
 
 Old records for stale fingerprints may be removed by bounded cleanup. Their
 absence never affects source readability.
@@ -162,9 +192,18 @@ and bounded:
 - expected `content_sha256`;
 - extractor policy version.
 
-The durable idempotency identity is SHA-256 over source ID, content fingerprint,
-and extractor version. One logical job may run per identity. Concurrent or
-replayed submissions converge on the same ready cache record.
+The durable claim identity is SHA-256 over source ID, content fingerprint, and
+extractor version. A claim is acquired before queue submission, then bound to
+the created command row by compare-and-swap. One logical job may run per
+identity across API and worker processes. Concurrent submissions converge on
+the same claim and command; matching operation replays return the same receipt,
+while conflicting request payloads return typed `409`.
+
+The claim lease is fixed at 90 seconds and renewed by the worker at bounded
+checkpoints. A takeover requires the lease to be expired and preserves the
+same deterministic claim identity. Completion, failure, and cancellation are
+owner-fenced. A process-local semaphore still enforces the two-job media budget,
+but it is never used as durability or idempotency proof.
 
 The command sequence is:
 
@@ -259,9 +298,12 @@ visual: SourceVisualReceipt | null
 - created and updated timestamps.
 
 The list endpoint loads visual receipts in one bounded batch for the returned
-source IDs. It returns only records whose fingerprint matches current source
-authority. A malformed or unreadable cache row is omitted rather than widening
-the response contract or failing the source list.
+source IDs and persisted `source.updated` revisions. It returns only records
+whose `source_updated_at` matches the current row revision. It does not hash
+source bodies or files during list/detail reads. Exact asset serving revalidates
+the full fingerprint before opening bytes. A malformed or unreadable cache row
+is omitted rather than widening the response contract or failing the source
+list.
 
 Endpoints are:
 
@@ -273,11 +315,12 @@ The GET endpoint resolves the current DB receipt, validates source ownership,
 fingerprint, path, asset hash, MIME, and size, then returns immutable content
 with the asset hash as ETag. It never accepts a filesystem path from the caller.
 
-Refresh and delete accept strict request bodies with a caller request ID. Replay
-must match source, fingerprint, and operation exactly. Stale, conflicting, or
-corrupt receipts return typed `409`; missing source returns `404`; feature-off
-returns the uniform feature-unavailable response; decoder/extractor failure is
-reported through command status and does not alter the source.
+Refresh and delete accept strict request bodies with a caller request ID. Their
+durable operation receipt must match source, source revision, fingerprint, and
+operation exactly. Stale, conflicting, or corrupt receipts return typed `409`;
+missing source returns `404`; feature-off returns the uniform
+feature-unavailable response; decoder/extractor failure is reported through
+command status and does not alter the source.
 
 ## 11. Frontend Architecture
 
@@ -423,6 +466,8 @@ Disposable real-database tests cover:
 - migration `46` and symmetric `46_down`;
 - schema-full rejection and unique source/fingerprint identity;
 - concurrent idempotent publication;
+- claim contention, owner fencing, lease expiry, stale-owner takeover, and
+  operation-receipt replay/conflict;
 - source fingerprint change and stale-cache omission;
 - publication and deletion crash windows;
 - restart hydration;
