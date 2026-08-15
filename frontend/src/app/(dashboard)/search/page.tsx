@@ -32,7 +32,7 @@ import type { SearchResult } from '@/lib/types/search'
 
 function sourceCoverFromResult(result: SearchResult): SourceListResponse {
   return {
-    id: result.parent_id,
+    id: result.id,
     title: result.title,
     source_type: result.source_type ?? null,
     asset: null,
@@ -44,6 +44,21 @@ function sourceCoverFromResult(result: SearchResult): SourceListResponse {
     visual: result.visual ?? null,
     visual_status: result.visual_status ?? null,
   }
+}
+
+function searchResultTarget(result: SearchResult): {
+  recordType: 'source' | 'note' | 'source_insight'
+  modalType: 'source' | 'note' | 'insight'
+  modalId: string
+} | null {
+  const separator = result.id.indexOf(':')
+  if (separator <= 0 || separator === result.id.length - 1) return null
+  const recordType = result.id.slice(0, separator)
+  const modalId = result.id.slice(separator + 1)
+  if (recordType === 'source') return { recordType, modalType: 'source', modalId }
+  if (recordType === 'note') return { recordType, modalType: 'note', modalId }
+  if (recordType === 'source_insight') return { recordType, modalType: 'insight', modalId }
+  return null
 }
 
 export default function SearchPage() {
@@ -509,22 +524,23 @@ export default function SearchPage() {
                     ) : (
                       <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
                         {searchMutation.data.results.map((result, index) => {
-                          // Parse type from parent_id (format: "source:id" or "note:id" or "source_insight:id")
-                          // Handle null parent_id gracefully (orphaned records)
-                          if (!result.parent_id) {
-                            console.warn('Search result with null parent_id:', result)
+                          // A result's own record ID defines its route and kind.
+                          // parent_id is only relationship metadata (for example,
+                          // a source insight's parent source) and never visual or
+                          // modal identity authority.
+                          const target = searchResultTarget(result)
+                          if (!target) {
+                            console.warn('Search result with invalid record id:', result)
                             return null
                           }
-                          const [type, id] = result.parent_id.split(':')
-                          const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
-                          const sourceResult = visualGalleryEnabled && type === 'source'
+                          const sourceResult = visualGalleryEnabled && target.recordType === 'source'
 
                           return (
                             <Card key={index}>
                               <CardContent className="pt-4">
                                 <div className={sourceResult ? 'grid min-w-0 gap-4 sm:grid-cols-[10rem_minmax(0,1fr)]' : ''}>
                                   {sourceResult ? (
-                                    <div className="min-w-0" data-testid={`search-result-cover-${result.parent_id}`}>
+                                    <div className="min-w-0" data-testid={`search-result-cover-${result.id}`}>
                                       <SourceCover source={sourceCoverFromResult(result)} variant="compact" />
                                     </div>
                                   ) : null}
@@ -532,7 +548,7 @@ export default function SearchPage() {
                                     <div className="flex items-start justify-between gap-4">
                                       <div className="min-w-0 flex-1">
                                         <button
-                                          onClick={() => openModal(modalType, id)}
+                                          onClick={() => openModal(target.modalType, target.modalId)}
                                           className="min-h-11 min-w-11 text-primary hover:underline font-medium"
                                         >
                                           {result.title}
@@ -586,7 +602,7 @@ export default function SearchPage() {
                       <EvidencePeek
                         evidenceQuery={evidenceResult.matches?.[0]}
                         onClose={closeEvidence}
-                        sourceId={evidenceResult.parent_id}
+                        sourceId={evidenceResult.id}
                         title={evidenceResult.title}
                       />
                     ) : null}

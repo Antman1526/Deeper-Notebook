@@ -71,17 +71,17 @@ describe('SearchPage', () => {
       search_type: 'text',
       results: [
         {
-          id: 'result:source', title: 'Source result', parent_id: 'source:one', final_score: 0.9,
+          id: 'source:one', title: 'Source result', parent_id: '', final_score: 0.9,
           matches: ['first exact match', 'second match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z',
           visual: { source_id: 'source:one', content_sha256: hash, asset_sha256: hash, alt_text: 'Source evidence cover', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Aone/visual?v=${hash}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
         },
         {
-          id: 'result:insight', title: 'Insight result', parent_id: 'source_insight:two', final_score: 0.8,
+          id: 'source_insight:two', title: 'Insight result', parent_id: 'source:one', final_score: 0.8,
           matches: ['insight match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z',
           visual: { source_id: 'source:two', content_sha256: hash, asset_sha256: hash, alt_text: 'Must not render', width: 640, height: 360, mime_type: 'image/webp', asset_url: `/api/sources/source%3Atwo/visual?v=${hash}`, created_at: '2026-08-10T00:00:00Z', updated_at: '2026-08-10T00:01:00Z', origin: 'embedded', source_locator: { page: 1 } },
         },
         {
-          id: 'result:note', title: 'Note result', parent_id: 'note:three', final_score: 0.7,
+          id: 'note:three', title: 'Note result', parent_id: 'source:one', final_score: 0.7,
           matches: ['note match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z', visual: null,
         },
       ],
@@ -113,7 +113,7 @@ describe('SearchPage', () => {
     mockSearchParams.current = 'mode=search'
     mockSearchData.current = {
       total_count: 1, search_type: 'text', results: [{
-        id: 'result:source', title: 'Source result', parent_id: 'source:one', final_score: 0.9,
+        id: 'source:one', title: 'Source result', parent_id: '', final_score: 0.9,
         matches: ['match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z', visual: null,
       }],
     }
@@ -130,7 +130,7 @@ describe('SearchPage', () => {
     mockSearchParams.current = 'mode=search'
     mockSearchData.current = {
       total_count: 1, search_type: 'text', results: [{
-        id: 'result:old', title: 'Old source', parent_id: 'source:old', final_score: 0.9,
+        id: 'source:old', title: 'Old source', parent_id: '', final_score: 0.9,
         matches: ['old exact match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z', visual: null,
       }],
     }
@@ -141,7 +141,7 @@ describe('SearchPage', () => {
 
     mockSearchData.current = {
       total_count: 1, search_type: 'text', results: [{
-        id: 'result:new', title: 'New source', parent_id: 'source:new', final_score: 0.8,
+        id: 'source:new', title: 'New source', parent_id: '', final_score: 0.8,
         matches: ['new exact match'], created: '2026-08-10T00:02:00Z', updated: '2026-08-10T00:03:00Z', visual: null,
       }],
     }
@@ -158,7 +158,7 @@ describe('SearchPage', () => {
     mockSearchParams.current = 'mode=search'
     mockSearchData.current = {
       total_count: 1, search_type: 'text', results: [{
-        id: 'result:source', title: 'Source result', parent_id: 'source:one', final_score: 0.9,
+        id: 'source:one', title: 'Source result', parent_id: '', final_score: 0.9,
         matches: ['exact match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z', visual: null,
       }],
     }
