@@ -245,11 +245,16 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
         || owner.getAttribute('aria-label')
         || owner.tagName.toLowerCase()
     }
-    const ownerViewport = (owner: ScrollOwner): DOMRect => (
-      owner
-        ? owner.getBoundingClientRect()
-        : new DOMRect(0, 0, window.innerWidth, window.innerHeight)
-    )
+    const ownerViewport = (owner: ScrollOwner): DOMRect => {
+      if (!owner) return new DOMRect(0, 0, window.innerWidth, window.innerHeight)
+      const borderRect = owner.getBoundingClientRect()
+      return new DOMRect(
+        borderRect.left + owner.clientLeft,
+        borderRect.top + owner.clientTop,
+        owner.clientWidth,
+        owner.clientHeight,
+      )
+    }
     const ownerMetrics = (owner: ScrollOwner) => {
       if (owner) return { clientHeight: owner.clientHeight, scrollHeight: owner.scrollHeight }
       return {
@@ -761,6 +766,48 @@ test.describe('source gallery visual contract', () => {
       failedHorizontalClippingOwners: ['outer-owner'],
       verticalClippingOwners: ['inner-owner', 'outer-owner'],
       failedVerticalClippingOwners: [],
+      documentViewportContained: true,
+      finallyContained: false,
+    }))
+  })
+
+  test('geometry measures a bordered owner by its client clipping box', async ({ page }) => {
+    await page.goto('/')
+    await page.setViewportSize({ width: 320, height: 160 })
+    await page.setContent(`
+      <style>
+        html, body { margin: 0; overflow: visible; }
+        #bordered-owner { width: 80px; height: 80px; border: 10px solid black; overflow: hidden; }
+        [data-dn-source-cover] { display: block; position: relative; width: 4px; height: 4px; left: -5px; top: -5px; }
+      </style>
+      <main>
+        <div id="bordered-owner">
+          <article data-dn-source-cover="true" data-dn-source-gallery-lower="true">Border-clipped cover</article>
+        </div>
+      </main>
+    `)
+
+    expect(await page.evaluate(() => document.elementFromPoint(7, 7)?.getAttribute('data-dn-source-cover') ?? null)).toBeNull()
+
+    const geometry = await inspectSourceGalleryGeometry(page)
+    expect(geometry.sourceSurfaces).toEqual([
+      expect.objectContaining({
+        horizontalClippingOwners: ['bordered-owner'],
+        failedHorizontalClippingOwners: ['bordered-owner'],
+        verticalClippingOwners: ['bordered-owner'],
+        failedVerticalClippingOwners: ['bordered-owner'],
+        documentViewportContained: true,
+        finallyContained: false,
+      }),
+    ])
+    expect(geometry.sourceSurfaceFailures).toEqual([
+      expect.stringContaining('bordered-owner'),
+    ])
+    expect(geometry.scroll).toEqual(expect.objectContaining({
+      horizontalClippingOwners: ['bordered-owner'],
+      failedHorizontalClippingOwners: ['bordered-owner'],
+      verticalClippingOwners: ['bordered-owner'],
+      failedVerticalClippingOwners: ['bordered-owner'],
       documentViewportContained: true,
       finallyContained: false,
     }))
