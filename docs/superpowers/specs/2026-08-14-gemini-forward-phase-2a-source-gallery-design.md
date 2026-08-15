@@ -121,6 +121,9 @@ Each ready record contains:
 - `source_id: record<source>`;
 - `source_updated_at: datetime` matching the source revision used to compute
   the fingerprint;
+- `source_file_sha256: option<string>` containing the already-computed
+  controlled source-file hash when one exists; it is derived linkage metadata,
+  is never returned as visual evidence, and is `null` for non-file sources;
 - `content_sha256: string` matching lowercase SHA-256;
 - `asset_sha256: string` matching lowercase SHA-256;
 - `asset_relpath: string` containing a bounded relative cache path only;
@@ -283,6 +286,7 @@ Source list and detail projections gain:
 
 ```text
 visual: SourceVisualReceipt | null
+visual_status: SourceVisualStatusReceipt | null
 ```
 
 `SourceVisualReceipt` contains only:
@@ -297,8 +301,17 @@ visual: SourceVisualReceipt | null
 - immutable opaque asset URL;
 - created and updated timestamps.
 
-The list endpoint loads visual receipts in one bounded batch for the returned
-source IDs and persisted `source.updated` revisions. It returns only records
+`SourceVisualStatusReceipt` is present only when there is no current ready
+visual and a current claim/command can safely explain the fallback. It contains
+only state (`queued | processing | unavailable | failed`), optional opaque
+command ID, optional bounded non-path error code, and updated timestamp. Raw
+worker errors, source text, and paths are never projected. Ready visuals use
+`visual` and `visual_status: null`; absent/stale/feature-off cache state may use
+both fields as `null`.
+
+The list endpoint loads visual receipts and safe transient status in one
+bounded batch for the returned source IDs and persisted `source.updated`
+revisions. It returns only records
 whose `source_updated_at` matches the current row revision. It does not hash
 source bodies or files during list/detail reads. Exact asset serving revalidates
 the full fingerprint before opening bytes. A malformed or unreadable cache row
@@ -337,10 +350,11 @@ Shared components live under
 - `source-gallery.css` owns named containers, auto-fit tracks, image geometry,
   and short-height behavior.
 
-The frontend API decoder rejects unknown origin values, malformed hashes,
+The frontend API decoder rejects unknown origin/status values, malformed hashes,
 non-positive dimensions, oversized dimensions, unsupported MIME, missing alt
 text, and non-opaque asset routes. Invalid visual data becomes `null` and the
-source remains usable.
+source remains usable. Invalid status data also becomes `null`; raw backend
+error text is never rendered.
 
 Route usage is:
 
@@ -350,6 +364,9 @@ Route usage is:
 - `/knowledge`: compact cover treatment for selected source context;
 - `/search`: cover thumbnails only for source-bearing results;
 - `/capture`: bounded source preview after a source has been created or linked.
+  The server may match a capture item only by its existing full-file SHA-256 to
+  a current cache row's `source_file_sha256`; it never guesses by filename or
+  path, and the browser never hashes or opens the local file.
 
 Routes keep their existing hooks and mutations. No component fetches source
 authority independently. Existing actions dispatch exactly once.
