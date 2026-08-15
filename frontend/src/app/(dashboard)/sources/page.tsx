@@ -287,17 +287,34 @@ export default function SourcesPage() {
     router.push(`/sources/${sourceId}`)
   }, [router])
 
-  const refetchSourcesAfterVisualMutation = useCallback(() => {
-    void fetchSources(true)
-  }, [fetchSources])
+  const refreshSourceAfterVisualMutation = useCallback(async (sourceId: string) => {
+    try {
+      const refreshed = await sourcesApi.get(sourceId)
+      setSources(prev => prev.map(source => {
+        if (source.id !== sourceId) return source
+        const merged: SourceListResponse = { ...source, ...refreshed }
+        return merged
+      }))
+    } catch (err) {
+      console.error('Failed to refresh source after visual mutation:', err)
+    }
+  }, [])
 
   const handleGalleryRefresh = useCallback((sourceId: string) => {
-    refreshVisual(sourceId, { onSuccess: refetchSourcesAfterVisualMutation })
-  }, [refreshVisual, refetchSourcesAfterVisualMutation])
+    refreshVisual(sourceId, {
+      onSuccess: () => {
+        void refreshSourceAfterVisualMutation(sourceId)
+      },
+    })
+  }, [refreshSourceAfterVisualMutation, refreshVisual])
 
   const handleGalleryRemove = useCallback((sourceId: string) => {
-    removeVisual(sourceId, { onSuccess: refetchSourcesAfterVisualMutation })
-  }, [removeVisual, refetchSourcesAfterVisualMutation])
+    removeVisual(sourceId, {
+      onSuccess: () => {
+        void refreshSourceAfterVisualMutation(sourceId)
+      },
+    })
+  }, [refreshSourceAfterVisualMutation, removeVisual])
 
   const handleDeleteClick = useCallback((e: React.MouseEvent, source: SourceListResponse) => {
     e.stopPropagation() // Prevent row click

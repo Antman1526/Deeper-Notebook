@@ -41,6 +41,7 @@ vi.mock('@/components/common/ConfirmDialog', () => ({
 vi.mock('@/lib/api/sources', () => ({
   sourcesApi: {
     list: vi.fn(),
+    get: vi.fn(),
     delete: vi.fn(),
   },
 }))
@@ -90,6 +91,7 @@ describe('SourcesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(sourcesApi.list).mockReset()
+    vi.mocked(sourcesApi.get).mockReset()
     mockVisualSystemEnabled.mockReturnValue(false)
     mockSourceVisualsEnabled.mockReturnValue(false)
     vi.mocked(useCreateDialogs).mockReturnValue({ openSourceDialog } as never)
@@ -198,7 +200,7 @@ describe('SourcesPage', () => {
     }))
   })
 
-  it('refetches the page-owned sources after successful visual mutations so covers update and pending clears', async () => {
+  it('refreshes the page-owned source after successful visual mutations so covers update and pending clears', async () => {
     const firstUpdated = '2026-08-10T00:00:00Z'
     const refreshedUpdated = '2026-08-10T00:01:00Z'
     const removedUpdated = '2026-08-10T00:02:00Z'
@@ -213,10 +215,10 @@ describe('SourcesPage', () => {
     })
     mockVisualSystemEnabled.mockReturnValue(true)
     mockSourceVisualsEnabled.mockReturnValue(true)
-    vi.mocked(sourcesApi.list)
-      .mockResolvedValueOnce([source()])
-      .mockResolvedValueOnce([source({ updated: refreshedUpdated, visual_status: { state: 'unavailable', command_id: null, error_code: null, updated_at: refreshedStatusUpdated } })])
-      .mockResolvedValueOnce([source({ updated: removedUpdated, visual_status: { state: 'unavailable', command_id: null, error_code: null, updated_at: removedStatusUpdated }, visual: null })])
+    vi.mocked(sourcesApi.list).mockResolvedValueOnce([source()])
+    vi.mocked(sourcesApi.get)
+      .mockResolvedValueOnce(source({ updated: refreshedUpdated, visual_status: { state: 'unavailable', command_id: null, error_code: null, updated_at: refreshedStatusUpdated } }) as never)
+      .mockResolvedValueOnce(source({ updated: removedUpdated, visual_status: { state: 'unavailable', command_id: null, error_code: null, updated_at: removedStatusUpdated }, visual: null }) as never)
     let refreshSuccess: (() => void) | undefined
     let removeSuccess: (() => void) | undefined
     mockRefreshVisual.mockImplementation((_sourceId: string, options?: { onSuccess?: () => void }) => {
@@ -236,7 +238,7 @@ describe('SourcesPage', () => {
       refreshSuccess?.()
     })
 
-    await waitFor(() => expect(sourcesApi.list).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:one'))
     expect(await screen.findByText('Visual cover unavailable')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Refresh visual for Field notes' })).not.toBeDisabled()
 
@@ -247,7 +249,7 @@ describe('SourcesPage', () => {
       removeSuccess?.()
     })
 
-    await waitFor(() => expect(sourcesApi.list).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledTimes(2))
     expect(screen.getByRole('button', { name: 'Remove visual for Field notes' })).not.toBeDisabled()
   })
 
@@ -269,6 +271,138 @@ describe('SourcesPage', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Remove visual for Field notes' }), { key: 'Enter' })
 
     expect(mockRouterPush).not.toHaveBeenCalled()
+  })
+
+  it('preserves loaded gallery pages and selection while merging a later source mutation', async () => {
+    const source = (index: number, overrides: Partial<SourceListResponse> = {}): SourceListResponse => ({
+      id: `source:${index}`,
+      title: `Source ${index}`,
+      source_type: 'text',
+      created: '2026-08-10T00:00:00Z',
+      updated: '2026-08-10T00:00:00Z',
+      asset: null,
+      embedded: true,
+      embedded_chunks: 0,
+      insights_count: 0,
+      ...overrides,
+    })
+    const firstPage = Array.from({ length: 30 }, (_, index) => source(index + 1))
+    const secondPage = Array.from({ length: 30 }, (_, index) => source(index + 31))
+    const continuationPage = [source(61)]
+    const refreshedSource = source(45, {
+      updated: '2026-08-10T01:00:00Z',
+      visual: null,
+      visual_status: {
+        state: 'unavailable',
+        command_id: null,
+        error_code: null,
+        updated_at: '2026-08-10T01:00:01Z',
+      },
+    })
+
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    let scrollSurface: HTMLDivElement | null = null
+    vi.mocked(sourcesApi.list).mockImplementation(async (params) => {
+      switch (params?.offset ?? 0) {
+        case 0:
+          return firstPage
+        case 30:
+          if (scrollSurface) scrollSurface.scrollTop = 0
+          return secondPage
+        case 60:
+          return continuationPage
+        default:
+          return []
+      }
+    })
+    vi.mocked(sourcesApi.get).mockResolvedValue(refreshedSource as never)
+    let refreshSuccess: (() => void) | undefined
+    mockRefreshVisual.mockImplementation((_sourceId: string, options?: { onSuccess?: () => void }) => {
+      refreshSuccess = options?.onSuccess
+    })
+
+    render(<SourcesPage />)
+
+    const gallery = await screen.findByLabelText('Source gallery')
+    scrollSurface = gallery.closest('[data-dn-horizontal-scroll="sources-gallery"]') as HTMLDivElement
+    Object.defineProperties(scrollSurface, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    })
+    scrollSurface.scrollTop = 600
+    fireEvent.scroll(scrollSurface)
+    await waitFor(() => {
+      expect(screen.getByTestId('source-gallery-card-source:60')).toBeInTheDocument()
+    })
+    expect(sourcesApi.list).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 30, limit: 30 }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Source 45' }))
+    expect(screen.getByRole('button', { name: 'Select Source 45' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Source 45' }))
+    await act(async () => {
+      refreshSuccess?.()
+    })
+
+    await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:45'))
+    expect(sourcesApi.list).toHaveBeenCalledTimes(2)
+    expect(screen.getByTestId('source-gallery-card-source:60')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select Source 45' })).toHaveAttribute('aria-pressed', 'true')
+
+    scrollSurface.scrollTop = 600
+    fireEvent.scroll(scrollSurface)
+    await waitFor(() => expect(sourcesApi.list).toHaveBeenCalledTimes(3))
+    expect(sourcesApi.list).toHaveBeenNthCalledWith(3, expect.objectContaining({ offset: 60, limit: 30 }))
+    expect(screen.getByTestId('source-gallery-card-source:61')).toBeInTheDocument()
+  })
+
+  it('preserves loaded gallery state when the authoritative mutation refresh fails', async () => {
+    const source = (index: number): SourceListResponse => ({
+      id: `source:${index}`,
+      title: `Source ${index}`,
+      source_type: 'text',
+      created: '2026-08-10T00:00:00Z',
+      updated: '2026-08-10T00:00:00Z',
+      asset: null,
+      embedded: true,
+      embedded_chunks: 0,
+      insights_count: 0,
+    })
+    const loadedSources = Array.from({ length: 31 }, (_, index) => source(index + 1))
+    let refreshSuccess: (() => void) | undefined
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    vi.mocked(sourcesApi.list).mockResolvedValueOnce(loadedSources as never)
+    vi.mocked(sourcesApi.get).mockRejectedValue(new Error('source read unavailable'))
+    mockRefreshVisual.mockImplementation((_sourceId: string, options?: { onSuccess?: () => void }) => {
+      refreshSuccess = options?.onSuccess
+    })
+
+    try {
+      render(<SourcesPage />)
+
+      expect(await screen.findByTestId('source-gallery-card-source:31')).toBeInTheDocument()
+      expect(screen.getAllByRole('listitem')).toHaveLength(31)
+      fireEvent.click(screen.getByRole('button', { name: 'Select Source 31' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Source 31' }))
+      await act(async () => {
+        refreshSuccess?.()
+      })
+
+      await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:31'))
+      await waitFor(() => expect(consoleError).toHaveBeenCalledWith(
+        'Failed to refresh source after visual mutation:',
+        expect.any(Error),
+      ))
+      expect(sourcesApi.list).toHaveBeenCalledTimes(1)
+      expect(screen.getAllByRole('listitem')).toHaveLength(31)
+      expect(screen.getByTestId('source-gallery-card-source:30')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Select Source 31' })).toHaveAttribute('aria-pressed', 'true')
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('keeps ArrowDown keyboard navigation scrolling the selected gallery card into view', async () => {
