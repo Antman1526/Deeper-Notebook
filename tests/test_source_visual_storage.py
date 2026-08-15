@@ -142,6 +142,35 @@ def test_publish_keeps_one_root_identity_across_temp_and_destination(
     assert not (replacement_root / stored.asset_relpath).exists()
 
 
+def test_publish_rejects_temp_path_exchange_after_descriptor_verification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    original_replace = os.replace
+    exchanged = False
+
+    def exchange_then_replace(*args: object, **kwargs: object) -> None:
+        nonlocal exchanged
+        if not exchanged and args and args[0] == staged.temp_name:
+            temp_path = store.root / ".tmp" / staged.temp_name
+            verified_path = temp_path.with_suffix(".verified")
+            temp_path.rename(verified_path)
+            temp_path.write_bytes(b"unverified-replacement")
+            exchanged = True
+        original_replace(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.replace", exchange_then_replace
+    )
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.publish(staged)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert not (store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)).exists()
+
+
 def test_stage_rejects_asset_hash_mismatch(tmp_path: Path):
     store = SourceVisualStore(data_folder=tmp_path)
     prepared = _prepared().model_copy(update={"asset_sha256": "f" * 64})

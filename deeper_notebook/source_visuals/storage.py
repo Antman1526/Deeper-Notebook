@@ -397,6 +397,30 @@ class SourceVisualStore:
                 src_dir_fd=temp_fd,
                 dst_dir_fd=parent_fd,
             )
+            verified_stat = os.fstat(verify_fd)
+            published_fd = self._open_regular_file(parent_fd, filename)
+            try:
+                published_stat = os.fstat(published_fd)
+                published_hash, published_size = _hash_fd(published_fd)
+            finally:
+                os.close(published_fd)
+            if (
+                (published_stat.st_dev, published_stat.st_ino)
+                != (verified_stat.st_dev, verified_stat.st_ino)
+                or published_hash != staged.asset_sha256
+                or published_size != size
+            ):
+                try:
+                    current = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+                    if (current.st_dev, current.st_ino) == (
+                        published_stat.st_dev,
+                        published_stat.st_ino,
+                    ):
+                        os.unlink(filename, dir_fd=parent_fd)
+                        os.fsync(parent_fd)
+                except OSError:
+                    pass
+                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
             os.fsync(parent_fd)
             os.fsync(temp_fd)
             return StoredVisualAsset(
