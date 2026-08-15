@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../components/deeper-notebook/source-gallery/source-gallery.css";
 
 @theme inline {
   --color-background: var(--background);

@@ -1,0 +1,207 @@
+.dn-source-gallery {
+  container: source-gallery / inline-size;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-x: clip;
+}
+
+.dn-source-gallery__filters,
+.dn-source-cover__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.dn-source-gallery__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: clamp(.75rem, 2cqi, 1.25rem);
+  min-width: 0;
+}
+
+.dn-source-gallery__card {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--card-foreground);
+  padding: 0.75rem;
+}
+
+.dn-source-gallery__select,
+.dn-source-cover__actions button,
+.dn-evidence-peek button {
+  min-height: 44px;
+  min-width: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: inherit;
+  padding: 0.5rem 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.dn-source-gallery__select[aria-pressed='true'] {
+  border-color: var(--primary);
+  outline: 2px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  outline-offset: 2px;
+}
+
+.dn-source-cover {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.dn-source-cover__visual {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+}
+
+.dn-source-cover__visual img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dn-source-gallery__provenance {
+  position: absolute;
+  inset: auto 0.5rem 0.5rem auto;
+  max-inline-size: calc(100% - 1rem);
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--foreground);
+  padding: 0.25rem 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.dn-source-cover__fallback {
+  display: grid;
+  align-content: end;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.dn-source-cover__shape {
+  position: absolute;
+  inset: 1rem auto auto 1rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.35;
+}
+
+.dn-source-cover__title,
+.dn-source-cover__type,
+.dn-source-cover__status,
+.dn-evidence-peek p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.dn-source-cover__title {
+  font-weight: 700;
+}
+
+.dn-source-cover__type,
+.dn-source-cover__status {
+  color: var(--muted-foreground);
+}
+
+.dn-evidence-peek {
+  display: grid;
+  gap: 1rem;
+  max-inline-size: min(42rem, calc(100vw - 2rem));
+  max-block-size: min(75vh, 42rem);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  padding: 1rem;
+}
+
+.dn-evidence-peek__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.dn-evidence-peek__header h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@container source-gallery (min-width: 64rem) {
+  .dn-source-gallery__card[data-featured='true'] {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
+}
+
+@container source-gallery (max-width: 34rem) {
+  .dn-source-gallery__card {
+    grid-template-columns: 6rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .dn-source-gallery__select {
+    grid-column: 1 / -1;
+  }
+
+  .dn-source-cover--card {
+    grid-template-columns: 6rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .dn-source-cover--card .dn-source-cover__visual {
+    min-height: 4.5rem;
+  }
+}
+
+@media (max-height: 42rem) {
+  .dn-source-gallery__card,
+  .dn-evidence-peek {
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .dn-source-gallery__card,
+  .dn-source-cover__visual,
+  .dn-evidence-peek,
+  .dn-source-gallery__select,
+  .dn-source-cover__actions button,
+  .dn-evidence-peek button {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dn-source-gallery *,
+  .dn-evidence-peek * {
+    animation: none;
+    scroll-behavior: auto;
+    transition: none;
+  }
+}
