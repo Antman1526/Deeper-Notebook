@@ -2032,6 +2032,63 @@ def test_recovery_scan_rejects_unbounded_irrelevant_entries_before_mutation(
     assert not list((store.root / ".tmp").glob("stage-*.tmp"))
 
 
+@pytest.mark.parametrize("window", ["before-journal", "after-journal-removal"])
+def test_fresh_store_retires_empty_fence_crash_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: str
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    parent = (store.root / stored.asset_relpath).parent
+    fence = parent / f".unlink-fence-{'c' * 32}"
+    fence.mkdir(mode=0o700)
+    if window == "after-journal-removal":
+        (fence / ".journal").write_text(
+            '{"dev":1,"ino":1,"name":"placeholder","operation":"unlink"}',
+            encoding="ascii",
+        )
+        (fence / ".journal").unlink()
+
+    original_fsync = os.fsync
+    parent_identity = (parent.stat().st_dev, parent.stat().st_ino)
+    synced_parent = False
+
+    def fsync(descriptor: int) -> None:
+        nonlocal synced_parent
+        metadata = os.fstat(descriptor)
+        if (metadata.st_dev, metadata.st_ino) == parent_identity:
+            synced_parent = True
+        original_fsync(descriptor)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fsync", fsync)
+    fresh_store = SourceVisualStore(data_folder=tmp_path)
+    staged = fresh_store.stage("source:two", "b" * 64, _prepared())
+
+    assert staged.temp_name
+    assert not fence.exists()
+    assert synced_parent
+
+
+def test_nonempty_fence_without_journal_blocks_recovery_without_deletion(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    parent = (store.root / stored.asset_relpath).parent
+    fence = parent / f".unlink-fence-{'d' * 32}"
+    fence.mkdir(mode=0o700)
+    foreign = fence / "foreign"
+    foreign.write_bytes(b"foreign-fence")
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        SourceVisualStore(data_folder=tmp_path).stage(
+            "source:two", "b" * 64, _prepared()
+        )
+
+    assert error.value.code == "CACHE_RECOVERY_REQUIRED"
+    assert fence.exists()
+    assert foreign.read_bytes() == b"foreign-fence"
+
+
 def test_mutation_guard_is_reentrant_for_stage_in_the_same_thread(tmp_path: Path):
     context = mp.get_context("fork")
     completed = context.Event()

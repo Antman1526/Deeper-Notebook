@@ -560,6 +560,20 @@ class SourceVisualStore:
         os.rmdir(fence_name, dir_fd=parent_fd)
         os.fsync(parent_fd)
 
+    def _retire_empty_fence_at(
+        self, parent_fd: int, fence_name: str, fence_fd: int, visited: list[int]
+    ) -> None:
+        """Retire only an exact private fence proven empty immediately before rmdir."""
+
+        if self._fence_entry_names(fence_fd, visited):
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        os.close(fence_fd)
+        try:
+            os.rmdir(fence_name, dir_fd=parent_fd)
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        os.fsync(parent_fd)
+
     def _reconcile_fence_at(
         self,
         parent_fd: int,
@@ -575,6 +589,12 @@ class SourceVisualStore:
             fence_entries = self._fence_entry_names(
                 fence_fd, [0] if visited is None else visited
             )
+            if not fence_entries:
+                self._retire_empty_fence_at(
+                    parent_fd, fence_name, fence_fd, [0] if visited is None else visited
+                )
+                fence_fd = None
+                return True
             name, expected_dev, expected_ino = self._read_fence_journal(fence_fd)
             if fence_entries not in ({_UNLINK_JOURNAL}, {_UNLINK_JOURNAL, name}):
                 raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
@@ -666,7 +686,13 @@ class SourceVisualStore:
     def _unlink_verified(
         self, parent_fd: int, name: str, expected_stat: os.stat_result
     ) -> None:
-        """Journal then move a name into a private fence before deletion."""
+        """Journal then move a name into a private fence before deletion.
+
+        Once the public name is atomically moved, the random 0700 fence plus the
+        held mutation lock is the trusted serialization boundary. Same-UID actors
+        bypassing that advisory boundary can alter the entire cache and are out of
+        this controlled-cache threat model.
+        """
 
         fence_fd = None
         fence_name = f"{_UNLINK_FENCE_PREFIX}{secrets.token_hex(16)[:32]}"
