@@ -114,6 +114,27 @@ export default function SourcesPage() {
     }
   }, [sources])
 
+  const scrollToSelectedRow = useCallback((index: number) => {
+    const scrollContainer = scrollContainerRef.current
+    if (!scrollContainer) return
+
+    // The legacy table and enabled gallery use different selectable elements,
+    // but keyboard navigation keeps their shared source-index ordering.
+    const selectedElement = visualGalleryEnabled
+      ? scrollContainer.querySelectorAll('[data-dn-source-gallery] [role="listitem"]')[index] as HTMLElement
+      : scrollContainer.querySelectorAll('tbody tr')[index] as HTMLElement
+    if (!selectedElement) return
+
+    const containerRect = scrollContainer.getBoundingClientRect()
+    const elementRect = selectedElement.getBoundingClientRect()
+
+    if (elementRect.top < containerRect.top) {
+      selectedElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } else if (elementRect.bottom > containerRect.bottom) {
+      selectedElement.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
+  }, [visualGalleryEnabled])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (sources.length === 0) return
@@ -177,31 +198,7 @@ export default function SourcesPage() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [sources, selectedIndex, router])
-
-  const scrollToSelectedRow = (index: number) => {
-    const scrollContainer = scrollContainerRef.current
-    if (!scrollContainer) return
-
-    // The legacy table and enabled gallery use different selectable elements,
-    // but keyboard navigation keeps their shared source-index ordering.
-    const selectedElement = visualGalleryEnabled
-      ? scrollContainer.querySelectorAll('[data-dn-source-gallery] [role="listitem"]')[index] as HTMLElement
-      : scrollContainer.querySelectorAll('tbody tr')[index] as HTMLElement
-    if (!selectedElement) return
-
-    const containerRect = scrollContainer.getBoundingClientRect()
-    const elementRect = selectedElement.getBoundingClientRect()
-
-    // Check if row is above visible area
-    if (elementRect.top < containerRect.top) {
-      selectedElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-    // Check if row is below visible area
-    else if (elementRect.bottom > containerRect.bottom) {
-      selectedElement.scrollIntoView({ behavior: 'smooth', block: 'end' })
-    }
-  }
+  }, [sources, selectedIndex, router, scrollToSelectedRow])
 
   // Set up scroll listener after sources are loaded
   useEffect(() => {
