@@ -2192,6 +2192,185 @@ async def test_delete_record_installs_claim_before_releasing_tombstone_guard(
 
 
 @pytest.mark.asyncio
+async def test_delete_claim_heartbeat_fences_reconciliation_past_initial_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store_a = SourceVisualStore(data_folder=tmp_path)
+    store_b = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store_a)
+    record = _record(stored)
+    clock = [1_000]
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time", lambda: clock[0]
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.cleanup._DELETION_CLAIM_HEARTBEAT_SECONDS",
+        0.01,
+        raising=False,
+    )
+
+    class BlockingRepository(_Repository):
+        def __init__(self) -> None:
+            super().__init__([record])
+            self.delete_started = asyncio.Event()
+            self.release_delete = asyncio.Event()
+
+        async def delete_ready_if_current(self, current: SourceVisualRecord) -> bool:
+            self.delete_started.set()
+            await self.release_delete.wait()
+            return await super().delete_ready_if_current(current)
+
+    repository = BlockingRepository()
+    delete_task = asyncio.create_task(
+        SourceVisualCleanup(store_a, repository).delete_record(record)
+    )
+    await asyncio.wait_for(repository.delete_started.wait(), timeout=1)
+    clock[0] += 301
+    await asyncio.sleep(0.05)
+
+    assert await SourceVisualCleanup(store_b, repository).reconcile_tombstones(
+        limit=100
+    ) == 0
+    assert not (store_a.root / record.asset_relpath).exists()
+
+    repository.release_delete.set()
+    assert await asyncio.wait_for(delete_task, timeout=1) is True
+    assert repository.records == []
+    assert store_a.list_tombstones(limit=100) == ()
+    assert not list((store_a.root / record.asset_relpath).parent.glob(".deleting-*"))
+
+
+@pytest.mark.asyncio
+async def test_delete_claim_heartbeat_failure_cancels_pending_database_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.cleanup._DELETION_CLAIM_HEARTBEAT_SECONDS",
+        0.01,
+        raising=False,
+    )
+    cancelled = asyncio.Event()
+
+    class BlockingRepository(_Repository):
+        def __init__(self) -> None:
+            super().__init__([record])
+
+        async def delete_ready_if_current(self, current: SourceVisualRecord) -> bool:
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    def fail_renew(_claim: object) -> object:
+        raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+
+    monkeypatch.setattr(
+        store, "renew_tombstone_deletion_claim", fail_renew, raising=False
+    )
+    with pytest.raises(SourceVisualStorageError) as error:
+        await asyncio.wait_for(
+            SourceVisualCleanup(store, BlockingRepository()).delete_record(record),
+            timeout=0.2,
+        )
+
+    assert error.value.code == "CACHE_RECOVERY_REQUIRED"
+    assert await asyncio.wait_for(cancelled.wait(), timeout=1)
+    parent = (store.root / record.asset_relpath).parent
+    assert not (store.root / record.asset_relpath).exists()
+    assert store.list_tombstones(limit=100)
+    assert list(parent.glob(".deleting-*.claim"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["raises", "false"])
+async def test_delete_claim_uses_renewed_owner_for_database_failure_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    clock = [1_000]
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time", lambda: clock[0]
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.cleanup._DELETION_CLAIM_HEARTBEAT_SECONDS",
+        0.01,
+    )
+
+    class BlockingRepository(_Repository):
+        def __init__(self) -> None:
+            super().__init__([record])
+            self.delete_started = asyncio.Event()
+            self.release_delete = asyncio.Event()
+
+        async def delete_ready_if_current(self, current: SourceVisualRecord) -> bool:
+            self.delete_started.set()
+            await self.release_delete.wait()
+            if outcome == "raises":
+                raise RuntimeError("database unavailable")
+            return False
+
+    repository = BlockingRepository()
+    deleting = asyncio.create_task(
+        SourceVisualCleanup(store, repository).delete_record(record)
+    )
+    await asyncio.wait_for(repository.delete_started.wait(), timeout=1)
+    clock[0] += 1
+    await asyncio.sleep(0.05)
+    repository.release_delete.set()
+
+    if outcome == "raises":
+        with pytest.raises(RuntimeError, match="database unavailable"):
+            await asyncio.wait_for(deleting, timeout=1)
+    else:
+        assert await asyncio.wait_for(deleting, timeout=1) is False
+    assert store.read_exact(record) == b"derived-webp"
+    assert repository.records == [record]
+    assert not list((store.root / record.asset_relpath).parent.glob(".deleting-*"))
+
+
+@pytest.mark.asyncio
+async def test_cancelling_delete_leaves_recoverable_tombstone_and_claim(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    class BlockingRepository(_Repository):
+        def __init__(self) -> None:
+            super().__init__([record])
+
+        async def delete_ready_if_current(self, current: SourceVisualRecord) -> bool:
+            started.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    task = asyncio.create_task(
+        SourceVisualCleanup(store, BlockingRepository()).delete_record(record)
+    )
+    await asyncio.wait_for(started.wait(), timeout=1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert await asyncio.wait_for(cancelled.wait(), timeout=1)
+    assert not (store.root / record.asset_relpath).exists()
+    assert store.list_tombstones(limit=100)
+    assert list((store.root / record.asset_relpath).parent.glob(".deleting-*.claim"))
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("row_present", [True, False])
 async def test_stale_deletion_claim_reconciles_exact_tombstone_and_clears_claim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, row_present: bool

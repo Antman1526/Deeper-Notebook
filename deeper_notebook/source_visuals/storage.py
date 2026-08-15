@@ -1630,6 +1630,38 @@ class SourceVisualStore:
         finally:
             _safe_close(parent_fd)
 
+    def renew_tombstone_deletion_claim(
+        self, claim: TombstoneDeletionClaim
+    ) -> TombstoneDeletionClaim:
+        """Renew only the current pending owner's exact deletion lease."""
+
+        self._validate_deletion_claim(claim)
+        if claim.phase != "pending":
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        parent_fd = None
+        try:
+            with self.mutation_guard() as root_fd:
+                parent_fd, _filename = self._open_asset_parent_at(
+                    root_fd, claim.tombstone.asset_relpath, create=False
+                )
+                current, current_stat = self._read_deletion_claim_at(
+                    parent_fd, claim.claim_name
+                )
+                if current != claim:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                renewed = replace(
+                    claim, expires_at=int(time.time()) + _DELETION_CLAIM_SECONDS
+                )
+                self._unlink_verified(parent_fd, claim.claim_name, current_stat)
+                self._write_deletion_claim_at(parent_fd, renewed)
+                return renewed
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        finally:
+            _safe_close(parent_fd)
+
     def release_tombstone_deletion_claim(self, claim: TombstoneDeletionClaim) -> None:
         """Release a claim only if this owner still holds its exact lease."""
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from typing import Protocol
 
@@ -9,8 +10,28 @@ from deeper_notebook.source_visuals.contracts import SourceVisualRecord
 from deeper_notebook.source_visuals.storage import (
     SourceVisualStorageError,
     SourceVisualStore,
+    TombstoneDeletionClaim,
     TombstonedVisualAsset,
 )
+
+_DELETION_CLAIM_HEARTBEAT_SECONDS = 60
+
+
+class _DeletionClaimHeartbeatLost(Exception):
+    """A DB await lost its owner lease and must defer to durable recovery."""
+
+    def __init__(self, error: SourceVisualStorageError) -> None:
+        self.error = error
+        super().__init__(error.code)
+
+
+class _DeletionClaimDatabaseError(Exception):
+    """Carry the latest lease when the awaited conditional delete fails."""
+
+    def __init__(self, error: Exception, claim: TombstoneDeletionClaim) -> None:
+        self.error = error
+        self.claim = claim
+        super().__init__(str(error))
 
 
 class SourceVisualCleanupRepository(Protocol):
@@ -36,13 +57,85 @@ class SourceVisualCleanup:
         self._store = store
         self._repository = repository
 
+    async def _renew_claim_until_stopped(
+        self,
+        claim_state: list[TombstoneDeletionClaim],
+        stopped: asyncio.Event,
+    ) -> SourceVisualStorageError | None:
+        while True:
+            try:
+                await asyncio.wait_for(
+                    stopped.wait(), timeout=_DELETION_CLAIM_HEARTBEAT_SECONDS
+                )
+                return None
+            except TimeoutError:
+                try:
+                    claim_state[0] = self._store.renew_tombstone_deletion_claim(
+                        claim_state[0]
+                    )
+                except SourceVisualStorageError as exc:
+                    return exc
+
+    async def _delete_with_claim_heartbeat(
+        self,
+        record: SourceVisualRecord,
+        claim: TombstoneDeletionClaim,
+    ) -> tuple[bool, TombstoneDeletionClaim]:
+        claim_state = [claim]
+        stopped = asyncio.Event()
+        delete_task = asyncio.create_task(
+            self._repository.delete_ready_if_current(record)
+        )
+        heartbeat_task = asyncio.create_task(
+            self._renew_claim_until_stopped(claim_state, stopped)
+        )
+        try:
+            done, _pending = await asyncio.wait(
+                {delete_task, heartbeat_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if heartbeat_task in done:
+                heartbeat_error = heartbeat_task.result()
+                if heartbeat_error is not None:
+                    if not delete_task.done():
+                        delete_task.cancel()
+                        await asyncio.gather(delete_task, return_exceptions=True)
+                    raise _DeletionClaimHeartbeatLost(heartbeat_error)
+            if not delete_task.done():
+                raise _DeletionClaimHeartbeatLost(
+                    SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                )
+            stopped.set()
+            heartbeat_error = await heartbeat_task
+            if heartbeat_error is not None:
+                raise _DeletionClaimHeartbeatLost(heartbeat_error)
+            try:
+                deleted = delete_task.result()
+            except Exception as exc:
+                raise _DeletionClaimDatabaseError(exc, claim_state[0]) from exc
+            return deleted, claim_state[0]
+        finally:
+            stopped.set()
+            if not delete_task.done():
+                delete_task.cancel()
+                await asyncio.gather(delete_task, return_exceptions=True)
+            if not heartbeat_task.done():
+                await heartbeat_task
+
     async def delete_record(self, record: SourceVisualRecord) -> bool:
         claimed_tombstone = self._store.tombstone_with_deletion_claim(record)
         if claimed_tombstone is None:
             return False
         tombstone, claim = claimed_tombstone
         try:
-            deleted = await self._repository.delete_ready_if_current(record)
+            deleted, claim = await self._delete_with_claim_heartbeat(record, claim)
+        except _DeletionClaimHeartbeatLost as exc:
+            # Retain the exact tombstone and expired/failed claim. A bounded
+            # future reconciler rechecks the row before moving either byte set.
+            raise exc.error
+        except _DeletionClaimDatabaseError as exc:
+            self._restore_after_failed_delete(tombstone)
+            self._store.release_tombstone_deletion_claim(exc.claim)
+            raise exc.error
         except Exception:
             self._restore_after_failed_delete(tombstone)
             self._store.release_tombstone_deletion_claim(claim)
