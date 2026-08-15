@@ -120,7 +120,11 @@ async def main() -> int:
                 "candidate_count": measurement.candidate_count,
                 "duration_seconds": round(measurement.duration_seconds, 6),
                 "output_webp_bytes": measurement.output_webp_bytes,
-                "passed": measurement.duration_seconds <= MAX_KIND_SECONDS,
+                "passed": (
+                    measurement.duration_seconds <= MAX_KIND_SECONDS
+                    and measurement.candidate_count > 0
+                    and measurement.output_webp_bytes > 0
+                ),
             }
             for kind, measurement in measurements.items()
         },
@@ -132,7 +136,7 @@ async def main() -> int:
         "source_rows": {"query_count": 0, "mutated": False},
     }
     receipt["passed"] = bool(
-        all(item.duration_seconds <= MAX_KIND_SECONDS for item in measurements.values())
+        all(item["passed"] for item in receipt["fixtures"].values())
         and cache_bytes <= MAX_CACHE_BYTES
         and not receipt["source_rows"]["mutated"]
     )
@@ -144,7 +148,7 @@ async def main() -> int:
     temporary.replace(RECEIPT_PATH)
     print(json.dumps(receipt, indent=2, sort_keys=True))
     if not receipt["passed"]:
-        raise RuntimeError("source visual extraction or cache budget exceeded")
+        raise RuntimeError("nonempty visual extraction, cache, or source-row budget exceeded")
     return 0
 
 

@@ -6,8 +6,10 @@ import {
 } from '../../src/lib/visual-system/route-manifest'
 import {
   installVisualSystemFixture,
+  frequencyMapFromLabels,
   VISUAL_MATRIX_THEMES,
   VISUAL_MATRIX_VIEWPORTS,
+  type VisualSystemFixtureHandle,
   type VisualMatrixTheme,
   type VisualMatrixViewport,
 } from './visual-system'
@@ -35,6 +37,7 @@ export interface SourceGalleryRequestLedger {
 }
 
 export interface SourceGalleryFixtureHandle {
+  base: VisualSystemFixtureHandle
   ledger: SourceGalleryRequestLedger
   expectCall: (label: string, count?: number) => void
   releaseData: () => void
@@ -63,6 +66,28 @@ function requestLabel(method: string, pathname: string): string {
 
 function increment(map: Record<string, number>, key: string, count = 1): void {
   map[key] = (map[key] ?? 0) + count
+}
+
+function mergeFrequencyMaps(...maps: readonly Record<string, number>[]): Record<string, number> {
+  return maps.reduce<Record<string, number>>((merged, map) => {
+    for (const [label, count] of Object.entries(map)) {
+      merged[label] = (merged[label] ?? 0) + count
+    }
+    return merged
+  }, {})
+}
+
+function delegatedLabel(label: string): boolean {
+  const separator = label.indexOf(' ')
+  if (separator <= 0) return false
+  const path = label.slice(separator + 1)
+  return ['/api/sources', '/api/search', '/api/capture'].some((prefix) => (
+    path === prefix || path.startsWith(`${prefix}/`)
+  ))
+}
+
+function withoutDelegatedFrequency(map: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(Object.entries(map).filter(([label]) => !delegatedLabel(label)))
 }
 
 function pageOrigin(url: string): boolean {
@@ -228,7 +253,7 @@ export async function installSourceGalleryFixture(
   { cell, theme, viewport }: InstallOptions,
 ): Promise<SourceGalleryFixtureHandle> {
   await page.setViewportSize({ width: viewport.width, height: viewport.height })
-  await installVisualSystemFixture(page, {
+  const base = await installVisualSystemFixture(page, {
     route: cell.route,
     theme,
     viewport,
@@ -338,7 +363,7 @@ export async function installSourceGalleryFixture(
     await route.abort()
   })
 
-  return { ledger, expectCall, releaseData }
+  return { base, ledger, expectCall, releaseData }
 }
 
 export async function revealSourceGalleryCell(page: Page, cell: SourceGalleryCell): Promise<void> {
@@ -360,8 +385,24 @@ export function sourceGalleryFrequency(labels: readonly string[]): Record<string
   }, {})
 }
 
-export function assertExactSourceGalleryLedger(ledger: SourceGalleryRequestLedger): void {
-  expect(ledger.unexpected).toEqual([])
-  expect(ledger.external).toEqual([])
-  expect(ledger.seen).toEqual(ledger.expected)
+export function assertExactSourceGalleryLedger(fixture: SourceGalleryFixtureHandle): void {
+  const baseExpected = withoutDelegatedFrequency(fixture.base.ledger.expected)
+  const baseSeen = mergeFrequencyMaps(
+    withoutDelegatedFrequency(fixture.base.ledger.seen),
+    withoutDelegatedFrequency(frequencyMapFromLabels(fixture.base.studyLedger.seen)),
+  )
+  const delegatedExpected = { ...fixture.ledger.expected }
+  const delegatedSeen = { ...fixture.ledger.seen }
+
+  expect(fixture.base.ledger.unexpected, 'base unexpected same-origin API requests').toEqual([])
+  expect(fixture.base.studyLedger.unexpected, 'base unexpected Study API requests').toEqual([])
+  expect(fixture.base.ledger.external, 'base external requests').toEqual([])
+  expect(fixture.ledger.unexpected, 'delegated unexpected API requests').toEqual([])
+  expect(fixture.ledger.external, 'delegated external requests').toEqual([])
+  expect(baseSeen, 'base expected-vs-seen').toEqual(baseExpected)
+  expect(delegatedSeen, 'delegated expected-vs-seen').toEqual(delegatedExpected)
+  expect(
+    mergeFrequencyMaps(baseSeen, delegatedSeen),
+    'combined base and delegated expected-vs-seen',
+  ).toEqual(mergeFrequencyMaps(baseExpected, delegatedExpected))
 }
