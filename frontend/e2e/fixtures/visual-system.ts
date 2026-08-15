@@ -208,6 +208,7 @@ export const VISUAL_ROUTE_EXPECTED_REQUESTS: Readonly<Record<string, VisualReque
     'GET /api/updates/check': 1,
     'GET /api/system/network-status': 1,
     'GET /api/notebooks': 2,
+    'GET /api/sources': 1,
     'GET /api/transformations': 1,
     'GET /api/settings': 1,
     'GET /api/episode-profiles': 1,
@@ -538,6 +539,7 @@ export interface VisualSystemFixtureOptions {
   viewport?: VisualMatrixViewport
   ledger?: VisualRequestLedger
   unexpectedExternalRequests?: string[]
+  delegatedApiPrefixes?: readonly string[]
 }
 
 export interface VisualSystemFixtureHandle {
@@ -579,7 +581,7 @@ export function frequencyMapFromLabels(labels: readonly string[]): Record<string
 const notebook = researchWorkbenchFixtures.notebook
 const source = researchWorkbenchFixtures.source
 const sourceList = {
-  id: source.id,
+  id: `source:${source.id}`,
   title: source.title,
   topics: [],
   provenance: { origin: 'browser fixture' },
@@ -596,6 +598,8 @@ const sourceList = {
   extracted_char_count: source.content.length,
   extraction_quality: 'ok',
   status: 'completed',
+  visual: null,
+  visual_status: null,
 } as const
 const sourceDetail = {
   ...sourceList,
@@ -855,9 +859,13 @@ export async function installVisualSystemFixture(
     viewport,
     ledger = emptyLedger(),
     unexpectedExternalRequests = [],
+    delegatedApiPrefixes = [],
   }: VisualSystemFixtureOptions,
 ): Promise<VisualSystemFixtureHandle> {
   const studyLedger: StudyRequestLedger = { expected: [], seen: [], unexpected: [] }
+  const delegated = (pathname: string): boolean => (
+    delegatedApiPrefixes.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  )
 
   const expected = route && viewport
     ? expectedVisualRequestFrequency(route, theme, viewport)
@@ -922,12 +930,14 @@ export async function installVisualSystemFixture(
   page.on('response', (response) => {
     const pathname = sameOriginApiPath(response.url())
     if (!pathname) return
+    if (delegated(pathname)) return
     const label = requestLabel(response.request().method(), pathname)
     if ((ledger.seen[label] ?? 0) > 0 || studyLedger.seen.includes(label)) return
     recordUnknown(response.request(), response.status())
   })
   page.on('requestfailed', (request) => {
-    if (sameOriginApiPath(request.url())) recordUnknown(request, 0)
+    const pathname = sameOriginApiPath(request.url())
+    if (pathname && !delegated(pathname)) recordUnknown(request, 0)
   })
 
   for (const pathname of COMMON_GET_ROUTES) {

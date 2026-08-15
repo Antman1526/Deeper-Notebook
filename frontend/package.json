@@ -10,6 +10,7 @@
     "lint": "eslint src/",
     "test": "vitest run --pool=forks --maxWorkers=1",
     "test:feature-build-contract": "NEXT_PUBLIC_DN_EVIDENCE_STUDIO=enabled NEXT_PUBLIC_ONP_EVIDENCE_STUDIO=0 NEXT_PUBLIC_DN_VISUAL_REFRESH=0 NEXT_PUBLIC_ONP_VISUAL_REFRESH=enabled NEXT_PUBLIC_DN_MODEL_FLEET=yes NEXT_PUBLIC_ONP_MODEL_FLEET=no NEXT_PUBLIC_DN_RESEARCH_RUNS=false NEXT_PUBLIC_ONP_RESEARCH_RUNS=true node scripts/run-feature-build-contract.mjs",
+    "test:source-gallery-budget": "node scripts/measure-source-gallery-budgets.mjs",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:e2e:mocked": "playwright test --project=mocked-browser",

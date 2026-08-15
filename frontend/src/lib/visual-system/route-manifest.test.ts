@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { VISUAL_ROUTE_MANIFEST } from './route-manifest'
+import { SOURCE_GALLERY_CELLS, VISUAL_ROUTE_MANIFEST } from './route-manifest'
 
 function findPageSources(directory: string, repositoryRoot: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -62,5 +62,45 @@ describe('visual system route manifest', () => {
     expect(VISUAL_ROUTE_MANIFEST.every((entry) => entry.browserPath.startsWith('/'))).toBe(true)
     expect(VISUAL_ROUTE_MANIFEST.map((entry) => entry.browserPath)).toHaveLength(22)
     expect(new Set(VISUAL_ROUTE_MANIFEST.map((entry) => entry.browserPath)).size).toBe(22)
+  })
+})
+
+describe('source gallery route manifest', () => {
+  it('adds exact state cells without changing the 22-route Phase 1 matrix', () => {
+    expect(VISUAL_ROUTE_MANIFEST).toHaveLength(22)
+    expect(new Set(SOURCE_GALLERY_CELLS.map(cell => cell.id)).size).toBe(
+      SOURCE_GALLERY_CELLS.length,
+    )
+    expect(new Set(SOURCE_GALLERY_CELLS.map(cell => cell.route))).toEqual(new Set([
+      '/sources',
+      '/notebooks/[id]',
+      '/knowledge',
+      '/search',
+      '/capture',
+    ]))
+    expect(new Set(SOURCE_GALLERY_CELLS.map(cell => cell.state))).toEqual(new Set([
+      'ready',
+      'processing',
+      'failed',
+      'missing-corrupt',
+      'compact',
+      'feature-off',
+    ]))
+  })
+
+  it('has an explicit feature-off rollback cell for every adopted route', () => {
+    expect(
+      SOURCE_GALLERY_CELLS
+        .filter(cell => cell.state === 'feature-off')
+        .map(cell => cell.route)
+        .sort(),
+    ).toEqual([
+      '/capture',
+      '/knowledge',
+      '/notebooks/[id]',
+      '/search',
+      '/sources',
+    ])
+    expect(SOURCE_GALLERY_CELLS.every(cell => cell.browserPath.startsWith('/'))).toBe(true)
   })
 })

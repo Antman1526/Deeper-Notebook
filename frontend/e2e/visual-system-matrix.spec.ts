@@ -49,6 +49,11 @@ test.describe('visual system matrix contract', () => {
       'gemini-forward-light',
       VISUAL_MATRIX_VIEWPORTS.find((viewport) => viewport.name === 'large-desktop')!,
     )['GET /api/sources']).toBe(2)
+    expect(expectedVisualRequestFrequency(
+      '/knowledge',
+      'gemini-forward-light',
+      VISUAL_MATRIX_VIEWPORTS.find((viewport) => viewport.name === 'mobile')!,
+    )['GET /api/sources']).toBe(1)
   })
 
   test('fixture rejects wrong methods and records an unexpected ledger entry', async ({ page }) => {
@@ -358,6 +363,9 @@ test.describe('visual system matrix contract', () => {
     expect(LOWER_CONTENT_SELECTOR_BY_ROUTE['/knowledge']).toBe(
       'main.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
     )
+    expect(LOWER_CONTENT_SELECTOR_BY_ROUTE['/sources']).toBe(
+      'main [data-dn-source-gallery="true"] [role="listitem"]:last-child button:last-child',
+    )
   })
 
   test('parses quoted browser action snapshots without deriving a role', () => {
@@ -414,7 +422,7 @@ const LOWER_CONTENT_SELECTOR_BY_ROUTE = {
   '/setup-wizard': 'main [data-testid="continue-button"]',
   '/notebooks': 'main [aria-label$="Archived Notebooks"]',
   '/notebooks/[id]': 'main textarea[name="chat-message"]:visible',
-  '/sources': 'main [data-dn-sources-table="true"]',
+  '/sources': 'main [data-dn-source-gallery="true"] [role="listitem"]:last-child button:last-child',
   '/sources/[id]': 'main textarea[name="chat-message"]',
   '/knowledge': 'main.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
   '/search': 'main #ask-question',
@@ -849,8 +857,8 @@ async function assertBaseCell(
   expect(pins.rootTransparency, `${route.route} solid transparency pin`).toBe('solid')
   expect(pins.cookies, `${route.route} exact cookie pins`).toEqual(['onp_intro_seen=1', 'wizard_completed=1'])
 
+  await settleVisualNetwork(page)
   assertExactRequestLedgers(route.route, theme, viewport, fixtureLedger, studyLedger)
-
   const geometry = await inspectGeometry(page)
   await settleVisualNetwork(page)
   assertExactRequestLedgers(route.route, theme, viewport, fixtureLedger, studyLedger)

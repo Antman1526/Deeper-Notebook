@@ -174,3 +174,46 @@ export const VISUAL_ROUTE_MANIFEST = [
     states: ['populated', 'unavailable'],
   },
 ] as const satisfies readonly VisualRouteEntry[]
+
+export type SourceGalleryRoute =
+  | '/sources'
+  | '/notebooks/[id]'
+  | '/knowledge'
+  | '/search'
+  | '/capture'
+
+export type SourceGalleryState =
+  | 'ready'
+  | 'processing'
+  | 'failed'
+  | 'missing-corrupt'
+  | 'compact'
+  | 'feature-off'
+
+export interface SourceGalleryCell {
+  id: string
+  route: SourceGalleryRoute
+  browserPath: string
+  state: SourceGalleryState
+  flags: 'enabled' | 'feature-off'
+}
+
+/**
+ * Phase 2A is a focused state matrix layered beside, never folded into, the
+ * fixed 22-route/264-cell Phase 1 visual-system contract.
+ */
+export const SOURCE_GALLERY_CELLS = [
+  { id: 'sources-ready', route: '/sources', browserPath: '/sources?source-gallery-cell=ready', state: 'ready', flags: 'enabled' },
+  { id: 'sources-processing', route: '/sources', browserPath: '/sources?source-gallery-cell=processing', state: 'processing', flags: 'enabled' },
+  { id: 'sources-failed', route: '/sources', browserPath: '/sources?source-gallery-cell=failed', state: 'failed', flags: 'enabled' },
+  { id: 'sources-missing-corrupt', route: '/sources', browserPath: '/sources?source-gallery-cell=missing-corrupt', state: 'missing-corrupt', flags: 'enabled' },
+  { id: 'sources-feature-off', route: '/sources', browserPath: '/sources?source-gallery-cell=feature-off', state: 'feature-off', flags: 'feature-off' },
+  { id: 'notebook-compact', route: '/notebooks/[id]', browserPath: '/notebooks/notebook-fixture-001?source-gallery-cell=compact', state: 'compact', flags: 'enabled' },
+  { id: 'notebook-feature-off', route: '/notebooks/[id]', browserPath: '/notebooks/notebook-fixture-001?source-gallery-cell=feature-off', state: 'feature-off', flags: 'feature-off' },
+  { id: 'knowledge-ready', route: '/knowledge', browserPath: '/knowledge?source-gallery-cell=ready', state: 'ready', flags: 'enabled' },
+  { id: 'knowledge-feature-off', route: '/knowledge', browserPath: '/knowledge?source-gallery-cell=feature-off', state: 'feature-off', flags: 'feature-off' },
+  { id: 'search-ready', route: '/search', browserPath: '/search?mode=search&source-gallery-cell=ready', state: 'ready', flags: 'enabled' },
+  { id: 'search-feature-off', route: '/search', browserPath: '/search?mode=search&source-gallery-cell=feature-off', state: 'feature-off', flags: 'feature-off' },
+  { id: 'capture-ready', route: '/capture', browserPath: '/capture?source-gallery-cell=ready', state: 'ready', flags: 'enabled' },
+  { id: 'capture-feature-off', route: '/capture', browserPath: '/capture?source-gallery-cell=feature-off', state: 'feature-off', flags: 'feature-off' },
+] as const satisfies readonly SourceGalleryCell[]
