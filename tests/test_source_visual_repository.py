@@ -646,6 +646,59 @@ async def test_command_bind_and_queued_receipt_finalization_share_one_fenced_tra
 
 
 @pytest.mark.asyncio
+async def test_legacy_receipt_repair_checks_current_claim_command_in_same_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repository = _repository()
+    payload = {
+        "operation_id": operation_identity("source:one", "request:legacy", "refresh"),
+        "source_id": "source:one",
+        "request_id": "request:legacy",
+        "source_updated_at": SOURCE_UPDATED,
+        "content_sha256": "a" * 64,
+        "operation": "refresh",
+        "command_id": "command:current",
+        "outcome": "queued",
+        "error_code": None,
+        "created_at": SOURCE_UPDATED,
+        "updated_at": SOURCE_UPDATED,
+    }
+    query = AsyncMock(return_value=payload)
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    receipt = await repository.finalize_operation_from_current_claim(
+        source_id="source:one",
+        content_sha256="a" * 64,
+        extractor_version="source-visual-v1",
+        command_id="command:current",
+        request_id="request:legacy",
+        source_updated_at=SOURCE_UPDATED,
+        now=SOURCE_UPDATED,
+    )
+
+    assert receipt.command_id == "command:current"
+    query_text, variables = query.await_args.args
+    assert "LET $claim" in query_text
+    assert "$claim.command_id != $command_record" in query_text
+    assert "UPDATE $operation_record" in query_text
+    assert variables["claim_record"] != "source_visual_claim"
+    assert variables["command_record"] != "command:current"
+
+    query.return_value = {"claim_changed": True}
+    with pytest.raises(SourceVisualConflictError) as error:
+        await repository.finalize_operation_from_current_claim(
+            source_id="source:one",
+            content_sha256="a" * 64,
+            extractor_version="source-visual-v1",
+            command_id="command:stale",
+            request_id="request:legacy",
+            source_updated_at=SOURCE_UPDATED,
+            now=SOURCE_UPDATED,
+        )
+    assert error.value.code == "COMMAND_CONFLICT"
+
+
+@pytest.mark.asyncio
 async def test_completed_delete_lookup_is_exactly_fingerprint_and_revision_bound(
     monkeypatch: pytest.MonkeyPatch,
 ):

@@ -233,6 +233,35 @@ class InMemoryQueueRepository:
         self.recorded.append(receipt)
         return receipt
 
+    async def finalize_operation_from_current_claim(
+        self,
+        source_id=None,
+        content_sha256=None,
+        extractor_version=None,
+        command_id=None,
+        request_id=None,
+        source_updated_at=None,
+        **_kwargs,
+    ):
+        identity = (source_id, content_sha256, extractor_version)
+        claim = self.claims.get(identity)
+        if claim is None or claim.get("command_id") != command_id:
+            raise SourceVisualConflictError("COMMAND_CONFLICT")
+        return await InMemoryQueueRepository.finalize_operation(
+            self,
+            source_id=source_id,
+            request_id=request_id,
+            operation="refresh",
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            expected_command_id=None,
+            expected_outcome="queued",
+            expected_error_code=None,
+            command_id=command_id,
+            outcome="queued",
+            error_code=None,
+        )
+
 
 @pytest.fixture
 def queue_context(monkeypatch):
@@ -369,6 +398,64 @@ async def test_restart_reconciles_command_from_exact_claim_after_finalize_transi
     assert repo.claims[("source:one", HASH, "source-visual-v1")]["command_id"] == "command:created"
     assert first.command_id == replay.command_id == "command:created"
     assert replay.outcome == "replayed"
+
+
+@pytest.mark.asyncio
+async def test_legacy_repair_never_persists_a_command_replaced_during_takeover(
+    queue_context, monkeypatch
+):
+    queue, _repo, _source = queue_context
+    identity = ("source:one", HASH, "source-visual-v1")
+
+    class Repo(InMemoryQueueRepository):
+        takeover_done = False
+
+        async def finalize_operation_from_current_claim(self, *args, **kwargs):
+            # Reproduce the old read/repair gap: a new owner replaces the
+            # durable claim command after queue.py read command:old but before
+            # the commandless operation receipt is finalized.
+            if not self.takeover_done:
+                self.takeover_done = True
+                self.claims[identity]["owner_token"] = "2" * 64
+                self.claims[identity]["command_id"] = "command:new"
+            return await super().finalize_operation_from_current_claim(
+                *args, **kwargs
+            )
+
+    repo = Repo()
+    monkeypatch.setattr(queue, "SourceVisualRepository", lambda: repo)
+    monkeypatch.setattr(
+        queue,
+        "submit_command",
+        lambda *_args: pytest.fail("legacy replay submitted a second command"),
+    )
+    await repo.record_operation(
+        "source:one",
+        "request-one",
+        "refresh",
+        source_updated_at=NOW,
+        content_sha256=HASH,
+        command_id=None,
+        outcome="queued",
+    )
+    repo.claims[identity] = {
+        "source_id": identity[0],
+        "content_sha256": identity[1],
+        "extractor_version": identity[2],
+        "owner_token": "1" * 64,
+        "lease_until": NOW + timedelta(seconds=90),
+        "command_id": "command:old",
+    }
+
+    replay = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
+
+    assert repo.claims[identity]["command_id"] == "command:new"
+    assert replay.command_id == "command:new"
+    assert repo.operations[("source:one", "request-one", "refresh")].command_id == (
+        "command:new"
+    )
 
 
 @pytest.mark.asyncio

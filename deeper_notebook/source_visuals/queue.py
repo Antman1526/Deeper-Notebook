@@ -140,37 +140,51 @@ async def _reconcile_bound_claim_command(
         or getattr(receipt, "error_code", None) is not None
     ):
         return receipt
-    claim = await _await_if_needed(
-        repository.get_claim(
-            authority.source_id,
-            authority.content_sha256,
-            authority.extractor_version,
+    # Two bounded attempts let a concurrent lease takeover replace a legacy
+    # claim between our read and repair. The repository transaction rechecks
+    # the exact current claim command while it updates the operation receipt,
+    # so a stale command is never persisted.
+    for _attempt in range(2):
+        claim = await _await_if_needed(
+            repository.get_claim(
+                authority.source_id,
+                authority.content_sha256,
+                authority.extractor_version,
+            )
         )
-    )
-    command_id = getattr(claim, "command_id", None)
-    if (
-        not command_id
-        or getattr(claim, "source_id", None) != authority.source_id
-        or getattr(claim, "content_sha256", None) != authority.content_sha256
-        or getattr(claim, "extractor_version", None) != authority.extractor_version
-    ):
-        return receipt
-    try:
-        return await _finalize_queued_operation(
-            repository,
-            authority=authority,
-            request_id=request_id,
-            command_id=str(command_id),
-            outcome="queued",
-            error_code=None,
-        )
-    except SourceVisualConflictError:
-        repaired = await _await_if_needed(
-            repository.get_operation(authority.source_id, request_id, "refresh")
-        )
-        if repaired is None:
-            raise
-        return repaired
+        command_id = getattr(claim, "command_id", None)
+        if (
+            not command_id
+            or getattr(claim, "source_id", None) != authority.source_id
+            or getattr(claim, "content_sha256", None) != authority.content_sha256
+            or getattr(claim, "extractor_version", None) != authority.extractor_version
+        ):
+            return receipt
+        try:
+            return await _await_if_needed(
+                repository.finalize_operation_from_current_claim(
+                    source_id=authority.source_id,
+                    content_sha256=authority.content_sha256,
+                    extractor_version=authority.extractor_version,
+                    command_id=str(command_id),
+                    request_id=request_id,
+                    source_updated_at=authority.source_updated_at,
+                )
+            )
+        except SourceVisualConflictError:
+            repaired = await _await_if_needed(
+                repository.get_operation(authority.source_id, request_id, "refresh")
+            )
+            if repaired is None:
+                raise
+            if (
+                getattr(repaired, "command_id", None) is not None
+                or getattr(repaired, "outcome", None) != "queued"
+                or getattr(repaired, "error_code", None) is not None
+            ):
+                return repaired
+            receipt = repaired
+    return receipt
 
 
 async def _operation_response(
