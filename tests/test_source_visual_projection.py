@@ -138,6 +138,7 @@ async def test_projection_keeps_detail_list_and_source_bearing_search_receipts_i
     results = [
         {"id": "source:one", "title": "Source one"},
         {"id": "note:one", "title": "Note one"},
+        {"id": "note:child", "parent_id": "source:one", "title": "Note child"},
     ]
     searched = await project_search_source_visuals(
         results,
@@ -150,6 +151,57 @@ async def test_projection_keeps_detail_list_and_source_bearing_search_receipts_i
     assert searched[0]["visual_status"] is None
     assert "visual" not in searched[1]
     assert "visual_status" not in searched[1]
+    assert "visual" not in searched[2]
+    assert "visual_status" not in searched[2]
+
+
+@pytest.mark.asyncio
+async def test_search_projection_recognizes_direct_and_parent_source_ids_without_private_leakage(monkeypatch):
+    """Production search rows omit revisions and source insights point at parent_id."""
+
+    from api.models import SearchRequest
+    from api.routers import search
+
+    results = [
+        {"id": "source:one", "title": "Source one", "full_text": "do not project this"},
+        {"id": "source_insight:one", "parent_id": "source:two", "title": "Insight"},
+        {"id": "note:one", "parent_id": "source:three", "title": "Note"},
+    ]
+    source_rows = [
+        {"id": "source:one", "updated": NOW},
+        {"id": "source:two", "updated": NOW},
+    ]
+    query = AsyncMock(return_value=source_rows)
+
+    async def project(values, *, source_rows):
+        assert len(values) == 3
+        assert source_rows == [
+            {"id": "source:one", "updated": NOW},
+            {"id": "source:two", "updated": NOW},
+        ]
+        copied = [dict(value) for value in values]
+        copied[0]["visual"] = {"asset_url": "/api/sources/source%3Aone/visual?v=opaque"}
+        copied[1]["visual"] = {"asset_url": "/api/sources/source%3Atwo/visual?v=opaque"}
+        return copied
+
+    monkeypatch.setattr(search, "source_visuals_enabled", lambda: True)
+    monkeypatch.setattr(search, "text_search", AsyncMock(return_value=results))
+    monkeypatch.setattr(search, "repo_query", query)
+    projector = AsyncMock(side_effect=project)
+    monkeypatch.setattr(search, "project_search_source_visuals", projector)
+
+    response = await search.search_knowledge_base(SearchRequest(query="needle", limit=3))
+
+    assert response.results[0]["visual"]["asset_url"].endswith("opaque")
+    assert response.results[1]["visual"]["asset_url"].endswith("opaque")
+    assert "visual" not in response.results[2]
+    assert query.await_count == 1
+    assert projector.await_count == 1
+    query_text, variables = query.await_args.args
+    assert "SELECT id, updated FROM source" in query_text
+    assert "LIMIT $limit" in query_text
+    assert variables["limit"] == 200
+    assert {str(value) for value in variables["source_ids"]} == {"source:one", "source:two"}
 
 
 @pytest.mark.asyncio

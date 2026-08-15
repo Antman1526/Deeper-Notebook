@@ -1220,6 +1220,43 @@ async def test_service_publish_ready_owner_loss_never_removes_new_owner_canonica
 
 
 @pytest.mark.asyncio
+async def test_service_delete_fence_after_publish_never_removes_newer_canonical(monkeypatch):
+    import deeper_notebook.source_visuals.service as service
+    from deeper_notebook.source_visuals.contracts import PreparedVisualAsset
+    from deeper_notebook.source_visuals.repository import SourceVisualConflictError
+
+    source = SimpleNamespace(id="source:one", source_type="upload", full_text="unchanged", asset=SimpleNamespace(file_path="/controlled/one.pdf"), updated=NOW, title="Source one")
+
+    class Repo(InMemoryServiceRepository):
+        def __init__(self):
+            super().__init__()
+            self.publish_kwargs = None
+
+        async def publish_ready(self, record, **kwargs):
+            self.publish_kwargs = kwargs
+            raise SourceVisualConflictError("DELETE_REQUESTED")
+
+    repo = Repo()
+    store = InMemoryServiceStore()
+    monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
+    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
+    monkeypatch.setattr(service, "extract_pdf_candidates", lambda _path: [SimpleNamespace(origin="embedded", locator={"page": 1}, encoded_bytes=b"x", score=1.0, stable_key="x")])
+    monkeypatch.setattr(service, "select_candidate", lambda values: list(values)[0])
+    monkeypatch.setattr(service, "prepare_webp", lambda _value: PreparedVisualAsset(encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1))
+    monkeypatch.setattr(service, "build_alt_text", lambda *_args: "safe")
+
+    result = await service.SourceVisualService(repository=repo, store=store, cleanup=InMemoryCleanup()).execute(
+        service.ExtractSourceVisualInput(source_id="source:one", request_id="request-one", expected_content_sha256=HASH, extractor_version="source-visual-v1", claim_owner_token="c" * 64)
+    )
+
+    assert result.outcome == "failed"
+    assert result.error_code == "delete_requested"
+    assert store.removed == []
+    assert repo.released == 1
+    assert repo.publish_kwargs["request_id"] == "request-one"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("scenario", "expected_error"),
     (

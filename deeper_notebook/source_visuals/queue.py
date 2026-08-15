@@ -224,12 +224,16 @@ async def _suppressed_auto_ingest_response(
     request_id: str,
     explicit: bool,
 ) -> SourceVisualJobResponse | None:
-    """Replay a completed delete for automatic ingestion of the same version."""
+    """Replay an exact accepted delete before automatic ingestion can recreate it."""
 
     if explicit or request_id != f"ingest:{authority.content_sha256}":
         return None
+    finder = getattr(repository, "find_accepted_delete", None)
+    if not callable(finder):
+        # Compatibility for narrow test doubles and older repository adapters.
+        finder = repository.find_completed_delete
     deleted = await _await_if_needed(
-        repository.find_completed_delete(
+        finder(
             authority.source_id,
             authority.source_updated_at,
             authority.content_sha256,

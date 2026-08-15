@@ -1,5 +1,6 @@
 import json
-from typing import AsyncGenerator, Optional
+from collections.abc import Mapping
+from typing import Any, AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -8,6 +9,7 @@ from loguru import logger
 from api.models import AskRequest, AskResponse, SearchRequest, SearchResponse
 from api.source_visual_projection import project_search_source_visuals
 from deeper_notebook.ai.models import Model, model_manager
+from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.domain.notebook import text_search, vector_search
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import (
@@ -20,6 +22,8 @@ from deeper_notebook.graphs.ask import graph as ask_graph
 
 router = APIRouter()
 
+_SOURCE_VISUAL_SEARCH_BATCH_LIMIT = 200
+
 
 def _exact_results(results: list[dict], query: str) -> list[dict]:
     needle = query.casefold()
@@ -28,6 +32,59 @@ def _exact_results(results: list[dict], query: str) -> list[dict]:
         if str(result.get("title", "")).casefold() == needle
         or any(str(match).casefold() == needle for match in result.get("matches", []))
     ]
+
+
+def _source_id_from_search_result(result: Mapping[str, Any]) -> str | None:
+    """Extract only a direct source id or a source-insight parent id."""
+
+    source_id = str(result.get("id", ""))
+    if source_id.startswith("source:"):
+        return source_id
+    if source_id.startswith("source_insight:"):
+        parent_id = str(result.get("parent_id", ""))
+        if parent_id.startswith("source:"):
+            return parent_id
+    return None
+
+
+async def _authoritative_search_source_rows(
+    results: list[dict[str, Any]],
+) -> list[dict[str, object]]:
+    """Batch-load the current revisions for source-bearing production search rows."""
+
+    source_ids = list(
+        dict.fromkeys(
+            source_id
+            for result in results
+            if isinstance(result, Mapping)
+            and (source_id := _source_id_from_search_result(result)) is not None
+        )
+    )[:_SOURCE_VISUAL_SEARCH_BATCH_LIMIT]
+    if not source_ids:
+        return []
+    try:
+        rows = await repo_query(
+            "SELECT id, updated FROM source WHERE id IN $source_ids LIMIT $limit;",
+            {
+                "source_ids": [ensure_record_id(source_id) for source_id in source_ids],
+                "limit": _SOURCE_VISUAL_SEARCH_BATCH_LIMIT,
+            },
+        )
+    except Exception:
+        # Visual projection is additive; a lookup failure must not alter the
+        # established search contract or disclose database details.
+        return []
+    allowed = set(source_ids)
+    authoritative: list[dict[str, object]] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, Mapping):
+            continue
+        source_id = str(row.get("id", ""))
+        if source_id in allowed:
+            authoritative.append({"id": source_id, "updated": row.get("updated")})
+        if len(authoritative) >= _SOURCE_VISUAL_SEARCH_BATCH_LIMIT:
+            break
+    return authoritative
 
 
 @router.post("/search", response_model=SearchResponse)
@@ -106,10 +163,12 @@ async def search_knowledge_base(search_request: SearchRequest):
         if search_request.match_mode == "exact":
             normalized_results = _exact_results(normalized_results, search_request.query)
         if source_visuals_enabled():
-            normalized_results = await project_search_source_visuals(
-                normalized_results,
-                source_rows=normalized_results,
-            )
+            source_rows = await _authoritative_search_source_rows(normalized_results)
+            if source_rows:
+                normalized_results = await project_search_source_visuals(
+                    normalized_results,
+                    source_rows=source_rows,
+                )
         return SearchResponse(
             results=normalized_results,
             total_count=len(normalized_results),

@@ -155,7 +155,14 @@ async def project_search_source_visuals(
     result: list[dict[str, Any]] = []
     for item in results:
         copied = dict(item)
-        source_id = copied.get("source_id") or copied.get("id")
+        # Canonical source hits carry their own id; source-insight hits bind
+        # their source through parent_id. Never infer from note metadata.
+        source_id = copied.get("id")
+        if not (
+            isinstance(source_id, str)
+            and source_id.startswith("source:")
+        ) and isinstance(copied.get("id"), str) and copied["id"].startswith("source_insight:"):
+            source_id = copied.get("parent_id")
         if isinstance(source_id, str) and source_id.startswith("source:"):
             projection = projections.get(source_id)
             if projection is not None:

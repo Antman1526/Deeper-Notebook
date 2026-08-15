@@ -374,3 +374,106 @@ async def test_completed_delete_suppresses_auto_ingest_but_a_new_explicit_refres
         explicit=True,
     )
     assert explicit is None
+
+
+@pytest.mark.asyncio
+async def test_queued_delete_intent_suppresses_auto_ingest_after_post_file_pre_receipt_crash(monkeypatch):
+    """A durable accepted delete fence wins before its file cleanup is finalized."""
+
+    from deeper_notebook.source_visuals import queue
+
+    authority = SimpleNamespace(
+        source_id="source:one",
+        source_updated_at=NOW,
+        content_sha256=SOURCE_SHA,
+        extractor_version="source-visual-v1",
+    )
+    accepted = SimpleNamespace(
+        source_id="source:one",
+        source_updated_at=NOW,
+        content_sha256=SOURCE_SHA,
+        operation="delete",
+        outcome="queued",
+        command_id=None,
+        error_code=None,
+    )
+    repository = SimpleNamespace(
+        get_operation=AsyncMock(return_value=None),
+        find_accepted_delete=AsyncMock(return_value=accepted),
+        record_operation=AsyncMock(return_value=SimpleNamespace(outcome="deleted")),
+    )
+    monkeypatch.setattr(queue, "SourceVisualRepository", lambda: repository)
+    monkeypatch.setattr(queue, "_load_source", AsyncMock(return_value=SimpleNamespace(id="source:one")))
+    monkeypatch.setattr(queue, "compute_source_visual_authority", AsyncMock(return_value=authority))
+
+    response = await queue.submit_source_visual("source:one", "ingest:" + SOURCE_SHA, explicit=False)
+
+    assert response.outcome == "replayed"
+    repository.find_accepted_delete.assert_awaited_once_with("source:one", NOW, SOURCE_SHA)
+    repository.record_operation.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_ready_atomically_rejects_a_running_worker_after_delete_intent(monkeypatch):
+    """DELETE's queued receipt fences an already-running extraction before UPSERT."""
+
+    from deeper_notebook.source_visuals.repository import SourceVisualRepository
+
+    query = AsyncMock(return_value={"delete_requested": True})
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    with pytest.raises(SourceVisualConflictError) as error:
+        await SourceVisualRepository().publish_ready(
+            _record(),
+            source_id="source:one",
+            content_sha256=SOURCE_SHA,
+            extractor_version="source-visual-v1",
+            source_updated_at=NOW,
+            owner_token="d" * 64,
+            request_id="request:old-before-delete",
+            now=NOW,
+        )
+
+    assert error.value.code == "DELETE_REQUESTED"
+    query_text = query.await_args.args[0]
+    assert "source_visual_operation" in query_text
+    assert "delete_intent" in query_text
+    assert "refresh_operation_record" in query_text
+    assert "$refresh.created_at <= $delete_intent.created_at" in query_text
+    assert "UPSERT $cache_record" in query_text
+
+
+@pytest.mark.asyncio
+async def test_publish_ready_allows_a_newer_explicit_refresh_to_supersede_delete_intent(monkeypatch):
+    """A command-bound refresh created after DELETE may recreate the derivative."""
+
+    from deeper_notebook.source_visuals.repository import SourceVisualRepository
+
+    query = AsyncMock(
+        return_value={
+            "published": True,
+            "owner_token": "d" * 64,
+            "lease_until": NOW.replace(hour=13),
+            "source_updated_at": NOW,
+        }
+    )
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    published = await SourceVisualRepository().publish_ready(
+        _record(),
+        source_id="source:one",
+        content_sha256=SOURCE_SHA,
+        extractor_version="source-visual-v1",
+        source_updated_at=NOW,
+        owner_token="d" * 64,
+        request_id="request:explicit-after-delete",
+        now=NOW,
+    )
+
+    assert published == _record()
+    query_text, variables = query.await_args.args
+    assert "refresh_operation_record" in query_text
+    assert "$refresh.command_id != $claim.command_id" in query_text
+    assert "$refresh.created_at <= $delete_intent.created_at" in query_text
+    assert "ORDER BY created_at DESC, updated_at DESC" in query_text
+    assert variables["request_id"] == "request:explicit-after-delete"

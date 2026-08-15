@@ -30,6 +30,7 @@ _PUBLIC_ERROR_CODES = frozenset(
         "OWNER_MISMATCH",
         "COMMAND_CONFLICT",
         "REQUEST_CONFLICT",
+        "DELETE_REQUESTED",
         "SOURCE_STALE",
         "LEASE_EXPIRED",
     }
@@ -1245,6 +1246,69 @@ class SourceVisualRepository:
             now=_now(None),
         )
 
+    async def find_accepted_delete(
+        self,
+        source_id: str,
+        source_updated_at: datetime,
+        content_sha256: str,
+    ) -> SourceVisualOperationReceipt | None:
+        """Find one exact queued or completed delete intent for auto-ingest fencing."""
+
+        source_id = _source_id(source_id)
+        source_updated_at = _datetime(source_updated_at)
+        _hash(content_sha256)
+        if source_updated_at is None:
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        rows = _rows(
+            await _transaction(
+                """
+                SELECT * FROM source_visual_operation
+                WHERE source_id = $source_record
+                    AND source_updated_at = $source_updated_at
+                    AND content_sha256 = $content_sha256
+                    AND operation = "delete"
+                    AND outcome IN ["queued", "deleted"]
+                ORDER BY updated_at DESC LIMIT 1;
+                """,
+                {
+                    "source_record": _source_record(source_id),
+                    "source_updated_at": source_updated_at,
+                    "content_sha256": content_sha256,
+                },
+            )
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        row = rows[0]
+        outcome = row.get("outcome")
+        if outcome not in {"queued", "deleted"} or not _operation_matches(
+            row,
+            source_id=source_id,
+            request_id=row.get("request_id", ""),
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            operation="delete",
+            command_id=None,
+            outcome=outcome,
+            error_code=None,
+        ):
+            raise SourceVisualRepositoryError("MALFORMED_ROW")
+        return _receipt_from_row(
+            row,
+            operation_id=operation_identity(source_id, row["request_id"], "delete"),
+            source_id=source_id,
+            request_id=row["request_id"],
+            source_updated_at=source_updated_at,
+            content_sha256=content_sha256,
+            operation="delete",
+            command_id=None,
+            outcome=outcome,
+            error_code=None,
+            now=_now(None),
+        )
+
     async def list_current(
         self, revisions: Mapping[str, datetime]
     ) -> dict[str, SourceVisualRecord]:
@@ -1509,6 +1573,7 @@ class SourceVisualRepository:
         content_sha256: str | None = None,
         extractor_version: str | None = None,
         owner_token: str | None = None,
+        request_id: str | None = None,
         source_updated_at: datetime | None = None,
         authority: SourceVisualAuthority | None = None,
         now: datetime | None = None,
@@ -1532,6 +1597,10 @@ class SourceVisualRepository:
         )
         if source_updated_at is None:
             raise SourceVisualRepositoryError("INVALID_INPUT")
+        if request_id is not None and (
+            not isinstance(request_id, str) or not 1 <= len(request_id) <= 256
+        ):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
         owner_token = _hash(owner_token)
         current = _now(now)
         ready = self._ready_record(
@@ -1550,7 +1619,31 @@ class SourceVisualRepository:
             BEGIN TRANSACTION;
             LET $source_row = (SELECT updated FROM $source_record)[0];
             LET $claim = (SELECT * FROM $claim_record)[0];
-            IF $source_row.updated != $source_updated_at THEN
+            LET $refresh = (SELECT * FROM $refresh_operation_record)[0];
+            LET $delete_intent = (
+                SELECT * FROM source_visual_operation
+                WHERE source_id = $source_record
+                    AND source_updated_at = $source_updated_at
+                    AND content_sha256 = $content_sha256
+                    AND operation = "delete"
+                    AND outcome IN ["queued", "deleted"]
+                ORDER BY created_at DESC, updated_at DESC
+                LIMIT 1
+            )[0];
+            IF $delete_intent != NONE AND (
+                $refresh = NONE
+                OR $refresh.source_id != $source_record
+                OR $refresh.request_id != $request_id
+                OR $refresh.operation != "refresh"
+                OR $refresh.source_updated_at != $source_updated_at
+                OR $refresh.content_sha256 != $content_sha256
+                OR $refresh.command_id != $claim.command_id
+                OR $refresh.outcome != "queued"
+                OR $refresh.error_code != NONE
+                OR $refresh.created_at <= $delete_intent.created_at
+            ) THEN
+                RETURN { delete_requested: true };
+            ELSE IF $source_row.updated != $source_updated_at THEN
                 RETURN { source_stale: true };
             ELSE IF $claim = NONE OR $claim.owner_token != $owner_token
                     OR $claim.lease_until <= $now THEN
@@ -1567,16 +1660,28 @@ class SourceVisualRepository:
                     "source_visual_claim",
                     claim_identity(source_id, content_sha256, extractor_version),
                 ),
+                "refresh_operation_record": _record(
+                    "source_visual_operation",
+                    operation_identity(
+                        source_id,
+                        request_id or "__publish_without_refresh_receipt__",
+                        "refresh",
+                    ),
+                ),
                 "cache_record": _record(
                     "source_visual_cache", _cache_identity(source_id, content_sha256)
                 ),
                 "source_updated_at": source_updated_at,
+                "content_sha256": content_sha256,
+                "request_id": request_id or "",
                 "owner_token": owner_token,
                 "now": current,
                 "record_data": record_data,
             },
         )
         row = _row(result)
+        if row and row.get("delete_requested"):
+            raise SourceVisualConflictError("DELETE_REQUESTED")
         if row and row.get("source_stale"):
             raise SourceVisualConflictError("SOURCE_STALE")
         _require_live_lease(row, owner_token, current)

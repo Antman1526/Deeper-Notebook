@@ -347,6 +347,7 @@ class SourceVisualService:
                             content_sha256=authority.content_sha256,
                             extractor_version=authority.extractor_version,
                             owner_token=input_data.claim_owner_token,
+                            request_id=input_data.request_id,
                             source_updated_at=authority.source_updated_at,
                         )
                     )
@@ -406,6 +407,17 @@ class SourceVisualService:
                 await self._cleanup_task_temp()
             await self._release_input_claim(input_data)
             return failed(_safe_error_code(exc))
+        except SourceVisualConflictError as exc:
+            if exc.code == "DELETE_REQUESTED":
+                # Publication crossed the shared canonical boundary before the
+                # transaction rejected it. Do not tombstone here: a newer
+                # owner can have published the same canonical path meanwhile.
+                # The delete fence keeps it invisible in the DB, and Task 3's
+                # owner-safe reconciliation retains cleanup authority.
+                await self._cleanup_task_temp()
+                await self._release_input_claim(input_data)
+                return failed("delete_requested")
+            raise
         except Exception:
             if authority is not None:
                 if record is None:
