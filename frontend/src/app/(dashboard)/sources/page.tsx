@@ -27,8 +27,8 @@ export default function SourcesPage() {
   const { t, language } = useTranslation()
   const failedToLoadMessage = t('sources.failedToLoad')
   const { openSourceDialog } = useCreateDialogs()
-  const { mutate: refreshVisual } = useRefreshSourceVisual()
-  const { mutate: removeVisual } = useRemoveSourceVisual()
+  const { mutateAsync: refreshVisual } = useRefreshSourceVisual()
+  const { mutateAsync: removeVisual } = useRemoveSourceVisual()
   const [sources, setSources] = useState<SourceListResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -297,23 +297,18 @@ export default function SourcesPage() {
       }))
     } catch (err) {
       console.error('Failed to refresh source after visual mutation:', err)
+      throw err
     }
   }, [])
 
-  const handleGalleryRefresh = useCallback((sourceId: string) => {
-    refreshVisual(sourceId, {
-      onSuccess: () => {
-        void refreshSourceAfterVisualMutation(sourceId)
-      },
-    })
+  const handleGalleryRefresh = useCallback(async (sourceId: string) => {
+    await refreshVisual(sourceId)
+    await refreshSourceAfterVisualMutation(sourceId)
   }, [refreshSourceAfterVisualMutation, refreshVisual])
 
-  const handleGalleryRemove = useCallback((sourceId: string) => {
-    removeVisual(sourceId, {
-      onSuccess: () => {
-        void refreshSourceAfterVisualMutation(sourceId)
-      },
-    })
+  const handleGalleryRemove = useCallback(async (sourceId: string) => {
+    await removeVisual(sourceId)
+    await refreshSourceAfterVisualMutation(sourceId)
   }, [refreshSourceAfterVisualMutation, removeVisual])
 
   const handleDeleteClick = useCallback((e: React.MouseEvent, source: SourceListResponse) => {

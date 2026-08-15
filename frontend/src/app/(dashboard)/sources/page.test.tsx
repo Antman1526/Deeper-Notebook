@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SourcesPage from './page'
@@ -56,8 +56,8 @@ vi.mock('@/lib/features', () => ({
 }))
 
 vi.mock('@/lib/hooks/use-source-visuals', () => ({
-  useRefreshSourceVisual: () => ({ mutate: mockRefreshVisual }),
-  useRemoveSourceVisual: () => ({ mutate: mockRemoveVisual }),
+  useRefreshSourceVisual: () => ({ mutateAsync: mockRefreshVisual }),
+  useRemoveSourceVisual: () => ({ mutateAsync: mockRemoveVisual }),
 }))
 
 vi.mock('@/lib/hooks/use-translation', () => ({
@@ -92,6 +92,8 @@ describe('SourcesPage', () => {
     vi.clearAllMocks()
     vi.mocked(sourcesApi.list).mockReset()
     vi.mocked(sourcesApi.get).mockReset()
+    mockRefreshVisual.mockReset().mockResolvedValue(undefined)
+    mockRemoveVisual.mockReset().mockResolvedValue(undefined)
     mockVisualSystemEnabled.mockReturnValue(false)
     mockSourceVisualsEnabled.mockReturnValue(false)
     vi.mocked(useCreateDialogs).mockReturnValue({ openSourceDialog } as never)
@@ -165,11 +167,11 @@ describe('SourcesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Field notes' }))
     fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Field notes' }))
     expect(mockRefreshVisual).toHaveBeenCalledOnce()
-    expect(mockRefreshVisual).toHaveBeenCalledWith('source:one', expect.objectContaining({ onSuccess: expect.any(Function) }))
+    expect(mockRefreshVisual).toHaveBeenCalledWith('source:one')
     fireEvent.click(screen.getByRole('button', { name: 'Remove visual for Appendix scan' }))
     fireEvent.click(screen.getByRole('button', { name: 'Remove visual for Appendix scan' }))
     expect(mockRemoveVisual).toHaveBeenCalledOnce()
-    expect(mockRemoveVisual).toHaveBeenCalledWith('source:two', expect.objectContaining({ onSuccess: expect.any(Function) }))
+    expect(mockRemoveVisual).toHaveBeenCalledWith('source:two')
   })
 
   it('keeps the existing source delete confirmation available for the selected gallery source', async () => {
@@ -219,24 +221,12 @@ describe('SourcesPage', () => {
     vi.mocked(sourcesApi.get)
       .mockResolvedValueOnce(source({ updated: refreshedUpdated, visual_status: { state: 'unavailable', command_id: null, error_code: null, updated_at: refreshedStatusUpdated } }) as never)
       .mockResolvedValueOnce(source({ updated: removedUpdated, visual_status: { state: 'unavailable', command_id: null, error_code: null, updated_at: removedStatusUpdated }, visual: null }) as never)
-    let refreshSuccess: (() => void) | undefined
-    let removeSuccess: (() => void) | undefined
-    mockRefreshVisual.mockImplementation((_sourceId: string, options?: { onSuccess?: () => void }) => {
-      refreshSuccess = options?.onSuccess
-    })
-    mockRemoveVisual.mockImplementation((_sourceId: string, options?: { onSuccess?: () => void }) => {
-      removeSuccess = options?.onSuccess
-    })
-
     render(<SourcesPage />)
 
     expect(await screen.findByText('Preparing visual cover')).toBeVisible()
     const refreshButton = screen.getByRole('button', { name: 'Refresh visual for Field notes' })
     fireEvent.click(refreshButton)
     expect(refreshButton).toBeDisabled()
-    await act(async () => {
-      refreshSuccess?.()
-    })
 
     await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:one'))
     expect(await screen.findByText('Visual cover unavailable')).toBeVisible()
@@ -245,9 +235,6 @@ describe('SourcesPage', () => {
     const removeButton = screen.getByRole('button', { name: 'Remove visual for Field notes' })
     fireEvent.click(removeButton)
     expect(removeButton).toBeDisabled()
-    await act(async () => {
-      removeSuccess?.()
-    })
 
     await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledTimes(2))
     expect(screen.getByRole('button', { name: 'Remove visual for Field notes' })).not.toBeDisabled()
@@ -317,11 +304,6 @@ describe('SourcesPage', () => {
       }
     })
     vi.mocked(sourcesApi.get).mockResolvedValue(refreshedSource as never)
-    let refreshSuccess: (() => void) | undefined
-    mockRefreshVisual.mockImplementation((_sourceId: string, options?: { onSuccess?: () => void }) => {
-      refreshSuccess = options?.onSuccess
-    })
-
     render(<SourcesPage />)
 
     const gallery = await screen.findByLabelText('Source gallery')
@@ -341,9 +323,6 @@ describe('SourcesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Select Source 45' }))
     expect(screen.getByRole('button', { name: 'Select Source 45' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Source 45' }))
-    await act(async () => {
-      refreshSuccess?.()
-    })
 
     await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:45'))
     expect(sourcesApi.list).toHaveBeenCalledTimes(2)
@@ -370,16 +349,11 @@ describe('SourcesPage', () => {
       insights_count: 0,
     })
     const loadedSources = Array.from({ length: 31 }, (_, index) => source(index + 1))
-    let refreshSuccess: (() => void) | undefined
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     mockVisualSystemEnabled.mockReturnValue(true)
     mockSourceVisualsEnabled.mockReturnValue(true)
     vi.mocked(sourcesApi.list).mockResolvedValueOnce(loadedSources as never)
     vi.mocked(sourcesApi.get).mockRejectedValue(new Error('source read unavailable'))
-    mockRefreshVisual.mockImplementation((_sourceId: string, options?: { onSuccess?: () => void }) => {
-      refreshSuccess = options?.onSuccess
-    })
-
     try {
       render(<SourcesPage />)
 
@@ -387,9 +361,6 @@ describe('SourcesPage', () => {
       expect(screen.getAllByRole('listitem')).toHaveLength(31)
       fireEvent.click(screen.getByRole('button', { name: 'Select Source 31' }))
       fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Source 31' }))
-      await act(async () => {
-        refreshSuccess?.()
-      })
 
       await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:31'))
       await waitFor(() => expect(consoleError).toHaveBeenCalledWith(
@@ -400,6 +371,9 @@ describe('SourcesPage', () => {
       expect(screen.getAllByRole('listitem')).toHaveLength(31)
       expect(screen.getByTestId('source-gallery-card-source:30')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Select Source 31' })).toHaveAttribute('aria-pressed', 'true')
+      await waitFor(() => expect(
+        screen.getByRole('button', { name: 'Refresh visual for Source 31' }),
+      ).not.toBeDisabled())
     } finally {
       consoleError.mockRestore()
     }

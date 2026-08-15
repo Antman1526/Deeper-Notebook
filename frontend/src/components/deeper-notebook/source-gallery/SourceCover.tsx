@@ -11,8 +11,8 @@ type SourceCoverProps = {
   variant?: 'card' | 'compact'
   priority?: boolean
   onOpen?: (sourceId: string) => void
-  onRefresh?: (sourceId: string) => void
-  onRemove?: (sourceId: string) => void
+  onRefresh?: (sourceId: string) => void | Promise<void>
+  onRemove?: (sourceId: string) => void | Promise<void>
 }
 
 function sourceTypeLabel(sourceType: SourceListResponse['source_type']): string {
@@ -94,10 +94,21 @@ export function SourceCover({
   )
   const pending = pendingIdentity === identity
 
-  function dispatch(action: ((sourceId: string) => void) | undefined) {
+  function dispatch(action: ((sourceId: string) => void | Promise<void>) | undefined) {
     if (!action || pending) return
-    setPendingIdentity(identity)
-    action(source.id)
+    const dispatchedIdentity = identity
+    setPendingIdentity(dispatchedIdentity)
+
+    try {
+      const result = action(source.id)
+      if (result) {
+        void result.catch(() => {
+          setPendingIdentity(current => current === dispatchedIdentity ? null : current)
+        })
+      }
+    } catch {
+      setPendingIdentity(current => current === dispatchedIdentity ? null : current)
+    }
   }
 
   return (

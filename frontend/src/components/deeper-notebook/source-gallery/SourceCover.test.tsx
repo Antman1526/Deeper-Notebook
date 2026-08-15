@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { SourceCover } from './SourceCover'
@@ -151,5 +151,33 @@ describe('SourceCover', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove visual for Second source' }))
     expect(onRemove).toHaveBeenCalledOnce()
     expect(onRemove).toHaveBeenCalledWith('source:two')
+  })
+
+  it('unlocks only the failed async action identity while fulfilled actions stay locked', async () => {
+    const rejectedAction = Promise.reject(new Error('refresh convergence failed'))
+    void rejectedAction.catch(() => undefined)
+    const onRefresh = vi.fn()
+      .mockReturnValueOnce(rejectedAction)
+      .mockResolvedValueOnce(undefined)
+
+    render(<SourceCover source={source({ visual: null })} onRefresh={onRefresh} />)
+
+    const refresh = screen.getByRole('button', { name: 'Refresh visual for Field notes' })
+    fireEvent.click(refresh)
+    fireEvent.click(refresh)
+    expect(onRefresh).toHaveBeenCalledOnce()
+    expect(refresh).toBeDisabled()
+
+    await act(async () => {
+      await rejectedAction.catch(() => undefined)
+    })
+    await waitFor(() => expect(refresh).not.toBeDisabled())
+
+    fireEvent.click(refresh)
+    expect(onRefresh).toHaveBeenCalledTimes(2)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(refresh).toBeDisabled()
   })
 })
