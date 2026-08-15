@@ -134,6 +134,176 @@ async def test_video_attempt_timeout_is_15_seconds_and_total_timeout_is_60(monke
 
 
 @pytest.mark.asyncio
+async def test_ffmpeg_attempt_deadline_covers_closed_pipes_and_live_process_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import deeper_notebook.source_visuals.extractors as extractors
+
+    class ClosedReader:
+        async def read(self, _size: int) -> bytes:
+            return b""
+
+    class LiveProcess:
+        def __init__(self) -> None:
+            self.stdout = ClosedReader()
+            self.stderr = ClosedReader()
+            self.terminate_calls = 0
+
+        async def wait(self) -> int:
+            await asyncio.sleep(0.02)
+            return 0
+
+        def terminate(self) -> None:
+            self.terminate_calls += 1
+
+        def kill(self) -> None:
+            raise AssertionError("terminate should settle this fake process")
+
+    process = LiveProcess()
+
+    async def spawn(*_args: object, **_kwargs: object) -> LiveProcess:
+        return process
+
+    monkeypatch.setattr(extractors.asyncio, "create_subprocess_exec", spawn)
+
+    with pytest.raises(extractors.SourceVisualMediaError, match="TIMEOUT"):
+        await extractors._run_ffmpeg("-nostdin", timeout=0.001)
+    assert process.terminate_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_ffmpeg_cancellation_during_process_wait_stops_the_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import deeper_notebook.source_visuals.extractors as extractors
+
+    class ClosedReader:
+        async def read(self, _size: int) -> bytes:
+            return b""
+
+    class WaitingProcess:
+        def __init__(self) -> None:
+            self.stdout = ClosedReader()
+            self.stderr = ClosedReader()
+            self.wait_started = asyncio.Event()
+            self.terminate_calls = 0
+
+        async def wait(self) -> int:
+            self.wait_started.set()
+            if not self.terminate_calls:
+                await asyncio.Event().wait()
+            return 0
+
+        def terminate(self) -> None:
+            self.terminate_calls += 1
+
+        def kill(self) -> None:
+            raise AssertionError("terminate should settle this fake process")
+
+    process = WaitingProcess()
+
+    async def spawn(*_args: object, **_kwargs: object) -> WaitingProcess:
+        return process
+
+    monkeypatch.setattr(extractors.asyncio, "create_subprocess_exec", spawn)
+    task = asyncio.create_task(extractors._run_ffmpeg("-nostdin", timeout=15.0))
+    await process.wait_started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert process.terminate_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_ffmpeg_stop_absorbs_terminate_kill_and_wait_exit_races() -> None:
+    from deeper_notebook.source_visuals.extractors import _stop_process
+
+    class ExitingProcess:
+        async def wait(self) -> int:
+            raise asyncio.TimeoutError
+
+        def terminate(self) -> None:
+            return None
+
+        def kill(self) -> None:
+            raise ProcessLookupError
+
+    await _stop_process(ExitingProcess())
+
+    class GoneBeforeTerminate:
+        async def wait(self) -> int:
+            raise AssertionError("an exited process must not be awaited")
+
+        def terminate(self) -> None:
+            raise ProcessLookupError
+
+        def kill(self) -> None:
+            raise AssertionError("an exited process must not be killed")
+
+    await _stop_process(GoneBeforeTerminate())
+
+
+@pytest.mark.asyncio
+async def test_video_never_returns_after_total_deadline_during_candidate_decode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import deeper_notebook.source_visuals.extractors as extractors
+
+    clock = {"now": 0.0}
+    candidate = extractors.VisualCandidate(
+        "video_frame", {"timestamp_ms": 1_000}, b"frame", 1.0, "candidate"
+    )
+
+    async def duration(_path: Path) -> int:
+        return 1
+
+    async def frame(_path: Path, _timestamp_ms: int) -> bytes:
+        return b"frame"
+
+    def decode(**_kwargs: object) -> extractors.VisualCandidate:
+        clock["now"] = extractors.VIDEO_JOB_TIMEOUT_SECONDS + 0.001
+        return candidate
+
+    monkeypatch.setattr(extractors.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(extractors, "_probe_video_duration", duration)
+    monkeypatch.setattr(extractors, "_extract_video_frame", frame)
+    monkeypatch.setattr(extractors, "_candidate_from_bytes", decode)
+
+    with pytest.raises(extractors.SourceVisualMediaError, match="TIMEOUT"):
+        await extractors.extract_video_candidates(VIDEO_FIXTURE)
+
+
+@pytest.mark.asyncio
+async def test_video_attempt_never_returns_after_frame_validation_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import deeper_notebook.source_visuals.extractors as extractors
+
+    clock = {"now": 0.0}
+    candidate = extractors.VisualCandidate(
+        "video_frame", {"timestamp_ms": 0}, b"frame", 1.0, "candidate"
+    )
+
+    async def duration(_path: Path) -> int:
+        return 1
+
+    async def frame(_path: Path, _timestamp_ms: int) -> bytes:
+        return b"frame"
+
+    def decode(**_kwargs: object) -> extractors.VisualCandidate:
+        clock["now"] = extractors.VIDEO_FRAME_TIMEOUT_SECONDS + 0.001
+        return candidate
+
+    monkeypatch.setattr(extractors.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(extractors, "_probe_video_duration", duration)
+    monkeypatch.setattr(extractors, "_extract_video_frame", frame)
+    monkeypatch.setattr(extractors, "_candidate_from_bytes", decode)
+
+    with pytest.raises(extractors.SourceVisualMediaError, match="TIMEOUT"):
+        await extractors.extract_video_candidates(VIDEO_FIXTURE)
+
+
+@pytest.mark.asyncio
 async def test_extract_video_subprocess_contract_is_async_bounded_and_no_shell() -> None:
     import deeper_notebook.source_visuals.extractors as extractors
 
@@ -171,7 +341,7 @@ async def test_audio_command_maps_one_picture_frame_not_the_audio_stream(
     monkeypatch.setattr(extractors, "prepare_webp", lambda value: value)
     await extractors.extract_audio_artwork(AUDIO_FIXTURE)
     command = calls[0]
-    assert "-map" in command and command[command.index("-map") + 1] == "0:v:0?"
+    assert "-map" in command and command[command.index("-map") + 1] == "0:v:0"
     assert "-frames:v" in command and command[command.index("-frames:v") + 1] == "1"
     assert "0:a:0" not in command
 
@@ -200,3 +370,42 @@ async def test_audio_missing_attached_stream_falls_back_without_audio_decode(
 
     monkeypatch.setattr(extractors, "_run_ffmpeg", missing_picture)
     assert await extractors.extract_audio_artwork(AUDIO_FIXTURE) is None
+
+
+@pytest.mark.asyncio
+async def test_audio_artwork_requires_attachment_on_exact_first_video_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import deeper_notebook.source_visuals.extractors as extractors
+
+    candidate = extractors.VisualCandidate(
+        "audio_artwork", {"resource_id": "attached-picture-0"}, b"frame", 1.0, "candidate"
+    )
+
+    async def fake_run(*_args: str, **_kwargs: object) -> tuple[bytes, bytes]:
+        return (
+            b"frame",
+            b"Stream #0:0: Video: h264\nStream #0:1: Video: mjpeg (attached pic)",
+        )
+
+    monkeypatch.setattr(extractors, "_run_ffmpeg", fake_run)
+    monkeypatch.setattr(extractors, "_candidate_from_bytes", lambda **_kwargs: candidate)
+    assert await extractors.extract_audio_artwork(AUDIO_FIXTURE) is None
+
+
+@pytest.mark.asyncio
+async def test_audio_artwork_accepts_attachment_on_exact_first_video_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import deeper_notebook.source_visuals.extractors as extractors
+
+    candidate = extractors.VisualCandidate(
+        "audio_artwork", {"resource_id": "attached-picture-0"}, b"frame", 1.0, "candidate"
+    )
+
+    async def fake_run(*_args: str, **_kwargs: object) -> tuple[bytes, bytes]:
+        return b"frame", b"Stream #0:1: Video: mjpeg (attached pic)"
+
+    monkeypatch.setattr(extractors, "_run_ffmpeg", fake_run)
+    monkeypatch.setattr(extractors, "_candidate_from_bytes", lambda **_kwargs: candidate)
+    assert await extractors.extract_audio_artwork(AUDIO_FIXTURE) is candidate

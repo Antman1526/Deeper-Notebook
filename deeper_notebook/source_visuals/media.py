@@ -130,13 +130,70 @@ def _reject_polyglot(payload: bytes, fmt: str) -> None:
                 return
         raise SourceVisualMediaError("DECODE_FAILED")
     if fmt == "JPEG":
-        if payload[-2:] != b"\xff\xd9":
-            raise SourceVisualMediaError("DECODE_FAILED")
+        _reject_jpeg_polyglot(payload)
         return
     if fmt == "WEBP":
         declared_size = int.from_bytes(payload[4:8], "little") + 8
         if declared_size != len(payload):
             raise SourceVisualMediaError("POLYGLOT")
+
+
+def _reject_jpeg_polyglot(payload: bytes) -> None:
+    """Parse JPEG markers through the first structural EOI and require EOF."""
+
+    if len(payload) < 4 or payload[:2] != b"\xff\xd8":
+        raise SourceVisualMediaError("DECODE_FAILED")
+    offset = 2
+    while True:
+        marker, offset = _next_jpeg_marker(payload, offset)
+        if marker == 0xD9:
+            if offset != len(payload):
+                raise SourceVisualMediaError("POLYGLOT")
+            return
+        if marker == 0xD8 or 0xD0 <= marker <= 0xD7:
+            raise SourceVisualMediaError("DECODE_FAILED")
+        if marker == 0x01:
+            continue
+        if offset + 2 > len(payload):
+            raise SourceVisualMediaError("DECODE_FAILED")
+        segment_length = int.from_bytes(payload[offset : offset + 2], "big")
+        if segment_length < 2:
+            raise SourceVisualMediaError("DECODE_FAILED")
+        segment_end = offset + segment_length
+        if segment_end > len(payload):
+            raise SourceVisualMediaError("DECODE_FAILED")
+        offset = segment_end
+        if marker == 0xDA:
+            offset = _consume_jpeg_entropy(payload, offset)
+
+
+def _next_jpeg_marker(payload: bytes, offset: int) -> tuple[int, int]:
+    if offset >= len(payload) or payload[offset] != 0xFF:
+        raise SourceVisualMediaError("DECODE_FAILED")
+    while offset < len(payload) and payload[offset] == 0xFF:
+        offset += 1
+    if offset >= len(payload) or payload[offset] == 0x00:
+        raise SourceVisualMediaError("DECODE_FAILED")
+    return payload[offset], offset + 1
+
+
+def _consume_jpeg_entropy(payload: bytes, offset: int) -> int:
+    while offset < len(payload):
+        if payload[offset] != 0xFF:
+            offset += 1
+            continue
+        marker_offset = offset
+        offset += 1
+        while offset < len(payload) and payload[offset] == 0xFF:
+            offset += 1
+        if offset >= len(payload):
+            raise SourceVisualMediaError("DECODE_FAILED")
+        marker = payload[offset]
+        if marker == 0x00 or 0xD0 <= marker <= 0xD7:
+            offset += 1
+            continue
+        return marker_offset
+    raise SourceVisualMediaError("DECODE_FAILED")
 
 
 def _srgb_rgb(image: Image.Image) -> Image.Image:

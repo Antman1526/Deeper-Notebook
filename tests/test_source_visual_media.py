@@ -143,6 +143,33 @@ def test_prepare_webp_letterboxes_and_applies_exif_orientation() -> None:
     assert decoded.getpixel((0, 0)) == (240, 240, 240)
 
 
+def test_prepare_webp_accepts_baseline_and_progressive_jpeg_but_rejects_structural_trailing_data() -> None:
+    from deeper_notebook.source_visuals.media import (
+        SourceVisualMediaError,
+        prepare_webp,
+    )
+
+    image = Image.new("RGB", (320, 180), (35, 120, 90))
+    baseline = io.BytesIO()
+    progressive = io.BytesIO()
+    image.save(baseline, format="JPEG")
+    image.save(progressive, format="JPEG", progressive=True)
+
+    assert prepare_webp(baseline.getvalue()).mime_type == "image/webp"
+    assert prepare_webp(progressive.getvalue()).mime_type == "image/webp"
+
+    malformed_length = bytearray(baseline.getvalue())
+    malformed_length[4:6] = b"\xff\xff"
+    hostile = (
+        baseline.getvalue() + b"PK\x03\x04archive-bytes" + b"\xff\xd9",
+        baseline.getvalue() + progressive.getvalue(),
+        bytes(malformed_length),
+    )
+    for payload in hostile:
+        with pytest.raises(SourceVisualMediaError):
+            prepare_webp(payload)
+
+
 def test_select_candidate_is_deterministic_and_scores_without_randomness() -> None:
     from deeper_notebook.source_visuals.media import VisualCandidate, select_candidate
 

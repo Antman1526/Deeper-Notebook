@@ -26,7 +26,12 @@ MAX_PDF_CANDIDATES = 64
 MAX_SUBPROCESS_OUTPUT = 8 * 1024 * 1024
 VIDEO_FRAME_TIMEOUT_SECONDS = 15.0
 VIDEO_JOB_TIMEOUT_SECONDS = 60.0
+PROCESS_STOP_GRACE_SECONDS = 1.0
 _DURATION_RE = re.compile(r"Duration:\s*(\d{2}):(\d{2}):(\d{2}\.\d{2})(?:,|\s|$)")
+_STREAM_LINE_RE = re.compile(
+    r"(?m)^\s*Stream #(?P<input>\d+):(?P<stream>\d+)(?:\([^\r\n)]*\))?:\s*(?P<kind>[A-Za-z]+):"
+)
+_ATTACHED_PICTURE_RE = re.compile(r"attached(?:[ _-])pic", re.IGNORECASE)
 
 
 def _bounded_path(value: str | Path) -> Path:
@@ -175,26 +180,38 @@ async def _read_capped(stream: asyncio.StreamReader, limit: int) -> bytes:
 async def _stop_process(process: object) -> None:
     terminate = getattr(process, "terminate", None)
     if callable(terminate):
-        terminate()
+        try:
+            terminate()
+        except ProcessLookupError:
+            return
+    wait = getattr(process, "wait", None)
+    if not callable(wait):
+        return
     try:
-        await asyncio.wait_for(getattr(process, "wait")(), timeout=1.0)
+        await asyncio.wait_for(wait(), timeout=PROCESS_STOP_GRACE_SECONDS)
         return
     except (asyncio.TimeoutError, ProcessLookupError):
         pass
     kill = getattr(process, "kill", None)
     if callable(kill):
-        kill()
+        try:
+            kill()
+        except ProcessLookupError:
+            return
     try:
-        await getattr(process, "wait")()
-    except (asyncio.CancelledError, ProcessLookupError):
+        await asyncio.wait_for(wait(), timeout=PROCESS_STOP_GRACE_SECONDS)
+    except (asyncio.TimeoutError, ProcessLookupError):
         pass
 
 
 async def _run_ffmpeg(*args: str, timeout: float) -> tuple[bytes, bytes]:
-    """Run the package ffmpeg binary with bounded pipes and no shell."""
+    """Run one bounded ffmpeg lifecycle with no shell or inherited stdin."""
 
     executable = imageio_ffmpeg.get_ffmpeg_exe()
-    try:
+    process: object | None = None
+
+    async def lifecycle() -> tuple[bytes, bytes]:
+        nonlocal process
         process = await asyncio.create_subprocess_exec(
             executable,
             *args,
@@ -202,30 +219,47 @@ async def _run_ffmpeg(*args: str, timeout: float) -> tuple[bytes, bytes]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-    except (OSError, ValueError):
-        raise SourceVisualMediaError("FFMPEG_UNAVAILABLE") from None
-    assert process.stdout is not None and process.stderr is not None
-    try:
-        stdout, stderr = await asyncio.wait_for(
-            asyncio.gather(
-                _read_capped(process.stdout, MAX_SUBPROCESS_OUTPUT),
-                _read_capped(process.stderr, MAX_SUBPROCESS_OUTPUT),
-            ),
-            timeout=timeout,
+        stdout_pipe = getattr(process, "stdout", None)
+        stderr_pipe = getattr(process, "stderr", None)
+        wait = getattr(process, "wait", None)
+        if stdout_pipe is None or stderr_pipe is None or not callable(wait):
+            raise SourceVisualMediaError("FFMPEG_FAILED")
+        stdout, stderr, returncode = await asyncio.gather(
+            _read_capped(stdout_pipe, MAX_SUBPROCESS_OUTPUT),
+            _read_capped(stderr_pipe, MAX_SUBPROCESS_OUTPUT),
+            wait(),
         )
-    except asyncio.TimeoutError:
-        await _stop_process(process)
-        raise SourceVisualMediaError("TIMEOUT") from None
+        if returncode != 0:
+            raise SourceVisualMediaError("FFMPEG_FAILED")
+        return stdout, stderr
+
+    try:
+        return await asyncio.wait_for(lifecycle(), timeout=timeout)
     except SourceVisualMediaError:
-        await _stop_process(process)
+        if process is not None:
+            await _stop_process(process)
         raise
+    except asyncio.TimeoutError:
+        if process is not None:
+            await _stop_process(process)
+        raise SourceVisualMediaError("TIMEOUT") from None
+    except (OSError, ValueError):
+        if process is None:
+            raise SourceVisualMediaError("FFMPEG_UNAVAILABLE") from None
+        await _stop_process(process)
+        raise SourceVisualMediaError("FFMPEG_FAILED") from None
+    except ProcessLookupError:
+        if process is not None:
+            await _stop_process(process)
+        raise SourceVisualMediaError("FFMPEG_FAILED") from None
     except asyncio.CancelledError:
-        await _stop_process(process)
+        if process is not None:
+            await _stop_process(process)
         raise
-    returncode = await process.wait()
-    if returncode != 0:
-        raise SourceVisualMediaError("FFMPEG_FAILED")
-    return stdout, stderr
+    except Exception:
+        if process is not None:
+            await _stop_process(process)
+        raise SourceVisualMediaError("FFMPEG_FAILED") from None
 
 
 async def _probe_video_duration(source: Path) -> int:
@@ -268,21 +302,35 @@ async def extract_video_candidates(source: str | Path) -> list[VisualCandidate]:
     """Probe duration and extract three deterministic representative frames."""
 
     path = _bounded_path(source)
-    started = time.monotonic()
+    deadline = time.monotonic() + VIDEO_JOB_TIMEOUT_SECONDS
+
+    def remaining_seconds() -> float:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise SourceVisualMediaError("TIMEOUT")
+        return remaining
+
     try:
         duration_ms = await asyncio.wait_for(
-            _probe_video_duration(path), timeout=VIDEO_JOB_TIMEOUT_SECONDS
+            _probe_video_duration(path), timeout=min(VIDEO_FRAME_TIMEOUT_SECONDS, remaining_seconds())
         )
         candidates: list[VisualCandidate] = []
         for timestamp_ms in video_timestamps_ms(duration_ms):
-            elapsed = time.monotonic() - started
-            remaining = VIDEO_JOB_TIMEOUT_SECONDS - elapsed
-            if remaining <= 0:
-                raise SourceVisualMediaError("TIMEOUT")
+            attempt_deadline = min(
+                deadline,
+                time.monotonic() + VIDEO_FRAME_TIMEOUT_SECONDS,
+            )
+
+            def remaining_attempt_seconds() -> float:
+                remaining = attempt_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SourceVisualMediaError("TIMEOUT")
+                return remaining
+
             try:
                 frame = await asyncio.wait_for(
                     _extract_video_frame(path, timestamp_ms),
-                    timeout=min(VIDEO_FRAME_TIMEOUT_SECONDS, remaining),
+                    timeout=remaining_attempt_seconds(),
                 )
             except asyncio.TimeoutError:
                 raise SourceVisualMediaError("TIMEOUT") from None
@@ -294,6 +342,9 @@ async def extract_video_candidates(source: str | Path) -> list[VisualCandidate]:
             )
             if candidate is not None:
                 candidates.append(candidate)
+            remaining_attempt_seconds()
+            remaining_seconds()
+        remaining_seconds()
         return candidates
     except asyncio.TimeoutError:
         raise SourceVisualMediaError("TIMEOUT") from None
@@ -313,7 +364,7 @@ async def extract_audio_artwork(source: str | Path) -> VisualCandidate | None:
             "-i",
             str(path),
             "-map",
-            "0:v:0?",
+            "0:v:0",
             "-frames:v",
             "1",
             "-f",
@@ -327,8 +378,7 @@ async def extract_audio_artwork(source: str | Path) -> VisualCandidate | None:
         if exc.code == "FFMPEG_FAILED":
             return None
         raise
-    stream_info = stderr.decode("utf-8", "replace").lower()
-    if "attached pic" not in stream_info or not stdout:
+    if not _first_video_stream_is_attached_picture(stderr) or not stdout:
         return None
     candidate = _candidate_from_bytes(
         origin="audio_artwork",
@@ -337,6 +387,19 @@ async def extract_audio_artwork(source: str | Path) -> VisualCandidate | None:
         stable_key=f"audio:attached-picture-0:{hashlib.sha256(stdout).hexdigest()}",
     )
     return candidate
+
+
+def _first_video_stream_is_attached_picture(stderr: bytes) -> bool:
+    """Authorize only the stream selected by the exact ``0:v:0`` mapping."""
+
+    text = stderr.decode("utf-8", "replace")
+    matches = list(_STREAM_LINE_RE.finditer(text))
+    for index, match in enumerate(matches):
+        if match.group("input") != "0" or match.group("kind").lower() != "video":
+            continue
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        return _ATTACHED_PICTURE_RE.search(text[match.start() : end]) is not None
+    return False
 
 
 def candidates_alt_text(title: str, source_kind: str, candidates: Iterable[VisualCandidate]) -> dict[str, str]:
