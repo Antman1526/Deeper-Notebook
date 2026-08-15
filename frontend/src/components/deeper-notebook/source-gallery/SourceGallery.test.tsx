@@ -59,6 +59,9 @@ describe('SourceGallery', () => {
     )
     expect(css).toContain('min-height: 44px')
     expect(css).toContain('min-width: 0')
+    expect(css).toMatch(
+      /@media \(max-height: 42rem\)[\s\S]*?\.dn-source-gallery \.dn-source-cover__visual \{[\s\S]*?inline-size: min\(100%, calc\(\(100vh - 15\.75rem\) \* 16 \/ 9\)\);[\s\S]*?block-size: min\(56\.25cqi, calc\(100vh - 15\.75rem\)\);[\s\S]*?max-block-size: calc\(100vh - 15\.75rem\);/,
+    )
     expect(css).toContain('@media (forced-colors: active)')
     expect(css).toContain('@media (prefers-reduced-motion: reduce)')
     expect(css).not.toContain('@keyframes')

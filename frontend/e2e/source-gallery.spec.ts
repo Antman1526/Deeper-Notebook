@@ -114,7 +114,12 @@ type GeometryReceipt = {
   sourceSurfaces: Array<{
     label: string
     horizontalClippingOwner: string
+    horizontalClippingOwners: string[]
+    failedHorizontalClippingOwners: string[]
     verticalClippingOwner: string
+    verticalClippingOwners: string[]
+    failedVerticalClippingOwners: string[]
+    documentViewportContained: boolean
     verticalScrollOwner: string
     verticalScrollClientHeight: number
     verticalScrollHeight: number
@@ -126,7 +131,12 @@ type GeometryReceipt = {
   scroll: {
     marker: string
     horizontalClippingOwner: string
+    horizontalClippingOwners: string[]
+    failedHorizontalClippingOwners: string[]
     verticalClippingOwner: string
+    verticalClippingOwners: string[]
+    failedVerticalClippingOwners: string[]
+    documentViewportContained: boolean
     verticalScrollOwner: string
     verticalScrollClientHeight: number
     verticalScrollHeight: number
@@ -207,15 +217,16 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
       || element.tagName.toLowerCase()
     )
 
-    const clippingOwner = (element: HTMLElement, axis: 'x' | 'y'): ScrollOwner => {
+    const clippingOwners = (element: HTMLElement, axis: 'x' | 'y'): HTMLElement[] => {
+      const owners: HTMLElement[] = []
       let current = element.parentElement
       while (current) {
         const style = window.getComputedStyle(current)
         const overflow = axis === 'x' ? style.overflowX : style.overflowY
-        if (['hidden', 'clip', 'auto', 'scroll'].includes(overflow)) return current
+        if (['hidden', 'clip', 'auto', 'scroll'].includes(overflow)) owners.push(current)
         current = current.parentElement
       }
-      return null
+      return owners
     }
     const verticalScrollOwner = (element: HTMLElement): ScrollOwner => {
       let current = element.parentElement
@@ -258,28 +269,98 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
       const metrics = ownerMetrics(owner)
       return Math.max(0, metrics.scrollHeight - metrics.clientHeight)
     }
+    const clippingScrollOffsets = (horizontalOwners: HTMLElement[], verticalOwners: HTMLElement[]) => (
+      Array.from(new Set([...horizontalOwners, ...verticalOwners])).map(owner => ({
+        owner,
+        scrollLeft: owner.scrollLeft,
+        scrollTop: owner.scrollTop,
+      }))
+    )
+    const restoreClippingOffsets = (offsets: Array<{ owner: HTMLElement; scrollLeft: number; scrollTop: number }>): void => {
+      for (const { owner, scrollLeft, scrollTop } of offsets) {
+        owner.scrollLeft = scrollLeft
+        owner.scrollTop = scrollTop
+      }
+    }
+    const isScrollableOnAxis = (owner: HTMLElement, axis: 'x' | 'y'): boolean => {
+      const style = window.getComputedStyle(owner)
+      const overflow = axis === 'x' ? style.overflowX : style.overflowY
+      return ['auto', 'scroll'].includes(overflow)
+        && (axis === 'x'
+          ? owner.scrollWidth > owner.clientWidth + 1
+          : owner.scrollHeight > owner.clientHeight + 1)
+    }
+    const revealWithinScrollChain = (
+      element: HTMLElement,
+      horizontalOwners: HTMLElement[],
+      verticalOwners: HTMLElement[],
+    ): void => {
+      for (const owner of horizontalOwners) {
+        if (!isScrollableOnAxis(owner, 'x')) continue
+        const rect = element.getBoundingClientRect()
+        const viewport = ownerViewport(owner)
+        const delta = rect.left < viewport.left
+          ? rect.left - viewport.left
+          : rect.right > viewport.right
+            ? rect.right - viewport.right
+            : 0
+        if (delta !== 0) owner.scrollLeft += delta
+      }
+      for (const owner of verticalOwners) {
+        if (!isScrollableOnAxis(owner, 'y')) continue
+        const rect = element.getBoundingClientRect()
+        const viewport = ownerViewport(owner)
+        const delta = rect.top < viewport.top
+          ? rect.top - viewport.top
+          : rect.bottom > viewport.bottom
+            ? rect.bottom - viewport.bottom
+            : 0
+        if (delta !== 0) owner.scrollTop += delta
+      }
+      const rect = element.getBoundingClientRect()
+      const viewport = new DOMRect(0, 0, window.innerWidth, window.innerHeight)
+      const left = rect.left < viewport.left
+        ? window.scrollX + rect.left - viewport.left
+        : rect.right > viewport.right
+          ? window.scrollX + rect.right - viewport.right
+          : window.scrollX
+      const top = rect.top < viewport.top
+        ? window.scrollY + rect.top - viewport.top
+        : rect.bottom > viewport.bottom
+          ? window.scrollY + rect.bottom - viewport.bottom
+          : window.scrollY
+      if (left !== window.scrollX || top !== window.scrollY) {
+        window.scrollTo({ left, top, behavior: 'auto' })
+      }
+    }
     const containedByOwners = (
       element: HTMLElement,
-      horizontalOwner: ScrollOwner,
-      verticalOwner: ScrollOwner,
-      requireDocumentViewport = false,
-    ): boolean => {
+      horizontalOwners: HTMLElement[],
+      verticalOwners: HTMLElement[],
+    ) => {
       const rect = element.getBoundingClientRect()
       const documentViewport = new DOMRect(0, 0, window.innerWidth, window.innerHeight)
-      const horizontalViewport = ownerViewport(horizontalOwner)
-      const verticalViewport = ownerViewport(verticalOwner)
-      return (
-        (!requireDocumentViewport || (
-          rect.left >= documentViewport.left - 1
-          && rect.right <= documentViewport.right + 1
-          && rect.top >= documentViewport.top - 1
-          && rect.bottom <= documentViewport.bottom + 1
-        ))
-        && rect.left >= horizontalViewport.left - 1
-        && rect.right <= horizontalViewport.right + 1
-        && rect.top >= verticalViewport.top - 1
-        && rect.bottom <= verticalViewport.bottom + 1
-      )
+      const failedHorizontalClippingOwners = horizontalOwners
+        .filter(owner => {
+          const viewport = ownerViewport(owner)
+          return rect.left < viewport.left - 1 || rect.right > viewport.right + 1
+        })
+        .map(ownerName)
+      const failedVerticalClippingOwners = verticalOwners
+        .filter(owner => {
+          const viewport = ownerViewport(owner)
+          return rect.top < viewport.top - 1 || rect.bottom > viewport.bottom + 1
+        })
+        .map(ownerName)
+      const documentViewportContained = contained(rect, documentViewport)
+      return {
+        contained: documentViewportContained
+          && failedHorizontalClippingOwners.length === 0
+          && failedVerticalClippingOwners.length === 0,
+        failedHorizontalClippingOwners,
+        failedVerticalClippingOwners,
+        documentViewportContained,
+      }
     }
 
     const roots = Array.from(document.querySelectorAll('[data-dn-source-cover]')).filter(visible)
@@ -311,32 +392,39 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
     ])
     const sourceSurfaceFailures: string[] = []
     const sourceSurfaces = Array.from(sourceSurfaceSet).map((surface) => {
-      const horizontalOwner = clippingOwner(surface, 'x')
-      const verticalOwner = clippingOwner(surface, 'y')
+      const horizontalOwners = clippingOwners(surface, 'x')
+      const verticalOwners = clippingOwners(surface, 'y')
       const scrollOwner = verticalScrollOwner(surface)
-      const original = readScrollTop(scrollOwner)
-      const max = maxScrollTop(scrollOwner)
+      const offsets = clippingScrollOffsets(horizontalOwners, verticalOwners)
+      const documentOffset = { left: window.scrollX, top: window.scrollY }
       writeScrollTop(scrollOwner, 0)
-      const initialContained = containedByOwners(surface, horizontalOwner, verticalOwner)
-      if (!initialContained && max > 0) {
-        surface.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      const initialContainment = containedByOwners(surface, horizontalOwners, verticalOwners)
+      if (!initialContainment.contained) {
+        revealWithinScrollChain(surface, horizontalOwners, verticalOwners)
       }
-      const finallyContained = containedByOwners(surface, horizontalOwner, verticalOwner)
-      writeScrollTop(scrollOwner, original)
+      const finalContainment = containedByOwners(surface, horizontalOwners, verticalOwners)
       const metrics = ownerMetrics(scrollOwner)
+      restoreClippingOffsets(offsets)
+      window.scrollTo({ left: documentOffset.left, top: documentOffset.top, behavior: 'auto' })
       const result = {
         label: describe(surface),
-        horizontalClippingOwner: ownerName(horizontalOwner),
-        verticalClippingOwner: ownerName(verticalOwner),
+        horizontalClippingOwner: ownerName(horizontalOwners[0] ?? null),
+        horizontalClippingOwners: horizontalOwners.map(ownerName),
+        failedHorizontalClippingOwners: finalContainment.failedHorizontalClippingOwners,
+        verticalClippingOwner: ownerName(verticalOwners[0] ?? null),
+        verticalClippingOwners: verticalOwners.map(ownerName),
+        failedVerticalClippingOwners: finalContainment.failedVerticalClippingOwners,
+        documentViewportContained: finalContainment.documentViewportContained,
         verticalScrollOwner: ownerName(scrollOwner),
         verticalScrollClientHeight: metrics.clientHeight,
         verticalScrollHeight: metrics.scrollHeight,
-        initialContained,
-        finallyContained,
+        initialContained: initialContainment.contained,
+        finallyContained: finalContainment.contained,
       }
-      if (!finallyContained) {
+      if (!finalContainment.contained) {
+        const rect = surface.getBoundingClientRect()
         sourceSurfaceFailures.push(
-          `${result.label} within x=${result.horizontalClippingOwner} y=${result.verticalClippingOwner} scroll=${result.verticalScrollOwner} (${result.verticalScrollHeight}/${result.verticalScrollClientHeight})`,
+          `${result.label} outside x=${result.failedHorizontalClippingOwners.join(',') || 'none'} y=${result.failedVerticalClippingOwners.join(',') || 'none'} document=${result.documentViewportContained} rect=${Math.round(rect.width)}x${Math.round(rect.height)} owners-x=${result.horizontalClippingOwners.join(',') || 'document'} owners-y=${result.verticalClippingOwners.join(',') || 'document'} scroll=${result.verticalScrollOwner} (${result.verticalScrollHeight}/${result.verticalScrollClientHeight})`,
         )
       }
       return result
@@ -351,19 +439,37 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
 
     const markers = Array.from(document.querySelectorAll<HTMLElement>('[data-dn-source-gallery-lower]')).filter(visible)
     const lower = markers.length === 1 ? markers[0] : null
-    const horizontalOwner = lower ? clippingOwner(lower, 'x') : null
-    const verticalOwner = lower ? clippingOwner(lower, 'y') : null
+    const horizontalOwners = lower ? clippingOwners(lower, 'x') : []
+    const verticalOwners = lower ? clippingOwners(lower, 'y') : []
     const scrollOwner = lower ? verticalScrollOwner(lower) : null
-    const original = readScrollTop(scrollOwner)
     const max = maxScrollTop(scrollOwner)
+    const offsets = clippingScrollOffsets(horizontalOwners, verticalOwners)
+    const documentOffset = { left: window.scrollX, top: window.scrollY }
     writeScrollTop(scrollOwner, 0)
     const before = readScrollTop(scrollOwner)
-    const initiallyContained = Boolean(lower) && containedByOwners(lower!, horizontalOwner, verticalOwner, true)
-    if (lower && !initiallyContained) lower.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    const initialContainment = lower
+      ? containedByOwners(lower, horizontalOwners, verticalOwners)
+      : {
+          contained: false,
+          failedHorizontalClippingOwners: [],
+          failedVerticalClippingOwners: [],
+          documentViewportContained: false,
+    }
+    if (lower && !initialContainment.contained) {
+      revealWithinScrollChain(lower, horizontalOwners, verticalOwners)
+    }
     const after = readScrollTop(scrollOwner)
-    const finallyContained = Boolean(lower) && containedByOwners(lower!, horizontalOwner, verticalOwner, true)
+    const finalContainment = lower
+      ? containedByOwners(lower, horizontalOwners, verticalOwners)
+      : {
+          contained: false,
+          failedHorizontalClippingOwners: [],
+          failedVerticalClippingOwners: [],
+          documentViewportContained: false,
+    }
     const metrics = ownerMetrics(scrollOwner)
-    writeScrollTop(scrollOwner, original)
+    restoreClippingOffsets(offsets)
+    window.scrollTo({ left: documentOffset.left, top: documentOffset.top, behavior: 'auto' })
 
     const shift = (window as Window & {
       __dnVisualSystemLayoutShift?: { value: number }
@@ -380,16 +486,21 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
       cumulativeLayoutShift: shift,
       scroll: {
         marker: lower ? describe(lower) : '',
-        horizontalClippingOwner: ownerName(horizontalOwner),
-        verticalClippingOwner: ownerName(verticalOwner),
+        horizontalClippingOwner: ownerName(horizontalOwners[0] ?? null),
+        horizontalClippingOwners: horizontalOwners.map(ownerName),
+        failedHorizontalClippingOwners: finalContainment.failedHorizontalClippingOwners,
+        verticalClippingOwner: ownerName(verticalOwners[0] ?? null),
+        verticalClippingOwners: verticalOwners.map(ownerName),
+        failedVerticalClippingOwners: finalContainment.failedVerticalClippingOwners,
+        documentViewportContained: finalContainment.documentViewportContained,
         verticalScrollOwner: ownerName(scrollOwner),
         verticalScrollClientHeight: metrics.clientHeight,
         verticalScrollHeight: metrics.scrollHeight,
         max,
         before,
         after,
-        initiallyContained,
-        finallyContained,
+        initiallyContained: initialContainment.contained,
+        finallyContained: finalContainment.contained,
       },
     }
   })
@@ -609,6 +720,52 @@ test.describe('source gallery visual contract', () => {
     ])
   })
 
+  test('geometry reports outer nested clipping owners for SourceCover and lower marker', async ({ page }) => {
+    await page.goto('/')
+    await page.setViewportSize({ width: 320, height: 160 })
+    await page.setContent(`
+      <style>
+        html, body { margin: 0; overflow: visible; }
+        #outer-owner { width: 80px; height: 80px; overflow: hidden; }
+        #inner-owner { width: 120px; height: 80px; overflow: hidden; }
+        [data-dn-source-cover] { display: block; width: 20px; height: 20px; margin-left: 90px; }
+        [data-dn-source-cover] button { width: 44px; height: 44px; }
+      </style>
+      <main>
+        <div id="outer-owner">
+          <div id="inner-owner">
+            <article data-dn-source-cover="true" data-dn-source-gallery-lower="true">
+              <button type="button">Nested clipped cover action</button>
+            </article>
+          </div>
+        </div>
+      </main>
+    `)
+
+    const geometry = await inspectSourceGalleryGeometry(page)
+    expect(geometry.sourceSurfaces).toEqual([
+      expect.objectContaining({
+        horizontalClippingOwners: ['inner-owner', 'outer-owner'],
+        failedHorizontalClippingOwners: ['outer-owner'],
+        verticalClippingOwners: ['inner-owner', 'outer-owner'],
+        failedVerticalClippingOwners: [],
+        documentViewportContained: true,
+        finallyContained: false,
+      }),
+    ])
+    expect(geometry.sourceSurfaceFailures).toEqual([
+      expect.stringContaining('outer-owner'),
+    ])
+    expect(geometry.scroll).toEqual(expect.objectContaining({
+      horizontalClippingOwners: ['inner-owner', 'outer-owner'],
+      failedHorizontalClippingOwners: ['outer-owner'],
+      verticalClippingOwners: ['inner-owner', 'outer-owner'],
+      failedVerticalClippingOwners: [],
+      documentViewportContained: true,
+      finallyContained: false,
+    }))
+  })
+
   test('rollback landmarks reject visible disabled, read-only, and actionless route surfaces', async ({ page }) => {
     const hostileMarkupByRoute: Record<(typeof SOURCE_GALLERY_CELLS)[number]['route'], string> = {
       '/sources': '<main><section data-dn-sources-table="true"><button disabled>Open source</button></section></main>',
@@ -681,7 +838,10 @@ test.describe('source gallery visual contract', () => {
           expect(geometry.sourceSurfaces.length, `${cell.id}/${theme}/${viewport.name} visible SourceCover/card count`).toBeGreaterThan(0)
           for (const surface of geometry.sourceSurfaces) {
             expect(surface.horizontalClippingOwner, `${cell.id}/${theme}/${viewport.name} ${surface.label} horizontal clipping owner`).not.toBe('')
+            expect(surface.failedHorizontalClippingOwners, `${cell.id}/${theme}/${viewport.name} ${surface.label} horizontal clipping containment`).toEqual([])
             expect(surface.verticalClippingOwner, `${cell.id}/${theme}/${viewport.name} ${surface.label} vertical clipping owner`).not.toBe('')
+            expect(surface.failedVerticalClippingOwners, `${cell.id}/${theme}/${viewport.name} ${surface.label} vertical clipping containment`).toEqual([])
+            expect(surface.documentViewportContained, `${cell.id}/${theme}/${viewport.name} ${surface.label} document viewport containment`).toBe(true)
             expect(surface.verticalScrollOwner, `${cell.id}/${theme}/${viewport.name} ${surface.label} vertical scroll owner`).not.toBe('')
             expect(surface.verticalScrollClientHeight, `${cell.id}/${theme}/${viewport.name} ${surface.label} scroll owner client height`).toBeGreaterThan(0)
             expect(surface.verticalScrollHeight, `${cell.id}/${theme}/${viewport.name} ${surface.label} scroll owner scroll height`).toBeGreaterThanOrEqual(surface.verticalScrollClientHeight)
@@ -692,7 +852,10 @@ test.describe('source gallery visual contract', () => {
           expect(geometry.cumulativeLayoutShift, `${cell.id}/${theme}/${viewport.name} CLS`).toBeLessThanOrEqual(0.05)
           expect(geometry.scroll.marker, `${cell.id}/${theme}/${viewport.name} route-specific lower marker`).not.toBe('')
           expect(geometry.scroll.horizontalClippingOwner, `${cell.id}/${theme}/${viewport.name} horizontal clipping owner`).not.toBe('')
+          expect(geometry.scroll.failedHorizontalClippingOwners, `${cell.id}/${theme}/${viewport.name} horizontal clipping containment`).toEqual([])
           expect(geometry.scroll.verticalClippingOwner, `${cell.id}/${theme}/${viewport.name} vertical clipping owner`).not.toBe('')
+          expect(geometry.scroll.failedVerticalClippingOwners, `${cell.id}/${theme}/${viewport.name} vertical clipping containment`).toEqual([])
+          expect(geometry.scroll.documentViewportContained, `${cell.id}/${theme}/${viewport.name} lower document viewport containment`).toBe(true)
           expect(geometry.scroll.verticalScrollOwner, `${cell.id}/${theme}/${viewport.name} vertical scroll owner`).not.toBe('')
           expect(geometry.scroll.verticalScrollClientHeight, `${cell.id}/${theme}/${viewport.name} scroll owner client height`).toBeGreaterThan(0)
           expect(geometry.scroll.verticalScrollHeight, `${cell.id}/${theme}/${viewport.name} scroll owner scroll height`).toBeGreaterThanOrEqual(geometry.scroll.verticalScrollClientHeight)

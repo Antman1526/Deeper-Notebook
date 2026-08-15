@@ -181,6 +181,12 @@
 }
 
 @media (max-height: 42rem) {
+  .dn-source-gallery .dn-source-cover__visual {
+    inline-size: min(100%, calc((100vh - 15.75rem) * 16 / 9));
+    block-size: min(56.25cqi, calc(100vh - 15.75rem));
+    max-block-size: calc(100vh - 15.75rem);
+  }
+
   .dn-source-gallery__card,
   .dn-evidence-peek {
     gap: 0.5rem;
