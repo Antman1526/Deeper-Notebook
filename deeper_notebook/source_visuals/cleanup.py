@@ -220,9 +220,30 @@ class SourceVisualCleanup:
                 )
             except Exception:
                 continue
-            if record is not None:
+            if record is None:
+                try:
+                    self._store.release_tombstone_deletion_claim(claim)
+                except (OSError, SourceVisualStorageError):
+                    continue
+                processed += 1
                 continue
             try:
+                if not (
+                    isinstance(record, SourceVisualRecord)
+                    and record.asset_relpath == claim.tombstone.asset_relpath
+                    and record.asset_sha256 == claim.tombstone.asset_sha256
+                ):
+                    continue
+                # A pending claim is stale after a failed DB delete restored
+                # canonical bytes. A db_deleted claim can likewise be stale
+                # when a later exact ready record has republished those bytes.
+                # In either phase, read_exact revalidates the full record/path,
+                # descriptor identity, size, and hash under storage authority.
+                if (
+                    len(self._store.read_exact(record))
+                    != claim.tombstone.byte_size
+                ):
+                    continue
                 self._store.release_tombstone_deletion_claim(claim)
             except (OSError, SourceVisualStorageError):
                 continue

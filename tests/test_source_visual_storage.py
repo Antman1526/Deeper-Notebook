@@ -2437,6 +2437,176 @@ async def test_stale_completed_deletion_claim_without_tombstone_is_released(
     assert completed.phase == "db_deleted"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["pending", "db_deleted"])
+async def test_expired_restored_claim_without_tombstone_is_released_for_exact_ready_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    claim = store.acquire_tombstone_deletion_claim(tombstone)
+    assert claim is not None
+    if phase == "db_deleted":
+        claim = store.mark_tombstone_deletion_claim_database_deleted(claim)
+    store.restore_tombstone(tombstone)
+    parent = (store.root / record.asset_relpath).parent
+    original_time = time.time
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time",
+        lambda: original_time() + 601,
+    )
+
+    assert await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
+        limit=100
+    ) == 1
+    assert store.read_exact(record) == b"derived-webp"
+    assert not list(parent.glob(".deleting-*.claim"))
+
+
+@pytest.mark.asyncio
+async def test_live_restored_claim_without_tombstone_is_not_released(tmp_path: Path):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    claim = store.acquire_tombstone_deletion_claim(tombstone)
+    assert claim is not None
+    store.restore_tombstone(tombstone)
+    parent = (store.root / record.asset_relpath).parent
+
+    assert await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
+        limit=100
+    ) == 0
+    assert store.read_exact(record) == b"derived-webp"
+    assert list(parent.glob(".deleting-*.claim"))
+
+
+@pytest.mark.asyncio
+async def test_expired_restored_claim_with_mismatched_ready_row_is_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    claim = store.acquire_tombstone_deletion_claim(tombstone)
+    assert claim is not None
+    store.restore_tombstone(tombstone)
+    parent = (store.root / record.asset_relpath).parent
+    mismatched = record.model_copy(update={"source_id": "source:two"})
+    original_time = time.time
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time",
+        lambda: original_time() + 601,
+    )
+
+    assert await SourceVisualCleanup(store, _Repository([mismatched])).reconcile_tombstones(
+        limit=100
+    ) == 0
+    assert list(parent.glob(".deleting-*.claim"))
+    assert store.read_exact(record) == b"derived-webp"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("canonical_state", ["missing", "corrupt"])
+async def test_expired_restored_claim_with_invalid_canonical_is_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, canonical_state: str
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    claim = store.acquire_tombstone_deletion_claim(tombstone)
+    assert claim is not None
+    store.restore_tombstone(tombstone)
+    canonical = store.root / record.asset_relpath
+    if canonical_state == "missing":
+        canonical.unlink()
+    else:
+        canonical.write_bytes(b"corrupt")
+    parent = canonical.parent
+    original_time = time.time
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time",
+        lambda: original_time() + 601,
+    )
+
+    assert await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
+        limit=100
+    ) == 0
+    assert list(parent.glob(".deleting-*.claim"))
+
+
+@pytest.mark.asyncio
+async def test_expired_restored_claim_release_failure_is_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    claim = store.acquire_tombstone_deletion_claim(tombstone)
+    assert claim is not None
+    store.restore_tombstone(tombstone)
+    parent = (store.root / record.asset_relpath).parent
+    original_release = store.release_tombstone_deletion_claim
+    release_attempts: list[object] = []
+
+    def fail_release(value: object) -> None:
+        release_attempts.append(value)
+        raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+
+    original_time = time.time
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time",
+        lambda: original_time() + 601,
+    )
+    monkeypatch.setattr(store, "release_tombstone_deletion_claim", fail_release)
+    cleanup = SourceVisualCleanup(store, _Repository([record]))
+
+    assert await cleanup.reconcile_tombstones(limit=100) == 0
+    assert release_attempts == [claim]
+    assert list(parent.glob(".deleting-*.claim"))
+    monkeypatch.setattr(store, "release_tombstone_deletion_claim", original_release)
+
+    assert await cleanup.reconcile_tombstones(limit=100) == 1
+    assert not list(parent.glob(".deleting-*.claim"))
+
+
+@pytest.mark.asyncio
+async def test_expired_restored_claims_are_released_before_claim_cap_blocks_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    records: list[SourceVisualRecord] = []
+    for index in range(8):
+        content_sha256 = f"{index + 1:064x}"
+        stored = _publish(store, bytes([index + 1]), content_sha256=content_sha256)
+        record = _record(stored, content_sha256=content_sha256)
+        tombstone = store.tombstone(record)
+        assert tombstone is not None
+        assert store.acquire_tombstone_deletion_claim(tombstone) is not None
+        store.restore_tombstone(tombstone)
+        records.append(record)
+    original_time = time.time
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time",
+        lambda: original_time() + 601,
+    )
+    cleanup = SourceVisualCleanup(store, _Repository(records))
+
+    assert await cleanup.reconcile_tombstones(limit=100) == 8
+    assert store.list_tombstone_deletion_claims(limit=100) == ()
+    assert store.stage("source:two", "f" * 64, _prepared()).temp_name
+
+
 def test_malformed_deletion_claim_fails_closed_without_deleting_tombstone(
     tmp_path: Path,
 ):
@@ -2736,6 +2906,7 @@ async def test_database_error_is_not_masked_when_claim_release_fails(
     def fail_release(_claim: object) -> None:
         raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
 
+    original_release = store.release_tombstone_deletion_claim
     monkeypatch.setattr(store, "release_tombstone_deletion_claim", fail_release)
     with pytest.raises(RuntimeError, match="database unavailable"):
         await SourceVisualCleanup(store, FailingRepository([record])).delete_record(record)
@@ -2743,6 +2914,17 @@ async def test_database_error_is_not_masked_when_claim_release_fails(
     assert store.read_exact(record) == b"derived-webp"
     parent = (store.root / record.asset_relpath).parent
     assert list(parent.glob(".deleting-*.claim"))
+    monkeypatch.setattr(store, "release_tombstone_deletion_claim", original_release)
+    original_time = time.time
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time",
+        lambda: original_time() + 601,
+    )
+
+    assert await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
+        limit=100
+    ) == 1
+    assert not list(parent.glob(".deleting-*.claim"))
 
 
 def test_deletion_claims_are_counted_and_bounded(tmp_path: Path):
