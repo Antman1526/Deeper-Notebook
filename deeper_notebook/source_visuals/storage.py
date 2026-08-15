@@ -499,6 +499,10 @@ class SourceVisualStore:
         finally:
             _safe_close(destination_fd)
         if _same_identity(destination_stat, source_stat):
+            try:
+                os.fsync(destination_parent_fd)
+            except OSError as exc:
+                raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
             return destination_stat
 
         if discard_mismatched_destination:
@@ -753,49 +757,53 @@ class SourceVisualStore:
 
     def tombstone(self, record: SourceVisualRecord) -> TombstonedVisualAsset | None:
         relpath = self._validate_record(record)
-        with self._active_lock:
-            if self._active_reads.get(relpath, 0):
-                raise SourceVisualStorageError("ASSET_BUSY")
-            parent_fd = file_fd = None
-            try:
-                with self.mutation_guard() as root_fd:
-                    parent_fd, filename = self._open_asset_parent_at(
-                        root_fd, relpath, create=False
+        # Preserve the immediate same-instance busy signal without holding this
+        # lock while waiting for the cross-instance mutation guard.
+        if self.is_read_active(record):
+            raise SourceVisualStorageError("ASSET_BUSY")
+        parent_fd = file_fd = None
+        try:
+            with self.mutation_guard() as root_fd:
+                with self._active_lock:
+                    if self._active_reads.get(relpath, 0):
+                        raise SourceVisualStorageError("ASSET_BUSY")
+                parent_fd, filename = self._open_asset_parent_at(
+                    root_fd, relpath, create=False
+                )
+                try:
+                    file_fd = self._open_regular_file(parent_fd, filename)
+                except SourceVisualStorageError as exc:
+                    if exc.code == "ASSET_MISSING":
+                        return None
+                    raise
+                verified_stat = os.fstat(file_fd)
+                digest, size = _hash_fd(file_fd)
+                if digest != record.asset_sha256:
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                tombstone_name = self._new_tombstone_name(record.asset_sha256)
+                if (
+                    self._link_no_replace(
+                        source_parent_fd=parent_fd,
+                        source_name=filename,
+                        source_stat=verified_stat,
+                        destination_parent_fd=parent_fd,
+                        destination_name=tombstone_name,
                     )
-                    try:
-                        file_fd = self._open_regular_file(parent_fd, filename)
-                    except SourceVisualStorageError as exc:
-                        if exc.code == "ASSET_MISSING":
-                            return None
-                        raise
-                    verified_stat = os.fstat(file_fd)
-                    digest, size = _hash_fd(file_fd)
-                    if digest != record.asset_sha256:
-                        raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-                    tombstone_name = self._new_tombstone_name(record.asset_sha256)
-                    if (
-                        self._link_no_replace(
-                            source_parent_fd=parent_fd,
-                            source_name=filename,
-                            source_stat=verified_stat,
-                            destination_parent_fd=parent_fd,
-                            destination_name=tombstone_name,
-                        )
-                        is None
-                    ):
-                        raise SourceVisualStorageError("TOMBSTONE_INVALID")
-                    self._unlink_verified(parent_fd, filename, verified_stat)
-                    os.fsync(parent_fd)
-                    return TombstonedVisualAsset(
-                        relpath, tombstone_name, record.asset_sha256, size
-                    )
-            except SourceVisualStorageError:
-                raise
-            except OSError as exc:
-                raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
-            finally:
-                _safe_close(file_fd)
-                _safe_close(parent_fd)
+                    is None
+                ):
+                    raise SourceVisualStorageError("TOMBSTONE_INVALID")
+                self._unlink_verified(parent_fd, filename, verified_stat)
+                os.fsync(parent_fd)
+                return TombstonedVisualAsset(
+                    relpath, tombstone_name, record.asset_sha256, size
+                )
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+        finally:
+            _safe_close(file_fd)
+            _safe_close(parent_fd)
 
     @staticmethod
     def _validate_tombstone(value: TombstonedVisualAsset) -> None:

@@ -8,6 +8,7 @@ import os
 import threading
 import time
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -138,6 +139,90 @@ def _stage_inside_mutation_guard(
     with store.mutation_guard():
         store.stage("source:one", "a" * 64, _prepared())
     completed.set()
+
+
+def _complete_if_store_lock_order_is_safe(
+    data_folder: str, completed: "mp.synchronize.Event"
+) -> None:
+    store = SourceVisualStore(data_folder=data_folder)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone_waiting = threading.Event()
+    reader_in_guard = threading.Event()
+    release_tombstone = threading.Event()
+    original_guard = store.mutation_guard
+    errors: list[BaseException] = []
+
+    @contextmanager
+    def controlled_guard():
+        if threading.current_thread().name == "tombstone":
+            tombstone_waiting.set()
+            release_tombstone.wait(timeout=2)
+        with original_guard() as root_fd:
+            if threading.current_thread().name == "reader":
+                reader_in_guard.set()
+            yield root_fd
+
+    store.mutation_guard = controlled_guard  # type: ignore[method-assign]
+
+    def tombstone_asset() -> None:
+        try:
+            store.tombstone(record)
+        except BaseException as exc:  # pragma: no cover - failure reported below.
+            errors.append(exc)
+
+    def read_asset() -> None:
+        try:
+            store.read_exact(record)
+        except BaseException as exc:  # pragma: no cover - failure reported below.
+            errors.append(exc)
+
+    tombstone = threading.Thread(target=tombstone_asset, name="tombstone", daemon=True)
+    reader = threading.Thread(target=read_asset, name="reader", daemon=True)
+    tombstone.start()
+    if not tombstone_waiting.wait(timeout=2):
+        return
+    reader.start()
+    if not reader_in_guard.wait(timeout=2):
+        return
+    release_tombstone.set()
+    tombstone.join(timeout=1)
+    reader.join(timeout=1)
+    if not tombstone.is_alive() and not reader.is_alive() and not errors:
+        completed.set()
+
+
+def _record_link_durability_events(
+    monkeypatch: pytest.MonkeyPatch, **parent_paths: Path
+) -> list[str]:
+    original_fsync = os.fsync
+    original_link = os.link
+    original_stat = os.fstat
+    original_unlink = os.unlink
+    identities = {
+        (path.stat().st_dev, path.stat().st_ino): role
+        for role, path in parent_paths.items()
+    }
+    events: list[str] = []
+
+    def fsync(descriptor: int) -> None:
+        metadata = original_stat(descriptor)
+        role = identities.get((metadata.st_dev, metadata.st_ino), "other")
+        events.append(f"fsync:{role}")
+        original_fsync(descriptor)
+
+    def link(*args: object, **kwargs: object) -> None:
+        original_link(*args, **kwargs)
+        events.append("link")
+
+    def unlink(*args: object, **kwargs: object) -> None:
+        events.append("unlink")
+        original_unlink(*args, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fsync", fsync)
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.unlink", unlink)
+    return events
 
 
 def test_asset_relpath_contains_only_derived_hash_segments():
@@ -986,6 +1071,101 @@ def test_active_read_fences_tombstone(tmp_path: Path, monkeypatch: pytest.Monkey
     release.set()
     thread.join(timeout=5)
     assert not thread.is_alive()
+
+
+def test_mutation_guard_and_active_reads_share_one_lock_order(tmp_path: Path):
+    context = mp.get_context("fork")
+    completed = context.Event()
+    child = context.Process(
+        target=_complete_if_store_lock_order_is_safe,
+        args=(str(tmp_path), completed),
+    )
+    child.start()
+    try:
+        child.join(timeout=5)
+    finally:
+        if child.is_alive():
+            child.kill()
+            child.join(timeout=5)
+
+    assert child.exitcode == 0
+    assert completed.is_set()
+
+
+def test_publish_fsyncs_destination_before_unlinking_staged_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    destination = store.root / asset_relpath(
+        "source:one", "a" * 64, staged.asset_sha256
+    )
+    destination.parent.mkdir(parents=True)
+    events = _record_link_durability_events(
+        monkeypatch,
+        destination=destination.parent,
+        stage=store.root / ".tmp",
+    )
+
+    store.publish(staged)
+
+    assert events[:3] == ["link", "fsync:destination", "unlink"]
+    assert events[-1] == "fsync:stage"
+
+
+def test_tombstone_fsyncs_link_before_unlinking_canonical_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    events = _record_link_durability_events(
+        monkeypatch,
+        asset=(store.root / record.asset_relpath).parent,
+    )
+
+    assert store.tombstone(record) is not None
+
+    assert events[:3] == ["link", "fsync:asset", "unlink"]
+    assert events[-1] == "fsync:asset"
+
+
+def test_restore_fsyncs_link_before_unlinking_tombstone_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    events = _record_link_durability_events(
+        monkeypatch,
+        asset=(store.root / record.asset_relpath).parent,
+    )
+
+    store.restore_tombstone(tombstone)
+
+    assert events[:3] == ["link", "fsync:asset", "unlink"]
+    assert events[-1] == "fsync:asset"
+
+
+def test_remove_fsyncs_quarantine_link_before_unlinking_tombstone_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    events = _record_link_durability_events(
+        monkeypatch,
+        asset=(store.root / record.asset_relpath).parent,
+    )
+
+    store.remove_tombstone(tombstone)
+
+    assert events[:3] == ["link", "fsync:asset", "unlink"]
+    assert events[-1] == "fsync:asset"
 
 
 def test_cross_store_read_holds_mutation_guard_until_tombstone_waits(
