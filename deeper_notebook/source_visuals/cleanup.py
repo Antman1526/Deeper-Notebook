@@ -37,22 +37,28 @@ class SourceVisualCleanup:
         self._repository = repository
 
     async def delete_record(self, record: SourceVisualRecord) -> bool:
-        tombstone = self._store.tombstone(record)
-        if tombstone is None:
+        claimed_tombstone = self._store.tombstone_with_deletion_claim(record)
+        if claimed_tombstone is None:
             return False
+        tombstone, claim = claimed_tombstone
         try:
             deleted = await self._repository.delete_ready_if_current(record)
         except Exception:
             self._restore_after_failed_delete(tombstone)
+            self._store.release_tombstone_deletion_claim(claim)
             raise
         if not deleted:
             self._restore_after_failed_delete(tombstone)
+            self._store.release_tombstone_deletion_claim(claim)
             return False
+        claim = self._store.mark_tombstone_deletion_claim_database_deleted(claim)
         try:
             self._store.remove_tombstone(tombstone)
         except (OSError, SourceVisualStorageError):
             # The row is gone, so a later bounded reconciliation owns cleanup.
-            pass
+            # Keep the lease until a reconciler removes this exact tombstone.
+            return True
+        self._store.release_tombstone_deletion_claim(claim)
         return True
 
     def _restore_after_failed_delete(self, tombstone: TombstonedVisualAsset) -> None:
@@ -61,8 +67,18 @@ class SourceVisualCleanup:
     async def reconcile_tombstones(self, *, limit: int = 100) -> int:
         self._store.reconcile_staged_files(limit=limit)
         tombstones = self._store.list_tombstones(limit=limit)
+        claims = self._store.list_tombstone_deletion_claims(limit=limit)
+        tombstone_set = set(tombstones)
         processed = 0
         for tombstone in tombstones:
+            try:
+                claim = self._store.acquire_tombstone_deletion_claim(tombstone)
+            except (OSError, SourceVisualStorageError):
+                continue
+            if claim is None:
+                # A live deletion owns this tombstone while it awaits its
+                # conditional database mutation; never restore around it.
+                continue
             try:
                 record = await self._repository.find_ready_by_asset_relpath(
                     tombstone.asset_relpath
@@ -88,7 +104,28 @@ class SourceVisualCleanup:
                 elif record is None:
                     self._store.remove_tombstone(tombstone)
                 else:
+                    self._store.release_tombstone_deletion_claim(claim)
                     continue
+                self._store.release_tombstone_deletion_claim(claim)
+            except (OSError, SourceVisualStorageError):
+                continue
+            processed += 1
+        for claim in claims:
+            if (
+                claim.tombstone in tombstone_set
+                or self._store.is_tombstone_deletion_claim_live(claim)
+            ):
+                continue
+            try:
+                record = await self._repository.find_ready_by_asset_relpath(
+                    claim.tombstone.asset_relpath
+                )
+            except Exception:
+                continue
+            if record is not None:
+                continue
+            try:
+                self._store.release_tombstone_deletion_claim(claim)
             except (OSError, SourceVisualStorageError):
                 continue
             processed += 1

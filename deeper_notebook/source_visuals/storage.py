@@ -13,7 +13,7 @@ import threading
 import time
 import weakref
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -44,10 +44,13 @@ _UNLINK_FENCE_NAME = re.compile(r"^\.unlink-fence-[0-9a-f]{32}$")
 _UNLINK_RECOVERY_PREFIX = ".unlink-recovery-"
 _UNLINK_RECOVERY_NAME = re.compile(r"^\.unlink-recovery-[0-9a-f]{32}$")
 _UNLINK_JOURNAL = ".journal"
+_DELETION_CLAIM_PREFIX = ".deleting-"
+_DELETION_CLAIM_NAME = re.compile(r"^\.deleting-([0-9a-f]{64})\.claim$")
 _MAX_ASSET_BYTES = 1_572_864
 _MAX_CACHE_FILES = 4096
 _MAX_RECOVERY_ENTRIES = 8
 _STALE_STAGE_SECONDS = 300
+_DELETION_CLAIM_SECONDS = 300
 _OPEN_DIRECTORY = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 )
@@ -144,6 +147,17 @@ class TombstonedVisualAsset:
     tombstone_name: str
     asset_sha256: str
     byte_size: int
+
+
+@dataclass(frozen=True, slots=True)
+class TombstoneDeletionClaim:
+    """One short-lived cache-local owner lease for a tombstone deletion."""
+
+    tombstone: TombstonedVisualAsset
+    claim_name: str
+    owner_token: str
+    expires_at: int
+    phase: str
 
 
 def _validate_hash(value: str) -> str:
@@ -475,6 +489,7 @@ class SourceVisualStore:
             or _UNVERIFIED_STAGE_NAME.fullmatch(name) is not None
             or TOMBSTONE.fullmatch(name) is not None
             or _UNLINK_RECOVERY_NAME.fullmatch(name) is not None
+            or _DELETION_CLAIM_NAME.fullmatch(name) is not None
             or re.fullmatch(r"[0-9a-f]{64}\.webp", name) is not None
         )
 
@@ -574,6 +589,20 @@ class SourceVisualStore:
             raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
         os.fsync(parent_fd)
 
+    def _retire_journal_only_fence_at(
+        self, parent_fd: int, fence_name: str, fence_fd: int, visited: list[int]
+    ) -> None:
+        """Retire a pre-rename fence whose sole entry is its private journal."""
+
+        if self._fence_entry_names(fence_fd, visited) != {_UNLINK_JOURNAL}:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        try:
+            os.unlink(_UNLINK_JOURNAL, dir_fd=fence_fd)
+            os.fsync(fence_fd)
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        self._retire_empty_fence_at(parent_fd, fence_name, fence_fd, visited)
+
     def _reconcile_fence_at(
         self,
         parent_fd: int,
@@ -591,6 +620,12 @@ class SourceVisualStore:
             )
             if not fence_entries:
                 self._retire_empty_fence_at(
+                    parent_fd, fence_name, fence_fd, [0] if visited is None else visited
+                )
+                fence_fd = None
+                return True
+            if fence_entries == {_UNLINK_JOURNAL}:
+                self._retire_journal_only_fence_at(
                     parent_fd, fence_name, fence_fd, [0] if visited is None else visited
                 )
                 fence_fd = None
@@ -767,6 +802,7 @@ class SourceVisualStore:
         temp_parent: bool,
         recovery_count: list[int],
         unverified_count: list[int],
+        deletion_claim_count: list[int],
         fences: list[tuple[str | None, str | None, str]],
         prefix: str | None,
         content: str | None,
@@ -786,15 +822,22 @@ class SourceVisualStore:
                 self._validate_pending_file(parent_fd, entry.name)
                 recovery_count[0] += 1
                 continue
+            if entry.name.startswith(_DELETION_CLAIM_PREFIX):
+                if temp_parent or _DELETION_CLAIM_NAME.fullmatch(entry.name) is None:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                self._read_deletion_claim_at(parent_fd, entry.name)
+                deletion_claim_count[0] += 1
+                continue
             if temp_parent and _UNVERIFIED_STAGE_NAME.fullmatch(entry.name) is not None:
                 self._validate_pending_file(parent_fd, entry.name)
                 unverified_count[0] += 1
 
-    def _reconcile_recovery_at(self, root_fd: int) -> None:
+    def _reconcile_recovery_at(self, root_fd: int) -> int:
         """Bound and retire durable unlink journals while the mutation lock is held."""
 
         recovery_count = [0]
         unverified_count = [0]
+        deletion_claim_count = [0]
         fences: list[tuple[str | None, str | None, str]] = []
         visited = [0]
         temp_fd = None
@@ -805,6 +848,7 @@ class SourceVisualStore:
                 temp_parent=True,
                 recovery_count=recovery_count,
                 unverified_count=unverified_count,
+                deletion_claim_count=deletion_claim_count,
                 fences=fences,
                 prefix=None,
                 content=None,
@@ -831,6 +875,7 @@ class SourceVisualStore:
                                 temp_parent=False,
                                 recovery_count=recovery_count,
                                 unverified_count=unverified_count,
+                                deletion_claim_count=deletion_claim_count,
                                 fences=fences,
                                 prefix=prefix_entry.name,
                                 content=content_entry.name,
@@ -844,6 +889,7 @@ class SourceVisualStore:
                 recovery_count[0] >= _MAX_RECOVERY_ENTRIES
                 or len(fences) > _MAX_RECOVERY_ENTRIES
                 or unverified_count[0] > 1
+                or deletion_claim_count[0] > _MAX_RECOVERY_ENTRIES
             ):
                 raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
 
@@ -866,6 +912,7 @@ class SourceVisualStore:
                         _safe_close(parent_fd)
                     _safe_close(content_fd)
                     _safe_close(prefix_fd)
+            return deletion_claim_count[0]
         finally:
             _safe_close(temp_fd)
 
@@ -1251,62 +1298,68 @@ class SourceVisualStore:
         with self._active_lock:
             return self._active_reads.get(relpath, 0) > 0
 
+    def _tombstone_at(
+        self, root_fd: int, record: SourceVisualRecord, relpath: str
+    ) -> TombstonedVisualAsset | None:
+        parent_fd = file_fd = None
+        try:
+            with self._active_lock:
+                if self._active_reads.get(relpath, 0):
+                    raise SourceVisualStorageError("ASSET_BUSY")
+            parent_fd, filename = self._open_asset_parent_at(
+                root_fd, relpath, create=False
+            )
+            try:
+                file_fd = self._open_regular_file(parent_fd, filename)
+            except SourceVisualStorageError as exc:
+                if exc.code == "ASSET_MISSING":
+                    return None
+                raise
+            verified_stat = os.fstat(file_fd)
+            digest, size = _hash_fd(file_fd)
+            if digest != record.asset_sha256:
+                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+            tombstone_name = self._new_tombstone_name(record.asset_sha256)
+            tombstone_stat = self._link_no_replace(
+                source_parent_fd=parent_fd,
+                source_name=filename,
+                source_stat=verified_stat,
+                destination_parent_fd=parent_fd,
+                destination_name=tombstone_name,
+                expected_hash=record.asset_sha256,
+                expected_size=size,
+            )
+            if tombstone_stat is None:
+                raise SourceVisualStorageError("TOMBSTONE_INVALID")
+            self._unlink_verified(parent_fd, filename, verified_stat)
+            self._verify_linked_bytes(
+                parent_fd,
+                tombstone_name,
+                tombstone_stat,
+                record.asset_sha256,
+                size,
+            )
+            os.fsync(parent_fd)
+            return TombstonedVisualAsset(
+                relpath, tombstone_name, record.asset_sha256, size
+            )
+        finally:
+            _safe_close(file_fd)
+            _safe_close(parent_fd)
+
     def tombstone(self, record: SourceVisualRecord) -> TombstonedVisualAsset | None:
         relpath = self._validate_record(record)
         # Preserve the immediate same-instance busy signal without holding this
         # lock while waiting for the cross-instance mutation guard.
         if self.is_read_active(record):
             raise SourceVisualStorageError("ASSET_BUSY")
-        parent_fd = file_fd = None
         try:
             with self.mutation_guard() as root_fd:
-                with self._active_lock:
-                    if self._active_reads.get(relpath, 0):
-                        raise SourceVisualStorageError("ASSET_BUSY")
-                parent_fd, filename = self._open_asset_parent_at(
-                    root_fd, relpath, create=False
-                )
-                try:
-                    file_fd = self._open_regular_file(parent_fd, filename)
-                except SourceVisualStorageError as exc:
-                    if exc.code == "ASSET_MISSING":
-                        return None
-                    raise
-                verified_stat = os.fstat(file_fd)
-                digest, size = _hash_fd(file_fd)
-                if digest != record.asset_sha256:
-                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-                tombstone_name = self._new_tombstone_name(record.asset_sha256)
-                tombstone_stat = self._link_no_replace(
-                    source_parent_fd=parent_fd,
-                    source_name=filename,
-                    source_stat=verified_stat,
-                    destination_parent_fd=parent_fd,
-                    destination_name=tombstone_name,
-                    expected_hash=record.asset_sha256,
-                    expected_size=size,
-                )
-                if tombstone_stat is None:
-                    raise SourceVisualStorageError("TOMBSTONE_INVALID")
-                self._unlink_verified(parent_fd, filename, verified_stat)
-                self._verify_linked_bytes(
-                    parent_fd,
-                    tombstone_name,
-                    tombstone_stat,
-                    record.asset_sha256,
-                    size,
-                )
-                os.fsync(parent_fd)
-                return TombstonedVisualAsset(
-                    relpath, tombstone_name, record.asset_sha256, size
-                )
+                return self._tombstone_at(root_fd, record, relpath)
         except SourceVisualStorageError:
             raise
         except OSError as exc:
             raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
-        finally:
-            _safe_close(file_fd)
-            _safe_close(parent_fd)
 
     @staticmethod
     def _validate_tombstone(value: TombstonedVisualAsset) -> None:
@@ -1314,10 +1367,297 @@ class SourceVisualStore:
             raise SourceVisualStorageError("TOMBSTONE_INVALID")
         match = TOMBSTONE.fullmatch(value.tombstone_name)
         relpath = _RELPATH.fullmatch(value.asset_relpath)
-        if match is None or relpath is None or match.group(2) != value.asset_sha256:
+        if (
+            match is None
+            or relpath is None
+            or match.group(2) != value.asset_sha256
+            or isinstance(value.byte_size, bool)
+            or not isinstance(value.byte_size, int)
+            or not 0 <= value.byte_size <= _MAX_ASSET_BYTES
+        ):
             raise SourceVisualStorageError("TOMBSTONE_INVALID")
         if relpath.group(3) != value.asset_sha256:
             raise SourceVisualStorageError("TOMBSTONE_INVALID")
+
+    @staticmethod
+    def _deletion_claim_name(tombstone: TombstonedVisualAsset) -> str:
+        SourceVisualStore._validate_tombstone(tombstone)
+        identity = "\0".join(
+            (
+                tombstone.asset_relpath,
+                tombstone.tombstone_name,
+                tombstone.asset_sha256,
+                str(tombstone.byte_size),
+            )
+        )
+        return f"{_DELETION_CLAIM_PREFIX}{hashlib.sha256(identity.encode()).hexdigest()}.claim"
+
+    @staticmethod
+    def _validate_deletion_claim(value: TombstoneDeletionClaim) -> None:
+        if not isinstance(value, TombstoneDeletionClaim):
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        SourceVisualStore._validate_tombstone(value.tombstone)
+        if (
+            value.claim_name != SourceVisualStore._deletion_claim_name(value.tombstone)
+            or _SHA256.fullmatch(value.owner_token) is None
+            or isinstance(value.expires_at, bool)
+            or not isinstance(value.expires_at, int)
+            or value.expires_at < 0
+            or value.phase not in {"pending", "db_deleted"}
+        ):
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+
+    def _read_deletion_claim_at(
+        self, parent_fd: int, claim_name: str
+    ) -> tuple[TombstoneDeletionClaim, os.stat_result]:
+        if _DELETION_CLAIM_NAME.fullmatch(claim_name) is None:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        claim_fd = None
+        try:
+            claim_fd = self._open_regular_file(parent_fd, claim_name)
+            claim_stat = os.fstat(claim_fd)
+            if (
+                claim_stat.st_size > 1024
+                or stat.S_IMODE(claim_stat.st_mode) != 0o600
+                or claim_stat.st_nlink != 1
+            ):
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            payload = os.read(claim_fd, 1025)
+        except SourceVisualStorageError as exc:
+            if exc.code == "ASSET_MISSING":
+                raise
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        finally:
+            _safe_close(claim_fd)
+        try:
+            value = json.loads(payload.decode("ascii"))
+            tombstone = TombstonedVisualAsset(
+                asset_relpath=value["asset_relpath"],
+                tombstone_name=value["tombstone_name"],
+                asset_sha256=value["asset_sha256"],
+                byte_size=value["byte_size"],
+            )
+            claim = TombstoneDeletionClaim(
+                tombstone=tombstone,
+                claim_name=claim_name,
+                owner_token=value["owner_token"],
+                expires_at=value["expires_at"],
+                phase=value["phase"],
+            )
+            if set(value) != {
+                "asset_relpath",
+                "asset_sha256",
+                "byte_size",
+                "expires_at",
+                "owner_token",
+                "phase",
+                "tombstone_name",
+            }:
+                raise ValueError
+            self._validate_deletion_claim(claim)
+        except (KeyError, TypeError, UnicodeDecodeError, ValueError):
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from None
+        return claim, claim_stat
+
+    def _write_deletion_claim_at(
+        self, parent_fd: int, claim: TombstoneDeletionClaim
+    ) -> None:
+        self._validate_deletion_claim(claim)
+        payload = json.dumps(
+            {
+                "asset_relpath": claim.tombstone.asset_relpath,
+                "asset_sha256": claim.tombstone.asset_sha256,
+                "byte_size": claim.tombstone.byte_size,
+                "expires_at": claim.expires_at,
+                "owner_token": claim.owner_token,
+                "phase": claim.phase,
+                "tombstone_name": claim.tombstone.tombstone_name,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        claim_fd = None
+        try:
+            claim_fd = os.open(
+                claim.claim_name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=parent_fd,
+            )
+            claim_stat = os.fstat(claim_fd)
+            if (
+                not stat.S_ISREG(claim_stat.st_mode)
+                or stat.S_IMODE(claim_stat.st_mode) != 0o600
+                or claim_stat.st_nlink != 1
+            ):
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            view = memoryview(payload)
+            while view:
+                written = os.write(claim_fd, view)
+                if written <= 0:
+                    raise OSError("claim write did not progress")
+                view = view[written:]
+            os.fsync(claim_fd)
+            os.fsync(parent_fd)
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        finally:
+            _safe_close(claim_fd)
+
+    def _verify_tombstone_at(
+        self, parent_fd: int, tombstone: TombstonedVisualAsset
+    ) -> None:
+        tombstone_fd = None
+        try:
+            tombstone_fd = self._open_regular_file(parent_fd, tombstone.tombstone_name)
+            digest, size = _hash_fd(tombstone_fd)
+        finally:
+            _safe_close(tombstone_fd)
+        if digest != tombstone.asset_sha256 or size != tombstone.byte_size:
+            raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+
+    def _acquire_tombstone_deletion_claim_at(
+        self, root_fd: int, tombstone: TombstonedVisualAsset
+    ) -> TombstoneDeletionClaim | None:
+        self._validate_tombstone(tombstone)
+        parent_fd = None
+        try:
+            parent_fd, _filename = self._open_asset_parent_at(
+                root_fd, tombstone.asset_relpath, create=False
+            )
+            self._verify_tombstone_at(parent_fd, tombstone)
+            claim_name = self._deletion_claim_name(tombstone)
+            now = int(time.time())
+            try:
+                existing, existing_stat = self._read_deletion_claim_at(
+                    parent_fd, claim_name
+                )
+            except SourceVisualStorageError as exc:
+                if exc.code != "ASSET_MISSING":
+                    raise
+                if self._reconcile_recovery_at(root_fd) >= _MAX_RECOVERY_ENTRIES:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            else:
+                if existing.tombstone != tombstone:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                if existing.phase == "pending" and existing.expires_at > now:
+                    return None
+                self._unlink_verified(parent_fd, claim_name, existing_stat)
+            claim = TombstoneDeletionClaim(
+                tombstone=tombstone,
+                claim_name=claim_name,
+                owner_token=secrets.token_hex(32),
+                expires_at=now + _DELETION_CLAIM_SECONDS,
+                phase="pending",
+            )
+            self._write_deletion_claim_at(parent_fd, claim)
+            return claim
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        finally:
+            _safe_close(parent_fd)
+
+    def acquire_tombstone_deletion_claim(
+        self, tombstone: TombstonedVisualAsset
+    ) -> TombstoneDeletionClaim | None:
+        """Acquire the exact tombstone's durable lease without retaining the lock."""
+
+        try:
+            with self.mutation_guard() as root_fd:
+                return self._acquire_tombstone_deletion_claim_at(root_fd, tombstone)
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+
+    def tombstone_with_deletion_claim(
+        self, record: SourceVisualRecord
+    ) -> tuple[TombstonedVisualAsset, TombstoneDeletionClaim] | None:
+        """Tombstone and lease one exact asset before releasing mutation authority."""
+
+        relpath = self._validate_record(record)
+        if self.is_read_active(record):
+            raise SourceVisualStorageError("ASSET_BUSY")
+        try:
+            with self.mutation_guard() as root_fd:
+                if self._reconcile_recovery_at(root_fd) >= _MAX_RECOVERY_ENTRIES:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                tombstone = self._tombstone_at(root_fd, record, relpath)
+                if tombstone is None:
+                    return None
+                claim = self._acquire_tombstone_deletion_claim_at(root_fd, tombstone)
+                if claim is None:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                return tombstone, claim
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+
+    def mark_tombstone_deletion_claim_database_deleted(
+        self, claim: TombstoneDeletionClaim
+    ) -> TombstoneDeletionClaim:
+        """Durably mark a successful conditional DB deletion before byte removal."""
+
+        self._validate_deletion_claim(claim)
+        if claim.phase != "pending":
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        parent_fd = None
+        try:
+            with self.mutation_guard() as root_fd:
+                parent_fd, _filename = self._open_asset_parent_at(
+                    root_fd, claim.tombstone.asset_relpath, create=False
+                )
+                current, current_stat = self._read_deletion_claim_at(
+                    parent_fd, claim.claim_name
+                )
+                if current != claim:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                completed = replace(claim, phase="db_deleted")
+                self._unlink_verified(parent_fd, claim.claim_name, current_stat)
+                self._write_deletion_claim_at(parent_fd, completed)
+                return completed
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        finally:
+            _safe_close(parent_fd)
+
+    def release_tombstone_deletion_claim(self, claim: TombstoneDeletionClaim) -> None:
+        """Release a claim only if this owner still holds its exact lease."""
+
+        self._validate_deletion_claim(claim)
+        parent_fd = None
+        try:
+            with self.mutation_guard() as root_fd:
+                parent_fd, _filename = self._open_asset_parent_at(
+                    root_fd, claim.tombstone.asset_relpath, create=False
+                )
+                current, current_stat = self._read_deletion_claim_at(
+                    parent_fd, claim.claim_name
+                )
+                if current != claim:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                self._unlink_verified(parent_fd, claim.claim_name, current_stat)
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        finally:
+            _safe_close(parent_fd)
+
+    def is_tombstone_deletion_claim_live(self, claim: TombstoneDeletionClaim) -> bool:
+        """Return whether a validated owner lease still fences reconciliation."""
+
+        self._validate_deletion_claim(claim)
+        return claim.expires_at > int(time.time())
 
     def restore_tombstone(self, tombstone: TombstonedVisualAsset) -> None:
         self._validate_tombstone(tombstone)
@@ -1533,6 +1873,68 @@ class SourceVisualStore:
             _safe_close(root_fd)
         return tuple(found)
 
+    def list_tombstone_deletion_claims(
+        self, *, limit: int = 100
+    ) -> tuple[TombstoneDeletionClaim, ...]:
+        """List a bounded set of validated claim journals beneath asset parents."""
+
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 100
+        ):
+            raise SourceVisualStorageError("INVALID_INPUT")
+        found: list[TombstoneDeletionClaim] = []
+        visited = [0]
+        try:
+            with self.mutation_guard() as root_fd:
+                for prefix_entry in self._iter_bounded_entries(
+                    root_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
+                ):
+                    if re.fullmatch(r"[0-9a-f]{2}", prefix_entry.name) is None:
+                        continue
+                    prefix_fd = self._open_child_dir(
+                        root_fd, prefix_entry.name, create=False
+                    )
+                    try:
+                        for content_entry in self._iter_bounded_entries(
+                            prefix_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
+                        ):
+                            if _SHA256.fullmatch(content_entry.name) is None:
+                                continue
+                            content_fd = self._open_child_dir(
+                                prefix_fd, content_entry.name, create=False
+                            )
+                            try:
+                                for entry in self._iter_bounded_entries(
+                                    content_fd,
+                                    visited,
+                                    error_code="CACHE_RECOVERY_REQUIRED",
+                                ):
+                                    if not entry.name.startswith(
+                                        _DELETION_CLAIM_PREFIX
+                                    ):
+                                        continue
+                                    if _DELETION_CLAIM_NAME.fullmatch(entry.name) is None:
+                                        raise SourceVisualStorageError(
+                                            "CACHE_RECOVERY_REQUIRED"
+                                        )
+                                    claim, _claim_stat = self._read_deletion_claim_at(
+                                        content_fd, entry.name
+                                    )
+                                    found.append(claim)
+                                    if len(found) >= limit:
+                                        return tuple(found)
+                            finally:
+                                _safe_close(content_fd)
+                    finally:
+                        _safe_close(prefix_fd)
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        return tuple(found)
+
     def cache_size_bytes(self) -> int:
         root_fd = self._ensure_root()
         total = 0
@@ -1626,6 +2028,10 @@ class SourceVisualStore:
                                         )
                                     elif _UNLINK_FENCE_NAME.fullmatch(entry.name) is not None:
                                         add_fence_file(temp_fd, entry.name)
+                                    elif entry.name.startswith(_DELETION_CLAIM_PREFIX):
+                                        raise SourceVisualStorageError(
+                                            "CACHE_RECOVERY_REQUIRED"
+                                        )
                                     elif entry.name.startswith(
                                         (_UNLINK_FENCE_PREFIX, _UNLINK_RECOVERY_PREFIX)
                                     ):
@@ -1686,10 +2092,22 @@ class SourceVisualStore:
                                                 entry.name
                                             ) is not None:
                                                 add_fence_file(content_fd, entry.name)
+                                            elif _DELETION_CLAIM_NAME.fullmatch(
+                                                entry.name
+                                            ) is not None:
+                                                self._read_deletion_claim_at(
+                                                    content_fd, entry.name
+                                                )
+                                                add_owned_file(
+                                                    content_fd,
+                                                    entry.name,
+                                                    invalid_code="CACHE_RECOVERY_REQUIRED",
+                                                )
                                             elif entry.name.startswith(
                                                 (
                                                     _UNLINK_FENCE_PREFIX,
                                                     _UNLINK_RECOVERY_PREFIX,
+                                                    _DELETION_CLAIM_PREFIX,
                                                 )
                                             ):
                                                 raise SourceVisualStorageError(
@@ -1716,6 +2134,7 @@ __all__ = [
     "StagedVisualAsset",
     "StoredVisualAsset",
     "TOMBSTONE",
+    "TombstoneDeletionClaim",
     "TombstonedVisualAsset",
     "asset_relpath",
 ]

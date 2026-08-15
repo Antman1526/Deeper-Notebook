@@ -1277,6 +1277,8 @@ async def test_database_delete_failure_restores_original(tmp_path: Path):
         await cleanup.delete_record(record)
     assert store.read_exact(record) == b"derived-webp"
     assert repository.records == [record]
+    parent = (store.root / record.asset_relpath).parent
+    assert not list(parent.glob(".deleting-*.claim"))
 
 
 @pytest.mark.asyncio
@@ -1449,7 +1451,8 @@ async def test_eviction_remeasures_physical_bytes_when_tombstone_cleanup_fails(
 
     assert removed == 2
     assert repository.records == []
-    assert observed_sizes[0] == observed_sizes[-1] == 200
+    assert observed_sizes[0] == 200
+    assert observed_sizes[-1] > 200
     assert len(observed_sizes) == 3
     assert store.cache_size_bytes() > 150
 
@@ -2087,6 +2090,214 @@ def test_nonempty_fence_without_journal_blocks_recovery_without_deletion(
     assert error.value.code == "CACHE_RECOVERY_REQUIRED"
     assert fence.exists()
     assert foreign.read_bytes() == b"foreign-fence"
+
+
+@pytest.mark.parametrize("payload", [b"", b'{"dev":'])
+def test_fresh_store_retires_journal_only_fence_crash_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: bytes
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    parent = (store.root / stored.asset_relpath).parent
+    fence = parent / f".unlink-fence-{'e' * 32}"
+    fence.mkdir(mode=0o700)
+    (fence / ".journal").write_bytes(payload)
+
+    original_fsync = os.fsync
+    parent_identity = (parent.stat().st_dev, parent.stat().st_ino)
+    synced_parent = False
+
+    def fsync(descriptor: int) -> None:
+        nonlocal synced_parent
+        metadata = os.fstat(descriptor)
+        if (metadata.st_dev, metadata.st_ino) == parent_identity:
+            synced_parent = True
+        original_fsync(descriptor)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fsync", fsync)
+
+    staged = SourceVisualStore(data_folder=tmp_path).stage(
+        "source:two", "b" * 64, _prepared()
+    )
+
+    assert staged.temp_name
+    assert not fence.exists()
+    assert synced_parent
+
+
+@pytest.mark.asyncio
+async def test_delete_record_claim_blocks_concurrent_tombstone_reconciliation(
+    tmp_path: Path,
+):
+    store_a = SourceVisualStore(data_folder=tmp_path)
+    store_b = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store_a)
+    record = _record(stored)
+
+    class BlockingRepository(_Repository):
+        def __init__(self) -> None:
+            super().__init__([record])
+            self.delete_started = asyncio.Event()
+            self.release_delete = asyncio.Event()
+
+        async def delete_ready_if_current(self, current: SourceVisualRecord) -> bool:
+            self.delete_started.set()
+            await self.release_delete.wait()
+            return await super().delete_ready_if_current(current)
+
+    repository = BlockingRepository()
+    deleting = SourceVisualCleanup(store_a, repository)
+    reconciling = SourceVisualCleanup(store_b, repository)
+    delete_task = asyncio.create_task(deleting.delete_record(record))
+    await asyncio.wait_for(repository.delete_started.wait(), timeout=1)
+    claim_parent = (store_a.root / record.asset_relpath).parent
+    assert len(list(claim_parent.glob(".deleting-*.claim"))) == 1
+
+    assert await reconciling.reconcile_tombstones(limit=100) == 0
+    repository.release_delete.set()
+    assert await asyncio.wait_for(delete_task, timeout=1) is True
+
+    canonical = store_a.root / record.asset_relpath
+    assert repository.records == []
+    assert not canonical.exists()
+    assert store_a.list_tombstones(limit=100) == ()
+    assert not list(canonical.parent.glob(".deleting-*.claim"))
+
+
+@pytest.mark.asyncio
+async def test_delete_record_installs_claim_before_releasing_tombstone_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store_a = SourceVisualStore(data_folder=tmp_path)
+    store_b = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store_a)
+    record = _record(stored)
+    repository = _Repository([record])
+    original_acquire = store_a.acquire_tombstone_deletion_claim
+
+    def restore_in_old_guard_gap(tombstone: object):
+        assert hasattr(tombstone, "tombstone_name")
+        store_b.restore_tombstone(tombstone)
+        return original_acquire(tombstone)
+
+    monkeypatch.setattr(
+        store_a,
+        "acquire_tombstone_deletion_claim",
+        restore_in_old_guard_gap,
+    )
+
+    assert await SourceVisualCleanup(store_a, repository).delete_record(record) is True
+    assert repository.records == []
+    assert not (store_a.root / record.asset_relpath).exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("row_present", [True, False])
+async def test_stale_deletion_claim_reconciles_exact_tombstone_and_clears_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, row_present: bool
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    claim = store.acquire_tombstone_deletion_claim(tombstone)
+    assert claim is not None
+    parent = (store.root / record.asset_relpath).parent
+    assert list(parent.glob(".deleting-*.claim"))
+
+    original_time = time.time
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time",
+        lambda: original_time() + 601,
+    )
+    repository = _Repository([record] if row_present else [])
+
+    assert await SourceVisualCleanup(store, repository).reconcile_tombstones(limit=100) == 1
+    assert not list(parent.glob(".deleting-*.claim"))
+    if row_present:
+        assert store.read_exact(record) == b"derived-webp"
+        assert repository.records == [record]
+    else:
+        assert not (store.root / record.asset_relpath).exists()
+        assert store.list_tombstones(limit=100) == ()
+
+
+@pytest.mark.asyncio
+async def test_stale_completed_deletion_claim_without_tombstone_is_released(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    claim = store.acquire_tombstone_deletion_claim(tombstone)
+    assert claim is not None
+    completed = store.mark_tombstone_deletion_claim_database_deleted(claim)
+    store.remove_tombstone(tombstone)
+    parent = (store.root / record.asset_relpath).parent
+    assert list(parent.glob(".deleting-*.claim"))
+
+    original_time = time.time
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.time.time",
+        lambda: original_time() + 601,
+    )
+    assert await SourceVisualCleanup(store, _Repository([])).reconcile_tombstones(
+        limit=100
+    ) == 1
+
+    assert not list(parent.glob(".deleting-*.claim"))
+    assert completed.phase == "db_deleted"
+
+
+def test_malformed_deletion_claim_fails_closed_without_deleting_tombstone(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    parent = (store.root / record.asset_relpath).parent
+    claim = parent / f".deleting-{'f' * 64}.claim"
+    claim.write_bytes(b"foreign-claim")
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        SourceVisualStore(data_folder=tmp_path).stage(
+            "source:two", "b" * 64, _prepared()
+        )
+
+    assert error.value.code == "CACHE_RECOVERY_REQUIRED"
+    assert claim.read_bytes() == b"foreign-claim"
+    assert (parent / tombstone.tombstone_name).exists()
+
+
+def test_deletion_claims_are_counted_and_bounded(tmp_path: Path):
+    store = SourceVisualStore(data_folder=tmp_path)
+    records: list[SourceVisualRecord] = []
+    for index in range(8):
+        content_sha256 = f"{index + 1:064x}"
+        stored = _publish(
+            store,
+            bytes([index + 1]),
+            content_sha256=content_sha256,
+        )
+        record = _record(stored, content_sha256=content_sha256)
+        tombstone = store.tombstone(record)
+        assert tombstone is not None
+        assert store.acquire_tombstone_deletion_claim(tombstone) is not None
+        records.append(record)
+
+    assert store.cache_size_bytes() > len(records)
+    extra = _publish(store, b"extra", content_sha256="f" * 64)
+    extra_tombstone = store.tombstone(_record(extra, content_sha256="f" * 64))
+    assert extra_tombstone is not None
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.acquire_tombstone_deletion_claim(extra_tombstone)
+
+    assert error.value.code == "CACHE_RECOVERY_REQUIRED"
 
 
 def test_mutation_guard_is_reentrant_for_stage_in_the_same_thread(tmp_path: Path):
