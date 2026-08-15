@@ -1109,7 +1109,9 @@ def test_publish_fsyncs_destination_before_unlinking_staged_source(
 
     store.publish(staged)
 
-    assert events[:3] == ["link", "fsync:destination", "unlink"]
+    assert events.index("link") < events.index("fsync:destination") < events.index(
+        "unlink"
+    )
     assert events[-1] == "fsync:stage"
 
 
@@ -1126,7 +1128,7 @@ def test_tombstone_fsyncs_link_before_unlinking_canonical_source(
 
     assert store.tombstone(record) is not None
 
-    assert events[:3] == ["link", "fsync:asset", "unlink"]
+    assert events.index("link") < events.index("fsync:asset") < events.index("unlink")
     assert events[-1] == "fsync:asset"
 
 
@@ -1145,7 +1147,7 @@ def test_restore_fsyncs_link_before_unlinking_tombstone_source(
 
     store.restore_tombstone(tombstone)
 
-    assert events[:3] == ["link", "fsync:asset", "unlink"]
+    assert events.index("link") < events.index("fsync:asset") < events.index("unlink")
     assert events[-1] == "fsync:asset"
 
 
@@ -1164,7 +1166,7 @@ def test_remove_fsyncs_quarantine_link_before_unlinking_tombstone_source(
 
     store.remove_tombstone(tombstone)
 
-    assert events[:3] == ["link", "fsync:asset", "unlink"]
+    assert events.index("link") < events.index("fsync:asset") < events.index("unlink")
     assert events[-1] == "fsync:asset"
 
 
@@ -1468,7 +1470,7 @@ def test_stage_maps_write_failure_and_removes_only_the_owned_temp(
     assert not list((store.root / ".tmp").glob("stage-*.tmp"))
 
 
-def test_stage_removes_exclusive_temp_when_initial_fstat_fails(
+def test_stage_keeps_unverified_temp_when_initial_fstat_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     store = SourceVisualStore(data_folder=tmp_path)
@@ -1478,7 +1480,7 @@ def test_stage_removes_exclusive_temp_when_initial_fstat_fails(
 
     def open_file(path: object, flags: int, *args: object, **kwargs: object) -> int:
         descriptor = original_open(path, flags, *args, **kwargs)
-        if str(path).startswith("stage-") and flags & os.O_EXCL:
+        if str(path).startswith(("stage-", ".unverified-stage-")) and flags & os.O_EXCL:
             created_stage_fds.add(descriptor)
         return descriptor
 
@@ -1495,7 +1497,243 @@ def test_stage_removes_exclusive_temp_when_initial_fstat_fails(
         store.stage("source:one", "a" * 64, _prepared())
 
     assert error.value.code == "TEMP_CREATE_FAILED"
-    assert not list((store.root / ".tmp").glob("stage-*.tmp"))
+    temp_dir = store.root / ".tmp"
+    assert not list(temp_dir.glob("stage-*.tmp"))
+    assert len(list(temp_dir.glob(".unverified-stage-*"))) == 1
+
+
+def test_stage_initial_fstat_failure_preserves_an_exchanged_foreign_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    original_open = os.open
+    original_fstat = os.fstat
+    created_stage_fds: set[int] = set()
+    held: Path | None = None
+
+    def open_file(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if str(path).startswith(("stage-", ".unverified-stage-")) and flags & os.O_EXCL:
+            created_stage_fds.add(descriptor)
+        return descriptor
+
+    def exchange_then_fail(descriptor: int) -> os.stat_result:
+        nonlocal held
+        if descriptor in created_stage_fds:
+            temp_dir = store.root / ".tmp"
+            stage_path = next(
+                iter(list(temp_dir.glob(".unverified-stage-*")) + list(temp_dir.glob("stage-*.tmp")))
+            )
+            held = stage_path.with_suffix(".held")
+            stage_path.rename(held)
+            stage_path.write_bytes(b"foreign-stage")
+            raise OSError("initial stage stat failed")
+        return original_fstat(descriptor)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.open", open_file)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fstat", exchange_then_fail
+    )
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:one", "a" * 64, _prepared())
+
+    assert error.value.code == "TEMP_CREATE_FAILED"
+    assert held is not None and held.exists()
+    temp_dir = store.root / ".tmp"
+    assert not list(temp_dir.glob("stage-*.tmp"))
+    unverified = next(
+        candidate
+        for candidate in temp_dir.glob(".unverified-stage-*")
+        if candidate.suffix == ".tmp"
+    )
+    assert unverified.read_bytes() == b"foreign-stage"
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fstat", original_fstat)
+    assert store.reconcile_staged_files(limit=100, now=time.time() + 601) == 0
+    assert unverified.read_bytes() == b"foreign-stage"
+
+
+def test_publish_rejects_same_inode_bytes_changed_at_link_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    stage_path = store.root / ".tmp" / staged.temp_name
+    canonical = store.root / asset_relpath(
+        "source:one", "a" * 64, staged.asset_sha256
+    )
+    original_link = os.link
+
+    def mutate_then_link(*args: object, **kwargs: object) -> None:
+        if args and args[0] == staged.temp_name:
+            stage_path.write_bytes(b"altered-webp")
+        original_link(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.link", mutate_then_link
+    )
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.publish(staged)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert not canonical.exists()
+    assert stage_path.read_bytes() == b"altered-webp"
+
+
+def test_tombstone_fenced_removal_preserves_exchange_at_removal_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    canonical = store.root / record.asset_relpath
+    held = canonical.with_name(f"{canonical.name}.held")
+    original_rename = os.rename
+    original_unlink = os.unlink
+    exchanged = False
+
+    def exchange_source() -> None:
+        nonlocal exchanged
+        if not exchanged:
+            original_rename(canonical, held)
+            canonical.write_bytes(b"foreign-canonical")
+            exchanged = True
+
+    def rename(*args: object, **kwargs: object) -> None:
+        if args and args[0] == canonical.name:
+            exchange_source()
+        original_rename(*args, **kwargs)
+
+    def unlink(*args: object, **kwargs: object) -> None:
+        if args and args[0] == canonical.name:
+            exchange_source()
+        original_unlink(*args, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.rename", rename)
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.unlink", unlink)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.tombstone(record)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert exchanged
+    assert canonical.read_bytes() == b"foreign-canonical"
+    assert held.read_bytes() == b"derived-webp"
+    assert not list(canonical.parent.glob(".unlink-fence-*"))
+
+
+def test_tombstone_fence_recovers_foreign_bytes_when_name_reappears(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    canonical = store.root / record.asset_relpath
+    held = canonical.with_name(f"{canonical.name}.held")
+    original_rename = os.rename
+    original_link = os.link
+    exchanged = reoccupied = False
+
+    def rename(*args: object, **kwargs: object) -> None:
+        nonlocal exchanged
+        if args and args[0] == canonical.name and not exchanged:
+            original_rename(canonical, held)
+            canonical.write_bytes(b"foreign-canonical")
+            exchanged = True
+        original_rename(*args, **kwargs)
+
+    def link(*args: object, **kwargs: object) -> None:
+        nonlocal reoccupied
+        if exchanged and args and args[0] == canonical.name and not reoccupied:
+            canonical.write_bytes(b"third-canonical")
+            reoccupied = True
+        original_link(*args, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.rename", rename)
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.tombstone(record)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert exchanged and reoccupied
+    assert canonical.read_bytes() == b"third-canonical"
+    assert held.read_bytes() == b"derived-webp"
+    assert not list(canonical.parent.glob(".unlink-fence-*"))
+    recovered = list(canonical.parent.glob(".unlink-recovery-*"))
+    assert len(recovered) == 1
+    assert recovered[0].read_bytes() == b"foreign-canonical"
+
+
+def test_publish_rechecks_bytes_after_staged_source_path_transition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    stage_path = store.root / ".tmp" / staged.temp_name
+    canonical = store.root / asset_relpath(
+        "source:one", "a" * 64, staged.asset_sha256
+    )
+    original_rename = os.rename
+
+    def mutate_then_rename(*args: object, **kwargs: object) -> None:
+        if args and args[0] == staged.temp_name:
+            stage_path.write_bytes(b"altered-webp")
+        original_rename(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.rename", mutate_then_rename
+    )
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.publish(staged)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert not canonical.exists()
+
+
+def test_created_cache_directory_fsync_failure_prevents_child_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path / "data")
+    original_mkdir = os.mkdir
+    original_fsync = os.fsync
+    cache_directory_created = False
+
+    def mkdir(path: object, *args: object, **kwargs: object) -> None:
+        nonlocal cache_directory_created
+        original_mkdir(path, *args, **kwargs)
+        if path == "source-visual-cache":
+            cache_directory_created = True
+
+    def fsync(descriptor: int) -> None:
+        if cache_directory_created:
+            raise OSError("parent directory sync failed")
+        original_fsync(descriptor)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.mkdir", mkdir)
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fsync", fsync)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:one", "a" * 64, _prepared())
+
+    assert error.value.code == "ASSET_IO_FAILED"
+    assert not (store.root / "x").exists()
+    assert not store.root.exists()
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_store_rejects_symlinked_data_folder_ancestors(
+    tmp_path: Path, nested: bool
+):
+    target = tmp_path / "target"
+    target.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(target, target_is_directory=True)
+    data_folder = alias / "nested-data" if nested else alias
+    store = SourceVisualStore(data_folder=data_folder)
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:one", "a" * 64, _prepared())
+
+    assert error.value.code == "CACHE_ROOT_SYMLINK"
+    assert not (target / "nested-data" / "source-visual-cache").exists()
+    assert not (target / "source-visual-cache").exists()
 
 
 def test_stage_failure_preserves_a_foreign_temp_path_exchange(

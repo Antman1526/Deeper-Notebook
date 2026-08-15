@@ -35,6 +35,9 @@ TOMBSTONE = re.compile(r"^\.expired-([0-9a-f]{16})-([0-9a-f]{64})\.webp$")
 _TEMP_DIR = ".tmp"
 _TEMP_MARKER = ".deeper-notebook-source-visual-cache-v1"
 _MUTATION_LOCK = ".mutation.lock"
+_UNLINK_FENCE_PREFIX = ".unlink-fence-"
+_UNLINK_RECOVERY_PREFIX = ".unlink-recovery-"
+_UNLINK_RECOVERY_NAME = re.compile(r"^\.unlink-recovery-[0-9a-f]{32}$")
 _MAX_ASSET_BYTES = 1_572_864
 _MAX_CACHE_FILES = 4096
 _STALE_STAGE_SECONDS = 300
@@ -75,7 +78,15 @@ _HAS_DESCRIPTOR_RELATIVE_PRIMITIVES = (
     and bool(getattr(os, "O_DIRECTORY", None))
     and all(
         operation in os.supports_dir_fd
-        for operation in (os.open, os.mkdir, os.link, os.stat, os.unlink)
+        for operation in (
+            os.open,
+            os.mkdir,
+            os.link,
+            os.rename,
+            os.rmdir,
+            os.stat,
+            os.unlink,
+        )
     )
     and os.link in os.supports_follow_symlinks
 )
@@ -296,10 +307,7 @@ class SourceVisualStore:
         data_fd = cache_fd = None
         try:
             _require_supported_platform()
-            if self._data_folder.is_symlink():
-                raise SourceVisualStorageError("CACHE_ROOT_SYMLINK")
-            self._data_folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-            data_fd = os.open(self._data_folder, _OPEN_DIRECTORY)
+            data_fd = self._open_absolute_directory(self._data_folder)
             cache_fd = self._open_child_dir(
                 data_fd, "source-visual-cache", create=True
             )
@@ -316,15 +324,37 @@ class SourceVisualStore:
             _safe_close(cache_fd)
             _safe_close(data_fd)
 
+    @classmethod
+    def _open_absolute_directory(cls, path: Path) -> int:
+        if not path.is_absolute():
+            raise SourceVisualStorageError("CACHE_ROOT_INVALID")
+        current_fd = os.open("/", _OPEN_DIRECTORY)
+        try:
+            for component in path.parts[1:]:
+                child_fd = cls._open_child_dir(current_fd, component, create=True)
+                _safe_close(current_fd)
+                current_fd = child_fd
+            return current_fd
+        except Exception:
+            _safe_close(current_fd)
+            raise
+
     @staticmethod
     def _open_child_dir(parent_fd: int, name: str, *, create: bool) -> int:
         if "/" in name or name in {"", ".", ".."}:
             raise SourceVisualStorageError("ASSET_RELPATH_INVALID")
+        created = False
         if create:
             try:
                 os.mkdir(name, mode=0o700, dir_fd=parent_fd)
+                created = True
             except FileExistsError:
                 pass
+            except OSError as exc:
+                raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+        if created:
+            try:
+                os.fsync(parent_fd)
             except OSError as exc:
                 raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
         try:
@@ -429,15 +459,77 @@ class SourceVisualStore:
         if not _same_identity(current_stat, expected_stat):
             raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
 
-    @staticmethod
     def _unlink_verified(
-        parent_fd: int, name: str, expected_stat: os.stat_result
+        self, parent_fd: int, name: str, expected_stat: os.stat_result
     ) -> None:
-        SourceVisualStore._require_path_identity(parent_fd, name, expected_stat)
+        """Detach one known inode through a private, identity-checked fence."""
+
+        fence_fd = moved_fd = None
+        fence_name = f"{_UNLINK_FENCE_PREFIX}{secrets.token_hex(16)}"
         try:
-            os.unlink(name, dir_fd=parent_fd)
+            os.mkdir(fence_name, mode=0o700, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            fence_fd = os.open(fence_name, _OPEN_DIRECTORY, dir_fd=parent_fd)
+            os.rename(name, name, src_dir_fd=parent_fd, dst_dir_fd=fence_fd)
+            os.fsync(parent_fd)
+            os.fsync(fence_fd)
+            moved_fd = self._open_regular_file(fence_fd, name)
+            moved_stat = os.fstat(moved_fd)
+            if not _same_identity(moved_stat, expected_stat):
+                recovered = False
+                try:
+                    os.link(
+                        name,
+                        name,
+                        src_dir_fd=fence_fd,
+                        dst_dir_fd=parent_fd,
+                        follow_symlinks=False,
+                    )
+                    os.fsync(parent_fd)
+                    recovered = True
+                except FileExistsError:
+                    recovery_name = (
+                        f"{_UNLINK_RECOVERY_PREFIX}{secrets.token_hex(16)}"
+                    )
+                    try:
+                        os.link(
+                            name,
+                            recovery_name,
+                            src_dir_fd=fence_fd,
+                            dst_dir_fd=parent_fd,
+                            follow_symlinks=False,
+                        )
+                        os.fsync(parent_fd)
+                        recovered = True
+                    except OSError:
+                        pass
+                except OSError:
+                    pass
+                if recovered:
+                    _safe_close(moved_fd)
+                    moved_fd = None
+                    os.unlink(name, dir_fd=fence_fd)
+                    os.fsync(fence_fd)
+                    _safe_close(fence_fd)
+                    fence_fd = None
+                    os.rmdir(fence_name, dir_fd=parent_fd)
+                    os.fsync(parent_fd)
+                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+            _safe_close(moved_fd)
+            moved_fd = None
+            os.unlink(name, dir_fd=fence_fd)
+            os.fsync(fence_fd)
+            _safe_close(fence_fd)
+            fence_fd = None
+            os.rmdir(fence_name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except SourceVisualStorageError:
+            raise
         except OSError as exc:
             raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+        finally:
+            _safe_close(moved_fd)
+            _safe_close(fence_fd)
 
     def _discard_staged_file_at(
         self, parent_fd: int, name: str, expected_stat: os.stat_result
@@ -451,15 +543,29 @@ class SourceVisualStore:
             return False
         return True
 
-    @staticmethod
-    def _discard_new_stage_file_at(parent_fd: int, name: str) -> None:
-        """Best-effort removal of an O_EXCL-created name while the guard is held."""
+    def _verify_linked_bytes(
+        self,
+        parent_fd: int,
+        name: str,
+        expected_stat: os.stat_result,
+        expected_hash: str,
+        expected_size: int,
+    ) -> None:
+        """Confirm a linked name still denotes the verified bytes."""
 
+        file_fd = None
         try:
-            os.unlink(name, dir_fd=parent_fd)
-            os.fsync(parent_fd)
-        except OSError:
-            pass
+            file_fd = self._open_regular_file(parent_fd, name)
+            current_stat = os.fstat(file_fd)
+            current_hash, current_size = _hash_fd(file_fd)
+        finally:
+            _safe_close(file_fd)
+        if (
+            not _same_identity(current_stat, expected_stat)
+            or current_hash != expected_hash
+            or current_size != expected_size
+        ):
+            raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
 
     @staticmethod
     def _new_tombstone_name(asset_sha256: str) -> str:
@@ -473,6 +579,8 @@ class SourceVisualStore:
         source_stat: os.stat_result,
         destination_parent_fd: int,
         destination_name: str,
+        expected_hash: str,
+        expected_size: int,
         discard_mismatched_destination: bool = False,
     ) -> os.stat_result | None:
         """Hard-link a verified inode without replacing a destination pathname."""
@@ -496,9 +604,14 @@ class SourceVisualStore:
                 destination_parent_fd, destination_name
             )
             destination_stat = os.fstat(destination_fd)
+            destination_hash, destination_size = _hash_fd(destination_fd)
         finally:
             _safe_close(destination_fd)
-        if _same_identity(destination_stat, source_stat):
+        if (
+            _same_identity(destination_stat, source_stat)
+            and destination_hash == expected_hash
+            and destination_size == expected_size
+        ):
             try:
                 os.fsync(destination_parent_fd)
             except OSError as exc:
@@ -507,18 +620,10 @@ class SourceVisualStore:
 
         if discard_mismatched_destination:
             try:
-                current_source = os.stat(
-                    source_name, dir_fd=source_parent_fd, follow_symlinks=False
+                self._unlink_verified(
+                    destination_parent_fd, destination_name, destination_stat
                 )
-                current_destination = os.stat(
-                    destination_name,
-                    dir_fd=destination_parent_fd,
-                    follow_symlinks=False,
-                )
-                if _same_identity(current_source, current_destination):
-                    os.unlink(destination_name, dir_fd=destination_parent_fd)
-                    os.fsync(destination_parent_fd)
-            except OSError:
+            except SourceVisualStorageError:
                 pass
         raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
 
@@ -535,18 +640,18 @@ class SourceVisualStore:
         if hashlib.sha256(prepared.encoded_bytes).hexdigest() != prepared.asset_sha256:
             raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
         temp_fd = file_fd = verify_fd = None
-        temp_created = False
         temp_stat = None
         temp_name = (
             f"stage-{_stage_identity(source_id, content_sha256, prepared.asset_sha256)}-"
             f"{secrets.token_hex(32)}.tmp"
         )
+        unverified_name = f".unverified-{temp_name}"
         try:
             with self.mutation_guard() as root_fd:
                 temp_fd = self._open_temp_at(root_fd)
                 try:
                     file_fd = os.open(
-                        temp_name,
+                        unverified_name,
                         os.O_WRONLY
                         | os.O_CREAT
                         | os.O_EXCL
@@ -554,13 +659,33 @@ class SourceVisualStore:
                         0o600,
                         dir_fd=temp_fd,
                     )
-                    temp_created = True
                     temp_stat = os.fstat(file_fd)
                 except OSError as exc:
-                    if temp_created:
-                        self._discard_new_stage_file_at(temp_fd, temp_name)
+                    # This pathname was only protected by O_EXCL, not an inode
+                    # identity.  Leaving it outside the recognised staging
+                    # namespace prevents a later stale sweep from deleting a
+                    # replacement that raced the initial fstat.
                     raise SourceVisualStorageError("TEMP_CREATE_FAILED") from exc
                 try:
+                    try:
+                        os.link(
+                            unverified_name,
+                            temp_name,
+                            src_dir_fd=temp_fd,
+                            dst_dir_fd=temp_fd,
+                            follow_symlinks=False,
+                        )
+                    except OSError as exc:
+                        raise SourceVisualStorageError("TEMP_CREATE_FAILED") from exc
+                    verify_fd = self._open_regular_file(temp_fd, temp_name)
+                    staged_stat = os.fstat(verify_fd)
+                    _safe_close(verify_fd)
+                    verify_fd = None
+                    if not _same_identity(staged_stat, temp_stat):
+                        self._discard_staged_file_at(temp_fd, temp_name, staged_stat)
+                        raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                    os.fsync(temp_fd)
+                    self._unlink_verified(temp_fd, unverified_name, temp_stat)
                     view = memoryview(prepared.encoded_bytes)
                     while view:
                         written = os.write(file_fd, view)
@@ -679,8 +804,11 @@ class SourceVisualStore:
                     source_stat=verified_stat,
                     destination_parent_fd=parent_fd,
                     destination_name=filename,
+                    expected_hash=staged.asset_sha256,
+                    expected_size=staged.byte_size,
                     discard_mismatched_destination=True,
                 )
+                installed_here = destination_stat is not None
                 if destination_stat is None:
                     existing_fd = self._open_regular_file(parent_fd, filename)
                     try:
@@ -694,7 +822,22 @@ class SourceVisualStore:
                         or existing_size != staged.byte_size
                     ):
                         raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                    destination_stat = existing_stat
                 self._unlink_verified(temp_fd, staged.temp_name, verified_stat)
+                destination_fd = self._open_regular_file(parent_fd, filename)
+                try:
+                    final_stat = os.fstat(destination_fd)
+                    final_hash, final_size = _hash_fd(destination_fd)
+                finally:
+                    _safe_close(destination_fd)
+                if (
+                    not _same_identity(final_stat, destination_stat)
+                    or final_hash != staged.asset_sha256
+                    or final_size != staged.byte_size
+                ):
+                    if installed_here and _same_identity(final_stat, destination_stat):
+                        self._discard_staged_file_at(parent_fd, filename, final_stat)
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
                 os.fsync(parent_fd)
                 os.fsync(temp_fd)
                 return StoredVisualAsset(
@@ -781,18 +924,25 @@ class SourceVisualStore:
                 if digest != record.asset_sha256:
                     raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
                 tombstone_name = self._new_tombstone_name(record.asset_sha256)
-                if (
-                    self._link_no_replace(
-                        source_parent_fd=parent_fd,
-                        source_name=filename,
-                        source_stat=verified_stat,
-                        destination_parent_fd=parent_fd,
-                        destination_name=tombstone_name,
-                    )
-                    is None
-                ):
+                tombstone_stat = self._link_no_replace(
+                    source_parent_fd=parent_fd,
+                    source_name=filename,
+                    source_stat=verified_stat,
+                    destination_parent_fd=parent_fd,
+                    destination_name=tombstone_name,
+                    expected_hash=record.asset_sha256,
+                    expected_size=size,
+                )
+                if tombstone_stat is None:
                     raise SourceVisualStorageError("TOMBSTONE_INVALID")
                 self._unlink_verified(parent_fd, filename, verified_stat)
+                self._verify_linked_bytes(
+                    parent_fd,
+                    tombstone_name,
+                    tombstone_stat,
+                    record.asset_sha256,
+                    size,
+                )
                 os.fsync(parent_fd)
                 return TombstonedVisualAsset(
                     relpath, tombstone_name, record.asset_sha256, size
@@ -837,11 +987,20 @@ class SourceVisualStore:
                     source_stat=tombstone_stat,
                     destination_parent_fd=parent_fd,
                     destination_name=filename,
+                    expected_hash=tombstone.asset_sha256,
+                    expected_size=tombstone.byte_size,
                 )
                 if destination_stat is None:
                     raise SourceVisualStorageError("TOMBSTONE_INVALID")
                 self._unlink_verified(
                     parent_fd, tombstone.tombstone_name, tombstone_stat
+                )
+                self._verify_linked_bytes(
+                    parent_fd,
+                    filename,
+                    destination_stat,
+                    tombstone.asset_sha256,
+                    tombstone.byte_size,
                 )
                 os.fsync(parent_fd)
         except SourceVisualStorageError:
@@ -868,21 +1027,28 @@ class SourceVisualStore:
                 if digest != tombstone.asset_sha256 or size != tombstone.byte_size:
                     raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
                 quarantine_name = self._new_tombstone_name(tombstone.asset_sha256)
-                if (
-                    self._link_no_replace(
-                        source_parent_fd=parent_fd,
-                        source_name=tombstone.tombstone_name,
-                        source_stat=tombstone_stat,
-                        destination_parent_fd=parent_fd,
-                        destination_name=quarantine_name,
-                    )
-                    is None
-                ):
+                quarantine_stat = self._link_no_replace(
+                    source_parent_fd=parent_fd,
+                    source_name=tombstone.tombstone_name,
+                    source_stat=tombstone_stat,
+                    destination_parent_fd=parent_fd,
+                    destination_name=quarantine_name,
+                    expected_hash=tombstone.asset_sha256,
+                    expected_size=tombstone.byte_size,
+                )
+                if quarantine_stat is None:
                     raise SourceVisualStorageError("TOMBSTONE_INVALID")
                 self._unlink_verified(
                     parent_fd, tombstone.tombstone_name, tombstone_stat
                 )
-                self._unlink_verified(parent_fd, quarantine_name, tombstone_stat)
+                self._verify_linked_bytes(
+                    parent_fd,
+                    quarantine_name,
+                    quarantine_stat,
+                    tombstone.asset_sha256,
+                    tombstone.byte_size,
+                )
+                self._unlink_verified(parent_fd, quarantine_name, quarantine_stat)
                 os.fsync(parent_fd)
         except SourceVisualStorageError:
             raise
@@ -1055,7 +1221,11 @@ class SourceVisualStore:
                                         raise SourceVisualStorageError(
                                             "CACHE_SCAN_LIMIT"
                                         )
-                                    if _TEMP_NAME.fullmatch(entry.name) is not None:
+                                    if (
+                                        _TEMP_NAME.fullmatch(entry.name) is not None
+                                        or _UNLINK_RECOVERY_NAME.fullmatch(entry.name)
+                                        is not None
+                                    ):
                                         add_owned_file(
                                             temp_fd,
                                             entry.name,
@@ -1099,6 +1269,17 @@ class SourceVisualStore:
                                                     content_fd,
                                                     entry.name,
                                                     invalid_code="TOMBSTONE_INVALID",
+                                                )
+                                            elif (
+                                                _UNLINK_RECOVERY_NAME.fullmatch(
+                                                    entry.name
+                                                )
+                                                is not None
+                                            ):
+                                                add_owned_file(
+                                                    content_fd,
+                                                    entry.name,
+                                                    invalid_code="ASSET_NOT_REGULAR",
                                                 )
                                             else:
                                                 continue
