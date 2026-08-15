@@ -13,7 +13,14 @@ export default function KnowledgePage() {
   return (
     <AppShell>
       <div className="min-w-0 space-y-6">
-        {visualGalleryEnabled ? <RecentSourceStrip sources={recentSources.data ?? []} /> : null}
+        {visualGalleryEnabled ? (
+          <div
+            className="min-h-[15rem] min-w-0 sm:min-h-[12rem]"
+            data-dn-recent-source-slot="true"
+          >
+            <RecentSourceStrip sources={recentSources.data ?? []} />
+          </div>
+        ) : null}
         <KnowledgeExplorer />
       </div>
     </AppShell>

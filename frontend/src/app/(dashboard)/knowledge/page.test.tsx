@@ -42,6 +42,10 @@ describe('KnowledgePage source visuals', () => {
     expect(mockRecentSources).toHaveBeenCalledOnce()
     expect(mockRecentSources).toHaveBeenCalledWith(4)
     expect(screen.getByRole('region', { name: 'Recent visual sources' })).toBeInTheDocument()
+    expect(document.querySelector('[data-dn-recent-source-slot="true"]')).toHaveClass(
+      'min-h-[15rem]',
+      'sm:min-h-[12rem]',
+    )
   })
 
   it.each([
