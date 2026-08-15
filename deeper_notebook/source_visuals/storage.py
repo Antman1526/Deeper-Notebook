@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -31,15 +32,21 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_ID = re.compile(r"^source:[A-Za-z0-9_-]+$")
 _RELPATH = re.compile(r"^([0-9a-f]{2})/([0-9a-f]{64})/([0-9a-f]{64})\.webp$")
 _TEMP_NAME = re.compile(r"^stage-([0-9a-f]{64})-([0-9a-f]{64})\.tmp$")
+_UNVERIFIED_STAGE_NAME = re.compile(
+    r"^\.unverified-stage-[0-9a-f]{64}-[0-9a-f]{64}\.tmp$"
+)
 TOMBSTONE = re.compile(r"^\.expired-([0-9a-f]{16})-([0-9a-f]{64})\.webp$")
 _TEMP_DIR = ".tmp"
 _TEMP_MARKER = ".deeper-notebook-source-visual-cache-v1"
 _MUTATION_LOCK = ".mutation.lock"
 _UNLINK_FENCE_PREFIX = ".unlink-fence-"
+_UNLINK_FENCE_NAME = re.compile(r"^\.unlink-fence-[0-9a-f]{32}$")
 _UNLINK_RECOVERY_PREFIX = ".unlink-recovery-"
 _UNLINK_RECOVERY_NAME = re.compile(r"^\.unlink-recovery-[0-9a-f]{32}$")
+_UNLINK_JOURNAL = ".journal"
 _MAX_ASSET_BYTES = 1_572_864
 _MAX_CACHE_FILES = 4096
+_MAX_RECOVERY_ENTRIES = 8
 _STALE_STAGE_SECONDS = 300
 _OPEN_DIRECTORY = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -52,6 +59,7 @@ _PUBLIC_CODES = frozenset(
         "CACHE_ROOT_SYMLINK",
         "CACHE_LOCK_INVALID",
         "CACHE_LOCK_UNSUPPORTED",
+        "CACHE_RECOVERY_REQUIRED",
         "CACHE_PATH_SYMLINK",
         "CACHE_SCAN_LIMIT",
         "TEMP_CREATE_FAILED",
@@ -289,6 +297,7 @@ class SourceVisualStore:
             held = _HeldMutation(root_fd, lock_fd, process_guard)
             held_mutations[key] = held
             try:
+                self._reconcile_recovery_at(root_fd)
                 yield root_fd
             finally:
                 held_mutations.pop(key, None)
@@ -459,77 +468,393 @@ class SourceVisualStore:
         if not _same_identity(current_stat, expected_stat):
             raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
 
-    def _unlink_verified(
-        self, parent_fd: int, name: str, expected_stat: os.stat_result
-    ) -> None:
-        """Detach one known inode through a private, identity-checked fence."""
+    @staticmethod
+    def _is_owned_mutation_name(name: str) -> bool:
+        return (
+            _TEMP_NAME.fullmatch(name) is not None
+            or _UNVERIFIED_STAGE_NAME.fullmatch(name) is not None
+            or TOMBSTONE.fullmatch(name) is not None
+            or _UNLINK_RECOVERY_NAME.fullmatch(name) is not None
+            or re.fullmatch(r"[0-9a-f]{64}\.webp", name) is not None
+        )
 
-        fence_fd = moved_fd = None
-        fence_name = f"{_UNLINK_FENCE_PREFIX}{secrets.token_hex(16)}"
+    def _write_fence_journal(
+        self, fence_fd: int, name: str, expected_stat: os.stat_result
+    ) -> None:
+        if not self._is_owned_mutation_name(name):
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        payload = json.dumps(
+            {
+                "dev": expected_stat.st_dev,
+                "ino": expected_stat.st_ino,
+                "name": name,
+                "operation": "unlink",
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+        journal_fd = None
         try:
-            os.mkdir(fence_name, mode=0o700, dir_fd=parent_fd)
-            os.fsync(parent_fd)
-            fence_fd = os.open(fence_name, _OPEN_DIRECTORY, dir_fd=parent_fd)
-            os.rename(name, name, src_dir_fd=parent_fd, dst_dir_fd=fence_fd)
-            os.fsync(parent_fd)
+            journal_fd = os.open(
+                _UNLINK_JOURNAL,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=fence_fd,
+            )
+            with os.fdopen(os.dup(journal_fd), "wb", closefd=True) as stream:
+                stream.write(payload)
+                stream.flush()
+            os.fsync(journal_fd)
             os.fsync(fence_fd)
-            moved_fd = self._open_regular_file(fence_fd, name)
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+        finally:
+            _safe_close(journal_fd)
+
+    def _read_fence_journal(self, fence_fd: int) -> tuple[str, int, int]:
+        journal_fd = None
+        try:
+            journal_fd = self._open_regular_file(fence_fd, _UNLINK_JOURNAL)
+            journal_stat = os.fstat(journal_fd)
+            if journal_stat.st_size > 512:
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            payload = os.read(journal_fd, 513)
+        except SourceVisualStorageError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        except OSError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        finally:
+            _safe_close(journal_fd)
+        try:
+            value = json.loads(payload.decode("ascii"))
+            name = value["name"]
+            dev = value["dev"]
+            ino = value["ino"]
+            if (
+                set(value) != {"dev", "ino", "name", "operation"}
+                or value["operation"] != "unlink"
+                or not isinstance(name, str)
+                or not self._is_owned_mutation_name(name)
+                or isinstance(dev, bool)
+                or not isinstance(dev, int)
+                or dev < 0
+                or isinstance(ino, bool)
+                or not isinstance(ino, int)
+                or ino < 0
+            ):
+                raise ValueError
+        except (UnicodeDecodeError, ValueError, KeyError, TypeError):
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from None
+        return name, dev, ino
+
+    @staticmethod
+    def _retire_fence_at(
+        parent_fd: int, fence_name: str, fence_fd: int, name: str, *, moved_present: bool
+    ) -> None:
+        if moved_present:
+            os.unlink(name, dir_fd=fence_fd)
+            os.fsync(fence_fd)
+        os.unlink(_UNLINK_JOURNAL, dir_fd=fence_fd)
+        os.fsync(fence_fd)
+        os.close(fence_fd)
+        os.rmdir(fence_name, dir_fd=parent_fd)
+        os.fsync(parent_fd)
+
+    def _reconcile_fence_at(
+        self,
+        parent_fd: int,
+        fence_name: str,
+        recovery_count: list[int],
+        visited: list[int] | None = None,
+    ) -> bool:
+        if _UNLINK_FENCE_NAME.fullmatch(fence_name) is None:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+        fence_fd = moved_fd = None
+        try:
+            fence_fd = self._open_child_dir(parent_fd, fence_name, create=False)
+            fence_entries = self._fence_entry_names(
+                fence_fd, [0] if visited is None else visited
+            )
+            name, expected_dev, expected_ino = self._read_fence_journal(fence_fd)
+            if fence_entries not in ({_UNLINK_JOURNAL}, {_UNLINK_JOURNAL, name}):
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            try:
+                moved_fd = self._open_regular_file(fence_fd, name)
+            except SourceVisualStorageError as exc:
+                if exc.code != "ASSET_MISSING":
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+                self._retire_fence_at(
+                    parent_fd, fence_name, fence_fd, name, moved_present=False
+                )
+                fence_fd = None
+                return True
             moved_stat = os.fstat(moved_fd)
-            if not _same_identity(moved_stat, expected_stat):
-                recovered = False
+            if (moved_stat.st_dev, moved_stat.st_ino) == (expected_dev, expected_ino):
+                _safe_close(moved_fd)
+                moved_fd = None
+                self._retire_fence_at(
+                    parent_fd, fence_name, fence_fd, name, moved_present=True
+                )
+                fence_fd = None
+                return True
+
+            destination_name = name
+            try:
+                os.link(
+                    name,
+                    destination_name,
+                    src_dir_fd=fence_fd,
+                    dst_dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+            except FileExistsError:
+                existing_fd = None
                 try:
-                    os.link(
-                        name,
-                        name,
-                        src_dir_fd=fence_fd,
-                        dst_dir_fd=parent_fd,
-                        follow_symlinks=False,
+                    existing_fd = self._open_regular_file(parent_fd, destination_name)
+                    already_recovered = _same_identity(
+                        os.fstat(existing_fd), moved_stat
                     )
-                    os.fsync(parent_fd)
-                    recovered = True
-                except FileExistsError:
-                    recovery_name = (
-                        f"{_UNLINK_RECOVERY_PREFIX}{secrets.token_hex(16)}"
+                except SourceVisualStorageError as exc:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+                finally:
+                    _safe_close(existing_fd)
+                if not already_recovered:
+                    if recovery_count[0] >= _MAX_RECOVERY_ENTRIES:
+                        raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                    destination_name = (
+                        f"{_UNLINK_RECOVERY_PREFIX}{secrets.token_hex(16)[:32]}"
                     )
                     try:
                         os.link(
                             name,
-                            recovery_name,
+                            destination_name,
                             src_dir_fd=fence_fd,
                             dst_dir_fd=parent_fd,
                             follow_symlinks=False,
                         )
-                        os.fsync(parent_fd)
-                        recovered = True
-                    except OSError:
-                        pass
-                except OSError:
-                    pass
-                if recovered:
-                    _safe_close(moved_fd)
-                    moved_fd = None
-                    os.unlink(name, dir_fd=fence_fd)
-                    os.fsync(fence_fd)
-                    _safe_close(fence_fd)
-                    fence_fd = None
-                    os.rmdir(fence_name, dir_fd=parent_fd)
-                    os.fsync(parent_fd)
-                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                    except OSError as exc:
+                        raise SourceVisualStorageError(
+                            "CACHE_RECOVERY_REQUIRED"
+                        ) from exc
+                    recovery_count[0] += 1
+            except OSError as exc:
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+
+            destination_fd = None
+            try:
+                destination_fd = self._open_regular_file(parent_fd, destination_name)
+                if not _same_identity(os.fstat(destination_fd), moved_stat):
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+            finally:
+                _safe_close(destination_fd)
+            os.fsync(parent_fd)
             _safe_close(moved_fd)
             moved_fd = None
-            os.unlink(name, dir_fd=fence_fd)
-            os.fsync(fence_fd)
-            _safe_close(fence_fd)
+            self._retire_fence_at(
+                parent_fd, fence_name, fence_fd, name, moved_present=True
+            )
             fence_fd = None
-            os.rmdir(fence_name, dir_fd=parent_fd)
-            os.fsync(parent_fd)
+            return False
         except SourceVisualStorageError:
             raise
         except OSError as exc:
-            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
         finally:
             _safe_close(moved_fd)
             _safe_close(fence_fd)
+
+    def _unlink_verified(
+        self, parent_fd: int, name: str, expected_stat: os.stat_result
+    ) -> None:
+        """Journal then move a name into a private fence before deletion."""
+
+        fence_fd = None
+        fence_name = f"{_UNLINK_FENCE_PREFIX}{secrets.token_hex(16)[:32]}"
+        try:
+            os.mkdir(fence_name, mode=0o700, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            fence_fd = os.open(fence_name, _OPEN_DIRECTORY, dir_fd=parent_fd)
+            self._write_fence_journal(fence_fd, name, expected_stat)
+            os.rename(name, name, src_dir_fd=parent_fd, dst_dir_fd=fence_fd)
+            os.fsync(parent_fd)
+            os.fsync(fence_fd)
+            _safe_close(fence_fd)
+            fence_fd = None
+            if not self._reconcile_fence_at(parent_fd, fence_name, [0]):
+                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+        except SourceVisualStorageError:
+            _safe_close(fence_fd)
+            fence_fd = None
+            try:
+                self._reconcile_fence_at(parent_fd, fence_name, [0])
+            except SourceVisualStorageError:
+                pass
+            raise
+        except OSError as exc:
+            _safe_close(fence_fd)
+            fence_fd = None
+            try:
+                self._reconcile_fence_at(parent_fd, fence_name, [0])
+            except SourceVisualStorageError:
+                pass
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+        finally:
+            _safe_close(fence_fd)
+
+    def _validate_pending_file(self, parent_fd: int, name: str) -> None:
+        pending_fd = None
+        try:
+            pending_fd = self._open_regular_file(parent_fd, name)
+        except SourceVisualStorageError as exc:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+        finally:
+            _safe_close(pending_fd)
+
+    @staticmethod
+    def _iter_bounded_entries(
+        parent_fd: int, visited: list[int], *, error_code: str
+    ) -> Iterator[os.DirEntry[str]]:
+        try:
+            with os.scandir(parent_fd) as entries:
+                for entry in entries:
+                    visited[0] += 1
+                    if visited[0] > _MAX_CACHE_FILES:
+                        raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
+                    yield entry
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError(error_code) from exc
+
+    def _fence_entry_names(self, fence_fd: int, visited: list[int]) -> set[str]:
+        return {
+            entry.name
+            for entry in self._iter_bounded_entries(
+                fence_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
+            )
+        }
+
+    def _collect_parent_recovery(
+        self,
+        parent_fd: int,
+        *,
+        temp_parent: bool,
+        recovery_count: list[int],
+        unverified_count: list[int],
+        fences: list[tuple[str | None, str | None, str]],
+        prefix: str | None,
+        content: str | None,
+        visited: list[int],
+    ) -> None:
+        for entry in self._iter_bounded_entries(
+            parent_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
+        ):
+            if entry.name.startswith(_UNLINK_FENCE_PREFIX):
+                if _UNLINK_FENCE_NAME.fullmatch(entry.name) is None:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                fences.append((prefix, content, entry.name))
+                continue
+            if entry.name.startswith(_UNLINK_RECOVERY_PREFIX):
+                if _UNLINK_RECOVERY_NAME.fullmatch(entry.name) is None:
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                self._validate_pending_file(parent_fd, entry.name)
+                recovery_count[0] += 1
+                continue
+            if temp_parent and _UNVERIFIED_STAGE_NAME.fullmatch(entry.name) is not None:
+                self._validate_pending_file(parent_fd, entry.name)
+                unverified_count[0] += 1
+
+    def _reconcile_recovery_at(self, root_fd: int) -> None:
+        """Bound and retire durable unlink journals while the mutation lock is held."""
+
+        recovery_count = [0]
+        unverified_count = [0]
+        fences: list[tuple[str | None, str | None, str]] = []
+        visited = [0]
+        temp_fd = None
+        try:
+            temp_fd = self._open_temp_at(root_fd)
+            self._collect_parent_recovery(
+                temp_fd,
+                temp_parent=True,
+                recovery_count=recovery_count,
+                unverified_count=unverified_count,
+                fences=fences,
+                prefix=None,
+                content=None,
+                visited=visited,
+            )
+            for prefix_entry in self._iter_bounded_entries(
+                root_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
+            ):
+                if re.fullmatch(r"[0-9a-f]{2}", prefix_entry.name) is None:
+                    continue
+                prefix_fd = self._open_child_dir(root_fd, prefix_entry.name, create=False)
+                try:
+                    for content_entry in self._iter_bounded_entries(
+                        prefix_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
+                    ):
+                        if _SHA256.fullmatch(content_entry.name) is None:
+                            continue
+                        content_fd = self._open_child_dir(
+                            prefix_fd, content_entry.name, create=False
+                        )
+                        try:
+                            self._collect_parent_recovery(
+                                content_fd,
+                                temp_parent=False,
+                                recovery_count=recovery_count,
+                                unverified_count=unverified_count,
+                                fences=fences,
+                                prefix=prefix_entry.name,
+                                content=content_entry.name,
+                                visited=visited,
+                            )
+                        finally:
+                            _safe_close(content_fd)
+                finally:
+                    _safe_close(prefix_fd)
+            if (
+                recovery_count[0] >= _MAX_RECOVERY_ENTRIES
+                or len(fences) > _MAX_RECOVERY_ENTRIES
+                or unverified_count[0] > 1
+            ):
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+
+            for prefix, content, fence_name in fences:
+                parent_fd = prefix_fd = content_fd = None
+                try:
+                    if prefix is None:
+                        parent_fd = self._open_temp_at(root_fd)
+                    else:
+                        prefix_fd = self._open_child_dir(root_fd, prefix, create=False)
+                        content_fd = self._open_child_dir(
+                            prefix_fd, content or "", create=False
+                        )
+                        parent_fd = content_fd
+                    self._reconcile_fence_at(
+                        parent_fd, fence_name, recovery_count, visited
+                    )
+                finally:
+                    if parent_fd is not content_fd:
+                        _safe_close(parent_fd)
+                    _safe_close(content_fd)
+                    _safe_close(prefix_fd)
+        finally:
+            _safe_close(temp_fd)
+
+    def _require_no_unverified_stage(self, temp_fd: int) -> None:
+        count = 0
+        visited = [0]
+        for entry in self._iter_bounded_entries(
+            temp_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
+        ):
+            if _UNVERIFIED_STAGE_NAME.fullmatch(entry.name) is None:
+                continue
+            self._validate_pending_file(temp_fd, entry.name)
+            count += 1
+        if count:
+            raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
 
     def _discard_staged_file_at(
         self, parent_fd: int, name: str, expected_stat: os.stat_result
@@ -649,6 +974,7 @@ class SourceVisualStore:
         try:
             with self.mutation_guard() as root_fd:
                 temp_fd = self._open_temp_at(root_fd)
+                self._require_no_unverified_stage(temp_fd)
                 try:
                     file_fd = os.open(
                         unverified_name,
@@ -830,6 +1156,7 @@ class SourceVisualStore:
                     final_hash, final_size = _hash_fd(destination_fd)
                 finally:
                     _safe_close(destination_fd)
+                self._require_path_identity(parent_fd, filename, final_stat)
                 if (
                     not _same_identity(final_stat, destination_stat)
                     or final_hash != staged.asset_sha256
@@ -1203,6 +1530,34 @@ class SourceVisualStore:
                 seen_inodes.add(identity)
                 total += metadata.st_size
 
+        def add_fence_file(parent_fd: int, fence_name: str) -> None:
+            nonlocal total
+            fence_fd = moved_fd = None
+            try:
+                fence_fd = self._open_child_dir(parent_fd, fence_name, create=False)
+                fence_entries = self._fence_entry_names(fence_fd, [0])
+                name, _dev, _ino = self._read_fence_journal(fence_fd)
+                if fence_entries not in ({_UNLINK_JOURNAL}, {_UNLINK_JOURNAL, name}):
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
+                try:
+                    moved_fd = self._open_regular_file(fence_fd, name)
+                except SourceVisualStorageError as exc:
+                    if exc.code == "ASSET_MISSING":
+                        return
+                    raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+                metadata = os.fstat(moved_fd)
+                identity = (metadata.st_dev, metadata.st_ino)
+                if identity not in seen_inodes:
+                    seen_inodes.add(identity)
+                    total += metadata.st_size
+            except SourceVisualStorageError:
+                raise
+            except OSError as exc:
+                raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED") from exc
+            finally:
+                _safe_close(moved_fd)
+                _safe_close(fence_fd)
+
         try:
             with os.scandir(root_fd) as prefixes:
                 for prefix in prefixes:
@@ -1221,15 +1576,35 @@ class SourceVisualStore:
                                         raise SourceVisualStorageError(
                                             "CACHE_SCAN_LIMIT"
                                         )
-                                    if (
-                                        _TEMP_NAME.fullmatch(entry.name) is not None
-                                        or _UNLINK_RECOVERY_NAME.fullmatch(entry.name)
-                                        is not None
-                                    ):
+                                    if _TEMP_NAME.fullmatch(entry.name) is not None:
                                         add_owned_file(
                                             temp_fd,
                                             entry.name,
                                             invalid_code="TEMP_INVALID",
+                                        )
+                                    elif _UNVERIFIED_STAGE_NAME.fullmatch(
+                                        entry.name
+                                    ) is not None:
+                                        add_owned_file(
+                                            temp_fd,
+                                            entry.name,
+                                            invalid_code="CACHE_RECOVERY_REQUIRED",
+                                        )
+                                    elif _UNLINK_RECOVERY_NAME.fullmatch(
+                                        entry.name
+                                    ) is not None:
+                                        add_owned_file(
+                                            temp_fd,
+                                            entry.name,
+                                            invalid_code="CACHE_RECOVERY_REQUIRED",
+                                        )
+                                    elif _UNLINK_FENCE_NAME.fullmatch(entry.name) is not None:
+                                        add_fence_file(temp_fd, entry.name)
+                                    elif entry.name.startswith(
+                                        (_UNLINK_FENCE_PREFIX, _UNLINK_RECOVERY_PREFIX)
+                                    ):
+                                        raise SourceVisualStorageError(
+                                            "CACHE_RECOVERY_REQUIRED"
                                         )
                         finally:
                             _safe_close(temp_fd)
@@ -1280,6 +1655,19 @@ class SourceVisualStore:
                                                     content_fd,
                                                     entry.name,
                                                     invalid_code="ASSET_NOT_REGULAR",
+                                                )
+                                            elif _UNLINK_FENCE_NAME.fullmatch(
+                                                entry.name
+                                            ) is not None:
+                                                add_fence_file(content_fd, entry.name)
+                                            elif entry.name.startswith(
+                                                (
+                                                    _UNLINK_FENCE_PREFIX,
+                                                    _UNLINK_RECOVERY_PREFIX,
+                                                )
+                                            ):
+                                                raise SourceVisualStorageError(
+                                                    "CACHE_RECOVERY_REQUIRED"
                                                 )
                                             else:
                                                 continue

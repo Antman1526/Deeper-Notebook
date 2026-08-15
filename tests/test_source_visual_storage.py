@@ -1820,6 +1820,218 @@ def test_cache_size_counts_owned_stage_tombstone_and_quarantine_inodes_once(
     assert store.cache_size_bytes() == stored.byte_size + staged.byte_size
 
 
+def test_publish_revalidates_final_canonical_path_after_final_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    canonical = store.root / asset_relpath(
+        "source:one", "a" * 64, staged.asset_sha256
+    )
+    held = canonical.with_name(f"{canonical.name}.held")
+    storage = __import__(
+        "deeper_notebook.source_visuals.storage", fromlist=["_hash_fd"]
+    )
+    original_hash_fd = storage._hash_fd
+    original_read = os.read
+    hash_calls = 0
+    exchanged = False
+
+    def exchange_during_final_hash(fd: int, count: int) -> bytes:
+        nonlocal exchanged
+        if not exchanged:
+            canonical.rename(held)
+            canonical.write_bytes(b"foreign-canonical")
+            exchanged = True
+        return original_read(fd, count)
+
+    def hash_fd(fd: int) -> tuple[str, int]:
+        nonlocal hash_calls
+        hash_calls += 1
+        if hash_calls == 3:
+            monkeypatch.setattr(
+                "deeper_notebook.source_visuals.storage.os.read",
+                exchange_during_final_hash,
+            )
+            try:
+                return original_hash_fd(fd)
+            finally:
+                monkeypatch.setattr(
+                    "deeper_notebook.source_visuals.storage.os.read", original_read
+                )
+        return original_hash_fd(fd)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage._hash_fd", hash_fd)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.publish(staged)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert hash_calls == 3
+    assert exchanged
+    assert canonical.read_bytes() == b"foreign-canonical"
+    assert held.read_bytes() == b"derived-webp"
+
+
+def test_fresh_store_reconciles_post_move_foreign_fence_and_counts_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    canonical = store.root / record.asset_relpath
+    held = canonical.with_name(f"{canonical.name}.held")
+    foreign = b"foreign-canonical"
+    original_rename = os.rename
+    original_fsync = os.fsync
+    moved = False
+
+    def exchange_then_rename(*args: object, **kwargs: object) -> None:
+        nonlocal moved
+        if args and args[0] == canonical.name and not moved:
+            original_rename(canonical, held)
+            canonical.write_bytes(foreign)
+            moved = True
+        original_rename(*args, **kwargs)
+
+    def fail_after_move(descriptor: int) -> None:
+        if moved:
+            raise OSError("post-move sync failed")
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.rename", exchange_then_rename
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fsync", fail_after_move
+    )
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.tombstone(record)
+
+    assert error.value.code == "ASSET_IO_FAILED"
+    parent = canonical.parent
+    assert canonical.read_bytes() == foreign
+    assert list(parent.glob(".unlink-fence-*"))
+    assert store.cache_size_bytes() == len(b"derived-webp") + len(foreign)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fsync", original_fsync)
+    recovered_store = SourceVisualStore(data_folder=tmp_path)
+    assert recovered_store.reconcile_staged_files(limit=100) == 0
+    assert canonical.read_bytes() == foreign
+    assert held.read_bytes() == b"derived-webp"
+    assert not list(parent.glob(".unlink-fence-*"))
+
+
+def test_unverified_stage_is_counted_and_blocks_another_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    original_open = os.open
+    original_fstat = os.fstat
+    created_stage_fds: set[int] = set()
+
+    def open_file(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if str(path).startswith(".unverified-stage-") and flags & os.O_EXCL:
+            created_stage_fds.add(descriptor)
+        return descriptor
+
+    def fail_initial_stage_fstat(descriptor: int) -> os.stat_result:
+        if descriptor in created_stage_fds:
+            raise OSError("initial stage stat failed")
+        return original_fstat(descriptor)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.open", open_file)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fstat", fail_initial_stage_fstat
+    )
+    with pytest.raises(SourceVisualStorageError) as first_error:
+        store.stage("source:one", "a" * 64, _prepared())
+
+    assert first_error.value.code == "TEMP_CREATE_FAILED"
+    unverified = next((store.root / ".tmp").glob(".unverified-stage-*"))
+    unverified.write_bytes(b"unverified")
+    assert store.cache_size_bytes() == unverified.stat().st_size
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fstat", original_fstat)
+    with pytest.raises(SourceVisualStorageError) as second_error:
+        store.stage("source:two", "b" * 64, _prepared())
+
+    assert second_error.value.code == "CACHE_RECOVERY_REQUIRED"
+    assert len(list((store.root / ".tmp").glob(".unverified-stage-*"))) == 1
+
+
+def test_recovery_entries_are_counted_and_cap_future_mutations(tmp_path: Path):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    parent = (store.root / stored.asset_relpath).parent
+    payload = b"foreign-recovery"
+    for index in range(8):
+        (parent / f".unlink-recovery-{index:032x}").write_bytes(payload)
+
+    assert store.cache_size_bytes() == stored.byte_size + 8 * len(payload)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:two", "b" * 64, _prepared())
+
+    assert error.value.code == "CACHE_RECOVERY_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_eviction_reports_recovery_bytes_without_deleting_foreign_data(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    parent = (store.root / stored.asset_relpath).parent
+    recovery = parent / f".unlink-recovery-{'a' * 32}"
+    recovery.write_bytes(b"foreign-recovery")
+    cleanup = SourceVisualCleanup(store, _Repository([]))
+
+    assert await cleanup.evict_to_budget(max_bytes=0) == 0
+    assert store.cache_size_bytes() == stored.byte_size + recovery.stat().st_size
+    assert recovery.read_bytes() == b"foreign-recovery"
+
+
+def test_malformed_fence_journal_blocks_mutation_without_deleting_its_file(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    parent = (store.root / stored.asset_relpath).parent
+    fence = parent / f".unlink-fence-{'b' * 32}"
+    fence.mkdir(mode=0o700)
+    moved = fence / Path(stored.asset_relpath).name
+    moved.write_bytes(b"foreign-fence")
+    (fence / ".journal").write_text("not-json", encoding="ascii")
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:two", "b" * 64, _prepared())
+
+    assert error.value.code == "CACHE_RECOVERY_REQUIRED"
+    assert moved.read_bytes() == b"foreign-fence"
+
+
+@pytest.mark.parametrize("location", ["temp", "content"])
+def test_recovery_scan_rejects_unbounded_irrelevant_entries_before_mutation(
+    tmp_path: Path, location: str
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    if location == "temp":
+        parent = store.root / ".tmp"
+        root_fd = store._ensure_root()
+        os.close(root_fd)
+        parent.mkdir(exist_ok=True)
+    else:
+        stored = _publish(store)
+        parent = (store.root / stored.asset_relpath).parent
+    for index in range(4097):
+        (parent / f"irrelevant-{index:04x}").write_bytes(b"x")
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.stage("source:two", "b" * 64, _prepared())
+
+    assert error.value.code == "CACHE_SCAN_LIMIT"
+    assert not list((store.root / ".tmp").glob("stage-*.tmp"))
+
+
 def test_mutation_guard_is_reentrant_for_stage_in_the_same_thread(tmp_path: Path):
     context = mp.get_context("fork")
     completed = context.Event()
