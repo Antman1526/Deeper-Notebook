@@ -114,6 +114,34 @@ def test_stage_is_exclusive_hashes_reopened_bytes_and_publish_fsyncs_parent(
     assert store.read_exact(_record(stored)) == prepared.encoded_bytes
 
 
+def test_publish_keeps_one_root_identity_across_temp_and_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    cache_parent = tmp_path / "source-visual-cache"
+    held_parent = tmp_path / "held-cache-parent"
+    replacement_root = cache_parent / "v1"
+    original_open_regular = store._open_regular_file
+    swapped = False
+
+    def open_regular(parent_fd: int, name: str) -> int:
+        nonlocal swapped
+        descriptor = original_open_regular(parent_fd, name)
+        if name == staged.temp_name and not swapped:
+            cache_parent.rename(held_parent)
+            replacement_root.mkdir(parents=True)
+            swapped = True
+        return descriptor
+
+    monkeypatch.setattr(store, "_open_regular_file", open_regular)
+
+    stored = store.publish(staged)
+
+    assert (held_parent / "v1" / stored.asset_relpath).read_bytes() == b"derived-webp"
+    assert not (replacement_root / stored.asset_relpath).exists()
+
+
 def test_stage_rejects_asset_hash_mismatch(tmp_path: Path):
     store = SourceVisualStore(data_folder=tmp_path)
     prepared = _prepared().model_copy(update={"asset_sha256": "f" * 64})

@@ -911,18 +911,31 @@ class SourceVisualRepository:
             raise SourceVisualRepositoryError("INVALID_INPUT")
         rows = _rows(
             await _transaction(
+                "BEGIN TRANSACTION; "
+                "LET $claim = (SELECT lease_until FROM $claim_record)[0]; "
+                "IF $claim != NONE AND $claim.lease_until > time::now() THEN "
+                "RETURN { claim_active: true }; END; "
                 "DELETE $cache_record WHERE source_id = $source_record "
                 "AND source_updated_at = $source_updated_at "
                 "AND content_sha256 = $content_sha256 "
                 "AND asset_sha256 = $asset_sha256 "
                 "AND asset_relpath = $asset_relpath "
-                "AND updated_at = $updated_at RETURN BEFORE;",
+                "AND updated_at = $updated_at RETURN BEFORE; "
+                "COMMIT TRANSACTION;",
                 {
                     "cache_record": _record(
                         "source_visual_cache",
                         _cache_identity(record.source_id, record.content_sha256),
                     ),
                     "source_record": _source_record(record.source_id),
+                    "claim_record": _record(
+                        "source_visual_claim",
+                        claim_identity(
+                            record.source_id,
+                            record.content_sha256,
+                            record.extractor_version,
+                        ),
+                    ),
                     "source_updated_at": record.source_updated_at,
                     "content_sha256": record.content_sha256,
                     "asset_sha256": record.asset_sha256,
@@ -931,6 +944,8 @@ class SourceVisualRepository:
                 },
             )
         )
+        if any(row.get("claim_active") is True for row in rows):
+            return False
         if not rows:
             return False
         if len(rows) != 1:

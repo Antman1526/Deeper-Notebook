@@ -199,24 +199,30 @@ class SourceVisualStore:
                 raise SourceVisualStorageError("CACHE_PATH_SYMLINK") from None
             raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
 
-    def _open_asset_parent(self, relpath: str, *, create: bool) -> tuple[int, str]:
+    def _open_asset_parent_at(
+        self, root_fd: int, relpath: str, *, create: bool
+    ) -> tuple[int, str]:
         match = _RELPATH.fullmatch(relpath)
         if match is None:
             raise SourceVisualStorageError("ASSET_RELPATH_INVALID")
-        root_fd = prefix_fd = None
+        prefix_fd = None
         try:
-            root_fd = self._ensure_root()
             prefix_fd = self._open_child_dir(root_fd, match.group(1), create=create)
             content_fd = self._open_child_dir(prefix_fd, match.group(2), create=create)
             return content_fd, f"{match.group(3)}.webp"
         finally:
             _safe_close(prefix_fd)
+
+    def _open_asset_parent(self, relpath: str, *, create: bool) -> tuple[int, str]:
+        root_fd = self._ensure_root()
+        try:
+            return self._open_asset_parent_at(root_fd, relpath, create=create)
+        finally:
             _safe_close(root_fd)
 
-    def _open_temp(self) -> tuple[int, int]:
-        root_fd = temp_fd = None
+    def _open_temp_at(self, root_fd: int) -> int:
+        temp_fd = None
         try:
-            root_fd = self._ensure_root()
             temp_fd = self._open_child_dir(root_fd, _TEMP_DIR, create=True)
             try:
                 marker_fd = os.open(
@@ -233,9 +239,16 @@ class SourceVisualStore:
                     raise SourceVisualStorageError("TEMP_INVALID")
             finally:
                 os.close(marker_fd)
-            return root_fd, temp_fd
+            return temp_fd
         except Exception:
             _safe_close(temp_fd)
+            raise
+
+    def _open_temp(self) -> tuple[int, int]:
+        root_fd = self._ensure_root()
+        try:
+            return root_fd, self._open_temp_at(root_fd)
+        except Exception:
             _safe_close(root_fd)
             raise
 
@@ -348,12 +361,15 @@ class SourceVisualStore:
         )
         root_fd = temp_fd = parent_fd = verify_fd = None
         try:
-            root_fd, temp_fd = self._open_temp()
+            root_fd = self._ensure_root()
+            temp_fd = self._open_temp_at(root_fd)
             verify_fd = self._open_regular_file(temp_fd, staged.temp_name)
             digest, size = _hash_fd(verify_fd)
             if digest != staged.asset_sha256 or size != staged.byte_size:
                 raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-            parent_fd, filename = self._open_asset_parent(relpath, create=True)
+            parent_fd, filename = self._open_asset_parent_at(
+                root_fd, relpath, create=True
+            )
             try:
                 existing_fd = self._open_regular_file(parent_fd, filename)
             except SourceVisualStorageError as exc:

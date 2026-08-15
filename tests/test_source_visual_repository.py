@@ -192,6 +192,29 @@ async def test_cleanup_repository_adapter_rejects_unbounded_or_malformed_input(
 
 
 @pytest.mark.asyncio
+async def test_conditional_cleanup_delete_atomically_rejects_new_live_claim(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repository = _repository()
+    record = SourceVisualRecord.model_validate(
+        {key: value for key, value in READY_ROW.items() if key != "id"}
+    )
+
+    async def query(query_text: str, variables: dict[str, object]):
+        if (
+            "BEGIN TRANSACTION" in query_text
+            and "lease_until > time::now()" in query_text
+            and "claim_record" in variables
+        ):
+            return [{"claim_active": True}]
+        return [READY_ROW]
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+
+    assert await repository.delete_ready_if_current(record) is False
+
+
+@pytest.mark.asyncio
 async def test_list_current_omits_malformed_and_stale_rows(monkeypatch: pytest.MonkeyPatch):
     repository = _repository()
     query = AsyncMock(
