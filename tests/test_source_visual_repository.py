@@ -76,6 +76,68 @@ async def test_list_current_binds_revision_values_not_the_revision_mapping(
 
 
 @pytest.mark.asyncio
+async def test_list_current_matches_source_revision_pairs_not_independent_sets(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repository = _repository()
+    second_updated = SOURCE_UPDATED + timedelta(hours=1)
+    source_two = {
+        **READY_ROW,
+        "id": "source_visual:two",
+        "source_id": "source:two",
+        "source_updated_at": second_updated,
+    }
+    rows = [
+        READY_ROW,
+        source_two,
+        {
+            **READY_ROW,
+            "id": "source_visual:one-stale",
+            "source_updated_at": second_updated,
+        },
+        {
+            **source_two,
+            "id": "source_visual:two-stale",
+            "source_updated_at": SOURCE_UPDATED,
+        },
+    ]
+    requested = {"source:one": SOURCE_UPDATED, "source:two": second_updated}
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    async def query(query_text: str, variables: dict[str, object]):
+        calls.append((query_text, variables))
+        pairs = variables.get("source_revision_pairs")
+        if pairs is None:
+            source_records = {str(value) for value in variables["source_records"]}
+            revisions = set(variables["source_revision_values"])
+            independently_selected = [
+                row
+                for row in rows
+                if row["source_id"] in source_records
+                and row["source_updated_at"] in revisions
+            ]
+            assert all(
+                (row["source_id"], row["source_updated_at"]) in requested.items()
+                for row in independently_selected
+            ), "independent ID/time IN sets admitted a stale source/revision pair"
+            return rows
+        normalised_pairs = {(str(pair[0]), pair[1]) for pair in pairs}
+        assert normalised_pairs == set(requested.items())
+        return [
+            row
+            for row in rows
+            if (row["source_id"], row["source_updated_at"]) in normalised_pairs
+        ]
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.repository.repo_query", query)
+    result = await repository.list_current(requested)
+
+    assert set(result) == set(requested)
+    assert all(result[source].source_updated_at == revision for source, revision in requested.items())
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_list_current_omits_malformed_and_stale_rows(monkeypatch: pytest.MonkeyPatch):
     repository = _repository()
     query = AsyncMock(

@@ -834,13 +834,15 @@ class SourceVisualRepository:
         result = await _transaction(
             """
             SELECT * FROM source_visual_cache
-            WHERE source_id IN $source_records
-              AND source_updated_at IN $source_revision_values
-              AND source_id.updated IN $source_revision_values;
+            WHERE [source_id, source_updated_at] IN $source_revision_pairs;
             """,
             {
                 "source_records": [_source_record(source_id) for source_id in normalised],
                 "source_revision_values": list(normalised.values()),
+                "source_revision_pairs": [
+                    [_source_record(source_id), revision]
+                    for source_id, revision in normalised.items()
+                ],
             },
         )
         current: dict[str, SourceVisualRecord] = {}
