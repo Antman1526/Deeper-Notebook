@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from deeper_notebook.source_visuals import authority as authority_module
 from deeper_notebook.source_visuals.authority import (
     SourceVisualAuthorityError,
     canonical_fingerprint_payload,
@@ -148,3 +149,58 @@ async def test_upload_file_root_validation_is_fail_closed(tmp_path: Path, kind: 
         )
     assert error.value.code in {"SOURCE_FILE_SYMLINK", "SOURCE_FILE_NOT_REGULAR", "SOURCE_FILE_OUTSIDE_ROOT"}
     assert str(path) not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_intermediate_symlink_component_is_rejected(tmp_path: Path):
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir()
+    real_directory = upload_root / "real"
+    real_directory.mkdir()
+    (real_directory / "asset.bin").write_bytes(b"asset")
+    linked_directory = upload_root / "linked"
+    linked_directory.symlink_to(real_directory, target_is_directory=True)
+
+    with pytest.raises(SourceVisualAuthorityError) as error:
+        await compute_source_visual_authority(
+            _source(
+                source_file_path=linked_directory / "asset.bin",
+                upload_root=upload_root,
+            )
+        )
+    assert error.value.code == "SOURCE_FILE_SYMLINK"
+
+
+@pytest.mark.asyncio
+async def test_file_open_is_descriptor_bound_to_the_upload_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir()
+    nested = upload_root / "nested"
+    nested.mkdir()
+    path = nested / "asset.bin"
+    path.write_bytes(b"asset")
+    original_open = authority_module.os.open
+    calls: list[tuple[object, int, int | None]] = []
+
+    def tracking_open(
+        path_value: object,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        calls.append((path_value, flags, dir_fd))
+        if dir_fd is None:
+            return original_open(path_value, flags, mode)
+        return original_open(path_value, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(authority_module.os, "open", tracking_open)
+    await compute_source_visual_authority(
+        _source(source_file_path=path, upload_root=upload_root)
+    )
+
+    assert calls
+    assert any(dir_fd is not None for _, _, dir_fd in calls)
+    assert all(os_path != str(path) for os_path, _, _ in calls)

@@ -7,6 +7,7 @@ its path and descriptor have been checked against the controlled upload root.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -190,30 +191,85 @@ def _file_identity(stat_result: os.stat_result | object) -> tuple[object, ...]:
     )
 
 
-def _hash_controlled_file(path: Path, upload_root: Path) -> tuple[str, str]:
+def _open_controlled_file(path: Path, upload_root: Path) -> tuple[int, str]:
+    """Open a regular file by walking from a trusted root descriptor.
+
+    Every component is opened with ``O_NOFOLLOW`` relative to the descriptor
+    for its parent.  This closes the validation/open gap for an intermediate
+    directory being replaced by a symlink after lexical containment checks.
+    """
+
     try:
-        resolved_path = path.resolve(strict=False)
+        candidate = Path(os.path.abspath(os.fspath(path)))
+        root = Path(os.path.abspath(os.fspath(upload_root)))
+        relative = candidate.relative_to(root)
     except (OSError, ValueError):
-        raise SourceVisualAuthorityError("SOURCE_FILE_INVALID") from None
-    try:
-        inside_root = resolved_path.is_relative_to(upload_root)
-    except AttributeError:  # pragma: no cover - Python 3.11 compatibility
-        inside_root = str(resolved_path).startswith(str(upload_root) + os.sep)
-    if not inside_root or resolved_path == upload_root:
+        raise SourceVisualAuthorityError("SOURCE_FILE_OUTSIDE_ROOT") from None
+    components = relative.parts
+    if not components:
         raise SourceVisualAuthorityError("SOURCE_FILE_OUTSIDE_ROOT")
 
-    if path.is_symlink():
-        raise SourceVisualAuthorityError("SOURCE_FILE_SYMLINK")
-
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    directory_flag = getattr(os, "O_DIRECTORY", 0)
+    root_flags = os.O_RDONLY | no_follow | directory_flag
+    child_directory_flags = os.O_RDONLY | no_follow | directory_flag
+    file_flags = os.O_RDONLY | no_follow
     try:
-        file_descriptor = os.open(os.fspath(path), flags)
+        parent_fd = os.open(os.fspath(root), root_flags)
     except FileNotFoundError:
         raise SourceVisualAuthorityError("SOURCE_FILE_MISSING") from None
     except OSError as exc:
-        if getattr(exc, "errno", None) in {40, 62}:  # ELOOP on common Unix hosts
+        if getattr(exc, "errno", None) in {40, 62}:
             raise SourceVisualAuthorityError("SOURCE_FILE_SYMLINK") from None
         raise SourceVisualAuthorityError("SOURCE_FILE_UNREADABLE") from None
+
+    try:
+        for component in components[:-1]:
+            try:
+                child_fd = os.open(
+                    component, child_directory_flags, dir_fd=parent_fd
+                )
+            except FileNotFoundError:
+                raise SourceVisualAuthorityError("SOURCE_FILE_MISSING") from None
+            except OSError as exc:
+                if getattr(exc, "errno", None) in {
+                    getattr(errno, "ELOOP", 62),
+                    getattr(errno, "ENOTDIR", 20),
+                }:
+                    raise SourceVisualAuthorityError("SOURCE_FILE_SYMLINK") from None
+                raise SourceVisualAuthorityError("SOURCE_FILE_UNREADABLE") from None
+            os.close(parent_fd)
+            parent_fd = child_fd
+
+        try:
+            file_descriptor = os.open(
+                components[-1], file_flags, dir_fd=parent_fd
+            )
+        except FileNotFoundError:
+            raise SourceVisualAuthorityError("SOURCE_FILE_MISSING") from None
+        except OSError as exc:
+            if getattr(exc, "errno", None) in {40, 62}:
+                raise SourceVisualAuthorityError("SOURCE_FILE_SYMLINK") from None
+            raise SourceVisualAuthorityError("SOURCE_FILE_UNREADABLE") from None
+        return file_descriptor, str(path)
+    finally:
+        os.close(parent_fd)
+
+
+def _hash_controlled_file(path: Path, upload_root: Path) -> tuple[str, str]:
+    try:
+        resolved_root = upload_root.resolve(strict=False)
+        candidate = Path(os.path.abspath(os.fspath(path)))
+    except (OSError, ValueError):
+        raise SourceVisualAuthorityError("SOURCE_FILE_INVALID") from None
+    try:
+        inside_root = candidate.is_relative_to(resolved_root)
+    except AttributeError:  # pragma: no cover - Python 3.11 compatibility
+        inside_root = str(candidate).startswith(str(resolved_root) + os.sep)
+    if not inside_root or candidate == resolved_root:
+        raise SourceVisualAuthorityError("SOURCE_FILE_OUTSIDE_ROOT")
+
+    file_descriptor, controlled_path = _open_controlled_file(path, resolved_root)
 
     try:
         try:
@@ -235,7 +291,7 @@ def _hash_controlled_file(path: Path, upload_root: Path) -> tuple[str, str]:
             raise SourceVisualAuthorityError("SOURCE_FILE_READ_FAILED") from None
         if _file_identity(before) != _file_identity(after):
             raise SourceVisualAuthorityError("SOURCE_FILE_CHANGED")
-        return digest.hexdigest(), str(path)
+        return digest.hexdigest(), controlled_path
     finally:
         os.close(file_descriptor)
 

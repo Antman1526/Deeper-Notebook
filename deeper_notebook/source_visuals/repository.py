@@ -30,6 +30,7 @@ _PUBLIC_ERROR_CODES = frozenset(
         "COMMAND_CONFLICT",
         "REQUEST_CONFLICT",
         "SOURCE_STALE",
+        "LEASE_EXPIRED",
     }
 )
 
@@ -134,6 +135,19 @@ def _row(result: object) -> dict[str, Any] | None:
     return rows[-1]
 
 
+def _require_live_lease(
+    row: Mapping[str, Any] | None, owner_token: str, now: datetime
+) -> Mapping[str, Any]:
+    """Require both exact ownership and a lease strictly after ``now``."""
+
+    if not row or row.get("owner_mismatch") or row.get("owner_token") != owner_token:
+        raise SourceVisualConflictError("OWNER_MISMATCH")
+    lease_until = _datetime(row.get("lease_until"))
+    if lease_until is None or lease_until <= now:
+        raise SourceVisualConflictError("LEASE_EXPIRED")
+    return row
+
+
 def _plain_id(value: object) -> str | None:
     if value is None:
         return None
@@ -195,6 +209,18 @@ def _record(table: str, identity: str) -> object:
         raise SourceVisualRepositoryError("INVALID_INPUT") from None
 
 
+def _command_text(value: object) -> str | None:
+    if value is None:
+        return None
+    result = str(value)
+    return result if result.startswith("command:") else f"command:{result}"
+
+
+def _command_record(value: object) -> object | None:
+    command_text = _command_text(value)
+    return _record("command", command_text) if command_text is not None else None
+
+
 def _source_record(source_id: str) -> object:
     try:
         return ensure_record_id(source_id)
@@ -240,8 +266,7 @@ def _claim_from_row(
         }
     )
     data["source_id"] = _string(data["source_id"])
-    if data["command_id"] is not None:
-        data["command_id"] = _string(data["command_id"])
+    data["command_id"] = _command_text(data["command_id"])
     try:
         return SourceVisualClaim.model_validate(data)
     except Exception as exc:
@@ -282,16 +307,14 @@ def _operation_matches(
         return False
     row_source = _string(row.get("source_id", ""))
     row_revision = _datetime(row.get("source_updated_at"))
-    row_command = row.get("command_id")
-    if row_command is not None:
-        row_command = _string(row_command)
+    row_command = _command_text(row.get("command_id"))
     return (
         row_source == source_id
         and row.get("request_id") == request_id
         and row_revision == source_updated_at
         and row.get("content_sha256") == content_sha256
         and row.get("operation") == operation
-        and row_command == command_id
+        and row_command == _command_text(command_id)
         and row.get("outcome") == outcome
         and row.get("error_code") == error_code
     )
@@ -334,8 +357,7 @@ def _receipt_from_row(
             "updated_at": _datetime(data.get("updated_at"), now),
         }
     )
-    if data["command_id"] is not None:
-        data["command_id"] = _string(data["command_id"])
+    data["command_id"] = _command_text(data["command_id"])
     try:
         return SourceVisualOperationReceipt.model_validate(data)
     except Exception as exc:
@@ -485,7 +507,8 @@ class SourceVisualRepository:
             """
             BEGIN TRANSACTION;
             LET $existing = (SELECT * FROM $claim_record)[0];
-            IF $existing = NONE OR $existing.owner_token != $owner_token THEN
+            IF $existing = NONE OR $existing.owner_token != $owner_token
+                    OR $existing.lease_until <= $now THEN
                 RETURN { owner_mismatch: true, existing: $existing };
             END;
             UPDATE $claim_record MERGE { lease_until: $lease_until, updated_at: $now };
@@ -500,8 +523,7 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
-        if not row or row.get("owner_mismatch") or row.get("owner_token") != owner_token:
-            raise SourceVisualConflictError("OWNER_MISMATCH")
+        _require_live_lease(row, owner_token, current)
         return _claim_from_row(
             row,
             claim_id=identity,
@@ -536,7 +558,8 @@ class SourceVisualRepository:
             """
             BEGIN TRANSACTION;
             LET $existing = (SELECT * FROM $claim_record)[0];
-            IF $existing = NONE OR $existing.owner_token != $owner_token THEN
+            IF $existing = NONE OR $existing.owner_token != $owner_token
+                    OR $existing.lease_until <= $now THEN
                 RETURN { owner_mismatch: true, existing: $existing };
             ELSE IF $existing.command_id != NONE AND $existing.command_id != $command_record THEN
                 RETURN { command_conflict: true, existing: $existing };
@@ -547,22 +570,19 @@ class SourceVisualRepository:
             """,
             {
                 "claim_record": _record("source_visual_claim", identity),
-                "command_record": _record("command", command_id),
+                "command_record": _command_record(command_id),
                 "owner_token": owner_token,
                 "now": current,
             },
         )
         row = _row(result)
-        if not row or row.get("owner_mismatch") or row.get("owner_token") != owner_token:
-            raise SourceVisualConflictError("OWNER_MISMATCH")
-        existing_command = row.get("command_id")
-        if existing_command is not None and _string(existing_command) not in {
-            command_id,
-            f"command:{command_id}",
-        }:
+        _require_live_lease(row, owner_token, current)
+        existing_command = _command_text(row.get("command_id"))
+        requested_command = _command_text(command_id)
+        if existing_command is not None and existing_command != requested_command:
             raise SourceVisualConflictError("COMMAND_CONFLICT")
         row = dict(row)
-        row["command_id"] = command_id
+        row["command_id"] = requested_command
         return _claim_from_row(
             row,
             claim_id=identity,
@@ -572,7 +592,7 @@ class SourceVisualRepository:
             owner_token=owner_token,
             lease_until=_datetime(row.get("lease_until"), current) or current,
             now=current,
-            command_id=command_id,
+            command_id=requested_command,
         )
 
     async def complete_claim(
@@ -592,7 +612,6 @@ class SourceVisualRepository:
             owner_token,
             authority=authority,
             now=now,
-            action="complete",
         )
 
     async def release_claim(
@@ -612,7 +631,6 @@ class SourceVisualRepository:
             owner_token,
             authority=authority,
             now=now,
-            action="release",
         )
 
     async def _finish_claim(
@@ -624,7 +642,6 @@ class SourceVisualRepository:
         *,
         authority: SourceVisualAuthority | None,
         now: datetime | None,
-        action: str,
     ) -> SourceVisualClaim:
         source_id, content_sha256, extractor_version, _ = _identity(
             source_id, content_sha256, extractor_version, authority
@@ -636,9 +653,11 @@ class SourceVisualRepository:
             f"""
             BEGIN TRANSACTION;
             LET $existing = (SELECT * FROM $claim_record)[0];
-            IF $existing = NONE OR $existing.owner_token != $owner_token THEN
+            IF $existing = NONE OR $existing.owner_token != $owner_token
+                    OR $existing.lease_until <= $now THEN
                 RETURN {{ owner_mismatch: true, existing: $existing }};
             END;
+            SELECT $existing;
             DELETE $claim_record;
             COMMIT TRANSACTION;
             """,
@@ -649,8 +668,7 @@ class SourceVisualRepository:
             },
         )
         row = _row(result)
-        if not row or row.get("owner_mismatch") or row.get("owner_token") != owner_token:
-            raise SourceVisualConflictError("OWNER_MISMATCH")
+        _require_live_lease(row, owner_token, current)
         return _claim_from_row(
             row,
             claim_id=identity,
@@ -694,6 +712,8 @@ class SourceVisualRepository:
             raise SourceVisualRepositoryError("INVALID_INPUT")
         if command_id is not None and not command_id:
             raise SourceVisualRepositoryError("INVALID_INPUT")
+        command_record = _command_record(command_id)
+        canonical_command_id = _command_text(command_id)
         current = _now(now)
         identity = operation_identity(source_id, request_id, operation)
         result = await _transaction(
@@ -704,7 +724,8 @@ class SourceVisualRepository:
                 CREATE $operation_record CONTENT $operation_data;
             ELSE IF $existing.source_id != $source_record OR $existing.request_id != $request_id
                     OR $existing.operation != $operation OR $existing.content_sha256 != $content_sha256
-                    OR $existing.source_updated_at != $source_updated_at THEN
+                    OR $existing.source_updated_at != $source_updated_at
+                    OR $existing.command_id != $command_record THEN
                 RETURN { request_conflict: true, existing: $existing };
             END;
             SELECT * FROM $operation_record;
@@ -717,6 +738,7 @@ class SourceVisualRepository:
                 "source_updated_at": source_updated_at,
                 "content_sha256": content_sha256,
                 "operation": operation,
+                "command_record": command_record,
                 "operation_data": {
                     "operation_id": identity,
                     "source_id": _source_record(source_id),
@@ -724,7 +746,7 @@ class SourceVisualRepository:
                     "source_updated_at": source_updated_at,
                     "content_sha256": content_sha256,
                     "operation": operation,
-                    "command_id": command_id,
+                    "command_id": command_record,
                     "outcome": outcome,
                     "error_code": error_code,
                     "created_at": current,
@@ -740,7 +762,7 @@ class SourceVisualRepository:
             source_updated_at=source_updated_at,
             content_sha256=content_sha256,
             operation=operation,
-            command_id=command_id,
+            command_id=canonical_command_id,
             outcome=outcome,
             error_code=error_code,
         )):
@@ -754,7 +776,7 @@ class SourceVisualRepository:
             source_updated_at=source_updated_at,
             content_sha256=content_sha256,
             operation=operation,
-            command_id=command_id,
+            command_id=canonical_command_id,
             outcome=outcome,
             error_code=error_code,
             now=current,
@@ -813,12 +835,12 @@ class SourceVisualRepository:
             """
             SELECT * FROM source_visual_cache
             WHERE source_id IN $source_records
-              AND source_updated_at IN $source_revisions
-              AND source_id.updated IN $source_revisions;
+              AND source_updated_at IN $source_revision_values
+              AND source_id.updated IN $source_revision_values;
             """,
             {
                 "source_records": [_source_record(source_id) for source_id in normalised],
-                "source_revisions": normalised,
+                "source_revision_values": list(normalised.values()),
             },
         )
         current: dict[str, SourceVisualRecord] = {}
@@ -846,8 +868,18 @@ class SourceVisualRepository:
         now: datetime | None = None,
     ) -> SourceVisualRecord:
         record, source_id = self._normalise_record_argument(record, source_id)
+        requested_source_id = source_id
+        requested_content_sha256 = content_sha256
+        requested_extractor_version = extractor_version
         source_id, content_sha256, extractor_version, authority = _identity(
             source_id, content_sha256, extractor_version, authority
+        )
+        self._validate_authority_inputs(
+            authority,
+            requested_source_id,
+            requested_content_sha256,
+            requested_extractor_version,
+            source_updated_at,
         )
         source_updated_at = _datetime(
             source_updated_at or (authority.source_updated_at if authority else None)
@@ -863,7 +895,10 @@ class SourceVisualRepository:
             extractor_version=extractor_version,
             source_updated_at=source_updated_at,
             now=current,
+            authority=authority,
         )
+        record_data = ready.model_dump()
+        record_data["source_id"] = _source_record(source_id)
         result = await _transaction(
             """
             BEGIN TRANSACTION;
@@ -871,11 +906,13 @@ class SourceVisualRepository:
             LET $claim = (SELECT * FROM $claim_record)[0];
             IF $source_row.updated != $source_updated_at THEN
                 RETURN { source_stale: true };
-            ELSE IF $claim = NONE OR $claim.owner_token != $owner_token THEN
+            ELSE IF $claim = NONE OR $claim.owner_token != $owner_token
+                    OR $claim.lease_until <= $now THEN
                 RETURN { owner_mismatch: true, existing: $claim };
             END;
             UPSERT $cache_record CONTENT $record_data;
-            SELECT * FROM $cache_record;
+            SELECT { published: true, owner_token: $claim.owner_token,
+                     lease_until: $claim.lease_until, source_updated_at: $source_updated_at };
             COMMIT TRANSACTION;
             """,
             {
@@ -889,14 +926,14 @@ class SourceVisualRepository:
                 ),
                 "source_updated_at": source_updated_at,
                 "owner_token": owner_token,
-                "record_data": ready.model_dump(),
+                "now": current,
+                "record_data": record_data,
             },
         )
         row = _row(result)
         if row and row.get("source_stale"):
             raise SourceVisualConflictError("SOURCE_STALE")
-        if row and (row.get("owner_mismatch") or row.get("owner_token") not in {None, owner_token}):
-            raise SourceVisualConflictError("OWNER_MISMATCH")
+        _require_live_lease(row, owner_token, current)
         return ready
 
     async def delete_ready(
@@ -912,8 +949,18 @@ class SourceVisualRepository:
         now: datetime | None = None,
     ) -> SourceVisualRecord:
         record, source_id = self._normalise_record_argument(record, source_id)
+        requested_source_id = source_id
+        requested_content_sha256 = content_sha256
+        requested_extractor_version = extractor_version
         source_id, content_sha256, extractor_version, authority = _identity(
             source_id, content_sha256, extractor_version, authority
+        )
+        self._validate_authority_inputs(
+            authority,
+            requested_source_id,
+            requested_content_sha256,
+            requested_extractor_version,
+            source_updated_at,
         )
         source_updated_at = _datetime(
             source_updated_at or (authority.source_updated_at if authority else None)
@@ -929,6 +976,7 @@ class SourceVisualRepository:
             extractor_version=extractor_version,
             source_updated_at=source_updated_at,
             now=current,
+            authority=authority,
         )
         result = await _transaction(
             """
@@ -937,10 +985,13 @@ class SourceVisualRepository:
             LET $claim = (SELECT * FROM $claim_record)[0];
             IF $source_row.updated != $source_updated_at THEN
                 RETURN { source_stale: true };
-            ELSE IF $claim = NONE OR $claim.owner_token != $owner_token THEN
+            ELSE IF $claim = NONE OR $claim.owner_token != $owner_token
+                    OR $claim.lease_until <= $now THEN
                 RETURN { owner_mismatch: true, existing: $claim };
             END;
             DELETE $cache_record;
+            SELECT { deleted: true, owner_token: $claim.owner_token,
+                     lease_until: $claim.lease_until, source_updated_at: $source_updated_at };
             COMMIT TRANSACTION;
             """,
             {
@@ -954,13 +1005,13 @@ class SourceVisualRepository:
                 ),
                 "source_updated_at": source_updated_at,
                 "owner_token": owner_token,
+                "now": current,
             },
         )
         row = _row(result)
         if row and row.get("source_stale"):
             raise SourceVisualConflictError("SOURCE_STALE")
-        if row and (row.get("owner_mismatch") or row.get("owner_token") not in {None, owner_token}):
-            raise SourceVisualConflictError("OWNER_MISMATCH")
+        _require_live_lease(row, owner_token, current)
         return ready
 
     @staticmethod
@@ -973,6 +1024,32 @@ class SourceVisualRepository:
         return record if record is not None else None, source_id
 
     @staticmethod
+    def _validate_authority_inputs(
+        authority: SourceVisualAuthority | None,
+        source_id: str | SourceVisualAuthority | None,
+        content_sha256: str | None,
+        extractor_version: str | None,
+        source_updated_at: datetime | None,
+    ) -> None:
+        if authority is None:
+            return
+        if (
+            source_id is not None
+            and not isinstance(source_id, SourceVisualAuthority)
+            and _source_id(source_id) != authority.source_id
+        ):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        if content_sha256 is not None and content_sha256 != authority.content_sha256:
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        if (
+            extractor_version is not None
+            and extractor_version != authority.extractor_version
+        ):
+            raise SourceVisualRepositoryError("INVALID_INPUT")
+        if source_updated_at is not None and _datetime(source_updated_at) != authority.source_updated_at:
+            raise SourceVisualConflictError("SOURCE_STALE")
+
+    @staticmethod
     def _ready_record(
         record: SourceVisualRecord | Mapping[str, Any] | None,
         *,
@@ -981,23 +1058,38 @@ class SourceVisualRepository:
         extractor_version: str,
         source_updated_at: datetime,
         now: datetime,
+        authority: SourceVisualAuthority | None = None,
     ) -> SourceVisualRecord:
-        if isinstance(record, SourceVisualRecord):
-            if record.source_id != source_id or record.content_sha256 != content_sha256:
+        def ensure_bound(parsed: SourceVisualRecord) -> SourceVisualRecord:
+            if parsed.source_id != source_id or parsed.content_sha256 != content_sha256:
                 raise SourceVisualRepositoryError("INVALID_INPUT")
-            return record
+            if parsed.source_updated_at != source_updated_at:
+                raise SourceVisualConflictError("SOURCE_STALE")
+            if parsed.extractor_version != extractor_version:
+                raise SourceVisualRepositoryError("INVALID_INPUT")
+            if authority is not None:
+                if (
+                    parsed.source_id != authority.source_id
+                    or parsed.source_updated_at != authority.source_updated_at
+                    or parsed.source_file_sha256 != authority.source_file_sha256
+                    or parsed.content_sha256 != authority.content_sha256
+                    or parsed.extractor_version != authority.extractor_version
+                ):
+                    raise SourceVisualRepositoryError("INVALID_INPUT")
+            return parsed
+
+        if isinstance(record, SourceVisualRecord):
+            return ensure_bound(record)
         if isinstance(record, Mapping):
             try:
                 parsed = SourceVisualRecord.model_validate(dict(record))
             except Exception as exc:
                 raise SourceVisualRepositoryError("MALFORMED_ROW") from exc
-            if parsed.source_id != source_id or parsed.content_sha256 != content_sha256:
-                raise SourceVisualRepositoryError("INVALID_INPUT")
-            return parsed
+            return ensure_bound(parsed)
         return SourceVisualRecord(
             source_id=source_id,
             source_updated_at=source_updated_at,
-            source_file_sha256=None,
+            source_file_sha256=authority.source_file_sha256 if authority else None,
             content_sha256=content_sha256,
             asset_sha256=content_sha256,
             asset_relpath=f"{content_sha256[:2]}/{content_sha256}/" + f"{content_sha256}.webp",
