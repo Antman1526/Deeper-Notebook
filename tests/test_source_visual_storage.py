@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import multiprocessing as mp
 import os
 import threading
 from collections.abc import Callable
@@ -17,6 +18,7 @@ from deeper_notebook.source_visuals.contracts import (
     SourceVisualRecord,
 )
 from deeper_notebook.source_visuals.storage import (
+    TOMBSTONE,
     SourceVisualStorageError,
     SourceVisualStore,
     asset_relpath,
@@ -101,6 +103,32 @@ def _install_hash_exchange(
     monkeypatch.setattr("deeper_notebook.source_visuals.storage._hash_fd", hash_fd)
 
 
+def _hold_store_mutation(
+    data_folder: str, entered: "mp.synchronize.Event", release: "mp.synchronize.Event"
+) -> None:
+    store = SourceVisualStore(data_folder=data_folder)
+    with store.mutation_guard():
+        entered.set()
+        release.wait(timeout=5)
+
+
+def _enter_store_mutation(
+    data_folder: str, entered: "mp.synchronize.Event"
+) -> None:
+    store = SourceVisualStore(data_folder=data_folder)
+    with store.mutation_guard():
+        entered.set()
+
+
+def _crash_in_store_mutation(
+    data_folder: str, entered: "mp.synchronize.Event"
+) -> None:
+    store = SourceVisualStore(data_folder=data_folder)
+    with store.mutation_guard():
+        entered.set()
+        os._exit(0)
+
+
 def test_asset_relpath_contains_only_derived_hash_segments():
     relpath = asset_relpath("source:one", "a" * 64, "b" * 64)
     assert relpath == (
@@ -117,18 +145,18 @@ def test_stage_is_exclusive_hashes_reopened_bytes_and_publish_fsyncs_parent(
     store = SourceVisualStore(data_folder=tmp_path)
     events: list[str] = []
     original_fsync = os.fsync
-    original_replace = os.replace
+    original_link = os.link
 
     def fsync(fd: int) -> None:
         events.append("fsync")
         original_fsync(fd)
 
-    def replace(*args: object, **kwargs: object) -> None:
-        events.append("replace")
-        original_replace(*args, **kwargs)
+    def link(*args: object, **kwargs: object) -> None:
+        events.append("link")
+        original_link(*args, **kwargs)
 
     monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fsync", fsync)
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.replace", replace)
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
     monkeypatch.setattr(
         "deeper_notebook.source_visuals.storage.secrets.token_hex",
         lambda _n: "1" * 64,
@@ -141,7 +169,7 @@ def test_stage_is_exclusive_hashes_reopened_bytes_and_publish_fsyncs_parent(
     assert duplicate.value.code == "TEMP_CREATE_FAILED"
     stored = store.publish(staged)
 
-    assert events.index("fsync") < events.index("replace") < len(events) - 1
+    assert events.index("fsync") < events.index("link") < len(events) - 1
     assert events[-1] == "fsync"
     assert store.read_exact(_record(stored)) == prepared.encoded_bytes
 
@@ -179,10 +207,10 @@ def test_publish_rejects_temp_path_exchange_after_descriptor_verification(
 ):
     store = SourceVisualStore(data_folder=tmp_path)
     staged = store.stage("source:one", "a" * 64, _prepared())
-    original_replace = os.replace
+    original_link = os.link
     exchanged = False
 
-    def exchange_then_replace(*args: object, **kwargs: object) -> None:
+    def exchange_then_link(*args: object, **kwargs: object) -> None:
         nonlocal exchanged
         if not exchanged and args and args[0] == staged.temp_name:
             temp_path = store.root / ".tmp" / staged.temp_name
@@ -190,10 +218,10 @@ def test_publish_rejects_temp_path_exchange_after_descriptor_verification(
             temp_path.rename(verified_path)
             temp_path.write_bytes(b"unverified-replacement")
             exchanged = True
-        original_replace(*args, **kwargs)
+        original_link(*args, **kwargs)
 
     monkeypatch.setattr(
-        "deeper_notebook.source_visuals.storage.os.replace", exchange_then_replace
+        "deeper_notebook.source_visuals.storage.os.link", exchange_then_link
     )
 
     with pytest.raises(SourceVisualStorageError) as error:
@@ -203,7 +231,7 @@ def test_publish_rejects_temp_path_exchange_after_descriptor_verification(
     assert not (store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)).exists()
 
 
-def test_publish_revalidates_canonical_path_after_installed_hash(
+def test_publish_accepts_matching_destination_that_appears_at_link_boundary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     store = SourceVisualStore(data_folder=tmp_path)
@@ -211,46 +239,24 @@ def test_publish_revalidates_canonical_path_after_installed_hash(
     canonical = store.root / asset_relpath(
         "source:one", "a" * 64, staged.asset_sha256
     )
-    held = canonical.with_name(f"{canonical.name}.held")
-    original_hash_fd = __import__(
-        "deeper_notebook.source_visuals.storage", fromlist=["_hash_fd"]
-    )._hash_fd
-    original_read = os.read
-    hash_calls = 0
-    exchanged = False
+    original_link = os.link
+    appeared = False
 
-    def exchange_during_hash(fd: int, count: int) -> bytes:
-        nonlocal exchanged
-        if not exchanged:
-            canonical.rename(held)
-            canonical.write_bytes(b"canonical-path-replacement")
-            exchanged = True
-        return original_read(fd, count)
+    def link(src: object, dst: object, **kwargs: object) -> None:
+        nonlocal appeared
+        if dst == canonical.name and not appeared:
+            canonical.write_bytes(b"derived-webp")
+            appeared = True
+        original_link(src, dst, **kwargs)
 
-    def hash_fd(fd: int) -> tuple[str, int]:
-        nonlocal hash_calls
-        hash_calls += 1
-        if hash_calls == 2:
-            monkeypatch.setattr(
-                "deeper_notebook.source_visuals.storage.os.read", exchange_during_hash
-            )
-            try:
-                return original_hash_fd(fd)
-            finally:
-                monkeypatch.setattr(
-                    "deeper_notebook.source_visuals.storage.os.read", original_read
-                )
-        return original_hash_fd(fd)
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage._hash_fd", hash_fd)
+    stored = store.publish(staged)
 
-    with pytest.raises(SourceVisualStorageError) as error:
-        store.publish(staged)
-
-    assert hash_calls == 2
-    assert exchanged
-    assert error.value.code == "ASSET_HASH_MISMATCH"
-    assert canonical.read_bytes() == b"canonical-path-replacement"
+    assert appeared
+    assert stored.asset_relpath == str(canonical.relative_to(store.root))
+    assert canonical.read_bytes() == b"derived-webp"
+    assert not (store.root / ".tmp" / staged.temp_name).exists()
 
 
 def test_publish_revalidates_existing_canonical_path_after_hash(
@@ -303,6 +309,338 @@ def test_publish_revalidates_existing_canonical_path_after_hash(
     assert canonical.read_bytes() == b"canonical-path-replacement"
     assert held.read_bytes() == b"derived-webp"
     assert staged_path.read_bytes() == b"derived-webp"
+
+
+def test_mutation_guard_serializes_independent_store_processes(tmp_path: Path):
+    context = mp.get_context("fork")
+    first_entered = context.Event()
+    release = context.Event()
+    second_entered = context.Event()
+    first = context.Process(
+        target=_hold_store_mutation,
+        args=(str(tmp_path), first_entered, release),
+    )
+    second = context.Process(
+        target=_enter_store_mutation,
+        args=(str(tmp_path), second_entered),
+    )
+    second_started = False
+    first.start()
+    try:
+        assert first_entered.wait(timeout=5)
+        second.start()
+        second_started = True
+        assert not second_entered.wait(timeout=0.25)
+        release.set()
+        assert second_entered.wait(timeout=5)
+    finally:
+        release.set()
+        if first.pid is not None:
+            first.join(timeout=5)
+        if second_started:
+            second.join(timeout=5)
+        if first.is_alive():
+            first.kill()
+            first.join(timeout=5)
+        if second.is_alive():
+            second.kill()
+            second.join(timeout=5)
+    assert first.exitcode == 0
+    assert second.exitcode == 0
+
+
+def test_mutation_guard_lock_file_crash_release_and_fail_closed_entries(
+    tmp_path: Path,
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    root_fd = store._ensure_root()
+    os.close(root_fd)
+    lock_path = store.root / ".mutation.lock"
+    outside = tmp_path / "outside-lock"
+    outside.write_bytes(b"outside")
+
+    lock_path.symlink_to(outside)
+    with pytest.raises(SourceVisualStorageError) as symlink_error:
+        with store.mutation_guard():
+            pass
+    assert symlink_error.value.code == "CACHE_LOCK_INVALID"
+
+    lock_path.unlink()
+    lock_path.mkdir()
+    with pytest.raises(SourceVisualStorageError) as nonregular_error:
+        with store.mutation_guard():
+            pass
+    assert nonregular_error.value.code == "CACHE_LOCK_INVALID"
+    lock_path.rmdir()
+
+    context = mp.get_context("fork")
+    entered = context.Event()
+    crashed = context.Process(
+        target=_crash_in_store_mutation,
+        args=(str(tmp_path), entered),
+    )
+    crashed.start()
+    assert entered.wait(timeout=5)
+    crashed.join(timeout=5)
+    assert crashed.exitcode == 0
+    with store.mutation_guard():
+        pass
+
+
+def test_publish_destination_appearance_at_no_replace_boundary_preserves_both(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    canonical = store.root / asset_relpath(
+        "source:one", "a" * 64, staged.asset_sha256
+    )
+    original_link = os.link
+    appeared = False
+
+    def link(src: object, dst: object, **kwargs: object) -> None:
+        nonlocal appeared
+        if dst == canonical.name and not appeared:
+            canonical.write_bytes(b"foreign-destination")
+            appeared = True
+        original_link(src, dst, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.publish(staged)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert appeared
+    assert canonical.read_bytes() == b"foreign-destination"
+    assert (store.root / ".tmp" / staged.temp_name).read_bytes() == b"derived-webp"
+
+
+def test_publish_source_exchange_at_link_boundary_preserves_verified_and_foreign(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    staged = store.stage("source:one", "a" * 64, _prepared())
+    temp_path = store.root / ".tmp" / staged.temp_name
+    held = temp_path.with_suffix(".held")
+    canonical = store.root / asset_relpath(
+        "source:one", "a" * 64, staged.asset_sha256
+    )
+    original_link = os.link
+    exchanged = False
+
+    def link(src: object, dst: object, **kwargs: object) -> None:
+        nonlocal exchanged
+        if src == staged.temp_name and not exchanged:
+            temp_path.rename(held)
+            temp_path.write_bytes(b"foreign-stage-replacement")
+            exchanged = True
+        original_link(src, dst, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.publish(staged)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert exchanged
+    assert held.read_bytes() == b"derived-webp"
+    assert temp_path.read_bytes() == b"foreign-stage-replacement"
+    assert not canonical.exists()
+
+
+def test_tombstone_source_exchange_does_not_move_foreign_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    canonical = store.root / record.asset_relpath
+    held = canonical.with_name(f"{canonical.name}.held")
+    original_link = os.link
+    exchanged = False
+
+    def link(src: object, dst: object, **kwargs: object) -> None:
+        nonlocal exchanged
+        if src == canonical.name and not exchanged:
+            canonical.rename(held)
+            canonical.write_bytes(b"foreign-canonical")
+            exchanged = True
+        original_link(src, dst, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.tombstone(record)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert exchanged
+    assert held.read_bytes() == b"derived-webp"
+    assert canonical.read_bytes() == b"foreign-canonical"
+    assert all(
+        path.read_bytes() != b"derived-webp"
+        for path in canonical.parent.glob(".expired-*.webp")
+    )
+
+
+def test_restore_destination_appearance_preserves_destination_and_tombstone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    canonical = store.root / record.asset_relpath
+    tombstone_path = canonical.with_name(tombstone.tombstone_name)
+    original_link = os.link
+    appeared = False
+
+    def link(src: object, dst: object, **kwargs: object) -> None:
+        nonlocal appeared
+        if dst == canonical.name and not appeared:
+            canonical.write_bytes(b"foreign-destination")
+            appeared = True
+        original_link(src, dst, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.restore_tombstone(tombstone)
+
+    assert error.value.code == "TOMBSTONE_INVALID"
+    assert appeared
+    assert canonical.read_bytes() == b"foreign-destination"
+    assert tombstone_path.read_bytes() == b"derived-webp"
+
+
+def test_restore_source_exchange_fails_without_cleaning_verified_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    canonical = store.root / record.asset_relpath
+    tombstone_path = canonical.with_name(tombstone.tombstone_name)
+    held = tombstone_path.with_name(f"{tombstone_path.name}.held")
+    original_link = os.link
+    exchanged = False
+
+    def link(src: object, dst: object, **kwargs: object) -> None:
+        nonlocal exchanged
+        if src == tombstone.tombstone_name and not exchanged:
+            tombstone_path.rename(held)
+            tombstone_path.write_bytes(b"foreign-tombstone")
+            exchanged = True
+        original_link(src, dst, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.restore_tombstone(tombstone)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert exchanged
+    assert held.read_bytes() == b"derived-webp"
+    assert tombstone_path.read_bytes() == b"foreign-tombstone"
+    assert canonical.read_bytes() == b"foreign-tombstone"
+
+
+def test_remove_source_exchange_retains_foreign_and_quarantine_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    source = store.root / record.asset_relpath
+    tombstone_path = source.with_name(tombstone.tombstone_name)
+    held = tombstone_path.with_name(f"{tombstone_path.name}.held")
+    original_link = os.link
+    exchanged = False
+
+    def link(src: object, dst: object, **kwargs: object) -> None:
+        nonlocal exchanged
+        if src == tombstone.tombstone_name and not exchanged:
+            tombstone_path.rename(held)
+            tombstone_path.write_bytes(b"foreign-tombstone")
+            exchanged = True
+        original_link(src, dst, **kwargs)
+
+    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", link)
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.remove_tombstone(tombstone)
+
+    assert error.value.code == "ASSET_HASH_MISMATCH"
+    assert exchanged
+    assert held.read_bytes() == b"derived-webp"
+    assert tombstone_path.read_bytes() == b"foreign-tombstone"
+    assert any(
+        path.read_bytes() == b"foreign-tombstone"
+        for path in source.parent.glob(".expired-*.webp")
+        if path != tombstone_path
+    )
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_keeps_verified_tombstone_when_canonical_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    tombstone = store.tombstone(record)
+    assert tombstone is not None
+    canonical = store.root / record.asset_relpath
+    canonical.write_bytes(b"derived-webp")
+    held = canonical.with_name(f"{canonical.name}.held")
+    storage = __import__(
+        "deeper_notebook.source_visuals.storage", fromlist=["_hash_fd"]
+    )
+    original_hash_fd = storage._hash_fd
+    exchanged = False
+
+    def hash_fd(fd: int) -> tuple[str, int]:
+        nonlocal exchanged
+        result = original_hash_fd(fd)
+        if not exchanged:
+            canonical.rename(held)
+            canonical.write_bytes(b"foreign-canonical")
+            exchanged = True
+        return result
+
+    monkeypatch.setattr(storage, "_hash_fd", hash_fd)
+    repository = _Repository([record])
+    processed = await SourceVisualCleanup(store, repository).reconcile_tombstones(
+        limit=100
+    )
+
+    assert processed == 0
+    assert exchanged
+    assert tombstone is not None
+    assert (canonical.parent / tombstone.tombstone_name).read_bytes() == b"derived-webp"
+    assert canonical.read_bytes() == b"foreign-canonical"
+    assert held.read_bytes() == b"derived-webp"
+
+
+@pytest.mark.parametrize("entry_kind", ["symlink", "directory"])
+def test_lock_and_quarantine_entries_fail_closed_without_traversal(
+    tmp_path: Path, entry_kind: str
+):
+    store = SourceVisualStore(data_folder=tmp_path)
+    stored = _publish(store)
+    record = _record(stored)
+    parent = store.root / record.asset_relpath
+    parent = parent.parent
+    quarantine = parent / f".expired-{'a' * 16}-{record.asset_sha256}.webp"
+    if entry_kind == "symlink":
+        outside = tmp_path / "outside-quarantine"
+        outside.write_bytes(b"outside")
+        quarantine.symlink_to(outside)
+    else:
+        quarantine.mkdir()
+
+    with pytest.raises(SourceVisualStorageError) as error:
+        store.list_tombstones(limit=100)
+    assert error.value.code == "TOMBSTONE_INVALID"
 
 
 def test_stage_rejects_asset_hash_mismatch(tmp_path: Path):
@@ -514,7 +852,10 @@ def test_tombstone_revalidates_canonical_path_after_hash(
     assert error.value.code == "ASSET_HASH_MISMATCH"
     assert canonical.read_bytes() == b"foreign-canonical-replacement"
     assert held.read_bytes() == b"derived-webp"
-    assert store.list_tombstones(limit=100) == ()
+    assert all(
+        path.read_bytes() != b"derived-webp"
+        for path in canonical.parent.glob(".expired-*.webp")
+    )
 
 
 def test_restore_revalidates_tombstone_path_after_hash(
@@ -539,7 +880,7 @@ def test_restore_revalidates_tombstone_path_after_hash(
         store.restore_tombstone(tombstone)
 
     assert error.value.code == "ASSET_HASH_MISMATCH"
-    assert not canonical.exists()
+    assert canonical.read_bytes() == b"foreign-tombstone-replacement"
     assert tombstone_path.read_bytes() == b"foreign-tombstone-replacement"
     assert held.read_bytes() == b"derived-webp"
 

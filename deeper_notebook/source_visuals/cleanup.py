@@ -80,10 +80,10 @@ class SourceVisualCleanup:
                         if exc.code != "TOMBSTONE_INVALID":
                             raise
                         # A crash-safe replacement may already occupy the
-                        # canonical name. Validate it before removing the old
-                        # duplicate tombstone.
-                        self._store.read_exact(record)
-                        self._store.remove_tombstone(tombstone)
+                        # canonical name. One storage method validates that
+                        # replacement and removes the tombstone while its
+                        # identity remains stable under the mutation guard.
+                        self._store.remove_replaced_tombstone(tombstone)
                 elif record is None:
                     self._store.remove_tombstone(tombstone)
                 else:

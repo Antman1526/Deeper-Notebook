@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import errno
+import fcntl
 import hashlib
 import os
 import re
 import secrets
 import stat
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 from deeper_notebook.config import DATA_FOLDER
 from deeper_notebook.source_visuals.contracts import (
@@ -25,6 +28,7 @@ _TEMP_NAME = re.compile(r"^stage-([0-9a-f]{64})-([0-9a-f]{64})\.tmp$")
 TOMBSTONE = re.compile(r"^\.expired-([0-9a-f]{16})-([0-9a-f]{64})\.webp$")
 _TEMP_DIR = ".tmp"
 _TEMP_MARKER = ".deeper-notebook-source-visual-cache-v1"
+_MUTATION_LOCK = ".mutation.lock"
 _MAX_ASSET_BYTES = 1_572_864
 _MAX_CACHE_FILES = 4096
 _OPEN_DIRECTORY = (
@@ -36,6 +40,7 @@ _PUBLIC_CODES = frozenset(
         "INVALID_INPUT",
         "CACHE_ROOT_INVALID",
         "CACHE_ROOT_SYMLINK",
+        "CACHE_LOCK_INVALID",
         "CACHE_PATH_SYMLINK",
         "CACHE_SCAN_LIMIT",
         "TEMP_CREATE_FAILED",
@@ -51,6 +56,9 @@ _PUBLIC_CODES = frozenset(
         "TOMBSTONE_INVALID",
     }
 )
+
+_PROCESS_MUTATION_LOCK = threading.Lock()
+_PROCESS_MUTATION_GUARDS: dict[tuple[int, int, int, int], threading.RLock] = {}
 
 
 class SourceVisualStorageError(ValueError):
@@ -142,6 +150,18 @@ def _safe_close(fd: int | None) -> None:
             pass
 
 
+def _same_identity(left: os.stat_result, right: os.stat_result) -> bool:
+    return (left.st_dev, left.st_ino) == (right.st_dev, right.st_ino)
+
+
+def _process_mutation_guard(
+    root_stat: os.stat_result, lock_stat: os.stat_result
+) -> threading.RLock:
+    key = (root_stat.st_dev, root_stat.st_ino, lock_stat.st_dev, lock_stat.st_ino)
+    with _PROCESS_MUTATION_LOCK:
+        return _PROCESS_MUTATION_GUARDS.setdefault(key, threading.RLock())
+
+
 class SourceVisualStore:
     """Own derived bytes beneath ``DATA_FOLDER/source-visual-cache/v1`` only."""
 
@@ -155,6 +175,60 @@ class SourceVisualStore:
     @property
     def root(self) -> Path:
         return self._root
+
+    def _open_mutation_lock(self, root_fd: int) -> int:
+        lock_fd = None
+        try:
+            lock_fd = os.open(
+                _MUTATION_LOCK,
+                os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=root_fd,
+            )
+            metadata = os.fstat(lock_fd)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+                or metadata.st_nlink != 1
+                or metadata.st_size != 0
+            ):
+                raise SourceVisualStorageError("CACHE_LOCK_INVALID")
+            return lock_fd
+        except SourceVisualStorageError:
+            _safe_close(lock_fd)
+            raise
+        except OSError as exc:
+            _safe_close(lock_fd)
+            raise SourceVisualStorageError("CACHE_LOCK_INVALID") from exc
+
+    @contextmanager
+    def mutation_guard(self) -> Iterator[int]:
+        """Serialize trusted cache mutations across threads and processes."""
+
+        root_fd = lock_fd = None
+        process_guard = None
+        locked = False
+        try:
+            root_fd = self._ensure_root()
+            lock_fd = self._open_mutation_lock(root_fd)
+            process_guard = _process_mutation_guard(os.fstat(root_fd), os.fstat(lock_fd))
+            process_guard.acquire()
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                locked = True
+            except (AttributeError, OSError) as exc:
+                raise SourceVisualStorageError("CACHE_LOCK_INVALID") from exc
+            yield root_fd
+        finally:
+            if locked and lock_fd is not None:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            if process_guard is not None:
+                process_guard.release()
+            _safe_close(lock_fd)
+            _safe_close(root_fd)
 
     def _ensure_root(self) -> int:
         data_fd = cache_fd = None
@@ -289,11 +363,75 @@ class SourceVisualStore:
             current_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
         except OSError as exc:
             raise SourceVisualStorageError("ASSET_HASH_MISMATCH") from exc
-        if (current_stat.st_dev, current_stat.st_ino) != (
-            expected_stat.st_dev,
-            expected_stat.st_ino,
-        ):
+        if not _same_identity(current_stat, expected_stat):
             raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+
+    @staticmethod
+    def _unlink_verified(
+        parent_fd: int, name: str, expected_stat: os.stat_result
+    ) -> None:
+        SourceVisualStore._require_path_identity(parent_fd, name, expected_stat)
+        try:
+            os.unlink(name, dir_fd=parent_fd)
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+
+    @staticmethod
+    def _new_tombstone_name(asset_sha256: str) -> str:
+        return f".expired-{secrets.token_hex(8)}-{asset_sha256}.webp"
+
+    def _link_no_replace(
+        self,
+        *,
+        source_parent_fd: int,
+        source_name: str,
+        source_stat: os.stat_result,
+        destination_parent_fd: int,
+        destination_name: str,
+        discard_mismatched_destination: bool = False,
+    ) -> os.stat_result | None:
+        """Hard-link a verified inode without replacing a destination pathname."""
+
+        try:
+            os.link(
+                source_name,
+                destination_name,
+                src_dir_fd=source_parent_fd,
+                dst_dir_fd=destination_parent_fd,
+                follow_symlinks=False,
+            )
+        except FileExistsError:
+            return None
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+
+        destination_fd = None
+        try:
+            destination_fd = self._open_regular_file(
+                destination_parent_fd, destination_name
+            )
+            destination_stat = os.fstat(destination_fd)
+        finally:
+            _safe_close(destination_fd)
+        if _same_identity(destination_stat, source_stat):
+            return destination_stat
+
+        if discard_mismatched_destination:
+            try:
+                current_source = os.stat(
+                    source_name, dir_fd=source_parent_fd, follow_symlinks=False
+                )
+                current_destination = os.stat(
+                    destination_name,
+                    dir_fd=destination_parent_fd,
+                    follow_symlinks=False,
+                )
+                if _same_identity(current_source, current_destination):
+                    os.unlink(destination_name, dir_fd=destination_parent_fd)
+                    os.fsync(destination_parent_fd)
+            except OSError:
+                pass
+        raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
 
     def stage(
         self,
@@ -307,59 +445,53 @@ class SourceVisualStore:
             raise SourceVisualStorageError("INVALID_INPUT")
         if hashlib.sha256(prepared.encoded_bytes).hexdigest() != prepared.asset_sha256:
             raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-        root_fd = temp_fd = file_fd = verify_fd = None
-        created = False
+        temp_fd = file_fd = verify_fd = None
         temp_name = (
             f"stage-{_stage_identity(source_id, content_sha256, prepared.asset_sha256)}-"
             f"{secrets.token_hex(32)}.tmp"
         )
         try:
-            root_fd, temp_fd = self._open_temp()
-            try:
-                file_fd = os.open(
-                    temp_name,
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-                    0o600,
-                    dir_fd=temp_fd,
-                )
-                created = True
-            except OSError as exc:
-                raise SourceVisualStorageError("TEMP_CREATE_FAILED") from exc
-            view = memoryview(prepared.encoded_bytes)
-            while view:
-                written = os.write(file_fd, view)
-                if written <= 0:
-                    raise SourceVisualStorageError("ASSET_IO_FAILED")
-                view = view[written:]
-            os.fsync(file_fd)
-            os.close(file_fd)
-            file_fd = None
-            verify_fd = self._open_regular_file(temp_fd, temp_name)
-            digest, size = _hash_fd(verify_fd)
-            if digest != prepared.asset_sha256:
-                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-            return StagedVisualAsset(
-                source_id=source_id,
-                content_sha256=content_sha256,
-                asset_sha256=prepared.asset_sha256,
-                temp_name=temp_name,
-                byte_size=size,
-                width=prepared.width,
-                height=prepared.height,
-                mime_type=prepared.mime_type,
-            )
-        except Exception:
-            if created and temp_fd is not None:
+            with self.mutation_guard() as root_fd:
+                temp_fd = self._open_temp_at(root_fd)
                 try:
-                    os.unlink(temp_name, dir_fd=temp_fd)
-                except OSError:
-                    pass
-            raise
+                    file_fd = os.open(
+                        temp_name,
+                        os.O_WRONLY
+                        | os.O_CREAT
+                        | os.O_EXCL
+                        | getattr(os, "O_NOFOLLOW", 0),
+                        0o600,
+                        dir_fd=temp_fd,
+                    )
+                except OSError as exc:
+                    raise SourceVisualStorageError("TEMP_CREATE_FAILED") from exc
+                view = memoryview(prepared.encoded_bytes)
+                while view:
+                    written = os.write(file_fd, view)
+                    if written <= 0:
+                        raise SourceVisualStorageError("ASSET_IO_FAILED")
+                    view = view[written:]
+                os.fsync(file_fd)
+                os.close(file_fd)
+                file_fd = None
+                verify_fd = self._open_regular_file(temp_fd, temp_name)
+                digest, size = _hash_fd(verify_fd)
+                if digest != prepared.asset_sha256:
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                return StagedVisualAsset(
+                    source_id=source_id,
+                    content_sha256=content_sha256,
+                    asset_sha256=prepared.asset_sha256,
+                    temp_name=temp_name,
+                    byte_size=size,
+                    width=prepared.width,
+                    height=prepared.height,
+                    mime_type=prepared.mime_type,
+                )
         finally:
             _safe_close(verify_fd)
             _safe_close(file_fd)
             _safe_close(temp_fd)
-            _safe_close(root_fd)
 
     def publish(self, staged: StagedVisualAsset) -> StoredVisualAsset:
         if not isinstance(staged, StagedVisualAsset):
@@ -373,97 +505,50 @@ class SourceVisualStore:
         relpath = asset_relpath(
             staged.source_id, staged.content_sha256, staged.asset_sha256
         )
-        root_fd = temp_fd = parent_fd = verify_fd = None
+        temp_fd = parent_fd = verify_fd = None
         try:
-            root_fd = self._ensure_root()
-            temp_fd = self._open_temp_at(root_fd)
-            verify_fd = self._open_regular_file(temp_fd, staged.temp_name)
-            digest, size = _hash_fd(verify_fd)
-            if digest != staged.asset_sha256 or size != staged.byte_size:
-                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-            parent_fd, filename = self._open_asset_parent_at(
-                root_fd, relpath, create=True
-            )
-            try:
-                existing_fd = self._open_regular_file(parent_fd, filename)
-            except SourceVisualStorageError as exc:
-                if exc.code != "ASSET_MISSING":
-                    raise
-            else:
-                try:
-                    existing_stat = os.fstat(existing_fd)
-                    existing_hash, existing_size = _hash_fd(existing_fd)
-                    try:
-                        canonical_stat = os.stat(
-                            filename, dir_fd=parent_fd, follow_symlinks=False
-                        )
-                    except OSError as exc:
-                        raise SourceVisualStorageError(
-                            "ASSET_HASH_MISMATCH"
-                        ) from exc
-                finally:
-                    os.close(existing_fd)
-                if (
-                    (canonical_stat.st_dev, canonical_stat.st_ino)
-                    != (existing_stat.st_dev, existing_stat.st_ino)
-                ):
+            with self.mutation_guard() as root_fd:
+                temp_fd = self._open_temp_at(root_fd)
+                verify_fd = self._open_regular_file(temp_fd, staged.temp_name)
+                verified_stat = os.fstat(verify_fd)
+                digest, size = _hash_fd(verify_fd)
+                if digest != staged.asset_sha256 or size != staged.byte_size:
                     raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-                if existing_hash == staged.asset_sha256 and existing_size == size:
-                    os.unlink(staged.temp_name, dir_fd=temp_fd)
-                    os.fsync(temp_fd)
-                    return StoredVisualAsset(
-                        relpath,
-                        staged.asset_sha256,
-                        size,
-                        staged.width,
-                        staged.height,
-                        staged.mime_type,
-                    )
-            os.replace(
-                staged.temp_name,
-                filename,
-                src_dir_fd=temp_fd,
-                dst_dir_fd=parent_fd,
-            )
-            verified_stat = os.fstat(verify_fd)
-            published_fd = self._open_regular_file(parent_fd, filename)
-            try:
-                published_stat = os.fstat(published_fd)
-                published_hash, published_size = _hash_fd(published_fd)
-                canonical_stat = os.stat(
-                    filename, dir_fd=parent_fd, follow_symlinks=False
+                parent_fd, filename = self._open_asset_parent_at(
+                    root_fd, relpath, create=True
                 )
-            finally:
-                os.close(published_fd)
-            if (
-                (published_stat.st_dev, published_stat.st_ino)
-                != (verified_stat.st_dev, verified_stat.st_ino)
-                or (canonical_stat.st_dev, canonical_stat.st_ino)
-                != (published_stat.st_dev, published_stat.st_ino)
-                or published_hash != staged.asset_sha256
-                or published_size != size
-            ):
-                try:
-                    current = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
-                    if (current.st_dev, current.st_ino) == (
-                        published_stat.st_dev,
-                        published_stat.st_ino,
+                destination_stat = self._link_no_replace(
+                    source_parent_fd=temp_fd,
+                    source_name=staged.temp_name,
+                    source_stat=verified_stat,
+                    destination_parent_fd=parent_fd,
+                    destination_name=filename,
+                    discard_mismatched_destination=True,
+                )
+                if destination_stat is None:
+                    existing_fd = self._open_regular_file(parent_fd, filename)
+                    try:
+                        existing_stat = os.fstat(existing_fd)
+                        existing_hash, existing_size = _hash_fd(existing_fd)
+                    finally:
+                        _safe_close(existing_fd)
+                    self._require_path_identity(parent_fd, filename, existing_stat)
+                    if (
+                        existing_hash != staged.asset_sha256
+                        or existing_size != staged.byte_size
                     ):
-                        os.unlink(filename, dir_fd=parent_fd)
-                        os.fsync(parent_fd)
-                except OSError:
-                    pass
-                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-            os.fsync(parent_fd)
-            os.fsync(temp_fd)
-            return StoredVisualAsset(
-                relpath,
-                staged.asset_sha256,
-                size,
-                staged.width,
-                staged.height,
-                staged.mime_type,
-            )
+                        raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                self._unlink_verified(temp_fd, staged.temp_name, verified_stat)
+                os.fsync(parent_fd)
+                os.fsync(temp_fd)
+                return StoredVisualAsset(
+                    relpath,
+                    staged.asset_sha256,
+                    size,
+                    staged.width,
+                    staged.height,
+                    staged.mime_type,
+                )
         except SourceVisualStorageError:
             raise
         except OSError as exc:
@@ -472,7 +557,6 @@ class SourceVisualStore:
             _safe_close(verify_fd)
             _safe_close(parent_fd)
             _safe_close(temp_fd)
-            _safe_close(root_fd)
 
     def read_exact(self, record: SourceVisualRecord) -> bytes:
         relpath = self._validate_record(record)
@@ -519,37 +603,37 @@ class SourceVisualStore:
                 raise SourceVisualStorageError("ASSET_BUSY")
             parent_fd = file_fd = None
             try:
-                parent_fd, filename = self._open_asset_parent(relpath, create=False)
-                try:
-                    file_fd = self._open_regular_file(parent_fd, filename)
-                except SourceVisualStorageError as exc:
-                    if exc.code == "ASSET_MISSING":
-                        return None
-                    raise
-                verified_stat = os.fstat(file_fd)
-                digest, size = _hash_fd(file_fd)
-                if digest != record.asset_sha256:
-                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-                tombstone_name = (
-                    f".expired-{secrets.token_hex(8)}-{record.asset_sha256}.webp"
-                )
-                try:
-                    os.stat(tombstone_name, dir_fd=parent_fd, follow_symlinks=False)
-                except FileNotFoundError:
-                    pass
-                else:
-                    raise SourceVisualStorageError("TOMBSTONE_INVALID")
-                self._require_path_identity(parent_fd, filename, verified_stat)
-                os.rename(
-                    filename,
-                    tombstone_name,
-                    src_dir_fd=parent_fd,
-                    dst_dir_fd=parent_fd,
-                )
-                os.fsync(parent_fd)
-                return TombstonedVisualAsset(
-                    relpath, tombstone_name, record.asset_sha256, size
-                )
+                with self.mutation_guard() as root_fd:
+                    parent_fd, filename = self._open_asset_parent_at(
+                        root_fd, relpath, create=False
+                    )
+                    try:
+                        file_fd = self._open_regular_file(parent_fd, filename)
+                    except SourceVisualStorageError as exc:
+                        if exc.code == "ASSET_MISSING":
+                            return None
+                        raise
+                    verified_stat = os.fstat(file_fd)
+                    digest, size = _hash_fd(file_fd)
+                    if digest != record.asset_sha256:
+                        raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                    tombstone_name = self._new_tombstone_name(record.asset_sha256)
+                    if (
+                        self._link_no_replace(
+                            source_parent_fd=parent_fd,
+                            source_name=filename,
+                            source_stat=verified_stat,
+                            destination_parent_fd=parent_fd,
+                            destination_name=tombstone_name,
+                        )
+                        is None
+                    ):
+                        raise SourceVisualStorageError("TOMBSTONE_INVALID")
+                    self._unlink_verified(parent_fd, filename, verified_stat)
+                    os.fsync(parent_fd)
+                    return TombstonedVisualAsset(
+                        relpath, tombstone_name, record.asset_sha256, size
+                    )
             except SourceVisualStorageError:
                 raise
             except OSError as exc:
@@ -571,72 +655,119 @@ class SourceVisualStore:
 
     def restore_tombstone(self, tombstone: TombstonedVisualAsset) -> None:
         self._validate_tombstone(tombstone)
-        parent_fd = None
+        parent_fd = tombstone_fd = None
         try:
-            parent_fd, filename = self._open_asset_parent(
-                tombstone.asset_relpath, create=False
-            )
-            try:
-                os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                pass
-            else:
-                raise SourceVisualStorageError("TOMBSTONE_INVALID")
-            tombstone_fd = self._open_regular_file(parent_fd, tombstone.tombstone_name)
-            try:
+            with self.mutation_guard() as root_fd:
+                parent_fd, filename = self._open_asset_parent_at(
+                    root_fd, tombstone.asset_relpath, create=False
+                )
+                tombstone_fd = self._open_regular_file(
+                    parent_fd, tombstone.tombstone_name
+                )
                 tombstone_stat = os.fstat(tombstone_fd)
                 digest, size = _hash_fd(tombstone_fd)
-            finally:
-                os.close(tombstone_fd)
-            if digest != tombstone.asset_sha256 or size != tombstone.byte_size:
-                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-            self._require_path_identity(
-                parent_fd, tombstone.tombstone_name, tombstone_stat
-            )
-            try:
-                os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                pass
-            except OSError as exc:
-                raise SourceVisualStorageError("ASSET_HASH_MISMATCH") from exc
-            else:
-                raise SourceVisualStorageError("TOMBSTONE_INVALID")
-            os.replace(
-                tombstone.tombstone_name,
-                filename,
-                src_dir_fd=parent_fd,
-                dst_dir_fd=parent_fd,
-            )
-            os.fsync(parent_fd)
+                if digest != tombstone.asset_sha256 or size != tombstone.byte_size:
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                destination_stat = self._link_no_replace(
+                    source_parent_fd=parent_fd,
+                    source_name=tombstone.tombstone_name,
+                    source_stat=tombstone_stat,
+                    destination_parent_fd=parent_fd,
+                    destination_name=filename,
+                )
+                if destination_stat is None:
+                    raise SourceVisualStorageError("TOMBSTONE_INVALID")
+                self._unlink_verified(
+                    parent_fd, tombstone.tombstone_name, tombstone_stat
+                )
+                os.fsync(parent_fd)
         except SourceVisualStorageError:
             raise
         except OSError as exc:
             raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
         finally:
+            _safe_close(tombstone_fd)
             _safe_close(parent_fd)
 
     def remove_tombstone(self, tombstone: TombstonedVisualAsset) -> None:
         self._validate_tombstone(tombstone)
         parent_fd = tombstone_fd = None
         try:
-            parent_fd, _filename = self._open_asset_parent(
-                tombstone.asset_relpath, create=False
-            )
-            tombstone_fd = self._open_regular_file(parent_fd, tombstone.tombstone_name)
-            tombstone_stat = os.fstat(tombstone_fd)
-            digest, size = _hash_fd(tombstone_fd)
-            if digest != tombstone.asset_sha256 or size != tombstone.byte_size:
-                raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
-            self._require_path_identity(
-                parent_fd, tombstone.tombstone_name, tombstone_stat
-            )
-            os.unlink(tombstone.tombstone_name, dir_fd=parent_fd)
-            os.fsync(parent_fd)
+            with self.mutation_guard() as root_fd:
+                parent_fd, _filename = self._open_asset_parent_at(
+                    root_fd, tombstone.asset_relpath, create=False
+                )
+                tombstone_fd = self._open_regular_file(
+                    parent_fd, tombstone.tombstone_name
+                )
+                tombstone_stat = os.fstat(tombstone_fd)
+                digest, size = _hash_fd(tombstone_fd)
+                if digest != tombstone.asset_sha256 or size != tombstone.byte_size:
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                quarantine_name = self._new_tombstone_name(tombstone.asset_sha256)
+                if (
+                    self._link_no_replace(
+                        source_parent_fd=parent_fd,
+                        source_name=tombstone.tombstone_name,
+                        source_stat=tombstone_stat,
+                        destination_parent_fd=parent_fd,
+                        destination_name=quarantine_name,
+                    )
+                    is None
+                ):
+                    raise SourceVisualStorageError("TOMBSTONE_INVALID")
+                self._unlink_verified(
+                    parent_fd, tombstone.tombstone_name, tombstone_stat
+                )
+                self._unlink_verified(parent_fd, quarantine_name, tombstone_stat)
+                os.fsync(parent_fd)
         except SourceVisualStorageError:
             raise
         except OSError as exc:
             raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
         finally:
+            _safe_close(tombstone_fd)
+            _safe_close(parent_fd)
+
+    def remove_replaced_tombstone(self, tombstone: TombstonedVisualAsset) -> None:
+        """Drop a duplicate tombstone only while its canonical replacement stays valid."""
+
+        self._validate_tombstone(tombstone)
+        parent_fd = tombstone_fd = canonical_fd = None
+        try:
+            with self.mutation_guard() as root_fd:
+                parent_fd, filename = self._open_asset_parent_at(
+                    root_fd, tombstone.asset_relpath, create=False
+                )
+                tombstone_fd = self._open_regular_file(
+                    parent_fd, tombstone.tombstone_name
+                )
+                tombstone_stat = os.fstat(tombstone_fd)
+                tombstone_hash, tombstone_size = _hash_fd(tombstone_fd)
+                if (
+                    tombstone_hash != tombstone.asset_sha256
+                    or tombstone_size != tombstone.byte_size
+                ):
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                canonical_fd = self._open_regular_file(parent_fd, filename)
+                canonical_stat = os.fstat(canonical_fd)
+                canonical_hash, canonical_size = _hash_fd(canonical_fd)
+                if (
+                    canonical_hash != tombstone.asset_sha256
+                    or canonical_size != tombstone.byte_size
+                ):
+                    raise SourceVisualStorageError("ASSET_HASH_MISMATCH")
+                self._require_path_identity(parent_fd, filename, canonical_stat)
+                self._unlink_verified(
+                    parent_fd, tombstone.tombstone_name, tombstone_stat
+                )
+                os.fsync(parent_fd)
+        except SourceVisualStorageError:
+            raise
+        except OSError as exc:
+            raise SourceVisualStorageError("ASSET_IO_FAILED") from exc
+        finally:
+            _safe_close(canonical_fd)
             _safe_close(tombstone_fd)
             _safe_close(parent_fd)
 
@@ -681,9 +812,19 @@ class SourceVisualStore:
                                             match = TOMBSTONE.fullmatch(entry.name)
                                             if match is None:
                                                 continue
-                                            tombstone_fd = self._open_regular_file(
-                                                content_fd, entry.name
-                                            )
+                                            try:
+                                                tombstone_fd = self._open_regular_file(
+                                                    content_fd, entry.name
+                                                )
+                                            except SourceVisualStorageError as exc:
+                                                if exc.code in {
+                                                    "ASSET_SYMLINK",
+                                                    "ASSET_NOT_REGULAR",
+                                                }:
+                                                    raise SourceVisualStorageError(
+                                                        "TOMBSTONE_INVALID"
+                                                    ) from exc
+                                                raise
                                             try:
                                                 size = os.fstat(tombstone_fd).st_size
                                             finally:
