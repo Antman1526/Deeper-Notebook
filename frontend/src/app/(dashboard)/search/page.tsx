@@ -87,6 +87,7 @@ export default function SearchPage() {
   const { openModal } = useModalManager()
   const visualGalleryEnabled = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
   const [evidenceResult, setEvidenceResult] = useState<SearchResult | null>(null)
+  const closeEvidence = useCallback(() => setEvidenceResult(null), [])
 
   const modelNameById = useMemo(() => {
     if (!availableModels) {
@@ -109,6 +110,7 @@ export default function SearchPage() {
   const handleSearch = useCallback(() => {
     if (!searchQuery.trim()) return
 
+    setEvidenceResult(null)
     searchMutation.mutate({
       query: searchQuery,
       type: searchType,
@@ -118,6 +120,17 @@ export default function SearchPage() {
       minimum_score: 0.2
     })
   }, [searchQuery, searchType, searchSources, searchNotes, searchMutation])
+
+  useEffect(() => {
+    if (!evidenceResult) return
+    const current = searchMutation.data?.results.some(result =>
+      result.id === evidenceResult.id
+      && result.parent_id === evidenceResult.parent_id
+      && result.updated === evidenceResult.updated
+      && result.matches?.[0] === evidenceResult.matches?.[0]
+    )
+    if (!current) setEvidenceResult(null)
+  }, [evidenceResult, searchMutation.data])
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -572,7 +585,7 @@ export default function SearchPage() {
                     {evidenceResult ? (
                       <EvidencePeek
                         evidenceQuery={evidenceResult.matches?.[0]}
-                        onClose={() => setEvidenceResult(null)}
+                        onClose={closeEvidence}
                         sourceId={evidenceResult.parent_id}
                         title={evidenceResult.title}
                       />

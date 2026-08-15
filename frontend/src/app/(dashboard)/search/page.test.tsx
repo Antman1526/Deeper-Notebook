@@ -123,4 +123,58 @@ describe('SearchPage', () => {
     expect(screen.queryByTestId('search-result-cover-source:one')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /View evidence/ })).not.toBeInTheDocument()
   })
+
+  it('closes stale evidence when a new search result set replaces its source', async () => {
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    mockSearchParams.current = 'mode=search'
+    mockSearchData.current = {
+      total_count: 1, search_type: 'text', results: [{
+        id: 'result:old', title: 'Old source', parent_id: 'source:old', final_score: 0.9,
+        matches: ['old exact match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z', visual: null,
+      }],
+    }
+    const locate = vi.spyOn(sourcesApi, 'locatePassage').mockResolvedValue(null)
+    const { rerender } = render(<SearchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'View evidence for Old source' }))
+    expect(await screen.findByRole('dialog', { name: 'Evidence in Old source' })).toBeInTheDocument()
+
+    mockSearchData.current = {
+      total_count: 1, search_type: 'text', results: [{
+        id: 'result:new', title: 'New source', parent_id: 'source:new', final_score: 0.8,
+        matches: ['new exact match'], created: '2026-08-10T00:02:00Z', updated: '2026-08-10T00:03:00Z', visual: null,
+      }],
+    }
+    rerender(<SearchPage />)
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Evidence in Old source' })).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'View evidence for New source' })).toBeInTheDocument()
+    locate.mockRestore()
+  })
+
+  it('returns focus to the original evidence invoker after a parent rerender', async () => {
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    mockSearchParams.current = 'mode=search'
+    mockSearchData.current = {
+      total_count: 1, search_type: 'text', results: [{
+        id: 'result:source', title: 'Source result', parent_id: 'source:one', final_score: 0.9,
+        matches: ['exact match'], created: '2026-08-10T00:00:00Z', updated: '2026-08-10T00:01:00Z', visual: null,
+      }],
+    }
+    const locate = vi.spyOn(sourcesApi, 'locatePassage').mockResolvedValue(null)
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    const { rerender } = render(<SearchPage />)
+    const invoker = screen.getByRole('button', { name: 'View evidence for Source result' })
+    invoker.focus()
+    fireEvent.click(invoker)
+    expect(await screen.findByRole('dialog', { name: 'Evidence in Source result' })).toBeInTheDocument()
+
+    rerender(<SearchPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Close evidence peek' }))
+
+    await waitFor(() => expect(invoker).toHaveFocus())
+    locate.mockRestore()
+    scrollTo.mockRestore()
+  })
 })
