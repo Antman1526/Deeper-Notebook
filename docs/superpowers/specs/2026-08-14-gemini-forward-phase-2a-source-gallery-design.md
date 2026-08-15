@@ -128,8 +128,8 @@ Each ready record contains:
 - `asset_sha256: string` matching lowercase SHA-256;
 - `asset_relpath: string` containing a bounded relative cache path only;
 - `origin: embedded | video_frame | audio_artwork`;
-- `source_locator: option<object>` with exactly one bounded page, timestamp, or
-  embedded-resource identifier appropriate to the origin;
+- `source_locator: object` (required) with exactly one bounded page, timestamp,
+  or embedded-resource identifier appropriate to the origin;
 - `extractor_version: string` bounded to 64 characters;
 - `alt_text: string` bounded to 300 characters;
 - `width: int` in `1..1280`;
