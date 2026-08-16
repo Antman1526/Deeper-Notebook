@@ -88,7 +88,17 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
             resp = client.get(url)
             latency_ms = (time.monotonic() - start) * 1000
             if resp.status_code == 200:
-                data = resp.json()
+                # v0.8.84 — mlx-lm 0.31's server answers GET /v1/models with
+                # HTTP 200 and an EMPTY body (verified live: 0 bytes both
+                # before and after a successful chat completion on the same
+                # server). A 200 from the endpoint proves the server is up,
+                # which is what this probe measures — parse the body
+                # best-effort instead of letting JSONDecodeError mark a
+                # working server unhealthy.
+                try:
+                    data = resp.json()
+                except ValueError:
+                    data = {}
                 models = [m.get("id", "?") for m in data.get("data", [])]
                 detail = ", ".join(models[:3]) if models else "no models listed"
                 return {
