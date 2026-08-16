@@ -940,3 +940,46 @@
   min-inline-size: 2.75rem;
   min-block-size: 2.75rem;
 }
+
+/* ------------------------------------------------------------------------- */
+/* v0.8.84 — shell layering repairs (owner-reported overlap, 2026-08-16).    */
+
+/* The 4.25rem instrument dock cannot host full-text model badges: the badge
+   rows sat in flex context with the default min-width:auto, so they refused
+   to shrink and painted straight across the adaptive navigator (the dock is
+   z-index 2). Clip the dock, wrap the badges into a compact dot cluster, and
+   drop the text labels in this rail — every dot keeps its title tooltip and
+   aria-label, and the full labelled list still lives in Settings → Models. */
+.dn-workspace-shell .dn-instrument-dock {
+  overflow: hidden;
+}
+
+.dn-workspace-shell .dn-dock-health {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.dn-workspace-shell .dn-dock-health > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.dn-workspace-shell .dn-dock-health > div > div {
+  min-width: 0;
+}
+
+.dn-workspace-shell .dn-dock-health span.truncate {
+  display: none;
+}
+
+/* FocusModeControl floats absolutely at the shell's top-right (z-index 10)
+   and was covering the command bar's palette trigger. Reserve its footprint
+   on the command row at widths where the control renders its full label
+   ("Enter Focus mode" + the Ctrl+Shift+F / ⌘⇧F kbd ≈ 17rem). Below 1024px
+   the shell's compact styles already reflow the bar, so no reservation. */
+@media (min-width: 1024px) {
+  .dn-workspace-shell-body > .dn-command-bar {
+    padding-right: calc(var(--dn-space-6) + 18rem);
+  }
+}
