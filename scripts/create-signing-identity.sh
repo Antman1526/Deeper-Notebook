@@ -27,7 +27,10 @@ set -euo pipefail
 IDENTITY="${1:-Deeper Notebook Local}"
 KEYCHAIN="${HOME}/Library/Keychains/login.keychain-db"
 
-if security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -qF "$IDENTITY"; then
+# v0.8.85 — check WITHOUT -v: an imported-but-untrusted identity is invisible
+# to `find-identity -v`, which made this script re-import duplicates and then
+# report failure even though the identity existed (seen live on macOS 15+).
+if security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null | grep -qF "$IDENTITY"; then
   echo "✅ Code-signing identity '$IDENTITY' already exists. Nothing to do."
   echo "   Build with:  make build-mac DEEPER_NOTEBOOK_CODESIGN_IDENTITY=\"$IDENTITY\""
   exit 0
@@ -71,16 +74,19 @@ echo "📥 Importing into login keychain…"
 security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "${P12_PASS}" \
   -T /usr/bin/codesign -T /usr/bin/security >/dev/null 2>&1
 
-# Trust for code signing (best-effort; may prompt for your login password).
-security add-trusted-cert -d -r trustAsRoot -p codeSign -k "$KEYCHAIN" "$TMP/cert.pem" >/dev/null 2>&1 || \
-  echo "   (could not auto-trust; codesign still works with the imported key)"
+# Trust for code signing. v0.8.85 — a SELF-SIGNED cert is its own root, so the
+# result type must be trustRoot; trustAsRoot is rejected with "parameters not
+# valid" on current macOS, which left the identity CSSMERR_TP_NOT_TRUSTED and
+# codesign unable to use it. User trust domain (no -d): no admin prompt needed.
+security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$TMP/cert.pem" || \
+  echo "   ⚠️  could not trust the cert; codesign will reject the identity" >&2
 
 # Allow codesign to use the key without an interactive prompt each build
 # (best-effort; assumes the login keychain is unlocked).
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCHAIN" >/dev/null 2>&1 || true
 
 if security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -qF "$IDENTITY"; then
-  echo "✅ Created '$IDENTITY'."
+  echo "✅ Created '$IDENTITY' (valid for codesigning)."
   echo "   Build with:  make build-mac DEEPER_NOTEBOOK_CODESIGN_IDENTITY=\"$IDENTITY\""
 else
   echo "❌ Identity not found after import — see any errors above." >&2
