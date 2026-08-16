@@ -90,6 +90,14 @@ def test_extract_python_runtime_skips_when_already_extracted(
     interpreter.parent.mkdir(parents=True)
     interpreter.write_bytes(b"existing")
 
+    # v0.8.83 — skipping additionally requires the extraction stamp to match
+    # the bundled tarball, so a runtime bump invalidates a healthy-but-stale
+    # extraction. Write the matching stamp to exercise the pure skip path.
+    import hashlib as _hashlib
+    (dest_parent / "python-runtime" / ".source-tarball.sha256").write_text(
+        _hashlib.sha256(tarball.read_bytes()).hexdigest() + "\n"
+    )
+
     # v0.7.212 — stub the health probe so the placeholder file is
     # treated as healthy. The probe itself is exercised by the
     # behavioural tests in test_v0_7_212_audit_followup.py.
@@ -309,6 +317,12 @@ def test_ensure_venv_creates_venv_and_writes_marker(
         return mock_result
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    # v0.8.83 — the marker now keys on interpreter identity + lock hash. Pin
+    # the stamp so it neither shells out (which would pollute run_calls with a
+    # non-depcheck call) nor varies by host interpreter.
+    monkeypatch.setattr(
+        "desktop.bootstrap._interpreter_stamp", lambda _p: "py-test-stamp"
+    )
 
     upstream_dir = tmp_path / "upstream"
     upstream_dir.mkdir()
@@ -349,9 +363,10 @@ def test_ensure_venv_creates_venv_and_writes_marker(
             f"v0.7.141 expected `python -c 'import X'` shape, got {call!r}"
         )
 
-    # Marker should be written with the lock hash.
+    # Marker should be written with the interpreter stamp + lock hash
+    # (v0.8.83) so a bundled-runtime bump invalidates the venv.
     assert fake_marker.exists()
-    assert fake_marker.read_text().strip() == _lock_hash(lock)
+    assert fake_marker.read_text().strip() == f"py-test-stamp {_lock_hash(lock)}"
 
     # .pth file written into site-packages.
     pth = site_packages / "deeper_notebook_upstream.pth"
@@ -369,7 +384,9 @@ def test_ensure_venv_skips_when_current(
     lock = tmp_path / "requirements.lock"
     lock.write_bytes(b"fastapi==0.104.0\n")
 
-    monkeypatch.setattr("desktop.bootstrap.is_venv_current", lambda _lock: True)
+    monkeypatch.setattr(
+        "desktop.bootstrap.is_venv_current", lambda _lock, _python=None: True
+    )
 
     fake_python = tmp_path / "venv" / "bin" / "python"
     monkeypatch.setattr("desktop.bootstrap.venv_python", lambda: fake_python)
@@ -386,3 +403,80 @@ def test_ensure_venv_skips_when_current(
 
     assert result == fake_python
     assert run_calls == [], "subprocess.run must not be called when venv is current"
+
+
+def test_runtime_bump_invalidates_lock_only_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """v0.8.83 — a marker written before interpreter keying (lock hash only)
+    must NOT satisfy is_venv_current when the interpreter is supplied, so the
+    first launch after a bundled-runtime bump rebuilds the venv exactly once.
+    """
+    from desktop.bootstrap import is_venv_current
+
+    lock = tmp_path / "requirements.lock"
+    lock.write_bytes(b"fastapi==0.104.0\n")
+    fake_python = tmp_path / "venv" / "bin" / "python"
+    fake_python.parent.mkdir(parents=True)
+    fake_python.touch()
+    marker = tmp_path / "venv-marker"
+
+    monkeypatch.setattr("desktop.bootstrap.venv_python", lambda: fake_python)
+    monkeypatch.setattr("desktop.bootstrap.venv_marker", lambda: marker)
+    monkeypatch.setattr(
+        "desktop.bootstrap._interpreter_stamp", lambda _p: "3.12.14 OpenSSL 3.5"
+    )
+
+    # Pre-v0.8.83 marker: lock hash alone.
+    marker.write_text(_lock_hash(lock))
+    assert is_venv_current(lock) is True, "legacy check still honours legacy marker"
+    assert is_venv_current(lock, tmp_path / "python3") is False, (
+        "interpreter-aware check must invalidate a lock-only marker"
+    )
+
+    # Current combined marker: matches only the same interpreter stamp.
+    marker.write_text(f"3.12.14 OpenSSL 3.5 {_lock_hash(lock)}")
+    assert is_venv_current(lock, tmp_path / "python3") is True
+    monkeypatch.setattr(
+        "desktop.bootstrap._interpreter_stamp", lambda _p: "3.12.8 OpenSSL 3.0"
+    )
+    assert is_venv_current(lock, tmp_path / "python3") is False, (
+        "a different bundled interpreter must invalidate the venv"
+    )
+
+
+def test_extract_python_runtime_reextracts_on_tarball_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """v0.8.83 — a healthy extraction from a DIFFERENT tarball must be wiped
+    and re-extracted, otherwise a bundled-runtime bump never reaches existing
+    installs (the venv stamp then re-keys off the stale interpreter too).
+    A pre-v0.8.83 extraction (no stamp at all) takes the same path.
+    """
+    import hashlib as _hashlib
+
+    from desktop import bootstrap
+
+    tarball = _make_python_tarball(tmp_path)
+    dest_parent = tmp_path / "home" / ".open-notebook-plus"
+
+    interpreter = dest_parent / "python-runtime" / "python" / "bin" / "python3"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_bytes(b"stale-interpreter")
+    stamp = dest_parent / "python-runtime" / ".source-tarball.sha256"
+    stamp.write_text(_hashlib.sha256(b"a different tarball").hexdigest() + "\n")
+
+    monkeypatch.setattr(bootstrap, "_interpreter_is_healthy", lambda _p: True)
+
+    original_platform = sys.platform
+    try:
+        sys.platform = "darwin"  # type: ignore[assignment]
+        result = extract_python_runtime(tarball, dest_parent)
+    finally:
+        sys.platform = original_platform  # type: ignore[assignment]
+
+    assert result == interpreter
+    assert interpreter.read_bytes() != b"stale-interpreter", "must re-extract"
+    assert stamp.read_text().strip() == _hashlib.sha256(
+        tarball.read_bytes()
+    ).hexdigest(), "stamp must record the new source tarball"

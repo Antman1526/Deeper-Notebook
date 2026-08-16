@@ -37,16 +37,21 @@ darwin-arm64 = "695f3640d5b1a4e28de7e36e3a2e14072852dcc6c70bf9e4deec6ada00d516b4
 darwin-x86_64 = "7e23d1d892c23f9e74245c4fd3d3e246438ce9b34460f85eee61f784de137b0b"
 windows-x86_64 = "3e8203e6434b45427f20824419f8d8d53f970a76d94ccdcad07f8498fa01a9d0"
 
+# v0.8.83 — bumped 20241206/3.12.8 → 20260814/3.12.14. The 2024 build links
+# OpenSSL 3.0.15, whose TLS ClientHello Wikimedia's edge rejects with a
+# robot-policy 403 — which killed keyless web_search ONLY in packaged builds
+# (dev venvs run a newer interpreter and were fine). The 2026 build carries a
+# current OpenSSL. Digests are the release's published sha256 values.
 [python_standalone]
-version = "20241206"
-python_version = "3.12.8"
+version = "20260814"
+python_version = "3.12.14"
 
 [python_standalone.urls]
-darwin-arm64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8+20241206-aarch64-apple-darwin-install_only.tar.gz"
-darwin-x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8+20241206-x86_64-apple-darwin-install_only.tar.gz"
-windows-x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20241206/cpython-3.12.8+20241206-x86_64-pc-windows-msvc-install_only.tar.gz"
+darwin-arm64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20260814/cpython-3.12.14+20260814-aarch64-apple-darwin-install_only.tar.gz"
+darwin-x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20260814/cpython-3.12.14+20260814-x86_64-apple-darwin-install_only.tar.gz"
+windows-x86_64 = "https://github.com/astral-sh/python-build-standalone/releases/download/20260814/cpython-3.12.14+20260814-x86_64-pc-windows-msvc-install_only.tar.gz"
 
 [python_standalone.sha256]
-darwin-arm64 = "e3c4aa607717b23903ca2650d5c3ee24f89b97543e2db2b0f463bddc7a9e92f3"
-darwin-x86_64 = "3ba35c706577d755e8e52a4c161a042464577c0e695e2a605362fa469e26de10"
-windows-x86_64 = "767b4be3ddf6b99e5ade519789c1615c191d8cf99d5aff4685cc18b48931f1e6"
+darwin-arm64 = "4572133a5542f306b9bdb155da5800f9e38950cd0a98d469b832ce256fe299ea"
+darwin-x86_64 = "1a94c83264731e9603fbea78e57e7ca8f20e7d91eb866627ac2304621b0f6f1f"
+windows-x86_64 = "7330282b47cd43a66b702d39078d2e5a88e580cee351d82f95045f21f5ee042a"
