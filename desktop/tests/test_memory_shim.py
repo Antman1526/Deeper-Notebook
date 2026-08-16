@@ -83,6 +83,14 @@ def test_delete_rejects_injection_in_id():
     rejected by httpx before they hit the server, which is even better
     (defense in depth)."""
     from httpx import InvalidURL
+    # starlette's TestClient prefers httpx2 when it is installed and raises
+    # httpx2.InvalidURL, an unrelated class from httpx.InvalidURL. The build
+    # venv already has httpx2; the test venv does not yet. Catch both so the
+    # refusal is recognized under either client.
+    try:
+        from httpx2 import InvalidURL as InvalidURL2
+    except ImportError:  # pragma: no cover - depends on the installed client
+        InvalidURL2 = InvalidURL
     mem = _fake_memory_client()
     app = build_app(mem_client=mem)
     bad_ids = [
@@ -96,8 +104,8 @@ def test_delete_rejects_injection_in_id():
         for bad in bad_ids:
             try:
                 r = c.delete(f"/api/memory/fact/{bad}")
-            except InvalidURL:
-                # httpx refused to send → input was rejected before reaching us.
+            except (InvalidURL, InvalidURL2):
+                # the client refused to send → input was rejected before reaching us.
                 continue
             assert r.status_code in (400, 404, 405), (
                 f"id={bad!r} returned {r.status_code}, expected 4xx"
