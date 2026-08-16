@@ -82,7 +82,11 @@ def test_runtime_lock_recipe_is_universal_across_packaged_platforms() -> None:
 
     lock = _LOCKFILE.read_text()
     marker = "platform_machine == 'arm64' and sys_platform == 'darwin'"
-    assert f"mlx-lm==0.26.4 ; {marker}" in lock
+    # v0.8.84 — assert the platform marker, not an exact version: the pin
+    # moved 0.26.4 → 0.31.x (qwen3_5 support) and this test's subject is the
+    # lock staying universal with mlx deps gated to Apple Silicon, exactly as
+    # the mlx / mlx-metal assertions below already express it.
+    assert re.search(rf"^mlx-lm==[^\n]+ ; {re.escape(marker)}$", lock, re.MULTILINE)
     assert re.search(rf"^mlx==[^\n]+ ; {re.escape(marker)}$", lock, re.MULTILINE)
     assert re.search(
         rf"^mlx-metal==[^\n]+ ; {re.escape(marker)}$",
