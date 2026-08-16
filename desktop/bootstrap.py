@@ -33,15 +33,17 @@ _BOOTSTRAP_LOG_MAX_BYTES = 5 * 1024 * 1024
 def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
     """Extract the python-build-standalone tarball on first launch.
 
-    python-build-standalone ``install_only`` tarballs contain a single
-    top-level ``python/`` directory, so extracting into
-    ``dest_parent/python-runtime/`` yields:
+    ``install_only`` tarballs hold one top-level ``python/`` dir, so extracting
+    into ``dest_parent/python-runtime/`` yields ``python/bin/python3`` (macOS/
+    Linux) or ``python/python.exe`` (Windows). Returns the interpreter path.
 
-        dest_parent/python-runtime/python/bin/python3   (macOS/Linux)
-        dest_parent/python-runtime/python/python.exe    (Windows)
-
-    If the interpreter already exists the function returns immediately without
-    re-extracting.
+    Extraction is skipped only when the existing runtime is BOTH healthy
+    (v0.7.212 probe — a Force-Quit/disk-full partial extraction must not be
+    trusted; it fails venv-create cryptically) AND stamped as produced by this
+    exact tarball. v0.8.83 — the stamp is new: a healthy-but-stale runtime
+    used to satisfy the check forever, so a bundled-runtime bump (e.g. the
+    3.12.8→3.12.14 OpenSSL fix) shipped in the .app but never reached an
+    existing install. Mismatch or a stampless install re-extracts once.
 
     Parameters
     ----------
@@ -64,43 +66,20 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
     else:
         interpreter = runtime_dir / "python" / "bin" / "python3"
 
-    # v0.8.83 — key the extracted runtime to the tarball it came from. A
-    # healthy-but-stale runtime used to satisfy the check below forever, so a
-    # bundled-runtime bump (e.g. the 3.12.8→3.12.14 OpenSSL fix) shipped in
-    # the .app but never reached an existing install: the old extraction kept
-    # winning. The stamp is the source tarball's SHA-256; mismatch or absence
-    # (every pre-v0.8.83 install) wipes and re-extracts exactly once.
     stamp_path = runtime_dir / ".source-tarball.sha256"
     tarball_hash = hashlib.sha256(tarball.read_bytes()).hexdigest()
 
-    # v0.7.212 — Partial-extraction recovery.
-    # Previously: a `python3` file existing was treated as proof that
-    # the runtime was fully extracted. If a previous extraction was
-    # interrupted mid-write (user Force Quit, disk full, Time Machine
-    # restore that copies the interpreter binary but not all the
-    # .so files), this function returned early — but the runtime is
-    # actually broken; the interpreter can't import its own stdlib.
-    # Subsequent `venv` create from this interpreter fails with a
-    # cryptic error and the user has to manually `rm -rf
-    # ~/.deeper-notebook/python-runtime` to recover.
-    #
-    # Health check: if the file is present, ensure it's executable
-    # AND can print its version. Anything else means the install is
-    # broken — wipe the runtime dir and re-extract.
     if interpreter.exists():
-        stamp_current = (
-            stamp_path.exists()
-            and stamp_path.read_text().strip() == tarball_hash
-        )
-        if stamp_current and _interpreter_is_healthy(interpreter):
-            return interpreter
+        if stamp_path.exists() and stamp_path.read_text().strip() == tarball_hash:
+            if _interpreter_is_healthy(interpreter):
+                return interpreter
+            reason = "v0.7.212: detected partial/broken"
+        else:
+            reason = "v0.8.83: bundled runtime changed — stale"
         import logging
         logging.getLogger(__name__).warning(
             "%s python-runtime at %s; wiping and re-extracting",
-            "v0.8.83: bundled runtime changed — stale"
-            if not stamp_current
-            else "v0.7.212: detected partial/broken",
-            runtime_dir,
+            reason, runtime_dir,
         )
         shutil.rmtree(runtime_dir, ignore_errors=True)
 
@@ -125,13 +104,10 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
 
     if not is_win and interpreter.exists():
         interpreter.chmod(0o755)
-
-    # v0.8.83 — record which tarball produced this extraction (see above).
-    try:
+    try:  # v0.8.83 — record which tarball produced this extraction.
         stamp_path.write_text(tarball_hash + "\n")
-    except OSError:  # pragma: no cover - stampless just means re-extract later
+    except OSError:  # pragma: no cover - stampless just re-extracts next launch
         pass
-
     return interpreter
 
 
@@ -180,41 +156,6 @@ def venv_marker() -> Path:
 
 def _lock_hash(lock_path: Path) -> str:
     return hashlib.sha256(lock_path.read_bytes()).hexdigest()
-
-
-def _interpreter_stamp(standalone_python: Path) -> str:
-    """Identity stamp of the bundled interpreter: version + OpenSSL build.
-
-    v0.8.83 — the venv marker used to key on the lock hash alone, so bumping
-    the bundled python-build-standalone runtime left every existing install on
-    the OLD interpreter's venv forever. The OpenSSL build is part of the stamp
-    on purpose: Wikimedia's edge 403s the OpenSSL 3.0 TLS fingerprint, which is
-    exactly the class of fix a runtime bump must actually deliver.
-
-    Fail-soft: if the interpreter can't answer, return a constant so the stamp
-    degrades to the old lock-only behaviour instead of forcing a rebuild loop.
-    """
-    try:
-        proc = subprocess.run(
-            [
-                str(standalone_python),
-                "-c",
-                "import ssl,sys;print(sys.version.split()[0], ssl.OPENSSL_VERSION)",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if proc.returncode == 0 and proc.stdout.strip():
-            return proc.stdout.strip()
-    except Exception:
-        pass
-    return "unknown-interpreter"
-
-
-def _provision_key(standalone_python: Path, lock_path: Path) -> str:
-    """Single-line venv marker: interpreter stamp + lock hash."""
-    return f"{_interpreter_stamp(standalone_python)} {_lock_hash(lock_path)}"
 
 
 def _bootstrap_log_path() -> Path:
@@ -278,19 +219,13 @@ def _run_logged(args: list[str], tag: str) -> None:
 
 
 def is_venv_current(lock_path: Path, standalone_python: Path | None = None) -> bool:
-    """True iff venv exists AND was provisioned against this exact lock — and,
-    when the bundled interpreter is supplied, against this exact interpreter.
-
-    A pre-v0.8.83 marker holds only the lock hash; it never matches the
-    combined key, so the first launch after a runtime bump rebuilds the venv
-    once — which is precisely the propagation the old keying silently skipped.
-    """
-    if not venv_python().exists():
+    """True iff the venv matches this lock and (v0.8.83, when the bundled
+    interpreter is supplied) this exact interpreter. A pre-v0.8.83 marker
+    holds only the lock hash, so it never matches the combined key and the
+    first launch after a runtime bump rebuilds the venv exactly once."""
+    if not venv_python().exists() or not venv_marker().exists():
         return False
-    marker = venv_marker()
-    if not marker.exists():
-        return False
-    recorded = marker.read_text().strip()
+    recorded = venv_marker().read_text().strip()
     if standalone_python is None:
         return recorded == _lock_hash(lock_path)
     return recorded == _provision_key(standalone_python, lock_path)
@@ -441,3 +376,35 @@ def _verify_critical_imports(
         except Exception:
             failed.append(f"{module} (exec failure)")
     return failed
+
+
+def _interpreter_stamp(standalone_python: Path) -> str:
+    """Identity stamp of the bundled interpreter: version + OpenSSL build.
+
+    v0.8.83 — part of the venv marker (see is_venv_current). The OpenSSL build
+    is included on purpose: Wikimedia's edge 403s the OpenSSL 3.0 TLS
+    fingerprint, which is exactly the class of fix a runtime bump must
+    actually deliver to existing installs. Fail-soft: if the interpreter can't
+    answer, degrade to a constant so a broken probe can't force a rebuild loop.
+    """
+    try:
+        proc = subprocess.run(
+            [
+                str(standalone_python),
+                "-c",
+                "import ssl,sys;print(sys.version.split()[0], ssl.OPENSSL_VERSION)",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    except Exception:
+        pass
+    return "unknown-interpreter"
+
+
+def _provision_key(standalone_python: Path, lock_path: Path) -> str:
+    """Single-line venv marker: interpreter stamp + lock hash (v0.8.83)."""
+    return f"{_interpreter_stamp(standalone_python)} {_lock_hash(lock_path)}"

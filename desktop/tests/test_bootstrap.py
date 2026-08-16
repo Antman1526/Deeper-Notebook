@@ -88,15 +88,7 @@ def test_extract_python_runtime_skips_when_already_extracted(
     # Pre-create the interpreter so extraction should be skipped.
     interpreter = dest_parent / "python-runtime" / "python" / "bin" / "python3"
     interpreter.parent.mkdir(parents=True)
-    interpreter.write_bytes(b"existing")
-
-    # v0.8.83 — skipping additionally requires the extraction stamp to match
-    # the bundled tarball, so a runtime bump invalidates a healthy-but-stale
-    # extraction. Write the matching stamp to exercise the pure skip path.
-    import hashlib as _hashlib
-    (dest_parent / "python-runtime" / ".source-tarball.sha256").write_text(
-        _hashlib.sha256(tarball.read_bytes()).hexdigest() + "\n"
-    )
+    _seed_extracted_runtime(dest_parent, tarball, b"existing")
 
     # v0.7.212 — stub the health probe so the placeholder file is
     # treated as healthy. The probe itself is exercised by the
@@ -317,9 +309,9 @@ def test_ensure_venv_creates_venv_and_writes_marker(
         return mock_result
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    # v0.8.83 — the marker now keys on interpreter identity + lock hash. Pin
-    # the stamp so it neither shells out (which would pollute run_calls with a
-    # non-depcheck call) nor varies by host interpreter.
+    # v0.8.83 — the marker keys on interpreter identity + lock hash. Pin the
+    # stamp so it neither shells out (polluting run_calls with a non-depcheck
+    # call) nor varies by host interpreter.
     monkeypatch.setattr(
         "desktop.bootstrap._interpreter_stamp", lambda _p: "py-test-stamp"
     )
@@ -363,8 +355,8 @@ def test_ensure_venv_creates_venv_and_writes_marker(
             f"v0.7.141 expected `python -c 'import X'` shape, got {call!r}"
         )
 
-    # Marker should be written with the interpreter stamp + lock hash
-    # (v0.8.83) so a bundled-runtime bump invalidates the venv.
+    # Marker: interpreter stamp + lock hash (v0.8.83), so a bundled-runtime
+    # bump invalidates the venv.
     assert fake_marker.exists()
     assert fake_marker.read_text().strip() == f"py-test-stamp {_lock_hash(lock)}"
 
@@ -405,6 +397,59 @@ def test_ensure_venv_skips_when_current(
     assert run_calls == [], "subprocess.run must not be called when venv is current"
 
 
+def _seed_extracted_runtime(
+    dest_parent: Path, tarball: Path, interpreter_bytes: bytes
+) -> None:
+    """Write a fake extracted interpreter WITH the v0.8.83 source-tarball
+    stamp, so tests exercising the pure skip path stay one line at the call
+    site (this file's legacy-token lines are pinned by the rebrand allowlist).
+    """
+    import hashlib as _hashlib
+
+    interpreter = dest_parent / "python-runtime" / "python" / "bin" / "python3"
+    interpreter.write_bytes(interpreter_bytes)
+    (dest_parent / "python-runtime" / ".source-tarball.sha256").write_text(
+        _hashlib.sha256(tarball.read_bytes()).hexdigest() + "\n"
+    )
+
+
+def test_extract_python_runtime_reextracts_on_tarball_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """v0.8.83 — a healthy extraction from a DIFFERENT tarball must be wiped
+    and re-extracted, otherwise a bundled-runtime bump never reaches existing
+    installs (the venv stamp then re-keys off the stale interpreter too).
+    A pre-v0.8.83 extraction (no stamp at all) takes the same path.
+    """
+    import hashlib as _hashlib
+
+    from desktop import bootstrap
+
+    tarball = _make_python_tarball(tmp_path)
+    dest_parent = tmp_path / "home" / "data-root"
+
+    interpreter = dest_parent / "python-runtime" / "python" / "bin" / "python3"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_bytes(b"stale-interpreter")
+    stamp = dest_parent / "python-runtime" / ".source-tarball.sha256"
+    stamp.write_text(_hashlib.sha256(b"a different tarball").hexdigest() + "\n")
+
+    monkeypatch.setattr(bootstrap, "_interpreter_is_healthy", lambda _p: True)
+
+    original_platform = sys.platform
+    try:
+        sys.platform = "darwin"  # type: ignore[assignment]
+        result = extract_python_runtime(tarball, dest_parent)
+    finally:
+        sys.platform = original_platform  # type: ignore[assignment]
+
+    assert result == interpreter
+    assert interpreter.read_bytes() != b"stale-interpreter", "must re-extract"
+    assert stamp.read_text().strip() == _hashlib.sha256(
+        tarball.read_bytes()
+    ).hexdigest(), "stamp must record the new source tarball"
+
+
 def test_runtime_bump_invalidates_lock_only_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -443,40 +488,3 @@ def test_runtime_bump_invalidates_lock_only_marker(
     assert is_venv_current(lock, tmp_path / "python3") is False, (
         "a different bundled interpreter must invalidate the venv"
     )
-
-
-def test_extract_python_runtime_reextracts_on_tarball_change(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """v0.8.83 — a healthy extraction from a DIFFERENT tarball must be wiped
-    and re-extracted, otherwise a bundled-runtime bump never reaches existing
-    installs (the venv stamp then re-keys off the stale interpreter too).
-    A pre-v0.8.83 extraction (no stamp at all) takes the same path.
-    """
-    import hashlib as _hashlib
-
-    from desktop import bootstrap
-
-    tarball = _make_python_tarball(tmp_path)
-    dest_parent = tmp_path / "home" / ".open-notebook-plus"
-
-    interpreter = dest_parent / "python-runtime" / "python" / "bin" / "python3"
-    interpreter.parent.mkdir(parents=True)
-    interpreter.write_bytes(b"stale-interpreter")
-    stamp = dest_parent / "python-runtime" / ".source-tarball.sha256"
-    stamp.write_text(_hashlib.sha256(b"a different tarball").hexdigest() + "\n")
-
-    monkeypatch.setattr(bootstrap, "_interpreter_is_healthy", lambda _p: True)
-
-    original_platform = sys.platform
-    try:
-        sys.platform = "darwin"  # type: ignore[assignment]
-        result = extract_python_runtime(tarball, dest_parent)
-    finally:
-        sys.platform = original_platform  # type: ignore[assignment]
-
-    assert result == interpreter
-    assert interpreter.read_bytes() != b"stale-interpreter", "must re-extract"
-    assert stamp.read_text().strip() == _hashlib.sha256(
-        tarball.read_bytes()
-    ).hexdigest(), "stamp must record the new source tarball"
