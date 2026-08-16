@@ -7,7 +7,9 @@ is bound.
 """
 from __future__ import annotations
 
+import socket
 import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal, NotRequired, TypedDict
 
@@ -76,6 +78,19 @@ def _runtime_label(*, name: str, kind: str) -> str:
     return kind
 
 
+def _port_accepts_connection(base_url: str, timeout: float = 2.0) -> bool:
+    """v0.8.84 — bare TCP reachability, for servers whose HTTP probe path
+    wedges while the server itself keeps working (mlx-lm 0.31's /v1/models)."""
+    try:
+        parsed = urllib.parse.urlsplit(base_url)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
     """Hit `{base_url}/models` — the standard OpenAI-compatible
     discovery endpoint. Returns healthy with latency + first few
@@ -126,6 +141,30 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
         return {
             "name": name, "status": "unhealthy",
             "detail": f"connect refused: {exc}",
+            "latency_ms": None,
+            "runtime": _runtime_label(name=name, kind="openai_compatible"),
+            "endpoint": base_url.rstrip("/"),
+            "probe_path": "/models",
+        }
+    except httpx.TimeoutException:
+        # v0.8.84 — mlx-lm 0.31's server stops completing GET /v1/models after
+        # its first chat completion (measured live: instant 200 before any
+        # generation, then an indefinite hang on the same endpoint while
+        # completions keep working). A read timeout therefore does not mean
+        # the server is down. Fall back to the question this probe actually
+        # asks — is anything accepting connections on that port?
+        if _port_accepts_connection(base_url):
+            return {
+                "name": name, "status": "healthy",
+                "detail": "endpoint reachable (models list timed out)",
+                "latency_ms": None,
+                "runtime": _runtime_label(name=name, kind="openai_compatible"),
+                "endpoint": base_url.rstrip("/"),
+                "probe_path": "/models",
+            }
+        return {
+            "name": name, "status": "unhealthy",
+            "detail": "timed out and port not accepting connections",
             "latency_ms": None,
             "runtime": _runtime_label(name=name, kind="openai_compatible"),
             "endpoint": base_url.rstrip("/"),

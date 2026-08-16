@@ -51,3 +51,36 @@ def test_non_200_is_still_unhealthy():
     result = _probe_with(_resp(503, ""))
     assert result["status"] == "unhealthy"
     assert "503" in result["detail"]
+
+
+def test_read_timeout_with_live_port_is_healthy():
+    """mlx-lm 0.31 wedges GET /v1/models after its first completion while the
+    server keeps serving chat. Timeout + live TCP port must read healthy."""
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get.side_effect = httpx.ReadTimeout("timed out")
+    with patch.object(httpx, "Client", return_value=client), patch(
+        "deeper_notebook.health.local_models._port_accepts_connection",
+        return_value=True,
+    ):
+        result = _probe_openai_compatible(
+            name="MLX (local)", base_url="http://127.0.0.1:1/v1"
+        )
+    assert result["status"] == "healthy"
+    assert "timed out" in result["detail"]
+
+
+def test_read_timeout_with_dead_port_is_unhealthy():
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.get.side_effect = httpx.ReadTimeout("timed out")
+    with patch.object(httpx, "Client", return_value=client), patch(
+        "deeper_notebook.health.local_models._port_accepts_connection",
+        return_value=False,
+    ):
+        result = _probe_openai_compatible(
+            name="MLX (local)", base_url="http://127.0.0.1:1/v1"
+        )
+    assert result["status"] == "unhealthy"
