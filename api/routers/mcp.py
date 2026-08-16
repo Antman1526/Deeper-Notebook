@@ -86,8 +86,17 @@ async def web_search_status():
     can SEE it's on and disable it per-turn via `disabled_mcp_servers`.
 
     Returns ``{enabled, provider, tool_name}``. No secrets — provider is a
-    label (serper/tavily/searxng), never the key.
+    label (serper/tavily/searxng/wikipedia), never the key.
+
+    v0.8.82 — also reports the keyless ``scholarly_search`` tool
+    (``scholarly_enabled`` / ``scholarly_tool_name``) so the picker can offer
+    a per-turn off-switch for it too; an always-on network tool must not be
+    the one tool the picker can't untick.
     """
+    from deeper_notebook.tools.scholarly_search import (
+        SCHOLARLY_SEARCH_TOOL_NAME,
+        scholarly_search_enabled,
+    )
     from deeper_notebook.tools.web_search import (
         WEB_SEARCH_TOOL_NAME,
         active_provider,
@@ -98,6 +107,8 @@ async def web_search_status():
         "enabled": web_search_enabled(),
         "provider": active_provider(),
         "tool_name": WEB_SEARCH_TOOL_NAME,
+        "scholarly_enabled": scholarly_search_enabled(),
+        "scholarly_tool_name": SCHOLARLY_SEARCH_TOOL_NAME,
     }
 
 

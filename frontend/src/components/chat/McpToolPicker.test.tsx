@@ -194,4 +194,73 @@ describe('McpToolPicker', () => {
     render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
     expect(screen.queryByTestId('mcp-pick-web-search-hint')).not.toBeInTheDocument()
   })
+
+  // v0.8.82 — keyless scholarly_search surfaced as a second synthetic row so
+  // the always-on tool has a per-turn off-switch like web_search does.
+  describe('scholarly_search row', () => {
+    const bothOn = {
+      enabled: true,
+      provider: 'wikipedia',
+      tool_name: 'web_search',
+      scholarly_enabled: true,
+      scholarly_tool_name: 'scholarly_search',
+    }
+
+    it('renders the scholarly row when scholarly search is enabled', () => {
+      mockServers.mockReturnValue([])
+      mockWebSearch.mockReturnValue(bothOn)
+      render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+      expect(screen.getByTestId('mcp-pick-scholarly-search')).toBeInTheDocument()
+      expect(screen.getByText(/scholarly search/i)).toBeInTheDocument()
+    })
+
+    it('counts both built-in tools in the trigger label', () => {
+      mockServers.mockReturnValue([])
+      mockWebSearch.mockReturnValue(bothOn)
+      render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+      expect(screen.getByTestId('mcp-tool-picker-trigger').textContent).toMatch(/2\/2 tools/)
+    })
+
+    it('scholarly checkbox reflects the disabled array (case-insensitive)', () => {
+      mockServers.mockReturnValue([])
+      mockWebSearch.mockReturnValue(bothOn)
+      render(<McpToolPicker disabled={['Scholarly_Search']} onToggle={() => {}} />)
+      const cb = screen.getByTestId('mcp-pick-scholarly-search') as HTMLInputElement
+      expect(cb.checked).toBe(false)
+      expect(screen.getByTestId('mcp-tool-picker-trigger').textContent).toMatch(/1\/2 tools/)
+    })
+
+    it('clicking scholarly calls onToggle("scholarly_search")', () => {
+      mockServers.mockReturnValue([])
+      mockWebSearch.mockReturnValue(bothOn)
+      const onToggle = vi.fn()
+      render(<McpToolPicker disabled={[]} onToggle={onToggle} />)
+      fireEvent.click(screen.getByTestId('mcp-pick-scholarly-search'))
+      expect(onToggle).toHaveBeenCalledWith('scholarly_search')
+    })
+
+    it('shows the picker and the capability hint with only scholarly enabled', () => {
+      mockServers.mockReturnValue([])
+      mockWebSearch.mockReturnValue({
+        enabled: false,
+        provider: null,
+        tool_name: 'web_search',
+        scholarly_enabled: true,
+        scholarly_tool_name: 'scholarly_search',
+      })
+      render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+      expect(screen.getByTestId('mcp-pick-scholarly-search')).toBeInTheDocument()
+      expect(screen.queryByTestId('mcp-pick-web-search')).not.toBeInTheDocument()
+      expect(screen.getByTestId('mcp-tool-picker-trigger').textContent).toMatch(/1\/1 tools/)
+      expect(screen.getByTestId('mcp-pick-web-search-hint')).toBeInTheDocument()
+    })
+
+    it('hides the scholarly row for a pre-v0.8.82 response shape', () => {
+      mockServers.mockReturnValue([])
+      mockWebSearch.mockReturnValue({ enabled: true, provider: 'serper', tool_name: 'web_search' })
+      render(<McpToolPicker disabled={[]} onToggle={() => {}} />)
+      expect(screen.queryByTestId('mcp-pick-scholarly-search')).not.toBeInTheDocument()
+      expect(screen.getByTestId('mcp-tool-picker-trigger').textContent).toMatch(/1\/1 tools/)
+    })
+  })
 })

@@ -65,15 +65,20 @@ export function useMCPServers() {
 
 // ---------------------------------------------------------------------------
 // v0.8.65 — built-in web_search tool availability.
-// The chat tool loop binds a `web_search` tool when a provider is configured
-// via env (SERPER_API_KEY / TAVILY_API_KEY / SEARXNG_BASE_URL). It is NOT an
-// MCP registry row, so the picker needs this signal to render a synthetic
-// toggle. `provider` is a label (serper/tavily/searxng) — never a key.
+// The chat tool loop binds a `web_search` tool when a provider is available
+// (a configured key/SearXNG URL, or the v0.8.82 keyless Wikipedia tail). It is
+// NOT an MCP registry row, so the picker needs this signal to render a
+// synthetic toggle. `provider` is a label (serper/tavily/searxng/wikipedia) —
+// never a key. v0.8.82 — the same response reports the keyless
+// `scholarly_search` tool so the picker can offer its off-switch too; the
+// fields are optional so a cached pre-v0.8.82 response cannot crash the picker.
 // ---------------------------------------------------------------------------
 export interface WebSearchStatus {
   enabled: boolean
   provider: string | null
   tool_name: string
+  scholarly_enabled?: boolean
+  scholarly_tool_name?: string
 }
 
 export function useWebSearchStatus() {

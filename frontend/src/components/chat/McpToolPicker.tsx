@@ -40,6 +40,8 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 // v0.8.65 — literal tool name the chat tool loop matches in
 // `disabled_mcp_servers` to exclude the built-in web_search tool.
 const WEB_SEARCH_TOOL_NAME = 'web_search'
+// v0.8.82 — same convention for the built-in keyless scholarly_search tool.
+const SCHOLARLY_SEARCH_TOOL_NAME = 'scholarly_search'
 
 export interface McpToolPickerProps {
   /** Names currently disabled — controlled. Pass `useNotebookChat.disabledMcpServers`. */
@@ -65,15 +67,25 @@ export function McpToolPicker({ disabled, onToggle }: McpToolPickerProps) {
   const webSearchOff = disabled.some(
     d => d.trim().toLowerCase() === WEB_SEARCH_TOOL_NAME,
   )
+  // v0.8.82 — scholarly_search is keyless and bound by default, so it needs a
+  // visible off-switch here just like web_search; an always-on network tool
+  // must not be the one tool the picker can't untick.
+  const scholarlyAvailable = !!webSearch?.scholarly_enabled
+  const scholarlyOff = disabled.some(
+    d => d.trim().toLowerCase() === SCHOLARLY_SEARCH_TOOL_NAME,
+  )
 
   // Hide the picker only when there is genuinely nothing to toggle.
-  if (servers.length === 0 && !webSearchAvailable) return null
+  if (servers.length === 0 && !webSearchAvailable && !scholarlyAvailable) return null
 
-  const total = servers.length + (webSearchAvailable ? 1 : 0)
+  const total =
+    servers.length + (webSearchAvailable ? 1 : 0) + (scholarlyAvailable ? 1 : 0)
   const enabledCount =
     servers.filter(
       s => !disabled.some(d => d.trim().toLowerCase() === (s.name || '').trim().toLowerCase()),
-    ).length + (webSearchAvailable && !webSearchOff ? 1 : 0)
+    ).length +
+    (webSearchAvailable && !webSearchOff ? 1 : 0) +
+    (scholarlyAvailable && !scholarlyOff ? 1 : 0)
 
   return (
     <Popover>
@@ -133,6 +145,29 @@ export function McpToolPicker({ disabled, onToggle }: McpToolPickerProps) {
               </Label>
             </li>
           )}
+          {scholarlyAvailable && (
+            <li
+              className="flex items-center gap-2"
+              data-testid="mcp-pick-scholarly-search-row"
+            >
+              <Checkbox
+                id="mcp-pick-scholarly-search"
+                checked={!scholarlyOff}
+                onCheckedChange={() => onToggle(SCHOLARLY_SEARCH_TOOL_NAME)}
+                data-testid="mcp-pick-scholarly-search"
+              />
+              <Label
+                htmlFor="mcp-pick-scholarly-search"
+                className="text-xs cursor-pointer flex-1 min-w-0"
+              >
+                <span className="truncate block">
+                  {t('chat.mcpPicker.scholarlySearch', {
+                    defaultValue: 'Scholarly search (OpenAlex/arXiv)',
+                  })}
+                </span>
+              </Label>
+            </li>
+          )}
           {servers.map(s => {
             const isOff = disabled.some(
               d => d.trim().toLowerCase() === (s.name || '').trim().toLowerCase(),
@@ -155,7 +190,7 @@ export function McpToolPicker({ disabled, onToggle }: McpToolPickerProps) {
             )
           })}
         </ul>
-        {webSearchAvailable && (
+        {(webSearchAvailable || scholarlyAvailable) && (
           // v0.8.65 — the built-in web_search tool (like all bound tools) only
           // fires if the active chat model supports function/tool calling.
           // Surface that so a user whose local model silently can't tool-call

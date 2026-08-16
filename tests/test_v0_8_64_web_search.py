@@ -629,7 +629,18 @@ def test_web_search_status_endpoint(monkeypatch):
 
     r = client.get("/api/mcp/web-search")
     assert r.status_code == 200
-    assert r.json() == {"enabled": False, "provider": None, "tool_name": "web_search"}
+    body = r.json()
+    # This module pins DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS=0 (see _clean_web_env),
+    # so with no key the web_search half reports disabled.
+    assert body["enabled"] is False
+    assert body["provider"] is None
+    assert body["tool_name"] == "web_search"
+    # v0.8.82 — the same response reports the keyless scholarly_search tool so
+    # the picker can render its off-switch. Its predicate is patched False by
+    # this module's fixture, and the endpoint must reflect that patch (it reads
+    # the predicate live, not a cached import).
+    assert body["scholarly_enabled"] is False
+    assert body["scholarly_tool_name"] == "scholarly_search"
 
     # configure a provider → enabled, provider is a label only
     monkeypatch.setenv("SERPER_API_KEY", "k")
