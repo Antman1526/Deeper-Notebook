@@ -190,3 +190,63 @@ The exact commit subject is `feat(ui): deliver local source visual gallery`.
 Staged and commit-range diff/secret-scan results are reported in the final task
 handoff after the commit; this commit is the implementation-range endpoint named
 at the top of this receipt.
+
+## Addendum — 2026-08-15, release-gate coverage
+
+Added after `5e662990` during release-candidate preparation. This addendum does
+not restate or revise any measurement above; all of them still hold.
+
+### Why a cell was missing
+
+`NEXT_PUBLIC_*` flags are inlined by `next build`, and `build-mac-frontend`
+runs a plain `npm run build`. At runtime `desktop/launcher.py` injects only
+`NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_API_BASE`, never the gallery flags. An
+installed app built with the gallery on therefore cannot turn its client gate
+back off; only `DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED=0` remains as a runtime
+kill switch. The emergency rollback state for a packaged enabled build is
+**client-on, backend-off**, which the dual-off matrix never exercised — every
+`state: 'feature-off'` cell in the route manifest is paired with
+`flags: 'feature-off'`.
+
+Consequence for sequencing: the rollout flag decision must precede the release
+candidate build, not follow it.
+
+### New cell and result
+
+`frontend/e2e/source-gallery.spec.ts` gains
+`enabled build against a disabled backend keeps all five routes usable with
+zero visual requests`, running the five `feature-off` cells across four
+viewports under an enabled build.
+
+```text
+NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2=1 NEXT_PUBLIC_DN_SOURCE_VISUALS=1 \
+  npx playwright test e2e/source-gallery.spec.ts --project=mocked-browser
+34 passed, 1 skipped
+```
+
+- 20 route/viewport combinations, zero visual reads, zero visual mutations.
+- Covers degrade to the titled fallback: no `<img>`, status reads
+  `Visual cover unavailable`, no page errors, exact request ledger.
+- The cell is deliberately excluded from the enabled runtime budget receipt so
+  the receipted 96-cell proof stays comparable. Re-measured budget after the
+  addition: 96/96 viewport cells, maximum CLS `0.0027664303626543213`.
+- Dual-off matrix re-run after the addition: 10 passed, 25 skipped, 20/20
+  cells, zero visual reads and zero visual mutations.
+- `npx tsc --noEmit` exited 0. `npm run lint` exited 0 with the same three
+  pre-existing warnings recorded above.
+
+### Open finding, not fixed here
+
+In the packaged rollback state the fallback cover still renders
+`Refresh visual for <title>` and `Remove visual for <title>`. Those dispatch
+`POST /visual:refresh` and `DELETE /visual`, which the backend guard at
+`api/routers/source_visuals.py` 404s while the flag is off. `SourceCover`'s
+`dispatch` catches the rejection and clears its pending state, so the result is
+a silent no-op rather than a crash or a data change — dead controls, not broken
+ones.
+
+This is not fixed here because the client cannot distinguish "backend disabled"
+from "visual not yet extracted" — both present as null `visual` and null
+`visual_status`, and Refresh is legitimately useful in the second case. A real
+fix needs the backend to surface capability, which is a new scope requiring
+owner approval.

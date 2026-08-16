@@ -952,4 +952,56 @@ test.describe('source gallery visual contract', () => {
       }
     }
   })
+
+  // The packaged rollback state. `NEXT_PUBLIC_*` flags are inlined by
+  // `next build`, so an installed app built with the gallery on cannot turn its
+  // client gate back off; only DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED=0 remains
+  // as a runtime kill switch. That leaves the client enabled while the backend
+  // 404s every visual route and omits `visual`/`visual_status` from every list
+  // projection — the combination the dual-off matrix above never exercises.
+  // This cell is deliberately excluded from the enabled runtime budget receipt
+  // so the receipted 96-cell enabled proof stays comparable.
+  test('enabled build against a disabled backend keeps all five routes usable with zero visual requests', async ({ browser }) => {
+    test.skip(!ENABLED_BUILD, 'enabled Source Gallery build required')
+    for (const cell of SOURCE_GALLERY_CELLS.filter(candidate => candidate.flags === 'feature-off')) {
+      for (const viewport of SOURCE_GALLERY_VIEWPORTS) {
+        const context = await browser.newContext({
+          viewport: { width: viewport.width, height: viewport.height },
+          colorScheme: 'light',
+        })
+        const page = await context.newPage()
+        const pageErrors: string[] = []
+        page.on('pageerror', error => pageErrors.push(error.message))
+        const fixture = await installSourceGalleryFixture(page, {
+          cell,
+          theme: 'gemini-forward-light',
+          viewport,
+        })
+        // Knowledge fetches its recent-source slot off the client gate, which is
+        // baked on here. The manifest ties that call to `flags: 'enabled'` cells,
+        // so the feature-off cell needs it declared for this build.
+        if (cell.route === '/knowledge') fixture.expectCall('GET /api/sources')
+        await page.goto(cell.browserPath)
+        await expect(page.locator('main')).toBeVisible()
+        fixture.releaseData()
+        await revealSourceGalleryCell(page, cell)
+        await expect(page.locator('main')).toBeVisible()
+        // The client gate is baked on, so cover slots still render. They must
+        // degrade to the titled fallback: no <img>, and therefore no asset read.
+        await expect(page.locator('[data-dn-source-cover] img')).toHaveCount(0)
+        const covers = await page.locator('[data-dn-source-cover]').count()
+        if (covers > 0) {
+          await expect(page.locator('.dn-source-cover__fallback').first()).toBeVisible()
+        }
+        const visualReceipts = fixture.ledger.receipts.filter(receipt => (
+          receipt.canonicalPath.endsWith('/visual')
+          || receipt.canonicalPath.endsWith('/visual:refresh')
+        ))
+        expect(visualReceipts, `${cell.id}/${viewport.name} backend-off visual ledger`).toEqual([])
+        expect(pageErrors, `${cell.id}/${viewport.name} page errors`).toEqual([])
+        assertExactSourceGalleryLedger(fixture)
+        await context.close()
+      }
+    }
+  })
 })
