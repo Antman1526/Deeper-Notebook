@@ -82,6 +82,18 @@ class MlxProvider:
         path = self._resolve_model_path(model)
         if validate and not _is_complete_mlx_repo(path):
             raise FileNotFoundError(f"Not a complete MLX model repo: {path}")
+        # v0.8.84 — a nonexistent path can never load, even for a configured
+        # model that skips full repo validation. Before this check, a model
+        # deleted after being configured produced the worst failure mode:
+        # mlx_lm.server was spawned (stderr=DEVNULL), bound nothing, and died
+        # silently — the credential then pointed at a dead port and the only
+        # symptom was a "Degraded" runtime card with no cause. Fail loudly at
+        # the source instead; callers already handle start() raising.
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Configured MLX model no longer exists on disk: {path} — "
+                "pick an existing model in Launch Preferences"
+            )
         if self._proc is not None:
             self.stop()
 

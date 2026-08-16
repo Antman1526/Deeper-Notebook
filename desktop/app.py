@@ -595,15 +595,26 @@ def _phase_select_provider(ctx: AppContext) -> None:
         model = cfg.default_model or provider.pick_default_model()
         if model:
             configured_model = bool(cfg.default_model)
-            extra_env = provider.start(
-                model,
-                validate=not configured_model,
-                # Keep the native knowledge app available even while an
-                # explicitly selected local model is still loading.
-                wait_for_ready=not configured_model,
-            )
-            extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
-            ctx.model_provider_runtime = provider
+            try:
+                extra_env = provider.start(
+                    model,
+                    validate=not configured_model,
+                    # Keep the native knowledge app available even while an
+                    # explicitly selected local model is still loading.
+                    wait_for_ready=not configured_model,
+                )
+            except FileNotFoundError as exc:
+                # v0.8.84 — a configured model deleted from disk must not
+                # abort the launch (everything else still works), but it must
+                # also not spawn a doomed server: before this, mlx_lm.server
+                # died with stderr=DEVNULL and the only symptom was a
+                # "Degraded" runtime card pointing at a dead port.
+                log.error(
+                    "MLX model provider disabled for this launch: %s", exc
+                )
+            else:
+                extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
+                ctx.model_provider_runtime = provider
 
     ctx.extra_env = extra_env
 

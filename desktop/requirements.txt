@@ -31,7 +31,11 @@ llama-cpp-python[server]>=0.3.16,<0.4
 # ~/Desktop/AI_Models/MLX and exposes the same OpenAI-compatible API
 # shape used by llama.cpp. MLX is macOS/Apple-Silicon only, so keep
 # the marker tight to avoid breaking Windows packages.
-mlx-lm>=0.26,<0.27; sys_platform == "darwin" and platform_machine == "arm64"
+# v0.8.84 — bumped 0.26 → 0.31: 0.26.4 rejects the qwen3_5 architecture
+# ("Model type qwen3_5 not supported"), so every recent Qwen3.x MLX repo
+# died at load while mlx_lm.server had already bound its port — the health
+# probe then saw a live port with a dead model.
+mlx-lm>=0.31,<0.32; sys_platform == "darwin" and platform_machine == "arm64"
 
 # v0.7.195 — Bundle the local-server shim dependencies. These have
 # been REQUIRED since the v0.4 local-server feature shipped, but

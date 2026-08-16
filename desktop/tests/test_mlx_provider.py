@@ -156,3 +156,26 @@ def test_start_raises_if_server_never_ready(mlx_model_root, monkeypatch):
     )
     with pytest.raises(RuntimeError, match="never became ready"):
         provider.start("MLX/mlx-community__North-Mini-Code-1.0-6bit")
+
+
+def test_start_refuses_missing_path_even_without_validation(
+    mlx_model_root, monkeypatch
+):
+    """v0.8.84 — a configured model (validate=False) deleted from disk must
+    fail loudly BEFORE spawning: mlx_lm.server runs with stderr=DEVNULL, so a
+    doomed spawn dies silently and leaves a credential pointing at a dead
+    port with no visible cause ("Degraded" and nothing else).
+    """
+    spawned = []
+    monkeypatch.setattr(
+        subprocess, "Popen", lambda *a, **kw: spawned.append(a) or MagicMock()
+    )
+
+    provider = MlxProvider(model_dir=mlx_model_root)
+    with pytest.raises(FileNotFoundError, match="no longer exists on disk"):
+        provider.start(
+            "MLX/deleted-after-configuration",
+            validate=False,
+            wait_for_ready=False,
+        )
+    assert spawned == [], "must not spawn a server for a nonexistent model"
