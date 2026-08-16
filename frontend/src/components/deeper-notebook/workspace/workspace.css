@@ -983,3 +983,42 @@
     padding-right: calc(var(--dn-space-6) + 18rem);
   }
 }
+
+/* ------------------------------------------------------------------------- */
+/* v0.8.85 — notebook voice (owner direction: "the design should feel like   */
+/* writing in a notebook"). Token-driven and theme-adaptive: every color is  */
+/* mixed from the active theme's own variables, so paper warmth and rule     */
+/* lines follow light, dark, and custom themes without per-theme overrides.  */
+
+.dn-workspace-shell {
+  /* Faint paper grain: a breath of foreground warmed into the background. */
+  --dn-paper: color-mix(in oklab, var(--background) 97%, var(--foreground));
+  /* Ruled line ink — decorative, deliberately far below text contrast. */
+  --dn-rule: color-mix(in oklab, var(--foreground) 9%, transparent);
+  /* Classic notebook margin ink, drawn from the theme accent. */
+  --dn-margin-ink: color-mix(in oklab, var(--primary) 30%, transparent);
+  --dn-write-leading: 1.7;
+}
+
+/* The written voice: titles read as penned headings, not UI labels. Chrome
+   (nav, buttons, badges) deliberately stays sans — the notebook is the page,
+   not the desk around it. */
+.dn-workspace-shell .dn-workspace-page-title,
+.dn-workspace-shell .dn-workspace-hero-title,
+.dn-workspace-shell .dn-visual-card-title,
+.dn-workspace-shell .dn-state-panel-title {
+  font-family: var(--font-serif), 'Iowan Old Style', 'Palatino', Georgia, serif;
+  letter-spacing: -0.012em;
+}
+
+.dn-workspace-shell .dn-workspace-canvas {
+  background: var(--dn-paper);
+}
+
+/* High-contrast readers get clean, unruled fields. */
+@media (prefers-contrast: more) {
+  .dn-workspace-shell {
+    --dn-rule: transparent;
+    --dn-paper: var(--background);
+  }
+}

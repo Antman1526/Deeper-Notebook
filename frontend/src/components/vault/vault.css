@@ -186,3 +186,52 @@
     animation-duration: 0.01ms;
   }
 }
+
+/* ------------------------------------------------------------------------- */
+/* v0.8.85 — the writing page. Inside the V2 workspace, the knowledge editor */
+/* and its live preview become ruled paper: serif text at generous leading,  */
+/* faint rules aligned to the line boxes, and a margin line in accent ink.   */
+/* Scoped to .dn-workspace-shell so the legacy shells keep their surfaces.   */
+
+.dn-workspace-shell .dn-vault-editor .cm-scroller,
+.dn-workspace-shell .dn-vault-live-preview .cm-scroller {
+  font-family: var(--font-serif), 'Iowan Old Style', 'Palatino', Georgia, serif;
+  line-height: var(--dn-write-leading, 1.7);
+}
+
+/* Markdown structure and code stay legible: syntax-highlighted code spans
+   keep their monospace voice on the ruled page. */
+.dn-workspace-shell .dn-vault-editor .cm-scroller .dn-live-preview-code,
+.dn-workspace-shell .dn-vault-live-preview .dn-live-preview-code {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.dn-workspace-shell .dn-vault-editor .cm-content,
+.dn-workspace-shell .dn-vault-live-preview .cm-content {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(1em * var(--dn-write-leading, 1.7) - 1px),
+    var(--dn-rule, transparent) calc(1em * var(--dn-write-leading, 1.7) - 1px),
+    var(--dn-rule, transparent) calc(1em * var(--dn-write-leading, 1.7))
+  );
+  background-origin: content-box;
+  background-attachment: local;
+}
+
+/* The margin line: gutter edge inked from the accent instead of the border
+   gray — the one place the notebook allows itself a line of color. */
+.dn-workspace-shell .dn-vault-editor .cm-gutters {
+  border-right: 2px solid var(--dn-margin-ink, var(--border));
+}
+
+.dn-workspace-shell .dn-vault-live-preview .cm-content {
+  padding-inline-start: 1.75rem;
+  border-inline-start: 2px solid var(--dn-margin-ink, transparent);
+}
+
+/* Warm the pages themselves. */
+.dn-workspace-shell .dn-vault-editor .cm-editor,
+.dn-workspace-shell .dn-vault-live-preview {
+  background: var(--dn-paper, var(--background));
+}
