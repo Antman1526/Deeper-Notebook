@@ -408,13 +408,16 @@ async def get_notebook_graph(notebook_id: str):
 async def discover_sources(notebook_id: str, request: DiscoverSourcesRequest):
     """v0.8.87 — Discover sources (improvement roadmap, Batch 3).
 
-    Guarded web search over the existing env-keyed `web_search` tool. SEARCH
-    ONLY — returns candidate {title, url, snippet}; the user picks which to add
-    (as link sources via the normal POST /sources pipeline). Privacy: this only
-    reaches the network when a provider key is configured AND the user runs it;
-    with no provider, `enabled=False` and the UI shows a setup hint (HTTP 200,
-    never an error). Best-effort: provider/transport errors degrade to empty
-    results rather than failing the request.
+    Guarded web search over the existing `web_search` tool. SEARCH ONLY —
+    returns candidate {title, url, snippet}; the user picks which to add
+    (as link sources via the normal POST /sources pipeline). Privacy: this
+    reaches the network only when the user runs it. v0.8.82 — the provider
+    chain now ends in a keyless Wikipedia tail, so `enabled` is True on a
+    fresh install; `DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS=0` restores the old
+    key-only gating, and with that set and no key, `enabled=False` and the UI
+    shows a setup hint (HTTP 200, never an error). Best-effort:
+    provider/transport errors degrade to empty results rather than failing
+    the request.
     """
     from deeper_notebook.tools.web_search import (
         active_provider,
