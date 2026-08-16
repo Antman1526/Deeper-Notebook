@@ -744,6 +744,29 @@ async def bind_mcp_and_run_tool_loop(
     except Exception as ws_exc:
         _logger.debug("web_search tool build failed (skipping): {}", ws_exc)
 
+    # 2a2. Native scholarly_search tool — keyless OpenAlex/arXiv literature
+    # search (v0.8.82). Separate from web_search on purpose: web_search's
+    # keyless tail is Wikipedia, which ends that chain before a research
+    # provider would ever run. A distinct tool lets the model pick the right
+    # one for the question. Keyless, so no configuration gates it.
+    try:
+        from deeper_notebook.tools.scholarly_search import (
+            SCHOLARLY_SEARCH_TOOL_NAME,
+            build_scholarly_search_tool,
+            scholarly_search_enabled,
+        )
+
+        _excluded_names = {
+            (n or "").strip().lower() for n in (exclude_server_names or []) if n
+        }
+        if (
+            scholarly_search_enabled()
+            and SCHOLARLY_SEARCH_TOOL_NAME not in _excluded_names
+        ):
+            mcp_tools = list(mcp_tools) + [build_scholarly_search_tool(mcp_captures)]
+    except Exception as sch_exc:
+        _logger.debug("scholarly_search tool build failed (skipping): {}", sch_exc)
+
     # 2b. Native opencode_run tool — local code computer execution.
     try:
         from deeper_notebook.tools.opencode import (

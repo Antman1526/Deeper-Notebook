@@ -9,25 +9,49 @@ tools expect to drop a provider API key into ``.env`` and immediately get web
 search in chat. This module adds exactly that: a built-in ``web_search`` tool
 the chat model can call, backed by whichever provider key is present.
 
-Opt-in by construction
------------------------
-The tool only *exists* when one of three provider settings is configured:
+Providers
+---------
 
-==================  ==================================  ============================
-Env var             Provider                            Notes
-==================  ==================================  ============================
-``SERPER_API_KEY``  Serper (Google Search API)          https://serper.dev
-``TAVILY_API_KEY``  Tavily search API                   https://tavily.com
-``SEARXNG_BASE_URL``A self-hosted SearXNG instance      keyless; e.g. ``http://127.0.0.1:8080``
-==================  ==================================  ============================
+==================== ================================= ==========================
+Env var              Provider                          Notes
+==================== ================================= ==========================
+``SERPER_API_KEY``   Serper (Google Search API)        https://serper.dev
+``TAVILY_API_KEY``   Tavily search API                 https://tavily.com
+``SEARXNG_BASE_URL`` A self-hosted SearXNG instance    e.g. ``http://127.0.0.1:8080``
+*(none)*             Wikipedia ``api.php``             keyless, always available
+==================== ================================= ==========================
 
-No key / URL → :func:`web_search_enabled` is ``False`` → the tool is never
-bound → **zero behaviour change**. This is the project's "default-off"
-contract without a separate ``DEEPER_NOTEBOOK_*`` flag: *key-presence is the opt-in*.
+Precedence is Serper > Tavily > SearXNG > Wikipedia, overridable via
+``DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER`` (a stale override naming an unconfigured
+provider is ignored, so it can't disable a perfectly good key).
 
-When several are set, precedence is Serper > Tavily > SearXNG, overridable via
-``DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER=serper|tavily|searxng`` (a stale override naming an
-unconfigured provider is ignored, so it can't disable a perfectly good key).
+v0.8.82 — default changed
+-------------------------
+This module used to be *default-off*: with no key, :func:`web_search_enabled`
+returned ``False`` and the tool was never bound, leaving a local model with no
+web reach at all. A keyless Wikipedia provider now sits at the tail of the
+chain, so the tool exists on a fresh install.
+
+Two honest limits on that:
+
+* Wikipedia is encyclopedic, **not** a general web index. Questions about
+  prices, live events, or anything post-dating an article will not be served
+  well. Real general web search still needs one of the keys above — all three
+  have a free tier.
+* DuckDuckGo was evaluated as a keyless general provider and **rejected**: both
+  its HTML endpoint and its official Instant Answer API answer HTTP 202 with an
+  anti-bot challenge to scripted clients, so it would have shipped as a
+  provider that silently returns nothing.
+
+Set ``DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS=0`` to restore the previous key-only
+contract exactly.
+
+Latency
+-------
+``httpx.AsyncClient`` is pooled across calls (keep-alive instead of a fresh TLS
+handshake per search) and identical recent queries are served from a bounded
+TTL cache (``DEEPER_NOTEBOOK_WEB_SEARCH_CACHE_TTL_SEC``, default 300s, ``0``
+disables). Empty results are never cached.
 
 Safety
 ------
@@ -43,9 +67,12 @@ Safety
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import time
+from collections import OrderedDict
+from html import unescape
 
 from loguru import logger
 
@@ -56,6 +83,8 @@ __all__ = [
     "WEB_SEARCH_TOOL_NAME",
     "active_provider",
     "web_search_enabled",
+    "keyless_enabled",
+    "reset_web_search_caches",
     "run_web_search",
     "run_web_search_with_evidence",
     "format_results",
@@ -67,10 +96,27 @@ WEB_SEARCH_TOOL_NAME = "web_search"
 _SERPER_ENDPOINT = "https://google.serper.dev/search"
 _TAVILY_ENDPOINT = "https://api.tavily.com/search"
 
+# v0.8.82 — keyless provider. Needs no API key and no self-hosting, so the
+# chain is never empty and a local model has some web reach out of the box.
+#
+# Wikipedia's api.php is an official, stable, keyless JSON API. It is the only
+# keyless *general* provider here on purpose: there is no free keyless
+# general-web search engine. DuckDuckGo was evaluated and rejected — both its
+# HTML endpoint and its Instant Answer API answer HTTP 202 with an anti-bot
+# challenge for scripted clients, so it would have shipped as a provider that
+# silently returns nothing. Real general web search still needs a (free-tier)
+# key; see the provider table above.
+_WIKIPEDIA_ENDPOINT = "https://en.wikipedia.org/w/api.php"
+_KEYLESS_PROVIDERS = ("wikipedia",)
+
 _DEFAULT_MAX_RESULTS = 5
 _DEFAULT_TIMEOUT_SEC = 10.0
 _MAX_RESULTS_CEILING = 20
 _TIMEOUT_CEILING_SEC = 60.0
+# Keyless attempts are cheap and never bill, so they get a tighter deadline than
+# a paid provider: a slow free endpoint should yield to the next one quickly
+# instead of eating the shared budget.
+_KEYLESS_TIMEOUT_SEC = 6.0
 # v0.8.65 — total wall-clock budget across the whole failover chain. Kept under
 # the chat loop's per-tool-call timeout (DEEPER_NOTEBOOK_MCP_TOOL_TIMEOUT_SEC, default 30s)
 # so web_search self-bounds + returns a graceful empty rather than being hard-
@@ -78,6 +124,20 @@ _TIMEOUT_CEILING_SEC = 60.0
 # budget) so a slow/hanging early instance can't starve a fast later one.
 _DEFAULT_TOTAL_BUDGET_SEC = 25.0
 _TOTAL_BUDGET_CEILING_SEC = 120.0
+
+# v0.8.82 — latency work. Two costs dominated a web_search call: a fresh TLS
+# handshake per call (the client was constructed per search) and re-running an
+# identical query inside one agent loop. A pooled client fixes the first, a
+# small TTL cache the second.
+_DEFAULT_CACHE_TTL_SEC = 300.0
+_CACHE_TTL_CEILING_SEC = 3600.0
+_CACHE_MAX_ENTRIES = 128
+_cache: "OrderedDict[tuple[str, int], tuple[float, list[dict], str | None, bool]]" = (
+    OrderedDict()
+)
+_pooled_client = None
+_pooled_client_loop = None
+_pooled_client_factory = None
 
 
 def _env(name: str) -> str:
@@ -87,6 +147,32 @@ def _env(name: str) -> str:
     if name.startswith("DEEPER_NOTEBOOK_"):
         return (resolve_env(name) or "").strip()
     return (os.environ.get(name) or "").strip()
+
+
+def keyless_enabled() -> bool:
+    """Whether the no-API-key provider may be used. Default ON.
+
+    v0.8.82 deliberately flips this module's historical "no key → no tool"
+    behaviour: the tool now exists by default so a local model can reach at
+    least Wikipedia with zero setup. Set ``DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS=0``
+    to restore the previous key-only contract (the whole tool then disappears
+    again unless a key or SearXNG URL is configured).
+    """
+    raw = _env("DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS").lower()
+    if raw in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return True
+
+
+def _cache_ttl_sec() -> float:
+    raw = _env("DEEPER_NOTEBOOK_WEB_SEARCH_CACHE_TTL_SEC")
+    if not raw:
+        return _DEFAULT_CACHE_TTL_SEC
+    try:
+        t = float(raw)
+    except ValueError:
+        return _DEFAULT_CACHE_TTL_SEC
+    return max(0.0, min(t, _CACHE_TTL_CEILING_SEC))
 
 
 def _searxng_urls() -> list[str]:
@@ -122,10 +208,12 @@ def _provider_chain() -> list[tuple[str, str | None]]:
     serper = bool(_env("SERPER_API_KEY"))
     tavily = bool(_env("TAVILY_API_KEY"))
     searxng_urls = _searxng_urls()
+    keyless = keyless_enabled()
     available = {
         "serper": serper,
         "tavily": tavily,
         "searxng": bool(searxng_urls),
+        "wikipedia": keyless,
     }
 
     chain: list[tuple[str, str | None]] = []
@@ -138,6 +226,8 @@ def _provider_chain() -> list[tuple[str, str | None]]:
         elif provider == "searxng":
             for url in searxng_urls:
                 chain.append(("searxng", url))
+        elif provider in _KEYLESS_PROVIDERS and keyless:
+            chain.append((provider, None))
 
     override = _env("DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER").lower()
     if override in available and available[override]:
@@ -146,6 +236,11 @@ def _provider_chain() -> list[tuple[str, str | None]]:
         add("serper")
         add("tavily")
         add("searxng")
+        # v0.8.82 — keyless tail. Appended LAST so a configured key still wins
+        # and no existing deployment changes behaviour; its only effect is that
+        # an unconfigured install now has a working chain instead of none.
+        for provider in _KEYLESS_PROVIDERS:
+            add(provider)
     return chain
 
 
@@ -264,6 +359,41 @@ async def _do_attempt(
             n=n,
         )
 
+    if provider == "wikipedia":
+        resp = await client.get(
+            _WIKIPEDIA_ENDPOINT,
+            params={
+                "action": "query",
+                "list": "search",
+                "format": "json",
+                "srsearch": query,
+                "srlimit": n,
+            },
+            headers={"User-Agent": "DeeperNotebook/1.0 (local research app)"},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        hits = ((data or {}).get("query") or {}).get("search") or []
+        out: list[dict] = []
+        for hit in hits[:n]:
+            if not isinstance(hit, dict):
+                continue
+            title = str(hit.get("title") or "")
+            if not title:
+                continue
+            # `snippet` is HTML with <span class="searchmatch"> highlighting.
+            snippet = unescape(re.sub(r"<[^>]+>", "", str(hit.get("snippet") or "")))
+            out.append(
+                {
+                    "title": title,
+                    "url": "https://en.wikipedia.org/wiki/"
+                    + title.replace(" ", "_"),
+                    "snippet": snippet.strip(),
+                }
+            )
+        return out
+
     # searxng — `target` is the specific instance URL for this attempt.
     base = (target or "").rstrip("/")
     resp = await client.get(
@@ -279,6 +409,82 @@ async def _do_attempt(
         snippet_key="content",
         n=n,
     )
+
+
+async def _acquire_client() -> tuple[object, bool]:
+    """Return ``(client, pooled)``; the caller closes it only when not pooled.
+
+    Reusing one ``httpx.AsyncClient`` keeps TLS connections alive between tool
+    calls, which is where most of a repeat search's latency went. Two guards
+    keep the pool honest:
+
+    * the client is rebuilt when the running event loop changes (a pooled
+      client is bound to the loop that created it); and
+    * it is rebuilt when ``httpx.AsyncClient`` is not the object the pool was
+      built from, so a monkeypatched client in a test is never served from a
+      previous test's pool.
+    """
+    global _pooled_client, _pooled_client_loop, _pooled_client_factory
+    import httpx
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    factory = httpx.AsyncClient
+    if (
+        _pooled_client is not None
+        and _pooled_client_loop is loop
+        and _pooled_client_factory is factory
+        and not getattr(_pooled_client, "is_closed", False)
+    ):
+        return _pooled_client, True
+
+    # Redirect policy is deliberately left at the httpx default (off) so every
+    # attempt behaves exactly as it did before pooling was introduced.
+    try:
+        client = factory(
+            limits=httpx.Limits(max_keepalive_connections=8, max_connections=16),
+        )
+    except Exception:  # pragma: no cover - defensive against client API drift
+        client = factory()
+    _pooled_client = client
+    _pooled_client_factory = factory
+    _pooled_client_loop = loop
+    return client, True
+
+
+def reset_web_search_caches() -> None:
+    """Drop the result cache and forget the pooled client. For tests/teardown."""
+    global _pooled_client, _pooled_client_loop
+    _cache.clear()
+    _pooled_client = None
+    _pooled_client_loop = None
+
+
+def _cache_get(key: tuple[str, int]):
+    ttl = _cache_ttl_sec()
+    if ttl <= 0:
+        return None
+    entry = _cache.get(key)
+    if entry is None:
+        return None
+    stored_at, results, provider, degraded = entry
+    if time.monotonic() - stored_at > ttl:
+        _cache.pop(key, None)
+        return None
+    _cache.move_to_end(key)
+    return list(results), provider, degraded
+
+
+def _cache_put(key: tuple[str, int], results, provider, degraded) -> None:
+    if _cache_ttl_sec() <= 0 or not results:
+        return
+    _cache[key] = (time.monotonic(), list(results), provider, degraded)
+    _cache.move_to_end(key)
+    while len(_cache) > _CACHE_MAX_ENTRIES:
+        _cache.popitem(last=False)
 
 
 async def _run_web_search_result(
@@ -321,16 +527,21 @@ async def _run_web_search_result(
 
     n = max_results if (max_results and max_results > 0) else _max_results()
 
-    # Lazy import so importing this module at startup never drags in httpx,
-    # and so tests can monkeypatch ``httpx.AsyncClient`` cleanly.
-    import httpx
+    # v0.8.82 — serve an identical recent query from memory. Agent loops
+    # re-issue the same search often; this turns the repeat into a no-op.
+    cache_key = (query.casefold(), n)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        logger.debug("web_search cache hit for {!r}", query)
+        return cached
 
     per_attempt_cap = _timeout_sec()
     deadline = time.monotonic() + _total_budget_sec()
 
     # No fixed client timeout — each request gets a per-call timeout below so
     # the chain can shrink later attempts as the budget runs down.
-    async with httpx.AsyncClient() as client:
+    client, pooled = await _acquire_client()
+    try:
         for attempt_index, (provider, target) in enumerate(chain):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -338,7 +549,12 @@ async def _run_web_search_result(
                     "web_search total budget exhausted; stopping failover chain"
                 )
                 break
-            attempt_timeout = min(per_attempt_cap, remaining)
+            cap = (
+                min(per_attempt_cap, _KEYLESS_TIMEOUT_SEC)
+                if provider in _KEYLESS_PROVIDERS
+                else per_attempt_cap
+            )
+            attempt_timeout = min(cap, remaining)
             try:
                 results = await _do_attempt(
                     client, provider, target, query, n, attempt_timeout
@@ -356,14 +572,26 @@ async def _run_web_search_result(
                 )
                 continue
             if results:
+                _cache_put(cache_key, results, provider, attempt_index > 0)
                 return results, provider, attempt_index > 0
-            if provider == "searxng":
+            if provider == "searxng" or provider in _KEYLESS_PROVIDERS:
+                # Free attempt answered 200-but-empty (a blocked mirror, or a
+                # layout change the parser no longer recognises). Costs nothing
+                # to try the next one.
                 logger.debug(
-                    "web_search searxng {} returned no results; trying next", target
+                    "web_search {} {} returned no results; trying next",
+                    provider,
+                    target or "",
                 )
                 continue
             # Paid provider returned a legitimate empty result — accept it.
             return results, provider, attempt_index > 0
+    finally:
+        if not pooled:
+            try:
+                await client.aclose()
+            except Exception:  # pragma: no cover - best-effort cleanup
+                pass
     return [], None, False
 
 

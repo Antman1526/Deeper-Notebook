@@ -1104,6 +1104,8 @@ def open_window(url: str, on_close: Callable[[], None],
     """
     import webview  # lazy: only the desktop runtime path needs this
 
+    apply_webview_security_settings(webview)
+
     from desktop import window_state
     from desktop.data_root import active_data_root
 
@@ -1259,3 +1261,45 @@ def open_window(url: str, on_close: Callable[[], None],
             webview.start()  # noqa: F821
     finally:
         remove_termination_observer()
+
+
+def apply_webview_security_settings(webview) -> dict:
+    """Pin pywebview's global settings instead of inheriting its defaults.
+
+    v0.8.82. The shell hosts a local Next.js origin, but source-controlled URLs
+    do reach it: the source detail view calls ``window.open(source.asset.url,
+    '_blank')`` and renders ``target="_blank"`` links. pywebview 5.4 happens to
+    default ``OPEN_EXTERNAL_LINKS_IN_BROWSER`` to True, which sends those to the
+    system browser rather than navigating the app shell — the behaviour we want,
+    but nothing in this repo was asserting it. A future pywebview changing that
+    default would silently turn a hostile source URL into "replace the app UI".
+
+    Setting it explicitly makes the guarantee ours, not the library's. Unknown
+    keys are ignored so this stays forward-compatible.
+
+    Applied from :func:`open_window` only. The data-root recovery window is an
+    isolated local repair UI that renders no source-controlled URLs, and adding
+    a call there would relocate an allowlisted compatibility line in this file
+    (see scripts/rebrand-allowlist.json, which pins occurrences by line).
+
+    Returns the settings actually applied (for tests/diagnostics).
+    """
+    desired = {
+        # A link out of the app opens in the user's real browser, never in the
+        # shell. This is the navigation policy the shell otherwise lacks.
+        "OPEN_EXTERNAL_LINKS_IN_BROWSER": True,
+        # The app has no in-window download flow; a page-initiated download
+        # should not write to disk behind the user's back.
+        "ALLOW_DOWNLOADS": False,
+        # Devtools stay available in debug builds only.
+        "OPEN_DEVTOOLS_IN_DEBUG": False,
+    }
+    settings = getattr(webview, "settings", None)
+    if not isinstance(settings, dict):
+        return {}
+    applied = {}
+    for key, value in desired.items():
+        if key in settings:
+            settings[key] = value
+            applied[key] = value
+    return applied

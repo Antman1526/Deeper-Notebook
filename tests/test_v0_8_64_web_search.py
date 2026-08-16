@@ -31,10 +31,34 @@ _ALL_ENV = (
 @pytest.fixture(autouse=True)
 def _clean_web_env(monkeypatch):
     """Start every test from a fully unconfigured state so the host's real
-    environment (or a stray .env) can't flip a provider on/off."""
+    environment (or a stray .env) can't flip a provider on/off.
+
+    v0.8.82 — this module documents the *key-based* chain, which is exactly
+    what ``DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS=0`` restores. Pinning it here keeps
+    every assertion below testing the same contract it was written for; the
+    keyless default that now ships is covered by
+    ``tests/test_v0_8_82_keyless_web_search.py``.
+    """
     for name in _ALL_ENV:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS", "0")
+    # scholarly_search (v0.8.82) is keyless and therefore bound by default. This
+    # module's subject is web_search's binding contract, and two tests here
+    # assert "nothing was bound at all" — which a second always-on tool would
+    # break for reasons that have nothing to do with web_search. Turn it off so
+    # every assertion below keeps measuring what it was written to measure.
+    #
+    # Patch the predicate rather than setting the env var: product env
+    # normalization mirrors a canonical name into its legacy alias spellings,
+    # and monkeypatch cannot undo writes it did not make — so the env route
+    # leaks "disabled" into later test modules.
+    monkeypatch.setattr(
+        "deeper_notebook.tools.scholarly_search.scholarly_search_enabled",
+        lambda: False,
+    )
+    ws.reset_web_search_caches()
     yield
+    ws.reset_web_search_caches()
 
 
 # ---------------------------------------------------------------- httpx mock

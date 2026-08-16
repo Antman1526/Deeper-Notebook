@@ -107,6 +107,16 @@ async def test_no_outcome_recorded_when_no_tools_bound(monkeypatch):
     monkeypatch.setattr(
         "deeper_notebook.tools.opencode.opencode_enabled", lambda: False
     )
+    # v0.8.82 — web_search and scholarly_search are keyless and therefore bound
+    # by default, so "no tools bound" now has to disable them too, the same way
+    # this test already disables opencode. The assertion below is unchanged.
+    monkeypatch.setattr(
+        "deeper_notebook.tools.web_search.web_search_enabled", lambda: False
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.tools.scholarly_search.scholarly_search_enabled",
+        lambda: False,
+    )
     model = _ScriptedModel([_FakeAIMessage([])])
 
     await chat_mod.bind_mcp_and_run_tool_loop(model, [], max_iterations=4)
