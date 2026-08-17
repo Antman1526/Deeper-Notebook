@@ -613,7 +613,11 @@ def _phase_select_provider(ctx: AppContext) -> None:
                     "MLX model provider disabled for this launch: %s", exc
                 )
             else:
-                extra_env["DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL"] = model
+                # v0.8.97 — start() now reports the RESOLVED path it launched
+                # mlx_lm.server with, which is the only string that server will
+                # accept as a `model` field. Only fall back to the raw config
+                # reference if a provider did not report one.
+                extra_env.setdefault("DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL", model)
                 ctx.model_provider_runtime = provider
 
     ctx.extra_env = extra_env

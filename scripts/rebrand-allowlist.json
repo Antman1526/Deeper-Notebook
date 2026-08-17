@@ -36889,6 +36889,26 @@
       }
     },
     {
+      "path": "docs/superpowers/plans/2026-08-11-full-release-quality-gate.md",
+      "pattern": "Open Notebook",
+      "source": "content",
+      "line": 4,
+      "column": 40,
+      "context_sha256": "9e04140110ce85639813b1168cfc19b7c35d6a6e121b0e3446007fbc2723cbd4",
+      "category": "migration_documentation",
+      "rationale": {
+        "path": "docs/superpowers/plans/2026-08-11-full-release-quality-gate.md",
+        "pattern": "Open Notebook",
+        "source": "content",
+        "line": 4,
+        "column": 40,
+        "context_sha256": "9e04140110ce85639813b1168cfc19b7c35d6a6e121b0e3446007fbc2723cbd4",
+        "category": "migration_documentation",
+        "explanation": "The superpowers plans 2026 08 11 full release quality gate document documents the upgrade boundary in the \"Deeper Notebook Full Release Quality Gate Plan / Checkout\" section because the statement uses that role while expressing Checkout: /Users/Antman/Documents/ current former base product title /Deeper-Notebook, while the preceding context concerns Date: 2026-08-11; the following context concerns Starting revision: 4c8b5a3d1fe4.",
+        "compatibility_contract": null
+      }
+    },
+    {
       "path": "docs/superpowers/plans/2026-08-13-gemini-forward-phase-1.md",
       "pattern": "onp-theme",
       "source": "content",

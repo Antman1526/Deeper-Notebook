@@ -15,6 +15,43 @@ def test_mlx_model_display_name_matches_inventory_repo_name():
     )
 
 
+def test_registered_mlx_model_name_is_the_string_the_server_accepts(monkeypatch):
+    """v0.8.97 — the registered name IS the wire ``model`` field.
+
+    ``deeper_notebook/ai/models.py`` builds every language model with
+    ``model_name=model.name``, so whatever is registered here is sent verbatim
+    as the OpenAI ``model`` parameter. ``mlx_lm.server`` keys its single loaded
+    model on the exact ``--model`` string it was launched with and resolves
+    anything else as a Hugging Face repo id — verified live against a running
+    server on this machine:
+
+        model="/…/MLX/PocketAiHub__Qwen3.8-27B-MLX-6bit"  → 200, generates
+        model="PocketAiHub/Qwen3.8-27B-MLX-6bit"          → 404 Repository Not Found
+        model="PocketAiHub__Qwen3.8-27B-MLX-6bit"         → 404 Repository Not Found
+
+    Registering the prettified display name therefore produced a model row that
+    could never answer. Register the launch reference itself.
+    """
+    client = MagicMock()
+    ensure_model = MagicMock(return_value=True)
+    monkeypatch.setattr(
+        "desktop.auto_register.mlx._ensure_credential",
+        MagicMock(return_value="credential:mlx"),
+    )
+    monkeypatch.setattr("desktop.auto_register.mlx._ensure_model", ensure_model)
+
+    launch_ref = "/Volumes/models/MLX/PocketAiHub__Qwen3.8-27B-MLX-6bit"
+    register_mlx_models(
+        client,
+        existing_cred_names=set(),
+        existing_model_keys=set(),
+        base_url="http://127.0.0.1:51231/v1",
+        model_ref=launch_ref,
+    )
+
+    assert ensure_model.call_args.kwargs["name"] == launch_ref
+
+
 def test_register_mlx_models_creates_openai_compatible_model(monkeypatch):
     client = MagicMock()
     ensure_credential = MagicMock(return_value="credential:mlx")
@@ -39,10 +76,12 @@ def test_register_mlx_models_creates_openai_compatible_model(monkeypatch):
         modalities=["language"],
         base_url="http://127.0.0.1:51231/v1",
     )
+    # v0.8.97 — the registered name is the LAUNCH REFERENCE (what mlx_lm.server
+    # accepts as the wire `model` field), not the prettified display name.
     ensure_model.assert_called_once_with(
         client=client,
-        existing_keys={("mlx-community/north-mini-code-1.0-6bit", "language")},
-        name="mlx-community/North-Mini-Code-1.0-6bit",
+        existing_keys={("mlx/mlx-community__north-mini-code-1.0-6bit", "language")},
+        name="MLX/mlx-community__North-Mini-Code-1.0-6bit",
         provider="openai_compatible",
         model_type="language",
         credential_id="credential:mlx",

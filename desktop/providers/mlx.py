@@ -144,6 +144,12 @@ class MlxProvider:
         env = ProviderEnv(
             OPENAI_COMPATIBLE_BASE_URL=f"http://127.0.0.1:{port}/v1",
             OPENAI_COMPATIBLE_API_KEY="sk-no-key",
+            # v0.8.97 — the RESOLVED path, not the caller's reference. This is
+            # the exact string passed to `--model` above, and mlx_lm.server
+            # only answers requests whose `model` field matches it; anything
+            # else is resolved as a Hugging Face repo id and 404s. Registration
+            # reads this so the model row's name is a usable wire id.
+            DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL=str(path),
         )
         if not wait_for_ready:
             return env
