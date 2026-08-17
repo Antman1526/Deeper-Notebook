@@ -42,7 +42,9 @@ const sourceVisualSchema = z.discriminatedUnion('origin', [
 })
 
 const sourceVisualStatusSchema = z.object({
-  state: z.enum(['queued', 'processing', 'unavailable', 'failed']),
+  // v0.8.86 — 'disabled' = backend capability sentinel: the feature flag
+  // is off server-side, so mutation actions can never succeed this session.
+  state: z.enum(['queued', 'processing', 'unavailable', 'failed', 'disabled']),
   command_id: commandIdSchema.optional().default(null),
   error_code: errorCodeSchema.optional().default(null),
   updated_at: dateTimeSchema,

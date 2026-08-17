@@ -204,3 +204,46 @@ describe('SourceCover', () => {
     expect(refresh).toBeDisabled()
   })
 })
+
+// v0.8.86 — backend capability sentinel: state 'disabled' means the feature
+// flag is off server-side, so mutation actions can only 404 and must not
+// render. Open (pure navigation) stays available.
+describe('disabled capability sentinel', () => {
+  const disabledStatus = {
+    state: 'disabled' as const,
+    command_id: null,
+    error_code: null,
+    updated_at: timestamp,
+  }
+
+  it('hides Refresh and Remove but keeps Open when visuals are disabled', () => {
+    const onOpen = vi.fn()
+    render(
+      <SourceCover
+        source={source({ visual: null, visual_status: disabledStatus })}
+        onOpen={onOpen}
+        onRefresh={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /refresh visual/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /remove visual/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Open Field notes' })).toBeTruthy()
+  })
+
+  it('says the feature is off instead of implying a cover might appear', () => {
+    render(<SourceCover source={source({ visual: null, visual_status: disabledStatus })} />)
+    expect(screen.getByRole('status').textContent).toBe('Visual covers are turned off')
+  })
+
+  it('still offers actions for a merely-unextracted visual (null status)', () => {
+    render(
+      <SourceCover
+        source={source({ visual: null, visual_status: null })}
+        onRefresh={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: /refresh visual/i })).toBeTruthy()
+  })
+})

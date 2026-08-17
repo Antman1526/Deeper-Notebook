@@ -121,6 +121,17 @@ function sourceVisual(state: SourceGalleryState) {
 }
 
 function sourceStatus(state: SourceGalleryState) {
+  // v0.8.86 — the backend stamps a 'disabled' capability sentinel when its
+  // feature flag is off; the fixture mirrors that for feature-off cells so
+  // the enabled-build/disabled-backend matrix exercises the real contract.
+  if (state === 'feature-off') {
+    return {
+      state: 'disabled',
+      command_id: null,
+      error_code: null,
+      updated_at: NOW,
+    } as const
+  }
   if (state !== 'processing' && state !== 'failed') return null
   return {
     state,

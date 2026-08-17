@@ -169,6 +169,17 @@ async def search_knowledge_base(search_request: SearchRequest):
                     normalized_results,
                     source_rows=source_rows,
                 )
+        else:
+            # v0.8.86 — capability sentinel; see api/routers/sources.py.
+            from api.schemas.source_visuals import disabled_visual_status
+
+            sentinel = disabled_visual_status().model_dump(mode="json")
+            normalized_results = [
+                {**row, "visual_status": sentinel}
+                if isinstance(row, dict)
+                else row
+                for row in normalized_results
+            ]
         return SearchResponse(
             results=normalized_results,
             total_count=len(normalized_results),

@@ -29,6 +29,10 @@ function statusCopy(source: SourceListResponse): string {
     case 'failed':
     case 'unavailable':
       return 'Visual cover unavailable'
+    case 'disabled':
+      // v0.8.86 — the backend reports the feature is off; say so instead of
+      // implying a cover might appear.
+      return 'Visual covers are turned off'
     default:
       return 'Visual cover unavailable'
   }
@@ -97,6 +101,9 @@ export function SourceCover({
     [source.id, source.updated, source.visual?.content_sha256, source.visual_status?.updated_at],
   )
   const pending = pendingIdentity === identity
+  // v0.8.86 — backend says the feature is off: Refresh/Remove could only
+  // 404, so they are not offered. Open (navigation) stays.
+  const visualsDisabled = source.visual_status?.state === 'disabled'
 
   function dispatch(action: ((sourceId: string) => void | Promise<void>) | undefined) {
     if (!action || pending || pendingIdentityRef.current === identity) return
@@ -157,12 +164,12 @@ export function SourceCover({
               Open {title}
             </button>
           ) : null}
-          {onRefresh ? (
+          {onRefresh && !visualsDisabled ? (
             <button type="button" disabled={pending} onClick={() => dispatch(onRefresh)}>
               Refresh visual for {title}
             </button>
           ) : null}
-          {onRemove ? (
+          {onRemove && !visualsDisabled ? (
             <button type="button" disabled={pending} onClick={() => dispatch(onRemove)}>
               Remove visual for {title}
             </button>

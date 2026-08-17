@@ -992,6 +992,10 @@ test.describe('source gallery visual contract', () => {
         const covers = await page.locator('[data-dn-source-cover]').count()
         if (covers > 0) {
           await expect(page.locator('.dn-source-cover__fallback').first()).toBeVisible()
+          // v0.8.86 — the backend's 'disabled' sentinel must suppress the
+          // mutation actions that could only 404 in this state.
+          await expect(page.getByRole('button', { name: /refresh visual/i })).toHaveCount(0)
+          await expect(page.getByRole('button', { name: /remove visual/i })).toHaveCount(0)
         }
         const visualReceipts = fixture.ledger.receipts.filter(receipt => (
           receipt.canonicalPath.endsWith('/visual')

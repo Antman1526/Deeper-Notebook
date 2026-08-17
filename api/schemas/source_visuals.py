@@ -15,8 +15,12 @@ from deeper_notebook.source_visuals.contracts import (
 )
 
 ERROR_CODE = r"^[a-z0-9][a-z0-9_.-]{0,63}$"
+# v0.8.86 — "disabled" is the backend-capability sentinel: the source-visuals
+# feature flag is off, so no visual can ever exist this session. Distinct from
+# "unavailable" (feature on, this source's visual missing/failed) so the client
+# can hide mutation actions instead of offering buttons that 404.
 SourceVisualStatusState = Literal[
-    "queued", "processing", "unavailable", "failed"
+    "queued", "processing", "unavailable", "failed", "disabled"
 ]
 SourceVisualOperationOutcome = Literal["queued", "replayed", "deleted", "failed"]
 
@@ -74,4 +78,19 @@ class SourceVisualJobResponse(_StrictSourceVisualSchema):
     outcome: SourceVisualOperationOutcome
     error_code: str | None = Field(
         default=None, pattern=ERROR_CODE, max_length=64
+    )
+
+
+def disabled_visual_status() -> "SourceVisualStatusResponse":
+    """v0.8.86 — sentinel stamped by list/detail projections when the backend
+    feature flag is off. Lets a client whose build-time flags are baked ON
+    (the packaged rollback state) distinguish "visuals are turned off" from
+    "not extracted yet" without any extra request."""
+    from datetime import datetime, timezone
+
+    return SourceVisualStatusResponse(
+        state="disabled",
+        command_id=None,
+        error_code=None,
+        updated_at=datetime.now(timezone.utc),
     )

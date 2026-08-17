@@ -477,3 +477,21 @@ async def test_publish_ready_allows_a_newer_explicit_refresh_to_supersede_delete
     assert "$refresh.created_at <= $delete_intent.created_at" in query_text
     assert "ORDER BY created_at DESC, updated_at DESC" in query_text
     assert variables["request_id"] == "request:explicit-after-delete"
+
+
+@pytest.mark.asyncio
+async def test_disabled_sentinel_shape_and_state():
+    """v0.8.86 — the capability sentinel list/detail projections stamp when the
+    feature flag is off. The state is 'disabled' (not 'unavailable') so a
+    client with baked-on build flags can hide mutation actions that would 404.
+    """
+    from api.schemas.source_visuals import disabled_visual_status
+
+    sentinel = disabled_visual_status()
+    assert sentinel.state == "disabled"
+    assert sentinel.command_id is None
+    assert sentinel.error_code is None
+    assert sentinel.updated_at is not None
+    # Serialises cleanly for the dict-shaped search results too.
+    dumped = sentinel.model_dump(mode="json")
+    assert dumped["state"] == "disabled"

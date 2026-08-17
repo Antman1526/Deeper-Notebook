@@ -648,6 +648,18 @@ async def get_sources(
                 else item
                 for item in response_list
             ]
+        else:
+            # v0.8.86 — capability sentinel: a packaged client with baked-on
+            # visual flags cannot otherwise tell "feature off" from "not yet
+            # extracted" (both were null/null) and rendered Refresh/Remove
+            # actions that 404 against the disabled router.
+            from api.schemas.source_visuals import disabled_visual_status
+
+            sentinel = disabled_visual_status()
+            response_list = [
+                item.model_copy(update={"visual_status": sentinel})
+                for item in response_list
+            ]
         return response_list
     except HTTPException:
         raise
@@ -1226,6 +1238,11 @@ async def get_source(source_id: str):
             receipt = projected.get(source.id or source_id)
             if receipt is not None:
                 visual, visual_status = receipt.visual, receipt.visual_status
+        else:
+            # v0.8.86 — capability sentinel (see the list projection above).
+            from api.schemas.source_visuals import disabled_visual_status
+
+            visual_status = disabled_visual_status()
 
         return SourceResponse(
             id=source.id or "",
