@@ -1,0 +1,39 @@
+-- v0.8.97 — ExamLab: timed exam attempts over Evidence Studio quiz artifacts.
+-- (Idea adopted from PageLM's ExamLab; implementation original — their license
+-- does not permit code reuse.)
+--
+-- An attempt SNAPSHOTS the quiz questions at start time, so editing or
+-- regenerating the source artifact mid-attempt can never corrupt grading.
+-- Grading is deterministic (answers vs the snapshotted correct_option_id) and
+-- happens at submit; no model call is involved after the attempt starts, so
+-- ExamLab works fully offline like the rest of the Study workbench.
+
+DEFINE TABLE IF NOT EXISTS study_exam_attempt SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS schema_version ON TABLE study_exam_attempt TYPE int DEFAULT 1 ASSERT $value = 1;
+DEFINE FIELD IF NOT EXISTS artifact_id ON TABLE study_exam_attempt TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS notebook_id ON TABLE study_exam_attempt TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
+DEFINE FIELD IF NOT EXISTS title ON TABLE study_exam_attempt TYPE string ASSERT string::len($value) >= 1 AND string::len($value) <= 512;
+-- Question snapshot: [{index, prompt, options: [{id, text}], correct_option_id,
+-- explanation, citations: [string]}]. FLEXIBLE like studio_artifact payloads —
+-- the authoritative shape lives in the Pydantic contracts, not the DB.
+DEFINE FIELD IF NOT EXISTS questions ON TABLE study_exam_attempt FLEXIBLE TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS question_count ON TABLE study_exam_attempt TYPE int ASSERT $value >= 1 AND $value <= 200;
+DEFINE FIELD IF NOT EXISTS duration_sec ON TABLE study_exam_attempt TYPE int ASSERT $value >= 60 AND $value <= 14400;
+DEFINE FIELD IF NOT EXISTS started_at ON TABLE study_exam_attempt TYPE datetime;
+DEFINE FIELD IF NOT EXISTS deadline ON TABLE study_exam_attempt TYPE datetime;
+DEFINE FIELD IF NOT EXISTS submitted_at ON TABLE study_exam_attempt TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS late ON TABLE study_exam_attempt TYPE option<bool>;
+-- {"<question index>": "<selected option id>"} as submitted.
+DEFINE FIELD IF NOT EXISTS answers ON TABLE study_exam_attempt FLEXIBLE TYPE option<object>;
+-- [{index, correct, selected_option_id, correct_option_id, explanation, citations}]
+DEFINE FIELD IF NOT EXISTS results ON TABLE study_exam_attempt FLEXIBLE TYPE option<array<object>>;
+DEFINE FIELD IF NOT EXISTS correct_count ON TABLE study_exam_attempt TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS score_percent ON TABLE study_exam_attempt TYPE option<number>;
+-- Indices of missed questions already seeded into the FSRS review deck, so
+-- seeding is idempotent per attempt.
+DEFINE FIELD IF NOT EXISTS seeded_indices ON TABLE study_exam_attempt TYPE array<int> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS created ON study_exam_attempt DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON study_exam_attempt DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_study_exam_attempt_notebook ON TABLE study_exam_attempt COLUMNS notebook_id;
+DEFINE INDEX IF NOT EXISTS idx_study_exam_attempt_started ON TABLE study_exam_attempt COLUMNS started_at;

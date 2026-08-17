@@ -68,6 +68,7 @@ from api.routers import (
     study,
     study_anki,
     study_assistants,
+    study_exams,
     study_plans,
     study_voice,
     transformations,
@@ -1286,6 +1287,8 @@ app.include_router(capture.router, prefix="/api", tags=["capture"])
 app.include_router(study.router, prefix="/api", tags=["study"])
 app.include_router(study_plans.router, prefix="/api", tags=["study-plans"])
 app.include_router(study_anki.router, prefix="/api", tags=["study-anki"])
+# v0.8.97 — ExamLab: timed exam attempts over quiz artifacts.
+app.include_router(study_exams.router, prefix="/api", tags=["study-exams"])
 app.include_router(study_assistants.router, prefix="/api", tags=["study-assistants"])
 app.include_router(study_voice.router, prefix="/api", tags=["study-voice"])
 app.include_router(video_overviews.router, prefix="/api", tags=["video-overviews"])

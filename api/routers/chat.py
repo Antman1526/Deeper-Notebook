@@ -3,7 +3,7 @@ import json
 import os
 import re
 import traceback
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -297,6 +297,20 @@ class ExecuteChatRequest(BaseModel):
             "When True, skip the fail-closed privacy gate for THIS turn "
             "(explicit user consent to send flagged content to cloud). "
             "Default False — the gate stays active."
+        ),
+    )
+    # v0.8.97 — Debate mode (idea adopted from PageLM; implementation
+    # original). Per-turn, following the disabled_mcp_servers precedent, so
+    # the user can enter and leave debate inside one session. "debate" swaps
+    # the system prompt for prompts/chat/debate.jinja: the assistant argues
+    # the opposing side of the user's position, grounded in the selected
+    # sources with the same citation contract as standard chat.
+    chat_mode: Literal["standard", "debate"] = Field(
+        "standard",
+        description=(
+            "Conversation mode for this turn. 'debate' makes the assistant "
+            "argue the strongest opposing case, grounded in the selected "
+            "sources with citations. Default 'standard'."
         ),
     )
 
@@ -837,6 +851,9 @@ async def execute_chat(request: ExecuteChatRequest):
             )
             # v0.8.63 — per-request privacy-gate bypass (explicit user consent).
             state_values["bypass_privacy_gate"] = bool(request.bypass_privacy_gate)
+            # v0.8.97 — per-turn conversation mode ("standard" | "debate").
+            # The graph's prompt-assembly node selects the matching template.
+            state_values["chat_mode"] = request.chat_mode
 
             # Add user message to state
             from langchain_core.messages import HumanMessage
@@ -1164,6 +1181,9 @@ async def _stream_chat_events(
             )
             # v0.8.63 — per-request privacy-gate bypass (explicit user consent).
             state_values["bypass_privacy_gate"] = bool(request.bypass_privacy_gate)
+            # v0.8.97 — per-turn conversation mode ("standard" | "debate").
+            # The graph's prompt-assembly node selects the matching template.
+            state_values["chat_mode"] = request.chat_mode
 
             from langchain_core.messages import HumanMessage
 

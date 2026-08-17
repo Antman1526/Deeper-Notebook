@@ -47,6 +47,11 @@ export function useNotebookChat({
   // tool picker above the message input; setters expose Add/Remove
   // semantics so consumers don't have to immutably-clone the array.
   const [disabledMcpServers, setDisabledMcpServers] = useState<string[]>([])
+  // v0.8.97 — Debate mode toggle. Hook-local like the MCP picks: flips per
+  // conversation without persisting to the session row, and applies to every
+  // turn sent while on ('debate' swaps the backend system prompt for the
+  // source-grounded opposition template).
+  const [debateMode, setDebateMode] = useState(false)
   // v0.8.43b — ref-based access to `updateSessionMutation` so the
   // useCallback can reference it WITHOUT needing it in the deps
   // array (the mutation object is hoisted later in this function
@@ -476,6 +481,8 @@ export function useNotebookChat({
           disabledMcpServers.length > 0 ? disabledMcpServers : undefined,
         // v0.8.63 — only sent (true) on an explicit "Re-ask allowing cloud".
         bypass_privacy_gate: bypassPrivacyGate || undefined,
+        // v0.8.97 — omit when standard so pre-upgrade servers never see the field.
+        chat_mode: debateMode ? 'debate' : undefined,
       }, controller.signal)) {
         // v0.7.50 — bail mid-stream if the component unmounted. Avoids
         // setState-on-dead-component warnings + extra setMessages
@@ -647,6 +654,9 @@ export function useNotebookChat({
     // toggle). Adding it here makes the next send always reflect the
     // current picks. Caught by react-hooks/exhaustive-deps.
     disabledMcpServers,
+    // v0.8.97 — same stale-closure hazard as disabledMcpServers above:
+    // without this, toggling Debate then sending captured the old mode.
+    debateMode,
   ])
 
   // Switch session
@@ -775,6 +785,10 @@ export function useNotebookChat({
     // pass the raw `mcp_server.name` from the registry.
     disabledMcpServers,
     toggleDisabledMcpServer,
+
+    // v0.8.97 — Debate mode state for the chat input toolbar.
+    debateMode,
+    setDebateMode,
 
     // Actions
     createSession,

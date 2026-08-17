@@ -1,0 +1,6 @@
+-- Remove only the row migration 47 inserted. Name + title together are the
+-- closest thing to identity for default-library rows (migration 5 precedent:
+-- defaults carry no fixed record id). A user-created transformation with the
+-- same name would also match — acceptable for a down migration on a
+-- single-user install, and strictly narrower than deleting by name alone.
+DELETE transformation WHERE name = "Cornell Notes" AND title = "Cornell Notes";

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 
+import { ExamLab } from '@/components/study/ExamLab'
 import { StudyDashboard } from '@/components/study/StudyDashboard'
 import { StudyPlanWizard } from '@/components/study/StudyPlanWizard'
 import { StudySession } from '@/components/study/StudySession'
@@ -85,6 +86,17 @@ export function StudyWorkbench({ cards = [], cardsLoading = false, cardsError = 
             ))}
           </ul>
         )}
+      </section>
+
+      {/* v0.8.97 — ExamLab: timed exams over Evidence Studio quizzes. */}
+      <section aria-labelledby="study-examlab-heading" className="space-y-4">
+        <div>
+          <h2 id="study-examlab-heading" className="text-lg font-semibold">ExamLab</h2>
+          <p className="text-sm text-muted-foreground">
+            Timed exam simulation with instant local grading. Misses feed your review deck.
+          </p>
+        </div>
+        <ExamLab />
       </section>
 
       <section aria-labelledby="study-review-heading" className="space-y-4">

@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { SourceDialog } from './SourceDialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square, X } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square, Swords, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -97,6 +97,12 @@ interface ChatPanelProps {
   // so the entire feature chain was unreachable from the UI.
   disabledMcpServers?: string[]
   onToggleMcpServer?: (name: string) => void
+  // v0.8.97 — Debate mode toggle (notebook chat only; callers that don't
+  // pass onToggleDebateMode simply never render the control). When active,
+  // every sent turn carries chat_mode: 'debate' and the assistant argues
+  // the opposing case grounded in the selected sources.
+  debateMode?: boolean
+  onToggleDebateMode?: () => void
   // v0.8.63 — "Re-ask allowing cloud" handler for the privacy review sheet.
   // Given the original question text, re-sends it with the privacy gate
   // bypassed (explicit user consent). Only notebook chat provides it; source
@@ -135,6 +141,8 @@ export function ChatPanel({
   notebookId,
   disabledMcpServers,
   onToggleMcpServer,
+  debateMode = false,
+  onToggleDebateMode,
   onReaskAllowCloud,
   onCancelStreaming,
   suggestedQuestions,
@@ -554,7 +562,7 @@ export function ChatPanel({
               The picker self-hides when there are no enabled MCP
               servers, so the row collapses to just the model selector
               for users without MCP configured. */}
-          {(onModelChange || onToggleMcpServer) && (
+          {(onModelChange || onToggleMcpServer || onToggleDebateMode) && (
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
@@ -566,12 +574,31 @@ export function ChatPanel({
                   />
                 )}
               </div>
-              {onToggleMcpServer && (
-                <McpToolPicker
-                  disabled={disabledMcpServers ?? []}
-                  onToggle={onToggleMcpServer}
-                />
-              )}
+              <div className="flex items-center gap-2">
+                {/* v0.8.97 — Debate mode: argue the other side from the sources. */}
+                {onToggleDebateMode && (
+                  <Button
+                    type="button"
+                    variant={debateMode ? 'secondary' : 'ghost'}
+                    size="sm"
+                    aria-pressed={debateMode}
+                    aria-label={debateMode ? 'Leave Debate mode' : 'Enter Debate mode'}
+                    title="Debate mode — the assistant argues the opposing case, grounded in your sources"
+                    onClick={onToggleDebateMode}
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    data-testid="debate-mode-toggle"
+                  >
+                    <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+                    Debate
+                  </Button>
+                )}
+                {onToggleMcpServer && (
+                  <McpToolPicker
+                    disabled={disabledMcpServers ?? []}
+                    onToggle={onToggleMcpServer}
+                  />
+                )}
+              </div>
             </div>
           )}
 

@@ -140,6 +140,10 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       // v0.8.46 — wire the per-conversation MCP tool picker (v0.8.42/43).
       disabledMcpServers={chat.disabledMcpServers}
       onToggleMcpServer={chat.toggleDisabledMcpServer}
+      // v0.8.97 — Debate mode: per-conversation toggle; each turn sent while
+      // active carries chat_mode 'debate' (source-grounded opposition).
+      debateMode={chat.debateMode}
+      onToggleDebateMode={() => chat.setDebateMode(!chat.debateMode)}
     />
   )
 }

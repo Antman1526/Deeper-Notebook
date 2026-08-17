@@ -160,6 +160,11 @@ class ThreadState(TypedDict):
     # ExecuteChatResponse so the frontend can render citation pill
     # popovers with the real search query + result text.
     mcp_tool_calls: Optional[list]
+    # v0.8.97 — Per-turn conversation mode ("standard" | "debate"). When
+    # "debate", call_model_with_messages renders prompts/chat/debate.jinja
+    # instead of chat/system.jinja: same context, same citation contract,
+    # opposing stance. Absent/None means standard.
+    chat_mode: Optional[str]
     # v0.8.42 — Per-request MCP server disable list. Frontend sends
     # this on `ExecuteChatRequest.disabled_mcp_servers` so the user
     # can untick specific tools for a given chat turn ("load only what
@@ -1000,7 +1005,17 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
         memory_block = render_memory_block(memory)
         prompt_data: dict = dict(state)  # type: ignore[arg-type]
         prompt_data["memory_block"] = memory_block
-        system_prompt = Prompter(prompt_template="chat/system").render(data=prompt_data)
+        # v0.8.97 — Debate mode swaps the whole system template rather than
+        # appending a stance instruction: an appended instruction fights the
+        # base template's "helpful assistant" framing and loses on smaller
+        # local models. The debate template carries its own copy of the
+        # grounding + citing contracts, so citations behave identically.
+        _template = (
+            "chat/debate"
+            if state.get("chat_mode") == "debate"
+            else "chat/system"
+        )
+        system_prompt = Prompter(prompt_template=_template).render(data=prompt_data)
         # v0.7.11 — trim accumulated message history before building the
         # LLM payload so a long-running session doesn't overflow a
         # 16k-context local server. See `_trim_message_history` docstring

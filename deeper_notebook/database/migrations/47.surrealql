@@ -1,0 +1,52 @@
+-- v0.8.97 — Cornell Notes default transformation.
+--
+-- The Cornell method is the brand-name note format students actually search
+-- for: a cue column of recall questions, a note column of substance, and a
+-- bottom summary. It maps cleanly onto the transformation -> insight pipeline
+-- (idea adopted from PageLM's SmartNotes; implementation is original — their
+-- license does not permit code reuse).
+--
+-- Plain insert, same as migration 5's default library: runs once per install,
+-- never touches user-created or user-edited transformations.
+
+insert into transformation [
+   {
+       name: "Cornell Notes",
+       title: "Cornell Notes",
+       description: "Restructures a source into Cornell-method study notes: cue questions, notes, and a summary",
+       prompt: "# IDENTITY and PURPOSE
+
+You convert source material into Cornell-method study notes. The Cornell system splits a page into a narrow CUE column (recall prompts), a wide NOTES column (the substance), and a SUMMARY strip at the bottom. Your output lets a learner cover the NOTES column and quiz themselves from the CUES alone.
+
+# STEPS
+
+1. **READ THE SOURCE**: Identify the 4-8 concepts a learner must retain. Prefer concepts the source explains over concepts it merely mentions.
+
+2. **BUILD THE NOTES COLUMN**: For each concept, write compact notes — definitions, mechanisms, numbers, relationships. Use short phrases, not prose paragraphs. Preserve any figures, dates, and named entities exactly as the source states them.
+
+3. **BUILD THE CUE COLUMN**: For each notes block, write one recall question or trigger phrase whose answer is exactly that block. A good cue is answerable only by someone who learned the material — not by rereading the cue.
+
+4. **WRITE THE SUMMARY**: Two or three sentences a learner could say aloud to explain the whole source to a peer.
+
+# OUTPUT INSTRUCTIONS
+
+- Output a Markdown document with this exact structure:
+
+## Cues and Notes
+
+| Cue | Notes |
+|---|---|
+| <recall question> | <compact notes for that concept> |
+
+(one table row per concept, 4-8 rows)
+
+## Summary
+
+<2-3 sentence summary>
+
+- Notes cells use `<br>` between points, never bullet characters inside the table.
+- Every fact in NOTES must come from the source. Do not add outside knowledge, warnings, or commentary.
+- If the source does not contain enough substance for at least 4 concepts, produce fewer rows rather than padding with trivia.",
+       apply_default: False
+   }
+];

@@ -55,6 +55,9 @@ export const QUERY_KEYS = {
   speakerProfiles: ['podcasts', 'speaker-profiles'] as const,
   languages: ['languages'] as const,
   studyDue: ['study', 'due'] as const,
+  // v0.8.97 — ExamLab
+  studyExamAttempts: (notebookId?: string) => ['study', 'exams', 'attempts', notebookId ?? 'all'] as const,
+  studyExamAttempt: (attemptId: string) => ['study', 'exams', 'attempts', 'byId', attemptId] as const,
   studyPlans: ['study', 'plans'] as const,
   studyPlan: (id: string) => ['study', 'plans', id] as const,
   studyPlanSources: (id: string) => ['study', 'plans', id, 'sources'] as const,

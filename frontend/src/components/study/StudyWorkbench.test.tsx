@@ -28,6 +28,11 @@ vi.mock('@/lib/hooks/use-study-plans', () => ({
 vi.mock('./StudyPlanWizard', () => ({
   StudyPlanWizard: ({ open }: { open: boolean }) => open ? <div role="dialog">Create study plan dialog</div> : null,
 }))
+// v0.8.97 — ExamLab has its own suite (ExamLab.test.tsx); here we only
+// assert the workbench composes it.
+vi.mock('./ExamLab', () => ({
+  ExamLab: () => <div data-testid="exam-lab">ExamLab panel</div>,
+}))
 
 describe('StudyWorkbench', () => {
   it('composes the existing review surface with active plans and actions', async () => {
@@ -35,6 +40,8 @@ describe('StudyWorkbench', () => {
 
     expect(screen.getByTestId('study-dashboard')).toBeInTheDocument()
     expect(screen.getByTestId('study-session')).toBeInTheDocument()
+    expect(screen.getByTestId('exam-lab')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ExamLab' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Active study plans' })).toBeInTheDocument()
     expect(screen.getByText('Understand mechanics')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Import study plan' })).toBeDisabled()

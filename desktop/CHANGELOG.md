@@ -25,6 +25,34 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.97 — 2026-08-17 — ExamLab, Debate mode, Cornell Notes
+
+Three study features. The first two adopt ideas from PageLM (CaviraOSS);
+implementations are original — their license does not permit code reuse.
+
+- **v0.8.97** ✨ **ExamLab** — timed exam simulation in the Study workbench,
+  built on Evidence Studio quiz artifacts. Starting an attempt snapshots the
+  quiz's questions (so mid-attempt artifact edits can never corrupt grading),
+  stamps a server-side deadline, and serves the taking view WITHOUT the answer
+  key. Grading is deterministic and local — submitted option ids against the
+  snapshot, no model call — so results are instant and identical offline. Late
+  submissions are graded and flagged, not rejected. Missed questions can be
+  seeded into the FSRS review deck (idempotent via `seeded_indices`; evidence
+  uses the Anki-import self-referential-span precedent). New table
+  `study_exam_attempt` (migration 48), router `/api/study/exams/*`, and an
+  ExamLab panel on /study.
+- **v0.8.97** ✨ **Debate mode** — a per-turn `chat_mode` on notebook chat
+  (`disabled_mcp_servers` precedent) that swaps the system template for
+  `prompts/chat/debate.jinja`: steelman the user's position first, argue the
+  strongest opposing case FROM THE SELECTED SOURCES with the standard citation
+  contract, concede what the sources concede, and mark pure reasoning as such.
+  Toggle (⚔ Debate) sits beside the MCP tool picker; `debateMode` joins the
+  sendMessage deps array (the v0.8.46b stale-closure lesson applied on day
+  one).
+- **v0.8.97** ✨ **Cornell Notes** — a default-library transformation
+  (migration 47) that restructures any source into cue/notes/summary Cornell
+  format, grounded-only by instruction.
+
 ## v0.8.96 — 2026-08-17 — Command row stops covering itself
 
 - **v0.8.96** 🐛 Bug fix: the Focus mode control was `position: absolute` at the

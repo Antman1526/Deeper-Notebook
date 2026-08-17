@@ -325,6 +325,10 @@ export interface SendNotebookChatMessageRequest {
   // fail-closed privacy gate flagged it ("Re-ask allowing cloud"). Omit /
   // false → the gate stays active (default).
   bypass_privacy_gate?: boolean
+  // v0.8.97 — per-turn conversation mode. 'debate' makes the assistant argue
+  // the strongest opposing case grounded in the selected sources with
+  // citations (prompts/chat/debate.jinja). Omit / 'standard' = normal chat.
+  chat_mode?: 'standard' | 'debate'
 }
 
 export interface BuildContextRequest {
