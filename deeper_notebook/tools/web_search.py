@@ -17,11 +17,12 @@ Env var              Provider                          Notes
 ==================== ================================= ==========================
 ``SERPER_API_KEY``   Serper (Google Search API)        https://serper.dev
 ``TAVILY_API_KEY``   Tavily search API                 https://tavily.com
+``BRAVE_API_KEY``    Brave Search API                  https://brave.com/search/api
 ``SEARXNG_BASE_URL`` A self-hosted SearXNG instance    e.g. ``http://127.0.0.1:8080``
 *(none)*             Wikipedia ``api.php``             keyless, always available
 ==================== ================================= ==========================
 
-Precedence is Serper > Tavily > SearXNG > Wikipedia, overridable via
+Precedence is Serper > Tavily > Brave > SearXNG > Wikipedia, overridable via
 ``DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER`` (a stale override naming an unconfigured
 provider is ignored, so it can't disable a perfectly good key).
 
@@ -95,6 +96,9 @@ WEB_SEARCH_TOOL_NAME = "web_search"
 
 _SERPER_ENDPOINT = "https://google.serper.dev/search"
 _TAVILY_ENDPOINT = "https://api.tavily.com/search"
+# v0.8.85 — Brave Search API (free tier: 2,000 queries/month). .env.example
+# advertised it before the branch existed; now it is real.
+_BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 
 # v0.8.82 — keyless provider. Needs no API key and no self-hosting, so the
 # chain is never empty and a local model has some web reach out of the box.
@@ -106,8 +110,21 @@ _TAVILY_ENDPOINT = "https://api.tavily.com/search"
 # challenge for scripted clients, so it would have shipped as a provider that
 # silently returns nothing. Real general web search still needs a (free-tier)
 # key; see the provider table above.
-_WIKIPEDIA_ENDPOINT = "https://en.wikipedia.org/w/api.php"
 _KEYLESS_PROVIDERS = ("wikipedia",)
+_WIKI_LANG_PATTERN = re.compile(r"^[a-z]{2,3}(-[a-z0-9]{2,8})?$")
+
+
+def _wiki_lang() -> str:
+    """v0.8.85 — Wikipedia language edition (DEEPER_NOTEBOOK_WEB_SEARCH_WIKI_LANG).
+
+    Defaults to ``en``; anything that does not look like a Wikipedia language
+    subdomain falls back rather than building a bogus hostname."""
+    raw = _env("DEEPER_NOTEBOOK_WEB_SEARCH_WIKI_LANG").lower()
+    return raw if raw and _WIKI_LANG_PATTERN.fullmatch(raw) else "en"
+
+
+def _wikipedia_endpoint() -> str:
+    return f"https://{_wiki_lang()}.wikipedia.org/w/api.php"
 
 _DEFAULT_MAX_RESULTS = 5
 _DEFAULT_TIMEOUT_SEC = 10.0
@@ -207,11 +224,13 @@ def _provider_chain() -> list[tuple[str, str | None]]:
     """
     serper = bool(_env("SERPER_API_KEY"))
     tavily = bool(_env("TAVILY_API_KEY"))
+    brave = bool(_env("BRAVE_API_KEY"))
     searxng_urls = _searxng_urls()
     keyless = keyless_enabled()
     available = {
         "serper": serper,
         "tavily": tavily,
+        "brave": brave,
         "searxng": bool(searxng_urls),
         "wikipedia": keyless,
     }
@@ -223,6 +242,8 @@ def _provider_chain() -> list[tuple[str, str | None]]:
             chain.append(("serper", None))
         elif provider == "tavily" and tavily:
             chain.append(("tavily", None))
+        elif provider == "brave" and brave:
+            chain.append(("brave", None))
         elif provider == "searxng":
             for url in searxng_urls:
                 chain.append(("searxng", url))
@@ -235,6 +256,7 @@ def _provider_chain() -> list[tuple[str, str | None]]:
     else:
         add("serper")
         add("tavily")
+        add("brave")
         add("searxng")
         # v0.8.82 — keyless tail. Appended LAST so a configured key still wins
         # and no existing deployment changes behaviour; its only effect is that
@@ -359,9 +381,29 @@ async def _do_attempt(
             n=n,
         )
 
+    if provider == "brave":
+        resp = await client.get(
+            _BRAVE_ENDPOINT,
+            params={"q": query, "count": n},
+            headers={
+                "X-Subscription-Token": _env("BRAVE_API_KEY"),
+                "Accept": "application/json",
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        web = (data or {}).get("web") if isinstance(data, dict) else None
+        return _normalise(
+            web.get("results") if isinstance(web, dict) else None,
+            url_key="url",
+            snippet_key="description",
+            n=n,
+        )
+
     if provider == "wikipedia":
         resp = await client.get(
-            _WIKIPEDIA_ENDPOINT,
+            _wikipedia_endpoint(),
             params={
                 "action": "query",
                 "list": "search",
@@ -387,7 +429,7 @@ async def _do_attempt(
             out.append(
                 {
                     "title": title,
-                    "url": "https://en.wikipedia.org/wiki/"
+                    "url": f"https://{_wiki_lang()}.wikipedia.org/wiki/"
                     + title.replace(" ", "_"),
                     "snippet": snippet.strip(),
                 }

@@ -33,6 +33,13 @@ class HealthResult(TypedDict):
 _PROBE_TIMEOUT = httpx.Timeout(
     connect=2.0, read=5.0, write=2.0, pool=2.0,
 )
+# v0.8.85 — Ollama gets a longer read budget. A large or freshly-upgraded
+# store makes /api/tags legitimately take 10-15s while the server is fine
+# (measured live: HTTP 200 in 9.8s during a store inventory); a 5s read
+# timeout flapped the health badge on every slow scan.
+_OLLAMA_PROBE_TIMEOUT = httpx.Timeout(
+    connect=2.0, read=20.0, write=2.0, pool=2.0,
+)
 _MAX_CONCURRENT_PROBES = 4
 
 
@@ -189,7 +196,7 @@ def _probe_ollama(*, name: str, base_url: str) -> HealthResult:
     url = f"{clean_base}/api/tags"
     start = time.monotonic()
     try:
-        with httpx.Client(timeout=_PROBE_TIMEOUT) as client:
+        with httpx.Client(timeout=_OLLAMA_PROBE_TIMEOUT) as client:
             resp = client.get(url)
             latency_ms = (time.monotonic() - start) * 1000
             if resp.status_code == 200:

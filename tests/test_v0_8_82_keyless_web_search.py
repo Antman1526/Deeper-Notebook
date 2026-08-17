@@ -35,6 +35,7 @@ _KEY_ENV = (
     "SERPER_API_KEY",
     "TAVILY_API_KEY",
     "SEARXNG_BASE_URL",
+    "BRAVE_API_KEY",
     "DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER",
     "DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS",
     "DEEPER_NOTEBOOK_WEB_SEARCH_CACHE_TTL_SEC",
@@ -60,7 +61,8 @@ def _clean(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     for canonical in (
         "DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS",
-        "DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER",
+        "BRAVE_API_KEY",
+    "DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER",
         "DEEPER_NOTEBOOK_WEB_SEARCH_CACHE_TTL_SEC",
         "DEEPER_NOTEBOOK_WEB_SEARCH_MAX_RESULTS",
     ):
@@ -182,7 +184,7 @@ def test_wikipedia_attempt_builds_urls_and_strips_markup(monkeypatch):
     assert results[0]["snippet"] == "An English mathematician"
     assert results[1]["url"] == "https://en.wikipedia.org/wiki/Analytical_Engine"
     assert calls[0][0] == "get"
-    assert calls[0][1] == ws._WIKIPEDIA_ENDPOINT
+    assert calls[0][1] == ws._wikipedia_endpoint()
 
 
 def test_wikipedia_malformed_payload_degrades_to_empty(monkeypatch):
@@ -320,3 +322,56 @@ def test_pooled_client_is_reused_for_repeat_searches(monkeypatch):
         return first is ws._pooled_client
 
     assert asyncio.run(_two()) is True
+
+
+# v0.8.85 — Brave provider + Wikipedia language edition.
+
+
+def test_brave_sits_between_tavily_and_searxng(monkeypatch):
+    monkeypatch.setenv("SERPER_API_KEY", "k")
+    monkeypatch.setenv("TAVILY_API_KEY", "k")
+    monkeypatch.setenv("BRAVE_API_KEY", "k")
+    monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
+    assert [p for p, _ in ws._provider_chain()] == [
+        "serper", "tavily", "brave", "searxng", "wikipedia",
+    ]
+
+
+def test_brave_request_and_parse(monkeypatch):
+    monkeypatch.setenv("BRAVE_API_KEY", "brave-key")
+    calls: list = []
+    payload = {"web": {"results": [
+        {"title": "T1", "url": "https://a", "description": "D1"},
+        {"title": "T2", "url": "https://b", "description": "D2"},
+    ]}}
+    monkeypatch.setattr(httpx, "AsyncClient", _fake_client(json_payload=payload, calls=calls))
+    results = asyncio.run(ws.run_web_search("q"))
+    assert calls[0][1] == ws._BRAVE_ENDPOINT
+    assert calls[0][2]["headers"]["X-Subscription-Token"] == "brave-key"
+    assert [r["snippet"] for r in results] == ["D1", "D2"]
+
+
+def test_brave_override_selects_only_brave(monkeypatch):
+    monkeypatch.setenv("SERPER_API_KEY", "k")
+    monkeypatch.setenv("BRAVE_API_KEY", "k")
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER", "brave")
+    assert [p for p, _ in ws._provider_chain()] == ["brave"]
+
+
+def test_wiki_lang_default_and_override(monkeypatch):
+    assert ws._wikipedia_endpoint() == "https://en.wikipedia.org/w/api.php"
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_WIKI_LANG", "de")
+    assert ws._wikipedia_endpoint() == "https://de.wikipedia.org/w/api.php"
+
+
+def test_wiki_lang_rejects_garbage(monkeypatch):
+    for bad in ("EN GB", "evil.example.com", "a", "x" * 20, "de/../en"):
+        monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_WIKI_LANG", bad)
+        assert ws._wikipedia_endpoint() == "https://en.wikipedia.org/w/api.php", bad
+
+
+def test_wiki_result_urls_follow_language(monkeypatch):
+    monkeypatch.setenv("DEEPER_NOTEBOOK_WEB_SEARCH_WIKI_LANG", "fr")
+    monkeypatch.setattr(httpx, "AsyncClient", _fake_client(json_payload=WIKI_PAYLOAD))
+    results = asyncio.run(ws.run_web_search("ada"))
+    assert results[0]["url"].startswith("https://fr.wikipedia.org/wiki/")

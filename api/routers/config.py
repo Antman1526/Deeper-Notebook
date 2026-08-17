@@ -72,9 +72,16 @@ async def get_latest_version_cached(current_version: str) -> tuple[Optional[str]
     try:
         logger.info("Checking for latest version from GitHub...")
 
-        # Fetch latest version from GitHub with 10-second timeout
+        # Fetch latest version from GitHub with 10-second timeout.
+        # v0.8.85 — compare against THIS fork, not upstream open-notebook.
+        # Upstream's pyproject (1.14.x) always outran this fork's (1.8.x), so
+        # every install showed a permanent "update available" banner whose
+        # link pointed at the fork's releases — an update that did not exist.
+        # Comparing installed pyproject vs fork-main pyproject means the
+        # banner appears exactly when this repo's main has moved past the
+        # running build.
         latest_version = await get_version_from_github_async(
-            "https://github.com/lfnovo/open-notebook", "main"
+            "https://github.com/Antman1526/Deeper-Notebook", "main"
         )
 
         logger.info(

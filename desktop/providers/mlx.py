@@ -56,6 +56,7 @@ class MlxProvider:
         )
         self._proc: subprocess.Popen | None = None
         self._port: int | None = None
+        self._stderr_log = None
 
     def is_available(self) -> bool:
         return bool(self.list_models())
@@ -109,10 +110,29 @@ class MlxProvider:
             "--port",
             str(port),
         ]
+        # v0.8.85 — capture stderr instead of discarding it. DEVNULL hid a
+        # configured-but-deleted model's death for hours (the server printed
+        # its ValueError to a discarded pipe and the only symptom was a dead
+        # port). The supervisor's v0.8.38 tail-drainer doesn't cover this
+        # spawn, so append to a dedicated log in the data root. Fail-soft:
+        # if the log can't be opened, fall back to DEVNULL rather than
+        # refusing to start the provider.
+        stderr_target = subprocess.DEVNULL
+        try:
+            from desktop.data_root import active_data_root
+
+            log_dir = active_data_root() / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            self._stderr_log = open(  # noqa: SIM115 - handle owned by provider
+                log_dir / "mlx_server.log", "ab"
+            )
+            stderr_target = self._stderr_log
+        except OSError:
+            self._stderr_log = None
         self._proc = subprocess.Popen(
             args,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=stderr_target,
         )
         self._port = port
 
@@ -156,6 +176,12 @@ class MlxProvider:
             self._proc.wait()
         self._proc = None
         self._port = None
+        if self._stderr_log is not None:  # v0.8.85 — release the log handle
+            try:
+                self._stderr_log.close()
+            except OSError:
+                pass
+            self._stderr_log = None
 
     def pick_default_model(self) -> str:
         try:

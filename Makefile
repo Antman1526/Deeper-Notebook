@@ -374,6 +374,16 @@ build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend build
 # spend 15+ min on a build that's going to be DOA. Runs desktop tests in the
 # prepared Python 3.12 desktop build environment. P2-MED-12 audit fix.
 build-mac-test: build-mac-venv
+	@# v0.8.85 — preflight: the backend gate includes a repair-script test that
+	@# CANNOT pass while the app or its SurrealDB is running. Before this check
+	@# it failed ~5 minutes into the suite with an opaque assertion; now the
+	@# build refuses up front with the actual remedy.
+	@if pgrep -f '/Applications/Deeper Notebook.app/Contents/MacOS' >/dev/null 2>&1 \
+	  || pgrep -f 'surreal-darwin' >/dev/null 2>&1; then \
+	  echo "❌ Deeper Notebook (or its SurrealDB sidecar) is running."; \
+	  echo "   Quit the app fully, then re-run make build-mac."; \
+	  exit 1; \
+	fi
 	@echo "🧪 Running unit tests (precondition for build-mac)…"
 	# v0.8.66 (audit I-M1) — DON'T pipe to `tail`: a piped recipe's exit status
 	# is the LAST command's (tail, always 0), so a failing test suite could NOT
@@ -385,8 +395,20 @@ build-mac-test: build-mac-venv
 	@# chat-stream overflow handling) could ship in a build with zero coverage.
 	@# Run the backend suite via the repo .venv (uv run, py3.12) the same way
 	@# `make test` does; integration tests (need a live SurrealDB) stay excluded.
+	@#
+	@# v0.8.85 — retry failures ONCE. Three timing-scaled tests (projection
+	@# budget, logseq scaling, plus frontend cousins) flake under heavy machine
+	@# load (Backblaze syncing build artifacts pushed load past 20) and cost
+	@# three consecutive builds in one day; each passed in isolation. A rerun
+	@# of ONLY the failed subset keeps the gate honest — a deterministic
+	@# failure still fails twice — while a load blip no longer kills a 25-min
+	@# build. `--last-failed-no-failures none` makes the retry a no-op when
+	@# the first pass was green.
 	@echo "🧪 Running backend tests (precondition for build-mac)…"
-	@uv run pytest tests/ -q --ignore=tests/integration
+	@uv run pytest tests/ -q --ignore=tests/integration || \
+	  { echo "⚠️  Backend failures — retrying only the failed tests once…"; \
+	    uv run pytest tests/ -q --ignore=tests/integration \
+	      --last-failed --last-failed-no-failures none; }
 
 # v0.7.141 — Stage 0.5: regenerate desktop/requirements.lock from
 # pyproject.toml BEFORE the bundle venv installs against it.

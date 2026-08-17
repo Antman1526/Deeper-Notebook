@@ -84,3 +84,15 @@ def test_read_timeout_with_dead_port_is_unhealthy():
             name="MLX (local)", base_url="http://127.0.0.1:1/v1"
         )
     assert result["status"] == "unhealthy"
+
+
+def test_ollama_probe_uses_patient_read_timeout():
+    """v0.8.85 — /api/tags legitimately takes 10-15s during a store inventory;
+    the ollama probe must not share the generic 5s read budget."""
+    from deeper_notebook.health.local_models import (
+        _OLLAMA_PROBE_TIMEOUT,
+        _PROBE_TIMEOUT,
+    )
+
+    assert _OLLAMA_PROBE_TIMEOUT.read >= 20.0
+    assert _PROBE_TIMEOUT.read == 5.0, "generic probes stay snappy"

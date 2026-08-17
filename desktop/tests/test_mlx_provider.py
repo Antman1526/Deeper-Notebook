@@ -179,3 +179,36 @@ def test_start_refuses_missing_path_even_without_validation(
             wait_for_ready=False,
         )
     assert spawned == [], "must not spawn a server for a nonexistent model"
+
+
+def test_start_captures_stderr_to_data_root_log(
+    mlx_model_root, monkeypatch, tmp_path
+):
+    """v0.8.85 — the MLX server's stderr must land in a log, not DEVNULL:
+    a dying server's traceback was the missing evidence for hours."""
+    captured = {}
+
+    def fake_popen(args, stdout=None, stderr=None, **kw):
+        captured["stderr"] = stderr
+        # NOTE: no spec= here — subprocess.Popen is already patched to this
+        # function, so spec'ing against it would strip Popen's real attrs.
+        proc = MagicMock()
+        proc.poll.return_value = None
+        return proc
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr("desktop.providers.mlx.find_free_port", lambda: 51230)
+    monkeypatch.setattr(
+        "desktop.data_root.active_data_root", lambda: tmp_path
+    )
+
+    provider = MlxProvider(model_dir=mlx_model_root)
+    provider.start(
+        "MLX/mlx-community__North-Mini-Code-1.0-6bit",
+        validate=False,
+        wait_for_ready=False,
+    )
+
+    assert captured["stderr"] is not subprocess.DEVNULL
+    assert (tmp_path / "logs" / "mlx_server.log").exists()
+    provider.stop()
