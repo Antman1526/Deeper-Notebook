@@ -16,6 +16,9 @@ a fail-closed privacy gate, and a source visual gallery.
 
 ![Deeper Notebook desktop icon](desktop/resources/icon.png)
 
+The product uses the approved **Notebook Spark** visual identity with the teal-to-cyan
+**Research Core** colorway. The canonical mark is [`brand/deeper-notebook-mark.svg`](brand/deeper-notebook-mark.svg).
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Python 3.12](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)
 ![Next.js 16](https://img.shields.io/badge/Next.js-16.2-black)
