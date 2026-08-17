@@ -59,7 +59,10 @@ mlx-lm>=0.31,<0.32; sys_platform == "darwin" and platform_machine == "arm64"
 # the patch versions safely.
 faster-whisper>=1.1.0,<2
 piper-tts>=1.2.0,<2
-mem0ai>=0.1.0,<2
+# v0.8.87 — mem0 2.x (PYSEC-2026-2636). 2.0 is stable (2.0.18); the shim and
+# the Surreal vector-store integration were already written against 2.x
+# semantics per their own comments — the old <2 ceiling was the anomaly.
+mem0ai>=2.0.18,<3
 
 # v0.7.197 — Pin the OpenChronicle MCP-bridge dependencies. Same
 # class of bug as v0.7.195 (faster-whisper / piper-tts / mem0ai
