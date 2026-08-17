@@ -1,273 +1,357 @@
-# Deeper Notebook — Technology Audit
+# Deeper Notebook — Complete Technology Audit
 
-> **Current identity note:** this audit covers the Deeper Notebook checkout.
-> Historical `Open Notebook Plus` identifiers are listed only where they are
-> compatibility aliases, persisted bundle IDs, or migration evidence.
+Every language, runtime, framework, library, tool, and external service the project uses,
+with **what it specifically does in this codebase** — not what it does in general.
 
-An exhaustive inventory of every language, framework, library, tool, and service used, with each item's **specific role in this project** and version constraints. Sourced from `pyproject.toml`, `desktop/requirements.txt`, `frontend/package.json`, `Dockerfile*`, `.github/workflows/*`, `Makefile`, `supervisord*.conf`, `desktop/build/pyinstaller.spec`, and real imports.
-
-> Version tracks: desktop app `0.8.5` (`desktop/__init__.py`); upstream/Docker image `1.8.5` (`pyproject.toml`). `requires-python = ">=3.11,<3.13"`.
+**Snapshot:** desktop `0.8.95` · server track `1.8.5` · `main` @ `aac7788b` · 2026-08-17
+**Sources:** `pyproject.toml`, `desktop/requirements.txt`, `frontend/package.json`,
+`desktop/build/runtimes.toml`, `Makefile`, `.pre-commit-config.yaml`, `.github/workflows/`.
 
 ---
 
-## Languages
+## 1. Languages
 
-| Technology | Version | Role in this project |
+| Language | Where | Specific role |
 |---|---|---|
-| **Python** | 3.11–3.12 (`.python-version` → 3.11; Docker builder `python:3.12-slim-trixie`) | Entire backend: FastAPI API, `open_notebook/` domain + graphs + AI layer, `commands/` job handlers, and the `desktop/` supervisor/launcher/window shell. |
-| **TypeScript** | `^5` | The whole Next.js frontend (`frontend/src/`) — components, hooks, API clients, types (e.g. `notebook-context.ts`). |
-| **SurrealQL** | SurrealDB dialect | Schema + migrations (`open_notebook/database/migrations/*.surrealql`), edge-table `DEFINE`s, and the `fn::vector_search` DB function. |
-| **Jinja2** | via `ai-prompter` | Prompt templates (`prompts/**/*.jinja`) for chat/ask/source_chat/podcast, rendered with variable injection + output-parser format instructions. |
-| **Bash / Shell** | — | `scripts/*.sh` (ralph loop, `repair_desktop_db.sh`, `wait-for-api.sh`), `dev-init.sh`, and the in-app relaunch shell string in `desktop/window.py`. |
+| **Python 3.12** (`>=3.11,<3.13`) | 514 files, ~179k LOC | Backend, business logic, desktop shell, launcher, build tooling. Upper bound is `<3.13` because `llama-cpp-python` wheels and `mlx-lm` lag a release |
+| **TypeScript 5** | 693 files, ~125k LOC | All frontend code. `strict` on; Zod schemas at API boundaries mean runtime shape errors surface as typed failures |
+| **SurrealQL** | 92 migration files | Schema DDL, cascade events, graph traversal (`count(<-reference.in)`), vector search. No ORM — queries are hand-written |
+| **CSS** | `workspace.css` + Tailwind layers | The notebook design language (paper grain, rule lines, density tokens) lives in hand-written CSS; utility layout is Tailwind |
+| **Bash / zsh** | `scripts/*.sh`, `Makefile` | Build orchestration, signing identity creation, DB repair, API readiness waits |
+| **JavaScript (ESM)** | `frontend/start-server.js`, `scripts/verify-feature-env-build.mjs` | Packaged Next server entry; build-time verification that feature-flag literals were actually inlined |
 
 ---
 
-## Backend Framework & Runtime
+## 2. Runtimes bundled into the app
 
-| Technology | Version | Role |
+Fetched by `desktop/build/fetch_runtimes.py`, SHA-256 verified with `hmac.compare_digest`,
+pinned in `runtimes.toml`.
+
+| Runtime | Version | Specific role |
 |---|---|---|
-| **FastAPI** | `>=0.136.3` | REST API in `api/`; routers for notebooks, sources, notes, chat, podcasts, models, credentials, transformations, insights, auth, languages, commands, settings; global exception handlers map the custom exception hierarchy to HTTP codes; lifespan runs migrations + starts the digest scheduler. |
-| **Uvicorn** | `>=0.24.0` | ASGI server. Desktop launcher spawns `python -m uvicorn api.main:app`; Docker via supervisord. |
-| **Starlette** | `>=1.2.1` (CVE-2026-48710 pin) | Underlies FastAPI; `BaseHTTPMiddleware` powers `PasswordAuthMiddleware` (`api/auth.py`). |
-| **Pydantic** | `>=2.9.2` (v2) | All request/response schemas (`api/models.py`), domain models (`open_notebook/domain/*`), and `CommandInput`/`CommandOutput` for jobs. |
-| **pydantic-settings** | via `llama-cpp-python[server]` | Env-driven config for the bundled `llama_cpp.server` sidecars. |
-| **Loguru** | `>=0.7.2` | Structured logging across API/graphs/commands; `configure_logging("api")` writes a file sink so startup errors persist. |
-| **python-dotenv** | `>=1.2.2` (CVE-2026-28684) | Loads `.env` at API startup. |
-| **httpx[socks]** | `>=0.27.0` | Async HTTP client for provider connection tests, the `web_search` tool, launcher readiness probes, and internal calls. |
-| **python-multipart** | `>=0.0.27` (CVE-2026-42561) | Multipart parsing for file-upload endpoints. |
-| **tomli** | `>=2.0.2` | TOML parsing (config/version). |
-| **numpy** | `>=2.4.1` | Embedding vector math (mean-pooling large content, similarity helpers). |
-| **prometheus-client** | `>=0.20.0` | `/metrics` endpoint (pure-Python, histogram buckets). |
+| **python-build-standalone** (CPython) | `20260814` / **3.12.14** | The interpreter the app actually runs on. Bumped from 3.12.8 specifically because its OpenSSL 3.0 TLS fingerprint got Wikimedia's edge to return HTTP 403 — the keyless search provider was dead in packaged builds only |
+| **SurrealDB** | `2.1.0` | The database binary, spawned as a child process by `launcher.py`. Bundled so the user installs nothing |
+| **Node.js** | `20.18.0` | Runs the packaged Next.js standalone server inside the `.app` |
+| **uv** | `0.5.11` | Creates and populates the user venv at `~/.deeper-notebook/venv` on first run and after a lock change |
 
 ---
 
-## LangGraph / LangChain AI Orchestration
+## 3. Backend framework and web layer
 
-| Technology | Version | Role |
+| Package | Floor | Specific role |
 |---|---|---|
-| **LangGraph** | `>=1.0.10` (bumped for CVE-2026-28277) | State-machine workflows: `chat` (single "agent" node + tool loop), `source` (extract→save→fan-out transform), `ask` (multi-search synthesis), `source_chat`, `transformation`, `prompt`. `Send` powers transformation fan-out; `StateGraph.compile(checkpointer=...)`. |
-| **langgraph-checkpoint-sqlite** | `>=3.0.1` | `SqliteSaver` (sync) + `AsyncSqliteSaver` (async streaming) persist chat message history to a WAL-tuned SQLite file (`LANGGRAPH_CHECKPOINT_FILE`), independent of SurrealDB. |
-| **LangChain** | `>=1.2.0` | Message types (`SystemMessage`, `ToolMessage`), `RunnableConfig`, output parsers used by graphs/prompts. |
-| **langchain-core** | `>=1.3.3` (CVE-2026-44843) | Core message/runnable primitives. |
-| **langchain-community** | `>=0.4.1` | Community integrations pulled in transitively. |
-| **langsmith** | `>=0.8.0` (CVE-2026-45134) | Transitive tracing dep (pinned for CVE, not necessarily enabled). |
-| **langchain-openai** | `>=1.1.14` | OpenAI chat/embeddings provider binding. |
-| **langchain-anthropic** | `>=1.3.0` | Anthropic (Claude) provider binding. |
-| **langchain-ollama** | `>=1.0.1` | Ollama local-model binding. |
-| **langchain-google-genai** | `>=4.1.2` | Google Gemini binding. |
-| **langchain-groq** | `>=1.1.1` | Groq binding. |
-| **langchain-mistralai** | `>=1.1.1` | Mistral binding. |
-| **langchain-deepseek** | `>=1.0.0` | DeepSeek binding. |
-| **tiktoken** | `>=0.12.0` | Token counting (`o200k_base`) in `utils/token_utils.py` — drives context sizing, the 105k large-context cutoff, history trimming, and local vs cloud routing math. |
-| **ai-prompter** | `>=0.4,<1` | `Prompter` renders the Jinja prompt templates by path (`"chat/system"`) and auto-injects `{{ format_instructions }}` when bound to a Pydantic output parser. |
+| **fastapi** | `>=0.136.3` | 47 router modules / 279 route handlers. Dependency injection carries `check_api_password`; `lifespan` runs migrations and warms clients |
+| **uvicorn** | `>=0.24.0` | ASGI server for the API process |
+| **starlette** | `>=1.2.1` | Pinned directly, not left transitive — CVE-2026-48710 (BadHost) |
+| **pydantic** | `>=2.9.2` | Every request/response schema. `model_copy(update=…)` is how the capability sentinel is stamped onto source rows |
+| **pydantic-settings** | `>=2.14.2` | Settings models where env-backed config needs validation |
+| **python-multipart** | `>=0.0.31` | Multipart parsing for source file upload — the highest-risk parser in the app, hence the direct floor |
+| **prometheus-client** | `>=0.20.0` | `/metrics`, token-guarded. Chosen for stable histogram-bucket semantics |
+| **loguru** | `>=0.7.2` | Every log sink: launcher, api, surreal, worker, per-sidecar `.tail` files |
+| **httpx[socks]** | `>=0.27.0` (desktop pins `==0.28.1`) | Every outbound HTTP call. The pooled `AsyncClient` in `web_search.py` (8 keepalive / 16 max) cut a search from 513 ms to 341 ms |
+| **h2** | `>=4.4.1` | HTTP/2 for httpx; floor is PYSEC-2026-3628 |
+| **aiohttp** | `>=3.14.3` (desktop `>=3.11.18`) | Used by MCP transports and the desktop shims |
+| **click** | `>=8.3.3` | CLI entry points (surreal-commands worker, maintenance scripts); floored directly rather than left transitive |
+| **urllib3 / idna / soupsieve / lxml / lxml-html-clean** | floors set | Transitive deps pinned up out of CVE range rather than left to resolution luck |
 
 ---
 
-## AI Providers & Local Inference
+## 4. AI orchestration
 
-| Technology | Version | Role |
+| Package | Floor | Specific role |
 |---|---|---|
-| **Esperanto** | `>=2.20.0,<3` | Unified multi-provider abstraction (`LanguageModel`, `AIFactory`) for LLM / embeddings / TTS across OpenAI, Anthropic, Google, Groq, Ollama, Mistral, DeepSeek, xAI, OpenRouter, Voyage, ElevenLabs, Azure, Vertex, openai_compatible. `provision_langchain_model()` and `ModelManager` build on it. |
-| **llama-cpp-python[server]** | `>=0.3.16,<0.4` (CVE-2024-42479 pin) | Bundled local GGUF inference sidecars. Launcher spawns `python -m llama_cpp.server` twice — a **chat** server and an **embed** (nomic) server — exposing an OpenAI-compatible API on dynamic ports; `--n_gpu_layers=-1` on macOS Metal for full offload. The `[server]` extra pulls in starlette-context/sse-starlette/PyYAML. |
-| **mlx-lm** | `>=0.26,<0.27` (`darwin`+`arm64` only) | Apple-Silicon MLX local model server (`python -m mlx_lm.server`) against `~/Desktop/AI_Models/MLX`, same OpenAI-compatible shape as llama.cpp. |
-| **Ollama** | via `langchain-ollama` / Esperanto | Local model provider (never gated by the offline gate — treated as machine-local). |
-| **huggingface-hub** | `>=1.3.0` | `snapshot_download` for managed local-model installs (`desktop/model_downloads.py`, first-run model fetch). |
-| **Smart router** | `open_notebook/ai/router.py` (in-repo) | `pick_provider()` chooses local vs cloud by health + token-fit + `default_provider`; gated behind `OPEN_NOTEBOOK_AUTO_ROUTE_CHAT` env / UI toggle. |
-| **Offline gate** | `open_notebook/ai/offline_gate.py` (in-repo) | Substitutes a local model when offline + candidate is cloud; fail-open. |
-| **Privacy gate** | `open_notebook/ai/privacy_gate.py` + `privacy_classifier.py` (in-repo) | Structured-secret detector; fails closed (reroute local / block) when cloud routing would leak keys/PII. |
-
-**Cloud providers reachable via Esperanto (opt-in by credential/key):** OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek, xAI, OpenRouter, Voyage (embeddings), ElevenLabs (TTS), Azure, Vertex, generic `openai_compatible` — 13 provider kinds handled in `api/routers/credentials.py`.
+| **langgraph** | `>=1.0.10` | The graph runtime for `chat`, `ask`, `source`, `source_chat`, `transformation`, `agent_fsm`. Bumped for CVE-2026-28277 |
+| **langgraph-checkpoint** / **-sqlite** / **-sdk** | `>=4.1.1` / `>=3.1.1` / `>=0.3.15` | Conversation checkpointing. Checkpoint cleanup on notebook delete lives in the router, not the domain model, to preserve layering |
+| **langchain** / **langchain-core** / **langchain-classic** / **langchain-community** | `>=1.3.9` / `>=1.3.3` / `>=1.0.7` / `>=0.4.1` | Message types, tool binding (`bind_tools`), and the `ToolMessage` loop |
+| **langchain-openai / -anthropic / -google-genai / -groq / -mistralai / -deepseek / -ollama** | each pinned | One adapter per provider. All are optional — a missing key means that provider is simply absent from model discovery |
+| **langsmith** | `>=0.8.18` | Comes in transitively via langchain; floored for CVE-2026-45134 |
+| **esperanto** | `>=2.20.0,<3` | Provider-agnostic model abstraction inherited from upstream; underlies model resolution |
+| **ai-prompter** | `>=0.4,<1` | Renders the Jinja templates in `prompts/` into system/user messages |
+| **tiktoken** | `>=0.12.0` | Token counting for the context budgets that cap memory recall and source context |
+| **mcp** | `>=1.28.1,<2` | Model Context Protocol client — external tool servers reachable from chat over streamable-http |
+| **fastmcp** | `>=3.0,<4` | Serves the desktop shims (memory, OpenChronicle) as MCP endpoints |
+| **skillopt** | `>=0.1.0,<0.2` | Microsoft SkillOpt — backs the prompt optimizer subsystem |
 
 ---
 
-## Database
+## 5. Local inference and media
 
-| Technology | Version | Role |
+| Package | Floor | Specific role |
 |---|---|---|
-| **SurrealDB** (server binary) | bundled per-arch (`surreal-<arch>` in `desktop/bin/`) | Primary datastore: records (notebook, source, note, chat_session, source_embedding, source_insight, transformation, credential, studio_artifact, command) + RELATION edges (`reference`, `artifact`, `refers_to`) + vector search. Launcher spawns it on a dynamic port with file-backed storage under `~/.open-notebook-plus/surreal_data`. |
-| **surrealdb** (Python driver) | `>=1.0.4` | Async client used by `open_notebook/database/repository.py` (`repo_query`, `repo_create`, `repo_upsert`, `ensure_record_id`); connection pool lazy-inits on first query. |
-| **AsyncMigrationManager** | in-repo | Auto-applies `migrations/*.surrealql` on API lifespan startup; version-recorded, idempotent (`IF NOT EXISTS`), with `_down.surrealql` rollbacks. |
-| **SQLite** (via stdlib + langgraph-checkpoint-sqlite) | — | LangGraph chat/checkpoint persistence only; WAL-tuned shared connection (`utils/sqlite_checkpoint.py`) to avoid "database is locked" under concurrent sessions. |
-| **RocksDB** (inside SurrealDB) | — | SurrealDB's on-disk engine; its live-query bookkeeping is the corruption source `desktop/db_repair.py` heals. |
+| **llama-cpp-python[server]** | `>=0.3.16,<0.4` | Runs GGUF models as OpenAI-compatible servers — two instances: chat and embeddings. The `[server]` extra is load-bearing: without it `starlette_context` is missing and both sidecars die at import, leaving every upload stuck "Processing". Floor is CVE-2024-42479 (heap OOB in GGUF parsing — a real risk since users download model files) |
+| **mlx-lm** | `>=0.31,<0.32`, darwin+arm64 only | Apple-Silicon inference against repos under the MLX model root. Its `/v1/models` returns an empty 200 body and later times out while completions keep working — `health/local_models.py` compensates for both |
+| **faster-whisper** | `>=1.1.0,<2` | Speech-to-text sidecar for audio sources and voice input |
+| **piper-tts** | `>=1.2.0,<2` | Text-to-speech sidecar; the maintained successor to the broken `piper` namespace |
+| **mem0ai** | `>=2.0.18,<3` | Long-term memory: fact/preference/episode extraction and recall. Backed by a **custom SurrealDB vector store** (`desktop/memory/surreal_store.py`) so memory shares the app's one database |
+| **huggingface-hub** | `>=1.3.0` | `snapshot_download` for managed local-model installs |
+| **imageio-ffmpeg** | `>=0.6.0,<1.0` | Package-managed FFmpeg binary for Video Overview composition — deliberately avoids assuming a system FFmpeg |
+| **numpy** | `>=2.4.1` | Vector math for embeddings and cosine similarity in memory recall |
 
 ---
 
-## Async Jobs
+## 6. Database
 
-| Technology | Version | Role |
+| Package | Floor | Specific role |
 |---|---|---|
-| **surreal-commands** | `>=1.3.1,<2` | SurrealDB-backed job queue. `@command(...)` handlers in `commands/` (`process_source`, `run_transformation`, `embed_source`/`embed_note`/`embed_insight`, `create_insight`, `rebuild_embeddings`, `generate_podcast`); a separate worker (`python -m surreal_commands.cli.worker --import-modules commands --max-tasks 5`) consumes them. Retries use blocklist `stop_on=[ValueError, ConfigurationError]` + exponential jitter. `submit_command` is wrapped in `asyncio.to_thread` from async code. |
-| **CommandService** | `api/command_service.py` (in-repo) | `submit_command_job()` wraps submission with a timeout; `/commands/{command_id}` reports status. |
+| **surrealdb** (Python SDK) | `>=1.0.4` | The client behind `repo_query`. Values are `$`-bound; identifiers are whitelist-validated before interpolation |
+| **surreal-commands** | `>=1.3.1,<2` | The background job system — podcast generation, visual extraction, embedding rebuilds. `api/command_service.py` wraps submit/list/cancel |
+
+Schema is managed by 92 hand-written `.surrealql` migrations, each with a `_down`
+counterpart, applied by `deeper_notebook/database/async_migrate.py` at startup.
 
 ---
 
-## Content Processing
+## 7. Document and content processing
 
-| Technology | Version | Role |
+| Package | Floor | Specific role |
 |---|---|---|
-| **content-core** | `>=1.14.1,<2` | File/URL extraction engine (`extract_content`, `ProcessSourceState`) — 50+ file types, web page text+metadata, YouTube transcripts; produces the `full_text` saved on a source. Engine choices come from `ContentSettings`. |
-| **crawl4ai** | via `open_notebook/utils/crawler.py` | Optional local URL scraper (`extract_url_with_crawl4ai`) selected when `url_engine == "crawl4ai"`, with content-core fallback. |
-| **lxml** | `>=6.1.0` (CVE-2026-41066) | HTML/XML parsing under content-core extraction. |
-| **Pillow** | `<12.0` (pinned by podcast-creator; CVEs noted, upgrade blocked) | Image handling for images extracted from PDFs/DOCX by content-core. |
-| **imageio-ffmpeg** | `>=0.6.0,<1.0` (locked `0.6.0`) | Supplies the platform FFmpeg executable used by `open_notebook/video/composer.py` to locally encode and decode-validate source-grounded Video Overview MP4 files; its runtime is bundled in desktop release preparation. |
-| **chunking / embedding utils** | in-repo (`utils/chunking.py`, `utils/embedding.py`) | Content-type-aware splitting (HTML/Markdown/plain, ~1500 char / 225 overlap) and batched embedding (50/batch, per-batch retry, mean-pooling for oversized content). |
-| **tiktoken** | `>=0.12.0` | (Also listed above) token counting for chunk/context sizing. |
+| **content-core** | `>=1.14.1,<2` | Primary text extraction across PDF/HTML/office/media. Deliberately **never given a raw URL** — its fetcher has a different localhost policy than our SSRF boundary |
+| **python-docx** | `>=1.2.0,<2.0` | `.docx` sources |
+| **python-pptx** | `>=1.0.2,<2.0` | `.pptx` sources |
+| **openpyxl** | `>=3.1.5,<4.0` | `.xlsx` sources |
+| **pillow** | `>=11.3.0,<12.0` | Source-visual thumbnail generation and WebP encoding. **Held below 12** by `podcast-creator → moviepy>=2.2.1 → Pillow<12`; residual advisories accepted under DN-DEP-PILLOW-2026-08-11 |
+| **markdown-it-py** | `>=4.0.0,<5` | Direct dependency of the vault Markdown parser |
+| **pyyaml** | `>=6.0.3,<7` | Vault frontmatter parsing |
+| **watchdog** | `>=6.0.0,<7.0` | Filesystem watching for the capture inbox and incremental vault sync |
+| **lxml** | `>=6.1.0` | HTML parsing in web-source ingestion; floored for CVE-2026-41066 |
 
 ---
 
-## Podcast / TTS / STT
+## 8. Domain-specific libraries
 
-| Technology | Version | Role |
+| Package | Floor | Specific role |
 |---|---|---|
-| **podcast-creator** | `>=0.12.0,<1` | End-to-end podcast pipeline (outline → transcript → audio) invoked by `generate_podcast` command; resolves model-registry references + credentials for all speaker profiles first. (Pins `pillow<12`.) |
-| **piper-tts** | `>=1.2.0,<2` | Local neural TTS sidecar (voice synthesis) spawned by the launcher; the maintained successor to the raw `piper` namespace. |
-| **faster-whisper** | `>=1.1.0,<2` | Local speech-to-text sidecar (Whisper.cpp bindings) for audio/video source transcription + voice chat; models cached under `~/.cache/huggingface`. |
-| **ElevenLabs** | via Esperanto credential | Optional cloud TTS provider (opt-in by key). |
+| **fsrs** | `>=6.3.1,<7.0` | The FSRS spaced-repetition scheduler behind the Study workbench |
+| **genanki** | `==0.13.1` | Anki `.apkg` export |
+| **podcast-creator** | `>=0.12.0,<1` | Episode generation pipeline (profiles, retries, TTS orchestration) |
+| **pycountry** | `>=26.2.16` | Language/country normalization for search and TTS voice selection |
+| **babel** | `>=2.18.0` | Locale-aware formatting on the server side |
 
 ---
 
-## Memory
+## 9. Security and crypto
 
-| Technology | Version | Role |
+| Package | Floor | Specific role |
 |---|---|---|
-| **mem0ai** | `>=0.1.0,<2` | In-process memory layer. A `memory_retriever` sidecar instantiates `mem0.Memory` (validates the local chat LLM + embed endpoints at startup — hence launcher ordering). The chat node recalls facts/preferences (`recall_memory` / `render_memory_block`) into the system prompt and extracts facts on the write path. |
-| **memory_recall / message_history** | in-repo (`utils/memory_recall.py`, `utils/message_history.py`) | Recency-vs-semantic recall orchestration (`ONP_MEMORY_RECALL_MODE`) and history trimming. |
-| **OpenChronicle bridge** | in-repo (`desktop/` + `mcp/`), optional | Optional local personal-memory MCP bridge sidecar. |
+| **cryptography** | `>=50.0.0` | Encrypts provider credentials at rest in the `credential` table; supports multi-key rotation via `DEEPER_NOTEBOOK_ENCRYPTION_KEYS` |
+| **authlib** | `>=1.6.12` | OAuth flows for connected services |
+| **pyjwt** | `>=2.13.0` | Token handling |
+| **joserfc** | `>=1.6.8` | JOSE primitives; floor is PYSEC-2026-2528/-2530 |
+| **pyasn1** | `>=0.6.4` | Transitive certificate parsing; floored deliberately |
+
+Application-level security is code, not a library: `security/outbound_url.py` (fail-closed
+SSRF boundary that resolves and checks every address, refusing non-canonical IP literals
+and DNS rebinding) and `security/mcp_transport.py` (a deliberately *different*, more
+permissive policy — a localhost MCP server is legitimate).
 
 ---
 
-## Web Search
+## 10. Desktop shell and packaging
 
-| Technology | Version | Role |
+| Package | Version | Specific role |
 |---|---|---|
-| **web_search tool** | in-repo (`open_notebook/tools/web_search.py`) | Chat tool that only *exists* when a provider is configured (key-presence = opt-in). Precedence Serper > Tavily > SearXNG, overridable via `ONP_WEB_SEARCH_PROVIDER`. |
-| **Serper** | `SERPER_API_KEY` | Google Search API backend. |
-| **Tavily** | `TAVILY_API_KEY` | Search API backend. |
-| **SearXNG** | `SEARXNG_BASE_URL` | Self-hosted, keyless search backend. |
+| **pywebview** | `==5.4` (exact) | The native macOS window. Pinned exactly because the settings dict is version-sensitive — the shell sets only keys the installed version defines. Exposes exactly one JS bridge method (`relaunch`); downloads disabled, devtools off, external links to the system browser |
+| **pyinstaller** | `>=6.13.0,<7` | Freezes the launcher into `Deeper Notebook.app`. Floor covers macOS 14+ codesign bundle handling |
+| **python-dotenv** | `>=1.2.2` | Reads `launcher.env` and `.env`; floored for CVE-2026-28684 |
+| **tomli** | `>=2.0.2` | Parses `config.toml` and `runtimes.toml` |
+| **pip / setuptools** | `>=26.1.2` / `>=83.0.0` | Build tooling floors — `ai-prompter` pulls pip as a build dep |
 
 ---
 
-## Model Context Protocol (MCP)
+## 11. Frontend — framework and rendering
 
-| Technology | Version | Role |
+| Package | Version | Specific role |
 |---|---|---|
-| **mcp** | `>=1.0.0` | MCP client; chat graph can call external MCP tools (web search, fetch, etc.) over streamable-HTTP. `open_notebook/mcp/` holds the registry, client, and curated `recommendations.py` (SearXNG/Crawl4AI). Tool output is fenced as untrusted before feeding the model. |
+| **next** | `^16.2.12` | App Router, `standalone` output for packaging, `/api` rewrites to the FastAPI port. **`NEXT_PUBLIC_*` inlining at build time is why frontend feature flags cannot be rolled back in a packaged app** |
+| **react** / **react-dom** | `^19.2.3` | UI runtime |
+| **typescript** | `^5` | Types |
+| **tailwindcss** | `^4` (+ `@tailwindcss/postcss`, `@tailwindcss/typography`) | Utility layout and prose styling. The notebook design language sits alongside it in hand-written CSS |
+| **tw-animate-css** | `^1.3.5` | Animation utilities |
+| **class-variance-authority** / **clsx** / **tailwind-merge** | — | Variant-driven component styling and safe class merging |
+| **postcss** | `8.5.26` (override) | Pinned via `overrides` so no transitive resolves a different build |
 
 ---
 
-## Desktop Packaging & Shell
+## 12. Frontend — components and interaction
 
-| Technology | Version | Role |
+| Package | Version | Specific role |
 |---|---|---|
-| **pywebview** | `==5.4` | Native window shell (WKWebView on macOS). `webview.create_window(..., js_api=_OnpJsApi)` shows a splash, then navigates to the frontend URL; `webview.start(private_mode=False, storage_path=...)` persists the WebKit data store; `_OnpJsApi.relaunch()` restarts the app. |
-| **PyInstaller** | `>=6.13.0,<7` | Freezes the app to a **onedir** bundle (`EXE(exclude_binaries=True)` + `COLLECT` + macOS `BUNDLE`, bundle id `com.antman1526.open-notebook-plus`, `CFBundleName "Open notebook+"`). Spec: `desktop/build/pyinstaller.spec`. |
-| **codesign** (Apple toolchain) | — | Makefile does an explicit final `codesign --force --deep --sign "$ONP_CODESIGN_IDENTITY"` (default ad-hoc `-`) after PyInstaller to fix invalid seals, then `codesign -v`. |
-| **hdiutil** | — | `make build-mac-dmg` wraps the `.app` into an (unsigned) `.dmg`. |
-| **aiohttp** | `>=3.11.18,<4` (CVE-2025-37960) | Async HTTP inside the desktop shell (`desktop/aiohttp_window.py`, sidecar/window handoff). |
-| **Supervisor (in-repo)** | `desktop/launcher.py` | Custom process supervisor: dynamic-port allocation, dependency-ordered spawn, readiness gates, process-group teardown, singleton PID-lock + orphan reaper, per-sidecar `.tail` logs with secret redaction, periodic DB export, and boot-time DB repair. |
-| **ControlServer** | `desktop/launcher_control.py` | Stdlib `ThreadingHTTPServer` on `127.0.0.1:<random>` with bearer-token auth; lets the API POST `/restart_sidecar` + `/hot_swap_chat` back into the launcher. |
+| **@radix-ui/react-*** (18 packages) | — | Accessible primitives: dialog, dropdown, popover, select, tabs, tooltip, accordion, scroll-area, radio-group, checkbox, collapsible, progress, separator, label, slot, alert-dialog |
+| **lucide-react** | `^0.525.0` | Icon set across the shell, dock, and gallery |
+| **cmdk** | `^1.1.1` | The command bar (`CommandBar`) |
+| **framer-motion** | `^12.42.0` | Shell transitions. Motion is compositor-only (transform/opacity/shadow) and fully disabled under `prefers-reduced-motion` |
+| **sonner** | `^2.0.6` | Toasts |
+| **react-resizable-panels** | `^2.1.9` | The workspace's resizable three-pane layout |
+| **@tanstack/react-virtual** | `^3.13.24` | Virtualises long source and note lists |
+| **@xyflow/react** | `^12.11.1` | The knowledge-graph / relation canvas |
+| **react-hook-form** + **@hookform/resolvers** | `^7.60` / `^5.1.1` | All settings and credential forms |
+| **use-debounce** | `^10.0.6` | Search-as-you-type and autosave throttling |
 
 ---
 
-## Frontend Framework & Libraries
+## 13. Frontend — data, state, content
 
-| Technology | Version | Role |
+| Package | Version | Specific role |
 |---|---|---|
-| **Next.js** | `^16.2.3` | React framework; App Router; standalone server build (`node server.js`) whose baked API port the launcher patches at boot (`next_rewrites_patcher.py`). Server-side API proxy via rewrites. |
-| **React** | `^19.2.3` | UI runtime. |
-| **react-dom** | `^19.2.3` | DOM renderer. |
-| **@xyflow/react** | `^12.11.1` | The notebook **mind-map** graph visualization (nodes/edges from `reference`/`artifact`). |
-| **react-markdown** | `^10.1.0` | Renders chat/insight/note Markdown. |
-| **remark-gfm / remark-math / rehype-katex** | `^4.0.1 / ^6.0.0 / ^7.0.1` | GitHub-flavored Markdown, math parsing, KaTeX math rendering in messages. |
-| **@uiw/react-md-editor** | `^4.0.8` | Markdown editor for notes. |
-| **react-pdf** | `^10.4.1` | In-app PDF source viewer (with citation-passage highlighting). |
-| **react-hook-form** + **@hookform/resolvers** + **zod** | `^7.60.0 / ^5.1.1 / ^4.0.5` | Forms + schema validation (credentials, settings, source add). |
-| **axios** | `^1.15.0` | HTTP client for non-streaming API calls (`apiClient`); streaming chat uses native `fetch` + `ReadableStream` instead (Axios can't expose the stream body). |
-| **date-fns** | `^4.1.0` | Date formatting. |
-| **use-debounce** | `^10.0.6` | Debounced inputs (search, context toggles). |
-| **@tanstack/react-virtual** | `^3.13.24` | Virtualized long lists. |
+| **@tanstack/react-query** | `^5.83.0` | Server-state cache with targeted invalidation — e.g. a visual-extraction command invalidates only that source's row |
+| **zustand** | `^5.0.6` | Client state. `display-preferences-store` (with `persist`) holds the density preference — Comfortable by default |
+| **axios** | `^1.18.1` | HTTP client under the generated API layer |
+| **zod** | `^4.0.5` | Runtime validation of API responses, including `source-visuals.ts` — this is what makes the `state: "disabled"` sentinel type-safe on the client |
+| **@codemirror/*** (6 packages) | — | The Markdown note editor: state, view, language, markdown mode, search, commands |
+| **@uiw/react-md-editor** | `^4.0.8` | Higher-level Markdown editing surface |
+| **react-markdown** + **remark-gfm** + **remark-math** + **rehype-katex** + **katex** | — | Renders chat answers and notes: GitHub-flavoured Markdown plus LaTeX math |
+| **react-pdf** | `^10.4.1` | In-app PDF viewing for PDF sources |
+| **date-fns** | `^4.1.0` | Relative timestamps ("updated 3 minutes ago") |
+| **i18next** + **react-i18next** + **i18next-browser-languagedetector** | — | UI localisation; locale files under `src/lib/locales/` |
 
 ---
 
-## State & Data-Fetching
+## 14. Testing
 
-| Technology | Version | Role |
+| Tool | Version | Specific role |
 |---|---|---|
-| **@tanstack/react-query** | `^5.83.0` | Server-state cache for notebooks/sources/notes/sessions/models/credentials; mutations invalidate query keys (some broad — a known pain point). Also caches MCP tool-call metadata via `setQueryData`. |
-| **Zustand** | `^5.0.6` | Client UI state (auth token store, context selections, UI toggles). |
-| **i18next** + **react-i18next** + **i18next-browser-languagedetector** | `^25.7.3 / ^16.5.0 / ^8.2.0` | Internationalization; all UI strings keyed. |
+| **pytest** | `>=9.0.3,<10` | 4,767 backend tests + 832 desktop tests. Migrated 8→9 this cycle (PYSEC-2026-1845) |
+| **pytest-asyncio** | `>=1.2.0,<2` | Async route and graph tests |
+| **vitest** | `^4.1.8` | ~1,775 frontend unit tests. Run `--pool=forks --maxWorkers=1` — parallel workers made the jsdom suites flaky |
+| **@testing-library/react** + **jest-dom** | `^16.2.0` / `^6.6.3` | Component tests written against user-visible behaviour |
+| **jsdom** | `^26.0.0` | DOM for vitest |
+| **@vitejs/plugin-react** | `^4.3.4` | JSX transform for the test build |
+| **@playwright/test** | `1.61.1` (exact) | E2E, three projects: `mocked-browser`, `native-runtime`, `packaged-device`. `workers: 1`, port 3117. Exact pin because visual-diff baselines are browser-build sensitive |
+| **@vitest/ui** | `^4.1.8` | Local test UI |
+| **remark-parse** / **unified** | — | Dev-only: assertions over rendered Markdown structure |
 
 ---
 
-## UI / Styling
+## 15. Build, quality, and release tooling
 
-| Technology | Version | Role |
+| Tool | Where | Specific role |
 |---|---|---|
-| **Tailwind CSS** | `^4` (+ `@tailwindcss/postcss`, `@tailwindcss/typography`) | Utility styling; typography plugin for Markdown prose. |
-| **Radix UI** (accordion, alert-dialog, checkbox, collapsible, dialog, dropdown-menu, label, popover, progress, radio-group, scroll-area, select, separator, slot, tabs, tooltip) | various `^1–^2` | Headless accessible primitives underlying the shadcn-style component library. |
-| **lucide-react** | `^0.525.0` | Icon set (e.g. cancel-run Square icon in ChatPanel). |
-| **framer-motion** | `^12.42.0` | Animations/transitions. |
-| **class-variance-authority / clsx / tailwind-merge** | `^0.7.1 / ^2.1.1 / ^3.3.1` | Conditional/variant class composition. |
-| **cmdk** | `^1.1.1` | Command-palette / combobox. |
-| **sonner** | `^2.0.6` | Toast notifications. |
-| **next-themes** | `^0.4.6` | Dark/light theme switching. |
-| **react-resizable-panels** | `^2.1.9` | Resizable notebook layout panels — **deliberately pinned to v2** (v4 broke the layout API). |
-| **tw-animate-css** | `^1.3.5` (dev) | Animation utilities. |
+| **uv** | `Makefile`, bootstrap | Dependency resolution, lockfile generation, and the runtime venv install |
+| **ruff** | `>=0.14.13`, pre-commit | Lint (`E,F,I,UP006,UP007`) + format. Its import reflow has twice broken a source-shape test — one file carries `# noqa: I001` for exactly that reason |
+| **mypy** | `>=1.11.1` | Optional static checking (dev extra) |
+| **pre-commit** | `>=4.1.0` | ruff check/format, check-yaml/json/toml, EOF fixer, trailing whitespace, merge-conflict marker, >1 MB file guard. Pytest is deliberately **not** in the hook — too slow |
+| **bandit** (via `uvx`) | `make security-scan` | SAST at `--severity-level high` over `deeper_notebook api desktop`. Drove the B608 burn-down from 79 → 0 |
+| **pip-audit** (via `uvx`) | `make security-scan` | Dependency CVE scan against `desktop/requirements.lock` |
+| **gitleaks** | pre-commit + push range | Secret scanning. The 574-commit push scan returned one hit, verified as a test fixture string |
+| **eslint** + **eslint-config-next** | `^9` / `^16.2.12` | Frontend lint |
+| **@next/bundle-analyzer** | `^16.2.12` | Bundle-budget verification — the Source Visual Gallery landed at −4 bytes gzip |
+| **`scripts/rebrand_audit.py`** | 2,896 lines | Product-identity governance. Line-pinned, self-validating allowlist keyed on `(path, pattern, source, line, column, context_sha256)`. `unexpected_active_identity` must stay at 0 or the build fails |
+| **`scripts/verify-feature-env-build.mjs`** | frontend | Proves `NEXT_PUBLIC_*` literals were actually inlined into the built chunks |
+| **`scripts/create-signing-identity.sh`** | — | Creates the stable self-signed identity that keeps macOS TCC grants across rebuilds. (Two real bugs recorded: `-r trustRoot` not `trustAsRoot`; never use `find-identity -v`, which hides untrusted identities) |
+| **`scripts/backup_restore.py`** | `make backup/restore/verify-backup` | DB backup with verification |
+| **`scripts/benchmark_models.py`**, **`measure_source_visuals.py`** | — | The measurement harnesses behind the performance numbers |
+| **Make** | 40+ targets | The whole build graph: `build-mac` = test → lock → venv → frontend → runtimes → pyinstaller → dmg |
+| **PyInstaller spec** | `desktop/build/pyinstaller.spec` | Bundle assembly, including the fetched runtimes |
+| **`post_build_mac.sh`**, **`package_smoke.py`**, **`release_manifest.py`** | — | Codesign, packaged smoke test, and release manifest generation |
 
 ---
 
-## Build / Test / Tooling
+## 16. CI/CD
 
-| Technology | Version | Role |
+| Workflow | Specific role |
+|---|---|
+| `.github/workflows/test.yml` | Backend + frontend test suites on push/PR |
+| `build-desktop.yml` | macOS `.app` / `.dmg` build |
+| `build-windows.yml` | Windows packaging |
+| `build-and-release.yml` | Tags and publishes the server container image, versioned from `pyproject.toml` (`1.8.5`) |
+| `build-dev.yml` | Development builds |
+| `claude.yml`, `claude-code-review.yml` | Claude Code automation on PRs |
+
+Also present: issue templates (bug / feature / installation) and a PR template.
+
+---
+
+## 17. Containerisation (server track only)
+
+| Asset | Specific role |
+|---|---|
+| `Dockerfile` | Multi-service server image |
+| `Dockerfile.single` | Single-container variant |
+| `docker-buildx-*` make targets | Multi-arch build setup |
+
+**The desktop app never runs in Docker.** These exist for the upstream-compatible server
+deployment, which is a separate distribution track.
+
+---
+
+## 18. External services (all optional, all fail-soft)
+
+### LLM providers
+OpenAI · Anthropic · Google (Gemini) · Groq · Mistral · DeepSeek · Ollama (local HTTP).
+Absent key ⇒ absent from model discovery. No provider is required — a fully local
+configuration is a supported first-class state.
+
+### Web search — the failover chain
+| Provider | Key | Role in the chain |
 |---|---|---|
-| **uv** (Astral) | latest (Docker `ghcr.io/astral-sh/uv`) | Python dependency resolver/installer; `uv.lock` lockfile; `uv run pytest`, `uv run uvicorn`. |
-| **pnpm / npm** | — | Frontend package manager (`frontend/package.json` scripts). |
-| **Node.js** | 22.x LTS (Docker `setup_22.x`) | Frontend build + runtime; bundled per-arch node binary in desktop builds. |
-| **Ruff** | `>=0.14.13` (dev) | Lint + import sort; selects `E,F,I,UP006,UP007` (PEP 585/604 modernization). |
-| **mypy** | `>=1.11.1` (dev) | Static typing (`mypy.ini`; Streamlit pages excluded). |
-| **pytest** | `>=9.0.3` + **pytest-asyncio** `>=1.2.0` (`asyncio_mode=auto`) | Backend tests (`tests/`, `desktop/tests/`); custom `integration_surreal` marker skips live-DB tests unless `SURREAL_INTEGRATION=1`. |
-| **Vitest** | `^4.1.8` (+ `@vitest/ui`) | Frontend unit tests (`vitest run --pool=forks --maxWorkers=1`). |
-| **@testing-library/react + jest-dom** | `^16.2.0 / ^6.6.3` | Component testing (e.g. `ChatPanel.*.test.tsx`, `chat-race-guard.test.ts`). |
-| **jsdom** | `^26.0.0` | DOM environment for Vitest. |
-| **@vitejs/plugin-react** | `^4.3.4` | React transform for Vitest. |
-| **ESLint** + **eslint-config-next** + **@eslint/eslintrc** | `^9 / ^16.2.6 / ^3` | Frontend linting. |
-| **@next/bundle-analyzer** | `^16.2.6` | `build:analyze` bundle inspection. |
-| **pre-commit** | `>=4.1.0` (dev) | Git hooks (`.pre-commit-config.yaml`). |
-| **isort** | `black` profile, line 88 | Import ordering config (also enforced via Ruff `I`). |
-| **types-requests** | `>=2.32.4` (dev) | Type stubs. |
-| **Make** | — | `Makefile` orchestrates the full mac build chain (test→lock→venv→frontend→runtimes→pyinstaller→dmg) + Docker release. |
-| **GitHub Actions** | — | `.github/workflows/`: `build-desktop.yml` (macos-14 arm64 + macos-13 x64 + windows PyInstaller → release), `build-windows.yml`, `build-dev.yml`, `build-and-release.yml` (Docker image tagged from `pyproject` version), `test.yml`, `claude.yml` + `claude-code-review.yml`. |
+| **Serper** | required | Primary paid provider |
+| **Tavily** | required | Second paid provider |
+| **Brave** | required | Third paid provider |
+| **SearXNG** | none (self-hosted URL) | Free instance; an empty result advances the chain |
+| **Wikipedia** | **none** | Keyless terminal fallback — guarantees search works with zero configuration. This is the provider the Python runtime bump was made for |
+
+Rule worth noting: a **paid** provider returning empty is a legitimate answer and ends the
+chain; a **free** one advances. Falling through on paid results would double the bill for
+no information.
+
+*Rejected after live testing:* DuckDuckGo. Both the HTML endpoint and the official Instant
+Answer API return HTTP 202 anti-bot challenges to scripted clients. A working parser was
+written, unit-tested, and then deleted rather than ship something that looks configured and
+returns nothing.
+
+### Scholarly
+**OpenAlex** and **arXiv** — keyless, behind a separate `scholarly_search` tool rather than
+extra entries in the web-search chain (Wikipedia terminates that chain first, and a paper
+is a poor answer to a price question). arXiv XML is size-bounded at 5 MB before parsing.
+
+### Other
+**Hugging Face** (model snapshot downloads) · **MCP servers** (user-configured, any
+transport the client supports) · **Gmail** (connected-service integration) ·
+**OpenChronicle** (local personal-memory bridge via a desktop shim) · **GitHub Releases**
+(update check against the Deeper-Notebook repo).
 
 ---
 
-## Deployment / Infra
+## 19. Platform APIs
 
-| Technology | Version | Role |
+| API | Specific role |
+|---|---|
+| **macOS TCC** | Consent for file access. Ad-hoc signing resets grants on every rebuild, which presents as a silent launch wedge — hence the stable self-signed identity |
+| **`codesign` / `security`** | Signing and keychain identity management. Verify with `-dvv`; `-dv` is not enough |
+| **`hdiutil`** | DMG creation |
+| **macOS menubar / tray** | `desktop/tray.py` |
+| **Screen geometry APIs** | `window_state.py` persists window position and validates it against currently attached displays |
+
+---
+
+## 20. Notable *absences* — and why
+
+| Not used | Why |
+|---|---|
+| **Electron / Tauri** | A Python backend is already required; Electron would ship a second full runtime for no gain |
+| **PostgreSQL + pgvector** | SurrealDB gives documents, graph edges, and vectors in one bundled binary with no user install |
+| **An ORM** | SurrealQL's graph traversal syntax has no mature ORM. The discipline is whitelist-identifiers + `$`-bound values, enforced by Bandit |
+| **Redis / Celery** | `surreal-commands` runs background jobs against the database already present |
+| **Notarization** | Owner decision. First launch of a fresh DMG needs right-click → Open |
+| **A cloud dependency of any kind at runtime** | The governing product constraint: it must work with the network cable unplugged |
+
+---
+
+## 21. Accepted security residuals
+
+| Package | Advisory | Reason |
 |---|---|---|
-| **Docker** | `python:3.12-slim-trixie` base | Server/self-host track (separate from the desktop app). `Dockerfile` (multi-stage) + `Dockerfile.single`; `.dockerignore`. |
-| **docker-compose** | — | `docker-compose.yml` orchestrates SurrealDB + API + worker + frontend for the self-host profile. |
-| **Supervisord** | — | In-container process manager (`supervisord.conf`, `supervisord.single.conf`): runs `uvicorn api.main:app`, the `surreal-commands-worker`, and the frontend `node server.js` (gated by `wait-for-api.sh`). |
-| **softprops/action-gh-release** | `@v2` | Publishes desktop build artifacts to GitHub Releases. |
-| **pycountry** + **babel** | `>=26.2.16 / >=2.18.0` | Podcast language list (`GET /languages`) — country/locale data. |
-| **urllib3** | `>=2.7.0` (CVE-2026-44431/44432 pin) | Transitive HTTP dep. |
+| `pillow 11.3.0` | ~20 PYSECs | DN-DEP-PILLOW-2026-08-11 — `podcast-creator → moviepy` requires `<12`. Floor held, residuals reported, no overrides |
+| `diskcache 5.6.3` | PYSEC-2026-2447 | No fixed release exists |
+
+Bandit MEDIUMs remaining (4, all triaged false positives): `B108` (`/tmp` appearing in a
+**denylist** of forbidden roots), `B102` (a build tool `exec`ing the repo's own version
+file), `B310` (`urlopen` against a hardcoded `127.0.0.1`), `B314` (parsing the repo's own
+canonical SVG at build time).
+
+Full triage: `docs/verification/2026-08-16-security-scan.md`.
 
 ---
 
-## Security & Crypto
-
-| Technology | Version | Role |
-|---|---|---|
-| **cryptography / Fernet** | via crypto stack | Symmetric encryption of provider credentials (`open_notebook/utils/encryption.py`, `domain/credential.py`); requires `OPEN_NOTEBOOK_ENCRYPTION_KEY`. |
-| **secrets** (stdlib) | — | Constant-time password compare (`api/auth.py`), 32-byte control-plane tokens, SurrealDB session creds via `token_urlsafe`. |
-| **SSRF guard** (in-repo) | `credentials._validate_url()` | Validates provider URL fields, allowing localhost/private IPs for self-hosted services (Ollama/LM Studio) but blocking unexpected egress. |
-
----
-
-## Third-Party APIs / Services (all opt-in)
-
-- **LLM/embeddings/TTS providers** (via Esperanto credentials, encrypted in DB): OpenAI, Anthropic, Google Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter, Voyage (embeddings), ElevenLabs (TTS), Azure OpenAI, Google Vertex, and any `openai_compatible` endpoint.
-- **Web search:** Serper, Tavily, SearXNG (`open_notebook/tools/web_search.py`).
-- **Hugging Face Hub:** model snapshot downloads for local GGUF/MLX/whisper models.
-- **MCP servers:** user-configured external tool servers over streamable-HTTP.
-
-> Nothing above is contacted unless the corresponding key/URL/credential is present — the project's "default-off, key = opt-in" egress contract, enforced further by the offline + privacy gates.
+*Companion documents: [PROJECT-DEEP-DIVE.md](./PROJECT-DEEP-DIVE.md) (architectural review context) and the
+15-part recreation set, `01-project-overview-architecture.md` → `15-file-structure-code-organization.md`.*

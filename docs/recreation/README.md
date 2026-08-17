@@ -1,5 +1,9 @@
 # Deeper Notebook reconstruction packet
 
+> **Snapshot:** regenerated 2026-08-17 against `main` @ `aac7788b` · desktop `0.8.95` ·
+> server track `1.8.5`. Every version, count, and measurement in this packet was read
+> from the tree or a tool run at that commit — none are estimates.
+
 This directory is the source-controlled reconstruction packet for the current
 Deeper Notebook checkout. It is intentionally written for a second AI system
 or senior engineer who has the repository but needs the architecture, exact

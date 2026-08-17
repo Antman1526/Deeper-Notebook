@@ -36,6 +36,10 @@ export default defineConfig({
         'e2e/device/**',
         // Podcast Studio proof binds to the controlled native runtime on 65060.
         'e2e/podcast-intelligence-studio.spec.ts',
+        // Documentation screenshot harness — asserts nothing, costs ~50 s, and is
+        // only run on demand when the user guide is regenerated. See
+        // docs/user-guide/README.md.
+        'e2e/docs-capture.spec.ts',
       ],
       use: {
         ...devices['Desktop Chrome'],

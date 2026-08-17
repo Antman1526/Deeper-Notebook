@@ -1,0 +1,1135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deeper Notebook — User Guide</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+  @page :first { margin: 0; }
+
+  :root{
+    --ink:#12201f; --ink-2:#3c514f; --ink-3:#6a807e;
+    --teal:#0d7c74; --teal-dark:#0a5d57; --cyan:#12b1a4;
+    --rule:#cfdedc; --paper:#ffffff; --tint:#f2f8f7; --warn:#8a5a12; --warn-bg:#fdf6e8;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    font-size:10.4pt; line-height:1.55; color:var(--ink); background:var(--paper);
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h1,h2,h3,h4,.ui{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+
+  /* ---------- cover ---------- */
+  .cover{
+    height:297mm; width:210mm; display:flex; flex-direction:column; justify-content:center;
+    padding:0 26mm; background:linear-gradient(155deg,#07302e 0%,#0a4a45 45%,#0d7c74 100%);
+    color:#eafaf8; page-break-after:always; position:relative;
+  }
+  .cover img.mark{width:88px;height:88px;border-radius:20px;margin-bottom:26px}
+  .cover h1{font-size:40pt;line-height:1.05;margin:0 0 10px;letter-spacing:-.5px;font-weight:700}
+  .cover .sub{font-size:15pt;color:#9fded7;margin:0 0 34px;font-family:"Iowan Old Style",Georgia,serif;font-style:italic}
+  .cover .kicker{font-size:9pt;letter-spacing:.22em;text-transform:uppercase;color:#6fc9c0;margin-bottom:16px}
+  .cover .meta{border-top:1px solid rgba(255,255,255,.22);padding-top:16px;font-size:9.5pt;color:#a8ded9;line-height:1.9}
+  .cover .meta b{color:#eafaf8;font-weight:600}
+
+  /* ---------- structure ---------- */
+  .page-break{page-break-before:always}
+  h2{
+    font-size:19pt;margin:0 0 4px;color:var(--teal-dark);letter-spacing:-.3px;
+    page-break-after:avoid;
+  }
+  h2 .num{color:var(--cyan);font-weight:700;margin-right:.5em}
+  h2+.lede{color:var(--ink-2);font-size:10.5pt;margin:0 0 16px;font-style:italic}
+  h3{font-size:12.2pt;margin:20px 0 6px;color:var(--ink);page-break-after:avoid}
+  h4{font-size:10.4pt;margin:14px 0 4px;color:var(--teal-dark);text-transform:uppercase;letter-spacing:.08em;page-break-after:avoid}
+  p{margin:0 0 9px}
+  ul,ol{margin:0 0 10px;padding-left:19px}
+  li{margin:0 0 4px}
+  strong{color:var(--ink)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9pt;background:var(--tint);padding:1px 4px;border-radius:3px;color:var(--teal-dark)}
+  hr{border:0;border-top:1px solid var(--rule);margin:22px 0}
+
+  figure{margin:14px 0 18px;page-break-inside:avoid}
+  figure img{width:100%;border:1px solid var(--rule);border-radius:6px;display:block}
+  figcaption{font-size:8.6pt;color:var(--ink-3);margin-top:6px;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+  figcaption b{color:var(--teal-dark)}
+
+  table{width:100%;border-collapse:collapse;margin:10px 0 16px;font-size:9.2pt;page-break-inside:avoid}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{background:var(--tint);color:var(--teal-dark);font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:8.6pt;text-transform:uppercase;letter-spacing:.06em}
+
+  .note,.warn{border-left:3px solid var(--cyan);background:var(--tint);padding:9px 12px;margin:12px 0;font-size:9.6pt;page-break-inside:avoid;border-radius:0 4px 4px 0}
+  .warn{border-left-color:#c9922c;background:var(--warn-bg);color:var(--warn)}
+  .note b,.warn b{display:block;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:8.4pt;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px}
+
+  .steps{counter-reset:s;list-style:none;padding-left:0}
+  .steps>li{counter-increment:s;position:relative;padding-left:28px;margin-bottom:8px}
+  .steps>li::before{
+    content:counter(s);position:absolute;left:0;top:1px;width:19px;height:19px;border-radius:50%;
+    background:var(--teal);color:#fff;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-size:8.5pt;font-weight:600;display:flex;align-items:center;justify-content:center;
+  }
+
+  .toc{columns:2;column-gap:26px;font-size:9.6pt}
+  .toc div{break-inside:avoid;margin-bottom:5px}
+  .toc .n{color:var(--cyan);font-weight:700;display:inline-block;width:1.7em;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+
+  kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:8.5pt;border:1px solid var(--rule);
+      border-bottom-width:2px;border-radius:4px;padding:1px 5px;background:#fff;color:var(--ink)}
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="cover">
+  <img class="mark" src="shots/icon.png" alt="">
+  <div class="kicker">User Guide · Version 0.8.95</div>
+  <h1>Deeper Notebook</h1>
+  <p class="sub">Think further with every source.</p>
+  <div class="meta">
+    <b>A complete how-to</b> for the local-first, source-grounded research workspace.<br>
+    Every screenshot in this guide is a live render of the application at this version.<br>
+    <b>Desktop</b> 0.8.95 &nbsp;·&nbsp; <b>Server track</b> 1.8.5 &nbsp;·&nbsp; <b>Published</b> 17 August 2026
+  </div>
+</section>
+
+<!-- ============ TOC ============ -->
+<h2><span class="num">—</span>Contents</h2>
+<p class="lede">Read straight through the first time; after that, jump.</p>
+<div class="toc">
+  <div><span class="n">1</span>What Deeper Notebook is</div>
+  <div><span class="n">2</span>Installing and first launch</div>
+  <div><span class="n">3</span>Anatomy of the workspace</div>
+  <div><span class="n">4</span>Home</div>
+  <div><span class="n">5</span>Notebooks</div>
+  <div><span class="n">6</span>Sources — adding material</div>
+  <div><span class="n">7</span>Reading a source</div>
+  <div><span class="n">8</span>Chat — grounded answers</div>
+  <div><span class="n">9</span>Ask and Search</div>
+  <div><span class="n">10</span>Knowledge and the mind map</div>
+  <div><span class="n">11</span>Studio — building artifacts</div>
+  <div><span class="n">12</span>Podcasts</div>
+  <div><span class="n">13</span>Study</div>
+  <div><span class="n">14</span>Transformations</div>
+  <div><span class="n">15</span>Capture</div>
+  <div><span class="n">16</span>Advanced</div>
+  <div><span class="n">17</span>Settings</div>
+  <div><span class="n">18</span>API keys and credentials</div>
+  <div><span class="n">19</span>Local models</div>
+  <div><span class="n">20</span>MCP servers</div>
+  <div><span class="n">21</span>Launch preferences</div>
+  <div><span class="n">22</span>Themes and appearance</div>
+  <div><span class="n">23</span>Working offline</div>
+  <div><span class="n">24</span>Privacy — what leaves your machine</div>
+  <div><span class="n">25</span>Backups and recovery</div>
+  <div><span class="n">26</span>Troubleshooting</div>
+  <div><span class="n">27</span>Keyboard shortcuts</div>
+  <div><span class="n">28</span>Where your data lives</div>
+</div>
+
+<!-- ============ 1 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">1</span>What Deeper Notebook is</h2>
+<p class="lede">A research workspace where every answer comes from material you chose.</p>
+
+<p>Deeper Notebook is a native desktop application for <strong>source-grounded research</strong>. You
+collect documents, audio, video, and web pages into <em>notebooks</em>. The application reads them,
+breaks them into passages, and indexes those passages. From then on, everything it produces — chat
+replies, syntheses, study guides, podcast scripts, slide decks — is drawn from <em>your</em> material
+and cites the passage it came from.</p>
+
+<p>Two things make it different from a web research assistant:</p>
+
+<ul>
+  <li><strong>It is yours.</strong> Your notebooks, sources, passage index, chat history, and the
+  facts it remembers about you all live in a database file on your own drive, behind a password you
+  set and an encryption key you control.</li>
+  <li><strong>It works with the network cable unplugged.</strong> The application bundles its own
+  database, its own web server, and can run its own AI models — for chat, for indexing, for
+  transcription, and for speech. Cloud providers are supported, but they are strictly opt-in and
+  never required.</li>
+</ul>
+
+<h3>Who it is for</h3>
+<p>Anyone who needs to work through a body of material and be able to answer <em>"where did that come
+from?"</em> — researchers, students, analysts, writers, and people preparing to teach something they
+have just learned.</p>
+
+<div class="note">
+  <b>The one rule worth learning first</b>
+  Deeper Notebook answers from your sources. If your sources do not support an answer, it is designed
+  to say so rather than fill the gap. When an answer feels thin, the fix is almost always to add a
+  better source — not to rephrase the question.
+</div>
+
+<!-- ============ 2 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">2</span>Installing and first launch</h2>
+<p class="lede">One drag, one right-click, then about a minute and a half of setup.</p>
+
+<h3>Install on macOS</h3>
+<ol class="steps">
+  <li>Download <code>Deeper-Notebook-mac-&lt;arch&gt;.dmg</code> from the Releases page.</li>
+  <li>Open the disk image and drag <strong>Deeper Notebook</strong> into <strong>Applications</strong>.</li>
+  <li><strong>Right-click the app and choose Open</strong> the first time. The build is signed but not
+  notarized, so a plain double-click will be refused by Gatekeeper. You only have to do this once per
+  fresh download.</li>
+  <li>Approve the file-access prompt when macOS asks. The application needs it to read the documents
+  you add and to write its own data folder.</li>
+</ol>
+
+<h3>What happens on first launch</h3>
+<p>The first launch does real work before it shows you anything, and it is slower than every launch
+after it. In order, it:</p>
+<ul>
+  <li>unpacks its bundled Python runtime, database engine, and web server;</li>
+  <li>builds a private environment for itself under your home folder;</li>
+  <li>downloads the local model files it needs;</li>
+  <li>starts nine or more background services, each on a port it picks at launch;</li>
+  <li>checks that each one answered, and opens the window.</li>
+</ul>
+<p>Budget roughly <strong>90 seconds</strong> the first time. Later launches skip the unpacking and the
+downloads. If a launch feels slow, §26 shows you where the time went.</p>
+
+<div class="warn">
+  <b>Windows</b>
+  Windows builds are produced separately — releases carry
+  <code>Deeper-Notebook-windows-x64.zip</code> and a <code>Setup-x64.exe</code> installer. The
+  screenshots in this guide are from macOS; the interface is the same.
+</div>
+
+<h3>The setup wizard</h3>
+<p>On a fresh profile the app opens a short wizard. You can accept every default and change your mind
+later — nothing there is permanent. The two questions worth answering deliberately:</p>
+<ul>
+  <li><strong>Do you want to add a cloud provider?</strong> You do not have to. If you skip it, the
+  app uses its bundled local models for everything.</li>
+  <li><strong>Do you want a sample notebook?</strong> Say yes the first time. It seeds a notebook with
+  a source already indexed, so your first chat has something to answer from.</li>
+</ul>
+
+<!-- ============ 3 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">3</span>Anatomy of the workspace</h2>
+<p class="lede">Four regions. Learn them once and every screen reads the same way.</p>
+
+<figure>
+  <img src="shots/01-home.png" alt="The Deeper Notebook home screen">
+  <figcaption><b>The shell.</b> Far left: the rail with your identity badge and the new-item button.
+  Left: the navigation column, grouped Collect / Process / Create / Manage. Centre: the working
+  surface. Right: the Context lens.</figcaption>
+</figure>
+
+<h4>The rail (far left)</h4>
+<p>Your badge, and a <strong>+</strong> button that starts something new from wherever you are — a
+notebook, a source, a note.</p>
+
+<h4>The navigation column</h4>
+<p>Grouped by what you are doing, not by data type:</p>
+<table>
+  <tr><th>Group</th><th>Contains</th><th>Use it when</th></tr>
+  <tr><td>Collect</td><td>Sources, Capture</td><td>You are gathering material</td></tr>
+  <tr><td>Process</td><td>Notebooks, Knowledge, Ask and Search</td><td>You are working through it</td></tr>
+  <tr><td>Create</td><td>Studio, Podcasts, Study</td><td>You are producing something from it</td></tr>
+  <tr><td>Manage</td><td>Models, Transformations, Settings, MCP Servers, Launch Preferences, Advanced</td><td>You are configuring the app</td></tr>
+</table>
+
+<h4>The working surface (centre)</h4>
+<p>Whatever you selected. In a notebook this splits into three resizable panes —
+<strong>sources │ notes │ chat</strong> — and remembers the widths you set.</p>
+
+<h4>The Context lens (right)</h4>
+<p>A running summary of what is in play: the evidence behind the current view, backlinks, and what the
+assistant currently has in context. When you are unsure why an answer said what it said, look here
+first.</p>
+
+<h4>Two controls in the top-right corner</h4>
+<ul>
+  <li><strong>Quick actions</strong> (<kbd>⌘K</kbd>) — the command bar. Type to jump to any notebook,
+  source, or setting. This is the fastest way to move around the app.</li>
+  <li><strong>Focus mode</strong> (<kbd>⌘⇧F</kbd>) — hides the navigation and the lens and leaves you
+  with the working surface alone.</li>
+</ul>
+
+<div class="warn">
+  <b>Known display issue at this version</b>
+  In build 0.8.95 the Focus mode control is drawn on top of the Quick actions button, so both labels
+  appear stacked in the top-right corner. Both controls still work, and the keyboard shortcuts
+  (<kbd>⌘K</kbd> and <kbd>⌘⇧F</kbd>) are unaffected. You can see this in the screenshots throughout
+  this guide — it is the application as it currently renders, not a capture artifact.
+</div>
+
+<!-- ============ 4 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">4</span>Home</h2>
+<p class="lede">Where you left off, and whether the machinery is healthy.</p>
+
+<p>Home is deliberately quiet. It shows three things:</p>
+<ul>
+  <li><strong>Continue</strong> — the notebook and question you were last working on.</li>
+  <li><strong>Quick actions</strong> — start a Studio artifact, or open a new empty notebook.</li>
+  <li><strong>Runtime status</strong> — whether the API, the database, and the migrations are ready.</li>
+</ul>
+
+<h3>Reading the runtime status panel</h3>
+<table>
+  <tr><th>Reads</th><th>Means</th><th>Do</th></tr>
+  <tr><td><strong>Ready</strong></td><td>Everything answered its health check</td><td>Nothing</td></tr>
+  <tr><td><strong>Starting</strong></td><td>A service is still coming up — normal for the first minute</td><td>Wait</td></tr>
+  <tr><td><strong>Degraded</strong></td><td>Something optional did not start — often a local model</td><td>Open Settings → Local models and check which one</td></tr>
+</table>
+<p><strong>Degraded is not broken.</strong> The application is designed so an optional service failing
+never stops you working — it removes a capability, tells you, and carries on. If your chat model is
+the thing that is degraded, you will get an explicit message rather than a silent hang.</p>
+
+<p>Use <strong>Refresh runtime status</strong> after you start or stop a model; the panel does not poll
+aggressively, on purpose.</p>
+
+<h3>Startup timings</h3>
+<p>If a launch felt slow, the app records how long each stage took and surfaces any stage over a tenth
+of a second. You do not need to open a log file to find out that model loading, not the database, was
+what you waited for.</p>
+
+<!-- ============ 5 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">5</span>Notebooks</h2>
+<p class="lede">A notebook is a question and the material that answers it.</p>
+
+<figure>
+  <img src="shots/02-notebooks.png" alt="The notebook index">
+  <figcaption><b>The notebook index.</b> Each card shows its source and note counts, and when it was
+  last touched.</figcaption>
+</figure>
+
+<h3>Creating one</h3>
+<ol class="steps">
+  <li>Click <strong>+</strong> in the rail, or open <strong>Notebooks</strong> and use the new-notebook
+  action.</li>
+  <li>Give it a name that states the question, not the topic. <em>"Does creatine help endurance?"</em>
+  beats <em>"Creatine"</em> — it makes it obvious later which sources belong.</li>
+  <li>Add a one-line description. It is what the assistant sees when it needs to know what this
+  notebook is for.</li>
+</ol>
+
+<h3>Archiving instead of deleting</h3>
+<p>Archive hides a notebook from the index without touching anything inside it. Delete is permanent
+and cascades: sources, notes, the passage index, and the chat sessions all go with it.</p>
+
+<div class="warn">
+  <b>Delete is not undoable from inside the app</b>
+  Your safety net is the automatic backup (§25), not an undo button. If you are unsure, archive.
+</div>
+
+<h3>The notebook workspace</h3>
+<figure>
+  <img src="shots/03-notebook-workspace.png" alt="Inside a notebook">
+  <figcaption><b>Inside a notebook.</b> The header actions — Mind map, Archive, Export, Delete — sit
+  above the working panes. Guided research and Evidence Studio are available from here.</figcaption>
+</figure>
+
+<p>Four actions live in the header:</p>
+<table>
+  <tr><th>Action</th><th>What it does</th></tr>
+  <tr><td><strong>Mind map</strong></td><td>Opens a graph of this notebook and everything related to it (§10)</td></tr>
+  <tr><td><strong>Archive</strong></td><td>Hides it from the index; fully reversible</td></tr>
+  <tr><td><strong>Export</strong></td><td>Writes the notebook and its notes out as Markdown</td></tr>
+  <tr><td><strong>Delete</strong></td><td>Permanent, and cascades to everything inside</td></tr>
+</table>
+
+<h3>Guided research</h3>
+<p>Type what you want to investigate and press <strong>Start research</strong>. The app searches, shows
+you candidate sources, and <strong>waits for you to approve each one</strong> before importing it.
+Nothing is added to your notebook without you clicking. This is deliberate — an unattended importer
+would quietly fill your notebook with material you never read.</p>
+
+<!-- ============ 6 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">6</span>Sources — adding material</h2>
+<p class="lede">Everything the application knows, it knows because you added it here.</p>
+
+<figure>
+  <img src="shots/04-sources.png" alt="The sources library">
+  <figcaption><b>The source library.</b> Covers are extracted from the source itself — a page render
+  for documents, a frame for video, a waveform for audio.</figcaption>
+</figure>
+
+<h3>What you can add</h3>
+<table>
+  <tr><th>Kind</th><th>Formats</th><th>How it is read</th></tr>
+  <tr><td>Documents</td><td>PDF, DOCX, PPTX, XLSX, Markdown, plain text</td><td>Text extraction, 50+ formats supported</td></tr>
+  <tr><td>Audio</td><td>MP3, WAV, M4A and similar</td><td>Transcribed by a local speech-to-text model</td></tr>
+  <tr><td>Video</td><td>MP4, MOV and similar</td><td>Audio track transcribed; frames used for the cover</td></tr>
+  <tr><td>Web pages</td><td>Any URL</td><td>Fetched and cleaned; dynamic pages rendered if the optional engine is installed</td></tr>
+  <tr><td>Raw text</td><td>Pasted</td><td>Used directly</td></tr>
+</table>
+
+<h3>Adding a source</h3>
+<ol class="steps">
+  <li>Open a notebook, or the Sources page.</li>
+  <li>Drop a file onto the sources pane, or use <strong>Add source</strong> and paste a URL.</li>
+  <li>Watch the state on the card. It moves <strong>Queued → Processing → Ready</strong>.</li>
+  <li>Wait for <strong>Ready</strong> before you ask about it. A source that is still processing has
+  not been indexed yet, so chat cannot see inside it.</li>
+</ol>
+
+<div class="note">
+  <b>Why a big PDF takes a moment</b>
+  Adding a source is not a copy. The app extracts the text, splits it into passages, and computes a
+  numeric index for every passage so it can find the right one later. A long document does real work
+  here. It only happens once.
+</div>
+
+<h3>Discover sources</h3>
+<p>Inside the Sources panel, <strong>Discover</strong> searches the web for a topic, shows you the
+candidate pages, and lets you add the ones you want as link sources. This only reaches the network if
+a search provider is available — and one always is, because Wikipedia needs no key. Configure a
+better provider in Settings if you want broader results (§17).</p>
+
+<h3>Enrichment on ingest</h3>
+<p>Two optional switches in <strong>Settings → Sources</strong>, both off by default:</p>
+<ul>
+  <li><strong>Auto-summarise</strong> — writes a Summary insight and a one-line preview onto the card
+  as soon as the source is ready.</li>
+  <li><strong>Extract key topics</strong> — pulls topic tags from the content so you can filter by
+  them later.</li>
+</ul>
+<p>Both cost a model call per source. Turn them on when you are adding a lot of material you will need
+to skim later; leave them off when you are adding a handful of things you will read yourself.</p>
+
+<!-- ============ 7 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">7</span>Reading a source</h2>
+<p class="lede">The reading pane is also where citations land.</p>
+
+<figure>
+  <img src="shots/05-source-reader.png" alt="A source open in the reading pane">
+  <figcaption><b>The source view.</b> Extracted text, insights, per-source chat, and the controls that
+  decide how much of this source the assistant may use.</figcaption>
+</figure>
+
+<h3>What is on this screen</h3>
+<ul>
+  <li><strong>The content.</strong> PDFs render inline, page by page. Everything else shows its
+  extracted text. If a PDF fails to render, the extracted text appears instead — you never lose
+  access to the content.</li>
+  <li><strong>Insights.</strong> Anything generated from this source: summaries, key points, extracted
+  topics, and the output of any transformation you ran (§14).</li>
+  <li><strong>Per-source chat.</strong> A conversation scoped to this one document. Useful when a
+  notebook has thirty sources and you want to interrogate exactly one.</li>
+</ul>
+
+<h3>The context toggle — the most important control here</h3>
+<p>Each source has three settings that decide what notebook-wide chat may use:</p>
+<table>
+  <tr><th>Setting</th><th>The assistant sees</th><th>Use when</th></tr>
+  <tr><td><strong>Off</strong></td><td>Nothing from this source</td><td>It is off-topic, outdated, or you are testing what a subset says</td></tr>
+  <tr><td><strong>Insights only</strong></td><td>Summaries and extracted points, not the full text</td><td>The source is long and you want its conclusions without spending context on it</td></tr>
+  <tr><td><strong>Full</strong></td><td>The whole indexed document</td><td>Normal — this is the default</td></tr>
+</table>
+<p>This is how you conduct an argument with your own library: turn one side off and ask the same
+question again.</p>
+
+<h3>Jumping from a citation</h3>
+<p>When a chat answer shows a citation pill, clicking it opens that source here and scrolls to the
+exact passage, highlighted. This turns a citation from a reference you have to trust into a claim you
+can check in one click.</p>
+
+<!-- ============ 8 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">8</span>Chat — grounded answers</h2>
+<p class="lede">The centre of the application. Everything else feeds it.</p>
+
+<p>Chat lives in the right pane of a notebook. Ask a question and the application does five things
+before the model ever sees your message:</p>
+<ol class="steps">
+  <li><strong>Recalls</strong> what it has learned about you from earlier conversations.</li>
+  <li><strong>Retrieves</strong> the passages from your sources most likely to answer the question.</li>
+  <li><strong>Checks the network.</strong> If you are offline, or you have switched offline mode on, it
+  swaps any cloud model for the best local one rather than hanging on an unreachable service.</li>
+  <li><strong>Attaches its tools</strong> — web search, scholarly search, add-a-web-page, and any MCP
+  servers you configured.</li>
+  <li><strong>Asks the model</strong>, and if the model calls a tool, runs it and asks again — up to
+  four rounds.</li>
+</ol>
+
+<h3>Reading an answer</h3>
+<ul>
+  <li><strong>Citation pills</strong> mark grounded claims. Click one to jump to the passage (§7).</li>
+  <li><strong>"Using X of Y sources"</strong> sits above the input. Click it to see exactly which
+  sources are in context right now. If an answer ignored something you expected, check here before
+  blaming the model.</li>
+  <li><strong>"Answered with &lt;model&gt; (offline)"</strong> appears on any message that was routed to
+  a local model because the network was unavailable.</li>
+</ul>
+
+<h3>Tools</h3>
+<table>
+  <tr><th>Tool</th><th>What it does</th><th>Needs</th></tr>
+  <tr><td><strong>Web search</strong></td><td>Searches the live web and cites what it found</td><td>Nothing — Wikipedia is always available. A provider key gives better results</td></tr>
+  <tr><td><strong>Scholarly search</strong></td><td>Searches OpenAlex and arXiv for papers</td><td>Nothing</td></tr>
+  <tr><td><strong>Add web source</strong></td><td>Turns a page it found into a permanent source in your notebook</td><td>Nothing</td></tr>
+  <tr><td><strong>MCP servers</strong></td><td>Anything you connect (§20)</td><td>Configuration</td></tr>
+</table>
+<p>The picker row above the input turns individual tools off for a conversation. Turn web search off
+when you want an answer strictly from your own library.</p>
+
+<div class="note">
+  <b>If your local model cannot use tools</b>
+  Many small local models do not support tool calling. The application detects this and answers
+  without tools rather than failing. You will get a normal reply — just one that could not search the
+  web. Switch to a larger local model or a cloud model if you need tools.
+</div>
+
+<h3>Memory</h3>
+<p>The application extracts durable facts and preferences from your conversations and recalls them
+later — so you do not re-explain your project every session. It is bounded on purpose: it keeps a
+capped number of items, only stores things it is reasonably confident about, and sanitises what it
+stores so text inside a source cannot instruct it. Memory settings live in Settings.</p>
+
+<!-- ============ 9 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">9</span>Ask and Search</h2>
+<p class="lede">Two different questions, two different tools.</p>
+
+<figure>
+  <img src="shots/06-search.png" alt="The Ask and Search screen">
+  <figcaption><b>Ask and Search.</b> One box, two behaviours.</figcaption>
+</figure>
+
+<table>
+  <tr><th></th><th>Search</th><th>Ask</th></tr>
+  <tr><td>Answers</td><td>"Where did I read about X?"</td><td>"What does everything I have say about X?"</td></tr>
+  <tr><td>Returns</td><td>Ranked passages</td><td>One synthesised, cited answer</td></tr>
+  <tr><td>Scope</td><td>Your whole library</td><td>The notebook</td></tr>
+  <tr><td>Cost</td><td>Instant, no model call</td><td>A model call</td></tr>
+</table>
+
+<p>Search matches on meaning, not just words — a passage about "resting heart rate declining" will come
+back for "cardiovascular adaptation" even with no shared vocabulary.</p>
+
+<p><strong>Ask declines.</strong> If your sources do not support a grounded answer, Ask says so instead
+of producing a plausible synthesis from nothing. Treat a declined Ask as information: it is telling you
+your library has a gap.</p>
+
+<!-- ============ 10 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">10</span>Knowledge and the mind map</h2>
+<p class="lede">Your library as a structure rather than a list.</p>
+
+<figure>
+  <img src="shots/07-knowledge.png" alt="The Knowledge workspace">
+  <figcaption><b>Knowledge.</b> Documents, blocks, and the relations between them.</figcaption>
+</figure>
+
+<p>Knowledge projects your material as documents, blocks within them, and the relations that connect
+them. It is where you go when you want to see how things sit together rather than read one thing.</p>
+
+<h3>The mind map</h3>
+<p>From any notebook header, <strong>Mind map</strong> draws a radial graph: the notebook at the
+centre, its sources and notes around it. Click a node to open it. The graph is built from relations
+that already exist in your data — it is a view, not a separate thing you have to maintain.</p>
+
+<h3>Vault sync</h3>
+<p>If you keep a Markdown vault — Obsidian, Logseq, or plain folders of Markdown — Deeper Notebook can
+watch it and keep your notes in step. Notes you write in the app appear as files; files you write
+outside appear as notes. The first pass over a large vault is proportional to its size; after that it
+watches for changes.</p>
+
+<!-- ============ 11 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">11</span>Studio — building artifacts</h2>
+<p class="lede">Turn a notebook into something you can hand to someone.</p>
+
+<figure>
+  <img src="shots/08-studio.png" alt="Evidence Studio">
+  <figcaption><b>Evidence Studio.</b> Pick sources, pick an artifact, review, export.</figcaption>
+</figure>
+
+<h3>What it can produce</h3>
+<table>
+  <tr><th>Artifact</th><th>Good for</th></tr>
+  <tr><td>Report</td><td>A written answer with structure and citations</td></tr>
+  <tr><td>Study guide</td><td>Learning the material yourself</td></tr>
+  <tr><td><strong>Course Pack</strong></td><td>Teaching it — outcomes, modules, timed lessons, exercises, facilitator notes, handouts, knowledge checks, an assessment</td></tr>
+  <tr><td>Briefing</td><td>Getting someone else up to speed quickly</td></tr>
+  <tr><td>FAQ · Timeline · Data table</td><td>Reference material</td></tr>
+  <tr><td>Flashcards · Quiz</td><td>Feeding the Study workbench (§13)</td></tr>
+  <tr><td>Mind map</td><td>A structural overview</td></tr>
+  <tr><td><strong>Slide deck</strong></td><td>Presenting — exports an editable <code>.pptx</code> plus a PDF</td></tr>
+  <tr><td><strong>Infographic</strong></td><td>A single visual — exports a <code>.png</code> plus a one-page PDF</td></tr>
+  <tr><td>Podcast outline</td><td>Feeding the podcast studio (§12)</td></tr>
+  <tr><td>Research run</td><td>A recorded investigation with its evidence attached</td></tr>
+</table>
+
+<h3>Producing one</h3>
+<ol class="steps">
+  <li>Select the sources to draw from. <strong>They must all be Ready.</strong> If any are still
+  processing, generation stops and tells you which — this is deliberate, because a half-indexed source
+  produces a thin artifact that looks finished.</li>
+  <li>Choose the artifact type.</li>
+  <li>Add direction if you have any — audience, angle, length.</li>
+  <li>Generate, and watch the approval gates: context building, privacy review, model routing,
+  generation.</li>
+  <li>Review the result. Edit it in place if you want; edits are re-checked and the exports are
+  regenerated so the files never disagree with what you see.</li>
+</ol>
+
+<h3>Where the files go</h3>
+<p>Artifacts save under your knowledge folder, in an <code>evidence-studio</code> directory, unless you
+have configured a different export path. Slide decks and infographics write their visual files next to
+the Markdown and JSON. All rendering happens locally — nothing is sent to a hosted office or image
+service.</p>
+
+<h3>Video Overview</h3>
+<p>Pair a finished slide deck with a finished, timestamped audio overview and the app composes a
+captioned 1920×1080 video locally, writing an <code>.mp4</code> and a <code>.vtt</code> caption file.
+It verifies the result before it offers it to you.</p>
+
+<!-- ============ 12 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">12</span>Podcasts</h2>
+<p class="lede">A multi-speaker audio conversation about your sources — with the outline under your control.</p>
+
+<figure>
+  <img src="shots/09-podcasts.png" alt="The podcast library">
+  <figcaption><b>Episode library.</b> Every generated episode, with its state and instructions.</figcaption>
+</figure>
+
+<figure>
+  <img src="shots/10-podcast-studio.png" alt="The podcast studio">
+  <figcaption><b>Podcast studio.</b> Speaker profiles, length, language, and per-episode direction.</figcaption>
+</figure>
+
+<h3>Generating an episode</h3>
+<ol class="steps">
+  <li>Choose the notebook and the sources.</li>
+  <li>Choose an <strong>episode profile</strong> (the format) and <strong>speaker profiles</strong>
+  (the voices and personas).</li>
+  <li>Set <strong>length</strong> — short, medium, or long. This controls how many segments the outline
+  gets.</li>
+  <li>Set the <strong>language</strong> if it is not English.</li>
+  <li>Optionally add focus instructions: what to emphasise, what to skip.</li>
+  <li>Decide whether to <strong>review the outline before audio</strong> — see below.</li>
+  <li>Generate.</li>
+</ol>
+
+<h3>The stages</h3>
+<p>Generation runs through named stages with live progress: <strong>outline → transcript → audio →
+combining</strong>. A <strong>Cancel</strong> button is available throughout.</p>
+
+<div class="note">
+  <b>Always review the outline the first time</b>
+  With outline review switched on, generation pauses after the outline. You can rename segments, rewrite
+  their descriptions, and change each one's size before any audio is synthesised. Audio is the expensive
+  stage — fixing the structure before it is the single highest-value habit in this feature.
+</div>
+
+<h3>Retrying and regenerating</h3>
+<p>Your instructions are stored with the episode and replayed on retry, so a retry is not a blank slate.
+A completed episode can be regenerated with different settings without re-selecting the sources.</p>
+
+<h3>If it fails immediately</h3>
+<p>Selections that exceed the content budget are rejected at submit time rather than failing halfway
+through. If that happens, remove a source or use insights-only on your longest one.</p>
+
+<!-- ============ 13 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">13</span>Study</h2>
+<p class="lede">Scheduled review, so what you collected stays learned.</p>
+
+<figure>
+  <img src="shots/11-study.png" alt="The study workbench">
+  <figcaption><b>Study.</b> Cards due today, plans in progress, and import/export.</figcaption>
+</figure>
+
+<h3>How the scheduling works</h3>
+<p>Study uses <strong>FSRS</strong>, a spaced-repetition scheduler. After each card you say how it
+went; FSRS models how quickly you forget that specific card and schedules it for the moment you are
+about to. Cards you find easy stretch out quickly. Cards you keep missing come back tomorrow.</p>
+<p>The only thing you have to get right is honesty about how well you recalled it. Marking a card easy
+because you almost got it will push it out of reach.</p>
+
+<h3>Getting cards in</h3>
+<ul>
+  <li>Generate flashcards or a quiz from a notebook in Studio (§11).</li>
+  <li>Import an existing Anki deck (<code>.apkg</code>).</li>
+  <li>Write them yourself.</li>
+</ul>
+<p>Export works the same way — your cards go back out as an Anki deck, so you are not locked in.</p>
+
+<h3>Study plans</h3>
+<p>A plan is a scoped course through a notebook. Open a plan and the study assistant will help you
+work through it — <strong>restricted to that plan's sources.</strong> It will not answer from material
+outside the plan, even if that material is in the same notebook. That restriction is enforced on the
+retrieval side, not just requested in a prompt.</p>
+
+<!-- ============ 14 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">14</span>Transformations</h2>
+<p class="lede">A saved instruction you can run over any source, plus a way to make it better.</p>
+
+<figure>
+  <img src="shots/12-transformations.png" alt="Transformations">
+  <figcaption><b>Transformations.</b> Named, reusable prompts with an Optimize action on each card.</figcaption>
+</figure>
+
+<p>A transformation is a named prompt — "summarise for a sceptical reader", "extract every claim with a
+number in it", "list the methods and their sample sizes". Run it over a source and the output is saved
+as an insight on that source.</p>
+
+<h3>Writing a good one</h3>
+<ul>
+  <li>Say what the output should look like, not just what to do. "A bulleted list, one claim per bullet,
+  each with the page it came from" beats "extract the claims".</li>
+  <li>Say what to do when the source does not contain what you asked for. Otherwise the model invents.</li>
+  <li>Keep one transformation to one job. Chaining two small ones is easier to debug than fixing one
+  large one.</li>
+</ul>
+
+<h3>The prompt optimizer</h3>
+<p>Each transformation card has an <strong>Optimize</strong> action. It genuinely trains the prompt:</p>
+<ol class="steps">
+  <li>You pick a notebook to train against and describe, in plain English, what a good output looks like.</li>
+  <li>Each round runs the prompt over example sources.</li>
+  <li>A second model scores the outputs against your criteria.</li>
+  <li>The optimizer proposes a bounded edit to the prompt.</li>
+  <li>The edit is kept <strong>only if it improves results on examples it was not trained on</strong>.</li>
+  <li>You see the before and after side by side, and it is applied only when you click <strong>Apply</strong>.</li>
+</ol>
+<p>It can run entirely against your local model, so nothing leaves the machine.</p>
+
+<!-- ============ 15 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">15</span>Capture</h2>
+<p class="lede">A folder that becomes sources.</p>
+
+<figure>
+  <img src="shots/13-capture.png" alt="The capture inbox">
+  <figcaption><b>Capture.</b> Watched folders and the items waiting in them.</figcaption>
+</figure>
+
+<p>Nominate a folder as a capture root and the application watches it. Anything you drop in appears in
+the capture inbox, where you decide which notebook it belongs to before it becomes a source.</p>
+
+<p>This is the right tool when material arrives faster than you can file it — scanned pages, downloads,
+recordings from a meeting. It keeps the arrival step and the filing step separate, so a busy week does
+not turn into an unusable notebook.</p>
+
+<!-- ============ 16 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">16</span>Advanced</h2>
+<p class="lede">Diagnostics and the tools you reach for rarely.</p>
+
+<figure>
+  <img src="shots/14-advanced.png" alt="The advanced screen">
+  <figcaption><b>Advanced.</b> Runtime detail, backup provenance, and maintenance actions.</figcaption>
+</figure>
+
+<p>Advanced carries what you need when something is wrong or you are curious about the machinery:
+detailed runtime state per service, backup provenance, and maintenance actions. Nothing here is
+required for normal use. It is worth knowing it exists before you need it.</p>
+
+<!-- ============ 17 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">17</span>Settings</h2>
+<p class="lede">Where behaviour is decided.</p>
+
+<figure>
+  <img src="shots/15-settings.png" alt="Settings">
+  <figcaption><b>Settings.</b> Models, sources, network, privacy, and appearance.</figcaption>
+</figure>
+
+<h3>Models</h3>
+<p>Choose which model does what: chat, embedding (the passage index), transcription, and speech. You can
+mix — a cloud model for chat and local models for everything else is a common and sensible setup.</p>
+
+<div class="warn">
+  <b>Changing the embedding model re-indexes everything</b>
+  The passage index is built by a specific model, and indexes from different models are not comparable.
+  Switching it means rebuilding, which on a large library takes minutes. Pick one early and stay on it.
+</div>
+
+<h3>Sources</h3>
+<p>The two enrichment switches described in §6, and extraction preferences.</p>
+
+<h3>Network</h3>
+<ul>
+  <li><strong>Offline mode.</strong> Force everything local even when you have a connection. Useful on
+  a metered link, on someone else's network, or when working with material you would rather not send
+  anywhere.</li>
+  <li><strong>Smart routing.</strong> Optional. Picks local or cloud per turn, based on how much context
+  the turn needs and whether your local model is healthy.</li>
+  <li><strong>Search providers.</strong> See below.</li>
+</ul>
+
+<h4>Search providers, in the order they are tried</h4>
+<table>
+  <tr><th>#</th><th>Provider</th><th>Key</th><th>Notes</th></tr>
+  <tr><td>1</td><td>Serper</td><td>Required</td><td>Paid, fast, broad</td></tr>
+  <tr><td>2</td><td>Tavily</td><td>Required</td><td>Paid, research-oriented</td></tr>
+  <tr><td>3</td><td>Brave</td><td>Required</td><td>Paid, independent index</td></tr>
+  <tr><td>4</td><td>SearXNG</td><td>None</td><td>Self-hosted; the app ships one you can run</td></tr>
+  <tr><td>5</td><td><strong>Wikipedia</strong></td><td><strong>None</strong></td><td>Always available — search works out of the box</td></tr>
+</table>
+<p>Each provider is tried in turn until one answers. You never have to configure search for it to work;
+adding a key makes it better.</p>
+
+<h3>Privacy</h3>
+<p>With the privacy gate on, any turn containing detected secrets or personal information is kept on
+your local model rather than being sent to a cloud provider. When that happens you get an
+<strong>On-device</strong> badge and an explicit <strong>"Re-ask allowing cloud"</strong> action, so
+the decision stays yours and is never made silently.</p>
+
+<h3>Appearance</h3>
+<p>Theme, and <strong>density</strong> — Comfortable by default, Compact if you want more on screen.</p>
+
+<!-- ============ 18 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">18</span>API keys and credentials</h2>
+<p class="lede">Optional, encrypted, and reversible.</p>
+
+<figure>
+  <img src="shots/16-settings-api-keys.png" alt="API keys">
+  <figcaption><b>API keys.</b> Provider credentials, encrypted at rest.</figcaption>
+</figure>
+
+<p>Cloud providers are opt-in. Adding a key here makes that provider's models available in the model
+picker; adding none is a fully supported configuration.</p>
+
+<p>Supported: OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek, and Ollama for models you run
+yourself. Search provider keys are configured here too.</p>
+
+<h3>How keys are stored</h3>
+<p>Encrypted in the database using an encryption key that belongs to you. They are never written to a
+log file, never included in an error message, and never displayed back to you after you save them.</p>
+
+<h3>Rotating your encryption key</h3>
+<p>You can supply a new key alongside the old one and the application re-encrypts in place — you do not
+have to re-enter a dozen provider keys. That capability exists precisely because the alternative
+guarantees nobody ever rotates.</p>
+
+<h3>Removing a provider</h3>
+<p>Delete the credential. Its models disappear from the picker. Nothing else changes — your notebooks,
+sources, and index are untouched, because they never depended on that provider.</p>
+
+<!-- ============ 19 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">19</span>Local models</h2>
+<p class="lede">The part that makes offline real.</p>
+
+<figure>
+  <img src="shots/17-settings-local-models.png" alt="Local models">
+  <figcaption><b>Local models.</b> The library, readiness, and role routing.</figcaption>
+</figure>
+
+<h3>The three ways to have a local model</h3>
+<table>
+  <tr><th>Kind</th><th>How to add one</th><th>Notes</th></tr>
+  <tr><td><strong>GGUF</strong></td><td>Put a <code>.gguf</code> file in the GGUF model folder</td><td>Broadest compatibility; the bundled default</td></tr>
+  <tr><td><strong>MLX</strong></td><td>Put a complete MLX repository in the MLX model folder</td><td>Apple Silicon only; usually faster</td></tr>
+  <tr><td><strong>Ollama</strong></td><td><code>ollama pull &lt;name&gt;</code></td><td>Detected automatically if Ollama is running</td></tr>
+</table>
+<p>Files appear in the picker on the next launch. The <strong>GGUF Manager</strong> can download models
+for you and swap the active one without restarting.</p>
+
+<h3>Reading this screen</h3>
+<ul>
+  <li><strong>Model library</strong> — what is installed. Read-only; use <strong>Rescan local
+  library</strong> after adding files.</li>
+  <li><strong>Readiness</strong> — only models that pass verification are eligible for automatic
+  routing. A model that is present but not ready will not be picked silently.</li>
+  <li><strong>Role routes and overrides</strong> — which model does which job. Overrides are explicit,
+  and are <strong>rejected</strong> if the model fails a readiness, quality, context, or memory gate.
+  The app will not quietly route work to a model that cannot do it.</li>
+</ul>
+
+<div class="warn">
+  <b>Keep each runtime's model folder separate</b>
+  If Ollama's storage shares a directory tree with your GGUF and MLX files, every scan re-inventories
+  all of them. Separating them took one measured operation from 10–15 seconds down to 22 milliseconds.
+</div>
+
+<h3>Choosing a size</h3>
+<p>Bigger models are better and slower, and a very large model loading from disk for the first time can
+take up to a minute. If chat feels sluggish, try a smaller model before assuming something is broken.</p>
+
+<!-- ============ 20 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">20</span>MCP servers</h2>
+<p class="lede">Give the assistant abilities the application does not ship with.</p>
+
+<figure>
+  <img src="shots/18-settings-mcp.png" alt="MCP servers">
+  <figcaption><b>MCP servers.</b> Connect external tool servers per conversation.</figcaption>
+</figure>
+
+<p>The Model Context Protocol is a standard way for a tool server to describe what it can do. Connect
+one here and its tools become available to chat, alongside the built-in ones.</p>
+
+<h3>Adding a server</h3>
+<ol class="steps">
+  <li>Add the server's address and any credentials it needs.</li>
+  <li>The application connects and lists the tools it offers.</li>
+  <li>Those tools now appear in the chat tool picker, where you can turn individual ones off.</li>
+</ol>
+
+<div class="warn">
+  <b>An MCP server can act on your behalf</b>
+  Only connect servers you trust. A tool server can do whatever it advertises — read files, call APIs,
+  change things. The application will not second-guess a server you explicitly configured.
+</div>
+
+<p>If a server is unreachable, chat continues without its tools rather than failing. A broken
+integration costs you a capability, not a conversation.</p>
+
+<!-- ============ 21 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">21</span>Launch preferences</h2>
+<p class="lede">What starts, and how.</p>
+
+<figure>
+  <img src="shots/19-settings-launcher-prefs.png" alt="Launch preferences">
+  <figcaption><b>Launch preferences.</b> Which model loads at launch, and how services behave.</figcaption>
+</figure>
+
+<p>This screen controls the launcher rather than the application: which local model to load at startup,
+how patient to be with services that are slow to come up, and where the data folder lives.</p>
+
+<div class="warn">
+  <b>If you delete a model file, clear it here too</b>
+  Pointing the launcher at a model that no longer exists used to fail quietly. It now refuses clearly
+  and continues the launch without that provider — but the fix is still to pick an existing model here.
+</div>
+
+<p>Ports are chosen fresh at each launch, so there is nothing to configure and nothing to collide with.</p>
+
+<!-- ============ 22 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">22</span>Themes and appearance</h2>
+<p class="lede">Seventeen themes, all of them accessible.</p>
+
+<p>Every theme meets WCAG AA or AAA contrast. These are not decoration — a high-contrast theme is the
+difference between usable and not for some readers, and the paper themes are noticeably easier for long
+reading sessions.</p>
+
+<figure>
+  <img src="shots/20-notebooks-light.png" alt="Research Core Light theme">
+  <figcaption><b>Research Core Light</b> — the default light theme.</figcaption>
+</figure>
+
+<figure>
+  <img src="shots/21-notebooks-archive-paper.png" alt="Archive Paper theme">
+  <figcaption><b>Archive Paper</b> — warm and low-glare, for long reading.</figcaption>
+</figure>
+
+<figure>
+  <img src="shots/22-notebooks-deep-ocean.png" alt="Deep Ocean theme">
+  <figcaption><b>Deep Ocean</b> — a darker alternative to the default.</figcaption>
+</figure>
+
+<figure>
+  <img src="shots/23-notebooks-high-contrast.png" alt="High Contrast Dark theme">
+  <figcaption><b>High Contrast Dark</b> — maximum separation between text and background.</figcaption>
+</figure>
+
+<h3>Density</h3>
+<p><strong>Comfortable</strong> is the default and gives text room to breathe. <strong>Compact</strong>
+tightens spacing so more fits on screen. The setting persists across launches.</p>
+
+<h3>Motion</h3>
+<p>Animation is limited to effects that do not move layout, and is disabled entirely if your system is
+set to reduce motion. You do not have to configure anything for that to take effect.</p>
+
+<h3>Narrow windows</h3>
+<figure>
+  <img src="shots/24-notebooks-mobile.png" alt="Narrow window layout" style="max-width:52%;margin:0 auto">
+  <figcaption><b>At 390 px wide.</b> The navigation collapses and the working surface takes the full
+  width. Every control stays reachable.</figcaption>
+</figure>
+
+<!-- ============ 23 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">23</span>Working offline</h2>
+<p class="lede">Not a degraded mode. The design centre.</p>
+
+<p>With local models configured, everything below works with no network at all:</p>
+<ul>
+  <li>Adding and indexing sources, including transcribing audio and video</li>
+  <li>Chat, with citations</li>
+  <li>Ask and semantic search</li>
+  <li>Memory recall and extraction</li>
+  <li>Studio artifacts</li>
+  <li>Podcast generation, including the audio</li>
+  <li>Study scheduling</li>
+</ul>
+<p>Only live web search and cloud models require a connection — and web search falls back to whatever
+providers are reachable.</p>
+
+<h3>The two ways you end up offline</h3>
+<ul>
+  <li><strong>By circumstance.</strong> The application notices and substitutes a local model for any
+  turn that was going to a cloud provider. You see an amber badge in the shell and a note on the
+  affected message. It does not hang waiting for a service that is not there.</li>
+  <li><strong>By choice.</strong> Switch offline mode on in Settings → Network and it behaves that way
+  even with a working connection.</li>
+</ul>
+
+<div class="note">
+  <b>One case where it stops rather than substitutes</b>
+  If you are offline, the turn needs a cloud model, and you have no local model configured at all, the
+  application fails immediately with a message telling you why — instead of waiting minutes on an
+  unreachable endpoint. Configure a local model and this never happens.
+</div>
+
+<!-- ============ 24 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">24</span>Privacy — what leaves your machine</h2>
+<p class="lede">A short and checkable list.</p>
+
+<h3>Never leaves</h3>
+<ul>
+  <li>Your notebooks, sources, and their full text</li>
+  <li>The passage index</li>
+  <li>Your chat history</li>
+  <li>What the assistant remembers about you</li>
+  <li>Your API keys and encryption key</li>
+  <li>Studio artifacts, slide decks, infographics, and video overviews — all rendered locally</li>
+</ul>
+
+<h3>Leaves only when you cause it to</h3>
+<ul>
+  <li><strong>A cloud model call</strong> — sends your message plus the source passages that were
+  retrieved for it, to the provider whose key you added.</li>
+  <li><strong>A web search</strong> — sends the search query to the provider being tried.</li>
+  <li><strong>Adding a web source</strong> — fetches the URL you gave it.</li>
+  <li><strong>An MCP tool call</strong> — sends whatever that tool takes, to the server you configured.</li>
+  <li><strong>A model download</strong> — fetches the file from Hugging Face.</li>
+  <li><strong>The update check</strong> — asks the releases page whether a newer version exists.</li>
+</ul>
+
+<h3>Three switches that shrink the list</h3>
+<ol class="steps">
+  <li><strong>Use local models only.</strong> Removes cloud model calls entirely.</li>
+  <li><strong>Offline mode.</strong> Removes cloud calls and search.</li>
+  <li><strong>The privacy gate.</strong> Keeps any turn containing detected secrets or personal
+  information on your local model even when cloud is otherwise in use — with an explicit consent action
+  if you want to override it for that turn.</li>
+</ol>
+
+<p>Every outbound address the application resolves is checked before it is used, and requests to your
+own machine's private network from a source URL or a model-directed fetch are refused.</p>
+
+<!-- ============ 25 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">25</span>Backups and recovery</h2>
+<p class="lede">Automatic, verified, and worth testing once.</p>
+
+<h3>Automatic backups</h3>
+<p>The application exports your database on an interval and keeps a rolling set of recent exports. Each
+backup is written atomically — a backup interrupted halfway never replaces a good one — and carries a
+manifest of checksums so a corrupted file can be identified as corrupted rather than silently
+restored.</p>
+
+<h3>Restoring</h3>
+<p>Verify a backup first, then restore it. Verification checks the contents against the manifest. If it
+fails, use an older backup — restoring a bad one is worse than being a day behind.</p>
+
+<h3>Self-healing</h3>
+<p>If the application is force-quit, the database can be left in a state that will not open. It detects
+this on the next launch, takes a backup <em>first</em>, and repairs. A <strong>Repair &amp;
+restart</strong> button handles the relaunch for you.</p>
+
+<div class="note">
+  <b>Test a restore once, on purpose</b>
+  A backup you have never restored is a hypothesis. Do it once when nothing is wrong, so you know how
+  it feels before the day you need it.
+</div>
+
+<!-- ============ 26 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">26</span>Troubleshooting</h2>
+<p class="lede">Common symptoms, and the first thing to check.</p>
+
+<table>
+  <tr><th>Symptom</th><th>Most likely cause</th><th>First move</th></tr>
+  <tr><td>A source is stuck on Processing</td><td>The indexing service is not running</td><td>Home → Runtime status. If it reads Degraded, check Settings → Local models</td></tr>
+  <tr><td>Chat says nothing is in context</td><td>Sources are set to Off, or none are Ready</td><td>Click "Using X of Y sources" above the input</td></tr>
+  <tr><td>Chat hangs, then errors</td><td>A cloud model with no connection</td><td>Switch on offline mode, or pick a local model</td></tr>
+  <tr><td>A model reads Degraded with no reason</td><td>It failed to start</td><td>Advanced → runtime detail shows the actual error from that service</td></tr>
+  <tr><td>Web search returns nothing</td><td>Every provider failed</td><td>Wikipedia needs no key and should always answer — if it does not, the machine has no network</td></tr>
+  <tr><td>The model cannot use tools</td><td>Small local models often cannot</td><td>Use a larger local model or a cloud model for that conversation</td></tr>
+  <tr><td>Podcast fails at submit</td><td>Selection exceeds the content budget</td><td>Remove a source, or set your longest to insights-only</td></tr>
+  <tr><td>Studio refuses to generate</td><td>A selected source is not Ready</td><td>The message names it — wait, then retry</td></tr>
+  <tr><td>The app will not open after an update</td><td>macOS access permission was reset</td><td>Right-click → Open, and re-approve the file-access prompt</td></tr>
+  <tr><td>Launch is very slow</td><td>A large model loading from disk</td><td>The startup timings panel shows which stage took the time</td></tr>
+  <tr><td>Window opens off-screen</td><td>A display was disconnected</td><td>Position is validated against attached displays and should self-correct on the next launch</td></tr>
+</table>
+
+<h3>When you need to report something</h3>
+<p>Every response carries a request identifier, and every log line is tagged with it. Including that
+identifier turns "chat failed sometimes" into a single traceable request.</p>
+
+<!-- ============ 27 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">27</span>Keyboard shortcuts</h2>
+
+<table>
+  <tr><th>Shortcut</th><th>Does</th></tr>
+  <tr><td><kbd>⌘K</kbd></td><td>Open Quick actions — jump to any notebook, source, or setting</td></tr>
+  <tr><td><kbd>⌘⇧F</kbd> / <kbd>Ctrl+Shift+F</kbd></td><td>Toggle Focus mode</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>Close a dialog or leave Focus mode</td></tr>
+  <tr><td><kbd>Tab</kbd> / <kbd>⇧Tab</kbd></td><td>Move through controls; dialogs trap focus and restore it on close</td></tr>
+  <tr><td><kbd>Enter</kbd></td><td>Send a chat message</td></tr>
+  <tr><td><kbd>⇧Enter</kbd></td><td>New line without sending</td></tr>
+</table>
+
+<p>Every icon-only control carries an accessible label, so the whole application is navigable by
+keyboard and readable by a screen reader.</p>
+
+<!-- ============ 28 ============ -->
+<div class="page-break"></div>
+<h2><span class="num">28</span>Where your data lives</h2>
+<p class="lede">One folder. Know it, back it up, and never delete it.</p>
+
+<p>Everything the application owns lives under a single folder in your home directory:</p>
+<table>
+  <tr><th>Platform</th><th>Location</th></tr>
+  <tr><td>macOS and Linux</td><td><code>~/.deeper-notebook/</code></td></tr>
+  <tr><td>Windows</td><td><code>%USERPROFILE%\.deeper-notebook</code></td></tr>
+</table>
+
+<p>Inside it: the database, your uploaded files, conversation checkpoints, logs, backups, the private
+Python environment the app built for itself, and the startup receipt.</p>
+
+<div class="warn">
+  <b>Never delete this folder as part of an uninstall or a cleanup</b>
+  Deleting the application removes the program. Deleting this folder removes your work. They are
+  separate on purpose.
+</div>
+
+<h3>Moving to another machine</h3>
+<p>Install the application on the new machine, then restore a verified backup (§25). Do not copy the
+folder by hand — parts of it, including the private Python environment, are specific to the machine
+that built them.</p>
+
+<hr>
+
+<h3>Where to go next</h3>
+<ul>
+  <li><strong>Project README</strong> — architecture, technology stack, and how to build from source.</li>
+  <li><strong><code>docs/recreation/</code></strong> — the full technical packet: eighteen documents
+  covering architecture, schema, API, security, performance, and build, written to be complete enough to
+  rebuild the project from.</li>
+  <li><strong>Load this guide into the app.</strong> Deeper Notebook reads PDFs. Adding this document as
+  a source lets you ask it questions about itself.</li>
+</ul>
+
+<p style="margin-top:26px;color:var(--ink-3);font-size:9pt">
+Deeper Notebook · desktop 0.8.95 · 17 August 2026 · MIT licensed ·
+a downstream fork of <code>lfnovo/open-notebook</code>
+</p>
+
+</body>
+</html>
