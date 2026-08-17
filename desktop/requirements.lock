@@ -626,7 +626,9 @@ pydantic-settings==2.15.0
 pydub==0.25.1
     # via podcast-creator
 pygments==2.20.0
-    # via rich
+    # via
+    #   pytest
+    #   rich
 pyinstaller==6.20.0
     # via -r desktop/requirements.txt
 pyinstaller-hooks-contrib==2026.5
@@ -659,11 +661,11 @@ pyobjc-framework-webkit==12.1 ; sys_platform == 'darwin'
     # via pywebview
 pyperclip==1.11.0
     # via fastmcp
-pytest==8.3.4
+pytest==9.1.1
     # via
     #   -r desktop/requirements.txt
     #   pytest-asyncio
-pytest-asyncio==0.24.0
+pytest-asyncio==1.4.0
     # via -r desktop/requirements.txt
 python-dateutil==2.9.0.post0
     # via pandas
@@ -890,6 +892,7 @@ typing-extensions==4.15.0
     #   py-key-value-aio
     #   pydantic
     #   pydantic-core
+    #   pytest-asyncio
     #   python-docx
     #   python-pptx
     #   pywebview
