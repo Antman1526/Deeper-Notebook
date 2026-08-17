@@ -5,7 +5,6 @@ import type { ReactNode } from 'react'
 import { AdaptiveNavigator } from '@/components/deeper-notebook/shell/AdaptiveNavigator'
 import { CommandBar } from '@/components/deeper-notebook/shell/CommandBar'
 import { ContextLens } from '@/components/deeper-notebook/shell/ContextLens'
-import { FocusModeControl } from '@/components/deeper-notebook/shell/FocusModeControl'
 import { InstrumentDock } from '@/components/deeper-notebook/shell/InstrumentDock'
 import { ShellUtilities } from '@/components/deeper-notebook/shell/ShellUtilities'
 
@@ -24,7 +23,8 @@ export function WorkspaceAppShell({ children }: { children: ReactNode }) {
         <ContextLens />
       </div>
       <ShellUtilities />
-      <FocusModeControl />
+      {/* v0.8.96 — FocusModeControl moved into CommandBar so it lays out beside
+          the palette trigger instead of floating on top of it. */}
     </div>
   )
 }

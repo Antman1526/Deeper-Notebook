@@ -28,8 +28,8 @@ The product uses the approved **Notebook Spark** visual identity with the teal-t
 ![SurrealDB](https://img.shields.io/badge/SurrealDB-2.1-ff5722)
 ![Tests](https://img.shields.io/badge/tests-4767%20backend%20%2B%20832%20desktop%20%2B%201775%20frontend-success)
 
-> **Snapshot:** desktop app `0.8.95` · server/container track `1.8.5` · `main` @ `aac7788b`
-> · 2026-08-17. The two version numbers track different artifacts and are deliberately not
+> **Snapshot:** desktop app `0.8.96` · server/container track `1.8.5` · 2026-08-17.
+> Counts and measurements below were read from the tree at `aac7788b`. The two version numbers track different artifacts and are deliberately not
 > reconciled — see [Two version tracks](#two-version-tracks).
 
 > GitHub: **https://github.com/Antman1526/Deeper-Notebook** — downstream fork of
@@ -834,7 +834,7 @@ contracts — do not remove them as a cosmetic rename.
 
 | Track | File | Current | What it versions |
 |---|---|---|---|
-| Desktop app | `desktop/__init__.py` | `0.8.95` | The `.app` / `.dmg`, the window, `/api/version`, the update-notifier baseline |
+| Desktop app | `desktop/__init__.py` | `0.8.96` | The `.app` / `.dmg`, the window, `/api/version`, the update-notifier baseline |
 | Server / container | `pyproject.toml` | `1.8.5` | The Docker image tagged by `build-and-release.yml`, inherited from upstream |
 
 They version different artifacts and are intentionally **not** reconciled.

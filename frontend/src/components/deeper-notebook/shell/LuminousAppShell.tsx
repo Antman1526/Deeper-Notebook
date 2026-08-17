@@ -6,7 +6,6 @@ import { AdaptiveNavigator } from './AdaptiveNavigator'
 import { AuroraCartography } from './AuroraCartography'
 import { CommandBar } from './CommandBar'
 import { ContextLens } from './ContextLens'
-import { FocusModeControl } from './FocusModeControl'
 import { InstrumentDock } from './InstrumentDock'
 import { ShellUtilities } from './ShellUtilities'
 
@@ -22,7 +21,8 @@ export function LuminousAppShell({ children }: { children: ReactNode }) {
         <ContextLens />
       </div>
       <ShellUtilities />
-      <FocusModeControl />
+      {/* v0.8.96 — FocusModeControl moved into CommandBar so it lays out beside
+          the palette trigger instead of floating on top of it. */}
     </div>
   )
 }

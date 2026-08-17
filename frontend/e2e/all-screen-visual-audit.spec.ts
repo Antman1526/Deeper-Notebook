@@ -35,6 +35,64 @@ test('compact shell keeps the focus control clear of the command title', async (
   expect(overlaps).toBe(false)
 })
 
+// v0.8.96 — the sibling guard above only ever compared the focus control with
+// .dn-command-title, and only at 320px. It therefore never saw the real defect:
+// .dn-focus-mode-control was position:absolute at the shell's top-right and sat
+// directly on top of .dn-command-trigger ("Quick actions ⌘K") at EVERY canonical
+// width, so both labels rendered stacked in the corner. An earlier reservation
+// fix targeted `.dn-workspace-shell-body > .dn-command-bar`, but the command bar's
+// real parent is .dn-luminous-workspace, so the rule never matched and the
+// regression went unnoticed. Compare against every command-row control, at every
+// width, so a reappearance cannot hide in the gap between the two selectors.
+test('focus control never overlaps a command-row control at any audit width', async ({ page }) => {
+  test.setTimeout(120_000)
+  await installLuminousFolioFixture(page, { theme: 'research-core-dark' })
+
+  const focusControl = page.getByRole('button', { name: 'Enter Focus mode' })
+
+  for (const viewport of canonicalViewports) {
+    await page.setViewportSize(viewport)
+    await page.goto('/notebooks')
+
+    if (rollbackBuild) {
+      // The legacy shell has no command bar; the control is deliberately floated.
+      await expect(page.locator('.dn-legacy-shell')).toBeVisible()
+      await expect(focusControl).toBeVisible()
+      continue
+    }
+
+    await expect(focusControl).toBeVisible()
+
+    const report = await page.evaluate(() => {
+      const focus = document.querySelector<HTMLElement>('.dn-focus-mode-control')
+      if (!focus) return { found: false, collisions: [] as string[] }
+      const focusRect = focus.getBoundingClientRect()
+      const collisions: string[] = []
+      for (const selector of ['.dn-command-trigger', '.dn-command-title', '.dn-command-kicker']) {
+        const other = document.querySelector<HTMLElement>(selector)
+        if (!other) continue
+        const rect = other.getBoundingClientRect()
+        const hit = rect.left < focusRect.right
+          && rect.right > focusRect.left
+          && rect.top < focusRect.bottom
+          && rect.bottom > focusRect.top
+        if (hit) {
+          collisions.push(
+            `${selector} [${Math.round(rect.left)},${Math.round(rect.top)},`
+            + `${Math.round(rect.right)},${Math.round(rect.bottom)}] vs focus `
+            + `[${Math.round(focusRect.left)},${Math.round(focusRect.top)},`
+            + `${Math.round(focusRect.right)},${Math.round(focusRect.bottom)}]`,
+          )
+        }
+      }
+      return { found: true, collisions }
+    })
+
+    expect(report.found, `${viewport.width}px focus control present`).toBe(true)
+    expect(report.collisions, `${viewport.width}px command-row overlap`).toEqual([])
+  }
+})
+
 test('external-request detector rejects hostile loopback-looking hostnames without network access', async () => {
   expect(isExternalRequest('http://localhost:3117/api/health')).toBe(false)
   expect(isExternalRequest('http://127.0.0.1:3117/api/health')).toBe(false)

@@ -1,18 +1,36 @@
+/* v0.8.96 — the control is a normal flow item inside .dn-command-actions in
+ * every shell that HAS a command bar (luminous, workspace). It used to be
+ * position:absolute at the shell's top-right in all shells, which drew it on
+ * top of .dn-command-trigger at every width. Only the legacy shell, which has
+ * no command bar to sit in, still floats it. */
 .dn-focus-mode-control {
-  position: absolute;
-  top: var(--dn-space-3);
-  right: var(--dn-space-3);
-  z-index: 10;
   min-height: 2.5rem;
   gap: 0.45rem;
   transition: opacity var(--dn-motion-immediate), background var(--dn-motion-immediate), border-color var(--dn-motion-immediate);
 }
 
-.dn-focus-mode-control[data-focus-active="true"] {
+.dn-legacy-shell > .dn-focus-mode-control {
+  position: absolute;
+  top: var(--dn-space-3);
+  right: var(--dn-space-3);
+  z-index: 10;
+}
+
+.dn-legacy-shell > .dn-focus-mode-control[data-focus-active="true"] {
   position: fixed;
   top: var(--dn-space-3);
   right: var(--dn-space-3);
   box-shadow: var(--dn-elevation-md);
+}
+
+/* The command row's right-hand group: palette trigger + focus control. Flex,
+ * so neither can cover the other and neither needs a reserved width. */
+.dn-command-actions {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--dn-space-2, 0.5rem);
 }
 
 .dn-focus-mode-shortcut {
@@ -24,10 +42,6 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.65rem;
   white-space: nowrap;
-}
-
-.dn-legacy-shell > .dn-focus-mode-control {
-  top: var(--dn-space-3);
 }
 
 .dn-luminous-shell {

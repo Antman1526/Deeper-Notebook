@@ -2,7 +2,7 @@
 
 **Audience:** an AI system asked to critique this codebase and propose concrete
 optimisations, refactors, better patterns, or architectural improvements.
-**Version:** desktop `0.8.95` @ `aac7788b` · **Written:** 2026-08-17
+**Version:** desktop `0.8.96` · **Written:** 2026-08-17 · measured at `aac7788b`
 
 Every snippet below is **real code** from the repository, annotated for intent. Where I am
 uncertain about an approach, it is marked **⚠️ UNCERTAIN** — those are the places I most
@@ -328,7 +328,7 @@ The fix (patch the predicate, or clear all spellings from the registry) is now d
 but the underlying mirroring behaviour is a footgun.
 
 ### 4.8 Two version tracks
-`pyproject.toml` = 1.8.5 (server/Docker), `desktop/__init__.py` = 0.8.95 (app). Correct,
+`pyproject.toml` = 1.8.5 (server/Docker), `desktop/__init__.py` = 0.8.96 (app). Correct,
 deliberately unreconciled — and confusing every single time.
 
 ---

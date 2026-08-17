@@ -25,6 +25,25 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.96 — 2026-08-17 — Command row stops covering itself
+
+- **v0.8.96** 🐛 Bug fix: the Focus mode control was `position: absolute` at the
+  shell's top-right and was drawn directly on top of the Quick actions command
+  trigger, so both labels rendered stacked in the corner of every dashboard
+  screen at every width (measured at 320, 768, 1024, and 1440 px). It is now a
+  flow item inside a new `.dn-command-actions` group in the command bar, so
+  flexbox lays the two controls out side by side. The legacy shell has no
+  command bar and still floats it; that path is unchanged.
+- **v0.8.96** A width-reservation rule added earlier to work around this never
+  took effect: it selected `.dn-workspace-shell-body > .dn-command-bar`, but the
+  rendered command bar's parent is `.dn-luminous-workspace`, so it matched
+  nothing. Removed rather than re-pointed — there is no width to reserve now.
+- **v0.8.96** The audit guard only compared the focus control with
+  `.dn-command-title`, and only at 320 px, which is why the overlap with
+  `.dn-command-trigger` went unseen. A new guard compares the control against
+  every command-row control at every canonical width; it fails on the old
+  layout and passes on the new one.
+
 ## v0.8.95 — 2026-07-17 — Portable podcast audio paths
 
 - **v0.8.95** Bug fix: podcast episode path tests now assert `Path` structure

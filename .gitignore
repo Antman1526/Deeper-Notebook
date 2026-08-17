@@ -163,3 +163,6 @@ output/upstream-sync/
 
 # Local isolated implementation worktrees.
 .worktrees/
+
+# Built user-guide PDF (regenerate with node docs/user-guide/render.mjs)
+docs/user-guide/*.pdf

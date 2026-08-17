@@ -3,7 +3,7 @@
 Every language, runtime, framework, library, tool, and external service the project uses,
 with **what it specifically does in this codebase** — not what it does in general.
 
-**Snapshot:** desktop `0.8.95` · server track `1.8.5` · `main` @ `aac7788b` · 2026-08-17
+**Snapshot:** desktop `0.8.96` · server track `1.8.5` · 2026-08-17 · measured at `aac7788b`
 **Sources:** `pyproject.toml`, `desktop/requirements.txt`, `frontend/package.json`,
 `desktop/build/runtimes.toml`, `Makefile`, `.pre-commit-config.yaml`, `.github/workflows/`.
 

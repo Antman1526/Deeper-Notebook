@@ -1,7 +1,7 @@
 # Deeper Notebook reconstruction packet
 
-> **Snapshot:** regenerated 2026-08-17 against `main` @ `aac7788b` · desktop `0.8.95` ·
-> server track `1.8.5`. Every version, count, and measurement in this packet was read
+> **Snapshot:** regenerated 2026-08-17 · desktop `0.8.96` · server track `1.8.5`.
+> Counts and measurements were read from the tree at `aac7788b`. Every version, count, and measurement in this packet was read
 > from the tree or a tool run at that commit — none are estimates.
 
 This directory is the source-controlled reconstruction packet for the current

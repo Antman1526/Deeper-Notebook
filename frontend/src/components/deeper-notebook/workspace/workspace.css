@@ -973,16 +973,12 @@
   display: none;
 }
 
-/* FocusModeControl floats absolutely at the shell's top-right (z-index 10)
-   and was covering the command bar's palette trigger. Reserve its footprint
-   on the command row at widths where the control renders its full label
-   ("Enter Focus mode" + the Ctrl+Shift+F / ⌘⇧F kbd ≈ 17rem). Below 1024px
-   the shell's compact styles already reflow the bar, so no reservation. */
-@media (min-width: 1024px) {
-  .dn-workspace-shell-body > .dn-command-bar {
-    padding-right: calc(var(--dn-space-6) + 18rem);
-  }
-}
+/* v0.8.96 — a width-reservation rule lived here, meant to keep the floating
+   FocusModeControl off the palette trigger. It never took effect: it selected
+   `.dn-workspace-shell-body > .dn-command-bar`, but the rendered command bar's
+   parent is `.dn-luminous-workspace`, so the rule matched nothing and the
+   overlap persisted at every width. The control is now a flow item inside
+   `.dn-command-actions` (see shell.css), so there is nothing to reserve. */
 
 /* ------------------------------------------------------------------------- */
 /* v0.8.85 — notebook voice (owner direction: "the design should feel like   */

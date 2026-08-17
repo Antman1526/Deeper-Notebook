@@ -54,13 +54,12 @@ export function WorkspaceAppShell({ children }: { children: ReactNode }) {
          className="dn-workspace-shell">
       <InstrumentDock />                       {/* 4.25rem icon rail */}
       <div className="dn-workspace-shell-body">
-        <CommandBar />                          {/* ⌘K palette trigger */}
+        <CommandBar />                          {/* ⌘K trigger + Focus control */}
         <AdaptiveNavigator />                   {/* contextual left nav */}
         <section className="dn-workspace-canvas">{children}</section>
         <ContextLens />                         {/* right evidence rail */}
       </div>
       <ShellUtilities />
-      <FocusModeControl />                      {/* floats top-right, z-10 */}
     </div>
   )
 }
@@ -83,12 +82,22 @@ CSS grid drives the layout:
 }
 ```
 
-> **Layering lesson (v0.8.84).** The dock is `z-index: 2`. Full-text badges inside the
-> 4.25rem rail refused to shrink (`min-width: auto`) and painted **over** the navigator.
-> Fix: clip the dock and collapse badges to a wrapped dot cluster. Separately,
-> `FocusModeControl` is absolutely positioned with nothing reserving its footprint, so it
-> covered the command bar's palette trigger — the command row now reserves 18rem at
-> ≥1024px. When adding floating chrome, reserve its space.
+> **Layering lesson (v0.8.84 / v0.8.96).** The dock is `z-index: 2`. Full-text badges
+> inside the 4.25rem rail refused to shrink (`min-width: auto`) and painted **over** the
+> navigator. Fix: clip the dock and collapse badges to a wrapped dot cluster.
+>
+> `FocusModeControl` taught the same lesson twice. It was `position: absolute` at the
+> shell's top-right with nothing reserving its footprint, so it covered the command bar's
+> palette trigger at every width. The first fix reserved 18rem on the command row — but
+> it selected `.dn-workspace-shell-body > .dn-command-bar` while the rendered bar's parent
+> is `.dn-luminous-workspace`, so the rule matched nothing and the overlap survived
+> unnoticed for another release.
+>
+> **The v0.8.96 fix is structural:** the control moved *into* `CommandBar`, inside a
+> `.dn-command-actions` flex group, so the two controls lay out side by side with no
+> reservation to keep in sync. Only the legacy shell — which has no command bar — still
+> floats it. Prefer flow over floating chrome; a reservation is a second source of truth
+> that will drift.
 
 ## 4. Display preferences (persisted, four axes)
 

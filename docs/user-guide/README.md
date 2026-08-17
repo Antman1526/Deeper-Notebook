@@ -19,30 +19,34 @@ fixtures — the same fixtures the visual release gate uses — so the shots are
 renders of the application, deterministic, and require no live backend.
 
 It is excluded from the `mocked-browser` project's default run (see the `testIgnore`
-list in `frontend/playwright.config.ts`), so it does not add ~50 s to every gate. Run
-it explicitly:
+list in `frontend/playwright.config.ts`), so it does not add ~50 s to every gate.
+Setting `DOCS_CAPTURE_DIR` — which a capture run needs anyway — lifts the exclusion,
+so there is no separate flag to remember:
 
 ```bash
 cd frontend
-npm run build && PORT=3117 npm run start &        # or let Playwright start it
-DOCS_CAPTURE_DIR=../docs/user-guide/shots \
+DOCS_CAPTURE_DIR="$(cd ../docs/user-guide/shots && pwd)" \
   npx playwright test e2e/docs-capture.spec.ts --project=mocked-browser
 ```
 
+Pass an absolute path: the spec writes relative to the Playwright working directory,
+not to this file. Playwright starts (or reuses) the Next server itself; a cold
+`npm run build` can exceed the 120 s `webServer` timeout, so on a slow machine build
+first and leave `PORT=3117 npm run start` running.
+
 ## Rendering the PDF
 
-`render.mjs` needs `@playwright/test` resolvable, so run it from `frontend/`:
-
 ```bash
-cd frontend
-GUIDE_DIR="$(cd ../docs/user-guide && pwd)" node ../docs/user-guide/render.mjs
+node docs/user-guide/render.mjs
 ```
 
-Output: `docs/user-guide/Deeper-Notebook-User-Guide.pdf` (A4, printed backgrounds,
-page numbers in the footer).
+Runnable from anywhere — it resolves Chromium through `frontend/node_modules`
+explicitly rather than relying on the working directory. Output:
+`docs/user-guide/Deeper-Notebook-User-Guide.pdf` (A4, printed backgrounds, page
+numbers in the footer). The PDF is gitignored.
 
 ## When to update
 
 Refresh the shots whenever a route's layout changes materially, and bump the version
-string in three places inside `guide.html`: the cover kicker, the cover meta line, and
+string in three places: the cover kicker and the cover meta line in `guide.html`, and
 the footer template in `render.mjs`.

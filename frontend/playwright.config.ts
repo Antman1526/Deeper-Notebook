@@ -37,9 +37,11 @@ export default defineConfig({
         // Podcast Studio proof binds to the controlled native runtime on 65060.
         'e2e/podcast-intelligence-studio.spec.ts',
         // Documentation screenshot harness — asserts nothing, costs ~50 s, and is
-        // only run on demand when the user guide is regenerated. See
+        // only run on demand when the user guide is regenerated. Setting
+        // DOCS_CAPTURE_DIR (which a capture run needs anyway) opts it back in, so
+        // the exclusion never blocks the one command that wants it. See
         // docs/user-guide/README.md.
-        'e2e/docs-capture.spec.ts',
+        ...(process.env.DOCS_CAPTURE_DIR ? [] : ['e2e/docs-capture.spec.ts']),
       ],
       use: {
         ...devices['Desktop Chrome'],

@@ -1,9 +1,9 @@
 # 01 — Project Overview & Architecture
 
-> **Recreation target:** Deeper Notebook v0.8.95 (desktop app track).
+> **Recreation target:** Deeper Notebook v0.8.96 (desktop app track).
 > Upstream server/Docker track is versioned separately at 1.8.5 in `pyproject.toml`.
 > **Source of truth for this document:** the working tree at commit `aac7788b`.
-> Regenerated 2026-08-17 against `main` @ `aac7788b`. Supersedes the 2026-08-09 packet.
+> Regenerated 2026-08-17, measured at `aac7788b`. Supersedes the 2026-08-09 packet.
 
 ---
 

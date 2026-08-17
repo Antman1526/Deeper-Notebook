@@ -1,6 +1,6 @@
 # 11 — Build & Deployment Pipeline
 
-> Two independent artifacts: the **macOS desktop app** (primary, version `0.8.95`) and the
+> Two independent artifacts: the **macOS desktop app** (primary, version `0.8.96`) and the
 > **Docker server image** (upstream track, version `1.8.5`). They version different things
 > and must not be "reconciled".
 
