@@ -3,7 +3,8 @@ its 404 contract.
 
 `artifact_sources` fetched every selected source with a sequential `await`
 inside a `for` loop — an N+1 on the path of EVERY Evidence Studio generation.
-The same loop was duplicated in `api/routers/studio/common.py`.
+The same loop was duplicated in `api/routers/studio/common.py`; v0.8.99
+removed that copy via class injection (see the router tests below).
 
 These tests pin the externally-visible contract so the concurrency change
 cannot alter behaviour:
@@ -101,12 +102,12 @@ async def test_no_selection_falls_back_to_notebook_sources(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_router_copy_is_also_concurrent(monkeypatch):
-    """`api/routers/studio/common._artifact_sources` deliberately mirrors the
-    shared helper rather than calling it: the Evidence Studio API suite patches
-    `Source` on THAT module, so delegating would escape the patch seam and hit
-    the live database. Because the copy is intentional, its concurrency must be
-    pinned separately or the two will drift.
+async def test_router_delegates_while_keeping_its_own_patch_seam(monkeypatch):
+    """v0.8.99 — the router no longer duplicates the loop; it delegates and
+    injects `Source` from its OWN namespace. This test is the reason the
+    injection exists: patching `common_module.Source` must still control what
+    the shared helper fetches, or the 26 Evidence Studio patch sites would
+    silently hit the live database.
     """
     from api.routers.studio import common as common_module
 
@@ -122,11 +123,11 @@ async def test_router_copy_is_also_concurrent(monkeypatch):
     result = await common_module._artifact_sources(artifact)
     elapsed = asyncio.get_running_loop().time() - started
     assert [s.id for s in result] == [f"source:{i}" for i in range(6)]
-    assert elapsed < 0.08, f"router copy still sequential, took {elapsed:.3f}s"
+    assert elapsed < 0.08, f"delegation lost concurrency, took {elapsed:.3f}s"
 
 
 @pytest.mark.asyncio
-async def test_router_copy_keeps_the_404_contract(monkeypatch):
+async def test_router_delegation_keeps_the_404_contract(monkeypatch):
     from api.routers.studio import common as common_module
 
     class _SourceStub:

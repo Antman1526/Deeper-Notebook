@@ -55,7 +55,16 @@ async def _find_duplicate_groups(table: str) -> list[dict]:
 
 
 async def _dedupe_table(table: str) -> int:
-    """Dedup one table. Returns the number of edges deleted."""
+    """Dedup one table. Returns the number of edges deleted.
+
+    v0.8.99 — `table` is interpolated into SurrealQL by
+    `_find_duplicate_groups`, whose `# nosec B608` asserts the identifier is
+    whitelisted. The only caller iterates `_EDGE_TABLES`, so that was true by
+    convention; validate here so it is true by construction and the tag stops
+    being a promise. Mirrors the guard in `evaluation.repository.latest_run`.
+    """
+    if table not in _EDGE_TABLES:
+        raise ValueError(f"unknown edge table: {table!r}")
     groups = await _find_duplicate_groups(table)
     if not groups:
         return 0

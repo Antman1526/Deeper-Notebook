@@ -29,6 +29,38 @@ import pytest
 # ---------------------------------------------------------------------- #
 
 
+@pytest.fixture(autouse=True)
+def _tkinter_available(monkeypatch):
+    """v0.8.99 — make these tests runnable on a Python built without Tk.
+
+    `desktop.app._handle_already_running` imports tkinter lazily inside the
+    function, and each test below patches `tkinter.Tk` / `tkinter.messagebox`.
+    On an interpreter without `_tkinter` (Homebrew python@3.12 is the common
+    case, and `.build-venv` uses it) the patch target itself fails to import,
+    so all five tests errored — while passing under the build gate, whose
+    bundled python-build-standalone ships Tk. That divergence read as flake and
+    masked a genuine bug in a neighbouring suite.
+
+    When the real tkinter is importable this fixture does nothing, so the tests
+    keep exercising the true module. When it is absent we install a minimal
+    stub so the branch logic is still covered rather than skipped — the dialog
+    is mocked in every test anyway, so no behaviour is lost.
+    """
+    try:
+        import tkinter  # noqa: F401
+        import tkinter.messagebox  # noqa: F401
+    except Exception:
+        import types
+
+        tk_stub = types.ModuleType("tkinter")
+        tk_stub.Tk = MagicMock(name="Tk")
+        messagebox_stub = types.ModuleType("tkinter.messagebox")
+        messagebox_stub.askyesno = MagicMock(name="askyesno", return_value=False)
+        tk_stub.messagebox = messagebox_stub
+        monkeypatch.setitem(sys.modules, "tkinter", tk_stub)
+        monkeypatch.setitem(sys.modules, "tkinter.messagebox", messagebox_stub)
+
+
 class TestHandleAlreadyRunning:
     """The dialog itself can't be rendered in CI, but every branch
     after the user's choice is testable."""

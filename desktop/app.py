@@ -141,6 +141,27 @@ def _select_chat_llm_path(
     return selected
 
 
+def _supervisor_stage_recorder(ctx: "AppContext"):
+    """Return a bounded stage sink for the Supervisor, or None.
+
+    v0.8.99 — `core_ready` reported one number for the whole of start_all().
+    These milestones say whether the time went to SurrealDB, the API, the
+    worker, or the Next server. Failures are swallowed: instrumentation must
+    never be able to fail a launch.
+    """
+    receipt_store = getattr(ctx, "startup_receipts", None)
+    if receipt_store is None:
+        return None
+
+    def _record(stage: str, elapsed_ms: int) -> None:
+        try:
+            receipt_store.record(stage, elapsed_ms)
+        except Exception:
+            pass
+
+    return _record
+
+
 def _record_core_ready(ctx: "AppContext") -> None:
     receipt_store = getattr(ctx, "startup_receipts", None)
     if receipt_store is None:
@@ -850,6 +871,9 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
         chat_llm_path=chat_llm_path,
         openchronicle_available=ctx.openchronicle_available,
         progress=ctx.progress_bus,
+        # v0.8.99 — break the opaque `core_ready` bucket into per-dependency
+        # milestones so a slow launch says WHICH dependency was slow.
+        stage_recorder=_supervisor_stage_recorder(ctx),
     )
     try:
         sv.start_all()

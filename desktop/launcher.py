@@ -19,7 +19,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, Callable
 
 import httpx
 
@@ -242,8 +242,18 @@ class Supervisor:
         chat_llm_path: Path | None = None,
         openchronicle_available: bool = False,
         progress: "ProgressBus | None" = None,
+        stage_recorder: "Callable[[str, int], None] | None" = None,
     ) -> None:
         self.cfg = cfg
+        # v0.8.99 — optional startup-stage sink. `core_ready` was a single
+        # opaque bucket covering all of start_all(); a slow launch reported one
+        # number (114s on a fresh install here) with no way to tell whether the
+        # cost was the database, the API, the Next server, or a model mmap.
+        # Nothing can be optimised that cannot be measured, so record a
+        # milestone as each dependency comes up. Purely observational: a
+        # recorder that raises must never affect the launch.
+        self._stage_recorder = stage_recorder
+        self._start_all_began_at: float | None = None
         self.resource_governor = ResourceGovernor(cfg.local_model_memory_limit_bytes)
         self.repo_root = repo_root
         self.bin_dir = bin_dir
@@ -368,6 +378,17 @@ class Supervisor:
             except OSError:
                 shutil.copytree(source, destination)
 
+    def _record_stage(self, stage: str) -> None:
+        """Best-effort startup milestone, measured from start_all()'s entry."""
+        if self._stage_recorder is None or self._start_all_began_at is None:
+            return
+        try:
+            elapsed_ms = int((time.monotonic() - self._start_all_began_at) * 1000)
+            self._stage_recorder(stage, elapsed_ms)
+        except Exception:
+            # Instrumentation must never be able to fail a launch.
+            pass
+
     def start_all(self) -> None:
         # v0.7.142 — Singleton enforcement + orphan reaper.
         # Before this release, double-clicking the .app twice spawned two
@@ -388,6 +409,7 @@ class Supervisor:
         # single call makes every subsequent reader in this method
         # (_spawn_llamacpp_chat, _local_chat_healthy_cached, etc.) see
         # the file-backed values transparently without special-casing.
+        self._start_all_began_at = time.monotonic()
         launcher_prefs.merge_with_env(os.environ)
         launcher_environment = normalize_product_environment(os.environ)
 
@@ -578,6 +600,7 @@ class Supervisor:
 
         self._progress("supervisor.surreal", "running")
         self._spawn_surreal(surreal_port)
+        self._record_stage("database_up")
         # v0.7.188 — pass the just-spawned proc to _wait_tcp so the
         # probe can early-exit if the child dies before binding.
         # self._procs[-1] is the latest Popen pushed by _spawn().
@@ -605,6 +628,7 @@ class Supervisor:
 
         self._progress("supervisor.api", "running")
         self._spawn_api(api_port)
+        self._record_stage("api_up")
         # First-launch SurrealDB schema migrations + the heavy upstream import
         # chain (langchain + langgraph + podcast_creator) take 20-60 s before
         # uvicorn finishes startup. Subsequent launches are much faster but
@@ -639,6 +663,7 @@ class Supervisor:
 
         self._progress("supervisor.worker", "running")
         self._spawn_worker()
+        self._record_stage("worker_up")
         # v0.8.67l — watch worker.log for the live-query "key already exists"
         # crash; if seen, flag an automatic repair for the next boot
         # (non-blocking daemon thread, never delays startup).
@@ -673,6 +698,7 @@ class Supervisor:
 
         self._progress("supervisor.next", "running")
         self._spawn_next(frontend_port, next_cwd=next_cwd)
+        self._record_stage("frontend_up")
         # v0.7.188 — same early-exit pattern as the API wait above.
         _wait_http(
             # v0.8.67d — was 120 s; raised + env-tunable for the same post-update
@@ -791,6 +817,11 @@ class Supervisor:
                 openchronicle_port,
             )
         self.openchronicle_port = openchronicle_port if self.openchronicle_available else 0
+        # Final milestone: everything start_all() owns is up. Subtracting
+        # `frontend_up` from this isolates the local-model sidecars (embed,
+        # chat, whisper, piper, memory), which is where a large GGUF mmap
+        # shows up.
+        self._record_stage("sidecars_up")
 
     def stop_all(self) -> None:
         # v0.8.40 — Tear down the launcher control plane first so any

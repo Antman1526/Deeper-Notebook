@@ -50,6 +50,7 @@ from deeper_notebook.local_models.role_routing import (
     recommend_model_roles,
 )
 from deeper_notebook.studio import artifact_generation as artifact_generation_service
+from deeper_notebook.studio.generation.context import artifact_sources
 from deeper_notebook.studio.payloads import (
     build_structured_payload,
     parse_payload_document,
@@ -272,42 +273,17 @@ async def _submit_studio_generation_command(
 async def _artifact_sources(artifact: StudioArtifact) -> list[Source]:
     """Load an artifact's sources, or its notebook's when none are selected.
 
-    v0.8.98 — fetch concurrently (was a sequential `await` per source: an N+1
-    on workflow-run creation and approval). The 404 contract is unchanged:
-    `gather` preserves order and the first *id-order* failure is what raises.
-
-    This mirrors `studio.generation.context.artifact_sources` rather than
-    calling it. Delegating looks tidier but breaks a load-bearing test seam —
-    the Evidence Studio API suite patches `Source` on THIS module
-    (`monkeypatch.setattr(studio_mod, "Source", ...)`), so moving the call into
-    another module escapes the patch and hits the live database. Keep the two
-    in sync; `tests/test_v0_8_98_artifact_sources_concurrency.py` pins both.
+    v0.8.99 — delegates to `studio.generation.context.artifact_sources` rather
+    than duplicating it. `Source` / `Notebook` are passed explicitly because
+    they are resolved from THIS module's namespace at call time: the Evidence
+    Studio API suite patches `studio_mod.Source` (26 sites, mirrored down by
+    `_sync_legacy_patches`), and a bare delegation would silently use the
+    canonical module's classes, escaping the patch and hitting the live
+    database. Behaviour, ordering, and the 404 contract are unchanged.
     """
-    if artifact.source_ids:
-        results = await asyncio.gather(
-            *(Source.get(source_id) for source_id in artifact.source_ids),
-            return_exceptions=True,
-        )
-        sources: list[Source] = []
-        for source_id, result in zip(artifact.source_ids, results):
-            if isinstance(result, (KeyError, NotFoundError)):
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Source not found: {source_id}",
-                ) from result
-            if isinstance(result, BaseException):
-                raise result
-            sources.append(result)
-        return sources
-
-    try:
-        notebook = await Notebook.get(artifact.notebook_id)
-    except (KeyError, NotFoundError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Notebook not found: {artifact.notebook_id}",
-        ) from exc
-    return await notebook.get_sources()
+    return await artifact_sources(
+        artifact, source_cls=Source, notebook_cls=Notebook
+    )
 
 
 def _artifact_not_ready_sources(sources: list[Source]) -> list[dict[str, str | None]]:

@@ -60,8 +60,27 @@ def sources_not_ready_exception(
 
 
 async def artifact_sources(
-    artifact: object, source_ids: list[str] | None = None
+    artifact: object,
+    source_ids: list[str] | None = None,
+    *,
+    source_cls: type[Source] | None = None,
+    notebook_cls: type[Notebook] | None = None,
 ) -> list[Source]:
+    """Load an artifact's selected sources, or its notebook's when none are set.
+
+    v0.8.99 — `source_cls` / `notebook_cls` let a caller supply the domain
+    classes resolved in ITS own module namespace. This exists so
+    `api/routers/studio/common.py` can delegate here instead of keeping a
+    duplicate copy: the Evidence Studio API suite patches `Source` on that
+    module (26 sites, plus the `_sync_legacy_patches` facade machinery), and a
+    plain delegation would read this module's `Source` instead, escape the
+    patch, and hit the live database. Injecting the class keeps that seam
+    intact without the API package reaching in to mutate this module's globals
+    — which would couple `deeper_notebook/` to `api/` and break the layering
+    rule. Defaults preserve the original behaviour exactly.
+    """
+    source_type = source_cls or Source
+    notebook_type = notebook_cls or Notebook
     selected_source_ids = (
         source_ids if source_ids is not None else getattr(artifact, "source_ids", [])
     )
@@ -76,7 +95,7 @@ async def artifact_sources(
         # request happened to fail first. Sources after a missing one now get
         # fetched too, which is harmless.
         results = await asyncio.gather(
-            *(Source.get(source_id) for source_id in selected_source_ids),
+            *(source_type.get(source_id) for source_id in selected_source_ids),
             return_exceptions=True,
         )
         sources: list[Source] = []
@@ -91,7 +110,7 @@ async def artifact_sources(
             sources.append(result)
         return sources
     try:
-        notebook = await Notebook.get(getattr(artifact, "notebook_id"))
+        notebook = await notebook_type.get(getattr(artifact, "notebook_id"))
     except (KeyError, NotFoundError) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

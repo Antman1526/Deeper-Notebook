@@ -1260,6 +1260,13 @@ class KnowledgeNavigationRepository:
 
     @staticmethod
     def _random_where(fields: str) -> str:
+        # v0.8.99 — `fields` is interpolated straight into the projection, and
+        # the `# nosec B608` below asserts it is a whitelisted identifier. Both
+        # callers pass one of exactly two values, so that held by convention;
+        # enforce it here so an added caller cannot smuggle a subquery into the
+        # SELECT list. Mirrors `evaluation.repository.latest_run`.
+        if fields not in {"count() AS count", _OPEN_DESCRIPTOR_FIELDS}:
+            raise ValueError("unsupported knowledge navigation projection")
         suffix = " GROUP ALL" if fields == "count() AS count" else " ORDER BY id"
         return f"""SELECT {fields} FROM knowledge_engine_document WHERE availability = "available" AND parse_state = "ready" AND document_kind IN ["note", "page", "journal"] AND "read" IN capabilities AND (array::len($space_ids) = 0 OR space_id IN $space_ids) AND (array::len($authority_kinds) = 0 OR authority_kind IN $authority_kinds) AND (array::len($tags) = 0 OR array::len(array::intersect(tags, $tags)) = array::len($tags)){suffix}"""  # nosec B608 - constants/whitelisted identifiers; values bound
 
