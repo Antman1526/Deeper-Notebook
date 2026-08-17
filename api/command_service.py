@@ -276,10 +276,14 @@ class CommandService:
                 # Direct SurrealDB fallback. Mirrors the structure of the
                 # lifespan stale-command reaper. The `command:` prefix
                 # handling matches what surreal_commands itself stores.
-                from deeper_notebook.database.repository import (
+                # noqa block: isort would merge these two imports, but the
+                # v0.7.177 shape guard pins the exact single-line repo_query
+                # import literal for the fallback path.
+                from deeper_notebook.database.repository import (  # noqa: I001
                     ensure_record_id,
-                    repo_query,
                 )
+                from deeper_notebook.database.repository import repo_query
+
 
                 # v0.8.87 (B608) — parse before interpolating: RecordID.parse
                 # rejects anything that is not a well-formed record id, so a  # nosec B608 - constants/whitelisted identifiers; values bound
