@@ -61,3 +61,37 @@ describe('RuntimeStatusPanel', () => {
     expect(onRefresh).toHaveBeenCalledOnce()
   })
 })
+
+// v0.8.86 — Phase 2B startup measurement: stage timings render in the panel.
+describe('startup stage timings', () => {
+  it('shows slow stages with human-readable durations', () => {
+    render(
+      <RuntimeStatusPanel
+        snapshot={{
+          ...readySnapshot,
+          startup: {
+            state: 'ready',
+            stages: [
+              { stage: 'chat_model_scan', elapsed_ms: 2195 },
+              { stage: 'core_ready', elapsed_ms: 97398 },
+              { stage: 'launcher_start', elapsed_ms: 0 },
+            ],
+          },
+        }}
+        onRefresh={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('chat model scan')).toBeInTheDocument()
+    expect(screen.getByText('2.2s')).toBeInTheDocument()
+    expect(screen.getByText('core ready')).toBeInTheDocument()
+    expect(screen.getByText('97.4s')).toBeInTheDocument()
+    // sub-100ms noise stays hidden
+    expect(screen.queryByText('launcher start')).toBeNull()
+  })
+
+  it('renders no stage rows when the receipt has none', () => {
+    render(<RuntimeStatusPanel snapshot={readySnapshot} onRefresh={vi.fn()} />)
+    expect(screen.queryByText(/core ready/)).toBeNull()
+  })
+})

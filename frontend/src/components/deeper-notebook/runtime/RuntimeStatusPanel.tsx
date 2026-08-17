@@ -133,6 +133,20 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
             <h3 className="font-semibold">Optional capabilities</h3>
             <dl className="mt-2 grid gap-1 text-muted-foreground">
               <div className="flex justify-between gap-3"><dt>Startup receipt</dt><dd>{stateLabel(normalized.startup.state)}</dd></div>
+              {/* v0.8.86 — Phase 2B startup measurement: the receipt's stage
+                  timings flowed all the way to this payload and stopped here.
+                  Show the slow stages (>=100ms) so a degraded launch is
+                  diagnosable from the UI instead of the log directory. */}
+              {normalized.startup.stages
+                .filter((stage) => stage.elapsed_ms >= 100)
+                .map((stage) => (
+                  <div key={stage.stage} className="flex justify-between gap-3 pl-3">
+                    <dt className="truncate">{stage.stage.replaceAll('_', ' ')}</dt>
+                    <dd>{stage.elapsed_ms >= 1000
+                      ? `${(stage.elapsed_ms / 1000).toFixed(1)}s`
+                      : `${stage.elapsed_ms}ms`}</dd>
+                  </div>
+                ))}
               <div className="flex justify-between gap-3"><dt>Local sources</dt><dd>{stateLabel(normalized.vault.state)}</dd></div>
               <div className="flex justify-between gap-3"><dt>Knowledge</dt><dd>{stateLabel(normalized.knowledge.state)}</dd></div>
               <div className="flex justify-between gap-3"><dt>Backup receipt</dt><dd>{stateLabel(normalized.backup.state)}</dd></div>

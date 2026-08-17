@@ -1022,3 +1022,47 @@
     --dn-paper: var(--background);
   }
 }
+
+/* v0.8.86 — Phase 2B motion polish. The notebook settles like paper: cards
+   lift a single pixel under the pointer, panels ease their shadows, and the
+   writing page's focus is a soft ink-in — transform/shadow/opacity only, so
+   nothing reflows (CLS-safe). Reduced motion strips every transition. */
+.dn-workspace-shell .dn-visual-card,
+.dn-workspace-shell .dn-state-panel,
+.dn-workspace-shell .dn-workspace-hero {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.dn-workspace-shell .dn-visual-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--dn-elevation-md, 0 2px 12px rgb(0 0 0 / 0.12));
+}
+
+.dn-workspace-shell .dn-vault-editor .cm-editor,
+.dn-workspace-shell .dn-vault-live-preview {
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+}
+
+.dn-workspace-shell .dn-source-cover {
+  transition: transform 0.18s ease;
+}
+
+.dn-workspace-shell .dn-source-cover:hover {
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dn-workspace-shell .dn-visual-card,
+  .dn-workspace-shell .dn-state-panel,
+  .dn-workspace-shell .dn-workspace-hero,
+  .dn-workspace-shell .dn-vault-editor .cm-editor,
+  .dn-workspace-shell .dn-vault-live-preview,
+  .dn-workspace-shell .dn-source-cover {
+    transition: none;
+  }
+
+  .dn-workspace-shell .dn-visual-card:hover,
+  .dn-workspace-shell .dn-source-cover:hover {
+    transform: none;
+  }
+}
