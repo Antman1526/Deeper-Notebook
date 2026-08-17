@@ -1066,3 +1066,25 @@
     transform: none;
   }
 }
+
+/* v0.8.87 — Phase 2B density preference. Comfortable (default, owner's pick)
+   is exactly today's layout — no rules needed. Compact tightens the workspace
+   rhythm via the same tokens everything already reads, so nothing bespoke
+   drifts: spacing steps down, cards trim padding, and the writing page keeps
+   its serif voice at a closer leading. High-contrast and reduced-motion
+   behaviour are unaffected (orthogonal attributes). */
+:root[data-dn-density='compact'] .dn-workspace-shell {
+  --dn-space-3: 0.5rem;
+  --dn-space-4: 0.65rem;
+  --dn-space-6: 1rem;
+  --dn-write-leading: 1.55;
+}
+
+:root[data-dn-density='compact'] .dn-workspace-shell .dn-visual-card-body,
+:root[data-dn-density='compact'] .dn-workspace-shell .dn-state-panel {
+  padding: 0.65rem 0.85rem;
+}
+
+:root[data-dn-density='compact'] .dn-workspace-shell .dn-workspace-canvas {
+  padding: var(--dn-space-4);
+}

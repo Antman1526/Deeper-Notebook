@@ -105,3 +105,19 @@ describe('display preferences store', () => {
     })
   })
 })
+
+// v0.8.87 — density preference (owner default: comfortable).
+describe('density preference', () => {
+  it('defaults to comfortable', () => {
+    expect(useDisplayPreferencesStore.getState().density).toBe('comfortable')
+  })
+
+  it('accepts compact and rejects garbage', () => {
+    useDisplayPreferencesStore.getState().setDensity('compact')
+    expect(useDisplayPreferencesStore.getState().density).toBe('compact')
+    // @ts-expect-error — runtime validation path
+    useDisplayPreferencesStore.getState().setDensity('cramped')
+    expect(useDisplayPreferencesStore.getState().density).toBe('comfortable')
+    useDisplayPreferencesStore.getState().reset()
+  })
+})

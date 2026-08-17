@@ -12,11 +12,12 @@ import {
   type MotionPreference,
   type TransparencyPreference,
   type WallpaperPreference,
+  isDensityPreference,
 } from '@/lib/stores/display-preferences-store'
 
 type DisplayPreferenceValues = Pick<
   DisplayPreferencesState,
-  'wallpaper' | 'motion' | 'transparency'
+  'wallpaper' | 'motion' | 'transparency' | 'density'
 >
 
 const WALLPAPER_OPTIONS: readonly { value: WallpaperPreference; label: string }[] = [
@@ -53,6 +54,11 @@ function resolveMotionPreference(value: MotionPreference): 'system' | 'full' | '
  * preference update. The store remains the only persistence authority; this
  * function only mirrors its allowlisted values into DOM attributes.
  */
+const DENSITY_OPTIONS = [
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'compact', label: 'Compact' },
+] as const
+
 export function applyDisplayPreferencesToDocument(values: DisplayPreferenceValues) {
   if (typeof document === 'undefined') return
 
@@ -60,21 +66,24 @@ export function applyDisplayPreferencesToDocument(values: DisplayPreferenceValue
   root.dataset.dnWallpaper = values.wallpaper
   root.dataset.dnMotion = resolveMotionPreference(values.motion)
   root.dataset.dnTransparency = values.transparency
+  root.dataset.dnDensity = values.density
 }
 
 export function DisplayPreferencesPanel() {
   const wallpaper = useDisplayPreferencesStore((state) => state.wallpaper)
   const motion = useDisplayPreferencesStore((state) => state.motion)
   const transparency = useDisplayPreferencesStore((state) => state.transparency)
+  const density = useDisplayPreferencesStore((state) => state.density)
   const focusMode = useDisplayPreferencesStore((state) => state.focusMode)
   const setWallpaper = useDisplayPreferencesStore((state) => state.setWallpaper)
   const setMotion = useDisplayPreferencesStore((state) => state.setMotion)
   const setTransparency = useDisplayPreferencesStore((state) => state.setTransparency)
+  const setDensity = useDisplayPreferencesStore((state) => state.setDensity)
   const setFocusMode = useDisplayPreferencesStore((state) => state.setFocusMode)
 
   useEffect(() => {
-    applyDisplayPreferencesToDocument({ wallpaper, motion, transparency })
-  }, [motion, transparency, wallpaper])
+    applyDisplayPreferencesToDocument({ wallpaper, motion, transparency, density })
+  }, [density, motion, transparency, wallpaper])
 
   useEffect(() => {
     if (typeof document === 'undefined') return
@@ -83,21 +92,28 @@ export function DisplayPreferencesPanel() {
 
   const updateWallpaper = (value: string) => {
     if (!isWallpaperPreference(value)) return
-    const next = { wallpaper: value, motion, transparency }
+    const next = { wallpaper: value, motion, transparency, density }
     setWallpaper(value)
     applyDisplayPreferencesToDocument(next)
   }
 
   const updateMotion = (value: string) => {
     if (!isMotionPreference(value)) return
-    const next = { wallpaper, motion: value, transparency }
+    const next = { wallpaper, motion: value, transparency, density }
     setMotion(value)
+    applyDisplayPreferencesToDocument(next)
+  }
+
+  const updateDensity = (value: string) => {
+    if (!isDensityPreference(value)) return
+    const next = { wallpaper, motion, transparency, density: value }
+    setDensity(value)
     applyDisplayPreferencesToDocument(next)
   }
 
   const updateTransparency = (value: string) => {
     if (!isTransparencyPreference(value)) return
-    const next = { wallpaper, motion, transparency: value }
+    const next = { wallpaper, motion, transparency: value, density }
     setTransparency(value)
     applyDisplayPreferencesToDocument(next)
   }
@@ -113,7 +129,7 @@ export function DisplayPreferencesPanel() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="space-y-2 text-sm font-medium" htmlFor="display-wallpaper">
           <span>Wallpaper</span>
           <select
@@ -155,6 +171,22 @@ export function DisplayPreferencesPanel() {
             className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             {TRANSPARENCY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="space-y-2 text-sm font-medium" htmlFor="display-density">
+          <span>Density</span>
+          <select
+            id="display-density"
+            value={density}
+            onChange={(event) => updateDensity(event.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            {DENSITY_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

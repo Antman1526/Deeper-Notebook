@@ -115,3 +115,16 @@ describe('DisplayPreferencesPanel', () => {
     expect(document.documentElement.dataset.theme).toBe('archive-paper')
   })
 })
+
+// v0.8.87 — density renders, applies, and stamps the document attribute.
+describe('density control', () => {
+  it('offers Comfortable and Compact and stamps data-dn-density', () => {
+    render(<DisplayPreferencesPanel />)
+    const select = screen.getByLabelText('Density') as HTMLSelectElement
+    expect(select.value).toBe('comfortable')
+    fireEvent.change(select, { target: { value: 'compact' } })
+    expect(document.documentElement.dataset.dnDensity).toBe('compact')
+    fireEvent.change(select, { target: { value: 'comfortable' } })
+    expect(document.documentElement.dataset.dnDensity).toBe('comfortable')
+  })
+})

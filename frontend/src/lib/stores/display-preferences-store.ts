@@ -4,15 +4,20 @@ import { persist } from 'zustand/middleware'
 export type WallpaperPreference = 'aurora' | 'static' | 'off'
 export type MotionPreference = 'system' | 'full' | 'reduced'
 export type TransparencyPreference = 'frosted' | 'solid'
+// v0.8.87 — Phase 2B density. Owner picked Comfortable as the default; Compact
+// tightens workspace spacing for dense screens.
+export type DensityPreference = 'comfortable' | 'compact'
 
 export interface DisplayPreferencesState {
   wallpaper: WallpaperPreference
   motion: MotionPreference
   transparency: TransparencyPreference
+  density: DensityPreference
   focusMode: boolean
   setWallpaper(value: WallpaperPreference): void
   setMotion(value: MotionPreference): void
   setTransparency(value: TransparencyPreference): void
+  setDensity(value: DensityPreference): void
   setFocusMode(value: boolean): void
   toggleFocusMode(): void
   reset(): void
@@ -22,11 +27,12 @@ export const DISPLAY_PREFERENCES_STORAGE_KEY = 'dn-display-preferences-v1'
 
 export const DEFAULT_DISPLAY_PREFERENCES: Pick<
   DisplayPreferencesState,
-  'wallpaper' | 'motion' | 'transparency' | 'focusMode'
+  'wallpaper' | 'motion' | 'transparency' | 'density' | 'focusMode'
 > = {
   wallpaper: 'aurora',
   motion: 'system',
   transparency: 'frosted',
+  density: 'comfortable',
   focusMode: false,
 }
 
@@ -46,6 +52,10 @@ export function isTransparencyPreference(value: unknown): value is TransparencyP
   return value === 'frosted' || value === 'solid'
 }
 
+export function isDensityPreference(value: unknown): value is DensityPreference {
+  return value === 'comfortable' || value === 'compact'
+}
+
 function readPersistedPreferences(value: unknown): Partial<typeof DEFAULT_DISPLAY_PREFERENCES> {
   if (!isRecord(value)) return {}
 
@@ -53,11 +63,12 @@ function readPersistedPreferences(value: unknown): Partial<typeof DEFAULT_DISPLA
     wallpaper: isWallpaperPreference(value.wallpaper) ? value.wallpaper : undefined,
     motion: isMotionPreference(value.motion) ? value.motion : undefined,
     transparency: isTransparencyPreference(value.transparency) ? value.transparency : undefined,
+    density: isDensityPreference(value.density) ? value.density : undefined,
     focusMode: typeof value.focusMode === 'boolean' ? value.focusMode : undefined,
   }
 }
 
-function safePreferences(state: Pick<DisplayPreferencesState, 'wallpaper' | 'motion' | 'transparency' | 'focusMode'>) {
+function safePreferences(state: Pick<DisplayPreferencesState, 'wallpaper' | 'motion' | 'transparency' | 'density' | 'focusMode'>) {
   return {
     wallpaper: isWallpaperPreference(state.wallpaper)
       ? state.wallpaper
@@ -68,6 +79,9 @@ function safePreferences(state: Pick<DisplayPreferencesState, 'wallpaper' | 'mot
     transparency: isTransparencyPreference(state.transparency)
       ? state.transparency
       : DEFAULT_DISPLAY_PREFERENCES.transparency,
+    density: isDensityPreference(state.density)
+      ? state.density
+      : DEFAULT_DISPLAY_PREFERENCES.density,
     focusMode: typeof state.focusMode === 'boolean'
       ? state.focusMode
       : DEFAULT_DISPLAY_PREFERENCES.focusMode,
@@ -92,6 +106,11 @@ export const useDisplayPreferencesStore = create<DisplayPreferencesState>()(
         transparency: isTransparencyPreference(value)
           ? value
           : DEFAULT_DISPLAY_PREFERENCES.transparency,
+      }),
+      setDensity: (value) => set({
+        density: isDensityPreference(value)
+          ? value
+          : DEFAULT_DISPLAY_PREFERENCES.density,
       }),
       setFocusMode: (value) => set({
         focusMode: typeof value === 'boolean'
