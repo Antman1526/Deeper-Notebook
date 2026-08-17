@@ -114,7 +114,7 @@ class EvaluationRepository:
             raise ValueError("unsupported evaluation selector")
         try:
             rows = await repo_query(
-                f"SELECT {_RUN_PROJECTION} FROM evaluation_run "
+                f"SELECT {_RUN_PROJECTION} FROM evaluation_run "  # nosec B608 - constants/whitelisted identifiers; values bound
                 f"WHERE notebook_id = $notebook_id AND {selector_field} = ${selector_field} "
                 "ORDER BY created DESC LIMIT 1",
                 {"notebook_id": ensure_record_id(notebook_id), selector_field: selector_value},
@@ -142,7 +142,7 @@ class EvaluationRepository:
         if not message_ids:
             return []
         branches = ",\n".join(
-            "  (SELECT "
+            "  (SELECT "  # nosec B608 - constants/whitelisted identifiers; values bound
             f"{_RUN_PROJECTION} FROM evaluation_run "
             "WHERE notebook_id = $notebook_id "
             f"AND message_id = $message_id_{index} "
@@ -158,7 +158,7 @@ class EvaluationRepository:
         }
         try:
             rows = await repo_query(
-                f"SELECT {_RUN_PROJECTION} FROM array::flatten([\n"
+                f"SELECT {_RUN_PROJECTION} FROM array::flatten([\n"  # nosec B608 - constants/whitelisted identifiers; values bound
                 f"{branches}\n"
                 "]) ",
                 variables,

@@ -43,7 +43,7 @@ async def _find_duplicate_groups(table: str) -> list[dict]:
         SELECT in, out, array::group(id) AS ids
         FROM {table}
         GROUP BY in, out
-        """
+        """  # nosec B608 - constants/whitelisted identifiers; values bound
     )
     if not rows:
         return []

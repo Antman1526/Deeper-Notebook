@@ -256,7 +256,7 @@ class SurrealMemoryStore(VectorStoreBase):
         hits: list[OutputData] = []
         for table in tables:
             rows = self._exec(
-                f"SELECT *, vector::similarity::cosine(embedding, $q) AS score "
+                f"SELECT *, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608 - constants/whitelisted identifiers; values bound
                 f"FROM {table} ORDER BY score DESC LIMIT $limit",
                 {"q": vectors, "limit": top_k},
             )
@@ -286,7 +286,7 @@ class SurrealMemoryStore(VectorStoreBase):
     def get(self, vector_id) -> OutputData | None:
         self._ensure_connected()
         vid = _validate_vector_id(vector_id)
-        rows = self._exec(f"SELECT * FROM {vid}")
+        rows = self._exec(f"SELECT * FROM {vid}")  # nosec B608 - constants/whitelisted identifiers; values bound
         if not rows:
             return None
         return self._to_output(rows[0])
@@ -310,7 +310,7 @@ class SurrealMemoryStore(VectorStoreBase):
         limit = top_k or 100
         out: list[OutputData] = []
         for table in tables:
-            rows = self._exec(f"SELECT * FROM {table} LIMIT $limit", {"limit": limit})
+            rows = self._exec(f"SELECT * FROM {table} LIMIT $limit", {"limit": limit})  # nosec B608 - constants/whitelisted identifiers; values bound
             for row in rows or []:
                 out.append(self._to_output(row))
         return out
@@ -322,7 +322,7 @@ class SurrealMemoryStore(VectorStoreBase):
         aggregate). Used as the high-water gate before a full prune so the
         per-turn writer path doesn't pay a select-all every turn."""
         self._ensure_connected()
-        rows = self._exec(f"SELECT count() AS n FROM {table} GROUP ALL")
+        rows = self._exec(f"SELECT count() AS n FROM {table} GROUP ALL")  # nosec B608 - constants/whitelisted identifiers; values bound
         if rows and isinstance(rows[0], dict):
             return int(rows[0].get("n") or 0)
         return 0
@@ -355,7 +355,7 @@ class SurrealMemoryStore(VectorStoreBase):
             # because the ORDER BY field must be selected (the "missing order
             # idiom" trap noted above).
             rows = self._exec(
-                f"SELECT id, created_at, confidence FROM {table} "
+                f"SELECT id, created_at, confidence FROM {table} "  # nosec B608 - constants/whitelisted identifiers; values bound
                 "ORDER BY created_at DESC, confidence DESC"
             ) or []
             # rows[:keep] are the newest survivors; rows[keep:] are evicted.

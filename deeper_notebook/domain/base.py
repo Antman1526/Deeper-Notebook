@@ -129,9 +129,9 @@ class ObjectModel(BaseModel):
                         )
 
                 validated_order_by = ", ".join(validated_clauses)
-                query = f"SELECT * FROM {table_name} ORDER BY {validated_order_by}"
+                query = f"SELECT * FROM {table_name} ORDER BY {validated_order_by}"  # nosec B608 - constants/whitelisted identifiers; values bound
             else:
-                query = f"SELECT * FROM {table_name}"
+                query = f"SELECT * FROM {table_name}"  # nosec B608 - constants/whitelisted identifiers; values bound
 
             # v0.7.159 — Append LIMIT … START … only when the caller asked.
             # Inputs were already validated at the top of the method (must

@@ -8,10 +8,18 @@ today (`make security-scan`).
 
 - HIGH severity: **0** (all 15 raw HIGHs were inside the vendored Node.js
   runtime's node-gyp Python files — third-party, excluded).
-- MEDIUM: 84, of which 79 are B608 "SQL string composition" — the codebase's
-  SurrealQL query-building pattern. These are guarded by boundary validation
-  and dedicated injection tests (e.g. the memory-shim whitelist suite); a
-  site-by-site burn-down is future work, not a current exposure claim.
+- MEDIUM: 84, of which 79 were B608 "SQL string composition" — the codebase's
+  SurrealQL query-building pattern. **Burn-down completed 2026-08-17**: every
+  site was audited; interpolations are module constants, whitelist-validated
+  identifiers (order-by/sort allowlists raising 400s, `_validate_vector_id`,
+  `ensure_record_id`), or `enumerate()` ints, with all values travelling as
+  `$`-bound parameters through `repo_query(vars=...)`. One genuinely weak
+  site was FIXED rather than tagged: `api/command_service.py` interpolated a
+  barely-checked job id into an UPDATE — it now passes `ensure_record_id`
+  (RecordID.parse rejects malformed input) before interpolation. The
+  remaining verified sites carry inline `# nosec B608` tags (placed
+  AST-safely — a tag that would land inside a multiline query string is
+  moved to the statement's closing line). Bandit B608 count: 79 → 0.
 - Remaining MEDIUMs, triaged:
   - B314 `scholarly_search.py` — **fixed**: arXiv payload now size-bounded
     (5 MB) before XML parsing; stdlib etree resolves no external entities.

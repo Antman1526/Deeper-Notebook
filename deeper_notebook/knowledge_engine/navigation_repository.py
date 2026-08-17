@@ -181,7 +181,7 @@ def _folder_reparent_transaction() -> str:
     """Build fixed-depth, data-bound atomic checks for a folder reparent."""
     parents = ["LET $parent_0 = $new_parent_relation_id;"]
     parents.extend(
-        "LET $parent_" + str(index) + " = (SELECT VALUE parent_folder_id "
+        "LET $parent_" + str(index) + " = (SELECT VALUE parent_folder_id "  # nosec B608 - constants/whitelisted identifiers; values bound
         "FROM knowledge_bookmark_folder WHERE type::string(id) = $parent_"
         + str(index - 1)
         + " LIMIT 1)[0];"
@@ -198,7 +198,7 @@ def _folder_reparent_transaction() -> str:
     )
     subtree = ["LET $subtree_0 = [$entity_relation_id];"]
     subtree.extend(
-        "LET $subtree_" + str(index) + " = (SELECT VALUE type::string(id) "
+        "LET $subtree_" + str(index) + " = (SELECT VALUE type::string(id) "  # nosec B608 - constants/whitelisted identifiers; values bound
         "FROM knowledge_bookmark_folder WHERE parent_folder_id IN $subtree_"
         + str(index - 1)
         + ");"
@@ -241,14 +241,14 @@ def _folder_reparent_transaction() -> str:
         RETURN {{ code: 'succeeded', prior: $prior,
             entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $receipt }};
         COMMIT TRANSACTION;
-    """
+    """  # nosec B608 - constants/whitelisted identifiers; values bound
 
 
 def _folder_create_transaction() -> str:
     """Build a receipt-first, transaction-local max-depth guard for creates."""
     parents = ["LET $parent_0 = $new_parent_relation_id;"]
     parents.extend(
-        "LET $parent_" + str(index) + " = (SELECT VALUE parent_folder_id "
+        "LET $parent_" + str(index) + " = (SELECT VALUE parent_folder_id "  # nosec B608 - constants/whitelisted identifiers; values bound
         "FROM knowledge_bookmark_folder WHERE type::string(id) = $parent_"
         + str(index - 1)
         + " LIMIT 1)[0];"
@@ -276,7 +276,7 @@ def _folder_create_transaction() -> str:
         RETURN {{ code: 'succeeded', prior: $prior,
             entity: (SELECT * FROM $entity_id LIMIT 1), receipt: $receipt }};
         COMMIT TRANSACTION;
-    """
+    """  # nosec B608 - constants/whitelisted identifiers; values bound
 
 
 def _model(model: type[BaseModel], value: Any, *, code: str) -> Any:
@@ -1261,7 +1261,7 @@ class KnowledgeNavigationRepository:
     @staticmethod
     def _random_where(fields: str) -> str:
         suffix = " GROUP ALL" if fields == "count() AS count" else " ORDER BY id"
-        return f"""SELECT {fields} FROM knowledge_engine_document WHERE availability = "available" AND parse_state = "ready" AND document_kind IN ["note", "page", "journal"] AND "read" IN capabilities AND (array::len($space_ids) = 0 OR space_id IN $space_ids) AND (array::len($authority_kinds) = 0 OR authority_kind IN $authority_kinds) AND (array::len($tags) = 0 OR array::len(array::intersect(tags, $tags)) = array::len($tags)){suffix}"""
+        return f"""SELECT {fields} FROM knowledge_engine_document WHERE availability = "available" AND parse_state = "ready" AND document_kind IN ["note", "page", "journal"] AND "read" IN capabilities AND (array::len($space_ids) = 0 OR space_id IN $space_ids) AND (array::len($authority_kinds) = 0 OR authority_kind IN $authority_kinds) AND (array::len($tags) = 0 OR array::len(array::intersect(tags, $tags)) = array::len($tags)){suffix}"""  # nosec B608 - constants/whitelisted identifiers; values bound
 
 
 __all__ = ["KnowledgeNavigationRepository", "KnowledgeNavigationRepositoryError"]

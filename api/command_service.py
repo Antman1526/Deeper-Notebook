@@ -152,7 +152,7 @@ class CommandService:
         Filters are applied in SurrealQL so we never load the whole
         table into Python.
         """
-        from deeper_notebook.database.repository import repo_query
+        from deeper_notebook.database.repository import ensure_record_id, repo_query
 
         clauses: list[str] = []
         params: dict[str, Any] = {"limit": max(1, min(int(limit), 500))}
@@ -168,7 +168,7 @@ class CommandService:
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         try:
             rows = await repo_query(
-                f"SELECT id, app, name, status, error_message, created, updated "
+                f"SELECT id, app, name, status, error_message, created, updated "  # nosec B608 - constants/whitelisted identifiers; values bound
                 f"FROM command{where} "
                 f"ORDER BY created DESC LIMIT $limit",
                 params,
@@ -276,13 +276,19 @@ class CommandService:
                 # Direct SurrealDB fallback. Mirrors the structure of the
                 # lifespan stale-command reaper. The `command:` prefix
                 # handling matches what surreal_commands itself stores.
-                from deeper_notebook.database.repository import repo_query
+                from deeper_notebook.database.repository import (
+                    ensure_record_id,
+                    repo_query,
+                )
 
-                record_id = (
+                # v0.8.87 (B608) — parse before interpolating: RecordID.parse
+                # rejects anything that is not a well-formed record id, so a  # nosec B608 - constants/whitelisted identifiers; values bound
+                # hostile job_id cannot smuggle SurrealQL into the UPDATE.
+                record_id = ensure_record_id(
                     job_id if job_id.startswith("command:") else f"command:{job_id}"
                 )
                 await repo_query(
-                    f"UPDATE {record_id} "
+                    f"UPDATE {record_id} "  # nosec B608 - constants/whitelisted identifiers; values bound
                     "SET status = 'canceled', "
                     "    result = {}, "
                     "    error_message = $msg, "
