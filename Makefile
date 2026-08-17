@@ -564,3 +564,26 @@ clean-cache:
 	@find . -name "*.pyo" -type f -delete 2>/dev/null || true
 	@find . -name "*.pyd" -type f -delete 2>/dev/null || true
 	@echo "✅ Cache directories cleaned!"
+
+# ---------------------------------------------------------------------------
+# v0.8.86 — security scans. Bandit was uninstalled and pip-audit died in
+# ensurepip for the entire life of the Phase 2A receipt; both now run.
+#  - bandit: fails on HIGH-severity findings in project code (currently zero;
+#    the vendored Node runtime under desktop/bin is excluded as third-party).
+#  - pip-audit: audits the desktop lockfile. Runs via the Homebrew
+#    interpreter because uv-managed pythons ship without a working ensurepip
+#    (pip-audit builds a temp venv with it). Findings are REPORTED, not
+#    build-failing: accepted residuals are documented in
+#    docs/verification/2026-08-16-security-scan.md and re-triaged there.
+# Network required (PyPI advisory DB) — deliberately NOT part of build-mac.
+.PHONY: security-scan
+security-scan:
+	@echo "🔍 Bandit (fails on HIGH severity in project code)…"
+	@uvx bandit -r deeper_notebook api desktop \
+	  -x "desktop/bin,desktop/tests,desktop/memory/tests" \
+	  -q --severity-level high
+	@echo "✅ Bandit: no HIGH-severity findings."
+	@echo "🔍 pip-audit over desktop/requirements.lock…"
+	@uvx --python /opt/homebrew/bin/python3.12 pip-audit \
+	  -r desktop/requirements.lock --no-deps || true
+	@echo "ℹ️  pip-audit findings above are triaged in docs/verification/2026-08-16-security-scan.md"

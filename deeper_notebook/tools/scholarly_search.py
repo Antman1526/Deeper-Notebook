@@ -63,6 +63,10 @@ _PROVIDERS = ("openalex", "arxiv")
 
 _DEFAULT_MAX_RESULTS = 5
 _MAX_RESULTS_CEILING = 20
+# v0.8.86 — bound the arXiv Atom payload before XML parsing (Bandit B314:
+# entity-expansion DoS). A legitimate max_results<=20 feed is tens of KB;
+# anything near the cap is not a search result.
+_MAX_ARXIV_BYTES = 5_000_000
 _TIMEOUT_SEC = 8.0
 _TOTAL_BUDGET_SEC = 20.0
 
@@ -168,10 +172,15 @@ def parse_arxiv_atom(xml_text: str, n: int) -> list[dict]:
     """Map an arXiv Atom feed to ``[{title,url,snippet}]``.
 
     Uses the stdlib XML parser; a malformed or unexpected feed degrades to an
-    empty list rather than raising into the chat turn.
+    empty list rather than raising into the chat turn. The payload is size-
+    bounded before parsing, and stdlib etree does not resolve external
+    entities, so the remaining B314 concern (expansion DoS) is capped.
     """
+    if xml_text and len(xml_text) > _MAX_ARXIV_BYTES:
+        logger.warning("arxiv feed exceeded {} bytes; discarded", _MAX_ARXIV_BYTES)
+        return []
     try:
-        root = ElementTree.fromstring(xml_text or "")
+        root = ElementTree.fromstring(xml_text or "")  # nosec B314 - bounded, no entity resolution
     except ElementTree.ParseError as exc:
         logger.debug("arxiv atom parse failed: {}", exc)
         return []

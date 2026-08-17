@@ -281,3 +281,10 @@ def test_tool_records_a_citation_capture(monkeypatch):
 
 def test_empty_results_format_readably():
     assert ss.format_scholarly_results("x", []) == "No scholarly results found for 'x'."
+
+
+def test_oversized_arxiv_feed_is_discarded_before_parsing():
+    """v0.8.86 — Bandit B314 hardening: a multi-megabyte 'feed' is not a
+    search result; it must be dropped before reaching the XML parser."""
+    huge = "<feed>" + "x" * (ss._MAX_ARXIV_BYTES + 1) + "</feed>"
+    assert ss.parse_arxiv_atom(huge, 5) == []

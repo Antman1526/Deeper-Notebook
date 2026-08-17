@@ -221,11 +221,13 @@ h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
-h2==4.3.0
-    # via httpx
+h2==4.4.1
+    # via
+    #   -r desktop/requirements.txt
+    #   httpx
 hf-xet==1.5.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
     # via huggingface-hub
-hpack==4.1.0
+hpack==4.2.0
     # via h2
 httpcore==1.0.9
     # via httpx
@@ -302,8 +304,10 @@ jiter==0.14.0
     # via
     #   anthropic
     #   openai
-joserfc==1.6.5
-    # via authlib
+joserfc==1.7.4
+    # via
+    #   -r desktop/requirements.txt
+    #   authlib
 jsonpatch==1.33
     # via langchain-core
 jsonpointer==3.1.1
@@ -769,8 +773,9 @@ secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
 sentencepiece==0.2.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'
     # via mlx-lm
-setuptools==82.0.1
+setuptools==84.0.0
     # via
+    #   -r desktop/requirements.txt
     #   ctranslate2
     #   pyinstaller
     #   pyinstaller-hooks-contrib

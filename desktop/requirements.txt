@@ -99,3 +99,9 @@ fsrs>=6.3.1,<7.0
 # Package-managed FFmpeg used by local Video Overview composition. The desktop
 # bootstrap installs this into its private venv, so a host FFmpeg is never used.
 imageio-ffmpeg>=0.6.0,<1.0
+
+# v0.8.86 — pip-audit floors (first successful dependency audit; see
+# docs/verification/2026-08-16-security-scan.md). Patch-level fixes only:
+h2>=4.4.1               # PYSEC-2026-3628
+joserfc>=1.6.8          # PYSEC-2026-2528 / -2530
+setuptools>=83.0.0      # PYSEC-2026-3447
