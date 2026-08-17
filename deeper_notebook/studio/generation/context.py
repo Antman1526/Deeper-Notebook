@@ -66,15 +66,29 @@ async def artifact_sources(
         source_ids if source_ids is not None else getattr(artifact, "source_ids", [])
     )
     if selected_source_ids:
+        # v0.8.98 — fetch concurrently. This ran a sequential `await` per
+        # selected source, an N+1 on the path of EVERY Studio generation; with
+        # a dozen sources that is a dozen serial round trips. The connection
+        # pool (DEEPER_NOTEBOOK_DB_POOL_SIZE) already supports overlap.
+        #
+        # The 404 contract is preserved exactly: `gather` keeps result order,
+        # and the first *id-order* failure is what raises — not whichever
+        # request happened to fail first. Sources after a missing one now get
+        # fetched too, which is harmless.
+        results = await asyncio.gather(
+            *(Source.get(source_id) for source_id in selected_source_ids),
+            return_exceptions=True,
+        )
         sources: list[Source] = []
-        for source_id in selected_source_ids:
-            try:
-                sources.append(await Source.get(source_id))
-            except (KeyError, NotFoundError) as exc:
+        for source_id, result in zip(selected_source_ids, results):
+            if isinstance(result, (KeyError, NotFoundError)):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Source not found: {source_id}",
-                ) from exc
+                ) from result
+            if isinstance(result, BaseException):
+                raise result
+            sources.append(result)
         return sources
     try:
         notebook = await Notebook.get(getattr(artifact, "notebook_id"))

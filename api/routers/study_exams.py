@@ -13,6 +13,7 @@ from api.schemas.study_exams import (
 )
 from deeper_notebook.domain.notebook import StudioArtifact
 from deeper_notebook.exceptions import InvalidInputError, NotFoundError
+from deeper_notebook.studio.payloads import parse_payload_document
 from deeper_notebook.study.exams import (
     StudyExamConflict,
     StudyExamError,
@@ -23,7 +24,6 @@ from deeper_notebook.study.exams import (
     missed_question_cards,
 )
 from deeper_notebook.study.repository import StudyRepository, StudyRepositoryError
-from deeper_notebook.studio.payloads import parse_payload_document
 
 router = APIRouter(prefix="/study/exams", tags=["study-exams"])
 

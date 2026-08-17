@@ -270,16 +270,34 @@ async def _submit_studio_generation_command(
 
 
 async def _artifact_sources(artifact: StudioArtifact) -> list[Source]:
+    """Load an artifact's sources, or its notebook's when none are selected.
+
+    v0.8.98 — fetch concurrently (was a sequential `await` per source: an N+1
+    on workflow-run creation and approval). The 404 contract is unchanged:
+    `gather` preserves order and the first *id-order* failure is what raises.
+
+    This mirrors `studio.generation.context.artifact_sources` rather than
+    calling it. Delegating looks tidier but breaks a load-bearing test seam —
+    the Evidence Studio API suite patches `Source` on THIS module
+    (`monkeypatch.setattr(studio_mod, "Source", ...)`), so moving the call into
+    another module escapes the patch and hits the live database. Keep the two
+    in sync; `tests/test_v0_8_98_artifact_sources_concurrency.py` pins both.
+    """
     if artifact.source_ids:
+        results = await asyncio.gather(
+            *(Source.get(source_id) for source_id in artifact.source_ids),
+            return_exceptions=True,
+        )
         sources: list[Source] = []
-        for source_id in artifact.source_ids:
-            try:
-                sources.append(await Source.get(source_id))
-            except (KeyError, NotFoundError) as exc:
+        for source_id, result in zip(artifact.source_ids, results):
+            if isinstance(result, (KeyError, NotFoundError)):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Source not found: {source_id}",
-                ) from exc
+                ) from result
+            if isinstance(result, BaseException):
+                raise result
+            sources.append(result)
         return sources
 
     try:

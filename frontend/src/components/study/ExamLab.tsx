@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlarmClock, CheckCircle2, GraduationCap, XCircle } from 'lucide-react'
+import { AlarmClock, CheckCircle2, XCircle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -242,18 +242,13 @@ export function ExamLab() {
 
   // Setup view.
   return (
+    /* v0.8.98 — no CardHeader: StudyWorkbench already renders an "ExamLab"
+       section heading and description directly above this card. A card title
+       repeated the name and a second description restated the same sentence.
+       The sibling "Active study plans" section sets the house pattern —
+       section heading, then unlabelled content cards. */
     <Card data-testid="examlab-setup">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <GraduationCap className="h-4 w-4" aria-hidden="true" />
-          ExamLab
-        </CardTitle>
-        <CardDescription>
-          Sit a timed exam built from one of your Evidence Studio quizzes. Grading is
-          instant and local; missed questions can join your review deck.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">
             <span className="text-muted-foreground">Notebook</span>

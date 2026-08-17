@@ -320,7 +320,18 @@ class SurrealMemoryStore(VectorStoreBase):
     def count(self, table: str) -> int:
         """v0.8.50 — row count for one memory table (cheap indexed
         aggregate). Used as the high-water gate before a full prune so the
-        per-turn writer path doesn't pay a select-all every turn."""
+        per-turn writer path doesn't pay a select-all every turn.
+
+        v0.8.98 — this is the ONLY method here that interpolates a
+        caller-supplied identifier; every other query builds its table name
+        from the `_ALL_TABLES` / `_KIND_TO_TABLE` constants. Callers happen to
+        pass whitelisted names today, but the repository's SurrealQL contract
+        requires identifiers be validated by construction, not by convention —
+        and the `# nosec` below asserts exactly that. Enforce it here so the
+        assertion is true no matter who calls this next.
+        """
+        if table not in _ALL_TABLES:
+            raise ValueError(f"unknown memory table: {table!r}")
         self._ensure_connected()
         rows = self._exec(f"SELECT count() AS n FROM {table} GROUP ALL")  # nosec B608 - constants/whitelisted identifiers; values bound
         if rows and isinstance(rows[0], dict):

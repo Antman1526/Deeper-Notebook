@@ -92,6 +92,19 @@
   min-inline-size: 0;
 }
 
+/* v0.8.98 — Evidence Studio's secondary rail holds the output-mode cards,
+   which carry a title plus a 15-25 word description. At the shared 15rem
+   minimum the rail resolved to exactly 240px; minus the card and inner-card
+   padding that left ~155px of text column, wrapping descriptions to one or
+   two words per line. 18rem restores a readable measure while keeping the
+   source desk comfortably the dominant column. Scoped to this spread because
+   the podcast-studio and graph-atlas rails hold short status text and read
+   correctly at the narrower default. The single-column stack below 62rem
+   (see the media query further down) is unaffected. */
+[data-dn-folio-spread][data-dn-folio-variant='evidence-studio'] {
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.4fr);
+}
+
 [data-dn-folio-primary],
 [data-dn-folio-secondary] {
   min-inline-size: 0;
