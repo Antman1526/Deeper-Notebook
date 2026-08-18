@@ -41,6 +41,128 @@ const sourceDetailFixture = {
   notebooks: ['notebook-fixture-001'],
 } as const
 
+// Real seeded transformations (names/titles/descriptions read from migrations
+// 5 and 47) so the transformations shot shows actual product content instead
+// of an empty list — Cornell Notes included, since it has no other capture.
+const transformationsFixture = [
+  {
+    id: 'transformation-cornell-notes',
+    name: 'Cornell Notes',
+    title: 'Cornell Notes',
+    description:
+      'Restructures a source into Cornell-method study notes: cue questions, notes, and a summary',
+    prompt: '# IDENTITY and PURPOSE\n\nYou convert source material into Cornell-method study notes…',
+    apply_default: false,
+    created: '2026-01-01T00:00:00Z',
+    updated: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'transformation-analyze-paper',
+    name: 'Analyze Paper',
+    title: 'Paper Analysis',
+    description: 'Analyses a technical/scientific paper',
+    prompt: '# IDENTITY and PURPOSE\n\nYou analyse a technical or scientific paper…',
+    apply_default: false,
+    created: '2026-01-01T00:00:00Z',
+    updated: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'transformation-key-insights',
+    name: 'Key Insights',
+    title: 'Key Insights',
+    description: 'Extracts important insights and actionable items',
+    prompt: '# IDENTITY and PURPOSE\n\nYou extract important insights and actionable items…',
+    apply_default: false,
+    created: '2026-01-01T00:00:00Z',
+    updated: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'transformation-dense-summary',
+    name: 'Dense Summary',
+    title: 'Dense Summary',
+    description: 'Creates a rich, deep summary of the content',
+    prompt: '# IDENTITY and PURPOSE\n\nYou create a rich, deep summary of the content…',
+    apply_default: false,
+    created: '2026-01-01T00:00:00Z',
+    updated: '2026-01-01T00:00:00Z',
+  },
+] as const
+
+// A completed quiz artifact for ExamLab (§13 in the guide) — matches the
+// StudioArtifact shape ExamLab reads (id/notebook_id/artifact_type/status/title
+// only; the setup view never inspects output_payload).
+const quizArtifactFixture = {
+  id: 'studio-artifact-quiz-fixture-001',
+  notebook_id: 'notebook-fixture-001',
+  artifact_type: 'quiz',
+  status: 'completed',
+  title: 'Research Methods — Quiz',
+  source_ids: ['source-fixture-001'],
+  output_format: 'quiz',
+  output_payload: {},
+  citations: [],
+  export_paths: {},
+  created: '2026-01-01T00:00:00Z',
+  updated: '2026-01-01T00:00:00Z',
+} as const
+
+// The in-progress attempt POST /api/study/exams/attempts returns — taking
+// view: questions populated, results null, matching the real taking/results
+// split (api/schemas/study_exams.py). Deadline is computed at capture time so
+// the countdown always renders a normal (non-overtime) remaining time.
+function buildExamAttemptFixture() {
+  const startedAt = new Date()
+  const deadline = new Date(startedAt.getTime() + 20 * 60_000)
+  return {
+    id: 'study_exam_attempt:fixture001',
+    artifact_id: quizArtifactFixture.id,
+    notebook_id: 'notebook-fixture-001',
+    title: quizArtifactFixture.title,
+    question_count: 3,
+    duration_sec: 1200,
+    started_at: startedAt.toISOString(),
+    deadline: deadline.toISOString(),
+    submitted_at: null,
+    late: null,
+    correct_count: null,
+    score_percent: null,
+    seeded_indices: [],
+    results: null,
+    questions: [
+      {
+        index: 0,
+        prompt: 'What is the primary purpose of a control group in an experiment?',
+        options: [
+          { id: 'a', text: 'To isolate the effect of the variable being tested' },
+          { id: 'b', text: 'To increase the sample size' },
+          { id: 'c', text: 'To reduce the cost of the study' },
+          { id: 'd', text: 'To speed up data collection' },
+        ],
+      },
+      {
+        index: 1,
+        prompt: 'Which of the following best describes a peer-reviewed source?',
+        options: [
+          { id: 'a', text: 'Any article published online' },
+          { id: 'b', text: 'Work evaluated by independent experts before publication' },
+          { id: 'c', text: 'A source with more than 100 citations' },
+          { id: 'd', text: 'A source written by a single author' },
+        ],
+      },
+      {
+        index: 2,
+        prompt: 'What does a p-value below 0.05 typically indicate in a study?',
+        options: [
+          { id: 'a', text: 'The effect size is large' },
+          { id: 'b', text: 'The result is unlikely to be due to chance alone' },
+          { id: 'c', text: 'The study is definitely correct' },
+          { id: 'd', text: 'The sample size was too small' },
+        ],
+      },
+    ],
+  } as const
+}
+
 const sharedBackgroundResponses: ReadonlyArray<readonly [string, unknown]> = [
   ['/api/system/db-repair-needed', { needs_repair: false }],
   ['/api/updates/check', {
@@ -63,7 +185,7 @@ const sharedBackgroundResponses: ReadonlyArray<readonly [string, unknown]> = [
   ['/api/deeper-notebook/gmail/status', { connected: false, configured: false }],
   ['/api/credentials/status', { configured: {}, source: {}, encryption_configured: true }],
   ['/api/credentials/env-status', {}],
-  ['/api/transformations', []],
+  ['/api/transformations', transformationsFixture],
 ]
 
 
@@ -94,9 +216,11 @@ const shots: ReadonlyArray<{ name: string; path: string; theme: string; width?: 
   { name: '24-notebooks-mobile', path: '/notebooks', theme: 'research-core-dark', width: 390, height: 844 },
 ]
 
-test('capture every guide screen', async ({ page }) => {
-  test.setTimeout(600_000)
-  mkdirSync(outDir, { recursive: true })
+// Shared route setup used by the main capture run and by the two additional,
+// interaction-driven captures below (debate mode, ExamLab). Extracted so a
+// route added for one shot can't silently drift out of sync with the others —
+// there is exactly one definition of what a mocked dashboard looks like.
+async function installGuideBackgroundRoutes(page: import('@playwright/test').Page): Promise<void> {
   await installLuminousFolioFixture(page, { theme: 'research-core-dark' })
   for (const [pathname, body] of sharedBackgroundResponses) {
     await page.route(url => url.pathname === pathname, async route => {
@@ -212,7 +336,7 @@ test('capture every guide screen', async ({ page }) => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })
   await page.route('**/api/transformations**', async route => {
-    await route.fulfill({ contentType: 'application/json', body: '[]' })
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(transformationsFixture) })
   })
   await page.route('**/api/study/cards/due', async route => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
@@ -232,6 +356,24 @@ test('capture every guide screen', async ({ page }) => {
   await page.route('**/api/capture/items', async route => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })
+  // ExamLab's setup view GETs this list on mount ("recent attempts") — empty
+  // by default. Same pathname is also POSTed to (start a new attempt), so
+  // this only fulfills GET and falls through otherwise; the ExamLab-specific
+  // test below registers its own POST handler, which — added after this one
+  // — is tried first and only reaches this fallback for the GET it ignores.
+  await page.route(url => url.pathname === '/api/study/exams/attempts', async route => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({ contentType: 'application/json', body: '[]' })
+  })
+}
+
+test('capture every guide screen', async ({ page }) => {
+  test.setTimeout(600_000)
+  mkdirSync(outDir, { recursive: true })
+  await installGuideBackgroundRoutes(page)
 
   for (const shot of shots) {
     await page.addInitScript((theme) => {
@@ -246,4 +388,90 @@ test('capture every guide screen', async ({ page }) => {
     await page.waitForTimeout(1200)
     await page.screenshot({ path: `${outDir}/${shot.name}.png`, fullPage: false })
   }
+})
+
+test('capture debate mode toggled on', async ({ page }) => {
+  test.setTimeout(60_000)
+  mkdirSync(outDir, { recursive: true })
+  await installGuideBackgroundRoutes(page)
+
+  await page.addInitScript((theme) => {
+    localStorage.setItem('dn-theme', theme)
+  }, 'research-core-dark')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  // Same route as shot 03 — the toggle already renders there, off. This
+  // capture is that exact screen with one extra click.
+  await page.goto('/notebooks/notebook-fixture-001')
+  await expect(page.locator('body')).toBeVisible({ timeout: 20_000 })
+  await page.waitForLoadState('networkidle').catch(() => undefined)
+  const toggle = page.getByTestId('debate-mode-toggle')
+  await toggle.waitFor({ state: 'visible', timeout: 20_000 })
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  await page.mouse.move(0, 0)
+  await page.waitForTimeout(600)
+  await page.screenshot({ path: `${outDir}/25-chat-debate-mode.png`, fullPage: false })
+})
+
+test('capture ExamLab in-progress attempt', async ({ page }) => {
+  test.setTimeout(60_000)
+  mkdirSync(outDir, { recursive: true })
+  await installGuideBackgroundRoutes(page)
+
+  // Override the shared "no quizzes" default with one completed quiz, and
+  // handle the start-exam POST — registered after installGuideBackgroundRoutes
+  // so both are tried before that function's fallback-only handlers. Computed
+  // once so the POST (start) and the GET-by-id useExamAttempt fires right
+  // after agree on the same attempt — the earlier failed run served that
+  // second GET from installResearchWorkbenchMocks's generic `{}` catch-all,
+  // where undefined !== null made submitted_at look non-null and ExamLab
+  // rendered the finished/results view instead of the taking view.
+  const attemptFixture = buildExamAttemptFixture()
+  await page.route('**/api/studio/notebooks/notebook-fixture-001/artifacts**', async route => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify([quizArtifactFixture]) })
+  })
+  await page.route(url => url.pathname === '/api/study/exams/attempts', async route => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(attemptFixture),
+    })
+  })
+  await page.route(
+    // The id contains ':' (a SurrealDB record id) — the client percent-encodes
+    // it via encodeURIComponent, so pathname arrives encoded; decode before
+    // comparing rather than embedding the raw id in the matcher.
+    url => decodeURIComponent(url.pathname) === `/api/study/exams/attempts/${attemptFixture.id}`,
+    async route => {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(attemptFixture) })
+    },
+  )
+
+  await page.addInitScript((theme) => {
+    localStorage.setItem('dn-theme', theme)
+  }, 'research-core-dark')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/study')
+  await expect(page.locator('body')).toBeVisible({ timeout: 20_000 })
+  await page.waitForLoadState('networkidle').catch(() => undefined)
+
+  await page.getByTestId('examlab-notebook-select').selectOption('notebook-fixture-001')
+  const quizSelect = page.getByTestId('examlab-quiz-select')
+  await expect(quizSelect.locator(`option[value="${quizArtifactFixture.id}"]`)).toHaveCount(1, { timeout: 20_000 })
+  await quizSelect.selectOption(quizArtifactFixture.id)
+  await page.getByTestId('examlab-start').click()
+
+  const taking = page.getByTestId('examlab-taking')
+  await taking.waitFor({ state: 'visible', timeout: 20_000 })
+  // Answer the first question only, so the screenshot reads as an attempt
+  // genuinely in progress rather than either extreme (untouched or complete).
+  await page.locator('input[name="exam-q-0"]').first().check()
+
+  await page.mouse.move(0, 0)
+  await page.waitForTimeout(600)
+  await page.screenshot({ path: `${outDir}/26-study-examlab.png`, fullPage: false })
 })
