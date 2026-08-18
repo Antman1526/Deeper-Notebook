@@ -166,3 +166,9 @@ output/upstream-sync/
 
 # Built user-guide PDF (regenerate with node docs/user-guide/render.mjs)
 docs/user-guide/*.pdf
+
+# Generated knowledge-graph output from the graphify tool (~53MB of AST dumps
+# that index this repo, legacy identity strings and all). Never source: it was
+# swept in by a `git add -A` and made the rebrand identity audit report 103k
+# false positives quoted out of its own index.
+graphify-out/

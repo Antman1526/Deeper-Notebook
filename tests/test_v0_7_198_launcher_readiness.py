@@ -36,7 +36,9 @@ def test_wait_tcp_called_between_llamacpp_chat_and_memory():
     timeout must be generous enough for a cold-cache mmap (≥60 s)."""
     src = _src("desktop/launcher.py")
     # Anchor on the chat_alive flag introduced in the fix.
-    assert "chat_alive = (" in src, (
+    # v0.8.99 — `chat_alive = (` pinned that the RHS was PARENTHESISED, a
+    # formatting artefact. The invariant is that the flag is assigned at all.
+    assert re.search(r"chat_alive\s*=", src), (
         "v0.7.198 regression: chat_alive precondition flag removed. "
         "_wait_tcp will fire even when no chat GGUF is configured, "
         "wasting 60s on every launch with no chat model."
@@ -64,7 +66,8 @@ def test_wait_tcp_called_between_llamacpp_chat_and_memory():
         "Cold-cache mmap of large GGUFs can legitimately exceed it."
     )
     # The order assertion: chat_alive guard appears BEFORE memory spawn.
-    idx_chat_alive = src.find("chat_alive = (")
+    _chat_alive = re.search(r"chat_alive\s*=", src)
+    idx_chat_alive = _chat_alive.start() if _chat_alive else -1
     idx_memory_spawn = src.find(
         'self._try_spawn("supervisor.memory"'
     )

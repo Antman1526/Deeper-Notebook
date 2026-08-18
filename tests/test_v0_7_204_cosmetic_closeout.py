@@ -131,7 +131,11 @@ def test_notes_title_fallback_len_is_parameterized():
     )
     # Pin the clamp range so a careless refactor that drops it
     # doesn't let an operator set it to 0 / negative.
-    assert "max(\n                        20, min(int(_max_title_len_raw), 500)\n                    )" in src
+    # v0.8.99 — the clamp BOUNDS are the invariant; whitespace is not.
+    assert re.search(
+        r"max\(\s*20,\s*min\(\s*int\(_max_title_len_raw\),\s*500\s*\)\s*\)",
+        src,
+    ), "v0.7.204 regression: note title fallback clamp [20, 500] removed."
     # And the fallback default-on-bad-int must still be the
     # original 80.
     assert "_max_title_len = 80" in src

@@ -20,8 +20,6 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
-
 # Every module that registers commands. A new command module must be added
 # here — that is the point: the registry is only as trustworthy as its
 # enumeration.
@@ -69,12 +67,7 @@ def test_every_registered_command_input_schema_resolves() -> None:
         "forward reference unresolved:\n  " + "\n  ".join(unresolved)
     )
 
-
-@pytest.mark.parametrize("expected", [
-    "open_notebook.extract_source_visual",
-    "open_notebook.optimize_prompt",
-    "open_notebook.generate_studio_artifact",
-])
-def test_known_commands_stay_registered(expected: str) -> None:
-    """Persisted queue identities — renaming one orphans queued jobs."""
-    assert expected in _registry()._commands
+# Persisted queue identities are pinned by tests/test_persisted_queue_identifiers.py,
+# which derives them from an AST inventory rather than hardcoded literals. Not
+# duplicated here: a second hardcoded copy adds no protection and re-introduces
+# the legacy app-name literal the identity audit exists to track.

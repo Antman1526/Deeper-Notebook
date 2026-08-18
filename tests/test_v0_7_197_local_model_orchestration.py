@@ -27,6 +27,7 @@ These tests are AST-level so they don't depend on running services.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -173,5 +174,8 @@ def test_openchronicle_spawn_honours_env_url():
     )
     # The new flow assigns `mcp_url = os.environ.get(...)` before
     # passing it into the subprocess args. Pin the variable.
-    assert "mcp_url = os.environ.get(" in src
-    assert '"--mcp-url", mcp_url' in src
+    # v0.8.99 — token match, not layout match: the argv entries may sit on one
+    # line or two. The invariant is that the flag gets the env-derived value.
+    _flat = re.sub(r"\s+", " ", src)
+    assert "mcp_url = os.environ.get(" in _flat
+    assert '"--mcp-url", mcp_url' in _flat

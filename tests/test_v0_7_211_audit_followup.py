@@ -20,6 +20,7 @@ list. Three discrete fixes:
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -39,7 +40,9 @@ def test_worker_spawn_passes_max_tasks_flag():
     its arg list so the worker's 5-task-concurrency default is
     explicit and tunable via DEEPER_NOTEBOOK_WORKER_MAX_TASKS."""
     src = _src("desktop/launcher.py")
-    assert '"--max-tasks", str(max_tasks)' in src
+    # v0.8.99 — token match so an argv reflow cannot break a guard that is
+    # about the flag being passed at all.
+    assert '"--max-tasks", str(max_tasks)' in re.sub(r"\s+", " ", src)
     assert 'DEEPER_NOTEBOOK_WORKER_MAX_TASKS' in src
     # Clamped to [1, 32] so a fat-fingered "0" or "1000" can't
     # destabilise the worker.

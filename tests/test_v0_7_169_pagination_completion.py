@@ -25,6 +25,7 @@ router-level pagination behavior.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -127,15 +128,18 @@ def test_chat_sessions_router_threads_pagination():
     AST-level pin — the Query(...) defaults and the call site must
     both be present.
     """
-    src = _read_source("api/routers/chat.py")
+    # v0.8.99 — whitespace-tolerant. These pinned exact newlines and
+    # indentation, so any reflow broke a guard that is about tokens, not
+    # layout. The invariant is unchanged.
+    src = re.sub(r"\s+", " ", _read_source("api/routers/chat.py"))
     # The Query() declarations.
-    assert "limit: int = Query(\n        100, ge=1, le=1000," in src, (
+    assert "limit: int = Query( 100, ge=1, le=1000," in src, (
         "v0.7.169 regression: /chat/sessions no longer declares "
         "`limit: int = Query(100, ge=1, le=1000)` for pagination."
     )
-    assert "offset: int = Query(\n        0, ge=0," in src
+    assert "offset: int = Query( 0, ge=0," in src
     # The call site must thread both through.
-    assert "notebook.get_chat_sessions(\n            limit=limit, offset=offset," in src
+    assert "notebook.get_chat_sessions( limit=limit, offset=offset," in src
 
 
 # ---------------------------------------------------------------------------
