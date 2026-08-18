@@ -67,6 +67,21 @@ trial sweep failed 5 source-shape guards. Those guards are the underlying smell
 — replacing them with behavioural assertions is the real fix and is a project,
 not a polish-pass edit. `ruff check --fix` stays.
 
+- **v0.8.100** 🐛 **Auto-route hard-failed a local-only install.** With the
+  Settings toggle on and no benchmark history, `provision_langchain_chat_model`
+  resolved neither a local nor a cloud candidate and `pick_provider` raised
+  "No model available — neither local nor cloud" on every chat turn — while a
+  valid `default_chat_model` sat unused and the same turn with the toggle off
+  answered normally. Auto-route now degrades to the default path. The router is
+  unchanged and still raises on two `None`s (pinned by test); the fix belongs in
+  the caller. Assigning the default to `local_model_id` was rejected as a
+  privacy regression — the privacy gate treats `local_model_id` as its
+  keep-on-device target.
+- **v0.8.100** 🛠 **`ruff-format` dropped from `.pre-commit-config.yaml`.**
+  Configured since v0.7.120 but never run, because pre-commit was never
+  installed; the first `pre-commit install` would have rewritten 697 files and
+  failed 5 source-shape guards. `ruff check --fix` stays.
+
 
 ## v0.8.99 — 2026-08-17 — Release-gate audit: two passes
 
