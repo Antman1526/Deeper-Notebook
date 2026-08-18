@@ -26,11 +26,13 @@ The product uses the approved **Notebook Spark** visual identity with the teal-t
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.136.3%2B-009688)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.0-ff6f00)
 ![SurrealDB](https://img.shields.io/badge/SurrealDB-2.1-ff5722)
-![Tests](https://img.shields.io/badge/tests-4767%20backend%20%2B%20832%20desktop%20%2B%201775%20frontend-success)
+![Tests](https://img.shields.io/badge/tests-4929%20backend%20%2B%20807%20desktop%20%2B%201775%20frontend-success)
 
-> **Snapshot:** desktop app `0.8.96` · server/container track `1.8.5` · 2026-08-17.
-> Counts and measurements below were read from the tree at `aac7788b`. The two version numbers track different artifacts and are deliberately not
-> reconciled — see [Two version tracks](#two-version-tracks).
+> **Snapshot:** desktop app `0.8.100` · server/container track `1.8.5` · 2026-08-17.
+> Counts and measurements below were read from the tree at `822d6fd3`. Backend and desktop
+> counts were re-collected this pass (`pytest --collect-only`); the frontend figure is
+> carried over from the prior snapshot, not re-run. The two version numbers track different
+> artifacts and are deliberately not reconciled — see [Two version tracks](#two-version-tracks).
 
 > GitHub: **https://github.com/Antman1526/Deeper-Notebook** — downstream fork of
 > [lfnovo/open-notebook](https://github.com/lfnovo/open-notebook).
@@ -205,6 +207,23 @@ selection; content token budgets enforced at submit so oversized selections fail
 FSRS spaced repetition, study plans built from a notebook, Anki `.apkg` import and export
 via `genanki`, and a scope-limited study assistant whose retrieval is post-filtered to the
 plan's authorised sources.
+
+**ExamLab** sits a timed exam over a quiz artifact: it snapshots the questions at start time
+(so editing or regenerating the source artifact mid-attempt can never corrupt grading),
+grades deterministically at submit with no model call, and can seed FSRS cards from missed
+questions only — repeat seeding never double-creates a card for the same miss. Idea adopted
+from PageLM's ExamLab; implementation is original.
+
+**Debate mode** is a per-turn chat toggle, not a separate feature surface: with it on, the
+same chat graph node renders `prompts/chat/debate.jinja` instead of the standard system
+prompt, and the model is contracted to steelman the opposing position, concede when the
+sources genuinely support the user, and cite every claim — still grounded in the notebook's
+sources like ordinary chat.
+
+**Cornell Notes** is a seeded transformation (cue column of recall questions, a note column,
+a bottom summary), installed once at migration time alongside the existing default library —
+it never touches a transformation you've edited. Idea adopted from PageLM's SmartNotes;
+implementation is original.
 
 ### Knowledge engine and vault
 Document/block/relation projection over your corpus, an interactive React Flow mind map of
@@ -834,7 +853,7 @@ contracts — do not remove them as a cosmetic rename.
 
 | Track | File | Current | What it versions |
 |---|---|---|---|
-| Desktop app | `desktop/__init__.py` | `0.8.96` | The `.app` / `.dmg`, the window, `/api/version`, the update-notifier baseline |
+| Desktop app | `desktop/__init__.py` | `0.8.100` | The `.app` / `.dmg`, the window, `/api/version`, the update-notifier baseline |
 | Server / container | `pyproject.toml` | `1.8.5` | The Docker image tagged by `build-and-release.yml`, inherited from upstream |
 
 They version different artifacts and are intentionally **not** reconciled.

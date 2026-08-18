@@ -231,6 +231,77 @@ is the immutable log. Scheduling is evidence-grounded — cards link to `study_p
 so every prompt is traceable to a source. Anki import/export via `genanki==0.13.1` pinned
 exactly for deterministic model/note semantics.
 
+## 7a. ExamLab — deterministic grading over a snapshot
+
+`deeper_notebook/study/exams.py`. `build_attempt` snapshots the quiz artifact's questions
+(prompt, options, `correct_option_id`, explanation, citations) into the attempt row at
+creation time — grading later reads only that snapshot, never the live artifact, so editing
+or regenerating the source quiz mid-attempt cannot corrupt or invalidate a grade in progress.
+
+```python
+# deeper_notebook/study/exams.py — grade_attempt
+if attempt.submitted_at is not None:
+    raise StudyExamConflict("attempt is already submitted")
+submitted = now or datetime.now(UTC)
+results: list[ExamQuestionResult] = []
+correct_count = 0
+for question in attempt.questions:
+    selected = answers.get(str(question.index))
+    valid_ids = {option.id for option in question.options}
+    # An unknown option id (malformed client) counts as unanswered, not an
+    # error — a bad request body must not make the whole attempt ungradable.
+    answered = selected is not None and selected in valid_ids
+    is_correct = answered and selected == question.correct_option_id
+    if is_correct:
+        correct_count += 1
+    results.append(ExamQuestionResult(
+        index=question.index, correct=is_correct, answered=answered,
+        selected_option_id=selected if answered else None,
+        correct_option_id=question.correct_option_id,
+        explanation=question.explanation, citations=list(question.citations),
+    ))
+graded = attempt.model_copy(update={
+    "submitted_at": submitted, "late": submitted > attempt.deadline,
+    "answers": {str(k): str(v) for k, v in answers.items()},
+    "results": results, "correct_count": correct_count,
+    "score_percent": round(100.0 * correct_count / attempt.question_count, 1),
+})
+```
+
+A late submission is graded and flagged (`late=True`), never rejected — the deadline is
+informational, not a lockout, since ExamLab has no server-side clock enforcement to make
+rejection meaningful. `missed_question_cards` builds FSRS cards only for indices not already
+in `seeded_indices`, so calling the seed endpoint twice creates zero cards the second time —
+an idempotent, not merely safe-to-retry, endpoint.
+
+## 7b. Debate mode — a prompt swap, not a parallel code path
+
+`deeper_notebook/graphs/chat.py`. Debate mode changes exactly one thing: which Jinja
+template `call_model_with_messages` renders.
+
+```python
+# deeper_notebook/graphs/chat.py
+# Debate mode swaps the whole system template rather than appending a stance
+# instruction: an appended instruction fights the base template's "helpful
+# assistant" framing and loses on smaller local models. The debate template
+# carries its own copy of the grounding + citing contracts, so citations
+# behave identically.
+_template = (
+    "chat/debate"
+    if state.get("chat_mode") == "debate"
+    else "chat/system"
+)
+system_prompt = Prompter(prompt_template=_template).render(data=prompt_data)
+```
+
+Everything downstream — tool binding, retrieval, citation formatting — is unchanged; the
+prompt contracts the model to steelman the opposing position, concede when the sources
+genuinely support the user's claim, and cite every assertion. **Design note:** because the
+debate template duplicates the citation contract rather than extending the standard one,
+the two prompts can drift out of sync if the citation rules change — there is no shared
+partial. Acceptable for now given the surface area (two files), but worth a Jinja include if
+a third mode is ever added.
+
 ## 8. Vault sync
 
 Bidirectional Markdown sync with Obsidian/Logseq vaults. `vault_trust_record` gates

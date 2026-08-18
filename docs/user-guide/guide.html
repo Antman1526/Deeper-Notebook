@@ -486,6 +486,16 @@ later — so you do not re-explain your project every session. It is bounded on 
 capped number of items, only stores things it is reasonably confident about, and sanitises what it
 stores so text inside a source cannot instruct it. Memory settings live in Settings.</p>
 
+<h3>Debate mode</h3>
+<p>The <strong>Debate</strong> toggle above the chat input, next to the tool picker, changes how the
+model responds to your next message — not what it can see. With it on, the assistant argues the
+opposing position: it steelmans the case against your claim, concedes when your sources genuinely
+support you rather than manufacturing disagreement, and still cites every assertion back to your
+sources exactly as it does in standard chat. It is a good way to stress-test a conclusion before you
+commit to it in writing.</p>
+<p>The toggle is per-turn, not a setting — it does not persist across a new session, and it does not
+change retrieval or which sources are in context, only the stance the model is asked to take.</p>
+
 <!-- ============ 9 ============ -->
 <div class="page-break"></div>
 <h2><span class="num">9</span>Ask and Search</h2>
@@ -663,6 +673,22 @@ work through it — <strong>restricted to that plan's sources.</strong> It will 
 outside the plan, even if that material is in the same notebook. That restriction is enforced on the
 retrieval side, not just requested in a prompt.</p>
 
+<h3>ExamLab — timed exams</h3>
+<p>Generate a quiz in Studio (§11), then sit it as a timed exam from Study. Starting an attempt snapshots
+every question — so if you edit or regenerate the quiz while an attempt is in progress, your exam stays
+exactly as it was when you started. Grading needs no model call and works fully offline: your answers
+are compared against the snapshot the moment you submit.</p>
+<ul>
+  <li><strong>While the exam is running</strong> you see only the questions and options — never the
+  answer key. The application is built so the answer key cannot appear in your browser early, even
+  under a bug: the "in progress" view of an attempt simply does not carry that field.</li>
+  <li><strong>A late submission is still graded</strong>, just marked late — the clock is a guide,
+  not a lockout.</li>
+  <li><strong>"Add missed questions to Study"</strong> turns each wrong answer into a flashcard,
+  scheduled by the same FSRS engine as the rest of Study. Run it again after a re-take and it only
+  adds cards for misses it has not already seeded — you will not end up with duplicates.</li>
+</ul>
+
 <!-- ============ 14 ============ -->
 <div class="page-break"></div>
 <h2><span class="num">14</span>Transformations</h2>
@@ -676,6 +702,11 @@ retrieval side, not just requested in a prompt.</p>
 <p>A transformation is a named prompt — "summarise for a sceptical reader", "extract every claim with a
 number in it", "list the methods and their sample sizes". Run it over a source and the output is saved
 as an insight on that source.</p>
+
+<p><strong>Cornell Notes</strong> ships as one of the built-in transformations: a cue column of recall
+questions, a note column of substance, and a summary at the bottom — the format students already know
+from class. It runs like any other transformation and is safe to edit or delete; it is only ever
+installed once, on first launch, and never overwrites a transformation you have changed.</p>
 
 <h3>Writing a good one</h3>
 <ul>

@@ -28,8 +28,8 @@ deeper_notebook/database/migrations/
   1.surrealql   1_down.surrealql
   ...
   46.surrealql  46_down.surrealql     ← source_visual_* tables
-  ...
-  92.surrealql  92_down.surrealql
+  47.surrealql  47_down.surrealql     ← Cornell Notes default transformation (plain insert)
+  48.surrealql  48_down.surrealql     ← study_exam_attempt table (ExamLab)
 ```
 
 Rules that must be preserved:
@@ -99,7 +99,7 @@ WHERE archived = $archived
 ORDER BY updated desc
 ```
 
-## 5. Table families (~75 total)
+## 5. Table families (~76 total)
 
 | Family | Tables |
 |---|---|
@@ -110,6 +110,7 @@ ORDER BY updated desc
 | Vault | `vault_file`, `vault_mount`, `vault_revision`, `vault_sync_receipt`, `vault_trust_record` |
 | Overlay | `overlay_note`, `overlay_space`, `overlay_revision`, `overlay_mutation_receipt` |
 | Study | `study_{plan,card,unit,review,progress,syllabus,plan_card,plan_source,plan_memory,plan_artifact}` |
+| Study/ExamLab | `study_exam_attempt` (migration 48) — snapshots quiz questions + answer key at attempt start; grading and FSRS-seeding both read the snapshot, never the live artifact |
 | Study/Anki | `study_anki_{card_compat,export,import,job}` |
 | Study/assistant | `study_assistant_session`, `study_assistant_handoff` |
 | Podcasts | `podcast_config`, `episode`, `episode_profile`, `speaker_profile` |

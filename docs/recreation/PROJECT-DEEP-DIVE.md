@@ -2,7 +2,7 @@
 
 **Audience:** an AI system asked to critique this codebase and propose concrete
 optimisations, refactors, better patterns, or architectural improvements.
-**Version:** desktop `0.8.96` · **Written:** 2026-08-17 · measured at `aac7788b`
+**Version:** desktop `0.8.100` · **Written:** 2026-08-17 · measured at `822d6fd3`
 
 Every snippet below is **real code** from the repository, annotated for intent. Where I am
 uncertain about an approach, it is marked **⚠️ UNCERTAIN** — those are the places I most
@@ -14,6 +14,10 @@ want challenged.
 
 **What it is.** A local-first, source-grounded research and knowledge workspace shipped as
 a native macOS app. Hard fork of `lfnovo/open-notebook`, now independently versioned.
+Recent additions: **ExamLab** (deterministic timed exams over quiz artifacts, snapshot-graded,
+offline), **Debate mode** (a per-turn chat toggle that swaps in a steelman/concede/cite
+prompt template), and **Cornell Notes** (a seeded transformation) — all sourced from the
+`Study workbench` / `Evidence Studio` surfaces described in §3.4 and §4.9.
 
 **The governing constraint** — everything else follows from it:
 
@@ -24,9 +28,13 @@ a native macOS app. Hard fork of `lfnovo/open-notebook`, now independently versi
 **Stack.** Python 3.12.14 · FastAPI · LangGraph · SurrealDB 2.x · Next.js 16.2.12 ·
 React 19.2.3 · PyWebView 5.4 · PyInstaller · uv.
 
-**Scale.** 514 Python files (~179k LOC), 693 TS/TSX (~125k LOC), 4,767 backend tests,
-832 desktop tests, ~1,775 frontend tests, 92 DB migrations, ~75 tables, 279 API routes,
-151 registered settings.
+**Scale.** 876 Python files (`git ls-files '*.py'`, tests included), 738 TS/TSX files,
+4,929 backend tests, 807 desktop tests, ~1,775 frontend tests (not re-collected this pass),
+96 DB migrations (48 up/down pairs), ~76 tables, 298 API routes. Earlier snapshots of this
+document used a narrower file-count method (source only, no tests); the jump in file counts
+reflects that methodology change, not new code written this pass — the test and route counts
+are the real deltas, and they *are* new: two features (ExamLab, migration 48) and one bug fix
+landed since the prior snapshot.
 
 **Runtime topology.** A PyWebView shell hosts a local Next.js server, which proxies to a
 local FastAPI backend, which talks to a bundled SurrealDB. A supervisor
@@ -272,6 +280,11 @@ DEFINE EVENT IF NOT EXISTS source_delete ON TABLE source WHEN ($after == NONE) T
 Counts come from graph traversal, not joins:
 `count(<-reference.in) AS source_count`.
 
+`study_exam_attempt` (migration 48) snapshots quiz questions at attempt start — editing or
+regenerating the source artifact mid-attempt can never corrupt grading, since scoring reads
+the snapshot, not the live artifact. `seeded_indices` prevents the FSRS-seeding endpoint from
+double-creating a card for a miss that was already seeded on an earlier call.
+
 ## 3.5 External dependencies
 
 Optional, all fail-soft: OpenAI/Anthropic/Google/Groq/Mistral/DeepSeek/Ollama (LLM),
@@ -314,9 +327,18 @@ The underlying pattern — f-string SurrealQL with whitelisted identifiers — i
 audited today* but relies on every future edit maintaining the discipline.
 **A typed query builder would make this structural instead of procedural.**
 
-### 4.5 Startup is ~97 s to `core_ready`
-Dominated by model loading and first-run provisioning. The shell opens before the model is
-ready (`wait_for_ready=False`), which mitigates perception but not cost.
+### 4.5 Cold start is ~106 s; warm is ~13 s
+Measured, decomposed, and root-caused this pass. `api_ready` accounts for 19 s; sidecar
+*spawning* is 26 ms across all six sidecars (memory 10 ms, llamacpp_embed 6 ms, llamacpp_chat
+3 ms, openchronicle 3 ms, whisper 2 ms, piper 2 ms) — negligible, not the cost. The remaining
+~86 s is a single silent gap in `launcher.log` ending at "Local GGUF (llama.cpp): healthy" —
+the `_wait_tcp` gate waiting for a 4.9 GB chat GGUF to cold-mmap. **This is not iCloud** (an
+earlier note in this document's history wrongly attributed it to iCloud sync; verified
+`~/Desktop` is a plain local directory, not synced). The model root
+(`/Users/Antman/Desktop/MacBook AI models`) is 1.0 TB on an internal SSD that is 90% full —
+APFS read latency degrading near capacity is the far more likely cause. Freeing space on that
+volume, not moving files off iCloud, is the applicable fix. The shell opens before the model
+is ready (`wait_for_ready=False`), which mitigates perception but not cost.
 
 ### 4.6 Five near-identical tool-binding blocks
 See §2.1.
@@ -328,8 +350,23 @@ The fix (patch the predicate, or clear all spellings from the registry) is now d
 but the underlying mirroring behaviour is a footgun.
 
 ### 4.8 Two version tracks
-`pyproject.toml` = 1.8.5 (server/Docker), `desktop/__init__.py` = 0.8.96 (app). Correct,
+`pyproject.toml` = 1.8.5 (server/Docker), `desktop/__init__.py` = 0.8.100 (app). Correct,
 deliberately unreconciled — and confusing every single time.
+
+### 4.9 Auto-route hard-failed with no benchmark history (found and fixed this pass)
+`provision_langchain_chat_model`'s local candidate comes from
+`DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID` or, failing that, `_measured_local_chat_model_id()` —
+which returns a model **only when benchmark history proves one**. A fresh install has none.
+With no cloud credential either, both candidates were `None` and `pick_provider` raised its
+step-5 "impossible state" on every chat turn, even though a valid `default_chat_model` sat
+configured and unused. Fixed by delegating to the default path when both candidates are
+`None` — routing between zero candidates was never real routing. The tempting one-liner
+(assigning the default to `local_model_id`) was rejected: the privacy gate uses
+`local_model_id` as its keep-on-device reroute target, so that would have let secrets leak to
+cloud while reporting them kept local. **This is the kind of defect that only shows up
+driving the real app** — every unit test in the routing suite passed throughout; the gap was
+between the router (a correct pure function) and its caller (which handed it two `None`s
+instead of degrading).
 
 ---
 
@@ -392,18 +429,26 @@ you would build instead.
    while allowing runtime rollback — a small runtime-config endpoint the client reads at
    boot, with the inlined value as the default?
 
-9. **Startup latency (§4.5).** 97 s to `core_ready`. Where is the highest-leverage
-   attack: lazy sidecar spawn, parallel phases, deferred model load, or something
-   structural I'm missing?
+9. **Startup latency (§4.5).** Decomposed this pass: sidecar spawning is 26 ms total,
+   not the cost; ~86 s of the ~106 s cold start is a single GGUF cold-mmap gated by
+   `_wait_tcp`, and the disk it's reading from is 90% full. Given the bottleneck is
+   filesystem/hardware, not this codebase, is there anything left worth building here —
+   a disk-space warning at first-run, `mmap` prefetch/readahead hints, or is "tell the
+   operator to free space" the honest answer?
 
 10. **Layering.** `deeper_notebook/` must not import `api/` or `desktop/`, and `domain/`
     must not import graphs. Are there violations implied by the descriptions above? Would
     a hexagonal/ports-and-adapters restructure pay for itself at this size, or is the
     current pragmatic layering appropriate?
 
-11. **Test suite economics.** 4,767 backend + 832 desktop + ~1,775 frontend tests gate a
+11. **Test suite economics.** 4,929 backend + 807 desktop + ~1,775 frontend tests gate a
     25-minute build. Is there a defensible split — smoke gate on build, full suite on a
     schedule — that keeps the safety this project clearly depends on?
+
+13. **Auto-route's fallback (§4.9).** The fix delegates to the default path when neither
+    candidate resolves. Is silent degradation the right UX, or should the toggle surface
+    "auto-route has nothing to route between yet — benchmark a model" instead of quietly
+    behaving as if it were off?
 
 12. **What would you delete?** This codebase has accreted defensively; nearly every guard
     traces to a real incident. Which guards now look redundant, and what evidence would

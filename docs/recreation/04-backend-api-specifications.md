@@ -19,7 +19,8 @@ gmail  insights  knowledge_engine  knowledge_navigation  knowledge_workspace
 languages  launcher_prefs  local_models  mcp  models  notebooks  notes  onp
 overlay  podcasts  research  runtime  search  settings  source_chat
 source_visuals  sources  speaker_profiles  study  study_anki  study_assistants
-study_plans  study_voice  system  transformations  updates  vault  video_overviews
+study_exams  study_plans  study_voice  system  transformations  updates  vault
+video_overviews
 ```
 
 ## 2. Authentication
@@ -115,6 +116,26 @@ def _guard() -> None:
 ```
 
 404 (not 403) so a disabled feature is indistinguishable from a nonexistent route.
+
+### ExamLab (`/api/study/exams/*`, `api/routers/study_exams.py`)
+- `POST …/attempts` → `201`, body `{artifact_id, notebook_id, title, duration_sec}`.
+  Requires the artifact to be `artifact_type == "quiz"` with a structured document (409
+  otherwise — "regenerate it in Evidence Studio first" for pre-structured-document quizzes).
+  Snapshots the questions into `study_exam_attempt` at creation.
+- `GET …/attempts` → `ExamAttemptSummaryResponse[]` (list view, no question payload).
+- `GET …/attempts/{id}` → `ExamAttemptResponse`. **Taking view vs results view is the
+  security-relevant contract**: while `submitted_at IS NONE`, the response carries
+  `questions` (prompt + options, no `correct_option_id`) and `results: None`. After submit,
+  it carries `results` (graded, with the answer key) and `questions: None`. The answer key
+  is structurally absent from the taking-view Pydantic model — not filtered at
+  serialization time, so there is no code path that can leak it early.
+- `POST …/attempts/{id}/submit` → body `{"answers": {"<index>": "<option_id>"}}`. Grades
+  deterministically against the snapshot; unanswered and unknown option ids both grade as
+  wrong, never as an error. A second submit on an already-submitted attempt is `409`
+  (`StudyExamConflict`).
+- `POST …/attempts/{id}/seed-misses` → creates FSRS cards only for missed questions not
+  already in `seeded_indices`; idempotent — calling twice creates zero cards the second
+  time. Response: `{"created": int, "already_seeded": int, "seeded_indices": [int]}`.
 
 ## 4. Error handling contract
 

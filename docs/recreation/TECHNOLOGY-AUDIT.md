@@ -3,7 +3,7 @@
 Every language, runtime, framework, library, tool, and external service the project uses,
 with **what it specifically does in this codebase** — not what it does in general.
 
-**Snapshot:** desktop `0.8.96` · server track `1.8.5` · 2026-08-17 · measured at `aac7788b`
+**Snapshot:** desktop `0.8.100` · server track `1.8.5` · 2026-08-17 · measured at `822d6fd3`
 **Sources:** `pyproject.toml`, `desktop/requirements.txt`, `frontend/package.json`,
 `desktop/build/runtimes.toml`, `Makefile`, `.pre-commit-config.yaml`, `.github/workflows/`.
 
@@ -66,7 +66,7 @@ pinned in `runtimes.toml`.
 | **langchain-openai / -anthropic / -google-genai / -groq / -mistralai / -deepseek / -ollama** | each pinned | One adapter per provider. All are optional — a missing key means that provider is simply absent from model discovery |
 | **langsmith** | `>=0.8.18` | Comes in transitively via langchain; floored for CVE-2026-45134 |
 | **esperanto** | `>=2.20.0,<3` | Provider-agnostic model abstraction inherited from upstream; underlies model resolution |
-| **ai-prompter** | `>=0.4,<1` | Renders the Jinja templates in `prompts/` into system/user messages |
+| **ai-prompter** | `>=0.4,<1` | Renders the Jinja templates in `prompts/` into system/user messages — including `prompts/chat/debate.jinja`, swapped in per-turn when Debate mode is on |
 | **tiktoken** | `>=0.12.0` | Token counting for the context budgets that cap memory recall and source context |
 | **mcp** | `>=1.28.1,<2` | Model Context Protocol client — external tool servers reachable from chat over streamable-http |
 | **fastmcp** | `>=3.0,<4` | Serves the desktop shims (memory, OpenChronicle) as MCP endpoints |
@@ -121,7 +121,7 @@ counterpart, applied by `deeper_notebook/database/async_migrate.py` at startup.
 
 | Package | Floor | Specific role |
 |---|---|---|
-| **fsrs** | `>=6.3.1,<7.0` | The FSRS spaced-repetition scheduler behind the Study workbench |
+| **fsrs** | `>=6.3.1,<7.0` | The FSRS spaced-repetition scheduler behind the Study workbench, including cards seeded from ExamLab's missed-question set |
 | **genanki** | `==0.13.1` | Anki `.apkg` export |
 | **podcast-creator** | `>=0.12.0,<1` | Episode generation pipeline (profiles, retries, TTS orchestration) |
 | **pycountry** | `>=26.2.16` | Language/country normalization for search and TTS voice selection |

@@ -87,7 +87,7 @@ deeper_notebook/
 
 ```
 desktop/
-├── __init__.py            __version__ = "0.8.96"   ← desktop track
+├── __init__.py            __version__ = "0.8.100"  ← desktop track
 ├── __main__.py            Entry point
 ├── app.py                 16 startup phases
 ├── launcher.py            Supervisor: 9+ sidecars, dynamic ports, process groups

@@ -223,7 +223,43 @@ const scholarlyAvailable = !!webSearch?.scholarly_enabled   // optional → old 
 if (servers.length === 0 && !webSearchAvailable && !scholarlyAvailable) return null
 ```
 
-## 9. Testing
+## 9. Component: ExamLab and the Debate mode toggle
+
+`frontend/src/components/study/ExamLab.tsx` drives the timed-exam flow against
+`/api/study/exams/*` (`lib/api/study-exams.ts`, `lib/hooks/use-study-exams.ts`). It renders
+strictly from whichever half of `ExamAttemptResponse` the backend sent — `questions` during
+the attempt, `results` after submit — so the client can't accidentally render an answer key
+early even if it wanted to; the field it would need isn't in the payload.
+
+Debate mode is not a separate screen — it's a per-turn toggle on the existing chat surface:
+
+```tsx
+// frontend/src/components/source/ChatPanel.tsx
+<Button
+  variant={debateMode ? 'secondary' : 'ghost'}
+  aria-pressed={debateMode}
+  aria-label={debateMode ? 'Leave Debate mode' : 'Enter Debate mode'}
+  title="Debate mode — the assistant argues the opposing case, grounded in your sources"
+  onClick={onToggleDebateMode}
+  data-testid="debate-mode-toggle"
+>
+  <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+  Debate
+</Button>
+
+// ChatColumn.tsx — the toggle is a controlled prop, state owned by the chat hook:
+// debateMode={chat.debateMode}
+// onToggleDebateMode={() => chat.setDebateMode(!chat.debateMode)}
+// every sent turn carries chat_mode: 'debate' and the assistant argues
+// the opposing position — see ChatPanel.debate-mode.test.tsx
+```
+
+State lives in the `chat` hook alongside the rest of the conversation state, not in
+`ChatPanel` itself — `ChatPanel` only renders the controlled boolean it's handed. It resets
+to standard mode on a fresh session, matching the backend contract: `chat_mode` travels
+per-request, nothing about it is persisted server-side.
+
+## 10. Testing
 
 - **Unit:** Vitest + Testing Library — 240 files, ~1,775 tests.
 - **Browser:** Playwright, `workers: 1` (shared stateful Next server), three projects:
