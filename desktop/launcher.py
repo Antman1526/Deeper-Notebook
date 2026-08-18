@@ -628,7 +628,11 @@ class Supervisor:
 
         self._progress("supervisor.api", "running")
         self._spawn_api(api_port)
-        self._record_stage("api_up")
+        # v0.8.99 — "spawned", not "ready": this fires the moment the uvicorn
+        # process exists (~200 ms). The expensive part is the /readyz wait
+        # below, recorded separately as `api_ready`. Conflating the two put a
+        # 20 s cost under the NEXT milestone and made the worker look slow.
+        self._record_stage("api_spawned")
         # First-launch SurrealDB schema migrations + the heavy upstream import
         # chain (langchain + langgraph + podcast_creator) take 20-60 s before
         # uvicorn finishes startup. Subsequent launches are much faster but
@@ -659,6 +663,12 @@ class Supervisor:
             ),
             proc=self._procs[-1] if self._procs else None,
         )
+        # The dominant startup cost on a warm launch: measured 20,208 ms here
+        # against 91 ms for SurrealDB and 206 ms to spawn uvicorn itself. It is
+        # the API's cold import chain (langchain + langgraph + podcast_creator
+        # + transformers) plus migrations, exactly as the comment above
+        # predicts. Everything downstream blocks on it.
+        self._record_stage("api_ready")
         self._progress("supervisor.api", "done")
 
         self._progress("supervisor.worker", "running")

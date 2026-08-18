@@ -17,7 +17,18 @@ from __future__ import annotations
 
 from desktop.launcher import Supervisor
 
-EXPECTED_STAGES = ("database_up", "api_up", "worker_up", "frontend_up", "sidecars_up")
+# v0.8.99 — `api_spawned` and `api_ready` are deliberately SEPARATE. The first
+# fires when uvicorn's process exists (~200 ms); the second after the /readyz
+# wait, which measured 20,208 ms on a warm launch and is the single dominant
+# startup cost. A combined mark hid that entirely and blamed the worker.
+EXPECTED_STAGES = (
+    "database_up",
+    "api_spawned",
+    "api_ready",
+    "worker_up",
+    "frontend_up",
+    "sidecars_up",
+)
 
 
 def _bare_supervisor(stage_recorder=None) -> Supervisor:

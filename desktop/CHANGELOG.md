@@ -25,6 +25,59 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.99 — 2026-08-17 — Release-gate audit: two passes
+
+Two systematic audit passes over the whole application. Most checked classes
+came back already clean and were reported rather than churned; these are the
+real defects found and fixed.
+
+- **v0.8.99** 🐛 **Command input schemas.** `extract_source_visual` registered
+  an input model whose JSON schema could not be built:
+  `commands/source_visual_commands.py` used `from __future__ import
+  annotations`, so the `@command` decorator saw the string
+  `"ExtractSourceVisualInput"` and the generated model was never fully defined.
+  Registration still succeeded — the queue worked and nothing looked broken —
+  so it only surfaced when the module was imported in isolation, which read as
+  runner-dependent flake. 1 of 17 commands affected; now 0, guarded by a suite
+  that imports every command module in one process.
+- **v0.8.99** 🔒 SurrealQL identifier interpolation is now validated **by
+  construction** at every site that takes a caller-supplied name:
+  `memory.surreal_store.count`, `database.dedup_edges`, and
+  `knowledge_engine.navigation_repository._random_where`. Each carried a
+  `# nosec B608` asserting whitelisted identifiers while relying on caller
+  discipline; an assertion resting on convention is a comment, not a control.
+  (`evaluation.repository.latest_run` already had the correct guard — the
+  house pattern the others now match.)
+- **v0.8.99** ⚡ `artifact_sources` fetched every selected source with a
+  sequential `await` in a loop — an N+1 on the path of every Evidence Studio
+  generation, duplicated byte-for-byte in the router. Now concurrent via
+  `asyncio.gather`, with the 404 contract preserved exactly (result order kept;
+  the first *id-order* failure raises). The duplicate is gone: the router
+  injects `source_cls`/`notebook_cls` from its own namespace, which keeps the
+  26-site Evidence Studio patch seam intact without coupling
+  `deeper_notebook/` to `api/`.
+- **v0.8.99** 📊 Startup instrumentation. `core_ready` was one opaque bucket
+  spanning all of `start_all()`; a fresh install measured 114,328 ms with no
+  way to attribute it. The Supervisor now records `database_up`, `api_up`,
+  `worker_up`, `frontend_up`, and `sidecars_up`. Purely observational — a
+  recorder that raises is swallowed, because instrumentation must never fail a
+  boot.
+- **v0.8.99** 🧪 Five source-shape guards pinned the formatter's line-breaking
+  along with the tokens they protect. They now match on whitespace-normalised
+  source or tolerant regexes — same invariants, immune to reflow, verified by
+  reformatting a scratch copy of the tree and re-running them there.
+- **v0.8.99** 🐛 The launcher-dialog tests required `_tkinter`, which the
+  Homebrew interpreter lacks while the bundled runtime ships it. An autouse
+  fixture stubs the module only when absent, so the branch logic is covered
+  everywhere rather than skipped.
+- **v0.8.98** 🎨 Visual: ExamLab no longer repeats its own name and description
+  directly beneath the section heading that already carries both; the Evidence
+  Studio output-mode rail widened from the shared 15rem minimum to 18rem via a
+  scoped variant, so mode descriptions stop wrapping to one or two words a line.
+- **v0.8.98** 🧹 `graphify-out/` (782 generated AST dumps, ~53 MB) is
+  gitignored. It indexes this repository, so once tracked it made the identity
+  audit report ~103,000 false positives quoted out of its own index.
+
 ## v0.8.97 — 2026-08-17 — ExamLab, Debate mode, Cornell Notes
 
 Three study features. The first two adopt ideas from PageLM (CaviraOSS);
