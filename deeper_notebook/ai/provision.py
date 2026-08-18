@@ -241,6 +241,41 @@ async def provision_langchain_chat_model(
         defaults = await model_manager.get_defaults()
         cloud_model_id = getattr(defaults, "auto_route_cloud", None) or None
 
+    # v0.8.100 — routing between zero candidates is not routing. When neither a
+    # local nor a cloud candidate resolves, auto-route fell through to
+    # pick_provider's step-5 ValueError ("No model available — neither local nor
+    # cloud") and the turn died, even though a perfectly good default_chat_model
+    # was configured and the SAME call with the toggle off would have answered.
+    #
+    # local_model_id comes from DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID or, failing
+    # that, _measured_local_chat_model_id() — which only returns a model when
+    # BENCHMARK HISTORY proves one. A fresh install has no benchmark history, so
+    # a local-only operator who flipped the Settings toggle got a hard failure on
+    # every chat turn, with an error message naming neither the toggle nor the
+    # missing benchmark. That is the whole defect.
+    #
+    # Degrade to the default path rather than inventing a candidate. Assigning
+    # default_chat_model to local_model_id is the tempting one-liner and it is
+    # wrong: the privacy gate uses local_model_id as its "safe to keep on-device"
+    # reroute target, so mislabeling a cloud default as local would let the gate
+    # send secrets TO the cloud while reporting them kept on-device. Delegating
+    # instead reproduces the toggle-off path exactly — the documented, tested
+    # one. That path does not run the privacy gate; unchanged from today, and
+    # with no candidates the gate has no reroute target regardless.
+    if not local_model_id and not cloud_model_id:
+        logger.info(
+            "auto-route: no local or cloud candidate resolved — using the "
+            "configured chat default. Benchmark a local model to give the "
+            "router something to route between."
+        )
+        return await provision_langchain_model(
+            content=content,
+            model_id=None,
+            default_type="chat",
+            fallback_out=fallback_out,
+            **kwargs,
+        )
+
     # v0.8.5 — read EITHER env var so the router stays in sync with
     # the actual sidecar config. Pre-v0.8.5 this only read
     # DEEPER_NOTEBOOK_LOCAL_N_CTX (default 32768), but the launcher's

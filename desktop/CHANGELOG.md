@@ -25,6 +25,49 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.100 — 2026-08-17 — Auto-route no longer hard-fails a local-only install
+
+🐛 **Bug fix — chat was dead for anyone who enabled auto-route without
+benchmarking a model.** `provision_langchain_chat_model` resolves its local
+candidate from `DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID` or, failing that, from
+`_measured_local_chat_model_id()` — which only returns a model when *benchmark
+history proves one*. A fresh install has no benchmark history. With no cloud
+credential either, both candidates came back `None`, `pick_provider` hit its
+step-5 `ValueError("No model available — neither local nor cloud")`, and every
+chat turn died. The configured `default_chat_model` was valid the whole time,
+and the identical turn with the toggle OFF answered normally. The error named
+neither the toggle nor the missing benchmark, so it read as "no models
+installed" on a machine with ninety of them.
+
+Routing between zero candidates is not routing. Auto-route now degrades to the
+default path — the same call the toggle-off branch already makes.
+
+The router itself is unchanged and still raises on two `None`s; that is correct
+for a pure function, and a test pins it so the fix stays in the caller. The
+tempting one-liner — assigning `default_chat_model` to `local_model_id` — was
+rejected as a **privacy regression**: the privacy gate uses `local_model_id` as
+its "safe to keep on-device" reroute target, so mislabelling a cloud default as
+local would let the gate send secrets *to* the cloud while reporting them kept
+on-device. The degraded path does not run the privacy gate, which is unchanged
+from the toggle-off path today and not a new gap — with no candidates the gate
+has no reroute target regardless.
+
+Diagnosed by driving the real installed app, where this masked a second,
+data-only problem: a `default_chat_model` pointing at a legacy env-migration
+artifact — a model row literally named `default_model` that no server can
+answer to. That row is structurally valid, so no static check can reject it;
+only the model server can. With this fix the operator now sees the server's
+actual rejection instead of a misleading "no model available". No code change
+was warranted for it, and none was made.
+
+🛠 **Infra — `ruff-format` removed from `.pre-commit-config.yaml`.** Listed
+since v0.7.120 but never run, because pre-commit was never installed. The first
+`pre-commit install` would have rewritten 697 files and broken the build: a
+trial sweep failed 5 source-shape guards. Those guards are the underlying smell
+— replacing them with behavioural assertions is the real fix and is a project,
+not a polish-pass edit. `ruff check --fix` stays.
+
+
 ## v0.8.99 — 2026-08-17 — Release-gate audit: two passes
 
 Two systematic audit passes over the whole application. Most checked classes

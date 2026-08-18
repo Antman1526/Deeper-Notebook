@@ -6,7 +6,7 @@
 #
 # What runs:
 #  - ruff check --fix (auto-fix what's mechanical, fail otherwise)
-#  - ruff format
+#  - (ruff format is intentionally disabled — see the note by the hook)
 #  - check-yaml + check-json (catch syntax errors before commit)
 #  - end-of-file-fixer + trailing-whitespace (file hygiene)
 #  - check-merge-conflict (catches accidental merge markers)
@@ -24,8 +24,19 @@ repos:
       - id: ruff
         args: [--fix]
         types: [python]
-      - id: ruff-format
-        types: [python]
+      # v0.8.100 — ruff-format is DELIBERATELY NOT ENABLED. It was listed here
+      # from v0.7.120 but pre-commit was never installed, so it never ran; the
+      # first `pre-commit install` would have rewritten 697 files and broken the
+      # build. Measured, not guessed: a trial sweep failed 5 source-shape guards
+      # (tests that assert exact source text to pin behaviour that has no other
+      # cheap assertion — e.g. "this argv flag is passed to the sidecar").
+      #
+      # Those guards, not the formatter, are the underlying smell: pinning
+      # formatting alongside tokens makes them brittle by construction. Replacing
+      # them with behavioural assertions is the real fix and is a project, not a
+      # polish-pass edit. Until that happens, a repo-wide reformat costs a broken
+      # build and buys cosmetics. `ruff check --fix` above stays — it is
+      # compatible and catches actual defects.
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
