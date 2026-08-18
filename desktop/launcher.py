@@ -389,6 +389,22 @@ class Supervisor:
             # Instrumentation must never be able to fail a launch.
             pass
 
+    def _record_sidecar_stage(self, step: str, started_at: float) -> None:
+        """Record one sidecar's own elapsed time (not cumulative).
+
+        v0.8.100 — sidecars spawn sequentially inside one `sidecars_up` span,
+        so a cumulative number would just restate that span. Per-sidecar
+        duration is what identifies the slow one.
+        """
+        if self._stage_recorder is None:
+            return
+        try:
+            name = step.split(".", 1)[-1] or step
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            self._stage_recorder(f"sidecar_{name}", elapsed_ms)
+        except Exception:
+            pass
+
     def start_all(self) -> None:
         # v0.7.142 — Singleton enforcement + orphan reaper.
         # Before this release, double-clicking the .app twice spawned two
@@ -1573,6 +1589,13 @@ class Supervisor:
             self._sidecar_spawn_args[kind] = (args[0] if args else 0, step)
         self._progress(step, "running")
         proc_count = len(self._procs)
+        # v0.8.100 — per-sidecar milestone. `sidecars_up` was a single 5,947 ms
+        # bucket covering embed/whisper/piper/chat/memory/openchronicle, which
+        # only says "the sidecars are slow", not WHICH. Recording here rather
+        # than at each call site means every sidecar — including any added
+        # later — is attributed automatically. `step` is "supervisor.<name>",
+        # so the milestone reads e.g. `sidecar_whisper`.
+        _sidecar_started_at = time.monotonic()
         try:
             fn(*args)
             spawned = self._procs[proc_count:]
@@ -1587,6 +1610,7 @@ class Supervisor:
             if kind is not None:
                 self._sidecar_procs[kind] = spawned[-1]
             self._progress(step, "done")
+            self._record_sidecar_stage(step, _sidecar_started_at)
         except Exception as exc:
             if kind is not None:
                 for proc in self._procs[proc_count:]:
@@ -1594,6 +1618,9 @@ class Supervisor:
                 self.resource_governor.release(kind)
             log.warning("%s spawn failed: %s", step, exc, exc_info=True)
             self._progress(step, "error", str(exc))
+            # A sidecar that burns 30 s and THEN fails is the most expensive
+            # case; attribute it rather than losing it to the exception path.
+            self._record_sidecar_stage(step, _sidecar_started_at)
 
     # v0.8.40 — map launcher step names to API-side `kind` strings.
     # Must stay in sync with `_KIND_TO_SUPERVISOR` in

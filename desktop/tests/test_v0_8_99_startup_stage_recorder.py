@@ -113,3 +113,57 @@ def test_app_builds_a_recorder_from_the_receipt_store() -> None:
     assert recorder is not None
     recorder("database_up", 1234)
     assert recorded == [("database_up", 1234)]
+
+
+# --- v0.8.100: per-sidecar attribution -----------------------------------------
+
+
+def test_sidecar_stage_records_its_own_elapsed_not_cumulative() -> None:
+    """`sidecars_up` was one 5,947 ms bucket for six sidecars. Each now reports
+    its OWN duration, which is what identifies the slow one."""
+    import time
+
+    recorded: list[tuple[str, int]] = []
+    supervisor = _bare_supervisor(lambda s, ms: recorded.append((s, ms)))
+    supervisor._record_sidecar_stage("supervisor.whisper", time.monotonic())
+
+    assert len(recorded) == 1
+    name, elapsed = recorded[0]
+    assert name == "sidecar_whisper", "milestone must be named for the sidecar"
+    assert 0 <= elapsed < 1000, "must be this sidecar's elapsed, not since boot"
+
+
+def test_sidecar_stage_needs_no_start_all_timestamp() -> None:
+    """Unlike _record_stage, this measures from a passed-in start, so it works
+    even when start_all's entry timestamp was never set."""
+    import time
+
+    recorded: list[tuple[str, int]] = []
+    supervisor = _bare_supervisor(lambda s, ms: recorded.append((s, ms)))
+    supervisor._start_all_began_at = None
+    supervisor._record_sidecar_stage("supervisor.piper", time.monotonic())
+    assert [n for n, _ in recorded] == ["sidecar_piper"]
+
+
+def test_sidecar_stage_swallows_a_raising_recorder() -> None:
+    import time
+
+    def _explode(stage: str, elapsed_ms: int) -> None:
+        raise RuntimeError("sink is on fire")
+
+    supervisor = _bare_supervisor(_explode)
+    supervisor._record_sidecar_stage("supervisor.memory", time.monotonic())
+
+
+def test_try_spawn_attributes_both_success_and_failure() -> None:
+    """A sidecar that burns time and THEN fails is the most expensive case; it
+    must not lose its measurement to the exception path."""
+    import pathlib as _pathlib
+
+    source = (
+        _pathlib.Path(__file__).resolve().parents[1] / "launcher.py"
+    ).read_text(encoding="utf-8")
+    body = source.split("def _try_spawn(", 1)[1].split("\n    def ", 1)[0]
+    assert body.count("self._record_sidecar_stage(step, _sidecar_started_at)") == 2, (
+        "_try_spawn must record on both the success and the failure path"
+    )

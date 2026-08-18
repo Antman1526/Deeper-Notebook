@@ -34,6 +34,15 @@ from api.models import (
 from api.schemas.source_visuals import disabled_visual_status
 from api.source_visual_projection import project_source_visuals
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
+# NOTE (v0.8.100): this import pulls `commands/__init__.py`, which eagerly
+# imports every command module (podcast_creator, transformers, content_core).
+# In isolation that is ~16.7 s, so it looks like the obvious startup win — it
+# is not. Measured A/B on `import api.main`, median of three runs:
+#   with this import 3.14 s | stubbed out 3.10 s
+# No gain: everything heavy it pulls is already imported by other API modules,
+# and run-to-run variance (+/-0.7 s) is larger than the difference. Deferring it
+# would move a Pydantic model between packages and risk the command input
+# schema for nothing. Leave it.
 from commands.source_commands import SourceProcessingInput
 from deeper_notebook.config import UPLOADS_FOLDER
 from deeper_notebook.database.repository import ensure_record_id, repo_query
