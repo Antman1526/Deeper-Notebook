@@ -47,6 +47,42 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v --ignore=tests/integration
 
+  # v0.8.108 — the security scan was a MANUAL make target and ran in no
+  # workflow. That is not theoretical: Bandit's B608 count was burned down to 0
+  # on 2026-08-17, and v0.8.97 reintroduced one in study/exams.py that shipped
+  # and sat undetected until someone ran the scan by hand two days later. A gate
+  # nobody runs is not a gate.
+  #
+  # Split deliberately:
+  #   * Bandit FAILS the build on HIGH severity in project code. It is offline,
+  #     deterministic, and its clean state is a fact worth enforcing.
+  #   * pip-audit REPORTS and does not fail. It queries the live PyPI advisory
+  #     database, so a new CVE published overnight would otherwise turn every
+  #     unrelated PR red. Its findings are triaged in
+  #     docs/verification/2026-08-16-security-scan.md, where the accepted
+  #     residuals (pillow<12 via moviepy, diskcache) are recorded with reasons.
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Bandit (fails on HIGH severity in project code)
+        run: |
+          uvx bandit -r deeper_notebook api desktop \
+            -x "desktop/bin,desktop/tests,desktop/memory/tests" \
+            -q --severity-level high
+
+      - name: pip-audit (reported, not enforced — see the note above)
+        continue-on-error: true
+        run: uvx pip-audit -r desktop/requirements.lock --no-deps
+
   # v0.7.129 — opt-in real-SurrealDB integration suite.
   # Runs in parallel with the hermetic backend job. Failure here
   # signals a SurrealQL syntax regression, migration-ordering bug,

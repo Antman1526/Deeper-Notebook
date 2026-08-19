@@ -19,6 +19,9 @@ from deeper_notebook.health.model_config import evaluate_model_config_health
 def _defaults(**overrides):
     base = {
         "default_chat_model": "model:good",
+        # v0.8.108 — embedding is a critical slot too; default it healthy so the
+        # existing chat-focused cases keep asserting exactly one issue.
+        "default_embedding_model": "model:good",
         "auto_route_enabled": False,
         "auto_route_cloud": None,
     }
@@ -66,8 +69,12 @@ async def test_a_healthy_configuration_reports_no_issues():
 async def test_no_chat_default_is_reported():
     health = await _evaluate(_defaults(default_chat_model=None))
     assert not health.ok
-    assert [i.code for i in health.issues] == ["chat_default_missing"]
-    assert "Settings" in health.issues[0].remedy
+    # v0.8.108 — membership, not equality: embedding became a critical slot too,
+    # and this helper's model_loader resolves nothing, so that slot legitimately
+    # reports as well. The claim under test is that a missing chat default is
+    # reported, not that it is the only thing that can ever be reported.
+    issue = next(i for i in health.issues if i.code == "chat_default_missing")
+    assert "Settings" in issue.remedy
 
 
 @pytest.mark.asyncio
@@ -181,3 +188,41 @@ async def test_a_provider_that_explodes_yields_unknown_not_a_500():
     )
     assert snapshot.model_config_health.state == "unknown"
     assert "model_config_unknown" in snapshot.reasons
+
+
+# --- v0.8.108: embedding is a critical slot -----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_missing_embedding_default_is_reported_with_its_own_code():
+    """Not under a 'chat' code — the operator has to know which slot is broken.
+
+    A dangling embedding default is quieter than a dangling chat default and
+    arguably worse: chat fails loudly on the next turn, while embedding failure
+    degrades search and every retrieval-grounded answer with no obvious error.
+    """
+    health = await _evaluate(
+        _defaults(default_embedding_model=None), _model(), _credential()
+    )
+    codes = [i.code for i in health.issues]
+    assert "embedding_default_missing" in codes
+    assert "chat_default_missing" not in codes
+
+    detail = next(i.detail for i in health.issues if i.code == "embedding_default_missing")
+    assert "Search" in detail
+
+
+@pytest.mark.asyncio
+async def test_chat_codes_are_unchanged_by_the_slot_generalisation():
+    """The codes are derived per slot, so chat must emit exactly what it did."""
+    health = await _evaluate(_defaults(default_chat_model=None), _model(), _credential())
+    assert "chat_default_missing" in [i.code for i in health.issues]
+
+
+@pytest.mark.asyncio
+async def test_both_slots_can_be_reported_at_once():
+    health = await _evaluate(
+        _defaults(default_chat_model=None, default_embedding_model=None)
+    )
+    codes = {i.code for i in health.issues}
+    assert {"chat_default_missing", "embedding_default_missing"} <= codes

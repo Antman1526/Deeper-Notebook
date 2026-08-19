@@ -25,6 +25,54 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.108 — 2026-08-19 — The security gate now runs, and there is a roadmap
+
+🔒 **`make security-scan` was a manual target that ran in no workflow.** Not a
+theoretical gap: Bandit's B608 count was burned down to 0 on 2026-08-17, v0.8.97
+reintroduced one in `study/exams.py`, and it shipped and sat undetected until
+someone ran the scan by hand. A gate nobody runs is not a gate. `test.yml` now
+has a `security-scan` job.
+
+Split deliberately. **Bandit fails the build** on HIGH severity in project code
+— offline, deterministic, and its clean state is worth enforcing. **pip-audit
+reports without failing**, because it queries the live PyPI advisory database
+and a CVE published overnight would otherwise turn every unrelated PR red; its
+residuals are triaged in `docs/verification/2026-08-16-security-scan.md`.
+
+✨ **`docs/ROADMAP.md`.** An inventory found no roadmap or backlog anywhere —
+only retrospective per-feature plans. Answering "what needs building?" meant
+reconstructing it from flag defaults, CI config, and §4 of PROJECT-DEEP-DIVE.
+For 49 routers and 5,754 tests, that reconstruction cost was the single most
+consequential missing artifact. Every figure in it is measured, with the
+commands named so they can be re-run rather than trusted.
+
+🐛 **Model-config health now covers the embedding default too.** A dangling
+embedding default is quieter than a dangling chat default and arguably worse:
+chat fails loudly on the next turn, while embedding failure degrades search and
+every retrieval-grounded answer with no obvious error. Codes are derived per
+slot, so chat emits exactly the strings it always has and embedding gets its
+own. Still deliberately not every slot — listing TTS/STT would train people to
+ignore the panel.
+
+🔍 **One finding that reversed on inspection.** `source_visuals_enabled()` reads
+`os.environ` directly instead of using `resolve_env`, which looked like a
+one-line inconsistency worth fixing. It is not: the name is absent from
+`environment.SETTINGS`, so `resolve_env` cannot resolve it at all — routing it
+through silently makes the flag unreadable (four tests fail immediately). The
+change was reverted and the roadmap entry rewritten to say what the real fix is
+(register the setting).
+
+- **v0.8.108** 🔒 **The security scan now runs in CI.** It was a manual make
+  target in no workflow, which is how a B608 regression shipped and went
+  undetected for two days. Bandit fails on HIGH; pip-audit reports without
+  failing, since it queries a live advisory database.
+- **v0.8.108** ✨ **`docs/ROADMAP.md`** — the repository had no roadmap or
+  backlog at all; "what needs building?" required reconstruction from flag
+  defaults and CI config.
+- **v0.8.108** 🐛 **Model-config health extended to the embedding default**,
+  whose failure is quieter than chat's and degrades search silently.
+
+
 ## v0.8.107 — 2026-08-19 — Quiet Bandit, and a packaged build that can be rolled back
 
 🛠 **86 `# nosec` tags stripped of prose.** Bandit parses everything after

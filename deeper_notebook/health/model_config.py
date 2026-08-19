@@ -40,10 +40,23 @@ from dataclasses import dataclass, field
 # endpoints, so a missing base_url there is normal rather than broken.
 _ENDPOINT_REQUIRED_PROVIDERS = frozenset({"openai_compatible", "ollama"})
 
-# The slots a user would notice immediately. Deliberately not every slot: a
-# missing TTS default degrades one feature, while a missing chat default is the
-# product not working.
-_CRITICAL_SLOTS = ("default_chat_model",)
+# The slots whose absence breaks the product rather than one feature.
+#
+# v0.8.108 — embedding joined chat. A dangling embedding default is quieter than
+# a dangling chat default and arguably worse: chat fails loudly on the next
+# turn, while embedding failure degrades search and every retrieval-grounded
+# answer without an obvious error. Still deliberately NOT every slot — a missing
+# TTS or STT default costs one feature, and listing it here would train people
+# to ignore this panel.
+_CRITICAL_SLOTS = ("default_chat_model", "default_embedding_model")
+
+# Codes are derived per slot, so chat keeps the exact strings it has always
+# emitted (chat_default_missing, ...) and embedding gets its own rather than
+# reporting an embedding problem under a "chat" code.
+_SLOT_REMEDIES = {
+    "chat": "Settings → Models → set a default chat model.",
+    "embedding": "Settings → Models → set a default embedding model.",
+}
 
 
 @dataclass(frozen=True)
@@ -104,12 +117,13 @@ async def evaluate_model_config_health(
         model_id = getattr(defaults, slot, None)
         label = slot.replace("default_", "").replace("_model", "")
 
+        remedy = _SLOT_REMEDIES.get(label, f"Settings → Models → set a default {label} model.")
+
         if not model_id:
-            health.add(
-                "chat_default_missing",
-                f"No {label} model is configured.",
-                "Settings → Models → set a default chat model.",
-            )
+            detail = f"No {label} model is configured."
+            if label == "embedding":
+                detail += " Search and source-grounded answers cannot work without one."
+            health.add(f"{label}_default_missing", detail, remedy)
             continue
 
         try:
@@ -119,12 +133,12 @@ async def evaluate_model_config_health(
 
         if model is None:
             health.add(
-                "chat_default_dangling",
+                f"{label}_default_dangling",
                 (
                     f"The configured {label} model ({model_id}) no longer exists — "
                     "it was probably deleted, or left behind by an older install."
                 ),
-                "Settings → Models → pick a different default chat model.",
+                f"Settings → Models → pick a different default {label} model.",
             )
             continue
 
@@ -147,7 +161,7 @@ async def evaluate_model_config_health(
 
             if credential is None:
                 health.add(
-                    "chat_default_credential_missing",
+                    f"{label}_default_credential_missing",
                     (
                         f"The {label} model '{getattr(model, 'name', model_id)}' is a "
                         f"{provider} model but has no credential attached, so there is "
@@ -157,7 +171,7 @@ async def evaluate_model_config_health(
                 )
             elif not (getattr(credential, "base_url", None) or "").strip():
                 health.add(
-                    "chat_default_endpoint_missing",
+                    f"{label}_default_endpoint_missing",
                     (
                         f"The {label} model '{getattr(model, 'name', model_id)}' uses "
                         f"credential '{getattr(credential, 'name', credential_id)}', "
