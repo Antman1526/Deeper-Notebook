@@ -99,6 +99,12 @@ Two traps for whoever does it, both hit during the attempt:
 
 **Payoff:** unblocks the formatter *and* ends the ratchet.
 
+Until then, `make repair-rebrand-pins` performs the repair in the required order
+(relocate pins by content digest → inventory digest → coverage digests →
+regenerate). It only moves a pin when the file still contains a line matching
+the recorded digest; anything whose content genuinely changed is reported for
+review rather than silently re-approved.
+
 ### 2.2 Retire source-shape tests — lower priority than it looks
 
 469 assertions across 88 files that grep exact source text. Long assumed to be

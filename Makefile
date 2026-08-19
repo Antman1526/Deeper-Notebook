@@ -576,6 +576,14 @@ clean-cache:
 #    build-failing: accepted residuals are documented in
 #    docs/verification/2026-08-16-security-scan.md and re-triaged there.
 # Network required (PyPI advisory DB) — deliberately NOT part of build-mac.
+# v0.8.109 — repair the allowlist after an edit shifts pinned lines. The failure
+# cascades through three gates that each report something different, and the
+# repair order matters (relocate -> inventory digest -> coverage digests ->
+# regenerate). See ROADMAP §2.1 for why this is needed at all.
+.PHONY: repair-rebrand-pins
+repair-rebrand-pins:
+	@uv run python scripts/repair_rebrand_pins.py
+
 .PHONY: security-scan
 security-scan:
 	@echo "🔍 Bandit (fails on HIGH severity in project code)…"
