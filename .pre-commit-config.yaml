@@ -24,6 +24,17 @@ repos:
       - id: ruff
         args: [--fix]
         types: [python]
+      # v0.8.105 — MEASURED AGAIN, and the earlier reasoning was wrong about
+      # WHY. Applying `ruff format` repo-wide (700 files) and re-running the
+      # suite gives 5,625 passed / 6 failed, and all six failures are
+      # identity-audit tests — not one of the ~469 source-text assertions
+      # broke. The blocker is scripts/rebrand-allowlist.json, whose entries are
+      # keyed on (path, pattern, source, line, column, context_sha256): a
+      # repo-wide reflow invalidates context hashes wholesale and
+      # `--regenerate` then aborts with "unclassified occurrence requires
+      # explicit review". Re-key that allowlist on content/AST identity and a
+      # formatter becomes adoptable; until then this stays off.
+      #
       # v0.8.100 — ruff-format is DELIBERATELY NOT ENABLED. It was listed here
       # from v0.7.120 but pre-commit was never installed, so it never ran; the
       # first `pre-commit install` would have rewritten 697 files and broken the

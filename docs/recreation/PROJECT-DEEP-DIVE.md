@@ -297,7 +297,28 @@ Local, expected-present: llama.cpp, MLX, faster-whisper, piper-tts, mem0, Surrea
 
 # 4. Pain points and known limitations
 
-### 4.1 Source-shape tests are brittle
+### 4.1 Source-shape tests are brittle — but they are NOT what blocks a formatter
+
+**Measured 2026-08-19, and the result overturned the assumption.** `ruff format`
+was applied to the whole repository (700 files reformatted, 422 already clean)
+and the suite re-run: **5,625 passed, 6 failed.** All six were identity-audit
+tests (`test_product_identity.py`, `test_persisted_queue_identifiers.py`). Not
+one of the ~469 source-text assertions across 88 files broke.
+
+So the formatter blocker is §4.2's allowlist, not these guards. `--regenerate`
+after the reformat fails outright:
+
+    ValueError: unclassified occurrence requires explicit review:
+      {'path': 'desktop/tests/test_data_root_migration.py',
+       'pattern': 'open_notebook', 'line': 839, ...}
+
+Because entries are keyed on `(path, pattern, source, line, column,
+context_sha256)`, a repo-wide reflow invalidates context hashes en masse, and
+each new one demands manual classification. The formatting change was reverted;
+adopting a formatter requires re-keying that allowlist on content or AST
+identity first (§4.2), which is a project of its own.
+
+The original brittleness note still stands on its own terms:
 Tests that grep source text for exact literals. They caught real regressions, but a
 `ruff --fix` import reflow and a 6-line insertion each broke one during this project.
 

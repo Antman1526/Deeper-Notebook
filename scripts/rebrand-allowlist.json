@@ -23789,6 +23789,26 @@
       }
     },
     {
+      "path": "docs/recreation/PROJECT-DEEP-DIVE.md",
+      "pattern": "open_notebook",
+      "source": "content",
+      "line": 313,
+      "column": 20,
+      "context_sha256": "787bfba64def089f656e0e222734bb009f6392d1f8dae0d79faeca793f235f9d",
+      "category": "migration_documentation",
+      "rationale": {
+        "path": "docs/recreation/PROJECT-DEEP-DIVE.md",
+        "pattern": "open_notebook",
+        "source": "content",
+        "line": 313,
+        "column": 20,
+        "context_sha256": "787bfba64def089f656e0e222734bb009f6392d1f8dae0d79faeca793f235f9d",
+        "category": "migration_documentation",
+        "explanation": "The recreation project deep dive document documents the upgrade boundary in the \"4. Pain points and known limitations / 4.1 Source-shape tests are brittle — but they are NOT what blocks a formatter / Measured 2026-08-19, and the result overturned the assumption\" section because the statement uses that role while expressing 'pattern': ' current legacy underscored identifier ', 'line': 839, while the preceding context concerns 'path': 'desktop/tests/test data root migration.py'; the following context concerns Because entries are keyed on path, pattern, source, line, column.",
+        "compatibility_contract": null
+      }
+    },
+    {
       "path": "docs/superpowers/plans/2026-05-09-open-notebook-plus-desktop.md",
       "pattern": "open-notebook-Plus",
       "source": "content",
