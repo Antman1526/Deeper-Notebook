@@ -1,5 +1,5 @@
 #define MyAppName "Deeper Notebook"
-#define MyAppVersion "0.8.101"
+#define MyAppVersion "0.8.102"
 #define MyAppPublisher "Antman1526"
 #define MyAppExeName "Deeper Notebook.exe"
 

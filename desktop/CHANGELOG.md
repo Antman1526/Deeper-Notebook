@@ -25,6 +25,57 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.102 — 2026-08-18 — The flaky suite, root-caused
+
+Four consecutive full runs failed four different sets of tests, all passing in
+isolation. Test order is NOT randomised, so the non-determinism had to be
+runtime state. It was.
+
+🛠 **Root cause: env leakage across tests.** `monkeypatch.setenv` undoes only the
+key it wrote, but `normalize_product_environment` deliberately MIRRORS a
+canonical name into its legacy spellings (`DN_*`, `ONP_*`, `OPEN_NOTEBOOK_*`),
+and monkeypatch has no record of writes it did not make — so the mirrors outlive
+the test. This is the footgun already recorded as §4.7 in PROJECT-DEEP-DIVE;
+what was missing was proof of which tests actually did it. Instrumenting a full
+run found exactly four:
+
+    test_evidence_studio_artifact_api.py  DN_/ONP_/OPEN_NOTEBOOK_EVIDENCE_STUDIO
+    test_v0_8_40b_hot_swap.py             DEEPER_NOTEBOOK_/OPEN_NOTEBOOK_ACTIVE_GGUF_MODEL
+    test_v0_8_40d_env_refresh.py (x2)     OPEN_NOTEBOOK_LOCAL_N_CTX
+
+Leaked feature flags are how a deterministically-ordered suite still varies run
+to run: `tests/test_environment_aliases.py` builds a subprocess env from
+`dict(os.environ)`, so it inherits whatever ran before it.
+
+Fixed at the class rather than per-test: a root `conftest.py` snapshots and
+restores `os.environ` around every test. Fixing the four individually would
+require every future test to know every mirror spelling — the same
+caller-discipline assumption the SurrealQL identifier guards exist to reject.
+
+Two implementation details that were measured, not guessed. It is a
+**hookwrapper, not an autouse fixture**: an autouse fixture tears down while
+other fixtures are still finalising, so it sees monkeypatch's own not-yet-undone
+writes as leaks — 67 false positives across three files. And it lives at the
+**repo root**, not under `tests/`, because `testpaths` is
+`["desktop/tests", "tests"]` with `tests/integration/` a third root, and
+desktop/tests runs FIRST — so a tests/-only conftest would leave the actual
+upstream polluter unprotected.
+
+`DEEPER_NOTEBOOK_TEST_STRICT_ENV=1` prints leaks as they happen (still
+repairing them). That is how these four were isolated, and how the next one
+gets found.
+
+Verified: 5621 passed, 0 failed, with all four leaks reported and repaired.
+
+- **v0.8.102** 🛠 **Root-caused the flaky suite.** Four full runs, four different
+  failure sets, all passing in isolation. Cause: `monkeypatch` cannot undo the
+  legacy-spelling env mirrors `normalize_product_environment` writes, so four
+  tests leaked feature flags into everything that ran after them. A root
+  `conftest.py` now restores `os.environ` around every test — a hookwrapper
+  rather than an autouse fixture, because the latter observes teardown too early
+  and produced 67 false positives.
+
+
 ## v0.8.101 — 2026-08-17 — Gate sweep: a B608 regression, a hard-failing test, dead broken markup
 
 Ran every gate to find what was actually broken rather than guessing. Three
