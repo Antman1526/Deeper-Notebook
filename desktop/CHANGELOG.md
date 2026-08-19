@@ -25,6 +25,49 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.103 — 2026-08-19 — Seam tests: the composition, not the units
+
+Three catastrophic defects shipped this month while every unit test passed,
+because each lived in the composition rather than in any single unit: auto-route
+hard-failing (v0.8.100), MLX models registered under a name no server answers to
+(v0.8.97), and a `default_chat_model` pointing at a legacy migration artifact.
+Unit tests that mock the layer below cannot see any of them.
+
+✨ **`tests/integration/test_chat_model_seams.py`** drives the real chain —
+defaults -> model row -> credential -> base_url -> adapter -> HTTP -> parsed
+reply — with nothing mocked below `provision`. The only fake is the process at
+the far end of the socket.
+
+That fake is the point. `_ProtocolFaithfulModelServer` reproduces the one
+upstream behaviour that turns a wire-id mismatch from silent into loud: **404 on
+any `model` value it was not launched with**, exactly as `mlx_lm.server` does
+(verified live during the v0.8.97 investigation). A fake that answered every
+request would pass all four tests while catching none of the bugs.
+
+Four tests: a turn completes against a real socket; a prettified display name
+fails loudly rather than silently; auto-route with no benchmark history still
+answers; a dangling default resolves to None instead of raising.
+
+**Verified by reintroducing the bug.** Reverting the v0.8.100 fix fails
+`test_auto_route_with_no_benchmark_history_still_answers` and *only* that test —
+targeted detection, not incidental coverage.
+
+🛠 **Root `conftest.py` gains an opt-out for session-scoped env owners.** Writing
+these surfaced a real defect in v0.8.102's env-restore hook:
+`tests/integration/conftest.py` exports `SURREAL_NAMESPACE`/`SURREAL_DATABASE`
+from a session fixture, whose setup runs inside the FIRST test's protocol — so
+the hook restored them away and starved every later test ("params.0: Input
+should be a valid string"). Items marked `integration_surreal` now opt out; they
+are gated, run as their own CI job, and manage env deliberately.
+
+- **v0.8.103** ✨ **Seam tests for the config -> resolution -> routing -> HTTP
+  chain**, with a protocol-faithful fake model server that 404s unknown model
+  ids the way mlx_lm does. Proven to catch the v0.8.100 auto-route defect:
+  reverting that fix fails exactly one of the four and nothing else.
+- **v0.8.103** 🛠 **Fixed v0.8.102's env-restore hook starving integration
+  tests** — session-scoped fixtures that own env now opt out via marker.
+
+
 ## v0.8.102 — 2026-08-18 — The flaky suite, root-caused
 
 Four consecutive full runs failed four different sets of tests, all passing in
