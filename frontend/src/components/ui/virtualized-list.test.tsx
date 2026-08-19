@@ -85,18 +85,31 @@ describe('VirtualizedList', () => {
     // No crash = pass. The key extraction path is exercised.
   })
 
-  it('supports tbody container for in-table virtualization', () => {
+  // v0.8.101 — "supports tbody container for in-table virtualization" was
+  // removed alongside the `containerAs` prop it exercised. The mode rendered
+  // <tbody> inside the component's hardcoded <div> and put <div> row wrappers
+  // inside that <tbody>, which React flagged as a hydration error on every
+  // run. This test asserted only that `container.querySelector('tbody')` was
+  // truthy — true of invalid markup too — so it pinned the element swap while
+  // saying nothing about validity. Nothing in the app used the prop.
+  it('renders rows inside a valid rowgroup/row structure', () => {
     const { container } = render(
       <VirtualizedList
         items={[{ id: 1 }]}
         estimateSize={48}
         renderItem={(item) => <span>{item.id}</span>}
-        containerAs="tbody"
       />
     )
-    // The inner container should be a tbody element when containerAs="tbody"
-    const tbody = container.querySelector('tbody')
-    expect(tbody).toBeTruthy()
+    const rowgroup = container.querySelector('[role="rowgroup"]')
+    expect(rowgroup).toBeTruthy()
+    // The rowgroup must not smuggle in table-only elements — that nesting is
+    // exactly what the removed mode got wrong.
+    expect(container.querySelector('tbody')).toBeNull()
+    // Deliberately not asserting rendered rows: the virtualizer measures a
+    // scroll element that has no dimensions under jsdom, so it yields zero
+    // virtual items here. That is why every other test in this file asserts
+    // "no crash" rather than row contents. Row rendering is covered for real
+    // by the Playwright suite against a laid-out browser.
   })
 })
 

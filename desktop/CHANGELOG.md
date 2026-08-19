@@ -25,6 +25,68 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.101 — 2026-08-17 — Gate sweep: a B608 regression, a hard-failing test, dead broken markup
+
+Ran every gate to find what was actually broken rather than guessing. Three
+real defects; the rest of the sweep came back clean and is recorded as such.
+
+🔒 **Bandit B608 regressed 0 → 1.** The 2026-08-17 burn-down took SurrealQL
+string-composition findings to zero; `study/exams.py::list_recent` (added in
+v0.8.97 with ExamLab) reintroduced one. Verified a false positive — `where` is
+either `""` or a literal assigned three lines above, a local rather than a
+parameter, and both `notebook_id` and the `[1,100]`-clamped `limit` travel as
+`$`-bound vars — so it takes the standard `# nosec B608` tag. Back to 0; the
+four remaining MEDIUMs are exactly the residuals triaged in
+`docs/verification/2026-08-16-security-scan.md`.
+
+The tag is deliberately bare. The house form appends prose (`- constants/…`),
+which Bandit parses as further test IDs and rejects one word at a time
+("Test in comment: constants is not a test name or id, ignoring"). Suppression
+still works, so the ~90 existing tags are noisy rather than broken — left alone
+rather than churned, but new ones need not add to it.
+
+🐛 **`test_real_pywebview_exposes_the_keys_we_pin` hard-failed everywhere the
+desktop runtime isn't installed.** `pywebview==5.4` is declared in
+`desktop/requirements.txt` (bundled app runtime), not `pyproject.toml`, so it is
+legitimately absent from the dev/server venv. The test already *intended* to
+tolerate that — it carries a `# pragma: no cover - env without pywebview`
+guard — but the bare `__import__("webview")` raised `ModuleNotFoundError`
+before that guard could run. Now `pytest.importorskip`, which reaches the
+documented intent. Assertions untouched: they still run wherever pywebview is
+present, which is the environment whose API they guard.
+
+🐛 **`VirtualizedList`'s `containerAs="tbody"` mode emitted invalid DOM.** It
+rendered `<tbody>` inside the component's hardcoded `<div>` scroll parent *and*
+wrapped each row in a `<div>` inside that `<tbody>` (which may only hold
+`<tr>`), so React warned "In HTML, `<tbody>` cannot be a child of `<div>`. This
+will cause a hydration error." on every frontend test run. **Nothing used it** —
+`SourcesColumn` is the only caller in the app and uses `VirtualizedListAuto`
+with no `containerAs` — and its one test asserted only that a `<tbody>` existed,
+which is true of invalid markup too, so it pinned the element swap while saying
+nothing about validity.
+
+Removed rather than fixed blind: real in-table virtualization needs more than an
+element swap (the row wrappers are absolutely positioned, which table layout does
+not honour), so it should be designed against an actual table consumer instead of
+left as a broken stub. The replacement test asserts the valid rowgroup/row
+structure and that no `<tbody>` appears.
+
+- **v0.8.101** 🔒 **Bandit B608 regressed 0 → 1.** `study/exams.py::list_recent`
+  (added with ExamLab in v0.8.97) reintroduced a SurrealQL string-composition
+  finding after the 2026-08-17 burn-down. Verified a false positive and tagged
+  `# nosec B608`; back to 0, with the four remaining MEDIUMs exactly the
+  residuals already triaged in `docs/verification/2026-08-16-security-scan.md`.
+- **v0.8.101** 🐛 **`test_real_pywebview_exposes_the_keys_we_pin` hard-failed**
+  wherever the bundled desktop runtime isn't installed. The test already meant
+  to tolerate a venv without `pywebview`, but its `__import__` threw before the
+  guard that says so could run. Now `pytest.importorskip`; assertions untouched.
+- **v0.8.101** 🐛 **`VirtualizedList`'s unused `containerAs="tbody"` mode emitted
+  invalid DOM** (`<tbody>` inside a `<div>`, `<div>` rows inside the `<tbody>`),
+  producing a React hydration warning on every frontend test run. No caller in
+  the app used it; removed, with a replacement test that asserts valid
+  rowgroup/row structure instead of merely that a `<tbody>` existed.
+
+
 ## v0.8.100 — 2026-08-17 — Auto-route no longer hard-fails a local-only install
 
 🐛 **Bug fix — chat was dead for anyone who enabled auto-route without

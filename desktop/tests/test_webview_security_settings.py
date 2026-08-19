@@ -10,6 +10,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from desktop.window import apply_webview_security_settings
@@ -54,9 +56,20 @@ def test_missing_settings_dict_is_tolerated():
 
 def test_real_pywebview_exposes_the_keys_we_pin():
     """Guards against pinning names that silently no longer exist."""
-    webview = __import__("webview")
+    # v0.8.101 — pywebview==5.4 is declared in desktop/requirements.txt (the
+    # bundled app runtime) and NOT in pyproject.toml, so it is legitimately
+    # absent from the dev/server venv. This test already intended to tolerate
+    # that — see the `env without pywebview` guard below — but the bare
+    # __import__ raised ModuleNotFoundError before that guard could run, so the
+    # suite failed anywhere the desktop runtime wasn't installed. importorskip
+    # reaches the documented intent; the assertions below are untouched and
+    # still run wherever pywebview IS present, which is the environment whose
+    # API this is guarding.
+    webview = pytest.importorskip(
+        "webview", reason="pywebview ships in the bundled desktop runtime, not this venv"
+    )
     settings = getattr(webview, "settings", None)
-    if not isinstance(settings, dict):  # pragma: no cover - env without pywebview
+    if not isinstance(settings, dict):  # pragma: no cover - pywebview without settings
         return
     applied = apply_webview_security_settings(webview)
     assert "OPEN_EXTERNAL_LINKS_IN_BROWSER" in applied, (

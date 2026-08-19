@@ -43,9 +43,19 @@ interface VirtualizedListProps<T> {
   overscan?: number
   /** Stable id extractor; uses array index by default. */
   getItemKey?: (item: T, index: number) => string | number
-  /** Inner spacer "ghost" wrapper; defaults to a div with
-   * role="rowgroup". Caller can override e.g. `<tbody>` for tables. */
-  containerAs?: 'div' | 'tbody'
+  // v0.8.101 — the `containerAs?: 'div' | 'tbody'` escape hatch was removed.
+  // It rendered <tbody> inside this component's hardcoded <div> scroll parent
+  // AND wrapped each row in a <div> inside that <tbody> (which may only hold
+  // <tr>), so React warned "In HTML, <tbody> cannot be a child of <div>. This
+  // will cause a hydration error." on every test run. Nothing consumed it —
+  // SourcesColumn, the only caller in the app, uses VirtualizedListAuto with
+  // no containerAs — and its one test asserted merely that a <tbody> existed,
+  // never that the nesting was valid, which is why it survived.
+  //
+  // In-table virtualization needs more than an element swap (the row wrappers
+  // are absolutely positioned, which table layout does not honour), so a real
+  // implementation should be designed against an actual table consumer rather
+  // than left as a broken stub. Removed rather than "fixed" blind.
 }
 
 export function VirtualizedList<T>({
@@ -55,7 +65,6 @@ export function VirtualizedList<T>({
   className,
   overscan = 5,
   getItemKey,
-  containerAs = 'div',
 }: VirtualizedListProps<T>) {
   'use no memo'
 
@@ -75,12 +84,10 @@ export function VirtualizedList<T>({
   const virtualItems = virtualizer.getVirtualItems()
   const totalSize = virtualizer.getTotalSize()
 
-  const Container = containerAs
-
   return (
     <div ref={parentRef} className={cn('overflow-auto', className)}>
-      <Container
-        role={containerAs === 'tbody' ? undefined : 'rowgroup'}
+      <div
+        role="rowgroup"
         style={{
           height: `${totalSize}px`,
           position: 'relative',
@@ -89,7 +96,7 @@ export function VirtualizedList<T>({
         {virtualItems.map((virtualRow) => (
           <div
             key={virtualRow.key}
-            role={containerAs === 'tbody' ? undefined : 'row'}
+            role="row"
             style={{
               position: 'absolute',
               top: 0,
@@ -102,7 +109,7 @@ export function VirtualizedList<T>({
             {renderItem(items[virtualRow.index], virtualRow.index)}
           </div>
         ))}
-      </Container>
+      </div>
     </div>
   )
 }

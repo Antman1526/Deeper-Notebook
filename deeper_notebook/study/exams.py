@@ -354,8 +354,23 @@ class StudyExamRepository:
         if notebook_id:
             where = "WHERE notebook_id = $notebook_id "
             vars["notebook_id"] = notebook_id
+        # `where` is either "" or the literal three lines up — a local, not a
+        # parameter — so this is safe by construction rather than by caller
+        # discipline. That distinction is the whole point of
+        # tests/test_v0_8_99_identifier_guards.py: the four sites that
+        # interpolated a *function parameter* needed real guards, because a
+        # comment asserting "callers only pass constants" is not a control.
+        # Here there is no caller to trust. notebook_id and the [1,100]-clamped
+        # limit both travel as $-bound vars.
+        #
+        # Tag is bare `# nosec B608` on purpose. The house form appends prose
+        # ("- constants/whitelisted identifiers; values bound"), which Bandit
+        # parses as further test IDs and rejects one word at a time
+        # ("Test in comment: constants is not a test name or id, ignoring").
+        # Suppression still works, so the existing tags are noisy rather than
+        # broken — but new ones need not add to it.
         result = await repo_query(
-            "SELECT * FROM study_exam_attempt "
+            "SELECT * FROM study_exam_attempt "  # nosec B608
             + where
             + "ORDER BY started_at DESC LIMIT $limit;",
             vars=vars,
