@@ -166,20 +166,18 @@ async def evaluate_model_config_health(
                     "Settings → API keys → set the base URL for that provider.",
                 )
 
-    # Auto-route is a distinct failure shape: nothing is *wrong* with the
-    # default, but the toggle promises routing it cannot perform. Since v0.8.100
-    # this degrades to the default instead of dying, so it is informational —
-    # the user should still be told the toggle is doing nothing.
-    if getattr(defaults, "auto_route_enabled", False) and not getattr(
-        defaults, "auto_route_cloud", None
-    ):
-        health.add(
-            "auto_route_without_cloud",
-            (
-                "Auto-route is on but no cloud model is configured for it, so every "
-                "turn uses the local default regardless."
-            ),
-            "Settings → Models → set an auto-route cloud model, or turn auto-route off.",
-        )
+    # NOT REPORTED: auto-route enabled with no cloud model.
+    #
+    # v0.8.105 removed that check, which v0.8.104 got wrong. It called
+    # health.add(), which sets ok=False, so the runtime snapshot went "degraded"
+    # and the status panel raised an alert for a configuration that is not only
+    # valid but is the EXPECTED one here: this product's governing constraint is
+    # that everything works with the network cable unplugged, so a local-only
+    # install having no cloud model is the default case, not a fault.
+    #
+    # Since v0.8.100 auto-route degrades cleanly to the configured default in
+    # exactly this situation, so nothing is broken and nothing needs fixing. A
+    # panel that cries degraded at a correct setup trains people to ignore it,
+    # which costs more than the note was ever worth.
 
     return health

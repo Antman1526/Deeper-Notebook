@@ -99,12 +99,25 @@ async def test_cloud_provider_without_a_base_url_is_not_an_issue():
 
 
 @pytest.mark.asyncio
-async def test_auto_route_without_a_cloud_model_is_reported_as_a_no_op():
-    """Post-v0.8.100 this degrades instead of dying — but it still misleads."""
+async def test_local_only_auto_route_is_not_treated_as_a_fault():
+    """v0.8.105 — the inverse of what v0.8.104 asserted, deliberately.
+
+    v0.8.104 flagged "auto-route on, no cloud model" as an issue. Because
+    health.add() sets ok=False, that pushed the whole runtime snapshot to
+    "degraded" and raised an alert in the status panel for a configuration that
+    is not merely valid but is the EXPECTED one: this product's governing
+    constraint is that it works with the network cable unplugged, so a
+    local-only install has no cloud model by design.
+
+    Since v0.8.100 auto-route degrades cleanly to the configured default here,
+    so nothing is broken. A panel that cries degraded at a correct setup trains
+    people to ignore it — which costs more than the note was worth.
+    """
     health = await _evaluate(
         _defaults(auto_route_enabled=True), _model(), _credential()
     )
-    assert "auto_route_without_cloud" in [i.code for i in health.issues]
+    assert health.ok
+    assert health.issues == []
 
 
 @pytest.mark.asyncio

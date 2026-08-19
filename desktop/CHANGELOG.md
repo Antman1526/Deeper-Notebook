@@ -25,6 +25,31 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.105 — 2026-08-19 — The health check cried wolf at a correct setup
+
+🐛 **Removed `auto_route_without_cloud`, added one release earlier.** It called
+`health.add()`, which sets `ok=False`, so "auto-route enabled with no cloud
+model" pushed the whole runtime snapshot to **degraded** and raised an alert in
+the status panel — for a configuration that is not merely valid but is the
+expected one. This product's governing constraint is that everything works with
+the network cable unplugged; a local-only install having no cloud model is the
+default case, not a fault.
+
+Since v0.8.100 auto-route degrades cleanly to the configured default in exactly
+that situation, so nothing is broken and nothing needs fixing. A panel that
+cries degraded at a correct setup trains people to ignore it, which costs more
+than the note was ever worth — and the entire point of v0.8.104 was to make that
+panel worth reading.
+
+The test is inverted rather than deleted: it now pins that a local-only
+auto-route install reports healthy, so this cannot regress quietly.
+
+- **v0.8.105** 🐛 **The model-config health check flagged a correct local-only
+  setup as degraded.** `auto_route_without_cloud` (added in v0.8.104) marked the
+  runtime unhealthy for an install with no cloud model — the expected shape for
+  a local-first product. Removed; the test is inverted to pin healthy.
+
+
 ## v0.8.104 — 2026-08-19 — Broken model configuration now says so
 
 `get_default_model` has logged "the configured model_id may have been deleted or
