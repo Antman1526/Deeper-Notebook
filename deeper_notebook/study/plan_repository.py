@@ -227,7 +227,7 @@ def _guard_plan_sql(
         checks = " AND ".join(f'$plan_guard.state != "{state}"' for state in states)
         state_guard = f'IF {checks} {{ THROW "study_plan_state_guard_failed"; }}; '
     return (
-        "LET $plan_guard = (SELECT id, revision, state FROM $plan WHERE "  # nosec B608 - constants/whitelisted identifiers; values bound
+        "LET $plan_guard = (SELECT id, revision, state FROM $plan WHERE "  # nosec B608
         f"{predicate})[0]; IF $plan_guard = NONE {{ "
         'THROW "study_plan_guard_failed"; }; '
         + state_guard
@@ -442,7 +442,7 @@ class StudyPlanRepository:
         try:
             record = _record_id(plan_id, "study_plan")
             rows = await repo_query(
-                f"SELECT {_PLAN_PROJECTION} FROM $plan;",  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_PLAN_PROJECTION} FROM $plan;",  # nosec B608
                 {"plan": record},
             )
             row = _record_or_none(rows, kind="plan")
@@ -467,13 +467,13 @@ class StudyPlanRepository:
                 if isinstance(version, bool) or not isinstance(version, int) or version < 1:
                     raise StudyPlanRepositoryError("invalid syllabus version")
                 syllabus_rows = await repo_query(
-                    f"SELECT {_SYLLABUS_PROJECTION} FROM study_syllabus "  # nosec B608 - constants/whitelisted identifiers; values bound
+                    f"SELECT {_SYLLABUS_PROJECTION} FROM study_syllabus "  # nosec B608
                     "WHERE plan_id = $plan_id AND version = $version LIMIT 1;",
                     {"plan_id": canonical_plan_id, "version": version},
                 )
             else:
                 syllabus_rows = await repo_query(
-                    f"SELECT {_SYLLABUS_PROJECTION} FROM study_syllabus "  # nosec B608 - constants/whitelisted identifiers; values bound
+                    f"SELECT {_SYLLABUS_PROJECTION} FROM study_syllabus "  # nosec B608
                     "WHERE plan_id = $plan_id ORDER BY version DESC LIMIT 1;",
                     {"plan_id": canonical_plan_id},
                 )
@@ -484,7 +484,7 @@ class StudyPlanRepository:
             if isinstance(syllabus_version, bool) or not isinstance(syllabus_version, int):
                 raise StudyPlanRepositoryError("invalid persisted study syllabus")
             unit_rows = await repo_query(
-                f"SELECT {_UNIT_PROJECTION} FROM study_unit "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_UNIT_PROJECTION} FROM study_unit "  # nosec B608
                 "WHERE type::string(plan_id) = $plan_id AND syllabus_version = $version "
                 "ORDER BY position ASC LIMIT 64;",
                 {"plan_id": canonical_plan_id, "version": syllabus_version},
@@ -624,7 +624,7 @@ class StudyPlanRepository:
         page_limit, page_offset = _bounded_page(limit, offset)
         try:
             rows = await repo_query(
-                f"SELECT {_PLAN_PROJECTION} FROM study_plan "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_PLAN_PROJECTION} FROM study_plan "  # nosec B608
                 "ORDER BY updated_at DESC LIMIT $limit START $offset;",
                 {"limit": page_limit, "offset": page_offset},
             )
@@ -735,7 +735,7 @@ class StudyPlanRepository:
             transaction = (
                 "BEGIN TRANSACTION; "
                 + _guard_plan_sql(expected_revision)
-                + "CREATE $link CONTENT $link_data; "  # nosec B608 - constants/whitelisted identifiers; values bound
+                + "CREATE $link CONTENT $link_data; "  # nosec B608
                 "LET $updated_plan = (UPDATE $plan SET source_links = "
                 "array::distinct(array::append(source_links, $source_id)), "
                 'state = IF state = "draft" THEN "analyzing_sources" ELSE state END, '
@@ -784,7 +784,7 @@ class StudyPlanRepository:
             await repo_query(
                 "BEGIN TRANSACTION; "
                 + _guard_plan_sql(expected_revision)
-                + "LET $link_guard = (SELECT id FROM study_plan_source "  # nosec B608 - constants/whitelisted identifiers; values bound
+                + "LET $link_guard = (SELECT id FROM study_plan_source "  # nosec B608
                 "WHERE plan_id = $plan_id AND source_id = $source_id)[0]; "
                 "IF $link_guard != NONE { "
                 "DELETE study_plan_source WHERE plan_id = $plan_id AND source_id = $source_id; "
@@ -912,9 +912,9 @@ class StudyPlanRepository:
                 f"study_syllabus:{_stable_record_token(plan_id, str(syllabus_version))}"
             )
             await repo_query(
-                "BEGIN TRANSACTION; "  # nosec B608 - constants/whitelisted identifiers; values bound
+                "BEGIN TRANSACTION; "  # nosec B608
                 + _guard_plan_sql(expected_revision, expected_state="editing")
-                + "LET $syllabus_guard = (SELECT id, plan_id, version, source_manifest_sha256 FROM $syllabus "  # nosec B608 - constants/whitelisted identifiers; values bound
+                + "LET $syllabus_guard = (SELECT id, plan_id, version, source_manifest_sha256 FROM $syllabus "  # nosec B608
                 "WHERE id = $syllabus AND plan_id = $plan_id AND version = $version)[0]; "
                 'IF $syllabus_guard = NONE { THROW "study_syllabus_guard_failed"; }; '
                 "UPDATE $syllabus SET approved_at = time::now() WHERE id = $syllabus; "

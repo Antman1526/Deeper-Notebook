@@ -4,7 +4,7 @@
 SurrealQL. Every caller today passes a member of ALL_MEMORY_TABLES, so it is
 safe *by convention* — but the repository's SurrealQL contract requires
 identifiers be whitelist-validated *by construction*, and the line carries a
-`# nosec B608` asserting exactly that. This suite makes the assertion true:
+a B608 suppression asserting exactly that. This suite makes it true:
 a non-whitelisted identifier must be refused before it can reach a query
 string, so the tag stops being a promise and becomes an enforced invariant.
 """

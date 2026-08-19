@@ -491,7 +491,7 @@ class StudyAssistantRepository:
 
         try:
             existing = await repo_query(
-                    f"SELECT {_SESSION_PROJECTION} FROM study_assistant_session "  # nosec B608 - constants/whitelisted identifiers; values bound
+                    f"SELECT {_SESSION_PROJECTION} FROM study_assistant_session "  # nosec B608
                     "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
                 {"plan_id": plan_value, "request_id": request_id},
             )
@@ -514,7 +514,7 @@ class StudyAssistantRepository:
         except Exception as exc:
             try:
                 replay = await repo_query(
-                    f"SELECT {_SESSION_PROJECTION} FROM study_assistant_session "  # nosec B608 - constants/whitelisted identifiers; values bound
+                    f"SELECT {_SESSION_PROJECTION} FROM study_assistant_session "  # nosec B608
                     "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
                     {"plan_id": plan_value, "request_id": request_id},
                 )
@@ -534,7 +534,7 @@ class StudyAssistantRepository:
         record = _table_record(session_id, "study_assistant_session")
         try:
             rows = await repo_query(
-                f"SELECT {_SESSION_PROJECTION} FROM $assistant_session LIMIT 1;",  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_SESSION_PROJECTION} FROM $assistant_session LIMIT 1;",  # nosec B608
                 {"assistant_session": record},
             )
             row = _one_or_none(rows, kind="assistant session")
@@ -588,7 +588,7 @@ class StudyAssistantRepository:
                         "assistant session is already running"
                     )
                 replay = await repo_query(
-                    f"SELECT {_SESSION_PROJECTION} FROM $assistant_session LIMIT 1;",  # nosec B608 - constants/whitelisted identifiers; values bound
+                    f"SELECT {_SESSION_PROJECTION} FROM $assistant_session LIMIT 1;",  # nosec B608
                     {"assistant_session": record},
                 )
                 current = _session_from(replay) if replay else None
@@ -756,7 +756,7 @@ class StudyAssistantRepository:
             "AND (preferences.approved_network_scope ?? []) = $network_scope)[0]; "
             "LET $authority_syllabus = (SELECT id FROM study_syllabus "
             "WHERE plan_id = $plan_id AND version = $syllabus_version "
-            # Surreal stores datetimes at nanosecond precision, while the
+            # Surreal stores datetimes at ns precision, while the
             # Python driver decodes/binds datetimes at microsecond precision.
             # Compare the canonical microsecond value without relaxing any
             # other authority predicate.
@@ -791,11 +791,11 @@ class StudyAssistantRepository:
             StudyAssistantSession, StudyAssistantHandoff
         ] | None:
             session_rows = await repo_query(
-                f"SELECT {_SESSION_PROJECTION} FROM $assistant_session LIMIT 1;",  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_SESSION_PROJECTION} FROM $assistant_session LIMIT 1;",  # nosec B608
                 {"assistant_session": session_record},
             )
             handoff_rows = await repo_query(
-                f"SELECT {_HANDOFF_PROJECTION} FROM $assistant_handoff LIMIT 1;",  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_HANDOFF_PROJECTION} FROM $assistant_handoff LIMIT 1;",  # nosec B608
                 {"assistant_handoff": handoff_record},
             )
             if not session_rows or not handoff_rows:
@@ -929,7 +929,7 @@ class StudyAssistantRepository:
 
         try:
             existing = await repo_query(
-                f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "  # nosec B608
                 "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
                 {"plan_id": str(plan_id), "request_id": request_id},
             )
@@ -952,7 +952,7 @@ class StudyAssistantRepository:
         except Exception as exc:
             try:
                 replay = await repo_query(
-                    f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "  # nosec B608 - constants/whitelisted identifiers; values bound
+                    f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "  # nosec B608
                     "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
                     {"plan_id": plan_value, "request_id": request_id},
                 )
@@ -972,7 +972,7 @@ class StudyAssistantRepository:
         record = _table_record(handoff_id, "study_assistant_handoff")
         try:
             rows = await repo_query(
-                f"SELECT {_HANDOFF_PROJECTION} FROM $assistant_handoff LIMIT 1;",  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_HANDOFF_PROJECTION} FROM $assistant_handoff LIMIT 1;",  # nosec B608
                 {"assistant_handoff": record},
             )
             row = _one_or_none(rows, kind="assistant handoff")
@@ -996,7 +996,7 @@ class StudyAssistantRepository:
         plan_value = _record_value(plan_id, plan)
         try:
             rows = await repo_query(
-                f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "  # nosec B608
                 "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
                 {"plan_id": plan_value, "request_id": request_id},
             )
@@ -1022,7 +1022,7 @@ class StudyAssistantRepository:
         plan_value = _record_value(plan_id, plan)
         try:
             rows = await repo_query(
-                f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_HANDOFF_PROJECTION} FROM study_assistant_handoff "  # nosec B608
                 "WHERE plan_id = $plan_id ORDER BY created_at DESC LIMIT $limit START $offset;",
                 {"plan_id": plan_value, "limit": page_limit, "offset": page_offset},
             )
@@ -1075,7 +1075,7 @@ class StudyAssistantRepository:
 
         async def replay_current() -> StudyPlanMemory | None:
             replay = await repo_query(
-                f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory "  # nosec B608
                 "WHERE plan_id = $plan_id AND memory_key = $memory_key LIMIT 1;",
                 {"plan_id": plan_value, "memory_key": memory.memory_key},
             )
@@ -1089,7 +1089,7 @@ class StudyAssistantRepository:
 
         try:
             existing = await repo_query(
-                f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory "  # nosec B608
                 "WHERE plan_id = $plan_id AND memory_key = $memory_key LIMIT 1;",
                 {"plan_id": plan_value, "memory_key": memory.memory_key},
             )
@@ -1154,7 +1154,7 @@ class StudyAssistantRepository:
             raise StudyAssistantRepositoryError("invalid memory key")
         try:
             rows = await repo_query(
-                f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory "  # nosec B608
                 "WHERE plan_id = $plan_id AND memory_key = $memory_key LIMIT 1;",
                 {"plan_id": plan_value, "memory_key": memory_key},
             )
@@ -1189,7 +1189,7 @@ class StudyAssistantRepository:
             params["status"] = status
         try:
             rows = await repo_query(
-                f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory WHERE plan_id = $plan_id"  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_MEMORY_PROJECTION} FROM study_plan_memory WHERE plan_id = $plan_id"  # nosec B608
                 f"{where} ORDER BY updated_at DESC LIMIT $limit START $offset;",
                 params,
             )
@@ -1234,7 +1234,7 @@ class StudyAssistantRepository:
         payload["plan_id"] = receipt.plan_id
         try:
             existing = await repo_query(
-                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "  # nosec B608
                 "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
                 {"plan_id": plan_value, "request_id": receipt.request_id},
             )
@@ -1260,7 +1260,7 @@ class StudyAssistantRepository:
             # typed idempotency conflict; do not report it as an outage.
             try:
                 replay_rows = await repo_query(
-                    f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "  # nosec B608 - constants/whitelisted identifiers; values bound
+                    f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "  # nosec B608
                     "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
                     {"plan_id": plan_value, "request_id": receipt.request_id},
                 )
@@ -1292,7 +1292,7 @@ class StudyAssistantRepository:
         plan_value = _record_value(plan_id, plan)
         try:
             rows = await repo_query(
-                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress WHERE plan_id = $plan_id "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress WHERE plan_id = $plan_id "  # nosec B608
                 "ORDER BY created_at DESC LIMIT $limit START $offset;",
                 {"plan_id": plan_value, "limit": page_limit, "offset": page_offset},
             )
@@ -1318,7 +1318,7 @@ class StudyAssistantRepository:
             raise StudyAssistantRepositoryError("invalid progress request ID")
         try:
             rows = await repo_query(
-                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "  # nosec B608
                 "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
                 {"plan_id": plan_value, "request_id": request_id},
             )
@@ -1363,7 +1363,7 @@ class StudyAssistantRepository:
         plan_value = _record_value(plan_id, plan)
         try:
             rows = await repo_query(
-                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_PROGRESS_PROJECTION} FROM study_progress "  # nosec B608
                 "WHERE plan_id = $plan_id AND request_id IN $request_ids "
                 "ORDER BY created_at DESC LIMIT $limit;",
                 {

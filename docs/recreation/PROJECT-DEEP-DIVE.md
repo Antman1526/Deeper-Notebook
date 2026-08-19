@@ -394,6 +394,32 @@ APFS read latency degrading near capacity is the far more likely cause. Freeing 
 volume, not moving files off iCloud, is the applicable fix. The shell opens before the model
 is ready (`wait_for_ready=False`), which mitigates perception but not cost.
 
+### 4.6a React `act()` warnings — diagnosed, deliberately not fixed
+
+~100 warnings across 15+ components. Every test passes; these are noise, not
+defects. Grouped by emitting component (2026-08-19):
+
+    GuidedTipsProvider 16 · Tooltip 13 · ThemeProvider 12 · KnowledgeExplorer 12
+    ThemeSwitcher 5 · StudyProgressPanel 4 · SourcesColumn 4 · Presence 4 · …
+
+There is no single root cause — at least three:
+
+1. **`MutationObserver` state updates.** `GuidedTipsProvider` repositions its
+   callout from a `MutationObserver` callback, which fires in a microtask
+   outside React's `act()` scope. The component is behaving correctly; the test
+   simply cannot wrap a mutation it did not cause.
+2. **Radix internals.** `Tooltip`, `PopperContent` and `Presence` (20 warnings)
+   are third-party async state driven by hover/focus. Silencing them means
+   changing how tests drive tooltips, not fixing our code.
+3. **Assorted unawaited async state** in the remaining components — genuinely
+   per-test work.
+
+Not done on purpose. Quieting these means editing ~25 currently-passing test
+files across three unrelated causes, immediately after v0.8.102 root-caused and
+fixed this suite's non-determinism. Trading real flake risk in a suite that was
+just made deterministic for quieter console output is a bad exchange. Worth
+doing per-cluster, deliberately, when someone is already working in that area.
+
 ### 4.6 Five near-identical tool-binding blocks
 See §2.1.
 

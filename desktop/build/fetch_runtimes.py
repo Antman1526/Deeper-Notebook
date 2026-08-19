@@ -115,7 +115,7 @@ def download(url: str, dest: Path, expected_sha256: str | None = None) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     staging = dest.with_name(f".{dest.name}.{secrets.token_hex(8)}.part")
     try:
-        with urllib.request.urlopen(  # nosec B310 - HTTPS validated above
+        with urllib.request.urlopen(  # nosec B310
             url, timeout=DOWNLOAD_SOCKET_TIMEOUT_SECONDS
         ) as r, staging.open("wb") as f:
             shutil.copyfileobj(r, f)
@@ -189,7 +189,7 @@ def fetch_surreal(
                 _validate_tar_members(
                     t, expected_root="surreal", exact_members={"surreal"}
                 )
-                t.extract(  # nosec B202 - validated above
+                t.extract(  # nosec B202
                     "surreal", path=staging_dir, filter="data"
                 )
             (staging_dir / "surreal").replace(target)
@@ -215,13 +215,13 @@ def fetch_node(
             with zipfile.ZipFile(archive) as z:
                 root = _node_root(version, arch)
                 _validate_zip_members(z.infolist(), expected_root=root)
-                z.extractall(staging_dir)  # nosec B202 - validated above
+                z.extractall(staging_dir)  # nosec B202
         else:
             download(url, archive, expected_sha256)
             with tarfile.open(archive) as t:
                 root = _node_root(version, arch)
                 _validate_tar_members(t, expected_root=root)
-                t.extractall(staging_dir, filter="data")  # nosec B202 - validated above
+                t.extractall(staging_dir, filter="data")  # nosec B202
         _replace_runtime_tree(staging_dir / root, out_dir)
     finally:
         archive.unlink(missing_ok=True)

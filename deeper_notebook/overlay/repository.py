@@ -175,7 +175,7 @@ class OverlayRepository:
                     )[0]
                 }};
                 COMMIT TRANSACTION;
-                """,  # nosec B608 - constants/whitelisted identifiers; values bound
+                """,  # nosec B608
                 {
                     "space_id": _db_id(space_id),
                     "space": {
@@ -202,7 +202,7 @@ class OverlayRepository:
                 SELECT {_OVERLAY_NOTE_FIELDS} FROM overlay_note
                 WHERE space_id = $space_id AND date_key = $date_key
                 LIMIT 1;
-                """,  # nosec B608 - constants/whitelisted identifiers; values bound
+                """,  # nosec B608
                 {
                     "space_id": _db_id("overlay_space:default"),
                     "date_key": validated_date,
@@ -214,7 +214,7 @@ class OverlayRepository:
         async with self._connection_factory() as connection:
             rows = await self._query(
                 connection,
-                f"SELECT {_OVERLAY_NOTE_FIELDS} FROM $note_id LIMIT 1;",  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_OVERLAY_NOTE_FIELDS} FROM $note_id LIMIT 1;",  # nosec B608
                 {"note_id": _overlay_note_db_id(note_id)},
             )
         if not rows:
@@ -243,7 +243,7 @@ class OverlayRepository:
                 WHERE space_id = $space_id
                 ORDER BY updated_at DESC, id
                 LIMIT $limit START $offset;
-                """,  # nosec B608 - constants/whitelisted identifiers; values bound
+                """,  # nosec B608
                 {
                     "space_id": _db_id("overlay_space:default"),
                     "limit": limit,
@@ -475,7 +475,7 @@ class OverlayRepository:
             receipt: $reserved_receipt
         };
         COMMIT TRANSACTION;
-        """  # nosec B608 - constants/whitelisted identifiers; values bound
+        """  # nosec B608
             .replace("__OVERLAY_NOTE_FIELDS__", _OVERLAY_NOTE_FIELDS)
             .replace("__OVERLAY_RECEIPT_FIELDS__", _OVERLAY_RECEIPT_FIELDS)
         )
@@ -779,7 +779,7 @@ class OverlayRepository:
             receipt: $reserved_receipt
         };
         COMMIT TRANSACTION;
-        """  # nosec B608 - constants/whitelisted identifiers; values bound
+        """  # nosec B608
             .replace("__OVERLAY_NOTE_FIELDS__", _OVERLAY_NOTE_FIELDS)
             .replace("__OVERLAY_RECEIPT_FIELDS__", _OVERLAY_RECEIPT_FIELDS)
         )
@@ -952,7 +952,7 @@ class OverlayRepository:
                 AND ($create_valid OR $update_valid)
             );
             IF $valid {
-            """  # nosec B608 - constants/whitelisted identifiers; values bound
+            """  # nosec B608
             + projection_mutation
             + """
                 UPSERT $overlay_note_id MERGE $overlay_note;
@@ -980,7 +980,7 @@ class OverlayRepository:
                 )[0]
             };
             COMMIT TRANSACTION;
-            """  # nosec B608 - constants/whitelisted identifiers; values bound
+            """  # nosec B608
         )
 
     async def record_failure(
@@ -1061,7 +1061,7 @@ class OverlayRepository:
                 FROM overlay_mutation_receipt
                 WHERE operation_id = $operation_id
                 LIMIT 1;
-                """,  # nosec B608 - constants/whitelisted identifiers; values bound
+                """,  # nosec B608
                 {"operation_id": reservation.operation_id},
             )
         return OverlayMutationReceipt.model_validate(rows[0]) if rows else None

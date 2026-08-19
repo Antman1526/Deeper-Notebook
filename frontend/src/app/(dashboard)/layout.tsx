@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useVersionCheck } from '@/lib/hooks/use-version-check'
+import { useRuntimeFeatures } from '@/lib/hooks/use-runtime-features'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
@@ -21,6 +22,12 @@ export default function DashboardLayout({
 
   // Check for version updates once per session
   useVersionCheck()
+
+  // v0.8.107 — adopt backend feature state over the build-time inlined flags,
+  // so a packaged build can be told a feature was rolled back instead of
+  // rendering dead controls for it. Fail-soft: the inlined value stands until
+  // (and unless) the backend answers.
+  useRuntimeFeatures()
 
   useEffect(() => {
     // Mark that we've completed the initial auth check

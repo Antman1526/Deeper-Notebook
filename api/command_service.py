@@ -168,7 +168,7 @@ class CommandService:
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         try:
             rows = await repo_query(
-                f"SELECT id, app, name, status, error_message, created, updated "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT id, app, name, status, error_message, created, updated "  # nosec B608
                 f"FROM command{where} "
                 f"ORDER BY created DESC LIMIT $limit",
                 params,
@@ -286,13 +286,13 @@ class CommandService:
 
 
                 # v0.8.87 (B608) — parse before interpolating: RecordID.parse
-                # rejects anything that is not a well-formed record id, so a  # nosec B608 - constants/whitelisted identifiers; values bound
+                # rejects anything that is not a well-formed record id, so a  # nosec B608
                 # hostile job_id cannot smuggle SurrealQL into the UPDATE.
                 record_id = ensure_record_id(
                     job_id if job_id.startswith("command:") else f"command:{job_id}"
                 )
                 await repo_query(
-                    f"UPDATE {record_id} "  # nosec B608 - constants/whitelisted identifiers; values bound
+                    f"UPDATE {record_id} "  # nosec B608
                     "SET status = 'canceled', "
                     "    result = {}, "
                     "    error_message = $msg, "

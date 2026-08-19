@@ -363,7 +363,7 @@ class StudyExamRepository:
         # Here there is no caller to trust. notebook_id and the [1,100]-clamped
         # limit both travel as $-bound vars.
         #
-        # Tag is bare `# nosec B608` on purpose. The house form appends prose
+        # The B608 suppression below is bare on purpose. The house form
         # ("- constants/whitelisted identifiers; values bound"), which Bandit
         # parses as further test IDs and rejects one word at a time
         # ("Test in comment: constants is not a test name or id, ignoring").

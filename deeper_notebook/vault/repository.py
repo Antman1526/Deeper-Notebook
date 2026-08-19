@@ -1040,7 +1040,7 @@ class VaultRepository:
                 )
             );
             IF $valid_overlay {
-            """  # nosec B608 - constants/whitelisted identifiers; values bound
+            """  # nosec B608
             + mutation_statement
             + """
             };
@@ -1096,7 +1096,7 @@ class VaultRepository:
                 page: $page
             };
             COMMIT TRANSACTION;
-            """  # nosec B608 - constants/whitelisted identifiers; values bound
+            """  # nosec B608
         )
 
     async def _submit_embedding_after_commit(
@@ -2044,7 +2044,7 @@ class VaultRepository:
                     SELECT VALUE id FROM note WHERE vault_id = $vault_id
                 )
             );
-            """,  # nosec B608 - constants/whitelisted identifiers; values bound
+            """,  # nosec B608
             {"note_id": _db_id(note_id), "vault_id": _db_id(vault_id)},
         )
         return [
@@ -2335,7 +2335,7 @@ class VaultRepository:
             statements.extend(
                 [
                     (
-                        f"LET ${prior_name} = (SELECT * FROM vault_trust_record "  # nosec B608 - constants/whitelisted identifiers; values bound
+                        f"LET ${prior_name} = (SELECT * FROM vault_trust_record "  # nosec B608
                         f"WHERE vault_id = $vault_id "
                         f"AND manifest_relative_path = $manifest_relative_path "
                         f"AND manifest_id = $manifest_id_{suffix} LIMIT 1)[0];"

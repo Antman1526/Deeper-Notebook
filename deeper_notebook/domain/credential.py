@@ -137,7 +137,7 @@ class Credential(ObjectModel):
         """Override get_all() to handle api_key decryption with per-row error handling."""
         order_clause = f" ORDER BY {order_by}" if order_by else ""
         results = await repo_query(
-            f"SELECT * FROM {cls.table_name}{order_clause}",  # nosec B608 - constants/whitelisted identifiers; values bound
+            f"SELECT * FROM {cls.table_name}{order_clause}",  # nosec B608
             {},
         )
         credentials = []

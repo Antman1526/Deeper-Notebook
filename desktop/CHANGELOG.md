@@ -25,6 +25,68 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.107 — 2026-08-19 — Quiet Bandit, and a packaged build that can be rolled back
+
+🛠 **86 `# nosec` tags stripped of prose.** Bandit parses everything after
+`nosec` as a comma/space separated list of test IDs, so
+`# nosec B608 - constants/whitelisted identifiers; values bound` was read as
+five bogus IDs and rejected one at a time. Suppression still worked — these were
+noise — but the noise buried the warnings that matter.
+
+Truncated IN PLACE, never moved to a preceding line: adding lines shifts every
+pinned line below it and detonates the rebrand-allowlist ratchet. The prose is
+not lost information; v0.8.99 established that exactly this claim is not a
+control when it lives in a comment, and the real enforcement is
+`_validate_vector_id`, `ensure_record_id`, the table/order-by allowlists, and
+`tests/test_v0_8_99_identifier_guards.py`.
+
+Also reworded six comments that merely *mentioned* the tag — including two
+containing the word **"nanoseconds"**, which contains the literal token
+(na-**nosec**-onds) and made Bandit parse the following prose as test IDs.
+Parse warnings: 101 → **0**, with B608 still at 0 and the four triaged residuals
+unchanged.
+
+✨ **`GET /api/features` — runtime feature state.** Frontend flags are
+`NEXT_PUBLIC_*`, which Next INLINES at build time, so a packaged .app has its UI
+feature set frozen in the bundle: turning a feature off server-side left its
+controls rendered and dead (§4.3; this produced the dead Refresh/Remove buttons
+in the source gallery, patched for that one surface in v0.8.86 without
+addressing the cause).
+
+Six frontend flags already had a backend predicate in
+`deeper_notebook/feature_flags.py` that is the real authority. The endpoint
+publishes them; `applyRuntimeFeatures` in `frontend/src/lib/features.ts` adopts
+them over the inlined defaults, and `useRuntimeFeatures` fetches once per
+session from the dashboard layout.
+
+Fail-soft by construction: the inlined value stays the DEFAULT, so an
+unreachable endpoint, a backend predating this, or a malformed payload all leave
+behaviour exactly as today. Only booleans are adopted — a truthy string would
+silently re-enable a rolled-back feature, which is the precise failure this
+prevents. A separate endpoint rather than a key on `/api/config`, because that
+one performs a GitHub update check and feature resolution must not inherit its
+latency or its failure modes.
+
+🔍 **React `act()` warnings: diagnosed, deliberately not fixed.** ~100 warnings
+across 15+ components with at least three unrelated causes — a
+`MutationObserver` in `GuidedTipsProvider`, Radix internals in
+`Tooltip`/`Popper`/`Presence` (20), and assorted unawaited async state. Every
+test passes; these are noise. Editing ~25 currently-passing test files
+immediately after v0.8.102 made this suite deterministic is a bad trade, and the
+grouping is recorded in §4.6a so it can be done per-cluster when someone is
+already in that area.
+
+- **v0.8.107** 🛠 **86 `# nosec` tags stripped of prose** that Bandit parsed as
+  bogus test IDs (including two comments containing "nanoseconds", which hides
+  the literal token). Parse warnings 101 → 0; B608 still 0.
+- **v0.8.107** ✨ **`GET /api/features`** publishes backend-authoritative flag
+  state so a packaged build can be told a feature was rolled back instead of
+  rendering dead controls. Fail-soft: the build-time inlined value remains the
+  default.
+- **v0.8.107** 🔍 **`act()` warnings diagnosed and deliberately deferred** —
+  three unrelated causes, ~25 passing test files, recorded in §4.6a.
+
+
 ## v0.8.105 — 2026-08-19 — The health check cried wolf at a correct setup
 
 🐛 **Removed `auto_route_without_cloud`, added one release earlier.** It called

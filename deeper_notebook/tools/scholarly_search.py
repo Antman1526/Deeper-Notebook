@@ -180,7 +180,7 @@ def parse_arxiv_atom(xml_text: str, n: int) -> list[dict]:
         logger.warning("arxiv feed exceeded {} bytes; discarded", _MAX_ARXIV_BYTES)
         return []
     try:
-        root = ElementTree.fromstring(xml_text or "")  # nosec B314 - bounded, no entity resolution
+        root = ElementTree.fromstring(xml_text or "")  # nosec B314
     except ElementTree.ParseError as exc:
         logger.debug("arxiv atom parse failed: {}", exc)
         return []

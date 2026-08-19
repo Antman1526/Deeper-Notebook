@@ -343,7 +343,7 @@ class Notebook(ObjectModel):
                     fetch chat_session
                 )
                 order by chat_session.updated desc{tail}
-            """,  # nosec B608 - constants/whitelisted identifiers; values bound
+            """,  # nosec B608
                 {"id": ensure_record_id(self.id)},
             )
             return (

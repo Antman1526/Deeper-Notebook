@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  applyRuntimeFeatures,
+  resetRuntimeFeatures,
   isEvidenceStudioEnabled,
   isLuminousFolioEnabled,
   isModelFleetEnabled,
@@ -126,4 +128,49 @@ describe('frontend feature flags', () => {
     expect(isResearchRunsEnabled()).toBe(true)
   })
 
+})
+
+// v0.8.107 — runtime overrides for build-time flags.
+describe('runtime feature overrides', () => {
+  afterEach(() => {
+    resetRuntimeFeatures()
+  })
+
+  it('leaves the inlined default in place until a payload arrives', () => {
+    // The pre-fetch state must be today's behaviour exactly — otherwise every
+    // packaged build flickers its UI on boot.
+    resetRuntimeFeatures()
+    expect(isStudyWorkbenchEnabled()).toBe(true)
+  })
+
+  it('adopts the backend answer over the inlined default', () => {
+    applyRuntimeFeatures({ studyWorkbench: false })
+    expect(isStudyWorkbenchEnabled()).toBe(false)
+  })
+
+  it('can also turn a feature ON that the build defaulted off', () => {
+    expect(isSourceVisualsEnabled()).toBe(false)
+    applyRuntimeFeatures({ sourceVisuals: true })
+    expect(isSourceVisualsEnabled()).toBe(true)
+  })
+
+  it('ignores non-boolean values rather than coercing them', () => {
+    // A truthy string here would silently re-enable a rolled-back feature,
+    // which is the precise failure this layer exists to prevent.
+    applyRuntimeFeatures({ studyWorkbench: 'false', sourceVisuals: 'yes' })
+    expect(isStudyWorkbenchEnabled()).toBe(true)
+    expect(isSourceVisualsEnabled()).toBe(false)
+  })
+
+  it('ignores a malformed payload entirely', () => {
+    applyRuntimeFeatures(null)
+    applyRuntimeFeatures('nope')
+    expect(isStudyWorkbenchEnabled()).toBe(true)
+  })
+
+  it('only overrides the keys it was given', () => {
+    applyRuntimeFeatures({ sourceVisuals: true })
+    expect(isSourceVisualsEnabled()).toBe(true)
+    expect(isStudyWorkbenchEnabled()).toBe(true)
+  })
 })

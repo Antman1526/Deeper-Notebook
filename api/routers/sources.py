@@ -515,7 +515,7 @@ async def get_sources(
             if not notebook:
                 raise HTTPException(status_code=404, detail="Notebook not found")
 
-            # Query sources for specific notebook - include command field with FETCH  # nosec B608 - constants/whitelisted identifiers; values bound
+            # Query sources for specific notebook - include command field with FETCH  # nosec B608
             query = f"""
                 SELECT id, asset, created, title, updated, topics, provenance,
                 source_type, command,
@@ -528,7 +528,7 @@ async def get_sources(
                 {order_clause}
                 LIMIT $limit START $offset
                 FETCH command
-            """  # nosec B608 - constants/whitelisted identifiers; values bound
+            """  # nosec B608
             result = await repo_query(
                 query,
                 {
@@ -538,7 +538,7 @@ async def get_sources(
                 },
             )
         else:
-            # Query all sources - include command field with FETCH  # nosec B608 - constants/whitelisted identifiers; values bound
+            # Query all sources - include command field with FETCH  # nosec B608
             query = f"""
                 SELECT id, asset, created, title, updated, topics, provenance,
                 source_type, command,
@@ -551,7 +551,7 @@ async def get_sources(
                 {order_clause}
                 LIMIT $limit START $offset
                 FETCH command
-            """  # nosec B608 - constants/whitelisted identifiers; values bound
+            """  # nosec B608
             result = await repo_query(query, {"limit": limit, "offset": offset})
 
         # Convert result to response model

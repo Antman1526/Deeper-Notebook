@@ -158,7 +158,7 @@ def _receipt_from(value: object) -> AnkiCompatibilityReceipt | None:
 class AnkiImportRepository:
     async def _find_by_request(self, plan_id: str, request_id: str) -> AnkiCompatibilityReceipt | None:
         rows = await repo_query(
-            f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "  # nosec B608 - constants/whitelisted identifiers; values bound
+            f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "  # nosec B608
             "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
             {"plan_id": plan_id, "request_id": request_id},
         )
@@ -166,7 +166,7 @@ class AnkiImportRepository:
 
     async def _find_by_payload(self, plan_id: str, payload_sha256: str) -> AnkiCompatibilityReceipt | None:
         rows = await repo_query(
-            f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "  # nosec B608 - constants/whitelisted identifiers; values bound
+            f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "  # nosec B608
             "WHERE plan_id = $plan_id AND payload_sha256 = $payload_sha256 LIMIT 1;",
             {"plan_id": plan_id, "payload_sha256": payload_sha256},
         )
@@ -174,7 +174,7 @@ class AnkiImportRepository:
 
     async def find_by_receipt(self, plan_id: str, receipt_id: str) -> AnkiCompatibilityReceipt | None:
         rows = await repo_query(
-            f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "  # nosec B608 - constants/whitelisted identifiers; values bound
+            f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "  # nosec B608
             "WHERE plan_id = $plan_id AND receipt_id = $receipt_id LIMIT 1;",
             {"plan_id": plan_id, "receipt_id": receipt_id},
         )
@@ -309,7 +309,7 @@ class AnkiImportRepository:
                 }
                 fragments.extend(
                     [
-                        f"LET $card_guard_{index} = SELECT VALUE id FROM ONLY $card_record_{index}; ",  # nosec B608 - constants/whitelisted identifiers; values bound
+                        f"LET $card_guard_{index} = SELECT VALUE id FROM ONLY $card_record_{index}; ",  # nosec B608
                         f"IF $card_guard_{index} != NONE {{ THROW 'study_anki_card_conflict'; }}; ",
                         f"CREATE $card_record_{index} CONTENT $card_{index}; ",
                         f"CREATE study_plan_card CONTENT $link_{index}; ",

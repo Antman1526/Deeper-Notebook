@@ -97,10 +97,10 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
     runtime_dir.mkdir(parents=True, exist_ok=True)
     if tarball.name.endswith(".tar.gz"):
         with tarfile.open(tarball, "r:gz") as t:
-            t.extractall(runtime_dir, filter="data")  # nosec B202 - validated above
+            t.extractall(runtime_dir, filter="data")  # nosec B202
     else:
         with zipfile.ZipFile(tarball) as z:
-            z.extractall(runtime_dir)  # nosec B202 - validated above
+            z.extractall(runtime_dir)  # nosec B202
 
     if not is_win and interpreter.exists():
         interpreter.chmod(0o755)

@@ -138,7 +138,7 @@ async def get_notebooks(
             FROM notebook
             {where_clause}
             ORDER BY {validated_order_by}
-        """  # nosec B608 - constants/whitelisted identifiers; values bound
+        """  # nosec B608
 
         result = await repo_query(query, params if params else None)
 

@@ -173,3 +173,49 @@ async def get_config(request: Request):
         "dbStatus": db_status,
         "sourceUploadMaxBytes": _source_upload_max_bytes(),
     }
+
+
+# v0.8.107 — runtime feature state, so a packaged build can be rolled back.
+#
+# THE PROBLEM. Frontend flags are `NEXT_PUBLIC_*`, which Next.js INLINES at
+# build time. A packaged .app therefore has its UI feature set frozen in the
+# bundle: turning a feature off server-side leaves its buttons rendered and
+# dead, because the client never learns the backend stopped supporting it. That
+# is recorded as §4.3 in docs/recreation/PROJECT-DEEP-DIVE.md, and it is what
+# produced the dead Refresh/Remove controls in the source gallery — patched
+# there in v0.8.86 with a per-row capability sentinel, which fixed that one
+# surface without addressing the cause.
+#
+# THE FIX. Six of the frontend flags already have a backend predicate in
+# deeper_notebook/feature_flags.py that is the real authority. Publish those,
+# and let the client prefer them over its inlined defaults (see
+# frontend/src/lib/features.ts).
+#
+# Deliberately a SEPARATE endpoint rather than a key on /api/config: /api/config
+# performs a GitHub update check, so it is comparatively slow and occasionally
+# fails, and feature resolution must not inherit either property. This one is
+# pure local env reads.
+@router.get("/features")
+async def get_features() -> dict[str, dict[str, bool]]:
+    """Return backend-authoritative feature state. No I/O beyond env reads."""
+    from deeper_notebook.feature_flags import (
+        evidence_studio_enabled,
+        model_fleet_enabled,
+        onp_visual_refresh_enabled,
+        research_runs_enabled,
+        source_visuals_enabled,
+        study_workbench_enabled,
+    )
+
+    # Keys match the frontend helper names so the mapping is checkable by eye
+    # and by tests/test_v0_8_107_runtime_features.py.
+    return {
+        "features": {
+            "evidenceStudio": evidence_studio_enabled(),
+            "visualRefresh": onp_visual_refresh_enabled(),
+            "modelFleet": model_fleet_enabled(),
+            "researchRuns": research_runs_enabled(),
+            "studyWorkbench": study_workbench_enabled(),
+            "sourceVisuals": source_visuals_enabled(),
+        }
+    }

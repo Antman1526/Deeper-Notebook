@@ -241,14 +241,14 @@ async def recall_relevant_memory(
     # is enforced (preferences are more authoritative than facts —
     # don't let one dominate the other).
     facts = await _safe_select(
-        f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608 - constants/whitelisted identifiers; values bound
+        f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608
         f"FROM memory_fact "
         f"WHERE embedding <|{_MAX_FACTS}|> $q "
         f"ORDER BY score DESC LIMIT $limit",
         {"q": q_vec, "limit": _MAX_FACTS},
     )
     preferences = await _safe_select(
-        f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608 - constants/whitelisted identifiers; values bound
+        f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608
         f"FROM memory_preference "
         f"WHERE embedding <|{_MAX_PREFERENCES}|> $q "
         f"ORDER BY score DESC LIMIT $limit",
@@ -258,7 +258,7 @@ async def recall_relevant_memory(
     # recency path). Same cosine idiom against the memory_episode table.
     episodes = (
         await _safe_select(
-            f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608 - constants/whitelisted identifiers; values bound
+            f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608
             f"FROM memory_episode "
             f"WHERE embedding <|{_MAX_EPISODES}|> $q "
             f"ORDER BY score DESC LIMIT $limit",

@@ -256,7 +256,7 @@ class SurrealMemoryStore(VectorStoreBase):
         hits: list[OutputData] = []
         for table in tables:
             rows = self._exec(
-                f"SELECT *, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT *, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608
                 f"FROM {table} ORDER BY score DESC LIMIT $limit",
                 {"q": vectors, "limit": top_k},
             )
@@ -286,7 +286,7 @@ class SurrealMemoryStore(VectorStoreBase):
     def get(self, vector_id) -> OutputData | None:
         self._ensure_connected()
         vid = _validate_vector_id(vector_id)
-        rows = self._exec(f"SELECT * FROM {vid}")  # nosec B608 - constants/whitelisted identifiers; values bound
+        rows = self._exec(f"SELECT * FROM {vid}")  # nosec B608
         if not rows:
             return None
         return self._to_output(rows[0])
@@ -310,7 +310,7 @@ class SurrealMemoryStore(VectorStoreBase):
         limit = top_k or 100
         out: list[OutputData] = []
         for table in tables:
-            rows = self._exec(f"SELECT * FROM {table} LIMIT $limit", {"limit": limit})  # nosec B608 - constants/whitelisted identifiers; values bound
+            rows = self._exec(f"SELECT * FROM {table} LIMIT $limit", {"limit": limit})  # nosec B608
             for row in rows or []:
                 out.append(self._to_output(row))
         return out
@@ -327,13 +327,13 @@ class SurrealMemoryStore(VectorStoreBase):
         from the `_ALL_TABLES` / `_KIND_TO_TABLE` constants. Callers happen to
         pass whitelisted names today, but the repository's SurrealQL contract
         requires identifiers be validated by construction, not by convention —
-        and the `# nosec` below asserts exactly that. Enforce it here so the
+        and the B608 suppression below asserts that. Enforce it here so the
         assertion is true no matter who calls this next.
         """
         if table not in _ALL_TABLES:
             raise ValueError(f"unknown memory table: {table!r}")
         self._ensure_connected()
-        rows = self._exec(f"SELECT count() AS n FROM {table} GROUP ALL")  # nosec B608 - constants/whitelisted identifiers; values bound
+        rows = self._exec(f"SELECT count() AS n FROM {table} GROUP ALL")  # nosec B608
         if rows and isinstance(rows[0], dict):
             return int(rows[0].get("n") or 0)
         return 0
@@ -366,7 +366,7 @@ class SurrealMemoryStore(VectorStoreBase):
             # because the ORDER BY field must be selected (the "missing order
             # idiom" trap noted above).
             rows = self._exec(
-                f"SELECT id, created_at, confidence FROM {table} "  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT id, created_at, confidence FROM {table} "  # nosec B608
                 "ORDER BY created_at DESC, confidence DESC"
             ) or []
             # rows[:keep] are the newest survivors; rows[keep:] are evicted.

@@ -43,7 +43,7 @@ async def _find_duplicate_groups(table: str) -> list[dict]:
         SELECT in, out, array::group(id) AS ids
         FROM {table}
         GROUP BY in, out
-        """  # nosec B608 - constants/whitelisted identifiers; values bound
+        """  # nosec B608
     )
     if not rows:
         return []
@@ -58,7 +58,7 @@ async def _dedupe_table(table: str) -> int:
     """Dedup one table. Returns the number of edges deleted.
 
     v0.8.99 — `table` is interpolated into SurrealQL by
-    `_find_duplicate_groups`, whose `# nosec B608` asserts the identifier is
+    `_find_duplicate_groups`, whose B608 suppression asserts the identifier is
     whitelisted. The only caller iterates `_EDGE_TABLES`, so that was true by
     convention; validate here so it is true by construction and the tag stops
     being a promise. Mirrors the guard in `evaluation.repository.latest_run`.

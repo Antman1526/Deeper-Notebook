@@ -357,7 +357,7 @@ class KnowledgeRepository:
         async with self._connection_factory() as connection:
             rows = await self._query(
                 connection,
-                f"SELECT {_DOCUMENT_FIELDS} FROM $document_id LIMIT 1;",  # nosec B608 - constants/whitelisted identifiers; values bound
+                f"SELECT {_DOCUMENT_FIELDS} FROM $document_id LIMIT 1;",  # nosec B608
                 {"document_id": _record_id(document_id, kind="document")},
             )
         if not rows:
@@ -668,7 +668,7 @@ class KnowledgeRepository:
                 {where}
                 ORDER BY updated_at DESC, id
                 LIMIT $limit START $offset;
-                """,  # nosec B608 - constants/whitelisted identifiers; values bound
+                """,  # nosec B608
                 variables,
             )
         try:
