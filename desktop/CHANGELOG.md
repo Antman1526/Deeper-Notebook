@@ -25,6 +25,70 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.109 — 2026-08-19 — The allowlist ratchet, actually fixed
+
+ROADMAP §2.1, and the second attempt. The first was reverted on 2026-08-19 for a
+good reason; this one keeps the property that reversion protected.
+
+🛠 **Approvals are keyed on content, not position.** They were pinned to
+`(path, pattern, source, line, column, sha256(RAW line))`. Every positional
+component moves when a file is edited, so an edit ABOVE a pinned line
+invalidated a still-correct approval — a ratchet that fired repeatedly, once
+relocating 416 pins for a single-line workflow edit — and a reformat invalidated
+everything at once, after which `--regenerate` aborted rather than rebuilt.
+
+The digest now hashes whitespace-normalized content, and lookups fall back to
+`(path, pattern, source, digest)` when the positional key misses.
+
+🔒 **What the first attempt got wrong, and how this fixes it.** Dropping
+`column` outright is a real weakening, and the suite proves it:
+`test_exact_context_does_not_hide_distinct_same_line_active_occurrence` puts the
+legacy token on ONE line twice, approves one occurrence, and asserts the other
+is still flagged. Ignoring column lets the approval cover both.
+
+`column` was never merely location — it is the only thing separating two
+occurrences on a line. So the **intra-line ordinal is folded into the digest**:
+the first and second occurrence of a token on the same line hash differently.
+Position leaves the key; the distinction it carried does not. Both tests pass.
+
+`context_sha256` is now defined as the ordinal-0 digest, deliberately identical
+to `occurrence_digest` for the first occurrence on a line. That equivalence
+collapsed what would have been ~18 fragile per-fixture rewrites to zero: every
+whole-path approval and every single-occurrence line approval keeps working
+untouched, and only a genuine second-occurrence approval says so explicitly.
+
+⚠️ **One assertion was changed, deliberately, and is flagged for review.**
+`test_allowlist_uses_exact_persisted_context_not_broad_module_pattern` shifted a
+key's column by +1 and asserted rejection — i.e. it asserted absolute column is
+part of identity. That is now unreachable rather than relaxed: the scanner
+derives digest and column together from the same `(context, column)`, so no code
+path can produce a shifted column with an unchanged digest; only a hand-built
+tuple can. The assertion was replaced with the reachable property — a key naming
+a genuinely DIFFERENT occurrence is still rejected — which is strictly stronger
+than checking one integer field.
+
+**Measured payoff.** A 702-file `ruff format` previously invalidated the
+allowlist wholesale and `--regenerate` refused. It now leaves **1,044 pins
+auto-relocated by content** and **49 entries genuinely changed** (lines ruff
+re-split), which is exactly what should require review. The formatter is no
+longer blocked by the allowlist; adopting it is now a bounded 49-entry review
+rather than an impossibility.
+
+Migration was verifying, not blind: an approval was re-keyed only after
+confirming the file still contained the recorded content. 2,608 migrated, 19
+relocated, 0 unresolved. `scripts/persisted_queue_inventory.py` duplicates the
+hashing (rebrand_audit imports it, so it cannot import back) and was updated in
+lockstep; when only one side normalized, 30 compatibility entries resolved to a
+null contract.
+
+- **v0.8.109** 🛠 **The allowlist ratchet is fixed (ROADMAP §2.1).** Approvals
+  are keyed on whitespace-normalized content with the intra-line ordinal folded
+  into the digest, so an edit above a pinned line no longer invalidates it —
+  while two occurrences on one line still hash differently, which is the
+  property that forced the first attempt to be reverted. A 702-file reformat now
+  costs a 49-entry review instead of being impossible.
+
+
 ## v0.8.108 — 2026-08-19 — The security gate now runs, and there is a roadmap
 
 🔒 **`make security-scan` was a manual target that ran in no workflow.** Not a

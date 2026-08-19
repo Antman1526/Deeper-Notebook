@@ -4,9 +4,24 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import re
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
+
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def _occurrence_digest(pattern: str, context: str, column: int) -> str:
+    """Mirror of rebrand_audit.occurrence_digest — keep the two in lockstep."""
+    ordinal = 0
+    cursor = context.find(pattern)
+    while cursor != -1 and cursor < column - 1:
+        ordinal += 1
+        cursor = context.find(pattern, cursor + len(pattern))
+    normalized = _WHITESPACE_RUN.sub(" ", context).strip()
+    return hashlib.sha256(f"{ordinal}\x00{normalized}".encode("utf-8")).hexdigest()
+
 
 LEGACY_QUEUE_APP = "open_notebook"
 
@@ -255,9 +270,15 @@ def _node_legacy_occurrences(
                     "source": "content",
                     "line": line_number,
                     "column": cursor + 1,
-                    "context_sha256": hashlib.sha256(
-                        line.encode("utf-8")
-                    ).hexdigest(),
+                    # Must stay byte-identical to
+                    # rebrand_audit.occurrence_digest: normalized content with
+                    # the intra-line ordinal folded in. Duplicated rather than
+                    # imported because rebrand_audit imports THIS module; when
+                    # only one side normalized, 30 compatibility entries
+                    # resolved to a null contract and load_allowlist aborted.
+                    "context_sha256": _occurrence_digest(
+                        LEGACY_QUEUE_APP, line, cursor + 1
+                    ),
                 }
             )
             cursor = line.find(

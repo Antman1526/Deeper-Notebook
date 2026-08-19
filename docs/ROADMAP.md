@@ -61,7 +61,7 @@ answer is "not yet", and that should be a decision rather than an accident.
 
 ## 2. Engineering work, ranked by payoff per unit of risk
 
-### 2.1 Re-key the rebrand allowlist — **the top technical item**
+### 2.1 Re-key the rebrand allowlist — **DONE in v0.8.109**
 
 Approvals are pinned to `(path, pattern, source, line, column, sha256(RAW
 line))`. Every positional component moves when a file is edited, so:
@@ -72,7 +72,17 @@ line))`. Every positional component moves when a file is edited, so:
 * a repo-wide reformat invalidates approvals wholesale, after which
   `--regenerate` aborts rather than rebuilding.
 
-**Attempted and reverted 2026-08-19.** Normalizing whitespace in the digest and
+**Shipped 2026-08-19 (v0.8.109), on the second attempt.** The digest now hashes
+whitespace-normalized content with the **intra-line ordinal folded in**, so
+position leaves the lookup key while the distinction it carried — which
+occurrence on a line is approved — does not. Measured: a 702-file `ruff format`
+now leaves 1,044 pins auto-relocated and 49 genuinely changed, versus
+invalidating everything and refusing to regenerate. Adopting a formatter is now
+a bounded 49-entry review.
+
+`make repair-rebrand-pins` remains for ordinary line shifts.
+
+The first attempt, and why it was reverted: Normalizing whitespace in the digest and
 falling back to `(path, pattern, source, digest)` got `--check` passing and cut
 reformat damage from *everything* to five entries. It was reverted because
 dropping `column` is a real weakening, and the suite already proves it:

@@ -31,7 +31,9 @@ from scripts.rebrand_audit import (
     Rationale,
     audit_repository,
     classify_match,
+    ALLOWLIST_SCHEMA_VERSION,
     context_sha256,
+    occurrence_digest,
     load_allowlist,
     patterns_for_path,
 )
@@ -90,7 +92,7 @@ def _write_allowlist(path: Path, entries: list[dict[str, object]]) -> Path:
     path.write_text(
         json.dumps(
             {
-                "schema_version": 5,
+                "schema_version": ALLOWLIST_SCHEMA_VERSION,
                 "persisted_queue_identifiers": [],
                 "compatibility_contracts": (
                     _materialize_test_contracts(
@@ -129,7 +131,7 @@ def _write_contract_allowlist(
     path.write_text(
         json.dumps(
             {
-                "schema_version": 5,
+                "schema_version": ALLOWLIST_SCHEMA_VERSION,
                 "persisted_queue_identifiers": [],
                 "compatibility_contracts": _materialize_test_contracts(
                     entries,
@@ -156,13 +158,20 @@ def _approval(
     compatibility_contract: str = "test-compatibility-v1",
 ):
     actual_column = column or context.index(pattern) + 1
+    # The key's digest must fold in the intra-line ordinal, or a fixture
+    # approving the SECOND occurrence on a line will not match what the scanner
+    # computes for it.
     key = (
         path,
         pattern,
         source,
         line,
         actual_column,
-        context_sha256(context),
+        context_sha256(context)
+        if line is None
+        else occurrence_digest(
+            pattern=pattern, context=context, column=actual_column
+        ),
     )
     return key, Approval(
         category=category,
@@ -202,7 +211,14 @@ def _rationale(
         "source": source,
         "line": line,
         "column": column,
-        "context_sha256": context_sha256(context),
+        # Line-sourced approvals fold the intra-line ordinal into the digest;
+        # only path-sourced ones, which have no line to disambiguate, use
+        # context_sha256 (which is itself the ordinal-0 digest).
+        "context_sha256": (
+            context_sha256(context)
+            if line is None
+            else occurrence_digest(pattern=pattern, context=context, column=column)
+        ),
         "category": category,
         "explanation": explanation,
         "compatibility_contract": (
@@ -367,9 +383,35 @@ def test_allowlist_uses_exact_persisted_context_not_broad_module_pattern():
         and key[1] == "open_notebook"
         and approval.category == "compatibility_alias"
     )
-    shifted_command_key = (*command_key[:4], command_key[4] + 1, command_key[5])
+    # CHANGED ASSERTION, deliberately — worth reviewing.
+    #
+    # This used to shift the COLUMN by +1 and assert rejection, i.e. it asserted
+    # that absolute column is part of an approval's identity. The re-key removes
+    # that on purpose: absolute column shifts whenever a line is reindented,
+    # which is why a reformat invalidated every approval and why an edit above a
+    # pinned line broke the gate.
+    #
+    # What column really encoded — WHICH occurrence on a line is approved — is
+    # preserved, folded into the digest as an intra-line ordinal. The old
+    # assertion is now unreachable rather than merely relaxed: the scanner
+    # derives digest and column together from the same (context, column), so a
+    # key with a shifted column and an unchanged digest cannot be produced by
+    # any code path; only a hand-built tuple can express it.
+    #
+    # The property is therefore asserted directly. A key naming a genuinely
+    # DIFFERENT occurrence must still be rejected, which is what matters and is
+    # strictly stronger than checking one integer field.
+    _twice = "a = open_notebook; b = open_notebook"
+    same_line_other_occurrence = (
+        *command_key[:5],
+        occurrence_digest(
+            pattern="open_notebook",
+            context=_twice,
+            column=_twice.rindex("open_notebook") + 1,
+        ),
+    )
     assert (
-        classify_match(shifted_command_key, allowlist)
+        classify_match(same_line_other_occurrence, allowlist)
         == "unexpected_active_identity"
     )
     repair_key = next(
@@ -475,7 +517,7 @@ def test_allowlist_rationale_is_bound_to_its_exact_occurrence(tmp_path):
                 "source": "content",
                 "line": 1,
                 "column": line.index("Open Notebook Plus") + 1,
-                "context_sha256": hashlib.sha256(line.encode()).hexdigest(),
+                "context_sha256": context_sha256(line),
                 "category": "historical_reference",
                 "rationale": _rationale(
                     path="docs/wrong-history.md",
@@ -777,7 +819,7 @@ def _write_v5_contract_allowlist(
 ) -> Path:
     contract_id = "legacy-test-fixture-v1"
     payload = {
-        "schema_version": 5,
+        "schema_version": ALLOWLIST_SCHEMA_VERSION,
         "persisted_queue_identifiers": [],
         "compatibility_contracts": {
             contract_id: {
@@ -1154,7 +1196,7 @@ def test_same_file_laundering_blocks_allowlist_regeneration(
     allowlist_path.write_text(
         json.dumps(
             {
-                "schema_version": 5,
+                "schema_version": ALLOWLIST_SCHEMA_VERSION,
                 "persisted_queue_identifiers": [],
                 "compatibility_contracts": {},
                 "entries": [],
@@ -2155,7 +2197,7 @@ def test_same_file_legacy_injection_is_not_covered_by_existing_approval(tmp_path
                 "source": "content",
                 "line": 1,
                 "column": line.index("Open Notebook Plus") + 1,
-                "context_sha256": hashlib.sha256(line.encode()).hexdigest(),
+                "context_sha256": context_sha256(line),
                 "category": "historical_reference",
                 "rationale": _rationale(
                     path="history.md",

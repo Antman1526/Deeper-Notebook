@@ -52,8 +52,18 @@ AUDIT = ROOT / "scripts" / "rebrand_audit.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 
 
-def _sha(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def _digest_for(entry: dict, text: str) -> str:
+    """Digest an entry's line using the audit's own encoding.
+
+    Must NOT hash the raw line: digests fold in the intra-line ordinal over
+    whitespace-normalized content, so a raw hash here would treat every pin as
+    changed and this tool would report the whole allowlist as needing review.
+    """
+    import rebrand_audit as ra
+
+    return ra.occurrence_digest(
+        pattern=entry["pattern"], context=text, column=entry.get("column", 1)
+    )
 
 
 def _relocate(payload: dict, *, dry_run: bool) -> tuple[int, list[str]]:
@@ -77,10 +87,11 @@ def _relocate(payload: dict, *, dry_run: bool) -> tuple[int, list[str]]:
             continue
         rel, line, digest = entry["path"], entry["line"], entry["context_sha256"]
         lines = lines_of(rel)
-        if lines and line <= len(lines) and _sha(lines[line - 1]) == digest:
+        if lines and line <= len(lines) and _digest_for(entry, lines[line - 1]) == digest:
             continue  # still accurate
         found = next(
-            (i for i, text in enumerate(lines, 1) if _sha(text) == digest), None
+            (i for i, text in enumerate(lines, 1) if _digest_for(entry, text) == digest),
+            None
         )
         if found is None:
             # Content changed, not merely moved. That is a real review item.

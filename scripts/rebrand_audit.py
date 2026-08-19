@@ -31,7 +31,7 @@ CATEGORIES = (
     "migration_documentation",
     "unexpected_active_identity",
 )
-ALLOWLIST_SCHEMA_VERSION = 5
+ALLOWLIST_SCHEMA_VERSION = 6  # digests fold in the intra-line ordinal
 LEGACY_PATTERNS = (
     "Open Notebook Plus",
     "Open Notebook",
@@ -792,7 +792,7 @@ _KIND_SCOPE_PREFIXES = {
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _PINNED_SELECTOR_INVENTORY_SHA256 = (
-    "94a41ea5c904fb917261f719ed868881b10426b4ac63bd322a91e0c89daafb0e"
+    "27cc4ac76f84bac0f103140cb2f134a2b02512dfc9ad9b536db0c6d55c733aac"
 )
 _SEMANTIC_SELECTOR_PATHS = frozenset(
     {
@@ -1348,9 +1348,58 @@ def semantic_explanation_for_occurrence(
     return _scrub_structural_terms(explanation).rstrip(".") + "."
 
 
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def normalize_context(context: str) -> str:
+    """Collapse whitespace so an approval survives reformatting.
+
+    Approvals used to pin the RAW line text, so reindenting changed the digest
+    and invalidated a still-correct approval. A repo-wide `ruff format` (700+
+    files) invalidated them wholesale, after which `--regenerate` aborted and
+    could not rebuild — which is what kept a formatter un-adoptable.
+    """
+    return _WHITESPACE_RUN.sub(" ", context).strip()
+
+
+def occurrence_ordinal(pattern: str, context: str, column: int) -> int:
+    """Which match of `pattern` on this line the given column refers to.
+
+    This is what lets absolute position leave the key WITHOUT losing what
+    position was really encoding. `column` was never merely location: when one
+    line contains the same legacy token twice, it is the only thing separating
+    the approved occurrence from the unapproved one. An ordinal keeps that
+    distinction while being immune to indentation, which shifts every absolute
+    column on a line by the same amount.
+    """
+    index = 0
+    cursor = context.find(pattern)
+    while cursor != -1 and cursor < column - 1:
+        index += 1
+        cursor = context.find(pattern, cursor + len(pattern))
+    return index
+
+
 def context_sha256(context: str) -> str:
-    """Return the integrity digest used to pin an approval to exact context."""
-    return hashlib.sha256(context.encode("utf-8")).hexdigest()
+    """Digest for context with no intra-line ambiguity — i.e. ordinal 0.
+
+    Deliberately identical to `occurrence_digest` for the FIRST occurrence on a
+    line. That equivalence is load-bearing: whole-path approvals have no line to
+    disambiguate, and the overwhelming majority of line approvals cover the only
+    occurrence on their line, so those keep working untouched. Only a genuine
+    second-occurrence approval has to say so explicitly.
+    """
+    return hashlib.sha256(
+        f"0\x00{normalize_context(context)}".encode("utf-8")
+    ).hexdigest()
+
+
+def occurrence_digest(*, pattern: str, context: str, column: int) -> str:
+    """Digest identifying WHICH occurrence on a line, independent of layout."""
+    ordinal = occurrence_ordinal(pattern, context, column)
+    return hashlib.sha256(
+        f"{ordinal}\x00{normalize_context(context)}".encode("utf-8")
+    ).hexdigest()
 
 
 def occurrence_anchor(
@@ -1373,20 +1422,51 @@ def _occurrence_key(
     column: int,
     context: str,
 ) -> OccurrenceKey:
-    return (
-        path,
-        pattern,
-        source,
-        line,
-        column,
-        context_sha256(context),
+    # Path-sourced occurrences have no line to disambiguate, so the context IS
+    # the path. Line-sourced ones fold in the ordinal so position can leave the
+    # lookup key safely.
+    digest = (
+        context_sha256(context)
+        if line is None
+        else occurrence_digest(pattern=pattern, context=context, column=column)
     )
+    return (path, pattern, source, line, column, digest)
+
+
+_CONTENT_INDEX_CACHE: dict[int, dict[tuple[str, str, str, str], str]] = {}
+
+
+def _content_index(allowlist: Allowlist) -> dict[tuple[str, str, str, str], str]:
+    """Index approvals by (path, pattern, source, digest) — position dropped."""
+    cached = _CONTENT_INDEX_CACHE.get(id(allowlist))
+    if cached is not None:
+        return cached
+    index: dict[tuple[str, str, str, str], str] = {}
+    for (path, pattern, source, _line, _column, digest), approval in allowlist.items():
+        index.setdefault((path, pattern, source, digest), approval.category)
+    _CONTENT_INDEX_CACHE[id(allowlist)] = index
+    return index
 
 
 def classify_match(key: OccurrenceKey, allowlist: Allowlist) -> str:
-    """Return the exact occurrence's category or flag it as active identity."""
+    """Return the occurrence's category or flag it as active identity.
+
+    Falls back to a position-independent match. An edit ABOVE an approved line
+    used to invalidate a still-correct approval; that ratchet fired repeatedly
+    and is what blocks adopting a formatter.
+
+    Safe because the digest folds in the intra-line ordinal: two occurrences of
+    the same token on one line hash differently, so an approval for one cannot
+    silently cover the other. The fallback still requires the same file, the
+    same pattern, the same source and the same normalized content — it drops
+    only WHERE on the page that content sits.
+    """
     approval = allowlist.get(key)
-    return approval.category if approval else "unexpected_active_identity"
+    if approval is not None:
+        return approval.category
+    path, pattern, source, _line, _column, digest = key
+    fallback = _content_index(allowlist).get((path, pattern, source, digest))
+    return fallback if fallback is not None else "unexpected_active_identity"
 
 
 def patterns_for_path(path: str, allowlist: Allowlist) -> tuple[str, ...]:
@@ -1727,7 +1807,9 @@ def _selector_occurrences_for_path(
                     "source": "content",
                     "line": line_number,
                     "column": start + 1,
-                    "context_sha256": context_sha256(context),
+                    "context_sha256": occurrence_digest(
+                        pattern=pattern, context=context, column=start + 1
+                    ),
                 }
             )
     identities = {
@@ -1973,7 +2055,17 @@ def compatibility_contract_for_occurrence(
             else Path(__file__).resolve().parents[1]
         )
         selectors = compatibility_selector_inventory(selector_root)
-    return selectors.get(key)
+    contract = selectors.get(key)
+    if contract is not None:
+        return contract
+    # Without this the approval survives a reflow but its COMPATIBILITY CONTRACT
+    # does not, and load_allowlist aborts with "compatibility entry must use its
+    # exact canonical compatibility contract". Measured that way.
+    path, pattern, source, _line, _column, digest = key
+    for (s_path, s_pattern, s_source, _l, _c, s_digest), value in selectors.items():
+        if (s_path, s_pattern, s_source, s_digest) == (path, pattern, source, digest):
+            return value
+    return None
 
 
 def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
@@ -2479,7 +2571,9 @@ def audit_repository(
                         "source": "content",
                         "line": line_number,
                         "column": start + 1,
-                        "context_sha256": context_sha256(line),
+                        "context_sha256": occurrence_digest(
+                            pattern=pattern, context=line, column=start + 1
+                        ),
                     },
                 )
                 != "unexpected_active_identity"
