@@ -329,7 +329,40 @@ The current workaround is a `# noqa: I001` block so isort won't merge two import
 **This is a smell.** AST-based assertions would express the invariant without pinning
 formatting.
 
-### 4.2 The rebrand allowlist is line-pinned and self-validating
+### 4.2 The rebrand allowlist is line-pinned — and the re-key is harder than it looks
+
+**Attempted 2026-08-19; reverted. The finding is worth more than the attempt.**
+
+The approach was sound and got most of the way: hash whitespace-NORMALIZED line
+content instead of the raw line, and fall back from the exact positional key to
+`(path, pattern, source, digest)` when it misses. With a verifying migration of
+all 2,616 approvals (plus the `_PINNED_SELECTOR_INVENTORY_SHA256` gate and 22 of
+25 contract coverage digests recomputed), `--check` passed, and a repo-wide
+`ruff format` went from *invalidating everything* to breaking **5 entries** —
+each a line ruff genuinely re-split, which SHOULD be re-reviewed.
+
+It was reverted because dropping `column` from the key is a real security
+weakening, and the suite already proves it:
+`test_exact_context_does_not_hide_distinct_same_line_active_occurrence` puts
+`open_notebook` on one line **twice** — one occurrence approved, one not — and
+asserts the unapproved one is still flagged. Ignoring `column` makes the
+approval cover both. The authors anticipated exactly this relaxation.
+
+So `column` is not incidental position; it carries intra-line occurrence
+identity. Making that reformat-stable means replacing absolute column with an
+**occurrence ordinal within the line** (1st vs 2nd match of that pattern) —
+stable under reindentation, still distinguishing the two occurrences. That
+ordinal has to be stored in the allowlist AND computed scanner-side, and
+`classify_match` currently receives only the key, not the source line, so it
+cannot derive it. Threading it through changes `_occurrence_key`'s arity, which
+ripples across ~55 assertions in `tests/test_product_identity.py`.
+
+That is the actual shape of the work: a scanner refactor, not a keying tweak.
+Also note the hashing is **duplicated** in `scripts/persisted_queue_inventory.py`
+(rebrand_audit imports it, so it cannot import back); when only one side
+normalized, 30 compatibility entries silently resolved to a null contract.
+
+### 4.2a The original note still stands
 `scripts/rebrand-allowlist.json` keys entries on
 `(path, pattern, source, line, column, context_sha256)` and loads its contracts *from
 itself*. Any edit that shifts a pinned line breaks the audit; hand-repair fails validation;

@@ -23809,6 +23809,26 @@
       }
     },
     {
+      "path": "docs/recreation/PROJECT-DEEP-DIVE.md",
+      "pattern": "open_notebook",
+      "source": "content",
+      "line": 347,
+      "column": 2,
+      "context_sha256": "ec3568a049ee27a5f44e1fdbbb542d0dfeda80f24913d8a9a6b5fb8c9f125f1c",
+      "category": "migration_documentation",
+      "rationale": {
+        "path": "docs/recreation/PROJECT-DEEP-DIVE.md",
+        "pattern": "open_notebook",
+        "source": "content",
+        "line": 347,
+        "column": 2,
+        "context_sha256": "ec3568a049ee27a5f44e1fdbbb542d0dfeda80f24913d8a9a6b5fb8c9f125f1c",
+        "category": "migration_documentation",
+        "explanation": "The recreation project deep dive document documents the upgrade boundary in the \"4. Pain points and known limitations / 4.2 The rebrand allowlist is line-pinned — and the re-key is harder than it looks / Attempted 2026-08-19; reverted. The finding is worth more than the attempt\" section because the statement uses that role while expressing current persisted command application namespace on one line twice — one occurrence approved, one not — and, while the preceding context concerns test exact context does not hide distinct same line active occurrence puts; the following context concerns asserts the unapproved one is still flagged. Ignoring column makes the.",
+        "compatibility_contract": null
+      }
+    },
+    {
       "path": "docs/superpowers/plans/2026-05-09-open-notebook-plus-desktop.md",
       "pattern": "open-notebook-Plus",
       "source": "content",
