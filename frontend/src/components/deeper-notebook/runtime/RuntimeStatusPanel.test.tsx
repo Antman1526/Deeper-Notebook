@@ -95,3 +95,53 @@ describe('startup stage timings', () => {
     expect(screen.queryByText(/core ready/)).toBeNull()
   })
 })
+
+// v0.8.104 — a broken model configuration has to reach the person who can fix
+// it. get_default_model already logged "the configured model_id may have been
+// deleted or misconfigured" long before this existed; that log went to a file
+// nobody opens while the UI just failed to answer. These assert the detail and
+// the remedy render verbatim, not merely that some warning appeared.
+describe('RuntimeStatusPanel model configuration issues', () => {
+  const issueSnapshot = {
+    ...readySnapshot,
+    status: 'degraded' as const,
+    reasons: ['model_config_degraded'] as const,
+    model_config_health: {
+      state: 'degraded' as const,
+      issues: [
+        {
+          code: 'chat_default_dangling',
+          detail: 'The configured chat model (model:gone) no longer exists.',
+          remedy: 'Settings → Models → pick a different default chat model.',
+        },
+      ],
+    },
+  }
+
+  it('renders the specific detail and its remedy', () => {
+    render(<RuntimeStatusPanel snapshot={issueSnapshot} />)
+
+    expect(
+      screen.getByText('The configured chat model (model:gone) no longer exists.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Settings → Models → pick a different default chat model.'),
+    ).toBeInTheDocument()
+  })
+
+  it('omits the block entirely when configuration is healthy', () => {
+    render(<RuntimeStatusPanel snapshot={readySnapshot} />)
+
+    expect(screen.queryByTestId('runtime-model-config-issues')).toBeNull()
+  })
+
+  it('parses a pre-v0.8.104 backend that omits the section', () => {
+    // The field is optional on purpose: an older backend must still yield a
+    // usable snapshot rather than failing validation into UNKNOWN.
+    const { model_config_health: _omitted, ...withoutSection } = issueSnapshot
+    render(<RuntimeStatusPanel snapshot={withoutSection} />)
+
+    expect(screen.queryByTestId('runtime-model-config-issues')).toBeNull()
+    expect(screen.getByTestId('runtime-status-panel')).toBeInTheDocument()
+  })
+})

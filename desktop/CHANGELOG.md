@@ -25,6 +25,50 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.104 — 2026-08-19 — Broken model configuration now says so
+
+`get_default_model` has logged "the configured model_id may have been deleted or
+misconfigured" since long before this release. That log goes to a file nobody
+opens, while the UI simply fails to answer. The information needed to explain
+the failure existed in the process; none of it reached the person who could act
+on it.
+
+✨ **`deeper_notebook/health/model_config.py`** evaluates the default model
+assignments structurally and surfaces the result through
+`GET /api/runtime/snapshot` — which the dashboard and Settings already read, so
+it reaches the UI without a new endpoint. Detected states:
+
+    chat_default_missing              no chat default set
+    chat_default_dangling             default points at a row that no longer exists
+    chat_default_credential_missing   endpoint provider with no credential
+    chat_default_endpoint_missing     credential with no base URL
+    auto_route_without_cloud          toggle promises routing it cannot perform
+    model_defaults_unreadable         the defaults record itself will not load
+
+Each carries a `detail` naming the offending id and a `remedy` naming the screen
+that fixes it. The panel renders both verbatim: a reason code alone ("Model
+configuration needs attention") is the same unhelpful shape as the log.
+
+🔒 **Deliberate limits, stated rather than glossed.** These are structural checks
+— no model is called, nothing spawns, no network I/O — because the runtime
+snapshot must stay a bounded read-only projection. So this CANNOT catch "the row
+is valid but the server rejects its name", which is the v0.8.97 MLX defect. Only
+asking the server catches that, which is what
+`tests/integration/test_chat_model_seams.py` does. Claiming broader coverage
+would be worse than checking nothing.
+
+Additive and backward compatible: the snapshot field is defaulted and the
+frontend type optional, so a client predating this parses a v0.8.104 payload and
+a v0.8.104 client parses an older backend's. Both directions are tested.
+
+- **v0.8.104** ✨ **A broken model configuration now reports itself** through the
+  runtime snapshot and the runtime status panel, with a detail naming the
+  offending id and a remedy naming the screen that fixes it — instead of a log
+  line nobody reads and a UI that silently fails to answer. Structural checks
+  only; the "valid row the server rejects" case is covered by the seam tests
+  instead, and that limit is documented rather than glossed.
+
+
 ## v0.8.103 — 2026-08-19 — Seam tests: the composition, not the units
 
 Three catastrophic defects shipped this month while every unit test passed,

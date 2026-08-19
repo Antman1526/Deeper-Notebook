@@ -117,6 +117,11 @@ def _providers(*, readiness=None, **overrides):
             "failed": 0,
         },
         "auto_export_directory": lambda: None,
+        # v0.8.104 — injected like every other read. Without it the builder
+        # falls back to the real reader, which touches the model tables and
+        # makes this suite depend on developer configuration; that fallback is
+        # exactly what "uses only injected read models" exists to forbid.
+        "model_config_health": lambda: {"ok": True, "issues": []},
         "active_data_root": lambda: Path("/private/should-never-leak"),
     }
     values.update(overrides)

@@ -25,6 +25,8 @@ export type RuntimeReasonCode =
   | 'auto_export_unknown'
   | 'auto_export_stale'
   | 'provenance_unknown'
+  | 'model_config_degraded'
+  | 'model_config_unknown'
 
 const RUNTIME_STATES = new Set<RuntimeState>(['ready', 'degraded', 'unknown'])
 const DATABASE_STATES = new Set<RuntimeDatabaseState>(['online', 'offline', 'unknown'])
@@ -47,6 +49,8 @@ const REASON_CODES = new Set<RuntimeReasonCode>([
   'auto_export_unknown',
   'auto_export_stale',
   'provenance_unknown',
+  'model_config_degraded',
+  'model_config_unknown',
 ])
 const STARTUP_STAGES = new Set([
   'launcher_start',
@@ -114,6 +118,24 @@ export interface RuntimeProvenance {
   source_fingerprint_state: RuntimeFingerprintState
 }
 
+export interface RuntimeModelConfigIssue {
+  code: string
+  detail: string
+  remedy: string
+}
+
+/**
+ * v0.8.104 — structural health of the default model assignments.
+ *
+ * Optional so a client running against a pre-v0.8.104 backend still parses:
+ * the field is simply absent and `normalizeRuntimeSnapshot` leaves it undefined
+ * rather than rejecting the whole snapshot.
+ */
+export interface RuntimeModelConfig {
+  state: RuntimeState
+  issues: RuntimeModelConfigIssue[]
+}
+
 export interface RuntimeSnapshot {
   schema_version: 'runtime-snapshot-v1'
   status: RuntimeState
@@ -125,6 +147,7 @@ export interface RuntimeSnapshot {
   knowledge: RuntimeKnowledge
   backup: RuntimeBackup
   provenance?: RuntimeProvenance
+  model_config_health?: RuntimeModelConfig
 }
 
 export const UNKNOWN_RUNTIME_SNAPSHOT: RuntimeSnapshot = {
@@ -251,6 +274,17 @@ function isBackup(value: unknown): value is RuntimeBackup {
     && isSafeTimestamp(value.newest_timestamp)
 }
 
+function isModelConfig(value: unknown): value is RuntimeModelConfig {
+  if (!isRecord(value) || !RUNTIME_STATES.has(value.state as RuntimeState)) return false
+  if (!Array.isArray(value.issues) || value.issues.length > 12) return false
+  return value.issues.every((issue) =>
+    isRecord(issue)
+    && typeof issue.code === 'string' && issue.code.length > 0 && issue.code.length <= 64
+    && typeof issue.detail === 'string' && issue.detail.length > 0 && issue.detail.length <= 400
+    && typeof issue.remedy === 'string' && issue.remedy.length > 0 && issue.remedy.length <= 200
+  )
+}
+
 function isProvenance(value: unknown): value is RuntimeProvenance {
   if (!isRecord(value) || !RUNTIME_STATES.has(value.state as RuntimeState)) return false
   return typeof value.mount_count === 'number'
@@ -281,6 +315,7 @@ export function isRuntimeSnapshot(value: unknown): value is RuntimeSnapshot {
     && isKnowledge(value.knowledge)
     && isBackup(value.backup)
     && (value.provenance === undefined || isProvenance(value.provenance))
+    && (value.model_config_health === undefined || isModelConfig(value.model_config_health))
 }
 
 export function normalizeRuntimeSnapshot(value: unknown): RuntimeSnapshot {
@@ -347,6 +382,19 @@ export function normalizeRuntimeSnapshot(value: unknown): RuntimeSnapshot {
           mount_count: value.provenance.mount_count,
           external_read_only_count: value.provenance.external_read_only_count,
           source_fingerprint_state: value.provenance.source_fingerprint_state,
+        },
+      } : {}),
+      // Rebuilt field-by-field like every other section: this function returns
+      // a fresh object rather than spreading the input, so anything not copied
+      // here is silently dropped even after passing validation.
+      ...(value.model_config_health ? {
+        model_config_health: {
+          state: value.model_config_health.state,
+          issues: value.model_config_health.issues.map((issue) => ({
+            code: issue.code,
+            detail: issue.detail,
+            remedy: issue.remedy,
+          })),
         },
       } : {}),
     }

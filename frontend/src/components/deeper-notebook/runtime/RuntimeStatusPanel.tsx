@@ -28,6 +28,8 @@ const REASON_LABELS: Record<RuntimeReasonCode, string> = {
   auto_export_unknown: 'Local backup status is unavailable',
   auto_export_stale: 'Local backup is stale',
   provenance_unknown: 'External source provenance is unavailable',
+  model_config_degraded: 'Model configuration needs attention',
+  model_config_unknown: 'Model configuration status is unavailable',
 }
 
 export interface RuntimeStatusPanelProps {
@@ -93,6 +95,7 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
 
   const role = normalized.status === 'degraded' ? 'alert' : 'status'
   const reasonLabels = normalized.reasons.map((reason) => REASON_LABELS[reason]).filter(Boolean)
+  const modelConfigIssues = normalized.model_config_health?.issues ?? []
   const apiLabel = normalized.status === 'unknown' ? 'Unknown' : 'Ready'
 
   return (
@@ -115,6 +118,25 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
       {reasonLabels.length ? (
         <ul aria-label="Runtime reasons" className="grid gap-1 text-sm text-muted-foreground">
           {reasonLabels.map((label) => <li key={label}>{label}</li>)}
+        </ul>
+      ) : null}
+
+      {/* v0.8.104 — the reason code alone ("Model configuration needs
+          attention") is the same unhelpful shape as the log nobody opens.
+          What makes this actionable is the detail (which setting, which id)
+          and the remedy (where to go), so both are rendered verbatim. */}
+      {modelConfigIssues.length ? (
+        <ul
+          aria-label="Model configuration issues"
+          data-testid="runtime-model-config-issues"
+          className="grid gap-2 rounded-lg border border-[var(--dn-paper-edge)] p-3 text-sm"
+        >
+          {modelConfigIssues.map((issue) => (
+            <li key={issue.code} className="grid gap-0.5">
+              <span className="font-medium">{issue.detail}</span>
+              <span className="text-muted-foreground">{issue.remedy}</span>
+            </li>
+          ))}
         </ul>
       ) : null}
 

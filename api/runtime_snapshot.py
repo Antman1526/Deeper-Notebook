@@ -47,6 +47,11 @@ ReasonCode = Literal[
     "auto_export_unknown",
     "auto_export_stale",
     "provenance_unknown",
+    # v0.8.104 — model configuration health. "degraded" means the app is
+    # running but chat cannot work (or is misleading the operator) until a
+    # setting changes. See deeper_notebook/health/model_config.py.
+    "model_config_degraded",
+    "model_config_unknown",
 ]
 
 ALLOWED_REASON_CODES = frozenset(ReasonCode.__args__)
@@ -147,6 +152,23 @@ class ProvenanceSnapshot(_Contract):
     source_fingerprint_state: Literal["available", "unknown"] = "unknown"
 
 
+class ModelConfigIssueSnapshot(_Contract):
+    code: str = Field(min_length=1, max_length=64)
+    detail: str = Field(min_length=1, max_length=400)
+    remedy: str = Field(min_length=1, max_length=200)
+
+
+class ModelConfigSnapshot(_Contract):
+    """Structural health of the default model assignments.
+
+    Content-free by construction: codes, human-readable detail, and a remedy —
+    never an API key, endpoint credential, or prompt.
+    """
+
+    state: SnapshotState = "unknown"
+    issues: list[ModelConfigIssueSnapshot] = Field(default_factory=list, max_length=12)
+
+
 class RuntimeSnapshot(_Contract):
     """Stable, content-free runtime snapshot returned by the API."""
 
@@ -160,6 +182,9 @@ class RuntimeSnapshot(_Contract):
     knowledge: KnowledgeSnapshot
     backup: AutoExportSnapshot
     provenance: ProvenanceSnapshot
+    # Defaulted so this is an ADDITIVE schema change: runtime-snapshot-v1
+    # consumers that predate it simply ignore an unknown key.
+    model_config_health: ModelConfigSnapshot = Field(default_factory=ModelConfigSnapshot)
 
 
 Provider = Callable[[], Any] | Callable[[], Awaitable[Any]]
@@ -177,6 +202,7 @@ class RuntimeSnapshotProviders:
     knowledge_summary: Provider | None = None
     auto_export_directory: Provider | None = None
     provenance_summary: Provider | None = None
+    model_config_health: Provider | None = None
 
 
 async def _invoke(provider: Provider | None) -> Any:
@@ -640,6 +666,52 @@ def _aggregate_status(
     return "ready"
 
 
+async def _default_model_config_health() -> dict | None:
+    """Read-only structural check of the default model assignments."""
+    try:
+        from deeper_notebook.health.model_config import evaluate_model_config_health
+
+        health = await evaluate_model_config_health()
+    except Exception:  # noqa: BLE001 - the snapshot must never fail the app
+        return None
+    return {
+        "ok": health.ok,
+        "issues": [
+            {"code": i.code, "detail": i.detail, "remedy": i.remedy}
+            for i in health.issues
+        ],
+    }
+
+
+def _normalise_model_config(raw: Any) -> tuple["ModelConfigSnapshot", list[str]]:
+    if not isinstance(raw, dict):
+        return ModelConfigSnapshot(state="unknown"), ["model_config_unknown"]
+    issues_raw = raw.get("issues")
+    if not isinstance(issues_raw, list):
+        return ModelConfigSnapshot(state="unknown"), ["model_config_unknown"]
+
+    issues: list[ModelConfigIssueSnapshot] = []
+    for entry in issues_raw[:12]:
+        if not isinstance(entry, dict):
+            continue
+        code = str(entry.get("code") or "").strip()
+        detail = str(entry.get("detail") or "").strip()
+        remedy = str(entry.get("remedy") or "").strip()
+        if not (code and detail and remedy):
+            continue
+        issues.append(
+            ModelConfigIssueSnapshot(
+                code=code[:64], detail=detail[:400], remedy=remedy[:200]
+            )
+        )
+
+    if issues:
+        return ModelConfigSnapshot(state="degraded", issues=issues), [
+            "model_config_degraded"
+        ]
+    return ModelConfigSnapshot(state="ready", issues=[]), []
+
+
 async def build_runtime_snapshot(
     providers: RuntimeSnapshotProviders | None = None,
 ) -> RuntimeSnapshot:
@@ -666,6 +738,10 @@ async def build_runtime_snapshot(
     if configured.provenance_summary is None:
         provenance_raw = vault_raw
     provenance, provenance_reasons = _normalise_provenance(provenance_raw)
+    model_config_raw = await _invoke(
+        configured.model_config_health or _default_model_config_health
+    )
+    model_config, model_config_reasons = _normalise_model_config(model_config_raw)
     for code in (
         *startup_reasons,
         *update_reasons,
@@ -673,6 +749,7 @@ async def build_runtime_snapshot(
         *knowledge_reasons,
         *backup_reasons,
         *provenance_reasons,
+        *model_config_reasons,
     ):
         if code in ALLOWED_REASON_CODES and code not in reasons:
             reasons.append(code)
@@ -688,6 +765,7 @@ async def build_runtime_snapshot(
             knowledge.state,
             backup.state,
             provenance.state,
+            model_config.state,
         ],
     )
     return RuntimeSnapshot(
@@ -700,6 +778,7 @@ async def build_runtime_snapshot(
         knowledge=knowledge,
         backup=backup,
         provenance=provenance,
+        model_config_health=model_config,
     )
 
 
