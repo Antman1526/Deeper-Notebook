@@ -11,6 +11,7 @@ from api.source_visual_projection import project_search_source_visuals
 from deeper_notebook.ai.models import Model, model_manager
 from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.domain.notebook import text_search, vector_search
+from deeper_notebook.search.fusion import reciprocal_rank_fusion
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import (
     DatabaseOperationError,
@@ -117,7 +118,71 @@ async def search_knowledge_base(search_request: SearchRequest):
         "vector" if search_request.match_mode == "semantic" else search_request.type
     )
     try:
-        if effective_type == "vector":
+        if effective_type == "hybrid":
+            # v0.8.113 — run both legs and fuse by rank. Keyword and semantic
+            # retrieval miss in different directions (text misses paraphrase,
+            # vector misses exact identifiers and error strings), so answering
+            # with one and discarding the other loses recall on every query.
+            #
+            # Degrades rather than fails: with no embedding model the vector leg
+            # is skipped and this is plain text search, which is strictly better
+            # than the 400 the "vector" branch raises. Either leg erroring is
+            # likewise absorbed — a hybrid search that dies because one half is
+            # unavailable is worse than one that returns the other half.
+            legs: list[list] = []
+            embedding_ready = bool(await model_manager.get_embedding_model())
+            for name, coro in (
+                (
+                    "vector",
+                    vector_search(
+                        keyword=search_request.query,
+                        results=search_request.limit,
+                        source=search_request.search_sources,
+                        note=search_request.search_notes,
+                        minimum_score=search_request.minimum_score,
+                    )
+                    if embedding_ready
+                    else None,
+                ),
+                (
+                    "text",
+                    text_search(
+                        keyword=search_request.query,
+                        results=search_request.limit,
+                        source=search_request.search_sources,
+                        note=search_request.search_notes,
+                    ),
+                ),
+            ):
+                if coro is None:
+                    continue
+                try:
+                    legs.append(await asyncio.wait_for(coro, timeout=_search_timeout))
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "hybrid search: {} leg timed out after {}s; continuing "
+                        "with the remaining leg(s)",
+                        name,
+                        _search_timeout,
+                    )
+                except Exception as leg_error:  # noqa: BLE001 - one leg must not sink the query
+                    logger.warning(
+                        "hybrid search: {} leg failed ({}); continuing with the "
+                        "remaining leg(s)",
+                        name,
+                        leg_error,
+                    )
+            if not legs:
+                raise HTTPException(
+                    status_code=504,
+                    detail=(
+                        "Both search legs failed or timed out. Raise "
+                        "DEEPER_NOTEBOOK_SEARCH_TIMEOUT_SEC, or check the "
+                        "database and embedding model."
+                    ),
+                )
+            results = reciprocal_rank_fusion(legs, limit=search_request.limit)
+        elif effective_type == "vector":
             # Check if embedding model is available for vector search
             if not await model_manager.get_embedding_model():
                 raise HTTPException(

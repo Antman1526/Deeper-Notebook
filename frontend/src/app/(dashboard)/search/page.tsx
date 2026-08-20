@@ -76,7 +76,7 @@ export default function SearchPage() {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState(urlMode === 'search' ? urlQuery : '')
-  const [searchType, setSearchType] = useState<'text' | 'vector'>('text')
+  const [searchType, setSearchType] = useState<'text' | 'vector' | 'hybrid'>('text')
   const [searchSources, setSearchSources] = useState(true)
   const [searchNotes, setSearchNotes] = useState(true)
 
@@ -448,7 +448,7 @@ export default function SearchPage() {
                     <RadioGroup
                       name="search-type"
                       value={searchType}
-                      onValueChange={(value: 'text' | 'vector') => setSearchType(value)}
+                      onValueChange={(value: 'text' | 'vector' | 'hybrid') => setSearchType(value)}
                       disabled={modelsLoading || searchMutation.isPending}
                     >
                       <div className="flex items-center space-x-2">
@@ -468,6 +468,24 @@ export default function SearchPage() {
                           className={`font-normal ${!hasEmbeddingModel ? 'text-muted-foreground cursor-not-allowed' : 'cursor-pointer'}`}
                         >
                           {t('searchPage.vectorSearch')}
+                        </Label>
+                      </div>
+                      {/* v0.8.113 — runs both legs and fuses them by rank.
+                          NOT disabled without an embedding model: the backend
+                          degrades to the text leg alone, which still beats the
+                          400 that plain vector search returns. */}
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value="hybrid"
+                          id="hybrid"
+                          disabled={searchMutation.isPending}
+                        />
+                        <Label htmlFor="hybrid" className="font-normal cursor-pointer">
+                          {t('searchPage.hybridSearch', {
+                            defaultValue: hasEmbeddingModel
+                              ? 'Hybrid (keyword + meaning)'
+                              : 'Hybrid (keyword only — no embedding model)',
+                          })}
                         </Label>
                       </div>
                     </RadioGroup>

@@ -92,7 +92,12 @@ class SearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(..., description="Search query")
-    type: Literal["text", "vector"] = Field("text", description="Search type")
+    # v0.8.113 — "hybrid" runs BOTH legs and fuses them with Reciprocal Rank
+    # Fusion. Additive: "text" and "vector" behave exactly as before, so no
+    # existing caller changes behaviour and the default is untouched.
+    type: Literal["text", "vector", "hybrid"] = Field(
+        "text", description="Search type: text, vector, or hybrid (both, RRF-fused)"
+    )
     limit: int = Field(100, description="Maximum number of results", ge=1, le=1000)
     search_sources: bool = Field(True, description="Include sources in search")
     search_notes: bool = Field(True, description="Include notes in search")

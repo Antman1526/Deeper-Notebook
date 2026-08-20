@@ -3,7 +3,9 @@ import type { SourceVisualReceipt, SourceVisualStatus } from './source-visuals'
 // Search types
 export interface SearchRequest {
   query: string
-  type: 'text' | 'vector'
+  // v0.8.113 — 'hybrid' runs both legs and fuses them with Reciprocal Rank
+  // Fusion. Additive: 'text' and 'vector' are unchanged.
+  type: 'text' | 'vector' | 'hybrid'
   limit: number
   search_sources: boolean
   search_notes: boolean

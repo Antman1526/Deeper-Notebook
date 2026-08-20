@@ -350,7 +350,7 @@ def test_installer_version_matches_the_canonical_desktop_version() -> None:
 
     assert installer_match is not None
     assert desktop_match is not None
-    assert installer_match.group(1) == desktop_match.group(1) == "0.8.112"
+    assert installer_match.group(1) == desktop_match.group(1) == "0.8.113"
 
 
 def test_installer_removes_only_the_exact_retired_start_menu_shortcut() -> None:

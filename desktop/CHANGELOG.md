@@ -25,6 +25,49 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.113 — 2026-08-19 — Hybrid retrieval: fuse both search legs
+
+✨ **`/api/search` gains `type: "hybrid"`.** It has always run exactly ONE leg —
+`if effective_type == "vector": ... else: text_search(...)` — and discarded the
+other. Keyword and semantic retrieval fail in different directions: text search
+misses paraphrase, vector search misses exact identifiers, rare proper nouns and
+error strings. Answering with one lost recall on every query, and the codebase
+already computed both.
+
+Results are combined with **Reciprocal Rank Fusion**, an architecture taken from
+qmd (github.com/tobi/qmd, MIT). Only the approach is borrowed — qmd is
+Node/TypeScript over SQLite FTS5 + sqlite-vec and is not a drop-in for a
+Python/SurrealDB app. Its third leg, an LLM reranker, is deliberately NOT
+implemented: it would add another GGUF to the sidecar fleet for a benefit this
+codebase has not measured.
+
+**Why RRF rather than blending scores.** The legs produce incomparable numbers —
+cosine similarity in [0, 1] against an unbounded SurrealDB relevance score that
+shifts with corpus size. Normalising them needs calibration that rots as the
+corpus grows. RRF uses only ORDER, so a leg reporting enormous magnitudes gains
+nothing, which is pinned by test.
+
+**Degrades, never fails.** With no embedding model the vector leg is skipped and
+hybrid is plain text search — strictly better than the 400 the `vector` branch
+raises. If either leg errors or times out, the other still answers; only when
+both are gone does it report 504.
+
+**Additive.** `text` and `vector` behave exactly as before and the default is
+unchanged, so no existing caller is affected. Exposed in the search UI as a
+third option, enabled even without an embedding model, so the feature is
+reachable rather than API-only.
+
+Two bugs in my own work, caught by the tests I wrote for it: the fusion kept
+whichever leg was iterated FIRST rather than whichever ranked a document higher
+(contradicting its own docstring), and my first k-sensitivity test proved
+nothing because agreement won at every value of k.
+
+- **v0.8.113** ✨ **Hybrid retrieval.** `/api/search` ran one leg and threw the
+  other away; it can now run both and fuse them with Reciprocal Rank Fusion
+  (architecture from qmd, MIT). Additive, degrades to a single leg rather than
+  failing, and exposed in the search UI.
+
+
 ## v0.8.112 — 2026-08-19 — Source visuals can be enabled in a packaged build
 
 🐛 **The source-visual kill switch was unreachable in a packaged app.**
