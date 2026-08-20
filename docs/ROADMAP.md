@@ -74,9 +74,26 @@ the fallout is exactly two known, legitimate categories:
   position. One approval covering both is the intended behaviour; the allowlist
   is a mapping, so the duplicates must be removed rather than tolerated.
 
+**A fourth category was found on 2026-08-19, and it is the one that matters.**
+`ruff format` JOINS adjacent string literals — and this codebase uses split
+literals deliberately:
+
+    production_roots = ("api", "commands", "desktop", "open_" "notebook")
+
+Two tests that SCAN production source for the legacy token write it split so
+they do not trip their own scan. Joining them reintroduces the exact token the
+codebase is designed not to contain, and the audit then correctly demands an
+approval for it. Driving to green would have papered over that by adding two
+approvals — quietly undoing an intentional identity-hygiene device.
+
+Both sites are now marked (`# fmt: skip`, and `# fmt: off/on` for the multi-line
+one, which `skip` does not cover) and carry a comment saying why, so the
+protection survives whether or not a formatter is ever enabled. Before adopting,
+grep for other adjacent-literal splits — the technique is invisible unless you
+look for it.
+
 Do it as a reviewable diff in one sitting with the allowlist changes actually
-read, not as a byproduct of chasing a green check. That is the whole remaining
-cost, and it is a few hours of attention rather than an engineering problem.
+read, not as a byproduct of chasing a green check.
 
 ---
 

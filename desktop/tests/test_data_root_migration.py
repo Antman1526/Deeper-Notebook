@@ -870,6 +870,12 @@ def test_receipt_file_and_parent_are_fsynced_around_transitions(
 
 def test_production_code_has_no_direct_data_directory_construction():
     repository_root = Path(__file__).resolve().parents[2]
+    # fmt: off
+    # The split literal below is DELIBERATE and must stay split: this test scans
+    # production source for the legacy token, so writing it whole would make the
+    # test trip its own scan. `ruff format` joins adjacent literals and silently
+    # undoes it; `# fmt: skip` does not hold inside a multi-line collection, so
+    # the block is guarded instead. See ROADMAP §1.3.
     production_roots = (
         "api",
         "commands",
@@ -878,6 +884,7 @@ def test_production_code_has_no_direct_data_directory_construction():
         "open_" "notebook",
         "scripts",
     )
+    # fmt: on
     allowed = {
         Path("deeper_notebook/identity.py"),
         Path("desktop/data_root.py"),

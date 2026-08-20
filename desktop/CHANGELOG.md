@@ -25,6 +25,55 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.110 — 2026-08-19 — Formatter adoption attempted; two real hazards fixed instead
+
+Adoption was driven end to end and **reverted again**, deliberately. The
+reversion is the finding, not a failure to finish.
+
+🔒 **`ruff format` silently undoes a deliberate identity-hygiene device.** It
+joins adjacent string literals, and two tests that SCAN production source for
+the legacy token write it split precisely so they do not trip their own scan:
+
+    production_roots = ("api", "commands", "desktop", "open_" "notebook")
+
+Joining that reintroduces the exact token the codebase is designed not to
+contain, and the audit then correctly demands an approval for it. Adding those
+two approvals — which is what "just get it green" would have done — would have
+quietly retired the device. Both sites now carry `# fmt: skip` (and
+`# fmt: off/on` for the multi-line one, which `skip` does not cover) plus a
+comment explaining why, so the protection holds whether or not a formatter is
+ever enabled.
+
+🐛 **Two real bugs in `repair_rebrand_pins.py`**, both found by using it:
+
+  * It computed each pin's digest from the **stored** column against the NEW
+    line text. Reindentation moves that column, so the ordinal came out wrong,
+    so the digest came out wrong, and pins whose indentation merely changed were
+    reported as "content changed" — 49 of them on a 702-file reformat, nearly
+    all false. It now tries every occurrence on the candidate line and corrects
+    the column as well as the line.
+  * It could relocate two entries onto the **same** occurrence when their
+    approved lines were identical, producing "duplicate allowlist entry" on the
+    next load. Occurrences are now claimed at most once.
+
+Both matter for ordinary edits, not just formatting. Verified by provoking a
+break and repairing it round-trip.
+
+📋 **ROADMAP §1.3 now carries the full shape of adoption**: ~1,040 pins
+relocate automatically, ~39 are genuinely re-split (unambiguous mapping — live
+occurrence count equals pinned count per file), ~160 collapse as legitimate
+duplicates under content-keying, and the split-literal hazard above. The
+remaining cost is a reviewed diff, not an engineering problem.
+
+- **v0.8.110** 🔒 **`ruff format` joins adjacent string literals**, undoing the
+  deliberate `"open_" "notebook"` splits two self-scanning tests rely on. Both
+  sites are now protected and documented; formatter adoption was reverted rather
+  than papered over with two new approvals.
+- **v0.8.110** 🐛 **Two bugs fixed in `repair_rebrand_pins.py`** — it used the
+  stale column (misreporting reindented pins as changed) and could claim one
+  occurrence twice (producing duplicate allowlist entries).
+
+
 ## v0.8.109 — 2026-08-19 — The allowlist ratchet, actually fixed
 
 ROADMAP §2.1, and the second attempt. The first was reverted on 2026-08-19 for a

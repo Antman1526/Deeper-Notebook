@@ -817,7 +817,12 @@ def test_bootstrap_applies_normalized_aliases_to_process_environment(module_name
 def test_production_python_does_not_directly_access_legacy_product_keys():
     """All product-owned legacy accesses must route through the central resolver."""
     root = Path(__file__).resolve().parents[1]
-    production_roots = ("api", "commands", "desktop", "open_" "notebook")
+    # The split literal is DELIBERATE and must stay split: this test scans
+    # production source for the legacy token, so writing it whole would make
+    # the test trip its own scan and need an identity approval for its own
+    # source. `ruff format` joins adjacent literals and silently undoes this,
+    # which is one reason the formatter is not enabled (ROADMAP §1.3).
+    production_roots = ("api", "commands", "desktop", "open_" "notebook")  # fmt: skip
     violations: list[str] = []
     getter_names = {
         "getenv",

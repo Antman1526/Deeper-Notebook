@@ -52,18 +52,30 @@ AUDIT = ROOT / "scripts" / "rebrand_audit.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 
 
-def _digest_for(entry: dict, text: str) -> str:
-    """Digest an entry's line using the audit's own encoding.
+def _match_on_line(entry: dict, text: str) -> int | None:
+    """Return the column on `text` whose digest equals the entry's, if any.
 
-    Must NOT hash the raw line: digests fold in the intra-line ordinal over
-    whitespace-normalized content, so a raw hash here would treat every pin as
-    changed and this tool would report the whole allowlist as needing review.
+    v0.8.110 — every occurrence on the line is tried rather than trusting the
+    entry's stored column. That column was recorded against the OLD layout and
+    reindentation moves it; feeding it to occurrence_ordinal against the new
+    text yields the wrong ordinal, hence the wrong digest, and a pin whose
+    indentation merely changed is misreported as "content changed". Measured on
+    a 702-file reformat: 49 pins reported changed, nearly all of which had only
+    shifted.
     """
     import rebrand_audit as ra
 
-    return ra.occurrence_digest(
-        pattern=entry["pattern"], context=text, column=entry.get("column", 1)
-    )
+    pattern = entry["pattern"]
+    cursor = text.find(pattern)
+    while cursor != -1:
+        column = cursor + 1
+        if (
+            ra.occurrence_digest(pattern=pattern, context=text, column=column)
+            == entry["context_sha256"]
+        ):
+            return column
+        cursor = text.find(pattern, cursor + len(pattern))
+    return None
 
 
 def _relocate(payload: dict, *, dry_run: bool) -> tuple[int, list[str]]:
@@ -82,27 +94,48 @@ def _relocate(payload: dict, *, dry_run: bool) -> tuple[int, list[str]]:
 
     moved = 0
     unresolved: list[str] = []
+    # v0.8.110 — an occurrence may be claimed only once. Without this, two
+    # entries whose approved lines are IDENTICAL (same normalized text, same
+    # intra-line ordinal, therefore the same digest) both relocate onto
+    # whichever occurrence appears first, and the next load fails with
+    # "duplicate allowlist entry". Found exactly that way.
+    claimed: set[tuple[str, int, int]] = set()
     for entry in payload["entries"]:
         if entry.get("source") != "content" or entry.get("line") is None:
             continue
         rel, line, digest = entry["path"], entry["line"], entry["context_sha256"]
         lines = lines_of(rel)
-        if lines and line <= len(lines) and _digest_for(entry, lines[line - 1]) == digest:
-            continue  # still accurate
-        found = next(
-            (i for i, text in enumerate(lines, 1) if _digest_for(entry, text) == digest),
-            None
+        held = (
+            _match_on_line(entry, lines[line - 1])
+            if lines and line <= len(lines)
+            else None
         )
+        if held is not None and (rel, line, held) not in claimed:
+            claimed.add((rel, line, held))
+            continue  # still accurate
+        found = None
+        found_column = None
+        for candidate, text in enumerate(lines, 1):
+            column = _match_on_line(entry, text)
+            if column is not None and (rel, candidate, column) not in claimed:
+                found, found_column = candidate, column
+                claimed.add((rel, candidate, column))
+                break
         if found is None:
             # Content changed, not merely moved. That is a real review item.
             unresolved.append(f"{rel}:{line}")
             continue
         moved += 1
         if not dry_run:
+            # Both line AND column are corrected: a reflow moves the token
+            # within its line as well as the line within the file.
             entry["line"] = found
+            entry["column"] = found_column
             rationale = entry.get("rationale") or {}
             if "line" in rationale:
                 rationale["line"] = found
+            if "column" in rationale:
+                rationale["column"] = found_column
     return moved, unresolved
 
 
