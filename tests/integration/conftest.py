@@ -534,6 +534,41 @@ async def _restore_table_data(
                     await connection.query(definition)
 
 
+async def _reset_failed_rewind_database(metadata: dict[str, Any]) -> None:
+    """Rebuild only this fixture's disposable database after a failed down."""
+    required = ("url", "user", "password", "namespace", "database")
+    if any(not isinstance(metadata.get(key), str) for key in required):
+        raise AssertionError(
+            "failed-down recovery requires disposable database metadata"
+        )
+
+    url = metadata["url"]
+    user = metadata["user"]
+    password = metadata["password"]
+    namespace = metadata["namespace"]
+    database = metadata["database"]
+    if (
+        namespace != database
+        or re.fullmatch(r"onp_test_[0-9a-f]{8}", namespace) is None
+    ):
+        raise AssertionError(
+            f"refusing to reset non-disposable migration namespace {namespace!r}"
+        )
+
+    from deeper_notebook.database import repository as repo_mod
+
+    await repo_mod.close_pool()
+    admin = AsyncSurreal(url)
+    try:
+        await admin.signin({"username": user, "password": password})
+        await admin.use(namespace, database)
+        await admin.query(f"USE NS {namespace};")
+        await admin.query(f"REMOVE DATABASE {database};")
+        await admin.query(f"DEFINE DATABASE {database};")
+    finally:
+        await admin.close()
+
+
 @pytest_asyncio.fixture
 async def clean_namespace(surreal_db: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     """Per-test wipe of all user-data tables.
@@ -664,20 +699,14 @@ async def migration_rewind(
             original_head = rewind["original_head"]
             failed_down_version = rewind["failed_down_version"]
             if failed_down_version is not None:
-                from deeper_notebook.database.repository import repo_query
-
-                # A down migration can damage DDL before it reaches
-                # lower_version(). Its tracker row is then still present, so a
-                # normal forward run would skip that migration. Start recovery
-                # by invalidating the attempted and later migrations, then
-                # replay them exactly once. Running normally first would replay
-                # successful earlier downs a second time, duplicating data from
-                # migrations such as v47.
-                for version in range(failed_down_version, original_head + 1):
-                    await repo_query(
-                        "DELETE type::thing('_sbl_migrations', $version);",
-                        {"version": version},
-                    )
+                # A failed down may alter DDL before it lowers the migration
+                # head. Tracker invalidation cannot restore an artifact owned
+                # by an earlier migration, and replaying only a suffix can
+                # duplicate default data. This fixture owns a unique ephemeral
+                # database, so rebuild it from migration zero and restore the
+                # exact rows/relations captured before the failed down.
+                await _reset_failed_rewind_database(clean_namespace)
+                manager = AsyncMigrationManager()
                 await manager.run_migration_up()
             else:
                 await manager.run_migration_up()

@@ -145,6 +145,12 @@ async def test_migration_rewind_recovers_schema_when_down_fails_before_lowering(
 ):
     original_head = await get_latest_version()
     assert "text_search" in migration_schema_authority["database"]["functions"]
+    for table in ("source_embedding", "source_insight", "note"):
+        indexes = migration_schema_authority["tables"][table]["indexes"]
+        assert any(
+            "HNSW DIMENSION 768 DIST COSINE" in definition
+            for definition in indexes.values()
+        )
 
     async def damaged_down_before_lowering(self) -> None:
         await repo_query("REMOVE FUNCTION IF EXISTS fn::text_search;")
