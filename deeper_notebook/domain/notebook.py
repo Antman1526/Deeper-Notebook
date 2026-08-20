@@ -57,6 +57,37 @@ from deeper_notebook.exceptions import (
 )
 from deeper_notebook.vault._projection_context import _projection_refresh_is_active
 
+# Source deletion can change BM25 collection statistics.  Keep this as a
+# fixed internal whitelist: callers and persisted source metadata must never
+# select a table or index for REBUILD.
+_SOURCE_SEARCH_INDEXES: tuple[tuple[str, str], ...] = (
+    ("source", "idx_source_title"),
+    ("source", "idx_source_full_text"),
+    ("source_embedding", "idx_source_embed_chunk"),
+    ("source_insight", "idx_source_insight"),
+)
+
+
+async def _refresh_source_search_indexes() -> None:
+    """Best-effort rebuild after a completed source deletion.
+
+    The primary deletion is irreversible, so a rebuild failure cannot turn it
+    into a false failed-delete response.  The warning remains explicit that
+    search relevance can be degraded until a later successful rebuild.
+    """
+    for table, index in _SOURCE_SEARCH_INDEXES:
+        try:
+            await repo_query(f"REBUILD INDEX {index} ON TABLE {table}")
+        except Exception as exc:
+            logger.warning(
+                "Search relevance may be degraded until the next successful "
+                "rebuild: failed to rebuild index {} on table {} after source "
+                "deletion: {}",
+                index,
+                table,
+                exc,
+            )
+
 
 class _UnsafeUploadCleanupError(OSError):
     """The stored upload path cannot be unlinked without following names."""
@@ -1085,6 +1116,9 @@ class Source(ObjectModel):
                 self.id,
                 e,
             )
+
+        if result:
+            await _refresh_source_search_indexes()
 
         return result
 
