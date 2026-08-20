@@ -36,15 +36,17 @@ integration test's job, and neither replaces the other.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
-MIGRATIONS = (
-    Path(__file__).resolve().parents[1] / "deeper_notebook" / "database" / "migrations"
-)
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+MIGRATIONS = REPOSITORY_ROOT / "deeper_notebook" / "database" / "migrations"
 
 # `<|K|>` targets MTREE; `<|K,EF|>` targets HNSW.
-_ONE_ARG_KNN = re.compile(r"<\|\s*\d+\s*\|>")
+# The operand may be a Python f-string expression (for example, `{_MAX_FACTS}`),
+# so this cannot be limited to numeric literals.
+_ONE_ARG_KNN = re.compile(r"<\|\s*[^,|]+\s*\|>")
 _TWO_ARG_KNN = re.compile(r"<\|\s*\d+\s*,\s*\d+\s*\|>")
 
 
@@ -129,4 +131,37 @@ def test_every_knn_predicate_in_the_function_is_two_arg():
     assert len(_TWO_ARG_KNN.findall(code)) == 3, (
         "expected one KNN predicate per searched table (source_embedding, "
         "source_insight, note)"
+    )
+
+
+def _production_python_code() -> list[tuple[Path, str]]:
+    """Return canonical Python source, excluding tests and comments.
+
+    Query strings may be f-strings, so matching only digit literals would miss
+    a one-argument predicate whose K is a Python constant. `ast.unparse()`
+    strips explanatory comments, and tests are excluded because they
+    intentionally document the historical broken syntax.
+    """
+    ignored_parts = {".git", ".venv", "build", "dist", "node_modules", "tests"}
+    sources: list[tuple[Path, str]] = []
+    for path in REPOSITORY_ROOT.rglob("*.py"):
+        if any(
+            part in ignored_parts for part in path.relative_to(REPOSITORY_ROOT).parts
+        ):
+            continue
+        sources.append((path, ast.unparse(ast.parse(path.read_text()))))
+    return sources
+
+
+def test_no_production_python_query_uses_one_argument_knn():
+    """All production KNN query predicates must match the HNSW index arity."""
+    offenders = [
+        f"{path.relative_to(REPOSITORY_ROOT)}: {match.group(0)}"
+        for path, source in _production_python_code()
+        for match in _ONE_ARG_KNN.finditer(source)
+    ]
+
+    assert not offenders, (
+        "one-argument KNN predicates target MTREE and silently return no rows "
+        f"against this repository's HNSW indexes: {offenders!r}. Use <|K,EF|>."
     )

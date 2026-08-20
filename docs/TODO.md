@@ -36,65 +36,34 @@ as a recoverable backup during verification.
 
 ## 1. Correctness — found 2026-08-20
 
-### 1.1 Fix the 17 red integration tests — **root cause identified**
+### 1.1 Stabilize the real-Surreal integration suite — **complete 2026-08-20**
 
-`SURREAL_INTEGRATION=1 uv run pytest tests/integration/` reports **17 failed,
-104 passed**. These are *pre-existing* — the same 17 fail with this session's
-migrations removed.
+The migration-rewind fixture now captures the live migration head, uses the
+canonical runner for every rewind, and restores the original schema/head after
+each test. The current real-Surreal suite is green, including a regression that
+seeds normalized 768-dimensional memory vectors and proves semantic recall
+returns facts, preferences, and episodes through the HNSW indexes.
 
-Fifteen are in `tests/integration/test_vault_projection.py` and share one cause:
+### 1.2 Keep the integration suite in CI — **implemented**
 
-```python
-async def _restore_recorded_v32_state() -> None:
-    await _restore_recorded_v35_state()
-    ...
-    DELETE type::thing('_sbl_migrations', 35);
-    DELETE type::thing('_sbl_migrations', 34);
-    DELETE type::thing('_sbl_migrations', 33);
+`test.yml` runs `tests/integration/` with `SURREAL_INTEGRATION=1` against the
+pinned `surrealdb/surrealdb:v2.6.5` container. The local gate remains opt-in to
+avoid accidental database connections; run it explicitly with:
+
+```bash
+SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q
 ```
-
-The helper deletes migration rows **33–35 only**, but `get_latest_version()`
-returns `max(version)` across every applied row. With migrations 36–50 also
-present, it returns 50, and the tests assert `== 32`:
-
-```
-assert 49 == 32   # 49 was the head at the time; now 50
-```
-
-It has been failing since **migration 36** landed, and every migration since has
-widened the gap. The helper was written when head *was* 35.
-
-The fix is not a one-liner: correcting it means unwinding 33..HEAD, which needs
-each down migration in that range to exist and be safe to apply. Decide between
-that and re-scoping these tests to a dedicated namespace migrated only to v32.
-
-### 1.2 Run the integration suite in CI — **the meta-lesson**
-
-This is the highest-leverage item on the list.
-
-Everything under `tests/integration/` is skipped unless `SURREAL_INTEGRATION=1`,
-which nothing sets. Two separate defects survived for dozens of migrations
-purely because of that:
-
-* semantic search returned **zero results for every query** since migration 21;
-* 15 vault tests have been red since migration 36.
-
-The 5,670-test backend suite was green throughout. A suite nobody runs is a
-suite that rots, and both defects were the silent kind — HTTP 200, no error, no
-log line.
-
-Gate it on a SurrealDB service container. Fix 1.1 first or CI starts red.
 
 ### 1.3 Audit the remaining SurrealQL defect classes
 
 Three defect classes were found in `fn::vector_search` this session. Two have
-been swept repo-wide; one has not.
+been swept repo-wide; one remains open.
 
 | Class | Swept? | Result |
 |---|---|---|
-| One-arg KNN `<\|K\|>` against an HNSW index | yes | only `fn::vector_search`; fixed in 49 |
+| One-arg KNN `<\|K\|>` against an HNSW index | yes | `fn::vector_search` and Python memory recall use `<\|K,EF\|>`; static + real-Surreal guards cover both |
 | `ORDER BY` on a statement carrying `GROUP BY` | yes | also `fn::text_search`; fixed in 50 |
-| Function call in a WHERE that also drives an indexed scan | **no** | not yet swept |
+| Function call in a WHERE that also drives an indexed scan | **partial** | `fn::vector_search` is fixed in migration 49; a broader repository-wide audit is outside this HNSW repair |
 
 The third is the subtle one: on SurrealDB 2.6.5 a `@@`/KNN predicate combined
 with a function-based condition over the same indexed field returns **no rows**,
@@ -187,7 +156,7 @@ handling and deprecation policy with it.
 
 ```bash
 uv run pytest tests/ desktop/tests/ -q                      # 5,670 pass
-SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q   # 17 pre-existing failures
+SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q   # 124 passed, 10 warnings (2026-08-20)
 uv run python scripts/rebrand_audit.py --check
 make repair-rebrand-pins
 make security-scan

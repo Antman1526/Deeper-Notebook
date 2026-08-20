@@ -1,7 +1,8 @@
 """v0.8.67w — unit tests for HNSW / KNN query operators in memory recall.
 
 This verifies that the memory recall layer queries utilize the proper
-SurrealDB KNN operator format `<|limit|>` based on the maximum limits configured:
+SurrealDB HNSW KNN operator format `<|limit,ef|>` based on the maximum limits
+configured:
 - _MAX_FACTS = 15
 - _MAX_PREFERENCES = 10
 - _MAX_EPISODES = 2
@@ -24,7 +25,7 @@ from deeper_notebook.utils.memory_recall import (
 @pytest.mark.asyncio
 async def test_recall_relevant_memory_hnsw_operator(monkeypatch):
     """Assert that recall_relevant_memory builds queries using the f-string
-    interpolated <|K|> operators for facts, preferences, and episodes.
+    interpolated `<|K,EF|>` HNSW operators for facts, preferences, and episodes.
     """
     captured_queries = []
 
@@ -57,17 +58,17 @@ async def test_recall_relevant_memory_hnsw_operator(monkeypatch):
     # Check fact query
     fact_q, fact_vars = captured_queries[0]
     assert "FROM memory_fact" in fact_q
-    assert "embedding <|15|> $q" in fact_q
+    assert "embedding <|15,15|> $q" in fact_q
     assert fact_vars["limit"] == 15
 
     # Check preference query
     pref_q, pref_vars = captured_queries[1]
     assert "FROM memory_preference" in pref_q
-    assert "embedding <|10|> $q" in pref_q
+    assert "embedding <|10,10|> $q" in pref_q
     assert pref_vars["limit"] == 10
 
     # Check episode query
     ep_q, ep_vars = captured_queries[2]
     assert "FROM memory_episode" in ep_q
-    assert "embedding <|2|> $q" in ep_q
+    assert "embedding <|2,2|> $q" in ep_q
     assert ep_vars["limit"] == 2

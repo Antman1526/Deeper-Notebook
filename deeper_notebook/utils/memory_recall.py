@@ -245,14 +245,14 @@ async def recall_relevant_memory(
     facts = await _safe_select(
         f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608
         f"FROM memory_fact "
-        f"WHERE embedding <|{_MAX_FACTS}|> $q "
+        f"WHERE embedding <|{_MAX_FACTS},{_MAX_FACTS}|> $q "
         f"ORDER BY score DESC LIMIT $limit",
         {"q": q_vec, "limit": _MAX_FACTS},
     )
     preferences = await _safe_select(
         f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608
         f"FROM memory_preference "
-        f"WHERE embedding <|{_MAX_PREFERENCES}|> $q "
+        f"WHERE embedding <|{_MAX_PREFERENCES},{_MAX_PREFERENCES}|> $q "
         f"ORDER BY score DESC LIMIT $limit",
         {"q": q_vec, "limit": _MAX_PREFERENCES},
     )
@@ -262,7 +262,7 @@ async def recall_relevant_memory(
         await _safe_select(
             f"SELECT text, vector::similarity::cosine(embedding, $q) AS score "  # nosec B608
             f"FROM memory_episode "
-            f"WHERE embedding <|{_MAX_EPISODES}|> $q "
+            f"WHERE embedding <|{_MAX_EPISODES},{_MAX_EPISODES}|> $q "
             f"ORDER BY score DESC LIMIT $limit",
             {"q": q_vec, "limit": _MAX_EPISODES},
         )

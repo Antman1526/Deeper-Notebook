@@ -23,6 +23,7 @@ migration set, exercises the recall path, REMOVE NAMESPACE on teardown.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 
 import pytest
@@ -30,6 +31,51 @@ import pytest
 from deeper_notebook.database.repository import repo_query
 
 pytestmark = pytest.mark.integration_surreal
+
+_EMBEDDING_DIMENSION = 768
+
+
+async def test_recall_relevant_memory_returns_all_kinds_from_hnsw(
+    clean_namespace, monkeypatch
+):
+    """A real HNSW recall query must return fact, preference, and episode rows.
+
+    The one-argument KNN operator is valid only for MTREE. Against these HNSW
+    indexes SurrealDB 2.6.5 accepts it but returns no candidates, so this test
+    exercises the actual query planner while stubbing only the embedder.
+    """
+    component = 1 / math.sqrt(_EMBEDDING_DIMENSION)
+    vector = [component] * _EMBEDDING_DIMENSION
+    rows = {
+        "memory_fact": "fact recalled through HNSW",
+        "memory_preference": "preference recalled through HNSW",
+        "memory_episode": "episode recalled through HNSW",
+    }
+    for table, text in rows.items():
+        await repo_query(
+            f"CREATE {table} CONTENT {{text: $text, embedding: $embedding}}",  # nosec B608
+            {"text": text, "embedding": vector},
+        )
+
+    class FakeEmbeddingModel:
+        async def aembed(self, texts):
+            return [vector]
+
+    async def get_embedding_model():
+        return FakeEmbeddingModel()
+
+    from deeper_notebook.ai.models import model_manager
+    from deeper_notebook.utils.memory_recall import recall_relevant_memory
+
+    monkeypatch.setattr(model_manager, "get_embedding_model", get_embedding_model)
+
+    result = await recall_relevant_memory("HNSW recall fixture")
+
+    assert result == {
+        "facts": [{"text": rows["memory_fact"]}],
+        "preferences": [{"text": rows["memory_preference"]}],
+        "episodes": [{"text": rows["memory_episode"]}],
+    }
 
 
 # v0.8.67s — Removed @pytest.mark.asyncio and changed fixture from surreal_db
