@@ -454,6 +454,106 @@ class TestSourceListingProcessingInfo:
         assert body[1]["extraction_quality"] == "ok"
 
 
+class TestSourceListingEmbeddingMetrics:
+    @patch("api.routers.sources.Source.get_embedded_chunks", new_callable=AsyncMock)
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    def test_get_sources_reports_projected_embedded_chunk_count_without_n_plus_one(
+        self, mock_repo_query, mock_embedded_chunks, client
+    ):
+        mock_repo_query.return_value = [
+            {
+                "id": "source:all-sources",
+                "title": "All sources",
+                "topics": [],
+                "asset": None,
+                "created": "2026-06-23T10:00:00Z",
+                "updated": "2026-06-23T10:01:00Z",
+                "embedded": False,
+                "embedded_chunks": 7,
+                "insights_count": 0,
+                "command": None,
+            }
+        ]
+
+        response = client.get("/api/sources")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body[0]["embedded_chunks"] == 7
+        assert body[0]["embedded"] is True
+        mock_embedded_chunks.assert_not_called()
+
+    @patch("api.routers.sources.Source.get_embedded_chunks", new_callable=AsyncMock)
+    @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    def test_get_notebook_sources_reports_projected_embedded_chunk_count_without_n_plus_one(
+        self, mock_repo_query, mock_nb_get, mock_embedded_chunks, client
+    ):
+        mock_nb_get.return_value = MagicMock()
+        mock_repo_query.return_value = [
+            {
+                "id": "source:notebook-filter",
+                "title": "Notebook source",
+                "topics": [],
+                "asset": None,
+                "created": "2026-06-23T10:00:00Z",
+                "updated": "2026-06-23T10:01:00Z",
+                "embedded": False,
+                "embedded_chunks": 4,
+                "insights_count": 0,
+                "notebook_count": 1,
+                "command": None,
+            }
+        ]
+
+        response = client.get(
+            "/api/sources", params={"notebook_id": "notebook:1"}
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body[0]["embedded_chunks"] == 4
+        assert body[0]["embedded"] is True
+        mock_embedded_chunks.assert_not_called()
+
+    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+    def test_get_sources_treats_missing_embedded_chunk_count_as_zero(
+        self, mock_repo_query, client
+    ):
+        mock_repo_query.return_value = [
+            {
+                "id": "source:no-embeddings",
+                "title": "Not embedded",
+                "topics": [],
+                "asset": None,
+                "created": "2026-06-23T10:00:00Z",
+                "updated": "2026-06-23T10:01:00Z",
+                "embedded": True,
+                "embedded_chunks": None,
+                "insights_count": 0,
+                "command": None,
+            },
+            {
+                "id": "source:missing-count",
+                "title": "Missing count",
+                "topics": [],
+                "asset": None,
+                "created": "2026-06-23T10:00:00Z",
+                "updated": "2026-06-23T10:01:00Z",
+                "embedded": True,
+                "insights_count": 0,
+                "command": None,
+            },
+        ]
+
+        response = client.get("/api/sources")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [row["embedded_chunks"] for row in body] == [0, 0]
+        assert [row["embedded"] for row in body] == [False, False]
+
+
 class TestSourceDetailExtractionMetrics:
     @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
     @patch("api.routers.sources.Source.get_embedded_chunks", new_callable=AsyncMock)

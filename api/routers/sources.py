@@ -529,7 +529,7 @@ async def get_sources(
                 string::len(full_text) AS extracted_char_count,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
                 (SELECT VALUE count() FROM reference WHERE in = $parent.id GROUP ALL)[0].count OR 0 AS notebook_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+                (SELECT VALUE count() FROM source_embedding WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS embedded_chunks,
                 (SELECT VALUE content FROM source_insight WHERE source = $parent.id AND insight_type = 'Summary' LIMIT 1)[0] AS summary_preview
                 FROM (select value in from reference where out=$notebook_id)
                 {order_clause}
@@ -552,7 +552,7 @@ async def get_sources(
                 string::len(full_text) AS extracted_char_count,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
                 (SELECT VALUE count() FROM reference WHERE in = $parent.id GROUP ALL)[0].count OR 0 AS notebook_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+                (SELECT VALUE count() FROM source_embedding WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS embedded_chunks,
                 (SELECT VALUE content FROM source_insight WHERE source = $parent.id AND insight_type = 'Summary' LIMIT 1)[0] AS summary_preview
                 FROM source
                 {order_clause}
@@ -618,6 +618,7 @@ async def get_sources(
                 status = "unknown"
 
             extracted_char_count = row.get("extracted_char_count")
+            embedded_chunks = int(row.get("embedded_chunks") or 0)
 
             response_list.append(
                 SourceListResponse(
@@ -634,8 +635,8 @@ async def get_sources(
                     )
                     if row_asset
                     else None,
-                    embedded=row.get("embedded", False),
-                    embedded_chunks=0,  # Not needed in list view
+                    embedded=embedded_chunks > 0,
+                    embedded_chunks=embedded_chunks,
                     insights_count=row.get("insights_count", 0),
                     # v0.8.88 — one-line preview of the auto-summary insight.
                     summary_preview=_summary_preview(row.get("summary_preview")),
