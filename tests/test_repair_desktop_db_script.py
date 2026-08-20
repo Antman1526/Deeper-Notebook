@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -12,13 +13,32 @@ pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX repair script")
 
 
 def _run(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["bash", str(SCRIPT), *args],
-        env={"HOME": str(home), "PATH": "/usr/bin:/bin"},
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    """Run the repair script against a throwaway HOME.
+
+    v0.8.114 — `pgrep` is stubbed to report nothing running. The script aborts
+    early if Deeper Notebook or SurrealDB is live, so before this stub these
+    tests passed or failed depending on whether the developer happened to have
+    the app OPEN — `test_explicit_exact_target_resolves_both_roots_conflict`
+    failed on a machine running the app and passed everywhere else. These tests
+    are about how the script resolves its data root, and none of them asserts
+    the running-process guard, so removing that dependency costs no coverage.
+
+    The stub lives OUTSIDE `home` deliberately: one of these tests snapshots the
+    whole HOME tree to prove the script mutates nothing, and a stub directory
+    planted inside it would register as a mutation.
+    """
+    with tempfile.TemporaryDirectory(prefix="repair-script-stub-") as stub_root:
+        stub_bin = Path(stub_root)
+        pgrep = stub_bin / "pgrep"
+        pgrep.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        pgrep.chmod(0o755)
+        return subprocess.run(
+            ["bash", str(SCRIPT), *args],
+            env={"HOME": str(home), "PATH": f"{stub_bin}:/usr/bin:/bin"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
 
 def test_both_data_roots_refuse_without_explicit_target_and_do_not_mutate(
