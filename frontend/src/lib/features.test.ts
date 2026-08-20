@@ -184,6 +184,14 @@ describe('runtime feature overrides', () => {
     expect(isSourceVisualsEnabled()).toBe(false)
   })
 
+  it('preserves an existing rollback when a later valid payload updates another feature', () => {
+    applyRuntimeFeatures({ sourceVisuals: false })
+    applyRuntimeFeatures({ researchRuns: true })
+
+    expect(isSourceVisualsEnabled()).toBe(false)
+    expect(isResearchRunsEnabled()).toBe(true)
+  })
+
   it('rejects mixed valid and malformed payloads atomically', () => {
     applyRuntimeFeatures({ sourceVisuals: false })
     applyRuntimeFeatures({ sourceVisuals: true, visualRefresh: 'false' })

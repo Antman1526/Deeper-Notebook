@@ -41,7 +41,11 @@ export function applyRuntimeFeatures(features: unknown): void {
     || entries.some(([key, value]) => !isFeatureName(key) || typeof value !== 'boolean')
   ) return
 
-  const next: Partial<Record<FeatureName, boolean>> = {}
+  // A valid response may come from an older backend that knows only a subset
+  // of the current feature names. Merge that bounded update into the last
+  // accepted authority so an unrelated partial response cannot erase an
+  // explicit rollback and fall through to a default-on build flag.
+  const next: Partial<Record<FeatureName, boolean>> = { ...runtimeOverrides }
   for (const [key, value] of entries) {
     // The validation above makes this a complete, known boolean authority.
     next[key as FeatureName] = value as boolean
