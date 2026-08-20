@@ -33,6 +33,7 @@ vi.mock('@/lib/api/source-visuals', () => ({
 vi.mock('@/lib/features', () => ({
   isVisualSystemV2Enabled: () => process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 === '1',
   isSourceVisualsEnabled: () => process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS === '1',
+  useSourceVisualsEnabled: () => process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS === '1',
 }))
 
 import { sourcesApi } from '@/lib/api/sources'

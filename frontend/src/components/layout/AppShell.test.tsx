@@ -55,6 +55,7 @@ describe('AppShell feature switch', () => {
   })
 
   it('retains the private legacy shell when the flag is off', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
     render(<AppShell><div data-testid="legacy-page">Legacy page</div></AppShell>)
 
@@ -66,6 +67,7 @@ describe('AppShell feature switch', () => {
   })
 
   it('keeps the legacy utility route mounted when Focus mode is active', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
     render(<AppShell><div data-testid="legacy-page">Legacy page</div></AppShell>)
 

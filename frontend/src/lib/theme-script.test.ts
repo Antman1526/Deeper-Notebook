@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { themeScript } from './theme-script'
 
-describe('pre-hydration Research Core theme script', () => {
+describe('pre-hydration Gemini-forward theme script', () => {
   afterEach(() => {
     delete process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2
     localStorage.clear()
@@ -14,8 +14,8 @@ describe('pre-hydration Research Core theme script', () => {
     expect(themeScript.indexOf("getItem('onp-theme')")).toBeLessThan(themeScript.indexOf("getItem('theme-storage')"))
   })
 
-  it('falls back to Research Core Dark and sets dark class from the catalog', () => {
-    expect(themeScript).toContain("'research-core-dark'")
+  it('uses the Gemini-forward default and retains the dark catalog contract', () => {
+    expect(themeScript).toContain("'gemini-forward-light'")
     expect(themeScript).toContain('research-core-dark')
     expect(themeScript).toContain("classList.toggle('dark'")
   })
@@ -148,7 +148,7 @@ describe('pre-hydration Research Core theme script', () => {
 
     window.eval(themeScript)
 
-    expect(document.documentElement.dataset.theme).toBe('research-core-dark')
+    expect(document.documentElement.dataset.theme).toBe('gemini-forward-light')
     expect(document.documentElement.dataset.dnFocusMode).toBe('true')
   })
 
