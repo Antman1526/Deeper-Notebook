@@ -25,6 +25,34 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.112 — 2026-08-19 — Source visuals can be enabled in a packaged build
+
+🐛 **The source-visual kill switch was unreachable in a packaged app.**
+`DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED` is documented as the runtime toggle,
+but a Dock-launched `.app` inherits no shell environment, and the launcher seeds
+its children from its own `os.environ` — so there was no supported way to set
+it. `launcher.env` looked like the place and silently ignored it: that file is
+filtered through a five-key whitelist.
+
+Added to `ALLOWED_KEYS`. That list carries an explicit "do not add arbitrary env
+vars" rule and the addition fits it rather than bending it — a documented on/off
+knob, not a secret. The alternative was `launchctl setenv`, which does not
+survive a reboot.
+
+✅ **Verified live rather than assumed.** With the flag on, the gated endpoints
+answer 409/422 instead of the 404 they return when disabled, and the extractor's
+native dependencies are present and working in the API's actual venv
+(`~/.deeper-notebook/venv`): PyMuPDF 1.27.2.3, imageio-ffmpeg 0.6.0 with its
+bundled ffmpeg binary, Pillow 11.3.0. Rendering `tests/fixtures/source_visuals/
+fixture.pdf` in that interpreter produces a 640x360 PNG. Checked without
+uploading anything to the user's notebook.
+
+- **v0.8.112** 🐛 **Source visuals could not be enabled in a packaged build** —
+  the documented kill switch was unreachable because `launcher.env` filters
+  through a five-key whitelist and a Dock-launched app inherits no shell env.
+  Added to the whitelist; verified live end to end.
+
+
 ## v0.8.111 — 2026-08-19 — `ruff format` adopted
 
 Enabled in `.pre-commit-config.yaml`; 701 files reformatted and the tree is now

@@ -50,6 +50,14 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "DEEPER_NOTEBOOK_LOCAL_N_CTX",
         "DEEPER_NOTEBOOK_CHAT_LLM_CTX",
         "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX",
+        # v0.8.112 — the source-visual kill switch. Added deliberately and it
+        # fits the rule above rather than bending it: a documented on/off knob,
+        # not a secret and not arbitrary. Without it the flag is unreachable in
+        # a packaged build — a Dock-launched .app inherits no shell environment,
+        # and the launcher seeds its children from its own os.environ, so the
+        # only alternative was `launchctl setenv`, which does not survive a
+        # reboot.
+        "DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED",
     }
 )
 
