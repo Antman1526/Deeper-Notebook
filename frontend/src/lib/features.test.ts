@@ -56,9 +56,9 @@ describe('frontend feature flags', () => {
     expect(isLuminousFolioEnabled()).toBe(false)
   })
 
-  it('keeps the Gemini-forward visual system disabled until explicitly enabled', () => {
+  it('enables the Gemini-forward visual system by default while retaining its canonical rollback flag', () => {
     delete process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2
-    expect(isVisualSystemV2Enabled()).toBe(false)
+    expect(isVisualSystemV2Enabled()).toBe(true)
 
     process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
     expect(isVisualSystemV2Enabled()).toBe(true)
@@ -67,9 +67,9 @@ describe('frontend feature flags', () => {
     expect(isVisualSystemV2Enabled()).toBe(false)
   })
 
-  it('keeps source visuals off unless explicitly enabled', () => {
+  it('enables source visuals by default while retaining its canonical rollback flag', () => {
     delete process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS
-    expect(isSourceVisualsEnabled()).toBe(false)
+    expect(isSourceVisualsEnabled()).toBe(true)
 
     process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS = '1'
     expect(isSourceVisualsEnabled()).toBe(true)
@@ -148,10 +148,10 @@ describe('runtime feature overrides', () => {
     expect(isStudyWorkbenchEnabled()).toBe(false)
   })
 
-  it('can also turn a feature ON that the build defaulted off', () => {
-    expect(isSourceVisualsEnabled()).toBe(false)
-    applyRuntimeFeatures({ sourceVisuals: true })
+  it('allows the backend runtime response to roll source visuals back below the inlined default', () => {
     expect(isSourceVisualsEnabled()).toBe(true)
+    applyRuntimeFeatures({ sourceVisuals: false })
+    expect(isSourceVisualsEnabled()).toBe(false)
   })
 
   it('ignores non-boolean values rather than coercing them', () => {
@@ -159,7 +159,7 @@ describe('runtime feature overrides', () => {
     // which is the precise failure this layer exists to prevent.
     applyRuntimeFeatures({ studyWorkbench: 'false', sourceVisuals: 'yes' })
     expect(isStudyWorkbenchEnabled()).toBe(true)
-    expect(isSourceVisualsEnabled()).toBe(false)
+    expect(isSourceVisualsEnabled()).toBe(true)
   })
 
   it('ignores a malformed payload entirely', () => {

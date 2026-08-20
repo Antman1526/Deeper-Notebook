@@ -785,7 +785,7 @@ _KIND_SCOPE_PREFIXES = {
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _PINNED_SELECTOR_INVENTORY_SHA256 = (
-    "6ae6c8f4ba4608bcd05e91c16d841724ac8acb23f5733dc9815875fc10e96bd5"
+    "5233ea483e5d1d0bf62a3eeba017e8d812a39fd82381d96749c9c839affd22a0"
 )
 _SEMANTIC_SELECTOR_PATHS = frozenset(
     {
@@ -1943,6 +1943,59 @@ def _frontend_semantic_selectors(
     return selectors
 
 
+def _source_visual_environment_alias_selectors(
+    root: Path,
+) -> dict[OccurrenceKey, str]:
+    """Select only the reviewed Source Visuals alias-contract regression."""
+    selectors: dict[OccurrenceKey, str] = {}
+    relative_path = "tests/test_environment_aliases.py"
+    target = root / relative_path
+    if not target.is_file():
+        return selectors
+    lines = target.read_text(encoding="utf-8").splitlines()
+    start = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line
+            == "def test_source_visuals_setting_registers_all_aliases_with_precedence_and_warnings("
+        ),
+        None,
+    )
+    if start is None:
+        return selectors
+    end = next(
+        (
+            index
+            for index, line in enumerate(lines[start + 1 :], start=start + 1)
+            if line.startswith("def ")
+        ),
+        len(lines),
+    )
+    expected_lines = {
+        '        ("OPEN_NOTEBOOK_SOURCE_VISUALS_ENABLED", "0", True),',
+        '        ("ONP_SOURCE_VISUALS_ENABLED", "1", True),',
+        '        "OPEN_NOTEBOOK_SOURCE_VISUALS_ENABLED",',
+        '        "ONP_SOURCE_VISUALS_ENABLED",',
+        '        "OPEN_NOTEBOOK_SOURCE_VISUALS_ENABLED": "0",',
+        '        "ONP_SOURCE_VISUALS_ENABLED": "1",',
+    }
+    if any(lines.count(expected) != 1 for expected in expected_lines):
+        return selectors
+    for occurrence in _selector_occurrences_for_path(root, relative_path):
+        key = _selector_key(occurrence)
+        line_number = occurrence.get("line")
+        if (
+            key is not None
+            and occurrence["pattern"] in {"OPEN_NOTEBOOK_", "ONP_"}
+            and isinstance(line_number, int)
+            and line_number - 1 < end
+            and lines[line_number - 1] in expected_lines
+        ):
+            selectors[key] = "env-alias-v1"
+    return selectors
+
+
 def compatibility_selector_inventory(
     root: Path,
 ) -> dict[OccurrenceKey, str]:
@@ -1971,6 +2024,7 @@ def compatibility_selector_inventory(
     ]
     semantic = _frontend_semantic_selectors(root)
     semantic.update(_backend_legacy_api_route_selectors(root))
+    semantic.update(_source_visual_environment_alias_selectors(root))
     for occurrences, contract in semantic_groups:
         for occurrence in occurrences:
             key = _selector_key(occurrence)

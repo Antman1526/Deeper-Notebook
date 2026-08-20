@@ -131,6 +131,48 @@ def test_all_four_precedence_positions(monkeypatch, winner, expected):
         assert resolve_env(canonical) == expected
 
 
+@pytest.mark.parametrize(
+    ("winner", "expected", "uses_legacy"),
+    [
+        ("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED", "0", False),
+        ("DN_SOURCE_VISUALS_ENABLED", "1", False),
+        ("OPEN_NOTEBOOK_SOURCE_VISUALS_ENABLED", "0", True),
+        ("ONP_SOURCE_VISUALS_ENABLED", "1", True),
+    ],
+)
+def test_source_visuals_setting_registers_all_aliases_with_precedence_and_warnings(
+    monkeypatch, winner, expected, uses_legacy
+):
+    canonical = "DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED"
+    aliases = (
+        "DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED",
+        "DN_SOURCE_VISUALS_ENABLED",
+        "OPEN_NOTEBOOK_SOURCE_VISUALS_ENABLED",
+        "ONP_SOURCE_VISUALS_ENABLED",
+    )
+    assert SETTINGS[canonical].precedence == aliases
+
+    _clear_aliases(monkeypatch, canonical)
+    start = aliases.index(winner)
+    values = {
+        "DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED": "0",
+        "DN_SOURCE_VISUALS_ENABLED": "1",
+        "OPEN_NOTEBOOK_SOURCE_VISUALS_ENABLED": "0",
+        "ONP_SOURCE_VISUALS_ENABLED": "1",
+    }
+    for name in aliases[start:]:
+        monkeypatch.setenv(name, values[name])
+
+    if uses_legacy:
+        with pytest.warns(LegacyEnvironmentWarning):
+            assert resolve_env(canonical) == expected
+    else:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            assert resolve_env(canonical) == expected
+        assert caught == []
+
+
 def test_short_name_precedence_and_child_process_mirroring(monkeypatch):
     canonical = "DEEPER_NOTEBOOK_DB_POOL_SIZE"
     _clear_aliases(monkeypatch, canonical)

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 from deeper_notebook.environment import resolve_env
 
 _TRUTHY = {"1", "true", "t", "yes", "y", "on", "enabled"}
@@ -37,8 +35,5 @@ def study_workbench_enabled() -> bool:
 
 
 def source_visuals_enabled() -> bool:
-    """Return whether source-derived visual extraction is explicitly enabled."""
-    raw = os.environ.get("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED")
-    if raw is None:
-        return False
-    return raw.strip().lower() in _TRUTHY
+    """Return whether source-derived visual extraction is enabled."""
+    return _env_flag("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED", default=True)

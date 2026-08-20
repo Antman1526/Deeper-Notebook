@@ -26,15 +26,15 @@ from deeper_notebook.identity import (
 )
 from deeper_notebook.logging import default_log_dir
 from scripts.rebrand_audit import (
+    ALLOWLIST_SCHEMA_VERSION,
     LEGACY_PATTERNS,
     Approval,
     Rationale,
     audit_repository,
     classify_match,
-    ALLOWLIST_SCHEMA_VERSION,
     context_sha256,
-    occurrence_digest,
     load_allowlist,
+    occurrence_digest,
     patterns_for_path,
 )
 
@@ -2592,6 +2592,39 @@ def test_frontend_alias_contract_survives_additional_canonical_feature_flag():
 
     assert len(feature_aliases) == 4
     assert set(feature_aliases) == {"frontend-env-alias-v1"}
+
+
+def test_source_visual_environment_alias_contract_is_closed():
+    selectors = rebrand_audit.compatibility_selector_inventory(ROOT)
+    source_lines = (
+        ROOT / "tests/test_environment_aliases.py"
+    ).read_text(encoding="utf-8").splitlines()
+    legacy_alias_pattern = next(
+        pattern
+        for pattern in LEGACY_PATTERNS
+        if pattern.endswith("_") and len(pattern) == 4
+    )
+    expected_lines = {
+        '        ("OPEN_NOTEBOOK_SOURCE_VISUALS_ENABLED", "0", True),',
+        '        ("ONP_SOURCE_VISUALS_ENABLED", "1", True),',
+        '        "OPEN_NOTEBOOK_SOURCE_VISUALS_ENABLED",',
+        '        "ONP_SOURCE_VISUALS_ENABLED",',
+        '        "OPEN_NOTEBOOK_SOURCE_VISUALS_ENABLED": "0",',
+        '        "ONP_SOURCE_VISUALS_ENABLED": "1",',
+    }
+    source_visual_aliases = [
+        rebrand_audit.compatibility_contract_for_occurrence(
+            occurrence, root=ROOT, selectors=selectors
+        )
+        for occurrence in rebrand_audit._selector_occurrences_for_path(
+            ROOT, "tests/test_environment_aliases.py"
+        )
+        if occurrence["pattern"] in {"OPEN_NOTEBOOK_", legacy_alias_pattern}
+        and source_lines[int(occurrence["line"]) - 1] in expected_lines
+    ]
+
+    assert len(source_visual_aliases) == 6
+    assert set(source_visual_aliases) == {"env-alias-v1"}
 
 
 def test_current_frontend_compatibility_seams_use_existing_contracts():

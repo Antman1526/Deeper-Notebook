@@ -97,9 +97,9 @@ export function isLuminousFolioEnabled(): boolean {
 }
 
 export function isVisualSystemV2Enabled(): boolean {
-  return envFlag(process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2, undefined, false)
+  return envFlag(process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2, undefined, true)
 }
 
 export function isSourceVisualsEnabled(): boolean {
-  return resolve('sourceVisuals', envFlag(process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS, undefined, false))
+  return resolve('sourceVisuals', envFlag(process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS, undefined, true))
 }
