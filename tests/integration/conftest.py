@@ -377,7 +377,22 @@ async def migration_rewind(
     """
     from deeper_notebook.database.async_migrate import AsyncMigrationManager
 
-    rewinds: list[tuple[AsyncMigrationManager, int]] = []
+    async def schema_snapshot() -> dict[str, Any]:
+        from deeper_notebook.database.repository import repo_query
+
+        rows = await repo_query("INFO FOR DB;")
+        database = rows[0] if isinstance(rows, list) else rows
+        tables = database.get("tables") or database.get("tb") or {}
+        table_info = {}
+        for table in sorted(tables):
+            rows = await repo_query(f"INFO FOR TABLE {table};")
+            table_info[table] = rows[0] if isinstance(rows, list) else rows
+        return {
+            "database": _freeze_schema_snapshot(database),
+            "tables": _freeze_schema_snapshot(table_info),
+        }
+
+    rewinds: list[dict[str, Any]] = []
 
     async def rewind_to(target_version: int) -> int:
         manager = AsyncMigrationManager()
@@ -388,10 +403,23 @@ async def migration_rewind(
             )
 
         # Register before mutating state so teardown restores a partially
-        # rewound database if a down migration itself raises.
-        rewinds.append((manager, original_head))
+        # rewound database if a down migration itself raises. The snapshot is
+        # schema authority, not only a migration-head proxy: a down migration
+        # can alter DDL before it reaches lower_version().
+        rewind = {
+            "manager": manager,
+            "original_head": original_head,
+            "original_schema": await schema_snapshot(),
+            "failed_down_version": None,
+        }
+        rewinds.append(rewind)
         while await manager.get_current_version() > target_version:
-            await manager.runner.run_one_down()
+            current_version = await manager.get_current_version()
+            try:
+                await manager.runner.run_one_down()
+            except Exception:
+                rewind["failed_down_version"] = current_version
+                raise
 
         assert await manager.get_current_version() == target_version
         return original_head
@@ -399,6 +427,35 @@ async def migration_rewind(
     try:
         yield rewind_to
     finally:
-        for manager, original_head in reversed(rewinds):
-            await manager.run_migration_up()
+        for rewind in reversed(rewinds):
+            manager = rewind["manager"]
+            original_head = rewind["original_head"]
+            failed_down_version = rewind["failed_down_version"]
+            if failed_down_version is not None:
+                from deeper_notebook.database.repository import repo_query
+
+                # A down migration can damage DDL before it reaches
+                # lower_version(). Its tracker row is then still present, so a
+                # normal forward run would skip that migration. Start recovery
+                # by invalidating the attempted and later migrations, then
+                # replay them exactly once. Running normally first would replay
+                # successful earlier downs a second time, duplicating data from
+                # migrations such as v47.
+                for version in range(failed_down_version, original_head + 1):
+                    await repo_query(
+                        "DELETE type::thing('_sbl_migrations', $version);",
+                        {"version": version},
+                    )
+                await manager.run_migration_up()
+            else:
+                await manager.run_migration_up()
             assert await manager.get_current_version() == original_head
+            assert await schema_snapshot() == rewind["original_schema"]
+
+
+def _freeze_schema_snapshot(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _freeze_schema_snapshot(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [_freeze_schema_snapshot(item) for item in value]
+    return value

@@ -15,7 +15,7 @@ from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.evaluation.schemas import EvidenceSpan, hash_source_text
 from deeper_notebook.study.assistant_repository import StudyAssistantRepository
 from deeper_notebook.study.assistants import StudyProgressReceipt
-from deeper_notebook.study.contracts import StudyCard, StudyRating
+from deeper_notebook.study.contracts import FsrsCardState, StudyCard, StudyRating
 from deeper_notebook.study.plan_repository import StudyPlanRepository
 from deeper_notebook.study.plans import StudyPlan, StudyPlanPreferences
 from deeper_notebook.study.progress import (
@@ -36,13 +36,14 @@ pytestmark = pytest.mark.integration_surreal
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 
 
-def _card() -> StudyCard:
+def _card(*, fsrs_state: FsrsCardState | None = None) -> StudyCard:
     source_text = "Native review projection source"
     return StudyCard(
         artifact_id="studio_artifact:progress-integration",
         artifact_card_id="card-one",
         front="What is the native review?",
         back="A durable FSRS receipt.",
+        fsrs_state=fsrs_state or FsrsCardState(),
         citations=[
             EvidenceSpan(
                 source_id="source:progress-integration",
@@ -170,7 +171,7 @@ async def test_card_version_owner_race_keeps_one_current_and_one_due_card(
 
     first, second = await asyncio.gather(
         repository.create_card_version_with_artifact_owner(
-            _card().model_copy(
+            _card(fsrs_state=FsrsCardState(due=NOW)).model_copy(
                 update={
                     "artifact_id": artifact_id,
                     "front": "Race winner one",
@@ -179,7 +180,7 @@ async def test_card_version_owner_race_keeps_one_current_and_one_due_card(
             )
         ),
         repository.create_card_version_with_artifact_owner(
-            _card().model_copy(
+            _card(fsrs_state=FsrsCardState(due=NOW)).model_copy(
                 update={
                     "artifact_id": artifact_id,
                     "front": "Race winner two",
@@ -206,9 +207,7 @@ async def test_card_version_owner_race_keeps_one_current_and_one_due_card(
         {"plan_id": plan_id},
     )
     assert {row["card_id"] for row in links} == {row["id"] for row in cards}
-    due_at = current[0]["due"]
-    assert due_at is not None
-    due = await repository.list_due(due_at, limit=100)
+    due = await repository.list_due(NOW, limit=100)
     assert [card.artifact_card_id for card in due].count("race-card") == 1
 
 
