@@ -160,6 +160,10 @@ class TestSourceDomain:
                 patch(
                     "deeper_notebook.domain.notebook._schedule_source_search_index_maintenance"
                 ),
+                patch(
+                    "deeper_notebook.domain.notebook._mark_source_search_rebuild_pending",
+                    new=AsyncMock(return_value="test-marker"),
+                ),
             ):
                 mock_delete.return_value = True
 
@@ -192,6 +196,10 @@ class TestSourceDomain:
             patch(
                 "deeper_notebook.domain.notebook._schedule_source_search_index_maintenance"
             ),
+            patch(
+                "deeper_notebook.domain.notebook._mark_source_search_rebuild_pending",
+                new=AsyncMock(return_value="test-marker"),
+            ),
         ):
             mock_delete.return_value = True
 
@@ -217,6 +225,10 @@ class TestSourceDomain:
             ) as mock_delete,
             patch(
                 "deeper_notebook.domain.notebook._schedule_source_search_index_maintenance"
+            ),
+            patch(
+                "deeper_notebook.domain.notebook._mark_source_search_rebuild_pending",
+                new=AsyncMock(return_value="test-marker"),
             ),
         ):
             mock_delete.return_value = True

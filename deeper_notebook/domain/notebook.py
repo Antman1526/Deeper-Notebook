@@ -1,6 +1,7 @@
 import asyncio
 import os
 import stat
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
@@ -68,6 +69,10 @@ _SOURCE_SEARCH_INDEXES: tuple[tuple[str, str], ...] = (
     ("source_insight", "idx_source_insight"),
 )
 _SOURCE_SEARCH_REBUILD_TIMEOUT_S = 10.0
+# Desktop shutdown defaults to an eight-second process grace. Keep enough room
+# for pool closure while waiting only briefly for an already-running pass; an
+# unfinished marker is reconciled before the next API starts serving requests.
+SOURCE_SEARCH_INDEX_SHUTDOWN_DRAIN_TIMEOUT_S = 5.0
 
 
 class _SourceSearchIndexMaintenanceState:
@@ -94,13 +99,60 @@ def _source_search_index_maintenance_state() -> _SourceSearchIndexMaintenanceSta
     return state
 
 
-async def _refresh_source_search_indexes() -> None:
+async def _mark_source_search_rebuild_pending() -> str:
+    """Persist a fresh reconciliation receipt before source deletion begins."""
+    rebuild_token = uuid.uuid4().hex
+    try:
+        rows = await repo_query(
+            "UPSERT open_notebook:source_search_rebuild_pending SET "
+            "source_search_rebuild_pending = true, "
+            "source_search_rebuild_token = $rebuild_token RETURN AFTER;",
+            {"rebuild_token": rebuild_token},
+        )
+    except Exception as exc:
+        raise DatabaseOperationError(
+            "Could not write the source-search rebuild marker before deletion"
+        ) from exc
+
+    if not rows or str(rows[0].get("source_search_rebuild_token")) != rebuild_token:
+        raise DatabaseOperationError(
+            "Could not confirm the source-search rebuild marker before deletion"
+        )
+    return rebuild_token
+
+
+async def _pending_source_search_rebuild_token() -> str | None:
+    """Read the one fixed durable marker without deriving any query from input."""
+    rows = await repo_query(
+        "SELECT source_search_rebuild_token "
+        "FROM open_notebook:source_search_rebuild_pending;"
+    )
+    if not rows:
+        return None
+    token = rows[0].get("source_search_rebuild_token")
+    return str(token) if token else None
+
+
+async def _clear_source_search_rebuild_marker(rebuild_token: str) -> bool:
+    """Clear only the exact marker token observed before this rebuild pass."""
+    rows = await repo_query(
+        "UPDATE open_notebook:source_search_rebuild_pending "
+        "SET source_search_rebuild_pending = false, "
+        "source_search_rebuild_token = NONE "
+        "WHERE source_search_rebuild_token = $rebuild_token RETURN AFTER;",
+        {"rebuild_token": rebuild_token},
+    )
+    return bool(rows)
+
+
+async def _refresh_source_search_indexes() -> bool:
     """Perform one bounded, best-effort maintenance pass.
 
     The primary deletion is irreversible, so a rebuild failure cannot turn it
     into a false failed-delete response.  The warning remains explicit that
     search relevance can be degraded until a later successful rebuild.
     """
+    succeeded = True
     for table, index in _SOURCE_SEARCH_INDEXES:
         try:
             await asyncio.wait_for(
@@ -108,6 +160,7 @@ async def _refresh_source_search_indexes() -> None:
                 timeout=_SOURCE_SEARCH_REBUILD_TIMEOUT_S,
             )
         except TimeoutError:
+            succeeded = False
             logger.warning(
                 "Search relevance may be degraded until the next successful "
                 "rebuild: timed out rebuilding index {} on table {} after {}s "
@@ -117,6 +170,7 @@ async def _refresh_source_search_indexes() -> None:
                 _SOURCE_SEARCH_REBUILD_TIMEOUT_S,
             )
         except Exception as exc:
+            succeeded = False
             logger.warning(
                 "Search relevance may be degraded until the next successful "
                 "rebuild: failed to rebuild index {} on table {} after source "
@@ -125,16 +179,50 @@ async def _refresh_source_search_indexes() -> None:
                 table,
                 exc,
             )
+    return succeeded
 
 
 async def _run_source_search_index_maintenance(
     state: _SourceSearchIndexMaintenanceState,
 ) -> None:
-    """Converge all deletes seen during a pass in one trailing pass."""
-    while state.completed_generation < state.generation:
+    """Converge marker generations, clearing only after a successful exact CAS."""
+    while True:
+        try:
+            rebuild_token = await _pending_source_search_rebuild_token()
+        except Exception as exc:
+            logger.warning(
+                "Search relevance may be degraded until the next successful "
+                "rebuild: could not read source-search rebuild marker: {}",
+                exc,
+            )
+            return
+
+        if rebuild_token is None:
+            state.completed_generation = state.generation
+            return
+
         generation = state.generation
-        await _refresh_source_search_indexes()
-        state.completed_generation = generation
+        if not await _refresh_source_search_indexes():
+            # Preserve the durable marker for a later delete, shutdown drain,
+            # or next application startup; retrying in a tight detached loop
+            # would amplify an outage.
+            return
+
+        try:
+            cleared = await _clear_source_search_rebuild_marker(rebuild_token)
+        except Exception as exc:
+            logger.warning(
+                "Search relevance may be degraded until the next successful "
+                "rebuild: could not clear source-search rebuild marker {}: {}",
+                rebuild_token,
+                exc,
+            )
+            return
+
+        if cleared:
+            state.completed_generation = generation
+        # A false CAS means another delete wrote a newer marker while this pass
+        # ran. Re-read it and perform exactly the required trailing pass.
 
 
 def _observe_source_search_index_maintenance(
@@ -170,14 +258,59 @@ def _schedule_source_search_index_maintenance() -> None:
         task.add_done_callback(_observe_source_search_index_maintenance)
 
 
-async def _wait_for_source_search_index_maintenance() -> None:
-    """Await the current loop's coalesced maintenance for focused tests only."""
-    state = _source_search_index_maintenance_state()
-    while state.completed_generation < state.generation:
+async def drain_source_search_index_maintenance(
+    *, timeout_s: float | None = SOURCE_SEARCH_INDEX_SHUTDOWN_DRAIN_TIMEOUT_S
+) -> bool:
+    """Boundedly drain the current loop's durable source-search maintenance.
+
+    A false return preserves the marker for the next startup.  Cancellation is
+    deliberately propagated after shielding the detached task, so the caller
+    can log the degraded-search condition without silently erasing the receipt.
+    """
+
+    async def _drain() -> bool:
+        try:
+            pending = await _pending_source_search_rebuild_token()
+        except Exception as exc:
+            logger.warning(
+                "Search relevance may be degraded until the next successful "
+                "rebuild: could not read source-search rebuild marker: {}",
+                exc,
+            )
+            return False
+        if pending is None:
+            return True
+
+        state = _source_search_index_maintenance_state()
+        if state.task is None or state.task.done():
+            _schedule_source_search_index_maintenance()
         task = state.task
-        if task is None:
-            return
+        assert task is not None
         await asyncio.shield(task)
+
+        try:
+            return await _pending_source_search_rebuild_token() is None
+        except Exception as exc:
+            logger.warning(
+                "Search relevance may be degraded until the next successful "
+                "rebuild: could not verify source-search rebuild marker: {}",
+                exc,
+            )
+            return False
+
+    if timeout_s is None:
+        return await _drain()
+    return await asyncio.wait_for(_drain(), timeout=timeout_s)
+
+
+async def reconcile_source_search_index_maintenance() -> bool:
+    """Finish any crash-surviving marker before the API begins serving traffic."""
+    return await drain_source_search_index_maintenance(timeout_s=None)
+
+
+async def _wait_for_source_search_index_maintenance() -> None:
+    """Compatibility test helper; production uses the public drain above."""
+    await drain_source_search_index_maintenance(timeout_s=None)
 
 
 class _UnsafeUploadCleanupError(OSError):
@@ -1124,6 +1257,10 @@ class Source(ObjectModel):
         against a now-dead source, writing fresh source_embedding rows
         pointing at the deleted source. Orphan data + wasted GPU.
         """
+        # This durable receipt is deliberately first: a forced kill after any
+        # file/database mutation must still trigger a later source-search index
+        # reconciliation. If writing it fails, fail closed before deletion.
+        await _mark_source_search_rebuild_pending()
         await self._cancel_processing_command()
         self._cleanup_uploaded_file()
 

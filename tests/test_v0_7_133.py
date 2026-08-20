@@ -228,6 +228,10 @@ class TestSourceDeletePostSweep:
                 new=fake_repo_query,
             ),
             patch(
+                "deeper_notebook.domain.notebook._mark_source_search_rebuild_pending",
+                new=AsyncMock(return_value="test-marker"),
+            ),
+            patch(
                 "deeper_notebook.domain.base.ObjectModel.delete",
                 new=fake_super_delete,
             ),
@@ -290,6 +294,10 @@ class TestSourceDeletePostSweep:
             patch(
                 "deeper_notebook.domain.notebook.repo_query",
                 new=flaky_repo_query,
+            ),
+            patch(
+                "deeper_notebook.domain.notebook._mark_source_search_rebuild_pending",
+                new=AsyncMock(return_value="test-marker"),
             ),
             patch(
                 "deeper_notebook.domain.base.ObjectModel.delete",

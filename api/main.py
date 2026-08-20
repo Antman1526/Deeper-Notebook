@@ -374,6 +374,79 @@ async def _stop_knowledge_engine(
     _clear_knowledge_engine_service(app)
 
 
+async def _reconcile_source_search_index_maintenance_at_startup() -> None:
+    """Finish a crash-surviving source-search rebuild before serving requests."""
+    try:
+        from deeper_notebook.domain.notebook import (
+            reconcile_source_search_index_maintenance,
+        )
+
+        if not await reconcile_source_search_index_maintenance():
+            logger.warning(
+                "Search relevance may be degraded: source-search index maintenance "
+                "remains pending after startup reconciliation"
+            )
+    except asyncio.CancelledError:
+        logger.warning(
+            "Search relevance may be degraded: source-search index maintenance "
+            "startup reconciliation was cancelled; the durable marker is retained"
+        )
+        raise
+    except Exception as exc:
+        logger.warning(
+            "Search relevance may be degraded: source-search index maintenance "
+            "startup reconciliation failed ({})",
+            type(exc).__name__,
+        )
+
+
+async def _close_database_pool_after_source_search_index_maintenance() -> None:
+    """Bounded clean-shutdown drain before closing the DB pool.
+
+    The drain's durable marker survives a timeout or forced kill and is repaired
+    by startup reconciliation. This is a clean-shutdown guarantee only: an
+    unclean process kill can interrupt the pass but cannot erase its receipt.
+    """
+    try:
+        from deeper_notebook.domain.notebook import (
+            drain_source_search_index_maintenance,
+        )
+
+        if not await drain_source_search_index_maintenance():
+            logger.warning(
+                "Search relevance may be degraded: source-search index maintenance "
+                "did not finish during bounded shutdown drain; the durable marker "
+                "will reconcile at next API startup"
+            )
+    except TimeoutError:
+        logger.warning(
+            "Search relevance may be degraded: source-search index maintenance "
+            "shutdown drain timed out; the durable marker will reconcile at next "
+            "API startup"
+        )
+    except asyncio.CancelledError:
+        logger.warning(
+            "Search relevance may be degraded: source-search index maintenance "
+            "shutdown drain was cancelled; the durable marker is retained"
+        )
+        raise
+    except Exception as exc:
+        logger.warning(
+            "Search relevance may be degraded: source-search index maintenance "
+            "shutdown drain failed ({}); the durable marker will reconcile at "
+            "next API startup",
+            type(exc).__name__,
+        )
+
+    try:
+        from deeper_notebook.database.repository import close_pool
+
+        await close_pool()
+        logger.info("SurrealDB pool closed")
+    except Exception as exc:
+        logger.warning(f"Closing DB pool raised: {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -433,6 +506,8 @@ async def lifespan(app: FastAPI):
         logger.exception(e)
         # Fail fast - don't start the API with an outdated database schema
         raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
+
+    await _reconcile_source_search_index_maintenance_at_startup()
 
     # The unified engine is strictly optional. Resolve it after durable schema
     # preparation and before legacy services so one coordinator can be injected
@@ -870,15 +945,10 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Digest scheduler exit raised: {e}")
 
-    # v0.7.18 — close pooled SurrealDB connections so we exit clean
-    # (avoids "task pending" warnings and leaves the DB free).
-    try:
-        from deeper_notebook.database.repository import close_pool
-
-        await close_pool()
-        logger.info("SurrealDB pool closed")
-    except Exception as e:
-        logger.warning(f"Closing DB pool raised: {e}")
+    # Durable source-search maintenance is drained before its database pool is
+    # closed. A bounded timeout retains its fixed marker for next-startup
+    # reconciliation rather than claiming a forced kill is durable completion.
+    await _close_database_pool_after_source_search_index_maintenance()
 
     # v0.7.211 — Close the AsyncSqliteSaver connections that back
     # /chat and /source/chat streaming. Previously these aiosqlite

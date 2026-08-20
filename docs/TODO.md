@@ -104,6 +104,17 @@ interpolates user input. A failed delete performs no rebuild; a rebuild failure
 is logged with its table/index and returns the completed delete, with search
 relevance explicitly degraded until the next successful rebuild.
 
+Each source-delete attempt first writes the fixed
+`open_notebook:source_search_rebuild_pending` record with a fresh opaque token;
+if that write cannot be confirmed, deletion aborts before any file or database
+mutation. The coalesced coordinator clears the marker only through an exact
+token compare-and-set after a successful fixed-index pass. API startup waits
+for any persisted marker before serving, while clean shutdown drains for at
+most five seconds before closing the pool. A timeout, cancellation, or forced
+kill leaves the marker and logs degraded search for next-startup reconciliation;
+this is a clean-shutdown guarantee, not a claim that an unclean process kill
+finishes maintenance.
+
 SurrealDB 2.6.5 changes raw BM25 score magnitudes on repeated identical
 `REBUILD INDEX` passes (the deterministic fixture progressed from
 `[1.9793, 0.8760]` after the delete pass to `[2.2471, 0.9935]` and
@@ -111,7 +122,7 @@ SurrealDB 2.6.5 changes raw BM25 score magnitudes on repeated identical
 fusion consumes rank, so the regression protects non-vacuous scores and
 identity/order, not unsupported magnitude idempotence. Evidence:
 `SURREAL_INTEGRATION=1 uv run pytest -q -s tests/integration/test_search_quality_benchmark.py`
-(two fresh namespaces, 5 passed each).
+(two fresh namespaces, now 6 passed each including the marker/CAS contract).
 
 ### 2.2 HNSW candidates now use the final cosine metric
 

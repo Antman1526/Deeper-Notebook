@@ -78,9 +78,10 @@ gitleaks detect --no-git --source <owned-files> --redact --no-banner
   unrefreshed. The repair uses a per-event-loop coordinator with a strong task
   reference only while pending, generation/pending coalescing, serialized
   fixed-whitelist passes, and a `10s` bounded wait per index.
-- `Source.delete()` schedules in a `finally` immediately after the post-sweep
-  attempt: success, failure, and caller cancellation all retain independently
-  owned maintenance, while no rebuild can run before the sweep. A delete during
+- A successful `Source.delete()` schedules in a `finally` immediately after the
+  post-sweep attempt, including caller cancellation after the irreversible
+  delete, while no rebuild can run before the sweep. Failed or interrupted
+  attempts retain the durable marker for later reconciliation. A delete during
   an active pass yields one trailing convergence pass rather than `4*N`
   overlapping rebuilds. Per-index errors/timeouts log exact table/index context
   and detached task failures are consumed.
@@ -93,3 +94,24 @@ gitleaks detect --no-git --source <owned-files> --redact --no-banner
 Verification: focused lifecycle/static selector `26 passed` (one existing
 Pydantic warning); one fresh real-Surreal benchmark `5 passed in 15.06s`.
 Scoped Ruff/format/compileall/diff-check and Gitleaks passed; no broad suite.
+
+### Review repair — durable source-index reconciliation (2026-08-20)
+
+- The desktop launcher has an eight-second default shutdown grace, so a
+  four-index/two-pass worst-case rebuild cannot be honestly guaranteed by a
+  long shutdown wait. `Source.delete()` now writes and confirms the fixed
+  `open_notebook:source_search_rebuild_pending` marker with a fresh opaque
+  token before any file or database deletion; failure to write it aborts the
+  delete before mutation.
+- The coordinator retains the marker after any timeout/failure and clears it
+  only with an exact-token CAS after a successful fixed-whitelist pass. A newer
+  token observed during a pass causes exactly one trailing pass; any forced
+  kill leaves the marker for the next API startup instead of falsely claiming
+  durability.
+- API startup awaits reconciliation before services begin serving. Clean
+  shutdown waits at most five seconds before pool closure; timeout or
+  cancellation logs degraded search and retains the marker. This is explicitly
+  not a guarantee for an unclean forced-kill process.
+- Fresh focused lifecycle selector passed `18`; a fresh disposable SurrealDB
+  2.6.5 marker UPSERT/new-token/stale-CAS/live-CAS probe plus Task 5 benchmark
+  passed `6` tests. No full integration suite was run.

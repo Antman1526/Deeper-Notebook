@@ -180,6 +180,52 @@ async def _hnsw_definition(table: str, index: str) -> str:
     return " ".join(definition.split()).upper()
 
 
+async def test_fixed_source_search_rebuild_marker_has_token_cas_on_surreal_2_6_5(
+    clean_namespace,
+) -> None:
+    """A forced kill must leave a durable, generation-safe reconciliation marker."""
+    marker = "open_notebook:source_search_rebuild_pending"
+    first_token = "task5-first-token"
+    second_token = "task5-second-token"
+
+    written = await repo_query(
+        "UPSERT open_notebook:source_search_rebuild_pending SET "
+        "source_search_rebuild_pending = true, "
+        "source_search_rebuild_token = $rebuild_token RETURN AFTER;",
+        {"rebuild_token": first_token},
+    )
+    assert written and written[0]["source_search_rebuild_token"] == first_token
+
+    replaced = await repo_query(
+        "UPSERT open_notebook:source_search_rebuild_pending SET "
+        "source_search_rebuild_pending = true, "
+        "source_search_rebuild_token = $rebuild_token RETURN AFTER;",
+        {"rebuild_token": second_token},
+    )
+    assert replaced and replaced[0]["source_search_rebuild_token"] == second_token
+
+    stale_clear = await repo_query(
+        "UPDATE open_notebook:source_search_rebuild_pending "
+        "SET source_search_rebuild_pending = false, "
+        "source_search_rebuild_token = NONE "
+        "WHERE source_search_rebuild_token = $rebuild_token RETURN AFTER;",
+        {"rebuild_token": first_token},
+    )
+    assert stale_clear == []
+    preserved = await repo_query(f"SELECT * FROM {marker};")
+    assert preserved and preserved[0]["source_search_rebuild_token"] == second_token
+
+    cleared = await repo_query(
+        "UPDATE open_notebook:source_search_rebuild_pending "
+        "SET source_search_rebuild_pending = false, "
+        "source_search_rebuild_token = NONE "
+        "WHERE source_search_rebuild_token = $rebuild_token RETURN AFTER;",
+        {"rebuild_token": second_token},
+    )
+    assert cleared and cleared[0]["source_search_rebuild_pending"] is False
+    assert "source_search_rebuild_token" not in cleared[0]
+
+
 async def test_hnsw_distance_migration_round_trips_all_shipped_indexes(
     clean_namespace,
     migration_rewind,
