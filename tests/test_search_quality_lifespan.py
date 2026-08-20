@@ -59,15 +59,29 @@ async def test_pool_close_stays_bounded_and_logs_degraded_search_on_drain_timeou
 
     warnings: list[str] = []
     events: list[str] = []
+    worker = asyncio.create_task(asyncio.Event().wait())
 
     async def timed_out_drain() -> None:
         raise TimeoutError
 
     async def close_pool() -> None:
+        assert worker.done() and worker.cancelled()
         events.append("pool-close")
+
+    async def quiesce() -> None:
+        worker.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await worker
+        events.append("worker-quiesced")
 
     monkeypatch.setattr(
         notebook, "drain_source_search_index_maintenance", timed_out_drain
+    )
+    monkeypatch.setattr(
+        notebook,
+        "cancel_source_search_index_maintenance",
+        quiesce,
+        raising=False,
     )
     monkeypatch.setattr(repository, "close_pool", close_pool)
     monkeypatch.setattr(
@@ -80,7 +94,7 @@ async def test_pool_close_stays_bounded_and_logs_degraded_search_on_drain_timeou
         main._close_database_pool_after_source_search_index_maintenance(), timeout=0.05
     )
 
-    assert events == ["pool-close"]
+    assert events == ["worker-quiesced", "pool-close"]
     assert any(
         "source-search index maintenance" in warning.lower()
         and "degraded" in warning.lower()
@@ -99,6 +113,7 @@ async def test_pool_close_logs_and_reraises_lifespan_cancellation_without_closin
 
     warnings: list[str] = []
     closed = False
+    worker = asyncio.create_task(asyncio.Event().wait())
 
     async def cancelled_drain() -> None:
         raise asyncio.CancelledError
@@ -107,8 +122,19 @@ async def test_pool_close_logs_and_reraises_lifespan_cancellation_without_closin
         nonlocal closed
         closed = True
 
+    async def quiesce() -> None:
+        worker.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await worker
+
     monkeypatch.setattr(
         notebook, "drain_source_search_index_maintenance", cancelled_drain
+    )
+    monkeypatch.setattr(
+        notebook,
+        "cancel_source_search_index_maintenance",
+        quiesce,
+        raising=False,
     )
     monkeypatch.setattr(repository, "close_pool", close_pool)
     monkeypatch.setattr(
@@ -121,6 +147,7 @@ async def test_pool_close_logs_and_reraises_lifespan_cancellation_without_closin
         await main._close_database_pool_after_source_search_index_maintenance()
 
     assert not closed
+    assert worker.done() and worker.cancelled()
     assert any(
         "source-search index maintenance" in warning.lower()
         and "degraded" in warning.lower()

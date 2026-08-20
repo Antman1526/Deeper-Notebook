@@ -409,6 +409,7 @@ async def _close_database_pool_after_source_search_index_maintenance() -> None:
     """
     try:
         from deeper_notebook.domain.notebook import (
+            cancel_source_search_index_maintenance,
             drain_source_search_index_maintenance,
         )
 
@@ -419,12 +420,18 @@ async def _close_database_pool_after_source_search_index_maintenance() -> None:
                 "will reconcile at next API startup"
             )
     except TimeoutError:
+        # The timed-out drain shields its worker, so explicitly cancel and
+        # await that exact task before the pool can close underneath it.
+        await cancel_source_search_index_maintenance()
         logger.warning(
             "Search relevance may be degraded: source-search index maintenance "
             "shutdown drain timed out; the durable marker will reconcile at next "
             "API startup"
         )
     except asyncio.CancelledError:
+        # Lifespan cancellation cannot leave a rebuild querying a closed pool.
+        # The durable marker remains for next-startup reconciliation.
+        await cancel_source_search_index_maintenance()
         logger.warning(
             "Search relevance may be degraded: source-search index maintenance "
             "shutdown drain was cancelled; the durable marker is retained"

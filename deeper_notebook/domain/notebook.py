@@ -106,6 +106,7 @@ async def _mark_source_search_rebuild_pending() -> str:
         rows = await repo_query(
             "UPSERT open_notebook:source_search_rebuild_pending SET "
             "source_search_rebuild_pending = true, "
+            "source_search_rebuild_state = 'intent', "
             "source_search_rebuild_token = $rebuild_token RETURN AFTER;",
             {"rebuild_token": rebuild_token},
         )
@@ -114,23 +115,40 @@ async def _mark_source_search_rebuild_pending() -> str:
             "Could not write the source-search rebuild marker before deletion"
         ) from exc
 
-    if not rows or str(rows[0].get("source_search_rebuild_token")) != rebuild_token:
+    if (
+        not rows
+        or str(rows[0].get("source_search_rebuild_token")) != rebuild_token
+        or rows[0].get("source_search_rebuild_state") != "intent"
+    ):
         raise DatabaseOperationError(
             "Could not confirm the source-search rebuild marker before deletion"
         )
     return rebuild_token
 
 
-async def _pending_source_search_rebuild_token() -> str | None:
+async def _pending_source_search_rebuild_marker() -> tuple[str, str] | None:
     """Read the one fixed durable marker without deriving any query from input."""
     rows = await repo_query(
-        "SELECT source_search_rebuild_token "
+        "SELECT source_search_rebuild_token, source_search_rebuild_state "
         "FROM open_notebook:source_search_rebuild_pending;"
     )
     if not rows:
         return None
     token = rows[0].get("source_search_rebuild_token")
-    return str(token) if token else None
+    state = rows[0].get("source_search_rebuild_state")
+    return (str(token), str(state)) if token and state else None
+
+
+async def _promote_source_search_rebuild_marker(rebuild_token: str) -> bool:
+    """Promote only this delete's persisted intent after its post-sweep."""
+    rows = await repo_query(
+        "UPDATE open_notebook:source_search_rebuild_pending "
+        "SET source_search_rebuild_state = 'ready' "
+        "WHERE source_search_rebuild_token = $rebuild_token "
+        "AND source_search_rebuild_state = 'intent' RETURN AFTER;",
+        {"rebuild_token": rebuild_token},
+    )
+    return bool(rows)
 
 
 async def _clear_source_search_rebuild_marker(rebuild_token: str) -> bool:
@@ -138,14 +156,16 @@ async def _clear_source_search_rebuild_marker(rebuild_token: str) -> bool:
     rows = await repo_query(
         "UPDATE open_notebook:source_search_rebuild_pending "
         "SET source_search_rebuild_pending = false, "
+        "source_search_rebuild_state = NONE, "
         "source_search_rebuild_token = NONE "
-        "WHERE source_search_rebuild_token = $rebuild_token RETURN AFTER;",
+        "WHERE source_search_rebuild_token = $rebuild_token "
+        "AND source_search_rebuild_state = 'ready' RETURN AFTER;",
         {"rebuild_token": rebuild_token},
     )
     return bool(rows)
 
 
-async def _refresh_source_search_indexes() -> bool:
+async def _refresh_source_search_indexes(rebuild_token: str) -> bool:
     """Perform one bounded, best-effort maintenance pass.
 
     The primary deletion is irreversible, so a rebuild failure cannot turn it
@@ -154,6 +174,24 @@ async def _refresh_source_search_indexes() -> bool:
     """
     succeeded = True
     for table, index in _SOURCE_SEARCH_INDEXES:
+        try:
+            marker = await _pending_source_search_rebuild_marker()
+        except Exception as exc:
+            logger.warning(
+                "Search relevance may be degraded until the next successful "
+                "rebuild: could not re-check source-search rebuild marker {} "
+                "before index {} on table {}: {}",
+                rebuild_token,
+                index,
+                table,
+                exc,
+            )
+            return False
+        if marker != (rebuild_token, "ready"):
+            # A newer delete has installed intent or a new ready generation.
+            # Stop before touching another index: its own promoted worker will
+            # rebuild the full whitelist against the converged source rows.
+            return False
         try:
             await asyncio.wait_for(
                 repo_query(f"REBUILD INDEX {index} ON TABLE {table}"),
@@ -188,7 +226,7 @@ async def _run_source_search_index_maintenance(
     """Converge marker generations, clearing only after a successful exact CAS."""
     while True:
         try:
-            rebuild_token = await _pending_source_search_rebuild_token()
+            marker = await _pending_source_search_rebuild_marker()
         except Exception as exc:
             logger.warning(
                 "Search relevance may be degraded until the next successful "
@@ -197,15 +235,36 @@ async def _run_source_search_index_maintenance(
             )
             return
 
-        if rebuild_token is None:
+        if marker is None:
             state.completed_generation = state.generation
             return
 
+        rebuild_token, marker_state = marker
+        if marker_state != "ready":
+            # An in-flight delete has written intent but not finished its
+            # post-sweep. Never rebuild or clear it from an older pass.
+            return
+
         generation = state.generation
-        if not await _refresh_source_search_indexes():
+        if not await _refresh_source_search_indexes(rebuild_token):
             # Preserve the durable marker for a later delete, shutdown drain,
             # or next application startup; retrying in a tight detached loop
             # would amplify an outage.
+            #
+            # The one exception is a newer *ready* generation scheduled while
+            # this pass was active. Its delete has completed post-sweep, so
+            # converge exactly that trailing generation in this same worker.
+            # An intent never qualifies here: it belongs to its live delete.
+            try:
+                newer_marker = await _pending_source_search_rebuild_marker()
+            except Exception:
+                return
+            if (
+                newer_marker is not None
+                and newer_marker[1] == "ready"
+                and state.generation > generation
+            ):
+                continue
             return
 
         try:
@@ -270,7 +329,7 @@ async def drain_source_search_index_maintenance(
 
     async def _drain() -> bool:
         try:
-            pending = await _pending_source_search_rebuild_token()
+            marker = await _pending_source_search_rebuild_marker()
         except Exception as exc:
             logger.warning(
                 "Search relevance may be degraded until the next successful "
@@ -278,8 +337,15 @@ async def drain_source_search_index_maintenance(
                 exc,
             )
             return False
-        if pending is None:
+        if marker is None:
             return True
+
+        _rebuild_token, marker_state = marker
+        if marker_state != "ready":
+            # A live delete can be between its pre-delete receipt and
+            # post-sweep promotion. It owns the intent; never turn a shutdown
+            # drain into an early rebuild of its incomplete mutation.
+            return False
 
         state = _source_search_index_maintenance_state()
         if state.task is None or state.task.done():
@@ -289,7 +355,7 @@ async def drain_source_search_index_maintenance(
         await asyncio.shield(task)
 
         try:
-            return await _pending_source_search_rebuild_token() is None
+            return await _pending_source_search_rebuild_marker() is None
         except Exception as exc:
             logger.warning(
                 "Search relevance may be degraded until the next successful "
@@ -304,8 +370,73 @@ async def drain_source_search_index_maintenance(
 
 
 async def reconcile_source_search_index_maintenance() -> bool:
-    """Finish any crash-surviving marker before the API begins serving traffic."""
+    """Finish any crash-surviving marker before the API begins serving traffic.
+
+    Startup runs before requests are accepted, so an ``intent`` can only be a
+    crash-left receipt, not an in-flight delete. Promote it to ``ready`` before
+    invoking the normal worker. Request-time workers never make that inference.
+    """
+    try:
+        marker = await _pending_source_search_rebuild_marker()
+    except Exception as exc:
+        logger.warning(
+            "Search relevance may be degraded until the next successful "
+            "rebuild: could not read source-search rebuild marker at startup: {}",
+            exc,
+        )
+        return False
+
+    if marker is not None:
+        rebuild_token, marker_state = marker
+        if marker_state == "intent":
+            try:
+                if not await _promote_source_search_rebuild_marker(rebuild_token):
+                    logger.warning(
+                        "Search relevance may be degraded until the next successful "
+                        "rebuild: source-search startup could not promote intent {}",
+                        rebuild_token,
+                    )
+                    return False
+            except Exception as exc:
+                logger.warning(
+                    "Search relevance may be degraded until the next successful "
+                    "rebuild: source-search startup could not promote intent {}: {}",
+                    rebuild_token,
+                    exc,
+                )
+                return False
+        elif marker_state != "ready":
+            logger.warning(
+                "Search relevance may be degraded until the next successful "
+                "rebuild: source-search marker has unknown state {}",
+                marker_state,
+            )
+            return False
     return await drain_source_search_index_maintenance(timeout_s=None)
+
+
+async def cancel_source_search_index_maintenance() -> None:
+    """Quiesce this loop's exact maintenance worker without clearing its marker.
+
+    Shutdown must not close the database pool while a timed-out worker can still
+    issue rebuild queries. Cancellation deliberately leaves the durable receipt
+    intact; startup reconciliation owns the next attempt.
+    """
+    state = _source_search_index_maintenance_state()
+    task = state.task
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # The worker cancellation is expected. Do not clear the marker here.
+        pass
+    except Exception:
+        # The done callback logs unexpected worker failures; shutdown still
+        # needs the task quiesced before the database pool is closed.
+        pass
 
 
 async def _wait_for_source_search_index_maintenance() -> None:
@@ -1260,7 +1391,7 @@ class Source(ObjectModel):
         # This durable receipt is deliberately first: a forced kill after any
         # file/database mutation must still trigger a later source-search index
         # reconciliation. If writing it fails, fail closed before deletion.
-        await _mark_source_search_rebuild_pending()
+        rebuild_token = await _mark_source_search_rebuild_pending()
         await self._cancel_processing_command()
         self._cleanup_uploaded_file()
 
@@ -1346,13 +1477,40 @@ class Source(ObjectModel):
                     e,
                 )
         finally:
-            # A completed post-sweep (or its failure/cancellation) must be
-            # followed without another await by independently owned index
-            # maintenance. Rebuilding earlier could miss a straggler removed
-            # by the sweep; omitting this finally would lose maintenance when
-            # a caller is cancelled after the irreversible deletion.
+            # A worker may only rebuild a marker after this delete's post-sweep
+            # has completed (or been attempted). The exact-token promotion
+            # fences an older pass from rebuilding/clearing a newer in-flight
+            # delete. Promotion failures preserve intent for startup recovery.
             if result:
-                _schedule_source_search_index_maintenance()
+                try:
+                    if await _promote_source_search_rebuild_marker(rebuild_token):
+                        _schedule_source_search_index_maintenance()
+                    else:
+                        logger.warning(
+                            "Search relevance may be degraded until the next "
+                            "successful rebuild: source-search marker {} was not "
+                            "promoted after source {} post-sweep",
+                            rebuild_token,
+                            self.id,
+                        )
+                except asyncio.CancelledError:
+                    logger.warning(
+                        "Search relevance may be degraded until the next "
+                        "successful rebuild: source-search marker {} remains "
+                        "intent after cancellation following source {} post-sweep",
+                        rebuild_token,
+                        self.id,
+                    )
+                    raise
+                except Exception as exc:
+                    logger.warning(
+                        "Search relevance may be degraded until the next "
+                        "successful rebuild: could not promote source-search marker "
+                        "{} after source {} post-sweep: {}",
+                        rebuild_token,
+                        self.id,
+                        exc,
+                    )
 
         return result
 

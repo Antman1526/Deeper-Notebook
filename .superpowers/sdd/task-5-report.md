@@ -115,3 +115,21 @@ Scoped Ruff/format/compileall/diff-check and Gitleaks passed; no broad suite.
 - Fresh focused lifecycle selector passed `18`; a fresh disposable SurrealDB
   2.6.5 marker UPSERT/new-token/stale-CAS/live-CAS probe plus Task 5 benchmark
   passed `6` tests. No full integration suite was run.
+
+### Review repair — fenced marker readiness and shutdown quiescence (2026-08-20)
+
+- The fixed durable marker now has two states. `Source.delete()` writes its
+  opaque token as `intent` before any destructive action, then exact-token CAS
+  promotes it to `ready` only after its post-sweep has completed or been
+  attempted. Maintenance rebuilds and clears only `ready`; an older pass
+  rechecks the exact ready token before each fixed index and stops when a newer
+  intent arrives. A newer promoted generation gets one serial trailing pass.
+- Startup runs before the API accepts requests, so it may safely promote a
+  crash-left `intent`; request-time workers never do. The real SurrealDB 2.6.5
+  CAS probe validates stale promotion/clear rejection and live promotion/clear
+  success. This is still a clean-shutdown guarantee only; forced process kills
+  retain the marker for next startup rather than claiming completed work.
+- If the five-second shutdown drain times out or lifespan is cancelled, API
+  explicitly cancels and awaits the exact loop-owned worker before pool close
+  (or re-raise). Cancellation never clears the marker. Deterministic lifecycle
+  tests prove the worker is done/cancelled before mocked `close_pool`.
