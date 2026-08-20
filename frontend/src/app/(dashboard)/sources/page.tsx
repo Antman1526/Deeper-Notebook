@@ -20,7 +20,7 @@ import { getApiErrorKey } from '@/lib/utils/error-handler'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
 import { SourceGallery } from '@/components/deeper-notebook/source-gallery/SourceGallery'
-import { isSourceVisualsEnabled, isVisualSystemV2Enabled } from '@/lib/features'
+import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
 import { useRefreshSourceVisual, useRemoveSourceVisual } from '@/lib/hooks/use-source-visuals'
 
 export default function SourcesPage() {
@@ -47,7 +47,8 @@ export default function SourcesPage() {
   const loadingMoreRef = useRef(false)
   const hasMoreRef = useRef(true)
   const PAGE_SIZE = 30
-  const visualGalleryEnabled = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
+  const sourceVisualsEnabled = useSourceVisualsEnabled()
+  const visualGalleryEnabled = isVisualSystemV2Enabled() && sourceVisualsEnabled
 
   const fetchSources = useCallback(async (reset = false) => {
     try {

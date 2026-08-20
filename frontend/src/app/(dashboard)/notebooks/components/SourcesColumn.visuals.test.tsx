@@ -29,7 +29,7 @@ const {
 
 vi.mock('@/lib/features', () => ({
   isVisualSystemV2Enabled: mockVisualSystemEnabled,
-  isSourceVisualsEnabled: mockSourceVisualsEnabled,
+  useSourceVisualsEnabled: mockSourceVisualsEnabled,
 }))
 
 vi.mock('@/components/sources/SourceCard', () => ({

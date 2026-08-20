@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils'
 import { ContextToggle } from '@/components/common/ContextToggle'
 import { ContextMode } from '@/app/(dashboard)/notebooks/[id]/page'
 import { SourceCover } from '@/components/deeper-notebook/source-gallery/SourceCover'
-import { isSourceVisualsEnabled, isVisualSystemV2Enabled } from '@/lib/features'
+import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
 
 interface SourceCardProps {
   source: SourceListResponse
@@ -199,7 +199,8 @@ export function SourceCard({
   onContextModeChange
 }: SourceCardProps) {
   const { t } = useTranslation()
-  const visualCoversEnabled = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
+  const sourceVisualsEnabled = useSourceVisualsEnabled()
+  const visualCoversEnabled = isVisualSystemV2Enabled() && sourceVisualsEnabled
   const shouldShowVisualCover = visualCoversEnabled && (showVisualCover ?? true)
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const statusConfigMap = getStatusConfig(t)

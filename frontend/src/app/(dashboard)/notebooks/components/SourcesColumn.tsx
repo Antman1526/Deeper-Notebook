@@ -35,7 +35,7 @@ import type { SourceBulkAction } from '@/lib/utils/source-context'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { isSourceVisualsEnabled, isVisualSystemV2Enabled } from '@/lib/features'
+import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
 // v0.7.119 — Bulk-vectorize button surfaces the per-notebook
 // vectorize_sources endpoint next to the existing "+" trigger.
 import { BulkVectorizeButton } from './BulkVectorizeButton'
@@ -68,7 +68,8 @@ export function SourcesColumn({
   fetchNextPage,
 }: SourcesColumnProps) {
   const { t } = useTranslation()
-  const showVisualCover = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
+  const sourceVisualsEnabled = useSourceVisualsEnabled()
+  const showVisualCover = isVisualSystemV2Enabled() && sourceVisualsEnabled
   const sourcesLabel = t('navigation.sources')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)

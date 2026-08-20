@@ -6,14 +6,15 @@ import { FolderPlus, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useCaptureActions, useCaptureItems, useCaptureRoots } from '@/lib/hooks/use-capture'
-import { isSourceVisualsEnabled, isVisualSystemV2Enabled } from '@/lib/features'
+import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
 import { CaptureItemRow } from './CaptureItemRow'
 
 export function CaptureInbox() {
   const roots = useCaptureRoots()
   const items = useCaptureItems()
   const actions = useCaptureActions()
-  const showVisualCover = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
+  const sourceVisualsEnabled = useSourceVisualsEnabled()
+  const showVisualCover = isVisualSystemV2Enabled() && sourceVisualsEnabled
   const [path, setPath] = useState('')
   const addRoot = async () => { await actions.addRoot.mutateAsync(path.trim()); setPath('') }
   const scan = () => void actions.scan.mutateAsync(undefined)

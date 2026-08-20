@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient, type MutateOptions } from '@tans
 import { sourceVisualsApi } from '@/lib/api/source-visuals'
 import { QUERY_KEYS, shouldRetryMutation } from '@/lib/api/query-client'
 import { sourcesApi } from '@/lib/api/sources'
-import { isSourceVisualsEnabled, isVisualSystemV2Enabled } from '@/lib/features'
+import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
 import type { SourceVisualJob } from '@/lib/types/source-visuals'
 
 type VisualMutationVariables = { sourceId: string; requestId: string }
@@ -49,7 +49,8 @@ export function useRemoveSourceVisual() {
 
 export function useRecentVisualSources(limit = 4) {
   const boundedLimit = Math.max(1, Math.min(4, Math.trunc(limit)))
-  const enabled = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
+  const sourceVisualsEnabled = useSourceVisualsEnabled()
+  const enabled = isVisualSystemV2Enabled() && sourceVisualsEnabled
   return useQuery({
     queryKey: QUERY_KEYS.recentVisualSources(boundedLimit),
     queryFn: () => sourcesApi.list({ limit: boundedLimit, sort_by: 'updated', sort_order: 'desc' }),

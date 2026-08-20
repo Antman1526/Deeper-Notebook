@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react'
+
 const TRUTHY = new Set(['1', 'true', 'yes', 'on', 'enabled'])
 
 // v0.8.107 — runtime overrides for build-time flags.
@@ -14,6 +16,7 @@ const TRUTHY = new Set(['1', 'true', 'yes', 'on', 'enabled'])
 //   * if the endpoint is unreachable or the backend predates it, nothing
 //     changes — this can only ever correct a flag, never strand the UI.
 let runtimeOverrides: Partial<Record<FeatureName, boolean>> = {}
+const runtimeFeatureListeners = new Set<() => void>()
 
 export type FeatureName =
   | 'evidenceStudio'
@@ -23,6 +26,15 @@ export type FeatureName =
   | 'studyWorkbench'
   | 'sourceVisuals'
 
+const FEATURE_NAMES = new Set<FeatureName>([
+  'evidenceStudio',
+  'visualRefresh',
+  'modelFleet',
+  'researchRuns',
+  'studyWorkbench',
+  'sourceVisuals',
+])
+
 export function applyRuntimeFeatures(features: unknown): void {
   if (!features || typeof features !== 'object') return
   const next: Partial<Record<FeatureName, boolean>> = {}
@@ -30,13 +42,40 @@ export function applyRuntimeFeatures(features: unknown): void {
     // Only booleans are adopted. A malformed payload must not flip a flag to a
     // truthy string, which is the failure mode that would silently re-enable a
     // rolled-back feature.
-    if (typeof value === 'boolean') next[key as FeatureName] = value
+    if (isFeatureName(key) && typeof value === 'boolean') next[key] = value
   }
+
+  if (sameRuntimeOverrides(runtimeOverrides, next)) return
   runtimeOverrides = next
+  notifyRuntimeFeatureListeners()
 }
 
 export function resetRuntimeFeatures(): void {
+  if (Object.keys(runtimeOverrides).length === 0) return
   runtimeOverrides = {}
+  notifyRuntimeFeatureListeners()
+}
+
+export function subscribeRuntimeFeatures(listener: () => void): () => void {
+  runtimeFeatureListeners.add(listener)
+  return () => runtimeFeatureListeners.delete(listener)
+}
+
+function sameRuntimeOverrides(
+  left: Partial<Record<FeatureName, boolean>>,
+  right: Partial<Record<FeatureName, boolean>>,
+): boolean {
+  const leftEntries = Object.entries(left)
+  return leftEntries.length === Object.keys(right).length
+    && leftEntries.every(([key, value]) => right[key as FeatureName] === value)
+}
+
+function notifyRuntimeFeatureListeners(): void {
+  runtimeFeatureListeners.forEach(listener => listener())
+}
+
+function isFeatureName(key: string): key is FeatureName {
+  return FEATURE_NAMES.has(key as FeatureName)
 }
 
 function resolve(name: FeatureName, inlinedDefault: boolean): boolean {
@@ -102,4 +141,12 @@ export function isVisualSystemV2Enabled(): boolean {
 
 export function isSourceVisualsEnabled(): boolean {
   return resolve('sourceVisuals', envFlag(process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS, undefined, true))
+}
+
+export function useSourceVisualsEnabled(): boolean {
+  return useSyncExternalStore(
+    subscribeRuntimeFeatures,
+    isSourceVisualsEnabled,
+    isSourceVisualsEnabled,
+  )
 }

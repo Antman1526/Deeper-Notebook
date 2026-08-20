@@ -1,23 +1,41 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/api/client', () => ({
+  default: { get: vi.fn() },
+}))
 
 vi.mock('@/lib/api/sources', () => ({
   sourcesApi: { list: vi.fn() },
 }))
 
+import apiClient from '@/lib/api/client'
 import { sourcesApi } from '@/lib/api/sources'
-import { applyRuntimeFeatures, resetRuntimeFeatures } from '@/lib/features'
+import { resetRuntimeFeatures } from '@/lib/features'
+import { QUERY_KEYS } from '@/lib/api/query-client'
+import { useRuntimeFeatures } from './use-runtime-features'
 import { useRecentVisualSources } from './use-source-visuals'
 
-function createWrapper() {
-  const client = new QueryClient({
+function createClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+}
+
+function createWrapper(client = createClient()) {
   return function QueryWrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 afterEach(() => {
@@ -51,11 +69,28 @@ describe('useRecentVisualSources default and rollback contract', () => {
     expect(sourcesApi.list).not.toHaveBeenCalled()
   })
 
-  it('honors a backend runtime source-visual rollback after the default-on build starts', () => {
-    applyRuntimeFeatures({ sourceVisuals: false })
+  it('stops an already-mounted source query after a delayed backend rollback', async () => {
+    const client = createClient()
+    const response = deferred<{ data: { features: unknown } }>()
+    vi.mocked(apiClient.get).mockReturnValue(response.promise)
+    vi.mocked(sourcesApi.list).mockResolvedValue([])
 
-    renderHook(() => useRecentVisualSources(), { wrapper: createWrapper() })
+    renderHook(() => {
+      useRuntimeFeatures()
+      return useRecentVisualSources()
+    }, { wrapper: createWrapper(client) })
 
-    expect(sourcesApi.list).not.toHaveBeenCalled()
+    await waitFor(() => expect(sourcesApi.list).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      response.resolve({ data: { features: { sourceVisuals: false } } })
+      await response.promise
+    })
+
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: QUERY_KEYS.recentVisualSources(4) })
+    })
+
+    expect(sourcesApi.list).toHaveBeenCalledTimes(1)
   })
 })

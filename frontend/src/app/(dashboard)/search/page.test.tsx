@@ -33,7 +33,7 @@ vi.mock('@/lib/features', async (importOriginal) => {
   return {
     ...actual,
     isVisualSystemV2Enabled: mockVisualSystemEnabled,
-    isSourceVisualsEnabled: mockSourceVisualsEnabled,
+    useSourceVisualsEnabled: mockSourceVisualsEnabled,
   }
 })
 

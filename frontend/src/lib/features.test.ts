@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   applyRuntimeFeatures,
@@ -11,6 +11,7 @@ import {
   isStudyWorkbenchEnabled,
   isVisualSystemV2Enabled,
   isVisualRefreshEnabled,
+  subscribeRuntimeFeatures,
 } from './features'
 
 const FEATURE_ENV = [
@@ -163,14 +164,38 @@ describe('runtime feature overrides', () => {
   })
 
   it('ignores a malformed payload entirely', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeRuntimeFeatures(listener)
+
     applyRuntimeFeatures(null)
     applyRuntimeFeatures('nope')
+    applyRuntimeFeatures({ sourceVisuals: 'false' })
+    applyRuntimeFeatures({ unknownFeature: true })
+
     expect(isStudyWorkbenchEnabled()).toBe(true)
+    expect(listener).not.toHaveBeenCalled()
+
+    unsubscribe()
   })
 
   it('only overrides the keys it was given', () => {
     applyRuntimeFeatures({ sourceVisuals: true })
     expect(isSourceVisualsEnabled()).toBe(true)
     expect(isStudyWorkbenchEnabled()).toBe(true)
+  })
+
+  it('notifies active readers once per runtime change and releases unsubscribed readers', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeRuntimeFeatures(listener)
+
+    applyRuntimeFeatures({ sourceVisuals: false })
+    applyRuntimeFeatures({ sourceVisuals: false })
+
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    unsubscribe()
+    applyRuntimeFeatures({ sourceVisuals: true })
+
+    expect(listener).toHaveBeenCalledTimes(1)
   })
 })

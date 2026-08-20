@@ -52,7 +52,7 @@ vi.mock('@/lib/hooks/use-create-dialogs', () => ({
 
 vi.mock('@/lib/features', () => ({
   isVisualSystemV2Enabled: mockVisualSystemEnabled,
-  isSourceVisualsEnabled: mockSourceVisualsEnabled,
+  useSourceVisualsEnabled: mockSourceVisualsEnabled,
 }))
 
 vi.mock('@/lib/hooks/use-source-visuals', () => ({

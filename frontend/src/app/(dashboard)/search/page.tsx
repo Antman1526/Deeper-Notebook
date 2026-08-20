@@ -26,7 +26,7 @@ import { SaveToNotebooksDialog } from '@/components/search/SaveToNotebooksDialog
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
 import { EvidencePeek } from '@/components/deeper-notebook/source-gallery/EvidencePeek'
 import { SourceCover } from '@/components/deeper-notebook/source-gallery/SourceCover'
-import { isSourceVisualsEnabled, isVisualSystemV2Enabled } from '@/lib/features'
+import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { SearchResult } from '@/lib/types/search'
 
@@ -100,7 +100,8 @@ export default function SearchPage() {
   const { data: modelDefaults, isLoading: modelsLoading } = useModelDefaults()
   const { data: availableModels } = useModels()
   const { openModal } = useModalManager()
-  const visualGalleryEnabled = isVisualSystemV2Enabled() && isSourceVisualsEnabled()
+  const sourceVisualsEnabled = useSourceVisualsEnabled()
+  const visualGalleryEnabled = isVisualSystemV2Enabled() && sourceVisualsEnabled
   const [evidenceResult, setEvidenceResult] = useState<SearchResult | null>(null)
   const closeEvidence = useCallback(() => setEvidenceResult(null), [])
 
