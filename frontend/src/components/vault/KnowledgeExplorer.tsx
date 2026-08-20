@@ -471,6 +471,7 @@ export function KnowledgeExplorer() {
     authorityKinds: activeSearchContext?.authorityKinds || [],
     tags: activeSearchContext?.tags || [],
   })
+  const { runSemanticSearch } = indexedSearch
   const setTabViewMode = useKnowledgeWorkspaceStore((state) => state.setTabViewMode)
   const setTabGraphViewport = useKnowledgeWorkspaceStore((state) => state.setTabGraphViewport)
   const bookmarks = useKnowledgeBookmarks({
@@ -512,8 +513,8 @@ export function KnowledgeExplorer() {
     }
     if (semanticSearchKeyRef.current === semanticSearchDescriptorKey) return
     semanticSearchKeyRef.current = semanticSearchDescriptorKey
-    indexedSearch.runSemanticSearch()
-  }, [indexedSearch.runSemanticSearch, semanticSearchDescriptorKey])
+    runSemanticSearch()
+  }, [runSemanticSearch, semanticSearchDescriptorKey])
 
   useEffect(() => {
     const context = activeTab?.viewMode === 'graph'
@@ -909,7 +910,7 @@ export function KnowledgeExplorer() {
       })
     }
   }, [namedWorkspaces.data?.items, openDescriptor, openNamedWorkspace, openTab, setActiveSearchContext, setGraphBookmarkContext, setNavigation, setTabGraphViewport, setTabViewMode])
-  const editBookmark = useCallback((_bookmark: KnowledgeBookmark, _editTarget: boolean) => undefined, [])
+  const editBookmark = useCallback(() => undefined, [])
   const updateBookmarkMetadata = useCallback((
     bookmark: KnowledgeBookmark,
     patch: Pick<import('@/lib/api/knowledge-navigation').UpdateBookmarkCommand, 'displayLabel' | 'tags' | 'target'>,

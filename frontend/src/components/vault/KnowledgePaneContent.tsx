@@ -84,7 +84,6 @@ export function KnowledgePaneContent({
   const metricsVisible = useKnowledgeWorkspaceStore(
     (state) => state.navigation.metricsVisible,
   )
-  const setNavigation = useKnowledgeWorkspaceStore((state) => state.setNavigation)
   const setFocusedBlock = useKnowledgeWorkspaceStore((state) => state.setFocusedBlock)
   const setGraphBookmarkContext = useKnowledgeWorkspaceStore((state) => state.setGraphBookmarkContext)
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
