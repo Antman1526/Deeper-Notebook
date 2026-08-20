@@ -270,6 +270,7 @@ _PROTECTED_TABLE_NAMES = frozenset(
     }
 )
 _TABLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+_TABLE_TYPE = re.compile(r"\bTYPE\s+(ANY|NORMAL|RELATION)\b")
 
 
 async def _discover_tables() -> list[str]:
@@ -426,6 +427,16 @@ def _table_overwrite_definition(table: str, definition: str) -> str:
     return f"DEFINE TABLE OVERWRITE {safe_table} {definition.removeprefix(prefix)}"
 
 
+def _table_restore_kind(table: str, definition: str) -> str:
+    """Return the supported INFO table type required for exact data restore."""
+    match = _TABLE_TYPE.search(definition)
+    if match is None:
+        raise AssertionError(
+            f"unsupported INFO FOR DB table type for {table!r}: {definition!r}"
+        )
+    return match.group(1)
+
+
 async def _restore_table_data(
     snapshot: dict[str, list[dict[str, Any]]],
     definitions: dict[str, dict[str, str | tuple[str, ...]]],
@@ -433,9 +444,10 @@ async def _restore_table_data(
     """Restore rows exactly, without active VALUE clauses rewriting them.
 
     A direct DELETE/CREATE under the recovered schema can change fields with
-    ``VALUE`` expressions (notably ``updated = time::now()``). Recreate every
-    validated user table SCHEMALESS, restore raw RecordIDs and payloads, then
-    apply its original captured DDL with explicit table overwrite semantics.
+    ``VALUE`` expressions (notably ``updated = time::now()``), and CREATE
+    cannot recreate Surreal graph-edge semantics. Recreate every validated
+    user table SCHEMALESS, restore ordinary records with CREATE and captured
+    relation rows with RELATE, then apply the original captured DDL.
     """
     from deeper_notebook.database.repository import db_connection
 
@@ -443,10 +455,19 @@ async def _restore_table_data(
         raise AssertionError("row snapshot and table definitions disagree")
 
     tables = sorted(snapshot)
+    table_kinds: dict[str, str] = {}
+    for table in tables:
+        table_definition = definitions[table]["table"]
+        if not isinstance(table_definition, str):
+            raise AssertionError(f"missing table definition for {table!r}")
+        table_kinds[table] = _table_restore_kind(table, table_definition)
+
     statements = ["BEGIN TRANSACTION;"]
     variables: dict[str, Any] = {}
     record_index = 0
     for table in tables:
+        if table_kinds[table] not in {"ANY", "NORMAL"}:
+            continue
         for row in snapshot[table]:
             record = row.get("id")
             if record is None:
@@ -458,6 +479,33 @@ async def _restore_table_data(
                 key: value for key, value in row.items() if key != "id"
             }
             statements.append(f"CREATE ${record_key} CONTENT ${payload_key};")
+            record_index += 1
+    for table in tables:
+        if table_kinds[table] != "RELATION":
+            continue
+        for row in snapshot[table]:
+            edge = row.get("id")
+            source = row.get("in")
+            target = row.get("out")
+            if edge is None or source is None or target is None:
+                raise AssertionError(
+                    f"relation snapshot row in {table!r} requires id, in, and out"
+                )
+            source_key = f"relation_source_{record_index}"
+            edge_key = f"relation_edge_{record_index}"
+            target_key = f"relation_target_{record_index}"
+            payload_key = f"relation_payload_{record_index}"
+            variables[source_key] = source
+            variables[edge_key] = edge
+            variables[target_key] = target
+            variables[payload_key] = {
+                key: value
+                for key, value in row.items()
+                if key not in {"id", "in", "out"}
+            }
+            statements.append(
+                f"RELATE ${source_key}->${edge_key}->${target_key} CONTENT ${payload_key};"
+            )
             record_index += 1
     statements.append("COMMIT TRANSACTION;")
 

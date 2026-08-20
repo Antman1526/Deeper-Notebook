@@ -91,6 +91,53 @@ async def migration_data_authority(
         assert await _data_snapshot() == expected
 
 
+async def _reference_traversal_targets() -> list[str]:
+    """Return the real graph traversal targets for the seeded relation edge."""
+    rows = await repo_query(
+        """
+        SELECT ->reference->notebook.id AS targets
+        FROM source:rewind_relation_source;
+        """
+    )
+    assert len(rows) == 1
+    targets = rows[0]["targets"]
+    assert isinstance(targets, list)
+    return targets
+
+
+@pytest_asyncio.fixture
+async def migration_relation_authority(
+    clean_namespace: dict[str, Any],
+) -> AsyncIterator[list[dict[str, Any]]]:
+    """Observe exact edge data and native traversal after rewind teardown."""
+    await repo_query(
+        """
+        CREATE source:rewind_relation_source SET
+            title = 'Rewind relation source',
+            asset = NONE,
+            full_text = 'relation source body';
+        CREATE notebook:rewind_relation_notebook SET
+            name = 'Rewind relation notebook';
+        RELATE source:rewind_relation_source
+            ->reference:rewind_relation_edge
+            ->notebook:rewind_relation_notebook
+            SET rewind_marker = 'original relation payload';
+        """
+    )
+    expected_edge = await repo_query("SELECT * FROM reference:rewind_relation_edge;")
+    assert len(expected_edge) == 1
+    assert await _reference_traversal_targets() == ["notebook:rewind_relation_notebook"]
+    try:
+        yield expected_edge
+    finally:
+        assert await repo_query("SELECT * FROM reference:rewind_relation_edge;") == (
+            expected_edge
+        )
+        assert await _reference_traversal_targets() == [
+            "notebook:rewind_relation_notebook"
+        ]
+
+
 async def test_migration_rewind_recovers_schema_when_down_fails_before_lowering(
     migration_schema_authority,
     migration_rewind,
@@ -202,4 +249,33 @@ async def test_migration_rewind_restores_rows_after_failed_down_data_mutation(
     assert await get_latest_version() == original_head
     assert migration_data_authority["source"] != await repo_query(
         "SELECT * FROM source ORDER BY id;"
+    )
+
+
+async def test_migration_rewind_restores_relation_traversal_after_failed_down(
+    migration_schema_authority,
+    migration_relation_authority,
+    migration_rewind,
+    monkeypatch,
+):
+    """Failed-down recovery must preserve relation semantics, not just edge fields."""
+    original_head = await get_latest_version()
+
+    async def damaged_down_after_relation_mutation(self) -> None:
+        await repo_query(
+            "UPDATE reference:rewind_relation_edge SET rewind_marker = 'corrupted';"
+        )
+        await repo_query("DELETE reference:rewind_relation_edge;")
+        raise RuntimeError("injected-down-after-relation-mutation")
+
+    monkeypatch.setattr(
+        AsyncMigrationRunner, "run_one_down", damaged_down_after_relation_mutation
+    )
+
+    with pytest.raises(RuntimeError, match="injected-down-after-relation-mutation"):
+        await migration_rewind(original_head - 1)
+
+    assert await get_latest_version() == original_head
+    assert migration_relation_authority != await repo_query(
+        "SELECT * FROM reference:rewind_relation_edge;"
     )

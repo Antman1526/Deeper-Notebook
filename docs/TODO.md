@@ -156,7 +156,7 @@ handling and deprecation policy with it.
 
 ```bash
 uv run pytest tests/ desktop/tests/ -q                      # 5,670 pass
-SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q   # 124 passed, 10 warnings (2026-08-20)
+SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q   # 126 passed, 10 warnings (2026-08-20)
 uv run python scripts/rebrand_audit.py --check
 make repair-rebrand-pins
 make security-scan
