@@ -1,0 +1,22 @@
+-- Migration 51 — align HNSW candidate selection with final cosine ranking.
+--
+-- `fn::vector_search` ranks by vector::similarity::cosine, but the three
+-- candidate indexes previously used SurrealDB's Euclidean default.  Provider
+-- output is not normalized at the centralized source-chunk write boundary, so
+-- Euclidean HNSW can drop the exact cosine winner from its fixed 100-candidate
+-- pool before the function's final cosine sort can recover it.
+--
+-- Removing and redefining an index is the required full rebuild for a distance
+-- change.  Do not replace this with REBUILD INDEX: a rebuild preserves the old
+-- index definition and therefore the wrong candidate metric.
+
+REMOVE INDEX IF EXISTS source_embedding_hnsw ON TABLE source_embedding;
+REMOVE INDEX IF EXISTS source_insight_hnsw ON TABLE source_insight;
+REMOVE INDEX IF EXISTS note_hnsw ON TABLE note;
+
+DEFINE INDEX IF NOT EXISTS source_embedding_hnsw ON source_embedding
+    FIELDS embedding HNSW DIMENSION 768 DIST COSINE;
+DEFINE INDEX IF NOT EXISTS source_insight_hnsw ON source_insight
+    FIELDS embedding HNSW DIMENSION 768 DIST COSINE;
+DEFINE INDEX IF NOT EXISTS note_hnsw ON note
+    FIELDS embedding HNSW DIMENSION 768 DIST COSINE;

@@ -1,0 +1,14 @@
+-- Migration 51 rollback — restore the exact prior Euclidean HNSW definitions.
+-- Dropping/redefining performs the required rebuild; REBUILD alone would retain
+-- the COSINE definition and is not a valid rollback.
+
+REMOVE INDEX IF EXISTS source_embedding_hnsw ON TABLE source_embedding;
+REMOVE INDEX IF EXISTS source_insight_hnsw ON TABLE source_insight;
+REMOVE INDEX IF EXISTS note_hnsw ON TABLE note;
+
+DEFINE INDEX IF NOT EXISTS source_embedding_hnsw ON source_embedding
+    FIELDS embedding HNSW DIMENSION 768 DIST EUCLIDEAN;
+DEFINE INDEX IF NOT EXISTS source_insight_hnsw ON source_insight
+    FIELDS embedding HNSW DIMENSION 768 DIST EUCLIDEAN;
+DEFINE INDEX IF NOT EXISTS note_hnsw ON note
+    FIELDS embedding HNSW DIMENSION 768 DIST EUCLIDEAN;
