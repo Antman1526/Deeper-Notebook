@@ -64,7 +64,10 @@ def _db_pool_size() -> int:
 
 def _db_pool_disabled() -> bool:
     return resolve_env("DEEPER_NOTEBOOK_DB_POOL_DISABLED", "").lower() in {
-        "1", "true", "yes", "on"
+        "1",
+        "true",
+        "yes",
+        "on",
     }
 
 
@@ -401,15 +404,22 @@ def _is_retriable_conn_error(exc: BaseException) -> bool:
     rather than a genuine query error? Deliberately CONSERVATIVE — only the
     socket-closed / connection-reset family — because it gates a retry, and we
     only ever retry read-only queries."""
-    if isinstance(exc, (ConnectionError, ConnectionResetError, OSError,
-                        asyncio.IncompleteReadError)):
+    if isinstance(
+        exc,
+        (ConnectionError, ConnectionResetError, OSError, asyncio.IncompleteReadError),
+    ):
         return True
     msg = str(exc).lower()
     return any(
         s in msg
         for s in (
-            "connection closed", "connection reset", "connection is closed",
-            "websocket", "going away", "broken pipe", "not connected",
+            "connection closed",
+            "connection reset",
+            "connection is closed",
+            "websocket",
+            "going away",
+            "broken pipe",
+            "not connected",
         )
     )
 
@@ -446,12 +456,11 @@ async def repo_query(
     )
     start = time.monotonic()
     try:
+
         async def _run() -> list[dict[str, Any]]:
             async with db_connection() as connection:
                 try:
-                    result = parse_record_ids(
-                        await connection.query(query_str, vars)
-                    )
+                    result = parse_record_ids(await connection.query(query_str, vars))
                     if isinstance(result, str):
                         raise RuntimeError(result)
                     return result
@@ -499,6 +508,7 @@ async def repo_query(
         # metrics-module import failure can't break the DB path.
         try:
             from api.metrics import db_query_duration_seconds, record_slow_query
+
             db_query_duration_seconds.observe(elapsed_s)
             if elapsed_ms > _slow_threshold_ms:
                 record_slow_query()
@@ -513,7 +523,9 @@ async def repo_query(
             # the format string — no need to thread it explicitly here.
             logger.warning(
                 "slow query: {:.0f}ms (threshold {:.0f}ms) — {!r}",
-                elapsed_ms, _slow_threshold_ms, query_str[:300],
+                elapsed_ms,
+                _slow_threshold_ms,
+                query_str[:300],
             )
 
 

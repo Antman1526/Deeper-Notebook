@@ -5,6 +5,7 @@ chat graph can call `await client.list_tool_names()` and
 `await client.call_tool(name, args)` without dealing with the
 session lifecycle directly.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -99,7 +100,11 @@ def _bounded_schema_value(value: Any, depth: int = 0) -> Any:
                 break
             except Exception:
                 break
-            if not isinstance(key, str) or not key or len(key) > _MAX_SCHEMA_STRING_CHARS:
+            if (
+                not isinstance(key, str)
+                or not key
+                or len(key) > _MAX_SCHEMA_STRING_CHARS
+            ):
                 continue
             bounded = _bounded_schema_value(item, depth + 1)
             if bounded is not None:
@@ -282,7 +287,11 @@ class MCPClient:
         async def _do() -> list[str]:
             async with _open_session(self.url, self._headers()) as s:
                 result = await s.list_tools()
-                return [tool["name"] for tool in _bounded_tool_specs(getattr(result, "tools", []))]
+                return [
+                    tool["name"]
+                    for tool in _bounded_tool_specs(getattr(result, "tools", []))
+                ]
+
         return await asyncio.wait_for(_do(), timeout=_rpc_timeout())
 
     async def list_tools_full(self) -> list[dict[str, Any]]:
@@ -303,10 +312,12 @@ class MCPClient:
         permissive empty object schema (LangChain treats as "no
         args"), so a tool with no args still binds cleanly.
         """
+
         async def _do() -> list[dict[str, Any]]:
             async with _open_session(self.url, self._headers()) as s:
                 result = await s.list_tools()
                 return _bounded_tool_specs(getattr(result, "tools", []))
+
         # v0.8.66 (audit MCP-1) — bound discovery; a hung server otherwise
         # stalls every chat turn that resolves tools.
         return await asyncio.wait_for(_do(), timeout=_rpc_timeout())
@@ -386,12 +397,14 @@ class MCPClient:
                             else "application/octet-stream"
                         )
                         approx = max(0, len(data) * 3 // 4)
-                        blocks.append({
-                            "type": "image",
-                            "mime_type": mime,
-                            "data": data,
-                            "bytes": approx,
-                        })
+                        blocks.append(
+                            {
+                                "type": "image",
+                                "mime_type": mime,
+                                "data": data,
+                                "bytes": approx,
+                            }
+                        )
                         text_chunks.append(f"[image: {mime}, ~{approx} bytes]")
                         continue
 

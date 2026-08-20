@@ -241,9 +241,16 @@ def test_future_decision_receipts_do_not_change_current_proposal_status() -> Non
         },
     )
 
-    projection = project_mastery((_assessment("assessment-future"), future), (), now=NOW)
+    projection = project_mastery(
+        (_assessment("assessment-future"), future), (), now=NOW
+    )
 
-    assert next(item for item in projection.proposals if item.proposal_id == proposal_id).status == "proposed"
+    assert (
+        next(
+            item for item in projection.proposals if item.proposal_id == proposal_id
+        ).status
+        == "proposed"
+    )
 
 
 def _api_plan(
@@ -253,7 +260,9 @@ def _api_plan(
         plan_id=PLAN_ID,
         goal=goal,
         starting_level="beginner",
-        preferences=StudyPlanPreferences(weekly_minutes=weekly_minutes, session_minutes=30),
+        preferences=StudyPlanPreferences(
+            weekly_minutes=weekly_minutes, session_minutes=30
+        ),
         source_manifest_sha256="a" * 64,
         approved_syllabus_version=1,
         state="active",
@@ -353,7 +362,10 @@ class _ApiProgressRepository:
 
     async def append_progress(self, receipt):
         self.append_calls += 1
-        if receipt.request_id.startswith("study_decision_completion:") and self.fail_completion_once:
+        if (
+            receipt.request_id.startswith("study_decision_completion:")
+            and self.fail_completion_once
+        ):
             self.fail_completion_once = False
             raise progress_repository_module.StudyProgressRepositoryError(
                 "simulated append outage"
@@ -361,7 +373,9 @@ class _ApiProgressRepository:
         existing = self.receipts.get(receipt.request_id)
         if existing is not None:
             if existing.details != receipt.details:
-                raise StudyAssistantConflictError("progress request ID was already used")
+                raise StudyAssistantConflictError(
+                    "progress request ID was already used"
+                )
             return existing
         self.receipts[receipt.request_id] = receipt
         return receipt
@@ -421,10 +435,14 @@ def test_api_accept_updates_existing_plan_and_appends_intent_and_completion(
     assert plans.plan.preferences.weekly_minutes == 90
     assert len(plans.update_calls) == 1
     assert "decision-one" in progress.receipts
-    assert any(key.startswith("study_decision_completion:") for key in progress.receipts)
+    assert any(
+        key.startswith("study_decision_completion:") for key in progress.receipts
+    )
     intent = progress.receipts["decision-one"]
     assert "target_preferences" not in (study_plans._progress_details(intent) or {})
-    assert (study_plans._progress_details(intent) or {}).get("target_weekly_minutes") == 90
+    assert (study_plans._progress_details(intent) or {}).get(
+        "target_weekly_minutes"
+    ) == 90
 
 
 def test_api_accept_with_maximum_network_scope_keeps_intent_bounded(
@@ -432,15 +450,19 @@ def test_api_accept_with_maximum_network_scope_keeps_intent_bounded(
 ) -> None:
     plans = _ApiPlanRepository(_api_plan())
     plans.plan = _api_plan()
-    plans.plan = plans.plan.model_copy(update={
-        "preferences": plans.plan.preferences.model_copy(update={
-            "network_allowed": True,
-            "model_route": "cloud",
-            "approved_network_scope": tuple(
-                f"https://example.edu/{index}/{'x' * 470}" for index in range(8)
-            ),
-        })
-    })
+    plans.plan = plans.plan.model_copy(
+        update={
+            "preferences": plans.plan.preferences.model_copy(
+                update={
+                    "network_allowed": True,
+                    "model_route": "cloud",
+                    "approved_network_scope": tuple(
+                        f"https://example.edu/{index}/{'x' * 470}" for index in range(8)
+                    ),
+                }
+            )
+        }
+    )
     progress = _ApiProgressRepository()
     client = _api_client(monkeypatch, plans, progress)
 
@@ -474,8 +496,12 @@ def test_api_accept_retry_reconciles_after_completion_append_failure(
         "expected_revision": 1,
     }
 
-    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
-    second = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    first = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
+    second = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
 
     assert first.status_code == 503
     assert second.status_code == 200
@@ -499,9 +525,13 @@ def test_api_accept_retry_reconciles_when_projection_no_longer_lists_proposal(
         "expected_revision": 1,
     }
 
-    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    first = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
     progress.projection = _api_projection().model_copy(update={"proposals": ()})
-    second = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    second = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
 
     assert first.status_code == 503
     assert second.status_code == 200
@@ -522,8 +552,12 @@ def test_api_accept_retry_after_pre_mutation_update_failure_replays_intent(
         "expected_revision": 1,
     }
 
-    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
-    second = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    first = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
+    second = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
 
     assert first.status_code == 409
     assert second.status_code == 200
@@ -545,8 +579,12 @@ def test_api_accept_same_request_id_is_idempotent_after_completion(
         "expected_revision": 1,
     }
 
-    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
-    second = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    first = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
+    second = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
 
     assert first.status_code == second.status_code == 200
     assert len(plans.update_calls) == 1
@@ -608,8 +646,14 @@ def test_api_distinct_dismiss_requests_share_one_proposal_claim(
 
     assert first.status_code == 200
     assert second.status_code == 409
-    assert decision_claim_request_id(PLAN_ID, "study_adaptation:extra") in progress.receipts
-    assert decision_terminal_request_id(PLAN_ID, "study_adaptation:extra") in progress.receipts
+    assert (
+        decision_claim_request_id(PLAN_ID, "study_adaptation:extra")
+        in progress.receipts
+    )
+    assert (
+        decision_terminal_request_id(PLAN_ID, "study_adaptation:extra")
+        in progress.receipts
+    )
 
 
 def test_api_accept_and_dismiss_contend_on_one_claim_without_double_mutation(
@@ -657,8 +701,12 @@ def test_api_same_client_replays_after_claim_response_loss(
         "expected_revision": 1,
     }
 
-    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
-    second = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    first = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
+    second = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
 
     assert first.status_code == 503
     assert second.status_code == 200
@@ -794,9 +842,13 @@ def test_api_dismiss_retry_is_receipt_idempotent_without_second_append(
         "request_id": "decision-dismiss-retry",
     }
 
-    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    first = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
     append_count = progress.append_calls
-    second = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    second = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
 
     assert first.status_code == second.status_code == 200
     assert progress.append_calls == append_count == 2
@@ -816,9 +868,13 @@ def test_api_accept_retry_rejects_unrelated_revision_change(
         "expected_revision": 1,
     }
 
-    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    first = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
     plans.plan = _api_plan(weekly_minutes=90, version=2, goal="Unrelated edit")
-    second = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    second = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
 
     assert first.status_code == 503
     assert second.status_code == 409
@@ -836,12 +892,22 @@ def test_api_dismiss_requires_proposed_and_replays_before_state_gate(
         "request_id": "decision-dismiss-state",
     }
 
-    first = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    first = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
     assert first.status_code == 200
-    progress.projection = _api_projection().model_copy(update={
-        "proposals": (_api_projection().proposals[0].model_copy(update={"status": "accepted"}),)
-    })
-    replay = client.post("/api/study/plans/study_plan%3Aone/progress:decision", json=payload)
+    progress.projection = _api_projection().model_copy(
+        update={
+            "proposals": (
+                _api_projection()
+                .proposals[0]
+                .model_copy(update={"status": "accepted"}),
+            )
+        }
+    )
+    replay = client.post(
+        "/api/study/plans/study_plan%3Aone/progress:decision", json=payload
+    )
     assert replay.status_code == 200
 
     progress.receipts.pop("decision-dismiss-state", None)
@@ -863,7 +929,10 @@ def _decision_receipt_details(
 ) -> tuple[dict[str, object], dict[str, object]]:
     base_plan = _api_plan(version=base_revision)
     target_preferences = base_plan.preferences.model_copy(
-        update={"weekly_minutes": base_plan.preferences.weekly_minutes + base_plan.preferences.session_minutes}
+        update={
+            "weekly_minutes": base_plan.preferences.weekly_minutes
+            + base_plan.preferences.session_minutes
+        }
     )
     claim_target = target_plan_sha256 or study_plans._plan_fingerprint(
         base_plan, preferences=target_preferences
@@ -873,9 +942,13 @@ def _decision_receipt_details(
         decision=decision,
         proposal_id=proposal_id,
         base_revision=base_revision if decision == "accepted" else None,
-        base_plan_sha256=study_plans._plan_fingerprint(base_plan) if decision == "accepted" else None,
+        base_plan_sha256=study_plans._plan_fingerprint(base_plan)
+        if decision == "accepted"
+        else None,
         target_plan_sha256=claim_target if decision == "accepted" else None,
-        target_weekly_minutes=target_preferences.weekly_minutes if decision == "accepted" else None,
+        target_weekly_minutes=target_preferences.weekly_minutes
+        if decision == "accepted"
+        else None,
     )
     terminal = study_plans._terminal_payload(
         claim_request_id=decision_claim_request_id(PLAN_ID, proposal_id),
@@ -1230,7 +1303,11 @@ def test_api_dismiss_terminal_replay_requires_matching_claim_and_order(
     client = _api_client(monkeypatch, plans, progress)
     orphan = client.post(
         "/api/study/plans/study_plan%3Aone/progress:decision",
-        json={"proposal_id": proposal_id, "decision": "dismissed", "request_id": client_request_id},
+        json={
+            "proposal_id": proposal_id,
+            "decision": "dismissed",
+            "request_id": client_request_id,
+        },
     )
     assert orphan.status_code == 409
 
@@ -1243,7 +1320,11 @@ def test_api_dismiss_terminal_replay_requires_matching_claim_and_order(
     )
     valid = client.post(
         "/api/study/plans/study_plan%3Aone/progress:decision",
-        json={"proposal_id": proposal_id, "decision": "dismissed", "request_id": client_request_id},
+        json={
+            "proposal_id": proposal_id,
+            "decision": "dismissed",
+            "request_id": client_request_id,
+        },
     )
     assert valid.status_code == 200
 

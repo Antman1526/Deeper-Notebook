@@ -28,7 +28,9 @@ class TestAsyncSourceAssetPersistence:
     """
 
     @pytest.mark.asyncio
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     async def test_async_link_source_persists_url_asset(
@@ -70,7 +72,9 @@ class TestAsyncSourceAssetPersistence:
         assert source.asset.file_path is None
 
     @pytest.mark.asyncio
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     async def test_async_source_persists_labels_and_provenance(
@@ -113,7 +117,9 @@ class TestAsyncSourceAssetPersistence:
         assert source.source_type == "link"
 
     @pytest.mark.asyncio
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     async def test_async_legacy_notebook_id_links_and_queues_source(
@@ -146,7 +152,9 @@ class TestAsyncSourceAssetPersistence:
         assert command_payload["notebook_ids"] == ["notebook:legacy"]
 
     @pytest.mark.asyncio
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     async def test_async_upload_accepts_frontend_notebook_id_and_notebooks_pair(
@@ -162,7 +170,9 @@ class TestAsyncSourceAssetPersistence:
 
         with (
             patch.object(Source, "save", autospec=True, side_effect=capture_save),
-            patch("api.routers.sources.save_uploaded_file", new_callable=AsyncMock) as mock_upload,
+            patch(
+                "api.routers.sources.save_uploaded_file", new_callable=AsyncMock
+            ) as mock_upload,
         ):
             mock_upload.return_value = os.path.join(
                 os.path.abspath(UPLOADS_FOLDER),
@@ -186,7 +196,9 @@ class TestAsyncSourceAssetPersistence:
         assert command_payload["notebook_ids"] == ["notebook:quick"]
 
     @pytest.mark.asyncio
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     @patch("api.routers.sources.save_uploaded_file", new_callable=AsyncMock)
@@ -195,7 +207,9 @@ class TestAsyncSourceAssetPersistence:
     ):
         """POST /sources with type=upload and async_processing=true persists Asset(file_path=...)."""
         mock_nb_get.return_value = MagicMock()
-        mock_upload.return_value = os.path.join(os.path.abspath(UPLOADS_FOLDER), "video.mp4")
+        mock_upload.return_value = os.path.join(
+            os.path.abspath(UPLOADS_FOLDER), "video.mp4"
+        )
         mock_submit.return_value = "command:123"
 
         saved_sources = []
@@ -226,11 +240,15 @@ class TestAsyncSourceAssetPersistence:
 
         source = saved_sources[0]
         assert source.asset is not None
-        assert source.asset.file_path == os.path.join(os.path.abspath(UPLOADS_FOLDER), "video.mp4")
+        assert source.asset.file_path == os.path.join(
+            os.path.abspath(UPLOADS_FOLDER), "video.mp4"
+        )
         assert source.asset.url is None
 
     @pytest.mark.asyncio
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     async def test_async_text_source_has_no_asset(
@@ -265,7 +283,9 @@ class TestAsyncSourceAssetPersistence:
         assert source.asset is None
 
     @pytest.mark.asyncio
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.execute_command_sync")
     @patch("api.routers.sources.Source.add_to_notebook", new_callable=AsyncMock)
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
@@ -303,7 +323,9 @@ class TestSourceListingErrors:
     def test_get_sources_for_missing_notebook_returns_404(
         self, mock_nb_get, mock_repo_query, client
     ):
-        mock_nb_get.side_effect = NotFoundError("notebook with id notebook:gone not found")
+        mock_nb_get.side_effect = NotFoundError(
+            "notebook with id notebook:gone not found"
+        )
 
         response = client.get("/api/sources", params={"notebook_id": "notebook:gone"})
 
@@ -494,7 +516,9 @@ class TestSourceCreationErrors:
 
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     def test_create_source_for_missing_notebook_returns_404(self, mock_nb_get, client):
-        mock_nb_get.side_effect = NotFoundError("notebook with id notebook:gone not found")
+        mock_nb_get.side_effect = NotFoundError(
+            "notebook with id notebook:gone not found"
+        )
 
         response = client.post(
             "/api/sources",
@@ -510,7 +534,9 @@ class TestSourceCreationErrors:
         assert response.json()["detail"] == "Notebook notebook:gone not found"
 
     @patch("api.routers.sources.Source.save", new_callable=AsyncMock)
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.Notebook.get", new_callable=AsyncMock)
     def test_oversized_upload_returns_413_and_leaves_no_partial_file(
         self, mock_nb_get, mock_submit, mock_save, client, monkeypatch, tmp_path
@@ -537,7 +563,9 @@ class TestSourceCreationErrors:
 
 
 class TestSourceRetryUploadPreflight:
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
     @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
     def test_retry_upload_source_rejects_missing_original_file(
@@ -563,7 +591,9 @@ class TestSourceRetryUploadPreflight:
         )
         mock_submit.assert_not_called()
 
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
     @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
     def test_retry_upload_source_rejects_file_outside_uploads_folder(
@@ -592,7 +622,9 @@ class TestSourceRetryUploadPreflight:
 
 
 class TestSourceRetryResponseMetrics:
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.Source.save", new_callable=AsyncMock)
     @patch("api.routers.sources.Source.get_embedded_chunks", new_callable=AsyncMock)
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
@@ -633,7 +665,9 @@ class TestRetrySourceProcessing:
     edge's in/out columns, not a non-existent `source` column (#861)."""
 
     @pytest.mark.asyncio
-    @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
+    @patch(
+        "api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock
+    )
     @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
     @patch("api.routers.sources.Source.get", new_callable=AsyncMock)
     async def test_retry_finds_notebooks_and_requeues(

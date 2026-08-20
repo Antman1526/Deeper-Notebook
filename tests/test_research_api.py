@@ -182,7 +182,9 @@ def test_approve_records_rejected_candidates_before_resume(monkeypatch) -> None:
     assert store.run.checkpoints["validate"]["comparison"]["verdicts"]
 
 
-def test_approve_with_evidence_still_requires_outbound_url_validation(monkeypatch) -> None:
+def test_approve_with_evidence_still_requires_outbound_url_validation(
+    monkeypatch,
+) -> None:
     evidence = normalize_web_results(
         [{"title": "T", "url": "https://example.com/a", "snippet": "S"}],
         query="q",

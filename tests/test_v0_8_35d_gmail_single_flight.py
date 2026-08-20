@@ -18,6 +18,7 @@ Test pattern mirrors `test_v0_8_35_health_cache_single_flight.py`:
 slow-stub the query so concurrent callers reliably overlap; assert
 exactly one query runs.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -81,9 +82,7 @@ async def test_gmail_get_single_flight_under_concurrency():
         new=AsyncMock(side_effect=_slow_query),
     ):
         # 5 concurrent cache-miss callers; gather joins them.
-        results = await asyncio.gather(
-            *[GmailIntegration.get() for _ in range(5)]
-        )
+        results = await asyncio.gather(*[GmailIntegration.get() for _ in range(5)])
 
     # All 5 returned the same shape — sanity check.
     assert all(r.email_address == "user@example.com" for r in results)
@@ -103,6 +102,7 @@ async def test_gmail_get_single_flight_lock_does_not_serialize_cache_hits():
     instance = GmailIntegration(email_address="cached@example.com", enabled=True)
     gmail_mod._CACHE["value"] = instance
     import time as _time
+
     gmail_mod._CACHE["ts"] = _time.monotonic()
 
     query_called = [False]
@@ -115,11 +115,7 @@ async def test_gmail_get_single_flight_lock_does_not_serialize_cache_hits():
         "deeper_notebook.domain.gmail.repo_query",
         new=AsyncMock(side_effect=_query_should_not_run),
     ):
-        results = await asyncio.gather(
-            *[GmailIntegration.get() for _ in range(3)]
-        )
+        results = await asyncio.gather(*[GmailIntegration.get() for _ in range(3)])
 
     assert all(r.email_address == "cached@example.com" for r in results)
-    assert query_called[0] is False, (
-        "Cache-hit path must not call the DB query at all"
-    )
+    assert query_called[0] is False, "Cache-hit path must not call the DB query at all"

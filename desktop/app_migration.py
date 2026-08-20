@@ -377,9 +377,7 @@ def replace_legacy_app(
         or decision.receipt_path != receipt_path
         or decision.snapshot is None
     ):
-        raise AppReplacementRefused(
-            "application paths changed after confirmation"
-        )
+        raise AppReplacementRefused("application paths changed after confirmation")
 
     def revalidate_confirmation() -> None:
         current = _capture_snapshot(
@@ -465,8 +463,7 @@ def replace_legacy_app(
                 )
                 if _snapshot_matches(decision.snapshot, current):
                     raise AppReplacementOutcomeError(
-                        "The old app was not moved. "
-                        "The macOS Trash operation failed.",
+                        "The old app was not moved. The macOS Trash operation failed.",
                         move_outcome="not-moved",
                     ) from error
                 raise AppReplacementOutcomeError(

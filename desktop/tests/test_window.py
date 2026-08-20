@@ -3,6 +3,7 @@
 These were missing — the v0.5 theme contrast fix shipped without a permanent
 test asserting the token set is complete or that WCAG contrast holds. (P1-LOW-12)
 """
+
 from __future__ import annotations
 
 import os
@@ -16,12 +17,31 @@ import desktop.window as window_module
 from desktop.window import _THEMES, _theme_injection_js, _theme_tokens
 
 EXPECTED_THEME_IDS = {
-    "research-core-dark", "research-core-light", "deep-ocean", "graphite-lab",
-    "arctic-research", "archive-paper", "high-contrast-dark", "high-contrast-light",
-    "light-blue", "system", "solarized-light", "github-light", "paper",
-    "catppuccin-latte", "rose-pine-dawn", "dark", "midnight-aurora",
-    "tokyo-night", "catppuccin-mocha", "rose-pine", "one-dark",
-    "gruvbox-dark", "solarized-dark", "dracula", "nord",
+    "research-core-dark",
+    "research-core-light",
+    "deep-ocean",
+    "graphite-lab",
+    "arctic-research",
+    "archive-paper",
+    "high-contrast-dark",
+    "high-contrast-light",
+    "light-blue",
+    "system",
+    "solarized-light",
+    "github-light",
+    "paper",
+    "catppuccin-latte",
+    "rose-pine-dawn",
+    "dark",
+    "midnight-aurora",
+    "tokyo-night",
+    "catppuccin-mocha",
+    "rose-pine",
+    "one-dark",
+    "gruvbox-dark",
+    "solarized-dark",
+    "dracula",
+    "nord",
 }
 
 
@@ -33,10 +53,21 @@ def test_theme_catalog_contains_exact_research_core_os_ids():
 def test_every_theme_exposes_research_core_semantic_tokens(theme_id):
     tokens = _theme_tokens(theme_id)
     required = {
-        "--dn-canvas", "--dn-panel", "--dn-panel-raised", "--dn-separator",
-        "--dn-focus", "--dn-selection", "--dn-evidence", "--dn-warning",
-        "--dn-editable", "--dn-read-only", "--dn-model-local", "--dn-model-cloud",
-        "--dn-graph-node", "--dn-graph-edge", "--dn-graph-selected",
+        "--dn-canvas",
+        "--dn-panel",
+        "--dn-panel-raised",
+        "--dn-separator",
+        "--dn-focus",
+        "--dn-selection",
+        "--dn-evidence",
+        "--dn-warning",
+        "--dn-editable",
+        "--dn-read-only",
+        "--dn-model-local",
+        "--dn-model-cloud",
+        "--dn-graph-node",
+        "--dn-graph-edge",
+        "--dn-graph-selected",
     }
     assert required <= set(tokens)
 
@@ -57,7 +88,9 @@ def test_focus_ring_has_three_to_one_contrast_against_background(theme_id):
 )
 def test_primary_and_accent_foregrounds_meet_wcag_aa(theme_id, foreground_token):
     tokens = _theme_tokens(theme_id)
-    color_token = "--primary" if foreground_token == "--primary-foreground" else "--accent"
+    color_token = (
+        "--primary" if foreground_token == "--primary-foreground" else "--accent"
+    )
     ratio = _contrast_ratio(tokens[foreground_token], tokens[color_token])
     assert ratio >= 4.5, (
         f"{theme_id}: {foreground_token}={tokens[foreground_token]} "
@@ -72,19 +105,33 @@ def test_every_theme_produces_27_shadcn_tokens(theme_id):
     unreadable-labels bug)."""
     tokens = _theme_tokens(theme_id)
     required = {
-        "--background", "--foreground",
-        "--card", "--card-foreground",
-        "--popover", "--popover-foreground",
-        "--primary", "--primary-foreground",
-        "--secondary", "--secondary-foreground",
-        "--muted", "--muted-foreground",
-        "--accent", "--accent-foreground",
-        "--destructive", "--destructive-foreground",
-        "--border", "--input", "--ring",
-        "--sidebar", "--sidebar-foreground",
-        "--sidebar-primary", "--sidebar-primary-foreground",
-        "--sidebar-accent", "--sidebar-accent-foreground",
-        "--sidebar-border", "--sidebar-ring",
+        "--background",
+        "--foreground",
+        "--card",
+        "--card-foreground",
+        "--popover",
+        "--popover-foreground",
+        "--primary",
+        "--primary-foreground",
+        "--secondary",
+        "--secondary-foreground",
+        "--muted",
+        "--muted-foreground",
+        "--accent",
+        "--accent-foreground",
+        "--destructive",
+        "--destructive-foreground",
+        "--border",
+        "--input",
+        "--ring",
+        "--sidebar",
+        "--sidebar-foreground",
+        "--sidebar-primary",
+        "--sidebar-primary-foreground",
+        "--sidebar-accent",
+        "--sidebar-accent-foreground",
+        "--sidebar-border",
+        "--sidebar-ring",
     }
     missing = required - set(tokens.keys())
     assert not missing, f"{theme_id} missing tokens: {missing}"
@@ -95,9 +142,11 @@ def _relative_luminance(hex_color: str) -> float:
     hex_color = hex_color.lstrip("#")
     if len(hex_color) != 6:
         return 0.5  # skip on unexpected shape
-    r, g, b = (int(hex_color[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    r, g, b = (int(hex_color[i : i + 2], 16) / 255.0 for i in (0, 2, 4))
+
     def channel(c: float) -> float:
         return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
     return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 
 
@@ -150,7 +199,7 @@ def test_injection_contains_every_theme_as_attribute_selector():
     # Every theme id should appear as an attribute selector
     for theme_id in _THEMES:
         assert f'data-theme="{theme_id}"' in js, (
-            f"injection missing :root[data-theme=\"{theme_id}\"] block"
+            f'injection missing :root[data-theme="{theme_id}"] block'
         )
 
 
@@ -210,10 +259,7 @@ def test_injection_sets_canonical_stt_url_and_deterministic_legacy_mirror():
     # Look for the EXPLICIT assignment (the bare `window.ONP_STT_URL`
     # token already appears in voice_injection.js as a fallback lookup).
     assert "window.DEEPER_NOTEBOOK_STT_URL = " in js
-    assert (
-        "window.ONP_STT_URL = window.DEEPER_NOTEBOOK_STT_URL;"
-        in js
-    )
+    assert "window.ONP_STT_URL = window.DEEPER_NOTEBOOK_STT_URL;" in js
     assert "127.0.0.1:51234" in js
     assert "/v1/audio/transcriptions" in js
 
@@ -230,10 +276,7 @@ def test_injection_sets_canonical_tts_url_and_deterministic_legacy_mirror():
         tts_url="http://127.0.0.1:51235/v1/audio/speech",
     )
     assert "window.DEEPER_NOTEBOOK_TTS_URL = " in js
-    assert (
-        "window.ONP_TTS_URL = window.DEEPER_NOTEBOOK_TTS_URL;"
-        in js
-    )
+    assert "window.ONP_TTS_URL = window.DEEPER_NOTEBOOK_TTS_URL;" in js
     assert "127.0.0.1:51235" in js
     assert "/v1/audio/speech" in js
 
@@ -291,8 +334,7 @@ def test_injection_sets_canonical_memory_globals_and_legacy_mirrors():
     assert "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE = true;" in js
     assert (
         "window.ONP_REMIND_OPENCHRONICLE = "
-        "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE;"
-        in js
+        "window.DEEPER_NOTEBOOK_REMIND_OPENCHRONICLE;" in js
     )
 
 
@@ -305,12 +347,12 @@ def test_desktop_bridge_producer_consumer_contract_is_canonical_first():
         memory_url="http://127.0.0.1:51236/memory",
         remind_openchronicle=True,
     )
-    voice = (
-        root / "desktop/first_run/static/voice_injection.js"
-    ).read_text(encoding="utf-8")
-    memory = (
-        root / "desktop/first_run/static/memory_injection.js"
-    ).read_text(encoding="utf-8")
+    voice = (root / "desktop/first_run/static/voice_injection.js").read_text(
+        encoding="utf-8"
+    )
+    memory = (root / "desktop/first_run/static/memory_injection.js").read_text(
+        encoding="utf-8"
+    )
 
     producer_pairs = [
         ("window.DEEPER_NOTEBOOK_STT_URL =", "window.ONP_STT_URL ="),
@@ -366,9 +408,7 @@ def test_recovery_card_renders_explanation_confirmation_and_explicit_actions():
         {
             "show_recovery_card": True,
             "title": "Two Deeper Notebook apps are installed",
-            "message": (
-                "Open Notebook Plus.app and Deeper Notebook.app both exist."
-            ),
+            "message": ("Open Notebook Plus.app and Deeper Notebook.app both exist."),
             "replace_label": "Replace Old App",
             "keep_label": "Keep Both",
         }
@@ -398,9 +438,7 @@ def test_native_app_termination_runs_window_cleanup_exactly_once(
     callbacks: dict[str, object] = {}
 
     class FakeNotificationCenter:
-        def addObserverForName_object_queue_usingBlock_(
-            self, name, obj, queue, block
-        ):
+        def addObserverForName_object_queue_usingBlock_(self, name, obj, queue, block):
             callbacks["notification"] = block
             return "observer-token"
 
@@ -412,17 +450,13 @@ def test_native_app_termination_runs_window_cleanup_exactly_once(
         sys.modules,
         "Foundation",
         SimpleNamespace(
-            NSNotificationCenter=SimpleNamespace(
-                defaultCenter=lambda: center
-            )
+            NSNotificationCenter=SimpleNamespace(defaultCenter=lambda: center)
         ),
     )
     monkeypatch.setitem(
         sys.modules,
         "AppKit",
-        SimpleNamespace(
-            NSApplicationWillTerminateNotification="will-terminate"
-        ),
+        SimpleNamespace(NSApplicationWillTerminateNotification="will-terminate"),
     )
 
     class Event:
@@ -458,9 +492,7 @@ def test_native_app_termination_runs_window_cleanup_exactly_once(
     )
     monkeypatch.setattr(window_module, "_preferred_window_size", lambda *_: (1280, 800))
     monkeypatch.setattr(window_module, "_start_handoff_controller", lambda *_: None)
-    monkeypatch.setattr(
-        "desktop.data_root.active_data_root", lambda: tmp_path
-    )
+    monkeypatch.setattr("desktop.data_root.active_data_root", lambda: tmp_path)
     monkeypatch.setattr("desktop.window_state.load_size", lambda *_: None)
     monkeypatch.setattr("desktop.window_state.save_size", lambda *_: None)
 
@@ -565,9 +597,7 @@ def test_native_close_waits_for_frontend_workspace_flush(
 
     assert callbacks["first_close_result"] is False
     assert callbacks["cleaned_before_flush"] is False
-    assert "DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE" in str(
-        callbacks["flush_source"]
-    )
+    assert "DEEPER_NOTEBOOK_FLUSH_KNOWLEDGE_WORKSPACE" in str(callbacks["flush_source"])
     assert callbacks["second_close_result"] is not False
     assert cleaned == [True]
 

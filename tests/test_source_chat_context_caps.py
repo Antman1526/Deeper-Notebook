@@ -12,6 +12,7 @@ These tests pin the new env-configurable caps:
   - DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP   (default 1_000)
   - DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS       (default 10)
 """
+
 from __future__ import annotations
 
 from deeper_notebook.graphs import source_chat
@@ -19,6 +20,7 @@ from deeper_notebook.graphs import source_chat
 # ---------------------------------------------------------------------------
 # Builders
 # ---------------------------------------------------------------------------
+
 
 def _ctx(sources=None, insights=None):
     """Build a ContextBuilder-shaped dict for testing."""
@@ -44,6 +46,7 @@ def _insight(rid: str, content: str, itype: str = "summary") -> dict:
 # ---------------------------------------------------------------------------
 # Source full_text cap
 # ---------------------------------------------------------------------------
+
 
 def test_source_full_text_default_cap_is_4000(monkeypatch):
     monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
@@ -85,6 +88,7 @@ def test_source_under_cap_not_truncated(monkeypatch):
 # Per-insight content cap
 # ---------------------------------------------------------------------------
 
+
 def test_insight_content_default_cap_is_1000(monkeypatch):
     monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
     monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
@@ -125,8 +129,11 @@ def test_insight_handles_non_string_content(monkeypatch):
     monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_INSIGHT_CHAR_CAP", raising=False)
     monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_MAX_INSIGHTS", raising=False)
 
-    weird = {"id": "insight:1", "insight_type": "summary",
-             "content": ["chunk a", "chunk b"]}
+    weird = {
+        "id": "insight:1",
+        "insight_type": "summary",
+        "content": ["chunk a", "chunk b"],
+    }
     # Must not raise
     out = source_chat._format_source_context(_ctx(insights=[weird]))
     assert "insight:1" in out
@@ -135,6 +142,7 @@ def test_insight_handles_non_string_content(monkeypatch):
 # ---------------------------------------------------------------------------
 # Max insight count cap
 # ---------------------------------------------------------------------------
+
 
 def test_max_insights_default_is_10(monkeypatch):
     monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_SOURCE_CHAR_CAP", raising=False)
@@ -183,6 +191,7 @@ def test_under_max_no_drop_marker(monkeypatch):
 # Env-var hardening
 # ---------------------------------------------------------------------------
 
+
 def test_invalid_env_falls_back_to_defaults(monkeypatch):
     """Garbage in any of the three env vars → default applied silently
     (with a warning log) instead of crashing or passing garbage downstream."""
@@ -193,9 +202,7 @@ def test_invalid_env_falls_back_to_defaults(monkeypatch):
     src = _source("source:1", "X" * 10_000)
     insights = [_insight(f"insight:{i}", "Y" * 3_000) for i in range(20)]
     # Must not raise
-    out = source_chat._format_source_context(
-        _ctx(sources=[src], insights=insights)
-    )
+    out = source_chat._format_source_context(_ctx(sources=[src], insights=insights))
     # Defaults kicked in: source ≤ 4000 X's, insights ≤ 10 of them
     assert out.count("X") <= 4_000 + 10
     for i in range(10):
@@ -213,9 +220,7 @@ def test_too_low_env_falls_back(monkeypatch):
 
     src = _source("source:1", "X" * 10_000)
     insight = _insight("insight:1", "Y" * 5_000)
-    out = source_chat._format_source_context(
-        _ctx(sources=[src], insights=[insight])
-    )
+    out = source_chat._format_source_context(_ctx(sources=[src], insights=[insight]))
     # Defaults (4000 / 1000) applied — way more than the bogus 50/10
     assert out.count("X") > 100
     assert out.count("Y") > 100

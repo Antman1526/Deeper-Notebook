@@ -9,6 +9,7 @@ _theme_injection_js) can be tested without pywebview installed. The
 desktop bundle's runtime path is unaffected — it calls open_window()
 which still requires webview.
 """
+
 from __future__ import annotations
 
 import html as _html
@@ -40,6 +41,7 @@ def _memory_injection_js() -> str:
             return ""
     return ""
 
+
 # Theme palettes — minimal source-of-truth per theme; full shadcn token set
 # is derived in _theme_tokens() below. Adding a new theme = 9 hex values here.
 #
@@ -49,87 +51,245 @@ def _memory_injection_js() -> str:
 # dark themes (the issue visible in the v0.4 screenshot).
 _THEMES = {
     # --- Research Core OS palettes ---
-    "research-core-dark": {"is_dark": True, "bg": "#071B1D", "fg": "#D8FFF8", "card": "#0B292B", "muted": "#12383A", "muted_fg": "#A3CEC8", "primary": "#2DD4BF", "primary_fg": "#041313", "accent": "#38BDF8", "accent_fg": "#041313", "border": "#225053", "destructive": "#FB7185"},
-    "research-core-light": {"is_dark": False, "bg": "#F5FBF9", "fg": "#102A2A", "card": "#FFFFFF", "muted": "#E5F2EE", "muted_fg": "#526E69", "primary": "#0F766E", "primary_fg": "#FFFFFF", "accent": "#0284C7", "accent_fg": "#000000", "border": "#C9DED8", "destructive": "#DC2626"},
-    "deep-ocean": {"is_dark": True, "bg": "#06151F", "fg": "#D8F3F8", "card": "#0B2432", "muted": "#123446", "muted_fg": "#9FC6CE", "primary": "#2DD4BF", "primary_fg": "#041619", "accent": "#38BDF8", "accent_fg": "#041619", "border": "#21485A", "destructive": "#FB7185"},
-    "graphite-lab": {"is_dark": True, "bg": "#151A1D", "fg": "#EDF7F5", "card": "#20272B", "muted": "#2A3438", "muted_fg": "#B5C6C3", "primary": "#5EEAD4", "primary_fg": "#0D1718", "accent": "#67E8F9", "accent_fg": "#0D1718", "border": "#3B494E", "destructive": "#FB7185"},
-    "arctic-research": {"is_dark": False, "bg": "#F4FAFC", "fg": "#122A35", "card": "#FFFFFF", "muted": "#E3EFF3", "muted_fg": "#4F6974", "primary": "#0F766E", "primary_fg": "#FFFFFF", "accent": "#0284C7", "accent_fg": "#000000", "border": "#C7DBE2", "destructive": "#DC2626"},
-    "archive-paper": {"is_dark": False, "bg": "#F7F1E5", "fg": "#2B332E", "card": "#FFFDF8", "muted": "#ECE3D3", "muted_fg": "#665F52", "primary": "#0F766E", "primary_fg": "#FFFFFF", "accent": "#A16207", "accent_fg": "#FFFFFF", "border": "#D8CDBB", "destructive": "#B91C1C"},
-    "high-contrast-dark": {"is_dark": True, "bg": "#000000", "fg": "#FFFFFF", "card": "#111111", "muted": "#1E1E1E", "muted_fg": "#E6E6E6", "primary": "#5EEAD4", "primary_fg": "#000000", "accent": "#67E8F9", "accent_fg": "#000000", "border": "#FFFFFF", "destructive": "#FF5A67"},
-    "high-contrast-light": {"is_dark": False, "bg": "#FFFFFF", "fg": "#000000", "card": "#FFFFFF", "muted": "#EFEFEF", "muted_fg": "#333333", "primary": "#006B63", "primary_fg": "#FFFFFF", "accent": "#005FCC", "accent_fg": "#FFFFFF", "border": "#000000", "destructive": "#B00020"},
+    "research-core-dark": {
+        "is_dark": True,
+        "bg": "#071B1D",
+        "fg": "#D8FFF8",
+        "card": "#0B292B",
+        "muted": "#12383A",
+        "muted_fg": "#A3CEC8",
+        "primary": "#2DD4BF",
+        "primary_fg": "#041313",
+        "accent": "#38BDF8",
+        "accent_fg": "#041313",
+        "border": "#225053",
+        "destructive": "#FB7185",
+    },
+    "research-core-light": {
+        "is_dark": False,
+        "bg": "#F5FBF9",
+        "fg": "#102A2A",
+        "card": "#FFFFFF",
+        "muted": "#E5F2EE",
+        "muted_fg": "#526E69",
+        "primary": "#0F766E",
+        "primary_fg": "#FFFFFF",
+        "accent": "#0284C7",
+        "accent_fg": "#000000",
+        "border": "#C9DED8",
+        "destructive": "#DC2626",
+    },
+    "deep-ocean": {
+        "is_dark": True,
+        "bg": "#06151F",
+        "fg": "#D8F3F8",
+        "card": "#0B2432",
+        "muted": "#123446",
+        "muted_fg": "#9FC6CE",
+        "primary": "#2DD4BF",
+        "primary_fg": "#041619",
+        "accent": "#38BDF8",
+        "accent_fg": "#041619",
+        "border": "#21485A",
+        "destructive": "#FB7185",
+    },
+    "graphite-lab": {
+        "is_dark": True,
+        "bg": "#151A1D",
+        "fg": "#EDF7F5",
+        "card": "#20272B",
+        "muted": "#2A3438",
+        "muted_fg": "#B5C6C3",
+        "primary": "#5EEAD4",
+        "primary_fg": "#0D1718",
+        "accent": "#67E8F9",
+        "accent_fg": "#0D1718",
+        "border": "#3B494E",
+        "destructive": "#FB7185",
+    },
+    "arctic-research": {
+        "is_dark": False,
+        "bg": "#F4FAFC",
+        "fg": "#122A35",
+        "card": "#FFFFFF",
+        "muted": "#E3EFF3",
+        "muted_fg": "#4F6974",
+        "primary": "#0F766E",
+        "primary_fg": "#FFFFFF",
+        "accent": "#0284C7",
+        "accent_fg": "#000000",
+        "border": "#C7DBE2",
+        "destructive": "#DC2626",
+    },
+    "archive-paper": {
+        "is_dark": False,
+        "bg": "#F7F1E5",
+        "fg": "#2B332E",
+        "card": "#FFFDF8",
+        "muted": "#ECE3D3",
+        "muted_fg": "#665F52",
+        "primary": "#0F766E",
+        "primary_fg": "#FFFFFF",
+        "accent": "#A16207",
+        "accent_fg": "#FFFFFF",
+        "border": "#D8CDBB",
+        "destructive": "#B91C1C",
+    },
+    "high-contrast-dark": {
+        "is_dark": True,
+        "bg": "#000000",
+        "fg": "#FFFFFF",
+        "card": "#111111",
+        "muted": "#1E1E1E",
+        "muted_fg": "#E6E6E6",
+        "primary": "#5EEAD4",
+        "primary_fg": "#000000",
+        "accent": "#67E8F9",
+        "accent_fg": "#000000",
+        "border": "#FFFFFF",
+        "destructive": "#FF5A67",
+    },
+    "high-contrast-light": {
+        "is_dark": False,
+        "bg": "#FFFFFF",
+        "fg": "#000000",
+        "card": "#FFFFFF",
+        "muted": "#EFEFEF",
+        "muted_fg": "#333333",
+        "primary": "#006B63",
+        "primary_fg": "#FFFFFF",
+        "accent": "#005FCC",
+        "accent_fg": "#FFFFFF",
+        "border": "#000000",
+        "destructive": "#B00020",
+    },
     # --- Light themes ---
     "light-blue": {
         "is_dark": False,
-        "bg": "#FFFFFF", "fg": "#1A2B3C",
-        "card": "#FFFFFF", "muted": "#F1F5F9", "muted_fg": "#475569",
-        "primary": "#2D7FF9", "primary_fg": "#000000",
-        "accent": "#5AB1FF", "accent_fg": "#000000",
-        "border": "#D8E5F5", "destructive": "#EF4444",
+        "bg": "#FFFFFF",
+        "fg": "#1A2B3C",
+        "card": "#FFFFFF",
+        "muted": "#F1F5F9",
+        "muted_fg": "#475569",
+        "primary": "#2D7FF9",
+        "primary_fg": "#000000",
+        "accent": "#5AB1FF",
+        "accent_fg": "#000000",
+        "border": "#D8E5F5",
+        "destructive": "#EF4444",
     },
     "system": {
         "is_dark": False,
-        "bg": "#FFFFFF", "fg": "#1A2B3C",
-        "card": "#FFFFFF", "muted": "#F1F5F9", "muted_fg": "#475569",
-        "primary": "#2D7FF9", "primary_fg": "#000000",
-        "accent": "#5AB1FF", "accent_fg": "#000000",
-        "border": "#D8E5F5", "destructive": "#EF4444",
+        "bg": "#FFFFFF",
+        "fg": "#1A2B3C",
+        "card": "#FFFFFF",
+        "muted": "#F1F5F9",
+        "muted_fg": "#475569",
+        "primary": "#2D7FF9",
+        "primary_fg": "#000000",
+        "accent": "#5AB1FF",
+        "accent_fg": "#000000",
+        "border": "#D8E5F5",
+        "destructive": "#EF4444",
     },
     "solarized-light": {
         "is_dark": False,
-        "bg": "#FDF6E3", "fg": "#073642",
-        "card": "#FDF6E3", "muted": "#EEE8D5", "muted_fg": "#586E75",
-        "primary": "#268BD2", "primary_fg": "#000000",
-        "accent": "#2AA198", "accent_fg": "#000000",
-        "border": "#D8D2BF", "destructive": "#DC322F",
+        "bg": "#FDF6E3",
+        "fg": "#073642",
+        "card": "#FDF6E3",
+        "muted": "#EEE8D5",
+        "muted_fg": "#586E75",
+        "primary": "#268BD2",
+        "primary_fg": "#000000",
+        "accent": "#2AA198",
+        "accent_fg": "#000000",
+        "border": "#D8D2BF",
+        "destructive": "#DC322F",
     },
     "github-light": {
         "is_dark": False,
-        "bg": "#FFFFFF", "fg": "#24292F",
-        "card": "#FFFFFF", "muted": "#F6F8FA", "muted_fg": "#57606A",
-        "primary": "#0969DA", "primary_fg": "#FFFFFF",
-        "accent": "#1F883D", "accent_fg": "#FFFFFF",
-        "border": "#D0D7DE", "destructive": "#CF222E",
+        "bg": "#FFFFFF",
+        "fg": "#24292F",
+        "card": "#FFFFFF",
+        "muted": "#F6F8FA",
+        "muted_fg": "#57606A",
+        "primary": "#0969DA",
+        "primary_fg": "#FFFFFF",
+        "accent": "#1F883D",
+        "accent_fg": "#FFFFFF",
+        "border": "#D0D7DE",
+        "destructive": "#CF222E",
     },
     "paper": {
         "is_dark": False,
-        "bg": "#FBF8F1", "fg": "#2A2520",
-        "card": "#FBF8F1", "muted": "#F0EBE0", "muted_fg": "#6B5F4D",
-        "primary": "#8B5A2B", "primary_fg": "#FBF8F1",
-        "accent": "#C0853D", "accent_fg": "#000000",
-        "border": "#DDD3BF", "destructive": "#B91C1C",
+        "bg": "#FBF8F1",
+        "fg": "#2A2520",
+        "card": "#FBF8F1",
+        "muted": "#F0EBE0",
+        "muted_fg": "#6B5F4D",
+        "primary": "#8B5A2B",
+        "primary_fg": "#FBF8F1",
+        "accent": "#C0853D",
+        "accent_fg": "#000000",
+        "border": "#DDD3BF",
+        "destructive": "#B91C1C",
     },
     # --- Dark themes ---
     "dark": {
         "is_dark": True,
-        "bg": "#0F1419", "fg": "#E5EBF2",
-        "card": "#1A2330", "muted": "#1F2A38", "muted_fg": "#B8C2D0",
-        "primary": "#5AB1FF", "primary_fg": "#0F1419",
-        "accent": "#2D7FF9", "accent_fg": "#0F1419",
-        "border": "#2A3540", "destructive": "#F87171",
+        "bg": "#0F1419",
+        "fg": "#E5EBF2",
+        "card": "#1A2330",
+        "muted": "#1F2A38",
+        "muted_fg": "#B8C2D0",
+        "primary": "#5AB1FF",
+        "primary_fg": "#0F1419",
+        "accent": "#2D7FF9",
+        "accent_fg": "#0F1419",
+        "border": "#2A3540",
+        "destructive": "#F87171",
     },
     "solarized-dark": {
         "is_dark": True,
-        "bg": "#002B36", "fg": "#EEE8D5",
-        "card": "#073642", "muted": "#073642", "muted_fg": "#93A1A1",
-        "primary": "#268BD2", "primary_fg": "#000000",
-        "accent": "#2AA198", "accent_fg": "#000000",
-        "border": "#14424F", "destructive": "#DC322F",
+        "bg": "#002B36",
+        "fg": "#EEE8D5",
+        "card": "#073642",
+        "muted": "#073642",
+        "muted_fg": "#93A1A1",
+        "primary": "#268BD2",
+        "primary_fg": "#000000",
+        "accent": "#2AA198",
+        "accent_fg": "#000000",
+        "border": "#14424F",
+        "destructive": "#DC322F",
     },
     "dracula": {
         "is_dark": True,
-        "bg": "#282A36", "fg": "#F8F8F2",
-        "card": "#343746", "muted": "#3D4051", "muted_fg": "#C7C9D9",
-        "primary": "#BD93F9", "primary_fg": "#282A36",
-        "accent": "#FF79C6", "accent_fg": "#282A36",
-        "border": "#44475A", "destructive": "#FF5555",
+        "bg": "#282A36",
+        "fg": "#F8F8F2",
+        "card": "#343746",
+        "muted": "#3D4051",
+        "muted_fg": "#C7C9D9",
+        "primary": "#BD93F9",
+        "primary_fg": "#282A36",
+        "accent": "#FF79C6",
+        "accent_fg": "#282A36",
+        "border": "#44475A",
+        "destructive": "#FF5555",
     },
     "nord": {
         "is_dark": True,
-        "bg": "#2E3440", "fg": "#ECEFF4",
-        "card": "#3B4252", "muted": "#434C5E", "muted_fg": "#D8DEE9",
-        "primary": "#88C0D0", "primary_fg": "#2E3440",
-        "accent": "#5E81AC", "accent_fg": "#000000",
-        "border": "#4C566A", "destructive": "#BF616A",
+        "bg": "#2E3440",
+        "fg": "#ECEFF4",
+        "card": "#3B4252",
+        "muted": "#434C5E",
+        "muted_fg": "#D8DEE9",
+        "primary": "#88C0D0",
+        "primary_fg": "#2E3440",
+        "accent": "#5E81AC",
+        "accent_fg": "#000000",
+        "border": "#4C566A",
+        "destructive": "#BF616A",
     },
     # --- v0.8.72: premium theme pack ---------------------------------------
     # Eight popular, hand-tuned palettes. Each fg/bg clears WCAG AAA (7:1) and
@@ -139,67 +299,115 @@ _THEMES = {
     # indigo→violet palette matches the launch splash + Aurora Reveal intro.
     "midnight-aurora": {  # dark · signature (matches splash/intro)
         "is_dark": True,
-        "bg": "#0D0E1D", "fg": "#EEF0FF",
-        "card": "#181A33", "muted": "#20223F", "muted_fg": "#B9BEE0",
-        "primary": "#6C7BFF", "primary_fg": "#000000",
-        "accent": "#B96CFF", "accent_fg": "#000000",
-        "border": "#2A2D52", "destructive": "#FF6B8B",
+        "bg": "#0D0E1D",
+        "fg": "#EEF0FF",
+        "card": "#181A33",
+        "muted": "#20223F",
+        "muted_fg": "#B9BEE0",
+        "primary": "#6C7BFF",
+        "primary_fg": "#000000",
+        "accent": "#B96CFF",
+        "accent_fg": "#000000",
+        "border": "#2A2D52",
+        "destructive": "#FF6B8B",
     },
     "tokyo-night": {  # dark
         "is_dark": True,
-        "bg": "#1A1B26", "fg": "#C0CAF5",
-        "card": "#24283B", "muted": "#2F334D", "muted_fg": "#A9B1D6",
-        "primary": "#7AA2F7", "primary_fg": "#1A1B26",
-        "accent": "#BB9AF7", "accent_fg": "#1A1B26",
-        "border": "#3B4261", "destructive": "#F7768E",
+        "bg": "#1A1B26",
+        "fg": "#C0CAF5",
+        "card": "#24283B",
+        "muted": "#2F334D",
+        "muted_fg": "#A9B1D6",
+        "primary": "#7AA2F7",
+        "primary_fg": "#1A1B26",
+        "accent": "#BB9AF7",
+        "accent_fg": "#1A1B26",
+        "border": "#3B4261",
+        "destructive": "#F7768E",
     },
     "catppuccin-mocha": {  # dark
         "is_dark": True,
-        "bg": "#1E1E2E", "fg": "#CDD6F4",
-        "card": "#313244", "muted": "#45475A", "muted_fg": "#A6ADC8",
-        "primary": "#CBA6F7", "primary_fg": "#1E1E2E",
-        "accent": "#F5C2E7", "accent_fg": "#1E1E2E",
-        "border": "#45475A", "destructive": "#F38BA8",
+        "bg": "#1E1E2E",
+        "fg": "#CDD6F4",
+        "card": "#313244",
+        "muted": "#45475A",
+        "muted_fg": "#A6ADC8",
+        "primary": "#CBA6F7",
+        "primary_fg": "#1E1E2E",
+        "accent": "#F5C2E7",
+        "accent_fg": "#1E1E2E",
+        "border": "#45475A",
+        "destructive": "#F38BA8",
     },
     "rose-pine": {  # dark
         "is_dark": True,
-        "bg": "#191724", "fg": "#E0DEF4",
-        "card": "#1F1D2E", "muted": "#26233A", "muted_fg": "#908CAA",
-        "primary": "#C4A7E7", "primary_fg": "#191724",
-        "accent": "#EBBCBA", "accent_fg": "#191724",
-        "border": "#403D52", "destructive": "#EB6F92",
+        "bg": "#191724",
+        "fg": "#E0DEF4",
+        "card": "#1F1D2E",
+        "muted": "#26233A",
+        "muted_fg": "#908CAA",
+        "primary": "#C4A7E7",
+        "primary_fg": "#191724",
+        "accent": "#EBBCBA",
+        "accent_fg": "#191724",
+        "border": "#403D52",
+        "destructive": "#EB6F92",
     },
     "gruvbox-dark": {  # dark
         "is_dark": True,
-        "bg": "#282828", "fg": "#EBDBB2",
-        "card": "#3C3836", "muted": "#504945", "muted_fg": "#BDAE93",
-        "primary": "#FABD2F", "primary_fg": "#282828",
-        "accent": "#FE8019", "accent_fg": "#282828",
-        "border": "#504945", "destructive": "#FB4934",
+        "bg": "#282828",
+        "fg": "#EBDBB2",
+        "card": "#3C3836",
+        "muted": "#504945",
+        "muted_fg": "#BDAE93",
+        "primary": "#FABD2F",
+        "primary_fg": "#282828",
+        "accent": "#FE8019",
+        "accent_fg": "#282828",
+        "border": "#504945",
+        "destructive": "#FB4934",
     },
     "one-dark": {  # dark
         "is_dark": True,
-        "bg": "#282C34", "fg": "#C5CCD6",
-        "card": "#21252B", "muted": "#3B4048", "muted_fg": "#9AA2AF",
-        "primary": "#61AFEF", "primary_fg": "#282C34",
-        "accent": "#C678DD", "accent_fg": "#282C34",
-        "border": "#3E4451", "destructive": "#E06C75",
+        "bg": "#282C34",
+        "fg": "#C5CCD6",
+        "card": "#21252B",
+        "muted": "#3B4048",
+        "muted_fg": "#9AA2AF",
+        "primary": "#61AFEF",
+        "primary_fg": "#282C34",
+        "accent": "#C678DD",
+        "accent_fg": "#282C34",
+        "border": "#3E4451",
+        "destructive": "#E06C75",
     },
     "catppuccin-latte": {  # light
         "is_dark": False,
-        "bg": "#EFF1F5", "fg": "#4C4F69",
-        "card": "#FFFFFF", "muted": "#CCD0DA", "muted_fg": "#5C5F74",
-        "primary": "#8839EF", "primary_fg": "#FFFFFF",
-        "accent": "#1E66F5", "accent_fg": "#FFFFFF",
-        "border": "#BCC0CC", "destructive": "#D20F39",
+        "bg": "#EFF1F5",
+        "fg": "#4C4F69",
+        "card": "#FFFFFF",
+        "muted": "#CCD0DA",
+        "muted_fg": "#5C5F74",
+        "primary": "#8839EF",
+        "primary_fg": "#FFFFFF",
+        "accent": "#1E66F5",
+        "accent_fg": "#FFFFFF",
+        "border": "#BCC0CC",
+        "destructive": "#D20F39",
     },
     "rose-pine-dawn": {  # light
         "is_dark": False,
-        "bg": "#FAF4ED", "fg": "#4B4661",
-        "card": "#FFFAF3", "muted": "#F2E9E1", "muted_fg": "#6A6580",
-        "primary": "#907AA9", "primary_fg": "#000000",
-        "accent": "#D7827E", "accent_fg": "#000000",
-        "border": "#DFDAD9", "destructive": "#B4637A",
+        "bg": "#FAF4ED",
+        "fg": "#4B4661",
+        "card": "#FFFAF3",
+        "muted": "#F2E9E1",
+        "muted_fg": "#6A6580",
+        "primary": "#907AA9",
+        "primary_fg": "#000000",
+        "accent": "#D7827E",
+        "accent_fg": "#000000",
+        "border": "#DFDAD9",
+        "destructive": "#B4637A",
     },
 }
 
@@ -278,10 +486,13 @@ def _theme_tokens(theme_id: str) -> dict:
     }
 
 
-def _theme_injection_js(theme_id: str, memory_url: str | None = None,
-                        remind_openchronicle: bool = False,
-                        stt_url: str | None = None,
-                        tts_url: str | None = None) -> str:
+def _theme_injection_js(
+    theme_id: str,
+    memory_url: str | None = None,
+    remind_openchronicle: bool = False,
+    stt_url: str | None = None,
+    tts_url: str | None = None,
+) -> str:
     """Inject ALL themes' tokens up front, keyed by [data-theme="X"]
     attribute selectors. The active theme is set by `dataset.theme` on
     <html>. The onp/ThemeSwitcher React component (and `window.ONP.setTheme`
@@ -299,12 +510,18 @@ def _theme_injection_js(theme_id: str, memory_url: str | None = None,
         # The default block (no data-theme attribute) uses the Research Core
         # palette so the page never flashes unstyled.
         if tid == "research-core-dark":
-            blocks.append(f":root, :root[data-theme=\"{tid}\"] {{\n          {decls}\n        }}")
+            blocks.append(
+                f':root, :root[data-theme="{tid}"] {{\n          {decls}\n        }}'
+            )
         else:
-            blocks.append(f":root[data-theme=\"{tid}\"] {{\n          {decls}\n        }}")
+            blocks.append(
+                f':root[data-theme="{tid}"] {{\n          {decls}\n        }}'
+            )
     all_themes_css = "\n        ".join(blocks)
     initial = theme_id if theme_id in _THEMES else "research-core-dark"
-    is_dark_map = {tid: ("true" if _THEMES[tid]["is_dark"] else "false") for tid in _THEMES}
+    is_dark_map = {
+        tid: ("true" if _THEMES[tid]["is_dark"] else "false") for tid in _THEMES
+    }
     is_dark_js = ", ".join(f'"{tid}": {v}' for tid, v in is_dark_map.items())
 
     base_js = f"""
@@ -544,8 +761,9 @@ def _app_recovery_injection_js(payload: dict[str, object]) -> str:
     """
 
 
-def _fit_window_size(screen_w: int, screen_h: int,
-                     min_w: int, min_h: int, frac: float = 0.9) -> tuple[int, int]:
+def _fit_window_size(
+    screen_w: int, screen_h: int, min_w: int, min_h: int, frac: float = 0.9
+) -> tuple[int, int]:
     """v0.8.67j — Pure helper: size the window to `frac` of the usable
     screen, never smaller than (min_w, min_h).
 
@@ -570,9 +788,9 @@ def _preferred_window_size(min_w: int, min_h: int) -> tuple[int, int]:
     """
     try:
         from AppKit import NSScreen  # pyobjc — present on the cocoa backend
+
         vf = NSScreen.mainScreen().visibleFrame()
-        return _fit_window_size(int(vf.size.width), int(vf.size.height),
-                                min_w, min_h)
+        return _fit_window_size(int(vf.size.width), int(vf.size.height), min_w, min_h)
     except Exception:
         return _fit_window_size(0, 0, min_w, min_h)
 
@@ -805,9 +1023,9 @@ class _OnpJsApi:
                 '/bin/kill "$pid" 2>/dev/null; '
                 'n=0; while /bin/kill -0 "$pid" 2>/dev/null && '
                 '[ "$n" -lt 20 ]; do '
-                '/bin/sleep 0.3; n=$((n+1)); done; '
+                "/bin/sleep 0.3; n=$((n+1)); done; "
                 '/bin/kill -9 "$pid" 2>/dev/null; '
-                '/bin/sleep 0.5; '
+                "/bin/sleep 0.5; "
                 '/usr/bin/open "$app_bundle"'
             )
             subprocess.Popen(
@@ -973,9 +1191,7 @@ def _data_root_recovery_html(
         path = _html.escape(str(item.get("path", "Unavailable")))
         tree_hash = _html.escape(str(item.get("tree_sha256", "Unavailable")))
         file_count = _html.escape(str(item.get("file_count", "Unavailable")))
-        directory_count = _html.escape(
-            str(item.get("directory_count", "Unavailable"))
-        )
+        directory_count = _html.escape(str(item.get("directory_count", "Unavailable")))
         return f"""
           <article class="root-summary">
             <h2>{_html.escape(label)}</h2>
@@ -1064,16 +1280,12 @@ def open_data_root_recovery_window(
 
     def _on_loaded() -> None:
         try:
-            window.evaluate_js(
-                _app_recovery_injection_js(api.get_app_recovery())
-            )
+            window.evaluate_js(_app_recovery_injection_js(api.get_app_recovery()))
         except Exception:
             pass
 
     window.events.loaded += _on_loaded
-    remove_termination_observer = _install_native_termination_observer(
-        lambda: None
-    )
+    remove_termination_observer = _install_native_termination_observer(lambda: None)
     try:
         try:
             webview.start(private_mode=True)
@@ -1083,16 +1295,20 @@ def open_data_root_recovery_window(
         remove_termination_observer()
 
 
-def open_window(url: str, on_close: Callable[[], None],
-                title: str = "Deeper Notebook",
-                width: int = 1280, height: int = 800,
-                theme: str = "light-blue",
-                memory_url: str | None = None,
-                remind_openchronicle: bool = False,
-                stt_url: str | None = None,
-                tts_url: str | None = None,
-                app_recovery=None,
-                on_ready: Callable[[], None] | None = None) -> None:
+def open_window(
+    url: str,
+    on_close: Callable[[], None],
+    title: str = "Deeper Notebook",
+    width: int = 1280,
+    height: int = 800,
+    theme: str = "light-blue",
+    memory_url: str | None = None,
+    remind_openchronicle: bool = False,
+    stt_url: str | None = None,
+    tts_url: str | None = None,
+    app_recovery=None,
+    on_ready: Callable[[], None] | None = None,
+) -> None:
     """Blocking — returns when the user closes the window.
 
     v0.7.152 — `stt_url` and `tts_url` are the dynamic per-launch endpoints
@@ -1118,6 +1334,7 @@ def open_window(url: str, on_close: Callable[[], None],
     if saved is not None:
         try:
             from AppKit import NSScreen
+
             vf = NSScreen.mainScreen().visibleFrame()
             _sw, _sh = int(vf.size.width), int(vf.size.height)
         except Exception:
@@ -1163,8 +1380,10 @@ def open_window(url: str, on_close: Callable[[], None],
         on_close()
 
     try:
+
         def _on_resized(w, h):  # pragma: no cover - pywebview callback
             _live["w"], _live["h"] = int(w), int(h)
+
         window.events.resized += _on_resized
     except Exception:
         pass
@@ -1208,25 +1427,30 @@ def open_window(url: str, on_close: Callable[[], None],
         active_theme = theme
         try:
             from desktop.config import default_config_path, load_or_create
+
             active_theme = load_or_create(default_config_path()).theme
         except Exception:
             pass
         try:
             window.evaluate_js(
-                _theme_injection_js(active_theme, memory_url=memory_url,
-                                    remind_openchronicle=remind_openchronicle,
-                                    stt_url=stt_url, tts_url=tts_url))
+                _theme_injection_js(
+                    active_theme,
+                    memory_url=memory_url,
+                    remind_openchronicle=remind_openchronicle,
+                    stt_url=stt_url,
+                    tts_url=tts_url,
+                )
+            )
         except Exception:
             pass  # best-effort; never crash on theme injection
         try:
-            window.evaluate_js(
-                _app_recovery_injection_js(_onp_api.get_app_recovery())
-            )
+            window.evaluate_js(_app_recovery_injection_js(_onp_api.get_app_recovery()))
         except Exception:
             pass
         if not _ready_notified and on_ready is not None:
             _ready_notified = True
             on_ready()
+
     window.events.loaded += _on_loaded
     _install_workspace_flush_close_gate(window, _page_loaded)
     _start_handoff_controller(window, url, _page_loaded, splash_html)
@@ -1244,6 +1468,7 @@ def open_window(url: str, on_close: Callable[[], None],
     # launches AND across rebuilds (the stable code-signing identity keeps the
     # same data container).
     import os as _os
+
     _storage_path = str(data_home / "webview_data")
     try:
         _os.makedirs(_storage_path, exist_ok=True)

@@ -11,6 +11,7 @@ with friendly status — there is no terminal error state.
 Kept as a template + builder so tests can pin the contract (embedded URL,
 no external resources, probe/replace logic) without a webview.
 """
+
 from __future__ import annotations
 
 import json

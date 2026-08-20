@@ -5,6 +5,7 @@ quotes, and keys ('full_text', 'insights') that never reach the LLM, which
 over-counted the budget and under-included real content. Now counts only the
 human-readable text fields.
 """
+
 from __future__ import annotations
 
 from deeper_notebook.utils.context_builder import ContextItem, _content_text
@@ -26,8 +27,12 @@ def test_extracts_only_text_fields():
 
 
 def test_token_count_lower_than_str_dict():
-    d = {"id": "source:1", "title": "T", "full_text": "hello world body text",
-         "insights": [{"content": "insight one"}]}
+    d = {
+        "id": "source:1",
+        "title": "T",
+        "full_text": "hello world body text",
+        "insights": [{"content": "insight one"}],
+    }
     item = ContextItem(id="source:1", type="source", content=d)
     assert item.token_count == token_count(_content_text(d))
     # strictly fewer tokens than the old str(dict) approach (overhead removed)
@@ -35,11 +40,16 @@ def test_token_count_lower_than_str_dict():
 
 
 def test_note_and_nondict_and_none():
-    assert _content_text({"id": "n", "title": "NT", "content": "note body"}) == "NT\nnote body"
+    assert (
+        _content_text({"id": "n", "title": "NT", "content": "note body"})
+        == "NT\nnote body"
+    )
     assert _content_text("plain string") == "plain string"
     assert _content_text(None) == ""
 
 
 def test_explicit_token_count_is_respected():
-    item = ContextItem(id="x", type="note", content={"content": "ignored"}, token_count=42)
+    item = ContextItem(
+        id="x", type="note", content={"content": "ignored"}, token_count=42
+    )
     assert item.token_count == 42

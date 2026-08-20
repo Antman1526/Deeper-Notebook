@@ -43,13 +43,21 @@
 ```python
 def test_parse_canvas_document_keeps_safe_nodes_and_edges():
     result = parse_canvas_document(
-        b'{"nodes":[{"id":"idea","type":"text","x":0,"y":0,"width":240,"height":120,"text":"Idea"},{"id":"note","type":"file","x":320,"y":0,"width":240,"height":120,"file":"notes/Plan.md"}],"edges":[{"id":"edge","fromNode":"idea","toNode":"note","label":"supports"}]}' ,
+        b'{"nodes":[{"id":"idea","type":"text","x":0,"y":0,"width":240,"height":120,"text":"Idea"},{"id":"note","type":"file","x":320,"y":0,"width":240,"height":120,"file":"notes/Plan.md"}],"edges":[{"id":"edge","fromNode":"idea","toNode":"note","label":"supports"}]}',
         relative_path="maps/plan.canvas",
     )
     assert result.nodes[1].file_path == "notes/Plan.md"
     assert result.edges[0].from_node == "idea"
 
-@pytest.mark.parametrize("payload", [b'not-json', b'{"nodes":[{"id":"x","type":"file","x":0,"y":0,"width":1,"height":1,"file":"../secret.md"}],"edges":[]}', b'{"nodes":[{"id":"x","type":"text","x":0,"y":0,"width":1,"height":1}],"edges":[{"id":"e","fromNode":"x","toNode":"missing"}]}'])
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"not-json",
+        b'{"nodes":[{"id":"x","type":"file","x":0,"y":0,"width":1,"height":1,"file":"../secret.md"}],"edges":[]}',
+        b'{"nodes":[{"id":"x","type":"text","x":0,"y":0,"width":1,"height":1}],"edges":[{"id":"e","fromNode":"x","toNode":"missing"}]}',
+    ],
+)
 def test_parse_canvas_document_rejects_unsafe_input(payload):
     with pytest.raises(CanvasDocumentError):
         parse_canvas_document(payload, relative_path="maps/plan.canvas")
@@ -66,19 +74,27 @@ Expected: collection fails with `ModuleNotFoundError` for `deeper_notebook.vault
 ```python
 @dataclass(frozen=True)
 class CanvasNode:
-    id: str; type: Literal['text', 'file', 'group', 'unsupported']
-    x: float; y: float; width: float; height: float
-    text: str | None = None; file_path: str | None = None; label: str | None = None
+    id: str
+    type: Literal["text", "file", "group", "unsupported"]
+    x: float
+    y: float
+    width: float
+    height: float
+    text: str | None = None
+    file_path: str | None = None
+    label: str | None = None
+
 
 @dataclass(frozen=True)
 class CanvasDocument:
     nodes: tuple[CanvasNode, ...]
     edges: tuple[CanvasEdge, ...]
 
+
 def parse_canvas_document(content: bytes, *, relative_path: str) -> CanvasDocument:
-    if not relative_path.casefold().endswith('.canvas'):
-        raise CanvasDocumentError('canvas_path_invalid')
-    raw = json.loads(content.decode('utf-8'))
+    if not relative_path.casefold().endswith(".canvas"):
+        raise CanvasDocumentError("canvas_path_invalid")
+    raw = json.loads(content.decode("utf-8"))
     # Require object/list shapes, unique nonblank IDs, finite geometry, and canonical file paths.
 ```
 
@@ -107,13 +123,18 @@ git commit -m "feat: validate read-only Canvas documents"
 
 ```python
 def test_canvas_endpoint_returns_hash_bound_document(client):
-    response = client.get('/deeper-notebook/vaults/vault_mount:fixture/canvases/maps/plan.canvas')
+    response = client.get(
+        "/deeper-notebook/vaults/vault_mount:fixture/canvases/maps/plan.canvas"
+    )
     assert response.status_code == 200
-    assert response.json()['file']['relative_path'] == 'maps/plan.canvas'
-    assert response.json()['source_hash'] == 'a' * 64
+    assert response.json()["file"]["relative_path"] == "maps/plan.canvas"
+    assert response.json()["source_hash"] == "a" * 64
+
 
 def test_canvas_endpoint_rejects_traversal(client):
-    response = client.get('/deeper-notebook/vaults/vault_mount:fixture/canvases/../plan.canvas')
+    response = client.get(
+        "/deeper-notebook/vaults/vault_mount:fixture/canvases/../plan.canvas"
+    )
     assert response.status_code in {403, 404, 409, 422}
 ```
 
@@ -132,8 +153,12 @@ async def read_canvas(self, vault_id: str, relative_path: str) -> VaultCanvasDoc
     with approve_vault_root(mount.root_path) as root:
         source = secure_read(root, relative_path)
     if source.sha256 != file.content_hash:
-        raise VaultSecurityError('changed_during_read')
-    return VaultCanvasDocument(file=file, source_hash=source.sha256, document=parse_canvas_document(source.content, relative_path=relative_path))
+        raise VaultSecurityError("changed_during_read")
+    return VaultCanvasDocument(
+        file=file,
+        source_hash=source.sha256,
+        document=parse_canvas_document(source.content, relative_path=relative_path),
+    )
 ```
 
 Make `get_file` an exact-match repository query, not a prefix lookup. Return `VaultCanvasResponse(file, source_hash, nodes, edges)` with `extra='forbid'`. Map missing, invalid, and changed Canvas states to stable `canvas_not_found`, `canvas_invalid`, and `canvas_source_changed` detail codes without returning an absolute path.

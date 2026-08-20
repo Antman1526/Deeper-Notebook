@@ -12,6 +12,7 @@ This test statically pins every PodcastEpisode model field to a
 DEFINE FIELD across the migration files, so the next model field added
 without a migration fails CI with a pointed message.
 """
+
 from __future__ import annotations
 
 import re
@@ -62,8 +63,11 @@ def test_down_migration_removes_what_up_defines():
     down = (_MIG_DIR / "22_down.surrealql").read_text()
     up_fields = set(_DEFINE_RE.findall(up))
     down_fields = set(
-        re.findall(r"REMOVE\s+FIELD\s+IF\s+EXISTS\s+(\w+)\s+ON\s+TABLE\s+episode",
-                   down, re.IGNORECASE)
+        re.findall(
+            r"REMOVE\s+FIELD\s+IF\s+EXISTS\s+(\w+)\s+ON\s+TABLE\s+episode",
+            down,
+            re.IGNORECASE,
+        )
     )
     assert up_fields == down_fields
 
@@ -75,7 +79,11 @@ def test_generation_stage_none_survives_prepare_save_data():
     from deeper_notebook.podcasts.models import PodcastEpisode
 
     episode = PodcastEpisode(
-        name="t", episode_profile={}, speaker_profile={},
-        briefing="b", content="c", generation_stage=None,
+        name="t",
+        episode_profile={},
+        speaker_profile={},
+        briefing="b",
+        content="c",
+        generation_stage=None,
     )
     assert "generation_stage" in episode._prepare_save_data()

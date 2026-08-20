@@ -71,10 +71,41 @@ _FORBIDDEN_MARKUP = re.compile(
     re.IGNORECASE,
 )
 _ALLOWED_TAGS = frozenset(
-    {"b", "strong", "i", "em", "u", "s", "br", "div", "p", "span", "ul", "ol", "li", "a", "img"}
+    {
+        "b",
+        "strong",
+        "i",
+        "em",
+        "u",
+        "s",
+        "br",
+        "div",
+        "p",
+        "span",
+        "ul",
+        "ol",
+        "li",
+        "a",
+        "img",
+    }
 )
 _ALLOWED_TEMPLATE_TAGS = frozenset(
-    {"b", "strong", "i", "em", "u", "s", "br", "div", "p", "span", "ul", "ol", "li", "hr"}
+    {
+        "b",
+        "strong",
+        "i",
+        "em",
+        "u",
+        "s",
+        "br",
+        "div",
+        "p",
+        "span",
+        "ul",
+        "ol",
+        "li",
+        "hr",
+    }
 )
 _BLOCK_TAGS = frozenset({"br", "div", "p", "ul", "ol", "li"})
 
@@ -113,7 +144,10 @@ class AnkiImportOptions(_Frozen):
     def deck_names_are_bounded(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         if len(set(values)) != len(values):
             raise ValueError("duplicate deck names")
-        if any(not value.strip() or value != value.strip() or len(value) > 200 for value in values):
+        if any(
+            not value.strip() or value != value.strip() or len(value) > 200
+            for value in values
+        ):
             raise ValueError("invalid deck name")
         return values
 
@@ -146,22 +180,36 @@ class AnkiCardPreview(_Frozen):
     def source_fields_are_bounded(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         if values and not 2 <= len(values) <= 4:
             raise ValueError("invalid source fields")
-        if any(not isinstance(value, str) or len(value.encode("utf-8")) > 16_384 for value in values):
+        if any(
+            not isinstance(value, str) or len(value.encode("utf-8")) > 16_384
+            for value in values
+        ):
             raise ValueError("invalid source fields")
         return values
 
     @field_validator("source_note_id")
     @classmethod
     def source_note_id_is_bounded(cls, value: str | None) -> str | None:
-        if value is not None and (not value.strip() or any(ord(char) < 32 or ord(char) == 127 for char in value)):
+        if value is not None and (
+            not value.strip()
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)
+        ):
             raise ValueError("invalid source note ID")
         return value
 
     @model_validator(mode="after")
     def template_ordinal_matches_model(self) -> "AnkiCardPreview":
-        if self.template_ord is not None and self.kind != "cloze" and self.template_ord > 1:
+        if (
+            self.template_ord is not None
+            and self.kind != "cloze"
+            and self.template_ord > 1
+        ):
             raise ValueError("invalid Basic/reverse template ordinal")
-        if self.template_ord is not None and self.source_model_kind == "basic" and self.template_ord > 1:
+        if (
+            self.template_ord is not None
+            and self.source_model_kind == "basic"
+            and self.template_ord > 1
+        ):
             raise ValueError("invalid Basic/reverse template ordinal")
         return self
 
@@ -177,7 +225,9 @@ class AnkiPackageInspection(_Frozen):
     skipped_count: int = Field(default=0, ge=0, le=MAX_CARDS)
     deck_names: tuple[str, ...] = Field(default_factory=tuple, max_length=MAX_DECKS)
     tags: tuple[str, ...] = Field(default_factory=tuple, max_length=1_000)
-    media_names: tuple[str, ...] = Field(default_factory=tuple, max_length=MAX_MEDIA_MEMBERS)
+    media_names: tuple[str, ...] = Field(
+        default_factory=tuple, max_length=MAX_MEDIA_MEMBERS
+    )
 
 
 def _reject(code: str) -> None:
@@ -221,7 +271,9 @@ def _safe_member_name(name: object) -> str:
     return name
 
 
-def _validate_archive(archive: zipfile.ZipFile) -> tuple[zipfile.ZipInfo, zipfile.ZipInfo, dict[str, str]]:
+def _validate_archive(
+    archive: zipfile.ZipFile,
+) -> tuple[zipfile.ZipInfo, zipfile.ZipInfo, dict[str, str]]:
     infos = archive.infolist()
     if len(infos) > MAX_ARCHIVE_MEMBERS:
         _reject("member_count_exceeded")
@@ -244,12 +296,19 @@ def _validate_archive(archive: zipfile.ZipFile) -> tuple[zipfile.ZipInfo, zipfil
             _reject("encrypted_member")
         if info.compress_type not in _ALLOWED_ZIP_METHODS:
             _reject("unsupported_compression")
-        if info.file_size < 0 or info.compress_size < 0 or info.file_size > MAX_MEMBER_BYTES:
+        if (
+            info.file_size < 0
+            or info.compress_size < 0
+            or info.file_size > MAX_MEMBER_BYTES
+        ):
             _reject("member_size_exceeded")
         expanded_total += info.file_size
         if expanded_total > MAX_EXPANDED_BYTES:
             _reject("expanded_size_exceeded")
-        if info.file_size > 1024 and info.file_size / max(info.compress_size, 1) > MAX_COMPRESSION_RATIO:
+        if (
+            info.file_size > 1024
+            and info.file_size / max(info.compress_size, 1) > MAX_COMPRESSION_RATIO
+        ):
             _reject("compression_ratio_exceeded")
         if name in _COLLECTION_MEMBERS:
             supported_collections.append(info)
@@ -279,11 +338,21 @@ def _validate_archive(archive: zipfile.ZipFile) -> tuple[zipfile.ZipInfo, zipfil
     manifest: dict[str, str] = {}
     seen_names: set[str] = set()
     for key, value in manifest_value.items():
-        if not isinstance(key, str) or not key.isascii() or not key.isdecimal() or str(int(key)) != key:
+        if (
+            not isinstance(key, str)
+            or not key.isascii()
+            or not key.isdecimal()
+            or str(int(key)) != key
+        ):
             _reject("invalid_media")
         if not isinstance(value, str) or _MEDIA_NAME.fullmatch(value) is None:
             _reject("invalid_media_filename")
-        if value in {".", ".."} or re.match(r"^[A-Za-z]:", value) or ".." in value or ":" in value:
+        if (
+            value in {".", ".."}
+            or re.match(r"^[A-Za-z]:", value)
+            or ".." in value
+            or ":" in value
+        ):
             _reject("invalid_media_filename")
         normalized = unicodedata.normalize("NFC", value)
         if normalized != value or normalized.casefold() in seen_names:
@@ -350,7 +419,10 @@ def _clean_text(
     limit: int,
     allow_empty: bool = False,
 ) -> tuple[str, tuple[str, ...]]:
-    if not isinstance(value, str) or len(value.encode("utf-8", "strict")) > MAX_FIELD_BYTES:
+    if (
+        not isinstance(value, str)
+        or len(value.encode("utf-8", "strict")) > MAX_FIELD_BYTES
+    ):
         _reject("field_size_exceeded")
     if _unsafe_markup(value):
         _reject("unsafe_field")
@@ -374,7 +446,11 @@ def _clean_text(
     text = _SOUND.sub(sound_replace, text)
     text = re.sub(r"[ \t\f\v]+", " ", text)
     text = re.sub(r"\n\s*\n+", "\n", text).strip()
-    if (not text and not allow_empty) or len(text) > limit or any(ord(char) == 0 or ord(char) == 127 for char in text):
+    if (
+        (not text and not allow_empty)
+        or len(text) > limit
+        or any(ord(char) == 0 or ord(char) == 127 for char in text)
+    ):
         _reject("unsafe_field")
     return text, tuple(sorted(parser.media))
 
@@ -489,9 +565,7 @@ def _validate_imported_schedule(values: tuple[object, ...]) -> None:
         and _bounded_integer(repetitions, minimum=0, maximum=2_147_483_647)
         and _bounded_integer(lapses, minimum=0, maximum=2_147_483_647)
         and _bounded_integer(remaining, minimum=0, maximum=2_147_483_647)
-        and _bounded_integer(
-            original_due, minimum=0, maximum=9_223_372_036_854_775_807
-        )
+        and _bounded_integer(original_due, minimum=0, maximum=9_223_372_036_854_775_807)
         and _bounded_integer(
             original_deck_id, minimum=0, maximum=9_223_372_036_854_775_807
         )
@@ -500,28 +574,44 @@ def _validate_imported_schedule(values: tuple[object, ...]) -> None:
         _reject("invalid_scheduling")
 
 
-def _validate_templates(model: Mapping[str, Any], field_names: tuple[str, ...]) -> tuple[int, tuple[int, ...]]:
+def _validate_templates(
+    model: Mapping[str, Any], field_names: tuple[str, ...]
+) -> tuple[int, tuple[int, ...]]:
     model_type = model.get("type")
     templates = model.get("tmpls")
     css = model.get("css", "")
-    if isinstance(model_type, bool) or model_type not in {0, 1} or not isinstance(templates, list):
+    if (
+        isinstance(model_type, bool)
+        or model_type not in {0, 1}
+        or not isinstance(templates, list)
+    ):
         _reject("unsupported_model")
     if not isinstance(css, str) or len(css) > 128_000 or _unsafe_markup(css):
         _reject("unsafe_template")
     if not 1 <= len(templates) <= 2:
         _reject("unsupported_model")
     ords: list[int] = []
-    allowed_tokens = set(field_names) | {"FrontSide"} | {f"cloze:{name}" for name in field_names}
+    allowed_tokens = (
+        set(field_names) | {"FrontSide"} | {f"cloze:{name}" for name in field_names}
+    )
     for template in templates:
         if not isinstance(template, dict):
             _reject("unsupported_model")
         ord_value = template.get("ord")
-        if isinstance(ord_value, bool) or not isinstance(ord_value, int) or ord_value not in {0, 1}:
+        if (
+            isinstance(ord_value, bool)
+            or not isinstance(ord_value, int)
+            or ord_value not in {0, 1}
+        ):
             _reject("unsupported_model")
         ords.append(ord_value)
         for key in ("qfmt", "afmt"):
             source = template.get(key)
-            if not isinstance(source, str) or len(source) > 128_000 or _unsafe_markup(source):
+            if (
+                not isinstance(source, str)
+                or len(source) > 128_000
+                or _unsafe_markup(source)
+            ):
                 _reject("unsafe_template")
             _validate_template_markup(source)
             tokens = _MUSTACHE.findall(source)
@@ -529,14 +619,25 @@ def _validate_templates(model: Mapping[str, Any], field_names: tuple[str, ...]) 
                 _reject("unsafe_template")
     if len(set(ords)) != len(ords):
         _reject("unsupported_model")
-    if model_type == 1 and (field_names[:2] != ("Text", "Extra") or tuple(ords) != (0,)):
+    if model_type == 1 and (
+        field_names[:2] != ("Text", "Extra") or tuple(ords) != (0,)
+    ):
         _reject("unsupported_model")
-    if model_type == 0 and (field_names[:2] != ("Front", "Back") or sorted(ords) != list(range(len(ords)))):
+    if model_type == 0 and (
+        field_names[:2] != ("Front", "Back") or sorted(ords) != list(range(len(ords)))
+    ):
         _reject("unsupported_model")
     return model_type, tuple(ords)
 
 
-def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, collection_sha256: str, media_names: tuple[str, ...]) -> AnkiPackageInspection:
+def _inspect_sqlite(
+    path: Path,
+    *,
+    package_sha256: str,
+    collection_member: str,
+    collection_sha256: str,
+    media_names: tuple[str, ...],
+) -> AnkiPackageInspection:
     try:
         with path.open("rb") as handle:
             if handle.read(16) != b"SQLite format 3\x00":
@@ -552,7 +653,10 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
     def progress() -> int:
         nonlocal calls
         calls += 1
-        return int(calls > MAX_SQLITE_PROGRESS_CALLS or time.monotonic() - started > MAX_SQLITE_SECONDS)
+        return int(
+            calls > MAX_SQLITE_PROGRESS_CALLS
+            or time.monotonic() - started > MAX_SQLITE_SECONDS
+        )
 
     try:
         with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
@@ -573,7 +677,9 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
                 _reject("unsafe_sqlite_schema")
             allowed_tables = {"col", "notes", "cards", "revlog", "graves"}
             tables = {row[1] for row in schema_rows if row[0] == "table"}
-            if tables != allowed_tables or any(row[0] not in {"table", "index"} for row in schema_rows):
+            if tables != allowed_tables or any(
+                row[0] not in {"table", "index"} for row in schema_rows
+            ):
                 _reject("unsafe_sqlite_schema")
             for row in schema_rows:
                 if row[0] != "index" or str(row[1]).startswith("sqlite_autoindex_"):
@@ -585,24 +691,88 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
                 if normalized_sql != _NATIVE_INDEX_SQL[index_name]:
                     _reject("unsafe_sqlite_schema")
             expected_columns = {
-                "col": {"id", "crt", "mod", "scm", "ver", "dty", "usn", "ls", "conf", "models", "decks", "dconf", "tags"},
-                "notes": {"id", "guid", "mid", "mod", "usn", "tags", "flds", "sfld", "csum", "flags", "data"},
-                "cards": {"id", "nid", "did", "ord", "mod", "usn", "type", "queue", "due", "ivl", "factor", "reps", "lapses", "left", "odue", "odid", "flags", "data"},
-                "revlog": {"id", "cid", "usn", "ease", "ivl", "lastIvl", "factor", "time", "type"},
+                "col": {
+                    "id",
+                    "crt",
+                    "mod",
+                    "scm",
+                    "ver",
+                    "dty",
+                    "usn",
+                    "ls",
+                    "conf",
+                    "models",
+                    "decks",
+                    "dconf",
+                    "tags",
+                },
+                "notes": {
+                    "id",
+                    "guid",
+                    "mid",
+                    "mod",
+                    "usn",
+                    "tags",
+                    "flds",
+                    "sfld",
+                    "csum",
+                    "flags",
+                    "data",
+                },
+                "cards": {
+                    "id",
+                    "nid",
+                    "did",
+                    "ord",
+                    "mod",
+                    "usn",
+                    "type",
+                    "queue",
+                    "due",
+                    "ivl",
+                    "factor",
+                    "reps",
+                    "lapses",
+                    "left",
+                    "odue",
+                    "odid",
+                    "flags",
+                    "data",
+                },
+                "revlog": {
+                    "id",
+                    "cid",
+                    "usn",
+                    "ease",
+                    "ivl",
+                    "lastIvl",
+                    "factor",
+                    "time",
+                    "type",
+                },
                 "graves": {"usn", "oid", "type"},
             }
             for table, expected in expected_columns.items():
-                columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}  # table is fixed above
+                columns = {
+                    row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+                }  # table is fixed above
                 if columns != expected:
                     _reject("unsupported_sqlite_schema")
-            col_rows = list(connection.execute("SELECT ver, models, decks FROM col LIMIT 2"))
+            col_rows = list(
+                connection.execute("SELECT ver, models, decks FROM col LIMIT 2")
+            )
             if len(col_rows) != 1 or col_rows[0][0] not in {11, 12}:
                 _reject("unsupported_sqlite_schema")
             models = _json_object(col_rows[0][1], code="invalid_models")
             decks = _json_object(col_rows[0][2], code="invalid_decks")
             if not 1 <= len(models) <= MAX_MODELS or not 1 <= len(decks) <= MAX_DECKS:
                 _reject("collection_limit_exceeded")
-            note_rows = list(connection.execute("SELECT id, guid, mid, tags, flds FROM notes ORDER BY id LIMIT ?", (MAX_NOTES + 1,)))
+            note_rows = list(
+                connection.execute(
+                    "SELECT id, guid, mid, tags, flds FROM notes ORDER BY id LIMIT ?",
+                    (MAX_NOTES + 1,),
+                )
+            )
             card_rows = list(
                 connection.execute(
                     "SELECT id, nid, did, ord, type, queue, due, ivl, factor, "
@@ -629,13 +799,14 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
         if any(not isinstance(item, dict) for item in fields):
             _reject("unsupported_model")
         field_ords = tuple(item.get("ord") for item in fields)
-        if (
-            any(isinstance(item, bool) or not isinstance(item, int) for item in field_ords)
-            or sorted(field_ords) != list(range(len(fields)))
-        ):
+        if any(
+            isinstance(item, bool) or not isinstance(item, int) for item in field_ords
+        ) or sorted(field_ords) != list(range(len(fields))):
             _reject("unsupported_model")
         ordered = sorted(fields, key=lambda item: item["ord"])
-        field_names = tuple(item.get("name") for item in ordered if isinstance(item, dict))
+        field_names = tuple(
+            item.get("name") for item in ordered if isinstance(item, dict)
+        )
         if (
             len(field_names) != len(fields)
             or len(set(field_names)) != len(field_names)
@@ -657,7 +828,13 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
             _reject("invalid_decks")
         deck_id = _numeric_json_id(key, value.get("id"), code="invalid_decks")
         name = value.get("name")
-        if not isinstance(name, str) or not name.strip() or name != name.strip() or len(name) > 200 or _unsafe_markup(name):
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or name != name.strip()
+            or len(name) > 200
+            or _unsafe_markup(name)
+        ):
             _reject("invalid_decks")
         deck_names_by_id[deck_id] = name
 
@@ -665,7 +842,12 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
     notes: dict[int, tuple[int, tuple[str, ...], tuple[str, ...]]] = {}
     all_tags: set[str] = set()
     for note_id, guid, model_id, raw_tags, raw_fields in note_rows:
-        if isinstance(note_id, bool) or not isinstance(note_id, int) or not isinstance(guid, str) or not 1 <= len(guid) <= 128:
+        if (
+            isinstance(note_id, bool)
+            or not isinstance(note_id, int)
+            or not isinstance(guid, str)
+            or not 1 <= len(guid) <= 128
+        ):
             _reject("invalid_note")
         if model_id not in model_specs or not isinstance(raw_fields, str):
             _reject("invalid_note")
@@ -675,7 +857,12 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
         if not isinstance(raw_tags, str) or len(raw_tags) > 16_000:
             _reject("invalid_note")
         tags = tuple(sorted(set(raw_tags.split())))
-        if len(tags) > 100 or any(not tag or len(tag) > 128 or any(ord(char) < 33 or ord(char) == 127 for char in tag) for tag in tags):
+        if len(tags) > 100 or any(
+            not tag
+            or len(tag) > 128
+            or any(ord(char) < 33 or ord(char) == 127 for char in tag)
+            for tag in tags
+        ):
             _reject("invalid_note")
         all_tags.update(tags)
         notes[note_id] = (model_id, field_values, tags)
@@ -685,10 +872,19 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
     for card_row in card_rows:
         card_id, note_id, deck_id, ord_value = card_row[:4]
         _validate_imported_schedule(tuple(card_row[4:]))
-        if isinstance(card_id, bool) or not isinstance(card_id, int) or card_id in seen_card_ids:
+        if (
+            isinstance(card_id, bool)
+            or not isinstance(card_id, int)
+            or card_id in seen_card_ids
+        ):
             _reject("invalid_card")
         seen_card_ids.add(card_id)
-        if note_id not in notes or deck_id not in deck_names_by_id or isinstance(ord_value, bool) or not isinstance(ord_value, int):
+        if (
+            note_id not in notes
+            or deck_id not in deck_names_by_id
+            or isinstance(ord_value, bool)
+            or not isinstance(ord_value, int)
+        ):
             _reject("invalid_card")
         model_id, fields, tags = notes[note_id]
         model_type, _field_names, template_ords = model_specs[model_id]
@@ -703,7 +899,7 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
             source_back, source_back_media = _clean_text(
                 fields[1], media_names=media_set, limit=16_000
             )
-            front_index, back_index = ((0, 1) if ord_value == 0 else (1, 0))
+            front_index, back_index = (0, 1) if ord_value == 0 else (1, 0)
             front, front_media = (
                 (source_front, source_front_media)
                 if front_index == 0
@@ -714,11 +910,15 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
                 if back_index == 1
                 else (source_front, source_front_media)
             )
-            kind: Literal["basic", "reverse", "cloze"] = "basic" if ord_value == 0 else "reverse"
+            kind: Literal["basic", "reverse", "cloze"] = (
+                "basic" if ord_value == 0 else "reverse"
+            )
             source_fields = (source_front, source_back)
             source_model_kind: Literal["basic", "cloze"] = "basic"
         else:
-            text, text_media = _clean_text(fields[0], media_names=media_set, limit=16_000)
+            text, text_media = _clean_text(
+                fields[0], media_names=media_set, limit=16_000
+            )
             extra, extra_media = _clean_text(
                 fields[1], media_names=media_set, limit=16_000, allow_empty=True
             )
@@ -726,7 +926,14 @@ def _inspect_sqlite(path: Path, *, package_sha256: str, collection_member: str, 
             target = ord_value + 1
             if not clozes or target not in {int(match.group(1)) for match in clozes}:
                 _reject("invalid_cloze")
-            front = _CLOZE.sub(lambda match: (f"[{match.group(3)}]" if match.group(3) else "[…]") if int(match.group(1)) == target else match.group(2), text)
+            front = _CLOZE.sub(
+                lambda match: (
+                    (f"[{match.group(3)}]" if match.group(3) else "[…]")
+                    if int(match.group(1)) == target
+                    else match.group(2)
+                ),
+                text,
+            )
             back_text = _CLOZE.sub(lambda match: match.group(2), text)
             back = f"{back_text}\n{extra}".strip()
             if not front or len(front) > 8_000 or not back or len(back) > 16_000:
@@ -781,11 +988,17 @@ def inspect_anki_package(path: str | os.PathLike[str]) -> AnkiPackageInspection:
                 collection_path = root / "collection.sqlite"
                 copied = 0
                 try:
-                    with archive.open(collection_info, "r") as source, collection_path.open("xb") as target:
+                    with (
+                        archive.open(collection_info, "r") as source,
+                        collection_path.open("xb") as target,
+                    ):
                         os.chmod(collection_path, 0o600)
                         while chunk := source.read(1024 * 1024):
                             copied += len(chunk)
-                            if copied > collection_info.file_size or copied > MAX_MEMBER_BYTES:
+                            if (
+                                copied > collection_info.file_size
+                                or copied > MAX_MEMBER_BYTES
+                            ):
                                 _reject("member_size_mismatch")
                             collection_digest.update(chunk)
                             target.write(chunk)

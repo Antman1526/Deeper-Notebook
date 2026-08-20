@@ -14,6 +14,7 @@ migrations.
   primary deletion path is unaffected
 - No-op when self.command is None
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -33,12 +34,15 @@ async def test_delete_cancels_running_command(monkeypatch):
     async def fake_get_status(command_id):
         class _R:
             value = "running"
+
         return _R()
 
     fake_svc = AsyncMock()
+
     async def _update(*args, **kwargs):
         cancelled_with["args"] = args
         cancelled_with["kwargs"] = kwargs
+
     fake_svc.update_command_result = _update
 
     monkeypatch.setattr(
@@ -82,11 +86,14 @@ async def test_delete_skips_cancel_for_completed_command(monkeypatch):
     async def fake_get_status(command_id):
         class _R:
             value = "completed"
+
         return _R()
 
     fake_svc = AsyncMock()
+
     async def _update(*args, **kwargs):
         cancel_calls.append((args, kwargs))
+
     fake_svc.update_command_result = _update
 
     monkeypatch.setattr(
@@ -111,8 +118,7 @@ async def test_delete_skips_cancel_for_completed_command(monkeypatch):
         await src.delete()
 
     assert cancel_calls == [], (
-        f"update_command_result should not run for completed cmds, "
-        f"got {cancel_calls}"
+        f"update_command_result should not run for completed cmds, got {cancel_calls}"
     )
 
 
@@ -126,9 +132,7 @@ async def test_delete_with_no_command_doesnt_touch_surreal_commands(monkeypatch)
         raised["v"] = True
         raise RuntimeError("should not be called")
 
-    monkeypatch.setattr(
-        "surreal_commands.get_command_status", boom, raising=False
-    )
+    monkeypatch.setattr("surreal_commands.get_command_status", boom, raising=False)
 
     src = Source(
         id="source:no_cmd",
@@ -153,6 +157,7 @@ async def test_delete_continues_if_cancel_raises(monkeypatch):
     API drift), we MUST still delete the source. The orphan-data
     failure mode is no worse than pre-v0.7.32; refusing to delete
     is worse than that."""
+
     async def fake_get_status(command_id):
         raise RuntimeError("surreal_commands unreachable")
 

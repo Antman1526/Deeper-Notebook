@@ -173,9 +173,7 @@ def test_active_product_code_has_no_stale_visible_brand_labels() -> None:
         ROOT / "desktop/tray.py",
         ROOT / "desktop/window.py",
     ]
-    stale = re.compile(
-        r"Open Notebook Plus|Open notebook\+|Open Notebook\+"
-    )
+    stale = re.compile(r"Open Notebook Plus|Open notebook\+|Open Notebook\+")
     unexpected: list[str] = []
     candidates = [
         path
@@ -190,7 +188,8 @@ def test_active_product_code_has_no_stale_visible_brand_labels() -> None:
             or ".next" in path.parts
             or "node_modules" in path.parts
             or ".test." in path.name
-            or relative.parts[:3] == (
+            or relative.parts[:3]
+            == (
                 "deeper_notebook",
                 "database",
                 "migrations",
@@ -208,6 +207,6 @@ def test_active_product_code_has_no_stale_visible_brand_labels() -> None:
             if stale.search(line):
                 unexpected.append(f"{relative}:{line_number}")
 
-    assert unexpected == [], (
-        "Stale active product labels remain:\n" + "\n".join(unexpected)
+    assert unexpected == [], "Stale active product labels remain:\n" + "\n".join(
+        unexpected
     )

@@ -185,6 +185,7 @@ async def _call_model_with_source_context_inner(
         recall_memory,
         render_memory_block,
     )
+
     last_user_text = ""
     for m in reversed(state.get("messages", [])):
         if getattr(m, "type", None) == "human":
@@ -221,18 +222,15 @@ async def _call_model_with_source_context_inner(
     # v0.7.65 — size against actual message text, not str(payload). See
     # chat.py for the same fix; same root cause (wrapper noise in
     # repr(list_of_Message) overcounted the context-budget tokens).
-    content_for_sizing = "\n".join(
-        extract_text_content(m.content) for m in payload
-    )
+    content_for_sizing = "\n".join(extract_text_content(m.content) for m in payload)
     # v0.8.66 (audit A-M1) — route the NO-OVERRIDE path through
     # provision_langchain_chat_model so source-chat (the highest-PII surface —
     # raw ~4000-char source text) gets the SAME smart-router AND fail-closed
     # privacy gate as notebook chat. Previously this always called
     # provision_langchain_model directly, bypassing both. An explicit model
     # pick still goes direct (the user chose that specific model).
-    _explicit_model = (
-        config.get("configurable", {}).get("model_id")
-        or state.get("model_override")
+    _explicit_model = config.get("configurable", {}).get("model_id") or state.get(
+        "model_override"
     )
     # v0.8.68 — offline-fallback info from the provisioning gate (parity
     # with chat.py). Empty dict when no substitution happened; returned in
@@ -245,8 +243,11 @@ async def _call_model_with_source_context_inner(
     selection_out: dict = {}
     if _explicit_model:
         model = await provision_langchain_model(
-            content_for_sizing, _explicit_model, "chat",
-            fallback_out=offline_fallback_out, max_tokens=8192,
+            content_for_sizing,
+            _explicit_model,
+            "chat",
+            fallback_out=offline_fallback_out,
+            max_tokens=8192,
         )
     else:
         model = await provision_langchain_chat_model(
@@ -264,6 +265,7 @@ async def _call_model_with_source_context_inner(
     # behaviour on the source-chat surface. Both graphs now share
     # `bind_mcp_and_run_tool_loop` from chat.py.
     from deeper_notebook.graphs.chat import bind_mcp_and_run_tool_loop
+
     # v0.8.44 — thread the per-request MCP disable list into the
     # source-chat tool loop (parity with notebook chat's v0.8.42).
     # v0.8.68 — mid-turn offline retry, same semantics as chat.py: a
@@ -271,7 +273,8 @@ async def _call_model_with_source_context_inner(
     # network state and retries ONCE with the gated (now local) model.
     try:
         ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
-            model, payload,
+            model,
+            payload,
             exclude_server_names=state.get("disabled_mcp_servers") or None,
         )
     except Exception as e:
@@ -289,14 +292,18 @@ async def _call_model_with_source_context_inner(
         )
         retry_fallback: dict = {}
         model = await provision_langchain_model(
-            content_for_sizing, _explicit_model, "chat",
-            fallback_out=retry_fallback, max_tokens=8192,
+            content_for_sizing,
+            _explicit_model,
+            "chat",
+            fallback_out=retry_fallback,
+            max_tokens=8192,
         )
         if not retry_fallback.get("offline_fallback"):
             raise  # gate didn't substitute (no local model) — original error stands
         offline_fallback_out.update(retry_fallback)
         ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
-            model, payload,
+            model,
+            payload,
             exclude_server_names=state.get("disabled_mcp_servers") or None,
         )
 

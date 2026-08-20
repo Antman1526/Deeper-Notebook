@@ -1,4 +1,5 @@
 """llama.cpp provider: scan a directory for GGUFs, spawn llama-cpp-python server."""
+
 from __future__ import annotations
 
 import os
@@ -27,7 +28,10 @@ _STDERR_TAIL_LINES = 30
 
 def _http_ready(port: int) -> bool:
     try:
-        return httpx.get(f"http://127.0.0.1:{port}/v1/models", timeout=0.5).status_code == 200
+        return (
+            httpx.get(f"http://127.0.0.1:{port}/v1/models", timeout=0.5).status_code
+            == 200
+        )
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
         return False
 
@@ -108,7 +112,9 @@ class LlamaCppProvider:
         return any(True for _ in self._iter_ggufs())
 
     def list_models(self) -> list[str]:
-        return sorted(p.relative_to(self.model_dir).as_posix() for p in self._iter_ggufs())
+        return sorted(
+            p.relative_to(self.model_dir).as_posix() for p in self._iter_ggufs()
+        )
 
     def start(self, model: str) -> ProviderEnv:
         path = self.model_dir / model
@@ -142,10 +148,15 @@ class LlamaCppProvider:
         # the operator has set DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH;
         # missing draft path or unset env keeps current behavior.
         argv = [
-            str(self._python_executable), "-m", "llama_cpp.server",
-            "--model", str(path),
-            "--host", "127.0.0.1",
-            "--port", str(port),
+            str(self._python_executable),
+            "-m",
+            "llama_cpp.server",
+            "--model",
+            str(path),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
         ]
         if self._draft_model_path is not None:
             # Skip silently if the configured path no longer exists or
@@ -164,17 +175,17 @@ class LlamaCppProvider:
                 # so a stray env var without a draft model can't
                 # generate a malformed argv that llama_cpp.server
                 # rejects at parse time.
-                if (
-                    self._draft_n_predict is not None
-                    and self._draft_n_predict > 0
-                ):
-                    argv.extend([
-                        "--n_predict_draft",
-                        str(self._draft_n_predict),
-                    ])
+                if self._draft_n_predict is not None and self._draft_n_predict > 0:
+                    argv.extend(
+                        [
+                            "--n_predict_draft",
+                            str(self._draft_n_predict),
+                        ]
+                    )
         self._proc = subprocess.Popen(
             argv,
-            stdout=subprocess.DEVNULL, stderr=self._stderr_fh,
+            stdout=subprocess.DEVNULL,
+            stderr=self._stderr_fh,
         )
         self._port = port
 
@@ -184,8 +195,11 @@ class LlamaCppProvider:
                 # v0.7.151 — surface the captured stderr tail so the user
                 # can actually diagnose the crash without grepping logs.
                 self._close_stderr()
-                tail = _tail_lines(self._stderr_log, _STDERR_TAIL_LINES) \
-                    if self._stderr_log else ""
+                tail = (
+                    _tail_lines(self._stderr_log, _STDERR_TAIL_LINES)
+                    if self._stderr_log
+                    else ""
+                )
                 msg = (
                     f"llama_cpp.server exited prematurely "
                     f"(returncode={self._proc.returncode}) "
@@ -222,16 +236,17 @@ class LlamaCppProvider:
         # the port. Include stderr tail too, since the model may be
         # silently hung (mmap stuck, infinite tokenizer load, …).
         self.stop()
-        tail = _tail_lines(self._stderr_log, _STDERR_TAIL_LINES) \
-            if self._stderr_log else ""
+        tail = (
+            _tail_lines(self._stderr_log, _STDERR_TAIL_LINES)
+            if self._stderr_log
+            else ""
+        )
         msg = (
             f"llama_cpp.server on port {port} never became ready "
             f"within {self._max_wait}s (model={model!r})"
         )
         if tail:
-            msg += (
-                f". Last stderr (full log at {self._stderr_log}):\n{tail}"
-            )
+            msg += f". Last stderr (full log at {self._stderr_log}):\n{tail}"
         raise RuntimeError(msg)
 
     def _close_stderr(self) -> None:
@@ -283,8 +298,13 @@ class LlamaCppProvider:
         if not models:
             return ""
         by_name = {m.lower(): m for m in models}
-        for hint in ("hermes-3", "mistral-7b-instruct", "qwen2.5-7b-instruct",
-                     "llama-3.2-3b", "phi-3.5-mini"):
+        for hint in (
+            "hermes-3",
+            "mistral-7b-instruct",
+            "qwen2.5-7b-instruct",
+            "llama-3.2-3b",
+            "phi-3.5-mini",
+        ):
             for k, original in by_name.items():
                 if hint in k:
                     return original

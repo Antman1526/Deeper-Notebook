@@ -213,9 +213,7 @@ def test_claim_and_operation_contracts_bound_leases_and_outcomes():
             )
     for outcome in ("processing", "complete"):
         with pytest.raises(ValidationError):
-            SourceVisualOperationReceipt(
-                **{**receipt.model_dump(), "outcome": outcome}
-            )
+            SourceVisualOperationReceipt(**{**receipt.model_dump(), "outcome": outcome})
 
 
 def test_prepared_asset_and_api_contracts_are_bounded_and_private():

@@ -82,7 +82,10 @@ def _critical_verdicts(content: str, sources: list[object]) -> list[object]:
 
 
 def _store_generated_output(
-    artifact: StudioArtifact, result: object, content: str, citations: list[dict[str, str]]
+    artifact: StudioArtifact,
+    result: object,
+    content: str,
+    citations: list[dict[str, str]],
 ) -> None:
     """Update only existing artifact fields so evaluation stays out of payloads."""
     artifact.output_format = "markdown"
@@ -163,9 +166,12 @@ class ArtifactGenerationRequest:
     # generation owner.  Existing Studio callers leave them unset and retain
     # the established save behavior.
     before_persist: Callable[[StudioArtifact], Awaitable[None] | None] | None = None
-    persist_artifact: Callable[
-        [StudioArtifact], Awaitable[StudioArtifact | None] | StudioArtifact | None
-    ] | None = None
+    persist_artifact: (
+        Callable[
+            [StudioArtifact], Awaitable[StudioArtifact | None] | StudioArtifact | None
+        ]
+        | None
+    ) = None
 
 
 class ArtifactGenerationOwnershipLost(RuntimeError):
@@ -333,7 +339,9 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
                 SystemMessage(content=_system_prompt(artifact)),
                 HumanMessage(content=combined_context),
             ],
-            timeout_seconds=context.env_int("DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC", 180),
+            timeout_seconds=context.env_int(
+                "DEEPER_NOTEBOOK_STUDIO_PAGE_TIMEOUT_SEC", 180
+            ),
         )
         content = render_artifact_markdown(result.document)
         await _before_persist(request, artifact)
@@ -369,7 +377,9 @@ async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifac
                 except Exception as repair_exc:
                     # Retain the original structured output for review. A repair
                     # failure must not turn a generated artifact into an error blob.
-                    logger.warning("Studio strict evidence repair failed: {}", repair_exc)
+                    logger.warning(
+                        "Studio strict evidence repair failed: {}", repair_exc
+                    )
                 # Keep the generated document reviewable, but do not publish it
                 # while a material claim remains contradicted or unsupported.
                 if critical:

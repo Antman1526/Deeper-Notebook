@@ -10,6 +10,7 @@ Covers:
   * Slow-query counter records when DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS exceeded
   * Memory-recall fall-through counter records reason-labeled events
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -66,6 +67,7 @@ def app_with_metrics():
     @a.get("/api/boom")
     def boom():
         from fastapi import HTTPException
+
         raise HTTPException(status_code=500, detail="simulated")
 
     @a.get("/metrics")
@@ -73,6 +75,7 @@ def app_with_metrics():
         from fastapi.responses import Response
 
         from api.metrics import render_prometheus
+
         body, content_type = render_prometheus()
         return Response(content=body, media_type=content_type)
 
@@ -104,14 +107,20 @@ def test_request_counter_increments_per_request(app_with_metrics):
     """v0.7.124 — Each HTTP request increments onp_http_requests_total
     labeled by method + route + status_code."""
     before = _counter_value(
-        http_requests_total, method="GET", route="/echo", status_code="200",
+        http_requests_total,
+        method="GET",
+        route="/echo",
+        status_code="200",
     )
     with TestClient(app_with_metrics) as client:
         client.get("/echo")
         client.get("/echo")
         client.get("/echo")
     after = _counter_value(
-        http_requests_total, method="GET", route="/echo", status_code="200",
+        http_requests_total,
+        method="GET",
+        route="/echo",
+        status_code="200",
     )
     assert after - before == 3
 
@@ -121,8 +130,10 @@ def test_route_label_uses_template_not_literal_url(app_with_metrics):
     must register as ONE label, not one-per-notebook-id. Otherwise
     Prometheus storage explodes on long-running deployments."""
     before = _counter_value(
-        http_requests_total, method="GET",
-        route="/api/notebooks/{notebook_id}", status_code="200",
+        http_requests_total,
+        method="GET",
+        route="/api/notebooks/{notebook_id}",
+        status_code="200",
     )
     with TestClient(app_with_metrics) as client:
         client.get("/api/notebooks/abc")
@@ -130,8 +141,10 @@ def test_route_label_uses_template_not_literal_url(app_with_metrics):
         client.get("/api/notebooks/notebook:xyz123")
         r = client.get("/metrics")
     after = _counter_value(
-        http_requests_total, method="GET",
-        route="/api/notebooks/{notebook_id}", status_code="200",
+        http_requests_total,
+        method="GET",
+        route="/api/notebooks/{notebook_id}",
+        status_code="200",
     )
     # All three literal URLs map to the same template label
     assert after - before == 3
@@ -145,14 +158,18 @@ def test_5xx_responses_are_recorded(app_with_metrics):
     """v0.7.124 — A 500-returning route must still bump the counter
     (under the 'status_code=500' label) so error rate is visible."""
     before = _counter_value(
-        http_requests_total, method="GET",
-        route="/api/boom", status_code="500",
+        http_requests_total,
+        method="GET",
+        route="/api/boom",
+        status_code="500",
     )
     with TestClient(app_with_metrics) as client:
         client.get("/api/boom")
     after = _counter_value(
-        http_requests_total, method="GET",
-        route="/api/boom", status_code="500",
+        http_requests_total,
+        method="GET",
+        route="/api/boom",
+        status_code="500",
     )
     assert after - before == 1
 
@@ -172,8 +189,7 @@ def test_metrics_endpoint_excluded_from_request_timing(app_with_metrics):
     assert 'route="/echo"' in body
     # /metrics does NOT appear in onp_http_requests_total at all
     counter_lines = [
-        line for line in body.splitlines()
-        if line.startswith("onp_http_requests_total")
+        line for line in body.splitlines() if line.startswith("onp_http_requests_total")
     ]
     assert not any('route="/metrics"' in line for line in counter_lines)
 
@@ -197,8 +213,11 @@ def test_slow_query_counter_increments_when_threshold_exceeded(monkeypatch):
             return []
 
     class _FakeCtx:
-        async def __aenter__(self): return _FakeConn()
-        async def __aexit__(self, *a): return None
+        async def __aenter__(self):
+            return _FakeConn()
+
+        async def __aexit__(self, *a):
+            return None
 
     monkeypatch.setattr(repo, "db_connection", lambda: _FakeCtx())
     monkeypatch.setattr(repo, "parse_record_ids", lambda x: x)
@@ -217,15 +236,20 @@ def test_slow_query_counter_silent_under_threshold(monkeypatch):
     the slow counter."""
     from deeper_notebook.database import repository as repo
 
-    monkeypatch.setenv("DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "5000")  # 5s — never exceeded
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_SLOW_QUERY_LOG_MS", "5000"
+    )  # 5s — never exceeded
 
     class _FakeConn:
         async def query(self, q, vars=None):
             return []
 
     class _FakeCtx:
-        async def __aenter__(self): return _FakeConn()
-        async def __aexit__(self, *a): return None
+        async def __aenter__(self):
+            return _FakeConn()
+
+        async def __aexit__(self, *a):
+            return None
 
     monkeypatch.setattr(repo, "db_connection", lambda: _FakeCtx())
     monkeypatch.setattr(repo, "parse_record_ids", lambda x: x)
@@ -257,17 +281,20 @@ def test_memory_recall_embed_timeout_bumps_counter(monkeypatch):
         return _HangingEmbed()
 
     from deeper_notebook.ai import models as ai_models
+
     monkeypatch.setattr(ai_models.model_manager, "get_embedding_model", _get_emb)
 
     from deeper_notebook.utils.memory_recall import recall_relevant_memory
 
     # Capture the per-label value before + after
     before = _counter_value(
-        memory_recall_fallthrough_total, reason="embed_timeout",
+        memory_recall_fallthrough_total,
+        reason="embed_timeout",
     )
     asyncio.run(recall_relevant_memory("test query"))
     after = _counter_value(
-        memory_recall_fallthrough_total, reason="embed_timeout",
+        memory_recall_fallthrough_total,
+        reason="embed_timeout",
     )
     assert after == before + 1
 
@@ -283,13 +310,16 @@ def test_memory_recall_query_timeout_bumps_counter(monkeypatch):
         return []
 
     from deeper_notebook.utils import memory_recall
+
     monkeypatch.setattr(memory_recall, "repo_query", _hanging_query)
 
     before = _counter_value(
-        memory_recall_fallthrough_total, reason="query_timeout",
+        memory_recall_fallthrough_total,
+        reason="query_timeout",
     )
     asyncio.run(memory_recall._safe_select("SELECT 1", {}))
     after = _counter_value(
-        memory_recall_fallthrough_total, reason="query_timeout",
+        memory_recall_fallthrough_total,
+        reason="query_timeout",
     )
     assert after == before + 1

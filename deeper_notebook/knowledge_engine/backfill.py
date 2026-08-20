@@ -174,7 +174,9 @@ class CanonicalSourceCatalog:
                 source = self._read_overlay(note)
                 if source is not None:
                     if max_sources is not None and len(sources) >= max_sources:
-                        raise RuntimeError("knowledge_engine_equivalence_inventory_too_large")
+                        raise RuntimeError(
+                            "knowledge_engine_equivalence_inventory_too_large"
+                        )
                     sources.append(source)
             offset += len(notes)
             if len(notes) < _PAGE_SIZE:
@@ -209,9 +211,19 @@ class CanonicalSourceCatalog:
         claims = tuple(
             sorted(
                 (
-                    _claim("overlay_space", note.space_id, "space", space_id, revision_id),
-                    _claim("overlay_note", note.id, "document", document_id, revision_id),
-                    _claim("note", note.projected_note_id, "document", document_id, revision_id),
+                    _claim(
+                        "overlay_space", note.space_id, "space", space_id, revision_id
+                    ),
+                    _claim(
+                        "overlay_note", note.id, "document", document_id, revision_id
+                    ),
+                    _claim(
+                        "note",
+                        note.projected_note_id,
+                        "document",
+                        document_id,
+                        revision_id,
+                    ),
                 ),
                 key=lambda claim: (claim.legacy_kind, claim.legacy_id),
             )
@@ -282,12 +294,16 @@ class CanonicalSourceCatalog:
             offset += len(page)
         return sorted(files, key=lambda item: (item.vault_id, item.relative_path))
 
-    def _read_vault_file(self, mount: VaultMount, file: VaultFile, root: object) -> CanonicalSource | None:
+    def _read_vault_file(
+        self, mount: VaultMount, file: VaultFile, root: object
+    ) -> CanonicalSource | None:
         if file.format not in _EXTERNAL_FORMATS or file.content_hash is None:
             self._vault_failure(mount, file, "knowledge_catalog_invalid_format")
             return None
         try:
-            result = secure_read(root, file.relative_path, max_bytes=self._max_markdown_bytes)  # type: ignore[arg-type]
+            result = secure_read(
+                root, file.relative_path, max_bytes=self._max_markdown_bytes
+            )  # type: ignore[arg-type]
             if (
                 result.sha256 != file.content_hash
                 or result.byte_size != file.size_bytes
@@ -336,9 +352,8 @@ class CanonicalSourceCatalog:
             CatalogFailure(
                 space_id=_space_id(mount.id),
                 relative_locator=file.relative_path,
-                observed_content_hash=file.content_hash or sha256(
-                    f"{mount.id}\0{file.relative_path}".encode()
-                ).hexdigest(),
+                observed_content_hash=file.content_hash
+                or sha256(f"{mount.id}\0{file.relative_path}".encode()).hexdigest(),
                 error_code=code,
             )
         )
@@ -361,7 +376,9 @@ class KnowledgeBackfillService:
     async def run(self) -> BackfillResult:
         async with _BACKFILL_LOCK:
             sources = [source async for source in self.catalog.iter_sources()]
-            entries: dict[str, list[CanonicalSource | CatalogFailure]] = defaultdict(list)
+            entries: dict[str, list[CanonicalSource | CatalogFailure]] = defaultdict(
+                list
+            )
             for source in sources:
                 entries[source.space_id].append(source)
             for failure in self.catalog.failures:
@@ -372,7 +389,9 @@ class KnowledgeBackfillService:
                 checkpoint = await self.repository.get_checkpoint(space_id)
                 resume_after = self._resume_after(checkpoint)
                 counts = self._checkpoint_counts(checkpoint)
-                for entry in sorted(entries[space_id], key=lambda item: item.relative_locator):
+                for entry in sorted(
+                    entries[space_id], key=lambda item: item.relative_locator
+                ):
                     if (
                         resume_after is not None
                         and entry.relative_locator < resume_after
@@ -392,7 +411,10 @@ class KnowledgeBackfillService:
                         counts["failed"] += 1
                         result = self._increment(result, "failed")
                         checkpoint = await self._persist_checkpoint(
-                            space_id, entry.relative_locator, entry.observed_content_hash, counts
+                            space_id,
+                            entry.relative_locator,
+                            entry.observed_content_hash,
+                            counts,
                         )
                         continue
                     try:
@@ -415,7 +437,10 @@ class KnowledgeBackfillService:
                         counts["failed"] += 1
                         result = self._increment(result, "failed")
                         checkpoint = await self._persist_checkpoint(
-                            space_id, entry.relative_locator, entry.observed_content_hash, counts
+                            space_id,
+                            entry.relative_locator,
+                            entry.observed_content_hash,
+                            counts,
                         )
                         continue
                     status = getattr(receipt, "status", "")
@@ -437,11 +462,16 @@ class KnowledgeBackfillService:
                         counts["failed"] += 1
                         result = self._increment(result, "failed")
                     checkpoint = await self._persist_checkpoint(
-                        space_id, entry.relative_locator, entry.observed_content_hash, counts
+                        space_id,
+                        entry.relative_locator,
+                        entry.observed_content_hash,
+                        counts,
                     )
                 if checkpoint is not None:
                     await self.repository.save_checkpoint(
-                        checkpoint.model_copy(update={"status": "completed", "updated_at": self._clock()})
+                        checkpoint.model_copy(
+                            update={"status": "completed", "updated_at": self._clock()}
+                        )
                     )
             return result
 

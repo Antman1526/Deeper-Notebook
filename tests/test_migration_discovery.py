@@ -172,9 +172,18 @@ def test_migration_46_is_symmetric_and_schema_full():
         "DEFINE FIELD IF NOT EXISTS source_locator.resource_id ON TABLE source_visual_cache TYPE option<string> "
         "ASSERT $value = NONE OR (string::len($value) >= 1 AND string::len($value) <= 128);"
     ) in sql
-    assert "($value.page != NONE AND $value.timestamp_ms = NONE AND $value.resource_id = NONE)" in sql
-    assert "($value.page = NONE AND $value.timestamp_ms != NONE AND $value.resource_id = NONE)" in sql
-    assert "($value.page = NONE AND $value.timestamp_ms = NONE AND $value.resource_id != NONE)" in sql
+    assert (
+        "($value.page != NONE AND $value.timestamp_ms = NONE AND $value.resource_id = NONE)"
+        in sql
+    )
+    assert (
+        "($value.page = NONE AND $value.timestamp_ms != NONE AND $value.resource_id = NONE)"
+        in sql
+    )
+    assert (
+        "($value.page = NONE AND $value.timestamp_ms = NONE AND $value.resource_id != NONE)"
+        in sql
+    )
     assert downs[45] is not None
     assert "REMOVE TABLE IF EXISTS source_visual_operation" in downs[45].sql
     assert "REMOVE TABLE IF EXISTS source_visual_claim" in downs[45].sql

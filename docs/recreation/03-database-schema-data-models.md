@@ -142,20 +142,20 @@ whitelist validation; *values* always travel as `$`-bound parameters in `vars`.
 
 ```python
 # api/routers/notebooks.py — allowlist BEFORE interpolation
-allowed_fields     = {"name", "created", "updated"}
+allowed_fields = {"name", "created", "updated"}
 allowed_directions = {"asc", "desc"}
 # ... parts validated, 400 raised otherwise ...
 where_clause = ""
 params: dict = {}
 if archived is not None:
-    where_clause = "WHERE archived = $archived"   # value is BOUND
+    where_clause = "WHERE archived = $archived"  # value is BOUND
     params["archived"] = archived
 query = f"""
     SELECT *, count(<-reference.in) AS source_count
     FROM notebook
     {where_clause}
     ORDER BY {validated_order_by}
-"""   # nosec B608 - constants/whitelisted identifiers; values bound
+"""  # nosec B608 - constants/whitelisted identifiers; values bound
 ```
 
 Record ids are parsed, never trusted:
@@ -164,7 +164,7 @@ Record ids are parsed, never trusted:
 # api/command_service.py — v0.8.87 hardening
 record_id = ensure_record_id(
     job_id if job_id.startswith("command:") else f"command:{job_id}"
-)   # RecordID.parse rejects malformed input before it reaches the query
+)  # RecordID.parse rejects malformed input before it reaches the query
 ```
 
 ## 7. Vector search
@@ -188,13 +188,17 @@ see `api/routers/embedding_rebuild.py`.
 ```python
 class ObjectModel(BaseModel):
     id: Optional[str] = None
+
     async def save(self) -> None: ...
     @classmethod
     async def get(cls, id: str) -> "ObjectModel": ...
     @classmethod
-    async def get_all(cls, order_by: str | None = None,
-                      limit: int | None = None,
-                      offset: int | None = None) -> list["ObjectModel"]: ...
+    async def get_all(
+        cls,
+        order_by: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list["ObjectModel"]: ...
     async def delete(self) -> bool: ...
 ```
 

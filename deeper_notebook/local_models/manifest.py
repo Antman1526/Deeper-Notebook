@@ -6,6 +6,7 @@ Plus compare scanned models with that curated intent. The patch helpers are
 intentionally narrow: append one validated row, with a backup, inside the
 configured model directory.
 """
+
 from __future__ import annotations
 
 import re
@@ -260,7 +261,9 @@ def find_manifest_matches(
     model_keys = inventory_model_match_keys(model.name, model.path)
     matches: list[ManifestModelEntry] = []
     for entry in entries:
-        if _entry_matches_model(entry, model, model_path=model_path, model_keys=model_keys):
+        if _entry_matches_model(
+            entry, model, model_path=model_path, model_keys=model_keys
+        ):
             matches.append(entry)
 
     return matches
@@ -274,11 +277,7 @@ def find_unmatched_manifest_entries(
     for model in models:
         for entry in find_manifest_matches(model, entries):
             matched_ids.add(_entry_identity(entry))
-    return [
-        entry
-        for entry in entries
-        if _entry_identity(entry) not in matched_ids
-    ]
+    return [entry for entry in entries if _entry_identity(entry) not in matched_ids]
 
 
 def build_manifest_reconciliation(
@@ -338,10 +337,7 @@ def build_manifest_recommendations(
 ) -> list[ManifestRecommendation]:
     rows = build_manifest_reconciliation(entries, models)
     rows.sort(key=_recommendation_sort_key)
-    return [
-        _recommendation_from_reconciliation(row)
-        for row in rows[:max(0, limit)]
-    ]
+    return [_recommendation_from_reconciliation(row) for row in rows[: max(0, limit)]]
 
 
 def _setup_task_for_missing_entry(
@@ -373,8 +369,7 @@ def _setup_task_for_missing_entry(
             action_type="download_snapshot",
             label="Copy setup command",
             description=(
-                "Copy a Hugging Face snapshot download command for this "
-                "manifest row."
+                "Copy a Hugging Face snapshot download command for this manifest row."
             ),
             repo_id=repo_id,
             target_path=local_path,
@@ -517,13 +512,15 @@ def _manifest_cell(value: str) -> str:
 
 
 def _manifest_table_header() -> str:
-    return "\n".join([
-        "# Local Model Inventory",
-        "",
-        "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
-        "|---|---|---|---|---|---|---|",
-        "",
-    ])
+    return "\n".join(
+        [
+            "# Local Model Inventory",
+            "",
+            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+            "|---|---|---|---|---|---|---|",
+            "",
+        ]
+    )
 
 
 def _is_huggingface_repo_id(value: str) -> bool:
@@ -576,11 +573,15 @@ def _entry_matches_model(
     model_path: str | None = None,
     model_keys: set[str] | None = None,
 ) -> bool:
-    current_model_path = model_path if model_path is not None else _resolved_path(model.path)
+    current_model_path = (
+        model_path if model_path is not None else _resolved_path(model.path)
+    )
     entry_path = _resolved_path(entry.local_path)
     if current_model_path and entry_path and current_model_path == entry_path:
         return True
 
-    current_model_keys = model_keys or inventory_model_match_keys(model.name, model.path)
+    current_model_keys = model_keys or inventory_model_match_keys(
+        model.name, model.path
+    )
     entry_keys = inventory_model_match_keys(entry.repo, entry.local_path)
     return bool(current_model_keys & entry_keys)

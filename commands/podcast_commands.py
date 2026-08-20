@@ -85,7 +85,9 @@ class PodcastGenerationInput(CommandInput):
     # the outline stage; the user reviews/edits it in the UI and approval
     # submits a resume_podcast command for the remaining stages.
     review_outline: bool = False
-    execution_policy: Literal["strict_local", "local_preferred", "custom"] = "strict_local"
+    execution_policy: Literal["strict_local", "local_preferred", "custom"] = (
+        "strict_local"
+    )
     compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced"
     include_transcription: bool = False
     # Phase 2 Studio receipts. These are redacted decisions and counts only;
@@ -421,7 +423,10 @@ async def generate_podcast_command(
         # marks the episode as failed → episode.delete() cleanup
         # path below fires, including the empty-output-dir sweep.
         _podcast_timeout = float(
-            resolve_env("DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
+            resolve_env(
+                "DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800"
+            ).strip()
+            or 1800
         )
         episode.generation_stage = STAGE_OUTLINE
         await episode.save()
@@ -647,7 +652,10 @@ async def resume_podcast_command(
         )
 
         _podcast_timeout = float(
-            resolve_env("DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip() or 1800
+            resolve_env(
+                "DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800"
+            ).strip()
+            or 1800
         )
         try:
             result = await run_graph_with_stages(

@@ -113,7 +113,9 @@ async def get_env_status():
         raise
     except Exception as e:
         logger.error(f"Error checking env status: {e}")
-        raise HTTPException(status_code=500, detail="Failed to check environment status")
+        raise HTTPException(
+            status_code=500, detail="Failed to check environment status"
+        )
 
 
 # =============================================================================
@@ -145,9 +147,10 @@ async def list_credentials(
         # credential row at write time) needs a schema migration + a
         # post-save hook on Model; deferred.
         import asyncio as _asyncio
-        linked_models_lists = await _asyncio.gather(*[
-            cred.get_linked_models() for cred in credentials
-        ])
+
+        linked_models_lists = await _asyncio.gather(
+            *[cred.get_linked_models() for cred in credentials]
+        )
         result = [
             credential_to_response(cred, len(models))
             for cred, models in zip(credentials, linked_models_lists)
@@ -186,7 +189,9 @@ async def list_credentials_by_provider(provider: str):
         raise
     except Exception as e:
         logger.error(f"Error listing credentials for {provider}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to list credentials for provider")
+        raise HTTPException(
+            status_code=500, detail="Failed to list credentials for provider"
+        )
 
 
 @router.post("", response_model=CredentialResponse, status_code=201)
@@ -204,8 +209,12 @@ async def create_credential(request: CreateCredentialRequest):
     # credential, a worst-case create blocked the entire API for ~3 min.
     # Run each validation off the event loop.
     for url_field in [
-        request.base_url, request.endpoint, request.endpoint_llm,
-        request.endpoint_embedding, request.endpoint_stt, request.endpoint_tts,
+        request.base_url,
+        request.endpoint,
+        request.endpoint_llm,
+        request.endpoint_embedding,
+        request.endpoint_stt,
+        request.endpoint_tts,
     ]:
         if url_field:
             try:
@@ -275,8 +284,12 @@ async def update_credential(credential_id: str, request: UpdateCredentialRequest
     # Validate all URL fields being updated
     # v0.6.18 — see create_credential above for the rationale on to_thread.
     for url_field in [
-        request.base_url, request.endpoint, request.endpoint_llm,
-        request.endpoint_embedding, request.endpoint_stt, request.endpoint_tts,
+        request.base_url,
+        request.endpoint,
+        request.endpoint_llm,
+        request.endpoint_embedding,
+        request.endpoint_stt,
+        request.endpoint_tts,
     ]:
         if url_field:
             try:
@@ -445,6 +458,7 @@ async def discover_models_for_credential(credential_id: str):
     # OpenRouter (300+ models) or hang if the base_url is misconfigured.
     # Default 30s aligns with the connection-test timeout (v0.7.100).
     import asyncio
+
     _discover_timeout = float(
         resolve_env("DEEPER_NOTEBOOK_DISCOVER_MODELS_TIMEOUT_SEC", "30").strip() or 30
     )
@@ -534,8 +548,12 @@ async def migrate_from_provider_config():
         # v0.7.181 — bubble typed exceptions to global handlers.
         raise
     except Exception as e:
-        logger.error(f"ProviderConfig migration FAILED: {type(e).__name__}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Migration from provider config failed")
+        logger.error(
+            f"ProviderConfig migration FAILED: {type(e).__name__}: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail="Migration from provider config failed"
+        )
 
 
 @router.post("/detect-osaurus")
@@ -594,9 +612,7 @@ async def detect_osaurus():
         with _httpx.Client(base_url=base, headers=headers, timeout=10.0) as cli:
             creds_resp = cli.get("/api/credentials")
             creds_resp.raise_for_status()
-            existing_cred_names = {
-                c.get("name", "").lower() for c in creds_resp.json()
-            }
+            existing_cred_names = {c.get("name", "").lower() for c in creds_resp.json()}
             models_resp = cli.get("/api/models")
             models_resp.raise_for_status()
             existing_model_keys = {
@@ -666,4 +682,6 @@ async def migrate_from_env():
         raise
     except Exception as e:
         logger.error(f"Env migration FAILED: {type(e).__name__}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Migration from environment variables failed")
+        raise HTTPException(
+            status_code=500, detail="Migration from environment variables failed"
+        )

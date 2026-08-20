@@ -13,6 +13,7 @@ Covers:
 
 No external dependencies (no real SurrealDB, no FastAPI lifespan).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -89,7 +90,8 @@ def test_request_id_visible_inside_handler_via_contextvar(app_with_request_id):
     surface the id in error responses or slow-query warnings."""
     with TestClient(app_with_request_id) as client:
         r = client.get(
-            "/echo", headers={"X-Request-ID": "from-handler-test"},
+            "/echo",
+            headers={"X-Request-ID": "from-handler-test"},
         )
     assert r.json()["rid"] == "from-handler-test"
 
@@ -246,8 +248,11 @@ def test_slow_query_logs_warning_when_threshold_exceeded(monkeypatch, caplog):
             return [{"value": "ok"}]
 
     class _FakeCtx:
-        async def __aenter__(self): return _FakeConn()
-        async def __aexit__(self, *a): return None
+        async def __aenter__(self):
+            return _FakeConn()
+
+        async def __aexit__(self, *a):
+            return None
 
     monkeypatch.setattr(repo, "db_connection", lambda: _FakeCtx())
     monkeypatch.setattr(repo, "parse_record_ids", lambda x: x)
@@ -256,6 +261,7 @@ def test_slow_query_logs_warning_when_threshold_exceeded(monkeypatch, caplog):
     # stdlib logging, not loguru.
     captured: list[str] = []
     from loguru import logger as loguru_logger
+
     sink_id = loguru_logger.add(
         lambda msg: captured.append(msg.record["message"]),
         level="WARNING",
@@ -268,8 +274,9 @@ def test_slow_query_logs_warning_when_threshold_exceeded(monkeypatch, caplog):
     # Query still returned its result
     assert result == [{"value": "ok"}]
     # And a slow-query warning fired
-    assert any("slow query" in msg for msg in captured), \
+    assert any("slow query" in msg for msg in captured), (
         f"No slow-query warning logged; captured: {captured}"
+    )
 
 
 def test_slow_query_silent_when_under_threshold(monkeypatch):
@@ -283,14 +290,18 @@ def test_slow_query_silent_when_under_threshold(monkeypatch):
             return [{"value": "fast"}]
 
     class _FakeCtx:
-        async def __aenter__(self): return _FakeConn()
-        async def __aexit__(self, *a): return None
+        async def __aenter__(self):
+            return _FakeConn()
+
+        async def __aexit__(self, *a):
+            return None
 
     monkeypatch.setattr(repo, "db_connection", lambda: _FakeCtx())
     monkeypatch.setattr(repo, "parse_record_ids", lambda x: x)
 
     captured: list[str] = []
     from loguru import logger as loguru_logger
+
     sink_id = loguru_logger.add(
         lambda msg: captured.append(msg.record["message"]),
         level="WARNING",
@@ -301,8 +312,9 @@ def test_slow_query_silent_when_under_threshold(monkeypatch):
         loguru_logger.remove(sink_id)
 
     # No slow-query warning under threshold
-    assert not any("slow query" in msg for msg in captured), \
+    assert not any("slow query" in msg for msg in captured), (
         f"Spurious slow-query warning; captured: {captured}"
+    )
 
 
 def test_slow_query_logs_even_when_query_errors(monkeypatch):
@@ -319,14 +331,18 @@ def test_slow_query_logs_even_when_query_errors(monkeypatch):
             raise RuntimeError("simulated query failure")
 
     class _FailingCtx:
-        async def __aenter__(self): return _FailingConn()
-        async def __aexit__(self, *a): return None
+        async def __aenter__(self):
+            return _FailingConn()
+
+        async def __aexit__(self, *a):
+            return None
 
     monkeypatch.setattr(repo, "db_connection", lambda: _FailingCtx())
     monkeypatch.setattr(repo, "parse_record_ids", lambda x: x)
 
     captured: list[str] = []
     from loguru import logger as loguru_logger
+
     sink_id = loguru_logger.add(
         lambda msg: captured.append(msg.record["message"]),
         level="WARNING",
@@ -337,8 +353,9 @@ def test_slow_query_logs_even_when_query_errors(monkeypatch):
     finally:
         loguru_logger.remove(sink_id)
 
-    assert any("slow query" in msg for msg in captured), \
+    assert any("slow query" in msg for msg in captured), (
         f"Slow-query warning should fire even on error; captured: {captured}"
+    )
 
 
 # --------------------------------------------------------------------- #
@@ -446,11 +463,13 @@ def test_dangerous_cors_no_password_combo_logs_error(monkeypatch, capsys):
     finally:
         logger.remove(sink_id)
 
-    assert any("DANGEROUS CONFIG" in msg for msg in captured), \
+    assert any("DANGEROUS CONFIG" in msg for msg in captured), (
         f"Expected ERROR-level dangerous-config warning; captured: {captured}"
+    )
     # Must name BOTH levers so the user knows what to set
-    assert any("CORS_ORIGINS" in msg and "DEEPER_NOTEBOOK_PASSWORD" in msg
-               for msg in captured)
+    assert any(
+        "CORS_ORIGINS" in msg and "DEEPER_NOTEBOOK_PASSWORD" in msg for msg in captured
+    )
 
 
 def test_safe_cors_with_password_set_does_not_log_dangerous_error(

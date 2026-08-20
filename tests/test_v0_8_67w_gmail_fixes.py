@@ -6,6 +6,7 @@ This verifies:
 2. `_send_digest_now` reload and check-under-lock behavior correctly suppresses
    duplicate scheduled sends (E-4).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -87,10 +88,14 @@ async def test_gmail_send_digest_single_flight_under_lock():
 
     async def _mock_repo_query(q, vars=None):
         # Simulate decrypter/decryption helper
-        return [{
-            **db_state,
-            "last_sent_at": db_state["last_sent_at"].isoformat() if db_state["last_sent_at"] else None
-        }]
+        return [
+            {
+                **db_state,
+                "last_sent_at": db_state["last_sent_at"].isoformat()
+                if db_state["last_sent_at"]
+                else None,
+            }
+        ]
 
     async def _mock_repo_upsert(table, rid, data, add_timestamp=True):
         if "last_sent_at" in data:
@@ -108,12 +113,13 @@ async def test_gmail_send_digest_single_flight_under_lock():
         return True, "Sent successfully", 5
 
     # Stub the encrypt/decrypt routines to pass values through
-    with patch("deeper_notebook.domain.gmail.repo_query", _mock_repo_query), \
-         patch("deeper_notebook.domain.gmail.repo_upsert", _mock_repo_upsert), \
-         patch("deeper_notebook.domain.gmail._dec", lambda x: x), \
-         patch("deeper_notebook.domain.gmail._enc", lambda x: x), \
-         patch("api.routers.gmail._send_digest_now_inner", _mock_send_digest_now_inner):
-
+    with (
+        patch("deeper_notebook.domain.gmail.repo_query", _mock_repo_query),
+        patch("deeper_notebook.domain.gmail.repo_upsert", _mock_repo_upsert),
+        patch("deeper_notebook.domain.gmail._dec", lambda x: x),
+        patch("deeper_notebook.domain.gmail._enc", lambda x: x),
+        patch("api.routers.gmail._send_digest_now_inner", _mock_send_digest_now_inner),
+    ):
         # Prepare two initial integration references (mimicking concurrent callers)
         g_caller1 = await GmailIntegration.get()
         g_caller2 = await GmailIntegration.get()

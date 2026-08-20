@@ -44,9 +44,7 @@ def load_knowledge_workspace(
         with target.open("rb") as stream:
             encoded = stream.read(MAX_KNOWLEDGE_WORKSPACE_BYTES + 1)
         if len(encoded) > MAX_KNOWLEDGE_WORKSPACE_BYTES:
-            raise WorkspaceStateError(
-                f"invalid workspace state in {target}"
-            )
+            raise WorkspaceStateError(f"invalid workspace state in {target}")
         payload = json.loads(encoded.decode("utf-8"))
         document = parse_workspace_document(payload)
         return (

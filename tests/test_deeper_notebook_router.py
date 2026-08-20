@@ -8,6 +8,7 @@ Covers:
   * POST /theme uses dataclasses.replace so adding fields to Config
     doesn't silently revert them.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -52,8 +53,10 @@ def app():
 def test_get_theme_returns_default_when_config_file_missing(app, monkeypatch):
     """First-run case — _load_config raises FileNotFoundError; GET should
     silently fall back to the default theme, NOT 500."""
+
     def _broken_load():
         raise FileNotFoundError("config not yet written")
+
     monkeypatch.setattr(deeper_notebook_mod, "_load_config", _broken_load)
 
     with TestClient(app) as client:
@@ -65,8 +68,10 @@ def test_get_theme_returns_default_when_config_file_missing(app, monkeypatch):
 def test_get_theme_propagates_http_exception(app, monkeypatch):
     """If _load_config raises HTTPException (e.g. 'module not bundled'),
     the user MUST see the actionable error, not a silent fallback."""
+
     def _bundling_err():
         raise HTTPException(status_code=500, detail="desktop.config not bundled")
+
     monkeypatch.setattr(deeper_notebook_mod, "_load_config", _bundling_err)
 
     with TestClient(app) as client:
@@ -76,8 +81,11 @@ def test_get_theme_propagates_http_exception(app, monkeypatch):
 
 
 def test_get_theme_returns_loaded_value(app, monkeypatch):
-    monkeypatch.setattr(deeper_notebook_mod, "_load_config",
-                        lambda: (Path("/tmp/c.toml"), _FakeCfg(theme="dracula")))
+    monkeypatch.setattr(
+        deeper_notebook_mod,
+        "_load_config",
+        lambda: (Path("/tmp/c.toml"), _FakeCfg(theme="dracula")),
+    )
     with TestClient(app) as client:
         r = client.get("/api/deeper-notebook/theme")
     assert r.status_code == 200
@@ -89,8 +97,9 @@ def test_get_theme_returns_loaded_value(app, monkeypatch):
 
 
 def test_post_theme_rejects_unknown(app, monkeypatch):
-    monkeypatch.setattr(deeper_notebook_mod, "_load_config",
-                        lambda: (Path("/tmp/c.toml"), _FakeCfg()))
+    monkeypatch.setattr(
+        deeper_notebook_mod, "_load_config", lambda: (Path("/tmp/c.toml"), _FakeCfg())
+    )
     with TestClient(app) as client:
         r = client.post("/api/deeper-notebook/theme", json={"theme": "neon-purple"})
     assert r.status_code == 400
@@ -100,8 +109,14 @@ def test_post_theme_rejects_unknown(app, monkeypatch):
 @pytest.mark.parametrize(
     "theme",
     [
-        "research-core-dark", "research-core-light", "deep-ocean", "graphite-lab",
-        "arctic-research", "archive-paper", "high-contrast-dark", "high-contrast-light",
+        "research-core-dark",
+        "research-core-light",
+        "deep-ocean",
+        "graphite-lab",
+        "arctic-research",
+        "archive-paper",
+        "high-contrast-dark",
+        "high-contrast-light",
     ],
 )
 def test_post_theme_accepts_each_research_core_palette(app, monkeypatch, theme):
@@ -134,8 +149,9 @@ def test_post_theme_preserves_other_fields_via_dataclasses_replace(app, monkeypa
         saved["cfg"] = self
 
     monkeypatch.setattr(_FakeCfg, "save", _save)
-    monkeypatch.setattr(deeper_notebook_mod, "_load_config",
-                        lambda: (Path("/tmp/c.toml"), original))
+    monkeypatch.setattr(
+        deeper_notebook_mod, "_load_config", lambda: (Path("/tmp/c.toml"), original)
+    )
 
     with TestClient(app) as client:
         r = client.post("/api/deeper-notebook/theme", json={"theme": "dark"})
@@ -151,8 +167,10 @@ def test_post_theme_surfaces_bundling_error(app, monkeypatch):
     """If desktop.config isn't bundled, POST should 500 with the helpful
     message — same path as GET. Previously POST duplicated the ImportError
     handling; now both go through _load_config."""
+
     def _bundling_err():
         raise HTTPException(status_code=500, detail="desktop.config not bundled")
+
     monkeypatch.setattr(deeper_notebook_mod, "_load_config", _bundling_err)
 
     with TestClient(app) as client:
@@ -180,7 +198,8 @@ def test_v0825_post_theme_sanitizes_save_failure_detail(app, monkeypatch):
 
     monkeypatch.setattr(_FakeCfg, "save", _save_boom)
     monkeypatch.setattr(
-        deeper_notebook_mod, "_load_config",
+        deeper_notebook_mod,
+        "_load_config",
         lambda: (Path("/tmp/c.toml"), _FakeCfg()),
     )
 
@@ -197,9 +216,7 @@ def test_v0825_post_theme_sanitizes_save_failure_detail(app, monkeypatch):
     assert "[Errno 13]" not in detail, (
         f"Errno fragment leaked into 500 detail: {detail!r}."
     )
-    assert "ws://127.0.0.1" not in detail, (
-        f"Internal URL leaked: {detail!r}."
-    )
+    assert "ws://127.0.0.1" not in detail, f"Internal URL leaked: {detail!r}."
     # And the type name IS present so the operator can correlate
     # with the log line written by logger.exception above.
     assert "OSError" in detail, (

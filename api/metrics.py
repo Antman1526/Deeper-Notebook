@@ -19,6 +19,7 @@ All counters use the canonical `_total` suffix per Prometheus naming
 conventions; histograms use buckets sized for the typical p99 range
 of each operation type.
 """
+
 from __future__ import annotations
 
 import time

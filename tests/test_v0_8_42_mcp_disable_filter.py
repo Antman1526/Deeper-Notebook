@@ -13,6 +13,7 @@ Covers:
     the kwarg through to the resolver.
   - `ExecuteChatRequest` schema accepts the new field (default null).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -53,10 +54,13 @@ def test_resolve_chat_tools_filters_out_excluded_servers(monkeypatch):
     class _FakeClient:
         def __init__(self, *, url: str):
             captured_url.append(url)
+
         async def list_tool_names(self):
             return []
+
         async def list_tools(self):
             return []
+
         async def call_tool(self, *_a, **_k):
             return {}
 
@@ -64,13 +68,16 @@ def test_resolve_chat_tools_filters_out_excluded_servers(monkeypatch):
     # Also patch the import inside _resolve_chat_tools — the function
     # does `from deeper_notebook.mcp.client import MCPClient` lazily.
     import deeper_notebook.mcp.client as mcp_client_mod
+
     monkeypatch.setattr(mcp_client_mod, "MCPClient", _FakeClient)
 
     # SearXNG excluded → Crawl4AI's URL should be captured.
-    _run(chat_mod._resolve_chat_tools(
-        force_servers=fake_servers,
-        exclude_server_names=["SearXNG"],
-    ))
+    _run(
+        chat_mod._resolve_chat_tools(
+            force_servers=fake_servers,
+            exclude_server_names=["SearXNG"],
+        )
+    )
     assert captured_url == ["http://127.0.0.1:11235"]
 
 
@@ -93,10 +100,12 @@ def test_resolve_chat_tools_excludes_case_insensitively(monkeypatch):
 
     # All three case variants → empty tools, no client constructed.
     for variant in ("searxng", "SEARXNG", "  SearXNG  "):
-        tools = _run(chat_mod._resolve_chat_tools(
-            force_servers=fake_servers,
-            exclude_server_names=[variant],
-        ))
+        tools = _run(
+            chat_mod._resolve_chat_tools(
+                force_servers=fake_servers,
+                exclude_server_names=[variant],
+            )
+        )
         assert tools == [], f"variant {variant!r} did not filter out"
 
 
@@ -113,10 +122,13 @@ def test_resolve_chat_tools_empty_exclude_list_is_noop(monkeypatch):
     class _FakeClient:
         def __init__(self, *, url):
             captured.append(url)
+
         async def list_tool_names(self):
             return []
+
         async def list_tools(self):
             return []
+
         async def call_tool(self, *_a, **_k):
             return {}
 
@@ -124,10 +136,12 @@ def test_resolve_chat_tools_empty_exclude_list_is_noop(monkeypatch):
 
     for empty in (None, []):
         captured.clear()
-        _run(chat_mod._resolve_chat_tools(
-            force_servers=fake_servers,
-            exclude_server_names=empty,
-        ))
+        _run(
+            chat_mod._resolve_chat_tools(
+                force_servers=fake_servers,
+                exclude_server_names=empty,
+            )
+        )
         assert captured == ["http://x"], (
             f"exclude={empty!r} unexpectedly filtered out the server"
         )
@@ -150,19 +164,24 @@ def test_resolve_chat_tools_ignores_blank_strings_in_exclude_list(monkeypatch):
     class _FakeClient:
         def __init__(self, *, url):
             captured.append(url)
+
         async def list_tool_names(self):
             return []
+
         async def list_tools(self):
             return []
+
         async def call_tool(self, *_a, **_k):
             return {}
 
     monkeypatch.setattr(mcp_client_mod, "MCPClient", _FakeClient)
 
-    _run(chat_mod._resolve_chat_tools(
-        force_servers=fake_servers,
-        exclude_server_names=["", "SearXNG", "   "],
-    ))
+    _run(
+        chat_mod._resolve_chat_tools(
+            force_servers=fake_servers,
+            exclude_server_names=["", "SearXNG", "   "],
+        )
+    )
     # Crawl4AI survived.
     assert captured == ["http://b"]
 
@@ -179,12 +198,19 @@ def test_bind_loop_forwards_exclude_to_resolver(monkeypatch):
 
     received: list[dict] = []
 
-    async def _fake_resolve(*, force_servers=None, captures=None,
-                            force_tool_names=None, force_tools_full=None,
-                            exclude_server_names=None):
-        received.append({
-            "exclude_server_names": exclude_server_names,
-        })
+    async def _fake_resolve(
+        *,
+        force_servers=None,
+        captures=None,
+        force_tool_names=None,
+        force_tools_full=None,
+        exclude_server_names=None,
+    ):
+        received.append(
+            {
+                "exclude_server_names": exclude_server_names,
+            }
+        )
         return []
 
     monkeypatch.setattr(chat_mod, "_resolve_chat_tools", _fake_resolve)
@@ -195,18 +221,24 @@ def test_bind_loop_forwards_exclude_to_resolver(monkeypatch):
     class _FakeAI:
         tool_calls = []
         content = ""
-        def model_copy(self, update): return self
+
+        def model_copy(self, update):
+            return self
 
     class _Model:
         async def ainvoke(self, _payload):
             return _FakeAI()
+
         def bind_tools(self, _tools):
             return self
 
-    _run(chat_mod.bind_mcp_and_run_tool_loop(
-        _Model(), payload=[],
-        exclude_server_names=["SearXNG", "Crawl4AI"],
-    ))
+    _run(
+        chat_mod.bind_mcp_and_run_tool_loop(
+            _Model(),
+            payload=[],
+            exclude_server_names=["SearXNG", "Crawl4AI"],
+        )
+    )
 
     assert len(received) == 1
     assert received[0]["exclude_server_names"] == ["SearXNG", "Crawl4AI"]
@@ -225,27 +257,35 @@ def test_execute_chat_request_accepts_disabled_mcp_servers_field():
 
     # Absent — default null
     r = ExecuteChatRequest(
-        session_id="chat_session:1", message="hi", context={},
+        session_id="chat_session:1",
+        message="hi",
+        context={},
     )
     assert r.disabled_mcp_servers is None
 
     # Explicit null
     r = ExecuteChatRequest(
-        session_id="chat_session:1", message="hi", context={},
+        session_id="chat_session:1",
+        message="hi",
+        context={},
         disabled_mcp_servers=None,
     )
     assert r.disabled_mcp_servers is None
 
     # Empty list — treated as "no disables" by the resolver
     r = ExecuteChatRequest(
-        session_id="chat_session:1", message="hi", context={},
+        session_id="chat_session:1",
+        message="hi",
+        context={},
         disabled_mcp_servers=[],
     )
     assert r.disabled_mcp_servers == []
 
     # Non-empty
     r = ExecuteChatRequest(
-        session_id="chat_session:1", message="hi", context={},
+        session_id="chat_session:1",
+        message="hi",
+        context={},
         disabled_mcp_servers=["SearXNG"],
     )
     assert r.disabled_mcp_servers == ["SearXNG"]

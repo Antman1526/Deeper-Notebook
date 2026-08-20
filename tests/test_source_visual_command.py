@@ -53,9 +53,7 @@ class InMemoryQueueRepository:
     async def get_operation(self, source_id, request_id, operation):
         return self.operations.get((source_id, request_id, operation))
 
-    async def find_completed_delete(
-        self, source_id, source_updated_at, content_sha256
-    ):
+    async def find_completed_delete(self, source_id, source_updated_at, content_sha256):
         for receipt in self.operations.values():
             if (
                 receipt.source_id == source_id
@@ -105,7 +103,11 @@ class InMemoryQueueRepository:
         identity = (source_id, content_sha256, extractor_version)
         async with self._lock:
             current = self.claims.get(identity)
-            if current and current["lease_until"] > NOW and current["owner_token"] != owner_token:
+            if (
+                current
+                and current["lease_until"] > NOW
+                and current["owner_token"] != owner_token
+            ):
                 raise SourceVisualConflictError("CLAIM_HELD")
             claim = SimpleNamespace(
                 claim_id=hashlib.sha256(repr(identity).encode()).hexdigest(),
@@ -337,9 +339,13 @@ async def test_two_independent_submitters_converge_on_one_claim_and_command(
 
 
 @pytest.mark.asyncio
-async def test_same_request_replays_without_submitting_again(queue_context, monkeypatch):
+async def test_same_request_replays_without_submitting_again(
+    queue_context, monkeypatch
+):
     queue, repo, _source = queue_context
-    monkeypatch.setattr(queue, "submit_command", lambda *_args: pytest.fail("replay submitted"))
+    monkeypatch.setattr(
+        queue, "submit_command", lambda *_args: pytest.fail("replay submitted")
+    )
     existing = await repo.record_operation(
         "source:one",
         "request-one",
@@ -350,14 +356,18 @@ async def test_same_request_replays_without_submitting_again(queue_context, monk
         outcome="queued",
     )
 
-    result = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    result = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
 
     assert result.outcome == "replayed"
     assert result.command_id == existing.command_id
 
 
 @pytest.mark.asyncio
-async def test_replay_after_winner_completion_never_submits_again(queue_context, monkeypatch):
+async def test_replay_after_winner_completion_never_submits_again(
+    queue_context, monkeypatch
+):
     queue, repo, _source = queue_context
     submitted = []
     monkeypatch.setattr(
@@ -366,11 +376,15 @@ async def test_replay_after_winner_completion_never_submits_again(queue_context,
         lambda *_args: submitted.append("submitted") or "command:winner",
     )
 
-    winner = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    winner = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
     identity, owner_token, _command_id = repo.bound[0]
     await repo.release_claim(*identity, owner_token=owner_token)
 
-    replay = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    replay = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
 
     assert winner.outcome == "queued"
     assert replay.outcome == "replayed"
@@ -391,11 +405,16 @@ async def test_successful_bind_finalizes_the_durable_operation_for_restart_repla
 
     first = await queue.submit_source_visual("source:one", "request-one", explicit=True)
     queue._PENDING_SUBMISSIONS.clear()
-    replay = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    replay = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
 
     assert first.command_id == replay.command_id == "command:durable"
     assert replay.outcome == "replayed"
-    assert repo.operations[("source:one", "request-one", "refresh")].command_id == "command:durable"
+    assert (
+        repo.operations[("source:one", "request-one", "refresh")].command_id
+        == "command:durable"
+    )
     assert submitted == ["submitted"]
 
 
@@ -416,9 +435,14 @@ async def test_restart_reconciles_command_from_exact_claim_after_finalize_transi
 
     first = await queue.submit_source_visual("source:one", "request-one", explicit=True)
     queue._PENDING_SUBMISSIONS.clear()
-    replay = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    replay = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
 
-    assert repo.claims[("source:one", HASH, "source-visual-v1")]["command_id"] == "command:created"
+    assert (
+        repo.claims[("source:one", HASH, "source-visual-v1")]["command_id"]
+        == "command:created"
+    )
     assert first.command_id == replay.command_id == "command:created"
     assert replay.outcome == "replayed"
 
@@ -441,9 +465,7 @@ async def test_legacy_repair_never_persists_a_command_replaced_during_takeover(
                 self.takeover_done = True
                 self.claims[identity]["owner_token"] = "2" * 64
                 self.claims[identity]["command_id"] = "command:new"
-            return await super().finalize_operation_from_current_claim(
-                *args, **kwargs
-            )
+            return await super().finalize_operation_from_current_claim(*args, **kwargs)
 
     repo = Repo()
     monkeypatch.setattr(queue, "SourceVisualRepository", lambda: repo)
@@ -533,7 +555,9 @@ async def test_same_request_concurrent_loser_converges_after_winner_receipt_fina
 
 
 @pytest.mark.asyncio
-async def test_expired_claim_takeover_rejects_a_late_old_submit(queue_context, monkeypatch):
+async def test_expired_claim_takeover_rejects_a_late_old_submit(
+    queue_context, monkeypatch
+):
     queue, repo, _source = queue_context
     old_started = threading.Event()
     old_finish = threading.Event()
@@ -595,7 +619,9 @@ async def test_submission_exception_releases_exact_owner_and_finalizes_failed_re
         raise TimeoutError("private path and source text must not escape")
 
     monkeypatch.setattr(queue, "submit_command", fail_submit)
-    result = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    result = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
 
     assert result.outcome == "failed"
     assert result.command_id is None
@@ -635,7 +661,10 @@ async def test_explicit_delete_suppresses_only_deterministic_auto_ingest_replay(
 
     assert auto.outcome == "replayed"
     assert auto.command_id is None
-    assert repo.operations[("source:one", f"ingest:{HASH}", "refresh")].outcome == "deleted"
+    assert (
+        repo.operations[("source:one", f"ingest:{HASH}", "refresh")].outcome
+        == "deleted"
+    )
     assert manual.outcome == "queued"
     assert manual.command_id == "command:manual-refresh"
     assert submitted == ["submitted"]
@@ -686,9 +715,9 @@ async def test_post_delete_commandless_refresh_reacquires_without_replaying_pred
     assert blocked.command_id is None
     assert replay.command_id == "command:post-delete"
     assert submitted == ["submitted"]
-    assert repo.operations[("source:one", "post-delete-refresh", "refresh")].command_id == (
-        "command:post-delete"
-    )
+    assert repo.operations[
+        ("source:one", "post-delete-refresh", "refresh")
+    ].command_id == ("command:post-delete")
 
 
 @pytest.mark.asyncio
@@ -699,17 +728,27 @@ async def test_post_delete_same_request_losers_converge_on_the_one_new_command(
     queue._PENDING_SUBMISSIONS.clear()
     identity = ("source:one", HASH, "source-visual-v1")
     await repo.record_operation(
-        "source:one", "delete-request", "delete",
-        source_updated_at=NOW, content_sha256=HASH, command_id=None, outcome="deleted"
+        "source:one",
+        "delete-request",
+        "delete",
+        source_updated_at=NOW,
+        content_sha256=HASH,
+        command_id=None,
+        outcome="deleted",
     )
     repo.claims[identity] = {
-        "source_id": identity[0], "content_sha256": identity[1],
-        "extractor_version": identity[2], "owner_token": "1" * 64,
-        "lease_until": NOW + timedelta(seconds=90), "command_id": "command:pre-delete",
+        "source_id": identity[0],
+        "content_sha256": identity[1],
+        "extractor_version": identity[2],
+        "owner_token": "1" * 64,
+        "lease_until": NOW + timedelta(seconds=90),
+        "command_id": "command:pre-delete",
     }
     submitted: list[str] = []
     monkeypatch.setattr(
-        queue, "submit_command", lambda *_args: submitted.append("submit") or "command:post-delete"
+        queue,
+        "submit_command",
+        lambda *_args: submitted.append("submit") or "command:post-delete",
     )
 
     assert (
@@ -724,7 +763,9 @@ async def test_post_delete_same_request_losers_converge_on_the_one_new_command(
 
     assert first.command_id == "command:post-delete"
     assert second.command_id == "command:post-delete"
-    replay = await queue.submit_source_visual("source:one", "same-request", explicit=True)
+    replay = await queue.submit_source_visual(
+        "source:one", "same-request", explicit=True
+    )
     assert replay.command_id == "command:post-delete"
     assert submitted == ["submit"]
 
@@ -737,17 +778,30 @@ async def test_post_delete_replay_never_uses_an_identity_only_predelete_pending_
     queue._PENDING_SUBMISSIONS.clear()
     identity = ("source:one", HASH, "source-visual-v1")
     await repo.record_operation(
-        "source:one", "delete-request", "delete",
-        source_updated_at=NOW, content_sha256=HASH, command_id=None, outcome="deleted"
+        "source:one",
+        "delete-request",
+        "delete",
+        source_updated_at=NOW,
+        content_sha256=HASH,
+        command_id=None,
+        outcome="deleted",
     )
     await repo.record_operation(
-        "source:one", "post-delete", "refresh",
-        source_updated_at=NOW, content_sha256=HASH, command_id=None, outcome="queued"
+        "source:one",
+        "post-delete",
+        "refresh",
+        source_updated_at=NOW,
+        content_sha256=HASH,
+        command_id=None,
+        outcome="queued",
     )
     repo.claims[identity] = {
-        "source_id": identity[0], "content_sha256": identity[1],
-        "extractor_version": identity[2], "owner_token": "1" * 64,
-        "lease_until": NOW + timedelta(seconds=90), "command_id": "command:pre-delete",
+        "source_id": identity[0],
+        "content_sha256": identity[1],
+        "extractor_version": identity[2],
+        "owner_token": "1" * 64,
+        "lease_until": NOW + timedelta(seconds=90),
+        "command_id": "command:pre-delete",
     }
     pending_receipt = asyncio.get_running_loop().create_future()
     pending_receipt.set_result("command:pre-delete")
@@ -755,13 +809,17 @@ async def test_post_delete_replay_never_uses_an_identity_only_predelete_pending_
         receipt=pending_receipt
     )
 
-    response = await queue.submit_source_visual("source:one", "post-delete", explicit=True)
+    response = await queue.submit_source_visual(
+        "source:one", "post-delete", explicit=True
+    )
 
     assert response.command_id is None
 
 
 @pytest.mark.asyncio
-async def test_timeout_keeps_claim_until_late_submit_is_bound(queue_context, monkeypatch):
+async def test_timeout_keeps_claim_until_late_submit_is_bound(
+    queue_context, monkeypatch
+):
     queue, repo, _source = queue_context
     started = threading.Event()
     finish = threading.Event()
@@ -773,7 +831,9 @@ async def test_timeout_keeps_claim_until_late_submit_is_bound(queue_context, mon
 
     monkeypatch.setattr(queue, "submit_command", submit)
     monkeypatch.setattr(queue, "_QUEUE_TIMEOUT_SECONDS", 0.01)
-    result = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    result = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
 
     assert started.is_set()
     assert result.outcome == "queued"
@@ -787,7 +847,9 @@ async def test_timeout_keeps_claim_until_late_submit_is_bound(queue_context, mon
 
 
 @pytest.mark.asyncio
-async def test_cancelling_caller_keeps_late_submit_owned_and_bound(queue_context, monkeypatch):
+async def test_cancelling_caller_keeps_late_submit_owned_and_bound(
+    queue_context, monkeypatch
+):
     queue, repo, _source = queue_context
     started = threading.Event()
     finish = threading.Event()
@@ -824,7 +886,9 @@ async def test_bind_failure_after_command_creation_keeps_owner_and_queued_receip
 
     monkeypatch.setattr(queue, "submit_command", lambda *_args: "command:created")
     monkeypatch.setattr(repo, "bind_command", reject_bind)
-    result = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    result = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
 
     assert result.outcome == "queued"
     assert result.command_id is None
@@ -844,7 +908,9 @@ async def test_submission_uses_legacy_app_strict_payload_and_thread_timeout(
         return "command:strict"
 
     monkeypatch.setattr(queue, "submit_command", submit)
-    result = await queue.submit_source_visual("source:one", "request-one", explicit=True)
+    result = await queue.submit_source_visual(
+        "source:one", "request-one", explicit=True
+    )
 
     from deeper_notebook.identity import LEGACY_COMMAND_APP
 
@@ -878,9 +944,7 @@ def test_command_input_is_strict_and_owner_token_is_exactly_64_chars():
             unexpected="private",
         )
     with pytest.raises(ValidationError):
-        ExtractSourceVisualInput(
-            **{**valid.model_dump(), "claim_owner_token": "short"}
-        )
+        ExtractSourceVisualInput(**{**valid.model_dump(), "claim_owner_token": "short"})
 
 
 def test_extract_command_is_registered_under_legacy_compatibility_app():
@@ -992,7 +1056,9 @@ async def test_service_success_renews_publishes_completes_and_does_not_mutate_so
     monkeypatch.setattr(service, "SourceVisualRepository", lambda: repo)
     monkeypatch.setattr(service, "SourceVisualStore", lambda: store)
     monkeypatch.setattr(service, "SourceVisualCleanup", lambda *_args: cleanup)
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda _s: _authority()
+    )
     monkeypatch.setattr(
         service,
         "extract_pdf_candidates",
@@ -1060,8 +1126,14 @@ async def test_service_typed_failure_releases_owner_and_cleans_temp(monkeypatch)
     store = InMemoryServiceStore()
     cleanup = InMemoryCleanup()
     monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
-    monkeypatch.setattr(service, "extract_pdf_candidates", lambda _path: (_ for _ in ()).throw(SourceVisualMediaError("DECODE_FAILED")))
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda _s: _authority()
+    )
+    monkeypatch.setattr(
+        service,
+        "extract_pdf_candidates",
+        lambda _path: (_ for _ in ()).throw(SourceVisualMediaError("DECODE_FAILED")),
+    )
 
     result = await service.SourceVisualService(
         repository=repo, store=store, cleanup=cleanup
@@ -1095,7 +1167,9 @@ async def test_service_cancellation_is_bounded_and_releases_owner(monkeypatch):
     repo = InMemoryServiceRepository()
     store = InMemoryServiceStore()
     monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda _s: _authority()
+    )
 
     def cancelled(_path):
         raise asyncio.CancelledError
@@ -1118,7 +1192,9 @@ async def test_service_cancellation_is_bounded_and_releases_owner(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_service_per_fingerprint_serialization_and_global_two_job_limit(monkeypatch):
+async def test_service_per_fingerprint_serialization_and_global_two_job_limit(
+    monkeypatch,
+):
     import deeper_notebook.source_visuals.service as service
     from deeper_notebook.source_visuals.contracts import PreparedVisualAsset
 
@@ -1150,13 +1226,29 @@ async def test_service_per_fingerprint_serialization_and_global_two_job_limit(mo
         maximum = max(maximum, active)
         await gate.wait()
         active -= 1
-        return [SimpleNamespace(origin="embedded", locator={"page": 1}, encoded_bytes=b"x", score=1.0, stable_key="x")]
+        return [
+            SimpleNamespace(
+                origin="embedded",
+                locator={"page": 1},
+                encoded_bytes=b"x",
+                score=1.0,
+                stable_key="x",
+            )
+        ]
 
     monkeypatch.setattr(service, "Source", SimpleNamespace(get=get_source))
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda s: _authority(s.id, HASH))
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda s: _authority(s.id, HASH)
+    )
     monkeypatch.setattr(service, "extract_pdf_candidates", extract)
     monkeypatch.setattr(service, "select_candidate", lambda values: list(values)[0])
-    monkeypatch.setattr(service, "prepare_webp", lambda _v: PreparedVisualAsset(encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1))
+    monkeypatch.setattr(
+        service,
+        "prepare_webp",
+        lambda _v: PreparedVisualAsset(
+            encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1
+        ),
+    )
     monkeypatch.setattr(service, "build_alt_text", lambda *_args: "safe")
     service._GLOBAL_MEDIA_SEMAPHORE = asyncio.Semaphore(2)
 
@@ -1165,7 +1257,9 @@ async def test_service_per_fingerprint_serialization_and_global_two_job_limit(mo
     cleanup = InMemoryCleanup()
     tasks = [
         asyncio.create_task(
-            service.SourceVisualService(repository=repo, store=store, cleanup=cleanup).execute(
+            service.SourceVisualService(
+                repository=repo, store=store, cleanup=cleanup
+            ).execute(
                 service.ExtractSourceVisualInput(
                     source_id=f"source:{index}",
                     request_id=f"request-{index}",
@@ -1213,10 +1307,30 @@ async def test_service_renews_immediately_before_publication(monkeypatch):
     repo = Repo()
     store = Store()
     monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
-    monkeypatch.setattr(service, "extract_pdf_candidates", lambda _path: [SimpleNamespace(origin="embedded", locator={"page": 1}, encoded_bytes=b"x", score=1.0, stable_key="x")])
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda _s: _authority()
+    )
+    monkeypatch.setattr(
+        service,
+        "extract_pdf_candidates",
+        lambda _path: [
+            SimpleNamespace(
+                origin="embedded",
+                locator={"page": 1},
+                encoded_bytes=b"x",
+                score=1.0,
+                stable_key="x",
+            )
+        ],
+    )
     monkeypatch.setattr(service, "select_candidate", lambda values: list(values)[0])
-    monkeypatch.setattr(service, "prepare_webp", lambda _value: PreparedVisualAsset(encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1))
+    monkeypatch.setattr(
+        service,
+        "prepare_webp",
+        lambda _value: PreparedVisualAsset(
+            encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1
+        ),
+    )
     monkeypatch.setattr(service, "build_alt_text", lambda *_args: "safe")
 
     result = await service.SourceVisualService(
@@ -1263,15 +1377,43 @@ async def test_service_cancellation_after_publish_removes_exact_uncommitted_asse
     repo = InMemoryServiceRepository()
     store = Store()
     monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
-    monkeypatch.setattr(service, "extract_pdf_candidates", lambda _path: [SimpleNamespace(origin="embedded", locator={"page": 1}, encoded_bytes=b"x", score=1.0, stable_key="x")])
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda _s: _authority()
+    )
+    monkeypatch.setattr(
+        service,
+        "extract_pdf_candidates",
+        lambda _path: [
+            SimpleNamespace(
+                origin="embedded",
+                locator={"page": 1},
+                encoded_bytes=b"x",
+                score=1.0,
+                stable_key="x",
+            )
+        ],
+    )
     monkeypatch.setattr(service, "select_candidate", lambda values: list(values)[0])
-    monkeypatch.setattr(service, "prepare_webp", lambda _value: PreparedVisualAsset(encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1))
+    monkeypatch.setattr(
+        service,
+        "prepare_webp",
+        lambda _value: PreparedVisualAsset(
+            encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1
+        ),
+    )
     monkeypatch.setattr(service, "build_alt_text", lambda *_args: "safe")
 
     pending = asyncio.create_task(
-        service.SourceVisualService(repository=repo, store=store, cleanup=InMemoryCleanup()).execute(
-            service.ExtractSourceVisualInput(source_id="source:one", request_id="request-one", expected_content_sha256=HASH, extractor_version="source-visual-v1", claim_owner_token="c" * 64)
+        service.SourceVisualService(
+            repository=repo, store=store, cleanup=InMemoryCleanup()
+        ).execute(
+            service.ExtractSourceVisualInput(
+                source_id="source:one",
+                request_id="request-one",
+                expected_content_sha256=HASH,
+                extractor_version="source-visual-v1",
+                claim_owner_token="c" * 64,
+            )
         )
     )
     await _wait_until(started.is_set)
@@ -1289,12 +1431,21 @@ async def test_service_cancellation_after_publish_removes_exact_uncommitted_asse
 
 
 @pytest.mark.asyncio
-async def test_service_lease_loss_before_publish_creates_no_canonical_or_row(monkeypatch):
+async def test_service_lease_loss_before_publish_creates_no_canonical_or_row(
+    monkeypatch,
+):
     import deeper_notebook.source_visuals.service as service
     from deeper_notebook.source_visuals.contracts import PreparedVisualAsset
     from deeper_notebook.source_visuals.repository import SourceVisualConflictError
 
-    source = SimpleNamespace(id="source:one", source_type="upload", full_text="unchanged", asset=SimpleNamespace(file_path="/controlled/one.pdf"), updated=NOW, title="Source one")
+    source = SimpleNamespace(
+        id="source:one",
+        source_type="upload",
+        full_text="unchanged",
+        asset=SimpleNamespace(file_path="/controlled/one.pdf"),
+        updated=NOW,
+        title="Source one",
+    )
 
     class Repo(InMemoryServiceRepository):
         def __init__(self):
@@ -1313,15 +1464,43 @@ async def test_service_lease_loss_before_publish_creates_no_canonical_or_row(mon
     repo = Repo()
     store = InMemoryServiceStore()
     monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
-    monkeypatch.setattr(service, "extract_pdf_candidates", lambda _path: [SimpleNamespace(origin="embedded", locator={"page": 1}, encoded_bytes=b"x", score=1.0, stable_key="x")])
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda _s: _authority()
+    )
+    monkeypatch.setattr(
+        service,
+        "extract_pdf_candidates",
+        lambda _path: [
+            SimpleNamespace(
+                origin="embedded",
+                locator={"page": 1},
+                encoded_bytes=b"x",
+                score=1.0,
+                stable_key="x",
+            )
+        ],
+    )
     monkeypatch.setattr(service, "select_candidate", lambda values: list(values)[0])
-    monkeypatch.setattr(service, "prepare_webp", lambda _value: PreparedVisualAsset(encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1))
+    monkeypatch.setattr(
+        service,
+        "prepare_webp",
+        lambda _value: PreparedVisualAsset(
+            encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1
+        ),
+    )
     monkeypatch.setattr(service, "build_alt_text", lambda *_args: "safe")
 
     with pytest.raises(SourceVisualConflictError):
-        await service.SourceVisualService(repository=repo, store=store, cleanup=InMemoryCleanup()).execute(
-            service.ExtractSourceVisualInput(source_id="source:one", request_id="request-one", expected_content_sha256=HASH, extractor_version="source-visual-v1", claim_owner_token="c" * 64)
+        await service.SourceVisualService(
+            repository=repo, store=store, cleanup=InMemoryCleanup()
+        ).execute(
+            service.ExtractSourceVisualInput(
+                source_id="source:one",
+                request_id="request-one",
+                expected_content_sha256=HASH,
+                extractor_version="source-visual-v1",
+                claim_owner_token="c" * 64,
+            )
         )
     assert store.published == []
     assert repo.ready_rows == []
@@ -1336,7 +1515,14 @@ async def test_service_publish_ready_owner_loss_never_removes_new_owner_canonica
     from deeper_notebook.source_visuals.contracts import PreparedVisualAsset
     from deeper_notebook.source_visuals.repository import SourceVisualConflictError
 
-    source = SimpleNamespace(id="source:one", source_type="upload", full_text="unchanged", asset=SimpleNamespace(file_path="/controlled/one.pdf"), updated=NOW, title="Source one")
+    source = SimpleNamespace(
+        id="source:one",
+        source_type="upload",
+        full_text="unchanged",
+        asset=SimpleNamespace(file_path="/controlled/one.pdf"),
+        updated=NOW,
+        title="Source one",
+    )
 
     class Repo(InMemoryServiceRepository):
         def __init__(self):
@@ -1350,15 +1536,43 @@ async def test_service_publish_ready_owner_loss_never_removes_new_owner_canonica
     repo = Repo()
     store = InMemoryServiceStore()
     monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
-    monkeypatch.setattr(service, "extract_pdf_candidates", lambda _path: [SimpleNamespace(origin="embedded", locator={"page": 1}, encoded_bytes=b"x", score=1.0, stable_key="x")])
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda _s: _authority()
+    )
+    monkeypatch.setattr(
+        service,
+        "extract_pdf_candidates",
+        lambda _path: [
+            SimpleNamespace(
+                origin="embedded",
+                locator={"page": 1},
+                encoded_bytes=b"x",
+                score=1.0,
+                stable_key="x",
+            )
+        ],
+    )
     monkeypatch.setattr(service, "select_candidate", lambda values: list(values)[0])
-    monkeypatch.setattr(service, "prepare_webp", lambda _value: PreparedVisualAsset(encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1))
+    monkeypatch.setattr(
+        service,
+        "prepare_webp",
+        lambda _value: PreparedVisualAsset(
+            encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1
+        ),
+    )
     monkeypatch.setattr(service, "build_alt_text", lambda *_args: "safe")
 
     with pytest.raises(SourceVisualConflictError):
-        await service.SourceVisualService(repository=repo, store=store, cleanup=InMemoryCleanup()).execute(
-            service.ExtractSourceVisualInput(source_id="source:one", request_id="request-one", expected_content_sha256=HASH, extractor_version="source-visual-v1", claim_owner_token="c" * 64)
+        await service.SourceVisualService(
+            repository=repo, store=store, cleanup=InMemoryCleanup()
+        ).execute(
+            service.ExtractSourceVisualInput(
+                source_id="source:one",
+                request_id="request-one",
+                expected_content_sha256=HASH,
+                extractor_version="source-visual-v1",
+                claim_owner_token="c" * 64,
+            )
         )
     assert store.removed == []
     assert len(repo.ready_rows) == 1
@@ -1366,12 +1580,21 @@ async def test_service_publish_ready_owner_loss_never_removes_new_owner_canonica
 
 
 @pytest.mark.asyncio
-async def test_service_delete_fence_after_publish_never_removes_newer_canonical(monkeypatch):
+async def test_service_delete_fence_after_publish_never_removes_newer_canonical(
+    monkeypatch,
+):
     import deeper_notebook.source_visuals.service as service
     from deeper_notebook.source_visuals.contracts import PreparedVisualAsset
     from deeper_notebook.source_visuals.repository import SourceVisualConflictError
 
-    source = SimpleNamespace(id="source:one", source_type="upload", full_text="unchanged", asset=SimpleNamespace(file_path="/controlled/one.pdf"), updated=NOW, title="Source one")
+    source = SimpleNamespace(
+        id="source:one",
+        source_type="upload",
+        full_text="unchanged",
+        asset=SimpleNamespace(file_path="/controlled/one.pdf"),
+        updated=NOW,
+        title="Source one",
+    )
 
     class Repo(InMemoryServiceRepository):
         def __init__(self):
@@ -1385,14 +1608,42 @@ async def test_service_delete_fence_after_publish_never_removes_newer_canonical(
     repo = Repo()
     store = InMemoryServiceStore()
     monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
-    monkeypatch.setattr(service, "extract_pdf_candidates", lambda _path: [SimpleNamespace(origin="embedded", locator={"page": 1}, encoded_bytes=b"x", score=1.0, stable_key="x")])
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda _s: _authority()
+    )
+    monkeypatch.setattr(
+        service,
+        "extract_pdf_candidates",
+        lambda _path: [
+            SimpleNamespace(
+                origin="embedded",
+                locator={"page": 1},
+                encoded_bytes=b"x",
+                score=1.0,
+                stable_key="x",
+            )
+        ],
+    )
     monkeypatch.setattr(service, "select_candidate", lambda values: list(values)[0])
-    monkeypatch.setattr(service, "prepare_webp", lambda _value: PreparedVisualAsset(encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1))
+    monkeypatch.setattr(
+        service,
+        "prepare_webp",
+        lambda _value: PreparedVisualAsset(
+            encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1
+        ),
+    )
     monkeypatch.setattr(service, "build_alt_text", lambda *_args: "safe")
 
-    result = await service.SourceVisualService(repository=repo, store=store, cleanup=InMemoryCleanup()).execute(
-        service.ExtractSourceVisualInput(source_id="source:one", request_id="request-one", expected_content_sha256=HASH, extractor_version="source-visual-v1", claim_owner_token="c" * 64)
+    result = await service.SourceVisualService(
+        repository=repo, store=store, cleanup=InMemoryCleanup()
+    ).execute(
+        service.ExtractSourceVisualInput(
+            source_id="source:one",
+            request_id="request-one",
+            expected_content_sha256=HASH,
+            extractor_version="source-visual-v1",
+            claim_owner_token="c" * 64,
+        )
     )
 
     assert result.outcome == "failed"
@@ -1404,12 +1655,21 @@ async def test_service_delete_fence_after_publish_never_removes_newer_canonical(
 
 
 @pytest.mark.asyncio
-async def test_service_delete_fence_owner_loss_keeps_a_durable_orphan_marker(monkeypatch):
+async def test_service_delete_fence_owner_loss_keeps_a_durable_orphan_marker(
+    monkeypatch,
+):
     import deeper_notebook.source_visuals.service as service
     from deeper_notebook.source_visuals.contracts import PreparedVisualAsset
     from deeper_notebook.source_visuals.repository import SourceVisualConflictError
 
-    source = SimpleNamespace(id="source:one", source_type="upload", full_text="unchanged", asset=SimpleNamespace(file_path="/controlled/one.pdf"), updated=NOW, title="Source one")
+    source = SimpleNamespace(
+        id="source:one",
+        source_type="upload",
+        full_text="unchanged",
+        asset=SimpleNamespace(file_path="/controlled/one.pdf"),
+        updated=NOW,
+        title="Source one",
+    )
 
     class Repo(InMemoryServiceRepository):
         async def renew_claim(self, *args, **kwargs):
@@ -1423,10 +1683,30 @@ async def test_service_delete_fence_owner_loss_keeps_a_durable_orphan_marker(mon
     repo = Repo()
     store = InMemoryServiceStore()
     monkeypatch.setattr(service, "Source", SimpleNamespace(get=lambda _id: source))
-    monkeypatch.setattr(service, "compute_source_visual_authority", lambda _s: _authority())
-    monkeypatch.setattr(service, "extract_pdf_candidates", lambda _path: [SimpleNamespace(origin="embedded", locator={"page": 1}, encoded_bytes=b"x", score=1.0, stable_key="x")])
+    monkeypatch.setattr(
+        service, "compute_source_visual_authority", lambda _s: _authority()
+    )
+    monkeypatch.setattr(
+        service,
+        "extract_pdf_candidates",
+        lambda _path: [
+            SimpleNamespace(
+                origin="embedded",
+                locator={"page": 1},
+                encoded_bytes=b"x",
+                score=1.0,
+                stable_key="x",
+            )
+        ],
+    )
     monkeypatch.setattr(service, "select_candidate", lambda values: list(values)[0])
-    monkeypatch.setattr(service, "prepare_webp", lambda _value: PreparedVisualAsset(encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1))
+    monkeypatch.setattr(
+        service,
+        "prepare_webp",
+        lambda _value: PreparedVisualAsset(
+            encoded_bytes=b"w", asset_sha256=ASSET_HASH, width=1, height=1
+        ),
+    )
     monkeypatch.setattr(service, "build_alt_text", lambda *_args: "safe")
 
     result = await service.SourceVisualService(
@@ -1499,7 +1779,9 @@ async def test_service_pre_authority_terminal_results_release_the_exact_input_cl
             lambda _source: _authority(content="c" * 64),
         )
     else:
-        monkeypatch.setattr(service, "compute_source_visual_authority", lambda _source: _authority())
+        monkeypatch.setattr(
+            service, "compute_source_visual_authority", lambda _source: _authority()
+        )
 
     result = await service.SourceVisualService(
         repository=repo, store=InMemoryServiceStore(), cleanup=InMemoryCleanup()

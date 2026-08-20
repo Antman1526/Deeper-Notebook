@@ -291,18 +291,14 @@ def _create_knowledge_engine_runtime() -> KnowledgeEngineService:
     )
     backfill = KnowledgeBackfillService(catalog=catalog, repository=repository)
 
-    async def legacy_digest_builder(
-        space_id: str, exact_queries: tuple[str, ...]
-    ):
+    async def legacy_digest_builder(space_id: str, exact_queries: tuple[str, ...]):
         return await legacy_projection_digest(
             catalog,
             space_id=space_id,
             exact_queries=exact_queries,
         )
 
-    async def unified_digest_builder(
-        space_id: str, exact_queries: tuple[str, ...]
-    ):
+    async def unified_digest_builder(space_id: str, exact_queries: tuple[str, ...]):
         return await repository.projection_digest(space_id, exact_queries)
 
     return KnowledgeEngineService(
@@ -354,9 +350,7 @@ async def _start_knowledge_engine(
         return service.coordinator, task
     except Exception as exc:
         _clear_knowledge_engine_service(app)
-        logger.warning(
-            "knowledge_engine_startup_unavailable ({})", type(exc).__name__
-        )
+        logger.warning("knowledge_engine_startup_unavailable ({})", type(exc).__name__)
         return None, None
 
 
@@ -443,9 +437,10 @@ async def lifespan(app: FastAPI):
     # The unified engine is strictly optional. Resolve it after durable schema
     # preparation and before legacy services so one coordinator can be injected
     # into both legacy projection paths without altering their availability.
-    knowledge_shadow_coordinator, knowledge_backfill_task = (
-        await _start_knowledge_engine(app)
-    )
+    (
+        knowledge_shadow_coordinator,
+        knowledge_backfill_task,
+    ) = await _start_knowledge_engine(app)
     await _start_knowledge_navigation(
         app,
         engine_service=getattr(app.state, "knowledge_engine_service", None),
@@ -1375,7 +1370,11 @@ def _checkout_head_revision() -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         return None
     revision = completed.stdout.strip()
-    return revision if completed.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", revision) else None
+    return (
+        revision
+        if completed.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", revision)
+        else None
+    )
 
 
 # v0.7.210 — Version endpoint. Drives the splash window's "Open

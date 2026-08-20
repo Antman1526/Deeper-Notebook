@@ -68,8 +68,13 @@ def test_supervisor_uses_source_standalone_frontend_when_built(cfg, tmp_path):
     standalone.mkdir(parents=True)
     (standalone / "server.js").write_text("// standalone server\n")
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
 
     assert sv._next_frontend_dir() == standalone
 
@@ -110,8 +115,13 @@ def test_supervisor_keeps_packaged_frontend_layout_when_no_source_build(cfg, tmp
     frontend.mkdir()
     (frontend / "server.js").write_text("// packaged server\n")
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
 
     assert sv._next_frontend_dir() == frontend
 
@@ -124,15 +134,24 @@ def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
         first = args[0] if isinstance(args, list) else args.split()[0]
         joined = " ".join(args) if isinstance(args, list) else args
         # v0.3/v0.4 optional shims — just return an alive proc, don't record order.
-        if ("llama_cpp" in joined or "whisper_shim" in joined or "piper_shim" in joined
-                or "memory_shim" in joined or "openchronicle_shim" in joined):
+        if (
+            "llama_cpp" in joined
+            or "whisper_shim" in joined
+            or "piper_shim" in joined
+            or "memory_shim" in joined
+            or "openchronicle_shim" in joined
+        ):
             return _alive_proc()
         # Check more specific patterns first — `surreal-commands-worker` would
         # otherwise match the bare-`surreal` arm.
         if "worker" in joined:
             started.append("worker")
             return procs["worker"]
-        if "surreal-darwin" in first or "surreal-windows" in first or first.endswith("/surreal"):
+        if (
+            "surreal-darwin" in first
+            or "surreal-windows" in first
+            or first.endswith("/surreal")
+        ):
             started.append("surreal")
             return procs["surreal"]
         if "uvicorn" in joined:
@@ -144,12 +163,19 @@ def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
         raise AssertionError(f"unexpected popen: {args}")
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
     sv.start_all()
     try:
         assert started == ["surreal", "api", "worker", "next"]
@@ -230,12 +256,11 @@ def test_try_spawn_queues_a_heavyweight_mlx_chat_when_another_is_reserved(
         surreal_user=cfg.surreal_user,
         surreal_password=cfg.surreal_password,
     )
-    sv = Supervisor(
-        mlx_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
+    sv = Supervisor(mlx_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64")
+    assert (
+        sv.resource_governor.reserve("other-heavyweight", 1, heavyweight_mlx=True)
+        == "reserved"
     )
-    assert sv.resource_governor.reserve(
-        "other-heavyweight", 1, heavyweight_mlx=True
-    ) == "reserved"
     started: list[int] = []
 
     sv._try_spawn("supervisor.llamacpp_chat", lambda port: started.append(port), 41234)
@@ -248,7 +273,11 @@ def test_restart_sidecar_replaces_its_reservation_under_a_tight_memory_limit(
     cfg, tmp_path, monkeypatch
 ):
     tight_cfg = Config(
-        cfg.model_dir, "none", "", cfg.surreal_user, cfg.surreal_password,
+        cfg.model_dir,
+        "none",
+        "",
+        cfg.surreal_user,
+        cfg.surreal_password,
         local_model_memory_limit_bytes=1024**3,
     )
     sv = Supervisor(
@@ -259,8 +288,12 @@ def test_restart_sidecar_replaces_its_reservation_under_a_tight_memory_limit(
     sv._sidecar_procs["embed"] = old
     sv._sidecar_spawn_args["embed"] = (41234, "supervisor.llamacpp_embed")
     sv._procs = [old]
-    monkeypatch.setattr("desktop.launcher.os.getpgid", lambda _pid: (_ for _ in ()).throw(OSError()))
-    monkeypatch.setattr(sv, "_spawn_llamacpp_embed", lambda _port: sv._procs.append(new))
+    monkeypatch.setattr(
+        "desktop.launcher.os.getpgid", lambda _pid: (_ for _ in ()).throw(OSError())
+    )
+    monkeypatch.setattr(
+        sv, "_spawn_llamacpp_embed", lambda _port: sv._procs.append(new)
+    )
     monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: True)
 
     ok, _detail = sv.restart_sidecar("embed")
@@ -275,18 +308,25 @@ def test_restart_sidecar_replaces_its_heavyweight_mlx_reservation(
     cfg, tmp_path, monkeypatch
 ):
     mlx_cfg = Config(
-        cfg.model_dir, "mlx", "", cfg.surreal_user, cfg.surreal_password,
+        cfg.model_dir,
+        "mlx",
+        "",
+        cfg.surreal_user,
+        cfg.surreal_password,
         local_model_memory_limit_bytes=5 * 1024**3,
     )
-    sv = Supervisor(
-        mlx_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64"
-    )
+    sv = Supervisor(mlx_cfg, tmp_path, tmp_path / "bin", "darwin-arm64", "darwin-arm64")
     old, new = _alive_proc(), _alive_proc()
-    assert sv.resource_governor.reserve("chat", 5 * 1024**3, heavyweight_mlx=True) == "reserved"
+    assert (
+        sv.resource_governor.reserve("chat", 5 * 1024**3, heavyweight_mlx=True)
+        == "reserved"
+    )
     sv._sidecar_procs["chat"] = old
     sv._sidecar_spawn_args["chat"] = (41234, "supervisor.llamacpp_chat")
     sv._procs = [old]
-    monkeypatch.setattr("desktop.launcher.os.getpgid", lambda _pid: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(
+        "desktop.launcher.os.getpgid", lambda _pid: (_ for _ in ()).throw(OSError())
+    )
     monkeypatch.setattr(sv, "_spawn_llamacpp_chat", lambda _port: sv._procs.append(new))
     monkeypatch.setattr(sv, "_sidecar_health_check", lambda _kind, _proc: True)
 
@@ -300,7 +340,11 @@ def test_restart_sidecar_keeps_existing_tracking_when_kill_cannot_be_confirmed(
     cfg, tmp_path, monkeypatch
 ):
     tight_cfg = Config(
-        cfg.model_dir, "none", "", cfg.surreal_user, cfg.surreal_password,
+        cfg.model_dir,
+        "none",
+        "",
+        cfg.surreal_user,
+        cfg.surreal_password,
         local_model_memory_limit_bytes=1024**3,
     )
     sv = Supervisor(
@@ -342,12 +386,19 @@ def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
     procs = [_alive_proc() for _ in range(10)]
     seq = iter(procs)
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: next(seq))
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
     sv.start_all()
     spawned_count = len(sv._procs)
     sv.stop_all()
@@ -398,9 +449,7 @@ def test_supervisor_registers_owned_process_cleanup_for_launcher_signals(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups only")
-def test_stop_all_escalates_a_surviving_owned_process_group(
-    cfg, tmp_path, monkeypatch
-):
+def test_stop_all_escalates_a_surviving_owned_process_group(cfg, tmp_path, monkeypatch):
     proc = MagicMock()
     proc.pid = 41001
     proc.wait.return_value = 0
@@ -463,10 +512,7 @@ def test_supervisor_children_cannot_mutate_packaged_python_bytecode(
     sv.start_all()
     try:
         assert spawned_envs
-        assert all(
-            env.get("PYTHONDONTWRITEBYTECODE") == "1"
-            for env in spawned_envs
-        )
+        assert all(env.get("PYTHONDONTWRITEBYTECODE") == "1" for env in spawned_envs)
     finally:
         sv.stop_all()
 
@@ -480,14 +526,21 @@ def test_supervisor_uses_venv_python_for_api_and_worker(cfg, tmp_path, monkeypat
         return _alive_proc()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
     fake_venv_python = Path("/tmp/fake/venv/bin/python")
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64",
-                    venv_python=fake_venv_python)
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+        venv_python=fake_venv_python,
+    )
     sv.start_all()
     try:
         # API spawn: [<venv_python>, "-m", "uvicorn", ...]
@@ -505,13 +558,20 @@ def test_supervisor_uses_venv_python_for_api_and_worker(cfg, tmp_path, monkeypat
 
 def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _alive_proc())
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64",
-                    extra_env={"OLLAMA_API_BASE": "http://127.0.0.1:11434"})
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+        extra_env={"OLLAMA_API_BASE": "http://127.0.0.1:11434"},
+    )
     sv.start_all()
     try:
         assert sv.session_env["OLLAMA_API_BASE"] == "http://127.0.0.1:11434"
@@ -572,7 +632,9 @@ def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
 
 
 def test_chat_llm_n_ctx_propagates_to_session_env_via_env_override(
-    cfg, tmp_path, monkeypatch,
+    cfg,
+    tmp_path,
+    monkeypatch,
 ):
     """v0.8.7 — DEEPER_NOTEBOOK_CHAT_LLM_CTX explicit override must reach the
     router via DEEPER_NOTEBOOK_LOCAL_N_CTX. Pre-v0.8.7 the operator's
@@ -593,8 +655,11 @@ def test_chat_llm_n_ctx_propagates_to_session_env_via_env_override(
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
     )
     sv.start_all()
     try:
@@ -630,14 +695,21 @@ def test_supervisor_injects_data_folder_absolute_path(cfg, tmp_path, monkeypatch
     and uploads regardless of cwd writability.
     """
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _alive_proc())
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
     # Force a known HOME so the assertion is deterministic.
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
     sv.start_all()
     try:
         data_folder = sv.session_env.get("DATA_FOLDER")
@@ -666,7 +738,9 @@ def test_supervisor_spawns_v03_children_when_paths_set(cfg, tmp_path, monkeypatc
         return _alive_proc()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
@@ -678,9 +752,13 @@ def test_supervisor_spawns_v03_children_when_paths_set(cfg, tmp_path, monkeypatc
     amy.write_bytes(b"x" * 200_000)
 
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
-        nomic_embed_path=embed, whisper_model_path=whisper,
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+        nomic_embed_path=embed,
+        whisper_model_path=whisper,
         piper_voices={"alex": amy},
     )
     sv.start_all()
@@ -696,22 +774,33 @@ def test_supervisor_spawns_v03_children_when_paths_set(cfg, tmp_path, monkeypatc
 
 def test_supervisor_skips_v03_children_when_paths_missing(cfg, tmp_path, monkeypatch):
     spawned: list[list[str]] = []
-    monkeypatch.setattr(subprocess, "Popen",
-                        lambda a, **kw: (spawned.append(list(a)),
-                                         # v0.8.66 — provide stdout/stderr (None) so the
-                                         # launcher's v0.8.38 sidecar-log drainer branch
-                                         # (`proc.stderr is not None`) sees a real attr.
-                                         # A spec=subprocess.Popen mock blocks these
-                                         # (instance attrs absent from the class) → the
-                                         # pre-existing AttributeError on `proc.stderr`.
-                                         MagicMock(poll=MagicMock(return_value=None),
-                                                   stdout=None, stderr=None))[1])
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda a, **kw: (
+            spawned.append(list(a)),
+            # v0.8.66 — provide stdout/stderr (None) so the
+            # launcher's v0.8.38 sidecar-log drainer branch
+            # (`proc.stderr is not None`) sees a real attr.
+            # A spec=subprocess.Popen mock blocks these
+            # (instance attrs absent from the class) → the
+            # pre-existing AttributeError on `proc.stderr`.
+            MagicMock(poll=MagicMock(return_value=None), stdout=None, stderr=None),
+        )[1],
+    )
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
     sv.start_all()
     try:
         joined = [" ".join(a) for a in spawned]
@@ -732,8 +821,9 @@ def test_supervisor_spawns_chat_llm_and_memory_retriever(cfg, tmp_path, monkeypa
         return _alive_proc()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("desktop.launcher.find_free_ports",
-                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
@@ -742,8 +832,11 @@ def test_supervisor_spawns_chat_llm_and_memory_retriever(cfg, tmp_path, monkeypa
     chat_gguf.write_bytes(b"FAKE-GGUF")
 
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
         chat_llm_path=chat_gguf,
         openchronicle_available=False,
     )
@@ -762,24 +855,32 @@ def test_supervisor_spawns_chat_llm_and_memory_retriever(cfg, tmp_path, monkeypa
 
 def test_supervisor_spawns_openchronicle_when_available(cfg, tmp_path, monkeypatch):
     spawned: list[list[str]] = []
-    monkeypatch.setattr(subprocess, "Popen",
-                        lambda a, **kw: (spawned.append(list(a)),
-                                         # v0.8.66 — provide stdout/stderr (None) so the
-                                         # launcher's v0.8.38 sidecar-log drainer branch
-                                         # (`proc.stderr is not None`) sees a real attr.
-                                         # A spec=subprocess.Popen mock blocks these
-                                         # (instance attrs absent from the class) → the
-                                         # pre-existing AttributeError on `proc.stderr`.
-                                         MagicMock(poll=MagicMock(return_value=None),
-                                                   stdout=None, stderr=None))[1])
-    monkeypatch.setattr("desktop.launcher.find_free_ports",
-                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda a, **kw: (
+            spawned.append(list(a)),
+            # v0.8.66 — provide stdout/stderr (None) so the
+            # launcher's v0.8.38 sidecar-log drainer branch
+            # (`proc.stderr is not None`) sees a real attr.
+            # A spec=subprocess.Popen mock blocks these
+            # (instance attrs absent from the class) → the
+            # pre-existing AttributeError on `proc.stderr`.
+            MagicMock(poll=MagicMock(return_value=None), stdout=None, stderr=None),
+        )[1],
+    )
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
         openchronicle_available=True,
     )
     sv.start_all()
@@ -794,24 +895,32 @@ def test_supervisor_spawns_openchronicle_when_available(cfg, tmp_path, monkeypat
 def test_supervisor_skips_chat_llm_when_no_path(cfg, tmp_path, monkeypatch):
     """No chat_llm_path → no llamacpp_chat process spawned; chat_llm_port stays 0."""
     spawned: list[list[str]] = []
-    monkeypatch.setattr(subprocess, "Popen",
-                        lambda a, **kw: (spawned.append(list(a)),
-                                         # v0.8.66 — provide stdout/stderr (None) so the
-                                         # launcher's v0.8.38 sidecar-log drainer branch
-                                         # (`proc.stderr is not None`) sees a real attr.
-                                         # A spec=subprocess.Popen mock blocks these
-                                         # (instance attrs absent from the class) → the
-                                         # pre-existing AttributeError on `proc.stderr`.
-                                         MagicMock(poll=MagicMock(return_value=None),
-                                                   stdout=None, stderr=None))[1])
-    monkeypatch.setattr("desktop.launcher.find_free_ports",
-                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda a, **kw: (
+            spawned.append(list(a)),
+            # v0.8.66 — provide stdout/stderr (None) so the
+            # launcher's v0.8.38 sidecar-log drainer branch
+            # (`proc.stderr is not None`) sees a real attr.
+            # A spec=subprocess.Popen mock blocks these
+            # (instance attrs absent from the class) → the
+            # pre-existing AttributeError on `proc.stderr`.
+            MagicMock(poll=MagicMock(return_value=None), stdout=None, stderr=None),
+        )[1],
+    )
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
         chat_llm_path=None,
     )
     sv.start_all()
@@ -823,11 +932,13 @@ def test_supervisor_skips_chat_llm_when_no_path(cfg, tmp_path, monkeypatch):
         sv.stop_all()
 
 
-def test_supervisor_logs_and_progresses_when_optional_service_fails(cfg, tmp_path, monkeypatch, caplog):
+def test_supervisor_logs_and_progresses_when_optional_service_fails(
+    cfg, tmp_path, monkeypatch, caplog
+):
     """v0.6.5 regression test: when an optional spawn raises, we must:
-      1. log the exception (so users debugging missing binaries can grep logs)
-      2. publish progress event with the error message (so the UI status shows it)
-      3. NOT crash the launcher (other services keep going)
+    1. log the exception (so users debugging missing binaries can grep logs)
+    2. publish progress event with the error message (so the UI status shows it)
+    3. NOT crash the launcher (other services keep going)
     """
     import logging
 
@@ -839,21 +950,28 @@ def test_supervisor_logs_and_progresses_when_optional_service_fails(cfg, tmp_pat
         return _alive_proc()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
     progress_events: list[tuple[str, str, str]] = []
     progress = MagicMock()
-    progress.publish = lambda step, status, message="": progress_events.append((step, status, message))
+    progress.publish = lambda step, status, message="": progress_events.append(
+        (step, status, message)
+    )
 
     # _spawn_piper requires the voice file to actually exist on disk;
     # otherwise it returns early without trying to spawn.
     voice_path = tmp_path / "fake.onnx"
     voice_path.write_bytes(b"")
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
         progress=progress,
         piper_voices={"en-us-amy": voice_path},
     )
@@ -866,13 +984,18 @@ def test_supervisor_logs_and_progresses_when_optional_service_fails(cfg, tmp_pat
         assert piper_logs, "expected a warning log for the failed piper spawn"
         assert "piper voice asset missing" in piper_logs[0].getMessage()
         # 2. Progress event includes the error message (not just status)
-        piper_errors = [(s, st, m) for (s, st, m) in progress_events
-                        if s == "supervisor.piper" and st == "error"]
+        piper_errors = [
+            (s, st, m)
+            for (s, st, m) in progress_events
+            if s == "supervisor.piper" and st == "error"
+        ]
         assert piper_errors, "expected an error progress event for piper"
         assert "piper voice asset missing" in piper_errors[0][2]
         # 3. Other services kept going (e.g. memory_retriever or openchronicle reached)
         steps_seen = {s for (s, _, _) in progress_events}
-        assert "supervisor.memory" in steps_seen, "memory spawn should still run after piper failure"
+        assert "supervisor.memory" in steps_seen, (
+            "memory spawn should still run after piper failure"
+        )
     finally:
         sv.stop_all()
 
@@ -888,6 +1011,7 @@ def test_supervisor_logs_and_progresses_when_optional_service_fails(cfg, tmp_pat
 # future refactor can't silently regress the cap.
 # ---------------------------------------------------------------------------
 
+
 def _build_chat_sv(cfg, tmp_path):
     """Helper: build a Supervisor with a stub chat GGUF on disk.
 
@@ -898,8 +1022,11 @@ def _build_chat_sv(cfg, tmp_path):
     chat_gguf = tmp_path / "Hermes-3-Llama-3.1-8B-Q4_K_M.gguf"
     chat_gguf.write_bytes(b"FAKE-GGUF")
     return Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
         chat_llm_path=chat_gguf,
         openchronicle_available=False,
     )
@@ -921,9 +1048,11 @@ def _stub_launcher_io(monkeypatch, spawned: list[list[str]]):
     def fake_popen(args, **kw):
         spawned.append(list(args))
         return _alive_proc()
+
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("desktop.launcher.find_free_ports",
-                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
     # v0.7.155 — Singleton + reap_orphans are stubbed module-wide via

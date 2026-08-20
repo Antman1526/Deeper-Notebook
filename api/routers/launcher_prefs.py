@@ -19,6 +19,7 @@ Note: changes are written immediately but only take effect after the
 launcher is restarted, since env vars are read once at startup before
 the API exists.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
@@ -44,6 +45,7 @@ async def get_launcher_prefs():
     """
     try:
         from desktop.launcher_prefs import get_prefs
+
         prefs = get_prefs()
         return {"prefs": prefs}
     except ValueError as exc:
@@ -81,6 +83,7 @@ async def update_launcher_prefs(body: PrefsUpdate):
     """
     try:
         from desktop.launcher_prefs import update_prefs
+
         new_prefs = update_prefs(body.prefs)
         return {"prefs": new_prefs}
     except ValueError as exc:

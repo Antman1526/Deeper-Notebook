@@ -25,6 +25,7 @@ all subsequent instances.
 Importing this module has the side effect of installing the `surreal` provider.
 `desktop/memory/client.py` (Task 5) imports it before calling `Memory.from_config`.
 """
+
 from __future__ import annotations
 
 import sys
@@ -41,8 +42,9 @@ class SurrealVectorStoreConfig(BaseModel):
     These fields become kwargs to `SurrealMemoryStore.__init__` because mem0's
     `VectorStoreFactory.create` calls `cls(**config.model_dump())`.
     """
-    collection_name: str = "memory"        # mem0 reads .collection_name — unused for routing
-    embedding_model_dims: int = 768         # nomic-embed-text-v1.5 native dim
+
+    collection_name: str = "memory"  # mem0 reads .collection_name — unused for routing
+    embedding_model_dims: int = 768  # nomic-embed-text-v1.5 native dim
     surreal_url: str
     namespace: str = "open_notebook"
     database: str = "open_notebook"
@@ -56,5 +58,6 @@ sys.modules["mem0.configs.vector_stores.surreal"] = _synthetic_module
 
 # `._provider_configs` is a Pydantic v2 ModelPrivateAttr — mutate its `.default`.
 VectorStoreConfig._provider_configs.default["surreal"] = "SurrealVectorStoreConfig"
-VectorStoreFactory.provider_to_class["surreal"] = \
+VectorStoreFactory.provider_to_class["surreal"] = (
     "desktop.memory.surreal_store.SurrealMemoryStore"
+)

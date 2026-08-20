@@ -187,7 +187,9 @@ def _truncate_ask_results(results: list) -> list:
     Non-`matches` fields (id, parent_id, title, similarity) are
     untouched — they're tiny and the prompt needs them for citation.
     """
-    max_results = _env_int("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", _ASK_MAX_RESULTS_DEFAULT, minimum=1)
+    max_results = _env_int(
+        "DEEPER_NOTEBOOK_ASK_MAX_RESULTS", _ASK_MAX_RESULTS_DEFAULT, minimum=1
+    )
     char_cap = _env_int(
         "DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP",
         _ASK_PER_RESULT_CHAR_CAP_DEFAULT,

@@ -109,9 +109,7 @@ def _validated_inputs(
 
     try:
         return (
-            AnkiPackageInspection.model_validate(
-                inspection.model_dump(mode="python")
-            ),
+            AnkiPackageInspection.model_validate(inspection.model_dump(mode="python")),
             AnkiImportOptions.model_validate(options.model_dump(mode="python")),
         )
     except Exception as exc:
@@ -147,16 +145,18 @@ def _receipt_from(value: object) -> AnkiCompatibilityReceipt | None:
                 for field in ("card_ids", "deck_names", "tags", "media_names"):
                     if isinstance(decoded.get(field), list):
                         decoded[field] = tuple(decoded[field])
-                return AnkiCompatibilityReceipt.model_validate(
-                    decoded
-                )
+                return AnkiCompatibilityReceipt.model_validate(decoded)
             except Exception as exc:
-                raise AnkiImportRepositoryError("Invalid persisted Anki import receipt") from exc
+                raise AnkiImportRepositoryError(
+                    "Invalid persisted Anki import receipt"
+                ) from exc
     return None
 
 
 class AnkiImportRepository:
-    async def _find_by_request(self, plan_id: str, request_id: str) -> AnkiCompatibilityReceipt | None:
+    async def _find_by_request(
+        self, plan_id: str, request_id: str
+    ) -> AnkiCompatibilityReceipt | None:
         rows = await repo_query(
             f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "  # nosec B608
             "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
@@ -164,7 +164,9 @@ class AnkiImportRepository:
         )
         return _receipt_from(rows)
 
-    async def _find_by_payload(self, plan_id: str, payload_sha256: str) -> AnkiCompatibilityReceipt | None:
+    async def _find_by_payload(
+        self, plan_id: str, payload_sha256: str
+    ) -> AnkiCompatibilityReceipt | None:
         rows = await repo_query(
             f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "  # nosec B608
             "WHERE plan_id = $plan_id AND payload_sha256 = $payload_sha256 LIMIT 1;",
@@ -172,7 +174,9 @@ class AnkiImportRepository:
         )
         return _receipt_from(rows)
 
-    async def find_by_receipt(self, plan_id: str, receipt_id: str) -> AnkiCompatibilityReceipt | None:
+    async def find_by_receipt(
+        self, plan_id: str, receipt_id: str
+    ) -> AnkiCompatibilityReceipt | None:
         rows = await repo_query(
             f"SELECT {_RECEIPT_FIELDS} FROM study_anki_import "  # nosec B608
             "WHERE plan_id = $plan_id AND receipt_id = $receipt_id LIMIT 1;",
@@ -208,7 +212,9 @@ class AnkiImportRepository:
         ):
             raise AnkiImportRepositoryError("Invalid Anki import request ID")
         inspection, options = _validated_inputs(inspection, options)
-        payload_sha256, selected = canonical_anki_import_payload(plan_id, inspection, options)
+        payload_sha256, selected = canonical_anki_import_payload(
+            plan_id, inspection, options
+        )
         try:
             existing = await self._find_by_request(canonical_plan_id, request_id)
             if existing is not None:
@@ -296,10 +302,11 @@ class AnkiImportRepository:
                     "plan_id": canonical_plan_id,
                     "card_id": str(record),
                     "source_note_id": preview.source_note_id or preview.note_id,
-                    "source_model_kind": preview.source_model_kind or (
-                        "cloze" if preview.kind == "cloze" else "basic"
-                    ),
-                    "template_ord": preview.template_ord if preview.template_ord is not None else 0,
+                    "source_model_kind": preview.source_model_kind
+                    or ("cloze" if preview.kind == "cloze" else "basic"),
+                    "template_ord": preview.template_ord
+                    if preview.template_ord is not None
+                    else 0,
                     "kind": preview.kind,
                     "source_fields": list(source_fields),
                     "deck_name": preview.deck_name,
@@ -327,11 +334,17 @@ class AnkiImportRepository:
                 collection_member=inspection.collection_member,
                 card_count=len(selected),
                 transformed_count=sum(card.kind != "basic" for card in selected),
-                skipped_count=inspection.skipped_count + len(inspection.cards) - len(selected),
+                skipped_count=inspection.skipped_count
+                + len(inspection.cards)
+                - len(selected),
                 card_ids=tuple(card_ids),
                 deck_names=tuple(sorted({card.deck_name for card in selected})),
-                tags=tuple(sorted({tag for card in selected for tag in card.tags}))[:1_000],
-                media_names=tuple(sorted({name for card in selected for name in card.media_names})),
+                tags=tuple(sorted({tag for card in selected for tag in card.tags}))[
+                    :1_000
+                ],
+                media_names=tuple(
+                    sorted({name for card in selected for name in card.media_names})
+                ),
                 syllabus_unit_id=options.syllabus_unit_id,
                 created_at=now,
             )
@@ -347,9 +360,7 @@ class AnkiImportRepository:
             persisted = _receipt_from(result)
             if persisted is not None:
                 return persisted
-            persisted = await self._find_by_request(
-                canonical_plan_id, request_id
-            )
+            persisted = await self._find_by_request(canonical_plan_id, request_id)
             if persisted is None or persisted.payload_sha256 != payload_sha256:
                 raise AnkiImportRepositoryError("Anki import did not persist")
             return persisted
@@ -359,16 +370,12 @@ class AnkiImportRepository:
             raise
         except Exception as exc:
             try:
-                replay = await self._find_by_request(
-                    canonical_plan_id, request_id
-                )
+                replay = await self._find_by_request(canonical_plan_id, request_id)
                 if replay is not None:
                     if replay.payload_sha256 == payload_sha256:
                         return replay
                     raise AnkiImportConflict("Anki import request ID was already used")
-                replay = await self._find_by_payload(
-                    canonical_plan_id, payload_sha256
-                )
+                replay = await self._find_by_payload(canonical_plan_id, payload_sha256)
                 if replay is not None:
                     return replay
             except AnkiImportConflict:
@@ -386,7 +393,9 @@ async def import_anki_package(
     request_id: str,
 ) -> AnkiCompatibilityReceipt:
     inspection = inspect_anki_package(path)
-    return await AnkiImportRepository().publish(plan_id, inspection, options, request_id)
+    return await AnkiImportRepository().publish(
+        plan_id, inspection, options, request_id
+    )
 
 
 __all__ = [

@@ -7,6 +7,7 @@ whole app. `_scan_chat_llm_with_timeout` runs it in a daemon thread and gives up
 after DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT seconds, returning None (degraded local chat) so the
 app still boots.
 """
+
 from __future__ import annotations
 
 import time
@@ -185,7 +186,9 @@ def test_launcher_start_receipt_is_recorded(monkeypatch, tmp_path):
             records.append((stage, elapsed_ms))
 
     monkeypatch.setattr(app, "active_data_root", lambda: data_root)
-    monkeypatch.setattr(config, "default_config_path", lambda: data_root / "config.toml")
+    monkeypatch.setattr(
+        config, "default_config_path", lambda: data_root / "config.toml"
+    )
     monkeypatch.setattr(startup_receipts, "StartupReceiptStore", Store)
     monkeypatch.setattr(app, "_setup_launcher_log_handler", lambda _path: None)
 
@@ -294,9 +297,7 @@ def test_supervisor_failure_preserves_error_when_receipt_write_fails(
     assert not [stage for stage, _elapsed in store.records if stage == "core_ready"]
 
 
-def test_core_ready_receipt_failure_does_not_change_success(
-    monkeypatch, tmp_path
-):
+def test_core_ready_receipt_failure_does_not_change_success(monkeypatch, tmp_path):
     from desktop import launcher
 
     store = _RecordingReceiptStore(fail_stages={"core_ready"})

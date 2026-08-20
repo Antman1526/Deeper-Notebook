@@ -19,6 +19,7 @@ Cross-suite pollution background — RESOLVED in v0.7.183:
   `desktop/dl_scripts/`. There's no namespace collision to fix
   with sys.path tricks — the fix is at the source.
 """
+
 import os
 from pathlib import Path
 
@@ -39,17 +40,12 @@ def _isolate_data_root_home(tmp_path, monkeypatch):
 
     def guarded_resolve(*, home=None, failure_injector=None):
         candidate = (
-            Path(home)
-            if home is not None
-            else Path(os.environ["HOME"])
+            Path(home) if home is not None else Path(os.environ["HOME"])
         ).resolve()
         assert candidate.is_relative_to(allowed_root), (
-            f"test attempted data-root resolution outside {allowed_root}: "
-            f"{candidate}"
+            f"test attempted data-root resolution outside {allowed_root}: {candidate}"
         )
-        return original_resolve(
-            home=home, failure_injector=failure_injector
-        )
+        return original_resolve(home=home, failure_injector=failure_injector)
 
     monkeypatch.setattr(data_root, "resolve_data_root", guarded_resolve)
 
@@ -96,9 +92,7 @@ def pytest_collection_modifyitems(config, items):
             "test_divergent_roots_enter_read_only_recovery_before_normal_startup"
         ),
     }
-    marker = pytest.mark.skip(
-        reason="POSIX descriptor or macOS bundle contract"
-    )
+    marker = pytest.mark.skip(reason="POSIX descriptor or macOS bundle contract")
     for item in items:
         normalized = item.nodeid.replace("\\", "/")
         if normalized.startswith(mac_app_suite) or normalized in posix_descriptor_tests:

@@ -13,6 +13,7 @@ We stub `chat_graph.ainvoke`, `chat_graph.get_state`, and
 `ChatSession.get` so the test doesn't need a database or LangGraph
 runtime — only the timeout-wrapping code path is exercised.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -66,6 +67,7 @@ def hanging_graph(monkeypatch):
     # graph trying to reach a non-existent SurrealDB.
     async def _fake_get_async_graph():
         return fake
+
     monkeypatch.setattr(chat_router, "get_async_graph", _fake_get_async_graph)
     return fake
 
@@ -84,7 +86,10 @@ def fake_session(monkeypatch):
 
 
 def test_chat_execute_timeout_returns_504_with_env_knob_hint(
-    client, hanging_graph, fake_session, monkeypatch,
+    client,
+    hanging_graph,
+    fake_session,
+    monkeypatch,
 ):
     """v0.7.108 — When chat_graph.ainvoke hangs past DEEPER_NOTEBOOK_CHAT_TIMEOUT_SEC,
     the endpoint must return 504 with the env knob + /chat/stream hint
@@ -112,7 +117,9 @@ def test_chat_execute_timeout_returns_504_with_env_knob_hint(
 
 
 def test_chat_execute_returns_200_when_graph_returns_in_time(
-    client, fake_session, monkeypatch,
+    client,
+    fake_session,
+    monkeypatch,
 ):
     """v0.7.108 — Negative-space check: a graph that returns within the
     timeout must produce a 200, not be incorrectly timeout-killed."""
@@ -125,14 +132,17 @@ def test_chat_execute_returns_200_when_graph_returns_in_time(
         async def ainvoke(self, *, input, config):
             # Returns immediately with one AI message
             from langchain_core.messages import AIMessage
+
             return {"messages": [AIMessage(content="quick reply")]}
 
     fake_fast = _FastGraph()
     monkeypatch.setattr(chat_router, "chat_graph", fake_fast)
+
     # v0.7.192 — patch the async-graph getter too (see hanging_graph
     # fixture above for the full rationale).
     async def _fake_get_async_graph():
         return fake_fast
+
     monkeypatch.setattr(chat_router, "get_async_graph", _fake_get_async_graph)
 
     resp = client.post(

@@ -597,9 +597,7 @@ class VaultRepository:
                 },
             )
 
-    async def record_observation(
-        self, observation: VaultFileObservation
-    ) -> None:
+    async def record_observation(self, observation: VaultFileObservation) -> None:
         """Persist file provenance only; source bytes never cross this boundary."""
 
         vault_file_id = _record_id(
@@ -2047,10 +2045,7 @@ class VaultRepository:
             """,  # nosec B608
             {"note_id": _db_id(note_id), "vault_id": _db_id(vault_id)},
         )
-        return [
-            _persisted_vault_link(row, vault_id=vault_id)
-            for row in rows
-        ]
+        return [_persisted_vault_link(row, vault_id=vault_id) for row in rows]
 
     async def _require_note_in_vault(
         self,

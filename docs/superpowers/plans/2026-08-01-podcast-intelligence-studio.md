@@ -97,19 +97,23 @@ class NotebookSelection(_Strict):
     kind: Literal["notebook"]
     notebook_id: str
 
+
 class AppNoteSelection(_Strict):
     kind: Literal["app_note"]
     note_id: str
+
 
 class AppSourceSelection(_Strict):
     kind: Literal["app_source"]
     source_id: str
     inclusion_mode: Literal["insights", "full"] = "full"
 
+
 class KnowledgeDocumentSelection(_Strict):
     kind: Literal["knowledge_document"]
     document_id: str
     expected_revision_id: str | None = None
+
 
 class KnowledgeBlockSelection(_Strict):
     kind: Literal["knowledge_block"]
@@ -119,28 +123,40 @@ class KnowledgeBlockSelection(_Strict):
     source_start: int | None = Field(default=None, ge=0)
     source_end: int | None = Field(default=None, ge=0)
 
+
 class KnowledgeCollectionSelection(_Strict):
     kind: Literal["knowledge_collection"]
     collection_kind: Literal["folder", "bookmark", "workspace"]
     collection_id: str
+
 
 class SearchSelection(_Strict):
     kind: Literal["saved_search"]
     query: str
     search_mode: Literal["exact", "text", "semantic"]
     space_ids: list[str] = Field(max_length=32)
-    authority_kinds: list[Literal["app_owned", "external_read_only"]] = Field(max_length=2)
+    authority_kinds: list[Literal["app_owned", "external_read_only"]] = Field(
+        max_length=2
+    )
+
 
 class GraphSelection(_Strict):
     kind: Literal["graph_selection"]
     document_ids: list[str] = Field(min_length=1, max_length=128)
 
+
 PodcastSelection = Annotated[
-    NotebookSelection | AppNoteSelection | AppSourceSelection |
-    KnowledgeDocumentSelection | KnowledgeBlockSelection |
-    KnowledgeCollectionSelection | SearchSelection | GraphSelection,
+    NotebookSelection
+    | AppNoteSelection
+    | AppSourceSelection
+    | KnowledgeDocumentSelection
+    | KnowledgeBlockSelection
+    | KnowledgeCollectionSelection
+    | SearchSelection
+    | GraphSelection,
     Field(discriminator="kind"),
 ]
+
 
 class SelectionPreviewEntry(_Strict):
     stable_id: str
@@ -149,9 +165,18 @@ class SelectionPreviewEntry(_Strict):
     relative_locator: str | None
     revision_id: str | None
     fingerprint: str | None
-    state: Literal["included", "duplicate", "unavailable", "changed", "empty", "failed_parse", "oversize"]
+    state: Literal[
+        "included",
+        "duplicate",
+        "unavailable",
+        "changed",
+        "empty",
+        "failed_parse",
+        "oversize",
+    ]
     reason: str
     estimated_characters: int = Field(ge=0)
+
 
 class PodcastSelectionPreview(_Strict):
     selection_fingerprint: str

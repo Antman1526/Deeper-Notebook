@@ -1,4 +1,5 @@
 """Regression coverage for bounded optional rate-limit client state."""
+
 from __future__ import annotations
 
 import asyncio

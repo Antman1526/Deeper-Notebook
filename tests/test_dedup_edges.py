@@ -8,6 +8,7 @@ is the most important contract to lock down: it ensures that a
 partial run can be safely retried on the next startup without losing
 different edges than the first pass would have.
 """
+
 from __future__ import annotations
 
 import pytest

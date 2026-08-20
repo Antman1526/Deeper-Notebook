@@ -27,7 +27,7 @@ try:
         model = model.bind_tools(mcp_tools)
 except Exception as bind_exc:
     _logger.debug("tool bind failed (degrading to no-tools): {}", bind_exc)
-    mcp_tools = []          # reset the lookup or later dispatch mismatches
+    mcp_tools = []  # reset the lookup or later dispatch mismatches
 ```
 
 Tool assembly is **independence-ordered**: MCP resolution, native `web_search`,
@@ -53,25 +53,33 @@ render as citation pills identical to MCP results.
 
 ```python
 chain = _provider_chain()
-deadline = time.monotonic() + _total_budget_sec()      # 25s total
+deadline = time.monotonic() + _total_budget_sec()  # 25s total
 for attempt_index, (provider, target) in enumerate(chain):
     remaining = deadline - time.monotonic()
-    if remaining <= 0: break
-    cap = (min(per_attempt_cap, _KEYLESS_TIMEOUT_SEC)   # keyless get 6s
-           if provider in _KEYLESS_PROVIDERS else per_attempt_cap)
+    if remaining <= 0:
+        break
+    cap = (
+        min(per_attempt_cap, _KEYLESS_TIMEOUT_SEC)  # keyless get 6s
+        if provider in _KEYLESS_PROVIDERS
+        else per_attempt_cap
+    )
     attempt_timeout = min(cap, remaining)
     try:
         results = await _do_attempt(client, provider, target, query, n, attempt_timeout)
     except Exception as exc:
-        logger.warning("web_search attempt via {}{} failed: {}", provider,
-                       f" ({target})" if target else "", exc)
-        continue                                        # error → next provider
+        logger.warning(
+            "web_search attempt via {}{} failed: {}",
+            provider,
+            f" ({target})" if target else "",
+            exc,
+        )
+        continue  # error → next provider
     if results:
         _cache_put(cache_key, results, provider, attempt_index > 0)
         return results, provider, attempt_index > 0
     if provider == "searxng" or provider in _KEYLESS_PROVIDERS:
-        continue          # free provider returning empty → try the next; costs nothing
-    return results, provider, attempt_index > 0   # PAID empty is a legitimate answer
+        continue  # free provider returning empty → try the next; costs nothing
+    return results, provider, attempt_index > 0  # PAID empty is a legitimate answer
 ```
 
 The paid-vs-free asymmetry is deliberate: falling through on a paid provider's legitimate
@@ -85,10 +93,12 @@ empty** — a failed lookup must not poison five minutes.
 
 ```python
 factory = httpx.AsyncClient
-if (_pooled_client is not None
-        and _pooled_client_loop is loop           # a client is bound to its loop
-        and _pooled_client_factory is factory     # monkeypatched class ⇒ rebuild
-        and not getattr(_pooled_client, "is_closed", False)):
+if (
+    _pooled_client is not None
+    and _pooled_client_loop is loop  # a client is bound to its loop
+    and _pooled_client_factory is factory  # monkeypatched class ⇒ rebuild
+    and not getattr(_pooled_client, "is_closed", False)
+):
     return _pooled_client, True
 ```
 
@@ -121,7 +131,7 @@ def _reconstruct_abstract(inverted: dict | None) -> str:
 arXiv XML is size-bounded before parsing (Bandit B314 — entity-expansion DoS):
 
 ```python
-if xml_text and len(xml_text) > _MAX_ARXIV_BYTES:      # 5 MB
+if xml_text and len(xml_text) > _MAX_ARXIV_BYTES:  # 5 MB
     logger.warning("arxiv feed exceeded {} bytes; discarded", _MAX_ARXIV_BYTES)
     return []
 ```
@@ -169,10 +179,13 @@ SourceVisualStatusState = Literal[
     "queued", "processing", "unavailable", "failed", "disabled"
 ]
 
+
 def disabled_visual_status() -> "SourceVisualStatusResponse":
     """Stamped by list/detail projections when the backend flag is off."""
     return SourceVisualStatusResponse(
-        state="disabled", command_id=None, error_code=None,
+        state="disabled",
+        command_id=None,
+        error_code=None,
         updated_at=datetime.now(timezone.utc),
     )
 ```
@@ -184,8 +197,9 @@ if source_visuals_enabled():
     ...
 else:
     sentinel = disabled_visual_status()
-    response_list = [item.model_copy(update={"visual_status": sentinel})
-                     for item in response_list]
+    response_list = [
+        item.model_copy(update={"visual_status": sentinel}) for item in response_list
+    ]
 ```
 
 The client then distinguishes the two cases:
@@ -254,18 +268,27 @@ for question in attempt.questions:
     is_correct = answered and selected == question.correct_option_id
     if is_correct:
         correct_count += 1
-    results.append(ExamQuestionResult(
-        index=question.index, correct=is_correct, answered=answered,
-        selected_option_id=selected if answered else None,
-        correct_option_id=question.correct_option_id,
-        explanation=question.explanation, citations=list(question.citations),
-    ))
-graded = attempt.model_copy(update={
-    "submitted_at": submitted, "late": submitted > attempt.deadline,
-    "answers": {str(k): str(v) for k, v in answers.items()},
-    "results": results, "correct_count": correct_count,
-    "score_percent": round(100.0 * correct_count / attempt.question_count, 1),
-})
+    results.append(
+        ExamQuestionResult(
+            index=question.index,
+            correct=is_correct,
+            answered=answered,
+            selected_option_id=selected if answered else None,
+            correct_option_id=question.correct_option_id,
+            explanation=question.explanation,
+            citations=list(question.citations),
+        )
+    )
+graded = attempt.model_copy(
+    update={
+        "submitted_at": submitted,
+        "late": submitted > attempt.deadline,
+        "answers": {str(k): str(v) for k, v in answers.items()},
+        "results": results,
+        "correct_count": correct_count,
+        "score_percent": round(100.0 * correct_count / attempt.question_count, 1),
+    }
+)
 ```
 
 A late submission is graded and flagged (`late=True`), never rejected — the deadline is
@@ -286,11 +309,7 @@ template `call_model_with_messages` renders.
 # assistant" framing and loses on smaller local models. The debate template
 # carries its own copy of the grounding + citing contracts, so citations
 # behave identically.
-_template = (
-    "chat/debate"
-    if state.get("chat_mode") == "debate"
-    else "chat/system"
-)
+_template = "chat/debate" if state.get("chat_mode") == "debate" else "chat/system"
 system_prompt = Prompter(prompt_template=_template).render(data=prompt_data)
 ```
 

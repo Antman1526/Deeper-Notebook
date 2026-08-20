@@ -55,9 +55,7 @@ async def get_settings():
         raise
     except Exception as e:
         logger.error(f"Error fetching settings: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching settings"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching settings")
 
 
 @router.put("/settings", response_model=SettingsResponse)
@@ -97,6 +95,7 @@ async def update_settings(settings_update: SettingsUpdate):
             # v0.8.68 — bust the network-state cache so the toggle takes
             # effect on the next chat turn, not after the 30s accessor TTL.
             from deeper_notebook.health.network import invalidate_forced_offline_cache
+
             invalidate_forced_offline_cache()
         # v0.8.88 — opt-in source auto-summary on ingest.
         if settings_update.auto_summarize_on_ingest is not None:
@@ -125,9 +124,7 @@ async def update_settings(settings_update: SettingsUpdate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating settings: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error updating settings"
-        )
+        raise HTTPException(status_code=500, detail="Error updating settings")
 
 
 # -------------------------------------------------------------------- #
@@ -209,7 +206,9 @@ def _env_int(name: str, default: Optional[int] = None) -> Optional[int]:
     except ValueError:
         logger.warning(
             "Settings: env var {} value {!r} is not an int; reporting as {}",
-            name, raw, default,
+            name,
+            raw,
+            default,
         )
         return default
 
@@ -236,10 +235,12 @@ async def get_observability_settings() -> ObservabilityResponse:
         encryption_kdf=resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KDF", "raw").lower(),
         checkpoint_keep_per_thread=_env_int(
             "DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD", 50
-        ) or 50,
+        )
+        or 50,
         checkpoint_prune_interval_hours=_env_int(
             "DEEPER_NOTEBOOK_CHECKPOINT_PRUNE_INTERVAL_HOURS", 24
-        ) or 24,
+        )
+        or 24,
         db_pool_size=_env_int("DEEPER_NOTEBOOK_DB_POOL_SIZE", 4) or 4,
         db_pool_disabled=_env_bool("DEEPER_NOTEBOOK_DB_POOL_DISABLED"),
         metrics_endpoint_path="/metrics",

@@ -61,20 +61,26 @@ def test_overlay_note_forbids_paths_and_invalid_hashes():
     )
     assert note.source_authority == "overlay"
     with pytest.raises(ValidationError):
-        OverlayNote.model_validate({
-            **note.model_dump(),
-            "relative_path": "/Users/owner/private.md",
-        })
+        OverlayNote.model_validate(
+            {
+                **note.model_dump(),
+                "relative_path": "/Users/owner/private.md",
+            }
+        )
     with pytest.raises(ValidationError):
-        OverlayNote.model_validate({
-            **note.model_dump(),
-            "content_hash": "not-a-hash",
-        })
+        OverlayNote.model_validate(
+            {
+                **note.model_dump(),
+                "content_hash": "not-a-hash",
+            }
+        )
     with pytest.raises(ValidationError):
-        OverlayNote.model_validate({
-            **note.model_dump(),
-            "date_key": "2026-02-30",
-        })
+        OverlayNote.model_validate(
+            {
+                **note.model_dump(),
+                "date_key": "2026-02-30",
+            }
+        )
 
 
 def test_overlay_note_paths_match_their_persisted_kind_contract():
@@ -95,18 +101,22 @@ def test_overlay_note_paths_match_their_persisted_kind_contract():
         "updated_at": now,
     }
     daily = OverlayNote.model_validate(daily_data)
-    unique = OverlayNote.model_validate({
-        **daily_data,
-        "kind": "unique",
-        "date_key": None,
-        "relative_path": "Notes/20260729-1542 Research Idea-2.md",
-    })
-    unique_third = OverlayNote.model_validate({
-        **daily_data,
-        "kind": "unique",
-        "date_key": None,
-        "relative_path": "Notes/20260729-1542 Research Idea-3.md",
-    })
+    unique = OverlayNote.model_validate(
+        {
+            **daily_data,
+            "kind": "unique",
+            "date_key": None,
+            "relative_path": "Notes/20260729-1542 Research Idea-2.md",
+        }
+    )
+    unique_third = OverlayNote.model_validate(
+        {
+            **daily_data,
+            "kind": "unique",
+            "date_key": None,
+            "relative_path": "Notes/20260729-1542 Research Idea-3.md",
+        }
+    )
     assert daily.relative_path == "Daily/2026-07-29.md"
     assert unique.relative_path == "Notes/20260729-1542 Research Idea-2.md"
     assert unique_third.relative_path == "Notes/20260729-1542 Research Idea-3.md"
@@ -214,18 +224,18 @@ def test_overlay_link_requires_explicit_nullable_overlay_identities():
         "target_overlay_note_id",
     ):
         with pytest.raises(ValidationError):
-            OverlayLink.model_validate({
-                key: value
-                for key, value in link.items()
-                if key != missing_field
-            })
+            OverlayLink.model_validate(
+                {key: value for key, value in link.items() if key != missing_field}
+            )
 
-    external = OverlayLink.model_validate({
-        **link,
-        "source_overlay_note_id": None,
-        "source_relative_path": None,
-        "target_overlay_note_id": None,
-    })
+    external = OverlayLink.model_validate(
+        {
+            **link,
+            "source_overlay_note_id": None,
+            "source_relative_path": None,
+            "target_overlay_note_id": None,
+        }
+    )
     assert external.target_note_id == "note:target"
     assert external.target_overlay_note_id is None
 
@@ -309,10 +319,7 @@ def test_overlay_page_builds_a_deduplicated_overlay_only_local_graph():
         "note:source",
         "note:target",
     }
-    assert {
-        (edge["source"], edge["target"])
-        for edge in page.graph.edges
-    } == {
+    assert {(edge["source"], edge["target"]) for edge in page.graph.edges} == {
         ("note:center", "note:target"),
         ("note:source", "note:center"),
     }

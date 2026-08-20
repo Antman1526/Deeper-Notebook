@@ -54,10 +54,15 @@ hid a fatal `ValueError: Model type qwen3_5 not supported` for hours.
 
 ```python
 # Brave: token in a header, count in params, results under web.results
-resp = await client.get(_BRAVE_ENDPOINT,
+resp = await client.get(
+    _BRAVE_ENDPOINT,
     params={"q": query, "count": n},
-    headers={"X-Subscription-Token": _env("BRAVE_API_KEY"),
-             "Accept": "application/json"}, timeout=timeout)
+    headers={
+        "X-Subscription-Token": _env("BRAVE_API_KEY"),
+        "Accept": "application/json",
+    },
+    timeout=timeout,
+)
 web = (data or {}).get("web")
 return _normalise(web.get("results"), url_key="url", snippet_key="description", n=n)
 ```
@@ -67,6 +72,8 @@ build an arbitrary hostname:
 
 ```python
 _WIKI_LANG_PATTERN = re.compile(r"^[a-z]{2,3}(-[a-z0-9]{2,8})?$")
+
+
 def _wiki_lang() -> str:
     raw = _env("DEEPER_NOTEBOOK_WEB_SEARCH_WIKI_LANG").lower()
     return raw if raw and _WIKI_LANG_PATTERN.fullmatch(raw) else "en"
@@ -83,7 +90,7 @@ def _wiki_lang() -> str:
 params = {"search": query, "per-page": n}
 mailto = _env("DEEPER_NOTEBOOK_SCHOLARLY_MAILTO")
 if mailto:
-    params["mailto"] = mailto     # faster, more reliable pool; optional
+    params["mailto"] = mailto  # faster, more reliable pool; optional
 ```
 
 ## 5. MCP (Model Context Protocol)

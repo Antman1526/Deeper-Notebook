@@ -125,9 +125,14 @@ def test_openchronicle_choice_defaults_to_skip(tmp_path):
 
 def test_openchronicle_choice_round_trips(tmp_path):
     cfg_path = tmp_path / "config.toml"
-    cfg = Config(model_dir=tmp_path, provider="none", default_model="",
-                 surreal_user="root", surreal_password="A" * 24,
-                 openchronicle_choice="prompt")
+    cfg = Config(
+        model_dir=tmp_path,
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="A" * 24,
+        openchronicle_choice="prompt",
+    )
     cfg.save(cfg_path)
     assert load_or_create(cfg_path).openchronicle_choice == "prompt"
 ```
@@ -187,9 +192,14 @@ def test_surreal_provider_is_registered_after_import():
     # Importing _register installs the provider as a side effect.
     importlib.import_module("desktop.memory._register")
 
-    assert VectorStoreConfig._provider_configs.default["surreal"] == "SurrealVectorStoreConfig"
-    assert VectorStoreFactory.provider_to_class["surreal"] == \
-        "desktop.memory.surreal_store.SurrealMemoryStore"
+    assert (
+        VectorStoreConfig._provider_configs.default["surreal"]
+        == "SurrealVectorStoreConfig"
+    )
+    assert (
+        VectorStoreFactory.provider_to_class["surreal"]
+        == "desktop.memory.surreal_store.SurrealMemoryStore"
+    )
 
 
 def test_surreal_provider_passes_mem0_pydantic_validation():
@@ -268,6 +278,7 @@ all subsequent instances.
 Importing this module has the side effect of installing the `surreal` provider.
 `desktop/memory/client.py` (Task 5) imports it before calling `Memory.from_config`.
 """
+
 from __future__ import annotations
 
 import sys
@@ -284,8 +295,9 @@ class SurrealVectorStoreConfig(BaseModel):
     These fields become kwargs to `SurrealMemoryStore.__init__` because mem0's
     `VectorStoreFactory.create` calls `cls(**config.model_dump())`.
     """
-    collection_name: str = "memory"        # mem0 reads .collection_name — unused for routing
-    embedding_model_dims: int = 768         # nomic-embed-text-v1.5 native dim
+
+    collection_name: str = "memory"  # mem0 reads .collection_name — unused for routing
+    embedding_model_dims: int = 768  # nomic-embed-text-v1.5 native dim
     surreal_url: str
     namespace: str = "open_notebook"
     database: str = "open_notebook"
@@ -299,8 +311,9 @@ sys.modules["mem0.configs.vector_stores.surreal"] = _synthetic_module
 
 # `._provider_configs` is a Pydantic v2 ModelPrivateAttr — mutate its `.default`.
 VectorStoreConfig._provider_configs.default["surreal"] = "SurrealVectorStoreConfig"
-VectorStoreFactory.provider_to_class["surreal"] = \
+VectorStoreFactory.provider_to_class["surreal"] = (
     "desktop.memory.surreal_store.SurrealMemoryStore"
+)
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -354,11 +367,13 @@ def _fake_client(responses: dict):
     Matches SurrealQL by prefix of the first non-whitespace word.
     """
     client = MagicMock()
+
     async def query(sql, vars=None):
         for prefix, resp in responses.items():
             if sql.strip().startswith(prefix):
                 return resp
         return [[]]
+
     client.query.side_effect = query
     return client
 
@@ -367,8 +382,14 @@ def test_insert_routes_facts_to_memory_fact_table():
     store = SurrealMemoryStore.from_test_client(_fake_client({"CREATE": [[]]}))
     store.insert(
         vectors=[[0.1, 0.2, 0.3]],
-        payloads=[{"kind": "fact", "text": "User likes coffee",
-                   "metadata": {"scope": "user"}, "confidence": 0.9}],
+        payloads=[
+            {
+                "kind": "fact",
+                "text": "User likes coffee",
+                "metadata": {"scope": "user"},
+                "confidence": 0.9,
+            }
+        ],
         ids=["fact-001"],
     )
     sent_sql = store._client.query.call_args_list[0].args[0]
@@ -379,8 +400,14 @@ def test_insert_routes_preferences_to_memory_preference_table():
     store = SurrealMemoryStore.from_test_client(_fake_client({"CREATE": [[]]}))
     store.insert(
         vectors=[[0.1]],
-        payloads=[{"kind": "preference", "text": "bullets",
-                   "metadata": {"scope": "user"}, "confidence": 0.85}],
+        payloads=[
+            {
+                "kind": "preference",
+                "text": "bullets",
+                "metadata": {"scope": "user"},
+                "confidence": 0.85,
+            }
+        ],
         ids=["pref-001"],
     )
     sent_sql = store._client.query.call_args_list[0].args[0]
@@ -397,11 +424,15 @@ def test_search_returns_outputdata_objects():
         "score": 0.92,
     }
     store = SurrealMemoryStore.from_test_client(
-        _fake_client({"SELECT": [[fake_record]]}))
+        _fake_client({"SELECT": [[fake_record]]})
+    )
     # mem0 2.x signature: search(query, vectors, top_k, filters)
-    hits = store.search(query="where does user live",
-                        vectors=[0.1, 0.2], top_k=5,
-                        filters={"kind": "fact"})
+    hits = store.search(
+        query="where does user live",
+        vectors=[0.1, 0.2],
+        top_k=5,
+        filters={"kind": "fact"},
+    )
     assert len(hits) == 1
     assert isinstance(hits[0], OutputData)
     assert hits[0].id == "memory_fact:abc"
@@ -425,7 +456,8 @@ def test_list_cols_returns_three_memory_tables():
 
 def test_reset_removes_and_redefines_all_three_tables():
     store = SurrealMemoryStore.from_test_client(
-        _fake_client({"REMOVE": [[]], "DEFINE": [[]]}))
+        _fake_client({"REMOVE": [[]], "DEFINE": [[]]})
+    )
     store.reset()
     sqls = " ".join(c.args[0] for c in store._client.query.call_args_list)
     for table in ("memory_fact", "memory_preference", "memory_episode"):
@@ -474,6 +506,7 @@ table on insert; `filters["kind"]` chooses on search. Default "fact".
 The `__init__` signature must match `SurrealVectorStoreConfig` (Task 2.5)
 because mem0's `VectorStoreFactory.create()` calls `cls(**config.model_dump())`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -506,15 +539,19 @@ class SurrealMemoryStore(VectorStoreBase):
     For tests, use the `from_test_client` classmethod with a mock client.
     """
 
-    def __init__(self, *,
-                 collection_name: str = "memory",
-                 embedding_model_dims: int = 768,
-                 surreal_url: str,
-                 namespace: str = "open_notebook",
-                 database: str = "open_notebook",
-                 user: str,
-                 password: str):
+    def __init__(
+        self,
+        *,
+        collection_name: str = "memory",
+        embedding_model_dims: int = 768,
+        surreal_url: str,
+        namespace: str = "open_notebook",
+        database: str = "open_notebook",
+        user: str,
+        password: str,
+    ):
         from surrealdb import Surreal
+
         self._client = Surreal(surreal_url)
         self._connect_args = (namespace, database, user, password)
         self._connected = False
@@ -537,7 +574,8 @@ class SurrealMemoryStore(VectorStoreBase):
             return
         ns, db, user, password = self._connect_args
         asyncio.get_event_loop().run_until_complete(
-            self._client.signin({"user": user, "pass": password}))
+            self._client.signin({"user": user, "pass": password})
+        )
         asyncio.get_event_loop().run_until_complete(self._client.use(ns, db))
         self._connected = True
 
@@ -588,8 +626,9 @@ class SurrealMemoryStore(VectorStoreBase):
                 row["id"] = _id
             self._exec(f"CREATE {table} CONTENT $row", {"row": row})
 
-    def search(self, query: str, vectors, top_k: int = 5,
-               filters: dict | None = None) -> list[OutputData]:
+    def search(
+        self, query: str, vectors, top_k: int = 5, filters: dict | None = None
+    ) -> list[OutputData]:
         """Vector cosine search. `query` (text) is unused — we operate on the
         precomputed `vectors` embedding. `filters['kind']` narrows to a single
         memory table; otherwise we union the three."""
@@ -663,8 +702,7 @@ class SurrealMemoryStore(VectorStoreBase):
         for table in _ALL_TABLES:
             self._exec(f"DEFINE TABLE {table}")
 
-    def keyword_search(self, query: str, top_k: int = 5,
-                       filters: dict | None = None):
+    def keyword_search(self, query: str, top_k: int = 5, filters: dict | None = None):
         """BM25 / FTS not wired in v0.4. Returning None tells mem0 to skip
         hybrid scoring and rely on vector search alone."""
         return None
@@ -823,7 +861,8 @@ from desktop.memory.client import build_memory_client
 
 def test_build_memory_client_uses_surreal_provider_and_local_endpoints():
     fake_cfg = MagicMock(
-        surreal_user="root", surreal_password="x" * 24,
+        surreal_user="root",
+        surreal_password="x" * 24,
     )
     with patch("desktop.memory.client.Memory") as mem0_cls:
         build_memory_client(
@@ -836,7 +875,10 @@ def test_build_memory_client_uses_surreal_provider_and_local_endpoints():
         config = call_args.kwargs.get("config") or call_args.args[0]
         # Vector store wired to our registered surreal provider, not "custom"
         assert config["vector_store"]["provider"] == "surreal"
-        assert config["vector_store"]["config"]["surreal_url"] == "ws://127.0.0.1:50000/rpc"
+        assert (
+            config["vector_store"]["config"]["surreal_url"]
+            == "ws://127.0.0.1:50000/rpc"
+        )
         assert config["vector_store"]["config"]["user"] == "root"
         assert config["vector_store"]["config"]["password"] == "x" * 24
         # Embedder + LLM point at local servers
@@ -852,8 +894,10 @@ def test_build_memory_client_imports_register_module_for_side_effect():
     side-effect import happened. Note: `_provider_configs` is a Pydantic v2
     ModelPrivateAttr at class level — read its `.default` to see the dict."""
     import sys
+
     assert "desktop.memory._register" in sys.modules
     from mem0.vector_stores.configs import VectorStoreConfig
+
     assert "surreal" in VectorStoreConfig._provider_configs.default
 ```
 
@@ -875,6 +919,7 @@ The `_register` import below has the side effect of installing `surreal` as
 a mem0 vector-store provider; it MUST happen before `Memory.from_config()`
 sees `provider: "surreal"`, or mem0 will reject the config as unknown.
 """
+
 from __future__ import annotations
 
 import desktop.memory._register  # noqa: F401 — registers `surreal` provider
@@ -890,34 +935,36 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
     OpenAI-compatible LLM and embedder endpoints."""
     if Memory is None:
         raise RuntimeError("mem0 not installed — run bootstrap to provision the venv")
-    return Memory.from_config({
-        "vector_store": {
-            "provider": "surreal",
-            "config": {
-                "surreal_url": surreal_url,
-                "namespace": "open_notebook",
-                "database": "open_notebook",
-                "user": cfg.surreal_user,
-                "password": cfg.surreal_password,
+    return Memory.from_config(
+        {
+            "vector_store": {
+                "provider": "surreal",
+                "config": {
+                    "surreal_url": surreal_url,
+                    "namespace": "open_notebook",
+                    "database": "open_notebook",
+                    "user": cfg.surreal_user,
+                    "password": cfg.surreal_password,
+                },
             },
-        },
-        "embedder": {
-            "provider": "openai",
-            "config": {
-                "api_key": "sk-no-key",
-                "base_url": embed_url,
-                "model": "nomic-embed-text-v1.5",
+            "embedder": {
+                "provider": "openai",
+                "config": {
+                    "api_key": "sk-no-key",
+                    "base_url": embed_url,
+                    "model": "nomic-embed-text-v1.5",
+                },
             },
-        },
-        "llm": {
-            "provider": "openai",
-            "config": {
-                "api_key": "sk-no-key",
-                "base_url": llm_url,
-                "model": "Hermes-3-Llama-3.1-8B-Q4_K_M",
+            "llm": {
+                "provider": "openai",
+                "config": {
+                    "api_key": "sk-no-key",
+                    "base_url": llm_url,
+                    "model": "Hermes-3-Llama-3.1-8B-Q4_K_M",
+                },
             },
-        },
-    })
+        }
+    )
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -951,6 +998,7 @@ git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
 Hermes 3 emits `<tool_call>` JSON blocks when prompted with explicit tool
 definitions. We parse those blocks to extract structured memory writes.
 """
+
 from __future__ import annotations
 
 # Tool definitions are inlined in the system prompt because Hermes 3 follows
@@ -995,13 +1043,11 @@ Emit exactly one `<tool_call>{...}</tool_call>` block with the remember_episode 
 
 
 def render_extract_user(user_text: str, assistant_text: str) -> str:
-    return (f"USER TURN: {user_text}\n\n"
-            f"ASSISTANT TURN: {assistant_text}")
+    return f"USER TURN: {user_text}\n\nASSISTANT TURN: {assistant_text}"
 
 
 def render_summarize_user(chat_session_id: str, transcript: str) -> str:
-    return (f"CHAT SESSION ID: {chat_session_id}\n\n"
-            f"TRANSCRIPT:\n{transcript}")
+    return f"CHAT SESSION ID: {chat_session_id}\n\nTRANSCRIPT:\n{transcript}"
 ```
 
 - [ ] **Step 2: Commit (no tests — pure data)**
@@ -1029,23 +1075,30 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from desktop.memory.writer import (
-    parse_tool_calls, apply_tool_call, extract_turn, summarize_session,
+    parse_tool_calls,
+    apply_tool_call,
+    extract_turn,
+    summarize_session,
 )
 
 
 def test_parse_tool_calls_finds_single_call():
-    raw = ('<tool_call>{"name": "remember_fact", '
-           '"arguments": {"text": "x", "scope": "user", "confidence": 0.8}}'
-           '</tool_call>')
+    raw = (
+        '<tool_call>{"name": "remember_fact", '
+        '"arguments": {"text": "x", "scope": "user", "confidence": 0.8}}'
+        "</tool_call>"
+    )
     calls = parse_tool_calls(raw)
     assert len(calls) == 1
     assert calls[0]["name"] == "remember_fact"
 
 
 def test_parse_tool_calls_finds_multiple_calls():
-    raw = ('<tool_call>{"name": "remember_fact", "arguments": {"text": "a", "scope": "user", "confidence": 1}}</tool_call>'
-           '\n some chat \n'
-           '<tool_call>{"name": "remember_preference", "arguments": {"text": "b", "scope": "user", "confidence": 1}}</tool_call>')
+    raw = (
+        '<tool_call>{"name": "remember_fact", "arguments": {"text": "a", "scope": "user", "confidence": 1}}</tool_call>'
+        "\n some chat \n"
+        '<tool_call>{"name": "remember_preference", "arguments": {"text": "b", "scope": "user", "confidence": 1}}</tool_call>'
+    )
     calls = parse_tool_calls(raw)
     assert len(calls) == 2
     assert calls[1]["name"] == "remember_preference"
@@ -1056,16 +1109,23 @@ def test_parse_tool_calls_returns_empty_on_no_calls():
 
 
 def test_parse_tool_calls_skips_malformed_blocks():
-    raw = '<tool_call>not valid json</tool_call>'
+    raw = "<tool_call>not valid json</tool_call>"
     assert parse_tool_calls(raw) == []
 
 
 def test_apply_tool_call_remember_fact_invokes_memory_add():
     mem_client = MagicMock()
-    apply_tool_call(mem_client, {
-        "name": "remember_fact",
-        "arguments": {"text": "user likes coffee", "scope": "user", "confidence": 0.9},
-    })
+    apply_tool_call(
+        mem_client,
+        {
+            "name": "remember_fact",
+            "arguments": {
+                "text": "user likes coffee",
+                "scope": "user",
+                "confidence": 0.9,
+            },
+        },
+    )
     mem_client.add.assert_called_once()
     kwargs = mem_client.add.call_args.kwargs
     assert kwargs.get("messages") or kwargs.get("data") or mem_client.add.call_args.args
@@ -1077,7 +1137,8 @@ def test_extract_turn_calls_llm_then_applies_each_tool_call(monkeypatch):
     fake_llm.complete.return_value = (
         '<tool_call>{"name": "remember_fact", '
         '"arguments": {"text": "x", "scope": "user", "confidence": 0.9}}'
-        '</tool_call>')
+        "</tool_call>"
+    )
     mem_client = MagicMock()
     extract_turn(
         llm=fake_llm,
@@ -1096,7 +1157,8 @@ def test_summarize_session_emits_episode():
         '<tool_call>{"name": "remember_episode", "arguments": '
         '{"summary": "discussed coffee", "topics": ["coffee"], '
         '"outcome": "exploration", "source_chat_id": "chat:1"}}'
-        '</tool_call>')
+        "</tool_call>"
+    )
     mem_client = MagicMock()
     summarize_session(
         llm=fake_llm,
@@ -1129,6 +1191,7 @@ Both invoke `<llm>.complete(system_prompt, user_prompt)` and parse the
 returned text for `<tool_call>...</tool_call>` blocks, then dispatch each to
 the mem0 client via apply_tool_call.
 """
+
 from __future__ import annotations
 
 import json
@@ -1192,8 +1255,9 @@ def apply_tool_call(mem_client, call: dict) -> None:
     )
 
 
-def extract_turn(*, llm, mem_client, chat_session_id: str,
-                 user_text: str, assistant_text: str) -> None:
+def extract_turn(
+    *, llm, mem_client, chat_session_id: str, user_text: str, assistant_text: str
+) -> None:
     """Run the per-turn extractor; write any tool calls into memory."""
     output = llm.complete(
         system=EXTRACT_TURN_SYSTEM_PROMPT,
@@ -1206,8 +1270,9 @@ def extract_turn(*, llm, mem_client, chat_session_id: str,
         apply_tool_call(mem_client, call)
 
 
-def summarize_session(*, llm, mem_client, chat_session_id: str,
-                      transcript: str) -> None:
+def summarize_session(
+    *, llm, mem_client, chat_session_id: str, transcript: str
+) -> None:
     output = llm.complete(
         system=SUMMARIZE_SESSION_SYSTEM_PROMPT,
         user=render_summarize_user(chat_session_id, transcript),
@@ -1249,6 +1314,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
@@ -1259,12 +1325,22 @@ def _fake_memory_client():
     """Memory mock that returns canned search results."""
     client = MagicMock()
     client.search.return_value = [
-        {"id": "fact:1", "text": "user likes coffee", "score": 0.95,
-         "metadata": {"kind": "fact", "scope": "user"},
-         "confidence": 0.9, "created_at": "2026-05-10T00:00:00Z"},
-        {"id": "pref:1", "text": "bullet points", "score": 0.85,
-         "metadata": {"kind": "preference", "scope": "user"},
-         "confidence": 0.85, "created_at": "2026-05-09T00:00:00Z"},
+        {
+            "id": "fact:1",
+            "text": "user likes coffee",
+            "score": 0.95,
+            "metadata": {"kind": "fact", "scope": "user"},
+            "confidence": 0.9,
+            "created_at": "2026-05-10T00:00:00Z",
+        },
+        {
+            "id": "pref:1",
+            "text": "bullet points",
+            "score": 0.85,
+            "metadata": {"kind": "preference", "scope": "user"},
+            "confidence": 0.85,
+            "created_at": "2026-05-09T00:00:00Z",
+        },
     ]
     return client
 
@@ -1329,6 +1405,7 @@ Exposes:
 Run as:
     python -m desktop_shims.memory_shim --port 8767
 """
+
 from __future__ import annotations
 
 import argparse
@@ -1362,37 +1439,45 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
     def relevant(topic: str = "", k: int = 5) -> dict:
         if not topic:
             return {"records": []}
-        records = _unwrap(mem_client.search(
-            query=topic, top_k=k, filters={"user_id": USER_ID}))
+        records = _unwrap(
+            mem_client.search(query=topic, top_k=k, filters={"user_id": USER_ID})
+        )
         return {"records": records[:k]}
 
     @app.get("/api/memory/preferences")
     def preferences() -> dict:
-        records = _unwrap(mem_client.search(
-            query="", top_k=200,
-            filters={"user_id": USER_ID, "kind": "preference"}))
+        records = _unwrap(
+            mem_client.search(
+                query="", top_k=200, filters={"user_id": USER_ID, "kind": "preference"}
+            )
+        )
         return {"records": records}
 
     @app.get("/api/memory/facts")
     def facts() -> dict:
-        records = _unwrap(mem_client.search(
-            query="", top_k=200,
-            filters={"user_id": USER_ID, "kind": "fact"}))
+        records = _unwrap(
+            mem_client.search(
+                query="", top_k=200, filters={"user_id": USER_ID, "kind": "fact"}
+            )
+        )
         return {"records": records}
 
     @app.get("/api/memory/episodes")
     def episodes() -> dict:
-        records = _unwrap(mem_client.search(
-            query="", top_k=200,
-            filters={"user_id": USER_ID, "kind": "episode"}))
+        records = _unwrap(
+            mem_client.search(
+                query="", top_k=200, filters={"user_id": USER_ID, "kind": "episode"}
+            )
+        )
         return {"records": records}
 
     @app.get("/api/memory/search")
     def search(q: str) -> dict:
         if not q:
             return {"records": []}
-        records = _unwrap(mem_client.search(
-            query=q, top_k=50, filters={"user_id": USER_ID}))
+        records = _unwrap(
+            mem_client.search(query=q, top_k=50, filters={"user_id": USER_ID})
+        )
         return {"records": records}
 
     @app.delete("/api/memory/{kind}/{id}")
@@ -1439,6 +1524,7 @@ def main(argv: list[str] | None = None) -> int:
     app = build_app(mem_client=mem_client)
 
     import uvicorn
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
@@ -1480,6 +1566,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
@@ -1490,16 +1577,24 @@ def _fake_mcp_client(recent_events=None, search_events=None):
     """Fake MCP client with canned tool responses."""
     client = MagicMock()
     client.call_tool = AsyncMock()
+
     async def fake_call_tool(name, args):
         if name == "recent_activity":
-            return {"events": recent_events or [
-                {"title": "Edited foo.md", "ts": "2026-05-11T08:00Z"},
-            ]}
+            return {
+                "events": recent_events
+                or [
+                    {"title": "Edited foo.md", "ts": "2026-05-11T08:00Z"},
+                ]
+            }
         if name == "search":
-            return {"events": search_events or [
-                {"title": "Read Self-RAG paper", "ts": "2026-05-11T07:00Z"},
-            ]}
+            return {
+                "events": search_events
+                or [
+                    {"title": "Read Self-RAG paper", "ts": "2026-05-11T07:00Z"},
+                ]
+            }
         return {"events": []}
+
     client.call_tool.side_effect = fake_call_tool
     return client
 
@@ -1555,6 +1650,7 @@ Run as:
     python -m desktop_shims.openchronicle_shim --port 8768 \\
         --mcp-url http://127.0.0.1:8742/mcp
 """
+
 from __future__ import annotations
 
 import argparse
@@ -1609,6 +1705,7 @@ def main(argv: list[str] | None = None) -> int:
         is simple, correct, and reconnects automatically if OpenChronicle
         restarts.
         """
+
         def __init__(self, url: str):
             self._url = url
 
@@ -1617,11 +1714,14 @@ def main(argv: list[str] | None = None) -> int:
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.call_tool(name, arguments)
-                    return result.model_dump() if hasattr(result, "model_dump") else result
+                    return (
+                        result.model_dump() if hasattr(result, "model_dump") else result
+                    )
 
     app = build_app(mcp_client=_PerCallMcpClient(args.mcp_url))
 
     import uvicorn
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
@@ -1661,8 +1761,8 @@ The memory writer (Task 7/12) needs Hermes 3 chat completions for fact extractio
 Update `Supervisor.__init__` to accept two new optional kwargs (place after `nomic_embed_path` for symmetry):
 
 ```python
-        chat_llm_path: Path | None = None,
-        openchronicle_available: bool = False,
+chat_llm_path: Path | None = (None,)
+openchronicle_available: bool = (False,)
 ```
 
 And add the matching instance assignments + ports:
@@ -1680,43 +1780,64 @@ And add the matching instance assignments + ports:
 - [ ] **Step 2: Add three new spawn methods after `_spawn_piper`**
 
 ```python
-    def _spawn_llamacpp_chat(self, port: int) -> None:
-        """Second llama-server, this one serving a chat-capable GGUF.
+def _spawn_llamacpp_chat(self, port: int) -> None:
+    """Second llama-server, this one serving a chat-capable GGUF.
 
-        Needed by mem0's writer (extract_turn / summarize_session) for
-        Hermes-3-style tool calling. ~5 GB RAM at runtime.
-        """
-        if self.chat_llm_path is None or not self.chat_llm_path.exists():
-            return  # silently skip; memory writer will simply no-op
-        args = [
-            str(self.venv_python), "-m", "llama_cpp.server",
-            "--model", str(self.chat_llm_path),
-            "--host", "127.0.0.1", "--port", str(port),
-            "--n_ctx", "8192",
-        ]
-        self._spawn(args, cwd=self.upstream_root, name="llamacpp_chat")
+    Needed by mem0's writer (extract_turn / summarize_session) for
+    Hermes-3-style tool calling. ~5 GB RAM at runtime.
+    """
+    if self.chat_llm_path is None or not self.chat_llm_path.exists():
+        return  # silently skip; memory writer will simply no-op
+    args = [
+        str(self.venv_python),
+        "-m",
+        "llama_cpp.server",
+        "--model",
+        str(self.chat_llm_path),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--n_ctx",
+        "8192",
+    ]
+    self._spawn(args, cwd=self.upstream_root, name="llamacpp_chat")
 
-    def _spawn_memory_retriever(self, port: int) -> None:
-        args = [
-            str(self.venv_python), "-m", "desktop_shims.memory_shim",
-            "--host", "127.0.0.1", "--port", str(port),
-            "--surreal-url", self.session_env["SURREAL_URL"],
-            "--embed-url",
-            f"http://127.0.0.1:{self.embed_port}/v1" if self.embed_port else "",
-            "--llm-url",
-            f"http://127.0.0.1:{self.chat_llm_port}/v1" if self.chat_llm_port else "",
-        ]
-        self._spawn(args, cwd=self.upstream_root, name="memory")
 
-    def _spawn_openchronicle_bridge(self, port: int) -> None:
-        if not self.openchronicle_available:
-            return
-        args = [
-            str(self.venv_python), "-m", "desktop_shims.openchronicle_shim",
-            "--host", "127.0.0.1", "--port", str(port),
-            "--mcp-url", "http://127.0.0.1:8742/mcp",
-        ]
-        self._spawn(args, cwd=self.upstream_root, name="openchronicle")
+def _spawn_memory_retriever(self, port: int) -> None:
+    args = [
+        str(self.venv_python),
+        "-m",
+        "desktop_shims.memory_shim",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--surreal-url",
+        self.session_env["SURREAL_URL"],
+        "--embed-url",
+        f"http://127.0.0.1:{self.embed_port}/v1" if self.embed_port else "",
+        "--llm-url",
+        f"http://127.0.0.1:{self.chat_llm_port}/v1" if self.chat_llm_port else "",
+    ]
+    self._spawn(args, cwd=self.upstream_root, name="memory")
+
+
+def _spawn_openchronicle_bridge(self, port: int) -> None:
+    if not self.openchronicle_available:
+        return
+    args = [
+        str(self.venv_python),
+        "-m",
+        "desktop_shims.openchronicle_shim",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--mcp-url",
+        "http://127.0.0.1:8742/mcp",
+    ]
+    self._spawn(args, cwd=self.upstream_root, name="openchronicle")
 ```
 
 - [ ] **Step 3: Extend `start_all` to allocate 3 more ports + spawn**
@@ -1724,9 +1845,17 @@ And add the matching instance assignments + ports:
 Change `find_free_ports(6)` to `find_free_ports(9)`, unpacking the new ports:
 
 ```python
-        (surreal_port, api_port, frontend_port,
-         embed_port, whisper_port, piper_port,
-         chat_llm_port, memory_port, openchronicle_port) = find_free_ports(9)
+(
+    surreal_port,
+    api_port,
+    frontend_port,
+    embed_port,
+    whisper_port,
+    piper_port,
+    chat_llm_port,
+    memory_port,
+    openchronicle_port,
+) = find_free_ports(9)
 ```
 
 After the existing v0.3 supervisor.piper progress block (right after stashing `self.piper_port = piper_port`), append:
@@ -1780,8 +1909,9 @@ def test_supervisor_spawns_chat_llm_and_memory_retriever(cfg, tmp_path, monkeypa
         return p
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("desktop.launcher.find_free_ports",
-                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
@@ -1790,8 +1920,11 @@ def test_supervisor_spawns_chat_llm_and_memory_retriever(cfg, tmp_path, monkeypa
     chat_gguf.write_bytes(b"FAKE-GGUF")
 
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
         chat_llm_path=chat_gguf,
         openchronicle_available=False,
     )
@@ -1811,18 +1944,26 @@ def test_supervisor_spawns_chat_llm_and_memory_retriever(cfg, tmp_path, monkeypa
 
 def test_supervisor_spawns_openchronicle_when_available(cfg, tmp_path, monkeypatch):
     spawned: list[list[str]] = []
-    monkeypatch.setattr(subprocess, "Popen",
-                        lambda a, **kw: (spawned.append(list(a)),
-                                         MagicMock(spec=subprocess.Popen,
-                                                   poll=MagicMock(return_value=None)))[1])
-    monkeypatch.setattr("desktop.launcher.find_free_ports",
-                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda a, **kw: (
+            spawned.append(list(a)),
+            MagicMock(spec=subprocess.Popen, poll=MagicMock(return_value=None)),
+        )[1],
+    )
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
         openchronicle_available=True,
     )
     sv.start_all()
@@ -1837,18 +1978,26 @@ def test_supervisor_spawns_openchronicle_when_available(cfg, tmp_path, monkeypat
 def test_supervisor_skips_chat_llm_when_no_path(cfg, tmp_path, monkeypatch):
     """No chat_llm_path → no llamacpp_chat process spawned; chat_llm_port stays 0."""
     spawned: list[list[str]] = []
-    monkeypatch.setattr(subprocess, "Popen",
-                        lambda a, **kw: (spawned.append(list(a)),
-                                         MagicMock(spec=subprocess.Popen,
-                                                   poll=MagicMock(return_value=None)))[1])
-    monkeypatch.setattr("desktop.launcher.find_free_ports",
-                       lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda a, **kw: (
+            spawned.append(list(a)),
+            MagicMock(spec=subprocess.Popen, poll=MagicMock(return_value=None)),
+        )[1],
+    )
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
         chat_llm_path=None,
     )
     sv.start_all()
@@ -1888,14 +2037,16 @@ git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
 ```python
 def _phase_detect_openchronicle(ctx: AppContext) -> None:
     import httpx
+
     try:
         r = httpx.get("http://127.0.0.1:8742/mcp", timeout=0.5)
-        ctx.openchronicle_available = (r.status_code < 500)
+        ctx.openchronicle_available = r.status_code < 500
     except Exception:
         ctx.openchronicle_available = False
     if ctx.progress_bus is not None:
         ctx.progress_bus.publish(
-            "openchronicle.detect", "done",
+            "openchronicle.detect",
+            "done",
             f"available={ctx.openchronicle_available}",
         )
 
@@ -1904,12 +2055,14 @@ def _phase_register_memory_commands(ctx: AppContext) -> None:
     """Drop commands/memory_commands.py into upstream's commands/ dir so the
     surreal-commands worker discovers our new handlers on startup."""
     import shutil
+
     commands_dst = ctx.upstream_root / "commands"  # the bundled upstream commands dir
     commands_dst.mkdir(parents=True, exist_ok=True)
     src = ctx.bin_dir.parent / "memory" / "memory_commands.py"
     # During development, src may live elsewhere; locate via package data:
     if not src.exists():
         import desktop.memory as mem_pkg
+
         src = Path(mem_pkg.__file__).parent / "memory_commands.py"
     if src.exists():
         shutil.copyfile(src, commands_dst / "memory_commands.py")
@@ -1935,8 +2088,8 @@ Update `_phase_start_supervisor(ctx)` to:
 
 2. **Pass two new kwargs** into the `Supervisor(...)` constructor:
    ```python
-       chat_llm_path=chat_llm_path,
-       openchronicle_available=ctx.openchronicle_available,
+   chat_llm_path = (chat_llm_path,)
+   openchronicle_available = (ctx.openchronicle_available,)
    ```
 
 - [ ] **Step 2: Sanity-import**
@@ -1982,6 +2135,7 @@ Discovery: surreal-commands imports any module passed via --import-modules.
 Each @command-decorated function is registered as
     open_notebook.<function_name>
 """
+
 from __future__ import annotations
 
 import os
@@ -2003,8 +2157,9 @@ def _build_clients():
     from desktop.memory.client import build_memory_client
 
     cfg = load_or_create(default_config_path())
-    surreal_url = os.environ.get("MEMORY_SURREAL_URL",
-                                 os.environ.get("SURREAL_URL", ""))
+    surreal_url = os.environ.get(
+        "MEMORY_SURREAL_URL", os.environ.get("SURREAL_URL", "")
+    )
     embed_url = os.environ.get("MEMORY_EMBED_URL", "")
     llm_url = os.environ.get("MEMORY_CHAT_LLM_URL", "")
     if not (surreal_url and embed_url and llm_url):
@@ -2013,8 +2168,10 @@ def _build_clients():
             "launcher Supervisor used to spawn this worker?"
         )
     mem_client = build_memory_client(
-        cfg=cfg, surreal_url=surreal_url,
-        embed_url=embed_url, llm_url=llm_url,
+        cfg=cfg,
+        surreal_url=surreal_url,
+        embed_url=embed_url,
+        llm_url=llm_url,
     )
     # Minimal LLM wrapper compatible with our writer's llm.complete()
     import httpx
@@ -2023,6 +2180,7 @@ def _build_clients():
         def __init__(self, base_url, model):
             self.base_url = base_url
             self.model = model
+
         def complete(self, system, user):
             with httpx.Client(timeout=120) as client:
                 r = client.post(
@@ -2039,21 +2197,26 @@ def _build_clients():
                 )
                 r.raise_for_status()
                 return r.json()["choices"][0]["message"]["content"]
+
     llm = _LLM(llm_url, "Hermes-3-Llama-3.1-8B-Q4_K_M")
     return llm, mem_client
 
 
 @command(name="memory_extract_turn")
-def memory_extract_turn(chat_session_id: str, user_text: str,
-                         assistant_text: str) -> dict:
+def memory_extract_turn(
+    chat_session_id: str, user_text: str, assistant_text: str
+) -> dict:
     """Per-turn fact extractor. Best-effort; no exceptions propagate."""
     try:
         from desktop.memory.writer import extract_turn
+
         llm, mem_client = _build_clients()
         extract_turn(
-            llm=llm, mem_client=mem_client,
+            llm=llm,
+            mem_client=mem_client,
             chat_session_id=chat_session_id,
-            user_text=user_text, assistant_text=assistant_text,
+            user_text=user_text,
+            assistant_text=assistant_text,
         )
         return {"ok": True}
     except Exception as e:
@@ -2065,9 +2228,11 @@ def memory_summarize_session(chat_session_id: str, transcript: str) -> dict:
     """Per-session episode summarizer."""
     try:
         from desktop.memory.writer import summarize_session
+
         llm, mem_client = _build_clients()
         summarize_session(
-            llm=llm, mem_client=mem_client,
+            llm=llm,
+            mem_client=mem_client,
             chat_session_id=chat_session_id,
             transcript=transcript,
         )
@@ -2105,25 +2270,40 @@ from desktop.config import Config
 
 def test_register_memory_credential_posts_credential():
     created = []
+
     class FakeClient:
         def get(self, path):
             class R:
                 status_code = 200
                 text = ""
-                def raise_for_status(self): pass
-                def json(self): return []
+
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return []
+
             return R()
+
         def post(self, path, json=None):
             created.append((path, json))
+
             class R:
                 status_code = 201
                 text = ""
+
                 def json(self):
                     return {"id": f"id-{json.get('name', '')}"}
+
             return R()
 
-    cfg = Config(model_dir=Path("/tmp"), provider="none", default_model="",
-                 surreal_user="root", surreal_password="x" * 24)
+    cfg = Config(
+        model_dir=Path("/tmp"),
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="x" * 24,
+    )
     register_memory_credential(FakeClient(), memory_port=8767, cfg=cfg)
     posted = [j for p, j in created if p == "/api/credentials"]
     assert any(j.get("name") == "Memory (local)" for j in posted)
@@ -2148,6 +2328,7 @@ upstream code can discover it. Whether upstream actually uses this credential
 or whether we need a small chat.py patch is decided at integration time
 (see spec §3.2).
 """
+
 from __future__ import annotations
 
 import logging
@@ -2165,7 +2346,9 @@ def register_memory_credential(client: Any, *, memory_port: int, cfg) -> None:
         existing_names=set(),
         name="Memory (local)",
         provider="openai_compatible",
-        modalities=["language"],  # placeholder — modality may be "memory" if upstream supports
+        modalities=[
+            "language"
+        ],  # placeholder — modality may be "memory" if upstream supports
         base_url=f"http://127.0.0.1:{memory_port}",
     )
     if cred:
@@ -2175,11 +2358,10 @@ def register_memory_credential(client: Any, *, memory_port: int, cfg) -> None:
 Then update `desktop/auto_register/__init__.py` to call this from the voice-models phase if `memory_port` is set. Find the existing call to `register_voice_models(...)` (or near it) and add:
 
 ```python
-        if kwargs.get("memory_port") is not None:
-            from desktop.auto_register.memory import register_memory_credential
-            register_memory_credential(client,
-                                       memory_port=kwargs["memory_port"],
-                                       cfg=cfg)
+if kwargs.get("memory_port") is not None:
+    from desktop.auto_register.memory import register_memory_credential
+
+    register_memory_credential(client, memory_port=kwargs["memory_port"], cfg=cfg)
 ```
 
 Also extend `auto_register(...)`'s signature to accept `memory_port: int | None = None`.
@@ -2212,9 +2394,12 @@ git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
 ```python
 def _phase_auto_register(ctx: AppContext) -> None:
     from desktop.auto_register import auto_register
+
     api_base = ctx.sv.session_env["INTERNAL_API_URL"]
     auto_register(
-        api_base_url=api_base, cfg=ctx.cfg, llamacpp_port=...,  # existing
+        api_base_url=api_base,
+        cfg=ctx.cfg,
+        llamacpp_port=...,  # existing
         whisper_port=getattr(ctx.sv, "whisper_port", None) or None,
         piper_port=getattr(ctx.sv, "piper_port", None) or None,
         embed_port=getattr(ctx.sv, "embed_port", None) or None,
@@ -2298,6 +2483,7 @@ Most data requests proxy through to the memory retriever shim (which has the
 mem0 client). This server itself is thin — just serves the static UI and
 provides a /api/theme endpoint so the dashboard adopts the user's wizard theme.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -2315,8 +2501,10 @@ def build_app(memory_retriever_url: str) -> web.Application:
         idx = STATIC_DIR / "index.html"
         if idx.exists():
             return web.FileResponse(idx)
-        return web.Response(text="<html><body>Memory dashboard (static UI not built yet)</body></html>",
-                            content_type="text/html")
+        return web.Response(
+            text="<html><body>Memory dashboard (static UI not built yet)</body></html>",
+            content_type="text/html",
+        )
 
     async def proxy(req: web.Request) -> web.Response:
         """Proxy /api/memory/* to the retriever shim."""
@@ -2329,17 +2517,23 @@ def build_app(memory_retriever_url: str) -> web.Application:
                 elif req.method == "DELETE":
                     r = await client.delete(url)
                 elif req.method == "POST":
-                    r = await client.post(url, json=await req.json() if req.body_exists else None)
+                    r = await client.post(
+                        url, json=await req.json() if req.body_exists else None
+                    )
                 else:
                     return web.Response(status=405, text="method not allowed")
-                return web.Response(status=r.status_code, body=r.content,
-                                    content_type=r.headers.get("content-type", "application/json"))
+                return web.Response(
+                    status=r.status_code,
+                    body=r.content,
+                    content_type=r.headers.get("content-type", "application/json"),
+                )
             except Exception as exc:
                 return web.json_response({"error": str(exc)}, status=502)
 
     async def theme(_: web.Request) -> web.Response:
         try:
             from desktop.config import default_config_path, load_or_create
+
             cfg = load_or_create(default_config_path())
             return web.json_response({"theme": cfg.theme})
         except Exception:
@@ -2607,12 +2801,22 @@ In `desktop/app.py`'s `_phase_open_window(ctx)`:
 ```python
 def _phase_open_window(ctx: AppContext) -> None:
     from desktop.window import open_window
-    memory_url = f"http://127.0.0.1:{ctx.memory_dashboard_port}/" if ctx.memory_dashboard_port else None
-    remind = (not ctx.openchronicle_available
-              and ctx.cfg.openchronicle_choice == "prompt")
-    open_window(ctx.sv.frontend_url, on_close=ctx.sv.stop_all,
-                theme=ctx.cfg.theme,
-                memory_url=memory_url, remind_openchronicle=remind)
+
+    memory_url = (
+        f"http://127.0.0.1:{ctx.memory_dashboard_port}/"
+        if ctx.memory_dashboard_port
+        else None
+    )
+    remind = (
+        not ctx.openchronicle_available and ctx.cfg.openchronicle_choice == "prompt"
+    )
+    open_window(
+        ctx.sv.frontend_url,
+        on_close=ctx.sv.stop_all,
+        theme=ctx.cfg.theme,
+        memory_url=memory_url,
+        remind_openchronicle=remind,
+    )
 ```
 
 Add `memory_dashboard_port: int = 0` to `AppContext`.
@@ -2623,6 +2827,7 @@ Add `memory_dashboard_port: int = 0` to `AppContext`.
 def _phase_start_memory_dashboard(ctx: AppContext) -> None:
     from desktop.memory_dashboard.server import build_app as md_build_app
     from desktop.aiohttp_window import start_aiohttp_server_thread
+
     memory_url = f"http://127.0.0.1:{ctx.sv.memory_port}/" if ctx.sv.memory_port else ""
     port, _, _, _ = start_aiohttp_server_thread(
         app_factory=lambda: md_build_app(memory_retriever_url=memory_url),
@@ -2642,10 +2847,12 @@ def _on_open_memory():
         _webview.create_window(
             "Memory",
             f"http://127.0.0.1:{ctx.memory_dashboard_port}/",
-            width=900, height=640,
+            width=900,
+            height=640,
         )
     except Exception:
         pass
+
 
 install_tray(
     on_open_main=_on_open_main,
@@ -2768,15 +2975,16 @@ Update the screen flow so theme's "Continue" goes to `ambient-memory` instead of
 In `desktop/first_run/server.py`, in the `save()` handler:
 
 ```python
-        cfg = Config(
-            model_dir=model_dir, provider=provider,
-            default_model=body.get("default_model", ""),
-            surreal_user="root",
-            surreal_password=secrets.token_urlsafe(24),
-            theme=body.get("theme", "light-blue"),
-            encryption_key=secrets.token_urlsafe(32),
-            openchronicle_choice=body.get("openchronicle_choice", "skip"),  # NEW
-        )
+cfg = Config(
+    model_dir=model_dir,
+    provider=provider,
+    default_model=body.get("default_model", ""),
+    surreal_user="root",
+    surreal_password=secrets.token_urlsafe(24),
+    theme=body.get("theme", "light-blue"),
+    encryption_key=secrets.token_urlsafe(32),
+    openchronicle_choice=body.get("openchronicle_choice", "skip"),  # NEW
+)
 ```
 
 - [ ] **Step 4: Add a dismiss-reminder endpoint**
@@ -2784,21 +2992,29 @@ In `desktop/first_run/server.py`, in the `save()` handler:
 In the same file, add:
 
 ```python
-    async def dismiss_openchronicle_reminder(req: web.Request) -> web.Response:
-        # Re-load, mutate, re-save.
-        from desktop.config import load_or_create
-        cfg = load_or_create(config_path)
-        # cfg is frozen, so we replace it
-        new_cfg = Config(
-            model_dir=cfg.model_dir, provider=cfg.provider,
-            default_model=cfg.default_model,
-            surreal_user=cfg.surreal_user, surreal_password=cfg.surreal_password,
-            theme=cfg.theme, encryption_key=cfg.encryption_key,
-            openchronicle_choice="skip",
-        )
-        new_cfg.save(config_path)
-        return web.json_response({"ok": True})
-    app.router.add_post("/api/config/dismiss_openchronicle_reminder", dismiss_openchronicle_reminder)
+async def dismiss_openchronicle_reminder(req: web.Request) -> web.Response:
+    # Re-load, mutate, re-save.
+    from desktop.config import load_or_create
+
+    cfg = load_or_create(config_path)
+    # cfg is frozen, so we replace it
+    new_cfg = Config(
+        model_dir=cfg.model_dir,
+        provider=cfg.provider,
+        default_model=cfg.default_model,
+        surreal_user=cfg.surreal_user,
+        surreal_password=cfg.surreal_password,
+        theme=cfg.theme,
+        encryption_key=cfg.encryption_key,
+        openchronicle_choice="skip",
+    )
+    new_cfg.save(config_path)
+    return web.json_response({"ok": True})
+
+
+app.router.add_post(
+    "/api/config/dismiss_openchronicle_reminder", dismiss_openchronicle_reminder
+)
 ```
 
 - [ ] **Step 5: Run wizard tests**
@@ -2829,13 +3045,21 @@ git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
 Find the `datas = [...]` list and add:
 
 ```python
-    # v0.4 — memory packages, dashboard, injections, migration
-    (str(PROJECT_ROOT / "desktop" / "memory"), "upstream/desktop/memory"),
-    (str(ROOT / "memory_dashboard" / "static"), "desktop/memory_dashboard/static"),
-    (str(ROOT / "first_run" / "static" / "memory_injection.js"),
-        "desktop/first_run/static"),
-    (str(PROJECT_ROOT / "migrations" / "010_memory_tables.surrealql"),
-        "upstream/migrations"),
+# v0.4 — memory packages, dashboard, injections, migration
+((str(PROJECT_ROOT / "desktop" / "memory"), "upstream/desktop/memory"),)
+((str(ROOT / "memory_dashboard" / "static"), "desktop/memory_dashboard/static"),)
+(
+    (
+        str(ROOT / "first_run" / "static" / "memory_injection.js"),
+        "desktop/first_run/static",
+    ),
+)
+(
+    (
+        str(PROJECT_ROOT / "migrations" / "010_memory_tables.surrealql"),
+        "upstream/migrations",
+    ),
+)
 ```
 
 (The `desktop/memory/` package needs to be importable from the venv-python at runtime. Since the venv lives outside the .app and the memory writer is invoked by the upstream worker process — also running from the venv — we need `desktop/memory` on the venv's sys.path. The launcher already injects `upstream/` via the .pth file from `bootstrap.ensure_venv`. We add `desktop/memory` similarly. The simplest approach: copy `desktop/memory/` into `upstream/desktop/memory/` at build time AND update the .pth setup in `bootstrap.py` to add the path. For v0.4, the simplest: keep the source bundled and let the worker import via the upstream-relative path.)

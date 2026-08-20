@@ -126,6 +126,7 @@ def _wiki_lang() -> str:
 def _wikipedia_endpoint() -> str:
     return f"https://{_wiki_lang()}.wikipedia.org/w/api.php"
 
+
 _DEFAULT_MAX_RESULTS = 5
 _DEFAULT_TIMEOUT_SEC = 10.0
 _MAX_RESULTS_CEILING = 20
@@ -562,6 +563,7 @@ async def _run_web_search_result(
     # instance on localhost would also be skipped here, but a localhost
     # SearXNG can't search the web without internet anyway.
     from deeper_notebook.health.network import get_network_state_with_settings
+
     _net = await get_network_state_with_settings()
     if _net.status == "offline":
         logger.info("v0.8.68 web_search skipped: device offline")

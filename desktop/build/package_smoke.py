@@ -143,7 +143,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-url", required=True)
     parser.add_argument("--frontend-url", required=True)
     parser.add_argument("--frontend-marker", default="__next_f")
-    parser.add_argument("--required-runtime-path", type=Path, action="append", default=[])
+    parser.add_argument(
+        "--required-runtime-path", type=Path, action="append", default=[]
+    )
     parser.add_argument("--artifact", type=Path, action="append", default=[])
     parser.add_argument("--expected-artifact-sha256", action="append", default=[])
     parser.add_argument("--receipt", type=Path, required=True)
@@ -175,7 +177,9 @@ def main() -> int:
 
     try:
         if not args.artifact:
-            raise SmokeFailure("at least one artifact is required for signature validation")
+            raise SmokeFailure(
+                "at least one artifact is required for signature validation"
+            )
         expected_hashes = parse_expected_hashes(args.expected_artifact_sha256)
         artifact_hashes = check_artifact_signatures(args.artifact, expected_hashes)
         receipt["checks"]["artifact_signatures"] = {
@@ -183,7 +187,9 @@ def main() -> int:
             "sha256": artifact_hashes,
         }
 
-        missing_runtime_paths = [path for path in args.required_runtime_path if not path.exists()]
+        missing_runtime_paths = [
+            path for path in args.required_runtime_path if not path.exists()
+        ]
         if missing_runtime_paths:
             raise SmokeFailure(
                 "missing bundled runtime path: "
@@ -198,7 +204,9 @@ def main() -> int:
         )
         time.sleep(0.1)
         if process.poll() is not None:
-            raise SmokeFailure(f"process exited during startup with code {process.returncode}")
+            raise SmokeFailure(
+                f"process exited during startup with code {process.returncode}"
+            )
         receipt["checks"]["process_startup"]["passed"] = True
 
         wait_for_url(args.api_url, args.timeout_seconds)

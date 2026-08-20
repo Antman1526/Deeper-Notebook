@@ -1,4 +1,5 @@
 """Whisper / Piper / embedding voice-model registration."""
+
 from __future__ import annotations
 
 import logging
@@ -34,8 +35,12 @@ def register_voice_models(
 
     Defaults preserve old test call sites that didn't pass these sets.
     """
-    existing_cred_names = existing_cred_names if existing_cred_names is not None else set()
-    existing_model_keys = existing_model_keys if existing_model_keys is not None else set()
+    existing_cred_names = (
+        existing_cred_names if existing_cred_names is not None else set()
+    )
+    existing_model_keys = (
+        existing_model_keys if existing_model_keys is not None else set()
+    )
 
     # Whisper
     if whisper_port is not None:
@@ -50,7 +55,8 @@ def register_voice_models(
         if cred:
             existing_cred_names.add("whisper (local)")
             if _ensure_model(
-                client=client, existing_keys=existing_model_keys,
+                client=client,
+                existing_keys=existing_model_keys,
                 name="whisper-base-en",
                 provider="openai_compatible",
                 model_type="speech_to_text",
@@ -72,7 +78,8 @@ def register_voice_models(
             existing_cred_names.add("piper (local)")
             for voice_id in ("piper-amy-en", "piper-ryan-en"):
                 if _ensure_model(
-                    client=client, existing_keys=existing_model_keys,
+                    client=client,
+                    existing_keys=existing_model_keys,
                     name=voice_id,
                     provider="openai_compatible",
                     model_type="text_to_speech",
@@ -93,7 +100,8 @@ def register_voice_models(
         if cred:
             existing_cred_names.add("local embeddings (llama.cpp)")
             if _ensure_model(
-                client=client, existing_keys=existing_model_keys,
+                client=client,
+                existing_keys=existing_model_keys,
                 name="nomic-embed-text-v1.5",
                 provider="openai_compatible",
                 model_type="embedding",

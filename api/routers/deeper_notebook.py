@@ -11,6 +11,7 @@ The theme set here is read by desktop/window.py's _theme_injection_js on
 every page load, so live switches persist across navigation and across
 app restarts (config.toml is the source of truth).
 """
+
 from __future__ import annotations
 
 from dataclasses import replace as _dc_replace
@@ -24,14 +25,33 @@ router = APIRouter()
 # Kept in lockstep with desktop/window.py:_THEMES — adding a theme requires
 # updating both. The UI shouldn't accept an arbitrary string.
 _VALID_THEMES = {
-    "research-core-dark", "research-core-light", "deep-ocean", "graphite-lab",
-    "arctic-research", "archive-paper", "high-contrast-dark", "high-contrast-light",
-    "light-blue", "system", "solarized-light", "github-light", "paper",
-    "dark", "solarized-dark", "dracula", "nord",
+    "research-core-dark",
+    "research-core-light",
+    "deep-ocean",
+    "graphite-lab",
+    "arctic-research",
+    "archive-paper",
+    "high-contrast-dark",
+    "high-contrast-light",
+    "light-blue",
+    "system",
+    "solarized-light",
+    "github-light",
+    "paper",
+    "dark",
+    "solarized-dark",
+    "dracula",
+    "nord",
     # v0.8.72 — premium theme pack (must mirror desktop/window.py:_THEMES
     # and frontend ThemeSwitcher:DEEPER_NOTEBOOK_THEMES).
-    "midnight-aurora", "tokyo-night", "catppuccin-mocha", "rose-pine",
-    "gruvbox-dark", "one-dark", "catppuccin-latte", "rose-pine-dawn",
+    "midnight-aurora",
+    "tokyo-night",
+    "catppuccin-mocha",
+    "rose-pine",
+    "gruvbox-dark",
+    "one-dark",
+    "catppuccin-latte",
+    "rose-pine-dawn",
 }
 
 
@@ -77,7 +97,9 @@ async def get_theme() -> ThemeResponse:
     except Exception:
         # Config file unreadable / first-run before disk write — return
         # the default rather than 500'ing the UI.
-        return ThemeResponse(theme="research-core-dark", available=sorted(_VALID_THEMES))
+        return ThemeResponse(
+            theme="research-core-dark", available=sorted(_VALID_THEMES)
+        )
     return ThemeResponse(theme=cfg.theme, available=sorted(_VALID_THEMES))
 
 
@@ -111,6 +133,7 @@ async def set_theme(body: ThemeRequest) -> ThemeResponse:
         # client and a minor info-disclosure of the operator's
         # filesystem layout. Full detail stays in logger.
         from loguru import logger
+
         logger.exception("Theme save failed")
         raise HTTPException(
             status_code=500,

@@ -98,7 +98,9 @@ class Repository:
 
 
 def service(catalog: Catalog, repository: Repository) -> KnowledgeBackfillService:
-    return KnowledgeBackfillService(catalog=catalog, repository=repository, clock=lambda: NOW)
+    return KnowledgeBackfillService(
+        catalog=catalog, repository=repository, clock=lambda: NOW
+    )
 
 
 @pytest.mark.asyncio
@@ -141,7 +143,10 @@ async def test_failed_item_keeps_prior_snapshot_and_requires_durable_failure_rec
     assert result.failed == 1
     assert repository.committed_snapshots == []
     assert repository.failure_codes == ["knowledge_adapter_invalid"]
-    assert repository.checkpoints["knowledge_engine_space:a"].last_relative_locator == "Bad.md"
+    assert (
+        repository.checkpoints["knowledge_engine_space:a"].last_relative_locator
+        == "Bad.md"
+    )
 
 
 @pytest.mark.asyncio
@@ -164,7 +169,9 @@ async def test_checkpoint_corruption_fails_closed_without_restarting():
 
     repository = CorruptRepository()
     with pytest.raises(KnowledgeRepositoryError, match="checkpoint_invalid"):
-        await service(Catalog([source("knowledge_engine_space:a", "Pages/A.md")]), repository).run()
+        await service(
+            Catalog([source("knowledge_engine_space:a", "Pages/A.md")]), repository
+        ).run()
     assert repository.committed_snapshots == []
 
 
@@ -182,11 +189,17 @@ async def test_cancellation_resumes_after_last_durable_item():
     with pytest.raises(asyncio.CancelledError):
         await service(catalog, repository).run()
 
-    assert repository.checkpoints["knowledge_engine_space:a"].last_relative_locator == "Pages/A.md"
+    assert (
+        repository.checkpoints["knowledge_engine_space:a"].last_relative_locator
+        == "Pages/A.md"
+    )
     repository.cancel_on = None
     result = await service(catalog, repository).run()
     assert result.projected == 1
-    assert repository.projected_locators[-1] == ("knowledge_engine_space:a", "Pages/B.md")
+    assert repository.projected_locators[-1] == (
+        "knowledge_engine_space:a",
+        "Pages/B.md",
+    )
 
 
 @pytest.mark.asyncio
@@ -242,8 +255,12 @@ async def test_completed_run_replays_idempotently_and_new_hash_creates_revision(
     first = await service(catalog, repository).run()
     first_revision = repository.committed_snapshots[-1].revision.id
     second = await service(catalog, repository).run()
-    catalog.sources[0] = replace(catalog.sources[0], canonical_bytes=b"# Changed\n", byte_size=10,
-        observed_content_hash=sha256(b"# Changed\n").hexdigest())
+    catalog.sources[0] = replace(
+        catalog.sources[0],
+        canonical_bytes=b"# Changed\n",
+        byte_size=10,
+        observed_content_hash=sha256(b"# Changed\n").hexdigest(),
+    )
     third = await service(catalog, repository).run()
 
     assert (first.projected, second.unchanged, third.projected) == (1, 1, 1)
@@ -282,7 +299,9 @@ async def test_backfill_distinguishes_identical_bytes_at_different_locators():
     assert second.unchanged == 2
     assert (third.projected, third.unchanged) == (1, 1)
     assert repository.committed_snapshots[-1].document.relative_locator == "Pages/B.md"
-    assert repository.committed_snapshots[-1].revision.id != first_revisions["Pages/B.md"]
+    assert (
+        repository.committed_snapshots[-1].revision.id != first_revisions["Pages/B.md"]
+    )
     assert len(repository.operations) == 3
 
 
@@ -313,7 +332,9 @@ class OverlayRepository:
 
 
 class VaultRepository:
-    def __init__(self, mounts: list[VaultMount], files: dict[str, list[VaultFile]]) -> None:
+    def __init__(
+        self, mounts: list[VaultMount], files: dict[str, list[VaultFile]]
+    ) -> None:
         self.mounts = mounts
         self.files = files
         self.write_calls: list[str] = []
@@ -332,7 +353,11 @@ class EmptyOverlayRepository:
 
 @pytest.fixture
 def approved_vault_root() -> Path:
-    base = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".cache" / "deeper-notebook-backfill-tests"
+    base = (
+        Path(pwd.getpwuid(os.getuid()).pw_dir)
+        / ".cache"
+        / "deeper-notebook-backfill-tests"
+    )
     root = base / uuid4().hex / "vault"
     root.mkdir(parents=True)
     try:
@@ -378,28 +403,46 @@ async def test_catalog_reads_overlay_body_only_without_source_writes(tmp_path: P
     snapshot = service(Catalog(sources), Repository())._project(sources[0])
     assert snapshot.document.normalized_body == "# Body\n"
     assert [claim.legacy_kind for claim in sources[0].legacy_identities] == [
-        "note", "overlay_note", "overlay_space"
+        "note",
+        "overlay_note",
+        "overlay_space",
     ]
     assert overlay.write_calls == vault.write_calls == []
 
 
 @pytest.mark.asyncio
-async def test_catalog_reports_descriptor_failures_without_root_disclosure(approved_vault_root: Path):
+async def test_catalog_reports_descriptor_failures_without_root_disclosure(
+    approved_vault_root: Path,
+):
     root = approved_vault_root
     (root / "Unsafe.md").symlink_to(root.parent / "outside.md")
     mount = VaultMount(
-        id="vault_mount:one", name="One", root_path=str(root), format_mode="mixed",
-        status="ready-read-only", parser_version="vault-parser-v1",
+        id="vault_mount:one",
+        name="One",
+        root_path=str(root),
+        format_mode="mixed",
+        status="ready-read-only",
+        parser_version="vault-parser-v1",
     )
     file = VaultFile(
-        id="vault_file:unsafe", note_id="note:unsafe", vault_id=mount.id,
-        relative_path="Unsafe.md", file_kind="markdown", format="markdown",
-        content_hash="0" * 64, size_bytes=1, modified_ns=1, encoding="utf-8",
-        newline="lf", parse_status="invalid", deleted_state="present",
+        id="vault_file:unsafe",
+        note_id="note:unsafe",
+        vault_id=mount.id,
+        relative_path="Unsafe.md",
+        file_kind="markdown",
+        format="markdown",
+        content_hash="0" * 64,
+        size_bytes=1,
+        modified_ns=1,
+        encoding="utf-8",
+        newline="lf",
+        parse_status="invalid",
+        deleted_state="present",
     )
     catalog = CanonicalSourceCatalog(
         overlay_repository=EmptyOverlayRepository(),
-        overlay_storage=SimpleNamespace(), vault_repository=VaultRepository([mount], {mount.id: [file]})
+        overlay_storage=SimpleNamespace(),
+        vault_repository=VaultRepository([mount], {mount.id: [file]}),
     )
 
     assert [item async for item in catalog.iter_sources()] == []
@@ -416,17 +459,31 @@ async def test_catalog_keeps_unavailable_root_path_out_of_failure():
         / f"deeper-notebook-backfill-missing-{uuid4().hex}"
     )
     mount = VaultMount(
-        id="vault_mount:missing", name="Missing", root_path=str(missing_root),
-        format_mode="markdown", status="unavailable", parser_version="vault-parser-v1",
+        id="vault_mount:missing",
+        name="Missing",
+        root_path=str(missing_root),
+        format_mode="markdown",
+        status="unavailable",
+        parser_version="vault-parser-v1",
     )
     file = VaultFile(
-        id="vault_file:missing", note_id="note:missing", vault_id=mount.id,
-        relative_path="Lost.md", file_kind="markdown", format="markdown",
-        content_hash="1" * 64, size_bytes=1, modified_ns=1, encoding="utf-8",
-        newline="lf", parse_status="invalid", deleted_state="present",
+        id="vault_file:missing",
+        note_id="note:missing",
+        vault_id=mount.id,
+        relative_path="Lost.md",
+        file_kind="markdown",
+        format="markdown",
+        content_hash="1" * 64,
+        size_bytes=1,
+        modified_ns=1,
+        encoding="utf-8",
+        newline="lf",
+        parse_status="invalid",
+        deleted_state="present",
     )
     catalog = CanonicalSourceCatalog(
-        overlay_repository=EmptyOverlayRepository(), overlay_storage=SimpleNamespace(),
+        overlay_repository=EmptyOverlayRepository(),
+        overlay_storage=SimpleNamespace(),
         vault_repository=VaultRepository([mount], {mount.id: [file]}),
     )
 
@@ -436,16 +493,31 @@ async def test_catalog_keeps_unavailable_root_path_out_of_failure():
 
 
 @pytest.mark.asyncio
-async def test_catalog_maps_root_drift_to_stable_failure_code(monkeypatch: pytest.MonkeyPatch):
+async def test_catalog_maps_root_drift_to_stable_failure_code(
+    monkeypatch: pytest.MonkeyPatch,
+):
     mount = VaultMount(
-        id="vault_mount:drift", name="Drift", root_path="/safe/not-retained",
-        format_mode="markdown", status="ready-read-only", parser_version="vault-parser-v1",
+        id="vault_mount:drift",
+        name="Drift",
+        root_path="/safe/not-retained",
+        format_mode="markdown",
+        status="ready-read-only",
+        parser_version="vault-parser-v1",
     )
     file = VaultFile(
-        id="vault_file:drift", note_id="note:drift", vault_id=mount.id,
-        relative_path="Drift.md", file_kind="markdown", format="markdown",
-        content_hash="2" * 64, size_bytes=1, modified_ns=1, encoding="utf-8",
-        newline="lf", parse_status="invalid", deleted_state="present",
+        id="vault_file:drift",
+        note_id="note:drift",
+        vault_id=mount.id,
+        relative_path="Drift.md",
+        file_kind="markdown",
+        format="markdown",
+        content_hash="2" * 64,
+        size_bytes=1,
+        modified_ns=1,
+        encoding="utf-8",
+        newline="lf",
+        parse_status="invalid",
+        deleted_state="present",
     )
 
     class Root:
@@ -458,10 +530,14 @@ async def test_catalog_maps_root_drift_to_stable_failure_code(monkeypatch: pytes
     def drift(root, relative_path, *, max_bytes=None):
         raise VaultSecurityError("root_changed")
 
-    monkeypatch.setattr("deeper_notebook.knowledge_engine.backfill.approve_vault_root", lambda path: Root())
+    monkeypatch.setattr(
+        "deeper_notebook.knowledge_engine.backfill.approve_vault_root",
+        lambda path: Root(),
+    )
     monkeypatch.setattr("deeper_notebook.knowledge_engine.backfill.secure_read", drift)
     catalog = CanonicalSourceCatalog(
-        overlay_repository=EmptyOverlayRepository(), overlay_storage=SimpleNamespace(),
+        overlay_repository=EmptyOverlayRepository(),
+        overlay_storage=SimpleNamespace(),
         vault_repository=VaultRepository([mount], {mount.id: [file]}),
     )
 

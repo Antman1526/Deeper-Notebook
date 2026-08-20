@@ -1,4 +1,5 @@
 """Evidence Studio artifact request and response schemas."""
+
 from __future__ import annotations
 
 from typing import Any, Literal

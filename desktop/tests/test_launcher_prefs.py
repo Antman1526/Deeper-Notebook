@@ -8,6 +8,7 @@ Six test cases covering the full behaviour contract:
 5. Shell env wins on merge (env-wins rule).
 6. Malformed line raises a clear ValueError.
 """
+
 from __future__ import annotations
 
 import os
@@ -18,6 +19,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write(tmp_path: Path, content: str) -> Path:
     """Write content to launcher.env inside tmp_path and return the path."""
@@ -31,22 +33,35 @@ def _write(tmp_path: Path, content: str) -> Path:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_missing_file_returns_empty(tmp_path, monkeypatch):
     """Case 1: when the file doesn't exist, get_prefs() must return {}."""
-    monkeypatch.setattr("desktop.launcher_prefs._prefs_path",
-                        lambda: tmp_path / ".open-notebook-plus" / "launcher.env")
+    monkeypatch.setattr(
+        "desktop.launcher_prefs._prefs_path",
+        lambda: tmp_path / ".open-notebook-plus" / "launcher.env",
+    )
     from desktop.launcher_prefs import get_prefs
+
     assert get_prefs() == {}
 
 
 def test_simple_read(tmp_path, monkeypatch):
     """Case 2: present file with two whitelisted keys is read correctly."""
-    _write(tmp_path, "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nDEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=32768\n")
-    monkeypatch.setattr("desktop.launcher_prefs._prefs_path",
-                        lambda: tmp_path / ".open-notebook-plus" / "launcher.env")
+    _write(
+        tmp_path,
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nDEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=32768\n",
+    )
+    monkeypatch.setattr(
+        "desktop.launcher_prefs._prefs_path",
+        lambda: tmp_path / ".open-notebook-plus" / "launcher.env",
+    )
     from desktop.launcher_prefs import get_prefs
+
     prefs = get_prefs()
-    assert prefs == {"DEEPER_NOTEBOOK_CHAT_LLM_CTX": "8192", "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX": "32768"}
+    assert prefs == {
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX": "8192",
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX": "32768",
+    }
 
 
 def test_comments_and_blank_lines_preserved(tmp_path, monkeypatch):
@@ -59,6 +74,7 @@ def test_comments_and_blank_lines_preserved(tmp_path, monkeypatch):
     path = _write(tmp_path, original)
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop import launcher_prefs as lp
+
     lp.update_prefs({"DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX": "65536"})
     new_text = path.read_text()
     # Original comment and blank line preserved
@@ -70,9 +86,13 @@ def test_comments_and_blank_lines_preserved(tmp_path, monkeypatch):
 
 def test_none_value_removes_key(tmp_path, monkeypatch):
     """Case 4: update_prefs({KEY: None}) removes the key from the file."""
-    path = _write(tmp_path, "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nDEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=32768\n")
+    path = _write(
+        tmp_path,
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nDEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=32768\n",
+    )
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop import launcher_prefs as lp
+
     result = lp.update_prefs({"DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX": None})
     assert "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX" not in result
     assert "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX" not in path.read_text()
@@ -96,6 +116,7 @@ def test_malformed_line_raises(tmp_path, monkeypatch):
     path = _write(tmp_path, "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nNOT_A_VALID_LINE\n")
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop.launcher_prefs import get_prefs
+
     with pytest.raises(ValueError, match="expected KEY=VALUE"):
         get_prefs()
 
@@ -106,6 +127,7 @@ def test_update_prefs_rejects_unknown_key(tmp_path, monkeypatch):
     path.parent.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop.launcher_prefs import update_prefs
+
     with pytest.raises(ValueError, match="not in whitelist"):
         update_prefs({"SECRET_KEY": "my-secret"})
 
@@ -158,8 +180,7 @@ def test_merge_with_env_skips_non_whitelist_keys(tmp_path, monkeypatch):
     at launcher startup. Second-line defense matching get_prefs."""
     path = _write(
         tmp_path,
-        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\n"
-        "MY_SECRET=should-not-leak\n",
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nMY_SECRET=should-not-leak\n",
     )
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
     from desktop.launcher_prefs import merge_with_env
@@ -174,7 +195,9 @@ def test_merge_with_env_skips_non_whitelist_keys(tmp_path, monkeypatch):
 
 
 def test_merge_with_env_logs_warning_on_malformed_file(
-    tmp_path, monkeypatch, caplog,
+    tmp_path,
+    monkeypatch,
+    caplog,
 ):
     """v0.8.8 — pre-fix, merge_with_env silently swallowed ValueError
     when the file had a malformed line. Operator edited one line wrong
@@ -185,7 +208,7 @@ def test_merge_with_env_logs_warning_on_malformed_file(
     path = _write(
         tmp_path,
         "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\n"
-        "this is not a valid line\n"   # missing '='
+        "this is not a valid line\n"  # missing '='
         "DEEPER_NOTEBOOK_LOCAL_N_CTX=32768\n",
     )
     monkeypatch.setattr("desktop.launcher_prefs._prefs_path", lambda: path)
@@ -201,8 +224,7 @@ def test_merge_with_env_logs_warning_on_malformed_file(
     # so operators can find the broken line.
     assert env == {}, "merge_with_env on malformed file must not partially apply"
     assert any(
-        "launcher.env could not be parsed" in rec.message
-        for rec in caplog.records
+        "launcher.env could not be parsed" in rec.message for rec in caplog.records
     ), (
         "v0.8.8: malformed launcher.env must log a WARNING so operators "
         "see they have a broken config; pre-v0.8.8 was silent"

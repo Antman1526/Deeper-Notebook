@@ -38,6 +38,7 @@ Locks in five separate improvements:
     upgraded from bare `p-6` to the `px-6 py-10 sm:px-8` standard
     (matches Settings/Podcasts/Search/Models).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -188,9 +189,7 @@ def test_source_detail_markdown_headers_use_font_semibold():
     use font-semibold (matching v0.7.180 H1 standard) instead of
     the legacy font-bold. Without this pin, a future contributor
     pulling in fresh shadcn typography utilities could revert it."""
-    src = _read_source(
-        "frontend/src/components/source/SourceDetailContent.tsx"
-    )
+    src = _read_source("frontend/src/components/source/SourceDetailContent.tsx")
     assert "text-2xl font-bold mt-6 mb-4" not in src, (
         "v0.7.183 regression: markdown h1 reverted to font-bold."
     )

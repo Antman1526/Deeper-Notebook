@@ -25,6 +25,7 @@ Scope / honesty:
 
 Default OFF — set `DEEPER_NOTEBOOK_PRIVACY_GATE=on` (aliases: 1/true/yes/local) to enable.
 """
+
 from __future__ import annotations
 
 import os
@@ -104,8 +105,13 @@ def detect_sensitive(text: str) -> list[str]:
 
 # --------------------------------------------------------------- gate config
 
+
 def _privacy_gate_enabled(mode: str | None = None) -> bool:
-    raw = mode if mode is not None else (resolve_env("DEEPER_NOTEBOOK_PRIVACY_GATE") or "")
+    raw = (
+        mode
+        if mode is not None
+        else (resolve_env("DEEPER_NOTEBOOK_PRIVACY_GATE") or "")
+    )
     return raw.strip().lower() in ("on", "1", "true", "yes", "local", "local-only")
 
 
@@ -113,6 +119,7 @@ def _record_redirect(outcome: str) -> None:
     """Best-effort metric — observability must never break routing."""
     try:
         from api.metrics import record_privacy_gate_redirect
+
         record_privacy_gate_redirect(outcome)
     except Exception:
         pass
@@ -163,18 +170,21 @@ def apply_privacy_gate(
     if local_model_id:
         logger.warning(
             "privacy gate: rerouting cloud→local — detected {} in outbound "
-            "content (set DEEPER_NOTEBOOK_PRIVACY_GATE=off to disable)", summary,
+            "content (set DEEPER_NOTEBOOK_PRIVACY_GATE=off to disable)",
+            summary,
         )
         _record_redirect("local")
         return ModelChoice(
-            local_model_id, f"privacy-gate: kept on-device ({summary})",
+            local_model_id,
+            f"privacy-gate: kept on-device ({summary})",
         )
 
     # No local fallback — fail closed rather than leak to cloud.
     _record_redirect("blocked")
     logger.warning(
         "privacy gate: BLOCKED a cloud request — detected {} and no local "
-        "model is configured to handle it on-device", summary,
+        "model is configured to handle it on-device",
+        summary,
     )
     raise ConfigurationError(
         f"Privacy gate blocked a cloud request: sensitive data ({summary}) "

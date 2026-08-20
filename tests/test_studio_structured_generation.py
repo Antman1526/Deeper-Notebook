@@ -101,9 +101,7 @@ async def test_unsupported_native_output_falls_back_to_json_schema_prompt():
 
 @pytest.mark.asyncio
 async def test_fenced_json_is_accepted():
-    model = PlainJsonModel(
-        [f"```json\n{json.dumps(FLASHCARD_DOCUMENT)}\n```"]
-    )
+    model = PlainJsonModel([f"```json\n{json.dumps(FLASHCARD_DOCUMENT)}\n```"])
 
     result = await generate_structured_document(
         model=model,

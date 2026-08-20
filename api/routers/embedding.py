@@ -36,7 +36,7 @@ class NotebookVectorizeSourceEntry(BaseModel):
     title: str
     queued: bool
     command_id: Optional[str] = None
-    skip_reason: Optional[str] = None    # set when queued=False
+    skip_reason: Optional[str] = None  # set when queued=False
 
 
 class NotebookVectorizeResponse(BaseModel):
@@ -46,7 +46,7 @@ class NotebookVectorizeResponse(BaseModel):
     queued: int
     skipped: int
     failed: int
-    sources: list[NotebookVectorizeSourceEntry]   # capped at 100
+    sources: list[NotebookVectorizeSourceEntry]  # capped at 100
     warnings: list[str] = []
     # v0.7.137 — Pagination fields so callers can systematically work
     # through notebooks with more sources than the per-request limit.
@@ -121,9 +121,7 @@ async def embed_content(embed_request: EmbedRequest):
                 raise
             except Exception as e:
                 logger.error(f"Failed to submit async embedding command: {e}")
-                raise HTTPException(
-                    status_code=500, detail="Failed to queue embedding"
-                )
+                raise HTTPException(status_code=500, detail="Failed to queue embedding")
 
         else:
             # DOMAIN MODEL PATH: Submit job via domain model convenience methods
@@ -170,9 +168,7 @@ async def embed_content(embed_request: EmbedRequest):
         logger.error(
             f"Error embedding {embed_request.item_type} {embed_request.item_id}: {str(e)}"
         )
-        raise HTTPException(
-            status_code=500, detail="Error embedding content"
-        )
+        raise HTTPException(status_code=500, detail="Error embedding content")
 
 
 @router.post(
@@ -184,7 +180,8 @@ async def vectorize_notebook_sources(
     req: NotebookVectorizeRequest,
     response: Response,
     offset: int = Query(
-        0, ge=0,
+        0,
+        ge=0,
         description=(
             "Skip the first N sources. Use to paginate through "
             "notebooks with more sources than the per-request limit. "
@@ -192,7 +189,9 @@ async def vectorize_notebook_sources(
         ),
     ),
     limit: int = Query(
-        500, ge=1, le=2000,
+        500,
+        ge=1,
+        le=2000,
         description=(
             "Process at most N sources in this call. Default 500, max 2000. "
             "The hard ceiling exists so a single misclick can't spam the "
@@ -226,7 +225,8 @@ async def vectorize_notebook_sources(
     notebook = await Notebook.get(notebook_id)
     if not notebook:
         raise HTTPException(
-            status_code=404, detail=f"Notebook {notebook_id!r} not found",
+            status_code=404,
+            detail=f"Notebook {notebook_id!r} not found",
         )
 
     # Embedding model must be configured before we queue anything —
@@ -316,13 +316,13 @@ async def vectorize_notebook_sources(
         # Skip-if-already-embedded path. We check the `embedded_chunks`
         # field if present (set by the embed_source command). A source
         # without that field has never been embedded.
-        already_embedded = (
-            getattr(source, "embedded_chunks", 0) or 0
-        ) > 0
+        already_embedded = (getattr(source, "embedded_chunks", 0) or 0) > 0
         if req.only_missing and already_embedded:
             entries.append(
                 NotebookVectorizeSourceEntry(
-                    source_id=sid, title=title, queued=False,
+                    source_id=sid,
+                    title=title,
+                    queued=False,
                     skip_reason="already_embedded",
                 )
             )
@@ -335,7 +335,9 @@ async def vectorize_notebook_sources(
         if not (source.full_text or "").strip():
             entries.append(
                 NotebookVectorizeSourceEntry(
-                    source_id=sid, title=title, queued=False,
+                    source_id=sid,
+                    title=title,
+                    queued=False,
                     skip_reason="no_text",
                 )
             )
@@ -356,22 +358,26 @@ async def vectorize_notebook_sources(
         except Exception as exc:
             logger.warning(
                 "Bulk vectorize: {} ({}) failed to queue: {}",
-                title, sid, exc,
+                title,
+                sid,
+                exc,
             )
             entries.append(
                 NotebookVectorizeSourceEntry(
-                    source_id=sid, title=title, queued=False,
+                    source_id=sid,
+                    title=title,
+                    queued=False,
                     skip_reason=f"submit_failed: {exc}",
                 )
             )
             failed += 1
-            warnings.append(
-                f"Could not queue embedding for {title!r}: {exc}"
-            )
+            warnings.append(f"Could not queue embedding for {title!r}: {exc}")
             continue
         entries.append(
             NotebookVectorizeSourceEntry(
-                source_id=sid, title=title, queued=True,
+                source_id=sid,
+                title=title,
+                queued=True,
                 command_id=str(command_id) if command_id else None,
             )
         )
@@ -379,7 +385,11 @@ async def vectorize_notebook_sources(
 
     logger.info(
         "Bulk vectorize: notebook={} total={} queued={} skipped={} failed={}",
-        notebook_id, len(sources), queued, skipped, failed,
+        notebook_id,
+        len(sources),
+        queued,
+        skipped,
+        failed,
     )
     return NotebookVectorizeResponse(
         notebook_id=notebook_id,

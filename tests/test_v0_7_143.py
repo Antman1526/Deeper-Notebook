@@ -67,6 +67,7 @@ class TestHandleAlreadyRunning:
 
     def _make_exc(self, pid: int = 99999, tmp_path: Path | None = None):
         from desktop.singleton import AlreadyRunning
+
         return AlreadyRunning(
             pid=pid,
             pid_file=(tmp_path or Path("/tmp")) / "launcher.pid",
@@ -80,8 +81,10 @@ class TestHandleAlreadyRunning:
         ctx = MagicMock()
         exc = self._make_exc(tmp_path=tmp_path)
 
-        with patch("tkinter.Tk") as MockTk, \
-             patch("tkinter.messagebox.askyesno", return_value=False):
+        with (
+            patch("tkinter.Tk") as MockTk,
+            patch("tkinter.messagebox.askyesno", return_value=False),
+        ):
             MockTk.return_value.withdraw = MagicMock()
             MockTk.return_value.destroy = MagicMock()
             result = _handle_already_running(exc, ctx)
@@ -103,13 +106,15 @@ class TestHandleAlreadyRunning:
         # (simulating the other launcher exiting).
         alive_responses = iter([True, False])
 
-        with patch("tkinter.Tk") as MockTk, \
-             patch("tkinter.messagebox.askyesno", return_value=True), \
-             patch("os.kill") as mock_kill, \
-             patch(
-                 "desktop.singleton._is_pid_alive",
-                 side_effect=lambda pid: next(alive_responses),
-             ):
+        with (
+            patch("tkinter.Tk") as MockTk,
+            patch("tkinter.messagebox.askyesno", return_value=True),
+            patch("os.kill") as mock_kill,
+            patch(
+                "desktop.singleton._is_pid_alive",
+                side_effect=lambda pid: next(alive_responses),
+            ),
+        ):
             MockTk.return_value.withdraw = MagicMock()
             MockTk.return_value.destroy = MagicMock()
             result = _handle_already_running(exc, ctx)
@@ -128,11 +133,13 @@ class TestHandleAlreadyRunning:
         ctx = MagicMock()
         exc = self._make_exc(pid=99999, tmp_path=tmp_path)
 
-        with patch("tkinter.Tk") as MockTk, \
-             patch("tkinter.messagebox.askyesno", return_value=True), \
-             patch("os.kill"), \
-             patch("desktop.singleton._is_pid_alive", return_value=True), \
-             patch("time.monotonic", side_effect=[0.0, 11.0]):  # immediately past deadline
+        with (
+            patch("tkinter.Tk") as MockTk,
+            patch("tkinter.messagebox.askyesno", return_value=True),
+            patch("os.kill"),
+            patch("desktop.singleton._is_pid_alive", return_value=True),
+            patch("time.monotonic", side_effect=[0.0, 11.0]),
+        ):  # immediately past deadline
             MockTk.return_value.withdraw = MagicMock()
             MockTk.return_value.destroy = MagicMock()
             result = _handle_already_running(exc, ctx)
@@ -149,9 +156,11 @@ class TestHandleAlreadyRunning:
         pf.write_text("99999")
         exc = self._make_exc(pid=99999, tmp_path=tmp_path)
 
-        with patch("tkinter.Tk") as MockTk, \
-             patch("tkinter.messagebox.askyesno", return_value=True), \
-             patch("os.kill", side_effect=ProcessLookupError("no such process")):
+        with (
+            patch("tkinter.Tk") as MockTk,
+            patch("tkinter.messagebox.askyesno", return_value=True),
+            patch("os.kill", side_effect=ProcessLookupError("no such process")),
+        ):
             MockTk.return_value.withdraw = MagicMock()
             MockTk.return_value.destroy = MagicMock()
             result = _handle_already_running(exc, ctx)
@@ -168,8 +177,10 @@ class TestHandleAlreadyRunning:
         ctx = MagicMock()
         exc = self._make_exc(tmp_path=tmp_path)
 
-        with patch("tkinter.Tk", side_effect=ImportError("no Tk")), \
-             patch("subprocess.run", side_effect=FileNotFoundError("no osascript")):
+        with (
+            patch("tkinter.Tk", side_effect=ImportError("no Tk")),
+            patch("subprocess.run", side_effect=FileNotFoundError("no osascript")),
+        ):
             result = _handle_already_running(exc, ctx)
         assert result is False
 
@@ -186,13 +197,14 @@ class TestParseWmicCSV:
 
     def test_handles_typical_wmic_output(self):
         from desktop.singleton import _parse_wmic_csv
+
         # Real-ish output: BOM + header (alphabetical) + 2 data rows.
         # ﻿ is the UTF-8 BOM wmic emits.
         sample = (
             "﻿Node,CommandLine,ParentProcessId,ProcessId\r\n"
             "\r\n"
-            "MACHINE,\"C:\\Python\\python.exe foo.py\",1234,5678\r\n"
-            "MACHINE,\"D:\\app\\node.exe server.js\",1,9999\r\n"
+            'MACHINE,"C:\\Python\\python.exe foo.py",1234,5678\r\n'
+            'MACHINE,"D:\\app\\node.exe server.js",1,9999\r\n'
         )
         result = _parse_wmic_csv(sample)
         # Sorted by line order. Each tuple: (pid, ppid, cmdline).
@@ -201,12 +213,14 @@ class TestParseWmicCSV:
 
     def test_empty_input_returns_empty(self):
         from desktop.singleton import _parse_wmic_csv
+
         assert _parse_wmic_csv("") == []
         assert _parse_wmic_csv("﻿") == []
         assert _parse_wmic_csv("\r\n\r\n") == []
 
     def test_missing_header_columns_returns_empty(self):
         from desktop.singleton import _parse_wmic_csv
+
         # Header without the columns we need
         sample = "Node,Caption\r\nM,foo\r\n"
         assert _parse_wmic_csv(sample) == []
@@ -214,6 +228,7 @@ class TestParseWmicCSV:
     def test_non_integer_pid_silently_skipped(self):
         """A malformed row shouldn't crash the whole scan."""
         from desktop.singleton import _parse_wmic_csv
+
         sample = (
             "﻿Node,CommandLine,ParentProcessId,ProcessId\r\n"
             "MACHINE,bad,notanint,5678\r\n"
@@ -226,10 +241,8 @@ class TestParseWmicCSV:
     def test_handles_blank_command_line(self):
         """Some Windows kernel processes have no CommandLine."""
         from desktop.singleton import _parse_wmic_csv
-        sample = (
-            "﻿Node,CommandLine,ParentProcessId,ProcessId\r\n"
-            "MACHINE,,4,8\r\n"
-        )
+
+        sample = "﻿Node,CommandLine,ParentProcessId,ProcessId\r\nMACHINE,,4,8\r\n"
         result = _parse_wmic_csv(sample)
         assert result == [(8, 4, "")]
 
@@ -254,9 +267,11 @@ class TestReapOrphansDispatch:
             called_windows.append(True)
             return []
 
-        with patch.object(singleton, "_list_processes_posix", fake_posix), \
-             patch.object(singleton, "_list_processes_windows", fake_windows), \
-             patch.object(singleton.sys, "platform", "darwin"):
+        with (
+            patch.object(singleton, "_list_processes_posix", fake_posix),
+            patch.object(singleton, "_list_processes_windows", fake_windows),
+            patch.object(singleton.sys, "platform", "darwin"),
+        ):
             singleton.reap_orphans(bundle_paths=[tmp_path], dry_run=True)
 
         assert called_posix == [True]
@@ -276,9 +291,11 @@ class TestReapOrphansDispatch:
             called_windows.append(True)
             return []
 
-        with patch.object(singleton, "_list_processes_posix", fake_posix), \
-             patch.object(singleton, "_list_processes_windows", fake_windows), \
-             patch.object(singleton.sys, "platform", "win32"):
+        with (
+            patch.object(singleton, "_list_processes_posix", fake_posix),
+            patch.object(singleton, "_list_processes_windows", fake_windows),
+            patch.object(singleton.sys, "platform", "win32"),
+        ):
             singleton.reap_orphans(bundle_paths=[tmp_path], dry_run=True)
 
         assert called_posix == []
@@ -290,15 +307,21 @@ class TestKillOrphanDispatch:
 
     def test_posix_uses_signal(self):
         from desktop import singleton
-        with patch.object(singleton.sys, "platform", "darwin"), \
-             patch("os.kill") as mock_kill:
+
+        with (
+            patch.object(singleton.sys, "platform", "darwin"),
+            patch("os.kill") as mock_kill,
+        ):
             singleton._kill_orphan(12345, "fake cmdline")
         mock_kill.assert_called_once_with(12345, signal.SIGTERM)
 
     def test_windows_uses_taskkill(self):
         from desktop import singleton
-        with patch.object(singleton.sys, "platform", "win32"), \
-             patch("subprocess.run") as mock_run:
+
+        with (
+            patch.object(singleton.sys, "platform", "win32"),
+            patch("subprocess.run") as mock_run,
+        ):
             mock_run.return_value = MagicMock(returncode=0)
             singleton._kill_orphan(12345, "fake cmdline")
         # taskkill /pid 12345 /t
@@ -310,15 +333,21 @@ class TestKillOrphanDispatch:
     def test_posix_signal_failure_is_silent(self):
         """ESRCH (PID already dead between scan + kill) is normal."""
         from desktop import singleton
-        with patch.object(singleton.sys, "platform", "darwin"), \
-             patch("os.kill", side_effect=ProcessLookupError):
+
+        with (
+            patch.object(singleton.sys, "platform", "darwin"),
+            patch("os.kill", side_effect=ProcessLookupError),
+        ):
             # Must not raise
             singleton._kill_orphan(12345, "fake cmdline")
 
     def test_windows_taskkill_failure_is_silent(self):
         from desktop import singleton
-        with patch.object(singleton.sys, "platform", "win32"), \
-             patch("subprocess.run", side_effect=FileNotFoundError):
+
+        with (
+            patch.object(singleton.sys, "platform", "win32"),
+            patch("subprocess.run", side_effect=FileNotFoundError),
+        ):
             singleton._kill_orphan(12345, "fake cmdline")
 
 
@@ -331,6 +360,7 @@ def test_reap_orphans_still_returns_safely_when_self_matches():
     """v0.7.142 test still passes after the v0.7.143 cross-platform
     refactor — self and parent never appear in the orphan list."""
     from desktop.singleton import reap_orphans
+
     python_path = Path(sys.executable).parent
     orphans = reap_orphans(bundle_paths=[python_path], dry_run=True)
     own_pid = os.getpid()

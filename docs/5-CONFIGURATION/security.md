@@ -197,25 +197,24 @@ curl -X POST \
 ```python
 import requests
 
+
 class OpenNotebookClient:
     def __init__(self, base_url: str, password: str):
         self.base_url = base_url
         self.headers = {"Authorization": f"Bearer {password}"}
 
     def get_notebooks(self):
-        response = requests.get(
-            f"{self.base_url}/api/notebooks",
-            headers=self.headers
-        )
+        response = requests.get(f"{self.base_url}/api/notebooks", headers=self.headers)
         return response.json()
 
     def create_notebook(self, name: str, description: str = None):
         response = requests.post(
             f"{self.base_url}/api/notebooks",
             headers=self.headers,
-            json={"name": name, "description": description}
+            json={"name": name, "description": description},
         )
         return response.json()
+
 
 # Usage
 client = OpenNotebookClient("http://localhost:5055", "your_password")

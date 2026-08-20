@@ -1,4 +1,5 @@
 """v0.8.70 — tests for the in-app update notifier service."""
+
 from __future__ import annotations
 
 import json
@@ -22,6 +23,7 @@ def _isolated_state(tmp_path, monkeypatch):
 
 
 # --- version parsing -------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "raw,expected",
@@ -59,20 +61,25 @@ def test_is_newer(latest, current, newer):
 
 # --- check() with a fake GitHub response ----------------------------------
 
+
 def _fake_release(tag: str, *, html_url: str | None = None, assets=None):
     release_url = html_url or (
         f"https://github.com/Antman1526/Deeper-Notebook/releases/tag/{tag}"
     )
-    release_assets = assets if assets is not None else [
-        {
-            "name": "Deeper-Notebook-mac-arm64.dmg",
-            "browser_download_url": release_url + "/download",
-        },
-        {
-            "name": "SHA256SUMS",
-            "browser_download_url": release_url + "/checksums",
-        },
-    ]
+    release_assets = (
+        assets
+        if assets is not None
+        else [
+            {
+                "name": "Deeper-Notebook-mac-arm64.dmg",
+                "browser_download_url": release_url + "/download",
+            },
+            {
+                "name": "SHA256SUMS",
+                "browser_download_url": release_url + "/checksums",
+            },
+        ]
+    )
 
     async def _fetch():
         return {
@@ -82,6 +89,7 @@ def _fake_release(tag: str, *, html_url: str | None = None, assets=None):
             "published_at": "2026-06-26T00:00:00Z",
             "assets": release_assets,
         }
+
     return _fetch
 
 
@@ -105,6 +113,7 @@ async def test_check_no_update_when_same_version(monkeypatch):
 async def test_check_network_failure_is_safe(monkeypatch):
     async def _boom():
         return None  # service maps every failure mode to None
+
     monkeypatch.setattr(svc, "_fetch_latest_release", _boom)
     status = await svc.check(force=True)
     assert status["update_available"] is False
@@ -137,24 +146,26 @@ async def test_cache_avoids_second_network_call(monkeypatch):
         return {"tag_name": "v0.8.70", "html_url": "https://x", "published_at": "p"}
 
     monkeypatch.setattr(svc, "_fetch_latest_release", _tracked)
-    await svc.check(force=True)          # hits network
-    await svc.check(force=False)         # within TTL → cached
+    await svc.check(force=True)  # hits network
+    await svc.check(force=False)  # within TTL → cached
     assert called["n"] == 1
 
 
 def test_skip_version_marks_skipped(_isolated_state):
     # Seed a cached "available" state, then skip it.
-    svc._write_state({
-        "enabled": True,
-        "cache": {
-            "latest": "v0.8.70",
-            "verification": "verified",
-            "release_url": (
-                "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
-            ),
-        },
-        "last_check": "2026-06-26T00:00:00+00:00",
-    })
+    svc._write_state(
+        {
+            "enabled": True,
+            "cache": {
+                "latest": "v0.8.70",
+                "verification": "verified",
+                "release_url": (
+                    "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
+                ),
+            },
+            "last_check": "2026-06-26T00:00:00+00:00",
+        }
+    )
     status = svc.skip_version("v0.8.70")
     assert status["skipped_version"] == "v0.8.70"
     assert status["update_available"] is True
@@ -187,9 +198,7 @@ def test_update_service_targets_canonical_release_repository():
 
 
 def test_status_uses_canonical_release_page_when_github_payload_has_no_url():
-    status = svc._status_from_state(
-        {"enabled": True, "cache": {"latest": "v0.8.70"}}
-    )
+    status = svc._status_from_state({"enabled": True, "cache": {"latest": "v0.8.70"}})
 
     assert status["verification"] == "unknown"
     assert status["html_url"] is None
@@ -205,11 +214,7 @@ def test_status_uses_canonical_release_page_when_github_payload_has_no_url():
         ),
         ({"tag": "not-a-version"}, "unverified"),
         (
-            {
-                "assets": [
-                    {"name": "SHA256SUMS", "browser_download_url": "https://x"}
-                ]
-            },
+            {"assets": [{"name": "SHA256SUMS", "browser_download_url": "https://x"}]},
             "unverified",
         ),
         (
@@ -229,7 +234,9 @@ async def test_release_candidate_requires_canonical_verified_metadata(
     monkeypatch, release_kwargs, expected
 ):
     tag = release_kwargs.pop("tag", "v0.8.70")
-    monkeypatch.setattr(svc, "_fetch_latest_release", _fake_release(tag, **release_kwargs))
+    monkeypatch.setattr(
+        svc, "_fetch_latest_release", _fake_release(tag, **release_kwargs)
+    )
 
     status = await svc.check(force=True)
 
@@ -266,9 +273,10 @@ async def test_release_requires_actual_tag_name_not_display_name(monkeypatch):
 
 
 async def test_release_url_must_bind_to_candidate_tag(monkeypatch):
-    release = await _fake_release("v0.8.70", html_url=(
-        "https://github.com/Antman1526/Deeper-Notebook/releases/123"
-    ))()
+    release = await _fake_release(
+        "v0.8.70",
+        html_url=("https://github.com/Antman1526/Deeper-Notebook/releases/123"),
+    )()
     monkeypatch.setattr(svc, "_fetch_latest_release", lambda: _release(release))
 
     status = await svc.check(force=True)
@@ -279,19 +287,21 @@ async def test_release_url_must_bind_to_candidate_tag(monkeypatch):
 
 
 def test_downgraded_verified_cache_never_returns_release_url():
-    status = svc._status_from_state({
-        "enabled": True,
-        "cache": {
-            "latest": "not-a-version",
-            "verification": "verified",
-            "release_url": (
-                "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
-            ),
-            "html_url": (
-                "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
-            ),
-        },
-    })
+    status = svc._status_from_state(
+        {
+            "enabled": True,
+            "cache": {
+                "latest": "not-a-version",
+                "verification": "verified",
+                "release_url": (
+                    "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
+                ),
+                "html_url": (
+                    "https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70"
+                ),
+            },
+        }
+    )
 
     assert status["verification"] == "unknown"
     assert status["release_url"] is None

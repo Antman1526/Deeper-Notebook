@@ -47,7 +47,9 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app, excluded_paths: Optional[list] = None):
         super().__init__(app)
-        self.password = resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env)
+        self.password = resolve_env(
+            "DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env
+        )
         # v0.7.209 — defaults expanded to match what main.py passes
         # in production. Previously the class default omitted the
         # K8s/Docker probes (/livez, /readyz, /healthz/deep) and

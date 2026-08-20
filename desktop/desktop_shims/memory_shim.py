@@ -14,6 +14,7 @@ Exposes:
 Run as:
     python -m desktop_shims.memory_shim --port 8767
 """
+
 from __future__ import annotations
 
 import argparse
@@ -68,37 +69,45 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
     def relevant(topic: str = "", k: int = 5) -> dict:
         if not topic:
             return {"records": []}
-        records = _unwrap(mem_client.search(
-            query=topic, top_k=k, filters={"user_id": USER_ID}))
+        records = _unwrap(
+            mem_client.search(query=topic, top_k=k, filters={"user_id": USER_ID})
+        )
         return {"records": records[:k]}
 
     @app.get("/api/memory/preferences")
     def preferences() -> dict:
-        records = _unwrap(mem_client.search(
-            query="", top_k=200,
-            filters={"user_id": USER_ID, "kind": "preference"}))
+        records = _unwrap(
+            mem_client.search(
+                query="", top_k=200, filters={"user_id": USER_ID, "kind": "preference"}
+            )
+        )
         return {"records": records}
 
     @app.get("/api/memory/facts")
     def facts() -> dict:
-        records = _unwrap(mem_client.search(
-            query="", top_k=200,
-            filters={"user_id": USER_ID, "kind": "fact"}))
+        records = _unwrap(
+            mem_client.search(
+                query="", top_k=200, filters={"user_id": USER_ID, "kind": "fact"}
+            )
+        )
         return {"records": records}
 
     @app.get("/api/memory/episodes")
     def episodes() -> dict:
-        records = _unwrap(mem_client.search(
-            query="", top_k=200,
-            filters={"user_id": USER_ID, "kind": "episode"}))
+        records = _unwrap(
+            mem_client.search(
+                query="", top_k=200, filters={"user_id": USER_ID, "kind": "episode"}
+            )
+        )
         return {"records": records}
 
     @app.get("/api/memory/search")
     def search(q: str) -> dict:
         if not q:
             return {"records": []}
-        records = _unwrap(mem_client.search(
-            query=q, top_k=50, filters={"user_id": USER_ID}))
+        records = _unwrap(
+            mem_client.search(query=q, top_k=50, filters={"user_id": USER_ID})
+        )
         return {"records": records}
 
     # Map the user-facing kind names (fact/preference/episode) to the actual
@@ -115,6 +124,7 @@ def build_app(mem_client: Any, ambient_status_fn=None) -> FastAPI:
         # Defense in depth: reject ids containing anything outside the safe
         # whitelist before forwarding to mem0 / SurrealQL.
         import re as _re
+
         if not _re.fullmatch(r"[A-Za-z0-9_\-]+", id):
             raise HTTPException(status_code=400, detail="invalid id")
         mem_client.delete(memory_id=f"{table}:{id}")
@@ -212,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     app = build_app(mem_client=mem_client)
 
     import uvicorn
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 

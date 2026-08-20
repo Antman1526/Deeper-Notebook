@@ -161,7 +161,14 @@ def _git_status(root: Path) -> tuple[str, bool]:
         return "git_status_unavailable", False
     try:
         result = subprocess.run(
-            ["git", "-C", os.fspath(root), "status", "--porcelain=v1", "--untracked-files=all"],
+            [
+                "git",
+                "-C",
+                os.fspath(root),
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+            ],
             capture_output=True,
             check=False,
             text=True,
@@ -178,7 +185,10 @@ def _snapshot(root: Path, identity: RootIdentity) -> Snapshot:
     try:
         git_status, git_status_available = _git_status(root)
         snapshot = Snapshot(
-            hashes={relative.as_posix(): _hash_file(root / relative) for relative in _relative_files(root)},
+            hashes={
+                relative.as_posix(): _hash_file(root / relative)
+                for relative in _relative_files(root)
+            },
             git_status=git_status,
             git_status_available=git_status_available,
         )
@@ -203,7 +213,9 @@ def _source_inventory_digest(hashes: dict[str, str]) -> str:
 
 def _provenance_digest(mapping: dict[str, list[Any]]) -> str:
     return hashlib.sha256(
-        json.dumps(mapping, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        json.dumps(
+            mapping, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
     ).hexdigest()
 
 
@@ -250,10 +262,18 @@ def _manifest_counts(root: Path, identity: RootIdentity) -> dict[str, Any]:
     for record in synthesis:
         record_id = record.get("id")
         derived_from = record.get("derivedFrom")
-        if not isinstance(record_id, str) or not record_id or not isinstance(derived_from, list):
-            raise VerificationError("connector manifest has invalid synthesis provenance")
+        if (
+            not isinstance(record_id, str)
+            or not record_id
+            or not isinstance(derived_from, list)
+        ):
+            raise VerificationError(
+                "connector manifest has invalid synthesis provenance"
+            )
         if record_id in expected_derived_from:
-            raise VerificationError("connector manifest has duplicate synthesis records")
+            raise VerificationError(
+                "connector manifest has duplicate synthesis records"
+            )
         expected_derived_from[record_id] = derived_from
     counts = {
         "expected_trust_records": len(records),
@@ -298,15 +318,25 @@ def _mount_id(
     mounts = request("GET", api, "")
     if not isinstance(mounts, list):
         raise VerificationError("canonical vault API returned an invalid mount list")
-    named_mounts = [mount for mount in mounts if isinstance(mount, dict) and mount.get("name") == name]
+    named_mounts = [
+        mount
+        for mount in mounts
+        if isinstance(mount, dict) and mount.get("name") == name
+    ]
     if named_mounts:
         if len(named_mounts) != 1:
-            raise VerificationError("existing vault mount conflicts with controlled verification")
+            raise VerificationError(
+                "existing vault mount conflicts with controlled verification"
+            )
         value = named_mounts[0].get("id")
         if not isinstance(value, str) or not value:
-            raise VerificationError("canonical vault API returned an invalid existing mount")
+            raise VerificationError(
+                "canonical vault API returned an invalid existing mount"
+            )
         detail = request("GET", api, f"/{value}")
-        _validate_mount_detail(detail, value, name, path, format_mode, parent_vault_id, watch_enabled)
+        _validate_mount_detail(
+            detail, value, name, path, format_mode, parent_vault_id, watch_enabled
+        )
         return value
     payload: dict[str, Any] = {
         "name": name,
@@ -321,12 +351,20 @@ def _mount_id(
         raise VerificationError("canonical vault API returned an invalid mount")
     value = created["id"]
     detail = request("GET", api, f"/{value}")
-    _validate_mount_detail(detail, value, name, path, format_mode, parent_vault_id, watch_enabled)
+    _validate_mount_detail(
+        detail, value, name, path, format_mode, parent_vault_id, watch_enabled
+    )
     return value
 
 
 def _validate_mount_detail(
-    detail: Any, value: str, name: str, path: Path, format_mode: str, parent_vault_id: str | None, watch_enabled: bool
+    detail: Any,
+    value: str,
+    name: str,
+    path: Path,
+    format_mode: str,
+    parent_vault_id: str | None,
+    watch_enabled: bool,
 ) -> None:
     if not isinstance(detail, dict):
         raise VerificationError("canonical vault API returned an invalid mount detail")
@@ -334,7 +372,9 @@ def _validate_mount_detail(
         detail_path = Path(detail["root_path"]).expanduser().resolve(strict=True)
         expected_path = path.resolve(strict=True)
     except (KeyError, OSError, TypeError) as exc:
-        raise VerificationError("canonical vault API returned an invalid mount detail") from exc
+        raise VerificationError(
+            "canonical vault API returned an invalid mount detail"
+        ) from exc
     if (
         detail.get("id") != value
         or detail.get("name") != name
@@ -357,13 +397,21 @@ def _snapshot_differences(left: Snapshot, right: Snapshot) -> tuple[bool, bool]:
 class _ObservedApi:
     """Run every API request with a mandatory before/after source reconciliation."""
 
-    def __init__(self, root: Path, identity: RootIdentity, baseline: Snapshot, report: dict[str, Any]):
+    def __init__(
+        self,
+        root: Path,
+        identity: RootIdentity,
+        baseline: Snapshot,
+        report: dict[str, Any],
+    ):
         self.root = root
         self.identity = identity
         self.baseline = baseline
         self.report = report
 
-    def request(self, method: str, api: str, path: str, payload: dict[str, Any] | None = None) -> Any:
+    def request(
+        self, method: str, api: str, path: str, payload: dict[str, Any] | None = None
+    ) -> Any:
         before = _snapshot(self.root, self.identity)
         before_hashes, before_git = _snapshot_differences(before, self.baseline)
         if before_hashes or before_git:
@@ -391,7 +439,12 @@ class _ObservedApi:
 
 
 def _scan_once(
-    api: str, mount_ids: list[str], root: Path, identity: RootIdentity, baseline: Snapshot, request: Any
+    api: str,
+    mount_ids: list[str],
+    root: Path,
+    identity: RootIdentity,
+    baseline: Snapshot,
+    request: Any,
 ) -> tuple[int, bool, bool, Snapshot | None]:
     changed = 0
     for mount_id in mount_ids:
@@ -411,28 +464,47 @@ def _scan_once(
         before_hashes, before_git = _snapshot_differences(before, baseline)
         after_hashes, after_git = _snapshot_differences(after, baseline)
         if request_failed:
-            raise ScanVerificationError(before_hashes or after_hashes, before_git or after_git, after)
+            raise ScanVerificationError(
+                before_hashes or after_hashes, before_git or after_git, after
+            )
         if not isinstance(result, dict) or not isinstance(result.get("parsed"), int):
             raise VerificationError("canonical vault API returned an invalid scan")
         changed += result["parsed"]
         if before_hashes or before_git or after_hashes or after_git:
-            return changed, before_hashes or after_hashes, before_git or after_git, after
+            return (
+                changed,
+                before_hashes or after_hashes,
+                before_git or after_git,
+                after,
+            )
     return changed, False, False, None
 
 
-def _write_report(output: OutputTarget, root_identity: RootIdentity, report: dict[str, Any]) -> None:
+def _write_report(
+    output: OutputTarget, root_identity: RootIdentity, report: dict[str, Any]
+) -> None:
     payload = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode("utf-8")
     try:
         root = _revalidate_root(root_identity)
         resolved_output = output.path.resolve(strict=False)
         parent = resolved_output.parent.resolve(strict=True)
-        if resolved_output == root or root in resolved_output.parents or parent == root or root in parent.parents:
+        if (
+            resolved_output == root
+            or root in resolved_output.parents
+            or parent == root
+            or root in parent.parents
+        ):
             raise VerificationError("output must remain outside the source root")
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        )
         parent_descriptor = os.open(parent, flags)
         try:
             parent_stat = os.fstat(parent_descriptor)
-            if (parent_stat.st_dev, parent_stat.st_ino) != (output.parent_device, output.parent_inode):
+            if (parent_stat.st_dev, parent_stat.st_ino) != (
+                output.parent_device,
+                output.parent_inode,
+            ):
                 raise VerificationError("output parent changed during verification")
             descriptor = os.open(
                 resolved_output.name,
@@ -448,7 +520,9 @@ def _write_report(output: OutputTarget, root_identity: RootIdentity, report: dic
         raise VerificationError("sanitized report could not be created") from exc
 
 
-def _safe_report(root: Path, initial: Snapshot, counts: dict[str, Any], mode: str) -> dict[str, Any]:
+def _safe_report(
+    root: Path, initial: Snapshot, counts: dict[str, Any], mode: str
+) -> dict[str, Any]:
     return {
         "root_label": root.name,
         "mode": mode,
@@ -457,11 +531,15 @@ def _safe_report(root: Path, initial: Snapshot, counts: dict[str, Any], mode: st
         "source_files_changed": 0,
         "git_status_changed": False,
         "git_status_available": initial.git_status_available,
-        "git_status": initial.git_status if not initial.git_status_available else "captured",
+        "git_status": initial.git_status
+        if not initial.git_status_available
+        else "captured",
         "second_scan_changed_projections": 0,
         "expected_trust_records": counts["expected_trust_records"],
         "expected_synthesis_records": counts["expected_synthesis_records"],
-        "expected_synthesis_with_derived_from": counts["expected_synthesis_with_derived_from"],
+        "expected_synthesis_with_derived_from": counts[
+            "expected_synthesis_with_derived_from"
+        ],
         "expected_derived_from_digest": counts["expected_derived_from_digest"],
         "trust_records": 0,
         "synthesis_records": 0,
@@ -473,11 +551,17 @@ def _safe_report(root: Path, initial: Snapshot, counts: dict[str, Any], mode: st
 
 def _record_git_status(report: dict[str, Any], snapshot: Snapshot) -> None:
     report["git_status_available"] = snapshot.git_status_available
-    report["git_status"] = snapshot.git_status if not snapshot.git_status_available else "captured"
+    report["git_status"] = (
+        snapshot.git_status if not snapshot.git_status_available else "captured"
+    )
 
 
-def _record_observation(report: dict[str, Any], hashes_changed: bool, git_changed: bool, observed: Snapshot) -> None:
-    report["source_files_changed"] = int(bool(report["source_files_changed"] or hashes_changed))
+def _record_observation(
+    report: dict[str, Any], hashes_changed: bool, git_changed: bool, observed: Snapshot
+) -> None:
+    report["source_files_changed"] = int(
+        bool(report["source_files_changed"] or hashes_changed)
+    )
     report["git_status_changed"] = bool(report["git_status_changed"] or git_changed)
     _record_git_status(report, observed)
     if hashes_changed:
@@ -488,10 +572,18 @@ def _record_observation(report: dict[str, Any], hashes_changed: bool, git_change
             report["failures"].append("git_status_mismatch")
 
 
-def run(root: Path, root_identity: RootIdentity, api: str, output: OutputTarget, check_only: bool) -> int:
+def run(
+    root: Path,
+    root_identity: RootIdentity,
+    api: str,
+    output: OutputTarget,
+    check_only: bool,
+) -> int:
     initial = _snapshot(root, root_identity)
     counts = _manifest_counts(root, root_identity)
-    report = _safe_report(root, initial, counts, "check-only" if check_only else "controlled")
+    report = _safe_report(
+        root, initial, counts, "check-only" if check_only else "controlled"
+    )
     if check_only:
         _write_report(output, root_identity, report)
         return 0
@@ -499,19 +591,54 @@ def run(root: Path, root_identity: RootIdentity, api: str, output: OutputTarget,
         observed_api = _ObservedApi(root, root_identity, initial, report)
         request = observed_api.request
         parent_id = _mount_id(api, "2nd Brains", root, "mixed", None, False, request)
-        obsidian_id = _mount_id(api, "Obsidian Brain", root / "Obsidian Brain", "obsidian", parent_id, True, request)
-        logseq_id = _mount_id(api, "Logseq Brain", root / "Logseq Brain", "logseq", parent_id, True, request)
-        request("POST", api, f"/{parent_id}/trust/import", {"manifest_relative_path": MANIFEST_PATH})
+        obsidian_id = _mount_id(
+            api,
+            "Obsidian Brain",
+            root / "Obsidian Brain",
+            "obsidian",
+            parent_id,
+            True,
+            request,
+        )
+        logseq_id = _mount_id(
+            api,
+            "Logseq Brain",
+            root / "Logseq Brain",
+            "logseq",
+            parent_id,
+            True,
+            request,
+        )
+        request(
+            "POST",
+            api,
+            f"/{parent_id}/trust/import",
+            {"manifest_relative_path": MANIFEST_PATH},
+        )
         scan_mounts = [obsidian_id, logseq_id]
-        _, first_hash_mismatch, first_git_mismatch, first_observed = _scan_once(api, scan_mounts, root, root_identity, initial, request)
+        _, first_hash_mismatch, first_git_mismatch, first_observed = _scan_once(
+            api, scan_mounts, root, root_identity, initial, request
+        )
         if first_hash_mismatch or first_git_mismatch:
-            _record_observation(report, first_hash_mismatch, first_git_mismatch, first_observed or initial)
+            _record_observation(
+                report,
+                first_hash_mismatch,
+                first_git_mismatch,
+                first_observed or initial,
+            )
             _write_report(output, root_identity, report)
             return 1
-        second_changed, second_hash_mismatch, second_git_mismatch, second_observed = _scan_once(api, scan_mounts, root, root_identity, initial, request)
+        second_changed, second_hash_mismatch, second_git_mismatch, second_observed = (
+            _scan_once(api, scan_mounts, root, root_identity, initial, request)
+        )
         report["second_scan_changed_projections"] = second_changed
         if second_hash_mismatch or second_git_mismatch:
-            _record_observation(report, second_hash_mismatch, second_git_mismatch, second_observed or initial)
+            _record_observation(
+                report,
+                second_hash_mismatch,
+                second_git_mismatch,
+                second_observed or initial,
+            )
             _write_report(output, root_identity, report)
             return 1
         trust = request("GET", api, f"/{parent_id}/trust")
@@ -529,15 +656,26 @@ def run(root: Path, root_identity: RootIdentity, api: str, output: OutputTarget,
         report["failures"].append("verification_operation_failed")
         _write_report(output, root_identity, report)
         return 2
-    if not isinstance(trust, list) or not isinstance(summary, dict) or not isinstance(receipts, list):
+    if (
+        not isinstance(trust, list)
+        or not isinstance(summary, dict)
+        or not isinstance(receipts, list)
+    ):
         report["failures"].append("verification_operation_failed")
         _write_report(output, root_identity, report)
         return 2
     report["trust_records"] = len(trust)
-    report["synthesis_records"] = sum(item.get("evidence_class") == "synthesis" for item in trust if isinstance(item, dict))
+    report["synthesis_records"] = sum(
+        item.get("evidence_class") == "synthesis"
+        for item in trust
+        if isinstance(item, dict)
+    )
     report["synthesis_with_derived_from"] = sum(
-        item.get("evidence_class") == "synthesis" and isinstance(item.get("derived_from"), list) and bool(item["derived_from"])
-        for item in trust if isinstance(item, dict)
+        item.get("evidence_class") == "synthesis"
+        and isinstance(item.get("derived_from"), list)
+        and bool(item["derived_from"])
+        for item in trust
+        if isinstance(item, dict)
     )
     report["receipts"] = len(receipts)
     returned_derived_from = {
@@ -545,12 +683,16 @@ def run(root: Path, root_identity: RootIdentity, api: str, output: OutputTarget,
         for item in trust
         if isinstance(item, dict) and item.get("evidence_class") == "synthesis"
     }
-    if summary.get("total") != report["trust_records"] or report["trust_records"] != counts["expected_trust_records"]:
+    if (
+        summary.get("total") != report["trust_records"]
+        or report["trust_records"] != counts["expected_trust_records"]
+    ):
         report["failures"].append("trust_count_mismatch")
     if report["synthesis_records"] != counts["expected_synthesis_records"]:
         report["failures"].append("synthesis_count_mismatch")
     if (
-        report["synthesis_with_derived_from"] != counts["expected_synthesis_with_derived_from"]
+        report["synthesis_with_derived_from"]
+        != counts["expected_synthesis_with_derived_from"]
         or returned_derived_from != counts["expected_derived_from"]
     ):
         report["failures"].append("derived_from_mismatch")
@@ -567,9 +709,15 @@ def run(root: Path, root_identity: RootIdentity, api: str, output: OutputTarget,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, help="Explicit external vault root")
-    parser.add_argument("--api", required=True, help="Canonical Deeper Notebook API base URL")
+    parser.add_argument(
+        "--api", required=True, help="Canonical Deeper Notebook API base URL"
+    )
     parser.add_argument("--output", required=True, help="Sanitized JSON report path")
-    parser.add_argument("--check-only", action="store_true", help="Validate and hash only; never call the API")
+    parser.add_argument(
+        "--check-only",
+        action="store_true",
+        help="Validate and hash only; never call the API",
+    )
     args = parser.parse_args(argv)
     try:
         root = _safe_root(args.root)

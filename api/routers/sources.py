@@ -34,6 +34,7 @@ from api.models import (
 from api.schemas.source_visuals import disabled_visual_status
 from api.source_visual_projection import project_source_visuals
 from api.utils.iso import iso  # v0.7.181 — Safari-safe datetime serialization
+
 # NOTE (v0.8.100): this import pulls `commands/__init__.py`, which eagerly
 # imports every command module (podcast_creator, transformers, content_core).
 # In isolation that is ~16.7 s, so it looks like the obvious startup win — it
@@ -184,7 +185,9 @@ def _source_provenance_for_create(
         if final_file_path:
             provenance.setdefault("file_name", Path(final_file_path).name)
             try:
-                provenance.setdefault("size_bytes", Path(final_file_path).stat().st_size)
+                provenance.setdefault(
+                    "size_bytes", Path(final_file_path).stat().st_size
+                )
             except OSError:
                 pass
     elif source_data.type == "text":
@@ -470,8 +473,12 @@ def _source_notebook_ids(source_data: SourceCreate) -> list[str]:
 async def get_sources(
     notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
     label: Optional[str] = Query(None, description="Filter by source label"),
-    source_type: Optional[str] = Query(None, description="Filter by normalized source type"),
-    origin: Optional[str] = Query(None, description="Filter by source provenance origin"),
+    source_type: Optional[str] = Query(
+        None, description="Filter by normalized source type"
+    ),
+    origin: Optional[str] = Query(
+        None, description="Filter by source provenance origin"
+    ),
     limit: int = Query(
         50, ge=1, le=100, description="Number of sources to return (1-100)"
     ),
@@ -560,7 +567,9 @@ async def get_sources(
         for row in result:
             row_topics = row.get("topics") or []
             row_provenance = row.get("provenance") or {}
-            row_source_type = row.get("source_type") or get_source_type_from_asset(row.get("asset"))
+            row_source_type = row.get("source_type") or get_source_type_from_asset(
+                row.get("asset")
+            )
             if label and label not in row_topics:
                 continue
             if normalized_filter_type and row_source_type != normalized_filter_type:
@@ -714,9 +723,7 @@ async def create_source(
             # Env override: DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES.
             max_bytes = _source_upload_max_bytes()
             try:
-                file_path = await save_uploaded_file(
-                    upload_file, max_bytes=max_bytes
-                )
+                file_path = await save_uploaded_file(upload_file, max_bytes=max_bytes)
             except ValueError as exc:
                 # ValueError from save_uploaded_file is the upload-cap
                 # path — surface as 413 (Payload Too Large), not 400.
@@ -725,16 +732,16 @@ async def create_source(
                     logger.warning("Source upload rejected (oversize): {}", msg)
                     raise HTTPException(status_code=413, detail=msg)
                 logger.error(f"File upload failed: {exc}")
-                raise HTTPException(status_code=400, detail=f"File upload failed: {msg}")
+                raise HTTPException(
+                    status_code=400, detail=f"File upload failed: {msg}"
+                )
             except HTTPException:
                 # v0.7.108 — re-raise typed HTTPExceptions so the next
                 # `except Exception` doesn't clobber them to 500.
                 raise
             except Exception as e:
                 logger.error(f"File upload failed: {e}")
-                raise HTTPException(
-                    status_code=400, detail="File upload failed"
-                )
+                raise HTTPException(status_code=400, detail="File upload failed")
 
         # Prepare content_state for processing
         content_state: dict[str, Any] = {}
@@ -974,7 +981,8 @@ async def create_source(
                     # client gets a generic message. Backend audit #3.
                     logger.error(
                         "Sync source processing failed for source {}: {}",
-                        source.id, result.error_message,
+                        source.id,
+                        result.error_message,
                     )
                     raise HTTPException(
                         status_code=500,
@@ -1233,9 +1241,7 @@ async def get_source(source_id: str):
         insights_count = _normalize_insights_count(insights_count_rows)
 
         extracted_char_count = (
-            len(source.full_text)
-            if source.full_text is not None
-            else None
+            len(source.full_text) if source.full_text is not None else None
         )
 
         visual = visual_status = None
@@ -1359,7 +1365,7 @@ async def locate_source_passage(source_id: str, body: LocatePassageRequest):
         logger.error(f"locate-passage: source fetch failed {source_id}: {e}")
         raise HTTPException(status_code=404, detail="Source not found")
 
-    text = (getattr(source, "full_text", None) or "")
+    text = getattr(source, "full_text", None) or ""
     if not text.strip() or not body.query.strip():
         return LocatePassageResponse(match=None)
     match = locate_passage(text, body.query)
@@ -1427,9 +1433,7 @@ async def get_source_status(source_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching status for source {source_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching source status"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching source status")
 
 
 @router.put("/sources/{source_id}", response_model=SourceResponse)
@@ -1520,9 +1524,7 @@ async def retry_source_processing(source_id: str):
         # 400 and the retry endpoint was effectively dead. Also pass a
         # RecordID, not the raw string.
         query = "SELECT VALUE out FROM reference WHERE in = $source_id"
-        references = await repo_query(
-            query, {"source_id": ensure_record_id(source_id)}
-        )
+        references = await repo_query(query, {"source_id": ensure_record_id(source_id)})
         notebook_ids = [str(r) for r in references]
 
         if not notebook_ids:
@@ -1649,9 +1651,7 @@ async def retry_source_processing(source_id: str):
         raise HTTPException(status_code=404, detail="Source not found")
     except Exception as e:
         logger.error(f"Error retrying source processing for {source_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error retrying source processing"
-        )
+        raise HTTPException(status_code=500, detail="Error retrying source processing")
 
 
 @router.delete("/sources/{source_id}")
@@ -1696,9 +1696,7 @@ async def get_source_insights(source_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching insights for source {source_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching insights"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching insights")
 
 
 @router.post(
@@ -1760,7 +1758,8 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
             # retry shortly" from "unexpected server error".
             logger.warning(
                 "Insight submission timed out / failed for source {}: {}",
-                source_id, exc,
+                source_id,
+                exc,
             )
             raise HTTPException(
                 status_code=503,
@@ -1797,6 +1796,4 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
         raise
     except Exception as e:
         logger.error(f"Error starting insight generation for source {source_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail="Error starting insight generation"
-        )
+        raise HTTPException(status_code=500, detail="Error starting insight generation")

@@ -259,8 +259,20 @@ def test_overview_mode_uses_its_exact_speaker_count():
         def model_copy(self, *, update):
             return FakeProfile(update["speakers"])
 
-    assert len(speaker_profile_for_overview_mode(FakeProfile(["a", "b"]), "brief").speakers) == 1
-    assert len(speaker_profile_for_overview_mode(FakeProfile(["a", "b", "c"]), "debate").speakers) == 2
+    assert (
+        len(
+            speaker_profile_for_overview_mode(FakeProfile(["a", "b"]), "brief").speakers
+        )
+        == 1
+    )
+    assert (
+        len(
+            speaker_profile_for_overview_mode(
+                FakeProfile(["a", "b", "c"]), "debate"
+            ).speakers
+        )
+        == 2
+    )
     with pytest.raises(ValueError, match="requires 2 speakers"):
         speaker_profile_for_overview_mode(FakeProfile(["a"]), "critique")
 

@@ -86,10 +86,12 @@ async def test_external_shadow_projects_exact_work_item_bytes_and_proven_claims(
     assert result is None
     assert snapshot.revision.content_hash == work.content_hash
     assert snapshot.revision.byte_size == len(work.content)
-    assert snapshot.document.normalized_body == "# Exact source\r\n\r\n- [ ] preserve bytes\r\n"
+    assert (
+        snapshot.document.normalized_body
+        == "# Exact source\r\n\r\n- [ ] preserve bytes\r\n"
+    )
     assert {
-        (claim.legacy_kind, claim.legacy_id)
-        for claim in snapshot.identity_claims
+        (claim.legacy_kind, claim.legacy_id) for claim in snapshot.identity_claims
     } >= {
         ("vault_mount", "vault_mount:fixture"),
         ("vault_file", "vault_file:fixture"),
@@ -311,11 +313,12 @@ async def test_overlay_shadow_uses_exact_canonical_markdown_bytes():
 
     snapshot = repository.snapshots[0]
     assert result is None
-    assert snapshot.revision.content_hash == hashlib.sha256(markdown.encode()).hexdigest()
+    assert (
+        snapshot.revision.content_hash == hashlib.sha256(markdown.encode()).hexdigest()
+    )
     assert snapshot.revision.byte_size == len(markdown.encode())
     assert {
-        (claim.legacy_kind, claim.legacy_id)
-        for claim in snapshot.identity_claims
+        (claim.legacy_kind, claim.legacy_id) for claim in snapshot.identity_claims
     } >= {
         ("overlay_space", "overlay_space:default"),
         ("overlay_note", "overlay_note:fixture"),

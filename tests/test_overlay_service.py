@@ -453,7 +453,9 @@ async def test_shadow_cancellation_propagates_after_overlay_commit(fixture):
             raise asyncio.CancelledError
 
     with pytest.raises(asyncio.CancelledError):
-        await fixture.service(shadow_projector=CancellingShadowProjector()).create_unique(
+        await fixture.service(
+            shadow_projector=CancellingShadowProjector()
+        ).create_unique(
             CreateUniqueNote(title="Research", idempotency_key="shadow-cancelled")
         )
 

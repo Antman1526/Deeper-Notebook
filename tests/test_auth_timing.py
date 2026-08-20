@@ -13,6 +13,7 @@ verify the helper:
   * is the secrets.compare_digest function under the hood (so the
     constant-time guarantee comes from stdlib, not our code)
 """
+
 from __future__ import annotations
 
 import secrets

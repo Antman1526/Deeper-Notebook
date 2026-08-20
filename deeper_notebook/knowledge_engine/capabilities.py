@@ -22,9 +22,7 @@ KnowledgeCapability = Literal[
     "cite",
 ]
 
-_EXTERNAL = frozenset[KnowledgeCapability](
-    {"read", "copy_content", "bookmark", "cite"}
-)
+_EXTERNAL = frozenset[KnowledgeCapability]({"read", "copy_content", "bookmark", "cite"})
 _OVERLAY_NOTE = frozenset[KnowledgeCapability](
     {
         "read",

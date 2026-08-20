@@ -7,6 +7,7 @@ Smoke-tests `build_digest_html` against a fake GmailIntegration, with
   * the "no activity" footer kicks in when total == 0
   * HTML escapes hostile input (xss surface)
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -41,7 +42,11 @@ def fake_query(monkeypatch):
     async def _stub(query: str, vars: dict):
         # Pick rows by the table referenced in the query.
         for table, rows in rows_for.items():
-            if f"FROM {table} " in query or f"FROM {table}\n" in query or query.rstrip().endswith(f"FROM {table}"):
+            if (
+                f"FROM {table} " in query
+                or f"FROM {table}\n" in query
+                or query.rstrip().endswith(f"FROM {table}")
+            ):
                 return rows
         return []
 
@@ -88,10 +93,15 @@ async def test_section_toggles_are_respected(fake_query):
 @pytest.mark.asyncio
 async def test_total_aggregates_across_sections(fake_query):
     fake_query["notebook"] = [{"id": "notebook:1", "name": "A"}]
-    fake_query["source"] = [{"id": "source:1", "title": "B"}, {"id": "source:2", "title": "C"}]
+    fake_query["source"] = [
+        {"id": "source:1", "title": "B"},
+        {"id": "source:2", "title": "C"},
+    ]
     fake_query["note"] = [{"id": "note:1", "title": "D"}]
     fake_query["episode"] = [{"id": "episode:1", "name": "E"}]
-    fake_query["memory_fact"] = [{"id": "memory_fact:1", "text": "F", "confidence": 0.9}]
+    fake_query["memory_fact"] = [
+        {"id": "memory_fact:1", "text": "F", "confidence": 0.9}
+    ]
     g = _make_g()
     html, total = await digest_mod.build_digest_html(g)
     assert total == 6
@@ -105,11 +115,13 @@ async def test_total_aggregates_across_sections(fake_query):
 @pytest.mark.asyncio
 async def test_hostile_input_is_html_escaped(fake_query):
     # An evil notebook name should NOT come back as live HTML.
-    fake_query["notebook"] = [{
-        "id": "notebook:xss",
-        "name": "<script>alert(1)</script>",
-        "description": "<img src=x onerror=alert(1)>",
-    }]
+    fake_query["notebook"] = [
+        {
+            "id": "notebook:xss",
+            "name": "<script>alert(1)</script>",
+            "description": "<img src=x onerror=alert(1)>",
+        }
+    ]
     g = _make_g()
     html, _ = await digest_mod.build_digest_html(g)
     # The raw tag is never present; the escaped version is.
@@ -223,8 +235,7 @@ async def test_v0827_safe_query_stays_debug_on_table_missing(monkeypatch):
         f"scheduler tick."
     )
     assert any(c["level"] == "DEBUG" for c in captured), (
-        f"Expected at least one DEBUG message for table-missing; "
-        f"got: {captured}"
+        f"Expected at least one DEBUG message for table-missing; got: {captured}"
     )
 
 

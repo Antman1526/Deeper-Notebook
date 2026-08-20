@@ -83,7 +83,9 @@ class StudyRepository:
             raise StudyCardArtifactOwnerAmbiguous("card artifact owner is ambiguous")
         return str(owners[0]["plan_id"]), owners[0].get("syllabus_unit_id")
 
-    async def create_card_version_with_artifact_owner(self, card: StudyCard) -> StudyCard:
+    async def create_card_version_with_artifact_owner(
+        self, card: StudyCard
+    ) -> StudyCard:
         """Create a card snapshot and owner edge in one DB transaction.
 
         The transaction reads the owner and current snapshot, retires a
@@ -249,14 +251,19 @@ class StudyRepository:
                 "SELECT * FROM study_card WHERE artifact_id = $artifact_id "
                 "AND artifact_card_id = $artifact_card_id AND current = true "
                 "ORDER BY version DESC LIMIT 1",
-                {"artifact_id": card.artifact_id, "artifact_card_id": card.artifact_card_id},
+                {
+                    "artifact_id": card.artifact_id,
+                    "artifact_card_id": card.artifact_card_id,
+                },
             )
             if previous_rows:
                 previous = self._card_from_record(previous_rows[0])
                 if self._snapshot_matches(previous, card):
                     return previous
                 version = previous.version + 1
-                next_card = card.model_copy(update={"version": version, "current": True})
+                next_card = card.model_copy(
+                    update={"version": version, "current": True}
+                )
                 await repo_query(
                     "BEGIN TRANSACTION; "
                     "UPDATE $previous SET current = false; "
@@ -281,7 +288,9 @@ class StudyRepository:
                 version = 1
             created = await repo_create(
                 "study_card",
-                self._card_data(card.model_copy(update={"version": version, "current": True})),
+                self._card_data(
+                    card.model_copy(update={"version": version, "current": True})
+                ),
             )
             return self._card_from_record(_one_record(created))
         except StudyRepositoryError:
@@ -292,7 +301,9 @@ class StudyRepository:
 
     async def get(self, card_id: str) -> StudyCard | None:
         try:
-            rows = await repo_query("SELECT * FROM $card", {"card": ensure_record_id(card_id)})
+            rows = await repo_query(
+                "SELECT * FROM $card", {"card": ensure_record_id(card_id)}
+            )
             return self._card_from_record(rows[0]) if rows else None
         except Exception as exc:
             logger.exception("Failed to load study card")
@@ -407,11 +418,15 @@ class StudyRepository:
         if not isinstance(record, dict):
             raise StudyRepositoryError("Study persistence returned an invalid card")
         fields = StudyCard.model_fields
-        return StudyCard.model_validate({field: record[field] for field in fields if field in record})
+        return StudyCard.model_validate(
+            {field: record[field] for field in fields if field in record}
+        )
 
     @staticmethod
     def _review_from_record(record: object) -> StudyReview:
         if not isinstance(record, dict):
             raise StudyRepositoryError("Study persistence returned an invalid review")
         fields = StudyReview.model_fields
-        return StudyReview.model_validate({field: record[field] for field in fields if field in record})
+        return StudyReview.model_validate(
+            {field: record[field] for field in fields if field in record}
+        )

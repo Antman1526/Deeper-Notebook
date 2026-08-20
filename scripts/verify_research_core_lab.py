@@ -5,6 +5,7 @@ This verifier never discovers the configured model library, external vaults,
 or production data.  The native URL is an optional, loopback-only readiness
 probe; browser proof remains a separate Playwright gate.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -78,12 +79,18 @@ def _inside(parent: Path, child: Path) -> bool:
 
 def _loopback_url(url: str) -> str:
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
         raise ValueError("native URL must be loopback-only")
     return url.rstrip("/")
 
 
-def verifier_config(*, fixture_root: Path, output_path: Path, native_url: str = "http://localhost:65060") -> VerifierConfig:
+def verifier_config(
+    *, fixture_root: Path, output_path: Path, native_url: str = "http://localhost:65060"
+) -> VerifierConfig:
     requested_root = fixture_root.expanduser().absolute()
     temporary_root = Path(tempfile.gettempdir()).resolve()
     root = requested_root.resolve()
@@ -98,11 +105,16 @@ def verifier_config(*, fixture_root: Path, output_path: Path, native_url: str = 
         raise ValueError("temporary synthetic fixture root required")
     if root.exists():
         entries = list(root.iterdir())
-        if entries != [root / _FIXTURE_SENTINEL] or not (root / _FIXTURE_SENTINEL).is_file():
+        if (
+            entries != [root / _FIXTURE_SENTINEL]
+            or not (root / _FIXTURE_SENTINEL).is_file()
+        ):
             raise ValueError("temporary synthetic fixture root required")
     else:
         root.mkdir(mode=0o700)
-        (root / _FIXTURE_SENTINEL).write_text("synthetic fixture only\n", encoding="utf-8")
+        (root / _FIXTURE_SENTINEL).write_text(
+            "synthetic fixture only\n", encoding="utf-8"
+        )
 
     requested_output = output_path.expanduser().absolute()
     output = requested_output.resolve(strict=False)
@@ -138,7 +150,9 @@ def _create_synthetic_fixture(root: Path) -> None:
     workspace.mkdir(parents=True, exist_ok=True)
     (library / "light-model.mlx").write_bytes(b"synthetic light mlx model\n")
     (library / "heavy-model.mlx").write_bytes(b"synthetic heavyweight mlx model\n")
-    (workspace / "current-session.json").write_text('{"synthetic": true}\n', encoding="utf-8")
+    (workspace / "current-session.json").write_text(
+        '{"synthetic": true}\n', encoding="utf-8"
+    )
 
 
 def _native_health(native_url: str) -> tuple[bool, int | None]:
@@ -152,7 +166,9 @@ def _native_health(native_url: str) -> tuple[bool, int | None]:
 def _workspace_migration_check() -> dict[str, object]:
     migrated = migrate_workspace_v1(default_knowledge_workspace())
     return {
-        "status": "passed" if migrated.version == 2 and migrated.next_id == 2 else "failed",
+        "status": "passed"
+        if migrated.version == 2 and migrated.next_id == 2
+        else "failed",
         "workspace_version": migrated.version,
         "pane_count": len(migrated.panes),
     }
@@ -170,7 +186,9 @@ def _strict_local_check() -> dict[str, object]:
             self.calls += 1
 
     class StrictLocalBoundary:
-        def __init__(self, planner: LocalModelPlanner, transport: TransportRecorder) -> None:
+        def __init__(
+            self, planner: LocalModelPlanner, transport: TransportRecorder
+        ) -> None:
             self._planner = planner
             self._transport = transport
 
@@ -199,11 +217,11 @@ def _strict_local_check() -> dict[str, object]:
     recorder = TransportRecorder()
     plan = StrictLocalBoundary(
         LocalModelPlanner((candidate,), now=1_800_000_001.0), recorder
-    ).plan(
-        RouteRequest(role="research_chat", execution_policy="strict_local")
-    )
+    ).plan(RouteRequest(role="research_chat", execution_policy="strict_local"))
     return {
-        "status": "passed" if plan.outcome == "ready" and recorder.calls == 0 else "failed",
+        "status": "passed"
+        if plan.outcome == "ready" and recorder.calls == 0
+        else "failed",
         "outcome": plan.outcome,
         "proof_boundary": "synthetic_contract_fixture",
         "transport_instrumented": True,
@@ -257,7 +275,13 @@ def _focused_gate_record(
             "error": "not_requested",
         }
     result = command_runner(command, cwd)
-    status = "passed" if result.returncode == 0 else "blocked" if result.returncode is None else "failed"
+    status = (
+        "passed"
+        if result.returncode == 0
+        else "blocked"
+        if result.returncode is None
+        else "failed"
+    )
     return {
         "status": status,
         "command": list(command),
@@ -270,7 +294,13 @@ def _focused_gate_record(
 def _focused_gates(*, run: bool, command_runner: CommandRunner) -> dict[str, object]:
     repo_root = Path(__file__).resolve().parents[1]
     tests = _focused_gate_record(
-        (".venv/bin/python", "-m", "pytest", "-q", "tests/test_verify_research_core_lab.py"),
+        (
+            ".venv/bin/python",
+            "-m",
+            "pytest",
+            "-q",
+            "tests/test_verify_research_core_lab.py",
+        ),
         repo_root,
         run=run,
         command_runner=command_runner,
@@ -292,7 +322,9 @@ def run_verifier(
     run_focused_gates: bool = False,
     command_runner: CommandRunner | None = None,
 ) -> VerificationResult:
-    config = verifier_config(fixture_root=fixture_root, output_path=output_path, native_url=native_url)
+    config = verifier_config(
+        fixture_root=fixture_root, output_path=output_path, native_url=native_url
+    )
     _create_synthetic_fixture(config.fixture_root)
     before = _hashes(config.fixture_root)
     library_before = _fingerprint(config.fixture_root / "local-library")
@@ -309,11 +341,16 @@ def run_verifier(
     report: dict[str, object] = {
         "schema_version": 1,
         "status": "blocked",
-        "synthetic_passed": all(check["status"] == "passed" for check in (migration, strict_local, heavyweight)),
+        "synthetic_passed": all(
+            check["status"] == "passed"
+            for check in (migration, strict_local, heavyweight)
+        ),
         "fixture": {
             "kind": "synthetic",
             "file_count": len(before),
-            "inventory_hash": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
+            "inventory_hash": hashlib.sha256(
+                json.dumps(before, sort_keys=True).encode()
+            ).hexdigest(),
         },
         "source_hashes_unchanged": before == after,
         "external_writes": 0,
@@ -332,16 +369,23 @@ def run_verifier(
             "native_runtime": {
                 "status": "passed" if native_ok else "blocked",
                 "route_status": native_status,
-                "reason": None if native_ok else "requires caller-launched persistent native runtime",
+                "reason": None
+                if native_ok
+                else "requires caller-launched persistent native runtime",
             },
-            "playwright_native": {"status": "blocked", "reason": "requires persistent native-runtime Playwright proof"},
+            "playwright_native": {
+                "status": "blocked",
+                "reason": "requires persistent native-runtime Playwright proof",
+            },
             "production_build": {
                 "status": focused_gates["build"]["status"],  # type: ignore[index]
                 "reason": focused_gates["build"]["error"],  # type: ignore[index]
             },
         },
     }
-    config.output_path.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    config.output_path.write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+    )
     return VerificationResult(2, report)
 
 
@@ -353,7 +397,9 @@ def main() -> int:
     parser.add_argument("--run-focused-gates", action="store_true")
     args = parser.parse_args()
     if args.fixture_root is None:
-        with tempfile.TemporaryDirectory(prefix="deeper-notebook-research-core-lab-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="deeper-notebook-research-core-lab-"
+        ) as directory:
             root = Path(directory).resolve()
             result = run_verifier(
                 native_url=args.native_url,

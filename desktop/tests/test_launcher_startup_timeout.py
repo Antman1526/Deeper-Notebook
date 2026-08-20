@@ -8,6 +8,7 @@ The fix makes the gate env-tunable with a raised default; these tests pin the
 parsing/fallback contract so a bad override can never make the gate *tighter*
 than the safe default by accident.
 """
+
 from __future__ import annotations
 
 import pytest

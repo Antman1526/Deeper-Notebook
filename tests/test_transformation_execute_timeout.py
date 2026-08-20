@@ -14,6 +14,7 @@ Mocks `transformation_graph.ainvoke`, `Transformation.get`, and
 `Model.get` so the test doesn't need a database or LangGraph runtime.
 Companion to `tests/test_chat_execute_timeout.py`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,8 +44,12 @@ def stub_domain(monkeypatch):
     """Stub Transformation.get + Model.get so the endpoint can locate
     both records without hitting SurrealDB."""
     fake_transformation = SimpleNamespace(
-        id="transformation:test", name="Test", title="Test",
-        prompt="Summarize this", apply_default=False, description="test",
+        id="transformation:test",
+        name="Test",
+        title="Test",
+        prompt="Summarize this",
+        apply_default=False,
+        description="test",
     )
     fake_model = SimpleNamespace(id="model:test", name="gpt-test")
 
@@ -55,13 +60,17 @@ def stub_domain(monkeypatch):
         return fake_model if _id == "model:test" else None
 
     monkeypatch.setattr(
-        xform_router.Transformation, "get", staticmethod(_get_xform),
+        xform_router.Transformation,
+        "get",
+        staticmethod(_get_xform),
     )
     monkeypatch.setattr(xform_router.Model, "get", staticmethod(_get_model))
 
 
 def test_transformation_execute_timeout_returns_504_with_env_knob_hint(
-    client, stub_domain, monkeypatch,
+    client,
+    stub_domain,
+    monkeypatch,
 ):
     """v0.7.119 — A hung graph past DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC
     returns 504 (NOT 500, post v0.7.109 fix) with the env-knob name
@@ -73,7 +82,8 @@ def test_transformation_execute_timeout_returns_504_with_env_knob_hint(
         return {"output": "never"}
 
     monkeypatch.setattr(
-        xform_router, "transformation_graph",
+        xform_router,
+        "transformation_graph",
         SimpleNamespace(ainvoke=_hanging_ainvoke),
     )
 
@@ -92,7 +102,9 @@ def test_transformation_execute_timeout_returns_504_with_env_knob_hint(
 
 
 def test_transformation_execute_returns_200_when_graph_returns_in_time(
-    client, stub_domain, monkeypatch,
+    client,
+    stub_domain,
+    monkeypatch,
 ):
     """v0.7.119 — Negative-space check: a fast graph response is NOT
     spuriously timeout-killed."""
@@ -102,7 +114,8 @@ def test_transformation_execute_returns_200_when_graph_returns_in_time(
         return {"output": "transformed text"}
 
     monkeypatch.setattr(
-        xform_router, "transformation_graph",
+        xform_router,
+        "transformation_graph",
         SimpleNamespace(ainvoke=_fast_ainvoke),
     )
 
@@ -118,7 +131,8 @@ def test_transformation_execute_returns_200_when_graph_returns_in_time(
 
 
 def test_transformation_execute_404_when_transformation_missing(
-    client, stub_domain,
+    client,
+    stub_domain,
 ):
     """v0.7.119 — Pre-existing 404 path: typed HTTPException(404) must
     survive the `except Exception` block (v0.7.109 fix). Before that
@@ -136,7 +150,8 @@ def test_transformation_execute_404_when_transformation_missing(
 
 
 def test_transformation_execute_404_when_model_missing(
-    client, stub_domain,
+    client,
+    stub_domain,
 ):
     """v0.7.119 — Same v0.7.109 fix coverage for the model-not-found
     branch."""

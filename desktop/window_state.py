@@ -9,6 +9,7 @@ resize/move events, so there's no dependency on event APIs that vary across
 pywebview versions, and a corrupt/missing file simply falls back to the
 screen-aware default.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,7 +20,9 @@ def state_path(data_home: Path) -> Path:
     return Path(data_home) / "window_state.json"
 
 
-def clamp(width, height, screen_w, screen_h, min_w: int = 1024, min_h: int = 700) -> tuple[int, int]:
+def clamp(
+    width, height, screen_w, screen_h, min_w: int = 1024, min_h: int = 700
+) -> tuple[int, int]:
     """Keep a remembered size sane: never below (min_w, min_h), never larger
     than the current screen (a monitor change mustn't strand the window
     off-screen). Non-positive screen dims mean "unknown" → only the floor is

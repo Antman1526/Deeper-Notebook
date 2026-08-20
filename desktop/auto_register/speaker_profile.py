@@ -31,6 +31,7 @@ Idempotent: only creates presets whose `name` doesn't already exist.
 Skips silently if neither piper voice is registered (catches Piper
 disabled or first-run mid-flight states).
 """
+
 from __future__ import annotations
 
 import logging
@@ -187,8 +188,7 @@ def register_default_speaker_profile(client: httpx.Client) -> None:
         existing = {p.get("name") for p in r.json() if p.get("name")}
     except Exception as exc:
         log.warning(
-            "Could not list speaker profiles: %s — skipping speaker "
-            "preset bootstrap",
+            "Could not list speaker profiles: %s — skipping speaker preset bootstrap",
             exc,
         )
         return
@@ -228,13 +228,10 @@ def register_default_speaker_profile(client: httpx.Client) -> None:
                     r.text[:200],
                 )
         except Exception as exc:
-            log.warning(
-                "Could not create speaker profile %r: %s", preset["name"], exc
-            )
+            log.warning("Could not create speaker profile %r: %s", preset["name"], exc)
 
     log.info(
-        "Speaker profile preset library: %d created, %d skipped "
-        "(already existed)",
+        "Speaker profile preset library: %d created, %d skipped (already existed)",
         created,
         skipped,
     )

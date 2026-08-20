@@ -25,6 +25,7 @@ Tests:
 3. _transform_node_timeout_sec parses DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC
 4. invalid env values fall back to 180s default with a warning
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -125,13 +126,12 @@ async def test_v0826_transformation_graph_times_out(monkeypatch):
 
     with pytest.raises(ExternalServiceError) as exc_info:
         await tg_mod.run_transformation(
-            state, RunnableConfig(configurable={}),
+            state,
+            RunnableConfig(configurable={}),
         )
 
     msg = str(exc_info.value)
-    assert "timed out" in msg.lower(), (
-        f"Expected timeout message; got {msg!r}"
-    )
+    assert "timed out" in msg.lower(), f"Expected timeout message; got {msg!r}"
     assert "DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC" in msg, (
         f"Timeout message must name the env knob so the operator "
         f"knows how to raise it; got {msg!r}"
@@ -180,8 +180,7 @@ async def test_v0826_prompt_graph_times_out(monkeypatch):
     # And it identifies which graph timed out so the operator can
     # debug — distinguishes transformation vs prompt failures.
     assert "Prompt graph" in msg, (
-        f"Prompt graph timeout must identify itself in the message; "
-        f"got {msg!r}"
+        f"Prompt graph timeout must identify itself in the message; got {msg!r}"
     )
 
 

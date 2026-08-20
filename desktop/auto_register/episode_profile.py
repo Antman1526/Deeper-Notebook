@@ -24,6 +24,7 @@ Registration is idempotent: only presets whose `name` does not yet
 exist in /api/episode-profiles are created. Existing user-customised
 profiles are never overwritten.
 """
+
 from __future__ import annotations
 
 import logging
@@ -201,6 +202,7 @@ _PRESETS: list[dict[str, Any]] = [
     },
 ]
 
+
 def register_default_episode_profile(client: httpx.Client) -> None:
     """Idempotent: create the v0.7.30 preset library.
 
@@ -295,7 +297,9 @@ def register_default_episode_profile(client: httpx.Client) -> None:
     # auto-register once Piper voices come online) than bind it to
     # something that's guaranteed to 500 later.
     _MIGRATION_SEEDED_SPEAKERS_REQUIRING_OPENAI = {
-        "tech_experts", "solo_expert", "business_panel",
+        "tech_experts",
+        "solo_expert",
+        "business_panel",
     }
     safe_fallback_speakers = (
         existing_speakers - _MIGRATION_SEEDED_SPEAKERS_REQUIRING_OPENAI
@@ -331,7 +335,8 @@ def register_default_episode_profile(client: httpx.Client) -> None:
                 # Migration-seeded openai-only speakers are filtered out.
                 fallback = (
                     sorted(safe_fallback_speakers)[0]
-                    if safe_fallback_speakers else None
+                    if safe_fallback_speakers
+                    else None
                 )
                 if fallback is None:
                     log.warning(
@@ -372,9 +377,7 @@ def register_default_episode_profile(client: httpx.Client) -> None:
                     r.text[:200],
                 )
         except Exception as exc:
-            log.warning(
-                "Could not create episode profile %r: %s", preset["name"], exc
-            )
+            log.warning("Could not create episode profile %r: %s", preset["name"], exc)
 
     log.info(
         "Episode profile preset library: %d created, %d skipped (already "

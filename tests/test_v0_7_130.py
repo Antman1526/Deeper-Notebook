@@ -50,9 +50,14 @@ class TestStudioMetrics:
             record_studio_generation,
             studio_generations_total,
         )
-        before = _counter_value(studio_generations_total, mode="notebook", outcome="success")
+
+        before = _counter_value(
+            studio_generations_total, mode="notebook", outcome="success"
+        )
         record_studio_generation("notebook", "success")
-        after = _counter_value(studio_generations_total, mode="notebook", outcome="success")
+        after = _counter_value(
+            studio_generations_total, mode="notebook", outcome="success"
+        )
         assert after == before + 1
 
     def test_record_studio_generation_different_labels_independent(self):
@@ -60,30 +65,53 @@ class TestStudioMetrics:
             record_studio_generation,
             studio_generations_total,
         )
-        before_success = _counter_value(studio_generations_total, mode="both", outcome="success")
-        before_failed = _counter_value(studio_generations_total, mode="both", outcome="failed")
+
+        before_success = _counter_value(
+            studio_generations_total, mode="both", outcome="success"
+        )
+        before_failed = _counter_value(
+            studio_generations_total, mode="both", outcome="failed"
+        )
         record_studio_generation("both", "failed")
-        assert _counter_value(studio_generations_total, mode="both", outcome="success") == before_success
-        assert _counter_value(studio_generations_total, mode="both", outcome="failed") == before_failed + 1
+        assert (
+            _counter_value(studio_generations_total, mode="both", outcome="success")
+            == before_success
+        )
+        assert (
+            _counter_value(studio_generations_total, mode="both", outcome="failed")
+            == before_failed + 1
+        )
 
     def test_record_studio_outline_parse_failure_reasons(self):
         from api.metrics import (
             record_studio_outline_parse_failure,
             studio_outline_parse_failures_total,
         )
-        before_json = _counter_value(studio_outline_parse_failures_total, reason="json_decode")
-        before_val = _counter_value(studio_outline_parse_failures_total, reason="validation")
+
+        before_json = _counter_value(
+            studio_outline_parse_failures_total, reason="json_decode"
+        )
+        before_val = _counter_value(
+            studio_outline_parse_failures_total, reason="validation"
+        )
         record_studio_outline_parse_failure("json_decode")
         record_studio_outline_parse_failure("validation")
         record_studio_outline_parse_failure("json_decode")
-        assert _counter_value(studio_outline_parse_failures_total, reason="json_decode") == before_json + 2
-        assert _counter_value(studio_outline_parse_failures_total, reason="validation") == before_val + 1
+        assert (
+            _counter_value(studio_outline_parse_failures_total, reason="json_decode")
+            == before_json + 2
+        )
+        assert (
+            _counter_value(studio_outline_parse_failures_total, reason="validation")
+            == before_val + 1
+        )
 
     def test_record_studio_single_note_fallback_unlabeled(self):
         from api.metrics import (
             record_studio_single_note_fallback,
             studio_single_note_fallbacks_total,
         )
+
         before = _counter_value(studio_single_note_fallbacks_total)
         record_studio_single_note_fallback()
         record_studio_single_note_fallback()
@@ -98,6 +126,7 @@ class TestStudioMetrics:
             record_studio_single_note_fallback,
             render_prometheus,
         )
+
         record_studio_generation("notebook", "success")
         record_studio_outline_parse_failure("json_decode")
         record_studio_single_note_fallback()
@@ -343,7 +372,7 @@ class TestSettingsObservability:
         assert r.status_code == 200
         data = r.json()
         assert data["checkpoint_keep_per_thread"] == 50  # default kicks in
-        assert data["slow_query_log_ms"] is None         # default for unparseable
+        assert data["slow_query_log_ms"] is None  # default for unparseable
 
     def test_bool_parsing_case_insensitive(self, monkeypatch):
         # Exhaustive matrix for the truthy set defined in _env_bool

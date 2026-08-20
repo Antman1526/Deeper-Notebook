@@ -1,4 +1,5 @@
 """Evidence Studio artifact API tests."""
+
 from __future__ import annotations
 
 import json
@@ -57,9 +58,7 @@ def _minimal_document(artifact_type: str, title: str | None = None) -> dict:
             "modules": [
                 {
                     "title": "Foundation",
-                    "lessons": [
-                        {"title": "Evidence", "content": "Grounded lesson."}
-                    ],
+                    "lessons": [{"title": "Evidence", "content": "Grounded lesson."}],
                 }
             ],
         }
@@ -186,17 +185,13 @@ class _FakeArtifact:
     @classmethod
     async def get_for_notebook(cls, notebook_id: str):
         return [
-            item
-            for item in cls.records.values()
-            if item.notebook_id == notebook_id
+            item for item in cls.records.values() if item.notebook_id == notebook_id
         ]
 
     @classmethod
     async def get_revisions(cls, artifact_id: str):
         return [
-            item
-            for item in cls.records.values()
-            if item.revision_of_id == artifact_id
+            item for item in cls.records.values() if item.revision_of_id == artifact_id
         ]
 
 
@@ -233,9 +228,7 @@ class _FakeWorkflowRun:
     @classmethod
     async def get_for_artifact(cls, artifact_id: str):
         return [
-            item
-            for item in cls.records.values()
-            if item.artifact_id == artifact_id
+            item for item in cls.records.values() if item.artifact_id == artifact_id
         ]
 
 
@@ -504,7 +497,9 @@ def test_create_workflow_run_without_approval_submits_generation_command(monkeyp
             return "command:studio-generate"
 
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
-    monkeypatch.setattr(studio_mod, "CommandService", _CommandServiceMock, raising=False)
+    monkeypatch.setattr(
+        studio_mod, "CommandService", _CommandServiceMock, raising=False
+    )
     monkeypatch.setattr(studio_mod, "provision_langchain_model", AsyncMock())
 
     response = _client().post(
@@ -562,7 +557,9 @@ def test_create_workflow_run_rejects_not_ready_sources_before_queueing(monkeypat
         submit_command_job = AsyncMock(return_value="command:should-not-submit")
 
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
-    monkeypatch.setattr(studio_mod, "CommandService", _CommandServiceMock, raising=False)
+    monkeypatch.setattr(
+        studio_mod, "CommandService", _CommandServiceMock, raising=False
+    )
 
     response = _client().post(
         "/api/studio/artifacts/studio_artifact:course-pack/workflow-runs",
@@ -661,7 +658,9 @@ def test_approve_workflow_run_releases_privacy_gate(monkeypatch):
             return "command:studio-report"
 
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
-    monkeypatch.setattr(studio_mod, "CommandService", _CommandServiceMock, raising=False)
+    monkeypatch.setattr(
+        studio_mod, "CommandService", _CommandServiceMock, raising=False
+    )
 
     response = _client().post("/api/studio/workflow-runs/studio_workflow_run:1/approve")
 
@@ -698,7 +697,11 @@ def test_approve_workflow_run_submits_generation_command(monkeypatch):
                 {"id": "context", "label": "Context built", "status": "completed"},
                 {"id": "privacy_gate", "label": "Privacy gate", "status": "pending"},
                 {"id": "model_route", "label": "Model route", "status": "blocked"},
-                {"id": "artifact_generation", "label": "Course Pack", "status": "blocked"},
+                {
+                    "id": "artifact_generation",
+                    "label": "Course Pack",
+                    "status": "blocked",
+                },
             ],
         ),
     }
@@ -723,7 +726,9 @@ def test_approve_workflow_run_submits_generation_command(monkeypatch):
             return "command:studio-approved"
 
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
-    monkeypatch.setattr(studio_mod, "CommandService", _CommandServiceMock, raising=False)
+    monkeypatch.setattr(
+        studio_mod, "CommandService", _CommandServiceMock, raising=False
+    )
     monkeypatch.setattr(studio_mod, "provision_langchain_model", AsyncMock())
 
     response = _client().post("/api/studio/workflow-runs/studio_workflow_run:1/approve")
@@ -1038,7 +1043,9 @@ def test_generate_artifact_is_hidden_when_feature_flag_disabled(monkeypatch):
     assert response.json()["detail"] == "Evidence Studio is not enabled"
 
 
-def test_generate_artifact_uses_selected_sources_and_saves_markdown(monkeypatch, tmp_path):
+def test_generate_artifact_uses_selected_sources_and_saves_markdown(
+    monkeypatch, tmp_path
+):
     monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
@@ -1176,7 +1183,9 @@ def test_generate_artifact_returns_409_when_sources_not_ready(monkeypatch):
         AsyncMock(),
     )
 
-    response = _client().post("/api/studio/artifacts/studio_artifact:not-ready/generate")
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:not-ready/generate"
+    )
 
     assert response.status_code == 409
     detail = response.json()["detail"]
@@ -1223,7 +1232,9 @@ def test_generate_course_pack_blocks_completed_source_without_text(monkeypatch):
         AsyncMock(),
     )
 
-    response = _client().post("/api/studio/artifacts/studio_artifact:empty-text/generate")
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:empty-text/generate"
+    )
 
     assert response.status_code == 409
     detail = response.json()["detail"]
@@ -1306,7 +1317,9 @@ def test_generate_course_pack_saves_training_sidecar_exports(monkeypatch, tmp_pa
         AsyncMock(return_value=fake_chain),
     )
 
-    response = _client().post("/api/studio/artifacts/studio_artifact:course-pack/generate")
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:course-pack/generate"
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -1325,9 +1338,13 @@ def test_generate_course_pack_saves_training_sidecar_exports(monkeypatch, tmp_pa
         }
     ]
 
-    instructor_export = tmp_path / body["export_paths"]["instructor_guide"].split("/")[-1]
+    instructor_export = (
+        tmp_path / body["export_paths"]["instructor_guide"].split("/")[-1]
+    )
     learner_export = tmp_path / body["export_paths"]["learner_handout"].split("/")[-1]
-    checklist_export = tmp_path / body["export_paths"]["module_checklist"].split("/")[-1]
+    checklist_export = (
+        tmp_path / body["export_paths"]["module_checklist"].split("/")[-1]
+    )
     assessment_export = tmp_path / body["export_paths"]["assessment"].split("/")[-1]
     assert "Open the local model settings page" in instructor_export.read_text()
     assert "Open the local model settings page" not in learner_export.read_text()
@@ -1413,7 +1430,9 @@ def test_generate_course_pack_flags_unsupported_citation_markers(monkeypatch, tm
         AsyncMock(return_value=fake_chain),
     )
 
-    response = _client().post("/api/studio/artifacts/studio_artifact:citation-guard/generate")
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:citation-guard/generate"
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -1474,12 +1493,14 @@ def test_generate_artifact_uses_role_routed_registered_model(monkeypatch, tmp_pa
     fake_chain = _json_chain("report", title="Report")
 
     async def _fake_provision(content, model_id, default_type, **kwargs):
-        captured.append({
-            "content": content,
-            "model_id": model_id,
-            "default_type": default_type,
-            "kwargs": kwargs,
-        })
+        captured.append(
+            {
+                "content": content,
+                "model_id": model_id,
+                "default_type": default_type,
+                "kwargs": kwargs,
+            }
+        )
         return fake_chain
 
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
@@ -1496,7 +1517,9 @@ def test_generate_artifact_uses_role_routed_registered_model(monkeypatch, tmp_pa
     assert captured[0]["default_type"] == "chat"
 
 
-def test_generate_artifact_keeps_explicit_model_over_role_routing(monkeypatch, tmp_path):
+def test_generate_artifact_keeps_explicit_model_over_role_routing(
+    monkeypatch, tmp_path
+):
     monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
@@ -1802,7 +1825,9 @@ def test_generate_artifact_supports_podcast_outline_instruction(monkeypatch):
         AsyncMock(return_value=fake_chain),
     )
 
-    response = _client().post("/api/studio/artifacts/studio_artifact:podcast-outline/generate")
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:podcast-outline/generate"
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -1845,7 +1870,9 @@ def test_generate_artifact_supports_research_run_instruction(monkeypatch):
         AsyncMock(return_value=fake_chain),
     )
 
-    response = _client().post("/api/studio/artifacts/studio_artifact:research-run/generate")
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:research-run/generate"
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -1860,7 +1887,9 @@ def test_generate_artifact_supports_research_run_instruction(monkeypatch):
     assert "citation markers" in lower_prompt
 
 
-def test_generate_research_run_persists_structured_stage_metadata(monkeypatch, tmp_path):
+def test_generate_research_run_persists_structured_stage_metadata(
+    monkeypatch, tmp_path
+):
     monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "1")
     monkeypatch.setenv("DEEPER_NOTEBOOK_ARTIFACT_EXPORT_DIR", str(tmp_path))
     _install_fake_artifacts(monkeypatch)
@@ -1910,7 +1939,9 @@ def test_generate_research_run_persists_structured_stage_metadata(monkeypatch, t
         AsyncMock(return_value=fake_chain),
     )
 
-    response = _client().post("/api/studio/artifacts/studio_artifact:research-stages/generate")
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:research-stages/generate"
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -1997,7 +2028,9 @@ def test_generate_data_table_persists_rows_and_csv_export(monkeypatch, tmp_path)
         AsyncMock(return_value=fake_chain),
     )
 
-    response = _client().post("/api/studio/artifacts/studio_artifact:data-table/generate")
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:data-table/generate"
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -2024,8 +2057,9 @@ def test_generate_data_table_persists_rows_and_csv_export(monkeypatch, tmp_path)
     assert "Topic,Evidence,Source,Confidence,Notes" in csv_export.read_text()
     json_export = tmp_path / body["export_paths"]["json"].split("/")[-1]
     exported_metadata = json.loads(json_export.read_text())
-    assert exported_metadata["output_payload"]["data_table_rows"] == (
-        body["output_payload"]["data_table_rows"]
+    assert (
+        exported_metadata["output_payload"]["data_table_rows"]
+        == (body["output_payload"]["data_table_rows"])
     )
     messages = fake_chain.ainvoke.call_args.args[0]
     lower_prompt = messages[0].content.lower()
@@ -2381,7 +2415,9 @@ def test_generate_artifact_returns_404_when_selected_source_is_missing(monkeypat
         AsyncMock(),
     )
 
-    response = _client().post("/api/studio/artifacts/studio_artifact:missing-source/generate")
+    response = _client().post(
+        "/api/studio/artifacts/studio_artifact:missing-source/generate"
+    )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Source not found: source:gone"

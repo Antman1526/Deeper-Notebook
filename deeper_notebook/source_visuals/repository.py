@@ -40,7 +40,12 @@ _PUBLIC_ERROR_CODES = frozenset(
 class _CurrentVisualRows(dict[str, SourceVisualRecord]):
     """Mapping-compatible ready rows with bounded non-ready status hints."""
 
-    def __init__(self, *args: object, statuses: Mapping[str, Mapping[str, object]] | None = None, **kwargs: object):
+    def __init__(
+        self,
+        *args: object,
+        statuses: Mapping[str, Mapping[str, object]] | None = None,
+        **kwargs: object,
+    ):
         super().__init__(*args, **kwargs)
         self.statuses = dict(statuses or {})
 
@@ -213,7 +218,9 @@ def _identity(
 
 def _record(table: str, identity: str) -> object:
     try:
-        record_id = identity if identity.startswith(f"{table}:") else f"{table}:{identity}"
+        record_id = (
+            identity if identity.startswith(f"{table}:") else f"{table}:{identity}"
+        )
         return ensure_record_id(record_id)
     except (TypeError, ValueError):
         raise SourceVisualRepositoryError("INVALID_INPUT") from None
@@ -244,10 +251,7 @@ async def _transaction(query: str, variables: dict[str, object]) -> object:
     except SourceVisualRepositoryError:
         raise
     except Exception as exc:
-        if (
-            "DN_SOURCE_VISUAL_" in query
-            and "failed transaction" in str(exc).lower()
-        ):
+        if "DN_SOURCE_VISUAL_" in query and "failed transaction" in str(exc).lower():
             # SurrealDB 2.x rolls back a transaction aborted by THROW but its
             # Python driver exposes only this generic message, not the thrown
             # marker.  Guarded callers perform exact persisted-state
@@ -433,7 +437,11 @@ class SourceVisualRepository:
         owner_token = _hash(owner_token)
         current = _now(now)
         if lease_until is None:
-            if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or lease_seconds <= 0:
+            if (
+                isinstance(lease_seconds, bool)
+                or not isinstance(lease_seconds, int)
+                or lease_seconds <= 0
+            ):
                 raise SourceVisualRepositoryError("INVALID_INPUT")
             lease_until = current + timedelta(seconds=lease_seconds)
         lease_until = _datetime(lease_until)
@@ -480,9 +488,8 @@ class SourceVisualRepository:
             if not isinstance(existing, Mapping):
                 existing = row
             existing_until = _datetime(existing.get("lease_until"))
-            if (
-                existing.get("owner_token") != owner_token
-                and (existing_until is None or existing_until > current)
+            if existing.get("owner_token") != owner_token and (
+                existing_until is None or existing_until > current
             ):
                 raise SourceVisualConflictError("CLAIM_HELD")
             row = dict(existing)
@@ -534,7 +541,11 @@ class SourceVisualRepository:
         owner_token = _hash(owner_token)
         current = _now(now)
         if lease_until is None:
-            if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or lease_seconds <= 0:
+            if (
+                isinstance(lease_seconds, bool)
+                or not isinstance(lease_seconds, int)
+                or lease_seconds <= 0
+            ):
                 raise SourceVisualRepositoryError("INVALID_INPUT")
             lease_until = current + timedelta(seconds=lease_seconds)
         lease_until = _datetime(lease_until)
@@ -1047,17 +1058,20 @@ class SourceVisualRepository:
         row = _row(result)
         if row is None:
             row = await _read_exact_row("source_visual_operation", identity)
-        if row and (row.get("request_conflict") or not _operation_matches(
-            row,
-            source_id=source_id,
-            request_id=request_id,
-            source_updated_at=source_updated_at,
-            content_sha256=content_sha256,
-            operation=operation,
-            command_id=canonical_command_id,
-            outcome=outcome,
-            error_code=error_code,
-        )):
+        if row and (
+            row.get("request_conflict")
+            or not _operation_matches(
+                row,
+                source_id=source_id,
+                request_id=request_id,
+                source_updated_at=source_updated_at,
+                content_sha256=content_sha256,
+                operation=operation,
+                command_id=canonical_command_id,
+                outcome=outcome,
+                error_code=error_code,
+            )
+        ):
             raise SourceVisualConflictError("REQUEST_CONFLICT")
         fallback = self._operation_cache.get(identity)
         receipt = _receipt_from_row(
@@ -1116,7 +1130,12 @@ class SourceVisualRepository:
             or expected_error_code is not None
         ):
             raise SourceVisualRepositoryError("INVALID_INPUT")
-        if operation == "delete" and command_id is None and outcome == "deleted" and error_code is None:
+        if (
+            operation == "delete"
+            and command_id is None
+            and outcome == "deleted"
+            and error_code is None
+        ):
             pass
         elif command_id is not None:
             if outcome != "queued" or error_code is not None:
@@ -1423,7 +1442,9 @@ class SourceVisualRepository:
                 FROM $operation_record;
                 """,
                 {
-                    "operation_record": _record("source_visual_operation", operation_id),
+                    "operation_record": _record(
+                        "source_visual_operation", operation_id
+                    ),
                     "claim_record": _record("source_visual_claim", claim_id),
                     "source_record": _source_record(source_id),
                     "request_id": request_id,
@@ -1442,17 +1463,21 @@ class SourceVisualRepository:
             if isinstance(claim, Mapping)
             else None
         )
-        if not operation_row or not _operation_matches(
-            operation_row,
-            source_id=source_id,
-            request_id=request_id,
-            source_updated_at=source_updated_at,
-            content_sha256=content_sha256,
-            operation="refresh",
-            command_id=operation_command,
-            outcome="queued",
-            error_code=None,
-        ) or (operation_command is not None and operation_command != claim_command):
+        if (
+            not operation_row
+            or not _operation_matches(
+                operation_row,
+                source_id=source_id,
+                request_id=request_id,
+                source_updated_at=source_updated_at,
+                content_sha256=content_sha256,
+                operation="refresh",
+                command_id=operation_command,
+                outcome="queued",
+                error_code=None,
+            )
+            or (operation_command is not None and operation_command != claim_command)
+        ):
             raise SourceVisualConflictError("REQUEST_CONFLICT")
 
         if delete_intent is None:
@@ -1475,11 +1500,8 @@ class SourceVisualRepository:
             and (lease_until := _datetime(claim.get("lease_until"))) is not None
             and lease_until > current
             and isinstance(command_refresh, Mapping)
-            and _command_text(command_refresh.get("command_id"))
-            == claim_command
-            and (
-                command_created_at := _datetime(command_refresh.get("created_at"))
-            )
+            and _command_text(command_refresh.get("command_id")) == claim_command
+            and (command_created_at := _datetime(command_refresh.get("created_at")))
             is not None
             and command_created_at > delete_created_at
         )
@@ -1532,13 +1554,13 @@ class SourceVisualRepository:
             ready_rows = _rows(ready_result)
             status_rows = _rows(
                 await _transaction(
-                "SELECT *, command_id.status AS command_status "
-                "FROM source_visual_operation "
-                "WHERE [source_id, source_updated_at] IN $source_revision_pairs "
-                'AND operation = "refresh" '
-                "ORDER BY updated_at DESC LIMIT $limit;",
-                variables,
-            )
+                    "SELECT *, command_id.status AS command_status "
+                    "FROM source_visual_operation "
+                    "WHERE [source_id, source_updated_at] IN $source_revision_pairs "
+                    'AND operation = "refresh" '
+                    "ORDER BY updated_at DESC LIMIT $limit;",
+                    variables,
+                )
             )
         current: dict[str, SourceVisualRecord] = {}
         for raw_row in ready_rows:
@@ -1572,7 +1594,10 @@ class SourceVisualRepository:
                 state = "failed"
             elif command_status in {"running", "processing"}:
                 state = "processing"
-            elif command_status in {"queued", "pending"} or outcome in {"queued", "replayed"}:
+            elif command_status in {"queued", "pending"} or outcome in {
+                "queued",
+                "replayed",
+            }:
                 state = "queued"
             else:
                 state = "unavailable"
@@ -1596,7 +1621,9 @@ class SourceVisualRepository:
         """
 
         hashes = tuple(dict.fromkeys(values))
-        if len(hashes) > _MAX_REVISIONS or any(_hash(value) is None for value in hashes):
+        if len(hashes) > _MAX_REVISIONS or any(
+            _hash(value) is None for value in hashes
+        ):
             raise SourceVisualRepositoryError("INVALID_INPUT")
         if not hashes:
             return []
@@ -1898,7 +1925,10 @@ class SourceVisualRepository:
                     {"source_record": _source_record(source_id)},
                 )
             )
-            if _datetime(source_row.get("updated") if source_row else None) != source_updated_at:
+            if (
+                _datetime(source_row.get("updated") if source_row else None)
+                != source_updated_at
+            ):
                 raise SourceVisualConflictError("SOURCE_STALE")
             delete_rows = _rows(
                 await _transaction(
@@ -2043,7 +2073,10 @@ class SourceVisualRepository:
                     {"source_record": _source_record(source_id)},
                 )
             )
-            if _datetime(source_row.get("updated") if source_row else None) != source_updated_at:
+            if (
+                _datetime(source_row.get("updated") if source_row else None)
+                != source_updated_at
+            ):
                 raise SourceVisualConflictError("SOURCE_STALE")
             cache_row = await _read_exact_row(
                 "source_visual_cache", _cache_identity(source_id, content_sha256)
@@ -2059,7 +2092,10 @@ class SourceVisualRepository:
     def _normalise_record_argument(
         record: SourceVisualRecord | Mapping[str, Any] | str | None,
         source_id: str | SourceVisualAuthority | None,
-    ) -> tuple[SourceVisualRecord | Mapping[str, Any] | None, str | SourceVisualAuthority | None]:
+    ) -> tuple[
+        SourceVisualRecord | Mapping[str, Any] | None,
+        str | SourceVisualAuthority | None,
+    ]:
         if isinstance(record, str) and source_id is None:
             return None, record
         return record if record is not None else None, source_id
@@ -2087,7 +2123,10 @@ class SourceVisualRepository:
             and extractor_version != authority.extractor_version
         ):
             raise SourceVisualRepositoryError("INVALID_INPUT")
-        if source_updated_at is not None and _datetime(source_updated_at) != authority.source_updated_at:
+        if (
+            source_updated_at is not None
+            and _datetime(source_updated_at) != authority.source_updated_at
+        ):
             raise SourceVisualConflictError("SOURCE_STALE")
 
     @staticmethod
@@ -2133,7 +2172,8 @@ class SourceVisualRepository:
             source_file_sha256=authority.source_file_sha256 if authority else None,
             content_sha256=content_sha256,
             asset_sha256=content_sha256,
-            asset_relpath=f"{content_sha256[:2]}/{content_sha256}/" + f"{content_sha256}.webp",
+            asset_relpath=f"{content_sha256[:2]}/{content_sha256}/"
+            + f"{content_sha256}.webp",
             origin="embedded",
             source_locator={"page": 1},
             extractor_version=extractor_version,

@@ -342,8 +342,7 @@ class KnowledgeNavigationService:
                         ) from None
                     if (
                         descriptor is None
-                        or getattr(descriptor, "authority_kind", None)
-                        != "app_owned"
+                        or getattr(descriptor, "authority_kind", None) != "app_owned"
                     ):
                         raise KnowledgeNavigationServiceError(
                             "workspace_write_target_not_app_owned"

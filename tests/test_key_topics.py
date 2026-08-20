@@ -11,7 +11,9 @@ def test_parse_topics_handles_empty():
 
 
 def test_parse_topics_strips_bullets_and_numbers():
-    text = "- Machine learning\n* Neural networks\n• Backprop\n1. Optimizers\n2) Datasets"
+    text = (
+        "- Machine learning\n* Neural networks\n• Backprop\n1. Optimizers\n2) Datasets"
+    )
     assert parse_topics(text) == [
         "Machine learning",
         "Neural networks",

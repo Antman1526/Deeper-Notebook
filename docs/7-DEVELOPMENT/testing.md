@@ -32,6 +32,7 @@ import pytest
 from httpx import AsyncClient
 from open_notebook.domain.notebook import Notebook
 
+
 @pytest.mark.asyncio
 async def test_create_notebook():
     """Test notebook creation."""
@@ -42,13 +43,14 @@ async def test_create_notebook():
     assert notebook.name == "Test Notebook"
     assert notebook.created is not None
 
+
 @pytest.mark.asyncio
 async def test_api_create_notebook():
     """Test notebook creation via API."""
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post(
             "/api/notebooks",
-            json={"name": "Test Notebook", "description": "Test description"}
+            json={"name": "Test Notebook", "description": "Test description"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -67,6 +69,7 @@ async def test_notebook_validation():
     """Test that notebook name validation works."""
     with pytest.raises(InvalidInputError):
         Notebook(name="", description="test")
+
 
 @pytest.mark.asyncio
 async def test_notebook_archive():
@@ -110,13 +113,13 @@ async def test_get_notebooks_endpoint():
         data = response.json()
         assert isinstance(data, list)
 
+
 @pytest.mark.asyncio
 async def test_create_notebook_validation():
     """Test that invalid input is rejected."""
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post(
-            "/api/notebooks",
-            json={"name": "", "description": ""}
+            "/api/notebooks", json={"name": "", "description": ""}
         )
         assert response.status_code == 400
 ```
@@ -138,15 +141,14 @@ async def test_save_and_retrieve_notebook():
     assert retrieved.name == "Test"
     assert retrieved.description == "desc"
 
+
 @pytest.mark.asyncio
 async def test_query_by_criteria():
     """Test querying notebooks by criteria."""
     await create_notebook("Active", "")
     await create_notebook("Archived", "")
 
-    active = await repo_query(
-        "SELECT * FROM notebook WHERE archived = false"
-    )
+    active = await repo_query("SELECT * FROM notebook WHERE archived = false")
     assert len(active) >= 1
 ```
 
@@ -209,6 +211,7 @@ Use pytest fixtures for common setup and teardown:
 ```python
 import pytest
 
+
 @pytest.fixture
 async def test_notebook():
     """Create a test notebook."""
@@ -217,11 +220,13 @@ async def test_notebook():
     yield notebook
     await notebook.delete()
 
+
 @pytest.fixture
 async def api_client():
     """Create an API test client."""
     async with AsyncClient(app=app, base_url="http://test") as client:
         yield client
+
 
 @pytest.fixture
 async def test_notebook_with_sources(test_notebook):
@@ -245,12 +250,11 @@ async def test_notebook_with_sources(test_notebook):
 
 ```python
 # Good - clearly describes what is being tested
-async def test_create_notebook_with_valid_name_succeeds():
-    ...
+async def test_create_notebook_with_valid_name_succeeds(): ...
+
 
 # Bad - vague about what's being tested
-async def test_notebook():
-    ...
+async def test_notebook(): ...
 ```
 
 ### 2. Use Docstrings
@@ -271,12 +275,14 @@ async def test_search_with_empty_query():
     with pytest.raises(InvalidInputError):
         await vector_search("")
 
+
 @pytest.mark.asyncio
 async def test_search_with_very_long_query():
     """Test that very long query is handled."""
     long_query = "x" * 10000
     results = await vector_search(long_query)
     assert isinstance(results, list)
+
 
 @pytest.mark.asyncio
 async def test_search_with_special_characters():
@@ -308,11 +314,13 @@ async def test_create_notebook_success():
     assert notebook.id is not None
     assert notebook.name == "Research"
 
+
 @pytest.mark.asyncio
 async def test_create_notebook_empty_name_fails():
     """Test that empty name raises error."""
     with pytest.raises(InvalidInputError):
         await create_notebook(name="", description="")
+
 
 @pytest.mark.asyncio
 async def test_create_notebook_duplicate_fails():
@@ -333,6 +341,7 @@ async def test_archive_notebook():
     await notebook.archive()
     assert notebook.archived is True
 
+
 # Bad - depends on another test's state
 @pytest.mark.asyncio
 async def test_archive_existing_notebook():
@@ -349,6 +358,7 @@ async def client_with_auth(api_client, mock_auth):
     """Client with authentication set up."""
     api_client.headers.update({"Authorization": f"Bearer {mock_auth.token}"})
     yield api_client
+
 
 @pytest.mark.asyncio
 async def test_protected_endpoint(client_with_auth):
@@ -382,10 +392,7 @@ async def test_async_operation():
 @pytest.mark.asyncio
 async def test_concurrent_notebook_creation():
     """Test creating multiple notebooks concurrently."""
-    tasks = [
-        create_notebook(f"Notebook {i}", "")
-        for i in range(10)
-    ]
+    tasks = [create_notebook(f"Notebook {i}", "") for i in range(10)]
     notebooks = await asyncio.gather(*tasks)
     assert len(notebooks) == 10
     assert all(n.id for n in notebooks)

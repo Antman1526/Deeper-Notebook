@@ -83,7 +83,9 @@ class CaptureRoutingService:
         get_speech_to_text: SpeechToTextGetter,
         semantic_suggester: NotebookSuggester | None = None,
     ) -> None:
-        self._roots = tuple(Path(root).expanduser().resolve() for root in approved_roots)
+        self._roots = tuple(
+            Path(root).expanduser().resolve() for root in approved_roots
+        )
         self._items = tuple(capture_items)
         self._notebooks = tuple(notebooks)
         self._get_speech_to_text = get_speech_to_text
@@ -109,7 +111,9 @@ class CaptureRoutingService:
         try:
             result = await model.atranscribe(audio_file=Path(source.path))
         except Exception:
-            logger.warning("Capture routing transcription unavailable from configured STT model")
+            logger.warning(
+                "Capture routing transcription unavailable from configured STT model"
+            )
             return CaptureRouteResult(
                 state="unavailable",
                 source=source,
@@ -130,7 +134,9 @@ class CaptureRoutingService:
                 raise CaptureRoutingError("capture media must not be a symlink")
             candidate = requested_path.expanduser().resolve(strict=True)
         except OSError as exc:
-            raise CaptureRoutingError("capture media must be an existing local file") from exc
+            raise CaptureRoutingError(
+                "capture media must be an existing local file"
+            ) from exc
         if not candidate.is_file() or candidate.suffix.lower() not in _MEDIA_SUFFIXES:
             raise CaptureRoutingError("capture media must be a supported regular file")
 
@@ -140,7 +146,9 @@ class CaptureRoutingService:
             fingerprint = fingerprint_file(candidate)
             stat = candidate.stat()
         except (CaptureFingerprintError, OSError) as exc:
-            raise CaptureRoutingError("capture media changed or became unavailable") from exc
+            raise CaptureRoutingError(
+                "capture media changed or became unavailable"
+            ) from exc
         if (
             item.sha256 != fingerprint.sha256
             or item.byte_size != fingerprint.byte_size
@@ -196,7 +204,9 @@ class CaptureRoutingService:
             except Exception:
                 logger.warning("Local semantic capture routing was unavailable")
 
-        search_terms = set(_WORDS.findall(f"{transcript} {source.relative_path}".lower()))
+        search_terms = set(
+            _WORDS.findall(f"{transcript} {source.relative_path}".lower())
+        )
         scored: list[CaptureNotebookSuggestion] = []
         for notebook in self._notebooks:
             matches = sorted(search_terms & set(_WORDS.findall(notebook.name.lower())))

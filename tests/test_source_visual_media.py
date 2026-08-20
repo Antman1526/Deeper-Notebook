@@ -32,11 +32,21 @@ def _oversized_png_header(width: int = 10_001, height: int = 4_000) -> bytes:
     header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
 
     def chunk(kind: bytes, value: bytes) -> bytes:
-        return struct.pack(">I", len(value)) + kind + value + struct.pack(">I", zlib.crc32(kind + value) & 0xFFFFFFFF)
+        return (
+            struct.pack(">I", len(value))
+            + kind
+            + value
+            + struct.pack(">I", zlib.crc32(kind + value) & 0xFFFFFFFF)
+        )
 
     # One short scanline is enough: the decoder must reject the pixel bound
     # before trying to inflate a full 40MP image.
-    return signature + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(b"\0" + b"\0" * width * 3)) + chunk(b"IEND", b"")
+    return (
+        signature
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b"\0" + b"\0" * width * 3))
+        + chunk(b"IEND", b"")
+    )
 
 
 def _candidate_image_bytes() -> bytes:
@@ -89,10 +99,19 @@ def test_prepare_webp_rejects_animated_gif_and_webp() -> None:
         prepare_webp,
     )
 
-    frames = [Image.new("RGB", (120, 80), color) for color in ((10, 20, 30), (30, 20, 10))]
+    frames = [
+        Image.new("RGB", (120, 80), color) for color in ((10, 20, 30), (30, 20, 10))
+    ]
     for fmt in ("GIF", "WEBP"):
         output = io.BytesIO()
-        frames[0].save(output, format=fmt, save_all=True, append_images=frames[1:], duration=20, loop=0)
+        frames[0].save(
+            output,
+            format=fmt,
+            save_all=True,
+            append_images=frames[1:],
+            duration=20,
+            loop=0,
+        )
         with pytest.raises(SourceVisualMediaError, match="ANIMATED_UNSUPPORTED"):
             prepare_webp(output.getvalue())
 
@@ -107,7 +126,9 @@ def test_prepare_webp_rejects_alpha_only_images() -> None:
         prepare_webp(_image_bytes(transparent=True))
 
 
-def test_prepare_webp_rejects_over_40mp_and_decoder_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prepare_webp_rejects_over_40mp_and_decoder_warnings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import deeper_notebook.source_visuals.media as media
 
     with pytest.raises(media.SourceVisualMediaError, match="PIXEL_LIMIT"):
@@ -118,13 +139,17 @@ def test_prepare_webp_rejects_over_40mp_and_decoder_warnings(monkeypatch: pytest
         media.prepare_webp(_candidate_image_bytes())
 
 
-def test_prepare_webp_rejects_polyglot_and_oversized_output(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prepare_webp_rejects_polyglot_and_oversized_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import deeper_notebook.source_visuals.media as media
 
     with pytest.raises(media.SourceVisualMediaError, match="POLYGLOT"):
         media.prepare_webp(_candidate_image_bytes() + b"PK\x03\x04")
 
-    monkeypatch.setattr(media, "_encode_webp", lambda *_args, **_kwargs: b"x" * (1_572_865))
+    monkeypatch.setattr(
+        media, "_encode_webp", lambda *_args, **_kwargs: b"x" * (1_572_865)
+    )
     with pytest.raises(media.SourceVisualMediaError, match="OUTPUT_TOO_LARGE"):
         media.prepare_webp(_candidate_image_bytes())
 
@@ -143,7 +168,9 @@ def test_prepare_webp_letterboxes_and_applies_exif_orientation() -> None:
     assert decoded.getpixel((0, 0)) == (240, 240, 240)
 
 
-def test_prepare_webp_accepts_baseline_and_progressive_jpeg_but_rejects_structural_trailing_data() -> None:
+def test_prepare_webp_accepts_baseline_and_progressive_jpeg_but_rejects_structural_trailing_data() -> (
+    None
+):
     from deeper_notebook.source_visuals.media import (
         SourceVisualMediaError,
         prepare_webp,
@@ -202,7 +229,9 @@ def test_select_candidate_ties_use_locator_before_origin() -> None:
 def test_candidate_alt_text_is_bounded_neutral_and_locator_based() -> None:
     from deeper_notebook.source_visuals.media import VisualCandidate, build_alt_text
 
-    candidate = VisualCandidate("embedded", {"page": 4, "resource_id": "12"}, b"x", 1.0, "k")
+    candidate = VisualCandidate(
+        "embedded", {"page": 4, "resource_id": "12"}, b"x", 1.0, "k"
+    )
     text = build_alt_text("A bounded source title", "PDF", candidate)
     assert text == "A bounded source title, PDF, Embedded image, page 4"
     assert len(text) <= 300

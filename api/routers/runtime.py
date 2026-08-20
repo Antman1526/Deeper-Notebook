@@ -54,7 +54,9 @@ async def _vault_summary(request: Request) -> list[dict[str, Any]] | None:
             fingerprint = getattr(mount, "source_fingerprint", None)
         except Exception:
             fingerprint = None
-        if isinstance(fingerprint, str) and _SOURCE_FINGERPRINT_RE.fullmatch(fingerprint):
+        if isinstance(fingerprint, str) and _SOURCE_FINGERPRINT_RE.fullmatch(
+            fingerprint
+        ):
             item["source_fingerprint"] = fingerprint
         summary.append(item)
     return summary
@@ -88,8 +90,12 @@ def _providers_for_request(request: Request) -> RuntimeSnapshotProviders:
     )
     return RuntimeSnapshotProviders(
         readiness=getattr(request.app.state, "runtime_readiness_provider", None),
-        startup_receipts=getattr(request.app.state, "runtime_startup_receipt_provider", None),
-        update_status=getattr(request.app.state, "runtime_update_status_provider", None),
+        startup_receipts=getattr(
+            request.app.state, "runtime_startup_receipt_provider", None
+        ),
+        update_status=getattr(
+            request.app.state, "runtime_update_status_provider", None
+        ),
         vault_summary=vault_provider or (lambda: _vault_summary(request)),
         knowledge_summary=knowledge_provider or (lambda: _knowledge_summary(request)),
         auto_export_directory=auto_export_provider,

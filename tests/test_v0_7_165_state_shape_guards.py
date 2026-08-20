@@ -21,6 +21,7 @@ contain an `isinstance(result, dict)` check immediately before the
 deterministically here rather than at runtime against a Pydantic
 state.
 """
+
 from __future__ import annotations
 
 import ast

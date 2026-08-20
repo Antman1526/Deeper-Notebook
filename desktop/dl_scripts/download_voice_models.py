@@ -12,6 +12,7 @@ package whenever a desktop test inserted `desktop/` into sys.path
 import path and breaking 17 tests in the combined-suite run. Renaming
 removes the namespace collision entirely.
 """
+
 from __future__ import annotations
 
 import argparse

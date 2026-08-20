@@ -488,8 +488,12 @@ class PodcastEpisode(ObjectModel):
     # success never reached the DB and the last stage ("combining_audio")
     # stuck on completed episodes forever (caught by the live smoke test).
     nullable_fields: ClassVar[set[str]] = {
-        "generation_stage", "custom_prompt", "selection_summary",
-        "selection_fingerprint", "editorial_brief", "retry_submitted",
+        "generation_stage",
+        "custom_prompt",
+        "selection_summary",
+        "selection_fingerprint",
+        "editorial_brief",
+        "retry_submitted",
     }
 
     name: str = Field(..., description="Episode name")

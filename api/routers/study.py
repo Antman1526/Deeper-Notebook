@@ -26,12 +26,16 @@ def _repository() -> StudyRepository:
     return StudyRepository()
 
 
-@router.post("/cards", response_model=StudyCardResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/cards", response_model=StudyCardResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_study_card(payload: CreateStudyCardRequest) -> StudyCardResponse:
     repository = _repository()
     try:
         requested = payload.to_card()
-        atomic_creator = getattr(repository, "create_card_version_with_artifact_owner", None)
+        atomic_creator = getattr(
+            repository, "create_card_version_with_artifact_owner", None
+        )
         if callable(atomic_creator):
             card = await atomic_creator(requested)
         else:
@@ -45,7 +49,9 @@ async def create_study_card(payload: CreateStudyCardRequest) -> StudyCardRespons
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Study card artifact owner changed",
             ) from None
-        raise HTTPException(status_code=503, detail="Study cards are unavailable") from None
+        raise HTTPException(
+            status_code=503, detail="Study cards are unavailable"
+        ) from None
     return StudyCardResponse.from_card(card)
 
 
@@ -56,7 +62,9 @@ async def list_due_study_cards(
     try:
         cards = await _repository().list_due(datetime.now(UTC), limit=limit)
     except StudyRepositoryError:
-        raise HTTPException(status_code=503, detail="Study cards are unavailable") from None
+        raise HTTPException(
+            status_code=503, detail="Study cards are unavailable"
+        ) from None
     return [StudyCardResponse.from_card(card) for card in cards]
 
 
@@ -73,10 +81,14 @@ async def review_study_card(
         )
     except StudyRepositoryError as exc:
         if str(exc) == "Study card no longer exists":
-            raise HTTPException(status_code=404, detail="Study card not found") from None
+            raise HTTPException(
+                status_code=404, detail="Study card not found"
+            ) from None
         if str(exc) == "Review request ID was already used":
             raise HTTPException(status_code=409, detail=str(exc)) from None
-        raise HTTPException(status_code=503, detail="Study reviews are unavailable") from None
+        raise HTTPException(
+            status_code=503, detail="Study reviews are unavailable"
+        ) from None
     return StudyReviewResultResponse(
         card=StudyCardResponse.from_card(card),
         review=StudyReviewResponse.from_review(review),

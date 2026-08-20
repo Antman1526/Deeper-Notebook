@@ -7,6 +7,7 @@ wrong. These tests confirm:
   - factory raises → caller gets a clear RuntimeError (not blank window)
   - timeout path → caller gets TimeoutError
 """
+
 from __future__ import annotations
 
 import socket
@@ -47,6 +48,7 @@ def test_starts_real_server_and_returns_bound_port():
 def test_factory_exception_surfaces_as_runtime_error():
     """The bug we just fixed: a factory that raises used to leave the caller
     with port=0 after 5s. Now it raises a clear RuntimeError quickly."""
+
     def _bad_factory():
         raise RuntimeError("simulated factory boom")
 
@@ -57,6 +59,7 @@ def test_factory_exception_surfaces_as_runtime_error():
 def test_setup_exception_during_runner_setup_propagates():
     """A factory that returns an app that fails at runner.setup() time —
     e.g. an on_startup handler raises. Must surface as RuntimeError."""
+
     def _on_startup_raises(_app):
         raise ValueError("startup signal raised")
 
@@ -74,6 +77,7 @@ def test_setup_exception_during_runner_setup_propagates():
 def test_timeout_raises_clear_error_when_server_hangs():
     """If app_factory hangs indefinitely we eventually give up with a
     timeout. Picking a short timeout keeps the test fast."""
+
     def _slow_factory():
         time.sleep(2.0)  # exceeds the 0.3s timeout below
         return _make_simple_app()

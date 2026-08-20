@@ -90,9 +90,7 @@ async def test_a_dangling_default_names_the_missing_row():
 
 @pytest.mark.asyncio
 async def test_endpoint_provider_without_a_base_url_is_reported():
-    health = await _evaluate(
-        _defaults(), _model(), _credential(base_url="")
-    )
+    health = await _evaluate(_defaults(), _model(), _credential(base_url=""))
     assert "chat_default_endpoint_missing" in [i.code for i in health.issues]
 
 
@@ -208,14 +206,18 @@ async def test_a_missing_embedding_default_is_reported_with_its_own_code():
     assert "embedding_default_missing" in codes
     assert "chat_default_missing" not in codes
 
-    detail = next(i.detail for i in health.issues if i.code == "embedding_default_missing")
+    detail = next(
+        i.detail for i in health.issues if i.code == "embedding_default_missing"
+    )
     assert "Search" in detail
 
 
 @pytest.mark.asyncio
 async def test_chat_codes_are_unchanged_by_the_slot_generalisation():
     """The codes are derived per slot, so chat must emit exactly what it did."""
-    health = await _evaluate(_defaults(default_chat_model=None), _model(), _credential())
+    health = await _evaluate(
+        _defaults(default_chat_model=None), _model(), _credential()
+    )
     assert "chat_default_missing" in [i.code for i in health.issues]
 
 

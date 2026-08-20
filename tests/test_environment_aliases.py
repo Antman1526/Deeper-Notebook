@@ -47,9 +47,7 @@ def _apply_and_resolve_secret(
         for candidate in (name, f"{name}_FILE")
     }
     original_environment = {
-        name: os.environ[name]
-        for name in product_names
-        if name in os.environ
+        name: os.environ[name] for name in product_names if name in os.environ
     }
     _clear_aliases(monkeypatch, canonical)
     for name, value in environment.items():
@@ -510,9 +508,7 @@ def test_apply_falls_through_missing_canonical_file_to_usable_legacy_file(
 
     assert value == legacy_secret
     assert receipt.winner == "OPEN_NOTEBOOK_ENCRYPTION_KEY"
-    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(
-        canonical_path
-    )
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(canonical_path)
     assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(legacy_path)
     _assert_secret_values_not_exposed(
         (legacy_secret,),
@@ -551,9 +547,7 @@ def test_apply_falls_through_unreadable_canonical_file_to_usable_legacy_file(
 
     assert value == legacy_secret
     assert receipt.winner == "OPEN_NOTEBOOK_ENCRYPTION_KEY"
-    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(
-        canonical_path
-    )
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(canonical_path)
     assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(legacy_path)
     _assert_secret_values_not_exposed(
         (canonical_secret, legacy_secret),
@@ -584,9 +578,7 @@ def test_apply_falls_through_empty_canonical_file_to_usable_legacy_file(
 
     assert value == legacy_secret
     assert receipt.winner == "OPEN_NOTEBOOK_ENCRYPTION_KEY"
-    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(
-        canonical_path
-    )
+    assert normalized["DEEPER_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(canonical_path)
     assert normalized["OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE"] == str(legacy_path)
     _assert_secret_values_not_exposed(
         (legacy_secret,),
@@ -625,9 +617,7 @@ def test_apply_preserves_long_short_file_chain_until_usable_legacy_file(
     assert receipt.winner == "OPEN_NOTEBOOK_METRICS_AUTH_TOKEN"
     assert normalized[f"{canonical}_FILE"] == str(canonical_path)
     assert normalized["DN_METRICS_AUTH_TOKEN_FILE"] == str(short_path)
-    assert normalized["OPEN_NOTEBOOK_METRICS_AUTH_TOKEN_FILE"] == str(
-        legacy_path
-    )
+    assert normalized["OPEN_NOTEBOOK_METRICS_AUTH_TOKEN_FILE"] == str(legacy_path)
     _assert_secret_values_not_exposed(
         (legacy_secret, lower_direct),
         receipt,
@@ -663,9 +653,7 @@ def test_apply_preserves_long_short_file_chain_until_usable_lower_direct(
     assert receipt.winner == "ONP_METRICS_AUTH_TOKEN"
     assert normalized[f"{canonical}_FILE"] == str(canonical_path)
     assert normalized["DN_METRICS_AUTH_TOKEN_FILE"] == str(short_path)
-    assert normalized["OPEN_NOTEBOOK_METRICS_AUTH_TOKEN_FILE"] == str(
-        legacy_path
-    )
+    assert normalized["OPEN_NOTEBOOK_METRICS_AUTH_TOKEN_FILE"] == str(legacy_path)
     _assert_secret_values_not_exposed(
         (lower_direct,),
         receipt,

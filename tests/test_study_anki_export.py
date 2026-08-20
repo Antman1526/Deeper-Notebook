@@ -46,9 +46,18 @@ def test_export_uses_stable_ids_and_round_trips_basic_reverse_and_cloze(
 
     assert first.receipt.card_count == second.receipt.card_count == 4
     assert first.receipt.card_count == inspect_export(first.path).card_count
-    assert inspect_export(first.path).stable_note_guids == inspect_export(second.path).stable_note_guids
-    assert inspect_export(first.path).stable_model_ids == inspect_export(second.path).stable_model_ids
-    assert inspect_export(first.path).stable_deck_ids == inspect_export(second.path).stable_deck_ids
+    assert (
+        inspect_export(first.path).stable_note_guids
+        == inspect_export(second.path).stable_note_guids
+    )
+    assert (
+        inspect_export(first.path).stable_model_ids
+        == inspect_export(second.path).stable_model_ids
+    )
+    assert (
+        inspect_export(first.path).stable_deck_ids
+        == inspect_export(second.path).stable_deck_ids
+    )
 
 
 def test_export_rejects_unapproved_or_unbound_plan(tmp_path: Path) -> None:

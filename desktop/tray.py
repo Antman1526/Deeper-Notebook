@@ -6,6 +6,7 @@ Note: pywebview's tray/menu support varies by platform. On macOS we use the
 versions. For v0.3 we implement best-effort with a try/except wrapper —
 silently no-ops if the host platform's API doesn't support the call we make.
 """
+
 from __future__ import annotations
 
 from typing import Callable
@@ -23,6 +24,7 @@ def install_tray(
     try:
         import webview  # local import: keep tray-less environments importable
         from webview.menu import Menu, MenuAction
+
         actions = [
             MenuAction("Open Main Window", on_open_main),
             MenuAction("Manage Models…", on_open_manager),

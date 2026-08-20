@@ -41,9 +41,7 @@ class SettingAliases:
     @property
     def legacy_names(self) -> frozenset[str]:
         return frozenset(
-            name
-            for name in (self.legacy, self.legacy_short)
-            if name is not None
+            name for name in (self.legacy, self.legacy_short) if name is not None
         )
 
 
@@ -175,7 +173,9 @@ _SHORT_SUFFIXES = (
     "REMIND_OPENCHRONICLE",
     "REPAIR_PORT",
     "RESEARCH_RUNS",
-    "SCHOLARLY_MAILTO", "SCHOLARLY_SEARCH", "SEARCH_TIMEOUT_SEC",
+    "SCHOLARLY_MAILTO",
+    "SCHOLARLY_SEARCH",
+    "SEARCH_TIMEOUT_SEC",
     "SHUTDOWN_GRACE_SECS",
     "SIDECAR_TCP_TIMEOUT",
     "SLOW_QUERY_LOG_MS",
@@ -206,7 +206,10 @@ _SHORT_SUFFIXES = (
     "VERSION",
     "VOICE_INJECTED",
     "VISUAL_REFRESH",
-    "WEB_SEARCH_CACHE_TTL_SEC", "WEB_SEARCH_KEYLESS", "WEB_SEARCH_MAX_RESULTS", "WEB_SEARCH_WIKI_LANG",
+    "WEB_SEARCH_CACHE_TTL_SEC",
+    "WEB_SEARCH_KEYLESS",
+    "WEB_SEARCH_MAX_RESULTS",
+    "WEB_SEARCH_WIKI_LANG",
     "WEB_SEARCH_PROVIDER",
     "WEB_SEARCH_TIMEOUT_SEC",
     "WEB_SEARCH_TOTAL_BUDGET_SEC",
@@ -246,9 +249,7 @@ SETTINGS: dict[str, SettingAliases] = {
 }
 
 _ALIASES: dict[str, SettingAliases] = {
-    name: aliases
-    for aliases in SETTINGS.values()
-    for name in aliases.precedence
+    name: aliases for aliases in SETTINGS.values() for name in aliases.precedence
 }
 
 # Provider-specific connection timeouts are an intentional setting family.
@@ -367,10 +368,7 @@ def normalize_product_environment(
                 assigned_pairs,
                 strict=True,
             ):
-                if (
-                    assigned_pair[0] is not None
-                    or assigned_pair[1] is not None
-                ):
+                if assigned_pair[0] is not None or assigned_pair[1] is not None:
                     active_pair = assigned_pair
                 file_value, direct_value = active_pair
                 if file_value is not None:
@@ -380,11 +378,7 @@ def normalize_product_environment(
 
         base_winner = winner.removesuffix("_FILE")
         if base_winner in aliases.legacy_names:
-            canonical = (
-                f"{aliases.canonical}_FILE"
-                if is_file
-                else aliases.canonical
-            )
+            canonical = f"{aliases.canonical}_FILE" if is_file else aliases.canonical
             _warn_legacy_once(winner, canonical)
 
     return normalized

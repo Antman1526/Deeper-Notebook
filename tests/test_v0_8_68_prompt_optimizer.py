@@ -5,6 +5,7 @@ the config assembly runs against the vendored base YAML. The library's
 surface (trainer signature, flat-config keys) is pinned so a skillopt
 upgrade that breaks the integration fails here with a clear message.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,6 +27,7 @@ def _run(coro):
 
 # ------------------------------------------------------------- library pins
 
+
 def test_trainer_accepts_programmatic_adapter():
     from skillopt.engine.trainer import ReflACTTrainer
 
@@ -39,17 +41,27 @@ def test_trainer_accepts_programmatic_adapter():
 def test_vendored_base_config_flattens_with_required_keys():
     from skillopt.config import flatten_config, load_config
 
-    flat = flatten_config(load_config(
-        str(_REPO / "deeper_notebook" / "prompt_optimizer" / "skillopt_base.yaml")
-    ))
-    for key in ("num_epochs", "batch_size", "edit_budget", "skill_init",
-                "out_root", "target_model", "optimizer_model"):
+    flat = flatten_config(
+        load_config(
+            str(_REPO / "deeper_notebook" / "prompt_optimizer" / "skillopt_base.yaml")
+        )
+    )
+    for key in (
+        "num_epochs",
+        "batch_size",
+        "edit_budget",
+        "skill_init",
+        "out_root",
+        "target_model",
+        "optimizer_model",
+    ):
         assert key in flat or any(k.endswith("." + key) for k in flat), (
             f"flattened skillopt config lost key {key!r}"
         )
 
 
 # ------------------------------------------------------------- judge parsing
+
 
 def test_parse_judge_score():
     from deeper_notebook.prompt_optimizer.adapter import parse_judge_score
@@ -62,6 +74,7 @@ def test_parse_judge_score():
 
 
 # ------------------------------------------------------------- dataloader
+
 
 def test_examples_dataloader_split_and_batches():
     from deeper_notebook.prompt_optimizer.adapter import ExamplesDataLoader
@@ -86,6 +99,7 @@ def test_single_item_still_yields_val():
 
 # ------------------------------------------------------------- rollout
 
+
 def test_rollout_scores_with_judge(monkeypatch, tmp_path):
     from deeper_notebook.prompt_optimizer import adapter as ad
 
@@ -99,8 +113,7 @@ def test_rollout_scores_with_judge(monkeypatch, tmp_path):
     monkeypatch.setattr(ad, "chat_optimizer", _fake_optimizer)
 
     adapter = ad.TransformationAdapter(
-        items=[{"id": "a", "input_text": "alpha"},
-               {"id": "b", "input_text": "beta"}],
+        items=[{"id": "a", "input_text": "alpha"}, {"id": "b", "input_text": "beta"}],
         criteria="Be concise.",
         workers=2,
     )
@@ -122,7 +135,8 @@ def test_rollout_target_failure_scores_zero(monkeypatch, tmp_path):
 
     monkeypatch.setattr(ad, "chat_target", _boom)
     adapter = ad.TransformationAdapter(
-        items=[{"id": "a", "input_text": "alpha"}], criteria="c" * 20,
+        items=[{"id": "a", "input_text": "alpha"}],
+        criteria="c" * 20,
     )
     results = adapter.rollout(
         [{"id": "a", "input_text": "alpha"}],
@@ -134,13 +148,17 @@ def test_rollout_target_failure_scores_zero(monkeypatch, tmp_path):
 
 # ------------------------------------------------------------- backends
 
+
 def test_resolve_backend_local(monkeypatch):
     from deeper_notebook.podcasts import models as pm
     from deeper_notebook.prompt_optimizer import runner
 
     async def _fake_resolve(model_id):
-        return ("openai_compatible", "gemma-4-E4B",
-                {"base_url": "http://127.0.0.1:59998/v1"})
+        return (
+            "openai_compatible",
+            "gemma-4-E4B",
+            {"base_url": "http://127.0.0.1:59998/v1"},
+        )
 
     monkeypatch.setattr(pm, "_resolve_model_config", _fake_resolve)
     out = _run(runner.resolve_backend("model:x"))
@@ -169,7 +187,9 @@ def test_build_flat_config_wires_endpoints(tmp_path):
         skill_init_path=str(tmp_path / "skill.md"),
         target={"model_name": "gemma", "endpoint": "http://t/v1", "api_key": "k1"},
         optimizer={"model_name": "hermes", "endpoint": "http://o/v1", "api_key": "k2"},
-        epochs=2, batch_size=4, edit_budget=3,
+        epochs=2,
+        batch_size=4,
+        edit_budget=3,
     )
 
     def _get(key):
@@ -188,6 +208,7 @@ def test_build_flat_config_wires_endpoints(tmp_path):
 
 
 # ------------------------------------------------------------- API + wiring
+
 
 def test_optimize_request_schema():
     from api.routers.transformations import OptimizePromptRequest
@@ -215,14 +236,17 @@ def test_offline_gate_blocks_cloud_models(monkeypatch):
     from deeper_notebook.health.network import NetworkState
 
     async def _offline():
-        return NetworkState(status="offline", forced_offline=False,
-                            checked_at=0.0, source="probe")
+        return NetworkState(
+            status="offline", forced_offline=False, checked_at=0.0, source="probe"
+        )
+
     monkeypatch.setattr(network, "get_network_state_with_settings", _offline)
 
     from deeper_notebook.podcasts import models as pm
 
     async def _cloud(model_id):
         return ("openai", "gpt-4o-mini", {})
+
     monkeypatch.setattr(pm, "_resolve_model_config", _cloud)
 
     with pytest.raises(ValueError, match="offline"):
@@ -275,11 +299,18 @@ def test_vendored_prompts_cover_patch_mode_pipeline():
     """The names the reflection + aggregate stages load in our (patch-mode)
     config must all be vendored — each was a live mid-training crash."""
     vendored = {
-        p.name for p in
-        (_REPO / "deeper_notebook" / "prompt_optimizer" / "skillopt_prompts").glob("*.md")
+        p.name
+        for p in (
+            _REPO / "deeper_notebook" / "prompt_optimizer" / "skillopt_prompts"
+        ).glob("*.md")
     }
-    for name in ("analyst_error", "analyst_success",
-                 "merge_failure", "merge_success", "merge_final"):
+    for name in (
+        "analyst_error",
+        "analyst_success",
+        "merge_failure",
+        "merge_success",
+        "merge_final",
+    ):
         assert f"{name}.md" in vendored, f"vendored prompt {name}.md missing"
 
 
@@ -304,8 +335,7 @@ def test_ensure_skillopt_prompts_fixes_disposable_package(monkeypatch, tmp_path)
 
     installed_prompts = Path(skillopt_prompts.__file__).parent
     installed_snapshot = {
-        path.name: path.read_bytes()
-        for path in installed_prompts.glob("*.md")
+        path.name: path.read_bytes() for path in installed_prompts.glob("*.md")
     }
     disposable_prompts = tmp_path / "skillopt" / "prompts"
     shutil.copytree(installed_prompts, disposable_prompts)
@@ -318,12 +348,16 @@ def test_ensure_skillopt_prompts_fixes_disposable_package(monkeypatch, tmp_path)
         "_PROMPTS_DIR",
         str(disposable_prompts),
     )
-    for name in ("analyst_error", "analyst_success",
-                 "merge_failure", "merge_success", "merge_final"):
+    for name in (
+        "analyst_error",
+        "analyst_success",
+        "merge_failure",
+        "merge_success",
+        "merge_final",
+    ):
         assert skillopt_prompts.load_prompt(name).strip(), (
             f"load_prompt({name!r}) empty"
         )
     assert {
-        path.name: path.read_bytes()
-        for path in installed_prompts.glob("*.md")
+        path.name: path.read_bytes() for path in installed_prompts.glob("*.md")
     } == installed_snapshot

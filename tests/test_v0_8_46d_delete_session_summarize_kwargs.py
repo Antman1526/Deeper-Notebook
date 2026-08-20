@@ -21,6 +21,7 @@ Two layers:
   2. Behavioral: delete_session runs to completion (SuccessResponse),
      not a TypeError-induced 500, with all DB/checkpoint deps mocked.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -63,6 +64,7 @@ async def test_delete_session_does_not_raise_typeerror(monkeypatch):
     # ChatSession.get is a classmethod/staticmethod on the domain model
     # imported into the router module namespace.
     from deeper_notebook.domain import notebook as nb_mod
+
     monkeypatch.setattr(nb_mod.ChatSession, "get", staticmethod(_fake_get))
 
     # The summarizer early-returns when memory env vars are absent —

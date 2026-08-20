@@ -9,6 +9,7 @@ The fix wrapped both calls in asyncio.to_thread(). These tests verify
 the pattern is in place by AST-inspecting the source — cheap, doesn't
 require firing up a graph or mocking LangGraph internals.
 """
+
 from __future__ import annotations
 
 import ast
@@ -52,8 +53,7 @@ def test_graph_invoke_is_always_wrapped_in_to_thread(module_path, graph_name):
     # `ast.Call.func` is `asyncio.to_thread`, not `chat_graph.invoke`,
     # so it's never reported as a top-level callable here.
     direct_invokes = [
-        c for c in _function_calls_in_source(src)
-        if c == f"{graph_name}.invoke"
+        c for c in _function_calls_in_source(src) if c == f"{graph_name}.invoke"
     ]
     assert not direct_invokes, (
         f"{module_path} contains a direct `{graph_name}.invoke(...)` call. "

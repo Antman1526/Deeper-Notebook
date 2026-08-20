@@ -38,9 +38,7 @@ def test_migration_33_schema_phase_enters_explicit_timestamp_carriage_mode():
         "DEFINE FIELD OVERWRITE updated ON note "
         "DEFAULT time::now() VALUE $before OR time::now();"
     )
-    note_passthrough = (
-        "DEFINE FIELD IF NOT EXISTS updated ON note DEFAULT time::now();"
-    )
+    note_passthrough = "DEFINE FIELD IF NOT EXISTS updated ON note DEFAULT time::now();"
     link_preservation = (
         "DEFINE FIELD OVERWRITE updated ON TABLE note_link TYPE datetime "
         "DEFAULT time::now() VALUE $before OR time::now();"
@@ -51,9 +49,9 @@ def test_migration_33_schema_phase_enters_explicit_timestamp_carriage_mode():
     )
     assert ups[32].sql.index(note_preservation) < ups[32].sql.index(note_passthrough)
     assert ups[32].sql.index(link_preservation) < ups[32].sql.index(link_passthrough)
-    assert ups[32].sql.index(
-        "REMOVE FIELD IF EXISTS updated ON note;"
-    ) < ups[32].sql.index(note_passthrough)
+    assert ups[32].sql.index("REMOVE FIELD IF EXISTS updated ON note;") < ups[
+        32
+    ].sql.index(note_passthrough)
     assert ups[32].sql.index(
         "REMOVE FIELD IF EXISTS updated ON TABLE note_link;"
     ) < ups[32].sql.index(link_passthrough)
@@ -274,8 +272,7 @@ async def test_migration_36_hook_restores_note_updated_after_note_schema_changes
     restoration, variables = connection.statements[0]
     assert variables == {}
     assert (
-        "DEFINE FIELD OVERWRITE updated ON note "
-        "DEFAULT time::now() VALUE time::now();"
+        "DEFINE FIELD OVERWRITE updated ON note DEFAULT time::now() VALUE time::now();"
     ) in restoration
     assert "ON TABLE note_link" not in restoration
     assert restoration.index(

@@ -39,7 +39,9 @@ def _projection(
 
 
 @pytest.mark.asyncio
-async def test_readiness_marks_missing_text_without_reading_or_copying_source(monkeypatch):
+async def test_readiness_marks_missing_text_without_reading_or_copying_source(
+    monkeypatch,
+):
     """A source without extracted text is bounded as processing, not exposed."""
 
     get_source = AsyncMock(
@@ -70,7 +72,9 @@ async def test_readiness_marks_missing_text_without_reading_or_copying_source(mo
 
 
 @pytest.mark.asyncio
-async def test_readiness_deduplicates_links_and_exposes_only_bounded_projection(monkeypatch):
+async def test_readiness_deduplicates_links_and_exposes_only_bounded_projection(
+    monkeypatch,
+):
     get_source = AsyncMock(
         return_value=[
             _projection(
@@ -112,9 +116,17 @@ async def test_validate_source_rejects_missing_source_before_linking(monkeypatch
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_source_id",
-    ["note:private", "notebook:private", "source:", "source:one:two", "not-a-record-id"],
+    [
+        "note:private",
+        "notebook:private",
+        "source:",
+        "source:one:two",
+        "not-a-record-id",
+    ],
 )
-async def test_validate_source_rejects_non_source_ids_before_projection(monkeypatch, invalid_source_id):
+async def test_validate_source_rejects_non_source_ids_before_projection(
+    monkeypatch, invalid_source_id
+):
     query = AsyncMock(return_value=[_projection()])
     monkeypatch.setattr(source_service, "repo_query", query)
 
@@ -160,7 +172,13 @@ async def test_validate_source_round_trips_driver_encoded_ids_without_double_enc
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_source_id",
-    ["note:private", "notebook:private", "source:", "source:one:two", "not-a-record-id"],
+    [
+        "note:private",
+        "notebook:private",
+        "source:",
+        "source:one:two",
+        "not-a-record-id",
+    ],
 )
 async def test_link_invalid_source_id_is_safe_source_404_without_projection_or_mutation(
     monkeypatch, invalid_source_id
@@ -268,7 +286,9 @@ async def test_link_rejects_invalid_source_before_repository_construction_even_f
         raise AssertionError("invalid source must be rejected before repository access")
 
     monkeypatch.setattr(study_plans, "_repository", forbidden_repository)
-    monkeypatch.setattr(study_plans.StudySourceService, "validate_source", source_validation)
+    monkeypatch.setattr(
+        study_plans.StudySourceService, "validate_source", source_validation
+    )
 
     with pytest.raises(HTTPException) as raised:
         await study_plans.add_study_plan_source(
@@ -309,10 +329,14 @@ async def test_link_persists_and_returns_one_canonical_encoded_source_id(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_encoded_duplicate_retry_is_idempotent_before_stale_revision_conflict(monkeypatch):
+async def test_encoded_duplicate_retry_is_idempotent_before_stale_revision_conflict(
+    monkeypatch,
+):
     plan = _plan(StudyPlanSourceLink(source_id="source:⟨lecture notes⟩"))
     repository_calls = AsyncMock()
-    validate_source = AsyncMock(side_effect=AssertionError("duplicate retry should not read source"))
+    validate_source = AsyncMock(
+        side_effect=AssertionError("duplicate retry should not read source")
+    )
 
     class Repository:
         async def get(self, plan_id: str) -> StudyPlan:
@@ -322,7 +346,9 @@ async def test_encoded_duplicate_retry_is_idempotent_before_stale_revision_confl
             return await repository_calls(*args, **kwargs)
 
     monkeypatch.setattr(study_plans, "_repository", Repository)
-    monkeypatch.setattr(study_plans.StudySourceService, "validate_source", validate_source)
+    monkeypatch.setattr(
+        study_plans.StudySourceService, "validate_source", validate_source
+    )
 
     result = await study_plans.add_study_plan_source(
         "study_plan:one",
@@ -335,7 +361,9 @@ async def test_encoded_duplicate_retry_is_idempotent_before_stale_revision_confl
 
 
 @pytest.mark.asyncio
-async def test_source_readiness_uses_fixed_projection_without_materializing_source(monkeypatch):
+async def test_source_readiness_uses_fixed_projection_without_materializing_source(
+    monkeypatch,
+):
     query = AsyncMock(return_value=[_projection(command=None, fingerprint="a" * 64)])
     monkeypatch.setattr(source_service, "repo_query", query)
 
@@ -360,12 +388,20 @@ def test_source_projection_guards_optional_full_text_before_string_functions():
     statement = source_service.SOURCE_PROJECTION
 
     assert "type::is::string(full_text)" in statement
-    assert "IF type::is::string(full_text) THEN string::len(full_text) ELSE 0 END" in statement
-    assert "IF type::is::string(full_text) THEN string::len(string::trim(full_text)) > 0 ELSE false END" in statement
+    assert (
+        "IF type::is::string(full_text) THEN string::len(full_text) ELSE 0 END"
+        in statement
+    )
+    assert (
+        "IF type::is::string(full_text) THEN string::len(string::trim(full_text)) > 0 ELSE false END"
+        in statement
+    )
 
 
 @pytest.mark.asyncio
-async def test_readiness_keeps_valid_items_when_legacy_links_use_wrong_tables(monkeypatch):
+async def test_readiness_keeps_valid_items_when_legacy_links_use_wrong_tables(
+    monkeypatch,
+):
     """Malformed legacy links become bounded missing items without a wrong-table query."""
 
     query = AsyncMock(
@@ -447,7 +483,9 @@ def test_normalize_source_id_preserves_correctly_encoded_closing_bracket():
 
 
 @pytest.mark.asyncio
-async def test_source_projection_query_error_is_unavailable_without_exception_inspection(monkeypatch):
+async def test_source_projection_query_error_is_unavailable_without_exception_inspection(
+    monkeypatch,
+):
     query = AsyncMock(side_effect=RuntimeError("opaque driver failure"))
     monkeypatch.setattr(source_service, "repo_query", query)
 
@@ -465,7 +503,9 @@ async def test_source_projection_empty_result_is_not_found(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_readiness_rejects_more_than_100_links_before_any_source_projection(monkeypatch):
+async def test_readiness_rejects_more_than_100_links_before_any_source_projection(
+    monkeypatch,
+):
     query = AsyncMock(return_value=[_projection()])
     monkeypatch.setattr(source_service, "repo_query", query)
     links = (StudyPlanSourceLink(source_id=f"source:{index}") for index in range(101))
@@ -498,7 +538,9 @@ async def test_readiness_consumes_infinite_links_only_until_bounded_limit(monkey
 
 
 @pytest.mark.asyncio
-async def test_duplicate_retry_is_idempotent_before_stale_revision_conflict(monkeypatch):
+async def test_duplicate_retry_is_idempotent_before_stale_revision_conflict(
+    monkeypatch,
+):
     plan = _plan(LINK)
     repository_calls = AsyncMock()
 
@@ -509,9 +551,13 @@ async def test_duplicate_retry_is_idempotent_before_stale_revision_conflict(monk
         async def add_source(self, *args: object, **kwargs: object) -> object:
             return await repository_calls(*args, **kwargs)
 
-    validate_source = AsyncMock(side_effect=AssertionError("duplicate retry should not read source"))
+    validate_source = AsyncMock(
+        side_effect=AssertionError("duplicate retry should not read source")
+    )
     monkeypatch.setattr(study_plans, "_repository", Repository)
-    monkeypatch.setattr(study_plans.StudySourceService, "validate_source", validate_source)
+    monkeypatch.setattr(
+        study_plans.StudySourceService, "validate_source", validate_source
+    )
 
     result = await study_plans.add_study_plan_source(
         "study_plan:one",

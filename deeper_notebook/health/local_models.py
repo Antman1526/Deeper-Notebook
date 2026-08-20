@@ -5,6 +5,7 @@ this module probes the local llama-cpp / whisper / piper / memory
 shims to verify they actually respond, not just that their port
 is bound.
 """
+
 from __future__ import annotations
 
 import socket
@@ -31,20 +32,29 @@ class HealthResult(TypedDict):
 # hang the launch-time health sweep. Same structured-Timeout shape
 # as credentials_service uses for discovery probes.
 _PROBE_TIMEOUT = httpx.Timeout(
-    connect=2.0, read=5.0, write=2.0, pool=2.0,
+    connect=2.0,
+    read=5.0,
+    write=2.0,
+    pool=2.0,
 )
 # v0.8.85 — Ollama gets a longer read budget. A large or freshly-upgraded
 # store makes /api/tags legitimately take 10-15s while the server is fine
 # (measured live: HTTP 200 in 9.8s during a store inventory); a 5s read
 # timeout flapped the health badge on every slow scan.
 _OLLAMA_PROBE_TIMEOUT = httpx.Timeout(
-    connect=2.0, read=20.0, write=2.0, pool=2.0,
+    connect=2.0,
+    read=20.0,
+    write=2.0,
+    pool=2.0,
 )
 _MAX_CONCURRENT_PROBES = 4
 
 
 def probe_local_model(
-    *, name: str, kind: str, base_url: str,
+    *,
+    name: str,
+    kind: str,
+    base_url: str,
 ) -> HealthResult:
     """Probe a single local sidecar. Returns a HealthResult dict.
 
@@ -53,7 +63,8 @@ def probe_local_model(
     """
     if ":0/" in base_url or base_url.endswith(":0"):
         return {
-            "name": name, "status": "not_configured",
+            "name": name,
+            "status": "not_configured",
             "detail": "port not allocated this session",
             "latency_ms": None,
             "runtime": _runtime_label(name=name, kind=kind),
@@ -64,7 +75,8 @@ def probe_local_model(
     if kind == "ollama":
         return _probe_ollama(name=name, base_url=base_url)
     return {
-        "name": name, "status": "unknown",
+        "name": name,
+        "status": "unknown",
         "detail": f"no probe for kind={kind!r}",
         "latency_ms": None,
         "runtime": _runtime_label(name=name, kind=kind),
@@ -124,8 +136,10 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
                 models = [m.get("id", "?") for m in data.get("data", [])]
                 detail = ", ".join(models[:3]) if models else "no models listed"
                 return {
-                    "name": name, "status": "healthy",
-                    "detail": detail, "latency_ms": latency_ms,
+                    "name": name,
+                    "status": "healthy",
+                    "detail": detail,
+                    "latency_ms": latency_ms,
                     "runtime": _runtime_label(
                         name=name,
                         kind="openai_compatible",
@@ -134,7 +148,8 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
                     "probe_path": "/models",
                 }
             return {
-                "name": name, "status": "unhealthy",
+                "name": name,
+                "status": "unhealthy",
                 "detail": f"HTTP {resp.status_code}",
                 "latency_ms": latency_ms,
                 "runtime": _runtime_label(
@@ -146,7 +161,8 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
             }
     except httpx.ConnectError as exc:
         return {
-            "name": name, "status": "unhealthy",
+            "name": name,
+            "status": "unhealthy",
             "detail": f"connect refused: {exc}",
             "latency_ms": None,
             "runtime": _runtime_label(name=name, kind="openai_compatible"),
@@ -162,7 +178,8 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
         # asks — is anything accepting connections on that port?
         if _port_accepts_connection(base_url):
             return {
-                "name": name, "status": "healthy",
+                "name": name,
+                "status": "healthy",
                 "detail": "endpoint reachable (models list timed out)",
                 "latency_ms": None,
                 "runtime": _runtime_label(name=name, kind="openai_compatible"),
@@ -170,7 +187,8 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
                 "probe_path": "/models",
             }
         return {
-            "name": name, "status": "unhealthy",
+            "name": name,
+            "status": "unhealthy",
             "detail": "timed out and port not accepting connections",
             "latency_ms": None,
             "runtime": _runtime_label(name=name, kind="openai_compatible"),
@@ -179,7 +197,8 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
         }
     except Exception as exc:
         return {
-            "name": name, "status": "unhealthy",
+            "name": name,
+            "status": "unhealthy",
             "detail": f"{type(exc).__name__}: {exc}",
             "latency_ms": None,
             "runtime": _runtime_label(name=name, kind="openai_compatible"),
@@ -254,7 +273,8 @@ def probe_all_local_models(credentials: list[dict]) -> list[HealthResult]:
 
     def _probe(cred: dict) -> HealthResult:
         result = probe_local_model(
-            name=cred["name"], kind=cred["kind"],
+            name=cred["name"],
+            kind=cred["kind"],
             base_url=cred["base_url"],
         )
         credential_id = cred.get("credential_id")

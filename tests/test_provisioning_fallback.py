@@ -1,4 +1,5 @@
 """v0.8.68 — provision_langchain_model consults the offline gate."""
+
 from __future__ import annotations
 
 import asyncio
@@ -50,12 +51,18 @@ def test_gate_substitution_flows_through(monkeypatch):
             fallback_out["offline_fallback"] = True
             fallback_out["to_model_id"] = "model:gemma"
         return "model:gemma"
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     out: dict = {}
-    model = _run(provision.provision_langchain_model(
-        "hello", None, "chat", fallback_out=out,
-    ))
+    model = _run(
+        provision.provision_langchain_model(
+            "hello",
+            None,
+            "chat",
+            fallback_out=out,
+        )
+    )
     assert isinstance(model, _FakeLangchain)
     assert got["model_id"] == "model:gemma"
     assert out.get("offline_fallback") is True
@@ -66,6 +73,7 @@ def test_gate_passthrough_keeps_explicit_candidate(monkeypatch):
 
     async def _fake_gate(candidate_id, *, fallback_out=None):
         return candidate_id
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     _run(provision.provision_langchain_model("hello", "model:explicit", "chat"))
@@ -77,6 +85,7 @@ def test_gate_configuration_error_propagates(monkeypatch):
 
     async def _fake_gate(candidate_id, *, fallback_out=None):
         raise ConfigurationError("offline, no local model")
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     with pytest.raises(ConfigurationError):
@@ -88,6 +97,7 @@ def test_no_candidate_still_raises_configuration_error(monkeypatch):
 
     async def _fake_gate(candidate_id, *, fallback_out=None):
         return candidate_id
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     with pytest.raises(ConfigurationError):
@@ -101,10 +111,12 @@ def test_default_path_load_failure_becomes_no_model_configured(monkeypatch):
 
     async def _fake_get_model(model_id, **kwargs):
         raise ConfigurationError("model record vanished")
+
     monkeypatch.setattr(provision.model_manager, "get_model", _fake_get_model)
 
     async def _fake_gate(candidate_id, *, fallback_out=None):
         return candidate_id
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     with pytest.raises(ConfigurationError) as exc_info:
@@ -118,10 +130,12 @@ def test_explicit_path_load_failure_propagates_verbatim(monkeypatch):
 
     async def _fake_get_model(model_id, **kwargs):
         raise ConfigurationError("Model with ID model:explicit not found.")
+
     monkeypatch.setattr(provision.model_manager, "get_model", _fake_get_model)
 
     async def _fake_gate(candidate_id, *, fallback_out=None):
         return candidate_id
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     with pytest.raises(ConfigurationError) as exc_info:

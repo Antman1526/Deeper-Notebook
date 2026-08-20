@@ -13,6 +13,7 @@ This file asserts the `done` event includes `selected_provider` /
 Companion to tests/test_v0_8_1_selected_provider.py (which covers the
 non-streaming path).
 """
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ from api.routers import chat as chat_router
 # ---------------------------------------------------------------------------
 # Fixtures (mirror the structure in tests/test_chat_stream.py)
 # ---------------------------------------------------------------------------
+
 
 class _FakeSession:
     def __init__(self, id: str = "chat_session:test", model_override=None):
@@ -55,6 +57,7 @@ def fake_graph(monkeypatch):
         def get_state(self, config):
             class _S:
                 values = {"messages": []}
+
             return _S()
 
         async def astream_events(self, *, input, config, version):
@@ -66,6 +69,7 @@ def fake_graph(monkeypatch):
 
     async def _fake_get_async_graph():
         return fake
+
     monkeypatch.setattr(chat_router, "get_async_graph", _fake_get_async_graph)
     return fake
 
@@ -73,6 +77,7 @@ def fake_graph(monkeypatch):
 @pytest.fixture
 def fake_session(monkeypatch):
     from deeper_notebook.domain import notebook as nb_mod
+
     sessions = {"chat_session:test": _FakeSession()}
 
     async def fake_get(session_id: str):
@@ -97,20 +102,21 @@ def test_done_event_carries_selected_provider_local_when_dict_output(
     """Dict-shaped on_chain_end output (the current TypedDict path) →
     done event includes selected_provider="local" and selected_model_id."""
     fake_graph.events = [
-        {"event": "on_chat_model_stream",
-         "data": {"chunk": _FakeChunk("hi")}},
-        {"event": "on_chain_end",
-         "data": {"output": {
-             "messages": [
-                 type("M", (), {"id": "m1", "type": "human",
-                                "content": "Hi"})(),
-                 type("M", (), {"id": "m2", "type": "ai",
-                                "content": "hi"})(),
-             ],
-             "selected_provider": "local",
-             "selected_model_id": "model:hermes",
-             "mcp_tool_calls": None,
-         }}},
+        {"event": "on_chat_model_stream", "data": {"chunk": _FakeChunk("hi")}},
+        {
+            "event": "on_chain_end",
+            "data": {
+                "output": {
+                    "messages": [
+                        type("M", (), {"id": "m1", "type": "human", "content": "Hi"})(),
+                        type("M", (), {"id": "m2", "type": "ai", "content": "hi"})(),
+                    ],
+                    "selected_provider": "local",
+                    "selected_model_id": "model:hermes",
+                    "mcp_tool_calls": None,
+                }
+            },
+        },
     ]
 
     app = _make_app()
@@ -136,15 +142,18 @@ def test_done_event_carries_selected_provider_cloud(
 ):
     """Cloud routing decision propagates to the done event."""
     fake_graph.events = [
-        {"event": "on_chain_end",
-         "data": {"output": {
-             "messages": [
-                 type("M", (), {"id": "m2", "type": "ai",
-                                "content": "ok"})(),
-             ],
-             "selected_provider": "cloud",
-             "selected_model_id": "model:gpt4",
-         }}},
+        {
+            "event": "on_chain_end",
+            "data": {
+                "output": {
+                    "messages": [
+                        type("M", (), {"id": "m2", "type": "ai", "content": "ok"})(),
+                    ],
+                    "selected_provider": "cloud",
+                    "selected_model_id": "model:gpt4",
+                }
+            },
+        },
     ]
 
     app = _make_app()
@@ -171,14 +180,17 @@ def test_done_event_selected_provider_null_when_routing_disabled(
     path, or upstream state schema) → done event reports null instead
     of omitting the keys, so the wire shape is stable for clients."""
     fake_graph.events = [
-        {"event": "on_chain_end",
-         "data": {"output": {
-             "messages": [
-                 type("M", (), {"id": "m2", "type": "ai",
-                                "content": "ok"})(),
-             ],
-             # selected_provider / selected_model_id intentionally absent
-         }}},
+        {
+            "event": "on_chain_end",
+            "data": {
+                "output": {
+                    "messages": [
+                        type("M", (), {"id": "m2", "type": "ai", "content": "ok"})(),
+                    ],
+                    # selected_provider / selected_model_id intentionally absent
+                }
+            },
+        },
     ]
 
     app = _make_app()
@@ -213,18 +225,17 @@ def test_done_event_survives_pydantic_state_shape(
     class _PydanticState:
         """Stand-in for a future Pydantic-typed chat ThreadState. Only
         attribute access matters here (the router uses getattr)."""
+
         def __init__(self):
             self.messages = [
-                type("M", (), {"id": "m2", "type": "ai",
-                               "content": "ok"})(),
+                type("M", (), {"id": "m2", "type": "ai", "content": "ok"})(),
             ]
             self.selected_provider = "local"
             self.selected_model_id = "model:hermes"
             self.mcp_tool_calls = None
 
     fake_graph.events = [
-        {"event": "on_chain_end",
-         "data": {"output": _PydanticState()}},
+        {"event": "on_chain_end", "data": {"output": _PydanticState()}},
     ]
 
     app = _make_app()

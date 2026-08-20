@@ -17,6 +17,7 @@ This test guards the contract: future PRs adding new endpoints
 can't re-introduce the pattern. Fails at collection time if any
 router file in `api/routers/` contains `detail=f"...: {str(e)}"`.
 """
+
 from __future__ import annotations
 
 import re

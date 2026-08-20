@@ -19,10 +19,7 @@ _APPLICATION = re.compile(
 def brand_office_application(path: Path) -> None:
     """Set the OOXML extended-properties application to Deeper Notebook."""
     with zipfile.ZipFile(path, "r") as package:
-        entries = [
-            (info, package.read(info.filename))
-            for info in package.infolist()
-        ]
+        entries = [(info, package.read(info.filename)) for info in package.infolist()]
 
     branded_entries: list[tuple[zipfile.ZipInfo, bytes]] = []
     changed = False

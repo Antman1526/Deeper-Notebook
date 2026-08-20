@@ -7,7 +7,9 @@ from scripts import verify_research_core_lab as verifier
 from scripts.verify_research_core_lab import run_verifier, verifier_config
 
 
-def test_verifier_uses_only_a_new_owned_temporary_synthetic_root(tmp_path: Path) -> None:
+def test_verifier_uses_only_a_new_owned_temporary_synthetic_root(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "fixture"
     output = tmp_path / "proof.json"
     result = run_verifier(
@@ -25,7 +27,9 @@ def test_verifier_uses_only_a_new_owned_temporary_synthetic_root(tmp_path: Path)
     assert (root / verifier._FIXTURE_SENTINEL).is_file()
 
 
-def test_verifier_records_the_phase_one_contract_proofs_without_paths(tmp_path: Path) -> None:
+def test_verifier_records_the_phase_one_contract_proofs_without_paths(
+    tmp_path: Path,
+) -> None:
     output = tmp_path / "proof.json"
     result = run_verifier(
         native_url="http://127.0.0.1:9",
@@ -35,7 +39,10 @@ def test_verifier_records_the_phase_one_contract_proofs_without_paths(tmp_path: 
 
     checks = result.report["checks"]  # type: ignore[assignment]
     assert checks["workspace_migration"]["status"] == "passed"  # type: ignore[index]
-    assert checks["local_library"]["before_fingerprint"] == checks["local_library"]["after_fingerprint"]  # type: ignore[index]
+    assert (
+        checks["local_library"]["before_fingerprint"]
+        == checks["local_library"]["after_fingerprint"]
+    )  # type: ignore[index]
     assert checks["local_library"]["unchanged"] is True  # type: ignore[index]
     assert checks["strict_local"]["transport_calls"] == 0  # type: ignore[index]
     assert checks["strict_local"]["transport_instrumented"] is True  # type: ignore[index]
@@ -48,12 +55,16 @@ def test_verifier_records_the_phase_one_contract_proofs_without_paths(tmp_path: 
     assert "Plan.md" not in proof
 
 
-def test_verifier_records_real_focused_gate_statuses_without_storing_output(tmp_path: Path) -> None:
+def test_verifier_records_real_focused_gate_statuses_without_storing_output(
+    tmp_path: Path,
+) -> None:
     calls: list[tuple[tuple[str, ...], Path]] = []
 
     def run(command: tuple[str, ...], cwd: Path) -> verifier.CommandResult:
         calls.append((command, cwd))
-        return verifier.CommandResult(returncode=0 if "pytest" in command else 1, output="private output")
+        return verifier.CommandResult(
+            returncode=0 if "pytest" in command else 1, output="private output"
+        )
 
     result = run_verifier(
         native_url="http://127.0.0.1:9",
@@ -71,7 +82,9 @@ def test_verifier_records_real_focused_gate_statuses_without_storing_output(tmp_
     assert len(calls) == 2
 
 
-def test_verifier_rejects_user_content_and_non_temporary_or_output_roots(tmp_path: Path) -> None:
+def test_verifier_rejects_user_content_and_non_temporary_or_output_roots(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "fixture"
     root.mkdir()
     (root / "user.md").write_text("do not touch", encoding="utf-8")
@@ -79,7 +92,10 @@ def test_verifier_rejects_user_content_and_non_temporary_or_output_roots(tmp_pat
         verifier_config(fixture_root=root, output_path=tmp_path / "proof.json")
 
     with pytest.raises(ValueError, match="temporary synthetic fixture root required"):
-        verifier_config(fixture_root=Path("/Users/Antman/Desktop/MacBook AI models"), output_path=tmp_path / "proof.json")
+        verifier_config(
+            fixture_root=Path("/Users/Antman/Desktop/MacBook AI models"),
+            output_path=tmp_path / "proof.json",
+        )
 
     owned = tmp_path / "owned"
     verifier_config(fixture_root=owned, output_path=tmp_path / "proof.json")
@@ -87,7 +103,9 @@ def test_verifier_rejects_user_content_and_non_temporary_or_output_roots(tmp_pat
         verifier_config(fixture_root=owned, output_path=owned / "proof.json")
 
 
-def test_default_cli_creates_a_fresh_owned_child_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_cli_creates_a_fresh_owned_child_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     class OwnedTemporaryDirectory:
         def __enter__(self) -> str:
             return str(tmp_path)
@@ -95,7 +113,9 @@ def test_default_cli_creates_a_fresh_owned_child_fixture(tmp_path: Path, monkeyp
         def __exit__(self, *args: object) -> None:
             return None
 
-    monkeypatch.setattr(verifier.tempfile, "TemporaryDirectory", lambda **_: OwnedTemporaryDirectory())
+    monkeypatch.setattr(
+        verifier.tempfile, "TemporaryDirectory", lambda **_: OwnedTemporaryDirectory()
+    )
     monkeypatch.setattr(sys, "argv", ["verify_research_core_lab.py"])
     assert verifier.main() == 2
     assert (tmp_path / "fixture" / verifier._FIXTURE_SENTINEL).is_file()

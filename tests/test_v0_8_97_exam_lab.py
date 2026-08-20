@@ -168,7 +168,10 @@ def _src(rel: str) -> str:
 
 def test_router_registered_in_main():
     src = _src("api/main.py")
-    assert 'app.include_router(study_exams.router, prefix="/api", tags=["study-exams"])' in src
+    assert (
+        'app.include_router(study_exams.router, prefix="/api", tags=["study-exams"])'
+        in src
+    )
 
 
 def test_taking_view_never_carries_the_answer_key():
@@ -199,6 +202,12 @@ def test_migration_48_defines_the_attempt_table_with_down():
     up = _src("deeper_notebook/database/migrations/48.surrealql")
     down = _src("deeper_notebook/database/migrations/48_down.surrealql")
     assert "DEFINE TABLE IF NOT EXISTS study_exam_attempt SCHEMAFULL" in up
-    for field in ("questions", "duration_sec", "deadline", "seeded_indices", "score_percent"):
+    for field in (
+        "questions",
+        "duration_sec",
+        "deadline",
+        "seeded_indices",
+        "score_percent",
+    ):
         assert f"DEFINE FIELD IF NOT EXISTS {field} " in up, f"missing {field}"
     assert "REMOVE TABLE IF EXISTS study_exam_attempt;" in down

@@ -136,7 +136,8 @@ async def _check_provider_has_credential(provider: str) -> bool:
             "treating as 'no DB credential' — env-var fallback "
             "in /providers will still surface env-configured "
             "providers correctly. error={}",
-            provider, exc,
+            provider,
+            exc,
         )
     return False
 
@@ -337,7 +338,9 @@ async def get_default_models():
             # Settings can render the toggle + provider-pref dropdown.
             auto_route_cloud=getattr(defaults, "auto_route_cloud", None),
             auto_route_enabled=getattr(defaults, "auto_route_enabled", False),
-            auto_route_provider_pref=getattr(defaults, "auto_route_provider_pref", "auto"),
+            auto_route_provider_pref=getattr(
+                defaults, "auto_route_provider_pref", "auto"
+            ),
         )
     except HTTPException:
         # v0.7.135 — re-raise typed HTTPExceptions so the generic
@@ -346,9 +349,7 @@ async def get_default_models():
         raise
     except Exception as e:
         logger.error(f"Error fetching default models: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching default models"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching default models")
 
 
 @router.put("/models/defaults", response_model=DefaultModelsResponse)
@@ -413,7 +414,9 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
             default_reasoning_model=getattr(defaults, "default_reasoning_model", None),
             auto_route_cloud=getattr(defaults, "auto_route_cloud", None),
             auto_route_enabled=getattr(defaults, "auto_route_enabled", False),
-            auto_route_provider_pref=getattr(defaults, "auto_route_provider_pref", "auto"),
+            auto_route_provider_pref=getattr(
+                defaults, "auto_route_provider_pref", "auto"
+            ),
         )
     except HTTPException:
         raise
@@ -423,9 +426,7 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
         raise
     except Exception as e:
         logger.error(f"Error updating default models: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error updating default models"
-        )
+        raise HTTPException(status_code=500, detail="Error updating default models")
 
 
 @router.get("/models/providers", response_model=ProviderAvailabilityResponse)
@@ -561,9 +562,7 @@ async def get_provider_availability():
 # =============================================================================
 
 
-@router.get(
-    "/models/discover/{provider}", response_model=list[DiscoveredModelResponse]
-)
+@router.get("/models/discover/{provider}", response_model=list[DiscoveredModelResponse])
 async def discover_models(provider: str):
     """
     Discover available models from a provider without registering them.
@@ -593,7 +592,8 @@ async def discover_models(provider: str):
     except Exception as e:
         logger.error(f"Error discovering models for {provider}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail="Error discovering models. Check server logs for details."
+            status_code=500,
+            detail="Error discovering models. Check server logs for details.",
         )
 
 
@@ -626,7 +626,10 @@ async def sync_models(provider: str):
         raise
     except Exception as e:
         logger.error(f"Error syncing models for {provider}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error syncing models. Check server logs for details.")
+        raise HTTPException(
+            status_code=500,
+            detail="Error syncing models. Check server logs for details.",
+        )
 
 
 @router.post("/models/sync", response_model=AllProvidersSyncResponse)
@@ -667,9 +670,7 @@ async def sync_all_models():
         raise
     except Exception as e:
         logger.error(f"Error syncing all models: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error syncing all models"
-        )
+        raise HTTPException(status_code=500, detail="Error syncing all models")
 
 
 @router.get("/models/count/{provider}", response_model=ProviderModelCountResponse)
@@ -695,9 +696,7 @@ async def get_model_count(provider: str):
         raise
     except Exception as e:
         logger.error(f"Error getting model count for {provider}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error getting model count"
-        )
+        raise HTTPException(status_code=500, detail="Error getting model count")
 
 
 @router.get("/models/by-provider/{provider}", response_model=list[ModelResponse])
@@ -734,9 +733,7 @@ async def get_models_by_provider(provider: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching models for {provider}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching models"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching models")
 
 
 def _get_preferred_model(
@@ -826,14 +823,30 @@ async def auto_assign_defaults():
         # Define slot configuration: (slot_name, model_type, current_value)
         slot_configs = [
             ("default_chat_model", "language", defaults.default_chat_model),  # type: ignore[attr-defined]
-            ("default_transformation_model", "language", defaults.default_transformation_model),  # type: ignore[attr-defined]
+            (
+                "default_transformation_model",
+                "language",
+                defaults.default_transformation_model,
+            ),  # type: ignore[attr-defined]
             ("default_tools_model", "language", defaults.default_tools_model),  # type: ignore[attr-defined]
             ("large_context_model", "language", defaults.large_context_model),  # type: ignore[attr-defined]
             # ONP v0.5 — 8th slot for slow-but-deep reasoning models.
-            ("default_reasoning_model", "language", getattr(defaults, "default_reasoning_model", None)),
+            (
+                "default_reasoning_model",
+                "language",
+                getattr(defaults, "default_reasoning_model", None),
+            ),
             ("default_embedding_model", "embedding", defaults.default_embedding_model),  # type: ignore[attr-defined]
-            ("default_text_to_speech_model", "text_to_speech", defaults.default_text_to_speech_model),  # type: ignore[attr-defined]
-            ("default_speech_to_text_model", "speech_to_text", defaults.default_speech_to_text_model),  # type: ignore[attr-defined]
+            (
+                "default_text_to_speech_model",
+                "text_to_speech",
+                defaults.default_text_to_speech_model,
+            ),  # type: ignore[attr-defined]
+            (
+                "default_speech_to_text_model",
+                "speech_to_text",
+                defaults.default_speech_to_text_model,
+            ),  # type: ignore[attr-defined]
         ]
 
         assigned: dict[str, str] = {}
@@ -880,9 +893,7 @@ async def auto_assign_defaults():
         raise
     except Exception as e:
         logger.error(f"Error auto-assigning defaults: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error auto-assigning defaults"
-        )
+        raise HTTPException(status_code=500, detail="Error auto-assigning defaults")
 
 
 @router.post("/models/auto-assign-capability", response_model=AutoAssignResult)
@@ -900,6 +911,7 @@ async def auto_assign_capability(force: bool = False):
     """
     try:
         from deeper_notebook.database.repository import repo_query
+
         try:
             from desktop.auto_register.assigner import SLOTS, assign_all
             from desktop.auto_register.capability import score_model

@@ -92,9 +92,7 @@ def _verify_directory_identities(
             or current.st_dev != device
             or current.st_ino != inode
         ):
-            raise _UnsafeUploadCleanupError(
-                "upload-directory-identity-changed"
-            )
+            raise _UnsafeUploadCleanupError("upload-directory-identity-changed")
 
 
 def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
@@ -109,12 +107,8 @@ def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
     try:
         relative = candidate.relative_to(root)
     except ValueError as exc:
-        raise _UnsafeUploadCleanupError(
-            "upload-path-outside-root"
-        ) from exc
-    if not relative.parts or any(
-        part in {"", ".", ".."} for part in relative.parts
-    ):
+        raise _UnsafeUploadCleanupError("upload-path-outside-root") from exc
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
         raise _UnsafeUploadCleanupError("upload-path-is-not-a-file")
 
     if os.name == "nt":
@@ -124,21 +118,13 @@ def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
 
         return secure_unlink_uploaded_file_windows(root, relative)
     if not _secure_upload_unlink_is_supported():
-        raise _UnsafeUploadCleanupError(
-            "secure-dir-fd-unlink-unavailable"
-        )
+        raise _UnsafeUploadCleanupError("secure-dir-fd-unlink-unavailable")
 
     directory_flags = (
-        os.O_RDONLY
-        | os.O_DIRECTORY
-        | os.O_NOFOLLOW
-        | getattr(os, "O_CLOEXEC", 0)
+        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     )
     file_flags = (
-        os.O_RDONLY
-        | os.O_NOFOLLOW
-        | os.O_NONBLOCK
-        | getattr(os, "O_CLOEXEC", 0)
+        os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
     )
     descriptors: list[int] = []
     identities: list[tuple[int, str, int, int]] = []
@@ -164,12 +150,8 @@ def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
             descriptors.append(current_fd)
             result = os.fstat(current_fd)
             if not stat.S_ISDIR(result.st_mode):
-                raise _UnsafeUploadCleanupError(
-                    "upload-parent-is-not-directory"
-                )
-            identities.append(
-                (parent_fd, component, result.st_dev, result.st_ino)
-            )
+                raise _UnsafeUploadCleanupError("upload-parent-is-not-directory")
+            identities.append((parent_fd, component, result.st_dev, result.st_ino))
 
         _verify_directory_identities(identities)
         name = relative.parts[-1]
@@ -179,9 +161,7 @@ def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
             return False
         result = os.fstat(file_fd)
         if not stat.S_ISREG(result.st_mode):
-            raise _UnsafeUploadCleanupError(
-                "upload-target-is-not-regular-file"
-            )
+            raise _UnsafeUploadCleanupError("upload-target-is-not-regular-file")
 
         visible = os.stat(name, dir_fd=current_fd, follow_symlinks=False)
         if (
@@ -189,9 +169,7 @@ def _secure_unlink_uploaded_file(file_path: Path, uploads_root: Path) -> bool:
             or visible.st_dev != result.st_dev
             or visible.st_ino != result.st_ino
         ):
-            raise _UnsafeUploadCleanupError(
-                "upload-file-identity-changed"
-            )
+            raise _UnsafeUploadCleanupError("upload-file-identity-changed")
         _verify_directory_identities(identities)
         os.unlink(name, dir_fd=current_fd)
         return True
@@ -275,19 +253,35 @@ class Notebook(ObjectModel):
             return cleaned if len(cleaned) <= 80 else cleaned[:79] + "…"
 
         nodes: list[dict[str, Any]] = [
-            {"id": str(self.id), "type": "notebook", "label": _label(self.name, "Notebook")}
+            {
+                "id": str(self.id),
+                "type": "notebook",
+                "label": _label(self.name, "Notebook"),
+            }
         ]
         edges: list[dict[str, Any]] = []
         for s in sources:
             nodes.append(
-                {"id": str(s.id), "type": "source", "label": _label(s.title, "Untitled source")}
+                {
+                    "id": str(s.id),
+                    "type": "source",
+                    "label": _label(s.title, "Untitled source"),
+                }
             )
-            edges.append({"source": str(self.id), "target": str(s.id), "kind": "reference"})
+            edges.append(
+                {"source": str(self.id), "target": str(s.id), "kind": "reference"}
+            )
         for n in notes:
             nodes.append(
-                {"id": str(n.id), "type": "note", "label": _label(n.title, "Untitled note")}
+                {
+                    "id": str(n.id),
+                    "type": "note",
+                    "label": _label(n.title, "Untitled note"),
+                }
             )
-            edges.append({"source": str(self.id), "target": str(n.id), "kind": "artifact"})
+            edges.append(
+                {"source": str(self.id), "target": str(n.id), "kind": "artifact"}
+            )
         return {"nodes": nodes, "edges": edges}
 
     async def get_chat_sessions(
@@ -324,7 +318,11 @@ class Notebook(ObjectModel):
                         f"limit must be a positive int, got {limit!r}"
                     )
             if offset is not None:
-                if not isinstance(offset, int) or offset < 0 or isinstance(offset, bool):
+                if (
+                    not isinstance(offset, int)
+                    or offset < 0
+                    or isinstance(offset, bool)
+                ):
                     raise InvalidInputError(
                         f"offset must be a non-negative int, got {offset!r}"
                     )
@@ -872,9 +870,7 @@ class Source(ObjectModel):
         except ValueError:
             raise
         except Exception as e:
-            logger.error(
-                f"Failed to submit embed_source job for source {self.id}: {e}"
-            )
+            logger.error(f"Failed to submit embed_source job for source {self.id}: {e}")
             logger.exception(e)
             raise DatabaseOperationError(e)
 
@@ -989,9 +985,7 @@ class Source(ObjectModel):
                 )
             else:
                 if deleted:
-                    logger.info(
-                        f"Deleted file for source {self.id}: {file_path}"
-                    )
+                    logger.info(f"Deleted file for source {self.id}: {file_path}")
                     return
                 logger.debug(
                     f"File {file_path} not found for source {self.id}, skipping cleanup"
@@ -1087,7 +1081,9 @@ class Source(ObjectModel):
             logger.warning(
                 "Race-window post-sweep failed for source {}: {}. Orphan "
                 "embeddings/insights may exist but are unreachable via "
-                "the API.", self.id, e,
+                "the API.",
+                self.id,
+                e,
             )
 
         return result
@@ -1124,10 +1120,7 @@ class Note(ObjectModel):
         Returns:
             Optional[str]: The command_id if embedding was submitted, None otherwise
         """
-        if (
-            not _projection_refresh_is_active()
-            and await self._is_canonical_external()
-        ):
+        if not _projection_refresh_is_active() and await self._is_canonical_external():
             raise ExternalNoteReadOnlyError()
 
         # Call parent save (without embedding)
@@ -1172,9 +1165,7 @@ class Note(ObjectModel):
                     "embed_note",
                     {"note_id": str(self.id)},
                 )
-                logger.debug(
-                    f"Submitted embed_note command {command_id} for {self.id}"
-                )
+                logger.debug(f"Submitted embed_note command {command_id} for {self.id}")
                 return command_id
             except ValueError:
                 # v0.7.133 — Narrow propagation for ValueError. The

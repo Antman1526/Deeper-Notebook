@@ -1,4 +1,5 @@
 """Compatibility checks for the split Studio router package."""
+
 from __future__ import annotations
 
 

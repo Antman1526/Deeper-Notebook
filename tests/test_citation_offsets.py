@@ -1,4 +1,5 @@
 """v0.8.78 — tests for citation passage location (improvement roadmap, Batch 2)."""
+
 from deeper_notebook.utils.citation_offsets import locate_passage
 
 TEXT = (
@@ -18,7 +19,7 @@ def test_locates_the_matching_passage():
     assert "neural networks" in m["snippet"]
     assert "representations" in m["snippet"]
     # Offsets point at real text and don't split words.
-    assert TEXT[m["start"]:m["end"]] .strip() == m["snippet"]
+    assert TEXT[m["start"] : m["end"]].strip() == m["snippet"]
     assert m["start"] == 0 or TEXT[m["start"] - 1].isspace()
     assert m["end"] == len(TEXT) or TEXT[m["end"]].isspace()
 
@@ -26,14 +27,20 @@ def test_locates_the_matching_passage():
 def test_discriminates_between_passages():
     # Sentence-sized window so adjacent blocks don't bleed into the match.
     rag = locate_passage(
-        TEXT, "retrieval augmented generation retriever grounding documents",
-        window=140, stride=60,
+        TEXT,
+        "retrieval augmented generation retriever grounding documents",
+        window=140,
+        stride=60,
     )
     dl = locate_passage(
-        TEXT, "deep learning neural networks representations",
-        window=140, stride=60,
+        TEXT,
+        "deep learning neural networks representations",
+        window=140,
+        stride=60,
     )
-    assert rag is not None and ("retriever" in rag["snippet"] or "generation" in rag["snippet"])
+    assert rag is not None and (
+        "retriever" in rag["snippet"] or "generation" in rag["snippet"]
+    )
     assert dl is not None and "neural networks" in dl["snippet"]
     # The two queries land on clearly different regions of the document.
     assert abs(rag["start"] - dl["start"]) > 80

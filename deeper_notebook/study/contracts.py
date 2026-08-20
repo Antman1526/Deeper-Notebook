@@ -38,9 +38,7 @@ class FsrsCardState(BaseModel):
         if self.last_review is not None and self.last_review.tzinfo is None:
             raise ValueError("FSRS review time must be timezone-aware")
         if self.state == "review" and (
-            self.step is not None
-            or self.stability is None
-            or self.difficulty is None
+            self.step is not None or self.stability is None or self.difficulty is None
         ):
             raise ValueError("review state requires stability and difficulty")
         if self.state != "review" and self.step is None:
@@ -76,7 +74,12 @@ class StudyCard(BaseModel):
         self.stability = self.fsrs_state.stability
         self.difficulty = self.fsrs_state.difficulty
         citation_keys = {
-            (citation.source_id, citation.source_content_sha256, citation.start, citation.end)
+            (
+                citation.source_id,
+                citation.source_content_sha256,
+                citation.start,
+                citation.end,
+            )
             for citation in self.citations
         }
         if len(citation_keys) != len(self.citations):

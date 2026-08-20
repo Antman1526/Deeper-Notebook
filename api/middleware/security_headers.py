@@ -31,6 +31,7 @@ Adds OWASP-recommended baseline headers to every API response:
         disabling it tells modern browsers not to attempt heuristic
         sanitization on the JSON-only API responses.
 """
+
 from __future__ import annotations
 
 from starlette.middleware.base import BaseHTTPMiddleware

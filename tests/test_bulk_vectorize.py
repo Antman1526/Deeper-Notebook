@@ -3,6 +3,7 @@
 Exercises the bulk re-embed endpoint with stubbed domain objects so
 no SurrealDB or embedding-model dependency is required.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -35,19 +36,26 @@ def patched_domain(monkeypatch):
         return state["has_embedding_model"]
 
     monkeypatch.setattr(
-        embedding_router.Notebook, "get", staticmethod(_nb_get),
+        embedding_router.Notebook,
+        "get",
+        staticmethod(_nb_get),
     )
     monkeypatch.setattr(
         embedding_router.model_manager,
-        "get_embedding_model", _has_embedding,
+        "get_embedding_model",
+        _has_embedding,
     )
 
     return state
 
 
 def _make_source(
-    sid: str, title: str, *, full_text: Optional[str] = None,
-    embedded_chunks: int = 0, vectorize_returns: Optional[str] = None,
+    sid: str,
+    title: str,
+    *,
+    full_text: Optional[str] = None,
+    embedded_chunks: int = 0,
+    vectorize_returns: Optional[str] = None,
     vectorize_raises: Optional[BaseException] = None,
 ):
     """Build a stub Source. vectorize() returns or raises per kwargs."""
@@ -58,6 +66,7 @@ def _make_source(
         if vectorize_raises:
             raise vectorize_raises
         return vectorize_returns
+
     src.vectorize = _vec
     return src
 
@@ -67,6 +76,7 @@ def _make_notebook(sources, name: str = "Test"):
 
     async def _get_sources():
         return sources
+
     nb.get_sources = _get_sources
     return nb
 
@@ -96,13 +106,17 @@ def test_bulk_vectorize_queues_all_when_only_missing_false(client, patched_domai
     existing embeddings (useful after switching embedding models)."""
     sources = [
         _make_source(
-            "source:1", "First", full_text="hello",
-            embedded_chunks=5,           # already embedded
+            "source:1",
+            "First",
+            full_text="hello",
+            embedded_chunks=5,  # already embedded
             vectorize_returns="cmd:1",
         ),
         _make_source(
-            "source:2", "Second", full_text="world",
-            embedded_chunks=0,           # never embedded
+            "source:2",
+            "Second",
+            full_text="world",
+            embedded_chunks=0,  # never embedded
             vectorize_returns="cmd:2",
         ),
     ]
@@ -121,16 +135,21 @@ def test_bulk_vectorize_queues_all_when_only_missing_false(client, patched_domai
 
 
 def test_bulk_vectorize_skips_already_embedded_when_only_missing_true(
-    client, patched_domain,
+    client,
+    patched_domain,
 ):
     sources = [
         _make_source(
-            "source:1", "Already done", full_text="hello",
+            "source:1",
+            "Already done",
+            full_text="hello",
             embedded_chunks=5,
             vectorize_returns="should-not-be-called",
         ),
         _make_source(
-            "source:2", "Pending", full_text="world",
+            "source:2",
+            "Pending",
+            full_text="world",
             embedded_chunks=0,
             vectorize_returns="cmd:2",
         ),
@@ -151,7 +170,8 @@ def test_bulk_vectorize_skips_already_embedded_when_only_missing_true(
 
 
 def test_bulk_vectorize_skips_sources_with_no_text_and_warns(
-    client, patched_domain,
+    client,
+    patched_domain,
 ):
     """v0.7.106 — A source without full_text would no-op or error in the
     embed worker. Skip it client-side with a warning that tells the user
@@ -160,7 +180,9 @@ def test_bulk_vectorize_skips_sources_with_no_text_and_warns(
         _make_source("source:1", "Empty source", full_text=None),
         _make_source("source:2", "Empty string", full_text="   "),
         _make_source(
-            "source:3", "Has text", full_text="real content",
+            "source:3",
+            "Has text",
+            full_text="real content",
             vectorize_returns="cmd:ok",
         ),
     ]
@@ -179,17 +201,22 @@ def test_bulk_vectorize_skips_sources_with_no_text_and_warns(
 
 
 def test_bulk_vectorize_continues_after_submit_failure(
-    client, patched_domain,
+    client,
+    patched_domain,
 ):
     """One source failing to queue must not abort the rest — partial
     success is the whole point of a bulk endpoint."""
     sources = [
         _make_source(
-            "source:1", "First", full_text="hello",
+            "source:1",
+            "First",
+            full_text="hello",
             vectorize_raises=RuntimeError("worker queue down"),
         ),
         _make_source(
-            "source:2", "Second", full_text="world",
+            "source:2",
+            "Second",
+            full_text="world",
             vectorize_returns="cmd:2",
         ),
     ]
@@ -213,7 +240,9 @@ def test_bulk_vectorize_continues_after_submit_failure(
 
 
 def test_bulk_vectorize_caps_at_max_sources_with_truncation_warning(
-    client, patched_domain, monkeypatch,
+    client,
+    patched_domain,
+    monkeypatch,
 ):
     """v0.7.110 — Notebooks larger than DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES
     get clamped to the cap with a warning. v0.7.137 reframed this as
@@ -227,7 +256,9 @@ def test_bulk_vectorize_caps_at_max_sources_with_truncation_warning(
     monkeypatch.setenv("DEEPER_NOTEBOOK_BULK_VECTORIZE_MAX_SOURCES", "3")
     sources = [
         _make_source(
-            f"source:{i}", f"Source {i}", full_text="x",
+            f"source:{i}",
+            f"Source {i}",
+            full_text="x",
             vectorize_returns=f"cmd:{i}",
         )
         for i in range(10)

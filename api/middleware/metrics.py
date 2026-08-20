@@ -18,6 +18,7 @@ don't blow up cardinality either.
 The /metrics endpoint itself is excluded from timing capture — we
 don't want Prometheus's own scrape to appear as request traffic.
 """
+
 from __future__ import annotations
 
 import time
@@ -74,21 +75,25 @@ class PrometheusMetricsMiddleware(BaseHTTPMiddleware):
             elapsed = time.monotonic() - start
             route_label = _route_label(request)
             http_requests_total.labels(
-                method=method, route=route_label,
+                method=method,
+                route=route_label,
                 status_code=str(status_code),
             ).inc()
             http_request_duration_seconds.labels(
-                method=method, route=route_label,
+                method=method,
+                route=route_label,
             ).observe(elapsed)
             raise
 
         elapsed = time.monotonic() - start
         route_label = _route_label(request)
         http_requests_total.labels(
-            method=method, route=route_label,
+            method=method,
+            route=route_label,
             status_code=str(status_code),
         ).inc()
         http_request_duration_seconds.labels(
-            method=method, route=route_label,
+            method=method,
+            route=route_label,
         ).observe(elapsed)
         return response

@@ -59,7 +59,9 @@ def test_phase_select_provider_starts_mlx_and_stashes_runtime(monkeypatch, tmp_p
     _phase_select_provider(ctx)
 
     assert FakeMlxProvider.started == ["MLX/mlx-community__North-Mini-Code-1.0-6bit"]
-    assert FakeMlxProvider.start_options == [{"validate": False, "wait_for_ready": False}]
+    assert FakeMlxProvider.start_options == [
+        {"validate": False, "wait_for_ready": False}
+    ]
     assert ctx.extra_env["OPENAI_COMPATIBLE_BASE_URL"] == "http://127.0.0.1:51231/v1"
     assert ctx.extra_env["OPENAI_COMPATIBLE_API_KEY"] == "sk-no-key"
     assert (
@@ -73,7 +75,8 @@ def test_phase_select_provider_starts_mlx_and_stashes_runtime(monkeypatch, tmp_p
 
 
 def test_phase_select_provider_uses_configured_mlx_default_without_inventory_scan(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ):
     import desktop.providers.mlx as mlx_mod
 
@@ -99,7 +102,9 @@ def test_phase_select_provider_uses_configured_mlx_default_without_inventory_sca
     _phase_select_provider(ctx)
 
     assert ConfiguredMlxProvider.started == ["MLX/configured-model"]
-    assert ConfiguredMlxProvider.start_options == [{"validate": False, "wait_for_ready": False}]
+    assert ConfiguredMlxProvider.start_options == [
+        {"validate": False, "wait_for_ready": False}
+    ]
 
 
 def test_phase_select_provider_uses_default_mlx_model_when_config_blank(
@@ -166,7 +171,4 @@ def test_phase_auto_register_passes_mlx_runtime_to_auto_register(monkeypatch, tm
 
     assert captured["api_base_url"] == "http://127.0.0.1:5055"
     assert captured["mlx_base_url"] == "http://127.0.0.1:51231/v1"
-    assert (
-        captured["mlx_model_ref"]
-        == "MLX/mlx-community__North-Mini-Code-1.0-6bit"
-    )
+    assert captured["mlx_model_ref"] == "MLX/mlx-community__North-Mini-Code-1.0-6bit"

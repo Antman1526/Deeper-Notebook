@@ -141,7 +141,14 @@ async def test_add_source_advances_draft_to_analyzing_sources_atomically(monkeyp
 
     async def query(sql, params):
         calls.append((sql, params))
-        return [{**PLAN_RECORD, "source_links": ["source:one"], "state": "analyzing_sources", "revision": 2}]
+        return [
+            {
+                **PLAN_RECORD,
+                "source_links": ["source:one"],
+                "state": "analyzing_sources",
+                "revision": 2,
+            }
+        ]
 
     monkeypatch.setattr(plan_repository, "repo_query", query)
 
@@ -150,18 +157,25 @@ async def test_add_source_advances_draft_to_analyzing_sources_atomically(monkeyp
     )
 
     transaction_sql = calls[0][0]
-    assert 'state = IF state = "draft" THEN "analyzing_sources" ELSE state END' in transaction_sql
+    assert (
+        'state = IF state = "draft" THEN "analyzing_sources" ELSE state END'
+        in transaction_sql
+    )
     assert "revision = revision + 1" in transaction_sql
 
 
 @pytest.mark.asyncio
-async def test_save_syllabus_propose_advances_lifecycle_and_revision_atomically(monkeypatch):
+async def test_save_syllabus_propose_advances_lifecycle_and_revision_atomically(
+    monkeypatch,
+):
     calls: list[tuple[str, dict[str, object]]] = []
 
     async def query(sql, params):
         calls.append((sql, params))
         if sql.startswith("SELECT"):
-            return [{"id": "study_syllabus:one", "plan_id": "study_plan:one", "version": 1}]
+            return [
+                {"id": "study_syllabus:one", "plan_id": "study_plan:one", "version": 1}
+            ]
         return [{"saved": True}]
 
     monkeypatch.setattr(plan_repository, "repo_query", query)
@@ -171,7 +185,7 @@ async def test_save_syllabus_propose_advances_lifecycle_and_revision_atomically(
     )
 
     transaction_sql = calls[0][0]
-    assert "state = \"syllabus_proposed\"" in transaction_sql
+    assert 'state = "syllabus_proposed"' in transaction_sql
     assert "revision = revision + 1" in transaction_sql
 
 
@@ -182,7 +196,9 @@ async def test_save_syllabus_edit_advances_proposed_lifecycle_atomically(monkeyp
     async def query(sql, params):
         calls.append((sql, params))
         if sql.startswith("SELECT"):
-            return [{"id": "study_syllabus:one", "plan_id": "study_plan:one", "version": 1}]
+            return [
+                {"id": "study_syllabus:one", "plan_id": "study_plan:one", "version": 1}
+            ]
         return [{"saved": True}]
 
     monkeypatch.setattr(plan_repository, "repo_query", query)
@@ -192,7 +208,7 @@ async def test_save_syllabus_edit_advances_proposed_lifecycle_atomically(monkeyp
     )
 
     transaction_sql = calls[0][0]
-    assert "state = \"editing\"" in transaction_sql
+    assert 'state = "editing"' in transaction_sql
     assert "revision = revision + 1" in transaction_sql
 
 
@@ -238,7 +254,9 @@ async def test_list_caps_pagination_and_decodes_only_plan_projection(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_get_missing_record_is_safe_and_malformed_id_is_a_domain_error(monkeypatch):
+async def test_get_missing_record_is_safe_and_malformed_id_is_a_domain_error(
+    monkeypatch,
+):
     async def query(sql, params):
         return []
 
@@ -252,7 +270,9 @@ async def test_get_missing_record_is_safe_and_malformed_id_is_a_domain_error(mon
 
 
 @pytest.mark.asyncio
-async def test_get_syllabus_projects_latest_or_exact_immutable_ordered_units(monkeypatch):
+async def test_get_syllabus_projects_latest_or_exact_immutable_ordered_units(
+    monkeypatch,
+):
     calls: list[tuple[str, dict[str, object]]] = []
     syllabus_record = {
         "id": "study_syllabus:one",
@@ -304,7 +324,9 @@ async def test_get_syllabus_projects_latest_or_exact_immutable_ordered_units(mon
 
 
 @pytest.mark.asyncio
-async def test_get_syllabus_missing_or_invalid_plan_is_safe_and_non_disclosing(monkeypatch):
+async def test_get_syllabus_missing_or_invalid_plan_is_safe_and_non_disclosing(
+    monkeypatch,
+):
     async def query(sql, params):
         return []
 
@@ -354,7 +376,10 @@ async def test_remove_source_only_deletes_owned_link(monkeypatch):
 
     monkeypatch.setattr(plan_repository, "repo_query", query)
 
-    assert await StudyPlanRepository().remove_source("study_plan:one", "source:one") is True
+    assert (
+        await StudyPlanRepository().remove_source("study_plan:one", "source:one")
+        is True
+    )
     transaction_sql = next(sql for sql, _ in calls if sql.startswith("BEGIN"))
     assert "DELETE study_plan_source" in transaction_sql
     assert "DELETE source" not in transaction_sql
@@ -369,7 +394,9 @@ async def test_save_syllabus_writes_versioned_units_without_overwriting(monkeypa
     async def query(sql, params):
         calls.append((sql, params))
         if sql.startswith("SELECT"):
-            return [{"id": "study_syllabus:one", "plan_id": "study_plan:one", "version": 1}]
+            return [
+                {"id": "study_syllabus:one", "plan_id": "study_plan:one", "version": 1}
+            ]
         return [{"saved": True}]
 
     monkeypatch.setattr(plan_repository, "repo_query", query)
@@ -419,7 +446,9 @@ async def test_driver_outages_are_not_misclassified_as_domain_conflicts(
     monkeypatch, operation
 ):
     async def query(sql, params):
-        raise RuntimeError(f"database transport unavailable while executing query: {sql}")
+        raise RuntimeError(
+            f"database transport unavailable while executing query: {sql}"
+        )
 
     monkeypatch.setattr(plan_repository, "repo_query", query)
     repository = StudyPlanRepository()
@@ -560,7 +589,9 @@ async def test_artifact_link_retry_reads_existing_without_duplicate_create(monke
 
 
 def test_task3_migration_contracts_are_schemafull_and_tightly_bounded():
-    migration = Path(__file__).parents[1] / "deeper_notebook/database/migrations/41.surrealql"
+    migration = (
+        Path(__file__).parents[1] / "deeper_notebook/database/migrations/41.surrealql"
+    )
     sql = migration.read_text()
     assert "SCHEMAFULL" in sql
     assert "string::len($value) >= 1" in sql
@@ -575,7 +606,9 @@ def test_task3_migration_contracts_are_schemafull_and_tightly_bounded():
 
 
 def test_task3_migration_mirrors_strict_task2_text_and_id_contracts():
-    migration = Path(__file__).parents[1] / "deeper_notebook/database/migrations/41.surrealql"
+    migration = (
+        Path(__file__).parents[1] / "deeper_notebook/database/migrations/41.surrealql"
+    )
     sql = migration.read_text()
     nonblank = 'string::trim($value) != ""'
     stable_id = 'string::matches($value, "^[a-z0-9][a-z0-9_-]{0,63}$")'
@@ -587,8 +620,11 @@ def test_task3_migration_mirrors_strict_task2_text_and_id_contracts():
     assert stable_id in sql
     assert 'string::matches($item, "^[a-z0-9][a-z0-9_-]{0,63}$")' in sql
     assert 'string::matches($activity.activity_id, "^[a-z0-9][a-z0-9_-]{0,63}$")' in sql
-    assert '"reading", "lesson", "tutor_session", "quiz", "recall", "exam", "project", "review", "custom"' in sql
-    assert "array::every($value, |$item| string::trim($item) != \"\" AND" in sql
+    assert (
+        '"reading", "lesson", "tutor_session", "quiz", "recall", "exam", "project", "review", "custom"'
+        in sql
+    )
+    assert 'array::every($value, |$item| string::trim($item) != "" AND' in sql
     assert "array::every($value, |$item| string::matches($item" in sql
     assert "array::every($value, |$activity|" in sql
     assert "string::len($value) <= 32" not in sql

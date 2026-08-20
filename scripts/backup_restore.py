@@ -30,6 +30,7 @@ Output: gzipped tar at the user-specified path. Includes a
 manifest.json with the bundle version, timestamp, and SHA-256 of
 each archived file for integrity verification.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -196,12 +197,14 @@ def backup(output_path: Path, *, data_root: Path | None = None) -> dict:
     file_entries: list[dict] = []
     for abs_p, arc_p in pairs:
         st = abs_p.stat()
-        file_entries.append({
-            "path": arc_p,
-            "bytes": st.st_size,
-            "sha256": _hash_file(abs_p),
-            "mtime": st.st_mtime,
-        })
+        file_entries.append(
+            {
+                "path": arc_p,
+                "bytes": st.st_size,
+                "sha256": _hash_file(abs_p),
+                "mtime": st.st_mtime,
+            }
+        )
 
     manifest = {
         "format_version": BUNDLE_FORMAT_VERSION,
@@ -252,12 +255,16 @@ def _BytesIO(b: bytes):
     """Local import shim so this file has no top-level io import (keeps
     the module load cheap when only the CLI argparser fires)."""
     import io
+
     return io.BytesIO(b)
 
 
 def restore(
-    bundle_path: Path, *, data_root: Path | None = None,
-    force: bool = False, verify_only: bool = False,
+    bundle_path: Path,
+    *,
+    data_root: Path | None = None,
+    force: bool = False,
+    verify_only: bool = False,
 ) -> dict:
     """Extract a bundle to `data_root`. By default REFUSES to extract
     over a non-empty data_root unless `force=True`.
@@ -313,8 +320,7 @@ def restore(
         # on Windows recorded Path strings with backslashes in the manifest.
         # Canonicalize both sides so those bundles remain verifiable.
         expected_hashes = {
-            e["path"].replace("\\", "/"): e["sha256"]
-            for e in manifest["files"]
+            e["path"].replace("\\", "/"): e["sha256"] for e in manifest["files"]
         }
         verified = 0
         mismatched: list[str] = []
@@ -376,26 +382,33 @@ def _cli():
 
     p_backup = sub.add_parser("backup", help="Create a backup bundle.")
     p_backup.add_argument(
-        "--output", "-o", required=True, type=Path,
+        "--output",
+        "-o",
+        required=True,
+        type=Path,
         help="Path for the output .tar.gz bundle.",
     )
     p_backup.add_argument(
-        "--data-root", type=Path,
+        "--data-root",
+        type=Path,
         help="Override the auto-detected data root.",
     )
 
     p_restore = sub.add_parser("restore", help="Restore a backup bundle.")
     p_restore.add_argument("bundle", type=Path, help="Path to the .tar.gz bundle.")
     p_restore.add_argument(
-        "--data-root", type=Path,
+        "--data-root",
+        type=Path,
         help="Override the auto-detected data root.",
     )
     p_restore.add_argument(
-        "--force", action="store_true",
+        "--force",
+        action="store_true",
         help="Overwrite non-empty data_root. DANGER — destroys existing data.",
     )
     p_restore.add_argument(
-        "--verify-only", action="store_true",
+        "--verify-only",
+        action="store_true",
         help="Check bundle integrity without writing anything.",
     )
 
@@ -408,8 +421,10 @@ def _cli():
 
     if args.cmd == "restore":
         result = restore(
-            args.bundle, data_root=args.data_root,
-            force=args.force, verify_only=args.verify_only,
+            args.bundle,
+            data_root=args.data_root,
+            force=args.force,
+            verify_only=args.verify_only,
         )
         print(json.dumps(result, indent=2))
         return 0

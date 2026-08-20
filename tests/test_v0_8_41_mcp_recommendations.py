@@ -7,6 +7,7 @@ frontend can drop in the same one-click pattern. Covers:
     URL prefixes).
   - GET /api/mcp/recommendations response shape.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -24,8 +25,15 @@ from deeper_notebook.mcp import recommendations as recs_mod
 def test_recommendations_have_required_fields():
     """Frontend card rendering would crash on undefined keys; lock the
     schema here."""
-    required = {"id", "label", "description", "default_url", "install_url",
-                "tags", "replaces"}
+    required = {
+        "id",
+        "label",
+        "description",
+        "default_url",
+        "install_url",
+        "tags",
+        "replaces",
+    }
     for entry in recs_mod.RECOMMENDATIONS:
         missing = required - entry.keys()
         assert not missing, (

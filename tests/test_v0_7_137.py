@@ -118,7 +118,7 @@ class TestVectorizePaginationDefaults:
             body = r.json()
             assert body["total_sources"] == 12
             assert body["offset"] == 0
-            assert body["limit"] == 500   # default
+            assert body["limit"] == 500  # default
             assert body["has_more"] is False
             assert r.headers["X-Total-Count"] == "12"
             assert r.headers["X-Offset"] == "0"
@@ -207,9 +207,9 @@ class TestVectorizeLimitClamping:
             assert r.status_code == 200
             body = r.json()
             assert body["limit"] == 500  # clamped down to the env cap
-            assert any(
-                "clamped" in w or "exceeds" in w for w in body["warnings"]
-            ), f"Expected clamp warning, got {body['warnings']}"
+            assert any("clamped" in w or "exceeds" in w for w in body["warnings"]), (
+                f"Expected clamp warning, got {body['warnings']}"
+            )
         finally:
             _stop(patchers)
 

@@ -9,6 +9,7 @@ resting state. The loaded handler confirms a genuine app page via an
 in-page sentinel because get_current_url() is None for html= pages and
 reports the target URL even for failed loads.
 """
+
 from __future__ import annotations
 
 import threading
@@ -36,8 +37,11 @@ def _run_controller(win, loaded, **kw):
     from desktop.window import _start_handoff_controller
 
     defaults = dict(
-        min_splash_sec=0.0, poll_sec=0.0, attempt_timeout_sec=0.2,
-        max_attempts=3, sleep=lambda s: None,
+        min_splash_sec=0.0,
+        poll_sec=0.0,
+        attempt_timeout_sec=0.2,
+        max_attempts=3,
+        sleep=lambda s: None,
     )
     defaults.update(kw)
     t = _start_handoff_controller(win, "http://x/", loaded, "<SPLASH/>", **defaults)
@@ -47,6 +51,7 @@ def _run_controller(win, loaded, **kw):
 
 
 # ------------------------------------------------------- handoff controller
+
 
 def test_happy_path_waits_for_consecutive_ready_then_navigates():
     seq = iter([False, True, True])
@@ -105,8 +110,12 @@ def test_min_splash_time_is_respected():
 
     win.load_url = _load
     _run_controller(
-        win, loaded, server_ready=lambda: True,
-        min_splash_sec=3.0, sleep=_sleep, clock=lambda: clock["t"],
+        win,
+        loaded,
+        server_ready=lambda: True,
+        min_splash_sec=3.0,
+        sleep=_sleep,
+        clock=lambda: clock["t"],
     )
     assert sum(slept) >= 3.0
 
@@ -117,8 +126,10 @@ def test_gives_up_to_frontend_url_after_max_attempts():
     win = _FakeWindow()
     calls = _run_controller(win, loaded, server_ready=lambda: True, max_attempts=2)
     assert calls == [
-        ("load_url", "http://x/"), ("load_html", "<SPLASH/>"),
-        ("load_url", "http://x/"), ("load_html", "<SPLASH/>"),
+        ("load_url", "http://x/"),
+        ("load_html", "<SPLASH/>"),
+        ("load_url", "http://x/"),
+        ("load_html", "<SPLASH/>"),
         ("load_url", "http://x/"),  # final resting navigation
     ]
 
@@ -185,6 +196,7 @@ def test_load_url_exception_is_retried():
 
 # ------------------------------------------------------- server readiness
 
+
 class _Resp:
     def __init__(self, status_code: int, content: bytes = b"<html>ok</html>"):
         self.status_code = status_code
@@ -204,7 +216,7 @@ def test_server_ready_rejects_next_warmup_404(monkeypatch):
             return _Resp(
                 200,
                 b"<html><head><title>404: This page could not be found.</title>"
-                b'</head><body><script>self.__next_f=[]</script>'
+                b"</head><body><script>self.__next_f=[]</script>"
                 b'<h1 class="next-error-h1">404</h1></body></html>',
             )
 
@@ -265,6 +277,7 @@ def test_server_ready_rejects_connection_error(monkeypatch):
 
 
 # ------------------------------------------------------- loaded sentinel
+
 
 def test_frontend_sentinel_js_shape():
     """The sentinel must check the Next runtime AND exclude Next's 404

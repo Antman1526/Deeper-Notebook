@@ -41,6 +41,7 @@ These tests pin both fixes so a future refactor can't silently
 re-introduce the dual spawn or move the draft-model wiring back to the
 dead path.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -62,6 +63,7 @@ def _stub_singleton(monkeypatch):
     collide on the PID file. Mirrors test_launcher.py's autouse stub —
     patch the SOURCE module (`desktop.singleton.*`) because the imports
     in Supervisor.start_all are function-scoped local imports."""
+
     class _FakeSingletonHandle:
         def release(self) -> None:
             pass
@@ -92,6 +94,7 @@ def _stub_io(monkeypatch, spawned):
     def fake_popen(args, **kw):
         spawned.append(list(args))
         return _alive_proc()
+
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
     monkeypatch.setattr(
         "desktop.launcher.find_free_ports",
@@ -105,6 +108,7 @@ def _stub_io(monkeypatch, spawned):
 def cfg(tmp_path):
     """Mirrors test_launcher.py's make_config helper."""
     from desktop.config import Config
+
     return Config(
         model_dir=tmp_path,
         provider="none",
@@ -118,8 +122,11 @@ def _build_sv(cfg, tmp_path):
     chat_gguf = tmp_path / "Hermes-3-Llama-3.1-8B-Q4_K_M.gguf"
     chat_gguf.write_bytes(b"FAKE-GGUF")
     return Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
         chat_llm_path=chat_gguf,
         openchronicle_available=False,
     )
@@ -140,7 +147,9 @@ def _chat_args(spawned):
 
 
 def test_supervisor_spawn_appends_model_draft_when_env_set(
-    cfg, tmp_path, monkeypatch,
+    cfg,
+    tmp_path,
+    monkeypatch,
 ):
     """v0.8.3 — `DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH` must reach
     `Supervisor._spawn_llamacpp_chat`'s argv. Pre-v0.8.3 the env var
@@ -173,7 +182,9 @@ def test_supervisor_spawn_appends_model_draft_when_env_set(
 
 
 def test_supervisor_spawn_appends_n_predict_draft_when_both_env_set(
-    cfg, tmp_path, monkeypatch,
+    cfg,
+    tmp_path,
+    monkeypatch,
 ):
     """v0.8.3 — both env vars set → both flags appear in argv. Pins
     that the tuning knob (v0.8.2 Item C) also reaches the LIVE spawn,
@@ -199,7 +210,9 @@ def test_supervisor_spawn_appends_n_predict_draft_when_both_env_set(
 
 
 def test_supervisor_spawn_omits_draft_flags_when_env_unset(
-    cfg, tmp_path, monkeypatch,
+    cfg,
+    tmp_path,
+    monkeypatch,
 ):
     """v0.8.3 — backward compat. With no draft env vars, the spawn
     argv must NOT contain `--model_draft` or `--n_predict_draft`.
@@ -223,7 +236,9 @@ def test_supervisor_spawn_omits_draft_flags_when_env_unset(
 
 
 def test_supervisor_spawn_skips_draft_when_path_missing(
-    cfg, tmp_path, monkeypatch,
+    cfg,
+    tmp_path,
+    monkeypatch,
 ):
     """v0.8.3 — stale env var pointing at a no-longer-existing file
     must NOT crash the chat sidecar. Skip silently; main model still
@@ -249,7 +264,9 @@ def test_supervisor_spawn_skips_draft_when_path_missing(
 
 
 def test_supervisor_spawn_skips_draft_when_path_too_small(
-    cfg, tmp_path, monkeypatch,
+    cfg,
+    tmp_path,
+    monkeypatch,
 ):
     """v0.8.3 — Git-LFS pointer / aborted download. Same guard as
     the main-model loop. Skip the flag, log a warning, keep chat
@@ -271,7 +288,9 @@ def test_supervisor_spawn_skips_draft_when_path_too_small(
 
 
 def test_supervisor_spawn_drops_n_predict_without_draft(
-    cfg, tmp_path, monkeypatch,
+    cfg,
+    tmp_path,
+    monkeypatch,
 ):
     """v0.8.3 — n_predict_draft is meaningless without a draft model.
     A bare DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT env (no path) must NOT
@@ -296,7 +315,10 @@ def test_supervisor_spawn_drops_n_predict_without_draft(
 
 
 def test_supervisor_spawn_handles_malformed_n_predict_env(
-    cfg, tmp_path, monkeypatch, caplog,
+    cfg,
+    tmp_path,
+    monkeypatch,
+    caplog,
 ):
     """v0.8.3 — garbage in DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT must
     NOT crash the spawn. Log a warning + drop the flag; main model

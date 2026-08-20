@@ -34,7 +34,10 @@ async def test_start_snapshot_install_completes_with_snapshot_download(
     calls: list[tuple[str, str]] = []
 
     def fake_snapshot_download(
-        repo_id: str, local_dir: str, *, revision: str | None = None,
+        repo_id: str,
+        local_dir: str,
+        *,
+        revision: str | None = None,
     ) -> None:
         calls.append((repo_id, local_dir))
         Path(local_dir).mkdir(parents=True, exist_ok=True)
@@ -67,7 +70,10 @@ async def test_snapshot_install_resolves_and_passes_immutable_revision(
         return commit
 
     def fake_snapshot_download(
-        repo_id: str, local_dir: str, *, revision: str,
+        repo_id: str,
+        local_dir: str,
+        *,
+        revision: str,
     ) -> None:
         download_calls.append((repo_id, local_dir, revision))
         Path(local_dir, "config.json").write_text("{}")
@@ -142,7 +148,10 @@ async def test_start_snapshot_install_dedupes_in_flight(
     unblock = threading.Event()
 
     def fake_snapshot_download(
-        repo_id: str, local_dir: str, *, revision: str | None = None,
+        repo_id: str,
+        local_dir: str,
+        *,
+        revision: str | None = None,
     ) -> None:
         unblock.wait(timeout=5)
 
@@ -168,7 +177,10 @@ async def test_start_snapshot_install_writes_and_removes_sidecar(
     unblock = threading.Event()
 
     def fake_snapshot_download(
-        repo_id: str, local_dir: str, *, revision: str | None = None,
+        repo_id: str,
+        local_dir: str,
+        *,
+        revision: str | None = None,
     ) -> None:
         started.set()
         unblock.wait(timeout=5)
@@ -204,7 +216,10 @@ async def test_cancel_snapshot_install_requests_stop_and_finishes_cancelled(
     unblock = threading.Event()
 
     def fake_snapshot_download(
-        repo_id: str, local_dir: str, *, revision: str | None = None,
+        repo_id: str,
+        local_dir: str,
+        *,
+        revision: str | None = None,
     ) -> None:
         started.set()
         unblock.wait(timeout=5)
@@ -235,11 +250,13 @@ async def test_reconcile_snapshot_installs_rebuilds_interrupted_sidecar(
     target = tmp_path / "Transformers" / "org__repo"
     target.mkdir(parents=True)
     (target / ".snapshot-install.meta").write_text(
-        json.dumps({
-            "job_id": "snap-restart",
-            "repo_id": "org/repo",
-            "target_path": str(target),
-        }),
+        json.dumps(
+            {
+                "job_id": "snap-restart",
+                "repo_id": "org/repo",
+                "target_path": str(target),
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -298,7 +315,10 @@ async def test_start_snapshot_install_repairs_config_only_partial_directory(
     (target / ".cache").mkdir()
 
     def fake_snapshot_download(
-        repo_id: str, local_dir: str, *, revision: str | None = None,
+        repo_id: str,
+        local_dir: str,
+        *,
+        revision: str | None = None,
     ) -> None:
         calls.append((repo_id, local_dir))
         Path(local_dir, "model.safetensors").write_bytes(b"weights")
@@ -354,7 +374,10 @@ async def test_start_snapshot_install_records_failures(
     tmp_path: Path,
 ) -> None:
     def fake_snapshot_download(
-        repo_id: str, local_dir: str, *, revision: str | None = None,
+        repo_id: str,
+        local_dir: str,
+        *,
+        revision: str | None = None,
     ) -> None:
         raise RuntimeError("network down")
 
@@ -488,11 +511,13 @@ def test_snapshot_install_list_reconciles_interrupted_sidecars(
     target = tmp_path / "MLX" / "org__repo"
     target.mkdir(parents=True)
     (target / ".snapshot-install.meta").write_text(
-        json.dumps({
-            "job_id": "snap-reconciled",
-            "repo_id": "org/repo",
-            "target_path": str(target),
-        }),
+        json.dumps(
+            {
+                "job_id": "snap-reconciled",
+                "repo_id": "org/repo",
+                "target_path": str(target),
+            }
+        ),
         encoding="utf-8",
     )
 

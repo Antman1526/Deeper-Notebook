@@ -110,7 +110,10 @@ def test_compose_and_stream_video_overview_stays_inside_local_root(
     assert Path(artifact.export_paths["video_mp4"]).is_relative_to(root)
     assert client.get(response.json()["media_url"]).content == b"mp4"
     # Text-mode output uses CRLF on Windows; WebVTT accepts either newline.
-    assert client.get(response.json()["captions_url"]).text.replace("\r\n", "\n") == "WEBVTT\n"
+    assert (
+        client.get(response.json()["captions_url"]).text.replace("\r\n", "\n")
+        == "WEBVTT\n"
+    )
 
 
 def test_rejects_audio_overview_without_timestamped_transcript(monkeypatch, tmp_path):

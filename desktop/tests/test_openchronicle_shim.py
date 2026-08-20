@@ -15,16 +15,24 @@ def _fake_mcp_client(recent_events=None, search_events=None):
     """Fake MCP client with canned tool responses."""
     client = MagicMock()
     client.call_tool = AsyncMock()
+
     async def fake_call_tool(name, args):
         if name == "recent_activity":
-            return {"events": recent_events or [
-                {"title": "Edited foo.md", "ts": "2026-05-11T08:00Z"},
-            ]}
+            return {
+                "events": recent_events
+                or [
+                    {"title": "Edited foo.md", "ts": "2026-05-11T08:00Z"},
+                ]
+            }
         if name == "search":
-            return {"events": search_events or [
-                {"title": "Read Self-RAG paper", "ts": "2026-05-11T07:00Z"},
-            ]}
+            return {
+                "events": search_events
+                or [
+                    {"title": "Read Self-RAG paper", "ts": "2026-05-11T07:00Z"},
+                ]
+            }
         return {"events": []}
+
     client.call_tool.side_effect = fake_call_tool
     return client
 

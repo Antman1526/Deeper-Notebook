@@ -220,9 +220,7 @@ async def test_projection_digest_uses_current_legacy_document_identities(
         b"  kind: unique\n  date_key: null\n---\n"
     )
     original = with_legacy_identities(frontmatter + b"# Identity\n\nRevision one\n")
-    replacement = with_legacy_identities(
-        frontmatter + b"# Identity\n\nRevision two\n"
-    )
+    replacement = with_legacy_identities(frontmatter + b"# Identity\n\nRevision two\n")
     repository = KnowledgeRepository()
     await repository.commit_snapshot(original, operation_id="native-identity-one")
     await repository.commit_snapshot(replacement, operation_id="native-identity-two")

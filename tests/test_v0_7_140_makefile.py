@@ -65,7 +65,7 @@ def test_start_all_passes_env_file_to_api():
     # End of block: next line that begins with a non-tab, non-#
     # character (i.e., the next target or a fully-flush comment).
     block = src[start:]
-    end_match = re.search(r"\n[^\t#\n]", block[len("start-all:"):])
+    end_match = re.search(r"\n[^\t#\n]", block[len("start-all:") :])
     if end_match:
         block = block[: len("start-all:") + end_match.start()]
 
@@ -102,7 +102,7 @@ def test_makefile_parses_clean():
     # is out of date. -n (dry-run) just expands rules without
     # running them and surfaces parse errors via exit code 2.
     proc = subprocess.run(
-        ["make", "-n", "status"],   # 'status' is the cheapest target
+        ["make", "-n", "status"],  # 'status' is the cheapest target
         capture_output=True,
         text=True,
         cwd=str(_MAKEFILE.parent),
@@ -110,9 +110,7 @@ def test_makefile_parses_clean():
     # exit 0 (success) or exit 1 (target wanted recompile, but
     # syntax was fine) are both OK. exit 2 is "Makefile parse
     # error" — fail loudly.
-    assert proc.returncode != 2, (
-        f"Makefile has a parse error:\n{proc.stderr}"
-    )
+    assert proc.returncode != 2, f"Makefile has a parse error:\n{proc.stderr}"
 
 
 def test_dev_and_full_targets_use_existing_compose_file():
@@ -122,8 +120,12 @@ def test_dev_and_full_targets_use_existing_compose_file():
     naming has to also add the file."""
     src = _makefile_text()
     # Pull out the dev: + full: target bodies (one line each).
-    dev_match = re.search(r"^dev:\s*\n(.*?)(?=^\S|^\s*$|\Z)", src, re.MULTILINE | re.DOTALL)
-    full_match = re.search(r"^full:\s*\n(.*?)(?=^\S|^\s*$|\Z)", src, re.MULTILINE | re.DOTALL)
+    dev_match = re.search(
+        r"^dev:\s*\n(.*?)(?=^\S|^\s*$|\Z)", src, re.MULTILINE | re.DOTALL
+    )
+    full_match = re.search(
+        r"^full:\s*\n(.*?)(?=^\S|^\s*$|\Z)", src, re.MULTILINE | re.DOTALL
+    )
     assert dev_match, "dev: target missing"
     assert full_match, "full: target missing"
     for label, body in (("dev", dev_match.group(1)), ("full", full_match.group(1))):

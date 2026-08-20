@@ -48,9 +48,7 @@ def test_atomic_rename_dispatches_to_platform_primitive(
     assert calls == [(source, destination)]
 
 
-def test_atomic_rename_fails_closed_on_unsupported_platform(
-    tmp_path, monkeypatch
-):
+def test_atomic_rename_fails_closed_on_unsupported_platform(tmp_path, monkeypatch):
     monkeypatch.setattr(data_root.sys, "platform", "freebsd")
 
     with pytest.raises(data_root._AtomicRenameUnavailable):
@@ -68,9 +66,7 @@ def test_macos_rename_uses_renamex_np_exclusive_flag(tmp_path, monkeypatch):
     destination = tmp_path / "destination"
     data_root._rename_macos_no_replace(source, destination)
 
-    assert native_call.calls == [
-        (bytes(source), bytes(destination), 0x00000004)
-    ]
+    assert native_call.calls == [(bytes(source), bytes(destination), 0x00000004)]
 
 
 def test_linux_rename_uses_renameat2_noreplace_flag(tmp_path, monkeypatch):
@@ -87,9 +83,7 @@ def test_linux_rename_uses_renameat2_noreplace_flag(tmp_path, monkeypatch):
     ]
 
 
-def test_windows_rename_uses_movefileex_without_replace_flag(
-    tmp_path, monkeypatch
-):
+def test_windows_rename_uses_movefileex_without_replace_flag(tmp_path, monkeypatch):
     native_call = _FakeNativeCall(1)
     fake_kernel32 = type("FakeKernel32", (), {"MoveFileExW": native_call})()
     monkeypatch.setattr(
@@ -120,22 +114,16 @@ def test_native_destination_exists_maps_to_file_exists(
     native_call = _FakeNativeCall(0 if platform == "win32" else -1)
     if platform == "darwin":
         fake_library = type("FakeLibc", (), {"renamex_np": native_call})()
-        monkeypatch.setattr(
-            ctypes, "CDLL", lambda *_args, **_kwargs: fake_library
-        )
+        monkeypatch.setattr(ctypes, "CDLL", lambda *_args, **_kwargs: fake_library)
         monkeypatch.setattr(ctypes, "get_errno", lambda: native_error)
         operation = data_root._rename_macos_no_replace
     elif platform == "linux":
         fake_library = type("FakeLibc", (), {"renameat2": native_call})()
-        monkeypatch.setattr(
-            ctypes, "CDLL", lambda *_args, **_kwargs: fake_library
-        )
+        monkeypatch.setattr(ctypes, "CDLL", lambda *_args, **_kwargs: fake_library)
         monkeypatch.setattr(ctypes, "get_errno", lambda: native_error)
         operation = data_root._rename_linux_no_replace
     else:
-        fake_library = type(
-            "FakeKernel32", (), {"MoveFileExW": native_call}
-        )()
+        fake_library = type("FakeKernel32", (), {"MoveFileExW": native_call})()
         monkeypatch.setattr(
             ctypes,
             "WinDLL",
@@ -195,11 +183,7 @@ def test_live_posix_directory_rename_never_replaces_destination(tmp_path):
     (racing_destination / "destination-marker").write_text("destination")
 
     with pytest.raises(FileExistsError):
-        data_root._rename_directory_no_replace(
-            racing_source, racing_destination
-        )
+        data_root._rename_directory_no_replace(racing_source, racing_destination)
 
     assert (racing_source / "source-marker").read_text() == "source"
-    assert (
-        racing_destination / "destination-marker"
-    ).read_text() == "destination"
+    assert (racing_destination / "destination-marker").read_text() == "destination"

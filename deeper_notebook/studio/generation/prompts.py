@@ -59,7 +59,9 @@ def study_unit_prompt(
     objective_lines = "\n".join(f"- {item}" for item in objectives)
     prerequisites = ", ".join(prerequisite_unit_ids) or "none"
     linked_sources = ", ".join(source_ids)
-    steering = context.strip() if isinstance(context, str) and context.strip() else "none"
+    steering = (
+        context.strip() if isinstance(context, str) and context.strip() else "none"
+    )
     return (
         f"Create a {artifact_type.replace('_', ' ')} for the approved study unit.\n"
         f"Plan goal: {plan_goal}\n"

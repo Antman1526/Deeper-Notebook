@@ -85,9 +85,9 @@ def test_start_all_marks_every_expected_stage_in_source() -> None:
     """Guards against a boundary being dropped during a refactor."""
     import pathlib
 
-    source = (
-        pathlib.Path(__file__).resolve().parents[1] / "launcher.py"
-    ).read_text(encoding="utf-8")
+    source = (pathlib.Path(__file__).resolve().parents[1] / "launcher.py").read_text(
+        encoding="utf-8"
+    )
     for stage in EXPECTED_STAGES:
         assert f'self._record_stage("{stage}")' in source, f"missing mark: {stage}"
 
@@ -160,9 +160,9 @@ def test_try_spawn_attributes_both_success_and_failure() -> None:
     must not lose its measurement to the exception path."""
     import pathlib as _pathlib
 
-    source = (
-        _pathlib.Path(__file__).resolve().parents[1] / "launcher.py"
-    ).read_text(encoding="utf-8")
+    source = (_pathlib.Path(__file__).resolve().parents[1] / "launcher.py").read_text(
+        encoding="utf-8"
+    )
     body = source.split("def _try_spawn(", 1)[1].split("\n    def ", 1)[0]
     assert body.count("self._record_sidecar_stage(step, _sidecar_started_at)") == 2, (
         "_try_spawn must record on both the success and the failure path"

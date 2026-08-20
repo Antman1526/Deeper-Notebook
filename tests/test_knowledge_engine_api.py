@@ -20,7 +20,9 @@ from deeper_notebook.knowledge_engine.repository import (
 )
 
 
-def _document(*, document_id: str = "knowledge_engine_document:one") -> KnowledgeDocument:
+def _document(
+    *, document_id: str = "knowledge_engine_document:one"
+) -> KnowledgeDocument:
     now = datetime(2026, 7, 30, tzinfo=timezone.utc)
     return KnowledgeDocument(
         id=document_id,
@@ -156,9 +158,7 @@ async def test_diagnostic_routes_are_read_only(app_with_engine: FastAPI) -> None
         base_url="http://test",
     ) as client:
         status = await client.get("/api/deeper-notebook/knowledge-engine/status")
-        documents = await client.get(
-            "/api/deeper-notebook/knowledge-engine/documents"
-        )
+        documents = await client.get("/api/deeper-notebook/knowledge-engine/documents")
     assert status.status_code == 200
     assert documents.status_code == 200
     paths = app_with_engine.openapi()["paths"]
@@ -349,9 +349,7 @@ async def test_invalid_request_uses_stable_error_envelope(
         response = await client.get(path)
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "knowledge_engine_request_invalid"}
-    }
+    assert response.json() == {"detail": {"code": "knowledge_engine_request_invalid"}}
 
 
 @pytest.mark.asyncio
@@ -367,7 +365,9 @@ async def test_existing_password_authentication_protects_diagnostics(
     app.add_middleware(PasswordAuthMiddleware)
     app.include_router(router, prefix="/api/deeper-notebook")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         denied = await client.get("/api/deeper-notebook/knowledge-engine/status")
         allowed = await client.get(
             "/api/deeper-notebook/knowledge-engine/status",
@@ -388,7 +388,9 @@ async def test_main_registers_only_the_canonical_diagnostic_routes() -> None:
     assert set(paths[canonical]) == {"get"}
     assert legacy not in paths
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.get(legacy)
     assert response.status_code == 404
 
@@ -439,9 +441,7 @@ async def test_equivalence_invalid_request_uses_stable_error_envelope(
         response = await client.get(path)
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "knowledge_engine_request_invalid"}
-    }
+    assert response.json() == {"detail": {"code": "knowledge_engine_request_invalid"}}
 
 
 @pytest.mark.asyncio
@@ -451,7 +451,9 @@ async def test_equivalence_never_relays_untrusted_difference_bodies(
     service = app_with_engine.state.knowledge_engine_service
     service.equivalence_result = {  # type: ignore[assignment]
         "passed": False,
-        "differences": [{"code": "document_hash_mismatch", "legacy_value": "test-only-token"}],
+        "differences": [
+            {"code": "document_hash_mismatch", "legacy_value": "test-only-token"}
+        ],
     }
     path = (
         "/api/deeper-notebook/knowledge-engine/equivalence?"
@@ -500,9 +502,7 @@ async def test_internal_service_value_error_is_unavailable_not_request_invalid(
         response = await client.get(path)
 
     assert response.status_code == 503
-    assert response.json() == {
-        "detail": {"code": "knowledge_engine_unavailable"}
-    }
+    assert response.json() == {"detail": {"code": "knowledge_engine_unavailable"}}
     assert "private service detail" not in response.text
 
 

@@ -2,6 +2,7 @@
 .needs_db_repair flag, so the frontend can show a "restart to auto-repair"
 banner while source processing is stuck.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

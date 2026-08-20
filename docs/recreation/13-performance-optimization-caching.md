@@ -24,12 +24,16 @@ Constructing `httpx.AsyncClient()` per call meant a fresh TLS handshake every se
 async def _acquire_client() -> tuple[object, bool]:
     """Return (client, pooled); the caller closes it only when not pooled."""
     factory = httpx.AsyncClient
-    if (_pooled_client is not None
-            and _pooled_client_loop is loop           # bound to its creating loop
-            and _pooled_client_factory is factory     # patched class ⇒ rebuild
-            and not getattr(_pooled_client, "is_closed", False)):
+    if (
+        _pooled_client is not None
+        and _pooled_client_loop is loop  # bound to its creating loop
+        and _pooled_client_factory is factory  # patched class ⇒ rebuild
+        and not getattr(_pooled_client, "is_closed", False)
+    ):
         return _pooled_client, True
-    client = factory(limits=httpx.Limits(max_keepalive_connections=8, max_connections=16))
+    client = factory(
+        limits=httpx.Limits(max_keepalive_connections=8, max_connections=16)
+    )
     ...
 ```
 
@@ -44,13 +48,14 @@ _CACHE_TTL_CEILING_SEC = 3600.0
 _CACHE_MAX_ENTRIES = 128
 _cache: "OrderedDict[tuple[str, int], tuple[float, list[dict], str | None, bool]]"
 
+
 def _cache_put(key, results, provider, degraded) -> None:
     if _cache_ttl_sec() <= 0 or not results:
-        return                                  # NEVER cache empty
+        return  # NEVER cache empty
     _cache[key] = (time.monotonic(), list(results), provider, degraded)
     _cache.move_to_end(key)
     while len(_cache) > _CACHE_MAX_ENTRIES:
-        _cache.popitem(last=False)              # LRU eviction
+        _cache.popitem(last=False)  # LRU eviction
 ```
 
 Four properties worth copying: case-insensitive key (`query.casefold()`), monotonic clock
@@ -88,7 +93,7 @@ chat tool call      30 s  (MCP_TOOL_TIMEOUT_SEC)
 ```
 
 ```python
-attempt_timeout = min(cap, remaining)   # later attempts shrink as the budget drains
+attempt_timeout = min(cap, remaining)  # later attempts shrink as the budget drains
 ```
 
 A slow early instance cannot starve a fast later one.
@@ -96,7 +101,7 @@ A slow early instance cannot starve a fast later one.
 ## 6. Probe budgets
 
 ```python
-_PROBE_TIMEOUT        = httpx.Timeout(connect=2.0, read=5.0,  write=2.0, pool=2.0)
+_PROBE_TIMEOUT = httpx.Timeout(connect=2.0, read=5.0, write=2.0, pool=2.0)
 _OLLAMA_PROBE_TIMEOUT = httpx.Timeout(connect=2.0, read=20.0, write=2.0, pool=2.0)
 _MAX_CONCURRENT_PROBES = 4
 ```

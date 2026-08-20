@@ -56,7 +56,9 @@ def test_register_mlx_models_creates_openai_compatible_model(monkeypatch):
     client = MagicMock()
     ensure_credential = MagicMock(return_value="credential:mlx")
     ensure_model = MagicMock(return_value=True)
-    monkeypatch.setattr("desktop.auto_register.mlx._ensure_credential", ensure_credential)
+    monkeypatch.setattr(
+        "desktop.auto_register.mlx._ensure_credential", ensure_credential
+    )
     monkeypatch.setattr("desktop.auto_register.mlx._ensure_model", ensure_model)
 
     registered = register_mlx_models(
@@ -103,8 +105,12 @@ def test_do_register_invokes_mlx_registration(monkeypatch, tmp_path: Path):
 
     register_mlx = MagicMock(return_value=True)
     monkeypatch.setattr("desktop.auto_register._list_ollama_models", lambda: [])
-    monkeypatch.setattr("desktop.auto_register._list_local_ggufs", lambda _model_dir: [])
-    monkeypatch.setattr("desktop.auto_register.register_osaurus_models", lambda **_kwargs: False)
+    monkeypatch.setattr(
+        "desktop.auto_register._list_local_ggufs", lambda _model_dir: []
+    )
+    monkeypatch.setattr(
+        "desktop.auto_register.register_osaurus_models", lambda **_kwargs: False
+    )
     monkeypatch.setattr("desktop.auto_register.register_mlx_models", register_mlx)
 
     cfg = Config(

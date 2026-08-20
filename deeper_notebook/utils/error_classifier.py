@@ -70,7 +70,14 @@ _CLASSIFICATION_RULES: list[tuple[list[str], type[DeeperNotebookError], str | No
     # your network connection") was misleading on a local-only build;
     # we now hint at the local server explicitly.
     (
-        ["connecterror", "timeoutexception", "connection refused", "connection error", "timed out", "timeout"],
+        [
+            "connecterror",
+            "timeoutexception",
+            "connection refused",
+            "connection error",
+            "timed out",
+            "timeout",
+        ],
         NetworkError,
         (
             "Could not reach the AI model server. If you're using a local "
@@ -80,7 +87,13 @@ _CLASSIFICATION_RULES: list[tuple[list[str], type[DeeperNotebookError], str | No
     ),
     # Context length errors
     (
-        ["context length", "token limit", "maximum context", "context_length_exceeded", "max_tokens"],
+        [
+            "context length",
+            "token limit",
+            "maximum context",
+            "context_length_exceeded",
+            "max_tokens",
+        ],
         ExternalServiceError,
         "Content too large for the selected model. Try using a smaller selection or a model with a larger context window.",
     ),
@@ -92,7 +105,14 @@ _CLASSIFICATION_RULES: list[tuple[list[str], type[DeeperNotebookError], str | No
     ),
     # Provider availability errors
     (
-        ["500", "502", "503", "service unavailable", "overloaded", "internal server error"],
+        [
+            "500",
+            "502",
+            "503",
+            "service unavailable",
+            "overloaded",
+            "internal server error",
+        ],
         ExternalServiceError,
         "The AI provider is temporarily unavailable. Please try again in a few minutes.",
     ),
@@ -116,13 +136,13 @@ def classify_error(exception: BaseException) -> tuple[type[DeeperNotebookError],
     for keywords, exc_class, message in _CLASSIFICATION_RULES:
         for keyword in keywords:
             if keyword in combined:
-                user_message = message if message is not None else _truncate(str(exception))
+                user_message = (
+                    message if message is not None else _truncate(str(exception))
+                )
                 return exc_class, user_message
 
     # Unclassified error - log for future improvement
-    logger.warning(
-        f"Unclassified LLM error ({type(exception).__name__}): {exception}"
-    )
+    logger.warning(f"Unclassified LLM error ({type(exception).__name__}): {exception}")
     return ExternalServiceError, f"AI service error: {_truncate(str(exception))}"
 
 
@@ -154,27 +174,57 @@ def _truncate(text: str, max_length: int = 200) -> str:
 # tail without a hint.
 _SIDECAR_PATTERNS: list[tuple[str, str]] = [
     # llama.cpp / llama-cpp-python — most common chat-sidecar failures.
-    ("failed to load model", "Model file could not be loaded — check the GGUF path and integrity."),
+    (
+        "failed to load model",
+        "Model file could not be loaded — check the GGUF path and integrity.",
+    ),
     ("file not found", "Model file not found — verify the path in your config."),
-    ("no such file or directory", "Model file not found — verify the path in your config."),
+    (
+        "no such file or directory",
+        "Model file not found — verify the path in your config.",
+    ),
     # OOM family — surfaces from CUDA, Metal, and CPU allocators differently.
-    ("out of memory", "Out of memory — try a smaller / more-quantized model, or lower n_ctx."),
+    (
+        "out of memory",
+        "Out of memory — try a smaller / more-quantized model, or lower n_ctx.",
+    ),
     ("cuda error", "GPU error — falling back to CPU may help; or restart the app."),
-    ("metal error", "Apple GPU (Metal) error — restart the app or try a smaller model."),
+    (
+        "metal error",
+        "Apple GPU (Metal) error — restart the app or try a smaller model.",
+    ),
     ("ggml-cuda", "CUDA backend failed — restart the app or switch to a CPU build."),
     # Port collision — common when two ONP instances or another local
     # server are running on the configured port.
-    ("address already in use", "Port already in use — another process is holding it. Restart the app or change the port."),
-    ("address in use", "Port already in use — another process is holding it. Restart the app or change the port."),
-    ("eaddrinuse", "Port already in use — another process is holding it. Restart the app or change the port."),
+    (
+        "address already in use",
+        "Port already in use — another process is holding it. Restart the app or change the port.",
+    ),
+    (
+        "address in use",
+        "Port already in use — another process is holding it. Restart the app or change the port.",
+    ),
+    (
+        "eaddrinuse",
+        "Port already in use — another process is holding it. Restart the app or change the port.",
+    ),
     # llama-cpp-python launcher Python errors.
-    ("modulenotfounderror", "Sidecar Python dependency missing — reinstall the desktop bundle."),
-    ("importerror", "Sidecar Python dependency missing — reinstall the desktop bundle."),
+    (
+        "modulenotfounderror",
+        "Sidecar Python dependency missing — reinstall the desktop bundle.",
+    ),
+    (
+        "importerror",
+        "Sidecar Python dependency missing — reinstall the desktop bundle.",
+    ),
     # Whisper / Piper specific.
     ("whisper.cpp:", "Whisper sidecar error — check the .pt model file is present."),
     ("piper:", "Piper TTS error — check the voice model file is present."),
     # Generic crash markers — least specific, must come last.
-    ("segmentation fault", "Sidecar crashed (segfault) — possible model-file corruption."),
+    (
+        "segmentation fault",
+        "Sidecar crashed (segfault) — possible model-file corruption.",
+    ),
     ("killed: 9", "Sidecar was killed (likely by the OS for OOM)."),
 ]
 

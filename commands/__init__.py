@@ -31,6 +31,7 @@ _NORMALIZED_PRODUCT_ENVIRONMENT = apply_product_environment(os.environ)
 
 try:
     from deeper_notebook.logging import configure_logging
+
     configure_logging("worker")
 except Exception:
     # Logging setup is best-effort at import time. Even if it fails,

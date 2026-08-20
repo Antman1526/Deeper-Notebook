@@ -499,8 +499,7 @@ def _wait_for_terminal_backfill(
         response_status, payload = _get(
             inputs,
             token,
-            "/api/deeper-notebook/knowledge-engine/backfill-checkpoints?"
-            f"{query}",
+            f"/api/deeper-notebook/knowledge-engine/backfill-checkpoints?{query}",
         )
         if response_status != 200 or not isinstance(payload, list):
             raise VerificationRefusal("api_response_invalid")
@@ -1084,10 +1083,7 @@ def _controlled_prepare(inputs: Inputs, manifest: dict[str, Any], token: str) ->
     }
     if (
         set(expected) != required
-        or not all(
-            isinstance(expected[key], str)
-            for key in required - integer_fields
-        )
+        or not all(isinstance(expected[key], str) for key in required - integer_fields)
         or any(
             isinstance(expected[key], bool) or not isinstance(expected[key], int)
             for key in integer_fields
@@ -1299,9 +1295,7 @@ def _controlled_verify(inputs: Inputs, manifest: dict[str, Any], token: str) -> 
     if (
         not isinstance(prior_checkpoints, list)
         or {
-            item.get("space_id")
-            for item in prior_checkpoints
-            if isinstance(item, dict)
+            item.get("space_id") for item in prior_checkpoints if isinstance(item, dict)
         }
         != set(startup_checkpoint_space_ids)
         or any(

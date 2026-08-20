@@ -17,8 +17,10 @@ from desktop.build.package_layout import pyinstaller_upstream_package_datas
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_MODULES = (
-    ROOT / "tests" / "fixtures" / "legacy_import_modules.txt"
-).read_text(encoding="utf-8").splitlines()
+    (ROOT / "tests" / "fixtures" / "legacy_import_modules.txt")
+    .read_text(encoding="utf-8")
+    .splitlines()
+)
 
 
 def _install_optional_skillopt_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -125,9 +127,7 @@ def test_installed_distribution_metadata_stays_canonical():
 
 def test_distribution_packages_canonical_runtime_data():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    package_data = pyproject["tool"]["setuptools"]["package-data"][
-        "deeper_notebook"
-    ]
+    package_data = pyproject["tool"]["setuptools"]["package-data"]["deeper_notebook"]
 
     assert {
         "ai/assets/*.mp3",

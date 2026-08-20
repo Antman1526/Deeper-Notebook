@@ -300,7 +300,12 @@ class SourceVisualStore:
             lock_fd = self._open_mutation_lock(root_fd)
             root_stat = os.fstat(root_fd)
             lock_stat = os.fstat(lock_fd)
-            key = (root_stat.st_dev, root_stat.st_ino, lock_stat.st_dev, lock_stat.st_ino)
+            key = (
+                root_stat.st_dev,
+                root_stat.st_ino,
+                lock_stat.st_dev,
+                lock_stat.st_ino,
+            )
             held_mutations = getattr(_MUTATION_STATE, "held", None)
             if held_mutations is None:
                 held_mutations = {}
@@ -346,9 +351,7 @@ class SourceVisualStore:
         try:
             _require_supported_platform()
             data_fd = self._open_absolute_directory(self._data_folder)
-            cache_fd = self._open_child_dir(
-                data_fd, "source-visual-cache", create=True
-            )
+            cache_fd = self._open_child_dir(data_fd, "source-visual-cache", create=True)
             return self._open_child_dir(cache_fd, "v1", create=True)
         except SourceVisualStorageError as exc:
             if exc.code == "CACHE_PATH_SYMLINK":
@@ -581,7 +584,12 @@ class SourceVisualStore:
 
     @staticmethod
     def _retire_fence_at(
-        parent_fd: int, fence_name: str, fence_fd: int, name: str, *, moved_present: bool
+        parent_fd: int,
+        fence_name: str,
+        fence_fd: int,
+        name: str,
+        *,
+        moved_present: bool,
     ) -> None:
         if moved_present:
             os.unlink(name, dir_fd=fence_fd)
@@ -922,10 +930,7 @@ class SourceVisualStore:
         if match is None:
             raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
         write_stat = self._validate_pending_file(parent_fd, name)
-        if (
-            write_stat.st_size > 16 * 1024
-            or stat.S_IMODE(write_stat.st_mode) != 0o600
-        ):
+        if write_stat.st_size > 16 * 1024 or stat.S_IMODE(write_stat.st_mode) != 0o600:
             raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
         marker_name = f"{_DELETE_FENCED_ORPHAN_PREFIX}{match.group(1)}.orphan"
         try:
@@ -990,7 +995,9 @@ class SourceVisualStore:
             ):
                 if re.fullmatch(r"[0-9a-f]{2}", prefix_entry.name) is None:
                     continue
-                prefix_fd = self._open_child_dir(root_fd, prefix_entry.name, create=False)
+                prefix_fd = self._open_child_dir(
+                    root_fd, prefix_entry.name, create=False
+                )
                 try:
                     for content_entry in self._iter_bounded_entries(
                         prefix_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
@@ -1040,7 +1047,9 @@ class SourceVisualStore:
             for prefix, content, name in claim_writes:
                 parent_fd = prefix_fd = content_fd = None
                 try:
-                    prefix_fd = self._open_child_dir(root_fd, prefix or "", create=False)
+                    prefix_fd = self._open_child_dir(
+                        root_fd, prefix or "", create=False
+                    )
                     content_fd = self._open_child_dir(
                         prefix_fd, content or "", create=False
                     )
@@ -1055,7 +1064,9 @@ class SourceVisualStore:
             for prefix, content, name in orphan_writes:
                 prefix_fd = content_fd = parent_fd = None
                 try:
-                    prefix_fd = self._open_child_dir(root_fd, prefix or "", create=False)
+                    prefix_fd = self._open_child_dir(
+                        root_fd, prefix or "", create=False
+                    )
                     content_fd = self._open_child_dir(
                         prefix_fd, content or "", create=False
                     )
@@ -1305,7 +1316,10 @@ class SourceVisualStore:
             isinstance(limit, bool)
             or not isinstance(limit, int)
             or not 1 <= limit <= 100
-            or (now is not None and (isinstance(now, bool) or not isinstance(now, float)))
+            or (
+                now is not None
+                and (isinstance(now, bool) or not isinstance(now, float))
+            )
         ):
             raise SourceVisualStorageError("INVALID_INPUT")
         current_time = time.time() if now is None else now
@@ -1574,7 +1588,10 @@ class SourceVisualStore:
                 raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                if not isinstance(payload, dict) or set(payload) != {"record", "byte_size"}:
+                if not isinstance(payload, dict) or set(payload) != {
+                    "record",
+                    "byte_size",
+                }:
                     raise ValueError("invalid orphan marker")
                 record = SourceVisualRecord.model_validate(payload["record"])
                 byte_size = payload["byte_size"]
@@ -1588,7 +1605,9 @@ class SourceVisualStore:
         finally:
             _safe_close(marker_fd)
 
-    def mark_delete_fenced_orphan(self, record: SourceVisualRecord) -> DeleteFencedOrphan:
+    def mark_delete_fenced_orphan(
+        self, record: SourceVisualRecord
+    ) -> DeleteFencedOrphan:
         """Durably retain a lost-owner canonical without mutating its pathname."""
 
         relpath = self._validate_record(record)
@@ -1611,13 +1630,14 @@ class SourceVisualStore:
                 ).encode("utf-8")
                 if len(payload) > 16 * 1024:
                     raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
-                temporary_name = (
-                    f"{_ORPHAN_WRITE_PREFIX}{record.asset_sha256}-{secrets.token_hex(16)}.tmp"
-                )
+                temporary_name = f"{_ORPHAN_WRITE_PREFIX}{record.asset_sha256}-{secrets.token_hex(16)}.tmp"
                 try:
                     marker_fd = os.open(
                         temporary_name,
-                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                        os.O_WRONLY
+                        | os.O_CREAT
+                        | os.O_EXCL
+                        | getattr(os, "O_NOFOLLOW", 0),
                         0o600,
                         dir_fd=parent_fd,
                     )
@@ -1642,7 +1662,9 @@ class SourceVisualStore:
                         follow_symlinks=False,
                     )
                 except FileExistsError:
-                    existing = self._read_delete_fenced_orphan_at(parent_fd, marker_name)
+                    existing = self._read_delete_fenced_orphan_at(
+                        parent_fd, marker_name
+                    )
                     if existing.record != record or existing.byte_size != byte_size:
                         raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
                     return existing
@@ -1669,25 +1691,45 @@ class SourceVisualStore:
     def list_delete_fenced_orphans(
         self, *, limit: int = 100
     ) -> tuple[DeleteFencedOrphan, ...]:
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 100
+        ):
             raise SourceVisualStorageError("INVALID_INPUT")
         found: list[DeleteFencedOrphan] = []
         visited = [0]
         try:
             with self.mutation_guard() as root_fd:
-                for prefix in self._iter_bounded_entries(root_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"):
+                for prefix in self._iter_bounded_entries(
+                    root_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
+                ):
                     if re.fullmatch(r"[0-9a-f]{2}", prefix.name) is None:
                         continue
                     prefix_fd = self._open_child_dir(root_fd, prefix.name, create=False)
                     try:
-                        for content in self._iter_bounded_entries(prefix_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"):
+                        for content in self._iter_bounded_entries(
+                            prefix_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"
+                        ):
                             if _SHA256.fullmatch(content.name) is None:
                                 continue
-                            content_fd = self._open_child_dir(prefix_fd, content.name, create=False)
+                            content_fd = self._open_child_dir(
+                                prefix_fd, content.name, create=False
+                            )
                             try:
-                                for entry in self._iter_bounded_entries(content_fd, visited, error_code="CACHE_RECOVERY_REQUIRED"):
-                                    if entry.name.startswith(_DELETE_FENCED_ORPHAN_PREFIX):
-                                        found.append(self._read_delete_fenced_orphan_at(content_fd, entry.name))
+                                for entry in self._iter_bounded_entries(
+                                    content_fd,
+                                    visited,
+                                    error_code="CACHE_RECOVERY_REQUIRED",
+                                ):
+                                    if entry.name.startswith(
+                                        _DELETE_FENCED_ORPHAN_PREFIX
+                                    ):
+                                        found.append(
+                                            self._read_delete_fenced_orphan_at(
+                                                content_fd, entry.name
+                                            )
+                                        )
                                         if len(found) >= limit:
                                             return tuple(found)
                             finally:
@@ -1712,7 +1754,9 @@ class SourceVisualStore:
                 marker_stat = os.fstat(marker_fd)
                 _safe_close(marker_fd)
                 marker_fd = None
-                existing = self._read_delete_fenced_orphan_at(parent_fd, orphan.marker_name)
+                existing = self._read_delete_fenced_orphan_at(
+                    parent_fd, orphan.marker_name
+                )
                 if existing != orphan:
                     raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
                 current_stat = os.stat(
@@ -2370,7 +2414,10 @@ class SourceVisualStore:
                                         _DELETION_CLAIM_PREFIX
                                     ):
                                         continue
-                                    if _DELETION_CLAIM_NAME.fullmatch(entry.name) is None:
+                                    if (
+                                        _DELETION_CLAIM_NAME.fullmatch(entry.name)
+                                        is None
+                                    ):
                                         raise SourceVisualStorageError(
                                             "CACHE_RECOVERY_REQUIRED"
                                         )
@@ -2448,9 +2495,7 @@ class SourceVisualStore:
                     if visited > _MAX_CACHE_FILES:
                         raise SourceVisualStorageError("CACHE_SCAN_LIMIT")
                     if prefix.name == _TEMP_DIR:
-                        temp_fd = self._open_child_dir(
-                            root_fd, _TEMP_DIR, create=False
-                        )
+                        temp_fd = self._open_child_dir(root_fd, _TEMP_DIR, create=False)
                         try:
                             with os.scandir(temp_fd) as entries:
                                 for entry in entries:
@@ -2465,23 +2510,28 @@ class SourceVisualStore:
                                             entry.name,
                                             invalid_code="TEMP_INVALID",
                                         )
-                                    elif _UNVERIFIED_STAGE_NAME.fullmatch(
-                                        entry.name
-                                    ) is not None:
+                                    elif (
+                                        _UNVERIFIED_STAGE_NAME.fullmatch(entry.name)
+                                        is not None
+                                    ):
                                         add_owned_file(
                                             temp_fd,
                                             entry.name,
                                             invalid_code="CACHE_RECOVERY_REQUIRED",
                                         )
-                                    elif _UNLINK_RECOVERY_NAME.fullmatch(
-                                        entry.name
-                                    ) is not None:
+                                    elif (
+                                        _UNLINK_RECOVERY_NAME.fullmatch(entry.name)
+                                        is not None
+                                    ):
                                         add_owned_file(
                                             temp_fd,
                                             entry.name,
                                             invalid_code="CACHE_RECOVERY_REQUIRED",
                                         )
-                                    elif _UNLINK_FENCE_NAME.fullmatch(entry.name) is not None:
+                                    elif (
+                                        _UNLINK_FENCE_NAME.fullmatch(entry.name)
+                                        is not None
+                                    ):
                                         add_fence_file(temp_fd, entry.name)
                                     elif entry.name.startswith(_DELETION_CLAIM_PREFIX):
                                         raise SourceVisualStorageError(
@@ -2518,15 +2568,21 @@ class SourceVisualStore:
                                                 raise SourceVisualStorageError(
                                                     "CACHE_SCAN_LIMIT"
                                                 )
-                                            if re.fullmatch(
-                                                r"[0-9a-f]{64}\.webp", entry.name
-                                            ) is not None:
+                                            if (
+                                                re.fullmatch(
+                                                    r"[0-9a-f]{64}\.webp", entry.name
+                                                )
+                                                is not None
+                                            ):
                                                 add_owned_file(
                                                     content_fd,
                                                     entry.name,
                                                     invalid_code="ASSET_NOT_REGULAR",
                                                 )
-                                            elif TOMBSTONE.fullmatch(entry.name) is not None:
+                                            elif (
+                                                TOMBSTONE.fullmatch(entry.name)
+                                                is not None
+                                            ):
                                                 add_owned_file(
                                                     content_fd,
                                                     entry.name,
@@ -2543,13 +2599,17 @@ class SourceVisualStore:
                                                     entry.name,
                                                     invalid_code="ASSET_NOT_REGULAR",
                                                 )
-                                            elif _UNLINK_FENCE_NAME.fullmatch(
-                                                entry.name
-                                            ) is not None:
+                                            elif (
+                                                _UNLINK_FENCE_NAME.fullmatch(entry.name)
+                                                is not None
+                                            ):
                                                 add_fence_file(content_fd, entry.name)
-                                            elif _DELETION_CLAIM_NAME.fullmatch(
-                                                entry.name
-                                            ) is not None:
+                                            elif (
+                                                _DELETION_CLAIM_NAME.fullmatch(
+                                                    entry.name
+                                                )
+                                                is not None
+                                            ):
                                                 self._read_deletion_claim_at(
                                                     content_fd, entry.name
                                                 )
@@ -2558,9 +2618,12 @@ class SourceVisualStore:
                                                     entry.name,
                                                     invalid_code="CACHE_RECOVERY_REQUIRED",
                                                 )
-                                            elif _DELETE_FENCED_ORPHAN_NAME.fullmatch(
-                                                entry.name
-                                            ) is not None:
+                                            elif (
+                                                _DELETE_FENCED_ORPHAN_NAME.fullmatch(
+                                                    entry.name
+                                                )
+                                                is not None
+                                            ):
                                                 self._read_delete_fenced_orphan_at(
                                                     content_fd, entry.name
                                                 )
@@ -2569,15 +2632,19 @@ class SourceVisualStore:
                                                     entry.name,
                                                     invalid_code="CACHE_RECOVERY_REQUIRED",
                                                 )
-                                            elif _ORPHAN_WRITE_NAME.fullmatch(entry.name) is not None:
+                                            elif (
+                                                _ORPHAN_WRITE_NAME.fullmatch(entry.name)
+                                                is not None
+                                            ):
                                                 add_owned_file(
                                                     content_fd,
                                                     entry.name,
                                                     invalid_code="CACHE_RECOVERY_REQUIRED",
                                                 )
-                                            elif _CLAIM_WRITE_NAME.fullmatch(
-                                                entry.name
-                                            ) is not None:
+                                            elif (
+                                                _CLAIM_WRITE_NAME.fullmatch(entry.name)
+                                                is not None
+                                            ):
                                                 add_owned_file(
                                                     content_fd,
                                                     entry.name,

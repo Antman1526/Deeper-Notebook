@@ -22,13 +22,9 @@ def test_canonical_created_inside_root_rename_window_is_not_replaced(
             canonical.mkdir()
         return real_rename(source, destination)
 
-    monkeypatch.setattr(
-        data_root, "_rename_directory_no_replace", destination_race
-    )
+    monkeypatch.setattr(data_root, "_rename_directory_no_replace", destination_race)
 
-    decision = data_root.migrate_data_root(
-        canonical, legacy, receipt_dir=receipts
-    )
+    decision = data_root.migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "migration-conflict"
     assert decision.reason_code == "canonical-root-appeared"

@@ -15,6 +15,7 @@ This file pins:
     domain models so the new iso(None) → None behavior doesn't
     Pydantic-reject responses during pre-persist windows.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -30,8 +31,7 @@ def _read_source(rel: str) -> str:
     package = path.with_suffix("")
     if package.is_dir():
         return "\n".join(
-            child.read_text(encoding="utf-8")
-            for child in sorted(package.rglob("*.py"))
+            child.read_text(encoding="utf-8") for child in sorted(package.rglob("*.py"))
         )
 
     return path.read_text(encoding="utf-8")
@@ -80,8 +80,7 @@ def test_new_iso_routers_have_no_unsafe_str_calls():
     assert not offenders, (
         "v0.7.182 regression: new iso-routers contain unsafe "
         "str(X.created) / str(X.updated). Safari new Date() will "
-        "fail.\n"
-        + "\n".join(f"  {r}:{ln} → {t}" for r, ln, t in offenders)
+        "fail.\n" + "\n".join(f"  {r}:{ln} → {t}" for r, ln, t in offenders)
     )
 
 
@@ -120,9 +119,7 @@ def test_response_models_have_optional_created_updated():
     for cls in expected_models:
         for field_name in ("created", "updated"):
             f = cls.model_fields.get(field_name)
-            assert f is not None, (
-                f"v0.7.182: {cls.__name__}.{field_name} is missing"
-            )
+            assert f is not None, f"v0.7.182: {cls.__name__}.{field_name} is missing"
             # Optional[str] means the field's annotation includes None.
             anno = str(f.annotation)
             assert "None" in anno or "Optional" in anno, (
@@ -188,6 +185,7 @@ def test_iso_helper_unchanged_behavioural_contract():
     assert iso(None) is None
     # T separator on datetime.
     from datetime import datetime, timezone
+
     dt = datetime(2026, 5, 22, 11, 0, 0, tzinfo=timezone.utc)
     s = iso(dt)
     assert s is not None and "T" in s

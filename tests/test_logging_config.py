@@ -7,6 +7,7 @@ For local-deploy use (the project's target), this meant the README's
 no code wrote there. `configure_logging("api")` now wires a rotated
 file sink at startup.
 """
+
 from __future__ import annotations
 
 import os
@@ -23,10 +24,7 @@ def test_default_log_dir_uses_home(monkeypatch, tmp_path):
     monkeypatch.delenv("DEEPER_NOTEBOOK_LOG_DIR", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("USERPROFILE", raising=False)
-    assert (
-        notebook_logging.default_log_dir()
-        == tmp_path / ".deeper-notebook" / "logs"
-    )
+    assert notebook_logging.default_log_dir() == tmp_path / ".deeper-notebook" / "logs"
 
 
 def test_default_log_dir_respects_env(monkeypatch, tmp_path):
@@ -102,6 +100,7 @@ def test_json_sink_when_enabled(monkeypatch, tmp_path):
     assert json_path.exists(), "JSON sink should honor the canonical setting"
     # First line should parse as JSON
     import json
+
     first = json_path.read_text().strip().split("\n")[0]
     parsed = json.loads(first)
     assert "record" in parsed or "text" in parsed  # loguru's serialize shape

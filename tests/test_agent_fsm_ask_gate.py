@@ -5,6 +5,7 @@ When DEEPER_NOTEBOOK_AGENT_FSM is on and no search produced grounded content,
 instead of letting the model hallucinate from an empty context. Default off
 → unchanged behaviour.
 """
+
 from __future__ import annotations
 
 import pytest

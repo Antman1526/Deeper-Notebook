@@ -13,7 +13,9 @@ def test_config_exposes_default_source_upload_cap(monkeypatch):
 
 
 def test_config_exposes_overridden_source_upload_cap(monkeypatch):
-    monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES", str(750 * 1024 * 1024))
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_SOURCE_UPLOAD_MAX_BYTES", str(750 * 1024 * 1024)
+    )
 
     from api.main import app
 

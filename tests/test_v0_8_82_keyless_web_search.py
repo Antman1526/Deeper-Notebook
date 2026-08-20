@@ -7,6 +7,7 @@ ones, and the old key-only behaviour is restorable with a single env var.
 
 No live network anywhere: ``httpx.AsyncClient`` is monkeypatched.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,8 +29,9 @@ def _clear_setting(monkeypatch, canonical: str) -> None:
     out here, so this stays correct if the alias scheme changes.
     """
     aliases = _SETTINGS.get(canonical)
-    for name in (aliases.precedence if aliases else (canonical,)):
+    for name in aliases.precedence if aliases else (canonical,):
         monkeypatch.delenv(name, raising=False)
+
 
 _KEY_ENV = (
     "SERPER_API_KEY",
@@ -62,7 +64,7 @@ def _clean(monkeypatch):
     for canonical in (
         "DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS",
         "BRAVE_API_KEY",
-    "DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER",
+        "DEEPER_NOTEBOOK_WEB_SEARCH_PROVIDER",
         "DEEPER_NOTEBOOK_WEB_SEARCH_CACHE_TTL_SEC",
         "DEEPER_NOTEBOOK_WEB_SEARCH_MAX_RESULTS",
     ):
@@ -333,18 +335,28 @@ def test_brave_sits_between_tavily_and_searxng(monkeypatch):
     monkeypatch.setenv("BRAVE_API_KEY", "k")
     monkeypatch.setenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
     assert [p for p, _ in ws._provider_chain()] == [
-        "serper", "tavily", "brave", "searxng", "wikipedia",
+        "serper",
+        "tavily",
+        "brave",
+        "searxng",
+        "wikipedia",
     ]
 
 
 def test_brave_request_and_parse(monkeypatch):
     monkeypatch.setenv("BRAVE_API_KEY", "brave-key")
     calls: list = []
-    payload = {"web": {"results": [
-        {"title": "T1", "url": "https://a", "description": "D1"},
-        {"title": "T2", "url": "https://b", "description": "D2"},
-    ]}}
-    monkeypatch.setattr(httpx, "AsyncClient", _fake_client(json_payload=payload, calls=calls))
+    payload = {
+        "web": {
+            "results": [
+                {"title": "T1", "url": "https://a", "description": "D1"},
+                {"title": "T2", "url": "https://b", "description": "D2"},
+            ]
+        }
+    }
+    monkeypatch.setattr(
+        httpx, "AsyncClient", _fake_client(json_payload=payload, calls=calls)
+    )
     results = asyncio.run(ws.run_web_search("q"))
     assert calls[0][1] == ws._BRAVE_ENDPOINT
     assert calls[0][2]["headers"]["X-Subscription-Token"] == "brave-key"

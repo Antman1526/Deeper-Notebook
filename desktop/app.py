@@ -22,6 +22,7 @@ Phase order
 10. _phase_install_tray       — set up the system tray icon + menu
 11. _phase_open_window        — open the PyWebView main window (blocks until closed)
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -72,6 +73,7 @@ def _scan_chat_llm_with_timeout(gguf_dir):
     import threading
 
     from desktop.auto_register.assigner import pick_chat_llm_file
+
     try:
         timeout = float(resolve_env("DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT", "20") or 20)
     except ValueError:
@@ -93,7 +95,9 @@ def _scan_chat_llm_with_timeout(gguf_dir):
         log.error(
             "chat-GGUF scan of %s timed out after %ss (stalled filesystem?) — "
             "starting WITHOUT a local chat model. Move models off iCloud/Desktop, "
-            "or raise DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT.", gguf_dir, timeout,
+            "or raise DEEPER_NOTEBOOK_MODEL_SCAN_TIMEOUT.",
+            gguf_dir,
+            timeout,
         )
         return None
     return result[0]
@@ -173,6 +177,7 @@ def _record_core_ready(ctx: "AppContext") -> None:
         )
     except Exception:
         pass
+
 
 # ---------------------------------------------------------------------------
 # Path helpers (private, replicated from __main__.py)
@@ -268,9 +273,7 @@ class AppContext:
     _cleanup_complete: threading.Event = dataclasses.field(
         default_factory=threading.Event, repr=False, compare=False
     )
-    _cleanup_started: bool = dataclasses.field(
-        default=False, repr=False, compare=False
-    )
+    _cleanup_started: bool = dataclasses.field(default=False, repr=False, compare=False)
     _cleanup_owner_thread_id: int | None = dataclasses.field(
         default=None, repr=False, compare=False
     )
@@ -465,16 +468,16 @@ def _setup_launcher_log_handler(log_path: Path) -> None:
     # Idempotency guard — avoid duplicating the handler on relaunch within
     # the same process (e.g. unit tests re-importing the module).
     for h in root.handlers:
-        if isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", "") == str(log_path):
+        if isinstance(h, RotatingFileHandler) and getattr(h, "baseFilename", "") == str(
+            log_path
+        ):
             return
 
     # 2 MB × 3 backups = ~8 MB total cap. Plenty for a launcher log.
-    handler = RotatingFileHandler(
-        log_path, maxBytes=2 * 1024 * 1024, backupCount=3
+    handler = RotatingFileHandler(log_path, maxBytes=2 * 1024 * 1024, backupCount=3)
+    handler.setFormatter(
+        _logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
     )
-    handler.setFormatter(_logging.Formatter(
-        "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
-    ))
     root.addHandler(handler)
     # Setting level on the parent ensures we capture INFO from children;
     # individual modules can still configure their own level.
@@ -490,6 +493,7 @@ def _phase_wizard_if_first_run(ctx: AppContext) -> None:
         return
 
     from desktop.first_run.server import run_wizard_blocking
+
     run_wizard_blocking(ctx._cfg_path, progress_bus=ctx.progress_bus)  # type: ignore[attr-defined]
     ctx.cfg = ctx._load_or_create(ctx._cfg_path)  # type: ignore[attr-defined]
 
@@ -536,7 +540,9 @@ def _phase_download_models(ctx: AppContext) -> None:
 
     _dl_log_path = ctx.log_dir / "downloads.log"
     _dl_handler = _logging.FileHandler(_dl_log_path)
-    _dl_handler.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    _dl_handler.setFormatter(
+        _logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    )
     _logging.getLogger("desktop.model_downloads").addHandler(_dl_handler)
 
     _bp = ctx._bootstrap_progress  # type: ignore[attr-defined]
@@ -548,6 +554,7 @@ def _phase_download_models(ctx: AppContext) -> None:
             ensure_stt_model,
             ensure_tts_model,
         )
+
         model_dir = Path(ctx.cfg.model_dir)
         ensure_embedding_model(model_dir, progress=_bp)
         ensure_tts_model(model_dir, progress=_bp)
@@ -630,9 +637,7 @@ def _phase_select_provider(ctx: AppContext) -> None:
                 # also not spawn a doomed server: before this, mlx_lm.server
                 # died with stderr=DEVNULL and the only symptom was a
                 # "Degraded" runtime card pointing at a dead port.
-                log.error(
-                    "MLX model provider disabled for this launch: %s", exc
-                )
+                log.error("MLX model provider disabled for this launch: %s", exc)
             else:
                 # v0.8.97 — start() now reports the RESOLVED path it launched
                 # mlx_lm.server with, which is the only string that server will
@@ -673,10 +678,7 @@ def _phase_detect_openchronicle(ctx: AppContext) -> None:
     import urllib.parse
 
     ctx.openchronicle_available = False
-    mcp_url = (
-        os.environ.get("OPENCHRONICLE_MCP_URL")
-        or "http://127.0.0.1:8742/mcp"
-    )
+    mcp_url = os.environ.get("OPENCHRONICLE_MCP_URL") or "http://127.0.0.1:8742/mcp"
     try:
         parsed = urllib.parse.urlparse(mcp_url)
         host = parsed.hostname or "127.0.0.1"
@@ -686,6 +688,7 @@ def _phase_detect_openchronicle(ctx: AppContext) -> None:
 
     # Stage 1 — quick TCP connect to filter "not running"
     import socket
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(0.3)
@@ -695,7 +698,9 @@ def _phase_detect_openchronicle(ctx: AppContext) -> None:
         if ctx.progress_bus is not None:
             try:
                 ctx.progress_bus.publish(
-                    "openchronicle.detect", "done", "available=False",
+                    "openchronicle.detect",
+                    "done",
+                    "available=False",
                 )
             except Exception:
                 pass
@@ -716,6 +721,7 @@ def _phase_detect_openchronicle(ctx: AppContext) -> None:
     # dev server) gets rejected. Short timeout so we don't block startup.
     try:
         import httpx
+
         r = httpx.post(
             mcp_url,
             json={
@@ -752,7 +758,8 @@ def _phase_detect_openchronicle(ctx: AppContext) -> None:
     if ctx.progress_bus is not None:
         try:
             ctx.progress_bus.publish(
-                "openchronicle.detect", "done",
+                "openchronicle.detect",
+                "done",
                 f"available={ctx.openchronicle_available}",
             )
         except Exception:
@@ -764,18 +771,21 @@ def _phase_register_memory_commands(ctx: AppContext) -> None:
     directory so the surreal-commands worker discovers our new handlers on
     startup. No-op if the template hasn't been packaged (graceful)."""
     import shutil
+
     assert ctx.bin_dir is not None
     commands_dst = upstream_dir() / "commands"
     commands_dst.mkdir(parents=True, exist_ok=True)
     # Locate the template via the desktop.memory package.
     import desktop.memory as mem_pkg
+
     src = Path(mem_pkg.__file__).parent / "memory_commands.py"
     if src.exists():
         shutil.copyfile(src, commands_dst / "memory_commands.py")
     ctx.commands_dst = commands_dst
     if ctx.progress_bus is not None:
         ctx.progress_bus.publish(
-            "memory.commands_registered", "done",
+            "memory.commands_registered",
+            "done",
             str(commands_dst / "memory_commands.py"),
         )
 
@@ -801,6 +811,7 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
         FASTER_WHISPER_STT_DIR,
         FASTER_WHISPER_STT_REQUIRED,
     )
+
     _local_whisper = voice_model_dir / FASTER_WHISPER_STT_DIR
     if all((_local_whisper / f).exists() for f in FASTER_WHISPER_STT_REQUIRED):
         whisper_model_name = _local_whisper
@@ -861,10 +872,15 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
         piper_voices["sam"] = ryan_path
 
     sv = Supervisor(
-        cfg=cfg, repo_root=repo_root(), bin_dir=ctx.bin_dir,
-        surreal_arch=ctx.arch, node_arch=ctx.arch,
-        extra_env=ctx.extra_env, debug_mode=True,
-        venv_python=ctx.venv_py, upstream_root=upstream_dir(),
+        cfg=cfg,
+        repo_root=repo_root(),
+        bin_dir=ctx.bin_dir,
+        surreal_arch=ctx.arch,
+        node_arch=ctx.arch,
+        extra_env=ctx.extra_env,
+        debug_mode=True,
+        venv_python=ctx.venv_py,
+        upstream_root=upstream_dir(),
         whisper_model_path=whisper_model_name,
         piper_voices=piper_voices,
         nomic_embed_path=nomic_path if nomic_path.exists() else None,
@@ -892,6 +908,7 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
         # original "log + raise" path so the user at least sees the
         # underlying problem.
         from desktop.singleton import AlreadyRunning
+
         if isinstance(exc, AlreadyRunning):
             if _handle_already_running(exc, ctx):
                 # User chose "Quit & Relaunch" and the cleanup worked.
@@ -912,6 +929,7 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
                 # so atexit handlers (including the singleton release if
                 # we somehow got that far) still fire.
                 import sys
+
                 sys.exit(0)
 
         # v0.6.25 — append, not overwrite. The old `.write_text(...)`
@@ -919,6 +937,7 @@ def _phase_start_supervisor(ctx: AppContext) -> None:
         # the FileHandler's accumulated lines. Now we open in append
         # mode with a separator so multiple failures are preserved.
         import datetime as _dt
+
         try:
             with (ctx.log_dir / "launcher.log").open("a") as _log:
                 _log.write(
@@ -958,7 +977,8 @@ def _handle_already_running(exc, ctx) -> bool:
     log = logging.getLogger(__name__)
     log.warning(
         "AlreadyRunning detected: PID %d holds %s",
-        exc.pid, exc.pid_file,
+        exc.pid,
+        exc.pid_file,
     )
 
     # Try Tk first. macOS's `osascript` fallback below covers the
@@ -992,27 +1012,29 @@ def _handle_already_running(exc, ctx) -> bool:
         # showing anything — caller's generic error path takes over.
         try:
             import subprocess
+
             script = (
-                'display dialog '
+                "display dialog "
                 f'"Another Deeper Notebook instance is already running '
-                f'(PID {exc.pid}).\\n\\nDo you want to quit the existing '
+                f"(PID {exc.pid}).\\n\\nDo you want to quit the existing "
                 f'app and relaunch?" '
                 'buttons {"Cancel", "Quit & Relaunch"} '
                 'default button "Quit & Relaunch" '
                 'with title "Deeper Notebook is already running" '
-                'with icon caution'
+                "with icon caution"
             )
             result = subprocess.run(
                 ["osascript", "-e", script],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             # osascript exits 1 when user clicks Cancel (or any
             # non-default button), 0 when they click the default.
             # The output contains "button returned:Quit & Relaunch"
             # or similar.
             user_chose_quit = (
-                "Quit & Relaunch" in result.stdout
-                and result.returncode == 0
+                "Quit & Relaunch" in result.stdout and result.returncode == 0
             )
             used_dialog = True
         except Exception as osa_exc:
@@ -1025,7 +1047,8 @@ def _handle_already_running(exc, ctx) -> bool:
         # in the launcher log. They can manually `pkill` and relaunch.
         log.warning(
             "Could not show AlreadyRunning dialog; user must manually "
-            "kill PID %d and relaunch.", exc.pid,
+            "kill PID %d and relaunch.",
+            exc.pid,
         )
         return False
 
@@ -1053,6 +1076,7 @@ def _handle_already_running(exc, ctx) -> bool:
 
     # Poll until dead, max 10 seconds.
     from desktop.singleton import _is_pid_alive
+
     deadline = time.monotonic() + 10.0
     while time.monotonic() < deadline:
         if not _is_pid_alive(exc.pid):
@@ -1133,8 +1157,11 @@ def _phase_auto_register(ctx: AppContext) -> None:
             )
 
         auto_register(
-            api_base_url=api_base, cfg=cfg, llamacpp_port=llamacpp_port,
-            mlx_base_url=mlx_base_url, mlx_model_ref=mlx_model_ref,
+            api_base_url=api_base,
+            cfg=cfg,
+            llamacpp_port=llamacpp_port,
+            mlx_base_url=mlx_base_url,
+            mlx_model_ref=mlx_model_ref,
             whisper_port=getattr(sv, "whisper_port", None) or None,
             piper_port=getattr(sv, "piper_port", None) or None,
             embed_port=getattr(sv, "embed_port", None) or None,
@@ -1149,25 +1176,32 @@ def _phase_auto_register(ctx: AppContext) -> None:
             from deeper_notebook.health.local_models import (
                 probe_all_local_models,
             )
+
             creds_for_probe = []
             if getattr(sv, "chat_llm_port", 0):
-                creds_for_probe.append({
-                    "name": "Local GGUF (llama.cpp)",
-                    "kind": "openai_compatible",
-                    "base_url": f"http://127.0.0.1:{sv.chat_llm_port}/v1",
-                })
+                creds_for_probe.append(
+                    {
+                        "name": "Local GGUF (llama.cpp)",
+                        "kind": "openai_compatible",
+                        "base_url": f"http://127.0.0.1:{sv.chat_llm_port}/v1",
+                    }
+                )
             if getattr(sv, "embed_port", 0):
-                creds_for_probe.append({
-                    "name": "Local Embeddings (llama.cpp)",
-                    "kind": "openai_compatible",
-                    "base_url": f"http://127.0.0.1:{sv.embed_port}/v1",
-                })
+                creds_for_probe.append(
+                    {
+                        "name": "Local Embeddings (llama.cpp)",
+                        "kind": "openai_compatible",
+                        "base_url": f"http://127.0.0.1:{sv.embed_port}/v1",
+                    }
+                )
             if creds_for_probe:
                 results = probe_all_local_models(creds_for_probe)
                 for r in results:
                     log.info(
                         "phase1.health %s: %s (%s, %.0fms)",
-                        r["name"], r["status"], r["detail"],
+                        r["name"],
+                        r["status"],
+                        r["detail"],
                         r.get("latency_ms") or 0,
                     )
         except Exception as exc:
@@ -1180,6 +1214,7 @@ def _phase_auto_register(ctx: AppContext) -> None:
         # come up on first launch + fast on second — without history the
         # only-on-first failure looks irreproducible).
         import datetime as _dt
+
         try:
             with (ctx.log_dir / "auto_register.log").open("a") as _log:
                 _log.write(
@@ -1217,12 +1252,18 @@ def _phase_start_memory_dashboard(ctx: AppContext) -> None:
     from desktop.aiohttp_window import start_aiohttp_server_thread
     from desktop.memory_dashboard.server import build_app as _md_build_app
 
-    memory_url = (f"http://127.0.0.1:{ctx.sv.memory_port}/"
-                  if getattr(ctx.sv, "memory_port", 0) else "")
+    memory_url = (
+        f"http://127.0.0.1:{ctx.sv.memory_port}/"
+        if getattr(ctx.sv, "memory_port", 0)
+        else ""
+    )
     # ONP v0.5 — wire the OpenChronicle bridge URL through so the dashboard
     # can power the Capture Inbox. Empty string when the bridge isn't running.
-    oc_url = (f"http://127.0.0.1:{ctx.sv.openchronicle_port}/"
-              if getattr(ctx.sv, "openchronicle_port", 0) else "")
+    oc_url = (
+        f"http://127.0.0.1:{ctx.sv.openchronicle_port}/"
+        if getattr(ctx.sv, "openchronicle_port", 0)
+        else ""
+    )
     # v0.5.4 — pass the upstream FastAPI URL so the dashboard can populate
     # its 'Active models' header (shows which model is in each role slot).
     upstream_api = ctx.sv.session_env.get("INTERNAL_API_URL", "")
@@ -1258,7 +1299,8 @@ def _phase_install_tray(ctx: AppContext) -> None:
             _webview.create_window(
                 "Models",
                 f"http://127.0.0.1:{mm_port}/",
-                width=920, height=640,
+                width=920,
+                height=640,
             )
         except Exception:
             pass
@@ -1270,7 +1312,8 @@ def _phase_install_tray(ctx: AppContext) -> None:
             _webview.create_window(
                 "Memory",
                 f"http://127.0.0.1:{md_port}/",
-                width=900, height=640,
+                width=900,
+                height=640,
             )
         except Exception:
             pass
@@ -1299,10 +1342,14 @@ def _phase_open_window(ctx: AppContext) -> None:
 
     ctx.progress_bus.publish("ready", "done", "Main window opening…")
 
-    memory_url = (f"http://127.0.0.1:{ctx.memory_dashboard_port}/"
-                  if ctx.memory_dashboard_port else None)
-    remind = (not ctx.openchronicle_available
-              and ctx.cfg.openchronicle_choice == "prompt")
+    memory_url = (
+        f"http://127.0.0.1:{ctx.memory_dashboard_port}/"
+        if ctx.memory_dashboard_port
+        else None
+    )
+    remind = (
+        not ctx.openchronicle_available and ctx.cfg.openchronicle_choice == "prompt"
+    )
 
     # v0.7.152 — Resolve STT + TTS shim URLs from the launcher's
     # dynamically-allocated ports so the voice-injection JS targets the
@@ -1317,14 +1364,13 @@ def _phase_open_window(ctx: AppContext) -> None:
     piper_port = getattr(ctx.sv, "piper_port", 0)
     stt_url = (
         f"http://127.0.0.1:{whisper_port}/v1/audio/transcriptions"
-        if whisper_port else None
+        if whisper_port
+        else None
     )
-    tts_url = (
-        f"http://127.0.0.1:{piper_port}/v1/audio/speech"
-        if piper_port else None
-    )
+    tts_url = f"http://127.0.0.1:{piper_port}/v1/audio/speech" if piper_port else None
 
     try:
+
         def _window_ready() -> None:
             assert ctx.log_dir is not None
             _write_desktop_readiness_marker(
@@ -1332,16 +1378,19 @@ def _phase_open_window(ctx: AppContext) -> None:
                 api_url=ctx.sv.session_env["INTERNAL_API_URL"],
                 frontend_url=ctx.sv.frontend_url,
             )
-            ctx.progress_bus.publish(
-                "window.ready", "done", ctx.sv.frontend_url
-            )
+            ctx.progress_bus.publish("window.ready", "done", ctx.sv.frontend_url)
 
-        open_window(ctx.sv.frontend_url, on_close=lambda: _stop_app_runtime_once(ctx),
-                    theme=ctx.cfg.theme,
-                    memory_url=memory_url, remind_openchronicle=remind,
-                    stt_url=stt_url, tts_url=tts_url,
-                    app_recovery=ctx.app_recovery,
-                    on_ready=_window_ready)
+        open_window(
+            ctx.sv.frontend_url,
+            on_close=lambda: _stop_app_runtime_once(ctx),
+            theme=ctx.cfg.theme,
+            memory_url=memory_url,
+            remind_openchronicle=remind,
+            stt_url=stt_url,
+            tts_url=tts_url,
+            app_recovery=ctx.app_recovery,
+            on_ready=_window_ready,
+        )
     finally:
         _stop_app_runtime_once(ctx)
 

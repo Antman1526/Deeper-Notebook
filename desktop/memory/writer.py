@@ -9,6 +9,7 @@ Both invoke `<llm>.complete(system_prompt, user_prompt)` and parse the
 returned text for `<tool_call>...</tool_call>` blocks, then dispatch each to
 the mem0 client via apply_tool_call.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,7 +41,7 @@ def _truncate(text: str, limit: int) -> str:
     so the LLM knows truncation happened."""
     if not text or len(text) <= limit:
         return text or ""
-    return "[…earlier omitted…]\n" + text[-(limit - 30):]
+    return "[…earlier omitted…]\n" + text[-(limit - 30) :]
 
 
 # --------------------------------------------------------------- retention (v0.8.50)
@@ -107,8 +108,9 @@ def _keep_per_table() -> int:
     return n if n >= 1 else _DEFAULT_KEEP_PER_TABLE
 
 
-def prune_memories(mem_client, keep_per_table: int | None = None, *,
-                   high_water: float | None = None) -> dict[str, int]:
+def prune_memories(
+    mem_client, keep_per_table: int | None = None, *, high_water: float | None = None
+) -> dict[str, int]:
     """Best-effort retention prune of the memory tables. Returns
     {table: n_deleted} (empty dict if pruning was skipped/unavailable).
     NEVER raises — a retention failure must not take down a memory write.
@@ -124,6 +126,7 @@ def prune_memories(mem_client, keep_per_table: int | None = None, *,
     try:
         if high_water is not None and hasattr(store, "count"):
             from desktop.memory.constants import ALL_MEMORY_TABLES
+
             threshold = int(keep * high_water)
             if not any(store.count(t) > threshold for t in ALL_MEMORY_TABLES):
                 return {}  # under the high-water mark — nothing to do
@@ -131,15 +134,20 @@ def prune_memories(mem_client, keep_per_table: int | None = None, *,
         total = sum(deleted.values()) if deleted else 0
         if total:
             import logging
+
             logging.getLogger(__name__).info(
                 "memory retention: pruned %d row(s) to keep=%d per table (%s)",
-                total, keep, deleted,
+                total,
+                keep,
+                deleted,
             )
         return deleted or {}
     except Exception as exc:
         import logging
+
         logging.getLogger(__name__).warning(
-            "memory retention prune failed (best-effort, ignored): %s", exc,
+            "memory retention prune failed (best-effort, ignored): %s",
+            exc,
         )
         return {}
 
@@ -180,14 +188,16 @@ class _MemoryBackendUnreachable(Exception):
 # importing httpx/requests at module load (those imports happen
 # inside mem0 when actually needed). Compared as `type(exc).__name__`
 # to stay loose against version drift.
-_BACKEND_DOWN_EXC_NAMES = frozenset({
-    "ConnectError",
-    "ConnectTimeout",
-    "ReadTimeout",
-    "ConnectionError",
-    "ConnectionRefusedError",
-    "OSError",
-})
+_BACKEND_DOWN_EXC_NAMES = frozenset(
+    {
+        "ConnectError",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "ConnectionError",
+        "ConnectionRefusedError",
+        "OSError",
+    }
+)
 
 
 # --------------------------------------------------------------- confidence (v0.8.55)
@@ -232,9 +242,12 @@ def apply_tool_call(mem_client, call: dict) -> None:
     confidence = _coerce_confidence(args.get("confidence"))
     if confidence < _confidence_floor():
         import logging
+
         logging.getLogger(__name__).debug(
             "apply_tool_call: dropped %s below confidence floor (%.2f < %.2f)",
-            _NAME_TO_KIND[name], confidence, _confidence_floor(),
+            _NAME_TO_KIND[name],
+            confidence,
+            _confidence_floor(),
         )
         return
     kind = _NAME_TO_KIND[name]
@@ -271,9 +284,12 @@ def apply_tool_call(mem_client, call: dict) -> None:
         )
     except Exception as exc:
         import logging
+
         logging.getLogger(__name__).warning(
             "mem_client.add failed for %s (text=%r): %s",
-            kind, text[:80], exc,
+            kind,
+            text[:80],
+            exc,
         )
         # v0.7.212 — Backend-down short-circuit. mem0's underlying
         # httpx call has a default 60-second read timeout; without
@@ -291,25 +307,31 @@ def apply_tool_call(mem_client, call: dict) -> None:
             ) from exc
 
 
-def _extract_and_apply(*, llm, mem_client, chat_session_id: str,
-                       user_content: str) -> None:
+def _extract_and_apply(
+    *, llm, mem_client, chat_session_id: str, user_content: str
+) -> None:
     """v0.8.54 — shared extract→parse→apply→prune core for both the
     single-turn (default) and batched paths. `user_content` is the rendered
     turn(s). Behaviour is byte-for-byte the pre-v0.8.54 extract_turn body —
     only the rendered input varies between the two callers."""
-    output = llm.complete(
-        system=EXTRACT_TURN_SYSTEM_PROMPT,
-        user=user_content,
-    ) or ""
+    output = (
+        llm.complete(
+            system=EXTRACT_TURN_SYSTEM_PROMPT,
+            user=user_content,
+        )
+        or ""
+    )
     calls = parse_tool_calls(output)
     if not calls and output.strip():
         # The LLM responded but didn't emit any <tool_call> blocks. Useful
         # debug signal — a chat model with weak instruction-following will
         # show up here.
         import logging
+
         logging.getLogger(__name__).debug(
             "extract parsed 0 tool calls from %d-char response: %r",
-            len(output), output[:200],
+            len(output),
+            output[:200],
         )
     for call in calls:
         # source_chat_id isn't a tool argument for extract, but we attach
@@ -322,9 +344,11 @@ def _extract_and_apply(*, llm, mem_client, chat_session_id: str,
             # to the underlying http timeout (mem0 default ~60s). Bail fast
             # and let the next turn try again — the shim may be back up then.
             import logging
+
             logging.getLogger(__name__).warning(
                 "extract: %s — aborting remaining %d call(s)",
-                exc, max(0, len(calls) - calls.index(call) - 1),
+                exc,
+                max(0, len(calls) - calls.index(call) - 1),
             )
             return
     # v0.8.50 — enforce the retention ceiling, but only behind the cheap
@@ -333,8 +357,9 @@ def _extract_and_apply(*, llm, mem_client, chat_session_id: str,
     prune_memories(mem_client, high_water=_PRUNE_HIGH_WATER)
 
 
-def extract_turn(*, llm, mem_client, chat_session_id: str,
-                 user_text: str, assistant_text: str) -> None:
+def extract_turn(
+    *, llm, mem_client, chat_session_id: str, user_text: str, assistant_text: str
+) -> None:
     """Run the per-turn extractor; write any tool calls into memory.
 
     v0.8.54 — when DEEPER_NOTEBOOK_MEMORY_BATCH_TURNS=N>1, buffer this turn and only run
@@ -351,7 +376,9 @@ def extract_turn(*, llm, mem_client, chat_session_id: str,
     if batch <= 1:
         # Default path — unchanged: extract this turn immediately.
         _extract_and_apply(
-            llm=llm, mem_client=mem_client, chat_session_id=chat_session_id,
+            llm=llm,
+            mem_client=mem_client,
+            chat_session_id=chat_session_id,
             user_content=render_extract_user(user_text, assistant_text),
         )
         return
@@ -376,7 +403,9 @@ def extract_turn(*, llm, mem_client, chat_session_id: str,
         # session ended). The next turn re-creates it via setdefault.
         _SESSION_BUFFERS.pop(chat_session_id, None)
     _extract_and_apply(
-        llm=llm, mem_client=mem_client, chat_session_id=chat_session_id,
+        llm=llm,
+        mem_client=mem_client,
+        chat_session_id=chat_session_id,
         user_content=render_extract_user_batch(turns),
     )
 
@@ -391,13 +420,16 @@ def flush_session_buffer(*, llm, mem_client, chat_session_id: str) -> None:
     if not turns:
         return
     _extract_and_apply(
-        llm=llm, mem_client=mem_client, chat_session_id=chat_session_id,
+        llm=llm,
+        mem_client=mem_client,
+        chat_session_id=chat_session_id,
         user_content=render_extract_user_batch(turns),
     )
 
 
-def summarize_session(*, llm, mem_client, chat_session_id: str,
-                      transcript: str) -> None:
+def summarize_session(
+    *, llm, mem_client, chat_session_id: str, transcript: str
+) -> None:
     # v0.8.54 — drain any buffered turns (batched extraction, Phase 5.1b)
     # BEFORE summarizing, so facts from the session's tail aren't stranded in
     # the buffer below the batch threshold when the conversation ends. No-op
@@ -409,10 +441,13 @@ def summarize_session(*, llm, mem_client, chat_session_id: str,
     # would otherwise blow past the model context.
     transcript = _truncate(transcript, _MAX_TRANSCRIPT_CHARS)
 
-    output = llm.complete(
-        system=SUMMARIZE_SESSION_SYSTEM_PROMPT,
-        user=render_summarize_user(chat_session_id, transcript),
-    ) or ""
+    output = (
+        llm.complete(
+            system=SUMMARIZE_SESSION_SYSTEM_PROMPT,
+            user=render_summarize_user(chat_session_id, transcript),
+        )
+        or ""
+    )
     for call in parse_tool_calls(output):
         apply_tool_call(mem_client, call)
     # v0.8.50 — session end is the natural, infrequent retention boundary:

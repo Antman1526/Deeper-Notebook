@@ -9,6 +9,7 @@ Each consumer provides:
   - a build_app(...) function returning an aiohttp.web.Application
   - a static_dir Path (auto-mounted at /static)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,7 +26,9 @@ def start_aiohttp_server_thread(
     host: str = "127.0.0.1",
     port: int = 0,
     startup_timeout_s: float = 5.0,
-) -> tuple[int, threading.Thread, asyncio.AbstractEventLoop | None, web.AppRunner | None]:
+) -> tuple[
+    int, threading.Thread, asyncio.AbstractEventLoop | None, web.AppRunner | None
+]:
     """Start an aiohttp server in a daemon thread.
 
     Returns (bound_port, thread, loop, runner).

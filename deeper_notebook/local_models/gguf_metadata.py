@@ -20,6 +20,7 @@ The two paths are complementary: the library is authoritative when
 available, the heuristic is a graceful degradation that keeps the UI
 useful even on minimal installs.
 """
+
 from __future__ import annotations
 
 import re
@@ -36,6 +37,7 @@ class GGUFMetadata:
     inventory + UI handle None gracefully (show "—" or just omit the
     column).
     """
+
     architecture: str | None
     context_length: int | None
     quant: str | None
@@ -47,11 +49,27 @@ class GGUFMetadata:
 # stem. Order: longest first so "Q4_K_M" wins over "Q4" in a string
 # like "model-q4_k_m.gguf".
 _QUANT_PATTERNS = [
-    "Q8_0", "Q6_K", "Q5_K_M", "Q5_K_S", "Q5_1", "Q5_0",
-    "Q4_K_M", "Q4_K_S", "Q4_1", "Q4_0",
-    "Q3_K_L", "Q3_K_M", "Q3_K_S",
-    "Q2_K", "IQ4_XS", "IQ3_XXS", "IQ2_XXS", "IQ1_S",
-    "F16", "F32", "BF16",
+    "Q8_0",
+    "Q6_K",
+    "Q5_K_M",
+    "Q5_K_S",
+    "Q5_1",
+    "Q5_0",
+    "Q4_K_M",
+    "Q4_K_S",
+    "Q4_1",
+    "Q4_0",
+    "Q3_K_L",
+    "Q3_K_M",
+    "Q3_K_S",
+    "Q2_K",
+    "IQ4_XS",
+    "IQ3_XXS",
+    "IQ2_XXS",
+    "IQ1_S",
+    "F16",
+    "F32",
+    "BF16",
 ]
 
 
@@ -143,6 +161,7 @@ def parse_gguf_metadata(path: Path) -> GGUFMetadata:
     n_ctx: int | None = None
     try:
         from gguf import GGUFReader  # type: ignore[import-not-found]
+
         reader = GGUFReader(str(path))
 
         arch_field = reader.get_field("general.architecture")

@@ -5,6 +5,7 @@ terminal <state>, and (b) classifies + surfaces the terminal state via
 agent_state_out — the valuable case being CLARIFY (the model paused to ask
 the user). Default off → no <state> injection, agent_state_out untouched.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -36,6 +37,7 @@ class _Model:
 def _make_tool(name, coroutine):
     class _T:
         pass
+
     t = _T()
     t.name = name
     t.coroutine = coroutine
@@ -95,14 +97,17 @@ async def test_complete_when_no_state_tag(monkeypatch):
 async def test_truncated_classified_when_loop_hits_cap(monkeypatch):
     monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "on")
     monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools",
+        chat_mod,
+        "_resolve_chat_tools",
         AsyncMock(return_value=[_make_tool("mcp_search", _ok)]),
     )
     # Always requests a tool → loop force-stops at max_iterations.
-    model = _Model([
-        _Msg(tool_calls=[{"name": "mcp_search", "args": {}, "id": f"c{i}"}])
-        for i in range(5)
-    ])
+    model = _Model(
+        [
+            _Msg(tool_calls=[{"name": "mcp_search", "args": {}, "id": f"c{i}"}])
+            for i in range(5)
+        ]
+    )
     out: dict = {}
     await chat_mod.bind_mcp_and_run_tool_loop(
         model, [], max_iterations=2, agent_state_out=out

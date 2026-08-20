@@ -1,5 +1,5 @@
-"""v0.8.67u — Unit tests for crawl4ai local scraper and integration fallback logic.
-"""
+"""v0.8.67u — Unit tests for crawl4ai local scraper and integration fallback logic."""
+
 from __future__ import annotations
 
 import sys
@@ -52,22 +52,24 @@ def _stub_crawl4ai_module(monkeypatch):
 
 # ------------------------------------------------------------- crawl4ai wrapper tests
 
+
 @pytest.mark.asyncio
 async def test_extract_url_with_crawl4ai_success(monkeypatch):
     # Mock AsyncWebCrawler
     mock_result = MagicMock()
     mock_result.success = True
     mock_result.markdown = "Parsed Markdown Content"
-    
+
     mock_crawler_instance = AsyncMock()
     mock_crawler_instance.__aenter__.return_value.arun.return_value = mock_result
-    
+
     mock_crawler_class = MagicMock(return_value=mock_crawler_instance)
-    
+
     # We must patch the import of AsyncWebCrawler inside crawler.py
     with patch("crawl4ai.AsyncWebCrawler", mock_crawler_class):
         content = await extract_url_with_crawl4ai("https://example.com/test")
         assert content == "Parsed Markdown Content"
+
 
 @pytest.mark.asyncio
 async def test_extract_url_with_crawl4ai_failure(monkeypatch):
@@ -75,68 +77,82 @@ async def test_extract_url_with_crawl4ai_failure(monkeypatch):
     mock_result = MagicMock()
     mock_result.success = False
     mock_result.error_message = "DDoS Blocked"
-    
+
     mock_crawler_instance = AsyncMock()
     mock_crawler_instance.__aenter__.return_value.arun.return_value = mock_result
-    
+
     mock_crawler_class = MagicMock(return_value=mock_crawler_instance)
-    
+
     with patch("crawl4ai.AsyncWebCrawler", mock_crawler_class):
         content = await extract_url_with_crawl4ai("https://example.com/test")
         assert content is None
 
+
 @pytest.mark.asyncio
 async def test_extract_url_with_crawl4ai_import_error(monkeypatch):
     # Mock ImportError
-    with patch("crawl4ai.AsyncWebCrawler", side_effect=ImportError("No module named crawl4ai")):
+    with patch(
+        "crawl4ai.AsyncWebCrawler", side_effect=ImportError("No module named crawl4ai")
+    ):
         content = await extract_url_with_crawl4ai("https://example.com/test")
         assert content is None
 
+
 # ------------------------------------------------------------- tool integration tests
+
 
 @pytest.mark.asyncio
 async def test_add_web_source_tool_uses_crawl4ai(monkeypatch):
     # Mock ContentSettings
-    settings = ContentSettings(
-        default_content_processing_engine_url="crawl4ai"
+    settings = ContentSettings(default_content_processing_engine_url="crawl4ai")
+    monkeypatch.setattr(
+        ContentSettings, "get_instance", AsyncMock(return_value=settings)
     )
-    monkeypatch.setattr(ContentSettings, "get_instance", AsyncMock(return_value=settings))
-    
+
     # Mock extract_url_with_crawl4ai
     mock_extract = AsyncMock(return_value="Scraped by Crawl4AI")
-    monkeypatch.setattr("deeper_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract)
+    monkeypatch.setattr(
+        "deeper_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract
+    )
     monkeypatch.setattr(
         "deeper_notebook.research.safe_fetch.fetch_public_url",
         AsyncMock(return_value=_checked_response("https://test.crawl")),
     )
-    
+
     # Mock Source saving
     mock_source = MagicMock()
     mock_source.id = "src:999"
     mock_source.save = AsyncMock()
     mock_source.add_to_notebook = AsyncMock()
     mock_source.vectorize = AsyncMock()
-    monkeypatch.setattr("deeper_notebook.tools.add_web_source.Source", MagicMock(return_value=mock_source))
-    
+    monkeypatch.setattr(
+        "deeper_notebook.tools.add_web_source.Source",
+        MagicMock(return_value=mock_source),
+    )
+
     tool = build_add_web_source_tool("notebook:111")
     res = await tool.coroutine(url="https://test.crawl", title="Crawl Test")
-    
+
     assert "Successfully imported" in res
     assert "Crawl Test" in res
     mock_extract.assert_called_once_with(
         "https://test.crawl", prefetched=_checked_response("https://test.crawl")
     )
 
+
 @pytest.mark.asyncio
 async def test_add_web_source_tool_falls_back_on_failure(monkeypatch):
-    settings = ContentSettings(
-        default_content_processing_engine_url="crawl4ai"
+    settings = ContentSettings(default_content_processing_engine_url="crawl4ai")
+    monkeypatch.setattr(
+        ContentSettings, "get_instance", AsyncMock(return_value=settings)
     )
-    monkeypatch.setattr(ContentSettings, "get_instance", AsyncMock(return_value=settings))
-    
+
     # Mock extract_url_with_crawl4ai to fail
-    monkeypatch.setattr("deeper_notebook.utils.crawler.extract_url_with_crawl4ai", AsyncMock(return_value=None))
-    
+    monkeypatch.setattr(
+        "deeper_notebook.utils.crawler.extract_url_with_crawl4ai",
+        AsyncMock(return_value=None),
+    )
+
     # The fallback remains checked URL ingestion, not content-core URL fetches.
     mock_fallback_res = MagicMock()
     mock_fallback_res.content = "Simple Scraped Content"
@@ -149,43 +165,50 @@ async def test_add_web_source_tool_falls_back_on_failure(monkeypatch):
         "deeper_notebook.research.safe_fetch.fetch_public_url",
         AsyncMock(return_value=_checked_response("https://test.crawl")),
     )
-    
+
     mock_source = MagicMock()
     mock_source.id = "src:999"
     mock_source.save = AsyncMock()
     mock_source.add_to_notebook = AsyncMock()
     mock_source.vectorize = AsyncMock()
-    monkeypatch.setattr("deeper_notebook.tools.add_web_source.Source", MagicMock(return_value=mock_source))
-    
+    monkeypatch.setattr(
+        "deeper_notebook.tools.add_web_source.Source",
+        MagicMock(return_value=mock_source),
+    )
+
     tool = build_add_web_source_tool("notebook:111")
     res = await tool.coroutine(url="https://test.crawl", title="Crawl Test")
-    
+
     assert "Successfully imported" in res
     assert "Crawl Test" in res
 
+
 # ------------------------------------------------------------- graph node tests
+
 
 @pytest.mark.asyncio
 async def test_source_graph_node_uses_crawl4ai(monkeypatch):
-    settings = ContentSettings(
-        default_content_processing_engine_url="crawl4ai"
+    settings = ContentSettings(default_content_processing_engine_url="crawl4ai")
+    monkeypatch.setattr(
+        ContentSettings, "get_instance", AsyncMock(return_value=settings)
     )
-    monkeypatch.setattr(ContentSettings, "get_instance", AsyncMock(return_value=settings))
-    
+
     # Mock extract_url_with_crawl4ai
     mock_extract = AsyncMock(return_value="Scraped inside graph")
-    monkeypatch.setattr("deeper_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract)
+    monkeypatch.setattr(
+        "deeper_notebook.utils.crawler.extract_url_with_crawl4ai", mock_extract
+    )
     monkeypatch.setattr(
         "deeper_notebook.research.safe_fetch.fetch_public_url",
         AsyncMock(return_value=_checked_response("https://test.graph.url")),
     )
-    
+
     state = {
         "content_state": {"url": "https://test.graph.url"},
         "source_id": "src:123",
-        "notebook_id": "nb:456"
+        "notebook_id": "nb:456",
     }
-    
+
     res = await source_graph.content_process(state)
     assert res["content_state"].content == "Scraped inside graph"
     mock_extract.assert_called_once_with(

@@ -110,9 +110,7 @@ def test_external_adapters_accept_mixed_policy_without_redetecting_format(
     assert first.space.format_mode == "mixed"
     assert "edit_body" not in first.document.capabilities
     if source_kind == "obsidian":
-        assert "task-one" in {
-            claim.legacy_id for claim in first.identity_claims
-        }
+        assert "task-one" in {claim.legacy_id for claim in first.identity_claims}
     elif source_kind == "logseq":
         assert [task.raw_status for task in first.tasks] == ["TODO", "DONE"]
     else:
@@ -171,9 +169,10 @@ def test_tag_relations_never_invent_target_documents():
         relation for relation in snapshot.relations if relation.relation_kind == "tag"
     ]
 
-    assert [(relation.target_text, relation.target_document_id, relation.resolved) for relation in tag_relations] == [
-        ("research", None, False)
-    ]
+    assert [
+        (relation.target_text, relation.target_document_id, relation.resolved)
+        for relation in tag_relations
+    ] == [("research", None, False)]
 
 
 def test_overlay_adapter_preserves_reserved_identity_and_body():
@@ -204,9 +203,9 @@ def test_adapter_preserves_parser_byte_spans():
     )
     snapshot = adapter_for("obsidian").project(source)
 
-    assert [
-        (block.source_start, block.source_end) for block in snapshot.blocks
-    ] == [(block.source_start, block.source_end) for block in parsed.blocks]
+    assert [(block.source_start, block.source_end) for block in snapshot.blocks] == [
+        (block.source_start, block.source_end) for block in parsed.blocks
+    ]
     validate_snapshot_spans(snapshot, source_size=source.byte_size)
 
 
@@ -294,8 +293,9 @@ def test_source_envelope_rejects_mismatched_hash_at_construction():
     with pytest.raises(ValidationError, match="observed_content_hash"):
         SourceEnvelope(
             **(
-                envelope("markdown-page.md", "markdown", "external_read_only")
-                .model_dump()
+                envelope(
+                    "markdown-page.md", "markdown", "external_read_only"
+                ).model_dump()
                 | {
                     "canonical_bytes": raw,
                     "byte_size": len(raw),

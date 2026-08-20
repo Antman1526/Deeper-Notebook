@@ -98,9 +98,7 @@ def test_default_detection_resolves_canonical_receipt_root_without_migrating_dat
     def unexpected_data_migration() -> Path:
         raise AssertionError("pure app detection must not resolve/migrate desktop data")
 
-    monkeypatch.setattr(
-        "desktop.data_root.active_data_root", unexpected_data_migration
-    )
+    monkeypatch.setattr("desktop.data_root.active_data_root", unexpected_data_migration)
 
     decision = detect_legacy_app_replacement(applications)
 
@@ -336,9 +334,7 @@ def test_receipt_cleanup_unlink_stays_on_held_dirfd_after_symlink_swap(
         )
 
     assert raced is True
-    assert canonical_receipt.read_text(encoding="utf-8") == (
-        '{"sentinel": true}\\n'
-    )
+    assert canonical_receipt.read_text(encoding="utf-8") == ('{"sentinel": true}\\n')
     assert not (held / "app-bundle-replacement.json").exists()
 
 
@@ -471,9 +467,7 @@ def test_replacement_refuses_bundle_swap_after_confirmation_without_receipt(
     decision = detect_legacy_app_replacement(applications, data_root)
     original = applications / "Original Legacy.app"
     legacy.rename(original)
-    replacement = _app(
-        applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID
-    )
+    replacement = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
     calls: list[Path] = []
 
     with pytest.raises(AppReplacementRefused, match="changed after confirmation"):
@@ -502,9 +496,7 @@ def test_replacement_refuses_root_swap_after_confirmation_without_receipt(
     original_root = tmp_path / "Original Applications"
     applications.rename(original_root)
     applications.mkdir()
-    replacement = _app(
-        applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID
-    )
+    replacement = _app(applications, "Open Notebook Plus.app", COMPATIBLE_BUNDLE_ID)
     _app(applications, "Deeper Notebook.app", COMPATIBLE_BUNDLE_ID)
     calls: list[Path] = []
 
@@ -669,9 +661,7 @@ def test_production_startup_to_rendered_confirmation_replacement_and_receipt(
         openchronicle_choice="skip",
     )
     ctx.progress_bus = SimpleNamespace(
-        publish=lambda step, status, message="": events.append(
-            (step, status, message)
-        )
+        publish=lambda step, status, message="": events.append((step, status, message))
     )
     ctx.log_dir = data_root / "logs"
     ctx.log_dir.mkdir(parents=True)

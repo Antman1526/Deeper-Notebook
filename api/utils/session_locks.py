@@ -55,6 +55,7 @@ runs multiple API replicas behind a load balancer, the
 serialization will need to move to a shared store — file a
 follow-up at that point.
 """
+
 from __future__ import annotations
 
 import asyncio

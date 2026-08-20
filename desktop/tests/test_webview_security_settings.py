@@ -5,6 +5,7 @@ The shell renders source-controlled URLs (`window.open(source.asset.url,
 5.4 sends those to the system browser by default, but nothing asserted it, so a
 future default flip would quietly let a hostile source URL replace the app UI.
 """
+
 from __future__ import annotations
 
 import sys
@@ -48,6 +49,7 @@ def test_unknown_keys_are_not_invented():
 
 def test_missing_settings_dict_is_tolerated():
     """A pywebview without a settings mapping must not crash window startup."""
+
     class _NoSettings:
         pass
 
@@ -66,7 +68,8 @@ def test_real_pywebview_exposes_the_keys_we_pin():
     # still run wherever pywebview IS present, which is the environment whose
     # API this is guarding.
     webview = pytest.importorskip(
-        "webview", reason="pywebview ships in the bundled desktop runtime, not this venv"
+        "webview",
+        reason="pywebview ships in the bundled desktop runtime, not this venv",
     )
     settings = getattr(webview, "settings", None)
     if not isinstance(settings, dict):  # pragma: no cover - pywebview without settings

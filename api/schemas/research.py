@@ -78,7 +78,9 @@ class ResearchRunResponse(BaseModel):
     candidates: list[ResearchCandidateResponse] = Field(default_factory=list)
     source_ids: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
-    comparison: ResearchComparisonResponse = Field(default_factory=ResearchComparisonResponse)
+    comparison: ResearchComparisonResponse = Field(
+        default_factory=ResearchComparisonResponse
+    )
     cancelled: bool = False
 
 

@@ -419,7 +419,9 @@ class KnowledgeEnginePodcastSelectionResolver:
                             and document.authority_kind not in selection.authority_kinds
                         ):
                             continue
-                        haystack = f"{document.title}\n{document.normalized_body}".casefold()
+                        haystack = (
+                            f"{document.title}\n{document.normalized_body}".casefold()
+                        )
                         matched = (
                             document.title.casefold() == needle
                             if selection.search_mode == "exact"
@@ -456,7 +458,9 @@ class KnowledgeNavigationReader(Protocol):
 
     async def list_folders(self): ...
 
-    async def list_bookmarks(self, filters: BookmarkFilters, cursor: str | None, limit: int): ...
+    async def list_bookmarks(
+        self, filters: BookmarkFilters, cursor: str | None, limit: int
+    ): ...
 
     async def get_workspace(self, workspace_id: str): ...
 
@@ -506,9 +510,7 @@ class KnowledgeNavigationPodcastSelectionResolver:
                     expected_revision_id=getattr(target, "source_revision_id", None),
                 )
             )
-        return self._unavailable_bookmark(
-            selection, "bookmark_target_kind_unavailable"
-        )
+        return self._unavailable_bookmark(selection, "bookmark_target_kind_unavailable")
 
     async def _resolve_folder(
         self, selection: KnowledgeCollectionSelection
@@ -542,7 +544,9 @@ class KnowledgeNavigationPodcastSelectionResolver:
                 )
                 for bookmark in page.items:
                     results.extend(
-                        await self._resolve_target(selection, getattr(bookmark, "target", None))
+                        await self._resolve_target(
+                            selection, getattr(bookmark, "target", None)
+                        )
                     )
                     if len(results) > self._MAX_COLLECTION_ITEMS:
                         return self._unavailable_bookmark(
@@ -570,7 +574,9 @@ class KnowledgeNavigationPodcastSelectionResolver:
         workspace = await self._navigation.get_workspace(selection.collection_id)
         panes = getattr(getattr(workspace, "snapshot", None), "panes", {})
         if not isinstance(panes, dict):
-            return self._unavailable_bookmark(selection, "workspace_snapshot_unavailable")
+            return self._unavailable_bookmark(
+                selection, "workspace_snapshot_unavailable"
+            )
         results: list[ResolvedSelectionItem] = []
         for pane_id in sorted(panes):
             for tab in getattr(panes[pane_id], "tabs", []):

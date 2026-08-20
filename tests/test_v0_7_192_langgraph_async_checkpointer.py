@@ -32,6 +32,7 @@ freshly-built v0.7.191 .app on macOS arm64.
 
      Fix: `llama-cpp-python[server]>=0.3.16,<0.4` + lockfile regen.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -55,6 +56,7 @@ def test_chat_module_exports_lazy_async_graph_factory():
     because aiosqlite.connect() captures the event loop at
     construct time, which doesn't exist at module load."""
     from deeper_notebook.graphs import chat
+
     assert hasattr(chat, "get_async_graph"), (
         "v0.7.192 regression: get_async_graph factory is gone. "
         "Streaming/ainvoke paths will fail with NotImplementedError "
@@ -68,6 +70,7 @@ def test_chat_module_exports_lazy_async_graph_factory():
 def test_source_chat_module_exports_lazy_async_graph_factory():
     """v0.7.192: same pin for source_chat."""
     from deeper_notebook.graphs import source_chat
+
     assert hasattr(source_chat, "get_async_source_chat_graph")
     assert hasattr(source_chat, "source_chat_graph")
 

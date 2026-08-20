@@ -5,6 +5,7 @@ reach it through Next.js rewrites, so the Next proxy cap must not be lower than
 the backend default or large-but-valid source files fail before FastAPI can
 return the app's friendly 413/error path.
 """
+
 from __future__ import annotations
 
 import re

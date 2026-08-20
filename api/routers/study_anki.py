@@ -132,7 +132,11 @@ def _canonical_data_root() -> Path:
         resolved.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(resolved, 0o700)
         stat_result = resolved.stat()
-        if not resolved.is_dir() or hasattr(os, "getuid") and stat_result.st_uid != os.getuid():
+        if (
+            not resolved.is_dir()
+            or hasattr(os, "getuid")
+            and stat_result.st_uid != os.getuid()
+        ):
             raise AnkiHttpError("storage_unavailable", 503)
     except AnkiHttpError:
         raise
@@ -151,7 +155,11 @@ def _owned_subroot(name: str) -> Path:
         child = root / name
         child.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(child, 0o700)
-        if child.is_symlink() or child.resolve() != child or not child.is_relative_to(root):
+        if (
+            child.is_symlink()
+            or child.resolve() != child
+            or not child.is_relative_to(root)
+        ):
             raise AnkiHttpError("storage_unavailable", 503)
         return child
     except AnkiHttpError:
@@ -172,7 +180,9 @@ def _require_study_workbench() -> None:
     # This dependency is intentionally attached to the whole router: FastAPI
     # evaluates it before multipart/body/query validation.
     if not study_workbench_enabled():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Study plan not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Study plan not found"
+        )
 
 
 router = APIRouter(
@@ -183,7 +193,12 @@ router = APIRouter(
 
 
 def _safe_plan_id(value: str) -> str:
-    if not isinstance(value, str) or value != value.strip() or not value or len(value) > 512:
+    if (
+        not isinstance(value, str)
+        or value != value.strip()
+        or not value
+        or len(value) > 512
+    ):
         raise AnkiHttpError("invalid_plan_id")
     if any(ord(char) < 32 or ord(char) == 127 for char in value):
         raise AnkiHttpError("invalid_plan_id")
@@ -194,13 +209,17 @@ def _parse_options(raw: str) -> tuple[AnkiHttpOptions, AnkiImportOptions]:
     try:
         decoded = json.loads(raw)
         http_options = AnkiHttpOptions.model_validate(decoded)
-        return http_options, AnkiImportOptions.model_validate(http_options.model_dump(mode="python"))
+        return http_options, AnkiImportOptions.model_validate(
+            http_options.model_dump(mode="python")
+        )
     except Exception as exc:
         raise AnkiHttpError("invalid_options") from exc
 
 
 def _options_sha256(options: AnkiImportOptions) -> str:
-    encoded = json.dumps(options.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+    encoded = json.dumps(
+        options.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -230,11 +249,17 @@ def _assert_replay_authority(
         raise AnkiHttpError("request_id_conflict", 409)
 
 
-def _http_receipt(receipt: AnkiCompatibilityReceipt) -> AnkiCompatibilityReceiptResponse:
-    return AnkiCompatibilityReceiptResponse.model_validate(receipt.model_dump(mode="python"))
+def _http_receipt(
+    receipt: AnkiCompatibilityReceipt,
+) -> AnkiCompatibilityReceiptResponse:
+    return AnkiCompatibilityReceiptResponse.model_validate(
+        receipt.model_dump(mode="python")
+    )
 
 
-def _preview(job: _ImportJob, metadata: AnkiJobMetadata | None = None) -> AnkiImportPreviewResponse:
+def _preview(
+    job: _ImportJob, metadata: AnkiJobMetadata | None = None
+) -> AnkiImportPreviewResponse:
     inspection = job.inspection
     if metadata is not None:
         return AnkiImportPreviewResponse(
@@ -298,7 +323,9 @@ async def _persist_job(job: _ImportJob) -> None:
 
 
 def _path_for_file_token(root: Path, token: str, *, prefix: str) -> Path:
-    if not isinstance(token, str) or not re.fullmatch(rf"{prefix}-[a-f0-9]{{64}}\.apkg", token):
+    if not isinstance(token, str) or not re.fullmatch(
+        rf"{prefix}-[a-f0-9]{{64}}\.apkg", token
+    ):
         raise AnkiHttpError("job_not_found", 404)
     path = root / token
     return _validate_root_file(path, root)
@@ -311,7 +338,9 @@ def _tombstone_path(root: Path, token: str, *, prefix: str) -> Path | None:
     return root / f".expired-{prefix}-{match.group(1)}.apkg"
 
 
-def _stage_expired_file(root: Path, token: str, *, prefix: str) -> tuple[Path | None, Path] | None:
+def _stage_expired_file(
+    root: Path, token: str, *, prefix: str
+) -> tuple[Path | None, Path] | None:
     """Move an expired file to a same-root tombstone without symlink follow."""
     if not isinstance(token, str):
         return None
@@ -324,7 +353,10 @@ def _stage_expired_file(root: Path, token: str, *, prefix: str) -> tuple[Path | 
         if root.is_symlink() or source.is_symlink() or tombstone.is_symlink():
             return None
         if tombstone.exists():
-            if tombstone.resolve(strict=False).parent != root_resolved or not tombstone.is_file():
+            if (
+                tombstone.resolve(strict=False).parent != root_resolved
+                or not tombstone.is_file()
+            ):
                 return None
             if source.exists():
                 return None
@@ -354,7 +386,9 @@ def _remove_tombstone(tombstone: Path) -> None:
     try:
         if tombstone.is_symlink() or not tombstone.is_file():
             return
-        if tombstone.resolve(strict=False).parent != tombstone.parent.resolve(strict=True):
+        if tombstone.resolve(strict=False).parent != tombstone.parent.resolve(
+            strict=True
+        ):
             return
         tombstone.unlink(missing_ok=True)
     except OSError:
@@ -368,8 +402,13 @@ async def _sweep_tombstones(root: Path, *, prefix: str, repository: Any) -> None
         if root.is_symlink():
             return
         pattern = re.compile(rf"^\.expired-{prefix}-[a-f0-9]{{64}}\.apkg$")
-        for path in sorted(root.iterdir(), key=lambda item: item.name)[:_MAX_RETAINED_JOBS]:
-            if not pattern.fullmatch(path.name) or path.resolve(strict=False).parent != root_resolved:
+        for path in sorted(root.iterdir(), key=lambda item: item.name)[
+            :_MAX_RETAINED_JOBS
+        ]:
+            if (
+                not pattern.fullmatch(path.name)
+                or path.resolve(strict=False).parent != root_resolved
+            ):
                 continue
             token = f"{prefix}-{path.name.split('-', 2)[2]}"
             try:
@@ -424,7 +463,9 @@ async def _cleanup_expired_metadata() -> None:
             _restore_tombstone(tombstone, source)
     expired_exports: tuple[tuple[str, str], ...] = ()
     try:
-        expired_exports = await AnkiExportRepository().list_expired(limit=_MAX_RETAINED_DOWNLOADS)
+        expired_exports = await AnkiExportRepository().list_expired(
+            limit=_MAX_RETAINED_DOWNLOADS
+        )
     except Exception:
         expired_exports = ()
     for download_id, token in expired_exports:
@@ -451,7 +492,11 @@ async def _load_job(plan_id: str, job_id: str) -> _ImportJob:
             metadata = await AnkiJobRepository().get(job_id, plan_id)
         except Exception as exc:
             raise AnkiHttpError("study_anki_unavailable", 503) from exc
-        if metadata is None or metadata.plan_id != plan_id or metadata.expires_at <= datetime.now(UTC):
+        if (
+            metadata is None
+            or metadata.plan_id != plan_id
+            or metadata.expires_at <= datetime.now(UTC)
+        ):
             raise AnkiHttpError("job_not_found", 404)
         if metadata.status == "published":
             inspection = AnkiPackageInspection(
@@ -473,7 +518,9 @@ async def _load_job(plan_id: str, job_id: str) -> _ImportJob:
                 publish_options_sha256=metadata.claim_options_sha256,
                 metadata=metadata,
             )
-        path = _path_for_file_token(_import_root(), metadata.file_token, prefix="upload")
+        path = _path_for_file_token(
+            _import_root(), metadata.file_token, prefix="upload"
+        )
         try:
             inspection = inspect_anki_package(path)
         except AnkiPackageRejected as exc:
@@ -533,7 +580,11 @@ def _validate_root_file(path: Path, root: Path) -> Path:
     try:
         root_resolved = root.resolve()
         candidate = path.resolve(strict=True)
-        if candidate.parent != root_resolved or path.is_symlink() or not candidate.is_file():
+        if (
+            candidate.parent != root_resolved
+            or path.is_symlink()
+            or not candidate.is_file()
+        ):
             raise AnkiHttpError("download_not_found", 404)
         return candidate
     except AnkiHttpError:
@@ -558,10 +609,21 @@ def _retain_download(download_id: str, path: Path) -> None:
 
 def _error_response(exc: AnkiHttpError) -> HTTPException:
     if exc.status_code == 503:
-        return HTTPException(status_code=503, detail={"code": "study_anki_unavailable", "message": "Study Anki is unavailable"})
+        return HTTPException(
+            status_code=503,
+            detail={
+                "code": "study_anki_unavailable",
+                "message": "Study Anki is unavailable",
+            },
+        )
     return HTTPException(
         status_code=exc.status_code,
-        detail={"code": exc.code, "message": "Invalid Study Anki request" if exc.status_code == 422 else "Study Anki item not found"},
+        detail={
+            "code": exc.code,
+            "message": "Invalid Study Anki request"
+            if exc.status_code == 422
+            else "Study Anki item not found",
+        },
     )
 
 
@@ -579,7 +641,9 @@ async def _publish_import(
         raise
     if inspection.package_sha256 != job.inspection.package_sha256:
         raise AnkiImportConflict("Anki upload changed before publish")
-    return await AnkiImportRepository().publish(plan_id, inspection, options, request_id)
+    return await AnkiImportRepository().publish(
+        plan_id, inspection, options, request_id
+    )
 
 
 @router.post("/{plan_id}/anki/import", response_model=AnkiImportPreviewResponse)
@@ -630,38 +694,56 @@ async def anki_import_status(plan_id: str, job_id: str) -> AnkiImportStatusRespo
                 raise AnkiHttpError("study_anki_unavailable", 503) from exc
             if metadata is None or metadata.expires_at <= datetime.now(UTC):
                 raise AnkiHttpError("job_not_found", 404)
-            base = _preview(_ImportJob(metadata.job_id, metadata.plan_id, Path("."), AnkiPackageInspection(
-                package_sha256=metadata.package_sha256,
-                collection_sha256=metadata.collection_sha256,
-                collection_member=metadata.collection_member,
-                cards=(),
-                note_count=0,
-                transformed_count=metadata.transformed_count,
-                skipped_count=metadata.skipped_count,
-            )), metadata).model_dump(mode="python")
+            base = _preview(
+                _ImportJob(
+                    metadata.job_id,
+                    metadata.plan_id,
+                    Path("."),
+                    AnkiPackageInspection(
+                        package_sha256=metadata.package_sha256,
+                        collection_sha256=metadata.collection_sha256,
+                        collection_member=metadata.collection_member,
+                        cards=(),
+                        note_count=0,
+                        transformed_count=metadata.transformed_count,
+                        skipped_count=metadata.skipped_count,
+                    ),
+                ),
+                metadata,
+            ).model_dump(mode="python")
             receipt_id = metadata.receipt_id
             return AnkiImportStatusResponse(**base, receipt_id=receipt_id)
         job = await _load_job(plan_id, job_id)
         base = _preview(job).model_dump(mode="python")
-        return AnkiImportStatusResponse(**base, receipt_id=job.receipt.receipt_id if job.receipt else None)
+        return AnkiImportStatusResponse(
+            **base, receipt_id=job.receipt.receipt_id if job.receipt else None
+        )
     except AnkiHttpError as exc:
         raise _error_response(exc) from None
 
 
-@router.post("/{plan_id}/anki/import/{job_id}:publish", response_model=AnkiImportPublishResponse)
-async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPublishRequest) -> AnkiImportPublishResponse:
+@router.post(
+    "/{plan_id}/anki/import/{job_id}:publish", response_model=AnkiImportPublishResponse
+)
+async def publish_anki_import(
+    plan_id: str, job_id: str, payload: AnkiImportPublishRequest
+) -> AnkiImportPublishResponse:
     try:
         plan_id = _safe_plan_id(plan_id)
         job = await _load_job(plan_id, job_id)
         if payload.upload_id != job_id:
             raise AnkiHttpError("upload_id_mismatch")
-        options = AnkiImportOptions.model_validate(payload.options.model_dump(mode="python"))
+        options = AnkiImportOptions.model_validate(
+            payload.options.model_dump(mode="python")
+        )
         options_hash = _options_sha256(options)
         payload_sha256: str | None = None
         if _durable_metadata_enabled() and job.metadata is not None:
             if job.metadata.status == "published" and job.metadata.receipt_id:
                 try:
-                    replay = await AnkiImportRepository().find_by_receipt(plan_id, job.metadata.receipt_id)
+                    replay = await AnkiImportRepository().find_by_receipt(
+                        plan_id, job.metadata.receipt_id
+                    )
                 except Exception as exc:
                     raise AnkiHttpError("study_anki_unavailable", 503) from exc
                 if replay is None:
@@ -669,7 +751,9 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                 _assert_replay_authority(
                     replay, job.metadata, payload.request_id, options_hash
                 )
-                return AnkiImportPublishResponse(status="replayed", receipt=_http_receipt(replay))
+                return AnkiImportPublishResponse(
+                    status="replayed", receipt=_http_receipt(replay)
+                )
         if not (
             _durable_metadata_enabled()
             and job.metadata is not None
@@ -701,7 +785,9 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                 raise AnkiHttpError("job_not_found", 404)
             if claim == "replay":
                 try:
-                    replay = await AnkiImportRepository()._find_by_request(plan_id, payload.request_id)
+                    replay = await AnkiImportRepository()._find_by_request(
+                        plan_id, payload.request_id
+                    )
                 except Exception as exc:
                     raise AnkiHttpError("study_anki_unavailable", 503) from exc
                 if replay is None:
@@ -742,9 +828,15 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                             latest = await AnkiJobRepository().get(job_id, plan_id)
                         except Exception as exc:
                             raise AnkiHttpError("study_anki_unavailable", 503) from exc
-                        if latest is None or latest.status != "published" or latest.receipt_id != replay.receipt_id:
+                        if (
+                            latest is None
+                            or latest.status != "published"
+                            or latest.receipt_id != replay.receipt_id
+                        ):
                             raise AnkiHttpError("publish_in_progress", 409)
-                return AnkiImportPublishResponse(status="replayed", receipt=_http_receipt(replay))
+                return AnkiImportPublishResponse(
+                    status="replayed", receipt=_http_receipt(replay)
+                )
             owner_token = getattr(claim, "owner_token", None)
             if not isinstance(owner_token, str):
                 raise AnkiHttpError("publish_in_progress", 409)
@@ -759,7 +851,9 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
                 or existing.payload_sha256 != payload_sha256
             ):
                 raise AnkiHttpError("request_id_conflict", 409)
-            return AnkiImportPublishResponse(status="replayed", receipt=_http_receipt(existing))
+            return AnkiImportPublishResponse(
+                status="replayed", receipt=_http_receipt(existing)
+            )
         try:
             receipt = await _publish_import(plan_id, job, options, payload.request_id)
         except AnkiPackageRejected as exc:
@@ -821,7 +915,9 @@ async def publish_anki_import(plan_id: str, job_id: str, payload: AnkiImportPubl
         job.publish_request_id = payload.request_id
         job.publish_options_sha256 = options_hash
         job.path.unlink(missing_ok=True)
-        return AnkiImportPublishResponse(status="published", receipt=_http_receipt(receipt))
+        return AnkiImportPublishResponse(
+            status="published", receipt=_http_receipt(receipt)
+        )
     except AnkiHttpError as exc:
         raise _error_response(exc) from None
 
@@ -852,7 +948,9 @@ async def _load_export_plan(plan_id: str) -> dict[str, Any]:
     )
     compatibility: dict[str, dict[str, Any]] = {}
     for compat_row in compat_rows:
-        if not isinstance(compat_row, dict) or not isinstance(compat_row.get("card_id"), str):
+        if not isinstance(compat_row, dict) or not isinstance(
+            compat_row.get("card_id"), str
+        ):
             raise AnkiHttpError("invalid_card_projection", 503)
         compatibility[str(compat_row["card_id"])] = compat_row
     cards: list[dict[str, Any]] = []
@@ -865,7 +963,9 @@ async def _load_export_plan(plan_id: str) -> dict[str, Any]:
             record = ensure_record_id(card_id)
         except Exception as exc:
             raise AnkiHttpError("invalid_card_projection", 503) from exc
-        if getattr(record, "table_name", None) != "study_card" or not isinstance(getattr(record, "id", None), str):
+        if getattr(record, "table_name", None) != "study_card" or not isinstance(
+            getattr(record, "id", None), str
+        ):
             raise AnkiHttpError("invalid_card_projection", 503)
         try:
             card = await repository.get(str(record))
@@ -880,12 +980,17 @@ async def _load_export_plan(plan_id: str) -> dict[str, Any]:
             "front": card.front,
             "back": card.back,
             "tags": ["study", "deeper-notebook"],
-            "kind": persisted_kind if persisted_kind != "basic" else ("cloze" if "{{c" in card.front else "basic"),
+            "kind": persisted_kind
+            if persisted_kind != "basic"
+            else ("cloze" if "{{c" in card.front else "basic"),
         }
         compat = compatibility.get(str(record)) or compatibility.get(str(card.id or ""))
         if compat is not None:
             source_fields = compat.get("source_fields")
-            if not isinstance(source_fields, (list, tuple)) or not 2 <= len(source_fields) <= 4:
+            if (
+                not isinstance(source_fields, (list, tuple))
+                or not 2 <= len(source_fields) <= 4
+            ):
                 raise AnkiHttpError("invalid_card_projection", 503)
             card_projection.update(
                 {
@@ -932,24 +1037,48 @@ def _bounded_card(card: object, index: int) -> dict[str, Any]:
     card_id = card.get("card_id", card.get("id", card.get("artifact_card_id")))
     front = card.get("front")
     back = card.get("back")
-    if not isinstance(card_id, str) or card_id != card_id.strip() or not card_id or len(card_id) > 512 or any(ord(char) < 32 or ord(char) == 127 for char in card_id):
+    if (
+        not isinstance(card_id, str)
+        or card_id != card_id.strip()
+        or not card_id
+        or len(card_id) > 512
+        or any(ord(char) < 32 or ord(char) == 127 for char in card_id)
+    ):
         raise AnkiHttpError("invalid_card_projection")
-    if not isinstance(front, str) or not 1 <= len(front) <= 8_000 or any(ord(char) == 0 or ord(char) == 127 for char in front):
+    if (
+        not isinstance(front, str)
+        or not 1 <= len(front) <= 8_000
+        or any(ord(char) == 0 or ord(char) == 127 for char in front)
+    ):
         raise AnkiHttpError("invalid_card_projection")
-    if not isinstance(back, str) or not 1 <= len(back) <= 16_000 or any(ord(char) == 0 or ord(char) == 127 for char in back):
+    if (
+        not isinstance(back, str)
+        or not 1 <= len(back) <= 16_000
+        or any(ord(char) == 0 or ord(char) == 127 for char in back)
+    ):
         raise AnkiHttpError("invalid_card_projection")
     kind = card.get("kind", "cloze" if "{{c" in front else "basic")
     if kind not in {"basic", "reverse", "cloze"}:
         raise AnkiHttpError("invalid_card_projection")
     raw_version = card.get("version", 1)
-    if isinstance(raw_version, bool) or not isinstance(raw_version, int) or not 1 <= raw_version <= 10_000:
+    if (
+        isinstance(raw_version, bool)
+        or not isinstance(raw_version, int)
+        or not 1 <= raw_version <= 10_000
+    ):
         raise AnkiHttpError("invalid_card_projection")
     tags = card.get("tags", ())
     if not isinstance(tags, (list, tuple)) or len(tags) > 100:
         raise AnkiHttpError("invalid_card_projection")
     clean_tags_list: list[str] = []
     for tag in tags:
-        if not isinstance(tag, str) or tag != tag.strip() or not tag or len(tag) > 64 or any(ord(char) < 33 or ord(char) == 127 for char in tag):
+        if (
+            not isinstance(tag, str)
+            or tag != tag.strip()
+            or not tag
+            or len(tag) > 64
+            or any(ord(char) < 33 or ord(char) == 127 for char in tag)
+        ):
             raise AnkiHttpError("invalid_card_projection")
         clean_tags_list.append(tag)
     if len(set(clean_tags_list)) != len(clean_tags_list):
@@ -977,7 +1106,9 @@ def _bounded_card(card: object, index: int) -> dict[str, Any]:
         raise AnkiHttpError("invalid_card_projection")
     template_ord = card.get("template_ord")
     if template_ord is not None and (
-        isinstance(template_ord, bool) or not isinstance(template_ord, int) or not 0 <= template_ord <= 999
+        isinstance(template_ord, bool)
+        or not isinstance(template_ord, int)
+        or not 0 <= template_ord <= 999
         or ((kind != "cloze" or source_model_kind == "basic") and template_ord > 1)
     ):
         raise AnkiHttpError("invalid_card_projection")
@@ -988,7 +1119,8 @@ def _bounded_card(card: object, index: int) -> dict[str, Any]:
         raise AnkiHttpError("invalid_card_projection")
     package_sha256 = card.get("package_sha256")
     if package_sha256 is not None and (
-        not isinstance(package_sha256, str) or re.fullmatch(r"[a-f0-9]{64}", package_sha256) is None
+        not isinstance(package_sha256, str)
+        or re.fullmatch(r"[a-f0-9]{64}", package_sha256) is None
     ):
         raise AnkiHttpError("invalid_card_projection")
     return {
@@ -1039,14 +1171,23 @@ def _escape_cloze(value: str) -> str:
     return "".join(pieces)
 
 
-def _semantic_export_payload(plan: dict[str, Any], cards: list[dict[str, Any]]) -> dict[str, Any]:
+def _semantic_export_payload(
+    plan: dict[str, Any], cards: list[dict[str, Any]]
+) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "plan_id": str(plan["plan_id"]),
         "plan_revision": int(plan.get("plan_revision", plan.get("version", 1))),
-        "syllabus_version": int(plan.get("approved_syllabus_version", plan.get("active_syllabus_version", 1))),
+        "syllabus_version": int(
+            plan.get(
+                "approved_syllabus_version", plan.get("active_syllabus_version", 1)
+            )
+        ),
         "cards": [
-            {key: card[key] for key in ("card_id", "version", "front", "back", "kind", "tags")}
+            {
+                key: card[key]
+                for key in ("card_id", "version", "front", "back", "kind", "tags")
+            }
             for card in cards
         ],
     }
@@ -1055,7 +1196,9 @@ def _semantic_export_payload(plan: dict[str, Any], cards: list[dict[str, Any]]) 
 def _build_package(
     plan: dict[str, Any], cards: list[dict[str, Any]], destination: Path
 ) -> tuple[tuple[str, ...], tuple[int, ...], tuple[int, ...], int]:
-    deck_id = _stable_int("deck", f"{plan['plan_id']}|{plan.get('approved_syllabus_version', 1)}")
+    deck_id = _stable_int(
+        "deck", f"{plan['plan_id']}|{plan.get('approved_syllabus_version', 1)}"
+    )
     deck_name = f"Deeper Notebook - {str(plan.get('goal', 'Study Plan'))[:120]}"
     deck = genanki.Deck(deck_id, deck_name)
     basic_id = _stable_int("model", "deeper-notebook-basic")
@@ -1080,7 +1223,13 @@ def _build_package(
         cloze_id,
         "Deeper Notebook Cloze",
         fields=[{"name": "Text"}, {"name": "Extra"}],
-        templates=[{"name": "Cloze", "qfmt": "{{cloze:Text}}", "afmt": "{{cloze:Text}}<hr id=answer>{{Extra}}"}],
+        templates=[
+            {
+                "name": "Cloze",
+                "qfmt": "{{cloze:Text}}",
+                "afmt": "{{cloze:Text}}<hr id=answer>{{Extra}}",
+            }
+        ],
         model_type=genanki.Model.CLOZE,
     )
     note_guids: list[str] = []
@@ -1116,7 +1265,9 @@ def _build_package(
                 and candidate.get("package_sha256") == identity[0]
                 and candidate.get("source_note_id") == identity[1]
             ]
-            grouped_kinds = {cards[candidate_index]["kind"] for candidate_index in grouped_indices}
+            grouped_kinds = {
+                cards[candidate_index]["kind"] for candidate_index in grouped_indices
+            }
             if "reverse" in grouped_kinds:
                 if not any(
                     cards[candidate_index].get("kind") == "basic"
@@ -1148,15 +1299,23 @@ def _build_package(
         canonical_card_id = (
             f"{package_sha256}|{source_note_id}"
             if isinstance(source_note_id, str) and isinstance(package_sha256, str)
-            else source_note_id if isinstance(source_note_id, str) else card["card_id"]
+            else source_note_id
+            if isinstance(source_note_id, str)
+            else card["card_id"]
         )
         canonical = f"{plan['plan_id']}|{canonical_card_id}|{card['version']}|1"
         guid = hashlib.sha256(canonical.encode()).hexdigest()[:32]
         note_guids.append(guid)
-        model = {"basic": basic_model, "reverse": reverse_model, "cloze": cloze_model}[kind]
+        model = {"basic": basic_model, "reverse": reverse_model, "cloze": cloze_model}[
+            kind
+        ]
         used_model_ids.add(int(model.model_id))
         source_fields = card.get("source_fields") or ()
-        if kind == "cloze" and len(source_fields) == 2 and isinstance(package_sha256, str):
+        if (
+            kind == "cloze"
+            and len(source_fields) == 2
+            and isinstance(package_sha256, str)
+        ):
             source_ordinals = {
                 int(match.group(1)) for match in _CLOZE_TOKEN.finditer(source_fields[0])
             }
@@ -1172,7 +1331,11 @@ def _build_package(
                 raise AnkiHttpError("cloze_template_subset_unsupported", 409)
         if kind == "reverse" and len(source_fields) == 2:
             fields = [_escape_field(source_fields[0]), _escape_field(source_fields[1])]
-        elif kind == "cloze" and len(source_fields) == 2 and _CLOZE_TOKEN.search(source_fields[0]):
+        elif (
+            kind == "cloze"
+            and len(source_fields) == 2
+            and _CLOZE_TOKEN.search(source_fields[0])
+        ):
             fields = [_escape_cloze(source_fields[0]), _escape_field(source_fields[1])]
         elif kind == "cloze" and _CLOZE_TOKEN.search(card["front"]):
             fields = [_escape_cloze(card["front"]), _escape_field(card["back"])]
@@ -1183,16 +1346,32 @@ def _build_package(
         elif kind == "cloze":
             expected_card_count += max(
                 1,
-                len({int(match.group(1)) for match in _CLOZE_TOKEN.finditer(source_fields[0] if len(source_fields) == 2 else card["front"])}),
+                len(
+                    {
+                        int(match.group(1))
+                        for match in _CLOZE_TOKEN.finditer(
+                            source_fields[0]
+                            if len(source_fields) == 2
+                            else card["front"]
+                        )
+                    }
+                ),
             )
         else:
             expected_card_count += 1
-        note = genanki.Note(model=model, fields=fields, tags=list(card["tags"]), guid=guid)
+        note = genanki.Note(
+            model=model, fields=fields, tags=list(card["tags"]), guid=guid
+        )
         deck.add_note(note)
     genanki.Package(deck).write_to_file(destination)
     # genanki always retains the built-in Default deck alongside the custom
     # deck; include both IDs in the package receipt identity.
-    return tuple(note_guids), tuple(sorted(used_model_ids)), (1, deck_id), expected_card_count
+    return (
+        tuple(note_guids),
+        tuple(sorted(used_model_ids)),
+        (1, deck_id),
+        expected_card_count,
+    )
 
 
 def inspect_export(path: str | os.PathLike[str]) -> AnkiExportInspection:
@@ -1208,19 +1387,31 @@ def inspect_export(path: str | os.PathLike[str]) -> AnkiExportInspection:
         os.chmod(snapshot, 0o600)
         package_path = snapshot
         with zipfile.ZipFile(package_path, "r") as archive:
-            member = "collection.anki2" if "collection.anki2" in archive.namelist() else "collection.anki21"
+            member = (
+                "collection.anki2"
+                if "collection.anki2" in archive.namelist()
+                else "collection.anki21"
+            )
             if member not in archive.namelist():
                 raise AnkiHttpError("invalid_export")
             sqlite_path = Path(temp_root) / "collection.sqlite"
             sqlite_path.write_bytes(archive.read(member))
-            with sqlite3.connect(f"file:{sqlite_path}?mode=ro&immutable=1", uri=True) as connection:
+            with sqlite3.connect(
+                f"file:{sqlite_path}?mode=ro&immutable=1", uri=True
+            ) as connection:
                 connection.execute("PRAGMA query_only=ON")
                 connection.execute("PRAGMA trusted_schema=OFF")
-                notes = connection.execute("SELECT guid, flds FROM notes ORDER BY id LIMIT 10001").fetchall()
-                cards = connection.execute("SELECT id FROM cards ORDER BY id LIMIT 10001").fetchall()
+                notes = connection.execute(
+                    "SELECT guid, flds FROM notes ORDER BY id LIMIT 10001"
+                ).fetchall()
+                cards = connection.execute(
+                    "SELECT id FROM cards ORDER BY id LIMIT 10001"
+                ).fetchall()
                 if len(cards) > MAX_EXPORT_CARDS:
                     raise AnkiHttpError("generated_package_card_count_exceeded", 503)
-                models_raw, decks_raw = connection.execute("SELECT models, decks FROM col").fetchone()
+                models_raw, decks_raw = connection.execute(
+                    "SELECT models, decks FROM col"
+                ).fetchone()
                 models = json.loads(models_raw)
                 decks = json.loads(decks_raw)
     return AnkiExportInspection(
@@ -1228,20 +1419,31 @@ def inspect_export(path: str | os.PathLike[str]) -> AnkiExportInspection:
         stable_note_guids=tuple(str(row[0]) for row in notes),
         stable_model_ids=tuple(sorted(int(value["id"]) for value in models.values())),
         stable_deck_ids=tuple(sorted(int(value["id"]) for value in decks.values())),
-        note_fields=tuple(tuple(str(value) for value in row[1].split("\x1f")) for row in notes),
+        note_fields=tuple(
+            tuple(str(value) for value in row[1].split("\x1f")) for row in notes
+        ),
     )
 
 
-def export_anki_package(plan: object, destination: str | os.PathLike[str]) -> AnkiExportResult:
+def export_anki_package(
+    plan: object, destination: str | os.PathLike[str]
+) -> AnkiExportResult:
     """Write one deterministic-semantic package from native Study card data."""
     if hasattr(plan, "model_dump"):
         plan = plan.model_dump(mode="python")
     if not isinstance(plan, dict):
         raise AnkiHttpError("invalid_plan_projection")
-    if plan.get("state") not in _PLAN_STATES or plan.get("approved_syllabus_version") is None:
+    if (
+        plan.get("state") not in _PLAN_STATES
+        or plan.get("approved_syllabus_version") is None
+    ):
         raise AnkiHttpError("approved_plan_required", 409)
     raw_cards = plan.get("cards", ())
-    if not isinstance(raw_cards, (list, tuple)) or not raw_cards or len(raw_cards) > MAX_EXPORT_CARDS:
+    if (
+        not isinstance(raw_cards, (list, tuple))
+        or not raw_cards
+        or len(raw_cards) > MAX_EXPORT_CARDS
+    ):
         raise AnkiHttpError("invalid_card_projection")
     cards = [_bounded_card(card, index) for index, card in enumerate(raw_cards)]
     cards.sort(
@@ -1254,14 +1456,18 @@ def export_anki_package(plan: object, destination: str | os.PathLike[str]) -> An
         )
     )
     semantic = _semantic_export_payload(plan, cards)
-    semantic_hash = hashlib.sha256(json.dumps(semantic, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    semantic_hash = hashlib.sha256(
+        json.dumps(semantic, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     output = Path(destination)
     output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(output.parent, 0o700)
     with tempfile.TemporaryDirectory(prefix="dn-anki-export-") as temp_root:
         temp_path = Path(temp_root) / "package.apkg"
         os.chmod(temp_root, 0o700)
-        note_guids, model_ids, deck_ids, expected_card_count = _build_package(plan, cards, temp_path)
+        note_guids, model_ids, deck_ids, expected_card_count = _build_package(
+            plan, cards, temp_path
+        )
         # Validate the produced bytes before publication.  The native Task 15
         # inspector is intentionally the trust boundary; this output contains
         # no external/package-controlled paths or add-ons.
@@ -1303,7 +1509,9 @@ def export_anki_package(plan: object, destination: str | os.PathLike[str]) -> An
 
 
 @router.post("/{plan_id}/anki/export", response_model=AnkiExportResponse)
-async def export_study_plan_anki(plan_id: str, payload: AnkiExportRequest) -> AnkiExportResponse:
+async def export_study_plan_anki(
+    plan_id: str, payload: AnkiExportRequest
+) -> AnkiExportResponse:
     try:
         plan_id = _safe_plan_id(plan_id)
         await _cleanup_expired_metadata()
@@ -1344,7 +1552,9 @@ async def export_study_plan_anki(plan_id: str, payload: AnkiExportRequest) -> An
     except AnkiHttpError as exc:
         raise _error_response(exc) from None
     except AnkiPackageRejected as exc:
-        raise _error_response(AnkiHttpError(f"generated_package_invalid:{exc.code}")) from None
+        raise _error_response(
+            AnkiHttpError(f"generated_package_invalid:{exc.code}")
+        ) from None
     except Exception as exc:
         if isinstance(exc, (ValueError, TypeError)):
             raise _error_response(AnkiHttpError("invalid_export")) from None
@@ -1363,7 +1573,9 @@ async def download_study_plan_anki(download_id: str) -> FileResponse:
                 raise AnkiHttpError("study_anki_unavailable", 503) from exc
             if metadata is None or metadata.expires_at <= datetime.now(UTC):
                 raise AnkiHttpError("download_not_found", 404)
-            resolved = _path_for_file_token(_export_root(), metadata.file_token, prefix="export")
+            resolved = _path_for_file_token(
+                _export_root(), metadata.file_token, prefix="export"
+            )
             try:
                 if resolved.stat().st_size > MAX_UPLOAD_BYTES:
                     raise AnkiHttpError("download_size_exceeded", 404)
@@ -1371,7 +1583,10 @@ async def download_study_plan_anki(download_id: str) -> FileResponse:
                 raise
             except OSError as exc:
                 raise AnkiHttpError("download_not_found", 404) from exc
-            if hashlib.sha256(resolved.read_bytes()).hexdigest() != metadata.package_sha256:
+            if (
+                hashlib.sha256(resolved.read_bytes()).hexdigest()
+                != metadata.package_sha256
+            ):
                 raise AnkiHttpError("download_not_found", 404)
         else:
             path = _DOWNLOADS.get(download_id)
@@ -1384,7 +1599,11 @@ async def download_study_plan_anki(download_id: str) -> FileResponse:
             resolved,
             media_type="application/zip",
             filename="study-plan.apkg",
-            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Disposition": 'attachment; filename="study-plan.apkg"'},
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": 'attachment; filename="study-plan.apkg"',
+            },
         )
     except AnkiHttpError as exc:
         raise _error_response(exc) from None

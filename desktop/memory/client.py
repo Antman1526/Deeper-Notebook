@@ -5,6 +5,7 @@ The `_register` import below has the side effect of installing `surreal` as
 a mem0 vector-store provider; it MUST happen before `Memory.from_config()`
 sees `provider: "surreal"`, or mem0 will reject the config as unknown.
 """
+
 from __future__ import annotations
 
 import os
@@ -36,41 +37,43 @@ def build_memory_client(*, cfg, surreal_url: str, embed_url: str, llm_url: str):
     if Memory is None:
         raise RuntimeError("mem0 not installed — run bootstrap to provision the venv")
     chat_model_name = resolve_env("DEEPER_NOTEBOOK_CHAT_MODEL_NAME", "default")
-    return Memory.from_config({
-        "vector_store": {
-            "provider": "surreal",
-            "config": {
-                "surreal_url": surreal_url,
-                "namespace": "open_notebook",
-                "database": "open_notebook",
-                "user": cfg.surreal_user,
-                "password": cfg.surreal_password,
+    return Memory.from_config(
+        {
+            "vector_store": {
+                "provider": "surreal",
+                "config": {
+                    "surreal_url": surreal_url,
+                    "namespace": "open_notebook",
+                    "database": "open_notebook",
+                    "user": cfg.surreal_user,
+                    "password": cfg.surreal_password,
+                },
             },
-        },
-        # v0.7.207 — mem0's BaseEmbedderConfig + BaseLlmConfig use
-        # the field name `openai_base_url`, NOT `base_url`. Prior to
-        # this fix the launcher passed `base_url` and mem0 rejected
-        # with `TypeError: BaseEmbedderConfig.__init__() got an
-        # unexpected keyword argument 'base_url'` at startup —
-        # memory_shim crashed silently (production DEVNULL), the
-        # Memory (local) credential test then reported "Cannot
-        # connect to server", and every chat session lost the
-        # mem0 writer that extracts facts + summarizes turns.
-        # Visible in ~/.deeper-notebook/logs/memory.log.
-        "embedder": {
-            "provider": "openai",
-            "config": {
-                "api_key": "sk-no-key",
-                "openai_base_url": embed_url,
-                "model": "nomic-embed-text-v1.5",
+            # v0.7.207 — mem0's BaseEmbedderConfig + BaseLlmConfig use
+            # the field name `openai_base_url`, NOT `base_url`. Prior to
+            # this fix the launcher passed `base_url` and mem0 rejected
+            # with `TypeError: BaseEmbedderConfig.__init__() got an
+            # unexpected keyword argument 'base_url'` at startup —
+            # memory_shim crashed silently (production DEVNULL), the
+            # Memory (local) credential test then reported "Cannot
+            # connect to server", and every chat session lost the
+            # mem0 writer that extracts facts + summarizes turns.
+            # Visible in ~/.deeper-notebook/logs/memory.log.
+            "embedder": {
+                "provider": "openai",
+                "config": {
+                    "api_key": "sk-no-key",
+                    "openai_base_url": embed_url,
+                    "model": "nomic-embed-text-v1.5",
+                },
             },
-        },
-        "llm": {
-            "provider": "openai",
-            "config": {
-                "api_key": "sk-no-key",
-                "openai_base_url": llm_url,
-                "model": chat_model_name,
+            "llm": {
+                "provider": "openai",
+                "config": {
+                    "api_key": "sk-no-key",
+                    "openai_base_url": llm_url,
+                    "model": chat_model_name,
+                },
             },
-        },
-    })
+        }
+    )

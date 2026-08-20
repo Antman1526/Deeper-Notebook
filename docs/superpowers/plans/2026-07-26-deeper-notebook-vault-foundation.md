@@ -473,14 +473,10 @@ Create a vault-specific watcher and repository protocol:
 
 ```python
 class VaultObservationRepository(Protocol):
-    async def record_observation(
-        self, observation: VaultFileObservation
-    ) -> None:
+    async def record_observation(self, observation: VaultFileObservation) -> None:
         raise NotImplementedError
 
-    async def mark_missing(
-        self, vault_id: str, relative_path: str
-    ) -> None:
+    async def mark_missing(self, vault_id: str, relative_path: str) -> None:
         raise NotImplementedError
 ```
 

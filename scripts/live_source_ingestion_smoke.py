@@ -6,6 +6,7 @@ running API process and proves the path that fixture browser tests cannot:
 create source -> worker finishes -> extracted text is readable from the API.
 Optionally, it can also create a source-chat session and stream one answer.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -78,7 +79,9 @@ def request_json(
             )
     except HTTPError as exc:
         text = exc.read().decode("utf-8", errors="replace")
-        raise SmokeFailure(f"{method} {url} failed with HTTP {exc.code}: {text}") from exc
+        raise SmokeFailure(
+            f"{method} {url} failed with HTTP {exc.code}: {text}"
+        ) from exc
     except URLError as exc:
         raise SmokeFailure(f"{method} {url} failed: {exc}") from exc
 
@@ -94,23 +97,29 @@ def request_multipart(
     boundary = f"----dn-smoke-{uuid.uuid4().hex}"
     chunks: list[bytes] = []
     for name, value in fields.items():
-        chunks.extend([
-            f"--{boundary}\r\n".encode("utf-8"),
-            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
-            value.encode("utf-8"),
-            b"\r\n",
-        ])
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(
+                    "utf-8"
+                ),
+                value.encode("utf-8"),
+                b"\r\n",
+            ]
+        )
     for name, (filename, content, content_type) in files.items():
-        chunks.extend([
-            f"--{boundary}\r\n".encode("utf-8"),
-            (
-                f'Content-Disposition: form-data; name="{name}"; '
-                f'filename="{filename}"\r\n'
-            ).encode("utf-8"),
-            f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
-            content,
-            b"\r\n",
-        ])
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                (
+                    f'Content-Disposition: form-data; name="{name}"; '
+                    f'filename="{filename}"\r\n'
+                ).encode("utf-8"),
+                f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+                content,
+                b"\r\n",
+            ]
+        )
     chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
     headers = {
         "Accept": "application/json",
@@ -180,7 +189,9 @@ def create_text_source(args: argparse.Namespace, marker: str) -> dict[str, Any]:
         timeout=args.request_timeout,
     )
     if not isinstance(response.data, dict) or not response.data.get("id"):
-        raise SmokeFailure(f"Create source returned unexpected payload: {response.text}")
+        raise SmokeFailure(
+            f"Create source returned unexpected payload: {response.text}"
+        )
     return response.data
 
 
@@ -196,11 +207,13 @@ def source_form_fields(
         "type": source_type,
         "title": title,
         "topics": json.dumps(["smoke", "source-ingestion"]),
-        "provenance": json.dumps({
-            "origin": "live_source_ingestion_smoke",
-            "marker": marker,
-            "source_kind": source_type,
-        }),
+        "provenance": json.dumps(
+            {
+                "origin": "live_source_ingestion_smoke",
+                "marker": marker,
+                "source_kind": source_type,
+            }
+        ),
         "source_type": source_type,
         "embed": "false" if args.skip_embedding else "true",
         "delete_source": "false",
@@ -239,11 +252,15 @@ def create_upload_source(args: argparse.Namespace, marker: str) -> dict[str, Any
         timeout=args.request_timeout,
     )
     if not isinstance(response.data, dict) or not response.data.get("id"):
-        raise SmokeFailure(f"Create upload source returned unexpected payload: {response.text}")
+        raise SmokeFailure(
+            f"Create upload source returned unexpected payload: {response.text}"
+        )
     return response.data
 
 
-def create_link_source(args: argparse.Namespace, marker: str, url: str) -> dict[str, Any]:
+def create_link_source(
+    args: argparse.Namespace, marker: str, url: str
+) -> dict[str, Any]:
     payload = {
         "type": "link",
         "title": args.title or f"Live link smoke {marker}",
@@ -270,11 +287,15 @@ def create_link_source(args: argparse.Namespace, marker: str, url: str) -> dict[
         timeout=args.request_timeout,
     )
     if not isinstance(response.data, dict) or not response.data.get("id"):
-        raise SmokeFailure(f"Create link source returned unexpected payload: {response.text}")
+        raise SmokeFailure(
+            f"Create link source returned unexpected payload: {response.text}"
+        )
     return response.data
 
 
-def start_marker_http_server(marker: str) -> tuple[http.server.ThreadingHTTPServer, str]:
+def start_marker_http_server(
+    marker: str,
+) -> tuple[http.server.ThreadingHTTPServer, str]:
     class MarkerHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             body = (
@@ -299,7 +320,9 @@ def start_marker_http_server(marker: str) -> tuple[http.server.ThreadingHTTPServ
     return server, f"http://127.0.0.1:{port}/smoke-{marker}.html"
 
 
-def wait_for_source(args: argparse.Namespace, source_id: str, marker: str) -> dict[str, Any]:
+def wait_for_source(
+    args: argparse.Namespace, source_id: str, marker: str
+) -> dict[str, Any]:
     deadline = time.monotonic() + args.timeout
     last_status: dict[str, Any] | None = None
     while True:
@@ -320,7 +343,9 @@ def wait_for_source(args: argparse.Namespace, source_id: str, marker: str) -> di
 
         detail = request_json(
             "GET",
-            build_api_url(args.base_url, f"/sources/{quote(source_id, safe=':')}", args.api_prefix),
+            build_api_url(
+                args.base_url, f"/sources/{quote(source_id, safe=':')}", args.api_prefix
+            ),
             token=args.token,
             timeout=args.request_timeout,
         ).data
@@ -366,7 +391,9 @@ def maybe_run_source_chat(
         timeout=args.request_timeout,
     ).data
     if not isinstance(session, dict) or not session.get("id"):
-        raise SmokeFailure(f"Create source-chat session returned unexpected payload: {session}")
+        raise SmokeFailure(
+            f"Create source-chat session returned unexpected payload: {session}"
+        )
 
     stream_url = build_api_url(
         args.base_url,
@@ -397,12 +424,18 @@ def maybe_run_source_chat(
                 if not line:
                     continue
                 buffer += line + "\n"
-                if "ai_message_delta" in line or '"type":"done"' in line or '"type": "done"' in line:
+                if (
+                    "ai_message_delta" in line
+                    or '"type":"done"' in line
+                    or '"type": "done"' in line
+                ):
                     saw_answer = True
                 if '"type":"done"' in line or '"type": "done"' in line:
                     break
             if not saw_answer:
-                raise SmokeFailure(f"Source chat stream produced no answer events:\n{buffer[-2000:]}")
+                raise SmokeFailure(
+                    f"Source chat stream produced no answer events:\n{buffer[-2000:]}"
+                )
             return {"session_id": session["id"], "stream_observed": True}
     except HTTPError as exc:
         text = exc.read().decode("utf-8", errors="replace")
@@ -414,7 +447,9 @@ def maybe_run_source_chat(
 def delete_source(args: argparse.Namespace, source_id: str) -> None:
     request_json(
         "DELETE",
-        build_api_url(args.base_url, f"/sources/{quote(source_id, safe=':')}", args.api_prefix),
+        build_api_url(
+            args.base_url, f"/sources/{quote(source_id, safe=':')}", args.api_prefix
+        ),
         token=args.token,
         timeout=args.request_timeout,
     )
@@ -429,7 +464,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--api-prefix", default="/api")
     parser.add_argument("--token", default=os.environ.get("DEEPER_NOTEBOOK_API_TOKEN"))
-    parser.add_argument("--notebook-id", default=os.environ.get("DEEPER_NOTEBOOK_SMOKE_NOTEBOOK_ID"))
+    parser.add_argument(
+        "--notebook-id", default=os.environ.get("DEEPER_NOTEBOOK_SMOKE_NOTEBOOK_ID")
+    )
     parser.add_argument("--title")
     parser.add_argument("--content")
     parser.add_argument(
@@ -488,14 +525,16 @@ def main(argv: list[str]) -> int:
             source_ids.append(source_id)
             detail = wait_for_source(args, source_id, marker)
             chat = maybe_run_source_chat(args, source_id, marker)
-            results.append({
-                "source_kind": source_kind,
-                "source_id": source_id,
-                "embedded": detail.get("embedded"),
-                "extracted_char_count": detail.get("extracted_char_count"),
-                "extraction_quality": detail.get("extraction_quality"),
-                "chat": chat,
-            })
+            results.append(
+                {
+                    "source_kind": source_kind,
+                    "source_id": source_id,
+                    "embedded": detail.get("embedded"),
+                    "extracted_char_count": detail.get("extracted_char_count"),
+                    "extraction_quality": detail.get("extraction_quality"),
+                    "chat": chat,
+                }
+            )
 
         result = {
             "ok": True,
@@ -515,7 +554,10 @@ def main(argv: list[str]) -> int:
                 try:
                     delete_source(args, source_id)
                 except SmokeFailure as exc:
-                    print(f"warning: cleanup failed for {source_id}: {exc}", file=sys.stderr)
+                    print(
+                        f"warning: cleanup failed for {source_id}: {exc}",
+                        file=sys.stderr,
+                    )
 
 
 if __name__ == "__main__":

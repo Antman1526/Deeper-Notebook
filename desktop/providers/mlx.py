@@ -1,4 +1,5 @@
 """MLX provider: scan local MLX repos and spawn mlx_lm.server."""
+
 from __future__ import annotations
 
 import subprocess
@@ -15,7 +16,10 @@ from desktop.providers import ProviderEnv
 
 def _http_ready(port: int) -> bool:
     try:
-        return httpx.get(f"http://127.0.0.1:{port}/v1/models", timeout=0.5).status_code == 200
+        return (
+            httpx.get(f"http://127.0.0.1:{port}/v1/models", timeout=0.5).status_code
+            == 200
+        )
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
         return False
 
@@ -33,7 +37,9 @@ def _is_complete_mlx_repo(path: Path) -> bool:
     if not (path / "config.json").is_file():
         return False
     try:
-        return any(item.is_file() and item.suffix == ".safetensors" for item in path.iterdir())
+        return any(
+            item.is_file() and item.suffix == ".safetensors" for item in path.iterdir()
+        )
     except OSError:
         return False
 
@@ -215,4 +221,6 @@ class MlxProvider:
         root = self.model_dir.resolve()
         if path == root or path.is_relative_to(root):
             return path
-        raise FileNotFoundError(f"MLX model path must be inside {self.model_dir}: {model}")
+        raise FileNotFoundError(
+            f"MLX model path must be inside {self.model_dir}: {model}"
+        )

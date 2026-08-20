@@ -50,15 +50,15 @@ def render_css() -> str:
     for theme_id, palette in _THEMES.items():
         blocks.append(
             f'[data-theme="{theme_id}"] {{\n'
-            f'  --bg: {palette["bg"]};\n'
-            f'  --surface: {palette["card"]};\n'
-            f'  --text: {palette["fg"]};\n'
-            f'  --muted: {palette["muted_fg"]};\n'
-            f'  --border: {palette["border"]};\n'
-            f'  --primary: {palette["primary"]};\n'
-            f'  --accent: {palette["accent"]};\n'
-            f'  --on-primary: {palette["primary_fg"]};\n'
-            '}\n'
+            f"  --bg: {palette['bg']};\n"
+            f"  --surface: {palette['card']};\n"
+            f"  --text: {palette['fg']};\n"
+            f"  --muted: {palette['muted_fg']};\n"
+            f"  --border: {palette['border']};\n"
+            f"  --primary: {palette['primary']};\n"
+            f"  --accent: {palette['accent']};\n"
+            f"  --on-primary: {palette['primary_fg']};\n"
+            "}\n"
         )
     return "\n".join(blocks).rstrip("\n") + "\n"
 
@@ -68,14 +68,16 @@ def render_catalog() -> str:
     entries = []
     for theme_id, palette in _THEMES.items():
         label, group = THEME_META[theme_id]
-        entries.append({
-            "id": theme_id,
-            "name": label,
-            "group": group,
-            "dark": bool(palette["is_dark"]),
-            "bg": palette["bg"],
-            "fg": palette["primary"],
-        })
+        entries.append(
+            {
+                "id": theme_id,
+                "name": label,
+                "group": group,
+                "dark": bool(palette["is_dark"]),
+                "bg": palette["bg"],
+                "fg": palette["primary"],
+            }
+        )
     payload = json.dumps(entries, ensure_ascii=False, separators=(",", ":"))
     return f"window.DN_THEME_CATALOG = {payload};\n"
 
@@ -85,7 +87,8 @@ def render_assets(*, check: bool = False) -> int:
     expected[CATALOG_PATH] = render_catalog()
     if check:
         stale = [
-            path for path, content in expected.items()
+            path
+            for path, content in expected.items()
             if not path.exists() or path.read_text(encoding="utf-8") != content
         ]
         return 1 if stale else 0

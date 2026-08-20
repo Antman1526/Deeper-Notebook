@@ -340,9 +340,7 @@ async def _resolve_chat_tools(
 
     try:
         raw_servers = (
-            force_servers
-            if force_servers is not None
-            else await list_enabled_servers()
+            force_servers if force_servers is not None else await list_enabled_servers()
         )
     except Exception:
         # The registry is an optional extension surface.  A malformed test
@@ -434,7 +432,7 @@ async def _resolve_chat_tools(
                             "properties": {},
                         },
                     }
-                    for n in force_tool_names[: _MAX_MCP_TOOLS]
+                    for n in force_tool_names[:_MAX_MCP_TOOLS]
                 ]
             )
         # v0.8.12 — TTL-cached discovery. ~50-500ms saved per chat
@@ -1011,9 +1009,7 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
         # local models. The debate template carries its own copy of the
         # grounding + citing contracts, so citations behave identically.
         _template = (
-            "chat/debate"
-            if state.get("chat_mode") == "debate"
-            else "chat/system"
+            "chat/debate" if state.get("chat_mode") == "debate" else "chat/system"
         )
         system_prompt = Prompter(prompt_template=_template).render(data=prompt_data)
         # v0.7.11 — trim accumulated message history before building the

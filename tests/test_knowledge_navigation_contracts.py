@@ -233,7 +233,10 @@ def test_legacy_named_workspace_tab_derives_its_research_mode():
             display_label="Plan",
             view_mode="reading",
             mode="podcast",
-            target={"kind": "document", "document_id": "knowledge_engine_document:plan"},
+            target={
+                "kind": "document",
+                "document_id": "knowledge_engine_document:plan",
+            },
         )
 
 
@@ -260,7 +263,10 @@ def test_named_workspace_modes_preserve_write_and_content_free_targets():
             display_label="Draft",
             view_mode="reading",
             mode="write",
-            target={"kind": "document", "document_id": "knowledge_engine_document:draft"},
+            target={
+                "kind": "document",
+                "document_id": "knowledge_engine_document:draft",
+            },
         )
     with pytest.raises(ValidationError):
         AskTarget(kind="ask", thread_id="/private/thread")

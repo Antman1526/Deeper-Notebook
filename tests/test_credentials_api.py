@@ -32,9 +32,7 @@ class TestCredentialCascadeDelete:
         mock_model2.name = "gpt-3.5-turbo"
 
         mock_cred = AsyncMock()
-        mock_cred.get_linked_models = AsyncMock(
-            return_value=[mock_model1, mock_model2]
-        )
+        mock_cred.get_linked_models = AsyncMock(return_value=[mock_model1, mock_model2])
         mock_cred.delete = AsyncMock()
         mock_get.return_value = mock_cred
 
@@ -84,9 +82,7 @@ class TestCredentialCascadeDelete:
         # First call returns cred to delete, second returns target
         mock_get.side_effect = [mock_cred, mock_target_cred]
 
-        response = client.delete(
-            "/api/credentials/cred:123?migrate_to=cred:456"
-        )
+        response = client.delete("/api/credentials/cred:123?migrate_to=cred:456")
 
         assert response.status_code == 200
         data = response.json()
@@ -108,8 +104,12 @@ class TestV0822MigrationSanitization:
     @patch("api.credentials_service.Credential.get_by_provider")
     @patch("api.credentials_service.require_encryption_key")
     async def test_migrate_from_env_sanitizes_exception_in_response(
-        self, mock_require, mock_get_by_provider,
-        mock_check_env, mock_create_cred, client,
+        self,
+        mock_require,
+        mock_get_by_provider,
+        mock_check_env,
+        mock_create_cred,
+        client,
     ):
         """Force migrate_from_env into the except branch and assert the
         response's `errors[]` carries only the exception TYPE NAME — not
@@ -165,7 +165,11 @@ class TestV0822MigrationSanitization:
     @patch("deeper_notebook.domain.provider_config.ProviderConfig")
     @patch("api.credentials_service.require_encryption_key")
     async def test_migrate_from_provider_config_sanitizes_exception(
-        self, mock_require, mock_provider_config, mock_get_by_provider, client,
+        self,
+        mock_require,
+        mock_provider_config,
+        mock_get_by_provider,
+        client,
     ):
         """Same contract as the env migration: exception messages from
         the inner Credential() constructor / save() must not leak into

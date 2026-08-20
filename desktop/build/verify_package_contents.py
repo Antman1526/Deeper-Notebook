@@ -55,9 +55,7 @@ def inspect_wheel(wheel_path: Path) -> dict[str, list[str]]:
         raise PackageContentError(f"wheel does not exist: {wheel_path}")
     with zipfile.ZipFile(wheel_path) as archive:
         paths = sorted(
-            name
-            for name in archive.namelist()
-            if name and not name.endswith("/")
+            name for name in archive.namelist() if name and not name.endswith("/")
         )
     return {
         "canonical_runtime": _require_canonical_runtime(
@@ -78,7 +76,9 @@ def _find_upstream_tree(frozen_root: Path) -> Path:
         if (candidate / "deeper_notebook").is_dir()
         and (candidate / "open_notebook").is_dir()
     ]
-    unique_candidates = list(dict.fromkeys(candidate.resolve() for candidate in candidates))
+    unique_candidates = list(
+        dict.fromkeys(candidate.resolve() for candidate in candidates)
+    )
     if len(unique_candidates) != 1:
         raise PackageContentError(
             "expected exactly one frozen upstream tree containing "
@@ -96,9 +96,7 @@ def inspect_frozen_root(frozen_root: Path) -> dict[str, list[str]]:
     paths = sorted(
         f"upstream/{path.relative_to(upstream).as_posix()}"
         for path in upstream.rglob("*")
-        if path.is_file()
-        and "__pycache__" not in path.parts
-        and path.suffix != ".pyc"
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
     )
     return {
         "package_roots": [

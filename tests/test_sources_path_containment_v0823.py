@@ -25,6 +25,7 @@ Tests:
 4. Both helpers tolerate OSError / ValueError on malformed paths
    without crashing (treat as "not found").
 """
+
 from __future__ import annotations
 
 import os
@@ -68,6 +69,7 @@ def test_is_source_file_available_rejects_sibling_prefix(tmp_path, monkeypatch):
     # read it at call time (not import time) via the module-level
     # symbol — patch on the module.
     import api.routers.sources as sources_mod
+
     monkeypatch.setattr(sources_mod, "UPLOADS_FOLDER", str(uploads))
 
     src = _build_source_with_file_path(str(bad_file))
@@ -91,6 +93,7 @@ def test_is_source_file_available_accepts_legitimate_path(tmp_path, monkeypatch)
     good_file.write_text("fake pdf")
 
     import api.routers.sources as sources_mod
+
     monkeypatch.setattr(sources_mod, "UPLOADS_FOLDER", str(uploads))
 
     src = _build_source_with_file_path(str(good_file))
@@ -109,6 +112,7 @@ def test_is_source_file_available_tolerates_malformed_path(tmp_path, monkeypatch
     uploads.mkdir()
 
     import api.routers.sources as sources_mod
+
     monkeypatch.setattr(sources_mod, "UPLOADS_FOLDER", str(uploads))
 
     # Embedded null byte → Path.resolve raises ValueError on most OSes.
@@ -137,6 +141,7 @@ async def test_resolve_source_file_rejects_sibling_prefix(tmp_path, monkeypatch)
     bad_file.write_text("ATTACKER SHOULD NOT GET THIS")
 
     import api.routers.sources as sources_mod
+
     monkeypatch.setattr(sources_mod, "UPLOADS_FOLDER", str(uploads))
 
     # Mock Source.get to return a source with the malicious asset.
@@ -168,6 +173,7 @@ async def test_resolve_source_file_serves_legitimate_path(tmp_path, monkeypatch)
     good_file.write_text("fake pdf")
 
     import api.routers.sources as sources_mod
+
     monkeypatch.setattr(sources_mod, "UPLOADS_FOLDER", str(uploads))
 
     fake_source = _build_source_with_file_path(str(good_file))

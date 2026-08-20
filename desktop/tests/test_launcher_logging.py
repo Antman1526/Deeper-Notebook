@@ -13,6 +13,7 @@ These tests confirm:
     file with the expected format
   - The handler is RotatingFileHandler with sensible defaults
 """
+
 from __future__ import annotations
 
 import logging
@@ -57,7 +58,8 @@ def test_handler_is_idempotent(tmp_path):
     _setup_launcher_log_handler(log_path)
     _setup_launcher_log_handler(log_path)
     file_handlers = [
-        h for h in logging.getLogger("desktop").handlers
+        h
+        for h in logging.getLogger("desktop").handlers
         if isinstance(h, RotatingFileHandler)
         and getattr(h, "baseFilename", "") == str(log_path)
     ]
@@ -70,7 +72,8 @@ def test_handler_is_rotating_with_sensible_cap(tmp_path):
     log_path = tmp_path / "launcher.log"
     _setup_launcher_log_handler(log_path)
     file_handlers = [
-        h for h in logging.getLogger("desktop").handlers
+        h
+        for h in logging.getLogger("desktop").handlers
         if isinstance(h, RotatingFileHandler)
         and getattr(h, "baseFilename", "") == str(log_path)
     ]

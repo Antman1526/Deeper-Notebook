@@ -1,4 +1,5 @@
 """v0.8.66 — MCP client RPC timeout (MCP-1) + optional auth headers (MCP-4)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -9,9 +10,17 @@ import pytest
 import deeper_notebook.mcp.client as cm
 
 
-@pytest.mark.parametrize("val,expected", [
-    (None, 30.0), ("5", 5.0), ("0", 30.0), ("-1", 30.0), ("x", 30.0), ("", 30.0),
-])
+@pytest.mark.parametrize(
+    "val,expected",
+    [
+        (None, 30.0),
+        ("5", 5.0),
+        ("0", 30.0),
+        ("-1", 30.0),
+        ("x", 30.0),
+        ("", 30.0),
+    ],
+)
 def test_rpc_timeout_parsing(monkeypatch, val, expected):
     if val is None:
         monkeypatch.delenv("DEEPER_NOTEBOOK_MCP_RPC_TIMEOUT_SEC", raising=False)
@@ -23,7 +32,9 @@ def test_rpc_timeout_parsing(monkeypatch, val, expected):
 def test_env_headers_parsing(monkeypatch):
     monkeypatch.delenv("DEEPER_NOTEBOOK_MCP_AUTH_HEADER", raising=False)
     assert cm._env_headers() is None
-    monkeypatch.setenv("DEEPER_NOTEBOOK_MCP_AUTH_HEADER", "Authorization: Bearer abc123")
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_MCP_AUTH_HEADER", "Authorization: Bearer abc123"
+    )
     assert cm._env_headers() == {"Authorization": "Bearer abc123"}
     monkeypatch.setenv("DEEPER_NOTEBOOK_MCP_AUTH_HEADER", "no-colon-here")
     assert cm._env_headers() is None
@@ -60,6 +71,7 @@ async def test_headers_threaded_to_session(monkeypatch):
         class _S:
             async def list_tools(self_):
                 return type("R", (), {"tools": []})()
+
         yield _S()
 
     monkeypatch.setattr(cm, "_open_session", _capture)

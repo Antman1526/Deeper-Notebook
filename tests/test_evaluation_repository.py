@@ -26,7 +26,9 @@ async def test_list_verdicts_selects_and_hides_ordering_metadata(monkeypatch) ->
             }
         ]
 
-    monkeypatch.setattr("deeper_notebook.evaluation.repository.repo_query", fake_repo_query)
+    monkeypatch.setattr(
+        "deeper_notebook.evaluation.repository.repo_query", fake_repo_query
+    )
 
     verdicts = await EvaluationRepository().list_verdicts("evaluation_run:example")
 

@@ -29,6 +29,7 @@ explicitly asked to clean up:
    with CJK-heavy content can raise the cap; the default stays at
    80 for English content.
 """
+
 from __future__ import annotations
 
 import re
@@ -100,10 +101,7 @@ def test_podcast_get_episode_does_not_mask_all_errors_as_404():
     # The whole try/except wrapper for get_episode must be gone.
     # Pin the v0.7.204 marker so a refactor that re-adds the
     # try/except is caught.
-    assert (
-        "v0.7.204 — was a bare `try/except Exception` that turned"
-        in src
-    )
+    assert "v0.7.204 — was a bare `try/except Exception` that turned" in src
     # The new code raises NotFoundError on None return.
     assert 'raise NotFoundError(f"Episode {episode_id} not found")' in src
 
@@ -115,7 +113,10 @@ def test_command_service_wraps_untyped_exceptions():
     500. Typed exceptions (ValueError, asyncio.TimeoutError,
     DeeperNotebookError subclasses) pass through unchanged."""
     src = _src("api/command_service.py")
-    assert "if isinstance(e, (DeeperNotebookError, ValueError, asyncio.TimeoutError)):" in src
+    assert (
+        "if isinstance(e, (DeeperNotebookError, ValueError, asyncio.TimeoutError)):"
+        in src
+    )
     assert "raise DeeperNotebookError(" in src
 
 

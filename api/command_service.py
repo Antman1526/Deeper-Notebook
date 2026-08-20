@@ -38,6 +38,7 @@ class CommandService:
             # 10s default is generous for a row-insert; tunable via
             # DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC.
             import os
+
             _submit_timeout = float(
                 resolve_env("DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
                 or 10
@@ -79,6 +80,7 @@ class CommandService:
             # wrapped. Logging stays at error level so ops have the
             # full stack.
             from deeper_notebook.exceptions import DeeperNotebookError
+
             logger.error(f"Failed to submit command job: {e}")
             if isinstance(e, (DeeperNotebookError, ValueError, asyncio.TimeoutError)):
                 raise
@@ -238,6 +240,7 @@ class CommandService:
                 from surreal_commands.core.service import (
                     get_command_service as _gcsvc,
                 )
+
                 _have_private_api = True
             except ImportError:
                 _have_private_api = False
@@ -261,9 +264,7 @@ class CommandService:
                 )
                 return False
 
-            cancel_msg = (
-                "Cancelled by user via DELETE /commands/jobs/{job_id}"
-            )
+            cancel_msg = "Cancelled by user via DELETE /commands/jobs/{job_id}"
             if _have_private_api:
                 svc = _gcsvc()
                 await svc.update_command_result(
@@ -283,7 +284,6 @@ class CommandService:
                     ensure_record_id,
                 )
                 from deeper_notebook.database.repository import repo_query
-
 
                 # v0.8.87 (B608) — parse before interpolating: RecordID.parse
                 # rejects anything that is not a well-formed record id, so a  # nosec B608

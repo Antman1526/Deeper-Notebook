@@ -29,6 +29,7 @@ on a flaky network / dead-child failure:
     `.old` at 2MB on startup. Custom check+rename pattern (not
     RotatingFileHandler) so no Windows concurrency issue.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -97,8 +98,10 @@ def test_wait_tcp_early_exits_when_proc_dies(monkeypatch):
     # Make socket.create_connection always fail so the loop hits
     # the poll check.
     import socket as _socket
+
     def _always_refuse(*a, **kw):
         raise OSError("connection refused")
+
     monkeypatch.setattr(_socket, "create_connection", _always_refuse)
 
     start = _time.monotonic()
@@ -131,8 +134,7 @@ def test_model_downloads_uses_httpx_stream_not_urllib():
     )
     # The bad import must be gone.
     code_only = "\n".join(
-        line for line in src.splitlines()
-        if not line.lstrip().startswith("#")
+        line for line in src.splitlines() if not line.lstrip().startswith("#")
     )
     assert "import urllib.request" not in code_only, (
         "v0.7.188 regression: urllib.request re-imported in "
@@ -170,9 +172,16 @@ def test_model_downloads_preserves_tmp_on_failure():
 
     class _FailingMid:
         status_code = 200
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def raise_for_status(self): pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def raise_for_status(self):
+            pass
+
         def iter_bytes(self, chunk_size=None):
             yield b"partial data " * 100  # writes ~1300 bytes
             raise httpx.ReadTimeout("idle stall")
@@ -181,6 +190,7 @@ def test_model_downloads_preserves_tmp_on_failure():
         dest = Path(td) / "model.gguf"
         tmp = dest.with_suffix(dest.suffix + ".tmp")
         import desktop.model_downloads as md
+
         orig_stream = md.httpx.stream
         md.httpx.stream = lambda *a, **kw: _FailingMid()
         try:
@@ -210,9 +220,16 @@ def test_model_downloads_handles_server_ignoring_range(monkeypatch, tmp_path):
 
     class _FullContentResp:
         status_code = 200  # server ignored our Range request
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def raise_for_status(self): pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def raise_for_status(self):
+            pass
+
         def iter_bytes(self, chunk_size=None):
             yield full_content
 

@@ -125,9 +125,7 @@ def secure_unlink_uploaded_file_windows(
             ) from ctypes.WinError(ctypes.get_last_error())
         attributes = information.dwFileAttributes
         if attributes & file_attribute_reparse_point:
-            raise UnsafeWindowsUploadCleanupError(
-                "upload-path-is-reparse-point"
-            )
+            raise UnsafeWindowsUploadCleanupError("upload-path-is-reparse-point")
         is_directory = bool(attributes & file_attribute_directory)
         if is_directory != expect_directory:
             raise UnsafeWindowsUploadCleanupError(
@@ -136,31 +134,23 @@ def secure_unlink_uploaded_file_windows(
                 else "upload-target-is-not-regular-file"
             )
         if get_file_type(raw_handle) != file_type_disk:
-            raise UnsafeWindowsUploadCleanupError(
-                "upload-target-is-not-regular-file"
-            )
+            raise UnsafeWindowsUploadCleanupError("upload-target-is-not-regular-file")
         return raw_handle
 
     try:
         anchor = root.anchor
         if not anchor:
-            raise UnsafeWindowsUploadCleanupError(
-                "upload-root-has-no-anchor"
-            )
+            raise UnsafeWindowsUploadCleanupError("upload-root-has-no-anchor")
         current = Path(anchor)
         for component in (*root.parts[1:], *relative.parts[:-1]):
             if ":" in component:
-                raise UnsafeWindowsUploadCleanupError(
-                    "upload-path-is-not-a-file"
-                )
+                raise UnsafeWindowsUploadCleanupError("upload-path-is-not-a-file")
             current /= component
             open_pinned(current, expect_directory=True)
 
         name = relative.parts[-1]
         if ":" in name:
-            raise UnsafeWindowsUploadCleanupError(
-                "upload-path-is-not-a-file"
-            )
+            raise UnsafeWindowsUploadCleanupError("upload-path-is-not-a-file")
         file_handle = open_pinned(
             current / name,
             expect_directory=False,

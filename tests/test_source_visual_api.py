@@ -73,24 +73,42 @@ class _Store:
         return self.body
 
     def __getattr__(self, name):
-        if name in {"stage", "publish", "tombstone", "remove_tombstone", "restore_tombstone"}:
+        if name in {
+            "stage",
+            "publish",
+            "tombstone",
+            "remove_tombstone",
+            "restore_tombstone",
+        }:
+
             def unexpected(*_args, **_kwargs):
                 self.mutations.append(name)
                 raise AssertionError(f"GET must not mutate cache via {name}")
+
             return unexpected
         raise AttributeError(name)
 
 
 @pytest.mark.asyncio
-async def test_asset_get_recomputes_authority_reads_exact_bytes_and_emits_private_immutable_etag(monkeypatch):
+async def test_asset_get_recomputes_authority_reads_exact_bytes_and_emits_private_immutable_etag(
+    monkeypatch,
+):
     from api.routers import source_visuals
 
     record = _record()
     repository = _Repository(record)
     store = _Store()
     monkeypatch.setattr(source_visuals, "source_visuals_enabled", lambda: True)
-    monkeypatch.setattr(source_visuals.Source, "get", AsyncMock(return_value=SimpleNamespace(id="source:one")))
-    monkeypatch.setattr(source_visuals, "compute_source_visual_authority", AsyncMock(return_value=_authority()))
+    monkeypatch.setattr(
+        source_visuals.Source,
+        "get",
+        AsyncMock(return_value=SimpleNamespace(id="source:one")),
+    )
+    monkeypatch.setattr(
+        source_visuals,
+        "compute_source_visual_authority",
+        AsyncMock(return_value=_authority()),
+    )
 
     response = await source_visuals.get_source_visual_asset(
         "source:one", if_none_match=None, repository=repository, store=store
@@ -107,17 +125,30 @@ async def test_asset_get_recomputes_authority_reads_exact_bytes_and_emits_privat
 
 
 @pytest.mark.asyncio
-async def test_asset_get_returns_304_only_after_full_authority_and_exact_read(monkeypatch):
+async def test_asset_get_returns_304_only_after_full_authority_and_exact_read(
+    monkeypatch,
+):
     from api.routers import source_visuals
 
     record = _record()
     store = _Store()
     monkeypatch.setattr(source_visuals, "source_visuals_enabled", lambda: True)
-    monkeypatch.setattr(source_visuals.Source, "get", AsyncMock(return_value=SimpleNamespace(id="source:one")))
-    monkeypatch.setattr(source_visuals, "compute_source_visual_authority", AsyncMock(return_value=_authority()))
+    monkeypatch.setattr(
+        source_visuals.Source,
+        "get",
+        AsyncMock(return_value=SimpleNamespace(id="source:one")),
+    )
+    monkeypatch.setattr(
+        source_visuals,
+        "compute_source_visual_authority",
+        AsyncMock(return_value=_authority()),
+    )
 
     response = await source_visuals.get_source_visual_asset(
-        "source:one", if_none_match=f'"{ASSET_SHA}"', repository=_Repository(record), store=store
+        "source:one",
+        if_none_match=f'"{ASSET_SHA}"',
+        repository=_Repository(record),
+        store=store,
     )
 
     assert response.status_code == 304
@@ -130,22 +161,39 @@ async def test_asset_get_returns_304_only_after_full_authority_and_exact_read(mo
     "record,authority,store_error",
     [
         (None, _authority(), None),
-        (_record(), SimpleNamespace(**{**_authority().__dict__, "content_sha256": "d" * 64}), None),
+        (
+            _record(),
+            SimpleNamespace(**{**_authority().__dict__, "content_sha256": "d" * 64}),
+            None,
+        ),
         (_record(), _authority(), SourceVisualStorageError("ASSET_MISSING")),
         (_record(), _authority(), SourceVisualStorageError("ASSET_HASH_MISMATCH")),
         (_record(), _authority(), SourceVisualStorageError("ASSET_IO_FAILED")),
     ],
 )
-async def test_asset_get_maps_stale_and_controlled_cache_failures_to_safe_conflict(monkeypatch, record, authority, store_error):
+async def test_asset_get_maps_stale_and_controlled_cache_failures_to_safe_conflict(
+    monkeypatch, record, authority, store_error
+):
     from api.routers import source_visuals
 
     monkeypatch.setattr(source_visuals, "source_visuals_enabled", lambda: True)
-    monkeypatch.setattr(source_visuals.Source, "get", AsyncMock(return_value=SimpleNamespace(id="source:one")))
-    monkeypatch.setattr(source_visuals, "compute_source_visual_authority", AsyncMock(return_value=authority))
+    monkeypatch.setattr(
+        source_visuals.Source,
+        "get",
+        AsyncMock(return_value=SimpleNamespace(id="source:one")),
+    )
+    monkeypatch.setattr(
+        source_visuals,
+        "compute_source_visual_authority",
+        AsyncMock(return_value=authority),
+    )
 
     with pytest.raises(HTTPException) as exc:
         await source_visuals.get_source_visual_asset(
-            "source:one", if_none_match=None, repository=_Repository(record), store=_Store(error=store_error)
+            "source:one",
+            if_none_match=None,
+            repository=_Repository(record),
+            store=_Store(error=store_error),
         )
 
     assert exc.value.status_code == 409
@@ -160,7 +208,9 @@ async def test_asset_get_missing_source_is_404(monkeypatch):
     monkeypatch.setattr(source_visuals.Source, "get", AsyncMock(return_value=None))
 
     with pytest.raises(HTTPException) as exc:
-        await source_visuals.get_source_visual_asset("source:missing", if_none_match=None)
+        await source_visuals.get_source_visual_asset(
+            "source:missing", if_none_match=None
+        )
 
     assert exc.value.status_code == 404
 
@@ -192,13 +242,21 @@ async def test_feature_guard_runs_before_source_or_payload_parsing(monkeypatch):
     monkeypatch.setattr(source_visuals.Source, "get", source_get)
 
     with pytest.raises(HTTPException) as refresh:
-        await source_visuals.submit_source_visual_refresh("not a source id", {"request_id": []})
+        await source_visuals.submit_source_visual_refresh(
+            "not a source id", {"request_id": []}
+        )
     with pytest.raises(HTTPException) as delete:
         await source_visuals.delete_source_visual("not a source id", {"request_id": []})
     with pytest.raises(HTTPException) as asset:
-        await source_visuals.get_source_visual_asset("not a source id", if_none_match=None)
+        await source_visuals.get_source_visual_asset(
+            "not a source id", if_none_match=None
+        )
 
-    assert {refresh.value.status_code, delete.value.status_code, asset.value.status_code} == {404}
+    assert {
+        refresh.value.status_code,
+        delete.value.status_code,
+        asset.value.status_code,
+    } == {404}
     assert refresh.value.detail == delete.value.detail == asset.value.detail
     source_get.assert_not_awaited()
 
@@ -213,14 +271,32 @@ async def test_refresh_returns_accepted_for_new_work_and_ok_for_replay(monkeypat
         "get",
         AsyncMock(return_value=SimpleNamespace(id="source:one")),
     )
-    submit = AsyncMock(side_effect=[
-        SimpleNamespace(source_id="source:one", command_id="command:new", content_sha256=SOURCE_SHA, outcome="queued", error_code=None),
-        SimpleNamespace(source_id="source:one", command_id="command:new", content_sha256=SOURCE_SHA, outcome="replayed", error_code=None),
-    ])
+    submit = AsyncMock(
+        side_effect=[
+            SimpleNamespace(
+                source_id="source:one",
+                command_id="command:new",
+                content_sha256=SOURCE_SHA,
+                outcome="queued",
+                error_code=None,
+            ),
+            SimpleNamespace(
+                source_id="source:one",
+                command_id="command:new",
+                content_sha256=SOURCE_SHA,
+                outcome="replayed",
+                error_code=None,
+            ),
+        ]
+    )
     monkeypatch.setattr(source_visuals, "submit_source_visual", submit)
 
-    created = await source_visuals.submit_source_visual_refresh("source:one", {"request_id": "request:new"})
-    replay = await source_visuals.submit_source_visual_refresh("source:one", {"request_id": "request:new"})
+    created = await source_visuals.submit_source_visual_refresh(
+        "source:one", {"request_id": "request:new"}
+    )
+    replay = await source_visuals.submit_source_visual_refresh(
+        "source:one", {"request_id": "request:new"}
+    )
 
     assert created.status_code == 202
     assert replay.status_code == 200
@@ -229,8 +305,16 @@ async def test_refresh_returns_accepted_for_new_work_and_ok_for_replay(monkeypat
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("error", [SourceVisualConflictError("REQUEST_CONFLICT"), SourceVisualRepositoryError("MALFORMED_ROW")])
-async def test_refresh_maps_typed_replay_conflict_to_409_without_raw_error(monkeypatch, error):
+@pytest.mark.parametrize(
+    "error",
+    [
+        SourceVisualConflictError("REQUEST_CONFLICT"),
+        SourceVisualRepositoryError("MALFORMED_ROW"),
+    ],
+)
+async def test_refresh_maps_typed_replay_conflict_to_409_without_raw_error(
+    monkeypatch, error
+):
     from api.routers import source_visuals
 
     monkeypatch.setattr(source_visuals, "source_visuals_enabled", lambda: True)
@@ -239,33 +323,77 @@ async def test_refresh_maps_typed_replay_conflict_to_409_without_raw_error(monke
         "get",
         AsyncMock(return_value=SimpleNamespace(id="source:one")),
     )
-    monkeypatch.setattr(source_visuals, "submit_source_visual", AsyncMock(side_effect=error))
+    monkeypatch.setattr(
+        source_visuals, "submit_source_visual", AsyncMock(side_effect=error)
+    )
 
     with pytest.raises(HTTPException) as exc:
-        await source_visuals.submit_source_visual_refresh("source:one", {"request_id": "request:conflict"})
+        await source_visuals.submit_source_visual_refresh(
+            "source:one", {"request_id": "request:conflict"}
+        )
 
     assert exc.value.status_code == 409
     assert "/" not in str(exc.value.detail)
 
 
 @pytest.mark.asyncio
-async def test_delete_uses_durable_receipt_then_tombstone_cleanup_and_replays(monkeypatch):
+async def test_delete_uses_durable_receipt_then_tombstone_cleanup_and_replays(
+    monkeypatch,
+):
     from api.routers import source_visuals
 
     record = _record()
     repository = SimpleNamespace(
-        get_operation=AsyncMock(side_effect=[None, SimpleNamespace(outcome="deleted", source_id="source:one", source_updated_at=NOW, command_id=None, content_sha256=SOURCE_SHA, error_code=None)]),
+        get_operation=AsyncMock(
+            side_effect=[
+                None,
+                SimpleNamespace(
+                    outcome="deleted",
+                    source_id="source:one",
+                    source_updated_at=NOW,
+                    command_id=None,
+                    content_sha256=SOURCE_SHA,
+                    error_code=None,
+                ),
+            ]
+        ),
         list_current=AsyncMock(return_value={"source:one": record}),
         record_operation=AsyncMock(return_value=SimpleNamespace(outcome="queued")),
-        finalize_operation=AsyncMock(return_value=SimpleNamespace(outcome="deleted", source_id="source:one", command_id=None, content_sha256=SOURCE_SHA, error_code=None)),
+        finalize_operation=AsyncMock(
+            return_value=SimpleNamespace(
+                outcome="deleted",
+                source_id="source:one",
+                command_id=None,
+                content_sha256=SOURCE_SHA,
+                error_code=None,
+            )
+        ),
     )
     cleanup = SimpleNamespace(delete_record=AsyncMock(return_value=True))
     monkeypatch.setattr(source_visuals, "source_visuals_enabled", lambda: True)
-    monkeypatch.setattr(source_visuals.Source, "get", AsyncMock(return_value=SimpleNamespace(id="source:one")))
-    monkeypatch.setattr(source_visuals, "compute_source_visual_authority", AsyncMock(return_value=_authority()))
+    monkeypatch.setattr(
+        source_visuals.Source,
+        "get",
+        AsyncMock(return_value=SimpleNamespace(id="source:one")),
+    )
+    monkeypatch.setattr(
+        source_visuals,
+        "compute_source_visual_authority",
+        AsyncMock(return_value=_authority()),
+    )
 
-    deleted = await source_visuals.delete_source_visual("source:one", {"request_id": "request:delete"}, repository=repository, cleanup=cleanup)
-    replay = await source_visuals.delete_source_visual("source:one", {"request_id": "request:delete"}, repository=repository, cleanup=cleanup)
+    deleted = await source_visuals.delete_source_visual(
+        "source:one",
+        {"request_id": "request:delete"},
+        repository=repository,
+        cleanup=cleanup,
+    )
+    replay = await source_visuals.delete_source_visual(
+        "source:one",
+        {"request_id": "request:delete"},
+        repository=repository,
+        cleanup=cleanup,
+    )
 
     assert deleted.status_code == 200
     assert replay.status_code == 200
@@ -275,7 +403,9 @@ async def test_delete_uses_durable_receipt_then_tombstone_cleanup_and_replays(mo
 
 
 @pytest.mark.asyncio
-async def test_delete_replay_recovers_a_post_file_pre_receipt_crash_without_recreating(monkeypatch):
+async def test_delete_replay_recovers_a_post_file_pre_receipt_crash_without_recreating(
+    monkeypatch,
+):
     from api.routers import source_visuals
 
     queued = SimpleNamespace(
@@ -302,11 +432,22 @@ async def test_delete_replay_recovers_a_post_file_pre_receipt_crash_without_recr
     )
     cleanup = SimpleNamespace(delete_record=AsyncMock())
     monkeypatch.setattr(source_visuals, "source_visuals_enabled", lambda: True)
-    monkeypatch.setattr(source_visuals.Source, "get", AsyncMock(return_value=SimpleNamespace(id="source:one")))
-    monkeypatch.setattr(source_visuals, "compute_source_visual_authority", AsyncMock(return_value=_authority()))
+    monkeypatch.setattr(
+        source_visuals.Source,
+        "get",
+        AsyncMock(return_value=SimpleNamespace(id="source:one")),
+    )
+    monkeypatch.setattr(
+        source_visuals,
+        "compute_source_visual_authority",
+        AsyncMock(return_value=_authority()),
+    )
 
     response = await source_visuals.delete_source_visual(
-        "source:one", {"request_id": "request:delete"}, repository=repository, cleanup=cleanup
+        "source:one",
+        {"request_id": "request:delete"},
+        repository=repository,
+        cleanup=cleanup,
     )
 
     assert response.status_code == 200
@@ -316,7 +457,9 @@ async def test_delete_replay_recovers_a_post_file_pre_receipt_crash_without_recr
 
 
 @pytest.mark.asyncio
-async def test_delete_conflict_and_crash_window_preserve_safe_receipt_and_never_recreate(monkeypatch):
+async def test_delete_conflict_and_crash_window_preserve_safe_receipt_and_never_recreate(
+    monkeypatch,
+):
     from api.routers import source_visuals
 
     record = _record()
@@ -324,22 +467,41 @@ async def test_delete_conflict_and_crash_window_preserve_safe_receipt_and_never_
         get_operation=AsyncMock(return_value=None),
         list_current=AsyncMock(return_value={"source:one": record}),
         record_operation=AsyncMock(return_value=SimpleNamespace(outcome="queued")),
-        finalize_operation=AsyncMock(side_effect=SourceVisualConflictError("REQUEST_CONFLICT")),
+        finalize_operation=AsyncMock(
+            side_effect=SourceVisualConflictError("REQUEST_CONFLICT")
+        ),
     )
-    cleanup = SimpleNamespace(delete_record=AsyncMock(side_effect=SourceVisualStorageError("ASSET_IO_FAILED")))
+    cleanup = SimpleNamespace(
+        delete_record=AsyncMock(side_effect=SourceVisualStorageError("ASSET_IO_FAILED"))
+    )
     monkeypatch.setattr(source_visuals, "source_visuals_enabled", lambda: True)
-    monkeypatch.setattr(source_visuals.Source, "get", AsyncMock(return_value=SimpleNamespace(id="source:one")))
-    monkeypatch.setattr(source_visuals, "compute_source_visual_authority", AsyncMock(return_value=_authority()))
+    monkeypatch.setattr(
+        source_visuals.Source,
+        "get",
+        AsyncMock(return_value=SimpleNamespace(id="source:one")),
+    )
+    monkeypatch.setattr(
+        source_visuals,
+        "compute_source_visual_authority",
+        AsyncMock(return_value=_authority()),
+    )
 
     with pytest.raises(HTTPException) as exc:
-        await source_visuals.delete_source_visual("source:one", {"request_id": "request:delete"}, repository=repository, cleanup=cleanup)
+        await source_visuals.delete_source_visual(
+            "source:one",
+            {"request_id": "request:delete"},
+            repository=repository,
+            cleanup=cleanup,
+        )
 
     assert exc.value.status_code == 409
     assert cleanup.delete_record.await_count == 1
 
 
 @pytest.mark.asyncio
-async def test_completed_delete_suppresses_auto_ingest_but_a_new_explicit_refresh_recreates(monkeypatch):
+async def test_completed_delete_suppresses_auto_ingest_but_a_new_explicit_refresh_recreates(
+    monkeypatch,
+):
     from deeper_notebook.source_visuals import queue
 
     authority = SimpleNamespace(
@@ -361,10 +523,16 @@ async def test_completed_delete_suppresses_auto_ingest_but_a_new_explicit_refres
         record_operation=AsyncMock(return_value=SimpleNamespace(outcome="deleted")),
     )
     monkeypatch.setattr(queue, "SourceVisualRepository", lambda: repository)
-    monkeypatch.setattr(queue, "_load_source", AsyncMock(return_value=SimpleNamespace(id="source:one")))
-    monkeypatch.setattr(queue, "compute_source_visual_authority", AsyncMock(return_value=authority))
+    monkeypatch.setattr(
+        queue, "_load_source", AsyncMock(return_value=SimpleNamespace(id="source:one"))
+    )
+    monkeypatch.setattr(
+        queue, "compute_source_visual_authority", AsyncMock(return_value=authority)
+    )
 
-    automatic = await queue.submit_source_visual("source:one", "ingest:" + SOURCE_SHA, explicit=False)
+    automatic = await queue.submit_source_visual(
+        "source:one", "ingest:" + SOURCE_SHA, explicit=False
+    )
     assert automatic.outcome == "replayed"
 
     explicit = await queue._suppressed_auto_ingest_response(
@@ -377,7 +545,9 @@ async def test_completed_delete_suppresses_auto_ingest_but_a_new_explicit_refres
 
 
 @pytest.mark.asyncio
-async def test_queued_delete_intent_suppresses_auto_ingest_after_post_file_pre_receipt_crash(monkeypatch):
+async def test_queued_delete_intent_suppresses_auto_ingest_after_post_file_pre_receipt_crash(
+    monkeypatch,
+):
     """A durable accepted delete fence wins before its file cleanup is finalized."""
 
     from deeper_notebook.source_visuals import queue
@@ -403,18 +573,28 @@ async def test_queued_delete_intent_suppresses_auto_ingest_after_post_file_pre_r
         record_operation=AsyncMock(return_value=SimpleNamespace(outcome="deleted")),
     )
     monkeypatch.setattr(queue, "SourceVisualRepository", lambda: repository)
-    monkeypatch.setattr(queue, "_load_source", AsyncMock(return_value=SimpleNamespace(id="source:one")))
-    monkeypatch.setattr(queue, "compute_source_visual_authority", AsyncMock(return_value=authority))
+    monkeypatch.setattr(
+        queue, "_load_source", AsyncMock(return_value=SimpleNamespace(id="source:one"))
+    )
+    monkeypatch.setattr(
+        queue, "compute_source_visual_authority", AsyncMock(return_value=authority)
+    )
 
-    response = await queue.submit_source_visual("source:one", "ingest:" + SOURCE_SHA, explicit=False)
+    response = await queue.submit_source_visual(
+        "source:one", "ingest:" + SOURCE_SHA, explicit=False
+    )
 
     assert response.outcome == "replayed"
-    repository.find_accepted_delete.assert_awaited_once_with("source:one", NOW, SOURCE_SHA)
+    repository.find_accepted_delete.assert_awaited_once_with(
+        "source:one", NOW, SOURCE_SHA
+    )
     repository.record_operation.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_publish_ready_atomically_rejects_a_running_worker_after_delete_intent(monkeypatch):
+async def test_publish_ready_atomically_rejects_a_running_worker_after_delete_intent(
+    monkeypatch,
+):
     """DELETE's queued receipt fences an already-running extraction before UPSERT."""
 
     from deeper_notebook.source_visuals.repository import SourceVisualRepository
@@ -444,7 +624,9 @@ async def test_publish_ready_atomically_rejects_a_running_worker_after_delete_in
 
 
 @pytest.mark.asyncio
-async def test_publish_ready_allows_a_newer_explicit_refresh_to_supersede_delete_intent(monkeypatch):
+async def test_publish_ready_allows_a_newer_explicit_refresh_to_supersede_delete_intent(
+    monkeypatch,
+):
     """A command-bound refresh created after DELETE may recreate the derivative."""
 
     from deeper_notebook.source_visuals.repository import SourceVisualRepository

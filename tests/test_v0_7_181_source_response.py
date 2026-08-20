@@ -22,6 +22,7 @@ v0.7.181 reconciles by:
 The intentional asymmetries (full_text and notebooks list-only
 omission) are preserved and now documented inline in api/models.py.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -38,6 +39,7 @@ def test_source_response_includes_insights_count():
     it the detail endpoint can't report 'this source has N
     transformations' to the client — UX gap with the list view."""
     from api.models import SourceResponse
+
     fields = SourceResponse.model_fields
     assert "insights_count" in fields, (
         "v0.7.181 regression: SourceResponse no longer declares "
@@ -114,6 +116,7 @@ def test_list_endpoint_still_includes_insights_count():
     endpoint was the source-of-truth; the detail endpoint had
     to catch up to it, not the other way around."""
     from api.models import SourceListResponse
+
     assert "insights_count" in SourceListResponse.model_fields, (
         "v0.7.181 regression: SourceListResponse no longer "
         "declares `insights_count`. The list endpoint will drop "
@@ -129,6 +132,7 @@ def test_full_text_remains_list_only_omitted():
     responses). If anyone proposes adding full_text to the list
     response in the name of 'symmetry', this test stops them."""
     from api.models import SourceListResponse, SourceResponse
+
     assert "full_text" in SourceResponse.model_fields
     assert "full_text" not in SourceListResponse.model_fields, (
         "v0.7.181: don't add full_text to SourceListResponse. A "

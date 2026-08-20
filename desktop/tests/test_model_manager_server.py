@@ -26,6 +26,7 @@ def test_build_app_accepts_config_path_without_resolving_data_root(
 class ModelManagerTest(AioHTTPTestCase):
     async def get_application(self):
         import tempfile
+
         self._tmpdir = Path(tempfile.mkdtemp())
         (self._tmpdir / "GGUF").mkdir()
         (self._tmpdir / "GGUF" / "test.gguf").write_bytes(b"x" * 2_000_000)
@@ -61,6 +62,7 @@ class PathTraversalTest(AioHTTPTestCase):
 
     async def get_application(self):
         import tempfile
+
         self._root = Path(tempfile.mkdtemp())
         # Two sibling dirs — model_dir and a "sensitive" dir next to it.
         self._model_dir = self._root / "models"
@@ -83,8 +85,9 @@ class PathTraversalTest(AioHTTPTestCase):
         )
         # Either rejected explicitly or 404 (because the dotdot escapes), but
         # the victim file MUST still exist.
-        assert self._victim.exists(), \
+        assert self._victim.exists(), (
             "victim file outside model_dir was deleted by dotdot traversal"
+        )
         assert r.status in (400, 404)
 
     async def test_sibling_prefix_traversal_rejected(self):
@@ -96,7 +99,12 @@ class PathTraversalTest(AioHTTPTestCase):
         # The aiohttp route won't accept a literal `..` in the URL segment,
         # so this test directly exercises the resolved-path logic.
         from pathlib import Path as _P
-        bad = (self._model_dir / "..").resolve() / "models_evil" / "should_not_be_deleted.gguf"
+
+        bad = (
+            (self._model_dir / "..").resolve()
+            / "models_evil"
+            / "should_not_be_deleted.gguf"
+        )
         root = self._model_dir.resolve()
         assert not bad.is_relative_to(root), (
             "Path.is_relative_to should reject /Users/.../models_evil/... "
@@ -123,6 +131,7 @@ class SymlinkTraversalTest(AioHTTPTestCase):
     async def get_application(self):
         import os
         import tempfile
+
         self._root = Path(tempfile.mkdtemp())
         self._model_dir = self._root / "models"
         self._model_dir.mkdir()

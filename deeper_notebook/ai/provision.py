@@ -42,7 +42,9 @@ def _truthy_env(name: str) -> bool:
     return resolve_env(name, "").lower() in ("1", "true", "yes", "on")
 
 
-async def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)") -> bool:
+async def _local_chat_healthy_cached(
+    model_name: str = "Local GGUF (llama.cpp)",
+) -> bool:
     """v0.8.0 — TTL-cached health lookup for the chat sidecar.
 
     Reads the sidecar base URL from DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL (set by
@@ -105,9 +107,7 @@ async def _local_chat_healthy_cached(model_name: str = "Local GGUF (llama.cpp)")
             # v0.8.20 — push the sync httpx call onto a worker thread so
             # the FastAPI event loop stays responsive during the probe.
             results = (
-                await asyncio.to_thread(probe_all_local_models, creds)
-                if creds
-                else []
+                await asyncio.to_thread(probe_all_local_models, creds) if creds else []
             )
             _health_cache = (
                 now,
@@ -199,7 +199,9 @@ async def provision_langchain_chat_model(
     else:
         try:
             defaults_for_toggle = await model_manager.get_defaults()
-            smart_routing_on = bool(getattr(defaults_for_toggle, "auto_route_enabled", False))
+            smart_routing_on = bool(
+                getattr(defaults_for_toggle, "auto_route_enabled", False)
+            )
         except Exception:
             # Defaults fetch failure is non-fatal — fall back to OFF
             # (the v0.8.0 default) so we never accidentally route to a
@@ -312,8 +314,7 @@ async def provision_langchain_chat_model(
         try:
             defaults_for_pref = await model_manager.get_defaults()
             default_provider = (
-                getattr(defaults_for_pref, "auto_route_provider_pref", None)
-                or "auto"
+                getattr(defaults_for_pref, "auto_route_provider_pref", None) or "auto"
             )
         except Exception:
             default_provider = "auto"

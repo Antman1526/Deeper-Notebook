@@ -3,6 +3,7 @@
 The shared integration conftest skips this module unless SURREAL_INTEGRATION=1.
 It intentionally records the runtime gate without creating a second server.
 """
+
 from __future__ import annotations
 
 import os

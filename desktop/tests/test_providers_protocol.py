@@ -20,4 +20,5 @@ def test_provider_error_subclass_of_runtimeerror():
     with __import__("pytest").raises(RuntimeError):
         raise ProviderError("boom")
 
+
 # (paperclip + hermes provider stubs deleted in v0.6 — never used in production)

@@ -11,6 +11,7 @@ connected and "forgotten" credentials still on disk.
 The fix force-writes the six credential/token keys even when None, so MERGE
 nulls them. These tests assert the exact payload handed to repo_upsert.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -23,9 +24,12 @@ from deeper_notebook.domain.gmail import GmailIntegration
 # The six keys that represent the clearable credential/token surface. If a
 # disconnect/forget can't null these, the account stays connected.
 _CREDENTIAL_KEYS = {
-    "client_id_enc", "client_secret_enc",
-    "access_token_enc", "refresh_token_enc",
-    "token_expires_at", "email_address",
+    "client_id_enc",
+    "client_secret_enc",
+    "access_token_enc",
+    "refresh_token_enc",
+    "token_expires_at",
+    "email_address",
 }
 
 
@@ -82,8 +86,10 @@ async def test_connected_save_writes_encrypted_credentials():
     def _fake_enc(v):
         return f"enc({v})" if v else None
 
-    with patch.object(gmail_mod, "repo_upsert", AsyncMock(side_effect=_fake_upsert)), \
-            patch.object(gmail_mod, "_enc", _fake_enc):
+    with (
+        patch.object(gmail_mod, "repo_upsert", AsyncMock(side_effect=_fake_upsert)),
+        patch.object(gmail_mod, "_enc", _fake_enc),
+    ):
         await g.save()
 
     data = captured["data"]

@@ -1,4 +1,5 @@
 """Focused contracts for the bounded desktop startup receipt store."""
+
 from __future__ import annotations
 
 import json
@@ -91,6 +92,5 @@ def test_receipt_stages_and_elapsed_values_are_bounded(tmp_path):
     assert payload["stages"][0]["stage"] == "stage-4"
     assert payload["stages"][-1]["stage"] == f"stage-{MAX_STAGES + 3}"
     assert all(
-        0 <= entry["elapsed_ms"] <= MAX_ELAPSED_MS
-        for entry in payload["stages"]
+        0 <= entry["elapsed_ms"] <= MAX_ELAPSED_MS for entry in payload["stages"]
     )

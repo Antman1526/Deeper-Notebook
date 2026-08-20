@@ -7,6 +7,7 @@ chooses the right overall status:
     chat model, command registry)
   - "not_ready" → 503 when must-have subsystems fail (DB, migrations)
 """
+
 from __future__ import annotations
 
 import pytest
@@ -18,12 +19,14 @@ def client(monkeypatch):
     # api.main imports trigger lifespan setup; build a TestClient and
     # let it manage startup/shutdown.
     from api.main import app
+
     return TestClient(app)
 
 
 def _patch_all_healthy(monkeypatch):
     """Stub every subsystem to look healthy. Individual tests then
     selectively break one subsystem to assert the response."""
+
     async def _db_ok():
         return {"status": "online"}
 
@@ -38,17 +41,26 @@ def _patch_all_healthy(monkeypatch):
         return object()
 
     from api.routers import config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "check_database_health", _db_ok)
     from deeper_notebook.database import async_migrate
+
     monkeypatch.setattr(
-        async_migrate, "AsyncMigrationManager", lambda: _Mgr(),
+        async_migrate,
+        "AsyncMigrationManager",
+        lambda: _Mgr(),
     )
     from deeper_notebook.ai.models import model_manager
+
     monkeypatch.setattr(
-        model_manager, "get_embedding_model", _has_emb,
+        model_manager,
+        "get_embedding_model",
+        _has_emb,
     )
     monkeypatch.setattr(
-        model_manager, "get_default_model", _has_chat,
+        model_manager,
+        "get_default_model",
+        _has_chat,
     )
 
 
@@ -59,8 +71,11 @@ def test_deep_healthy_when_all_subsystems_up(client, monkeypatch):
     body = r.json()
     assert body["status"] == "healthy"
     for name in (
-        "database", "migrations", "embedding_model",
-        "chat_model", "command_registry",
+        "database",
+        "migrations",
+        "embedding_model",
+        "chat_model",
+        "command_registry",
     ):
         assert body["checks"][name]["ok"] is True, body["checks"][name]
 
@@ -72,6 +87,7 @@ def test_deep_returns_503_when_database_offline(client, monkeypatch):
         return {"status": "offline", "error": "Connection refused"}
 
     from api.routers import config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "check_database_health", _db_off)
 
     r = client.get("/healthz/deep")
@@ -90,8 +106,11 @@ def test_deep_returns_503_when_migrations_pending(client, monkeypatch):
             return True
 
     from deeper_notebook.database import async_migrate
+
     monkeypatch.setattr(
-        async_migrate, "AsyncMigrationManager", lambda: _PendingMgr(),
+        async_migrate,
+        "AsyncMigrationManager",
+        lambda: _PendingMgr(),
     )
 
     r = client.get("/healthz/deep")
@@ -111,8 +130,11 @@ def test_deep_degraded_200_when_embedding_model_missing(client, monkeypatch):
         return None
 
     from deeper_notebook.ai.models import model_manager
+
     monkeypatch.setattr(
-        model_manager, "get_embedding_model", _no_emb,
+        model_manager,
+        "get_embedding_model",
+        _no_emb,
     )
 
     r = client.get("/healthz/deep")
@@ -133,8 +155,11 @@ def test_deep_degraded_when_chat_model_missing(client, monkeypatch):
         return None
 
     from deeper_notebook.ai.models import model_manager
+
     monkeypatch.setattr(
-        model_manager, "get_default_model", _no_chat,
+        model_manager,
+        "get_default_model",
+        _no_chat,
     )
 
     r = client.get("/healthz/deep")
@@ -209,5 +234,6 @@ def test_api_alias_passes_probe_providers_query(client, monkeypatch):
     assert r_root.status_code == r_api.status_code
     # `upstream_providers` only appears when probe_providers=true; both
     # paths must agree on this behavior.
-    assert ("upstream_providers" in r_root.json()["checks"]) == \
-        ("upstream_providers" in r_api.json()["checks"])
+    assert ("upstream_providers" in r_root.json()["checks"]) == (
+        "upstream_providers" in r_api.json()["checks"]
+    )

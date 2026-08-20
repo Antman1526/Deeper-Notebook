@@ -67,6 +67,7 @@ def test_every_registered_command_input_schema_resolves() -> None:
         "forward reference unresolved:\n  " + "\n  ".join(unresolved)
     )
 
+
 # Persisted queue identities are pinned by tests/test_persisted_queue_identifiers.py,
 # which derives them from an AST inventory rather than hardcoded literals. Not
 # duplicated here: a second hardcoded copy adds no protection and re-introduces

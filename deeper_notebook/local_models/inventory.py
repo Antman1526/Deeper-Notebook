@@ -12,6 +12,7 @@ should never collide (different processes, different purposes); the
 launcher version stays as-is to avoid touching the v0.7.197 +
 v0.8.x auto-register chain.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -136,6 +137,7 @@ class LocalModelInfo:
     - `path`: absolute path. Used by future hot-swap calls.
     - `metadata`: GGUFMetadata (best-effort, fields may be None).
     """
+
     name: str
     path: str  # str instead of Path so it serializes cleanly to JSON
     metadata: GGUFMetadata
@@ -246,11 +248,13 @@ def build_readiness_inventory(
                 assessment=assessment,
                 parameter_count_b=None,
                 modality=_modality_for_text(
-                    " ".join([
-                        str(getattr(entry, "category", "") or ""),
-                        str(getattr(entry, "role", "") or ""),
-                        str(getattr(entry, "notes", "") or ""),
-                    ])
+                    " ".join(
+                        [
+                            str(getattr(entry, "category", "") or ""),
+                            str(getattr(entry, "role", "") or ""),
+                            str(getattr(entry, "notes", "") or ""),
+                        ]
+                    )
                 ),
             )
         )
@@ -325,7 +329,10 @@ def _manifest_state(status: str) -> str:
 
 def _modality_for_text(value: str) -> str:
     normalized = value.lower()
-    if any(marker in normalized for marker in ("speech", "stt", "tts", "voice", "whisper", "audio")):
+    if any(
+        marker in normalized
+        for marker in ("speech", "stt", "tts", "voice", "whisper", "audio")
+    ):
         return "audio"
     if any(marker in normalized for marker in ("vision", "image", "vl")):
         return "image"
@@ -628,11 +635,13 @@ def enumerate_models(
             # parse_gguf_metadata is already broadly try/excepted; this
             # is belt-and-braces for the directory walk.
             continue
-        results.append(LocalModelInfo(
-            name=p.stem,
-            path=str(p),
-            metadata=md,
-        ))
+        results.append(
+            LocalModelInfo(
+                name=p.stem,
+                path=str(p),
+                metadata=md,
+            )
+        )
 
     results.extend(_enumerate_mlx_models(dir_path, trusted_external_roots))
     results.extend(_enumerate_transformers_models(dir_path, trusted_external_roots))

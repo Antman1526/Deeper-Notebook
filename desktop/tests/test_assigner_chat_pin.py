@@ -5,6 +5,7 @@ picks the chat GGUF via pick_chat_llm_file's scorer, independent of the UI's
 model choice. DEEPER_NOTEBOOK_CHAT_LLM_GGUF lets the user force a specific file; if unset or
 absent, the scorer still runs so the sidecar always spawns.
 """
+
 from __future__ import annotations
 
 from desktop.auto_register.assigner import pick_chat_llm_file
@@ -23,7 +24,9 @@ def test_pin_forces_named_model(tmp_path, monkeypatch):
 
 def test_pin_without_extension_and_case_insensitive(tmp_path, monkeypatch):
     _mk(tmp_path, ["Qwen3.5-9B-Q4_K_M.gguf", "Hermes-3-Llama-3.1-8B-Q4_K_M.gguf"])
-    monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_LLM_GGUF", "qwen3.5-9b-q4_k_m")  # no .gguf, lowercase
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_CHAT_LLM_GGUF", "qwen3.5-9b-q4_k_m"
+    )  # no .gguf, lowercase
     assert pick_chat_llm_file(tmp_path).name == "Qwen3.5-9B-Q4_K_M.gguf"
 
 

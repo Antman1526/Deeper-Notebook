@@ -44,6 +44,7 @@ This module:
     suffix and a fresh one is created. The user loses old chat
     history (rare) but the API doesn't refuse to start.
 """
+
 from __future__ import annotations
 
 import os
@@ -163,9 +164,9 @@ def get_checkpoint_connection(path: str) -> sqlite3.Connection:
             corrupted = True
     except sqlite3.DatabaseError as exc:
         logger.warning(
-            "Open failed for checkpoint DB at {} ({!s}); treating as "
-            "corrupted",
-            path, exc,
+            "Open failed for checkpoint DB at {} ({!s}); treating as corrupted",
+            path,
+            exc,
         )
         corrupted = True
         conn = None  # type: ignore[assignment]

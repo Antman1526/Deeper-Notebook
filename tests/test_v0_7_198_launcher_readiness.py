@@ -18,6 +18,7 @@ This file pins the source contract; the runtime behaviour is
 implicitly tested by the existing desktop test suite's start_all
 mocks.
 """
+
 from __future__ import annotations
 
 import re
@@ -68,9 +69,7 @@ def test_wait_tcp_called_between_llamacpp_chat_and_memory():
     # The order assertion: chat_alive guard appears BEFORE memory spawn.
     _chat_alive = re.search(r"chat_alive\s*=", src)
     idx_chat_alive = _chat_alive.start() if _chat_alive else -1
-    idx_memory_spawn = src.find(
-        'self._try_spawn("supervisor.memory"'
-    )
+    idx_memory_spawn = src.find('self._try_spawn("supervisor.memory"')
     assert idx_chat_alive != -1 and idx_memory_spawn != -1
     assert idx_chat_alive < idx_memory_spawn
 

@@ -380,8 +380,9 @@ def test_approved_root_rejects_mount_backed_ancestor(
     monkeypatch.setattr(
         os.path,
         "ismount",
-        lambda candidate: Path(candidate) == vault_root.parent
-        or real_ismount(candidate),
+        lambda candidate: (
+            Path(candidate) == vault_root.parent or real_ismount(candidate)
+        ),
     )
     with pytest.raises(VaultSecurityError) as caught:
         approve_vault_root(vault_root)

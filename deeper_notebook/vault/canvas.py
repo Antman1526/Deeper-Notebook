@@ -139,7 +139,10 @@ def parse_canvas_document(content: bytes, *, relative_path: str) -> CanvasDocume
         path = canonical_vault_relative_path(relative_path)
     except VaultSecurityError as exc:
         raise CanvasDocumentError("canvas_path_invalid") from exc
-    if not path.casefold().endswith(".canvas") or classify_vault_path(path).kind != "metadata":
+    if (
+        not path.casefold().endswith(".canvas")
+        or classify_vault_path(path).kind != "metadata"
+    ):
         raise CanvasDocumentError("canvas_path_invalid")
     try:
         raw = json.loads(content.decode("utf-8"))

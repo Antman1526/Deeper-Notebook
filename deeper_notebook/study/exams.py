@@ -306,9 +306,7 @@ class StudyExamRepository:
             if attempt_id.startswith("study_exam_attempt:")
             else f"study_exam_attempt:{attempt_id}"
         )
-        result = await repo_query(
-            "SELECT * FROM $record;", vars={"record": record}
-        )
+        result = await repo_query("SELECT * FROM $record;", vars={"record": record})
         rows = result if isinstance(result, list) else [result]
         if not rows or not rows[0]:
             raise StudyExamNotFound("exam attempt not found")
@@ -326,7 +324,9 @@ class StudyExamRepository:
                     "submitted_at": attempt.submitted_at,
                     "late": attempt.late,
                     "answers": attempt.answers,
-                    "results": [r.model_dump(mode="python") for r in attempt.results or []],
+                    "results": [
+                        r.model_dump(mode="python") for r in attempt.results or []
+                    ],
                     "correct_count": attempt.correct_count,
                     "score_percent": attempt.score_percent,
                 },

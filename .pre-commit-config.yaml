@@ -24,30 +24,25 @@ repos:
       - id: ruff
         args: [--fix]
         types: [python]
-      # v0.8.105 — MEASURED AGAIN, and the earlier reasoning was wrong about
-      # WHY. Applying `ruff format` repo-wide (700 files) and re-running the
-      # suite gives 5,625 passed / 6 failed, and all six failures are
-      # identity-audit tests — not one of the ~469 source-text assertions
-      # broke. The blocker is scripts/rebrand-allowlist.json, whose entries are
-      # keyed on (path, pattern, source, line, column, context_sha256): a
-      # repo-wide reflow invalidates context hashes wholesale and
-      # `--regenerate` then aborts with "unclassified occurrence requires
-      # explicit review". Re-key that allowlist on content/AST identity and a
-      # formatter becomes adoptable; until then this stays off.
+      # v0.8.111 — ENABLED. It stayed off for three releases because
+      # scripts/rebrand-allowlist.json pinned approvals to line and column, so a
+      # repo-wide reformat invalidated them wholesale and `--regenerate` refused
+      # to rebuild. v0.8.109 re-keyed approvals onto content (with the
+      # intra-line ordinal folded into the digest), which removed the blocker.
       #
-      # v0.8.100 — ruff-format is DELIBERATELY NOT ENABLED. It was listed here
-      # from v0.7.120 but pre-commit was never installed, so it never ran; the
-      # first `pre-commit install` would have rewritten 697 files and broken the
-      # build. Measured, not guessed: a trial sweep failed 5 source-shape guards
-      # (tests that assert exact source text to pin behaviour that has no other
-      # cheap assertion — e.g. "this argv flag is passed to the sidecar").
+      # Adoption itself is recorded in
+      # docs/verification/2026-08-19-formatter-adoption-review.md: 701 files
+      # reformatted, ~1,046 pins relocated automatically, and 38 re-approvals
+      # reviewed line by line before being applied. One proposed mapping was
+      # WRONG — it would have moved a regex approval onto an unrelated assert —
+      # and was caught by that review, which is the reason the review exists.
       #
-      # Those guards, not the formatter, are the underlying smell: pinning
-      # formatting alongside tokens makes them brittle by construction. Replacing
-      # them with behavioural assertions is the real fix and is a project, not a
-      # polish-pass edit. Until that happens, a repo-wide reformat costs a broken
-      # build and buys cosmetics. `ruff check --fix` above stays — it is
-      # compatible and catches actual defects.
+      # NOTE for anyone touching split string literals: ruff JOINS adjacent
+      # literals, and two self-scanning tests write `"open_" "notebook"` on
+      # purpose so they do not trip their own scan. Those sites are guarded with
+      # `# fmt: skip` / `# fmt: off`; do not remove the guards.
+      - id: ruff-format
+        types: [python]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

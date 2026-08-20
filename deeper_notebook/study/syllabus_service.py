@@ -117,7 +117,9 @@ class StudySyllabusActivityDocument(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    activity_id: StrictStr = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    activity_id: StrictStr = Field(
+        min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$"
+    )
     kind: Literal[
         "reading",
         "lesson",
@@ -146,13 +148,17 @@ class StudySyllabusUnitDocument(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    unit_id: StrictStr = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    unit_id: StrictStr = Field(
+        min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$"
+    )
     title: StrictStr = Field(min_length=1, max_length=200)
     objectives: list[StrictStr] = Field(min_length=1, max_length=20)
     prerequisite_unit_ids: list[StrictStr] = Field(default_factory=list, max_length=20)
     estimated_minutes: StrictInt = Field(ge=5, le=10_080)
     source_ids: list[StrictStr] = Field(min_length=1, max_length=100)
-    activities: list[StudySyllabusActivityDocument] = Field(default_factory=list, max_length=50)
+    activities: list[StudySyllabusActivityDocument] = Field(
+        default_factory=list, max_length=50
+    )
 
     @field_validator("unit_id", "title")
     @classmethod
@@ -260,7 +266,9 @@ async def _maybe_await(value: object) -> object:
     return await value if inspect.isawaitable(value) else value
 
 
-def _safe_error(exc: BaseException, fallback: type[StudySyllabusError], reason: str) -> StudySyllabusError:
+def _safe_error(
+    exc: BaseException, fallback: type[StudySyllabusError], reason: str
+) -> StudySyllabusError:
     if isinstance(exc, StudySyllabusError):
         return exc
     if isinstance(exc, (StudyPlanNotFoundError,)):
@@ -291,7 +299,13 @@ class StudySyllabusService:
         self.source_loader = source_loader or Source.get
 
     async def propose(self, plan_id: str, *, expected_revision: int) -> StudySyllabus:
-        plan, sources, manifest, context_text, citations = await self._load_ready_plan_sources(
+        (
+            plan,
+            sources,
+            manifest,
+            context_text,
+            citations,
+        ) = await self._load_ready_plan_sources(
             plan_id, expected_revision=expected_revision
         )
         try:
@@ -309,7 +323,9 @@ class StudySyllabusService:
         except StudySyllabusError:
             raise
         except Exception as exc:
-            raise _safe_error(exc, StudySyllabusUnavailable, "syllabus_unavailable") from exc
+            raise _safe_error(
+                exc, StudySyllabusUnavailable, "syllabus_unavailable"
+            ) from exc
 
         try:
             document = (
@@ -321,7 +337,9 @@ class StudySyllabusService:
                 plan,
                 document,
                 manifest=manifest,
-                selected_source_ids={_canonical_source_id(source) for source in sources},
+                selected_source_ids={
+                    _canonical_source_id(source) for source in sources
+                },
             )
         except StudySyllabusError:
             raise
@@ -340,7 +358,9 @@ class StudySyllabusService:
         except StudySyllabusError:
             raise
         except Exception as exc:
-            raise _safe_error(exc, StudySyllabusUnavailable, "syllabus_unavailable") from exc
+            raise _safe_error(
+                exc, StudySyllabusUnavailable, "syllabus_unavailable"
+            ) from exc
 
     async def approve(
         self,
@@ -352,7 +372,9 @@ class StudySyllabusService:
         try:
             plan = await self.repository.get(plan_id)
         except Exception as exc:
-            raise _safe_error(exc, StudySyllabusUnavailable, "syllabus_unavailable") from exc
+            raise _safe_error(
+                exc, StudySyllabusUnavailable, "syllabus_unavailable"
+            ) from exc
         if plan is None:
             raise StudySyllabusNotFound("syllabus_not_found")
         if plan.version != expected_revision:
@@ -361,9 +383,13 @@ class StudySyllabusService:
             raise StudySyllabusConflict("invalid_lifecycle")
 
         try:
-            syllabus = await self.repository.get_syllabus(plan_id, version=syllabus_version)
+            syllabus = await self.repository.get_syllabus(
+                plan_id, version=syllabus_version
+            )
         except Exception as exc:
-            raise _safe_error(exc, StudySyllabusUnavailable, "syllabus_unavailable") from exc
+            raise _safe_error(
+                exc, StudySyllabusUnavailable, "syllabus_unavailable"
+            ) from exc
         if syllabus is None:
             raise StudySyllabusNotFound("syllabus_not_found")
         if syllabus.approved_at is not None:
@@ -381,7 +407,9 @@ class StudySyllabusService:
                 expected_revision=expected_revision,
             )
         except Exception as exc:
-            raise _safe_error(exc, StudySyllabusUnavailable, "syllabus_unavailable") from exc
+            raise _safe_error(
+                exc, StudySyllabusUnavailable, "syllabus_unavailable"
+            ) from exc
 
     async def detect_drift(
         self,
@@ -395,11 +423,15 @@ class StudySyllabusService:
             plan = await self.repository.get(plan_id)
             if plan is None:
                 raise StudySyllabusNotFound("syllabus_not_found")
-            syllabus = await self.repository.get_syllabus(plan_id, version=syllabus_version)
+            syllabus = await self.repository.get_syllabus(
+                plan_id, version=syllabus_version
+            )
         except StudySyllabusError:
             raise
         except Exception as exc:
-            raise _safe_error(exc, StudySyllabusUnavailable, "syllabus_unavailable") from exc
+            raise _safe_error(
+                exc, StudySyllabusUnavailable, "syllabus_unavailable"
+            ) from exc
         if syllabus is None:
             raise StudySyllabusNotFound("syllabus_not_found")
         _, sources, _, _, _ = await self._load_ready_plan_sources(
@@ -416,7 +448,9 @@ class StudySyllabusService:
         try:
             plan = await self.repository.get(plan_id)
         except Exception as exc:
-            raise _safe_error(exc, StudySyllabusUnavailable, "syllabus_unavailable") from exc
+            raise _safe_error(
+                exc, StudySyllabusUnavailable, "syllabus_unavailable"
+            ) from exc
         if plan is None:
             raise StudySyllabusNotFound("syllabus_not_found")
         if plan.version != expected_revision:
@@ -481,7 +515,9 @@ class StudySyllabusService:
             )
 
             route = await resolve_artifact_model_route(
-                SimpleNamespace(artifact_type="flashcards", model_id=None, provider=None)
+                SimpleNamespace(
+                    artifact_type="flashcards", model_id=None, provider=None
+                )
             )
             model_id = route[0] if isinstance(route, tuple) else None
             return await provision_langchain_model(

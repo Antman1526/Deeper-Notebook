@@ -4,6 +4,7 @@ Covers the pure decision logic in `_should_send` and `_backoff_for`, and the
 failure-recording state machine. Doesn't touch SurrealDB or the network —
 the only thing exercised is the scheduler's own bookkeeping.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -85,7 +86,9 @@ async def test_should_not_send_daily_too_recent():
 
 @pytest.mark.asyncio
 async def test_should_send_daily_after_23h():
-    g = _make_g(last_sent_at=datetime.now(timezone.utc) - timedelta(hours=23, minutes=5))
+    g = _make_g(
+        last_sent_at=datetime.now(timezone.utc) - timedelta(hours=23, minutes=5)
+    )
     assert await scheduler._should_send(g) is True
 
 
@@ -142,7 +145,9 @@ async def test_should_send_again_after_backoff_expires():
     g = _make_g(last_sent_at=None)
     # Push next_retry_after into the past to simulate backoff window expired
     scheduler._failure_state["consecutive_failures"] = 1
-    scheduler._failure_state["next_retry_after"] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    scheduler._failure_state["next_retry_after"] = datetime.now(
+        timezone.utc
+    ) - timedelta(seconds=1)
     assert await scheduler._should_send(g) is True
 
 

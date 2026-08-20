@@ -7,6 +7,7 @@ Discovery: surreal-commands imports any module passed via --import-modules.
 Each @command-decorated function is registered as
     <persisted_app_identifier>.<function_name>
 """
+
 from __future__ import annotations
 
 import os
@@ -36,8 +37,9 @@ def _build_clients(model_override: str | None = None):
     from desktop.memory.client import build_memory_client
 
     cfg = load_or_create(default_config_path())
-    surreal_url = os.environ.get("MEMORY_SURREAL_URL",
-                                 os.environ.get("SURREAL_URL", ""))
+    surreal_url = os.environ.get(
+        "MEMORY_SURREAL_URL", os.environ.get("SURREAL_URL", "")
+    )
     embed_url = os.environ.get("MEMORY_EMBED_URL", "")
     llm_url = os.environ.get("MEMORY_CHAT_LLM_URL", "")
     if not (surreal_url and embed_url and llm_url):
@@ -46,8 +48,10 @@ def _build_clients(model_override: str | None = None):
             "launcher Supervisor used to spawn this worker?"
         )
     mem_client = build_memory_client(
-        cfg=cfg, surreal_url=surreal_url,
-        embed_url=embed_url, llm_url=llm_url,
+        cfg=cfg,
+        surreal_url=surreal_url,
+        embed_url=embed_url,
+        llm_url=llm_url,
     )
     # Minimal LLM wrapper compatible with our writer's llm.complete()
     # v0.5.10 — fixes for production reliability:
@@ -81,9 +85,7 @@ def _build_clients(model_override: str | None = None):
     # affects OpenAI-compatible third-party servers (LM Studio, vLLM)
     # that actually route by model name.
     chat_model_name = (
-        model_override
-        or resolve_env("DEEPER_NOTEBOOK_CHAT_MODEL_NAME")
-        or "default"
+        model_override or resolve_env("DEEPER_NOTEBOOK_CHAT_MODEL_NAME") or "default"
     )
 
     class _LLM:
@@ -120,19 +122,19 @@ def _build_clients(model_override: str | None = None):
                     choices = payload.get("choices") or []
                     if not choices:
                         import logging
+
                         logging.getLogger(__name__).warning(
                             "chat LLM returned no choices (payload keys=%s) "
                             "— skipping fact extraction",
                             list(payload.keys()),
                         )
                         return ""
-                    return (
-                        choices[0].get("message", {}).get("content") or ""
-                    )
+                    return choices[0].get("message", {}).get("content") or ""
             except httpx.TimeoutException:
                 # Don't crash the worker — log and return empty so the writer
                 # silently produces zero facts for this turn.
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "chat LLM timed out after %ss — skipping fact extraction",
                     chat_timeout_s,
@@ -152,9 +154,11 @@ def _build_clients(model_override: str | None = None):
                 # user's chat experience is unaffected, and one warning
                 # in the log identifies the root cause.
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "chat LLM failed (%s: %s) — skipping fact extraction",
-                    type(exc).__name__, exc,
+                    type(exc).__name__,
+                    exc,
                 )
                 return ""
 
@@ -163,9 +167,12 @@ def _build_clients(model_override: str | None = None):
 
 
 @command(name="memory_extract_turn", app="open_notebook")
-def memory_extract_turn(chat_session_id: str, user_text: str,
-                         assistant_text: str,
-                         model_override: str | None = None) -> dict:
+def memory_extract_turn(
+    chat_session_id: str,
+    user_text: str,
+    assistant_text: str,
+    model_override: str | None = None,
+) -> dict:
     """Per-turn fact extractor. Best-effort; no exceptions propagate.
 
     v0.7.83 — accepts optional `model_override` (defaults to None for
@@ -175,11 +182,14 @@ def memory_extract_turn(chat_session_id: str, user_text: str,
     """
     try:
         from desktop.memory.writer import extract_turn
+
         llm, mem_client = _build_clients(model_override=model_override)
         extract_turn(
-            llm=llm, mem_client=mem_client,
+            llm=llm,
+            mem_client=mem_client,
             chat_session_id=chat_session_id,
-            user_text=user_text, assistant_text=assistant_text,
+            user_text=user_text,
+            assistant_text=assistant_text,
         )
         return {"ok": True}
     except Exception as e:
@@ -187,17 +197,20 @@ def memory_extract_turn(chat_session_id: str, user_text: str,
 
 
 @command(name="memory_summarize_session", app="open_notebook")
-def memory_summarize_session(chat_session_id: str, transcript: str,
-                              model_override: str | None = None) -> dict:
+def memory_summarize_session(
+    chat_session_id: str, transcript: str, model_override: str | None = None
+) -> dict:
     """Per-session episode summarizer.
 
     v0.7.83 — see memory_extract_turn for the model_override contract.
     """
     try:
         from desktop.memory.writer import summarize_session
+
         llm, mem_client = _build_clients(model_override=model_override)
         summarize_session(
-            llm=llm, mem_client=mem_client,
+            llm=llm,
+            mem_client=mem_client,
             chat_session_id=chat_session_id,
             transcript=transcript,
         )

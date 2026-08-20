@@ -10,9 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from deeper_notebook.knowledge_engine.capabilities import AuthorityKind
 from deeper_notebook.podcasts.selection_contracts import PodcastSelection
 
-_ABSOLUTE_MODEL_ID = re.compile(
-    r"^(?:/|\\\\|//|[A-Za-z]:[\\/]|file://)", re.IGNORECASE
-)
+_ABSOLUTE_MODEL_ID = re.compile(r"^(?:/|\\\\|//|[A-Za-z]:[\\/]|file://)", re.IGNORECASE)
 _EMBEDDED_FILE_URL = re.compile(r"\bfile://[^\s,;\)\]}>]*", re.IGNORECASE)
 _EMBEDDED_WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s,;\)\]}>]*")
 _EMBEDDED_UNC_PATH = re.compile(r"(?:^|(?<=[\s(\"'=]))(?:\\\\|//)[^\s,;\)\]}>]*")
@@ -86,9 +84,7 @@ class PodcastReadinessRequest(PodcastSelectionPreviewRequest):
 
     @field_validator("production_overrides")
     @classmethod
-    def validate_production_overrides(
-        cls, value: dict[str, str]
-    ) -> dict[str, str]:
+    def validate_production_overrides(cls, value: dict[str, str]) -> dict[str, str]:
         normalized: dict[str, str] = {}
         for role, model_id in value.items():
             model = " ".join(model_id.split())
@@ -140,7 +136,9 @@ class PodcastModelPlanReceipt(_Strict):
     ]
     outcome: Literal["ready", "blocked", "approval_required"]
     resource_tier: Literal["light", "standard", "heavyweight"] | None
-    selection_source: Literal["automatic", "role_override", "production_override"] | None
+    selection_source: (
+        Literal["automatic", "role_override", "production_override"] | None
+    )
     reason: Literal["route_ready", "route_blocked", "route_approval_required"]
 
 
@@ -190,7 +188,9 @@ class PodcastEditorialBrief(_Strict):
     def normalize_outline(cls, value: list[str]) -> list[str]:
         normalized = [" ".join(item.split()) for item in value]
         if any(not item or len(item) > 512 for item in normalized):
-            raise ValueError("outline entries must be non-empty labels up to 512 characters")
+            raise ValueError(
+                "outline entries must be non-empty labels up to 512 characters"
+            )
         if any(cls._looks_like_filesystem_path(item) for item in normalized):
             raise ValueError("outline entries must not be filesystem paths")
         return normalized
@@ -214,7 +214,13 @@ class PodcastEditorialBrief(_Strict):
         if any(getattr(self, field) is not None for field in full_fields):
             if self.audience not in {"foundation", "practitioner", "expert"}:
                 raise ValueError("audience must be foundation, practitioner, or expert")
-            if self.purpose not in {"explain", "analyze", "challenge", "compare", "teach"}:
+            if self.purpose not in {
+                "explain",
+                "analyze",
+                "challenge",
+                "compare",
+                "teach",
+            }:
                 raise ValueError("purpose is not supported")
             if self.format not in {"brief", "deep_dive", "critique", "debate"}:
                 raise ValueError("format is not supported")
@@ -246,7 +252,9 @@ class PodcastStudioSubmitRequest(PodcastReadinessRequest):
     @classmethod
     def label_is_not_path(cls, value: str) -> str:
         normalized = " ".join(value.split())
-        if not normalized or PodcastEditorialBrief._looks_like_filesystem_path(normalized):
+        if not normalized or PodcastEditorialBrief._looks_like_filesystem_path(
+            normalized
+        ):
             raise ValueError("label must not be a filesystem path")
         return normalized
 

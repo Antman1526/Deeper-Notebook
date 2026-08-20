@@ -29,6 +29,7 @@ class TestIsCommandRegistered:
 
     def test_registered_command_returns_true(self):
         from deeper_notebook.domain import notebook as nb_mod
+
         fake_registry = MagicMock()
         fake_registry.get_command_by_id.return_value = MagicMock()  # truthy
         with patch.dict(
@@ -39,6 +40,7 @@ class TestIsCommandRegistered:
 
     def test_unregistered_command_returns_false(self):
         from deeper_notebook.domain import notebook as nb_mod
+
         fake_registry = MagicMock()
         fake_registry.get_command_by_id.return_value = None
         with patch.dict(
@@ -74,14 +76,16 @@ class TestNoteSaveUsesRegistry:
         async def _fake_super_save(self):
             self.id = "note:fake"
 
-        with patch(
-            "deeper_notebook.domain.notebook.ObjectModel.save", _fake_super_save
-        ), patch(
-            "deeper_notebook.domain.notebook._is_command_registered",
-            return_value=False,
-        ), patch(
-            "deeper_notebook.domain.notebook.submit_command",
-        ) as submit_mock:
+        with (
+            patch("deeper_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch(
+                "deeper_notebook.domain.notebook._is_command_registered",
+                return_value=False,
+            ),
+            patch(
+                "deeper_notebook.domain.notebook.submit_command",
+            ) as submit_mock,
+        ):
             result = await note.save()
             assert result is None
             # submit_command must NOT have been called — the pre-check
@@ -97,15 +101,17 @@ class TestNoteSaveUsesRegistry:
         async def _fake_super_save(self):
             self.id = "note:fake"
 
-        with patch(
-            "deeper_notebook.domain.notebook.ObjectModel.save", _fake_super_save
-        ), patch(
-            "deeper_notebook.domain.notebook._is_command_registered",
-            return_value=True,
-        ), patch(
-            "deeper_notebook.domain.notebook.submit_command",
-            return_value="command:xyz",
-        ) as submit_mock:
+        with (
+            patch("deeper_notebook.domain.notebook.ObjectModel.save", _fake_super_save),
+            patch(
+                "deeper_notebook.domain.notebook._is_command_registered",
+                return_value=True,
+            ),
+            patch(
+                "deeper_notebook.domain.notebook.submit_command",
+                return_value="command:xyz",
+            ) as submit_mock,
+        ):
             result = await note.save()
             assert result == "command:xyz"
             submit_mock.assert_called_once()
@@ -122,21 +128,25 @@ class TestMemoryRecallBudget:
 
     def test_default_budget_when_env_unset(self, monkeypatch):
         from deeper_notebook.utils.memory_recall import _recall_budget_sec
+
         monkeypatch.delenv("DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC", raising=False)
         assert _recall_budget_sec() == 12.0
 
     def test_env_override_parsed(self, monkeypatch):
         from deeper_notebook.utils.memory_recall import _recall_budget_sec
+
         monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC", "30")
         assert _recall_budget_sec() == 30.0
 
     def test_garbage_env_falls_back_to_default(self, monkeypatch):
         from deeper_notebook.utils.memory_recall import _recall_budget_sec
+
         monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC", "not-a-float")
         assert _recall_budget_sec() == 12.0
 
     def test_zero_or_negative_falls_back_to_default(self, monkeypatch):
         from deeper_notebook.utils.memory_recall import _recall_budget_sec
+
         for v in ("0", "-5", "-0.1"):
             monkeypatch.setenv("DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC", v)
             assert _recall_budget_sec() == 12.0, f"Expected fallback for {v!r}"
@@ -209,15 +219,19 @@ class TestSourceDeletePostSweep:
             call_log.append("__SUPER_DELETE__")
             return True
 
-        with patch(
-            "deeper_notebook.domain.notebook.repo_query",
-            new=fake_repo_query,
-        ), patch(
-            "deeper_notebook.domain.base.ObjectModel.delete",
-            new=fake_super_delete,
-        ), patch(
-            "deeper_notebook.config.UPLOADS_FOLDER",
-            "/tmp/fake-uploads",
+        with (
+            patch(
+                "deeper_notebook.domain.notebook.repo_query",
+                new=fake_repo_query,
+            ),
+            patch(
+                "deeper_notebook.domain.base.ObjectModel.delete",
+                new=fake_super_delete,
+            ),
+            patch(
+                "deeper_notebook.config.UPLOADS_FOLDER",
+                "/tmp/fake-uploads",
+            ),
         ):
             await src.delete()
 
@@ -265,15 +279,19 @@ class TestSourceDeletePostSweep:
         async def fake_super_delete(self):
             return True
 
-        with patch(
-            "deeper_notebook.domain.notebook.repo_query",
-            new=flaky_repo_query,
-        ), patch(
-            "deeper_notebook.domain.base.ObjectModel.delete",
-            new=fake_super_delete,
-        ), patch(
-            "deeper_notebook.config.UPLOADS_FOLDER",
-            "/tmp/fake-uploads",
+        with (
+            patch(
+                "deeper_notebook.domain.notebook.repo_query",
+                new=flaky_repo_query,
+            ),
+            patch(
+                "deeper_notebook.domain.base.ObjectModel.delete",
+                new=fake_super_delete,
+            ),
+            patch(
+                "deeper_notebook.config.UPLOADS_FOLDER",
+                "/tmp/fake-uploads",
+            ),
         ):
             # Must not raise.
             result = await src.delete()

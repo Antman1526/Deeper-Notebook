@@ -8,6 +8,7 @@ Two layers:
      + httpx proxy to the launcher. Launcher is mocked via env vars +
      a stub server.
 """
+
 from __future__ import annotations
 
 import json
@@ -85,7 +86,8 @@ def test_server_assigns_random_port(server):
 
 def test_token_required_for_protected_endpoints(server):
     code, body = _http_request(
-        "POST", f"{server.url}/restart_sidecar",
+        "POST",
+        f"{server.url}/restart_sidecar",
         body={"kind": "chat"},
         # No token!
     )
@@ -95,7 +97,8 @@ def test_token_required_for_protected_endpoints(server):
 
 def test_token_must_match(server):
     code, body = _http_request(
-        "POST", f"{server.url}/restart_sidecar",
+        "POST",
+        f"{server.url}/restart_sidecar",
         body={"kind": "chat"},
         token="completely-wrong-token-xyz",
     )
@@ -114,7 +117,8 @@ def test_restart_invokes_registered_callback(server):
     server.register_callback("restart_sidecar", _cb)
 
     code, body = _http_request(
-        "POST", f"{server.url}/restart_sidecar",
+        "POST",
+        f"{server.url}/restart_sidecar",
         body={"kind": "chat"},
         token=server.token,
     )
@@ -127,12 +131,14 @@ def test_restart_invokes_registered_callback(server):
 
 def test_restart_failure_returns_400(server):
     """Callback returns (False, detail) → 400 + detail surfaced."""
+
     def _cb(kind: str) -> tuple[bool, str]:
         return False, f"Sidecar {kind!r} was never spawned"
 
     server.register_callback("restart_sidecar", _cb)
     code, body = _http_request(
-        "POST", f"{server.url}/restart_sidecar",
+        "POST",
+        f"{server.url}/restart_sidecar",
         body={"kind": "memory"},
         token=server.token,
     )
@@ -143,12 +149,14 @@ def test_restart_failure_returns_400(server):
 
 def test_restart_callback_exception_returns_500(server):
     """Callback raising → 500 + readable error, never crashes server."""
+
     def _cb(kind: str) -> tuple[bool, str]:
         raise ValueError("simulated bad state")
 
     server.register_callback("restart_sidecar", _cb)
     code, body = _http_request(
-        "POST", f"{server.url}/restart_sidecar",
+        "POST",
+        f"{server.url}/restart_sidecar",
         body={"kind": "chat"},
         token=server.token,
     )
@@ -160,7 +168,8 @@ def test_restart_callback_exception_returns_500(server):
 def test_restart_rejects_missing_kind(server):
     server.register_callback("restart_sidecar", lambda _k: (True, ""))
     code, body = _http_request(
-        "POST", f"{server.url}/restart_sidecar",
+        "POST",
+        f"{server.url}/restart_sidecar",
         body={},
         token=server.token,
     )
@@ -172,7 +181,8 @@ def test_restart_no_callback_returns_503(server):
     """No callback registered → 503 (rather than 500 — the request
     shape is fine, the server just isn't configured)."""
     code, body = _http_request(
-        "POST", f"{server.url}/restart_sidecar",
+        "POST",
+        f"{server.url}/restart_sidecar",
         body={"kind": "chat"},
         token=server.token,
     )
@@ -181,7 +191,8 @@ def test_restart_no_callback_returns_503(server):
 
 def test_unknown_path_returns_404(server):
     code, body = _http_request(
-        "POST", f"{server.url}/some/unknown/path",
+        "POST",
+        f"{server.url}/some/unknown/path",
         body={"kind": "chat"},
         token=server.token,
     )
@@ -261,7 +272,8 @@ def test_restart_endpoint_502_when_launcher_unreachable(app, monkeypatch):
     502 from the API (NOT 500 — we know the network failed, not us)."""
     # Pick a port that's almost certainly not bound.
     monkeypatch.setenv(
-        "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", "http://127.0.0.1:1",
+        "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL",
+        "http://127.0.0.1:1",
     )
     monkeypatch.setenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", "dummy")
     with TestClient(app) as client:
@@ -275,6 +287,7 @@ def test_restart_endpoint_400_when_launcher_rejects(app, monkeypatch):
     srv = ControlServer()
     srv.start()
     try:
+
         def _cb(_k: str) -> tuple[bool, str]:
             return False, "Sidecar 'memory' was never spawned this session"
 

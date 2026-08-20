@@ -22,6 +22,7 @@ Design notes
 - **State:** the same file persists the user's enabled toggle and the version
   they chose to skip.
 """
+
 from __future__ import annotations
 
 import json

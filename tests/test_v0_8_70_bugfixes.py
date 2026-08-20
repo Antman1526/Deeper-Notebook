@@ -5,6 +5,7 @@
 2. CommandService.get_command_status must map a "not found" ValueError to None
    (so the HTTP layer returns 404) and re-raise other ValueErrors.
 """
+
 from __future__ import annotations
 
 import os
@@ -15,6 +16,7 @@ import deeper_notebook.ai.connection_tester as ct
 from api.command_service import CommandService
 
 # --- 1. connection_tester env-leak fix ------------------------------------
+
 
 async def test_connection_test_restores_absent_env_var(monkeypatch):
     """When the provider key wasn't set before, it must be removed after."""
@@ -52,13 +54,12 @@ async def test_connection_test_restores_prior_env_var(monkeypatch):
 
 # --- 2. command status 404 mapping ----------------------------------------
 
+
 async def test_get_command_status_returns_none_for_not_found(monkeypatch):
     async def _raise_not_found(job_id):
         raise ValueError(f"Command {job_id} not found")
 
-    monkeypatch.setattr(
-        "api.command_service.get_command_status", _raise_not_found
-    )
+    monkeypatch.setattr("api.command_service.get_command_status", _raise_not_found)
     result = await CommandService.get_command_status("command:missing")
     assert result is None  # → router emits 404
 
@@ -67,8 +68,6 @@ async def test_get_command_status_reraises_other_valueerror(monkeypatch):
     async def _raise_other(job_id):
         raise ValueError("malformed job payload")
 
-    monkeypatch.setattr(
-        "api.command_service.get_command_status", _raise_other
-    )
+    monkeypatch.setattr("api.command_service.get_command_status", _raise_other)
     with pytest.raises(ValueError, match="malformed"):
         await CommandService.get_command_status("command:bad")

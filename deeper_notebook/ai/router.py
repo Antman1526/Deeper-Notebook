@@ -6,6 +6,7 @@ health, n_ctx headroom, and user preference. Pure function so it's
 trivially testable and re-callable from any callsite (chat node,
 ask node, future tools).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

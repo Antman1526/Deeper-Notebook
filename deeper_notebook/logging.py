@@ -22,6 +22,7 @@ at startup. The stderr sink is preserved so docker/systemd users still
 see live output. Idempotent — safe to call multiple times (e.g. when
 reloading uvicorn).
 """
+
 from __future__ import annotations
 
 import os
@@ -142,13 +143,17 @@ def configure_logging(
 
     if json_sink is None:
         json_sink = resolve_env("DEEPER_NOTEBOOK_LOG_JSON", "").lower() in {
-            "1", "true", "yes", "on"
+            "1",
+            "true",
+            "yes",
+            "on",
         }
 
     # Sanitize component for filesystem use — keep alnum + dash + underscore.
-    safe_component = "".join(
-        c if c.isalnum() or c in "-_" else "_" for c in component.lower()
-    ) or "app"
+    safe_component = (
+        "".join(c if c.isalnum() or c in "-_" else "_" for c in component.lower())
+        or "app"
+    )
 
     # Clear any prior config so this function is idempotent — important
     # when uvicorn reloads or when tests configure logging repeatedly.
@@ -166,7 +171,7 @@ def configure_logging(
         logger.add(
             sys.stderr,
             level=level,
-            format=_LOG_FORMAT,    # v0.7.120 — request_id column
+            format=_LOG_FORMAT,  # v0.7.120 — request_id column
             backtrace=False,
             diagnose=False,  # avoid leaking local variables in tracebacks
         )
@@ -176,7 +181,7 @@ def configure_logging(
     logger.add(
         text_path,
         level=level,
-        format=_LOG_FORMAT,        # v0.7.120 — request_id column
+        format=_LOG_FORMAT,  # v0.7.120 — request_id column
         rotation=rotation,
         retention=retention,
         compression=compression,
@@ -205,6 +210,11 @@ def configure_logging(
     logger.info(
         "loguru configured for component={} level={} dir={} rotation={} "
         "retention={} json={}",
-        safe_component, level, log_dir, rotation, retention, json_sink,
+        safe_component,
+        level,
+        log_dir,
+        rotation,
+        retention,
+        json_sink,
     )
     return log_dir

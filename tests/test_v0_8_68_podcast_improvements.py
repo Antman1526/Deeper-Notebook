@@ -6,6 +6,7 @@ selected-profile guard, empty episode-dir cleanup, and media-type mapping.
 Mix of unit tests and source-anchor guards (the worker command needs a live
 podcast-creator + DB to run end-to-end; anchors keep the wiring honest).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,13 +25,18 @@ def _run(coro):
 
 # ------------------------------------------------------------- briefing_suffix
 
+
 def test_episode_model_stores_briefing_suffix():
     from deeper_notebook.podcasts.models import PodcastEpisode
 
     assert "briefing_suffix" in PodcastEpisode.model_fields
     ep = PodcastEpisode(
-        name="e", episode_profile={}, speaker_profile={},
-        briefing="b", content="c", briefing_suffix="make it funny",
+        name="e",
+        episode_profile={},
+        speaker_profile={},
+        briefing="b",
+        content="c",
+        briefing_suffix="make it funny",
     )
     assert ep.briefing_suffix == "make it funny"
 
@@ -60,6 +66,7 @@ def test_retry_replays_suffix_and_allows_completed():
 
 # ------------------------------------------------------------- content budget
 
+
 def test_submit_rejects_oversized_content(monkeypatch):
     from api.podcast_service import PodcastService
     from deeper_notebook.exceptions import InvalidInputError
@@ -82,17 +89,20 @@ def test_submit_rejects_oversized_content(monkeypatch):
         return ("openai_compatible", "m", {})
 
     import api.podcast_service as svc
+
     monkeypatch.setattr(svc.EpisodeProfile, "get_by_name", _fake_ep)
     monkeypatch.setattr(svc.SpeakerProfile, "get_by_name", _fake_sp)
     monkeypatch.setenv("DEEPER_NOTEBOOK_PODCAST_MAX_CONTENT_TOKENS", "100")
 
     with pytest.raises(InvalidInputError) as exc:
-        _run(PodcastService.submit_generation_job(
-            episode_profile_name="ep",
-            speaker_profile_name="sp",
-            episode_name="too big",
-            content="word " * 5000,  # far beyond 100 tokens
-        ))
+        _run(
+            PodcastService.submit_generation_job(
+                episode_profile_name="ep",
+                speaker_profile_name="sp",
+                episode_name="too big",
+                content="word " * 5000,  # far beyond 100 tokens
+            )
+        )
     assert "too large" in str(exc.value)
 
 
@@ -119,6 +129,7 @@ def test_budget_disabled_with_zero(monkeypatch):
         return ("openai_compatible", "m", {})
 
     import api.podcast_service as svc
+
     monkeypatch.setattr(svc.EpisodeProfile, "get_by_name", _fake_ep)
     monkeypatch.setattr(svc.SpeakerProfile, "get_by_name", _fake_sp)
     monkeypatch.setenv("DEEPER_NOTEBOOK_PODCAST_MAX_CONTENT_TOKENS", "0")
@@ -131,17 +142,20 @@ def test_budget_disabled_with_zero(monkeypatch):
 
     monkeypatch.setattr(svc, "submit_command", _fake_submit)
 
-    job_id = _run(PodcastService.submit_generation_job(
-        episode_profile_name="ep",
-        speaker_profile_name="sp",
-        episode_name="big but allowed",
-        content="word " * 5000,
-    ))
+    job_id = _run(
+        PodcastService.submit_generation_job(
+            episode_profile_name="ep",
+            speaker_profile_name="sp",
+            episode_name="big but allowed",
+            content="word " * 5000,
+        )
+    )
     assert reached.get("submitted") is True
     assert job_id
 
 
 # ------------------------------------------------------------- dir cleanup
+
 
 def test_cleanup_episode_dir_removes_empty_uuid_dir(tmp_path, monkeypatch):
     import api.routers.podcasts as pr
@@ -177,13 +191,18 @@ def test_cleanup_episode_dir_keeps_partial_artifacts(tmp_path, monkeypatch):
 
 # ------------------------------------------------------------- media type
 
+
 def test_audio_media_type_mapping_present():
     router_src = (_REPO / "api" / "routers" / "podcasts.py").read_text()
     assert '".wav": "audio/wav"' in router_src
-    assert 'media_type=_MEDIA_TYPES.get(audio_path.suffix.lower(), "audio/mpeg")' in router_src
+    assert (
+        'media_type=_MEDIA_TYPES.get(audio_path.suffix.lower(), "audio/mpeg")'
+        in router_src
+    )
 
 
 # ------------------------------------------------------------- docs accuracy
+
 
 def test_docs_no_longer_claim_silent_audio_fallback():
     for doc in (_REPO / "CLAUDE.md", _REPO / "deeper_notebook" / "CLAUDE.md"):

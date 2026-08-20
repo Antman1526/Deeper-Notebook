@@ -2,6 +2,7 @@
 to the HuggingFace `namespace/name` shape before it is interpolated into the
 download URL. `filename` was already guarded; `repo_id` was not.
 """
+
 from __future__ import annotations
 
 import types
@@ -16,29 +17,36 @@ def client(monkeypatch, tmp_path):
 
     async def _fake_start_download(repo_id, filename, dest_dir):
         return types.SimpleNamespace(
-            job_id="job:1", status="downloading",
+            job_id="job:1",
+            status="downloading",
             target_path=str(dest_dir / filename),
-            bytes_downloaded=0, bytes_total=None,
+            bytes_downloaded=0,
+            bytes_total=None,
         )
 
     import deeper_notebook.local_models as lm
+
     monkeypatch.setattr(lm, "start_download", _fake_start_download, raising=False)
 
     from api.main import app
+
     return TestClient(app)
 
 
-@pytest.mark.parametrize("bad_repo_id", [
-    "../../etc/passwd",
-    "a/b/c",                 # too many segments
-    "no-slash",              # missing namespace
-    "x@evil.com/y",          # @ in path
-    "ns/name?x=1",           # query smuggle
-    "ns/name#frag",          # fragment
-    "ns /name",              # whitespace
-    "/leadingslash",
-    "ns/..",                 # traversal segment
-])
+@pytest.mark.parametrize(
+    "bad_repo_id",
+    [
+        "../../etc/passwd",
+        "a/b/c",  # too many segments
+        "no-slash",  # missing namespace
+        "x@evil.com/y",  # @ in path
+        "ns/name?x=1",  # query smuggle
+        "ns/name#frag",  # fragment
+        "ns /name",  # whitespace
+        "/leadingslash",
+        "ns/..",  # traversal segment
+    ],
+)
 def test_download_rejects_bad_repo_id(client, bad_repo_id):
     r = client.post(
         "/api/local-models/download",

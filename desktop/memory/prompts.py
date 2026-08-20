@@ -3,6 +3,7 @@
 Hermes 3 emits `<tool_call>` JSON blocks when prompted with explicit tool
 definitions. We parse those blocks to extract structured memory writes.
 """
+
 from __future__ import annotations
 
 # Tool definitions are inlined in the system prompt because Hermes 3 follows
@@ -47,8 +48,7 @@ Emit exactly one `<tool_call>{...}</tool_call>` block with the remember_episode 
 
 
 def render_extract_user(user_text: str, assistant_text: str) -> str:
-    return (f"USER TURN: {user_text}\n\n"
-            f"ASSISTANT TURN: {assistant_text}")
+    return f"USER TURN: {user_text}\n\nASSISTANT TURN: {assistant_text}"
 
 
 def render_extract_user_batch(turns: list[tuple[str, str]]) -> str:
@@ -60,5 +60,4 @@ def render_extract_user_batch(turns: list[tuple[str, str]]) -> str:
 
 
 def render_summarize_user(chat_session_id: str, transcript: str) -> str:
-    return (f"CHAT SESSION ID: {chat_session_id}\n\n"
-            f"TRANSCRIPT:\n{transcript}")
+    return f"CHAT SESSION ID: {chat_session_id}\n\nTRANSCRIPT:\n{transcript}"

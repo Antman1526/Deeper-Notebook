@@ -2,6 +2,7 @@
 
 Add a row to EXPECTED_PICKS to lock in a new model→slot expectation.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -13,35 +14,41 @@ from desktop.auto_register.capability import ModelDescriptor, score_model
 # Each row: (model_name, expected_kind, expected_source, expected_min_score_axis)
 # expected_min_score_axis is a (axis, min_value) tuple — None to skip score check.
 
+
 @pytest.mark.parametrize(
     "name,expected_kind,expected_source,axis_check",
     [
         # ----- Exact-prefix registry hits -----
-        ("Hermes-3-Llama-3.1-8B-Q4_K_M.gguf", "chat",      "registry", ("tools",     0.90)),
-        ("DeepSeek-R1-Distill-Qwen-14B-Q4_K_M", "reasoning","registry", ("reasoning", 0.90)),
-        ("Qwen2.5-Coder-7B-Instruct",         "chat",      "registry", ("code",      0.90)),
-        ("nomic-embed-text-v1.5",              "embed",     "registry", None),
-        ("whisper-base-en",                    "stt",       "registry", None),
-        ("piper-amy-en",                       "tts",       "registry", None),
+        ("Hermes-3-Llama-3.1-8B-Q4_K_M.gguf", "chat", "registry", ("tools", 0.90)),
+        (
+            "DeepSeek-R1-Distill-Qwen-14B-Q4_K_M",
+            "reasoning",
+            "registry",
+            ("reasoning", 0.90),
+        ),
+        ("Qwen2.5-Coder-7B-Instruct", "chat", "registry", ("code", 0.90)),
+        ("nomic-embed-text-v1.5", "embed", "registry", None),
+        ("whisper-base-en", "stt", "registry", None),
+        ("piper-amy-en", "tts", "registry", None),
         # ----- Fallback patterns (HF-style) -----
-        ("MyNew-Coder-9B-Instruct",            "chat",      "fallback", ("code",      0.80)),
-        ("Some-R1-Reasoning-Distill",          "reasoning", "fallback", ("reasoning", 0.80)),
-        ("ImaginaryEmbed-2",                   "embed",     "fallback", None),
-        ("whisper-medium-multilingual",        "stt",       "fallback", None),
+        ("MyNew-Coder-9B-Instruct", "chat", "fallback", ("code", 0.80)),
+        ("Some-R1-Reasoning-Distill", "reasoning", "fallback", ("reasoning", 0.80)),
+        ("ImaginaryEmbed-2", "embed", "fallback", None),
+        ("whisper-medium-multilingual", "stt", "fallback", None),
         # ----- Fallback patterns (Ollama `<family>:<tag>` style) -----
         # P1-CRIT-01 fix: was returning kind=chat source=default with neutral
         # 0.5 scores, leaving Tools / Large Context / Reasoning slots empty
         # for Ollama-only users. Now scores via family-name regex.
-        ("llama3.1:latest",                    "chat",      "fallback", ("tools",     0.55)),
-        ("qwen2.5:14b",                        "chat",      "fallback", ("speed",     0.70)),
-        ("mistral:7b-instruct",                "chat",      "fallback", ("tools",     0.55)),
-        ("phi3.5:latest",                      "chat",      "fallback", ("chat",      0.70)),
-        ("gemma2:9b",                          "chat",      "fallback", ("chat",      0.70)),
-        ("deepseek-r1:14b",                    "reasoning", "fallback", ("reasoning", 0.80)),
-        ("qwen2.5-coder:32b",                  "chat",      "fallback", ("code",      0.80)),
-        ("nomic-embed-text:latest",            "embed",     "fallback", None),
+        ("llama3.1:latest", "chat", "fallback", ("tools", 0.55)),
+        ("qwen2.5:14b", "chat", "fallback", ("speed", 0.70)),
+        ("mistral:7b-instruct", "chat", "fallback", ("tools", 0.55)),
+        ("phi3.5:latest", "chat", "fallback", ("chat", 0.70)),
+        ("gemma2:9b", "chat", "fallback", ("chat", 0.70)),
+        ("deepseek-r1:14b", "reasoning", "fallback", ("reasoning", 0.80)),
+        ("qwen2.5-coder:32b", "chat", "fallback", ("code", 0.80)),
+        ("nomic-embed-text:latest", "embed", "fallback", None),
         # ----- Last-resort default (truly unrecognizable name) -----
-        ("xyz-9000-something",                 "chat",      "default",  None),
+        ("xyz-9000-something", "chat", "default", None),
     ],
 )
 def test_score_model_classifies_correctly(
@@ -66,21 +73,25 @@ def test_score_model_unknown_falls_back_to_neutral():
 
 # ---------------------------------------------------------- assigner.py
 
+
 def _pool() -> list[ModelDescriptor]:
     """A realistic mix from the user's downloaded models."""
-    return [score_model(n) for n in (
-        "Hermes-3-Llama-3.1-8B-Q4_K_M",
-        "Qwen3.6-27B-Q4_K_M",
-        "Qwen2.5-14B-Instruct-Q4_K_M",
-        "DeepSeek-R1-Distill-Qwen-14B-Q4_K_M",
-        "Llama-3.2-3B-Instruct-Q4_K_M",
-        "Phi-3.5-mini-instruct-Q4_K_M",
-        "gemma-4-E2B-it-Q4_K_M",            # NEW: small chat winner under 4 GB ceiling
-        "nomic-embed-text-v1.5",
-        "whisper-base-en",
-        "piper-amy-en",
-        "piper-ryan-en",
-    )]
+    return [
+        score_model(n)
+        for n in (
+            "Hermes-3-Llama-3.1-8B-Q4_K_M",
+            "Qwen3.6-27B-Q4_K_M",
+            "Qwen2.5-14B-Instruct-Q4_K_M",
+            "DeepSeek-R1-Distill-Qwen-14B-Q4_K_M",
+            "Llama-3.2-3B-Instruct-Q4_K_M",
+            "Phi-3.5-mini-instruct-Q4_K_M",
+            "gemma-4-E2B-it-Q4_K_M",  # NEW: small chat winner under 4 GB ceiling
+            "nomic-embed-text-v1.5",
+            "whisper-base-en",
+            "piper-amy-en",
+            "piper-ryan-en",
+        )
+    ]
 
 
 # Each row: (slot, expected_model_substring_in_name)
@@ -88,21 +99,21 @@ EXPECTED_PICKS = [
     # v0.5.2: chat is RAM-bounded by an adaptive ceiling (~40% of system
     # RAM, clamped to [3, 32] GB). Tests pin the ceiling explicitly via
     # DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING fixture below — at 4 GB, gemma-4-E2B wins.
-    ("chat",           "gemma-4-E2B"),
+    ("chat", "gemma-4-E2B"),
     # Hermes-3 is the tool specialist — should win Tools regardless of size
-    ("tools",          "Hermes-3"),
+    ("tools", "Hermes-3"),
     # Embedding / TTS / STT are kind-filtered — only one eligible each
-    ("embedding",      "nomic-embed-text-v1.5"),
-    ("stt",            "whisper-base-en"),
+    ("embedding", "nomic-embed-text-v1.5"),
+    ("stt", "whisper-base-en"),
     # large_context requires >= 32k — Phi/Hermes/Qwen2.5/Qwen3 all qualify;
     # weights favor chat depth + log10(ctx) so Qwen3.6-27B or 2.5-14B wins
-    ("large_context",  "Qwen"),
+    ("large_context", "Qwen"),
     # Transformation favors reasoning + chat — Qwen3.6-27B should win
     ("transformation", "Qwen3.6-27B"),
     # ONP v0.5 — Reasoning slot picks the purpose-built reasoner
     # (DeepSeek-R1-Distill is the only model in the test pool with
     # reasoning >= 0.75)
-    ("reasoning",      "R1-Distill"),
+    ("reasoning", "R1-Distill"),
 ]
 
 
@@ -144,8 +155,15 @@ def test_assign_all_returns_pick_for_every_slot():
     picks = assign_all(_pool())
     assert set(picks.keys()) == set(SLOTS)
     # Slots we expect to have a model in our pool
-    for slot in ("chat", "tools", "transformation", "large_context",
-                 "embedding", "tts", "stt"):
+    for slot in (
+        "chat",
+        "tools",
+        "transformation",
+        "large_context",
+        "embedding",
+        "tts",
+        "stt",
+    ):
         assert picks[slot].model is not None, f"slot={slot} reason={picks[slot].reason}"
 
 
@@ -171,6 +189,7 @@ def test_deterministic_across_runs():
 
 
 # ---------------------------------------------------------- pick_chat_llm_file
+
 
 def test_pick_chat_llm_file_respects_ram_ceiling(tmp_path):
     """The launcher uses this to decide which GGUF to load into the chat
@@ -200,6 +219,7 @@ def test_pick_chat_llm_file_skips_stub_files(tmp_path):
     earlier in the session) should not be selectable. The 1 MB threshold
     catches them."""
     from desktop.auto_register.assigner import pick_chat_llm_file
+
     (tmp_path / "ministral-3-14b-fallback-Q4_K_M.gguf").write_bytes(b"x" * 29)
     (tmp_path / "gemma-4-E2B-it-Q4_K_M.gguf").write_bytes(b"x" * 2_000_000)
     chosen = pick_chat_llm_file(tmp_path, ram_ceiling_gb=4.0)
@@ -211,6 +231,7 @@ def test_pick_chat_llm_file_returns_none_for_empty_dir(tmp_path):
     """No GGUFs → None. Caller (app.py) handles by skipping the chat-server
     spawn."""
     from desktop.auto_register.assigner import pick_chat_llm_file
+
     assert pick_chat_llm_file(tmp_path) is None
     missing = tmp_path / "does-not-exist"
     assert pick_chat_llm_file(missing) is None
@@ -221,8 +242,9 @@ def test_pick_chat_llm_file_falls_back_when_no_models_fit_ceiling(tmp_path):
     the highest-scoring chat-kind model (instead of returning None and
     leaving the user without a chat server)."""
     from desktop.auto_register.assigner import pick_chat_llm_file
+
     big = b"x" * 2_000_000
-    (tmp_path / "Qwen3.6-27B-Q4_K_M.gguf").write_bytes(big)        # 16 GB
+    (tmp_path / "Qwen3.6-27B-Q4_K_M.gguf").write_bytes(big)  # 16 GB
     (tmp_path / "Qwen2.5-14B-Instruct-Q4_K_M.gguf").write_bytes(big)  # 9 GB
     chosen = pick_chat_llm_file(tmp_path, ram_ceiling_gb=4.0)
     assert chosen is not None
@@ -237,9 +259,11 @@ def test_ram_probe_prefers_psutil_when_available(monkeypatch):
     from desktop.auto_register import assigner
 
     class _FakeVmem:
-        total = 64 * 1024 ** 3  # 64 GB
+        total = 64 * 1024**3  # 64 GB
 
-    fake_psutil = type("psutil", (), {"virtual_memory": staticmethod(lambda: _FakeVmem())})
+    fake_psutil = type(
+        "psutil", (), {"virtual_memory": staticmethod(lambda: _FakeVmem())}
+    )
     monkeypatch.setitem(__import__("sys").modules, "psutil", fake_psutil)
     assert assigner._probe_total_ram_gb() == 64.0
 
@@ -256,6 +280,7 @@ def test_ram_probe_falls_back_to_sysconf_when_psutil_missing(monkeypatch):
     # Skip on Windows where os.sysconf doesn't exist regardless of psutil
     if not hasattr(__import__("os"), "sysconf"):
         import pytest
+
         pytest.skip("os.sysconf unavailable (Windows)")
     val = assigner._probe_total_ram_gb()
     # Should produce SOMETHING positive

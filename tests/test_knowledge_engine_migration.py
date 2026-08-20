@@ -216,9 +216,7 @@ def test_migration_38_is_schemafull_and_idempotent():
     for table in TABLES:
         assert f"DEFINE TABLE IF NOT EXISTS {table} SCHEMAFULL;" in sql
     definitions = [
-        line.strip()
-        for line in sql.splitlines()
-        if line.strip().startswith("DEFINE ")
+        line.strip() for line in sql.splitlines() if line.strip().startswith("DEFINE ")
     ]
     assert definitions
     assert all("IF NOT EXISTS" in line for line in definitions)
@@ -230,8 +228,7 @@ def test_migration_38_matches_the_strict_shadow_schema_contract():
         for field in fields:
             rendered_field = "`capabilities`" if field == "capabilities" else field
             assert (
-                f"DEFINE FIELD IF NOT EXISTS {rendered_field} ON TABLE {table}"
-                in sql
+                f"DEFINE FIELD IF NOT EXISTS {rendered_field} ON TABLE {table}" in sql
             )
     for index in INDEXES:
         assert f"DEFINE INDEX IF NOT EXISTS {index}" in sql

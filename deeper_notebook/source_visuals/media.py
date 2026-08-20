@@ -213,7 +213,9 @@ def _srgb_rgb(image: Image.Image) -> Image.Image:
     return rgb
 
 
-def _decode_image(value: bytes | bytearray | memoryview | BinaryIO | Path | str) -> _DecodedImage:
+def _decode_image(
+    value: bytes | bytearray | memoryview | BinaryIO | Path | str,
+) -> _DecodedImage:
     payload = _read_input(value)
     if not payload:
         raise SourceVisualMediaError("DECODE_FAILED")
@@ -226,7 +228,10 @@ def _decode_image(value: bytes | bytearray | memoryview | BinaryIO | Path | str)
         if expected_format == "GIF":
             try:
                 with Image.open(io.BytesIO(payload)) as gif:
-                    if bool(getattr(gif, "is_animated", False)) or int(getattr(gif, "n_frames", 1)) != 1:
+                    if (
+                        bool(getattr(gif, "is_animated", False))
+                        or int(getattr(gif, "n_frames", 1)) != 1
+                    ):
                         raise SourceVisualMediaError("ANIMATED_UNSUPPORTED")
             except SourceVisualMediaError:
                 raise
@@ -244,13 +249,19 @@ def _decode_image(value: bytes | bytearray | memoryview | BinaryIO | Path | str)
             with Image.open(io.BytesIO(payload)) as opened:
                 if opened.format != expected_format:
                     raise SourceVisualMediaError("FORMAT_MISMATCH")
-                if bool(getattr(opened, "is_animated", False)) or int(getattr(opened, "n_frames", 1)) != 1:
+                if (
+                    bool(getattr(opened, "is_animated", False))
+                    or int(getattr(opened, "n_frames", 1)) != 1
+                ):
                     raise SourceVisualMediaError("ANIMATED_UNSUPPORTED")
                 opened.verify()
             with Image.open(io.BytesIO(payload)) as opened:
                 if opened.format != expected_format:
                     raise SourceVisualMediaError("FORMAT_MISMATCH")
-                if bool(getattr(opened, "is_animated", False)) or int(getattr(opened, "n_frames", 1)) != 1:
+                if (
+                    bool(getattr(opened, "is_animated", False))
+                    or int(getattr(opened, "n_frames", 1)) != 1
+                ):
                     raise SourceVisualMediaError("ANIMATED_UNSUPPORTED")
                 oriented = ImageOps.exif_transpose(opened)
                 oriented.load()
@@ -306,7 +317,9 @@ def _letterbox(image: Image.Image) -> Image.Image:
     return canvas
 
 
-def prepare_webp(value: bytes | bytearray | memoryview | BinaryIO | Path | str) -> PreparedVisualAsset:
+def prepare_webp(
+    value: bytes | bytearray | memoryview | BinaryIO | Path | str,
+) -> PreparedVisualAsset:
     """Decode one static image and return a bounded deterministic WebP."""
 
     decoded = _decode_image(value)
@@ -336,7 +349,9 @@ def prepare_webp(value: bytes | bytearray | memoryview | BinaryIO | Path | str) 
             contained.close()
 
 
-def image_quality_score(value: bytes | bytearray | memoryview | BinaryIO | Path | str) -> float:
+def image_quality_score(
+    value: bytes | bytearray | memoryview | BinaryIO | Path | str,
+) -> float:
     """Return a stable score based only on decoded pixels."""
 
     decoded = _decode_image(value)
@@ -357,12 +372,22 @@ def image_quality_score(value: bytes | bytearray | memoryview | BinaryIO | Path 
                 abs(raw[index] - raw[index + 1]) + abs(raw[index] - raw[index + width])
                 for index in range((width - 1) * (height - 1))
             ]
-            edge_variance = min(1.0, (sum(differences) / max(1, len(differences))) / 255.0)
+            edge_variance = min(
+                1.0, (sum(differences) / max(1, len(differences))) / 255.0
+            )
         else:
             edge_variance = 0.0
-        resolution = min(1.0, (decoded.width * decoded.height) / (MAX_WIDTH * MAX_HEIGHT))
+        resolution = min(
+            1.0, (decoded.width * decoded.height) / (MAX_WIDTH * MAX_HEIGHT)
+        )
         exposure = max(0.0, 1.0 - abs(mean - 0.5) * 2.0)
-        return round(0.35 * resolution + 0.30 * edge_variance + 0.20 * exposure + 0.15 * variance, 8)
+        return round(
+            0.35 * resolution
+            + 0.30 * edge_variance
+            + 0.20 * exposure
+            + 0.15 * variance,
+            8,
+        )
     finally:
         image.close()
 

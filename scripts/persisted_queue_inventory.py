@@ -86,7 +86,7 @@ def production_python_paths(root: Path) -> list[Path]:
         if not (
             relative.startswith("tests/")
             or "/tests/" in relative
-            or relative.startswith("open_" "notebook/")
+            or relative.startswith("open_notebook/")
             or relative.startswith("desktop/bin/")
         )
     ]
@@ -256,11 +256,7 @@ def _node_legacy_occurrences(
     for line_number in range(node.lineno, node.end_lineno + 1):
         line = source_lines[line_number - 1]
         start = node.col_offset if line_number == node.lineno else 0
-        end = (
-            node.end_col_offset
-            if line_number == node.end_lineno
-            else len(line)
-        )
+        end = node.end_col_offset if line_number == node.end_lineno else len(line)
         cursor = line.find(LEGACY_QUEUE_APP, start, end)
         while cursor >= 0:
             occurrences.append(

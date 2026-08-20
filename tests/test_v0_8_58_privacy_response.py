@@ -6,6 +6,7 @@ v0.8.1 selected_provider plumbing. These tests pin the response-model shape
 and guard the cross-layer wiring (provision → graph node → router) by source,
 since the full path is the live-SurrealDB chat integration.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -66,4 +67,4 @@ def test_categories_are_labels_only_never_values():
     src = _src("deeper_notebook/ai/privacy_gate.py")
     assert "findings_out.extend(findings)" in src
     # findings come from detect_sensitive (labels) ∪ extra_findings (labels)
-    assert "set(detect_sensitive(content or \"\"))" in src
+    assert 'set(detect_sensitive(content or ""))' in src

@@ -441,7 +441,9 @@ async def test_current_block_lookup_is_bounded_to_document_and_revision(
     assert current.document_id == document_id
     assert wrong_document is None
     assert wrong_revision is None
-    assert all("markdown" not in str(result) for result in migrated_memory_connection.results)
+    assert all(
+        "markdown" not in str(result) for result in migrated_memory_connection.results
+    )
 
 
 @pytest.mark.asyncio

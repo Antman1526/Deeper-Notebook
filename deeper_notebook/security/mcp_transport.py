@@ -56,7 +56,9 @@ def _canonical_hostname(hostname: str) -> str:
         try:
             canonical = hostname.encode("idna").decode("ascii").lower()
         except UnicodeError as exc:
-            raise MCPTransportPolicyError("MCP URL hostname cannot be normalized") from exc
+            raise MCPTransportPolicyError(
+                "MCP URL hostname cannot be normalized"
+            ) from exc
         if not canonical or canonical.endswith("."):
             _reject("MCP URL hostname is non-canonical")
         return canonical
@@ -147,7 +149,9 @@ async def resolve_mcp_addresses(hostname: str, port: int) -> tuple[str, ...]:
     addresses = tuple(sorted({record[4][0] for record in records}))
     if any(_is_link_local_address(address) for address in addresses):
         _reject("MCP URL resolves to a link-local address")
-    if not addresses or any(not _is_allowed_mcp_address(address) for address in addresses):
+    if not addresses or any(
+        not _is_allowed_mcp_address(address) for address in addresses
+    ):
         _reject("MCP URL resolves to a blocked network address")
     return addresses
 
@@ -184,7 +188,10 @@ class PinnedMCPNetworkBackend(httpcore.AsyncNetworkBackend):
         self._delegate = delegate
 
     def _authority_matches(self, host: str, port: int) -> bool:
-        return host.lower().rstrip(".") == self._receipt.hostname.lower().rstrip(".") and port == self._receipt.port
+        return (
+            host.lower().rstrip(".") == self._receipt.hostname.lower().rstrip(".")
+            and port == self._receipt.port
+        )
 
     async def connect_tcp(
         self,
@@ -197,8 +204,12 @@ class PinnedMCPNetworkBackend(httpcore.AsyncNetworkBackend):
         if not self._authority_matches(host, port):
             raise MCPTransportPolicyError("MCP connection authority changed")
         approved = tuple(self._receipt.addresses)
-        if not approved or any(not _is_allowed_mcp_address(address) for address in approved):
-            raise MCPTransportPolicyError("MCP connection receipt contains a blocked address")
+        if not approved or any(
+            not _is_allowed_mcp_address(address) for address in approved
+        ):
+            raise MCPTransportPolicyError(
+                "MCP connection receipt contains a blocked address"
+            )
 
         last_error: Exception | None = None
         for address in approved:
@@ -210,13 +221,17 @@ class PinnedMCPNetworkBackend(httpcore.AsyncNetworkBackend):
                     local_address=local_address,
                     socket_options=socket_options,
                 )
-            except Exception as exc:  # pragma: no cover - exercised by real fallback dials
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - exercised by real fallback dials
                 last_error = exc
         if last_error is not None:
             raise last_error
         raise MCPTransportPolicyError("MCP connection has no approved address")
 
-    async def connect_unix_socket(self, path: str, **kwargs: Any) -> httpcore.AsyncNetworkStream:
+    async def connect_unix_socket(
+        self, path: str, **kwargs: Any
+    ) -> httpcore.AsyncNetworkStream:
         raise MCPTransportPolicyError("Unix-socket MCP transport is not supported")
 
     async def sleep(self, seconds: float) -> None:
@@ -231,7 +246,9 @@ class PinnedMCPHTTPTransport(httpx.AsyncHTTPTransport):
         super().__init__(trust_env=False, retries=0)
         pool = getattr(self, "_pool", None)
         if pool is None or not hasattr(pool, "_network_backend"):
-            raise MCPTransportPolicyError("Installed HTTPX transport has no safe backend seam")
+            raise MCPTransportPolicyError(
+                "Installed HTTPX transport has no safe backend seam"
+            )
         # httpx 0.28/httpcore 1.x expose this pool seam; TLS and SNI remain in
         # AsyncHTTPConnection while the backend controls only TCP resolution.
         pool._network_backend = PinnedMCPNetworkBackend(receipt)

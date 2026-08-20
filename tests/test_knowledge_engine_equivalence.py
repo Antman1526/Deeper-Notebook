@@ -28,9 +28,7 @@ def _digest(**changes: object) -> ProjectionDigest:
             "Pages/B.md": ["Pages/A.md"],
         },
         "graph_edges": ["note:a->note:b:wikilink"],
-        "exact_search_membership": {
-            sha256(b"research").hexdigest(): ["Pages/A.md"]
-        },
+        "exact_search_membership": {sha256(b"research").hexdigest(): ["Pages/A.md"]},
         "authority_kind": "external_read_only",
         "source_kind": "obsidian",
         "format_mode": "obsidian",
@@ -80,9 +78,7 @@ def test_every_locked_dimension_has_a_stable_mismatch_code() -> None:
         format_mode="markdown",
         provenance="overlay",
         capabilities=["read"],
-        overlay_revision_mappings={
-            "overlay_note:one": "knowledge_engine_revision:c"
-        },
+        overlay_revision_mappings={"overlay_note:one": "knowledge_engine_revision:c"},
     )
 
     report = compare_projection_digests(legacy, unified)
@@ -120,9 +116,7 @@ def test_exact_query_text_is_hashed_before_it_can_reach_a_report() -> None:
                 sha256(b"test-only-token").hexdigest(): ["Pages/A.md"]
             }
         ),
-        _digest(
-            exact_search_membership={sha256(b"test-only-token").hexdigest(): []}
-        ),
+        _digest(exact_search_membership={sha256(b"test-only-token").hexdigest(): []}),
     )
 
     assert "test-only-token" not in report.model_dump_json()

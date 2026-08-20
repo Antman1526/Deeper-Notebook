@@ -297,12 +297,12 @@ Output (Source record with embeddings)
 **State Dict**:
 ```python
 {
-  "content_state": {"file_path" | "url" | "content": str},
-  "source_id": str,
-  "full_text": str,
-  "embeddings": List[Dict],
-  "topics": List[str],
-  "notebook_ids": List[str],
+    "content_state": {"file_path" | "url" | "content": str},
+    "source_id": str,
+    "full_text": str,
+    "embeddings": List[Dict],
+    "topics": List[str],
+    "notebook_ids": List[str],
 }
 ```
 
@@ -336,11 +336,11 @@ Output (complete message)
 **State Dict**:
 ```python
 {
-  "session_id": str,
-  "messages": List[BaseMessage],
-  "context": Dict[str, Any],  # sources, notes, snippets
-  "response": str,
-  "model_override": Optional[str],
+    "session_id": str,
+    "messages": List[BaseMessage],
+    "context": Dict[str, Any],  # sources, notes, snippets
+    "response": str,
+    "model_override": Optional[str],
 }
 ```
 
@@ -378,11 +378,11 @@ Output (final answer)
 **State Dict**:
 ```python
 {
-  "question": str,
-  "strategy": SearchStrategy,
-  "answers": List[str],
-  "final_answer": str,
-  "sources_used": List[Source],
+    "question": str,
+    "strategy": SearchStrategy,
+    "answers": List[str],
+    "final_answer": str,
+    "sources_used": List[Source],
 }
 ```
 
@@ -501,7 +501,7 @@ result = await graph.ainvoke(
         "configurable": {
             "model_override": "anthropic/claude-opus-4"  # Use Claude instead
         }
-    }
+    },
 )
 ```
 
@@ -593,6 +593,7 @@ async def ask(request: AskRequest):
     async def stream_response():
         async for chunk in ask_graph.astream(input={...}):
             yield f"data: {json.dumps(chunk)}\n\n"
+
     return StreamingResponse(stream_response(), media_type="text/event-stream")
 ```
 
@@ -603,9 +604,7 @@ For async background tasks (source processing), use Surreal-Commands job queue:
 ```python
 # Submit job
 command_id = await CommandService.submit_command_job(
-    app="open_notebook",
-    command="process_source",
-    input={...}
+    app="open_notebook", command="process_source", input={...}
 )
 
 # Poll status
@@ -645,7 +644,7 @@ const source = await response.json();
 # API
 result = await repo_query(
     "SELECT * FROM source WHERE notebook = $notebook_id",
-    {"notebook_id": ensure_record_id(notebook_id)}
+    {"notebook_id": ensure_record_id(notebook_id)},
 )
 ```
 

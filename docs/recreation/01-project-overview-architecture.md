@@ -136,8 +136,9 @@ failed to propagate):
 ```python
 # desktop/bootstrap.py
 # Extraction is keyed to the tarball that produced it.
-stamp_path   = runtime_dir / ".source-tarball.sha256"
+stamp_path = runtime_dir / ".source-tarball.sha256"
 tarball_hash = hashlib.sha256(tarball.read_bytes()).hexdigest()
+
 
 # The venv marker is keyed to interpreter identity + lock hash, not lock alone.
 def _provision_key(standalone_python: Path, lock_path: Path) -> str:

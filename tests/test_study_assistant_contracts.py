@@ -53,7 +53,9 @@ def test_all_twelve_roles_and_four_authorities_are_exact() -> None:
         "progress_coach",
     )
     assert STUDY_AUTHORITIES == ("ask", "coach", "plan", "create")
-    assert set(StudyAssistantInvocation.model_fields["role"].annotation.__args__) == set(  # type: ignore[attr-defined]
+    assert set(
+        StudyAssistantInvocation.model_fields["role"].annotation.__args__
+    ) == set(  # type: ignore[attr-defined]
         STUDY_ASSISTANT_ROLES
     )
 
@@ -61,12 +63,8 @@ def test_all_twelve_roles_and_four_authorities_are_exact() -> None:
 def test_invocation_is_deeply_immutable_and_bounded() -> None:
     invocation = _invocation(
         selected_source_ids=("source:one",),
-        citations=(
-            {"source_id": "source:one", "locator": "page:1", "quote": "A"},
-        ),
-        proposed_actions=(
-            {"action": "review_source", "label": "Review source"},
-        ),
+        citations=({"source_id": "source:one", "locator": "page:1", "quote": "A"},),
+        proposed_actions=({"action": "review_source", "label": "Review source"},),
     )
     with pytest.raises(ValidationError):
         _invocation(prompt="x" * 16_385)
@@ -109,7 +107,9 @@ def test_create_authority_cannot_enable_network_or_mutate_syllabus() -> None:
         {"authority": "plan", "changes_schedule": True},
     ],
 )
-def test_plan_authority_only_proposes_bounded_actions(updates: dict[str, object]) -> None:
+def test_plan_authority_only_proposes_bounded_actions(
+    updates: dict[str, object],
+) -> None:
     """Plan mode can describe a proposal, never perform a protected mutation."""
     with pytest.raises(ValidationError):
         _invocation(**updates)
@@ -144,15 +144,15 @@ def test_network_requires_explicit_approved_bounded_scope() -> None:
     assert allowed.network_allowed is True
 
 
-def test_response_exposes_citations_and_actions_but_no_raw_provider_or_reasoning() -> None:
+def test_response_exposes_citations_and_actions_but_no_raw_provider_or_reasoning() -> (
+    None
+):
     response = StudyAssistantResponse(
         plan_id=PLAN_ID,
         role="source_guide",
         authority="ask",
         answer="The selected source describes the core idea.",
-        citations=(
-            {"source_id": "source:one", "locator": "page:1", "quote": "A"},
-        ),
+        citations=({"source_id": "source:one", "locator": "page:1", "quote": "A"},),
         proposed_actions=(),
         created_at=NOW,
     )
@@ -178,9 +178,7 @@ def test_handoff_is_bounded_and_requires_plan_local_origin() -> None:
         session_id="study_assistant_session:one",
         role="source_guide",
         observation="The learner is uncertain about velocity.",
-        evidence=(
-            {"source_id": "source:one", "locator": "page:2"},
-        ),
+        evidence=({"source_id": "source:one", "locator": "page:2"},),
         proposed_action="Ask one Socratic question.",
         origin="source_guide",
         user_decision="pending",
@@ -233,7 +231,9 @@ def test_memory_provenance_status_and_inferred_confirmation_are_explicit() -> No
 
 
 @pytest.mark.parametrize("status", ["active", "confirmed"])
-def test_assistant_inference_cannot_become_durable_without_user_decision(status: str) -> None:
+def test_assistant_inference_cannot_become_durable_without_user_decision(
+    status: str,
+) -> None:
     with pytest.raises(ValidationError):
         StudyPlanMemory(
             plan_id=PLAN_ID,

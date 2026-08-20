@@ -148,11 +148,16 @@ def verifier_config(
         raise ValueError("temporary synthetic fixture root required")
     if root.exists():
         entries = list(root.iterdir())
-        if entries != [root / _FIXTURE_SENTINEL] or not (root / _FIXTURE_SENTINEL).is_file():
+        if (
+            entries != [root / _FIXTURE_SENTINEL]
+            or not (root / _FIXTURE_SENTINEL).is_file()
+        ):
             raise ValueError("temporary synthetic fixture root required")
     else:
         root.mkdir(mode=0o700)
-        (root / _FIXTURE_SENTINEL).write_text("synthetic fixture only\n", encoding="utf-8")
+        (root / _FIXTURE_SENTINEL).write_text(
+            "synthetic fixture only\n", encoding="utf-8"
+        )
 
     requested_output = output_path.expanduser().absolute()
     output = requested_output.resolve(strict=False)
@@ -164,7 +169,9 @@ def verifier_config(
         or _inside(root, output)
     ):
         raise ValueError("new proof output file required")
-    if expected_revision is not None and not _PROOF_REVISION_PATTERN.fullmatch(expected_revision):
+    if expected_revision is not None and not _PROOF_REVISION_PATTERN.fullmatch(
+        expected_revision
+    ):
         raise ValueError("expected revision must be a lowercase 40-hex value")
     return VerifierConfig(root, output, _loopback_url(native_url), expected_revision)
 
@@ -236,16 +243,26 @@ def fixture_write_guard(fixture_root: Path) -> Iterator[FixtureWriteGuard]:
     original_os_open = os.open
     with ExitStack() as stack:
         for name in ("unlink", "rmdir", "mkdir", "touch", "write_text", "write_bytes"):
-            stack.enter_context(patch.object(Path, name, new=single_path(getattr(Path, name))))
+            stack.enter_context(
+                patch.object(Path, name, new=single_path(getattr(Path, name)))
+            )
         stack.enter_context(patch.object(Path, "open", new=path_open(Path.open)))
         for name in ("rename", "replace", "symlink_to", "hardlink_to"):
-            stack.enter_context(patch.object(Path, name, new=two_paths(getattr(Path, name))))
+            stack.enter_context(
+                patch.object(Path, name, new=two_paths(getattr(Path, name)))
+            )
         for name in ("remove", "unlink", "rmdir", "mkdir"):
-            stack.enter_context(patch.object(os, name, new=single_path(getattr(os, name))))
+            stack.enter_context(
+                patch.object(os, name, new=single_path(getattr(os, name)))
+            )
         for name in ("rename", "replace", "symlink", "link"):
-            stack.enter_context(patch.object(os, name, new=two_paths(getattr(os, name))))
+            stack.enter_context(
+                patch.object(os, name, new=two_paths(getattr(os, name)))
+            )
         stack.enter_context(patch.object(os, "open", new=guarded_os_open))
-        stack.enter_context(patch.object(builtins, "open", new=open_file(builtins.open)))
+        stack.enter_context(
+            patch.object(builtins, "open", new=open_file(builtins.open))
+        )
         stack.enter_context(patch.object(io, "open", new=open_file(io.open)))
         yield guard
 
@@ -269,7 +286,9 @@ def _create_fixture(root: Path) -> None:
     logseq = root / "logseq" / "pages"
     obsidian.mkdir(parents=True, exist_ok=True)
     logseq.mkdir(parents=True, exist_ok=True)
-    (obsidian / "Plan.md").write_text("# Plan\n\nprivate fixture content\n", encoding="utf-8")
+    (obsidian / "Plan.md").write_text(
+        "# Plan\n\nprivate fixture content\n", encoding="utf-8"
+    )
     (logseq / "Research.md").write_text("- private fixture content\n", encoding="utf-8")
 
 
@@ -289,7 +308,10 @@ def _exact_text_selection_check() -> dict[str, object]:
                 "kind": "saved_search",
                 "query": "research",
                 "search_mode": "text",
-                "space_ids": ["knowledge_engine_space:obsidian", "knowledge_engine_space:logseq"],
+                "space_ids": [
+                    "knowledge_engine_space:obsidian",
+                    "knowledge_engine_space:logseq",
+                ],
                 "authority_kinds": ["external_read_only"],
             }
         ),
@@ -414,14 +436,18 @@ async def _execute_read_only_flow(fixture_root: Path) -> dict[str, object]:
     async def allow_synthetic_local_profiles(*_args: object) -> None:
         return None
 
-    def fake_submit_command(module: str, command: str, _arguments: dict[str, object]) -> str:
+    def fake_submit_command(
+        module: str, command: str, _arguments: dict[str, object]
+    ) -> str:
         if (module, command) != (LEGACY_QUEUE_APP, "generate_podcast"):
             raise AssertionError("unexpected synthetic command")
         job_id = f"command:synthetic-{len(submissions) + 1}"
         submissions.append(job_id)
         return job_id
 
-    with tempfile.TemporaryDirectory(prefix="deeper-notebook-podcast-audio-") as audio_directory:
+    with tempfile.TemporaryDirectory(
+        prefix="deeper-notebook-podcast-audio-"
+    ) as audio_directory:
         audio_root = (Path(audio_directory) / "episodes").resolve()
         audio_root.mkdir()
         old_audio = audio_root / "episode.mp3"
@@ -459,7 +485,9 @@ async def _execute_read_only_flow(fixture_root: Path) -> dict[str, object]:
                 episode_name="Synthetic verification episode",
                 content=preparation.content,
             )
-            retry = await podcast_router_module._retry_podcast_episode_locked(episode.id)
+            retry = await podcast_router_module._retry_podcast_episode_locked(
+                episode.id
+            )
         old_audio_removed_after_retry = not old_audio.exists()
         _assert_owned_audio_removed(old_audio)
 
@@ -490,7 +518,9 @@ def _assert_owned_audio_removed(audio_path: Path) -> None:
         raise RuntimeError("synthetic retry left owned audio behind")
 
 
-def _native_health(native_url: str) -> tuple[bool, int | None, dict[str, object] | None]:
+def _native_health(
+    native_url: str,
+) -> tuple[bool, int | None, dict[str, object] | None]:
     try:
         with urlopen(f"{native_url}/health", timeout=2) as response:  # nosec B310: loopback validated
             try:
@@ -726,7 +756,11 @@ def _sanitized_playwright_receipt(expected_revision: str) -> dict[str, object]:
             }
             for title in _PLAYWRIGHT_NATIVE_TEST_TITLES
         ],
-        "stats": {"expected": _PLAYWRIGHT_NATIVE_TEST_COUNT, "unexpected": 0, "skipped": 0},
+        "stats": {
+            "expected": _PLAYWRIGHT_NATIVE_TEST_COUNT,
+            "unexpected": 0,
+            "skipped": 0,
+        },
     }
 
 
@@ -799,7 +833,8 @@ def run_verifier(
     report: dict[str, object] = {
         "schema_version": 1,
         "status": "passed" if passed else "blocked",
-        "synthetic_passed": exact_text["status"] == "passed" and read_only_flow["status"] == "passed",
+        "synthetic_passed": exact_text["status"] == "passed"
+        and read_only_flow["status"] == "passed",
         "fixture": {
             "kind": "synthetic_obsidian_logseq",
             "file_count": len(before),
@@ -847,7 +882,9 @@ def main() -> int:
     parser.add_argument("--expected-revision", required=True)
     args = parser.parse_args()
     if args.fixture_root is None:
-        with tempfile.TemporaryDirectory(prefix="deeper-notebook-podcast-studio-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="deeper-notebook-podcast-studio-"
+        ) as directory:
             root = Path(directory).resolve()
             return run_verifier(
                 native_url=args.native_url,

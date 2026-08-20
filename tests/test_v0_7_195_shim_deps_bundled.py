@@ -28,6 +28,7 @@ Fix: pin all three shim deps in `desktop/requirements.txt` and
 regenerate `desktop/requirements.lock`. Same class of fix as v0.7.192's
 `llama-cpp-python[server]` extras.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

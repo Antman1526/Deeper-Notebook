@@ -29,18 +29,19 @@ def test_save_capture_state_is_atomic(tmp_path, monkeypatch):
     from desktop.memory_dashboard import server as srv
 
     # Redirect path to tmp_path
-    monkeypatch.setattr(srv, "_capture_state_path",
-                        lambda: tmp_path / "capture_state.json")
+    monkeypatch.setattr(
+        srv, "_capture_state_path", lambda: tmp_path / "capture_state.json"
+    )
     p = tmp_path / "capture_state.json"
     tmp_sibling = p.with_suffix(p.suffix + ".tmp")
 
-    srv._save_capture_state({"last_seen": "2025-01-01T00:00:00Z",
-                             "muted_apps": ["Slack", "VSCode"]})
+    srv._save_capture_state(
+        {"last_seen": "2025-01-01T00:00:00Z", "muted_apps": ["Slack", "VSCode"]}
+    )
 
     # File present, .tmp NOT left behind
     assert p.exists()
-    assert not tmp_sibling.exists(), \
-        f"leftover .tmp file: {tmp_sibling}"
+    assert not tmp_sibling.exists(), f"leftover .tmp file: {tmp_sibling}"
 
     # Round-trip
     state = srv._load_capture_state()
@@ -48,7 +49,9 @@ def test_save_capture_state_is_atomic(tmp_path, monkeypatch):
     assert state["muted_apps"] == ["Slack", "VSCode"]
 
 
-def test_save_capture_state_preserves_old_file_on_replace_failure(tmp_path, monkeypatch):
+def test_save_capture_state_preserves_old_file_on_replace_failure(
+    tmp_path, monkeypatch
+):
     """If os.replace itself raises (e.g. cross-device link error in a
     weird mount setup), the ORIGINAL capture_state.json must remain
     intact — its data is more valuable than the new write."""
@@ -56,16 +59,20 @@ def test_save_capture_state_preserves_old_file_on_replace_failure(tmp_path, monk
 
     from desktop.memory_dashboard import server as srv
 
-    monkeypatch.setattr(srv, "_capture_state_path",
-                        lambda: tmp_path / "capture_state.json")
+    monkeypatch.setattr(
+        srv, "_capture_state_path", lambda: tmp_path / "capture_state.json"
+    )
 
     # Seed an existing valid file
     srv._save_capture_state({"last_seen": "old", "muted_apps": ["A"]})
     assert (tmp_path / "capture_state.json").read_text()  # not empty
 
     # Now make os.replace blow up — old file stays intact
-    monkeypatch.setattr(_os, "replace",
-                        lambda *_a, **_kw: (_ for _ in ()).throw(OSError("simulated replace failure")))
+    monkeypatch.setattr(
+        _os,
+        "replace",
+        lambda *_a, **_kw: (_ for _ in ()).throw(OSError("simulated replace failure")),
+    )
 
     srv._save_capture_state({"last_seen": "new", "muted_apps": ["B"]})
 
@@ -86,8 +93,9 @@ def test_save_capture_state_handles_corrupted_existing_file(tmp_path, monkeypatc
     content."""
     from desktop.memory_dashboard import server as srv
 
-    monkeypatch.setattr(srv, "_capture_state_path",
-                        lambda: tmp_path / "capture_state.json")
+    monkeypatch.setattr(
+        srv, "_capture_state_path", lambda: tmp_path / "capture_state.json"
+    )
     p = tmp_path / "capture_state.json"
     p.write_text("{ this is not json")  # corrupted
 

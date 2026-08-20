@@ -31,7 +31,12 @@ def _native_playwright_report(
         )
     return {
         "config": {
-            "argv": ["playwright", "test", "e2e/podcast-intelligence-studio.spec.ts", "--project=native-runtime"],
+            "argv": [
+                "playwright",
+                "test",
+                "e2e/podcast-intelligence-studio.spec.ts",
+                "--project=native-runtime",
+            ],
             "rootDir": "/synthetic/frontend/e2e",
         },
         "suites": [
@@ -44,10 +49,14 @@ def _native_playwright_report(
                         "tests": [
                             {
                                 "projectName": "native-runtime",
-                                "annotations": [] if revision is None else [{
-                                    "type": "podcast_studio_runtime_revision",
-                                    "description": revision,
-                                }],
+                                "annotations": []
+                                if revision is None
+                                else [
+                                    {
+                                        "type": "podcast_studio_runtime_revision",
+                                        "description": revision,
+                                    }
+                                ],
                                 "results": [{"status": result_status}],
                             }
                         ],
@@ -110,16 +119,19 @@ def test_checkout_revision_ignores_ambient_git_routing_and_config(
     assert api_main._checkout_head_revision() == _PROOF_REVISION
     environment = captured["env"]
     assert isinstance(environment, dict)
-    assert all(key not in environment for key in (
-        "GIT_DIR",
-        "GIT_WORK_TREE",
-        "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-        "GIT_CONFIG_COUNT",
-        "GIT_CONFIG_KEY_0",
-        "GIT_CONFIG_VALUE_0",
-    ))
+    assert all(
+        key not in environment
+        for key in (
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_KEY_0",
+            "GIT_CONFIG_VALUE_0",
+        )
+    )
     assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
     assert environment["GIT_CONFIG_GLOBAL"] == os.devnull
     assert environment["GIT_OPTIONAL_LOCKS"] == "0"
@@ -132,7 +144,15 @@ def test_verifier_binds_live_health_and_every_playwright_case_to_expected_revisi
     monkeypatch.setattr(
         verifier,
         "_native_health",
-        lambda _url: (True, 200, {"status": "healthy", "name": "Deeper Notebook", "proof_revision": _PROOF_REVISION}),
+        lambda _url: (
+            True,
+            200,
+            {
+                "status": "healthy",
+                "name": "Deeper Notebook",
+                "proof_revision": _PROOF_REVISION,
+            },
+        ),
     )
 
     result = verifier.run_verifier(
@@ -151,7 +171,9 @@ def test_verifier_binds_live_health_and_every_playwright_case_to_expected_revisi
         "proof_revision": _PROOF_REVISION,
         "reason": None,
     }
-    assert result.report["gates"]["playwright_native"]["proof_revision"] == _PROOF_REVISION  # type: ignore[index]
+    assert (
+        result.report["gates"]["playwright_native"]["proof_revision"] == _PROOF_REVISION
+    )  # type: ignore[index]
 
 
 def test_verifier_rejects_missing_or_unbound_revision_evidence(
@@ -161,7 +183,15 @@ def test_verifier_rejects_missing_or_unbound_revision_evidence(
     monkeypatch.setattr(
         verifier,
         "_native_health",
-        lambda _url: (True, 200, {"status": "healthy", "name": "Deeper Notebook", "proof_revision": _PROOF_REVISION}),
+        lambda _url: (
+            True,
+            200,
+            {
+                "status": "healthy",
+                "name": "Deeper Notebook",
+                "proof_revision": _PROOF_REVISION,
+            },
+        ),
     )
 
     result = verifier.run_verifier(
@@ -181,13 +211,17 @@ def test_fixture_write_guard_rejects_create_and_delete_without_mutating_sources(
 ) -> None:
     fixture = tmp_path / "fixture"
     fixture.mkdir()
-    (fixture / verifier._FIXTURE_SENTINEL).write_text("synthetic fixture only\n", encoding="utf-8")
+    (fixture / verifier._FIXTURE_SENTINEL).write_text(
+        "synthetic fixture only\n", encoding="utf-8"
+    )
     verifier._create_fixture(fixture)
     before = verifier._hashes(fixture)
 
     with verifier.fixture_write_guard(fixture) as guard:
         with pytest.raises(PermissionError, match="synthetic fixture write blocked"):
-            (fixture / "obsidian" / "Created.md").write_text("blocked", encoding="utf-8")
+            (fixture / "obsidian" / "Created.md").write_text(
+                "blocked", encoding="utf-8"
+            )
         with pytest.raises(PermissionError, match="synthetic fixture write blocked"):
             (fixture / "logseq" / "pages" / "Research.md").unlink()
 
@@ -200,7 +234,9 @@ def test_fixture_write_guard_rejects_write_restore_attempt_without_mutating_sour
 ) -> None:
     fixture = tmp_path / "fixture"
     fixture.mkdir()
-    (fixture / verifier._FIXTURE_SENTINEL).write_text("synthetic fixture only\n", encoding="utf-8")
+    (fixture / verifier._FIXTURE_SENTINEL).write_text(
+        "synthetic fixture only\n", encoding="utf-8"
+    )
     verifier._create_fixture(fixture)
     source = fixture / "obsidian" / "Plan.md"
     before = verifier._hashes(fixture)
@@ -220,7 +256,9 @@ def test_fixture_write_guard_rejects_link_creation_and_symlink_escape(
 ) -> None:
     fixture = tmp_path / "fixture"
     fixture.mkdir()
-    (fixture / verifier._FIXTURE_SENTINEL).write_text("synthetic fixture only\n", encoding="utf-8")
+    (fixture / verifier._FIXTURE_SENTINEL).write_text(
+        "synthetic fixture only\n", encoding="utf-8"
+    )
     verifier._create_fixture(fixture)
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -247,10 +285,14 @@ def test_fixture_write_guard_rejects_link_creation_and_symlink_escape(
     assert "obsidian/escape" in before
 
 
-def test_verifier_rejects_a_retry_that_leaves_owned_audio_behind(tmp_path: Path) -> None:
+def test_verifier_rejects_a_retry_that_leaves_owned_audio_behind(
+    tmp_path: Path,
+) -> None:
     fixture = tmp_path / "fixture"
     fixture.mkdir()
-    (fixture / verifier._FIXTURE_SENTINEL).write_text("synthetic fixture only\n", encoding="utf-8")
+    (fixture / verifier._FIXTURE_SENTINEL).write_text(
+        "synthetic fixture only\n", encoding="utf-8"
+    )
     verifier._create_fixture(fixture)
     original_unlink = Path.unlink
 
@@ -260,7 +302,9 @@ def test_verifier_rejects_a_retry_that_leaves_owned_audio_behind(tmp_path: Path)
         original_unlink(path, *args, **kwargs)
 
     with patch.object(Path, "unlink", new=leave_owned_audio):
-        with pytest.raises(RuntimeError, match="synthetic retry left owned audio behind"):
+        with pytest.raises(
+            RuntimeError, match="synthetic retry left owned audio behind"
+        ):
             asyncio.run(verifier._execute_read_only_flow(fixture))
 
 
@@ -271,7 +315,15 @@ def test_verifier_requires_a_complete_passing_native_playwright_report(
     monkeypatch.setattr(
         verifier,
         "_native_health",
-        lambda _url: (True, 200, {"status": "healthy", "name": "Deeper Notebook", "proof_revision": _PROOF_REVISION}),
+        lambda _url: (
+            True,
+            200,
+            {
+                "status": "healthy",
+                "name": "Deeper Notebook",
+                "proof_revision": _PROOF_REVISION,
+            },
+        ),
     )
 
     result = verifier.run_verifier(
@@ -299,7 +351,15 @@ def test_verifier_rejects_an_incomplete_or_failed_native_playwright_report(
     monkeypatch.setattr(
         verifier,
         "_native_health",
-        lambda _url: (True, 200, {"status": "healthy", "name": "Deeper Notebook", "proof_revision": _PROOF_REVISION}),
+        lambda _url: (
+            True,
+            200,
+            {
+                "status": "healthy",
+                "name": "Deeper Notebook",
+                "proof_revision": _PROOF_REVISION,
+            },
+        ),
     )
 
     result = verifier.run_verifier(
@@ -333,9 +393,7 @@ def test_verifier_owns_playwright_execution_and_keeps_raw_report_ephemeral(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run(
-        args: list[str], **kwargs: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         captured["args"] = args
         captured.update(kwargs)
         environment = kwargs["env"]
@@ -352,9 +410,14 @@ def test_verifier_owns_playwright_execution_and_keeps_raw_report_ephemeral(
 
     assert report["stats"] == {"expected": 5, "unexpected": 0, "skipped": 0}
     assert captured["args"] == [
-        "npm", "exec", "--", "playwright", "test",
+        "npm",
+        "exec",
+        "--",
+        "playwright",
+        "test",
         "e2e/podcast-intelligence-studio.spec.ts",
-        "--project=native-runtime", "--reporter=json",
+        "--project=native-runtime",
+        "--reporter=json",
     ]
     environment = captured["env"]
     assert isinstance(environment, dict)
@@ -368,7 +431,15 @@ def test_sanitized_playwright_receipt_contains_no_host_paths(
     monkeypatch.setattr(
         verifier,
         "_native_health",
-        lambda _url: (True, 200, {"status": "healthy", "name": "Deeper Notebook", "proof_revision": _PROOF_REVISION}),
+        lambda _url: (
+            True,
+            200,
+            {
+                "status": "healthy",
+                "name": "Deeper Notebook",
+                "proof_revision": _PROOF_REVISION,
+            },
+        ),
     )
     receipt = tmp_path / "receipt.json"
 
@@ -406,7 +477,9 @@ def test_verifier_uses_a_new_owned_synthetic_vault_pair_only(tmp_path: Path) -> 
     assert (tmp_path / "fixture" / verifier._FIXTURE_SENTINEL).is_file()
 
 
-def test_verifier_report_is_aggregate_only_and_keeps_semantic_search_locked(tmp_path: Path) -> None:
+def test_verifier_report_is_aggregate_only_and_keeps_semantic_search_locked(
+    tmp_path: Path,
+) -> None:
     output = tmp_path / "proof.json"
     result = verifier.run_verifier(
         native_url="http://127.0.0.1:9",
@@ -424,7 +497,9 @@ def test_verifier_report_is_aggregate_only_and_keeps_semantic_search_locked(tmp_
     assert "private fixture content" not in report
 
 
-def test_verifier_executes_selection_submission_retry_and_audio_inspection(tmp_path: Path) -> None:
+def test_verifier_executes_selection_submission_retry_and_audio_inspection(
+    tmp_path: Path,
+) -> None:
     result = verifier.run_verifier(
         native_url="http://127.0.0.1:9",
         fixture_root=tmp_path / "fixture",
@@ -447,13 +522,17 @@ def test_verifier_does_not_use_a_literal_operation_claim_list() -> None:
     assert '"operations"' not in source
 
 
-def test_verifier_rejects_existing_user_content_and_output_inside_fixture(tmp_path: Path) -> None:
+def test_verifier_rejects_existing_user_content_and_output_inside_fixture(
+    tmp_path: Path,
+) -> None:
     fixture = tmp_path / "fixture"
     fixture.mkdir()
     (fixture / "personal.md").write_text("do not touch", encoding="utf-8")
 
     with pytest.raises(ValueError, match="temporary synthetic fixture root required"):
-        verifier.verifier_config(fixture_root=fixture, output_path=tmp_path / "proof.json")
+        verifier.verifier_config(
+            fixture_root=fixture, output_path=tmp_path / "proof.json"
+        )
 
     owned = tmp_path / "owned"
     verifier.verifier_config(fixture_root=owned, output_path=tmp_path / "proof.json")

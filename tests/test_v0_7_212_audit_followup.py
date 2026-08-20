@@ -27,6 +27,7 @@ short-circuit, wizard SSE reader-thread cleanup.
    (normal or aborted) and the reader checks it between
    subscribe iterations.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -105,6 +106,7 @@ def test_apply_tool_call_raises_on_connection_error():
         "arguments": {"text": "the sky is blue"},
     }
     import pytest
+
     with pytest.raises(_MemoryBackendUnreachable):
         apply_tool_call(mem_client, call)
 
@@ -147,8 +149,11 @@ def test_extract_turn_aborts_remaining_facts_on_backend_down():
     )
 
     w.extract_turn(
-        llm=llm, mem_client=mem_client,
-        chat_session_id="cs:1", user_text="x", assistant_text="y",
+        llm=llm,
+        mem_client=mem_client,
+        chat_session_id="cs:1",
+        user_text="x",
+        assistant_text="y",
     )
     # Only one call attempted before the circuit breaker fired.
     assert mem_client.add.call_count == 1

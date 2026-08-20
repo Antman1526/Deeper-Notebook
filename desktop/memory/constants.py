@@ -3,6 +3,7 @@
 These were duplicated across surreal_store.py and memory_shim.py;
 promoted here so adding a new memory kind = one edit.
 """
+
 from __future__ import annotations
 
 # Memory `kind` (in mem0 payloads + dashboard URL paths) → SurrealDB table name.

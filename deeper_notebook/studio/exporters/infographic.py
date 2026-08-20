@@ -60,7 +60,9 @@ def _panel_grid(
             best = (score, candidate)
 
     if best is None:
-        raise ValueError("Infographic panels cannot fit within the selected orientation")
+        raise ValueError(
+            "Infographic panels cannot fit within the selected orientation"
+        )
     return best[1]
 
 
@@ -214,13 +216,23 @@ def _draw_panel(
 
     if panel.kind in {"timeline", "process"}:
         draw.line(
-            (left + 45, content_top + 12, left + 45, min(bottom - 74, content_top + 115)),
+            (
+                left + 45,
+                content_top + 12,
+                left + 45,
+                min(bottom - 74, content_top + 115),
+            ),
             fill=accent,
             width=5,
         )
         for offset in (14, 62, 110):
             draw.ellipse(
-                (left + 34, content_top + offset - 10, left + 56, content_top + offset + 12),
+                (
+                    left + 34,
+                    content_top + offset - 10,
+                    left + 56,
+                    content_top + offset + 12,
+                ),
                 fill=accent,
             )
         body_left = left + 78

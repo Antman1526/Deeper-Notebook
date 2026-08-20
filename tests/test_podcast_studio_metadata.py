@@ -101,7 +101,9 @@ def test_editorial_brief_rejects_an_absolute_path() -> None:
         )
 
 
-def test_selection_summary_v2_keeps_validated_refs_and_normalized_settings_path_free() -> None:
+def test_selection_summary_v2_keeps_validated_refs_and_normalized_settings_path_free() -> (
+    None
+):
     preview = PodcastSelectionPreviewResponse(
         selection_fingerprint="b" * 64,
         entries=[
@@ -300,7 +302,10 @@ async def test_retry_replays_studio_metadata_on_the_new_episode(
 
     result = await _retry_podcast_episode_locked("episode:failed")
 
-    assert result == {"job_id": "command:retry", "message": "Retry submitted successfully"}
+    assert result == {
+        "job_id": "command:retry",
+        "message": "Retry submitted successfully",
+    }
     assert episode.deleted is True
     assert len(calls) == 1
     assert calls[0]["selection_summary"] == episode.selection_summary
@@ -967,17 +972,21 @@ def _v2_retry_summary(
         "total_count": 1,
         "included_count": 1,
         "authority_counts": {"external_read_only": 1},
-        "included_items": [{
-            "stable_id": "knowledge_engine_document:research",
-            "authority_kind": "external_read_only",
-            "revision_id": "knowledge_engine_revision:one",
-            "fingerprint": "a" * 64,
-        }],
-        "selections": [{
-            "kind": "knowledge_document",
-            "document_id": "knowledge_engine_document:research",
-            "expected_revision_id": "knowledge_engine_revision:one",
-        }],
+        "included_items": [
+            {
+                "stable_id": "knowledge_engine_document:research",
+                "authority_kind": "external_read_only",
+                "revision_id": "knowledge_engine_revision:one",
+                "fingerprint": "a" * 64,
+            }
+        ],
+        "selections": [
+            {
+                "kind": "knowledge_document",
+                "document_id": "knowledge_engine_document:research",
+                "expected_revision_id": "knowledge_engine_revision:one",
+            }
+        ],
         "production_settings": {
             "mode": mode,
             "episode_length": episode_length,
@@ -1085,15 +1094,17 @@ async def test_tampered_v2_receipts_reject_unknown_sensitive_or_model_fields(
     episode = _RetryEpisode()
     episode.id = f"episode:tampered-receipt-{unsafe_key}"
     episode.selection_summary = _v2_retry_summary()
-    episode.model_plan_receipts = [{
-        "version": 1,
-        "role": "podcast_outline",
-        "outcome": "ready",
-        "resource_tier": "standard",
-        "selection_source": "automatic",
-        "reason": "route_ready",
-        unsafe_key: unsafe_value,
-    }]
+    episode.model_plan_receipts = [
+        {
+            "version": 1,
+            "role": "podcast_outline",
+            "outcome": "ready",
+            "resource_tier": "standard",
+            "selection_source": "automatic",
+            "reason": "route_ready",
+            unsafe_key: unsafe_value,
+        }
+    ]
 
     result = await _resolve_retry_selection(episode, request=object())
 
@@ -1144,7 +1155,9 @@ async def test_actual_v2_matching_retry_replays_settings_and_submits_once(
         lambda *args, **kwargs: [],
     )
 
-    result = await _retry_podcast_episode_locked("episode:matching-real", request=object())
+    result = await _retry_podcast_episode_locked(
+        "episode:matching-real", request=object()
+    )
 
     assert result["job_id"] == "command:v2-retry"
     assert len(submitted) == 1
@@ -1188,14 +1201,16 @@ async def test_v2_retry_production_override_receipt_requires_fresh_preview(
     episode = _RetryEpisode()
     episode.id = "episode:override-receipt"
     episode.selection_summary = _v2_retry_summary()
-    episode.model_plan_receipts = [{
-        "version": 1,
-        "role": "podcast_outline",
-        "outcome": "ready",
-        "resource_tier": "standard",
-        "selection_source": "production_override",
-        "reason": "route_ready",
-    }]
+    episode.model_plan_receipts = [
+        {
+            "version": 1,
+            "role": "podcast_outline",
+            "outcome": "ready",
+            "resource_tier": "standard",
+            "selection_source": "production_override",
+            "reason": "route_ready",
+        }
+    ]
     called = False
 
     async def preparation(*args, **kwargs):

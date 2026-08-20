@@ -415,10 +415,12 @@ def test_v0829_check_provider_has_credential_logs_debug_on_db_error(monkeypatch)
 
     captured: list[dict] = []
     sink_id = logger.add(
-        lambda msg: captured.append({
-            "level": msg.record["level"].name,
-            "message": msg.record["message"],
-        }),
+        lambda msg: captured.append(
+            {
+                "level": msg.record["level"].name,
+                "message": msg.record["message"],
+            }
+        ),
         level="DEBUG",
     )
     try:

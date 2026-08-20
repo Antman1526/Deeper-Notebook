@@ -16,6 +16,7 @@ Tests (no network — reconcile is pure filesystem):
   - reconcile skips a (repo,filename) already owned by a live job
   - the GET /local-models/downloads endpoint reconciles + lists
 """
+
 from __future__ import annotations
 
 import json
@@ -37,12 +38,14 @@ def _reset_jobs():
 
 def _write_sidecar(dest_dir, filename, repo_id, bytes_total, job_id="job-x"):
     (dest_dir / f"{filename}.part.meta").write_text(
-        json.dumps({
-            "job_id": job_id,
-            "repo_id": repo_id,
-            "filename": filename,
-            "bytes_total": bytes_total,
-        }),
+        json.dumps(
+            {
+                "job_id": job_id,
+                "repo_id": repo_id,
+                "filename": filename,
+                "bytes_total": bytes_total,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -98,8 +101,7 @@ async def test_reconcile_prunes_sidecar_without_part(tmp_path):
 @pytest.mark.asyncio
 async def test_reconcile_prunes_corrupt_sidecar(tmp_path):
     (tmp_path / "bad.gguf.part").write_bytes(b"z" * 100)
-    (tmp_path / "bad.gguf.part.meta").write_text("{ this is not json",
-                                                 encoding="utf-8")
+    (tmp_path / "bad.gguf.part.meta").write_text("{ this is not json", encoding="utf-8")
 
     n = await dl_mod.reconcile_jobs(tmp_path)
     assert n == 0
@@ -131,6 +133,7 @@ async def test_reconcile_skips_live_job(tmp_path):
 @pytest.mark.asyncio
 async def test_reconcile_missing_dir_returns_zero():
     from pathlib import Path
+
     n = await dl_mod.reconcile_jobs(Path("/no/such/dir/v0_8_39d"))
     assert n == 0
 

@@ -77,7 +77,9 @@ def test_loader_uses_canonical_lf_bytes_for_windows_checkouts(tmp_path: Path):
     copied_manifest = tmp_path / "manifest.json"
     canonical_lf = corpus_path.read_bytes().replace(b"\r\n", b"\n")
     copied_corpus.write_bytes(canonical_lf.replace(b"\n", b"\r\n"))
-    copied_manifest.write_text(manifest_path.read_text(encoding="utf-8"), encoding="utf-8")
+    copied_manifest.write_text(
+        manifest_path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
 
     assert len(load_golden_corpus(copied_corpus, copied_manifest).cases) == 66
 
@@ -86,7 +88,10 @@ def test_loader_refuses_a_rehashed_corpus_that_removes_a_release_denominator(
     tmp_path: Path,
 ):
     corpus_path, manifest_path, _ = corpus_paths()
-    rows = [json.loads(line) for line in corpus_path.read_text(encoding="utf-8").splitlines()]
+    rows = [
+        json.loads(line)
+        for line in corpus_path.read_text(encoding="utf-8").splitlines()
+    ]
     for row in rows:
         row["expected_claims"][0]["status"] = "unsupported"
         row["expected_claims"][0]["evidence"] = []

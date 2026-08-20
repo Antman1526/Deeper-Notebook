@@ -5,6 +5,7 @@ literal "debate" swaps the system template. The debate template must carry
 the same grounding + citation contracts as standard chat — a debate partner
 that invents evidence is a regression, not a feature.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,7 +38,9 @@ def test_chat_mode_rejects_unknown_values():
     """A typo'd mode must 422, not silently fall back to standard."""
     with pytest.raises(ValidationError):
         ExecuteChatRequest(
-            session_id="chat_session:x", message="hi", context={},
+            session_id="chat_session:x",
+            message="hi",
+            context={},
             chat_mode="argument",
         )
 
@@ -60,8 +63,11 @@ def test_debate_template_renders_with_and_without_context():
     from ai_prompter import Prompter
 
     rendered = Prompter(prompt_template="chat/debate").render(
-        data={"context": "source:abc — The sky is sometimes green.", "notebook": None,
-              "memory_block": ""}
+        data={
+            "context": "source:abc — The sky is sometimes green.",
+            "notebook": None,
+            "memory_block": "",
+        }
     )
     assert "steelman" in rendered.lower() or "strongest form" in rendered.lower()
     assert "The sky is sometimes green." in rendered

@@ -93,8 +93,15 @@ ClaimClock = Callable[[], datetime]
 ClaimOwnerFactory = Callable[[], str]
 
 
-def _safe_id(value: object, *, field_name: str, pattern: re.Pattern[str], limit: int) -> str:
-    if not isinstance(value, str) or not value or len(value) > limit or pattern.fullmatch(value) is None:
+def _safe_id(
+    value: object, *, field_name: str, pattern: re.Pattern[str], limit: int
+) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > limit
+        or pattern.fullmatch(value) is None
+    ):
         raise StudyArtifactConflict(f"invalid_{field_name}")
     return value
 
@@ -108,7 +115,9 @@ def _validate_request(
 ) -> tuple[str, str, tuple[str, ...], int, str | None]:
     plan = _safe_id(plan_id, field_name="plan_id", pattern=_PLAN_ID, limit=512)
     unit = _safe_id(unit_id, field_name="unit_id", pattern=_UNIT_ID, limit=64)
-    if isinstance(artifact_types, (str, bytes)) or not isinstance(artifact_types, (list, tuple)):
+    if isinstance(artifact_types, (str, bytes)) or not isinstance(
+        artifact_types, (list, tuple)
+    ):
         raise StudyArtifactConflict("invalid_artifact_types")
     if not artifact_types or len(artifact_types) > MAX_ARTIFACT_TYPES:
         raise StudyArtifactConflict("artifact_type_bounds")
@@ -119,7 +128,11 @@ def _validate_request(
         if item in normalized:
             raise StudyArtifactConflict("duplicate_artifact_type")
         normalized.append(item)
-    if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 1:
+    if (
+        isinstance(expected_revision, bool)
+        or not isinstance(expected_revision, int)
+        or expected_revision < 1
+    ):
         raise StudyArtifactConflict("invalid_expected_revision")
     if context is not None:
         if not isinstance(context, str) or len(context) > MAX_CONTEXT_CHARS:
@@ -250,14 +263,24 @@ class StudyArtifactService:
             raise StudyArtifactConflict("revision_conflict")
         if plan.state != "approved":
             raise StudyArtifactConflict("syllabus_not_approved")
-        if plan.approved_syllabus_version is None or plan.source_manifest_sha256 is None:
+        if (
+            plan.approved_syllabus_version is None
+            or plan.source_manifest_sha256 is None
+        ):
             raise StudyArtifactConflict("syllabus_not_approved")
         syllabus = await self._load_syllabus(plan_key, plan.approved_syllabus_version)
         if syllabus.approved_at is None:
             raise StudyArtifactConflict("syllabus_not_approved")
         if syllabus.source_manifest_sha256 != plan.source_manifest_sha256:
             raise StudyArtifactConflict("manifest_mismatch")
-        unit = next((candidate for candidate in syllabus.units if candidate.unit_id == requested_unit), None)
+        unit = next(
+            (
+                candidate
+                for candidate in syllabus.units
+                if candidate.unit_id == requested_unit
+            ),
+            None,
+        )
         if unit is None:
             raise StudyArtifactNotFound("unit_not_found")
 
@@ -596,7 +619,9 @@ class StudyArtifactService:
     ) -> None:
         if str(getattr(artifact, "artifact_type", artifact_type)) != artifact_type:
             raise StudyArtifactConflict("artifact_identity_mismatch")
-        existing_sources = tuple(str(item) for item in getattr(artifact, "source_ids", ()))
+        existing_sources = tuple(
+            str(item) for item in getattr(artifact, "source_ids", ())
+        )
         if existing_sources and existing_sources != source_ids:
             raise StudyArtifactConflict("artifact_identity_mismatch")
 
@@ -665,7 +690,10 @@ class StudyArtifactService:
         require_status: str | None = None,
     ) -> object:
         if owner_token is None:
-            if require_status is not None and str(getattr(artifact, "status", "")) != require_status:
+            if (
+                require_status is not None
+                and str(getattr(artifact, "status", "")) != require_status
+            ):
                 raise StudyArtifactConflict("generation_claim_lost")
             return artifact
         current = artifact
@@ -679,7 +707,10 @@ class StudyArtifactService:
         expiry = self._claim_expiry(current)
         if expiry is None or expiry <= self._claim_now():
             raise StudyArtifactConflict("generation_claim_lost")
-        if require_status is not None and str(getattr(current, "status", "")) != require_status:
+        if (
+            require_status is not None
+            and str(getattr(current, "status", "")) != require_status
+        ):
             raise StudyArtifactConflict("generation_claim_lost")
         return current
 
@@ -743,7 +774,10 @@ class StudyArtifactService:
                         await saved
                 return artifact, owner
             current = await self._existing_artifact(operation_id)
-            if current is not None and str(getattr(current, "status", "")) == "completed":
+            if (
+                current is not None
+                and str(getattr(current, "status", "")) == "completed"
+            ):
                 return current, None
             raise StudyArtifactConflict("generation_in_progress")
 
@@ -766,13 +800,18 @@ class StudyArtifactService:
                     },
                 )
             except Exception as exc:
-                raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+                raise StudyArtifactUnavailable(
+                    "artifact_persistence_unavailable"
+                ) from exc
             if isinstance(rows, list) and rows and isinstance(rows[0], dict):
                 claimed = StudioArtifact(**rows[0])
                 self._validate_artifact_identity(claimed, artifact_type, source_ids)
                 return claimed, owner
             current = await self._existing_artifact(operation_id)
-            if current is not None and str(getattr(current, "status", "")) == "completed":
+            if (
+                current is not None
+                and str(getattr(current, "status", "")) == "completed"
+            ):
                 return current, None
             raise StudyArtifactConflict("generation_in_progress")
 
@@ -842,7 +881,9 @@ class StudyArtifactService:
                     },
                 )
             except Exception as exc:
-                raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+                raise StudyArtifactUnavailable(
+                    "artifact_persistence_unavailable"
+                ) from exc
             if not isinstance(rows, list) or not rows:
                 raise ArtifactGenerationOwnershipLost("generation claim lost")
             return StudioArtifact(**rows[0])
@@ -918,7 +959,9 @@ class StudyArtifactService:
                     },
                 )
             except Exception as exc:
-                raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+                raise StudyArtifactUnavailable(
+                    "artifact_persistence_unavailable"
+                ) from exc
             if not isinstance(rows, list) or not rows:
                 raise StudyArtifactConflict("generation_claim_lost")
             return StudioArtifact(**rows[0])
@@ -966,11 +1009,16 @@ class StudyArtifactService:
             current_syllabus.version != syllabus.version
             or current_syllabus.approved_at is None
             or current_syllabus.approved_at != syllabus.approved_at
-            or current_syllabus.source_manifest_sha256 != syllabus.source_manifest_sha256
+            or current_syllabus.source_manifest_sha256
+            != syllabus.source_manifest_sha256
         ):
             raise StudyArtifactConflict("study_authority_changed")
         current_unit = next(
-            (candidate for candidate in current_syllabus.units if candidate.unit_id == unit.unit_id),
+            (
+                candidate
+                for candidate in current_syllabus.units
+                if candidate.unit_id == unit.unit_id
+            ),
             None,
         )
         if current_unit is None:
@@ -983,7 +1031,9 @@ class StudyArtifactService:
         ):
             raise StudyArtifactConflict("study_authority_changed")
         if require_sources:
-            await self._ready_sources(current_plan, current_syllabus, current_unit_sources)
+            await self._ready_sources(
+                current_plan, current_syllabus, current_unit_sources
+            )
         return current_plan, current_syllabus, current_unit, current_unit_sources
 
     async def _ready_sources(
@@ -1024,7 +1074,10 @@ class StudyArtifactService:
                 canonical = _canonical_source_id(source)
                 if canonical != source_id:
                     raise StudyArtifactConflict("source_identity_mismatch")
-                if not isinstance(_value(source, "full_text"), str) or not _value(source, "full_text").strip():
+                if (
+                    not isinstance(_value(source, "full_text"), str)
+                    or not _value(source, "full_text").strip()
+                ):
                     raise StudyArtifactNotReady("sources_not_ready")
                 sources_by_id[source_id] = source
         except StudyArtifactError:
@@ -1032,7 +1085,10 @@ class StudyArtifactService:
         except Exception as exc:
             raise StudyArtifactUnavailable("source_unavailable") from exc
         try:
-            if source_manifest(sources_by_id.values()) != syllabus.source_manifest_sha256:
+            if (
+                source_manifest(sources_by_id.values())
+                != syllabus.source_manifest_sha256
+            ):
                 raise StudyArtifactConflict("sources_changed")
         except StudyArtifactError:
             raise
@@ -1149,11 +1205,15 @@ class StudyArtifactService:
                     },
                 )
             except Exception as exc:
-                raise StudyArtifactUnavailable("artifact_persistence_unavailable") from exc
+                raise StudyArtifactUnavailable(
+                    "artifact_persistence_unavailable"
+                ) from exc
             if not isinstance(rows, list) or not rows:
                 raise StudyArtifactConflict("generation_claim_lost")
             return
-        current = await self._owned_artifact_for_update(artifact, operation_id, owner_token)
+        current = await self._owned_artifact_for_update(
+            artifact, operation_id, owner_token
+        )
         self._set_claim_metadata(current, owner=None, started_at=None, lease_until=None)
         await self._save_owned_state(current, operation_id, owner_token)
 
@@ -1165,7 +1225,9 @@ class StudyArtifactService:
         owner_token: str | None = None,
     ) -> None:
         try:
-            bounded_status = status if status in {"failed", "cancelled", "pending"} else "failed"
+            bounded_status = (
+                status if status in {"failed", "cancelled", "pending"} else "failed"
+            )
             if owner_token is not None and StudioArtifact is _REAL_STUDIO_ARTIFACT:
                 await repo_query(
                     "UPDATE $artifact SET status = $status, "
@@ -1191,7 +1253,9 @@ class StudyArtifactService:
                 except StudyArtifactConflict:
                     return
             setattr(artifact, "status", bounded_status)
-            self._set_claim_metadata(artifact, owner=None, started_at=None, lease_until=None)
+            self._set_claim_metadata(
+                artifact, owner=None, started_at=None, lease_until=None
+            )
             for field_name, empty_value in (
                 ("output_payload", {}),
                 ("citations", []),

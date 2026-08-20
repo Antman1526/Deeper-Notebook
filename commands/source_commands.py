@@ -80,7 +80,10 @@ class SourceProcessingOutput(CommandOutput):
         "wait_strategy": "exponential_jitter",
         "wait_min": 1,
         "wait_max": 120,  # Allow queue to drain
-        "stop_on": [ValueError, ConfigurationError],  # Don't retry validation/config errors
+        "stop_on": [
+            ValueError,
+            ConfigurationError,
+        ],  # Don't retry validation/config errors
         "retry_log_level": "debug",  # Avoid log noise during transaction conflicts
     },
 )
@@ -154,15 +157,17 @@ async def process_source_command(
         logger.info(f"Processing source with {len(input_data.notebook_ids)} notebooks")
 
         # Execute source_graph with all notebooks
-        result = await _await_if_needed(source_graph.ainvoke(
-            {  # type: ignore[arg-type]
-                "content_state": input_data.content_state,
-                "notebook_ids": input_data.notebook_ids,  # Use notebook_ids (plural) as expected by SourceState
-                "apply_transformations": transformations,
-                "embed": input_data.embed,
-                "source_id": input_data.source_id,  # Add the source_id to the state
-            }
-        ))
+        result = await _await_if_needed(
+            source_graph.ainvoke(
+                {  # type: ignore[arg-type]
+                    "content_state": input_data.content_state,
+                    "notebook_ids": input_data.notebook_ids,  # Use notebook_ids (plural) as expected by SourceState
+                    "apply_transformations": transformations,
+                    "embed": input_data.embed,
+                    "source_id": input_data.source_id,  # Add the source_id to the state
+                }
+            )
+        )
 
         processed_source = result["source"]
 
@@ -181,7 +186,8 @@ async def process_source_command(
                     (
                         i
                         for i in insights_list
-                        if getattr(i, "insight_type", None) == KEY_TOPICS_TRANSFORMATION_TITLE
+                        if getattr(i, "insight_type", None)
+                        == KEY_TOPICS_TRANSFORMATION_TITLE
                     ),
                     None,
                 )
@@ -200,9 +206,7 @@ async def process_source_command(
         logger.info(
             f"Successfully processed source: {processed_source.id} in {processing_time:.2f}s"
         )
-        logger.info(
-            f"Created {insights_created} insights, embedding {embed_status}"
-        )
+        logger.info(f"Created {insights_created} insights, embedding {embed_status}")
 
         if source_visuals_enabled():
             try:
@@ -269,7 +273,8 @@ async def process_source_command(
                 "v0.7.209 orphan-cleanup: failed to delete "
                 "placeholder source %s after extract failure "
                 "(leaving in place): %s",
-                input_data.source_id, cleanup_exc,
+                input_data.source_id,
+                cleanup_exc,
             )
         return SourceProcessingOutput(
             success=False,
@@ -279,9 +284,7 @@ async def process_source_command(
         )
     except Exception as e:
         # Transient failure - will be retried (surreal-commands logs final failure)
-        logger.debug(
-            f"Transient error processing source {input_data.source_id}: {e}"
-        )
+        logger.debug(f"Transient error processing source {input_data.source_id}: {e}")
         raise
 
 
@@ -315,7 +318,10 @@ class RunTransformationOutput(CommandOutput):
         "wait_strategy": "exponential_jitter",
         "wait_min": 1,
         "wait_max": 60,
-        "stop_on": [ValueError, ConfigurationError],  # Don't retry validation/config errors
+        "stop_on": [
+            ValueError,
+            ConfigurationError,
+        ],  # Don't retry validation/config errors
         "retry_log_level": "debug",
     },
 )
@@ -373,8 +379,10 @@ async def run_transformation_command(
         # surfaces as failed with the user-facing message.
         import asyncio
         import os as _os
+
         _xform_timeout = float(
-            resolve_env("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
+            resolve_env("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "180").strip()
+            or 180
         )
         try:
             await asyncio.wait_for(

@@ -16,6 +16,7 @@ Two follow-up improvements from the v0.7.162 deferred list:
 
 Tests pin both behaviors against mocked endpoints (no live SurrealDB).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,6 +30,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture()
 def client():
     from api.main import app
+
     return TestClient(app)
 
 

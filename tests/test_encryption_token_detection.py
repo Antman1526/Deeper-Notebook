@@ -16,6 +16,7 @@ tests prove that:
   - The 1/256 random-collision case is the worst case (random byte == 0x80
     is needed for a false positive).
 """
+
 from __future__ import annotations
 
 import base64
@@ -31,6 +32,7 @@ def _set_key(monkeypatch, key="test-key"):
     monkeypatch.setenv("DEEPER_NOTEBOOK_ENCRYPTION_KEY", key)
     # Reset the lazy-init cache between tests
     from deeper_notebook.utils import encryption
+
     encryption._ENCRYPTION_KEY = None
 
 

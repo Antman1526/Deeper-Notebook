@@ -9,6 +9,7 @@ The supervisor spawns FastAPI/worker/llama-cpp using the venv's Python
 interpreter rather than the frozen launcher binary, so no internal dispatcher
 tricks are needed.
 """
+
 from __future__ import annotations
 
 import sys
@@ -51,6 +52,7 @@ def _emergency_log(exc: BaseException) -> None:
 if __name__ == "__main__":
     try:
         from desktop.app import run
+
         rc = run()
     except BaseException as exc:  # noqa: BLE001 — catch SystemExit too
         # SystemExit and KeyboardInterrupt are intentional exits; pass them

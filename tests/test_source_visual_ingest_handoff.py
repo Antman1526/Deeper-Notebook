@@ -52,7 +52,9 @@ def source_processing_context(monkeypatch):
         source.async_save_calls += 1
 
     source.save = source_save
-    monkeypatch.setattr(source_commands, "Transformation", SimpleNamespace(get=lambda _id: None))
+    monkeypatch.setattr(
+        source_commands, "Transformation", SimpleNamespace(get=lambda _id: None)
+    )
     monkeypatch.setattr(
         source_commands,
         "Source",
@@ -83,7 +85,11 @@ async def test_ingest_visual_handoff_is_disabled_without_backend_flag(
     source_commands, _processed, _source = source_processing_context
     called = []
     monkeypatch.setattr(source_commands, "source_visuals_enabled", lambda: False)
-    monkeypatch.setattr(source_commands, "submit_source_visual", lambda *args, **kwargs: called.append((args, kwargs)))
+    monkeypatch.setattr(
+        source_commands,
+        "submit_source_visual",
+        lambda *args, **kwargs: called.append((args, kwargs)),
+    )
 
     result = await source_commands.process_source_command(_input())
 
@@ -108,7 +114,7 @@ async def test_ingest_visual_handoff_uses_deterministic_request_and_is_best_effo
     result = await source_commands.process_source_command(_input())
 
     assert result.success is True
-    assert called == [(('source:one', f"ingest:{HASH}"), {"explicit": False})]
+    assert called == [(("source:one", f"ingest:{HASH}"), {"explicit": False})]
     assert processed.full_text == "source content remains authoritative"
 
 

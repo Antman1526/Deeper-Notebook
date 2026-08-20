@@ -117,7 +117,9 @@ async def evaluate_model_config_health(
         model_id = getattr(defaults, slot, None)
         label = slot.replace("default_", "").replace("_model", "")
 
-        remedy = _SLOT_REMEDIES.get(label, f"Settings → Models → set a default {label} model.")
+        remedy = _SLOT_REMEDIES.get(
+            label, f"Settings → Models → set a default {label} model."
+        )
 
         if not model_id:
             detail = f"No {label} model is configured."

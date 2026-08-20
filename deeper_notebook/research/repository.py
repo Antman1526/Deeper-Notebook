@@ -43,7 +43,11 @@ def _run_from_record(record: dict[str, Any] | list[dict[str, Any]]) -> ResearchR
     """Deserialize persistence records without leaking database audit fields."""
     data = _one_record(record)
     return ResearchRun.model_validate(
-        {key: value for key, value in data.items() if key not in _DATABASE_METADATA_FIELDS}
+        {
+            key: value
+            for key, value in data.items()
+            if key not in _DATABASE_METADATA_FIELDS
+        }
     )
 
 

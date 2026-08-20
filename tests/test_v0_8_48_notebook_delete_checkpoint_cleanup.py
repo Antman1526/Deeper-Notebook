@@ -18,6 +18,7 @@ The meaningful new logic is the router-side helper (the domain delete is
 a live-SurrealDB integration path covered by the integration suite); we
 test the helper behaviorally and guard the two-halves contract by source.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -97,9 +98,7 @@ async def test_cleanup_noop_when_checkpointer_lacks_delete_thread(monkeypatch):
         _FakeGraph(object()),  # plain object has no delete_thread
         raising=False,
     )
-    n = await nb_router._cleanup_checkpoint_threads(
-        ["chat_session:a"], context="t"
-    )
+    n = await nb_router._cleanup_checkpoint_threads(["chat_session:a"], context="t")
     assert n == 0
 
 

@@ -30,6 +30,7 @@ Pattern matches `deeper_notebook/local_models/downloader.py:RECOMMENDATIONS`
 intentionally — both are curated lists of "things you can plug into
 Deeper Notebook that we've made sure work."
 """
+
 from __future__ import annotations
 
 # Each entry is a recommendation card the frontend renders. Fields:

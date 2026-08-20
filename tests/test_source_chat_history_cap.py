@@ -7,6 +7,7 @@ with `env_var_name="DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP"` and a smaller
 default cap of 8_000 chars (since source_chat already spends part of
 the context budget on injected source + insight content per v0.7.12).
 """
+
 from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -25,6 +26,7 @@ def _hist(n_turns: int, content_size: int = 300) -> list:
 # ---------------------------------------------------------------------------
 # Shared util — keep coverage of the env-var routing
 # ---------------------------------------------------------------------------
+
 
 def test_source_chat_uses_its_own_env_var(monkeypatch):
     """Setting DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP must affect the
@@ -96,11 +98,13 @@ async def test_source_chat_invokes_trim(monkeypatch):
     trim_calls: list = []
 
     def fake_trim(messages, *, env_var_name, default_char_cap, minimum_cap=500):
-        trim_calls.append({
-            "messages": list(messages),
-            "env_var_name": env_var_name,
-            "default_char_cap": default_char_cap,
-        })
+        trim_calls.append(
+            {
+                "messages": list(messages),
+                "env_var_name": env_var_name,
+                "default_char_cap": default_char_cap,
+            }
+        )
         # Return a stub small list so we can pinpoint it in the payload
         return [HumanMessage(content="trimmed")]
 
@@ -146,9 +150,7 @@ async def test_source_chat_invokes_trim(monkeypatch):
     monkeypatch.setattr(source_chat, "provision_langchain_model", fake_provision)
     # v0.8.66 (audit A-M1) — the no-override path now routes through
     # provision_langchain_chat_model (smart-router + privacy gate); stub it too.
-    monkeypatch.setattr(
-        source_chat, "provision_langchain_chat_model", fake_provision
-    )
+    monkeypatch.setattr(source_chat, "provision_langchain_chat_model", fake_provision)
 
     msgs = _hist(20, content_size=500)
     await source_chat._call_model_with_source_context_inner(
@@ -162,8 +164,7 @@ async def test_source_chat_invokes_trim(monkeypatch):
     # Trim was called with the canonical source_chat env var name and 8k default
     assert len(trim_calls) == 1
     assert (
-        trim_calls[0]["env_var_name"]
-        == "DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP"
+        trim_calls[0]["env_var_name"] == "DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP"
     )
     assert trim_calls[0]["default_char_cap"] == 8_000
     assert trim_calls[0]["messages"] == msgs

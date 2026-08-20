@@ -19,6 +19,7 @@ Resume covers:
     doesn't support Range; corruption guard).
   - Content-Range header populates bytes_total correctly during resume.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -56,7 +57,9 @@ async def test_cancel_job_in_flight_sets_flag(tmp_path):
     """A queued or downloading job → cancel sets the flag, ok=True."""
     # Build a job in queued state without firing a real download.
     job = dl_mod.DownloadJob(
-        job_id="j1", repo_id="r/a", filename="x.gguf",
+        job_id="j1",
+        repo_id="r/a",
+        filename="x.gguf",
         target_path=str(tmp_path / "x.gguf"),
         status="downloading",
     )
@@ -71,7 +74,9 @@ async def test_cancel_job_already_terminal_returns_409_shape(tmp_path):
     """Idempotent — calling cancel on a terminal job returns False
     with a status-aware detail. The HTTP layer maps this to 409."""
     job = dl_mod.DownloadJob(
-        job_id="j2", repo_id="r/a", filename="x.gguf",
+        job_id="j2",
+        repo_id="r/a",
+        filename="x.gguf",
         target_path=str(tmp_path / "x.gguf"),
         status="completed",
     )
@@ -98,7 +103,10 @@ async def test_stream_aborts_on_cancellation_flag(tmp_path):
     class _SlowResp:
         status_code = 200
         headers = {"content-length": "2000"}
-        def raise_for_status(self): pass
+
+        def raise_for_status(self):
+            pass
+
         async def aiter_bytes(self, chunk_size=1024 * 1024):
             # Yield the first chunk, let the loop set cancelled,
             # then a second one — but the loop check should fire
@@ -108,17 +116,29 @@ async def test_stream_aborts_on_cancellation_flag(tmp_path):
             yield b"y" * 1000  # never written
 
     class _Ctx:
-        async def __aenter__(self): return _SlowResp()
-        async def __aexit__(self, *_a): pass
+        async def __aenter__(self):
+            return _SlowResp()
+
+        async def __aexit__(self, *_a):
+            pass
 
     class _Client:
-        def __init__(self, *a, **k): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): pass
-        def stream(self, m, u, headers=None): return _Ctx()
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            pass
+
+        def stream(self, m, u, headers=None):
+            return _Ctx()
 
     job = dl_mod.DownloadJob(
-        job_id="j3", repo_id="r/a", filename="x.gguf",
+        job_id="j3",
+        repo_id="r/a",
+        filename="x.gguf",
         target_path=str(tmp_path / "x.gguf"),
     )
 
@@ -127,8 +147,7 @@ async def test_stream_aborts_on_cancellation_flag(tmp_path):
         job.cancelled = True
         await dl_mod._stream_download(job, tmp_path)
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _Client):
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient", _Client):
         await asyncio.wait_for(_drive(), timeout=5.0)
 
     assert job.status == "cancelled"
@@ -154,25 +173,37 @@ async def test_start_download_detects_existing_part_file(tmp_path):
     class _R:
         status_code = 206  # partial content for the Range request
         headers = {"content-length": "1500", "content-range": "bytes 1500-2999/3000"}
-        def raise_for_status(self): pass
+
+        def raise_for_status(self):
+            pass
+
         async def aiter_bytes(self, chunk_size=1024 * 1024):
             yield b""
 
     class _Ctx:
-        async def __aenter__(self): return _R()
-        async def __aexit__(self, *_a): pass
+        async def __aenter__(self):
+            return _R()
+
+        async def __aexit__(self, *_a):
+            pass
 
     captured_headers = []
+
     class _Client:
-        def __init__(self, *a, **k): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): pass
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            pass
+
         def stream(self, m, u, headers=None):
             captured_headers.append(dict(headers or {}))
             return _Ctx()
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _Client):
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient", _Client):
         job = await dl_mod.start_download("r/a", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)
 
@@ -202,22 +233,34 @@ async def test_resume_aborts_when_server_returns_200(tmp_path):
     class _R:
         status_code = 200  # mirror that ignored Range
         headers = {"content-length": "3000"}
-        def raise_for_status(self): pass
+
+        def raise_for_status(self):
+            pass
+
         async def aiter_bytes(self, chunk_size=1024 * 1024):
             yield b"x" * 3000
 
     class _Ctx:
-        async def __aenter__(self): return _R()
-        async def __aexit__(self, *_a): pass
+        async def __aenter__(self):
+            return _R()
+
+        async def __aexit__(self, *_a):
+            pass
 
     class _Client:
-        def __init__(self, *a, **k): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): pass
-        def stream(self, m, u, headers=None): return _Ctx()
+        def __init__(self, *a, **k):
+            pass
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _Client):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            pass
+
+        def stream(self, m, u, headers=None):
+            return _Ctx()
+
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient", _Client):
         job = await dl_mod.start_download("r/a", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)
 
@@ -248,7 +291,9 @@ def test_cancel_endpoint_404_for_unknown_job(app):
 
 def test_cancel_endpoint_409_when_already_terminal(app, tmp_path):
     job = dl_mod.DownloadJob(
-        job_id="j-done", repo_id="r/a", filename="x.gguf",
+        job_id="j-done",
+        repo_id="r/a",
+        filename="x.gguf",
         target_path=str(tmp_path / "x.gguf"),
         status="completed",
     )
@@ -262,7 +307,9 @@ def test_cancel_endpoint_409_when_already_terminal(app, tmp_path):
 
 def test_cancel_endpoint_happy_path_sets_flag(app, tmp_path):
     job = dl_mod.DownloadJob(
-        job_id="j-flag", repo_id="r/a", filename="x.gguf",
+        job_id="j-flag",
+        repo_id="r/a",
+        filename="x.gguf",
         target_path=str(tmp_path / "x.gguf"),
         status="downloading",
     )

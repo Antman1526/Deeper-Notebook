@@ -153,23 +153,17 @@ class SecureDirectory:
     def verify_visible_identity(self) -> None:
         if self.windows_handle is not None:
             if _windows_path_is_reparse_point(self.path):
-                raise _CriticalPathError(
-                    "recovery-directory-identity-changed"
-                )
+                raise _CriticalPathError("recovery-directory-identity-changed")
             try:
                 current = self.path.stat(follow_symlinks=False)
             except OSError as exc:
-                raise _CriticalPathError(
-                    "recovery-directory-identity-changed"
-                ) from exc
+                raise _CriticalPathError("recovery-directory-identity-changed") from exc
             if (
                 not stat.S_ISDIR(current.st_mode)
                 or current.st_dev != self.device
                 or current.st_ino != self.inode
             ):
-                raise _CriticalPathError(
-                    "recovery-directory-identity-changed"
-                )
+                raise _CriticalPathError("recovery-directory-identity-changed")
             return
         if self.parent_fd is None or self.name is None:
             return
@@ -180,9 +174,7 @@ class SecureDirectory:
                 follow_symlinks=False,
             )
         except OSError as exc:
-            raise _CriticalPathError(
-                "recovery-directory-identity-changed"
-            ) from exc
+            raise _CriticalPathError("recovery-directory-identity-changed") from exc
         if (
             not stat.S_ISDIR(current.st_mode)
             or current.st_dev != self.device
@@ -198,9 +190,7 @@ def _windows_path_is_reparse_point(path: Path) -> bool:
     import ctypes
     from ctypes import wintypes
 
-    get_attributes = ctypes.WinDLL(
-        "kernel32", use_last_error=True
-    ).GetFileAttributesW
+    get_attributes = ctypes.WinDLL("kernel32", use_last_error=True).GetFileAttributesW
     get_attributes.argtypes = (wintypes.LPCWSTR,)
     get_attributes.restype = wintypes.DWORD
     attributes = get_attributes(str(path))
@@ -214,9 +204,7 @@ def _open_windows_directory_handle(path: Path) -> int:
     import ctypes
     from ctypes import wintypes
 
-    create_file = ctypes.WinDLL(
-        "kernel32", use_last_error=True
-    ).CreateFileW
+    create_file = ctypes.WinDLL("kernel32", use_last_error=True).CreateFileW
     create_file.argtypes = (
         wintypes.LPCWSTR,
         wintypes.DWORD,
@@ -253,9 +241,7 @@ def _close_windows_handle(handle: int) -> None:
     import ctypes
     from ctypes import wintypes
 
-    close_handle = ctypes.WinDLL(
-        "kernel32", use_last_error=True
-    ).CloseHandle
+    close_handle = ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle
     close_handle.argtypes = (wintypes.HANDLE,)
     close_handle.restype = wintypes.BOOL
     if not close_handle(handle):
@@ -352,12 +338,7 @@ def _create_windows_owned_directory(path: Path, reason: str) -> bool:
         ctypes.POINTER(wintypes.DWORD),
     )
     convert.restype = wintypes.BOOL
-    sddl = (
-        f"O:{sid}"
-        f"D:P(A;OICI;FA;;;{sid})"
-        "(A;OICI;FA;;;SY)"
-        "(A;OICI;FA;;;BA)"
-    )
+    sddl = f"O:{sid}D:P(A;OICI;FA;;;{sid})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
     if not convert(sddl, 1, ctypes.byref(descriptor), ctypes.byref(descriptor_size)):
         raise _CriticalPathError(reason)
 
@@ -412,11 +393,7 @@ def _harden_windows_owned_directory(path: Path, reason: str) -> None:
         ctypes.POINTER(wintypes.DWORD),
     )
     convert.restype = wintypes.BOOL
-    sddl = (
-        f"D:P(A;OICI;FA;;;{sid})"
-        "(A;OICI;FA;;;SY)"
-        "(A;OICI;FA;;;BA)"
-    )
+    sddl = f"D:P(A;OICI;FA;;;{sid})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
     if not convert(sddl, 1, ctypes.byref(descriptor), ctypes.byref(descriptor_size)):
         raise _CriticalPathError(reason)
 
@@ -450,9 +427,7 @@ def _open_windows_append_file(path: Path) -> int:
     import msvcrt
     from ctypes import wintypes
 
-    create_file = ctypes.WinDLL(
-        "kernel32", use_last_error=True
-    ).CreateFileW
+    create_file = ctypes.WinDLL("kernel32", use_last_error=True).CreateFileW
     create_file.argtypes = (
         wintypes.LPCWSTR,
         wintypes.DWORD,
@@ -496,12 +471,7 @@ def _secure_directory_flags() -> int:
     required = ("O_DIRECTORY", "O_NOFOLLOW")
     if any(not hasattr(os, name) for name in required):
         raise _CriticalPathError("secure-directory-handles-unavailable")
-    return (
-        os.O_RDONLY
-        | os.O_DIRECTORY
-        | os.O_NOFOLLOW
-        | getattr(os, "O_CLOEXEC", 0)
-    )
+    return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
 
 
 def _validate_directory_fd(
@@ -512,9 +482,7 @@ def _validate_directory_fd(
 ) -> os.stat_result:
     result = os.fstat(fd)
     if not stat.S_ISDIR(result.st_mode):
-        raise _CriticalPathError(
-            ownership_reason or "recovery-parent-is-not-directory"
-        )
+        raise _CriticalPathError(ownership_reason or "recovery-parent-is-not-directory")
     getuid = getattr(os, "getuid", None)
     if (
         ownership_reason is not None
@@ -537,9 +505,7 @@ def _open_directory_path(path: Path) -> Iterator[SecureDirectory]:
         try:
             result = path.stat(follow_symlinks=False)
             if not stat.S_ISDIR(result.st_mode):
-                raise _CriticalPathError(
-                    "recovery-parent-is-not-directory"
-                )
+                raise _CriticalPathError("recovery-parent-is-not-directory")
             directory = SecureDirectory(
                 path,
                 -1,
@@ -767,9 +733,7 @@ def classify_roots(canonical: Path, legacy: Path) -> DataRootDecision:
     legacy_exists = _path_exists(legacy)
 
     if not canonical_exists and not legacy_exists:
-        return DataRootDecision(
-            "not-needed", canonical, canonical, legacy
-        )
+        return DataRootDecision("not-needed", canonical, canonical, legacy)
 
     if canonical.is_symlink():
         return DataRootDecision(
@@ -819,9 +783,7 @@ def classify_roots(canonical: Path, legacy: Path) -> DataRootDecision:
     if canonical_exists and not legacy_exists:
         return DataRootDecision("ready", canonical, canonical, legacy)
     if legacy_exists and not canonical_exists:
-        return DataRootDecision(
-            "migration-pending", legacy, canonical, legacy
-        )
+        return DataRootDecision("migration-pending", legacy, canonical, legacy)
 
     try:
         equivalent = _tree_manifest(canonical) == _tree_manifest(legacy)
@@ -1033,9 +995,7 @@ def append_recovery_log(
         if sys.platform != "win32":
             os.fchmod(fd, 0o600)
             if stat.S_IMODE(os.fstat(fd).st_mode) & 0o177:
-                raise _CriticalPathError(
-                    "recovery-log-file-permissions-unsafe"
-                )
+                raise _CriticalPathError("recovery-log-file-permissions-unsafe")
         _write_all(fd, payload)
         os.fsync(fd)
     finally:
@@ -1074,13 +1034,9 @@ def _device_id(path: Path) -> int:
     return Path(path).stat().st_dev
 
 
-def _raise_posix_rename_error(
-    error: int, source: Path, destination: Path
-) -> None:
+def _raise_posix_rename_error(error: int, source: Path, destination: Path) -> None:
     if error in {errno.EEXIST, errno.ENOTEMPTY}:
-        raise FileExistsError(
-            error, os.strerror(error), str(destination)
-        )
+        raise FileExistsError(error, os.strerror(error), str(destination))
     unsupported_errors = {
         errno.EXDEV,
         errno.EINVAL,
@@ -1106,24 +1062,23 @@ def _rename_macos_no_replace(source: Path, destination: Path) -> None:
     try:
         renamex_np = ctypes.CDLL(None, use_errno=True).renamex_np
     except (AttributeError, OSError) as exc:
-        raise _AtomicRenameUnavailable(
-            "renamex_np is unavailable"
-        ) from exc
+        raise _AtomicRenameUnavailable("renamex_np is unavailable") from exc
     renamex_np.argtypes = (
         ctypes.c_char_p,
         ctypes.c_char_p,
         ctypes.c_uint,
     )
     renamex_np.restype = ctypes.c_int
-    if renamex_np(
-        os.fsencode(source),
-        os.fsencode(destination),
-        0x00000004,  # RENAME_EXCL
-    ) == 0:
+    if (
+        renamex_np(
+            os.fsencode(source),
+            os.fsencode(destination),
+            0x00000004,  # RENAME_EXCL
+        )
+        == 0
+    ):
         return
-    _raise_posix_rename_error(
-        ctypes.get_errno(), Path(source), Path(destination)
-    )
+    _raise_posix_rename_error(ctypes.get_errno(), Path(source), Path(destination))
 
 
 def _rename_linux_no_replace(source: Path, destination: Path) -> None:
@@ -1133,9 +1088,7 @@ def _rename_linux_no_replace(source: Path, destination: Path) -> None:
     try:
         renameat2 = ctypes.CDLL(None, use_errno=True).renameat2
     except (AttributeError, OSError) as exc:
-        raise _AtomicRenameUnavailable(
-            "renameat2 is unavailable"
-        ) from exc
+        raise _AtomicRenameUnavailable("renameat2 is unavailable") from exc
     renameat2.argtypes = (
         ctypes.c_int,
         ctypes.c_char_p,
@@ -1145,17 +1098,18 @@ def _rename_linux_no_replace(source: Path, destination: Path) -> None:
     )
     renameat2.restype = ctypes.c_int
     at_fdcwd = -100
-    if renameat2(
-        at_fdcwd,
-        os.fsencode(source),
-        at_fdcwd,
-        os.fsencode(destination),
-        0x00000001,  # RENAME_NOREPLACE
-    ) == 0:
+    if (
+        renameat2(
+            at_fdcwd,
+            os.fsencode(source),
+            at_fdcwd,
+            os.fsencode(destination),
+            0x00000001,  # RENAME_NOREPLACE
+        )
+        == 0
+    ):
         return
-    _raise_posix_rename_error(
-        ctypes.get_errno(), Path(source), Path(destination)
-    )
+    _raise_posix_rename_error(ctypes.get_errno(), Path(source), Path(destination))
 
 
 def _rename_windows_no_replace(source: Path, destination: Path) -> None:
@@ -1164,13 +1118,9 @@ def _rename_windows_no_replace(source: Path, destination: Path) -> None:
     from ctypes import wintypes
 
     try:
-        move_file = ctypes.WinDLL(
-            "kernel32", use_last_error=True
-        ).MoveFileExW
+        move_file = ctypes.WinDLL("kernel32", use_last_error=True).MoveFileExW
     except (AttributeError, OSError) as exc:
-        raise _AtomicRenameUnavailable(
-            "MoveFileExW is unavailable"
-        ) from exc
+        raise _AtomicRenameUnavailable("MoveFileExW is unavailable") from exc
     move_file.argtypes = (
         wintypes.LPCWSTR,
         wintypes.LPCWSTR,
@@ -1202,9 +1152,7 @@ def _rename_windows_no_replace(source: Path, destination: Path) -> None:
     )
 
 
-def _rename_directory_no_replace(
-    source: Path, destination: Path
-) -> None:
+def _rename_directory_no_replace(source: Path, destination: Path) -> None:
     """Use only native atomic directory renames that reject destinations."""
     if sys.platform == "darwin":
         _rename_macos_no_replace(source, destination)
@@ -1305,9 +1253,7 @@ def _windows_process_status(
     error_invalid_parameter = 87
     error_not_found = 1168
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    handle = kernel32.OpenProcess(
-        process_query_limited_information, False, pid
-    )
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
     if handle:
         kernel32.CloseHandle(handle)
         return "live"
@@ -1445,9 +1391,7 @@ def _operator_instructions(
     ]
 
 
-def _invoke_failure(
-    failure_injector: Callable[[str], None] | None, stage: str
-) -> None:
+def _invoke_failure(failure_injector: Callable[[str], None] | None, stage: str) -> None:
     if failure_injector is None:
         return
     try:
@@ -1470,9 +1414,7 @@ def _reason_for_exception(exc: BaseException) -> str:
     return "migration-step-failed"
 
 
-def _safe_replace_receipt(
-    receipt_path: Path, payload: dict[str, object]
-) -> None:
+def _safe_replace_receipt(receipt_path: Path, payload: dict[str, object]) -> None:
     try:
         _replace_json(receipt_path, payload)
     except OSError:
@@ -1484,11 +1426,7 @@ def _unresolved_rollback(
     receipt_dir: Path, canonical: Path, legacy: Path
 ) -> DataRootDecision | None:
     """Find a durable unresolved rollback marker for these exact roots."""
-    if (
-        not receipt_dir.is_dir()
-        or receipt_dir.is_symlink()
-        or not canonical.exists()
-    ):
+    if not receipt_dir.is_dir() or receipt_dir.is_symlink() or not canonical.exists():
         return None
     try:
         receipt_paths = sorted(
@@ -1506,10 +1444,9 @@ def _unresolved_rollback(
             if not stat.S_ISREG(mode):
                 continue
             payload = json.loads(receipt_path.read_text(encoding="utf-8"))
-            if (
-                payload.get("canonical_path") != str(canonical)
-                or payload.get("source_path") != str(legacy)
-            ):
+            if payload.get("canonical_path") != str(canonical) or payload.get(
+                "source_path"
+            ) != str(legacy):
                 continue
             status = payload.get("status")
             if status in {
@@ -1527,10 +1464,7 @@ def _unresolved_rollback(
                     canonical,
                     legacy,
                     receipt_path,
-                    str(
-                        payload.get("rollback_reason_code")
-                        or "unresolved-rollback"
-                    ),
+                    str(payload.get("rollback_reason_code") or "unresolved-rollback"),
                 )
         except (OSError, ValueError, json.JSONDecodeError, AttributeError):
             continue
@@ -1551,9 +1485,7 @@ def migrate_data_root(
     if initial.state != "migration-pending":
         return initial
 
-    receipt_dir = Path(
-        receipt_dir or canonical.parent / _MIGRATION_DIRECTORY_NAME
-    )
+    receipt_dir = Path(receipt_dir or canonical.parent / _MIGRATION_DIRECTORY_NAME)
     migration_id = uuid.uuid4().hex
     receipt_path = receipt_dir / f"migration-{migration_id}.json"
     lock_path = receipt_dir / LOCK_FILE_NAME
@@ -1773,14 +1705,10 @@ def migrate_data_root(
         rollback_problem: str | None = None
         try:
             if compatibility_link_created:
-                if (
-                    not legacy.is_symlink()
-                    or legacy.resolve(strict=True)
-                    != canonical.resolve(strict=True)
-                ):
-                    raise _ValidationError(
-                        "compatibility-link-ownership-uncertain"
-                    )
+                if not legacy.is_symlink() or legacy.resolve(
+                    strict=True
+                ) != canonical.resolve(strict=True):
+                    raise _ValidationError("compatibility-link-ownership-uncertain")
                 legacy.unlink()
                 _fsync_directory(canonical.parent)
             if _path_exists(legacy):
@@ -1847,9 +1775,7 @@ def resolve_data_root(
     base = Path(home) if home is not None else user_home()
     canonical = base / DATA_DIR_NAME
     legacy = base / LEGACY_DATA_DIR_NAME
-    rollback = _unresolved_rollback(
-        base / _MIGRATION_DIRECTORY_NAME, canonical, legacy
-    )
+    rollback = _unresolved_rollback(base / _MIGRATION_DIRECTORY_NAME, canonical, legacy)
     if rollback is not None:
         return rollback
     decision = classify_roots(canonical, legacy)
@@ -1896,12 +1822,9 @@ def active_data_root(*, home: Path | None = None) -> Path:
         "cross-device-atomic-rename-unavailable",
         "atomic-rename-unavailable",
     }
-    if (
-        decision.state in {"migration-conflict", "rollback-available"}
-        or (
-            decision.state == "migration-deferred"
-            and decision.reason_code not in safe_deferred_reasons
-        )
+    if decision.state in {"migration-conflict", "rollback-available"} or (
+        decision.state == "migration-deferred"
+        and decision.reason_code not in safe_deferred_reasons
     ):
         raise DataRootUnavailableError(decision)
     return decision.active_root

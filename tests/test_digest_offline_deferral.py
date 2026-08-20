@@ -1,6 +1,7 @@
 """v0.8.68 — digest scheduler defers sends while offline instead of silently
 failing, retries on the next tick (no backoff escalation for network drops),
 and keeps a pending marker for /gmail/status."""
+
 from __future__ import annotations
 
 import asyncio
@@ -45,12 +46,14 @@ def _gmail(frequency="daily"):
 def _patch_gmail(monkeypatch, g):
     async def _fake_get():
         return g
+
     monkeypatch.setattr(scheduler.GmailIntegration, "get", _fake_get)
 
 
 def _patch_offline(monkeypatch, offline: bool):
     async def _fake():
         return offline
+
     monkeypatch.setattr(scheduler, "_offline_now", _fake)
 
 
@@ -62,6 +65,7 @@ def _patch_send(monkeypatch, sends, *, ok=True, raises=None):
             raise raises
         sends.append(label)
         return (ok, "ok" if ok else "soft failure", 1)
+
     monkeypatch.setattr(gmail_router, "_send_digest_now", _fake_send)
 
 
@@ -121,9 +125,7 @@ def test_stale_pending_marker_clears(monkeypatch):
     sends: list = []
     _patch_send(monkeypatch, sends)
 
-    scheduler._pending_digest_since = (
-        datetime.now(timezone.utc) - timedelta(hours=25)
-    )
+    scheduler._pending_digest_since = datetime.now(timezone.utc) - timedelta(hours=25)
     _run(scheduler._tick())
     # >24h old: marker resets to "now" semantics — it reports pending with a
     # fresh timestamp rather than claiming a day-old queued digest.

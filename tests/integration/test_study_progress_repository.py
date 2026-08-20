@@ -125,7 +125,9 @@ async def test_card_creation_links_unique_artifact_owner_and_rejects_cross_plan(
         "WHERE card_id = $card_id",
         {"card_id": card.id},
     )
-    assert links == [{"plan_id": owner, "card_id": card.id, "syllabus_unit_id": "owner-unit"}]
+    assert links == [
+        {"plan_id": owner, "card_id": card.id, "syllabus_unit_id": "owner-unit"}
+    ]
 
     await plans.link_artifact(
         other,
@@ -147,7 +149,6 @@ async def test_card_creation_links_unique_artifact_owner_and_rejects_cross_plan(
     assert orphan_rows == []
 
 
-
 async def test_card_version_owner_race_keeps_one_current_and_one_due_card(
     clean_namespace,
 ):
@@ -156,7 +157,9 @@ async def test_card_version_owner_race_keeps_one_current_and_one_due_card(
     plan_id = "study_plan:card-version-race"
     artifact_id = "studio_artifact:card-version-race"
     await plans.create(
-        StudyPlan(plan_id=plan_id, goal="Verify atomic card race", starting_level="beginner")
+        StudyPlan(
+            plan_id=plan_id, goal="Verify atomic card race", starting_level="beginner"
+        )
     )
     await plans.link_artifact(
         plan_id,
@@ -214,7 +217,9 @@ async def test_ambiguous_owner_transaction_leaves_no_card_due_or_link(
     repository = StudyRepository()
     artifact_id = "studio_artifact:owner-conflict-race"
     for plan_id in ("study_plan:owner-conflict-one", "study_plan:owner-conflict-two"):
-        await plans.create(StudyPlan(plan_id=plan_id, goal="Owner conflict", starting_level="beginner"))
+        await plans.create(
+            StudyPlan(plan_id=plan_id, goal="Owner conflict", starting_level="beginner")
+        )
         await plans.link_artifact(
             plan_id,
             artifact_id,
@@ -311,7 +316,9 @@ async def test_real_owner_resolution_races_leave_existing_current_unchanged(
                 await original_query(
                     "CREATE $link CONTENT $payload RETURN AFTER;",
                     {
-                        "link": ensure_record_id(f"study_plan_artifact:owner-race-{race}"),
+                        "link": ensure_record_id(
+                            f"study_plan_artifact:owner-race-{race}"
+                        ),
                         "payload": {
                             "plan_id": replacement,
                             "artifact_id": artifact_id,
@@ -328,7 +335,9 @@ async def test_real_owner_resolution_races_leave_existing_current_unchanged(
                 await original_query(
                     "CREATE $link CONTENT $payload RETURN AFTER;",
                     {
-                        "link": ensure_record_id(f"study_plan_artifact:owner-race-{race}"),
+                        "link": ensure_record_id(
+                            f"study_plan_artifact:owner-race-{race}"
+                        ),
                         "payload": {
                             "plan_id": replacement,
                             "artifact_id": artifact_id,
@@ -406,7 +415,9 @@ async def test_progress_append_race_re_reads_unique_winner(clean_namespace):
     assert persisted[0].model_copy(update={"receipt_id": None}) == receipt
 
 
-async def test_real_surreal_decision_claim_serializes_independent_clients(clean_namespace):
+async def test_real_surreal_decision_claim_serializes_independent_clients(
+    clean_namespace,
+):
     """A shared deterministic claim permits at most one native mutation."""
 
     plan_id = "study_plan:progress-decision-concurrency"
@@ -492,11 +503,7 @@ async def test_real_surreal_accept_mutation_updates_plan_preferences(clean_names
 
     updated = await repository.update(
         plan_id,
-        {
-            "preferences": StudyPlanPreferences(
-                weekly_minutes=90, session_minutes=30
-            )
-        },
+        {"preferences": StudyPlanPreferences(weekly_minutes=90, session_minutes=30)},
         expected_revision=1,
     )
 

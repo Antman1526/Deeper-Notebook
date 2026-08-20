@@ -8,6 +8,7 @@ H3 — DELETE and /test bound a plain string to `id = $id`; a RecordID never
 H4 — POST /api/mcp stored an arbitrary URL with no SSRF validation; it is later
      fetched outbound by /test and the chat tool loop.
 """
+
 from __future__ import annotations
 
 import pytest

@@ -24,8 +24,7 @@ SurrealQL injection is the equivalent of SQL injection. User-controlled values m
 ```python
 # Good: parameterized query
 result = await repo_query(
-    "SELECT * FROM source WHERE id = $id",
-    {"id": ensure_record_id(source_id)}
+    "SELECT * FROM source WHERE id = $id", {"id": ensure_record_id(source_id)}
 )
 ```
 

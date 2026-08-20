@@ -14,6 +14,7 @@ Covers:
   * verify-only mode doesn't write anything
   * Format version: future bundles are rejected with a clear error
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -29,9 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 import backup_restore as br  # noqa: E402
 
 
-def test_data_root_env_prefers_canonical_and_accepts_legacy(
-    tmp_path, monkeypatch
-):
+def test_data_root_env_prefers_canonical_and_accepts_legacy(tmp_path, monkeypatch):
     canonical = tmp_path / "canonical"
     legacy = tmp_path / "legacy"
     canonical.mkdir()
@@ -68,8 +67,9 @@ def _make_fake_data_dir(root: Path) -> dict[str, bytes]:
     return contents
 
 
-def _rewrite_with_windows_manifest_paths(bundle: Path, output: Path, *,
-                                         corrupt_member: str | None = None) -> None:
+def _rewrite_with_windows_manifest_paths(
+    bundle: Path, output: Path, *, corrupt_member: str | None = None
+) -> None:
     """Write a bundle whose manifest uses Windows path separators.
 
     Python's tar implementation stores portable slash-separated member names,
@@ -165,9 +165,11 @@ def test_backup_restore_round_trip(tmp_path):
 
     # Spot-check that each NON-skipped file came back with identical bytes
     expected_paths = {
-        rel: payload for rel, payload in original.items()
-        if not any(skip in rel for skip in ("logs/", "__pycache__",
-                                             ".DS_Store", ".lock"))
+        rel: payload
+        for rel, payload in original.items()
+        if not any(
+            skip in rel for skip in ("logs/", "__pycache__", ".DS_Store", ".lock")
+        )
     }
     for rel, payload in expected_paths.items():
         restored = restore_root / rel
@@ -175,7 +177,9 @@ def test_backup_restore_round_trip(tmp_path):
         assert restored.read_bytes() == payload, f"{rel} content mismatch"
 
 
-def test_backup_replaces_existing_bundle_when_windows_blocks_rename(tmp_path, monkeypatch):
+def test_backup_replaces_existing_bundle_when_windows_blocks_rename(
+    tmp_path, monkeypatch
+):
     """A repeated backup replaces its prior bundle even when the filesystem
     forbids rename-overwrite, as Windows does."""
     src_root = tmp_path / "src"
@@ -270,7 +274,9 @@ def test_verify_accepts_windows_style_manifest_paths(tmp_path):
     _rewrite_with_windows_manifest_paths(bundle, windows_bundle)
 
     result = br.restore(
-        windows_bundle, data_root=tmp_path / "target", verify_only=True,
+        windows_bundle,
+        data_root=tmp_path / "target",
+        verify_only=True,
     )
 
     assert result["integrity_ok"] is True
@@ -297,8 +303,7 @@ def test_verify_detects_corrupted_bundle(tmp_path):
     )
 
     with pytest.raises(RuntimeError) as exc_info:
-        br.restore(tampered, data_root=tmp_path / "target",
-                   verify_only=True)
+        br.restore(tampered, data_root=tmp_path / "target", verify_only=True)
     assert "integrity" in str(exc_info.value).lower()
     assert "corrupt" in str(exc_info.value).lower()
 
@@ -334,8 +339,7 @@ def test_restore_rejects_future_bundle_version(tmp_path):
                         dst_tar.addfile(member, fileobj=f)
 
     with pytest.raises(RuntimeError) as exc_info:
-        br.restore(future_bundle, data_root=tmp_path / "x",
-                   verify_only=True)
+        br.restore(future_bundle, data_root=tmp_path / "x", verify_only=True)
     assert "format version" in str(exc_info.value).lower()
     assert "999" in str(exc_info.value)
 
@@ -357,7 +361,6 @@ def test_backup_raises_on_missing_data_dir(tmp_path):
     """v0.7.126 — Pointing at a non-existent dir errors with
     actionable text mentioning DEEPER_NOTEBOOK_DATA_DIR."""
     with pytest.raises(RuntimeError) as exc_info:
-        br.backup(tmp_path / "out.tar.gz",
-                  data_root=tmp_path / "does-not-exist")
+        br.backup(tmp_path / "out.tar.gz", data_root=tmp_path / "does-not-exist")
     assert "not found" in str(exc_info.value).lower()
     assert "DEEPER_NOTEBOOK_DATA_DIR" in str(exc_info.value)

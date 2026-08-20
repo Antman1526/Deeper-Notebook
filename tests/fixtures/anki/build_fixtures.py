@@ -18,16 +18,33 @@ def _model(*, kind: str, hostile_template: str | None = None) -> dict[str, Any]:
                 "name": "Cloze",
                 "type": 1,
                 "flds": [{"name": "Text", "ord": 0}, {"name": "Extra", "ord": 1}],
-                "tmpls": [{"name": "Cloze", "ord": 0, "qfmt": "{{cloze:Text}}", "afmt": "{{cloze:Text}}<br>{{Extra}}"}],
+                "tmpls": [
+                    {
+                        "name": "Cloze",
+                        "ord": 0,
+                        "qfmt": "{{cloze:Text}}",
+                        "afmt": "{{cloze:Text}}<br>{{Extra}}",
+                    }
+                ],
                 "css": ".card { font-family: sans-serif; }",
             }
         }
     templates = [
-        {"name": "Card 1", "ord": 0, "qfmt": "{{Front}}", "afmt": "{{FrontSide}}<hr>{{Back}}"}
+        {
+            "name": "Card 1",
+            "ord": 0,
+            "qfmt": "{{Front}}",
+            "afmt": "{{FrontSide}}<hr>{{Back}}",
+        }
     ]
     if kind == "reverse":
         templates.append(
-            {"name": "Card 2", "ord": 1, "qfmt": "{{Back}}", "afmt": "{{FrontSide}}<hr>{{Front}}"}
+            {
+                "name": "Card 2",
+                "ord": 1,
+                "qfmt": "{{Back}}",
+                "afmt": "{{FrontSide}}<hr>{{Front}}",
+            }
         )
     if hostile_template is not None:
         templates[0]["qfmt"] = hostile_template

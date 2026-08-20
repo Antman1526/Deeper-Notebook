@@ -226,6 +226,7 @@ class ArtifactGenerationRequest:
     source_ids: list[str]
     requested_model_id: str | None = None
 
+
 async def generate_artifact(request: ArtifactGenerationRequest) -> StudioArtifact: ...
 ```
 
@@ -287,6 +288,7 @@ class EvidenceSpan(BaseModel):
         if self.end <= self.start:
             raise ValueError("end must be greater than start")
         return self
+
 
 class ClaimVerdict(BaseModel):
     schema_version: Literal[1] = 1
@@ -381,10 +383,33 @@ class ClaimVerdict(BaseModel):
 
 ```python
 ROLE_WEIGHTS = {
-    "chat": {"correctness": .30, "citation": .25, "latency": .20, "instruction": .15, "context": .10},
-    "source_synthesis": {"correctness": .30, "citation": .30, "schema": .20, "context": .15, "latency": .05},
-    "coding_research": {"correctness": .30, "tool": .25, "schema": .15, "context": .15, "latency": .15},
-    "study_fast": {"correctness": .25, "schema": .30, "latency": .25, "instruction": .20},
+    "chat": {
+        "correctness": 0.30,
+        "citation": 0.25,
+        "latency": 0.20,
+        "instruction": 0.15,
+        "context": 0.10,
+    },
+    "source_synthesis": {
+        "correctness": 0.30,
+        "citation": 0.30,
+        "schema": 0.20,
+        "context": 0.15,
+        "latency": 0.05,
+    },
+    "coding_research": {
+        "correctness": 0.30,
+        "tool": 0.25,
+        "schema": 0.15,
+        "context": 0.15,
+        "latency": 0.15,
+    },
+    "study_fast": {
+        "correctness": 0.25,
+        "schema": 0.30,
+        "latency": 0.25,
+        "instruction": 0.20,
+    },
 }
 ```
 

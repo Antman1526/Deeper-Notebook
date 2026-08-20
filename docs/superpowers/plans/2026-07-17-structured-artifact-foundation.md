@@ -114,9 +114,7 @@ class ArtifactDocumentBase(BaseModel):
 
 
 class GenericDocument(ArtifactDocumentBase):
-    artifact_type: Literal[
-        "report", "study_guide", "briefing", "faq", "timeline"
-    ]
+    artifact_type: Literal["report", "study_guide", "briefing", "faq", "timeline"]
     summary: str = ""
     sections: list[ArtifactSection] = Field(min_length=1)
 
@@ -464,8 +462,14 @@ async def generate_structured_document(*, model, schema, messages, timeout_secon
             )
             parsed = response.get("parsed") if isinstance(response, dict) else response
             if parsed is not None:
-                document = parsed if isinstance(parsed, schema) else schema.model_validate(parsed)
-                return StructuredGenerationResult(document, _raw_text(response), 1, "native")
+                document = (
+                    parsed
+                    if isinstance(parsed, schema)
+                    else schema.model_validate(parsed)
+                )
+                return StructuredGenerationResult(
+                    document, _raw_text(response), 1, "native"
+                )
         except (NotImplementedError, TypeError, ValueError, ValidationError):
             pass
 
@@ -535,7 +539,10 @@ schema = schema_for_artifact_type(artifact.artifact_type)
 result = await generate_structured_document(
     model=chain,
     schema=schema,
-    messages=[SystemMessage(content=system_prompt), HumanMessage(content=combined_context)],
+    messages=[
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=combined_context),
+    ],
     timeout_seconds=_PAGE_TIMEOUT_SEC,
 )
 content = render_artifact_markdown(result.document)

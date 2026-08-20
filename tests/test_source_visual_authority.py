@@ -16,7 +16,12 @@ from deeper_notebook.source_visuals.authority import (
 )
 
 
-def _source(*, source_file_path: Path | None = None, upload_root: Path | None = None, **overrides: object) -> SimpleNamespace:
+def _source(
+    *,
+    source_file_path: Path | None = None,
+    upload_root: Path | None = None,
+    **overrides: object,
+) -> SimpleNamespace:
     values: dict[str, object] = {
         "id": "source:one",
         "source_id": "source:one",
@@ -102,10 +107,14 @@ async def test_file_byte_change_changes_authority_fingerprint(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_file_changing_during_hash_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_file_changing_during_hash_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     path = tmp_path / "asset.bin"
     path.write_bytes(b"asset")
-    original_fstat = __import__("deeper_notebook.source_visuals.authority", fromlist=["os"]).os.fstat
+    original_fstat = __import__(
+        "deeper_notebook.source_visuals.authority", fromlist=["os"]
+    ).os.fstat
     calls = 0
 
     def changing_fstat(fd: int):
@@ -116,13 +125,19 @@ async def test_file_changing_during_hash_is_rejected(tmp_path: Path, monkeypatch
             return SimpleNamespace(st_mode=result.st_mode, st_size=result.st_size + 1)
         return result
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.authority.os.fstat", changing_fstat)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.authority.os.fstat", changing_fstat
+    )
     with pytest.raises(SourceVisualAuthorityError) as error:
-        await compute_source_visual_authority(_source(source_file_path=path, upload_root=tmp_path))
+        await compute_source_visual_authority(
+            _source(source_file_path=path, upload_root=tmp_path)
+        )
     assert error.value.code == "SOURCE_FILE_CHANGED"
 
 
-@pytest.mark.parametrize("kind", ["symlink", "non_regular", "sibling_prefix", "outside_root"])
+@pytest.mark.parametrize(
+    "kind", ["symlink", "non_regular", "sibling_prefix", "outside_root"]
+)
 @pytest.mark.asyncio
 async def test_upload_file_root_validation_is_fail_closed(tmp_path: Path, kind: str):
     upload_root = tmp_path / "uploads"
@@ -147,7 +162,11 @@ async def test_upload_file_root_validation_is_fail_closed(tmp_path: Path, kind: 
         await compute_source_visual_authority(
             _source(source_file_path=path, upload_root=upload_root)
         )
-    assert error.value.code in {"SOURCE_FILE_SYMLINK", "SOURCE_FILE_NOT_REGULAR", "SOURCE_FILE_OUTSIDE_ROOT"}
+    assert error.value.code in {
+        "SOURCE_FILE_SYMLINK",
+        "SOURCE_FILE_NOT_REGULAR",
+        "SOURCE_FILE_OUTSIDE_ROOT",
+    }
     assert str(path) not in str(error.value)
 
 

@@ -13,6 +13,7 @@ blocking the FastAPI event loop). The monkeypatches below switched
 from sync lambdas to `AsyncMock` instances so the same shape continues
 to satisfy `await _local_chat_healthy_cached()` in production code.
 """
+
 from unittest.mock import AsyncMock
 
 import pytest
@@ -225,7 +226,9 @@ class TestProvisionLangchainChatModelDisabled:
         import deeper_notebook.ai.router as router_mod
 
         def _exploding_pick_provider(**kwargs):
-            raise AssertionError("pick_provider() must not be called when routing is off")
+            raise AssertionError(
+                "pick_provider() must not be called when routing is off"
+            )
 
         monkeypatch.setattr(router_mod, "pick_provider", _exploding_pick_provider)
 
@@ -235,8 +238,10 @@ class TestProvisionLangchainChatModelDisabled:
         class _Defaults:
             auto_route_enabled = False
             auto_route_provider_pref = "auto"
+
         monkeypatch.setattr(
-            provision_mod.model_manager, "get_defaults",
+            provision_mod.model_manager,
+            "get_defaults",
             AsyncMock(return_value=_Defaults()),
         )
 
@@ -244,9 +249,7 @@ class TestProvisionLangchainChatModelDisabled:
         # latter inherited a closed loop from a prior pytest-asyncio
         # test in the full suite → "Event loop is closed". Fresh loop
         # per call is immune.
-        asyncio.run(
-            provision_mod.provision_langchain_chat_model("hello world")
-        )
+        asyncio.run(provision_mod.provision_langchain_chat_model("hello world"))
 
         assert len(captured) == 1
         assert captured[0]["model_id"] is None
@@ -259,6 +262,7 @@ class TestProvisionLangchainChatModelEnabled:
 
     def _run(self, coro):
         import asyncio
+
         # v0.8.46c — fresh loop per call; immune to a closed "current"
         # loop left by a prior pytest-asyncio (auto-mode) test in the
         # full suite. The old get_event_loop().run_until_complete()
@@ -275,7 +279,9 @@ class TestProvisionLangchainChatModelEnabled:
         monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
 
         # Patch health cache to return healthy
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True)
+        )
 
         captured: list[dict] = []
 
@@ -288,7 +294,9 @@ class TestProvisionLangchainChatModelEnabled:
         # Small content — should fit in default n_ctx (32768) with headroom
         self._run(provision_mod.provision_langchain_chat_model("short prompt"))
 
-        assert len(captured) == 1, "provision_langchain_model should be called exactly once"
+        assert len(captured) == 1, (
+            "provision_langchain_model should be called exactly once"
+        )
         assert captured[0]["model_id"] == "model:hermes", (
             f"Expected local model_id 'model:hermes', got {captured[0]['model_id']!r}"
         )
@@ -304,7 +312,9 @@ class TestProvisionLangchainChatModelEnabled:
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "32768")
         monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
 
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True)
+        )
 
         captured: list[dict] = []
 
@@ -338,6 +348,7 @@ class TestCloudModelIdResolution:
 
     def _run(self, coro):
         import asyncio
+
         # v0.8.46c — fresh loop per call; immune to a closed "current"
         # loop left by a prior pytest-asyncio (auto-mode) test in the
         # full suite. The old get_event_loop().run_until_complete()
@@ -357,7 +368,9 @@ class TestCloudModelIdResolution:
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "32768")
 
         # Local is unhealthy so the router will try to use the cloud model.
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=False))
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=False)
+        )
 
         # Stub get_defaults: auto_route_cloud points at cloud; default_chat_model at local.
         from deeper_notebook.ai.models import DefaultModels
@@ -399,7 +412,9 @@ class TestCloudModelIdResolution:
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:env_z")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "32768")
 
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=False))
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=False)
+        )
 
         # Stub defaults with a different field value — env must take priority.
         from deeper_notebook.ai.models import DefaultModels
@@ -442,7 +457,9 @@ class TestCloudModelIdResolution:
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "32768")
 
         # Local is healthy; content fits — pick_provider should return local.
-        monkeypatch.setattr(provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True))
+        monkeypatch.setattr(
+            provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True)
+        )
 
         # Stub defaults: auto_route_cloud is None (not configured).
         from deeper_notebook.ai.models import DefaultModels
@@ -505,7 +522,8 @@ class TestNCtxEnvVarSync:
     """
 
     def test_router_picks_up_onp_chat_llm_ctx_when_router_var_unset(
-        self, monkeypatch,
+        self,
+        monkeypatch,
     ):
         """v0.8.5 — operator sets DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192 (low-RAM mode);
         router must respect that 8k ceiling and flip to cloud for
@@ -515,12 +533,15 @@ class TestNCtxEnvVarSync:
         monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", "8192")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL",
-                           "http://localhost:1234/v1")
+        monkeypatch.setenv(
+            "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:1234/v1"
+        )
 
         import deeper_notebook.ai.provision as provision_mod
+
         monkeypatch.setattr(
-            provision_mod, "_local_chat_healthy_cached",
+            provision_mod,
+            "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
         )
 
@@ -531,23 +552,24 @@ class TestNCtxEnvVarSync:
             return object()
 
         monkeypatch.setattr(
-            provision_mod, "provision_langchain_model", _fake_inner,
+            provision_mod,
+            "provision_langchain_model",
+            _fake_inner,
         )
 
         import asyncio
+
         # Prompt that fits a 32k n_ctx (with 1k headroom) but overflows
         # an 8k one. token_count for ~10000 chars ≈ 2.5k tokens, so
         # we need bigger.
-        big = "x " * 4000   # ~ 8000 chars ≈ 2000 tokens — fits 8k
+        big = "x " * 4000  # ~ 8000 chars ≈ 2000 tokens — fits 8k
         # Push it well past the 8192 - 1000 = 7192 headroom but under
         # 32768 - 1000 = 31768 so the router answer differs between
         # 8k and 32k.
-        big = "x " * 16000   # ~ 32000 chars ≈ 8000 tokens
+        big = "x " * 16000  # ~ 32000 chars ≈ 8000 tokens
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(
-                provision_mod.provision_langchain_chat_model(big)
-            )
+            loop.run_until_complete(provision_mod.provision_langchain_chat_model(big))
         finally:
             loop.close()
 
@@ -563,7 +585,8 @@ class TestNCtxEnvVarSync:
         )
 
     def test_router_var_overrides_launcher_var_when_both_set(
-        self, monkeypatch,
+        self,
+        monkeypatch,
     ):
         """v0.8.5 — explicit router knob wins over the launcher knob.
         Operator can decouple router math from sidecar config if they
@@ -574,12 +597,15 @@ class TestNCtxEnvVarSync:
         monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", "8192")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL",
-                           "http://localhost:1234/v1")
+        monkeypatch.setenv(
+            "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:1234/v1"
+        )
 
         import deeper_notebook.ai.provision as provision_mod
+
         monkeypatch.setattr(
-            provision_mod, "_local_chat_healthy_cached",
+            provision_mod,
+            "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
         )
 
@@ -590,19 +616,20 @@ class TestNCtxEnvVarSync:
             return object()
 
         monkeypatch.setattr(
-            provision_mod, "provision_langchain_model", _fake_inner,
+            provision_mod,
+            "provision_langchain_model",
+            _fake_inner,
         )
 
         import asyncio
+
         # 8000 tokens of content. Fits the 65k explicit OPEN_NOTEBOOK
         # ceiling; would overflow the 8k launcher ceiling. Router
         # should pick LOCAL because the explicit var wins.
         big = "x " * 16000
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(
-                provision_mod.provision_langchain_chat_model(big)
-            )
+            loop.run_until_complete(provision_mod.provision_langchain_chat_model(big))
         finally:
             loop.close()
 
@@ -612,7 +639,8 @@ class TestNCtxEnvVarSync:
         )
 
     def test_router_falls_back_to_32768_default_when_both_unset(
-        self, monkeypatch,
+        self,
+        monkeypatch,
     ):
         """v0.8.5 — neither env var set → 32768 default. Mirrors the
         launcher's own default so the no-config case stays correct."""
@@ -621,12 +649,15 @@ class TestNCtxEnvVarSync:
         monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", raising=False)
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL",
-                           "http://localhost:1234/v1")
+        monkeypatch.setenv(
+            "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:1234/v1"
+        )
 
         import deeper_notebook.ai.provision as provision_mod
+
         monkeypatch.setattr(
-            provision_mod, "_local_chat_healthy_cached",
+            provision_mod,
+            "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
         )
 
@@ -637,16 +668,17 @@ class TestNCtxEnvVarSync:
             return object()
 
         monkeypatch.setattr(
-            provision_mod, "provision_langchain_model", _fake_inner,
+            provision_mod,
+            "provision_langchain_model",
+            _fake_inner,
         )
 
         import asyncio
+
         # Small prompt that comfortably fits 32k (and 8k for that matter).
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(
-                provision_mod.provision_langchain_chat_model("hi")
-            )
+            loop.run_until_complete(provision_mod.provision_langchain_chat_model("hi"))
         finally:
             loop.close()
 
@@ -656,7 +688,8 @@ class TestNCtxEnvVarSync:
         )
 
     def test_router_falls_back_to_32768_when_var_is_malformed(
-        self, monkeypatch,
+        self,
+        monkeypatch,
     ):
         """v0.8.5 — operator typo ('32k' instead of '32768') must not
         crash the chat turn. Mirrors v0.7.206's same-shape guard in
@@ -667,12 +700,15 @@ class TestNCtxEnvVarSync:
         monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", raising=False)
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL",
-                           "http://localhost:1234/v1")
+        monkeypatch.setenv(
+            "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:1234/v1"
+        )
 
         import deeper_notebook.ai.provision as provision_mod
+
         monkeypatch.setattr(
-            provision_mod, "_local_chat_healthy_cached",
+            provision_mod,
+            "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
         )
 
@@ -680,16 +716,17 @@ class TestNCtxEnvVarSync:
             return object()
 
         monkeypatch.setattr(
-            provision_mod, "provision_langchain_model", _fake_inner,
+            provision_mod,
+            "provision_langchain_model",
+            _fake_inner,
         )
 
         import asyncio
+
         loop = asyncio.new_event_loop()
         try:
             # Should NOT raise ValueError despite the garbage env value
-            loop.run_until_complete(
-                provision_mod.provision_langchain_chat_model("hi")
-            )
+            loop.run_until_complete(provision_mod.provision_langchain_chat_model("hi"))
         finally:
             loop.close()
 
@@ -724,10 +761,13 @@ class TestHealthCacheTTL:
         # Patch probe_all_local_models inside the health module so the import
         # inside _local_chat_healthy_cached resolves to our fake.
         import deeper_notebook.health.local_models as health_mod
+
         monkeypatch.setattr(health_mod, "probe_all_local_models", _fake_probe)
 
         # Provide a base URL so the cache path actually builds creds
-        monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
+        monkeypatch.setenv(
+            "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080"
+        )
 
         async def _drive() -> tuple[bool, bool]:
             # First call — cache miss, probe runs

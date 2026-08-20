@@ -17,6 +17,7 @@ Tests:
   - `SourceChatState` TypedDict has the field declared (regression
     guard against an accidental schema rollback).
 """
+
 from __future__ import annotations
 
 import typing
@@ -43,7 +44,8 @@ def test_send_message_request_accepts_disabled_mcp_servers():
 
     # Non-empty
     r = SendMessageRequest(
-        message="hi", disabled_mcp_servers=["SearXNG", "Crawl4AI"],
+        message="hi",
+        disabled_mcp_servers=["SearXNG", "Crawl4AI"],
     )
     assert r.disabled_mcp_servers == ["SearXNG", "Crawl4AI"]
 

@@ -124,26 +124,30 @@ async def test_get_page_returns_its_canonical_file_record():
             compact = " ".join(statement.split())
             self.calls.append((compact, variables or {}))
             if "SELECT * FROM $note_id WHERE vault_id = $vault_id" in compact:
-                return [{
-                    "id": "note:alpha",
-                    "vault_id": "vault_mount:test",
-                    "vault_file_id": "vault_file:alpha",
-                    "title": "Alpha",
-                    "content": "# Alpha\n",
-                }]
+                return [
+                    {
+                        "id": "note:alpha",
+                        "vault_id": "vault_mount:test",
+                        "vault_file_id": "vault_file:alpha",
+                        "title": "Alpha",
+                        "content": "# Alpha\n",
+                    }
+                ]
             if "SELECT * FROM $vault_file_id WHERE vault_id = $vault_id" in compact:
-                return [{
-                    "id": "vault_file:alpha",
-                    "vault_id": "vault_mount:test",
-                    "relative_path": "pages/alpha.md",
-                    "file_kind": "markdown",
-                    "format": "obsidian",
-                    "content_hash": "a" * 64,
-                    "encoding": "utf-8",
-                    "newline": "lf",
-                    "parse_status": "parsed",
-                    "deleted_state": "present",
-                }]
+                return [
+                    {
+                        "id": "vault_file:alpha",
+                        "vault_id": "vault_mount:test",
+                        "relative_path": "pages/alpha.md",
+                        "file_kind": "markdown",
+                        "format": "obsidian",
+                        "content_hash": "a" * 64,
+                        "encoding": "utf-8",
+                        "newline": "lf",
+                        "parse_status": "parsed",
+                        "deleted_state": "present",
+                    }
+                ]
             return []
 
     recorder = PageRecorder()
@@ -173,12 +177,14 @@ async def test_get_page_rejects_note_without_canonical_file():
         async def query(self, statement, variables=None):
             compact = " ".join(statement.split())
             if "SELECT * FROM $note_id WHERE vault_id = $vault_id" in compact:
-                return [{
-                    "id": "note:alpha",
-                    "vault_id": "vault_mount:test",
-                    "vault_file_id": "vault_file:missing",
-                    "title": "Alpha",
-                }]
+                return [
+                    {
+                        "id": "note:alpha",
+                        "vault_id": "vault_mount:test",
+                        "vault_file_id": "vault_file:missing",
+                        "title": "Alpha",
+                    }
+                ]
             return []
 
     repository = VaultRepository(
@@ -195,19 +201,21 @@ Extend the backlink recorder and assertions:
 
 ```python
 if "FROM note_link" in compact:
-    return [{
-        "id": "note_link:source-target",
-        "source_note_id": "note:source",
-        "target_note_id": "note:target",
-        "target_text": "Target",
-        "source_note_title": "Source title",
-        "target_note_title": "Target title",
-        "target_relative_path": "pages/target.md",
-        "source_start": 12,
-        "source_end": 22,
-        "link_kind": "wikilink",
-        "resolved": True,
-    }]
+    return [
+        {
+            "id": "note_link:source-target",
+            "source_note_id": "note:source",
+            "target_note_id": "note:target",
+            "target_text": "Target",
+            "source_note_title": "Source title",
+            "target_note_title": "Target title",
+            "target_relative_path": "pages/target.md",
+            "source_start": 12,
+            "source_end": 22,
+            "link_kind": "wikilink",
+            "resolved": True,
+        }
+    ]
 ```
 
 ```python
@@ -217,8 +225,7 @@ assert backlinks[0].source_start == 12
 assert backlinks[0].source_end == 22
 assert "target_note_id.title AS target_note_title" in link_query
 assert (
-    "target_note_id.vault_file_id.relative_path AS target_relative_path"
-    in link_query
+    "target_note_id.vault_file_id.relative_path AS target_relative_path" in link_query
 )
 ```
 
@@ -295,7 +302,7 @@ def test_migration_35_adds_optional_vault_file_newline_metadata():
     sql = NEWLINE_UP.read_text(encoding="utf-8")
     assert (
         "DEFINE FIELD IF NOT EXISTS newline ON TABLE vault_file "
-        'TYPE option<string> ASSERT $value = NONE OR $value IN '
+        "TYPE option<string> ASSERT $value = NONE OR $value IN "
         '["lf", "crlf", "mixed", "none"];'
     ) in sql
 
@@ -357,13 +364,10 @@ def test_page_maps_orphaned_note_to_canonical_file_error(client):
         side_effect=LookupError("vault_note_file_not_found"),
     )
     response = test_client.get(
-        "/api/deeper-notebook/vaults/"
-        "vault_mount:fixture/pages/note:orphan"
+        "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:orphan"
     )
     assert response.status_code == 409
-    assert response.json()["detail"]["code"] == (
-        "vault_canonical_file_unavailable"
-    )
+    assert response.json()["detail"]["code"] == ("vault_canonical_file_unavailable")
     assert "/Users/" not in response.text
 
 
@@ -389,8 +393,7 @@ def test_page_rejects_missing_or_invalid_content_hash(client):
             ),
         )
         response = test_client.get(
-            "/api/deeper-notebook/vaults/"
-            "vault_mount:fixture/pages/note:one"
+            "/api/deeper-notebook/vaults/vault_mount:fixture/pages/note:one"
         )
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "vault_page_invalid"
@@ -592,10 +595,12 @@ files = await self._query(
 )
 if not files:
     raise LookupError("vault_note_file_not_found")
-file = VaultFile.model_validate({
-    **files[0],
-    "note_id": note_id,
-})
+file = VaultFile.model_validate(
+    {
+        **files[0],
+        "note_id": note_id,
+    }
+)
 ```
 
 Return `VaultPage(file=file, note=note, ...)` and project the target fields in
@@ -680,9 +685,7 @@ if isinstance(exc, LookupError) and "vault_note_file_not_found" in message:
         status.HTTP_409_CONFLICT,
         "vault_canonical_file_unavailable",
     )
-if isinstance(exc, LookupError) and (
-    "vault_page_content_hash_unavailable" in message
-):
+if isinstance(exc, LookupError) and ("vault_page_content_hash_unavailable" in message):
     return _error(status.HTTP_409_CONFLICT, "vault_page_invalid")
 ```
 

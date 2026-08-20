@@ -504,25 +504,49 @@ def _strict_decision_details(
             "target_plan_sha256",
         },
     }[phase]
-    if set(details) != expected or details.get("phase") != phase or details.get("decision") != "accepted":
+    if (
+        set(details) != expected
+        or details.get("phase") != phase
+        or details.get("decision") != "accepted"
+    ):
         return None
     base_revision = details.get("base_revision")
-    if isinstance(base_revision, bool) or not isinstance(base_revision, int) or not 1 <= base_revision <= 100_000:
+    if (
+        isinstance(base_revision, bool)
+        or not isinstance(base_revision, int)
+        or not 1 <= base_revision <= 100_000
+    ):
         return None
     proposal_id = details.get("proposal_id")
-    if not isinstance(proposal_id, str) or not 1 <= len(proposal_id) <= 512 or any(ord(char) < 32 for char in proposal_id):
+    if (
+        not isinstance(proposal_id, str)
+        or not 1 <= len(proposal_id) <= 512
+        or any(ord(char) < 32 for char in proposal_id)
+    ):
         return None
     for key in ("base_plan_sha256", "target_plan_sha256"):
         value = details.get(key)
-        if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(char not in "0123456789abcdef" for char in value)
+        ):
             return None
     if phase == "intent":
         target_weekly = details.get("target_weekly_minutes")
-        if isinstance(target_weekly, bool) or not isinstance(target_weekly, int) or not 5 <= target_weekly <= 10_080:
+        if (
+            isinstance(target_weekly, bool)
+            or not isinstance(target_weekly, int)
+            or not 5 <= target_weekly <= 10_080
+        ):
             return None
     else:
         intent_request_id = details.get("intent_request_id")
-        if not isinstance(intent_request_id, str) or not 1 <= len(intent_request_id) <= 256 or any(ord(char) < 32 for char in intent_request_id):
+        if (
+            not isinstance(intent_request_id, str)
+            or not 1 <= len(intent_request_id) <= 256
+            or any(ord(char) < 32 for char in intent_request_id)
+        ):
             return None
     return details
 
@@ -779,7 +803,9 @@ async def _accept_study_plan_progress(
             request_id=completion_id,
             now=now,
         )
-        legacy_intent = await repository.get_progress_by_request(plan_id, payload.request_id)
+        legacy_intent = await repository.get_progress_by_request(
+            plan_id, payload.request_id
+        )
         legacy_intent_details = (
             _strict_decision_details(
                 legacy_intent,
@@ -802,7 +828,9 @@ async def _accept_study_plan_progress(
             raise StudyAssistantConflictError("progress request ID was already used")
         raise StudyAssistantConflictError("legacy proposal decision requires retry")
 
-    existing_intent = await repository.get_progress_by_request(plan_id, payload.request_id)
+    existing_intent = await repository.get_progress_by_request(
+        plan_id, payload.request_id
+    )
     intent_details = (
         _strict_decision_details(
             existing_intent,
@@ -831,7 +859,11 @@ async def _accept_study_plan_progress(
         target_weekly_minutes = intent_details.get("target_weekly_minutes")
     else:
         proposal = next(
-            (item for item in visible_projection.proposals if item.proposal_id == selected_id),
+            (
+                item
+                for item in visible_projection.proposals
+                if item.proposal_id == selected_id
+            ),
             None,
         )
         if proposal is None:
@@ -845,7 +877,10 @@ async def _accept_study_plan_progress(
         ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"code": "adaptation_unavailable", "message": "This study adaptation is unavailable"},
+                detail={
+                    "code": "adaptation_unavailable",
+                    "message": "This study adaptation is unavailable",
+                },
             )
         base_revision = payload.expected_revision
         base_plan_sha256 = _plan_fingerprint(plan)
@@ -873,7 +908,10 @@ async def _accept_study_plan_progress(
     if claim_details is not None:
         if _plan_fingerprint(plan) not in {base_plan_sha256, target_plan_sha256}:
             # The only permitted post-mutation state is the exact target.
-            if plan.version != base_revision + 1 or _plan_fingerprint(plan) != target_plan_sha256:
+            if (
+                plan.version != base_revision + 1
+                or _plan_fingerprint(plan) != target_plan_sha256
+            ):
                 raise StudyAssistantConflictError("study plan authority changed")
     else:
         # The claim is the shared serialization point.  It is appended before
@@ -914,7 +952,8 @@ async def _accept_study_plan_progress(
     if plan.version == base_revision:
         if (
             _plan_fingerprint(plan) != base_plan_sha256
-            or _plan_fingerprint(plan, preferences=target_preferences) != target_plan_sha256
+            or _plan_fingerprint(plan, preferences=target_preferences)
+            != target_plan_sha256
         ):
             raise StudyAssistantConflictError("study plan authority changed")
         try:
@@ -1031,7 +1070,9 @@ async def _decide_study_plan_progress(
             )
         claim_id = decision_claim_request_id(plan_id, selected_id)
         terminal_id = decision_terminal_request_id(plan_id, selected_id)
-        existing_terminal = await repository.get_progress_by_request(plan_id, terminal_id)
+        existing_terminal = await repository.get_progress_by_request(
+            plan_id, terminal_id
+        )
         if existing_terminal is not None:
             terminal_details = _strict_terminal_details(
                 existing_terminal,
@@ -1089,7 +1130,9 @@ async def _decide_study_plan_progress(
                 )
                 is None
             ):
-                raise StudyAssistantConflictError("proposal decision claim was already used")
+                raise StudyAssistantConflictError(
+                    "proposal decision claim was already used"
+                )
         else:
             proposal = next(
                 (

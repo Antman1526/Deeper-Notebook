@@ -63,7 +63,9 @@ class SourceVisualJobResponse(BaseModel):
     )
 
 
-async def _await_if_needed(value: _AwaitableValue | Awaitable[_AwaitableValue]) -> _AwaitableValue:
+async def _await_if_needed(
+    value: _AwaitableValue | Awaitable[_AwaitableValue],
+) -> _AwaitableValue:
     if inspect.isawaitable(value):
         return await value
     return value
@@ -213,7 +215,9 @@ async def _operation_response(
         command_id=getattr(receipt, "command_id", None),
         content_sha256=authority.content_sha256,
         outcome=outcome,
-        error_code=getattr(receipt, "error_code", None) if outcome == "failed" else None,
+        error_code=getattr(receipt, "error_code", None)
+        if outcome == "failed"
+        else None,
     )
 
 

@@ -16,6 +16,7 @@ saved to the Notebook in render order, with the right titles + bodies.
 Companion to `test_studio_router.py` which covers the lower-level
 unit slices. Does NOT need a real SurrealDB or LangGraph runtime.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -41,11 +42,15 @@ def client(monkeypatch, tmp_path):
 
     # --- Mock content_core
     import sys
+
     async def _extract(state):
         return SimpleNamespace(
             content=f"# {state.file_path}\n\nFull text of {state.file_path}",
-            title=None, url=None, file_path=state.file_path,
+            title=None,
+            url=None,
+            file_path=state.file_path,
         )
+
     fake_cc = SimpleNamespace(extract_content=_extract)
     fake_cc_common = SimpleNamespace(
         ProcessSourceState=lambda **kw: SimpleNamespace(**kw),
@@ -60,6 +65,7 @@ def client(monkeypatch, tmp_path):
         def __init__(self, *, name, description=None):
             self.name, self.description = name, description
             self.id = "notebook:e2e-test"
+
         async def save(self):
             pass
 
@@ -69,10 +75,13 @@ def client(monkeypatch, tmp_path):
             self.full_text = None
             self.title = kw.get("title")
             self.asset = kw.get("asset")
+
         async def save(self):
             pass
+
         async def add_to_notebook(self, _id):
             pass
+
         async def vectorize(self):
             pass
 
@@ -81,11 +90,17 @@ def client(monkeypatch, tmp_path):
             self.id = f"note:e2e-{len(notes_saved)}"
             self.title, self.content = title, content
             self.note_type = note_type
+
         async def save(self):
-            notes_saved.append({
-                "id": self.id, "title": self.title,
-                "content": self.content, "type": self.note_type,
-            })
+            notes_saved.append(
+                {
+                    "id": self.id,
+                    "title": self.title,
+                    "content": self.content,
+                    "type": self.note_type,
+                }
+            )
+
         async def add_to_notebook(self, _id):
             pass
 
@@ -96,49 +111,60 @@ def client(monkeypatch, tmp_path):
 
     # --- Mock the LLM chain — provision returns a chain whose ainvoke
     # produces the outline JSON first, then per-page markdown.
-    page_outputs = iter([
-        # First call: outline JSON
-        MagicMock(content=(
-            '{"headline": "Demo project headline",'
-            ' "summary": "First summary paragraph about the project.\\n\\n'
-            'Second paragraph with details.",'
-            ' "pages": ['
-            '  {"title": "Architecture",'
-            '   "focus": "How the components fit together",'
-            '   "key_questions": ["What\'s the data flow?"]},'
-            '  {"title": "Backend Internals",'
-            '   "focus": "How the API layer works",'
-            '   "key_questions": ["How are requests handled?"]},'
-            '  {"title": "Risks",'
-            '   "focus": "Known issues and gaps",'
-            '   "key_questions": ["What could break?"]}'
-            ' ],'
-            ' "top_suggestions": ["Verify X", "Audit Y", "Document Z"]'
-            '}'
-        )),
-        # Page 1 — Architecture
-        MagicMock(content=(
-            "# Architecture\n\nIntro about how it fits together.\n\n"
-            "## Key concepts\n- **Component A** — does X\n\n"
-            "## Details\nMore body text.\n\n"
-            "## 💡 AI Suggestions for this page\n- Verify X\n"
-        )),
-        # Page 2 — Backend Internals
-        MagicMock(content=(
-            "# Backend Internals\n\nFastAPI layer details.\n\n"
-            "## 💡 AI Suggestions for this page\n- Document the request flow\n"
-        )),
-        # Page 3 — Risks
-        MagicMock(content=(
-            "# Risks\n\nThings to watch.\n\n"
-            "## 💡 AI Suggestions for this page\n- Add monitoring\n"
-        )),
-    ])
+    page_outputs = iter(
+        [
+            # First call: outline JSON
+            MagicMock(
+                content=(
+                    '{"headline": "Demo project headline",'
+                    ' "summary": "First summary paragraph about the project.\\n\\n'
+                    'Second paragraph with details.",'
+                    ' "pages": ['
+                    '  {"title": "Architecture",'
+                    '   "focus": "How the components fit together",'
+                    '   "key_questions": ["What\'s the data flow?"]},'
+                    '  {"title": "Backend Internals",'
+                    '   "focus": "How the API layer works",'
+                    '   "key_questions": ["How are requests handled?"]},'
+                    '  {"title": "Risks",'
+                    '   "focus": "Known issues and gaps",'
+                    '   "key_questions": ["What could break?"]}'
+                    " ],"
+                    ' "top_suggestions": ["Verify X", "Audit Y", "Document Z"]'
+                    "}"
+                )
+            ),
+            # Page 1 — Architecture
+            MagicMock(
+                content=(
+                    "# Architecture\n\nIntro about how it fits together.\n\n"
+                    "## Key concepts\n- **Component A** — does X\n\n"
+                    "## Details\nMore body text.\n\n"
+                    "## 💡 AI Suggestions for this page\n- Verify X\n"
+                )
+            ),
+            # Page 2 — Backend Internals
+            MagicMock(
+                content=(
+                    "# Backend Internals\n\nFastAPI layer details.\n\n"
+                    "## 💡 AI Suggestions for this page\n- Document the request flow\n"
+                )
+            ),
+            # Page 3 — Risks
+            MagicMock(
+                content=(
+                    "# Risks\n\nThings to watch.\n\n"
+                    "## 💡 AI Suggestions for this page\n- Add monitoring\n"
+                )
+            ),
+        ]
+    )
 
     fake_chain = MagicMock()
     fake_chain.ainvoke = AsyncMock(side_effect=lambda msgs: next(page_outputs))
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
 

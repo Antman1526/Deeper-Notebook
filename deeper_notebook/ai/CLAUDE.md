@@ -123,11 +123,12 @@ embedding_model = await model_manager.get_embedding_model(temperature=0.1)
 
 # Provision model for LangGraph (auto-detects large context)
 from open_notebook.ai.provision import provision_langchain_model
+
 langchain_model = await provision_langchain_model(
     content=long_text,
     model_id=None,  # Use default
     default_type="chat",
-    temperature=0.7
+    temperature=0.7,
 )
 ```
 
@@ -261,9 +262,15 @@ PROVIDER_CONFIG = {
     "mistral": {"env_var": "MISTRAL_API_KEY", "config_field": "mistral_api_key"},
     "deepseek": {"env_var": "DEEPSEEK_API_KEY", "config_field": "deepseek_api_key"},
     "xai": {"env_var": "XAI_API_KEY", "config_field": "xai_api_key"},
-    "openrouter": {"env_var": "OPENROUTER_API_KEY", "config_field": "openrouter_api_key"},
+    "openrouter": {
+        "env_var": "OPENROUTER_API_KEY",
+        "config_field": "openrouter_api_key",
+    },
     "voyage": {"env_var": "VOYAGE_API_KEY", "config_field": "voyage_api_key"},
-    "elevenlabs": {"env_var": "ELEVENLABS_API_KEY", "config_field": "elevenlabs_api_key"},
+    "elevenlabs": {
+        "env_var": "ELEVENLABS_API_KEY",
+        "config_field": "elevenlabs_api_key",
+    },
     "ollama": {"env_var": "OLLAMA_API_BASE", "config_field": "ollama_api_base"},
 }
 ```
@@ -276,7 +283,10 @@ Multi-field configuration for Vertex AI:
 VERTEX_CONFIG = {
     "project": {"env_var": "VERTEX_PROJECT", "config_field": "vertex_project"},
     "location": {"env_var": "VERTEX_LOCATION", "config_field": "vertex_location"},
-    "credentials": {"env_var": "GOOGLE_APPLICATION_CREDENTIALS", "config_field": "google_application_credentials"},
+    "credentials": {
+        "env_var": "GOOGLE_APPLICATION_CREDENTIALS",
+        "config_field": "google_application_credentials",
+    },
 }
 ```
 
@@ -286,14 +296,35 @@ Generic and mode-specific endpoints for Azure:
 
 ```python
 AZURE_CONFIG = {
-    "api_key": {"env_var": "AZURE_OPENAI_API_KEY", "config_field": "azure_openai_api_key"},
-    "api_version": {"env_var": "AZURE_OPENAI_API_VERSION", "config_field": "azure_openai_api_version"},
-    "endpoint": {"env_var": "AZURE_OPENAI_ENDPOINT", "config_field": "azure_openai_endpoint"},
+    "api_key": {
+        "env_var": "AZURE_OPENAI_API_KEY",
+        "config_field": "azure_openai_api_key",
+    },
+    "api_version": {
+        "env_var": "AZURE_OPENAI_API_VERSION",
+        "config_field": "azure_openai_api_version",
+    },
+    "endpoint": {
+        "env_var": "AZURE_OPENAI_ENDPOINT",
+        "config_field": "azure_openai_endpoint",
+    },
     # Mode-specific endpoints
-    "endpoint_llm": {"env_var": "AZURE_OPENAI_ENDPOINT_LLM", "config_field": "azure_openai_endpoint_llm"},
-    "endpoint_embedding": {"env_var": "AZURE_OPENAI_ENDPOINT_EMBEDDING", "config_field": "azure_openai_endpoint_embedding"},
-    "endpoint_stt": {"env_var": "AZURE_OPENAI_ENDPOINT_STT", "config_field": "azure_openai_endpoint_stt"},
-    "endpoint_tts": {"env_var": "AZURE_OPENAI_ENDPOINT_TTS", "config_field": "azure_openai_endpoint_tts"},
+    "endpoint_llm": {
+        "env_var": "AZURE_OPENAI_ENDPOINT_LLM",
+        "config_field": "azure_openai_endpoint_llm",
+    },
+    "endpoint_embedding": {
+        "env_var": "AZURE_OPENAI_ENDPOINT_EMBEDDING",
+        "config_field": "azure_openai_endpoint_embedding",
+    },
+    "endpoint_stt": {
+        "env_var": "AZURE_OPENAI_ENDPOINT_STT",
+        "config_field": "azure_openai_endpoint_stt",
+    },
+    "endpoint_tts": {
+        "env_var": "AZURE_OPENAI_ENDPOINT_TTS",
+        "config_field": "azure_openai_endpoint_tts",
+    },
 }
 ```
 
@@ -304,11 +335,23 @@ Generic and mode-specific configuration for OpenAI-compatible providers:
 ```python
 OPENAI_COMPATIBLE_CONFIG = {
     # Generic
-    "api_key": {"env_var": "OPENAI_COMPATIBLE_API_KEY", "config_field": "openai_compatible_api_key"},
-    "base_url": {"env_var": "OPENAI_COMPATIBLE_BASE_URL", "config_field": "openai_compatible_base_url"},
+    "api_key": {
+        "env_var": "OPENAI_COMPATIBLE_API_KEY",
+        "config_field": "openai_compatible_api_key",
+    },
+    "base_url": {
+        "env_var": "OPENAI_COMPATIBLE_BASE_URL",
+        "config_field": "openai_compatible_base_url",
+    },
     # Mode-specific: LLM, Embedding, STT, TTS
-    "api_key_llm": {"env_var": "OPENAI_COMPATIBLE_API_KEY_LLM", "config_field": "openai_compatible_api_key_llm"},
-    "base_url_llm": {"env_var": "OPENAI_COMPATIBLE_BASE_URL_LLM", "config_field": "openai_compatible_base_url_llm"},
+    "api_key_llm": {
+        "env_var": "OPENAI_COMPATIBLE_API_KEY_LLM",
+        "config_field": "openai_compatible_api_key_llm",
+    },
+    "base_url_llm": {
+        "env_var": "OPENAI_COMPATIBLE_BASE_URL_LLM",
+        "config_field": "openai_compatible_base_url_llm",
+    },
     # ... similar for embedding, stt, tts
 }
 ```

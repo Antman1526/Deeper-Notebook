@@ -29,7 +29,9 @@ def test_research_candidate_keeps_optional_evidence() -> None:
     assert round_tripped.candidates[0].evidence == evidence
 
 
-def test_discovery_rejects_invalid_evidence_urls_without_dropping_valid_entries() -> None:
+def test_discovery_rejects_invalid_evidence_urls_without_dropping_valid_entries() -> (
+    None
+):
     valid = normalize_web_results(
         [{"title": "Valid", "url": "https://example.com/source", "snippet": "S"}],
         query="q",

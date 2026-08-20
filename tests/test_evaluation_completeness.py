@@ -23,7 +23,9 @@ def _uncited(claim: str) -> ClaimVerdict:
 
 
 @pytest.mark.asyncio
-async def test_latest_lookup_is_notebook_owned_and_returns_newest_selector_run(monkeypatch):
+async def test_latest_lookup_is_notebook_owned_and_returns_newest_selector_run(
+    monkeypatch,
+):
     captured: dict[str, object] = {}
 
     async def fake_query(query: str, variables: dict[str, object]):
@@ -75,7 +77,9 @@ async def test_latest_lookup_is_notebook_owned_and_returns_newest_selector_run(m
 
 
 @pytest.mark.asyncio
-async def test_latest_lookup_returns_404_for_missing_or_cross_notebook_selector(monkeypatch):
+async def test_latest_lookup_returns_404_for_missing_or_cross_notebook_selector(
+    monkeypatch,
+):
     async def fake_query(_query: str, _variables: dict[str, object]):
         return []
 
@@ -128,7 +132,9 @@ async def test_latest_routes_preserve_typed_http_errors_from_repository(monkeypa
 
 @pytest.mark.asyncio
 async def test_latest_lookup_requires_exactly_one_bounded_selector(monkeypatch):
-    monkeypatch.setattr(evaluations, "repo_query", lambda *_args: pytest.fail("query should not run"))
+    monkeypatch.setattr(
+        evaluations, "repo_query", lambda *_args: pytest.fail("query should not run")
+    )
 
     with pytest.raises(HTTPException) as missing:
         await evaluations.get_latest_evaluation(notebook_id="notebook:mine")
@@ -192,9 +198,7 @@ async def test_batch_lookup_deduplicates_ids_and_uses_one_run_and_one_verdict_qu
             },
         ]
 
-    monkeypatch.setattr(
-        "deeper_notebook.evaluation.repository.repo_query", fake_query
-    )
+    monkeypatch.setattr("deeper_notebook.evaluation.repository.repo_query", fake_query)
 
     result = await evaluations.batch_latest_evaluations(
         evaluations.EvaluationBatchRequest(
@@ -264,9 +268,7 @@ async def test_batch_query_limits_each_selector_branch_with_many_histories(monke
         captured["variables"] = variables
         return []
 
-    monkeypatch.setattr(
-        "deeper_notebook.evaluation.repository.repo_query", fake_query
-    )
+    monkeypatch.setattr("deeper_notebook.evaluation.repository.repo_query", fake_query)
     message_ids = [f"message:{index}" for index in range(100)]
 
     result = await EvaluationRepository().latest_runs_for_messages(
@@ -309,6 +311,7 @@ async def test_recheck_preserves_original_artifact_and_message_selector(monkeypa
             return SimpleNamespace(id="evaluation_run:new")
 
     monkeypatch.setattr(evaluations, "_owned_run", fake_owned_run)
+
     async def fake_source_get(_source_id: str):
         return SourceRecord()
 
@@ -319,6 +322,7 @@ async def test_recheck_preserves_original_artifact_and_message_selector(monkeypa
         lambda _response_text, _source_map: [],
     )
     monkeypatch.setattr(evaluations, "EvaluationRepository", Repository)
+
     async def fake_get_evaluation(run_id: str, notebook_id: str):
         return {"run": {"id": run_id, "notebook_id": notebook_id}}
 

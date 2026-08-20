@@ -17,6 +17,7 @@ We verify:
     least one file extracted successfully
   * All-files-fail-extraction returns 400 with notebook_id
 """
+
 from __future__ import annotations
 
 import io
@@ -76,6 +77,7 @@ def patched_pipeline(monkeypatch):
     # Patch the LAZY import that happens inside studio_generate. Insert a
     # synthetic module so `from content_core import extract_content` resolves.
     import sys
+
     fake_cc = SimpleNamespace(extract_content=_extract)
     fake_cc_common = SimpleNamespace(
         ProcessSourceState=lambda **kw: SimpleNamespace(**kw),
@@ -116,11 +118,16 @@ def patched_pipeline(monkeypatch):
             self.id = f"source:{len(created_sources)}"
 
         async def save(self):
-            created_sources.append({"id": self.id, "title": self.title,
-                                    "full_text": self.full_text,
-                                    "source_type": self.source_type,
-                                    "provenance": self.provenance,
-                                    "asset": self.asset})
+            created_sources.append(
+                {
+                    "id": self.id,
+                    "title": self.title,
+                    "full_text": self.full_text,
+                    "source_type": self.source_type,
+                    "provenance": self.provenance,
+                    "asset": self.asset,
+                }
+            )
 
         async def add_to_notebook(self, _id):
             pass
@@ -136,8 +143,9 @@ def patched_pipeline(monkeypatch):
             self.id = f"note:{len(created_notes)}"
 
         async def save(self):
-            created_notes.append({"id": self.id, "title": self.title,
-                                  "content": self.content})
+            created_notes.append(
+                {"id": self.id, "title": self.title, "content": self.content}
+            )
 
         async def add_to_notebook(self, _id):
             pass
@@ -227,11 +235,13 @@ def test_notebook_mode_generates_and_saves_note(client, patched_pipeline, monkey
     page_markdown = "# Page Body\n\n## Key concepts\n- foo\n\n## 💡 AI Suggestions for this page\n- Verify foo"
 
     fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(side_effect=[
-        MagicMock(content=outline_json),
-        MagicMock(content=page_markdown),
-        MagicMock(content=page_markdown),
-    ])
+    fake_chain.ainvoke = AsyncMock(
+        side_effect=[
+            MagicMock(content=outline_json),
+            MagicMock(content=page_markdown),
+            MagicMock(content=page_markdown),
+        ]
+    )
 
     async def _provision(*args, **kwargs):
         return fake_chain
@@ -287,10 +297,14 @@ def test_notebook_mode_accepts_link_only_sources(client, patched_pipeline, monke
         '], "top_suggestions": ["check source"]}'
     )
     fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(side_effect=[
-        MagicMock(content=outline_json),
-        MagicMock(content="# Link Page\n\n## 💡 AI Suggestions for this page\n- act"),
-    ])
+    fake_chain.ainvoke = AsyncMock(
+        side_effect=[
+            MagicMock(content=outline_json),
+            MagicMock(
+                content="# Link Page\n\n## 💡 AI Suggestions for this page\n- act"
+            ),
+        ]
+    )
     monkeypatch.setattr(
         studio_mod,
         "provision_langchain_model",
@@ -331,12 +345,15 @@ def test_notebook_mode_falls_back_to_single_note_when_outline_unparseable(
     fake_chain = MagicMock()
     # First call (outline): not JSON. Second call (single-note fallback):
     # plain markdown. Subsequent ainvokes shouldn't happen.
-    fake_chain.ainvoke = AsyncMock(side_effect=[
-        MagicMock(content="Sorry, I cannot follow JSON instructions."),
-        MagicMock(content="# Fallback Study Notes\n\nFallback content."),
-    ])
+    fake_chain.ainvoke = AsyncMock(
+        side_effect=[
+            MagicMock(content="Sorry, I cannot follow JSON instructions."),
+            MagicMock(content="# Fallback Study Notes\n\nFallback content."),
+        ]
+    )
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
 
@@ -349,7 +366,9 @@ def test_notebook_mode_falls_back_to_single_note_when_outline_unparseable(
     body = r.json()
     assert body["mode"] == "notebook"
     assert len(body["note_ids"]) == 1  # single fallback note
-    assert any("fell back" in w.lower() or "outline" in w.lower() for w in body["warnings"])
+    assert any(
+        "fell back" in w.lower() or "outline" in w.lower() for w in body["warnings"]
+    )
     assert "Fallback Study Notes" in patched_pipeline["notes"][0]["content"]
 
 
@@ -360,11 +379,14 @@ def test_notebook_mode_single_note_when_multipage_disabled(
     legacy single-note path immediately, no outline call."""
     monkeypatch.setattr(studio_mod, "_MULTIPAGE_ENABLED", False)
     fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(return_value=MagicMock(
-        content="# Disabled-mode Notes\n\nbody",
-    ))
+    fake_chain.ainvoke = AsyncMock(
+        return_value=MagicMock(
+            content="# Disabled-mode Notes\n\nbody",
+        )
+    )
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
     r = client.post(
@@ -380,24 +402,34 @@ def test_notebook_mode_single_note_when_multipage_disabled(
     assert "Disabled-mode Notes" in patched_pipeline["notes"][0]["content"]
 
 
-def test_notebook_mode_title_auto_defaults_from_filename(client, patched_pipeline, monkeypatch):
+def test_notebook_mode_title_auto_defaults_from_filename(
+    client, patched_pipeline, monkeypatch
+):
     """v0.7.89 — outline can return un-parseable text and we'll fall back
     to single-note (still 200). The title-from-filename behavior is what
     we're verifying here, not the LLM output shape."""
     fake_chain = MagicMock()
-    fake_chain.ainvoke = AsyncMock(side_effect=[
-        MagicMock(content="not json"),                # outline → triggers fallback
-        MagicMock(content="# Fallback notes"),         # single-note pass
-    ])
+    fake_chain.ainvoke = AsyncMock(
+        side_effect=[
+            MagicMock(content="not json"),  # outline → triggers fallback
+            MagicMock(content="# Fallback notes"),  # single-note pass
+        ]
+    )
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
 
     r = client.post(
         "/api/studio/generate",
         data={"mode": "notebook"},  # no title
-        files=[("files", ("Quantum Computing Primer.pdf", b"%PDF-1.4 ...", "application/pdf"))],
+        files=[
+            (
+                "files",
+                ("Quantum Computing Primer.pdf", b"%PDF-1.4 ...", "application/pdf"),
+            )
+        ],
     )
     assert r.status_code == 200
     assert "Quantum Computing Primer" in r.json()["title"]
@@ -408,11 +440,17 @@ def test_notebook_mode_title_auto_defaults_from_filename(client, patched_pipelin
 # ----------------------------------------------------------------------------
 
 
-def test_notebook_mode_returns_400_when_no_text_extracted(client, patched_pipeline, monkeypatch):
+def test_notebook_mode_returns_400_when_no_text_extracted(
+    client, patched_pipeline, monkeypatch
+):
     # Patch extract_content to return empty content for every file
     import sys
+
     async def _empty_extract(_state):
-        return SimpleNamespace(content="", title=None, url=None, file_path=_state.file_path)
+        return SimpleNamespace(
+            content="", title=None, url=None, file_path=_state.file_path
+        )
+
     fake_cc = SimpleNamespace(extract_content=_empty_extract)
     monkeypatch.setitem(sys.modules, "content_core", fake_cc)
 
@@ -453,7 +491,9 @@ def test_notebook_mode_llm_failure_returns_502_with_notebook_id(
 # ----------------------------------------------------------------------------
 
 
-def test_podcast_mode_submits_job_and_returns_job_id(client, patched_pipeline, monkeypatch):
+def test_podcast_mode_submits_job_and_returns_job_id(
+    client, patched_pipeline, monkeypatch
+):
     submit_calls: list[dict] = []
 
     async def _submit(**kwargs):
@@ -461,7 +501,9 @@ def test_podcast_mode_submits_job_and_returns_job_id(client, patched_pipeline, m
         return "command:podcast-123"
 
     monkeypatch.setattr(
-        studio_mod.PodcastService, "submit_generation_job", _submit,
+        studio_mod.PodcastService,
+        "submit_generation_job",
+        _submit,
     )
 
     r = client.post(
@@ -508,7 +550,9 @@ def test_partial_extraction_still_generates_with_warning(
         if "bad" in state.file_path:
             raise ValueError("simulated parser failure")
         return SimpleNamespace(
-            content=f"parsed: {state.file_path}", title=None, url=None,
+            content=f"parsed: {state.file_path}",
+            title=None,
+            url=None,
             file_path=state.file_path,
         )
 
@@ -523,12 +567,15 @@ def test_partial_extraction_still_generates_with_warning(
         '"pages": [{"title": "P", "focus": "f", "key_questions": ["q"]}], '
         '"top_suggestions": ["x"]}'
     )
-    fake_chain.ainvoke = AsyncMock(side_effect=[
-        MagicMock(content=outline_json),
-        MagicMock(content="# P\n\n## 💡 AI Suggestions for this page\n- act"),
-    ])
+    fake_chain.ainvoke = AsyncMock(
+        side_effect=[
+            MagicMock(content=outline_json),
+            MagicMock(content="# P\n\n## 💡 AI Suggestions for this page\n- act"),
+        ]
+    )
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
 
@@ -560,6 +607,7 @@ def test_studio_passes_max_bytes_to_save_uploaded_file(client, monkeypatch):
     be passed by Studio so the cap is enforced mid-stream regardless of
     whether Content-Length was set."""
     import sys
+
     captured_kwargs: list[dict] = []
 
     async def _save_recording(upload, max_bytes=None):
@@ -567,11 +615,14 @@ def test_studio_passes_max_bytes_to_save_uploaded_file(client, monkeypatch):
         return f"/fake/uploads/{upload.filename}"
 
     monkeypatch.setattr(studio_mod, "save_uploaded_file", _save_recording)
+
     # Need to stub the rest of the pipeline too — re-use the same fakes
     # as patched_pipeline but inline (since we replace save_uploaded_file).
     async def _extract(state):
-        return SimpleNamespace(content="text", title=None, url=None,
-                               file_path=state.file_path)
+        return SimpleNamespace(
+            content="text", title=None, url=None, file_path=state.file_path
+        )
+
     fake_cc = SimpleNamespace(extract_content=_extract)
     fake_cc_common = SimpleNamespace(
         ProcessSourceState=lambda **kw: SimpleNamespace(**kw),
@@ -582,18 +633,36 @@ def test_studio_passes_max_bytes_to_save_uploaded_file(client, monkeypatch):
     class _NotebookMock:
         def __init__(self, *, name, description=None):
             self.name, self.id = name, "notebook:0"
-        async def save(self): pass
+
+        async def save(self):
+            pass
+
     class _SourceMock:
         def __init__(self, **_kw):
             self.id, self.full_text, self.title = "source:0", None, None
-        async def save(self): pass
-        async def add_to_notebook(self, _id): pass
-        async def vectorize(self): pass
+
+        async def save(self):
+            pass
+
+        async def add_to_notebook(self, _id):
+            pass
+
+        async def vectorize(self):
+            pass
+
     class _NoteMock:
         def __init__(self, **kw):
-            self.id, self.title, self.content = "note:0", kw.get("title"), kw.get("content")
-        async def save(self): pass
-        async def add_to_notebook(self, _id): pass
+            self.id, self.title, self.content = (
+                "note:0",
+                kw.get("title"),
+                kw.get("content"),
+            )
+
+        async def save(self):
+            pass
+
+        async def add_to_notebook(self, _id):
+            pass
 
     monkeypatch.setattr(studio_mod, "Notebook", _NotebookMock)
     monkeypatch.setattr(studio_mod, "Source", _SourceMock)
@@ -607,12 +676,15 @@ def test_studio_passes_max_bytes_to_save_uploaded_file(client, monkeypatch):
         '"pages": [{"title": "P", "focus": "f", "key_questions": ["q"]}], '
         '"top_suggestions": ["x"]}'
     )
-    fake_chain.ainvoke = AsyncMock(side_effect=[
-        MagicMock(content=outline_json),
-        MagicMock(content="# P body"),
-    ])
+    fake_chain.ainvoke = AsyncMock(
+        side_effect=[
+            MagicMock(content=outline_json),
+            MagicMock(content="# P body"),
+        ]
+    )
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
 
@@ -675,6 +747,7 @@ def test_env_overrides_lift_studio_caps_for_cloud_users(monkeypatch):
     """Cloud users who configure a large-context model (or use cloud APIs)
     must be able to lift the caps via env vars without code changes."""
     import importlib
+
     monkeypatch.setenv("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", "100000")
     monkeypatch.setenv("DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS", "500000")
     # Re-import to pick up the env values (module-level constants)
@@ -693,6 +766,7 @@ def test_invalid_env_var_falls_back_to_default(monkeypatch):
     """Garbage in the env var must not crash startup. Module load must
     survive DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS=banana with a warning + fallback."""
     import importlib
+
     monkeypatch.setenv("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", "banana")
     importlib.reload(studio_mod)
     try:
@@ -706,6 +780,7 @@ def test_invalid_env_var_falls_back_to_default(monkeypatch):
 def test_negative_env_var_falls_back_to_default(monkeypatch):
     """A negative value (typo, miscalc) must not produce an invalid cap."""
     import importlib
+
     monkeypatch.setenv("DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", "-1")
     importlib.reload(studio_mod)
     try:
@@ -727,7 +802,9 @@ def test_context_overflow_error_includes_local_model_hint():
     server error and just retry, hitting the same wall."""
     exc = ValueError("Error: prompt is too long for context length 8192")
     detail = studio_mod._studio_generation_error_detail(
-        exc, notebook_id="notebook:abc", source_count=3,
+        exc,
+        notebook_id="notebook:abc",
+        source_count=3,
     )
     assert "context window" in detail.lower()
     assert "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS" in detail
@@ -740,7 +817,9 @@ def test_generic_error_omits_local_model_hint():
     local-model hint — that'd be misleading."""
     exc = RuntimeError("HTTP 401 Unauthorized")
     detail = studio_mod._studio_generation_error_detail(
-        exc, notebook_id="notebook:abc", source_count=1,
+        exc,
+        notebook_id="notebook:abc",
+        source_count=1,
     )
     # No misleading local-model advice
     assert "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS" not in detail
@@ -760,7 +839,9 @@ def test_overflow_error_pattern_matching_is_case_insensitive():
     for msg in variants:
         exc = ValueError(msg)
         detail = studio_mod._studio_generation_error_detail(
-            exc, notebook_id="notebook:x", source_count=1,
+            exc,
+            notebook_id="notebook:x",
+            source_count=1,
         )
         assert "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS" in detail, (
             f"pattern not matched for {msg!r}"
@@ -773,13 +854,16 @@ def test_overflow_error_pattern_matching_is_case_insensitive():
 
 
 def test_page_timeout_becomes_warning_other_pages_ship(
-    client, patched_pipeline, monkeypatch,
+    client,
+    patched_pipeline,
+    monkeypatch,
 ):
     """v0.7.93 — if one page times out, the rest must still ship and the
     timeout becomes a per-page warning (not a 504 that kills the whole
     notebook). Verifies the per-page timeout AND the warning text guides
     the user toward the env knob."""
     import asyncio
+
     # Shorten the timeout so the test runs fast
     monkeypatch.setattr(studio_mod, "_PAGE_TIMEOUT_SEC", 1)
     outline_json = (
@@ -809,7 +893,8 @@ def test_page_timeout_becomes_warning_other_pages_ship(
     fake_chain = MagicMock()
     fake_chain.ainvoke = _slow_invoke
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
 
@@ -831,12 +916,15 @@ def test_page_timeout_becomes_warning_other_pages_ship(
 
 
 def test_outline_timeout_returns_504_with_actionable_detail(
-    client, patched_pipeline, monkeypatch,
+    client,
+    patched_pipeline,
+    monkeypatch,
 ):
     """v0.7.93 — outline-pass timeout returns 504 (Gateway Timeout) NOT 502.
     The detail message must include the env-knob name so users can recover
     rather than just see a wall of stack trace."""
     import asyncio
+
     monkeypatch.setattr(studio_mod, "_OUTLINE_TIMEOUT_SEC", 1)
 
     async def _hang_invoke(messages):
@@ -846,7 +934,8 @@ def test_outline_timeout_returns_504_with_actionable_detail(
     fake_chain = MagicMock()
     fake_chain.ainvoke = _hang_invoke
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
 
@@ -864,7 +953,9 @@ def test_outline_timeout_returns_504_with_actionable_detail(
 
 
 def test_parallel_pages_env_knob_changes_generation_strategy(
-    client, patched_pipeline, monkeypatch,
+    client,
+    patched_pipeline,
+    monkeypatch,
 ):
     """v0.7.92 — with DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_PARALLEL_PAGES=true, all pages
     are generated concurrently (asyncio.gather) instead of in a for-loop.
@@ -872,6 +963,7 @@ def test_parallel_pages_env_knob_changes_generation_strategy(
     one at a time (in_flight peaks at 1); parallel calls overlap
     (in_flight peaks > 1)."""
     import asyncio
+
     monkeypatch.setattr(studio_mod, "_PARALLEL_PAGES", True)
 
     outline_json = (
@@ -907,7 +999,8 @@ def test_parallel_pages_env_knob_changes_generation_strategy(
     fake_chain = MagicMock()
     fake_chain.ainvoke = _track_invoke
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
 
@@ -927,12 +1020,15 @@ def test_parallel_pages_env_knob_changes_generation_strategy(
 
 
 def test_parallel_pages_off_by_default_runs_sequentially(
-    client, patched_pipeline, monkeypatch,
+    client,
+    patched_pipeline,
+    monkeypatch,
 ):
     """v0.7.92 — Verify the default (sequential) path. Same instrumentation
     as the parallel test, but without flipping the knob, peak concurrency
     must stay at 1."""
     import asyncio
+
     # Explicitly assert the default — guards against accidental flip.
     monkeypatch.setattr(studio_mod, "_PARALLEL_PAGES", False)
 
@@ -967,7 +1063,8 @@ def test_parallel_pages_off_by_default_runs_sequentially(
     fake_chain = MagicMock()
     fake_chain.ainvoke = _track_invoke
     monkeypatch.setattr(
-        studio_mod, "provision_langchain_model",
+        studio_mod,
+        "provision_langchain_model",
         AsyncMock(return_value=fake_chain),
     )
 

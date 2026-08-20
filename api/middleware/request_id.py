@@ -15,6 +15,7 @@ upstream proxies / clients so a request_id flowing in from a reverse
 proxy keeps the same value end-to-end. Falls back to a fresh UUID4
 when no inbound header is present.
 """
+
 from __future__ import annotations
 
 import re

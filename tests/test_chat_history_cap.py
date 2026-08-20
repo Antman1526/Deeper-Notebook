@@ -9,6 +9,7 @@ the hardcoded `max_tokens=8192` output reservation — overflowed a
 
 These tests pin the new `_trim_message_history` contract.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -19,6 +20,7 @@ from deeper_notebook.graphs import chat
 # ---------------------------------------------------------------------------
 # _msg_char_len — defensive against many message shapes
 # ---------------------------------------------------------------------------
+
 
 def test_msg_char_len_handles_message_objects():
     assert chat._msg_char_len(HumanMessage(content="hello")) == 5
@@ -45,6 +47,7 @@ def test_msg_char_len_handles_non_str_content():
 # _trim_message_history — pure function
 # ---------------------------------------------------------------------------
 
+
 def _make_history(n_turns: int, content_size: int = 200) -> list:
     """Build a realistic alternating user/AI history."""
     out: list = []
@@ -66,15 +69,16 @@ def test_trim_returns_untouched_when_under_cap(monkeypatch):
     out = chat._trim_message_history(msgs)
     assert out == msgs
     assert not any(
-        isinstance(m, SystemMessage)
-        and chat._HISTORY_TRUNCATION_MARKER in m.content
+        isinstance(m, SystemMessage) and chat._HISTORY_TRUNCATION_MARKER in m.content
         for m in out
     )
 
 
 def test_trim_drops_oldest_when_over_cap(monkeypatch):
     """Over the cap → oldest dropped, most-recent kept, marker prepended."""
-    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)  # 12_000 default
+    monkeypatch.delenv(
+        "DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False
+    )  # 12_000 default
     msgs = _make_history(50, content_size=500)  # ~50_000 chars total
     out = chat._trim_message_history(msgs)
 
@@ -174,6 +178,7 @@ def test_trim_preserves_message_order(monkeypatch):
 # call_model_with_messages integration
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_call_model_invokes_trimming(monkeypatch):
     """Verify the chat-graph node calls _trim_message_history before
@@ -238,8 +243,13 @@ async def test_call_model_invokes_trimming(monkeypatch):
 
     msgs = _make_history(20, content_size=500)
     await chat.call_model_with_messages(
-        {"messages": msgs, "notebook": None, "context": None,
-         "context_config": None, "model_override": None},
+        {
+            "messages": msgs,
+            "notebook": None,
+            "context": None,
+            "context_config": None,
+            "model_override": None,
+        },
         {"configurable": {}},
     )
 

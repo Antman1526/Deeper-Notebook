@@ -73,9 +73,7 @@ def test_migration_37_removes_none_colliding_daily_index():
     sql = INDEX_REPAIR.read_text(encoding="utf-8")
     down_sql = INDEX_REPAIR_DOWN.read_text(encoding="utf-8")
 
-    assert (
-        "REMOVE INDEX IF EXISTS idx_overlay_daily ON TABLE overlay_note;" in sql
-    )
+    assert "REMOVE INDEX IF EXISTS idx_overlay_daily ON TABLE overlay_note;" in sql
     assert "DEFINE INDEX" not in sql
     assert "idx_overlay_path" not in sql
     assert "idx_overlay_daily" in down_sql

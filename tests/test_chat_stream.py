@@ -11,6 +11,7 @@ The non-streaming /chat/execute path is unchanged; this file verifies:
 The endpoint is exercised end-to-end via TestClient with the graph
 stubbed out; we don't spin up a real LLM.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,6 +26,7 @@ from api.routers import chat as chat_router
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 class _FakeSession:
     """Stand-in for ChatSession used by /chat/stream startup."""
@@ -74,6 +76,7 @@ def fake_graph(monkeypatch):
         def get_state(self, config):
             class _S:
                 values = {"messages": []}
+
             return _S()
 
         async def astream_events(self, *, input, config, version):
@@ -82,6 +85,7 @@ def fake_graph(monkeypatch):
 
     fake = _FakeGraph()
     monkeypatch.setattr(chat_router, "chat_graph", fake)
+
     # v0.7.192 — chat_router.get_async_graph (added in v0.7.192) is
     # what _stream_chat_events actually calls for astream_events.
     # The pre-v0.7.192 code did `chat_graph.astream_events(...)`
@@ -90,6 +94,7 @@ def fake_graph(monkeypatch):
     # the streaming path.
     async def _fake_get_async_graph():
         return fake
+
     monkeypatch.setattr(chat_router, "get_async_graph", _fake_get_async_graph)
     return fake
 
@@ -118,26 +123,32 @@ def _parse_ndjson(body: str) -> list[dict]:
 # Wire format
 # ---------------------------------------------------------------------------
 
+
 def test_stream_returns_ndjson_with_start_token_done_events(
     monkeypatch, fake_graph, fake_session
 ):
     """Happy path: start → 3 token events → done. Wire format is one
     JSON object per line (NDJSON)."""
     fake_graph.events = [
-        {"event": "on_chat_model_stream",
-         "data": {"chunk": _FakeChunk("Hello ")}},
-        {"event": "on_chat_model_stream",
-         "data": {"chunk": _FakeChunk("world")}},
-        {"event": "on_chat_model_stream",
-         "data": {"chunk": _FakeChunk("!")}},
+        {"event": "on_chat_model_stream", "data": {"chunk": _FakeChunk("Hello ")}},
+        {"event": "on_chat_model_stream", "data": {"chunk": _FakeChunk("world")}},
+        {"event": "on_chat_model_stream", "data": {"chunk": _FakeChunk("!")}},
         # Outer chain emits the final messages
-        {"event": "on_chain_end",
-         "data": {"output": {"messages": [
-             type("M", (), {"id": "m1", "type": "human",
-                            "content": "Hi"})(),
-             type("M", (), {"id": "m2", "type": "ai",
-                            "content": "Hello world!"})(),
-         ]}}},
+        {
+            "event": "on_chain_end",
+            "data": {
+                "output": {
+                    "messages": [
+                        type("M", (), {"id": "m1", "type": "human", "content": "Hi"})(),
+                        type(
+                            "M",
+                            (),
+                            {"id": "m2", "type": "ai", "content": "Hello world!"},
+                        )(),
+                    ]
+                }
+            },
+        },
     ]
 
     app = _make_app(fake_graph.events)
@@ -199,8 +210,10 @@ def test_stream_emits_error_event_on_graph_exception(
 
     async def boom(*args, **kw):
         # First yield a token, then raise
-        yield {"event": "on_chat_model_stream",
-               "data": {"chunk": _FakeChunk("partial")}}
+        yield {
+            "event": "on_chat_model_stream",
+            "data": {"chunk": _FakeChunk("partial")},
+        }
         raise RuntimeError("LLM provider unreachable")
 
     fake_graph.astream_events = boom  # type: ignore[method-assign]
@@ -247,8 +260,10 @@ def test_stream_surfaces_context_overflow_message(
     )
 
     async def boom(*args, **kw):
-        yield {"event": "on_chat_model_stream",
-               "data": {"chunk": _FakeChunk("partial")}}
+        yield {
+            "event": "on_chat_model_stream",
+            "data": {"chunk": _FakeChunk("partial")},
+        }
         raise ExternalServiceError(overflow_msg)
 
     fake_graph.astream_events = boom  # type: ignore[method-assign]
@@ -257,8 +272,11 @@ def test_stream_surfaces_context_overflow_message(
     with TestClient(app) as client:
         resp = client.post(
             "/api/chat/stream",
-            json={"session_id": "chat_session:test",
-                  "message": "summarize all sources", "context": {}},
+            json={
+                "session_id": "chat_session:test",
+                "message": "summarize all sources",
+                "context": {},
+            },
         )
 
     events = _parse_ndjson(resp.text)
@@ -267,9 +285,7 @@ def test_stream_surfaces_context_overflow_message(
     assert "failed unexpectedly" not in resp.text
 
 
-def test_stream_surfaces_network_error_message(
-    monkeypatch, fake_graph, fake_session
-):
+def test_stream_surfaces_network_error_message(monkeypatch, fake_graph, fake_session):
     """v0.8.67i — NetworkError (e.g. the local sidecar not yet reachable on
     a cold first request) likewise surfaces its actionable message instead
     of the opaque generic failure."""
@@ -281,8 +297,7 @@ def test_stream_surfaces_network_error_message(
     )
 
     async def boom(*args, **kw):
-        yield {"event": "on_chat_model_stream",
-               "data": {"chunk": _FakeChunk("x")}}
+        yield {"event": "on_chat_model_stream", "data": {"chunk": _FakeChunk("x")}}
         raise NetworkError(net_msg)
 
     fake_graph.astream_events = boom  # type: ignore[method-assign]
@@ -291,8 +306,7 @@ def test_stream_surfaces_network_error_message(
     with TestClient(app) as client:
         resp = client.post(
             "/api/chat/stream",
-            json={"session_id": "chat_session:test",
-                  "message": "hi", "context": {}},
+            json={"session_id": "chat_session:test", "message": "hi", "context": {}},
         )
 
     events = _parse_ndjson(resp.text)
@@ -300,20 +314,20 @@ def test_stream_surfaces_network_error_message(
     assert err["detail"] == net_msg
 
 
-def test_stream_filters_non_string_chunk_content(
-    monkeypatch, fake_graph, fake_session
-):
+def test_stream_filters_non_string_chunk_content(monkeypatch, fake_graph, fake_session):
     """on_chat_model_stream chunks with non-string content (multi-modal)
     are silently skipped — we only emit string tokens to the client."""
     fake_graph.events = [
-        {"event": "on_chat_model_stream",
-         "data": {"chunk": _FakeChunk(None)}},  # None content
-        {"event": "on_chat_model_stream",
-         "data": {"chunk": _FakeChunk([{"type": "image", "url": "..."}])}},  # multi-modal list
-        {"event": "on_chat_model_stream",
-         "data": {"chunk": _FakeChunk("real text")}},
-        {"event": "on_chain_end",
-         "data": {"output": {"messages": []}}},
+        {
+            "event": "on_chat_model_stream",
+            "data": {"chunk": _FakeChunk(None)},
+        },  # None content
+        {
+            "event": "on_chat_model_stream",
+            "data": {"chunk": _FakeChunk([{"type": "image", "url": "..."}])},
+        },  # multi-modal list
+        {"event": "on_chat_model_stream", "data": {"chunk": _FakeChunk("real text")}},
+        {"event": "on_chain_end", "data": {"output": {"messages": []}}},
     ]
 
     app = _make_app(fake_graph.events)
@@ -335,8 +349,7 @@ def test_stream_response_headers_disable_proxy_buffering(
     for nginx-family proxies + Next.js dev proxy to actually flush
     each NDJSON line as it's written."""
     fake_graph.events = [
-        {"event": "on_chain_end",
-         "data": {"output": {"messages": []}}},
+        {"event": "on_chain_end", "data": {"output": {"messages": []}}},
     ]
 
     app = _make_app(fake_graph.events)

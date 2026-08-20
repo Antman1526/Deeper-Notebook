@@ -75,7 +75,8 @@ configured provider erroring is not (WARNING).
 if not path.exists():
     raise FileNotFoundError(
         f"Configured MLX model no longer exists on disk: {path} — "
-        "pick an existing model in Launch Preferences")
+        "pick an existing model in Launch Preferences"
+    )
 ```
 
 ...caught one level up so the launch continues without the provider:
@@ -119,7 +120,7 @@ if self.debug_mode:
     stdout, stderr = subprocess.PIPE, subprocess.PIPE
 else:
     stdout = subprocess.DEVNULL
-    stderr = subprocess.PIPE      # drained to a tail-only file
+    stderr = subprocess.PIPE  # drained to a tail-only file
 ```
 
 Cost: one drainer thread + a tiny rolling file per sidecar. Benefit: when a sidecar
@@ -131,6 +132,8 @@ a reader** — the OS buffer fills and the child deadlocks.
 
 ```python
 _BOOTSTRAP_LOG_MAX_BYTES = 5 * 1024 * 1024
+
+
 def _rotate_log_if_oversized(log_path: Path) -> None:
     try:
         if log_path.exists() and log_path.stat().st_size > _BOOTSTRAP_LOG_MAX_BYTES:
@@ -148,7 +151,8 @@ if proc.returncode != 0:
     tail = log_path.read_text(errors="replace").splitlines()[-25:]
     raise RuntimeError(
         f"[{tag}] subprocess failed with exit={proc.returncode}. "
-        f"Last 25 lines of {log_path}:\n" + "\n".join(tail))
+        f"Last 25 lines of {log_path}:\n" + "\n".join(tail)
+    )
 ```
 
 Without this, errors from `uv pip install` vanished entirely when the .app was launched

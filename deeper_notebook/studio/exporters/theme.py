@@ -46,7 +46,9 @@ _BOLD_FONT_CANDIDATES = (
 )
 
 
-def load_font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+def load_font(
+    size: int, *, bold: bool = False
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     candidates = _BOLD_FONT_CANDIDATES if bold else _FONT_CANDIDATES
     for candidate in candidates:
         try:
@@ -106,7 +108,9 @@ def draw_fitted_text(
         lines = wrap_text(draw, text, font, max_width)
         if max_lines is not None and len(lines) > max_lines:
             continue
-        bbox = draw.multiline_textbbox((0, 0), "\n".join(lines), font=font, spacing=spacing)
+        bbox = draw.multiline_textbbox(
+            (0, 0), "\n".join(lines), font=font, spacing=spacing
+        )
         if bbox[3] - bbox[1] <= max_height:
             selected_font = font
             selected_lines = lines
@@ -127,7 +131,9 @@ def draw_fitted_text(
         fill=fill,
         spacing=spacing,
     )
-    bbox = draw.multiline_textbbox((x, y), rendered, font=selected_font, spacing=spacing)
+    bbox = draw.multiline_textbbox(
+        (x, y), rendered, font=selected_font, spacing=spacing
+    )
     return bbox[2] - bbox[0], bbox[3] - bbox[1]
 
 

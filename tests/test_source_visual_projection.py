@@ -66,7 +66,9 @@ class _CaptureRepository:
         return self.records
 
 
-def _source_row(source_id: str = "source:one", *, updated: datetime = NOW) -> dict[str, object]:
+def _source_row(
+    source_id: str = "source:one", *, updated: datetime = NOW
+) -> dict[str, object]:
     return {
         "id": source_id,
         "updated": updated,
@@ -81,10 +83,7 @@ async def test_projects_thirty_rows_through_one_bounded_batch_without_private_fi
     from api.source_visual_projection import project_source_visuals
 
     rows = [_source_row(f"source:{index}") for index in range(30)]
-    records = {
-        f"source:{index}": _record(f"source:{index}")
-        for index in range(30)
-    }
+    records = {f"source:{index}": _record(f"source:{index}") for index in range(30)}
     repository = _Repository(records)
 
     projected = await project_source_visuals(rows, repository=repository)
@@ -133,8 +132,12 @@ async def test_projection_keeps_detail_list_and_source_bearing_search_receipts_i
     )
 
     record = _record()
-    detail = await project_source_visuals([_source_row()], repository=_Repository({"source:one": record}))
-    listed = await project_source_visuals([_source_row()], repository=_Repository({"source:one": record}))
+    detail = await project_source_visuals(
+        [_source_row()], repository=_Repository({"source:one": record})
+    )
+    listed = await project_source_visuals(
+        [_source_row()], repository=_Repository({"source:one": record})
+    )
     results = [
         {"id": "source:one", "title": "Source one"},
         {"id": "note:one", "title": "Note one"},
@@ -156,7 +159,9 @@ async def test_projection_keeps_detail_list_and_source_bearing_search_receipts_i
 
 
 @pytest.mark.asyncio
-async def test_search_projection_recognizes_direct_and_parent_source_ids_without_private_leakage(monkeypatch):
+async def test_search_projection_recognizes_direct_and_parent_source_ids_without_private_leakage(
+    monkeypatch,
+):
     """Production search rows omit revisions and source insights point at parent_id."""
 
     from api.models import SearchRequest
@@ -190,7 +195,9 @@ async def test_search_projection_recognizes_direct_and_parent_source_ids_without
     projector = AsyncMock(side_effect=project)
     monkeypatch.setattr(search, "project_search_source_visuals", projector)
 
-    response = await search.search_knowledge_base(SearchRequest(query="needle", limit=3))
+    response = await search.search_knowledge_base(
+        SearchRequest(query="needle", limit=3)
+    )
 
     assert response.results[0]["visual"]["asset_url"].endswith("opaque")
     assert response.results[1]["visual"]["asset_url"].endswith("opaque")
@@ -201,7 +208,10 @@ async def test_search_projection_recognizes_direct_and_parent_source_ids_without
     assert "SELECT id, updated FROM source" in query_text
     assert "LIMIT $limit" in query_text
     assert variables["limit"] == 200
-    assert {str(value) for value in variables["source_ids"]} == {"source:one", "source:two"}
+    assert {str(value) for value in variables["source_ids"]} == {
+        "source:one",
+        "source:two",
+    }
 
 
 @pytest.mark.asyncio
@@ -209,15 +219,23 @@ async def test_search_projection_recognizes_direct_and_parent_source_ids_without
     ("status", "expected"),
     [
         ({"state": "queued", "command_id": "command:one", "updated_at": NOW}, "queued"),
-        ({"state": "processing", "command_id": "command:one", "updated_at": NOW}, "processing"),
+        (
+            {"state": "processing", "command_id": "command:one", "updated_at": NOW},
+            "processing",
+        ),
         ({"state": "unavailable", "updated_at": NOW}, "unavailable"),
-        ({"state": "failed", "error_code": "decode_failed", "updated_at": NOW}, "failed"),
+        (
+            {"state": "failed", "error_code": "decode_failed", "updated_at": NOW},
+            "failed",
+        ),
     ],
 )
 async def test_projection_exposes_only_safe_nonready_statuses(status, expected):
     from api.source_visual_projection import project_source_visuals
 
-    repository = _Repository({}, statuses={"source:one": {**status, "worker_error": "/private/secret"}})
+    repository = _Repository(
+        {}, statuses={"source:one": {**status, "worker_error": "/private/secret"}}
+    )
     projected = await project_source_visuals([_source_row()], repository=repository)
 
     response = projected["source:one"].visual_status.model_dump(mode="json")
@@ -235,7 +253,13 @@ async def test_ready_projection_clears_nonready_status_even_when_a_status_hint_e
         [_source_row()],
         repository=_Repository(
             {"source:one": _record()},
-            statuses={"source:one": {"state": "failed", "error_code": "decode_failed", "updated_at": NOW}},
+            statuses={
+                "source:one": {
+                    "state": "failed",
+                    "error_code": "decode_failed",
+                    "updated_at": NOW,
+                }
+            },
         ),
     )
 

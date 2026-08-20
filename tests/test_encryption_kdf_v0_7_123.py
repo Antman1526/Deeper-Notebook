@@ -16,6 +16,7 @@ Verifies:
 No external dependencies, no real database — pure unit tests on the
 encryption module.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -26,6 +27,7 @@ def _reset_encryption_cache(monkeypatch):
     """Each test gets a fresh encryption-key cache. Required because
     the module caches the parsed keys in a module-level variable."""
     from deeper_notebook.utils import encryption as enc
+
     enc._reset_encryption_cache()
     yield
     enc._reset_encryption_cache()

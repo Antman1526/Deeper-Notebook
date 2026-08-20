@@ -44,9 +44,12 @@ class TestSearchLimitValidation:
         response = client.post(
             "/api/search",
             json={
-                "query": "plan", "type": "text", "match_mode": "exact",
+                "query": "plan",
+                "type": "text",
+                "match_mode": "exact",
                 "space_ids": ["knowledge_engine_space:research"],
-                "authority_kinds": ["external_read_only"], "tags": ["plans"],
+                "authority_kinds": ["external_read_only"],
+                "tags": ["plans"],
             },
         )
 
@@ -54,7 +57,9 @@ class TestSearchLimitValidation:
         assert "filters" in response.json()["detail"].lower()
 
     @patch("api.routers.search.text_search", new_callable=AsyncMock)
-    def test_exact_mode_filters_text_results_to_exact_query_matches(self, mock_text_search, client):
+    def test_exact_mode_filters_text_results_to_exact_query_matches(
+        self, mock_text_search, client
+    ):
         mock_text_search.return_value = [
             {"id": "note:exact", "title": "Plan", "matches": ["Plan"]},
             {"id": "note:partial", "title": "Planning", "matches": ["Planning"]},
@@ -81,7 +86,10 @@ class TestTextSearchHighlightOverflowFallback:
         )
         with (
             patch.object(
-                notebook_module, "repo_query", new_callable=AsyncMock, side_effect=overflow
+                notebook_module,
+                "repo_query",
+                new_callable=AsyncMock,
+                side_effect=overflow,
             ),
             patch.object(
                 notebook_module,
@@ -103,7 +111,10 @@ class TestTextSearchHighlightOverflowFallback:
         overflow = RuntimeError("position overflow: 1 - len: 0")
         with (
             patch.object(
-                notebook_module, "repo_query", new_callable=AsyncMock, side_effect=overflow
+                notebook_module,
+                "repo_query",
+                new_callable=AsyncMock,
+                side_effect=overflow,
             ),
             patch.object(
                 notebook_module,
@@ -134,19 +145,44 @@ class TestTextSearchHighlightOverflowFallback:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("embedding_state", ["pending", "failed"])
-async def test_vector_search_enriches_mounted_note_without_root_leak(embedding_state: str):
+async def test_vector_search_enriches_mounted_note_without_root_leak(
+    embedding_state: str,
+):
     from deeper_notebook.domain import notebook as notebook_module
 
     with (
-        patch("deeper_notebook.utils.embedding.generate_embedding", new_callable=AsyncMock, return_value=[0.1]),
-        patch.object(notebook_module, "repo_query", new_callable=AsyncMock, side_effect=[
-            [{"id": "note:mounted", "title": "Mounted"}],
-            [{"id": "note:mounted", "canonical_external": True, "vault_id": "vault_mount:brain", "relative_path": "wiki/note.md", "source_hash": "a" * 64, "embedding_state": embedding_state}],
-        ]),
+        patch(
+            "deeper_notebook.utils.embedding.generate_embedding",
+            new_callable=AsyncMock,
+            return_value=[0.1],
+        ),
+        patch.object(
+            notebook_module,
+            "repo_query",
+            new_callable=AsyncMock,
+            side_effect=[
+                [{"id": "note:mounted", "title": "Mounted"}],
+                [
+                    {
+                        "id": "note:mounted",
+                        "canonical_external": True,
+                        "vault_id": "vault_mount:brain",
+                        "relative_path": "wiki/note.md",
+                        "source_hash": "a" * 64,
+                        "embedding_state": embedding_state,
+                    }
+                ],
+            ],
+        ),
     ):
         result = await notebook_module.vector_search("mounted", 1)
 
-    assert result[0]["vault_provenance"] == {"canonical_external": True, "vault_id": "vault_mount:brain", "relative_path": "wiki/note.md", "source_hash": "sha256:" + "a" * 64}
+    assert result[0]["vault_provenance"] == {
+        "canonical_external": True,
+        "vault_id": "vault_mount:brain",
+        "relative_path": "wiki/note.md",
+        "source_hash": "sha256:" + "a" * 64,
+    }
     assert "/Users/" not in str(result)
 
 
@@ -154,7 +190,12 @@ async def test_vector_search_enriches_mounted_note_without_root_leak(embedding_s
 async def test_normal_search_result_keeps_legacy_shape():
     from deeper_notebook.domain import notebook as notebook_module
 
-    with patch.object(notebook_module, "repo_query", new_callable=AsyncMock, return_value=[{"id": "source:plain", "title": "Plain"}]):
+    with patch.object(
+        notebook_module,
+        "repo_query",
+        new_callable=AsyncMock,
+        return_value=[{"id": "source:plain", "title": "Plain"}],
+    ):
         result = await notebook_module.text_search("plain", 1)
 
     assert result == [{"id": "source:plain", "title": "Plain"}]
@@ -162,7 +203,9 @@ async def test_normal_search_result_keeps_legacy_shape():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("embedding_state", ["pending", "failed"])
-async def test_text_search_enriches_mounted_note_with_portable_provenance(embedding_state: str):
+async def test_text_search_enriches_mounted_note_with_portable_provenance(
+    embedding_state: str,
+):
     from deeper_notebook.domain import notebook as notebook_module
 
     with patch.object(
@@ -171,14 +214,16 @@ async def test_text_search_enriches_mounted_note_with_portable_provenance(embedd
         new_callable=AsyncMock,
         side_effect=[
             [{"id": "note:mounted", "title": "Mounted"}],
-            [{
-                "id": "note:mounted",
-                "canonical_external": True,
-                "vault_id": "vault_mount:obsidian-brain",
-                "relative_path": "wiki/concepts/local-llms.md",
-                "source_hash": "d2d369166f8a794dbab96699aefd87ccc58763163dceb4221e61cc9c8833f071",
-                "embedding_state": embedding_state,
-            }],
+            [
+                {
+                    "id": "note:mounted",
+                    "canonical_external": True,
+                    "vault_id": "vault_mount:obsidian-brain",
+                    "relative_path": "wiki/concepts/local-llms.md",
+                    "source_hash": "d2d369166f8a794dbab96699aefd87ccc58763163dceb4221e61cc9c8833f071",
+                    "embedding_state": embedding_state,
+                }
+            ],
         ],
     ) as query:
         result = await notebook_module.text_search("mounted", 1)

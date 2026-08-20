@@ -60,9 +60,7 @@ class SourceVisualReceiptResponse(_StrictSourceVisualSchema):
 class SourceVisualStatusResponse(_StrictSourceVisualSchema):
     state: SourceVisualStatusState
     command_id: str | None = Field(default=None, min_length=1, max_length=512)
-    error_code: str | None = Field(
-        default=None, pattern=ERROR_CODE, max_length=64
-    )
+    error_code: str | None = Field(default=None, pattern=ERROR_CODE, max_length=64)
     updated_at: datetime
 
 
@@ -76,9 +74,7 @@ class SourceVisualJobResponse(_StrictSourceVisualSchema):
     height: int | None = Field(default=None, ge=1, le=720)
     duration_ms: int | None = Field(default=None, ge=0, le=60_000)
     outcome: SourceVisualOperationOutcome
-    error_code: str | None = Field(
-        default=None, pattern=ERROR_CODE, max_length=64
-    )
+    error_code: str | None = Field(default=None, pattern=ERROR_CODE, max_length=64)
 
 
 def disabled_visual_status() -> "SourceVisualStatusResponse":

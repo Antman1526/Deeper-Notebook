@@ -50,50 +50,30 @@ Right now it is neither, which is the worst of the three.
 rather than a subsystem; the main Guided Research workspace is live in the
 notebook page.
 
-### 1.3 Adopt a formatter — now unblocked, needs one reviewed sitting
+### 1.3 Adopt a formatter — **DONE in v0.8.111**
 
-§2.1 was the blocker and is fixed (v0.8.109). Adoption was then attempted end to
-end on 2026-08-19 and **reverted deliberately** — not because it failed, but
-because of *how* it was passing. Reaching a green audit took a migration,
-several repair runs, re-approving 38 pins by ordinal, and collapsing 160
-allowlist entries. Driving a security allowlist to quiet with successive ad-hoc
-scripts is how you get a gate that passes without meaning anything.
+`ruff format` is enabled in `.pre-commit-config.yaml` and the tree is fully
+formatted (1,126 files; the formatter is now a no-op).
 
-The work is now understood and bounded. `ruff format` touches ~702 files, and
-the fallout is exactly two known, legitimate categories:
+It stayed off for three releases because §2.1's allowlist pinned approvals to
+line and column, so a reformat invalidated them wholesale. §2.1 removed that
+blocker; adoption then took one reviewed pass:
 
-* **~1,040 pins relocate automatically.** `make repair-rebrand-pins` handles
-  these; no judgement needed.
-* **~39 pins are genuinely re-split.** Ruff moves a trailing `)` onto its own
-  line, so the approved text changes by punctuation while its meaning does not.
-  Each needs re-approval. The mapping is unambiguous — for every affected
-  (path, pattern) the live occurrence count equals the pinned count, so the
-  k-th live occurrence is the k-th approval.
-* **~160 entries collapse as duplicates.** Two IDENTICAL lines in one file now
-  hash the same, because the key is content plus intra-line ordinal rather than
-  position. One approval covering both is the intended behaviour; the allowlist
-  is a mapping, so the duplicates must be removed rather than tolerated.
+* **701 files** reformatted.
+* **~1,046 pins** relocated automatically by `make repair-rebrand-pins`.
+* **38 re-approvals** reviewed line by line and recorded in
+  `docs/verification/2026-08-19-formatter-adoption-review.md`. One proposed
+  mapping was **wrong** — it would have moved a regex approval onto an unrelated
+  `assert` — and the review caught it. That is why the review exists.
+* **2 approvals** carried onto the occurrence the audit itself named, where
+  substring nesting made ordinal mapping ambiguous.
 
-**A fourth category was found on 2026-08-19, and it is the one that matters.**
-`ruff format` JOINS adjacent string literals — and this codebase uses split
-literals deliberately:
-
-    production_roots = ("api", "commands", "desktop", "open_" "notebook")
-
-Two tests that SCAN production source for the legacy token write it split so
-they do not trip their own scan. Joining them reintroduces the exact token the
-codebase is designed not to contain, and the audit then correctly demands an
-approval for it. Driving to green would have papered over that by adding two
-approvals — quietly undoing an intentional identity-hygiene device.
-
-Both sites are now marked (`# fmt: skip`, and `# fmt: off/on` for the multi-line
-one, which `skip` does not cover) and carry a comment saying why, so the
-protection survives whether or not a formatter is ever enabled. Before adopting,
-grep for other adjacent-literal splits — the technique is invisible unless you
-look for it.
-
-Do it as a reviewable diff in one sitting with the allowlist changes actually
-read, not as a byproduct of chasing a green check.
+**The hazard worth remembering:** ruff JOINS adjacent string literals, and two
+tests that scan production source for the legacy token write `"open_" "notebook"`
+deliberately so they do not trip their own scan. Joining reintroduces the exact
+token the codebase is designed not to contain. Both sites are guarded with
+`# fmt: skip` / `# fmt: off` and carry a comment; **do not remove those guards**,
+and grep for other adjacent-literal splits before adding new ones.
 
 ---
 

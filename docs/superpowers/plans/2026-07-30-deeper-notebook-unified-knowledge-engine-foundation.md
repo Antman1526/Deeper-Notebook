@@ -88,11 +88,13 @@
 from pathlib import PurePosixPath
 from typing import Protocol
 
+
 class KnowledgeAdapter(Protocol):
     source_kind: "SourceKind"
 
     def project(self, envelope: "SourceEnvelope") -> "KnowledgeSnapshot":
         raise NotImplementedError
+
 
 class KnowledgeSnapshotRepository(Protocol):
     async def commit_snapshot(
@@ -102,6 +104,7 @@ class KnowledgeSnapshotRepository(Protocol):
         operation_id: str,
     ) -> "ProjectionReceipt":
         raise NotImplementedError
+
 
 class KnowledgeShadowProjector(Protocol):
     async def project_external(
@@ -332,9 +335,7 @@ KnowledgeCapability = Literal[
     "cite",
 ]
 
-_EXTERNAL = frozenset[KnowledgeCapability](
-    {"read", "copy_content", "bookmark", "cite"}
-)
+_EXTERNAL = frozenset[KnowledgeCapability]({"read", "copy_content", "bookmark", "cite"})
 _OVERLAY_NOTE = frozenset[KnowledgeCapability](
     {
         "read",
@@ -796,9 +797,7 @@ def test_migration_38_is_schemafull_and_idempotent():
     for table in TABLES:
         assert f"DEFINE TABLE IF NOT EXISTS {table} SCHEMAFULL;" in sql
     definitions = [
-        line.strip()
-        for line in sql.splitlines()
-        if line.strip().startswith("DEFINE ")
+        line.strip() for line in sql.splitlines() if line.strip().startswith("DEFINE ")
     ]
     assert definitions
     assert all("IF NOT EXISTS" in line for line in definitions)
@@ -985,9 +984,7 @@ from deeper_notebook.knowledge_engine.repository import (
 
 @pytest.mark.asyncio
 async def test_commit_snapshot_uses_one_transaction(snapshot, fake_connection):
-    repository = KnowledgeRepository(
-        connection_factory=fake_connection.factory
-    )
+    repository = KnowledgeRepository(connection_factory=fake_connection.factory)
     receipt = await repository.commit_snapshot(
         snapshot,
         operation_id="shadow-project-one",
@@ -1005,15 +1002,11 @@ async def test_commit_snapshot_rejects_operation_replay_with_other_hash(
     snapshot,
     fake_connection,
 ):
-    repository = KnowledgeRepository(
-        connection_factory=fake_connection.factory
-    )
+    repository = KnowledgeRepository(connection_factory=fake_connection.factory)
     await repository.commit_snapshot(snapshot, operation_id="same-operation")
     changed = snapshot.model_copy(
         update={
-            "revision": snapshot.revision.model_copy(
-                update={"content_hash": "b" * 64}
-            )
+            "revision": snapshot.revision.model_copy(update={"content_hash": "b" * 64})
         }
     )
     with pytest.raises(KnowledgeRepositoryError, match="operation_conflict"):
@@ -1055,9 +1048,7 @@ class KnowledgeRepository:
                 "knowledge_engine_repository_unavailable"
             ) from None
         if isinstance(result, str):
-            raise KnowledgeRepositoryError(
-                "knowledge_engine_repository_unavailable"
-            )
+            raise KnowledgeRepositoryError("knowledge_engine_repository_unavailable")
         parsed = parse_record_ids(result)
         return parsed if isinstance(parsed, list) else [parsed]
 ```
@@ -1484,18 +1475,24 @@ def test_knowledge_engine_flags_use_product_precedence(monkeypatch):
         "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED": "true",
         "DN_KNOWLEDGE_ENGINE_SHADOW_ENABLED": "false",
     }
-    assert resolve_env(
-        "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED",
-        getter=values.get,
-    ) == "true"
+    assert (
+        resolve_env(
+            "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED",
+            getter=values.get,
+        )
+        == "true"
+    )
 
 
 def test_knowledge_engine_flags_default_disabled(monkeypatch):
-    assert resolve_env(
-        "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED",
-        "false",
-        getter=lambda _name: None,
-    ) == "false"
+    assert (
+        resolve_env(
+            "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED",
+            "false",
+            getter=lambda _name: None,
+        )
+        == "false"
+    )
 ```
 
 Lifecycle tests must assert:
@@ -1529,8 +1526,8 @@ Add these suffixes to `_SHORT_SUFFIXES` in
 `deeper_notebook/environment.py`:
 
 ```python
-"KNOWLEDGE_ENGINE_BACKFILL_ENABLED",
-"KNOWLEDGE_ENGINE_SHADOW_ENABLED",
+("KNOWLEDGE_ENGINE_BACKFILL_ENABLED",)
+("KNOWLEDGE_ENGINE_SHADOW_ENABLED",)
 ```
 
 Use a strict boolean parser in the engine service:
@@ -1643,12 +1640,8 @@ async def test_diagnostic_routes_are_read_only(app_with_engine):
         transport=ASGITransport(app=app_with_engine),
         base_url="http://test",
     ) as client:
-        status = await client.get(
-            "/api/deeper-notebook/knowledge-engine/status"
-        )
-        documents = await client.get(
-            "/api/deeper-notebook/knowledge-engine/documents"
-        )
+        status = await client.get("/api/deeper-notebook/knowledge-engine/status")
+        documents = await client.get("/api/deeper-notebook/knowledge-engine/documents")
     assert status.status_code == 200
     assert documents.status_code == 200
     paths = app_with_engine.openapi()["paths"]

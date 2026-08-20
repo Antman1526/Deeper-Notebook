@@ -68,7 +68,9 @@ def _validate_unique_capabilities(
 def _validate_hashes(value: str | None) -> str | None:
     if value is None:
         return None
-    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+    if len(value) != 64 or any(
+        character not in "0123456789abcdef" for character in value
+    ):
         raise ValueError("content hashes must be lowercase SHA-256 values")
     return value
 
@@ -164,9 +166,7 @@ class KnowledgeSpace(_Strict):
 
     @model_validator(mode="after")
     def validate_capabilities(self) -> "KnowledgeSpace":
-        _validate_derived_capabilities(
-            self.capabilities, self.authority_kind, "space"
-        )
+        _validate_derived_capabilities(self.capabilities, self.authority_kind, "space")
         return self
 
 
@@ -301,9 +301,7 @@ class KnowledgeView(_Strict):
     definition: dict[str, Any] = Field(default_factory=dict)
     view_state: ViewState
     capabilities: list[KnowledgeCapability] = Field(
-        default_factory=lambda: sorted(
-            capabilities_for("external_read_only", "view")
-        )
+        default_factory=lambda: sorted(capabilities_for("external_read_only", "view"))
     )
     created_at: datetime
     updated_at: datetime
@@ -323,9 +321,7 @@ class KnowledgeView(_Strict):
 
     @model_validator(mode="after")
     def validate_view_contract(self) -> "KnowledgeView":
-        _validate_derived_capabilities(
-            self.capabilities, self.authority_kind, "view"
-        )
+        _validate_derived_capabilities(self.capabilities, self.authority_kind, "view")
         if self.view_state.kind != self.view_kind:
             raise ValueError("view_state kind must match view_kind")
         if self.view_kind == "collection" and self.target_ids:
@@ -347,7 +343,9 @@ class SourceRevision(_Strict):
     adapter_version: str = Field(min_length=1, max_length=128)
     parser_version: str = Field(min_length=1, max_length=128)
     parse_status: ParseState
-    diagnostics: list[AdapterDiagnostic] = Field(default_factory=list, max_length=10_000)
+    diagnostics: list[AdapterDiagnostic] = Field(
+        default_factory=list, max_length=10_000
+    )
     observed_at: datetime
     created_at: datetime
 
@@ -413,7 +411,9 @@ class KnowledgeSnapshot(_Strict):
     identity_claims: list[KnowledgeIdentityClaim] = Field(
         default_factory=list, max_length=100_000
     )
-    diagnostics: list[AdapterDiagnostic] = Field(default_factory=list, max_length=10_000)
+    diagnostics: list[AdapterDiagnostic] = Field(
+        default_factory=list, max_length=10_000
+    )
     revision: SourceRevision
 
     @model_validator(mode="after")
@@ -467,7 +467,9 @@ class KnowledgeSnapshot(_Strict):
             )
         for claim in self.identity_claims:
             if claim.source_revision_id != self.revision.id:
-                raise ValueError("identity claim source_revision_id must match snapshot")
+                raise ValueError(
+                    "identity claim source_revision_id must match snapshot"
+                )
         return self
 
 
@@ -494,7 +496,9 @@ def validate_snapshot_spans(snapshot: KnowledgeSnapshot, *, source_size: int) ->
             raise ValueError("source span is outside the original file bytes")
     for diagnostic in (*snapshot.revision.diagnostics, *snapshot.diagnostics):
         if diagnostic.source_end is not None and diagnostic.source_end > source_size:
-            raise ValueError("diagnostic source span is outside the original file bytes")
+            raise ValueError(
+                "diagnostic source span is outside the original file bytes"
+            )
 
 
 class ProjectionReceipt(_Strict):
@@ -666,7 +670,9 @@ class EquivalenceDifference(_Strict):
 
 class EquivalenceReport(_Strict):
     passed: bool
-    differences: list[EquivalenceDifference] = Field(default_factory=list, max_length=10_000)
+    differences: list[EquivalenceDifference] = Field(
+        default_factory=list, max_length=10_000
+    )
 
 
 __all__ = [

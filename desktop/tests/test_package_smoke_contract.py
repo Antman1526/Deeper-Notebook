@@ -25,7 +25,8 @@ def run_smoke(*arguments: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_smoke_writes_a_machine_readable_receipt_for_the_required_proofs(
-    monkeypatch, tmp_path: Path,
+    monkeypatch,
+    tmp_path: Path,
 ) -> None:
     runtime_path = tmp_path / "bundled-runtime"
     artifact = tmp_path / "Open-Notebook-Plus-fixture"
@@ -67,22 +68,22 @@ def test_smoke_writes_a_machine_readable_receipt_for_the_required_proofs(
         "argv",
         [
             "package_smoke.py",
-        "--executable",
-        sys.executable,
-        "--api-url",
-        "http://127.0.0.1:5055/healthz",
-        "--frontend-url",
-        "http://127.0.0.1:5055/notebooks",
-        "--required-runtime-path",
-        str(runtime_path),
-        "--artifact",
-        str(artifact),
-        "--expected-artifact-sha256",
-        f"{artifact}={hashlib.sha256(artifact.read_bytes()).hexdigest()}",
-        "--receipt",
-        str(receipt_path),
-        "--timeout-seconds",
-        "5",
+            "--executable",
+            sys.executable,
+            "--api-url",
+            "http://127.0.0.1:5055/healthz",
+            "--frontend-url",
+            "http://127.0.0.1:5055/notebooks",
+            "--required-runtime-path",
+            str(runtime_path),
+            "--artifact",
+            str(artifact),
+            "--expected-artifact-sha256",
+            f"{artifact}={hashlib.sha256(artifact.read_bytes()).hexdigest()}",
+            "--receipt",
+            str(receipt_path),
+            "--timeout-seconds",
+            "5",
         ],
     )
 
@@ -95,11 +96,16 @@ def test_smoke_writes_a_machine_readable_receipt_for_the_required_proofs(
         "process_startup": {"passed": True},
         "api_readiness": {"passed": True, "url": "http://127.0.0.1:5055/healthz"},
         "bundled_runtime_paths": {"passed": True, "paths": [str(runtime_path)]},
-        "frontend_route_load": {"passed": True, "url": "http://127.0.0.1:5055/notebooks"},
+        "frontend_route_load": {
+            "passed": True,
+            "url": "http://127.0.0.1:5055/notebooks",
+        },
         "clean_shutdown": {"passed": True},
         "artifact_signatures": {
             "passed": True,
-            "sha256": {str(artifact): hashlib.sha256(artifact.read_bytes()).hexdigest()},
+            "sha256": {
+                str(artifact): hashlib.sha256(artifact.read_bytes()).hexdigest()
+            },
         },
     }
 
@@ -149,4 +155,6 @@ def test_smoke_requires_an_artifact_to_sign(tmp_path: Path) -> None:
     )
 
     assert result.returncode != 0
-    assert "at least one artifact is required" in receipt_path.read_text(encoding="utf-8")
+    assert "at least one artifact is required" in receipt_path.read_text(
+        encoding="utf-8"
+    )

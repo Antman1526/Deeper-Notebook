@@ -42,7 +42,9 @@ class PodcastGenerationRequest(BaseModel):
     # v0.8.68 — outline-review workflow: stop after the outline so the user
     # can edit it before transcript + audio are generated.
     review_outline: bool = False
-    execution_policy: Literal["strict_local", "local_preferred", "custom"] = "strict_local"
+    execution_policy: Literal["strict_local", "local_preferred", "custom"] = (
+        "strict_local"
+    )
     compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced"
     include_transcription: bool = False
 
@@ -155,8 +157,12 @@ class PodcastService:
         custom_prompt: Optional[str] = None,
         episode_length: Optional[str] = None,
         review_outline: bool = False,
-        execution_policy: Literal["strict_local", "local_preferred", "custom"] = "strict_local",
-        compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced",
+        execution_policy: Literal[
+            "strict_local", "local_preferred", "custom"
+        ] = "strict_local",
+        compute_profile: Literal[
+            "efficient", "balanced", "maximum_quality"
+        ] = "balanced",
         include_transcription: bool = False,
         selection_summary: Optional[dict[str, Any]] = None,
         selection_fingerprint: Optional[str] = None,

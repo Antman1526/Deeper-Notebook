@@ -18,6 +18,7 @@ Design (spec 2026-06-11):
   - forced_offline_lookup: callers pass a callable for the user's
     Offline-mode toggle so this module has no settings/DB dependency.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -59,7 +60,9 @@ def _get_probe_lock() -> asyncio.Lock:
 
 def _ttl_s() -> float:
     try:
-        v = float(resolve_env("DEEPER_NOTEBOOK_NETWORK_STATE_TTL_SEC") or _DEFAULT_TTL_S)
+        v = float(
+            resolve_env("DEEPER_NOTEBOOK_NETWORK_STATE_TTL_SEC") or _DEFAULT_TTL_S
+        )
         return v if v > 0 else _DEFAULT_TTL_S
     except ValueError:
         return _DEFAULT_TTL_S
@@ -102,8 +105,10 @@ def report_network_failure() -> None:
     """A real outbound call failed with a network-classified error."""
     global _state
     _state = NetworkState(
-        status="offline", forced_offline=False,
-        checked_at=time.monotonic(), source="call-failure",
+        status="offline",
+        forced_offline=False,
+        checked_at=time.monotonic(),
+        source="call-failure",
     )
     logger.info("v0.8.68 network-state: flipped OFFLINE (cloud call failed)")
 
@@ -112,8 +117,10 @@ def report_network_success() -> None:
     """A real outbound call succeeded — we are definitely online."""
     global _state
     _state = NetworkState(
-        status="online", forced_offline=False,
-        checked_at=time.monotonic(), source="call-success",
+        status="online",
+        forced_offline=False,
+        checked_at=time.monotonic(),
+        source="call-success",
     )
 
 
@@ -125,7 +132,8 @@ def reset_network_state_for_tests() -> None:
 
 
 async def get_network_state(
-    *, forced_offline_lookup: Callable[[], bool] | None = None,
+    *,
+    forced_offline_lookup: Callable[[], bool] | None = None,
 ) -> NetworkState:
     """Current network state. Forced-offline check first (no probe), then
     TTL cache, then a single-flight thread-side TCP probe."""
@@ -137,8 +145,10 @@ async def get_network_state(
             forced = False  # settings hiccup must never brick cloud access
         if forced:
             return NetworkState(
-                status="offline", forced_offline=True,
-                checked_at=time.monotonic(), source="override",
+                status="offline",
+                forced_offline=True,
+                checked_at=time.monotonic(),
+                source="override",
             )
 
     now = time.monotonic()
@@ -158,8 +168,10 @@ async def get_network_state(
             logger.debug(f"v0.8.68 network probe errored ({exc!r}) → unknown")
             status = "unknown"
         _state = NetworkState(
-            status=status, forced_offline=False,
-            checked_at=time.monotonic(), source="probe",
+            status=status,
+            forced_offline=False,
+            checked_at=time.monotonic(),
+            source="probe",
         )
     return _state
 
@@ -185,6 +197,7 @@ async def forced_offline_enabled() -> bool:
         return _forced_cache[1]
     try:
         from deeper_notebook.domain.content_settings import ContentSettings
+
         settings = await ContentSettings.get_instance()
         value = bool(getattr(settings, "offline_mode", False))
     except Exception:
@@ -199,7 +212,9 @@ async def get_network_state_with_settings() -> NetworkState:
     sync forced_offline_lookup callable — resolve it first."""
     if await forced_offline_enabled():
         return NetworkState(
-            status="offline", forced_offline=True,
-            checked_at=time.monotonic(), source="override",
+            status="offline",
+            forced_offline=True,
+            checked_at=time.monotonic(),
+            source="override",
         )
     return await get_network_state()

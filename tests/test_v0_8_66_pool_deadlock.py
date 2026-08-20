@@ -14,6 +14,7 @@ connection.
 These tests reuse the `fake_async_surreal` + `fresh_pool` fixtures from
 test_db_pool.py.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -124,7 +125,10 @@ def test_pool_deadlock_cases_register_shared_fixtures_without_shadowing():
             for fixture in mark.args
         }
         assert {"fake_async_surreal", "fresh_pool"} <= fixture_names
-        assert not {
-            "fake_async_surreal",
-            "fresh_pool",
-        } & inspect.signature(test).parameters.keys()
+        assert (
+            not {
+                "fake_async_surreal",
+                "fresh_pool",
+            }
+            & inspect.signature(test).parameters.keys()
+        )

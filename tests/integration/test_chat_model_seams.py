@@ -97,7 +97,11 @@ class _Handler(BaseHTTPRequestHandler):
         if payload.get("model") != WIRE_MODEL_ID:
             self._json(
                 404,
-                {"error": {"message": f"Repository Not Found for model {payload.get('model')!r}"}},
+                {
+                    "error": {
+                        "message": f"Repository Not Found for model {payload.get('model')!r}"
+                    }
+                },
             )
             return
 
@@ -115,7 +119,11 @@ class _Handler(BaseHTTPRequestHandler):
                         "finish_reason": "stop",
                     }
                 ],
-                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
             },
         )
 
@@ -189,7 +197,9 @@ async def _set_chat_default(model_id: str | None, **extra) -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_chat_turn_completes_against_a_real_socket(local_credential, model_server):
+async def test_a_chat_turn_completes_against_a_real_socket(
+    local_credential, model_server
+):
     """The whole chain: defaults -> model row -> credential -> HTTP -> parsed reply.
 
     Nothing below provision is mocked. If resolution, base_url plumbing, the
@@ -231,7 +241,11 @@ async def test_registering_a_prettified_name_fails_loudly_not_silently(
     # The failure must name the rejected model, not surface as a timeout or a
     # generic "no model available" — that difference is the whole bug report.
     message = str(excinfo.value)
-    assert "404" in message or "Repository Not Found" in message or "not found" in message.lower()
+    assert (
+        "404" in message
+        or "Repository Not Found" in message
+        or "not found" in message.lower()
+    )
 
 
 @pytest.mark.asyncio
@@ -257,7 +271,9 @@ async def test_auto_route_with_no_benchmark_history_still_answers(
 
 
 @pytest.mark.asyncio
-async def test_a_dangling_chat_default_is_reported_not_silently_ignored(local_credential):
+async def test_a_dangling_chat_default_is_reported_not_silently_ignored(
+    local_credential,
+):
     """A default pointing at a deleted row must resolve to None, not explode.
 
     This is the shape of the `default_model` env-migration artifact: the id is

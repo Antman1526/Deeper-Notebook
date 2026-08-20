@@ -130,9 +130,7 @@ The shared server-startup scaffolding is in `aiohttp_window.py`:
 ```python
 from desktop.aiohttp_window import start_aiohttp_server_thread
 
-port, thread, loop, runner = start_aiohttp_server_thread(
-    lambda: build_app(...)
-)
+port, thread, loop, runner = start_aiohttp_server_thread(lambda: build_app(...))
 ```
 
 **Worked example:** `model_manager/` — a non-blocking window started in the

@@ -16,6 +16,7 @@ are guarded:
   3. `limit + offset` → appends both clauses in `LIMIT … START …` order
   4. Invalid input → `InvalidInputError`, no query issued
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch

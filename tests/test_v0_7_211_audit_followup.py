@@ -18,6 +18,7 @@ list. Three discrete fixes:
    file on Windows and bumped the FD count over long-running
    .app sessions.
 """
+
 from __future__ import annotations
 
 import re
@@ -43,7 +44,7 @@ def test_worker_spawn_passes_max_tasks_flag():
     # v0.8.99 — token match so an argv reflow cannot break a guard that is
     # about the flag being passed at all.
     assert '"--max-tasks", str(max_tasks)' in re.sub(r"\s+", " ", src)
-    assert 'DEEPER_NOTEBOOK_WORKER_MAX_TASKS' in src
+    assert "DEEPER_NOTEBOOK_WORKER_MAX_TASKS" in src
     # Clamped to [1, 32] so a fat-fingered "0" or "1000" can't
     # destabilise the worker.
     assert "max(1, min(int(max_tasks_raw), 32))" in src
@@ -61,7 +62,7 @@ def test_app_publishes_warning_when_chat_gguf_missing():
     can see why local chat isn't available."""
     src = _src("desktop/app.py")
     assert "v0.7.211" in src and "No chat GGUF found" in src
-    assert 'ctx.progress_bus.publish(' in src
+    assert "ctx.progress_bus.publish(" in src
     assert '"provider.llamacpp"' in src
     assert '"warning"' in src
 

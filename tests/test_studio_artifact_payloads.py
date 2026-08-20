@@ -35,9 +35,10 @@ def test_legacy_content_remains_readable():
 
 
 def test_structured_markdown_takes_precedence_over_content_alias():
-    assert artifact_markdown(
-        {"markdown": "# Structured", "content": "# Compatibility"}
-    ) == "# Structured"
+    assert (
+        artifact_markdown({"markdown": "# Structured", "content": "# Compatibility"})
+        == "# Structured"
+    )
 
 
 def test_new_payload_keeps_legacy_content_alias_and_extras():

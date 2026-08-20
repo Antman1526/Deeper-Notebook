@@ -21,9 +21,9 @@ Always use type hints for function parameters and return values:
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 
+
 async def process_content(
-    content: str,
-    options: Optional[Dict[str, Any]] = None
+    content: str, options: Optional[Dict[str, Any]] = None
 ) -> ProcessedContent:
     """Process content with optional configuration."""
     # Implementation
@@ -40,6 +40,7 @@ async def fetch_data(url: str) -> Dict[str, Any]:
         async with session.get(url) as response:
             return await response.json()
 
+
 # Bad - mixing sync and async
 def fetch_data(url: str) -> Dict[str, Any]:
     loop = asyncio.get_event_loop()
@@ -52,6 +53,7 @@ Use structured error handling with custom exceptions:
 
 ```python
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
+
 
 async def create_notebook(name: str, description: str) -> Notebook:
     """Create a new notebook with validation."""
@@ -72,9 +74,7 @@ Use Google-style docstrings for all functions, classes, and modules:
 
 ```python
 async def vector_search(
-    query: str,
-    limit: int = 10,
-    minimum_score: float = 0.2
+    query: str, limit: int = 10, minimum_score: float = 0.2
 ) -> List[SearchResult]:
     """Perform vector search across embedded content.
 
@@ -182,9 +182,11 @@ Use Pydantic models for validation:
 from pydantic import BaseModel, Field
 from typing import Optional
 
+
 class NotebookCreate(BaseModel):
     name: str = Field(..., description="Name of the notebook", min_length=1)
     description: str = Field(default="", description="Description of the notebook")
+
 
 class NotebookResponse(BaseModel):
     id: str
@@ -226,8 +228,8 @@ Use FastAPI's automatic documentation features:
     responses={
         201: {"description": "Notebook created successfully"},
         400: {"description": "Invalid input data"},
-        500: {"description": "Internal server error"}
-    }
+        500: {"description": "Internal server error"},
+    },
 )
 async def create_notebook(notebook: NotebookCreate):
     """Create a new notebook."""
@@ -243,18 +245,20 @@ Use the repository pattern consistently:
 ```python
 from open_notebook.database.repository import repo_create, repo_query, repo_update
 
+
 # Create records
 async def create_notebook(data: Dict[str, Any]) -> Dict[str, Any]:
     """Create a new notebook record."""
     return await repo_create("notebook", data)
 
+
 # Query with parameters
 async def find_notebooks_by_user(user_id: str) -> List[Dict[str, Any]]:
     """Find notebooks for a specific user."""
     return await repo_query(
-        "SELECT * FROM notebook WHERE user_id = $user_id",
-        {"user_id": user_id}
+        "SELECT * FROM notebook WHERE user_id = $user_id", {"user_id": user_id}
     )
+
 
 # Update records
 async def update_notebook(notebook_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -322,21 +326,17 @@ We use these tools to maintain code quality:
 async def get_notebook_with_sources(notebook_id: str) -> Notebook:
     """Retrieve notebook with all related sources."""
     notebook_data = await repo_query(
-        "SELECT * FROM notebook WHERE id = $id",
-        {"id": notebook_id}
+        "SELECT * FROM notebook WHERE id = $id", {"id": notebook_id}
     )
     if not notebook_data:
         raise InvalidInputError(f"Notebook {notebook_id} not found")
 
     sources_data = await repo_query(
         "SELECT * FROM source WHERE notebook_id = $notebook_id",
-        {"notebook_id": notebook_id}
+        {"notebook_id": notebook_id},
     )
 
-    return Notebook(
-        **notebook_data[0],
-        sources=[Source(**s) for s in sources_data]
-    )
+    return Notebook(**notebook_data[0], sources=[Source(**s) for s in sources_data])
 ```
 
 ### Model Validation
@@ -344,14 +344,15 @@ async def get_notebook_with_sources(notebook_id: str) -> Notebook:
 ```python
 from pydantic import BaseModel, validator
 
+
 class NotebookInput(BaseModel):
     name: str
     description: str = ""
 
-    @validator('name')
+    @validator("name")
     def name_not_empty(cls, v):
         if not v.strip():
-            raise ValueError('Name cannot be empty')
+            raise ValueError("Name cannot be empty")
         return v.strip()
 ```
 

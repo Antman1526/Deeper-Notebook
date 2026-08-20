@@ -23,6 +23,7 @@ came out of the same deep-scan but each touch a different file:
     adds a new migration without `IF NOT EXISTS` / `OVERWRITE`
     guards.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

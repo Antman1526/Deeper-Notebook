@@ -6,6 +6,7 @@ Task 9 additions (lines below the original 3 tests):
   * test_mcp_router_duplicate_name_409 — second POST with the same name
     must return 409, not 500.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -47,35 +48,50 @@ def test_mcp_client_call_tool_handles_text_image_and_resource_blocks(monkeypatch
     # TextContent / ImageContent / EmbeddedResource without needing
     # the real mcp package types.
     class _Text:
-        def __init__(self, text): self.text = text
+        def __init__(self, text):
+            self.text = text
+
     class _Image:
         def __init__(self, data, mime):
             self.data, self.mimeType = data, mime
+
     class _Resource:
         def __init__(self, uri, mime, text=None, blob=None):
             class _R:
                 pass
+
             r = _R()
             r.uri, r.mimeType, r.text, r.blob = uri, mime, text, blob
             self.resource = r
+
     class _Result:
-        def __init__(self, blocks): self.content = blocks
+        def __init__(self, blocks):
+            self.content = blocks
 
     captured_session = {}
 
     class _FakeSession:
-        async def __aenter__(self): return self
-        async def __aexit__(self, *a): return False
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
         async def call_tool(self, name, arguments=None):
             captured_session["name"] = name
             captured_session["arguments"] = arguments
-            return _Result([
-                _Text("Hello from search."),
-                _Image("AAAA" * 256, "image/png"),    # ~768 bytes
-                _Resource(uri="file:///tmp/a.pdf", mime="application/pdf",
-                          blob="BBBB" * 1024),
-                _Text("Trailing note."),
-            ])
+            return _Result(
+                [
+                    _Text("Hello from search."),
+                    _Image("AAAA" * 256, "image/png"),  # ~768 bytes
+                    _Resource(
+                        uri="file:///tmp/a.pdf",
+                        mime="application/pdf",
+                        blob="BBBB" * 1024,
+                    ),
+                    _Text("Trailing note."),
+                ]
+            )
 
     monkeypatch.setattr(
         "deeper_notebook.mcp.client._open_session",
@@ -122,8 +138,12 @@ def test_mcp_client_call_tool_empty_result_safe(monkeypatch):
         content = []
 
     class _FakeSession:
-        async def __aenter__(self): return self
-        async def __aexit__(self, *a): return False
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
         async def call_tool(self, name, arguments=None):
             return _Result()
 
@@ -153,13 +173,27 @@ def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
     ]
 
     class FakeSession:
-        async def __aenter__(self): return self
-        async def __aexit__(self, *a): return False
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
         async def list_tools(self):
-            return type("X", (), {"tools": [
-                type("T", (), {"name": t["name"], "description": t["description"]})()
-                for t in fake_tools
-            ]})()
+            return type(
+                "X",
+                (),
+                {
+                    "tools": [
+                        type(
+                            "T",
+                            (),
+                            {"name": t["name"], "description": t["description"]},
+                        )()
+                        for t in fake_tools
+                    ]
+                },
+            )()
 
     monkeypatch.setattr(
         "deeper_notebook.mcp.client._open_session",
@@ -167,6 +201,7 @@ def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
     )
     client = MCPClient(url="http://127.0.0.1:8742/mcp")
     import asyncio
+
     loop = asyncio.new_event_loop()
     try:
         names = loop.run_until_complete(client.list_tool_names())
@@ -190,13 +225,18 @@ def test_chat_graph_exposes_mcp_tools_when_enabled(monkeypatch):
     import asyncio
 
     from deeper_notebook.graphs.chat import _resolve_chat_tools
+
     loop = asyncio.new_event_loop()
     try:
         tools = loop.run_until_complete(
             _resolve_chat_tools(
                 force_servers=[
-                    {"id": "mcp_server:1", "name": "test",
-                     "url": "http://x", "enabled": True}
+                    {
+                        "id": "mcp_server:1",
+                        "name": "test",
+                        "url": "http://x",
+                        "enabled": True,
+                    }
                 ],
                 # v0.8.10 — bypass network discovery for the unit test
                 force_tool_names=["web_search", "fetch_url"],
@@ -228,9 +268,12 @@ def test_chat_graph_binds_gbrain_style_tool_names(monkeypatch):
         tools = loop.run_until_complete(
             _resolve_chat_tools(
                 force_servers=[
-                    {"id": "mcp_server:1", "name": "gbrain",
-                     "url": "http://localhost:8742/mcp",
-                     "enabled": True}
+                    {
+                        "id": "mcp_server:1",
+                        "name": "gbrain",
+                        "url": "http://localhost:8742/mcp",
+                        "enabled": True,
+                    }
                 ],
                 force_tool_names=["search", "think", "find_trajectory"],
             )
@@ -274,13 +317,21 @@ def test_chat_graph_builds_structured_tool_with_real_args_schema(monkeypatch):
     try:
         tools = loop.run_until_complete(
             _resolve_chat_tools(
-                force_servers=[{"id": "mcp_server:1", "name": "test",
-                                "url": "http://x", "enabled": True}],
-                force_tools_full=[{
-                    "name": "search",
-                    "description": "Search the brain repo",
-                    "input_schema": schema,
-                }],
+                force_servers=[
+                    {
+                        "id": "mcp_server:1",
+                        "name": "test",
+                        "url": "http://x",
+                        "enabled": True,
+                    }
+                ],
+                force_tools_full=[
+                    {
+                        "name": "search",
+                        "description": "Search the brain repo",
+                        "input_schema": schema,
+                    }
+                ],
             )
         )
     finally:
@@ -331,19 +382,28 @@ def test_resolve_chat_tools_handles_nullable_json_schema(monkeypatch):
             # Only-null type (degenerate but legal)
             "stub": {"type": ["null"]},
         },
-        "required": ["query"],   # required-but-nullable → still optional
+        "required": ["query"],  # required-but-nullable → still optional
     }
 
     loop = asyncio.new_event_loop()
     try:
         tools = loop.run_until_complete(
             _resolve_chat_tools(
-                force_servers=[{"id": "mcp_server:1", "name": "test",
-                                "url": "http://x", "enabled": True}],
-                force_tools_full=[{
-                    "name": "nullable_search", "description": "",
-                    "input_schema": schema,
-                }],
+                force_servers=[
+                    {
+                        "id": "mcp_server:1",
+                        "name": "test",
+                        "url": "http://x",
+                        "enabled": True,
+                    }
+                ],
+                force_tools_full=[
+                    {
+                        "name": "nullable_search",
+                        "description": "",
+                        "input_schema": schema,
+                    }
+                ],
             )
         )
     finally:
@@ -381,20 +441,33 @@ def test_resolve_chat_tools_caches_discovery_across_calls(monkeypatch):
 
     async def fake_list_tools_full(self):
         call_count["n"] += 1
-        return [{
-            "name": "search", "description": "",
-            "input_schema": {"type": "object", "properties": {
-                "query": {"type": "string"}
-            }, "required": ["query"]},
-        }]
+        return [
+            {
+                "name": "search",
+                "description": "",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            }
+        ]
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_full,
     )
 
     async def fake_list_enabled():
-        return [{"id": "mcp_server:1", "name": "test",
-                 "url": "http://CACHE-TEST-URL", "enabled": True}]
+        return [
+            {
+                "id": "mcp_server:1",
+                "name": "test",
+                "url": "http://CACHE-TEST-URL",
+                "enabled": True,
+            }
+        ]
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list_enabled,
@@ -407,7 +480,7 @@ def test_resolve_chat_tools_caches_discovery_across_calls(monkeypatch):
         loop.run_until_complete(_resolve_chat_tools())
     finally:
         loop.close()
-        _clear_tool_discovery_cache()   # don't leak into other tests
+        _clear_tool_discovery_cache()  # don't leak into other tests
 
     assert call_count["n"] == 1, (
         f"v0.8.12: list_tools_full should be cached across turns; "
@@ -435,14 +508,22 @@ def test_resolve_chat_tools_negative_caches_discovery_failures(monkeypatch):
     async def fake_list_tools_raise(self):
         call_count["n"] += 1
         raise ConnectionError("MCP server unreachable")
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_raise,
     )
 
     async def fake_list_enabled():
-        return [{"id": "mcp_server:1", "name": "broken",
-                 "url": "http://BROKEN-URL", "enabled": True}]
+        return [
+            {
+                "id": "mcp_server:1",
+                "name": "broken",
+                "url": "http://BROKEN-URL",
+                "enabled": True,
+            }
+        ]
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list_enabled,
@@ -477,20 +558,33 @@ def test_bind_mcp_and_run_tool_loop_extracted_helper_works(monkeypatch):
     from deeper_notebook.graphs.chat import bind_mcp_and_run_tool_loop
 
     async def fake_list_enabled():
-        return [{"id": "mcp_server:1", "name": "test",
-                 "url": "http://EXTRACT-TEST-URL", "enabled": True}]
+        return [
+            {
+                "id": "mcp_server:1",
+                "name": "test",
+                "url": "http://EXTRACT-TEST-URL",
+                "enabled": True,
+            }
+        ]
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list_enabled,
     )
 
     async def fake_list_tools_full(self):
-        return [{
-            "name": "search", "description": "",
-            "input_schema": {"type": "object", "properties": {
-                "query": {"type": "string"}
-            }, "required": ["query"]},
-        }]
+        return [
+            {
+                "name": "search",
+                "description": "",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            }
+        ]
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_full,
@@ -498,12 +592,14 @@ def test_bind_mcp_and_run_tool_loop_extracted_helper_works(monkeypatch):
 
     async def fake_call_tool(self, name, args):
         return {"text": f"called {name} with {args}", "blocks": []}
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
 
     n = {"calls": 0}
+
     async def fake_ainvoke(payload):
         n["calls"] += 1
         if n["calls"] == 1:
@@ -521,7 +617,8 @@ def test_bind_mcp_and_run_tool_loop_extracted_helper_works(monkeypatch):
     try:
         final, captures = loop.run_until_complete(
             bind_mcp_and_run_tool_loop(
-                fake_model, [HumanMessage(content="hi")],
+                fake_model,
+                [HumanMessage(content="hi")],
             )
         )
     finally:
@@ -541,6 +638,7 @@ def test_source_chat_state_carries_mcp_tool_calls_field(monkeypatch):
     Cheap structural check — the v0.7.183 source_chat tests + the new
     bind_mcp_and_run_tool_loop integration give end-to-end coverage."""
     from deeper_notebook.graphs.source_chat import SourceChatState
+
     annotations = getattr(SourceChatState, "__annotations__", {})
     assert "mcp_tool_calls" in annotations, (
         "v0.8.16: SourceChatState must declare mcp_tool_calls so the "
@@ -555,17 +653,22 @@ def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
     (server unreachable, transport error, auth refused), the chat
     must continue in degraded no-MCP mode rather than crashing the
     whole turn."""
+
     async def fake_list_enabled():
-        return [{"id": "mcp_server:1", "name": "test",
-                 "url": "http://x", "enabled": True}]
+        return [
+            {"id": "mcp_server:1", "name": "test", "url": "http://x", "enabled": True}
+        ]
+
     monkeypatch.setattr(
-        "deeper_notebook.mcp.registry.list_enabled_servers", fake_list_enabled,
+        "deeper_notebook.mcp.registry.list_enabled_servers",
+        fake_list_enabled,
     )
 
     # v0.8.11 — discovery is now via list_tools_full (returns schemas).
     # Mock both methods so any future refactor still hits a raise.
     async def fake_list_tools_raise(self):
         raise ConnectionError("MCP server unreachable")
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_raise,
@@ -578,6 +681,7 @@ def test_chat_graph_returns_empty_when_discovery_fails(monkeypatch):
     import asyncio
 
     from deeper_notebook.graphs.chat import _resolve_chat_tools
+
     loop = asyncio.new_event_loop()
     try:
         tools = loop.run_until_complete(_resolve_chat_tools())
@@ -598,16 +702,26 @@ def test_mcp_registry_lists_enabled_servers(monkeypatch):
 
     async def _fake_repo_query(q, params=None):
         return [
-            {"id": "mcp_server:1", "name": "OpenChronicle",
-             "url": "http://127.0.0.1:8742/mcp", "enabled": True},
-            {"id": "mcp_server:2", "name": "DuckDuckGo",
-             "url": "http://127.0.0.1:8743/mcp", "enabled": False},
+            {
+                "id": "mcp_server:1",
+                "name": "OpenChronicle",
+                "url": "http://127.0.0.1:8742/mcp",
+                "enabled": True,
+            },
+            {
+                "id": "mcp_server:2",
+                "name": "DuckDuckGo",
+                "url": "http://127.0.0.1:8743/mcp",
+                "enabled": False,
+            },
         ]
+
     monkeypatch.setattr(
         "deeper_notebook.database.repository.repo_query",
         _fake_repo_query,
     )
     import asyncio
+
     loop = asyncio.new_event_loop()
     try:
         servers = loop.run_until_complete(list_enabled_servers())
@@ -659,7 +773,11 @@ def test_mcp_router_list_and_create(monkeypatch):
     assert r_list.json() == []
 
     # Create
-    payload = {"name": "TestServer", "url": "http://127.0.0.1:8742/mcp", "enabled": True}
+    payload = {
+        "name": "TestServer",
+        "url": "http://127.0.0.1:8742/mcp",
+        "enabled": True,
+    }
     r_create = client.post("/api/mcp", json=payload)
     assert r_create.status_code == 201, r_create.text
     body = r_create.json()
@@ -711,15 +829,30 @@ def test_list_enabled_servers_sorts_by_priority(monkeypatch):
     # Rows as SurrealDB would return them after ORDER BY priority, created:
     # priority 10 → 50 → 100
     ordered_rows = [
-        {"id": "mcp_server:3", "name": "FastOne",
-         "url": "http://a/mcp", "enabled": True, "priority": 10,
-         "created": "2026-01-01T00:00:00Z"},
-        {"id": "mcp_server:1", "name": "MidOne",
-         "url": "http://b/mcp", "enabled": True, "priority": 50,
-         "created": "2026-01-02T00:00:00Z"},
-        {"id": "mcp_server:2", "name": "SlowOne",
-         "url": "http://c/mcp", "enabled": True, "priority": 100,
-         "created": "2026-01-03T00:00:00Z"},
+        {
+            "id": "mcp_server:3",
+            "name": "FastOne",
+            "url": "http://a/mcp",
+            "enabled": True,
+            "priority": 10,
+            "created": "2026-01-01T00:00:00Z",
+        },
+        {
+            "id": "mcp_server:1",
+            "name": "MidOne",
+            "url": "http://b/mcp",
+            "enabled": True,
+            "priority": 50,
+            "created": "2026-01-02T00:00:00Z",
+        },
+        {
+            "id": "mcp_server:2",
+            "name": "SlowOne",
+            "url": "http://c/mcp",
+            "enabled": True,
+            "priority": 100,
+            "created": "2026-01-03T00:00:00Z",
+        },
     ]
 
     async def _fake_repo_query(q, params=None):
@@ -734,6 +867,7 @@ def test_list_enabled_servers_sorts_by_priority(monkeypatch):
         _fake_repo_query,
     )
     import asyncio
+
     loop = asyncio.new_event_loop()
     try:
         servers = loop.run_until_complete(list_enabled_servers())
@@ -753,8 +887,13 @@ def test_patch_mcp_server_updates_priority(monkeypatch):
 
     from api.main import app
 
-    _updated = {"id": "mcp_server:p1", "name": "PriorityServer",
-                "url": "http://x/mcp", "enabled": True, "priority": 5}
+    _updated = {
+        "id": "mcp_server:p1",
+        "name": "PriorityServer",
+        "url": "http://x/mcp",
+        "enabled": True,
+        "priority": 5,
+    }
 
     async def _fake_repo_update(table, id_, data):
         assert table == "mcp_server"
@@ -763,6 +902,7 @@ def test_patch_mcp_server_updates_priority(monkeypatch):
         return [_updated]
 
     import deeper_notebook.database.repository as _repo
+
     monkeypatch.setattr(_repo, "repo_update", _fake_repo_update)
 
     client = TestClient(app)
@@ -811,8 +951,14 @@ def test_resolve_chat_tools_captures_calls(monkeypatch):
     try:
         tools = loop.run_until_complete(
             _resolve_chat_tools(
-                force_servers=[{"id": "mcp_server:1", "name": "test",
-                                "url": "http://x", "enabled": True}],
+                force_servers=[
+                    {
+                        "id": "mcp_server:1",
+                        "name": "test",
+                        "url": "http://x",
+                        "enabled": True,
+                    }
+                ],
                 captures=captures,
                 force_tool_names=["web_search"],
             )
@@ -854,8 +1000,14 @@ def test_resolve_chat_tools_increments_index_across_calls(monkeypatch):
     try:
         tools = loop.run_until_complete(
             _resolve_chat_tools(
-                force_servers=[{"id": "mcp_server:1", "name": "test",
-                                "url": "http://x", "enabled": True}],
+                force_servers=[
+                    {
+                        "id": "mcp_server:1",
+                        "name": "test",
+                        "url": "http://x",
+                        "enabled": True,
+                    }
+                ],
                 captures=captures,
                 force_tool_names=["web_search"],
             )
@@ -892,8 +1044,14 @@ def test_resolve_chat_tools_truncates_long_text(monkeypatch):
     try:
         tools = loop.run_until_complete(
             _resolve_chat_tools(
-                force_servers=[{"id": "mcp_server:1", "name": "test",
-                                "url": "http://x", "enabled": True}],
+                force_servers=[
+                    {
+                        "id": "mcp_server:1",
+                        "name": "test",
+                        "url": "http://x",
+                        "enabled": True,
+                    }
+                ],
                 captures=captures,
                 force_tool_names=["web_search"],
             )
@@ -930,8 +1088,10 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
 
     # Mock MCP server registry → one enabled server
     async def fake_list():
-        return [{"id": "mcp_server:1", "name": "test",
-                 "url": "http://x", "enabled": True}]
+        return [
+            {"id": "mcp_server:1", "name": "test", "url": "http://x", "enabled": True}
+        ]
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list,
@@ -940,6 +1100,7 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
     # Mock MCPClient.call_tool → deterministic result
     async def fake_call_tool(self, name, args):
         return {"text": f"executed {name} with {args}"}
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
@@ -950,15 +1111,18 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
     # dynamically. Without this, the test would try a real network
     # call to "http://x".
     async def fake_list_tools_full(self):
-        return [{
-            "name": "web_search",
-            "description": "Search the web",
-            "input_schema": {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"],
-            },
-        }]
+        return [
+            {
+                "name": "web_search",
+                "description": "Search the web",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            }
+        ]
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_full,
@@ -978,11 +1142,13 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
             # mcp_web_search since fake_list_tools returns ["web_search"]).
             return AIMessage(
                 content="",
-                tool_calls=[{
-                    "name": "mcp_web_search",
-                    "args": {"query": "test query"},
-                    "id": "call_abc",
-                }],
+                tool_calls=[
+                    {
+                        "name": "mcp_web_search",
+                        "args": {"query": "test query"},
+                        "id": "call_abc",
+                    }
+                ],
             )
         # Second call (after tool result fed back) → final answer
         return AIMessage(
@@ -995,8 +1161,10 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
 
     # Stub the provision so the node uses our fake model
     import deeper_notebook.graphs.chat as chat_mod
+
     async def fake_provision(content, model_id, default_type, **kw):
         return fake_model
+
     monkeypatch.setattr(chat_mod, "provision_langchain_model", fake_provision)
 
     async def fake_recall_memory(query=None):
@@ -1006,12 +1174,13 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
 
     # Run the node
     from langchain_core.messages import HumanMessage
+
     state = {
         "messages": [HumanMessage(content="search for something")],
         "notebook": None,
         "context": None,
         "context_config": None,
-        "model_override": "model:test",   # bypass smart router for clean test
+        "model_override": "model:test",  # bypass smart router for clean test
         "selected_provider": None,
         "selected_model_id": None,
         "mcp_tool_calls": None,
@@ -1038,12 +1207,15 @@ def test_call_model_with_messages_executes_mcp_tool_calls(monkeypatch):
         f"This means the tool closure never fired — chat graph isn't executing "
         f"tools despite the bind_tools call."
     )
-    assert captures[0]["name"] == "web_search"  # _search calls call_tool("web_search", ...)
+    assert (
+        captures[0]["name"] == "web_search"
+    )  # _search calls call_tool("web_search", ...)
     assert captures[0]["args"] == {"query": "test query"}
     assert "executed web_search" in captures[0]["text"]
 
     # The second model invocation must have seen a ToolMessage in the payload.
     from langchain_core.messages import ToolMessage
+
     second_payload = captured_payloads[1]
     tool_msgs = [m for m in second_payload if isinstance(m, ToolMessage)]
     assert len(tool_msgs) == 1, (
@@ -1064,8 +1236,10 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
     from langchain_core.messages import AIMessage, HumanMessage
 
     async def fake_list():
-        return [{"id": "mcp_server:1", "name": "test",
-                 "url": "http://x", "enabled": True}]
+        return [
+            {"id": "mcp_server:1", "name": "test", "url": "http://x", "enabled": True}
+        ]
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.registry.list_enabled_servers",
         fake_list,
@@ -1073,21 +1247,26 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
 
     async def fake_call_tool(self, name, args):
         return {"text": "result"}
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.client.MCPClient.call_tool",
         fake_call_tool,
     )
+
     # v0.8.10 / v0.8.11 — stub list_tools_full discovery
     async def fake_list_tools_full(self):
-        return [{
-            "name": "web_search",
-            "description": "Search the web",
-            "input_schema": {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"],
-            },
-        }]
+        return [
+            {
+                "name": "web_search",
+                "description": "Search the web",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            }
+        ]
+
     monkeypatch.setattr(
         "deeper_notebook.mcp.client.MCPClient.list_tools_full",
         fake_list_tools_full,
@@ -1100,11 +1279,13 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
         # ALWAYS emit a tool_call → would loop forever without the bound
         return AIMessage(
             content="",
-            tool_calls=[{
-                "name": "mcp_web_search",
-                "args": {"query": f"iter{call_count['n']}"},
-                "id": f"call_{call_count['n']}",
-            }],
+            tool_calls=[
+                {
+                    "name": "mcp_web_search",
+                    "args": {"query": f"iter{call_count['n']}"},
+                    "id": f"call_{call_count['n']}",
+                }
+            ],
         )
 
     fake_model = MagicMock()
@@ -1112,8 +1293,10 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
     fake_model.bind_tools = lambda tools: fake_model
 
     import deeper_notebook.graphs.chat as chat_mod
+
     async def fake_provision(content, model_id, default_type, **kw):
         return fake_model
+
     monkeypatch.setattr(chat_mod, "provision_langchain_model", fake_provision)
 
     async def fake_recall_memory(query=None):
@@ -1123,9 +1306,12 @@ def test_call_model_bounds_tool_loop_iterations(monkeypatch):
 
     state = {
         "messages": [HumanMessage(content="loop")],
-        "notebook": None, "context": None, "context_config": None,
+        "notebook": None,
+        "context": None,
+        "context_config": None,
         "model_override": "model:test",
-        "selected_provider": None, "selected_model_id": None,
+        "selected_provider": None,
+        "selected_model_id": None,
         "mcp_tool_calls": None,
     }
     loop = asyncio.new_event_loop()

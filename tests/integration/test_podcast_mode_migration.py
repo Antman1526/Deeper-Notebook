@@ -14,7 +14,9 @@ pytestmark = pytest.mark.integration_surreal
 
 
 @pytest.mark.asyncio
-async def test_mode_prompt_and_transcript_segments_survive_outline_retry_and_reload(clean_namespace):
+async def test_mode_prompt_and_transcript_segments_survive_outline_retry_and_reload(
+    clean_namespace,
+):
     episode = PodcastEpisode(
         name="Durable debate",
         episode_profile={"name": "profile"},
@@ -45,9 +47,7 @@ async def test_mode_prompt_and_transcript_segments_survive_outline_retry_and_rel
     # data path used after the process restarts between outline review and TTS.
     reloaded.generation_stage = "awaiting_review"
     reloaded.outline = {
-        "segments": [
-            {"name": "Question", "description": "Frame it", "size": "short"}
-        ]
+        "segments": [{"name": "Question", "description": "Frame it", "size": "short"}]
     }
     await reloaded.save()
     after_outline_review = await PodcastEpisode.get(str(episode.id))

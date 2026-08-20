@@ -21,6 +21,7 @@ needing to ship or maintain an MLX runtime — they install Osaurus once
 (`brew install --cask osaurus`), we detect it on next launch, and the
 smart router (v0.8.0+) starts using it.
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,9 +55,9 @@ def _osaurus_port() -> int:
         return int(raw)
     except ValueError:
         log.warning(
-            "DEEPER_NOTEBOOK_OSAURUS_PORT=%r is not an integer; "
-            "falling back to %d",
-            raw, DEFAULT_OSAURUS_PORT,
+            "DEEPER_NOTEBOOK_OSAURUS_PORT=%r is not an integer; falling back to %d",
+            raw,
+            DEFAULT_OSAURUS_PORT,
         )
         return DEFAULT_OSAURUS_PORT
 
@@ -81,7 +82,8 @@ def _osaurus_running(port: int) -> tuple[bool, list[str]]:
             if resp.status_code != 200:
                 log.debug(
                     "Osaurus probe at %s returned HTTP %d — skipping",
-                    url, resp.status_code,
+                    url,
+                    resp.status_code,
                 )
                 return False, []
             data = resp.json()
@@ -97,7 +99,8 @@ def _osaurus_running(port: int) -> tuple[bool, list[str]]:
         # operators can see them without re-enabling DEBUG.
         log.info(
             "Osaurus probe at %s failed unexpectedly (%s) — skipping",
-            url, exc,
+            url,
+            exc,
         )
         return False, []
 
@@ -169,7 +172,9 @@ def register_osaurus_models(
             registered = True
             log.info(
                 "Registered Osaurus model %r against credential %r (port %d)",
-                model_name, cred_name, target_port,
+                model_name,
+                cred_name,
+                target_port,
             )
 
     return registered

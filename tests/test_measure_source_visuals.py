@@ -18,15 +18,23 @@ sys.modules["measure_source_visuals"] = measure_source_visuals
 SPEC.loader.exec_module(measure_source_visuals)
 
 
-def test_empty_extractor_results_fail_the_budget_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_empty_extractor_results_fail_the_budget_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A zero-candidate run cannot claim a successful visual extraction proof."""
 
     async def no_candidates(_fixture: Path) -> list[object]:
         return []
 
-    monkeypatch.setattr(measure_source_visuals, "RECEIPT_PATH", tmp_path / "receipt.json")
-    monkeypatch.setattr(measure_source_visuals, "extract_pdf_candidates", lambda _fixture: [])
-    monkeypatch.setattr(measure_source_visuals, "extract_video_candidates", no_candidates)
+    monkeypatch.setattr(
+        measure_source_visuals, "RECEIPT_PATH", tmp_path / "receipt.json"
+    )
+    monkeypatch.setattr(
+        measure_source_visuals, "extract_pdf_candidates", lambda _fixture: []
+    )
+    monkeypatch.setattr(
+        measure_source_visuals, "extract_video_candidates", no_candidates
+    )
     monkeypatch.setattr(measure_source_visuals, "extract_audio_artwork", no_candidates)
 
     with pytest.raises(RuntimeError, match="nonempty visual extraction"):

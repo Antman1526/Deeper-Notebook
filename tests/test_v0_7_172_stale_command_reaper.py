@@ -14,6 +14,7 @@ startup so the frontend stops polling.
 This test pins the contract at the AST level so the reaper can't
 silently be removed in a future refactor.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

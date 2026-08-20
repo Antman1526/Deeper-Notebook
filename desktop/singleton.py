@@ -43,6 +43,7 @@ uses its query-only `OpenProcess` API because Windows does not expose
 POSIX signal-zero semantics. `psutil` would be cleaner but we don't
 want a new dep in the bundle just for this.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -174,11 +175,11 @@ class SingletonHandle:
                 log.debug(
                     "Singleton release: PID file now owned by PID %d "
                     "(not us — %d); leaving alone",
-                    existing, os.getpid(),
+                    existing,
+                    os.getpid(),
                 )
         except Exception as exc:
-            log.warning("Could not release singleton at %s: %s",
-                        self.pid_file, exc)
+            log.warning("Could not release singleton at %s: %s", self.pid_file, exc)
 
 
 @dataclass
@@ -245,7 +246,8 @@ def acquire_singleton(
             raise AlreadyRunning(existing_pid, pid_file)
         log.info(
             "Removing stale PID file %s (PID %d is no longer alive)",
-            pid_file, existing_pid,
+            pid_file,
+            existing_pid,
         )
         try:
             pid_file.unlink(missing_ok=True)
@@ -512,10 +514,13 @@ def _list_processes_posix() -> list[tuple[int, int, str]]:
     """Return [(pid, ppid, cmdline), ...] using `ps -eo`. Empty list on
     any failure (ps not available, parse error, timeout)."""
     import subprocess
+
     try:
         result = subprocess.run(
             ["ps", "-eo", "pid,ppid,command"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         log.debug("ps not available for orphan reap: %s", exc)
@@ -564,11 +569,15 @@ def _list_processes_windows() -> list[tuple[int, int, str]]:
     try:
         result = subprocess.run(
             [
-                "wmic", "process", "get",
+                "wmic",
+                "process",
+                "get",
                 "ProcessId,ParentProcessId,CommandLine",
                 "/format:csv",
             ],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0 and result.stdout.strip():
             return _parse_wmic_csv(result.stdout)
@@ -579,7 +588,9 @@ def _list_processes_windows() -> list[tuple[int, int, str]]:
     try:
         result = subprocess.run(
             ["tasklist", "/v", "/fo", "csv", "/nh"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         log.debug("tasklist also unavailable: %s", exc)
@@ -654,10 +665,13 @@ def _kill_orphan(pid: int, cmdline: str) -> None:
     truncated = cmdline[:80]
     if sys.platform == "win32":
         import subprocess
+
         try:
             subprocess.run(
                 ["taskkill", "/pid", str(pid), "/t"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             log.info("Reaped orphan %d: %s", pid, truncated)
         except (FileNotFoundError, subprocess.TimeoutExpired) as exc:

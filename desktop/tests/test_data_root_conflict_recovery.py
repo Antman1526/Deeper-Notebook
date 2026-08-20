@@ -198,9 +198,12 @@ def test_conflict_evidence_does_not_select_or_mutate_either_root(
     assert recovery_root == tmp_path / ".deeper-notebook-recovery"
     assert payload["selected_root"] is None
     assert payload["mutated_roots"] == []
-    assert json.loads(
-        (recovery_root / "logs" / "recovery.log").read_text(encoding="utf-8")
-    )["selected_root"] is None
+    assert (
+        json.loads(
+            (recovery_root / "logs" / "recovery.log").read_text(encoding="utf-8")
+        )["selected_root"]
+        is None
+    )
     assert not list(recovery_root.rglob("*.tmp"))
     assert (_tree_hash(canonical), _tree_hash(legacy)) == before
 
@@ -227,9 +230,7 @@ def test_conflict_evidence_rejects_symlinked_or_foreign_recovery_root(
     if hasattr(data_root.os, "getuid"):
         actual_uid = data_root.os.getuid()
         monkeypatch.setattr(data_root.os, "getuid", lambda: actual_uid + 1)
-        with pytest.raises(
-            RuntimeError, match="recovery-metadata-directory-not-owned"
-        ):
+        with pytest.raises(RuntimeError, match="recovery-metadata-directory-not-owned"):
             data_root.write_conflict_recovery_evidence(decision, home=tmp_path)
         assert (_tree_hash(canonical), _tree_hash(legacy)) == before
 

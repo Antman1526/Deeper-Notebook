@@ -1,4 +1,5 @@
 """Managed Hugging Face snapshot installs for repo-style local models."""
+
 from __future__ import annotations
 
 import asyncio
@@ -74,9 +75,7 @@ def _prune_job_history() -> None:
         "failed",
         "cancelled",
     }
-    terminal_ids = [
-        job_id for job_id, job in _JOBS.items() if job.status in terminal
-    ]
+    terminal_ids = [job_id for job_id, job in _JOBS.items() if job.status in terminal]
     excess = len(terminal_ids) - _MAX_TERMINAL_JOBS
     for job_id in terminal_ids[: max(0, excess)]:
         _JOBS.pop(job_id, None)
@@ -84,7 +83,9 @@ def _prune_job_history() -> None:
 
 def _validate_commit_sha(value: object) -> str:
     if not isinstance(value, str) or not _COMMIT_SHA_RE.fullmatch(value.strip()):
-        raise ValueError("Hugging Face snapshot revision is not a 40-character commit SHA")
+        raise ValueError(
+            "Hugging Face snapshot revision is not a 40-character commit SHA"
+        )
     return value.strip().lower()
 
 
@@ -176,7 +177,10 @@ def _has_existing_model_files(target_dir: Path) -> bool:
 
 
 def _snapshot_download(
-    repo_id: str, local_dir: str, *, revision: str | None = None,
+    repo_id: str,
+    local_dir: str,
+    *,
+    revision: str | None = None,
 ) -> None:
     from huggingface_hub import snapshot_download
 
@@ -208,7 +212,9 @@ async def _run_snapshot_install(
         job.revision = _validate_commit_sha(resolved_revision)
         _write_snapshot_meta(target_dir, job)
         job.status = "downloading"
-        _append_log(job, f"Downloading {job.repo_id} at {job.revision} into {target_dir}")
+        _append_log(
+            job, f"Downloading {job.repo_id} at {job.revision} into {target_dir}"
+        )
         _write_snapshot_meta(target_dir, job)
         target_dir.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(
@@ -334,8 +340,7 @@ async def reconcile_snapshot_installs(model_dir: Path) -> int:
     reconstructed = 0
     async with _get_registry_lock():
         live_keys = {
-            (job.repo_id, str(Path(job.target_path)))
-            for job in _JOBS.values()
+            (job.repo_id, str(Path(job.target_path))) for job in _JOBS.values()
         }
         try:
             meta_files = list(model_dir.rglob(_SNAPSHOT_META_FILENAME))

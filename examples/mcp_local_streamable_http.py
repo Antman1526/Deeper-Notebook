@@ -5,6 +5,7 @@ Run with ``uv run python examples/mcp_local_streamable_http.py`` and register
 intentionally external to Deeper Notebook so registration and failure
 isolation can be exercised without an in-process code loader.
 """
+
 from __future__ import annotations
 
 import os

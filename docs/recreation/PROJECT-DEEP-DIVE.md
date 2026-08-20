@@ -58,7 +58,7 @@ try:
         model = model.bind_tools(mcp_tools)
 except Exception as bind_exc:
     _logger.debug("tool bind failed (degrading to no-tools): {}", bind_exc)
-    mcp_tools = []      # ← must reset, or later dispatch looks up a tool that isn't bound
+    mcp_tools = []  # ← must reset, or later dispatch looks up a tool that isn't bound
 ```
 
 Tool assembly is deliberately split into independent `try` blocks. Originally MCP
@@ -69,8 +69,14 @@ MCP servers also dropped the **DB-independent** web-search tool:
 # 2. Native env-keyed web_search tool — INDEPENDENT of MCP/DB (v0.8.64).
 try:
     from deeper_notebook.tools.web_search import (
-        WEB_SEARCH_TOOL_NAME, build_web_search_tool, web_search_enabled)
-    _excluded_names = {(n or "").strip().lower() for n in (exclude_server_names or []) if n}
+        WEB_SEARCH_TOOL_NAME,
+        build_web_search_tool,
+        web_search_enabled,
+    )
+
+    _excluded_names = {
+        (n or "").strip().lower() for n in (exclude_server_names or []) if n
+    }
     if web_search_enabled() and WEB_SEARCH_TOOL_NAME not in _excluded_names:
         mcp_tools = list(mcp_tools) + [build_web_search_tool(mcp_captures)]
 except Exception as ws_exc:
@@ -88,25 +94,32 @@ buying enough isolation clarity to justify itself, or is a registry strictly bet
 `deeper_notebook/tools/web_search.py`:
 
 ```python
-deadline = time.monotonic() + _total_budget_sec()          # 25s across the WHOLE chain
+deadline = time.monotonic() + _total_budget_sec()  # 25s across the WHOLE chain
 for attempt_index, (provider, target) in enumerate(chain):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         break
-    cap = (min(per_attempt_cap, _KEYLESS_TIMEOUT_SEC)      # keyless are cheap → 6s
-           if provider in _KEYLESS_PROVIDERS else per_attempt_cap)
-    attempt_timeout = min(cap, remaining)                  # later attempts shrink
+    cap = (
+        min(per_attempt_cap, _KEYLESS_TIMEOUT_SEC)  # keyless are cheap → 6s
+        if provider in _KEYLESS_PROVIDERS
+        else per_attempt_cap
+    )
+    attempt_timeout = min(cap, remaining)  # later attempts shrink
     try:
         results = await _do_attempt(client, provider, target, query, n, attempt_timeout)
     except Exception as exc:
-        logger.warning("web_search attempt via {}{} failed: {}",
-                       provider, f" ({target})" if target else "", exc)
-        continue                                            # error → next provider
+        logger.warning(
+            "web_search attempt via {}{} failed: {}",
+            provider,
+            f" ({target})" if target else "",
+            exc,
+        )
+        continue  # error → next provider
     if results:
         _cache_put(cache_key, results, provider, attempt_index > 0)
         return results, provider, attempt_index > 0
     if provider == "searxng" or provider in _KEYLESS_PROVIDERS:
-        continue          # FREE provider, empty answer → try next; costs nothing
+        continue  # FREE provider, empty answer → try next; costs nothing
     return results, provider, attempt_index > 0
     # ↑ PAID provider returning empty is a legitimate answer. Falling through would
     #   double the bill for no information. This asymmetry is intentional.
@@ -118,12 +131,16 @@ for attempt_index, (provider, target) in enumerate(chain):
 async def _acquire_client() -> tuple[object, bool]:
     """Return (client, pooled); the caller closes it only when not pooled."""
     factory = httpx.AsyncClient
-    if (_pooled_client is not None
-            and _pooled_client_loop is loop         # a client is bound to its creating loop
-            and _pooled_client_factory is factory   # patched class in a test ⇒ rebuild
-            and not getattr(_pooled_client, "is_closed", False)):
+    if (
+        _pooled_client is not None
+        and _pooled_client_loop is loop  # a client is bound to its creating loop
+        and _pooled_client_factory is factory  # patched class in a test ⇒ rebuild
+        and not getattr(_pooled_client, "is_closed", False)
+    ):
         return _pooled_client, True
-    client = factory(limits=httpx.Limits(max_keepalive_connections=8, max_connections=16))
+    client = factory(
+        limits=httpx.Limits(max_keepalive_connections=8, max_connections=16)
+    )
     ...
 ```
 
@@ -174,12 +191,12 @@ an existing install, because two independent caches both said "current":
 
 ```python
 # Layer 1 — the extracted runtime is keyed to the tarball that produced it.
-stamp_path   = runtime_dir / ".source-tarball.sha256"
+stamp_path = runtime_dir / ".source-tarball.sha256"
 tarball_hash = hashlib.sha256(tarball.read_bytes()).hexdigest()
 if interpreter.exists():
     if stamp_path.exists() and stamp_path.read_text().strip() == tarball_hash:
         if _interpreter_is_healthy(interpreter):
-            return interpreter                 # only skip when BOTH hold
+            return interpreter  # only skip when BOTH hold
         reason = "v0.7.212: detected partial/broken"
     else:
         reason = "v0.8.83: bundled runtime changed — stale"
@@ -191,8 +208,14 @@ if interpreter.exists():
 def _interpreter_stamp(standalone_python: Path) -> str:
     """OpenSSL is in the stamp on purpose: Wikimedia's edge 403s the OpenSSL 3.0
     TLS fingerprint, which is exactly the class of fix a runtime bump must deliver."""
-    proc = subprocess.run([str(standalone_python), "-c",
-        "import ssl,sys;print(sys.version.split()[0], ssl.OPENSSL_VERSION)"], ...)
+    proc = subprocess.run(
+        [
+            str(standalone_python),
+            "-c",
+            "import ssl,sys;print(sys.version.split()[0], ssl.OPENSSL_VERSION)",
+        ],
+        ...,
+    )
     return proc.stdout.strip() if proc.returncode == 0 else "unknown-interpreter"
 ```
 
@@ -208,9 +231,10 @@ if source_visuals_enabled():
     projected = await project_source_visuals(result)
     ...
 else:
-    sentinel = disabled_visual_status()          # state="disabled"
-    response_list = [item.model_copy(update={"visual_status": sentinel})
-                     for item in response_list]
+    sentinel = disabled_visual_status()  # state="disabled"
+    response_list = [
+        item.model_copy(update={"visual_status": sentinel}) for item in response_list
+    ]
 ```
 
 ```tsx

@@ -19,6 +19,7 @@ in both `delete_session` endpoints (chat.py + source_chat.py),
 wrapped in best-effort try/except so a checkpoint-cleanup failure
 doesn't block the primary SurrealDB delete.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

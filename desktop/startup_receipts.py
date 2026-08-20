@@ -4,6 +4,7 @@ The launcher uses this store as a best-effort optimization.  A malformed,
 stale, or out-of-root receipt is treated as a cache miss so it can never alter
 model ownership or prevent the normal bounded chooser from running.
 """
+
 from __future__ import annotations
 
 import json
@@ -170,9 +171,7 @@ class StartupReceiptStore:
 
         payload = self._read() or _empty_payload()
         stages = [
-            entry
-            for entry in payload["stages"]
-            if entry["stage"] != normalized_stage
+            entry for entry in payload["stages"] if entry["stage"] != normalized_stage
         ]
         stages.append({"stage": normalized_stage, "elapsed_ms": normalized_elapsed})
         payload["stages"] = stages[-MAX_STAGES:]
@@ -218,9 +217,11 @@ class StartupReceiptStore:
         cached = payload["chat_model"]
         model_root = Path(root).expanduser().resolve(strict=False)
         raw_path = Path(cached["path"]).expanduser()
-        candidate = (model_root / raw_path if not raw_path.is_absolute() else raw_path)
+        candidate = model_root / raw_path if not raw_path.is_absolute() else raw_path
         candidate = candidate.resolve(strict=False)
-        if candidate.suffix.lower() != ".gguf" or not _path_is_within(candidate, model_root):
+        if candidate.suffix.lower() != ".gguf" or not _path_is_within(
+            candidate, model_root
+        ):
             return None
         try:
             metadata = candidate.stat()

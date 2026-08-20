@@ -137,11 +137,17 @@ def extract_pdf_candidates(
 
 
 def _duration_ms_from_text(stderr: bytes | str) -> int:
-    text = stderr.decode("utf-8", "replace") if isinstance(stderr, bytes) else str(stderr)
+    text = (
+        stderr.decode("utf-8", "replace") if isinstance(stderr, bytes) else str(stderr)
+    )
     match = _DURATION_RE.search(text)
     if match is None:
         raise SourceVisualMediaError("VIDEO_DURATION_INVALID")
-    hours, minutes, seconds = int(match.group(1)), int(match.group(2)), float(match.group(3))
+    hours, minutes, seconds = (
+        int(match.group(1)),
+        int(match.group(2)),
+        float(match.group(3)),
+    )
     if minutes >= 60 or seconds >= 60 or hours >= 100:
         raise SourceVisualMediaError("VIDEO_DURATION_INVALID")
     duration_ms = int(round((hours * 3_600 + minutes * 60 + seconds) * 1_000))
@@ -312,7 +318,8 @@ async def extract_video_candidates(source: str | Path) -> list[VisualCandidate]:
 
     try:
         duration_ms = await asyncio.wait_for(
-            _probe_video_duration(path), timeout=min(VIDEO_FRAME_TIMEOUT_SECONDS, remaining_seconds())
+            _probe_video_duration(path),
+            timeout=min(VIDEO_FRAME_TIMEOUT_SECONDS, remaining_seconds()),
         )
         candidates: list[VisualCandidate] = []
         for timestamp_ms in video_timestamps_ms(duration_ms):
@@ -402,7 +409,9 @@ def _first_video_stream_is_attached_picture(stderr: bytes) -> bool:
     return False
 
 
-def candidates_alt_text(title: str, source_kind: str, candidates: Iterable[VisualCandidate]) -> dict[str, str]:
+def candidates_alt_text(
+    title: str, source_kind: str, candidates: Iterable[VisualCandidate]
+) -> dict[str, str]:
     """Return stable alt text keyed by each candidate's stable key."""
 
     return {

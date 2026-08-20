@@ -82,18 +82,40 @@
 
 ```python
 ArtifactKind = Literal[
-    "research_set", "research_context", "evidence_blueprint", "storyboard",
-    "script", "verification", "voice_segment", "episode_assembly",
+    "research_set",
+    "research_context",
+    "evidence_blueprint",
+    "storyboard",
+    "script",
+    "verification",
+    "voice_segment",
+    "episode_assembly",
 ]
 StageName = Literal[
-    "research_set", "evidence", "storyboard", "script", "verification", "voice", "episode",
+    "research_set",
+    "evidence",
+    "storyboard",
+    "script",
+    "verification",
+    "voice",
+    "episode",
 ]
 ArtifactState = Literal["current", "stale", "superseded", "failed"]
-EvidenceState = Literal["supported", "contested", "interpretive", "unsupported", "unavailable"]
-StageState = Literal[
-    "pending", "queued", "running", "awaiting_review", "approved",
-    "completed", "failed", "cancelled", "blocked",
+EvidenceState = Literal[
+    "supported", "contested", "interpretive", "unsupported", "unavailable"
 ]
+StageState = Literal[
+    "pending",
+    "queued",
+    "running",
+    "awaiting_review",
+    "approved",
+    "completed",
+    "failed",
+    "cancelled",
+    "blocked",
+]
+
 
 class ResearchSetManifestItem(_Strict):
     item_id: str
@@ -106,8 +128,11 @@ class ResearchSetManifestItem(_Strict):
     source_revision_id: str
     content_fingerprint: str
     inclusion_mode: Literal["full", "selected_blocks", "summary"]
-    inclusion_state: Literal["included", "duplicate", "excluded", "unavailable", "changed"]
+    inclusion_state: Literal[
+        "included", "duplicate", "excluded", "unavailable", "changed"
+    ]
     inclusion_reason: str
+
 
 class ArtifactVersion(_Strict):
     artifact_id: str
@@ -118,6 +143,7 @@ class ArtifactVersion(_Strict):
     parent_artifact_ids: list[str] = Field(max_length=64)
     content_fingerprint: str
     created_at: datetime
+
 
 class EvidenceClaim(_Strict):
     claim_id: str
@@ -130,6 +156,7 @@ class EvidenceClaim(_Strict):
     contradicting_link_ids: list[str] = Field(max_length=128)
     unresolved_question_ids: list[str] = Field(max_length=64)
 
+
 class ClaimEvidenceLink(_Strict):
     link_id: str
     claim_id: str
@@ -140,6 +167,7 @@ class ClaimEvidenceLink(_Strict):
     source_end: int | None
     relation: Literal["supports", "contradicts", "contextualizes"]
     excerpt_fingerprint: str
+
 
 class ModelExecutionReceipt(_Strict):
     receipt_id: str
@@ -181,13 +209,19 @@ class VerificationFinding(_Strict):
     finding_id: str
     severity: Literal["info", "warning", "blocking"]
     code: Literal[
-        "missing_evidence", "stale_revision", "contested_without_counterpoint",
-        "unlabeled_interpretation", "speaker_role_drift", "duration_mismatch",
-        "audience_mismatch", "unresolved_citation",
+        "missing_evidence",
+        "stale_revision",
+        "contested_without_counterpoint",
+        "unlabeled_interpretation",
+        "speaker_role_drift",
+        "duration_mismatch",
+        "audience_mismatch",
+        "unresolved_citation",
     ]
     script_segment_id: str
     claim_id: str | None
     message: str
+
 
 class VerificationReport(_Strict):
     artifact_id: str

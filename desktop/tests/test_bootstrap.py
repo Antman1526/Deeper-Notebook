@@ -1,4 +1,5 @@
 """Tests for desktop/bootstrap.py — first-launch venv provisioning."""
+
 from __future__ import annotations
 
 import hashlib
@@ -25,6 +26,7 @@ from desktop.bootstrap import (
 # ---------------------------------------------------------------------------
 # extract_python_runtime
 # ---------------------------------------------------------------------------
+
 
 def _make_python_tarball(tmp_path: Path) -> Path:
     """Create a minimal synthetic python-build-standalone-style .tar.gz."""
@@ -69,7 +71,8 @@ def test_extract_python_runtime_extracts_tarball(tmp_path: Path) -> None:
 
 
 def test_extract_python_runtime_skips_when_already_extracted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """extract_python_runtime returns early when the interpreter
     already exists AND passes the v0.7.212 health probe.
@@ -94,8 +97,11 @@ def test_extract_python_runtime_skips_when_already_extracted(
     # treated as healthy. The probe itself is exercised by the
     # behavioural tests in test_v0_7_212_audit_followup.py.
     from desktop import bootstrap
+
     monkeypatch.setattr(
-        bootstrap, "_interpreter_is_healthy", lambda _p: True,
+        bootstrap,
+        "_interpreter_is_healthy",
+        lambda _p: True,
     )
 
     original_platform = sys.platform
@@ -110,7 +116,9 @@ def test_extract_python_runtime_skips_when_already_extracted(
     assert interpreter.read_bytes() == b"existing"
 
 
-def test_extract_python_runtime_extracts_zip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_extract_python_runtime_extracts_zip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """extract_python_runtime handles .zip archives (Windows path)."""
     zpath = _make_python_zip(tmp_path)
     dest_parent = tmp_path / "home" / ".open-notebook-plus"
@@ -148,7 +156,9 @@ def _make_windows_python_targz(tmp_path: Path) -> Path:
     return tarball
 
 
-def test_bundled_python_tarball_is_targz_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bundled_python_tarball_is_targz_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The bundled python artifact path must be `.tar.gz` on Windows too — never
     `.zip`. (Regression for the mislabeled-archive Windows bootstrap crash.)"""
     from desktop.app import _bundled_python_tarball
@@ -178,7 +188,9 @@ def test_extract_windows_targz_uses_tarfile_not_zipfile(
     assert result.exists()
 
 
-def test_gzip_tar_bytes_named_zip_would_crash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gzip_tar_bytes_named_zip_would_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Documents the H7 root cause: gzip-tar bytes with a `.zip` name (the OLD
     Windows bundled name) make extract_python_runtime raise BadZipFile."""
     good = _make_windows_python_targz(tmp_path)
@@ -194,6 +206,7 @@ def test_gzip_tar_bytes_named_zip_would_crash(tmp_path: Path, monkeypatch: pytes
 # ---------------------------------------------------------------------------
 # _lock_hash
 # ---------------------------------------------------------------------------
+
 
 def test_lock_hash_is_sha256_hex(tmp_path: Path) -> None:
     lock = tmp_path / "requirements.lock"
@@ -215,18 +228,27 @@ def test_lock_hash_changes_with_content(tmp_path: Path) -> None:
 # is_venv_current
 # ---------------------------------------------------------------------------
 
-def test_is_venv_current_false_when_no_venv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+
+def test_is_venv_current_false_when_no_venv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     lock = tmp_path / "requirements.lock"
     lock.write_bytes(b"pkgA==1.0\n")
 
     # Point venv_dir / venv_python / venv_marker at tmp paths that don't exist.
-    monkeypatch.setattr("desktop.bootstrap.venv_python", lambda: tmp_path / "bin" / "python")
-    monkeypatch.setattr("desktop.bootstrap.venv_marker", lambda: tmp_path / "venv-marker")
+    monkeypatch.setattr(
+        "desktop.bootstrap.venv_python", lambda: tmp_path / "bin" / "python"
+    )
+    monkeypatch.setattr(
+        "desktop.bootstrap.venv_marker", lambda: tmp_path / "venv-marker"
+    )
 
     assert is_venv_current(lock) is False
 
 
-def test_is_venv_current_false_when_marker_stale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_is_venv_current_false_when_marker_stale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     lock = tmp_path / "requirements.lock"
     lock.write_bytes(b"pkgA==1.0\n")
 
@@ -243,7 +265,9 @@ def test_is_venv_current_false_when_marker_stale(tmp_path: Path, monkeypatch: py
     assert is_venv_current(lock) is False
 
 
-def test_is_venv_current_true_when_marker_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_is_venv_current_true_when_marker_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     lock = tmp_path / "requirements.lock"
     lock.write_bytes(b"pkgA==1.0\n")
     correct_hash = _lock_hash(lock)
@@ -264,6 +288,7 @@ def test_is_venv_current_true_when_marker_matches(tmp_path: Path, monkeypatch: p
 # ---------------------------------------------------------------------------
 # ensure_venv — happy path (subprocess mocked)
 # ---------------------------------------------------------------------------
+
 
 def test_ensure_venv_creates_venv_and_writes_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -414,7 +439,8 @@ def _seed_extracted_runtime(
 
 
 def test_extract_python_runtime_reextracts_on_tarball_change(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """v0.8.83 — a healthy extraction from a DIFFERENT tarball must be wiped
     and re-extracted, otherwise a bundled-runtime bump never reaches existing
@@ -445,9 +471,9 @@ def test_extract_python_runtime_reextracts_on_tarball_change(
 
     assert result == interpreter
     assert interpreter.read_bytes() != b"stale-interpreter", "must re-extract"
-    assert stamp.read_text().strip() == _hashlib.sha256(
-        tarball.read_bytes()
-    ).hexdigest(), "stamp must record the new source tarball"
+    assert (
+        stamp.read_text().strip() == _hashlib.sha256(tarball.read_bytes()).hexdigest()
+    ), "stamp must record the new source tarball"
 
 
 def test_runtime_bump_invalidates_lock_only_marker(

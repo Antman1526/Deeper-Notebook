@@ -4,6 +4,7 @@ Keeps a cloud-bound turn on-device (or blocks it) when it contains
 structured secrets/PII. Pure detector + pure gate decision — no live
 services. Default-off behaviour is also pinned (zero change unless opted in).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -123,16 +124,22 @@ LOCAL = ModelChoice("model:local", "local: healthy")
 
 def test_gate_off_is_passthrough():
     out = pg.apply_privacy_gate(
-        CLOUD, content="ssn 123-45-6789", local_model_id="model:local",
-        cloud_model_id="model:cloud", mode="off",
+        CLOUD,
+        content="ssn 123-45-6789",
+        local_model_id="model:local",
+        cloud_model_id="model:cloud",
+        mode="off",
     )
     assert out is CLOUD  # untouched
 
 
 def test_gate_on_clean_content_passthrough():
     out = pg.apply_privacy_gate(
-        CLOUD, content="just a normal question", local_model_id="model:local",
-        cloud_model_id="model:cloud", mode="on",
+        CLOUD,
+        content="just a normal question",
+        local_model_id="model:local",
+        cloud_model_id="model:cloud",
+        mode="on",
     )
     assert out is CLOUD
 
@@ -140,16 +147,22 @@ def test_gate_on_clean_content_passthrough():
 def test_gate_on_local_choice_passthrough():
     """Already going local → nothing to gate, even with secrets present."""
     out = pg.apply_privacy_gate(
-        LOCAL, content="ssn 123-45-6789", local_model_id="model:local",
-        cloud_model_id="model:cloud", mode="on",
+        LOCAL,
+        content="ssn 123-45-6789",
+        local_model_id="model:local",
+        cloud_model_id="model:cloud",
+        mode="on",
     )
     assert out is LOCAL
 
 
 def test_gate_on_cloud_sensitive_reroutes_to_local(monkeypatch):
     out = pg.apply_privacy_gate(
-        CLOUD, content="my ssn is 123-45-6789", local_model_id="model:local",
-        cloud_model_id="model:cloud", mode="on",
+        CLOUD,
+        content="my ssn is 123-45-6789",
+        local_model_id="model:local",
+        cloud_model_id="model:cloud",
+        mode="on",
     )
     assert out.model_id == "model:local"
     assert "privacy-gate" in out.reason
@@ -159,8 +172,11 @@ def test_gate_on_cloud_sensitive_reroutes_to_local(monkeypatch):
 def test_gate_on_cloud_sensitive_no_local_blocks():
     with pytest.raises(ConfigurationError) as ei:
         pg.apply_privacy_gate(
-            CLOUD, content="key sk-abcdefghij0123456789XYZ",
-            local_model_id=None, cloud_model_id="model:cloud", mode="on",
+            CLOUD,
+            content="key sk-abcdefghij0123456789XYZ",
+            local_model_id=None,
+            cloud_model_id="model:cloud",
+            mode="on",
         )
     assert "Privacy gate blocked" in str(ei.value)
     assert "openai_key" in str(ei.value)
@@ -169,7 +185,9 @@ def test_gate_on_cloud_sensitive_no_local_blocks():
 def test_gate_reads_env_when_mode_none(monkeypatch):
     monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_GATE", "on")
     out = pg.apply_privacy_gate(
-        CLOUD, content="ssn 123-45-6789", local_model_id="model:local",
+        CLOUD,
+        content="ssn 123-45-6789",
+        local_model_id="model:local",
         cloud_model_id="model:cloud",  # mode=None → read env
     )
     assert out.model_id == "model:local"

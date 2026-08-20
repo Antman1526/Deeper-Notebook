@@ -29,6 +29,7 @@ Four independent fixes bundled under one version tag:
     refactors don't accidentally demote it to a retry-eligible
     exception, undoing the OOM protection).
 """
+
 from __future__ import annotations
 
 import ast
@@ -45,8 +46,7 @@ def _read_source(rel: str) -> str:
     package = path.with_suffix("")
     if package.is_dir():
         return "\n".join(
-            child.read_text(encoding="utf-8")
-            for child in sorted(package.rglob("*.py"))
+            child.read_text(encoding="utf-8") for child in sorted(package.rglob("*.py"))
         )
 
     return path.read_text(encoding="utf-8")
@@ -120,8 +120,7 @@ def test_create_source_insight_reraises_typed_exceptions():
 
     # Import must be present.
     assert (
-        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
-        in src
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError" in src
     ), (
         "v0.7.178 regression: NotFoundError import in sources.py is "
         "gone. Without it, the re-raise below references an undefined "

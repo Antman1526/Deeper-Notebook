@@ -153,8 +153,12 @@ def _env_int(name: str, default: int) -> int:
     except ValueError:
         # Don't crash startup over a bad env var; fall back loudly.
         import logging
+
         logging.getLogger(__name__).warning(
-            "Invalid %s=%r; using default %d", name, raw, default,
+            "Invalid %s=%r; using default %d",
+            name,
+            raw,
+            default,
         )
         return default
 
@@ -162,10 +166,12 @@ def _env_int(name: str, default: int) -> int:
 # Defaults sized for local 7B-9B models with 8k-32k context. Cloud users
 # can raise these via env vars (e.g. DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS=200000).
 _MAX_EXTRACT_CHARS_PER_FILE = _env_int(
-    "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS", 15_000,
+    "DEEPER_NOTEBOOK_STUDIO_MAX_FILE_CHARS",
+    15_000,
 )
 _MAX_COMBINED_CHARS = _env_int(
-    "DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS", 60_000,
+    "DEEPER_NOTEBOOK_STUDIO_MAX_COMBINED_CHARS",
+    60_000,
 )
 
 # v0.7.1 — Cap warning-message length. Parser libraries (PyMuPDF, mammoth)
@@ -237,7 +243,10 @@ _LOCAL_OVERFLOW_PATTERNS = (
 
 
 def _studio_generation_error_detail(
-    exc: BaseException, *, notebook_id: str, source_count: int,
+    exc: BaseException,
+    *,
+    notebook_id: str,
+    source_count: int,
 ) -> str:
     """Build the 502 detail string for LLM-call failures.
 
@@ -319,10 +328,9 @@ do not pad to hit a length target.
 # -----------------------------------------------------------------------------
 # Default ON. Falls back to the legacy single-note path (NOTEBOOK_SYSTEM_PROMPT
 # above) if disabled OR if the outline pass returns un-parseable JSON.
-_MULTIPAGE_ENABLED = (
-    resolve_env("DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_MULTIPAGE", "true").strip().lower()
-    not in ("0", "false", "no", "off")
-)
+_MULTIPAGE_ENABLED = resolve_env(
+    "DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_MULTIPAGE", "true"
+).strip().lower() not in ("0", "false", "no", "off")
 # Caps pages to bound LLM cost. Outline LLM is *also* told this number so it
 # doesn't propose more than we can render.
 _PAGES_MAX = _env_int("DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_PAGES_MAX", 6)
@@ -338,10 +346,9 @@ if _PAGES_MAX > 12:
 # speedup on multi-page generation. The trade-off: parallel calls
 # mean per-page failures can interleave in logs, but the final result
 # is identical (each page still gets its own warning on failure).
-_PARALLEL_PAGES = (
-    resolve_env("DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_PARALLEL_PAGES", "false").strip().lower()
-    in ("1", "true", "yes", "on")
-)
+_PARALLEL_PAGES = resolve_env(
+    "DEEPER_NOTEBOOK_STUDIO_NOTEBOOK_PARALLEL_PAGES", "false"
+).strip().lower() in ("1", "true", "yes", "on")
 # v0.7.93 — Per-page generation timeout. Local LLMs (especially the
 # desktop bundle's llama-cpp chat server) can hang indefinitely when
 # the model is mid-loading, mid-prompt-eval, or the prompt overflows
@@ -499,8 +506,8 @@ class StudioGenerateResponse(BaseModel):
     notebook_id: str
     mode: str  # "notebook" | "podcast" | "both"
     note_id: Optional[str] = None  # notebook + both: overview note (back-compat)
-    note_ids: list[str] = []       # v0.7.89 — all notes in render order
-    job_id: Optional[str] = None   # podcast  + both: surreal_commands job id
+    note_ids: list[str] = []  # v0.7.89 — all notes in render order
+    job_id: Optional[str] = None  # podcast  + both: surreal_commands job id
     source_ids: list[str]
     title: str
     warnings: list[str] = []  # non-fatal issues (e.g. a file couldn't be extracted)
@@ -535,7 +542,8 @@ async def create_studio_workflow_run(
         notebook_id=str(artifact.notebook_id),
         title=payload.title,
         status="awaiting_approval" if approval_required else "queued",
-        source_ids=payload.source_ids or [str(source_id) for source_id in artifact.source_ids],
+        source_ids=payload.source_ids
+        or [str(source_id) for source_id in artifact.source_ids],
         approval_required=approval_required,
         steps=_workflow_steps_for_artifact(
             artifact,
@@ -605,10 +613,16 @@ async def approve_studio_workflow_run(
 
 @router.post("/generate", response_model=StudioGenerateResponse)
 async def studio_generate(
-    files: Optional[list[UploadFile]] = File(None, description="One or more documents to ingest"),
-    links: Optional[list[str]] = Form(None, description="Optional http(s) links to ingest"),
+    files: Optional[list[UploadFile]] = File(
+        None, description="One or more documents to ingest"
+    ),
+    links: Optional[list[str]] = Form(
+        None, description="Optional http(s) links to ingest"
+    ),
     mode: str = Form(..., description="'notebook', 'podcast', or 'both'"),
-    title: Optional[str] = Form(None, description="Notebook title; auto-generated if absent"),
+    title: Optional[str] = Form(
+        None, description="Notebook title; auto-generated if absent"
+    ),
     episode_profile_name: Optional[str] = Form(
         None,
         description="Required for podcast / both — name of an EpisodeProfile record",
@@ -633,7 +647,9 @@ async def studio_generate(
     files = files or []
     normalized_links = _normalize_studio_links(links)
     if not files and not normalized_links:
-        raise HTTPException(status_code=400, detail="at least one file or link is required")
+        raise HTTPException(
+            status_code=400, detail="at least one file or link is required"
+        )
     if mode in ("podcast", "both"):
         if not episode_profile_name or not speaker_profile_name:
             raise HTTPException(
@@ -647,7 +663,9 @@ async def studio_generate(
 
     for f in files:
         if not f.filename:
-            raise HTTPException(status_code=400, detail="all files must have a filename")
+            raise HTTPException(
+                status_code=400, detail="all files must have a filename"
+            )
         ext = Path(f.filename).suffix.lower()
         if ext and ext not in _ALLOWED_EXTENSIONS:
             raise HTTPException(
@@ -720,16 +738,19 @@ async def studio_generate(
     ) -> None:
         try:
             _extract_timeout = float(
-                resolve_env("DEEPER_NOTEBOOK_STUDIO_EXTRACT_TIMEOUT_SEC", "60").strip() or 60
+                resolve_env("DEEPER_NOTEBOOK_STUDIO_EXTRACT_TIMEOUT_SEC", "60").strip()
+                or 60
             )
             try:
                 processed = await asyncio.wait_for(
-                    extract_content(process_state), timeout=_extract_timeout,
+                    extract_content(process_state),
+                    timeout=_extract_timeout,
                 )
             except asyncio.TimeoutError:
                 logger.warning(
                     "Studio: extract_content timed out for {!r} after {}s",
-                    label, _extract_timeout,
+                    label,
+                    _extract_timeout,
                 )
                 warnings.append(
                     f"Parsing {label!r} timed out after {_extract_timeout:.0f}s. "
@@ -747,7 +768,9 @@ async def studio_generate(
             if len(text) > _MAX_EXTRACT_CHARS_PER_FILE:
                 logger.info(
                     "Studio: truncating {!r} from {} → {} chars",
-                    label, len(text), _MAX_EXTRACT_CHARS_PER_FILE,
+                    label,
+                    len(text),
+                    _MAX_EXTRACT_CHARS_PER_FILE,
                 )
                 text = text[:_MAX_EXTRACT_CHARS_PER_FILE] + "\n\n[…truncated…]"
             extracted.append((label, text))
@@ -779,7 +802,9 @@ async def studio_generate(
             except HTTPException:
                 raise
             except Exception as exc:
-                logger.warning("Studio: vectorize failed (non-fatal) for {!r}: {}", label, exc)
+                logger.warning(
+                    "Studio: vectorize failed (non-fatal) for {!r}: {}", label, exc
+                )
         except HTTPException:
             raise
         except Exception as exc:
@@ -798,7 +823,9 @@ async def studio_generate(
             # `except Exception` doesn't clobber them to 500.
             raise
         except Exception as exc:
-            logger.warning("Studio: save_uploaded_file failed for {!r}: {}", filename, exc)
+            logger.warning(
+                "Studio: save_uploaded_file failed for {!r}: {}", filename, exc
+            )
             warnings.append(f"Could not save {filename!r}: {_brief(exc)}")
             continue
 
@@ -825,7 +852,9 @@ async def studio_generate(
         await _extract_and_persist_source(
             source=source,
             label=filename,
-            process_state=ProcessSourceState(file_path=saved_path, output_format="markdown"),
+            process_state=ProcessSourceState(
+                file_path=saved_path, output_format="markdown"
+            ),
         )
 
     for link in normalized_links:
@@ -903,6 +932,7 @@ async def studio_generate(
     def _record_outcome(outcome: str) -> None:
         try:
             from api.metrics import record_studio_generation
+
             record_studio_generation(mode, outcome)
         except Exception as exc:
             # v0.8.45 — best-effort metric increment must never mask the
@@ -1001,7 +1031,9 @@ def _strip_json_wrapper(text: str) -> str:
 
 # v0.7.89 — Validate and normalize the outline JSON. Returns (outline, error).
 # A bad outline returns (None, "reason") so caller can fall back to single-note.
-def _validate_outline(payload: dict, *, max_pages: int) -> tuple[Optional[dict], Optional[str]]:
+def _validate_outline(
+    payload: dict, *, max_pages: int
+) -> tuple[Optional[dict], Optional[str]]:
     if not isinstance(payload, dict):
         return None, "outline is not a JSON object"
     headline = (payload.get("headline") or "").strip()
@@ -1028,9 +1060,7 @@ def _validate_outline(payload: dict, *, max_pages: int) -> tuple[Optional[dict],
         if not pfocus and not pqs:
             # Page is empty — skip; LLM probably padded.
             continue
-        cleaned_pages.append(
-            {"title": ptitle, "focus": pfocus, "key_questions": pqs}
-        )
+        cleaned_pages.append({"title": ptitle, "focus": pfocus, "key_questions": pqs})
     if not cleaned_pages:
         return None, "outline 'pages' had no usable entries after validation"
     if not isinstance(top_suggestions, list):
@@ -1101,20 +1131,27 @@ async def _generate_outline(
     system_prompt = NOTEBOOK_OUTLINE_PROMPT.format(max_pages=_PAGES_MAX)
     try:
         chain = await provision_langchain_model(
-            combined_context, None, "chat", max_tokens=2048,
+            combined_context,
+            None,
+            "chat",
+            max_tokens=2048,
         )
         # v0.7.93 — wrap in wait_for so a hung local LLM (stuck loading /
         # mid-prompt-eval / overflowed context) becomes a typed 502 with
         # an actionable hint instead of hanging the request indefinitely.
         response = await asyncio.wait_for(
             chain.ainvoke(
-                [SystemMessage(content=system_prompt), HumanMessage(content=combined_context)]
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=combined_context),
+                ]
             ),
             timeout=_OUTLINE_TIMEOUT_SEC,
         )
     except asyncio.TimeoutError as exc:
         logger.warning(
-            "Studio multi-page: outline pass timed out after {}s", _OUTLINE_TIMEOUT_SEC,
+            "Studio multi-page: outline pass timed out after {}s",
+            _OUTLINE_TIMEOUT_SEC,
         )
         raise HTTPException(
             status_code=504,
@@ -1138,7 +1175,9 @@ async def _generate_outline(
         raise HTTPException(
             status_code=502,
             detail=_studio_generation_error_detail(
-                exc, notebook_id=notebook_id, source_count=source_count,
+                exc,
+                notebook_id=notebook_id,
+                source_count=source_count,
             ),
         )
     raw = extract_text_content(response.content)
@@ -1154,39 +1193,43 @@ async def _generate_outline(
         # report.)
         logger.warning(
             "Studio multi-page: outline JSON parse failed ({}); raw={!r}",
-            exc, cleaned[:500],
+            exc,
+            cleaned[:500],
         )
         # v0.7.130 — emit the Prometheus counter. Best-effort: a metrics
         # import failure must not break the caller's fallback flow.
         try:
             from api.metrics import record_studio_outline_parse_failure
+
             record_studio_outline_parse_failure("json_decode")
         except Exception as metric_exc:
             # v0.8.45 — DEBUG log the swallowed metric failure (the
             # ValueError below is the real signal; this guard only
             # protects the metric increment). v0.8.35f convention.
             logger.debug(
-                "Studio: record_studio_outline_parse_failure(json_decode) "
-                "failed: {}", metric_exc,
+                "Studio: record_studio_outline_parse_failure(json_decode) failed: {}",
+                metric_exc,
             )
         raise ValueError(f"outline JSON parse failed: {exc}")
     outline, err = _validate_outline(payload, max_pages=_PAGES_MAX)
     if not outline:
         logger.warning(
             "Studio multi-page: outline validation failed ({}); raw={!r}",
-            err, cleaned[:500],
+            err,
+            cleaned[:500],
         )
         # v0.7.130 — counterpart for the validation-failure path. Same
         # try/except shield so observability can't break the request.
         try:
             from api.metrics import record_studio_outline_parse_failure
+
             record_studio_outline_parse_failure("validation")
         except Exception as metric_exc:
             # v0.8.45 — DEBUG log the swallowed metric failure
             # (v0.8.35f convention; the ValueError below is the signal).
             logger.debug(
-                "Studio: record_studio_outline_parse_failure(validation) "
-                "failed: {}", metric_exc,
+                "Studio: record_studio_outline_parse_failure(validation) failed: {}",
+                metric_exc,
             )
         raise ValueError(f"outline validation failed: {err}")
     return outline
@@ -1209,7 +1252,9 @@ async def _generate_page(
     """
     questions_md = "\n".join(f"  - {q}" for q in page_spec.get("key_questions", []))
     if not questions_md:
-        questions_md = "  - (No specific questions listed; cover the focus area thoroughly.)"
+        questions_md = (
+            "  - (No specific questions listed; cover the focus area thoroughly.)"
+        )
     system_prompt = NOTEBOOK_PAGE_PROMPT.format(
         notebook_title=notebook_title,
         page_title=page_spec["title"],
@@ -1217,11 +1262,17 @@ async def _generate_page(
         page_questions=questions_md,
     )
     chain = await provision_langchain_model(
-        combined_context, None, "chat", max_tokens=3072,
+        combined_context,
+        None,
+        "chat",
+        max_tokens=3072,
     )
     response = await asyncio.wait_for(
         chain.ainvoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=combined_context)]
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=combined_context),
+            ]
         ),
         timeout=_PAGE_TIMEOUT_SEC,
     )
@@ -1251,7 +1302,9 @@ async def _generate_all_pages(
         if isinstance(exc, asyncio.TimeoutError):
             logger.warning(
                 "Studio multi-page: page {} ({!r}) timed out after {}s",
-                i, page_spec["title"], _PAGE_TIMEOUT_SEC,
+                i,
+                page_spec["title"],
+                _PAGE_TIMEOUT_SEC,
             )
             warnings.append(
                 f"Page {i} ({page_spec['title']!r}) timed out after "
@@ -1261,7 +1314,9 @@ async def _generate_all_pages(
         else:
             logger.warning(
                 "Studio multi-page: page {} ({!r}) generation failed: {}",
-                i, page_spec["title"], _brief(exc),
+                i,
+                page_spec["title"],
+                _brief(exc),
             )
             warnings.append(
                 f"Page {i} ({page_spec['title']!r}) could not be generated: "
@@ -1289,9 +1344,7 @@ async def _generate_all_pages(
                     f"Page {i} ({page_spec['title']!r}) returned empty content."
                 )
                 continue
-            page_contents.append(
-                (f"📄 {i:02d} · {page_spec['title']}", result)
-            )
+            page_contents.append((f"📄 {i:02d} · {page_spec['title']}", result))
         return page_contents
 
     # Sequential (default, local-LLM-safe).
@@ -1314,9 +1367,7 @@ async def _generate_all_pages(
                 f"Page {i} ({page_spec['title']!r}) returned empty content."
             )
             continue
-        page_contents.append(
-            (f"📄 {i:02d} · {page_spec['title']}", body)
-        )
+        page_contents.append((f"📄 {i:02d} · {page_spec['title']}", body))
     return page_contents
 
 
@@ -1394,7 +1445,8 @@ async def _dispatch_notebook_mode(
         # JSON parse / validation failure — fall back to single-note so
         # the user still gets a usable artifact.
         logger.warning(
-            "Studio multi-page: falling back to single-note ({})", exc,
+            "Studio multi-page: falling back to single-note ({})",
+            exc,
         )
         # v0.7.130 — emit the fallback counter. Specific outline-parse
         # failure reason (json_decode vs validation) was already recorded
@@ -1402,6 +1454,7 @@ async def _dispatch_notebook_mode(
         # back rather than crashing or succeeding multi-page.
         try:
             from api.metrics import record_studio_single_note_fallback
+
             record_studio_single_note_fallback()
         except Exception as metric_exc:
             # v0.8.45 — DEBUG log the swallowed metric failure
@@ -1504,7 +1557,10 @@ async def _dispatch_notebook_mode_singlenote(
     notebook_id = str(notebook.id)
     try:
         chain = await provision_langchain_model(
-            combined_context, None, "chat", max_tokens=8192,
+            combined_context,
+            None,
+            "chat",
+            max_tokens=8192,
         )
         # v0.7.99 — same timeout protection as the multi-page paths.
         # Before this, the legacy fallback was the one ainvoke in this
@@ -1513,8 +1569,10 @@ async def _dispatch_notebook_mode_singlenote(
         # output budget is comparable.
         response = await asyncio.wait_for(
             chain.ainvoke(
-                [SystemMessage(content=NOTEBOOK_SYSTEM_PROMPT),
-                 HumanMessage(content=combined_context)]
+                [
+                    SystemMessage(content=NOTEBOOK_SYSTEM_PROMPT),
+                    HumanMessage(content=combined_context),
+                ]
             ),
             timeout=_PAGE_TIMEOUT_SEC,
         )
@@ -1547,7 +1605,9 @@ async def _dispatch_notebook_mode_singlenote(
         raise HTTPException(
             status_code=502,
             detail=_studio_generation_error_detail(
-                exc, notebook_id=notebook_id, source_count=len(source_ids),
+                exc,
+                notebook_id=notebook_id,
+                source_count=len(source_ids),
             ),
         )
     try:

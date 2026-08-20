@@ -201,7 +201,8 @@ def detect_content_type_from_extension(
         # extension-based detection isn't contributing.
         logger.debug(
             "detect_content_type_from_extension({!r}) raised: {}",
-            file_path, exc,
+            file_path,
+            exc,
         )
         return None
 

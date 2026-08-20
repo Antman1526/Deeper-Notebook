@@ -5,6 +5,7 @@ competitive enhancement plan: feature flags plus a durable Studio artifact
 record. They are kept DB-free where possible so the contract can stay fast
 and focused.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -342,7 +343,9 @@ def test_studio_workflow_run_migration_defines_run_history_table():
 def test_studio_artifact_domain_queries_separate_roots_from_revisions():
     src = (_REPO / "deeper_notebook" / "domain" / "notebook.py").read_text()
 
-    get_for_notebook = src[src.index("async def get_for_notebook"): src.index("async def get_revisions")]
+    get_for_notebook = src[
+        src.index("async def get_for_notebook") : src.index("async def get_revisions")
+    ]
     assert "revision_of_id = NONE" in get_for_notebook
     assert "async def get_revisions" in src
     assert "WHERE revision_of_id = $artifact_id" in src
@@ -352,7 +355,9 @@ def test_studio_workflow_run_domain_queries_by_artifact():
     src = (_REPO / "deeper_notebook" / "domain" / "notebook.py").read_text()
 
     assert "async def get_for_artifact" in src
-    get_for_artifact = src[src.index("async def get_for_artifact"): src.index("class ChatSession")]
+    get_for_artifact = src[
+        src.index("async def get_for_artifact") : src.index("class ChatSession")
+    ]
     assert "FROM studio_workflow_run" in get_for_artifact
     assert "WHERE artifact_id = $artifact_id" in get_for_artifact
 

@@ -18,6 +18,7 @@ ones in that list:
 Mocking strategy: FastAPI TestClient + monkeypatched repo_query.
 No live SurrealDB needed.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -33,6 +34,7 @@ def client():
     them — we patch repo_query at the point of use so nothing
     actually touches SurrealDB."""
     from api.main import app
+
     return TestClient(app)
 
 
@@ -204,11 +206,12 @@ def test_rebuild_submits_command_and_sums_counts_in_parallel(client, monkeypatch
     async def fake_submit(*args, **kwargs):
         return "command:rebuild-job-1"
 
-    with patch(
-        "api.routers.embedding_rebuild.repo_query", new=fake_repo_query
-    ), patch(
-        "api.routers.embedding_rebuild.CommandService.submit_command_job",
-        new=fake_submit,
+    with (
+        patch("api.routers.embedding_rebuild.repo_query", new=fake_repo_query),
+        patch(
+            "api.routers.embedding_rebuild.CommandService.submit_command_job",
+            new=fake_submit,
+        ),
     ):
         r = client.post(
             "/api/embeddings/rebuild",
@@ -245,18 +248,19 @@ def test_rebuild_skips_unselected_branches(client, monkeypatch):
     async def fake_submit(*args, **kwargs):
         return "command:partial-1"
 
-    with patch(
-        "api.routers.embedding_rebuild.repo_query", new=fake_repo_query
-    ), patch(
-        "api.routers.embedding_rebuild.CommandService.submit_command_job",
-        new=fake_submit,
+    with (
+        patch("api.routers.embedding_rebuild.repo_query", new=fake_repo_query),
+        patch(
+            "api.routers.embedding_rebuild.CommandService.submit_command_job",
+            new=fake_submit,
+        ),
     ):
         r = client.post(
             "/api/embeddings/rebuild",
             json={
                 "mode": "existing",
                 "include_sources": True,
-                "include_notes": False,    # opted out
+                "include_notes": False,  # opted out
                 "include_insights": False,  # opted out
             },
             headers={"x-skip-error-toast": "1"},

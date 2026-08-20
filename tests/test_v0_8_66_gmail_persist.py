@@ -12,6 +12,7 @@ Both are the same ensure_record_id-missing / bare-id class as the H3 MCP fix.
 These tests pin the corrected id-form at the (mocked) repo boundary so it can't
 regress without standing up a live DB.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch

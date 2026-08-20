@@ -15,6 +15,7 @@ matches the example payloads we ship in the template. If either
 breaks, citations silently regress to plain text — easy to miss
 in a code review.
 """
+
 from __future__ import annotations
 
 import re
@@ -131,12 +132,12 @@ def test_citation_regex_rejects_malformed_markers():
     rendering empty / broken pills."""
     bad_cases = [
         "[mcp:]",
-        "[mcp:1 ]",      # trailing space
-        "[mcp:1!]",      # punctuation
-        "[ mcp:1]",      # leading space
-        "[unknown:1]",   # unknown kind
-        "mcp:1",         # missing brackets
-        "[[mcp:1]]",     # double brackets
+        "[mcp:1 ]",  # trailing space
+        "[mcp:1!]",  # punctuation
+        "[ mcp:1]",  # leading space
+        "[unknown:1]",  # unknown kind
+        "mcp:1",  # missing brackets
+        "[[mcp:1]]",  # double brackets
     ]
     for s in bad_cases:
         assert not CITATION_RE.fullmatch(s), f"Should NOT match: {s!r}"

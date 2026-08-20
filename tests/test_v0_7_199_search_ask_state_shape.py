@@ -14,6 +14,7 @@ v0.7.199 extends it to the streaming-events handler.
 
 Test is AST-level so it doesn't depend on a running ask_graph.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -31,7 +32,9 @@ def test_stream_ask_response_accepts_pydantic_state_shape():
     every subsequent SSE event when a node returns a Pydantic model."""
     src = _src("api/routers/search.py")
     # The bare-isinstance early-continue must be gone.
-    assert "if not isinstance(output, dict):\n                    continue" not in src, (
+    assert (
+        "if not isinstance(output, dict):\n                    continue" not in src
+    ), (
         "v0.7.199 regression: bare isinstance(output, dict) gate is "
         "back. LangGraph nodes returning Pydantic models will drop "
         "all subsequent strategy/answer/final_answer SSE events."

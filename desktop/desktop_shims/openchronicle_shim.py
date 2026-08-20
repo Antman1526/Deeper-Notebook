@@ -10,6 +10,7 @@ Run as:
     python -m desktop_shims.openchronicle_shim --port 8768 \\
         --mcp-url http://127.0.0.1:8742/mcp
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,6 +46,7 @@ def build_app(mcp_client: Any) -> FastAPI:
 
 def main(argv: list[str] | None = None) -> int:
     import os
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--host", default="127.0.0.1")
@@ -69,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         is simple, correct, and reconnects automatically if OpenChronicle
         restarts.
         """
+
         def __init__(self, url: str):
             self._url = url
 
@@ -77,11 +80,14 @@ def main(argv: list[str] | None = None) -> int:
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.call_tool(name, arguments)
-                    return result.model_dump() if hasattr(result, "model_dump") else result
+                    return (
+                        result.model_dump() if hasattr(result, "model_dump") else result
+                    )
 
     app = build_app(mcp_client=_PerCallMcpClient(args.mcp_url))
 
     import uvicorn
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 

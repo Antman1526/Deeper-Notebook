@@ -227,20 +227,27 @@ def _bounded_utf8(value: object, *, limit: int, reason: str) -> str:
     return value.strip()
 
 
-def _call_arguments(call: Callable[..., object], *, path: Path | None = None, text: str | None = None) -> tuple[tuple[object, ...], dict[str, object]]:
+def _call_arguments(
+    call: Callable[..., object], *, path: Path | None = None, text: str | None = None
+) -> tuple[tuple[object, ...], dict[str, object]]:
     """Adapt the common Esperanto and small local test-model signatures."""
     try:
         parameters = inspect.signature(call).parameters
     except (TypeError, ValueError):
         parameters = {}
-    accepts_kwargs = any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values())
+    accepts_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
     if path is not None:
         for name in ("audio_file", "file", "audio", "path"):
             if name in parameters or accepts_kwargs:
                 return (), {name: str(path)}
         return (str(path),), {}
     if text is not None:
-        kwargs: dict[str, object] = {"text": text} if "text" in parameters or accepts_kwargs else {}
+        kwargs: dict[str, object] = (
+            {"text": text} if "text" in parameters or accepts_kwargs else {}
+        )
         if "voice" in parameters:
             kwargs["voice"] = "default"
         return (() if kwargs else (text,)), kwargs
@@ -256,7 +263,9 @@ async def _invoke_transcriber(model: object, path: Path) -> object:
 
 
 async def _invoke_synthesizer(model: object, text: str) -> object:
-    call = getattr(model, "agenerate_speech", None) or getattr(model, "generate_speech", None)
+    call = getattr(model, "agenerate_speech", None) or getattr(
+        model, "generate_speech", None
+    )
     if not callable(call):
         raise StudyVoiceUnavailable("local_speech_unavailable")
     args, kwargs = _call_arguments(call, text=text)
@@ -268,7 +277,9 @@ def _result_text(result: object) -> str:
     if returned_duration is None:
         returned_duration = _value(result, "duration_seconds", None)
     if returned_duration is not None:
-        if isinstance(returned_duration, bool) or not isinstance(returned_duration, Real):
+        if isinstance(returned_duration, bool) or not isinstance(
+            returned_duration, Real
+        ):
             raise StudyVoiceResultError("invalid_audio_duration")
         duration = float(returned_duration)
         if not math.isfinite(duration) or duration < 0:
@@ -300,7 +311,12 @@ def _result_audio(result: object) -> tuple[bytes, str]:
         raise StudyVoiceResultError("empty_audio_output")
     if len(raw) > MAX_TTS_BYTES:
         raise StudyVoiceResultError("audio_output_too_large")
-    content_type = str(_value(result, "content_type", "audio/wav")).split(";", 1)[0].strip().lower()
+    content_type = (
+        str(_value(result, "content_type", "audio/wav"))
+        .split(";", 1)[0]
+        .strip()
+        .lower()
+    )
     if content_type not in _SAFE_AUDIO_TYPES:
         raise StudyVoiceResultError("unsafe_audio_type")
     return raw, content_type
@@ -326,11 +342,20 @@ class StudyVoiceService:
             from .plan_repository import StudyPlanRepository
 
             plan_repository = StudyPlanRepository()
-        if speech_to_text_getter is None or text_to_speech_getter is None or defaults_getter is None or model_getter is None:
+        if (
+            speech_to_text_getter is None
+            or text_to_speech_getter is None
+            or defaults_getter is None
+            or model_getter is None
+        ):
             from deeper_notebook.ai.models import Model, model_manager
 
-            speech_to_text_getter = speech_to_text_getter or model_manager.get_speech_to_text
-            text_to_speech_getter = text_to_speech_getter or model_manager.get_text_to_speech
+            speech_to_text_getter = (
+                speech_to_text_getter or model_manager.get_speech_to_text
+            )
+            text_to_speech_getter = (
+                text_to_speech_getter or model_manager.get_text_to_speech
+            )
             defaults_getter = defaults_getter or model_manager.get_defaults
             model_getter = model_getter or Model.get
         if credential_getter is None:
@@ -343,17 +368,26 @@ class StudyVoiceService:
         self._credential_getter = credential_getter
         self.capability_timeout_seconds = (
             capability_timeout_seconds
-            if math.isfinite(capability_timeout_seconds) and capability_timeout_seconds > 0
+            if math.isfinite(capability_timeout_seconds)
+            and capability_timeout_seconds > 0
             else 5.0
         )
-        self.max_upload_bytes = max_upload_bytes if max_upload_bytes is not None else MAX_UPLOAD_BYTES
-        self.max_tts_bytes = max_tts_bytes if max_tts_bytes is not None else MAX_TTS_BYTES
+        self.max_upload_bytes = (
+            max_upload_bytes if max_upload_bytes is not None else MAX_UPLOAD_BYTES
+        )
+        self.max_tts_bytes = (
+            max_tts_bytes if max_tts_bytes is not None else MAX_TTS_BYTES
+        )
 
     async def _authorized_plan(self, plan_id: str) -> None:
         _validate_plan_id(plan_id)
         try:
             plan = await _maybe_await(self.plan_repository.get(plan_id))
-            if plan is None or _value(plan, "state") not in _AUTHORIZED_PLAN_STATES or _value(plan, "approved_syllabus_version") is None:
+            if (
+                plan is None
+                or _value(plan, "state") not in _AUTHORIZED_PLAN_STATES
+                or _value(plan, "approved_syllabus_version") is None
+            ):
                 raise StudyVoiceNotFound("approved_plan_not_found")
             syllabus = await _maybe_await(
                 self.plan_repository.get_syllabus(
@@ -375,13 +409,21 @@ class StudyVoiceService:
         rather than allowing environment state to select a remote service.
         """
         defaults = await _maybe_await(self._defaults_getter())
-        field = "default_speech_to_text_model" if kind == "speech_to_text" else "default_text_to_speech_model"
+        field = (
+            "default_speech_to_text_model"
+            if kind == "speech_to_text"
+            else "default_text_to_speech_model"
+        )
         model_id = _value(defaults, field)
         if not isinstance(model_id, str) or not model_id.strip():
             raise StudyVoiceUnavailable("local_speech_unavailable")
         record = await _maybe_await(self._model_getter(model_id))
         provider = _safe_model_provider(record)
-        if record is None or _value(record, "type") != kind or provider not in LOCAL_PROVIDERS:
+        if (
+            record is None
+            or _value(record, "type") != kind
+            or provider not in LOCAL_PROVIDERS
+        ):
             raise StudyVoiceUnavailable("local_speech_unavailable")
 
         credential_id = _value(record, "credential")
@@ -405,7 +447,9 @@ class StudyVoiceService:
             for config_name in ("config", "settings"):
                 config = _value(credential, config_name)
                 if isinstance(config, Mapping):
-                    endpoint = _first_value(config, (endpoint_name, "base_url", "endpoint"))
+                    endpoint = _first_value(
+                        config, (endpoint_name, "base_url", "endpoint")
+                    )
                     if endpoint is not None:
                         break
         if not _is_local_speech_endpoint(endpoint):
@@ -415,17 +459,28 @@ class StudyVoiceService:
     async def _local_model(self, kind: str) -> object:
         try:
             record, _credential = await self._resolve_local_record(kind)
-            getter = self._speech_to_text_getter if kind == "speech_to_text" else self._text_to_speech_getter
+            getter = (
+                self._speech_to_text_getter
+                if kind == "speech_to_text"
+                else self._text_to_speech_getter
+            )
             model = await _maybe_await(getter())
             model_provider = _value(model, "provider")
             if model is None or (
                 model_provider is not None
-                and str(model_provider).strip().lower().replace("-", "_") not in LOCAL_PROVIDERS
+                and str(model_provider).strip().lower().replace("-", "_")
+                not in LOCAL_PROVIDERS
             ):
                 raise StudyVoiceUnavailable("local_speech_unavailable")
-            endpoint_name = "endpoint_stt" if kind == "speech_to_text" else "endpoint_tts"
-            runtime_endpoint = _first_value(model, (endpoint_name, "base_url", "endpoint"))
-            if runtime_endpoint is not None and not _is_local_speech_endpoint(runtime_endpoint):
+            endpoint_name = (
+                "endpoint_stt" if kind == "speech_to_text" else "endpoint_tts"
+            )
+            runtime_endpoint = _first_value(
+                model, (endpoint_name, "base_url", "endpoint")
+            )
+            if runtime_endpoint is not None and not _is_local_speech_endpoint(
+                runtime_endpoint
+            ):
                 raise StudyVoiceUnavailable("local_speech_unavailable")
             return model
         except StudyVoiceError:
@@ -510,7 +565,9 @@ class StudyVoiceService:
 
     async def synthesize_text(self, plan_id: str, text: str) -> tuple[bytes, str]:
         await self._authorized_plan(plan_id)
-        bounded_text = _bounded_utf8(text, limit=MAX_TTS_INPUT_BYTES, reason="voice_text_too_large")
+        bounded_text = _bounded_utf8(
+            text, limit=MAX_TTS_INPUT_BYTES, reason="voice_text_too_large"
+        )
         model = await self._local_model("text_to_speech")
         try:
             try:

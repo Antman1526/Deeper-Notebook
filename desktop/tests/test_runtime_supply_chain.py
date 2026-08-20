@@ -48,7 +48,9 @@ def test_direct_runtime_fetch_resolves_repo_from_script_path_without_network(
         "urllib.request.urlopen = _unexpected_urlopen\n",
         encoding="utf-8",
     )
-    script = Path(__file__).resolve().parents[2] / "desktop" / "build" / "fetch_runtimes.py"
+    script = (
+        Path(__file__).resolve().parents[2] / "desktop" / "build" / "fetch_runtimes.py"
+    )
     env = os.environ.copy()
     env.update(
         {
@@ -102,7 +104,9 @@ def test_runtime_manifest_has_https_urls_and_sha256_for_every_supported_asset():
 def test_download_rejects_non_https_before_urlopen(tmp_path: Path):
     with patch.object(fetch_runtimes.urllib.request, "urlopen") as urlopen:
         with pytest.raises(ValueError, match="HTTPS"):
-            fetch_runtimes.download("http://example.invalid/runtime", tmp_path / "x", "0" * 64)
+            fetch_runtimes.download(
+                "http://example.invalid/runtime", tmp_path / "x", "0" * 64
+            )
     urlopen.assert_not_called()
 
 
@@ -123,7 +127,9 @@ def test_download_digest_mismatch_removes_only_owned_download(tmp_path: Path):
             return self._body.read(_size)
 
     destination = tmp_path / "runtime.tgz"
-    with patch.object(fetch_runtimes.urllib.request, "urlopen", return_value=_Response()) as urlopen:
+    with patch.object(
+        fetch_runtimes.urllib.request, "urlopen", return_value=_Response()
+    ) as urlopen:
         with pytest.raises(ValueError, match="SHA-256"):
             fetch_runtimes.download(
                 "https://example.invalid/runtime.tgz",
@@ -137,7 +143,9 @@ def test_download_digest_mismatch_removes_only_owned_download(tmp_path: Path):
     assert not destination.exists()
 
 
-def test_download_digest_mismatch_preserves_previous_verified_destination(tmp_path: Path):
+def test_download_digest_mismatch_preserves_previous_verified_destination(
+    tmp_path: Path,
+):
     from io import BytesIO
 
     class _Response:
@@ -153,7 +161,9 @@ def test_download_digest_mismatch_preserves_previous_verified_destination(tmp_pa
 
     destination = tmp_path / "runtime.exe"
     destination.write_bytes(b"previously-verified")
-    with patch.object(fetch_runtimes.urllib.request, "urlopen", return_value=_Response()):
+    with patch.object(
+        fetch_runtimes.urllib.request, "urlopen", return_value=_Response()
+    ):
         with pytest.raises(ValueError, match="SHA-256"):
             fetch_runtimes.download(
                 "https://example.invalid/runtime.exe",
@@ -164,7 +174,8 @@ def test_download_digest_mismatch_preserves_previous_verified_destination(tmp_pa
 
 
 def test_node_extract_failure_preserves_previous_verified_runtime(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ):
     runtime_bin = tmp_path / "bin"
     prior_node = runtime_bin / "node-darwin-arm64" / "bin" / "node"
@@ -197,7 +208,8 @@ def test_node_extract_failure_preserves_previous_verified_runtime(
 
 
 def test_surreal_extract_failure_preserves_previous_verified_runtime(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ):
     runtime_bin = tmp_path / "bin"
     runtime_bin.mkdir()
@@ -227,7 +239,8 @@ def test_surreal_extract_failure_preserves_previous_verified_runtime(
 
 
 def test_uv_extract_failure_preserves_previous_verified_runtime(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path,
+    monkeypatch,
 ):
     runtime_bin = tmp_path / "bin"
     runtime_bin.mkdir()
@@ -453,9 +466,7 @@ def test_tar_validator_accepts_node_symlinks_and_uv_layouts():
             expected_root="node-v20.18.0-darwin-arm64",
         )
 
-    uv_payload = _tar_bytes(
-        [("uv-aarch64-apple-darwin/uv", b"uv", None)]
-    )
+    uv_payload = _tar_bytes([("uv-aarch64-apple-darwin/uv", b"uv", None)])
     with tarfile.open(fileobj=io.BytesIO(uv_payload), mode="r:gz") as archive:
         archive_validation.validate_tar_members(
             archive,

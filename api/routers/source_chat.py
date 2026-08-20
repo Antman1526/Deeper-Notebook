@@ -34,6 +34,7 @@ class CreateSourceChatSessionRequest(BaseModel):
         None, description="Optional model override for this session"
     )
 
+
 class UpdateSourceChatSessionRequest(BaseModel):
     title: Optional[str] = Field(None, description="New session title")
     model_override: Optional[str] = Field(
@@ -47,8 +48,10 @@ class UpdateSourceChatSessionRequest(BaseModel):
     # the persisted value (so the existing rename/model-override flow
     # is untouched). null explicitly clears; [] is "explicitly none".
     disabled_mcp_servers: Optional[list[str]] = Field(
-        None, description="MCP server names disabled for this session",
+        None,
+        description="MCP server names disabled for this session",
     )
+
 
 class ChatMessage(BaseModel):
     id: str = Field(..., description="Message ID")
@@ -68,6 +71,7 @@ class ContextIndicator(BaseModel):
         default_factory=list, description="Note IDs used in context"
     )
 
+
 class SourceChatSessionResponse(BaseModel):
     id: str = Field(..., description="Session ID")
     title: str = Field(..., description="Session title")
@@ -86,8 +90,10 @@ class SourceChatSessionResponse(BaseModel):
     # column — no new migration needed. The frontend hydrates the
     # source-chat picker from this on session load.
     disabled_mcp_servers: Optional[list[str]] = Field(
-        None, description="MCP server names disabled for this session",
+        None,
+        description="MCP server names disabled for this session",
     )
+
 
 class SourceChatSessionWithMessagesResponse(SourceChatSessionResponse):
     messages: list[ChatMessage] = Field(
@@ -96,6 +102,7 @@ class SourceChatSessionWithMessagesResponse(SourceChatSessionResponse):
     context_indicators: Optional[ContextIndicator] = Field(
         None, description="Context indicators from last response"
     )
+
 
 class SendMessageRequest(BaseModel):
     message: str = Field(..., description="User message content")
@@ -114,6 +121,7 @@ class SendMessageRequest(BaseModel):
             "Names match `mcp_server.name` case-insensitively."
         ),
     )
+
 
 class SuccessResponse(BaseModel):
     success: bool = Field(True, description="Operation success status")
@@ -207,17 +215,16 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
         #   2. then asyncio.gather all message-count reads in parallel
         # Each phase has its wall-clock bounded by the slowest single
         # call instead of the sum.
-        session_ids: list[str] = [
-            str(r["in"]) for r in relations if r.get("in")
-        ]
-        session_rows = await asyncio.gather(*[
-            repo_query("SELECT * FROM $id", {"id": ensure_record_id(sid)})
-            for sid in session_ids
-        ])
-        msg_counts = await asyncio.gather(*[
-            get_session_message_count(source_chat_graph, sid)
-            for sid in session_ids
-        ])
+        session_ids: list[str] = [str(r["in"]) for r in relations if r.get("in")]
+        session_rows = await asyncio.gather(
+            *[
+                repo_query("SELECT * FROM $id", {"id": ensure_record_id(sid)})
+                for sid in session_ids
+            ]
+        )
+        msg_counts = await asyncio.gather(
+            *[get_session_message_count(source_chat_graph, sid) for sid in session_ids]
+        )
 
         sessions: list[SourceChatSessionResponse] = []
         for sid, session_result, msg_count in zip(
@@ -532,9 +539,9 @@ async def delete_source_chat_session(
                 )
         except Exception as cleanup_exc:
             logger.warning(
-                "Source-chat checkpoint cleanup failed for session {} "
-                "(non-fatal): {}",
-                full_session_id, cleanup_exc,
+                "Source-chat checkpoint cleanup failed for session {} (non-fatal): {}",
+                full_session_id,
+                cleanup_exc,
             )
 
         return SuccessResponse(
@@ -605,6 +612,7 @@ async def stream_source_chat_response(
         # closing the generator on client disconnect) reaches the
         # finally clause and releases.
         from api.utils.session_locks import get_session_lock
+
         session_lock = await get_session_lock(session_id)
         await session_lock.acquire()
         try:
@@ -628,9 +636,7 @@ async def stream_source_chat_response(
             # picks field (parallel deferred work to v0.8.43 for
             # notebook chat); a future v0.8.44b could add migration
             # 21 with `disabled_mcp_servers` on `source_chat_session`.
-            state_values["disabled_mcp_servers"] = (
-                disabled_mcp_servers or None
-            )
+            state_values["disabled_mcp_servers"] = disabled_mcp_servers or None
 
             # Send user message event
             user_event = {"type": "user_message", "content": message, "timestamp": None}
@@ -659,10 +665,14 @@ async def stream_source_chat_response(
             ):
                 # Early-cancel parity with /chat/stream — stop generation
                 # the moment the client gives up on the response.
-                if fastapi_request is not None and await fastapi_request.is_disconnected():
+                if (
+                    fastapi_request is not None
+                    and await fastapi_request.is_disconnected()
+                ):
                     logger.info(
                         "source chat stream: client disconnected for "
-                        "session {}; halting", session_id,
+                        "session {}; halting",
+                        session_id,
                     )
                     return
 
@@ -674,10 +684,12 @@ async def stream_source_chat_response(
                         accumulated_content += content
                         yield (
                             "data: "
-                            + json.dumps({
-                                "type": "ai_message_delta",
-                                "content": content,
-                            })
+                            + json.dumps(
+                                {
+                                    "type": "ai_message_delta",
+                                    "content": content,
+                                }
+                            )
                             + "\n\n"
                         )
                 elif etype == "on_chain_end":
@@ -705,9 +717,7 @@ async def stream_source_chat_response(
                             "context_indicators": getattr(
                                 output, "context_indicators", None
                             ),
-                            "mcp_tool_calls": getattr(
-                                output, "mcp_tool_calls", None
-                            ),
+                            "mcp_tool_calls": getattr(output, "mcp_tool_calls", None),
                             # v0.8.68 — offline-fallback info (dual-path,
                             # same Pydantic-state guard as the fields above).
                             "offline_fallback": getattr(
@@ -729,11 +739,13 @@ async def stream_source_chat_response(
             if accumulated_content:
                 yield (
                     "data: "
-                    + json.dumps({
-                        "type": "ai_message",
-                        "content": accumulated_content,
-                        "timestamp": None,
-                    })
+                    + json.dumps(
+                        {
+                            "type": "ai_message",
+                            "content": accumulated_content,
+                            "timestamp": None,
+                        }
+                    )
                     + "\n\n"
                 )
 
@@ -741,10 +753,12 @@ async def stream_source_chat_response(
             if final_state and "context_indicators" in final_state:
                 yield (
                     "data: "
-                    + json.dumps({
-                        "type": "context_indicators",
-                        "data": final_state["context_indicators"],
-                    })
+                    + json.dumps(
+                        {
+                            "type": "context_indicators",
+                            "data": final_state["context_indicators"],
+                        }
+                    )
                     + "\n\n"
                 )
 
@@ -760,10 +774,12 @@ async def stream_source_chat_response(
             if final_state and final_state.get("mcp_tool_calls"):
                 yield (
                     "data: "
-                    + json.dumps({
-                        "type": "mcp_tool_calls",
-                        "calls": final_state["mcp_tool_calls"],
-                    })
+                    + json.dumps(
+                        {
+                            "type": "mcp_tool_calls",
+                            "calls": final_state["mcp_tool_calls"],
+                        }
+                    )
                     + "\n\n"
                 )
 
@@ -773,11 +789,13 @@ async def stream_source_chat_response(
             if final_state and final_state.get("selected_provider") is not None:
                 yield (
                     "data: "
-                    + json.dumps({
-                        "type": "selected_provider",
-                        "selected_provider": final_state["selected_provider"],
-                        "selected_model_id": final_state.get("selected_model_id"),
-                    })
+                    + json.dumps(
+                        {
+                            "type": "selected_provider",
+                            "selected_provider": final_state["selected_provider"],
+                            "selected_model_id": final_state.get("selected_model_id"),
+                        }
+                    )
                     + "\n\n"
                 )
 
@@ -788,10 +806,12 @@ async def stream_source_chat_response(
             if final_state and final_state.get("offline_fallback"):
                 yield (
                     "data: "
-                    + json.dumps({
-                        "type": "offline_fallback",
-                        "data": final_state["offline_fallback"],
-                    })
+                    + json.dumps(
+                        {
+                            "type": "offline_fallback",
+                            "data": final_state["offline_fallback"],
+                        }
+                    )
                     + "\n\n"
                 )
 

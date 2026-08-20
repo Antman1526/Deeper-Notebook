@@ -6,6 +6,7 @@ Provides:
   - _list_ollama_models: Ollama discovery
   - _list_local_ggufs: local GGUF discovery
 """
+
 from __future__ import annotations
 
 import logging
@@ -95,20 +96,24 @@ def _ensure_credential(
                                 log.info(
                                     "Refreshed base_url for %r: %r → %r "
                                     "(dynamic port changed across launches)",
-                                    name, saved_url, base_url,
+                                    name,
+                                    saved_url,
+                                    base_url,
                                 )
                             else:
                                 log.warning(
                                     "PUT /credentials/%s base_url → %s: %s "
                                     "(credential will use stale URL)",
-                                    cred_id, put_resp.status_code,
+                                    cred_id,
+                                    put_resp.status_code,
                                     put_resp.text[:200],
                                 )
                         except Exception as exc:
                             log.warning(
                                 "Could not refresh base_url for %r: %s "
                                 "(credential will use stale URL)",
-                                name, exc,
+                                name,
+                                exc,
                             )
                     return cred_id
             # Loop exited without finding a match — refuse to POST a duplicate.
@@ -129,7 +134,12 @@ def _ensure_credential(
         r = client.post("/api/credentials", json=payload)
         if r.status_code == 201:
             data = r.json()
-            log.info("Created credential %r (provider=%s id=%s)", name, provider, data.get("id"))
+            log.info(
+                "Created credential %r (provider=%s id=%s)",
+                name,
+                provider,
+                data.get("id"),
+            )
             return data.get("id")
         else:
             log.warning(
@@ -160,14 +170,14 @@ def _ensure_model(
     try:
         r = client.post("/api/models", json=payload)
         if r.status_code in (200, 201):
-            log.info("Registered model %r (provider=%s type=%s)", name, provider, model_type)
+            log.info(
+                "Registered model %r (provider=%s type=%s)", name, provider, model_type
+            )
             return True
         elif r.status_code == 400 and "already exists" in (r.text or "").lower():
             return False  # duplicate — treat as no-op
         else:
-            log.warning(
-                "POST /models %r → %s: %s", name, r.status_code, r.text[:200]
-            )
+            log.warning("POST /models %r → %s: %s", name, r.status_code, r.text[:200])
             return False
     except Exception as exc:
         log.warning("Could not register model %r: %s", name, exc)

@@ -13,6 +13,7 @@ Tests are network-isolated — no real Osaurus required. We mock the
 probe at the httpx level and stub the auto_register HTTP helpers at
 the module level for the registration side.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -26,6 +27,7 @@ from desktop.auto_register import osaurus as osaurus_mod
 def test_osaurus_port_default():
     """Default port is 1337 — Osaurus's documented default."""
     import os as _os
+
     _os.environ.pop("DEEPER_NOTEBOOK_OSAURUS_PORT", None)
     assert osaurus_mod._osaurus_port() == 1337
 
@@ -56,8 +58,7 @@ def test_osaurus_running_returns_models_on_200():
     fake_client = MagicMock()
     fake_client.__enter__.return_value.get.return_value = fake_response
 
-    with patch("desktop.auto_register.osaurus.httpx.Client",
-               return_value=fake_client):
+    with patch("desktop.auto_register.osaurus.httpx.Client", return_value=fake_client):
         running, models = osaurus_mod._osaurus_running(1337)
     assert running is True
     assert models == ["qwen2.5-7b-instruct-mlx", "llama-3.1-8b-mlx"]
@@ -71,8 +72,7 @@ def test_osaurus_running_returns_false_on_connect_error():
         "Connection refused"
     )
 
-    with patch("desktop.auto_register.osaurus.httpx.Client",
-               return_value=fake_client):
+    with patch("desktop.auto_register.osaurus.httpx.Client", return_value=fake_client):
         running, models = osaurus_mod._osaurus_running(1337)
     assert running is False
     assert models == []
@@ -84,8 +84,7 @@ def test_osaurus_running_returns_false_on_non_200():
     fake_client = MagicMock()
     fake_client.__enter__.return_value.get.return_value = fake_response
 
-    with patch("desktop.auto_register.osaurus.httpx.Client",
-               return_value=fake_client):
+    with patch("desktop.auto_register.osaurus.httpx.Client", return_value=fake_client):
         running, models = osaurus_mod._osaurus_running(1337)
     assert running is False
     assert models == []
@@ -94,7 +93,9 @@ def test_osaurus_running_returns_false_on_non_200():
 def test_register_osaurus_models_skips_when_not_running():
     """No Osaurus → no API calls at all, returns False."""
     with patch.object(
-        osaurus_mod, "_osaurus_running", return_value=(False, []),
+        osaurus_mod,
+        "_osaurus_running",
+        return_value=(False, []),
     ):
         # If anything tries to call client.get/post, this MagicMock
         # would record it — assert below.
@@ -114,14 +115,23 @@ def test_register_osaurus_models_happy_path():
     """Probe succeeds → credential created → models registered."""
     fake_models = ["qwen2.5-7b-instruct-mlx", "llama-3.1-8b-mlx"]
 
-    with patch.object(
-        osaurus_mod, "_osaurus_running",
-        return_value=(True, fake_models),
-    ), patch.object(
-        osaurus_mod, "_ensure_credential", return_value="cred:osaurus-1",
-    ) as mock_ensure_cred, patch.object(
-        osaurus_mod, "_ensure_model", return_value=True,
-    ) as mock_ensure_model:
+    with (
+        patch.object(
+            osaurus_mod,
+            "_osaurus_running",
+            return_value=(True, fake_models),
+        ),
+        patch.object(
+            osaurus_mod,
+            "_ensure_credential",
+            return_value="cred:osaurus-1",
+        ) as mock_ensure_cred,
+        patch.object(
+            osaurus_mod,
+            "_ensure_model",
+            return_value=True,
+        ) as mock_ensure_model,
+    ):
         fake_client = MagicMock()
         result = osaurus_mod.register_osaurus_models(
             client=fake_client,
@@ -140,9 +150,7 @@ def test_register_osaurus_models_happy_path():
 
     # Both models registered against the new credential.
     assert mock_ensure_model.call_count == 2
-    registered_names = [
-        c.kwargs["name"] for c in mock_ensure_model.call_args_list
-    ]
+    registered_names = [c.kwargs["name"] for c in mock_ensure_model.call_args_list]
     assert registered_names == fake_models
 
 
@@ -150,14 +158,23 @@ def test_register_osaurus_models_returns_false_when_credential_fails():
     """If _ensure_credential returns None (deduplication refusal,
     network error, etc.) we skip model registration entirely and
     return False — same shape as register_llamacpp_models."""
-    with patch.object(
-        osaurus_mod, "_osaurus_running",
-        return_value=(True, ["model-a"]),
-    ), patch.object(
-        osaurus_mod, "_ensure_credential", return_value=None,
-    ), patch.object(
-        osaurus_mod, "_ensure_model", return_value=True,
-    ) as mock_ensure_model:
+    with (
+        patch.object(
+            osaurus_mod,
+            "_osaurus_running",
+            return_value=(True, ["model-a"]),
+        ),
+        patch.object(
+            osaurus_mod,
+            "_ensure_credential",
+            return_value=None,
+        ),
+        patch.object(
+            osaurus_mod,
+            "_ensure_model",
+            return_value=True,
+        ) as mock_ensure_model,
+    ):
         result = osaurus_mod.register_osaurus_models(
             client=MagicMock(),
             existing_cred_names=set(),
@@ -172,13 +189,22 @@ def test_register_osaurus_models_honours_explicit_port_kwarg():
     """Caller can pass `port=` to override both the default and the
     env var. Useful for the on-demand /credentials/detect-osaurus
     endpoint and for tests."""
-    with patch.object(
-        osaurus_mod, "_osaurus_running",
-        return_value=(True, ["m"]),
-    ) as mock_probe, patch.object(
-        osaurus_mod, "_ensure_credential", return_value="cred:x",
-    ) as mock_cred, patch.object(
-        osaurus_mod, "_ensure_model", return_value=True,
+    with (
+        patch.object(
+            osaurus_mod,
+            "_osaurus_running",
+            return_value=(True, ["m"]),
+        ) as mock_probe,
+        patch.object(
+            osaurus_mod,
+            "_ensure_credential",
+            return_value="cred:x",
+        ) as mock_cred,
+        patch.object(
+            osaurus_mod,
+            "_ensure_model",
+            return_value=True,
+        ),
     ):
         osaurus_mod.register_osaurus_models(
             client=MagicMock(),

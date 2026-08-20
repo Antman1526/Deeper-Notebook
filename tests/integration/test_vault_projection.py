@@ -144,7 +144,9 @@ async def test_migration_38_down_up_preserves_shadow_records(clean_namespace):
             "SELECT * FROM knowledge_engine_backfill_checkpoint:round_trip;"
         )
     )[0]
-    assert str(row_after_down["id"]) == "knowledge_engine_backfill_checkpoint:round_trip"
+    assert (
+        str(row_after_down["id"]) == "knowledge_engine_backfill_checkpoint:round_trip"
+    )
 
     manager = AsyncMigrationManager()
     await manager.run_migration_up()

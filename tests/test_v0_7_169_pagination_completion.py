@@ -23,6 +23,7 @@ Two remaining unbounded queries from prior audits:
 These tests pin both contracts at the AST/text level + the actual
 router-level pagination behavior.
 """
+
 from __future__ import annotations
 
 import re
@@ -59,9 +60,7 @@ async def test_get_chat_sessions_accepts_limit_and_offset():
     nb = Notebook(name="test-nb", description="t")
     nb.id = "notebook:abc"
 
-    with patch(
-        "deeper_notebook.domain.notebook.repo_query", new=fake_repo_query
-    ):
+    with patch("deeper_notebook.domain.notebook.repo_query", new=fake_repo_query):
         await nb.get_chat_sessions(limit=50, offset=25)
 
     q = captured["query"] or ""
@@ -88,9 +87,7 @@ async def test_get_chat_sessions_without_args_is_unbounded():
     nb = Notebook(name="test-nb", description="t")
     nb.id = "notebook:abc"
 
-    with patch(
-        "deeper_notebook.domain.notebook.repo_query", new=fake_repo_query
-    ):
+    with patch("deeper_notebook.domain.notebook.repo_query", new=fake_repo_query):
         await nb.get_chat_sessions()
 
     q = captured["query"] or ""

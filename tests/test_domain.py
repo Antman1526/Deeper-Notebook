@@ -135,7 +135,8 @@ class TestSourceDomain:
         # Create a "uploads" dir + a file inside it
         uploads_dir = Path(tempfile.mkdtemp()).resolve()
         monkeypatch.setattr(
-            "deeper_notebook.config.UPLOADS_FOLDER", str(uploads_dir),
+            "deeper_notebook.config.UPLOADS_FOLDER",
+            str(uploads_dir),
         )
         tmp_path = uploads_dir / "test.txt"
         tmp_path.write_bytes(b"Test content")
@@ -209,7 +210,6 @@ class TestSourceDomain:
             result = await source.delete()
             assert result is True
             mock_delete.assert_called_once()
-
 
     @pytest.mark.asyncio
     async def test_vectorize_raises_valueerror_when_no_text(self):

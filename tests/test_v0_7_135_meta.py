@@ -181,16 +181,18 @@ def _scan_function(
         # everything to 500. Verify the HTTPException re-raise
         # precedes it.
         if not _try_block_has_httpexception_before_generic(node):
-            violations.append((
-                node.lineno,
-                f"{func.name}() try/except at line {node.lineno} converts "
-                "any Exception to HTTPException(500) but lacks an `except "
-                "HTTPException: raise` clause earlier — typed 4xx/5xx "
-                "exceptions raised inside the try will be clobbered to 500. "
-                "Add `except HTTPException:\\n    raise` before the generic "
-                "`except Exception` clause, or annotate the line with "
-                "`# noqa: HTTP_RAISE` if the catch is intentional.",
-            ))
+            violations.append(
+                (
+                    node.lineno,
+                    f"{func.name}() try/except at line {node.lineno} converts "
+                    "any Exception to HTTPException(500) but lacks an `except "
+                    "HTTPException: raise` clause earlier — typed 4xx/5xx "
+                    "exceptions raised inside the try will be clobbered to 500. "
+                    "Add `except HTTPException:\\n    raise` before the generic "
+                    "`except Exception` clause, or annotate the line with "
+                    "`# noqa: HTTP_RAISE` if the catch is intentional.",
+                )
+            )
     return violations
 
 
@@ -220,10 +222,7 @@ def test_router_httpexception_reraise_enforced(router_file: Path):
     """
     violations = _scan_file(router_file)
     if violations:
-        lines = "\n".join(
-            f"  {router_file.name}:{ln}: {msg}"
-            for ln, msg in violations
-        )
+        lines = "\n".join(f"  {router_file.name}:{ln}: {msg}" for ln, msg in violations)
         pytest.fail(
             f"\n{lines}\n\nThe `except HTTPException: raise` convention "
             "exists to prevent typed 4xx/5xx exceptions from being "

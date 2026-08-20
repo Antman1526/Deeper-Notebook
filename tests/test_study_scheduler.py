@@ -72,7 +72,9 @@ def test_scheduler_returns_utc_plain_state_without_leaking_fsrs_objects() -> Non
 def test_again_from_a_review_card_increments_lapse_count() -> None:
     scheduler = StudyScheduler()
     first_review_at = datetime(2026, 7, 18, 12, 0, tzinfo=UTC)
-    graduated = scheduler.schedule(_card(), StudyRating.EASY, reviewed_at=first_review_at)
+    graduated = scheduler.schedule(
+        _card(), StudyRating.EASY, reviewed_at=first_review_at
+    )
 
     lapsed = scheduler.schedule(
         graduated.card,
@@ -127,18 +129,27 @@ class _MemoryRepository:
         return [self.card] if self.card.due <= now else []
 
     async def review(
-        self, card_id: str, *, rating: StudyRating, request_id: str, reviewed_at: datetime
+        self,
+        card_id: str,
+        *,
+        rating: StudyRating,
+        request_id: str,
+        reviewed_at: datetime,
     ):
         if request_id in self.requests:
             return self.requests[request_id]
-        scheduled = StudyScheduler().schedule(self.card, rating, reviewed_at=reviewed_at)
+        scheduled = StudyScheduler().schedule(
+            self.card, rating, reviewed_at=reviewed_at
+        )
         self.card = scheduled.card
         result = (self.card, scheduled.review)
         self.requests[request_id] = result
         return result
 
 
-def test_study_api_accepts_evidence_cards_and_replays_review_requests(monkeypatch) -> None:
+def test_study_api_accepts_evidence_cards_and_replays_review_requests(
+    monkeypatch,
+) -> None:
     store = _MemoryRepository()
     monkeypatch.setattr(study_router, "_repository", lambda: store)
     app = FastAPI()
@@ -159,7 +170,11 @@ def test_study_api_accepts_evidence_cards_and_replays_review_requests(monkeypatc
         assert card.json()["citations"][0]["quote"] == "Private fact"
         assert store.linked_plan_id == "study_plan:owner"
 
-        request = {"request_id": "review-1", "rating": "good", "reviewed_at": "2026-07-18T12:00:00Z"}
+        request = {
+            "request_id": "review-1",
+            "rating": "good",
+            "reviewed_at": "2026-07-18T12:00:00Z",
+        }
         first = client.post("/api/study/cards/study_card:one/reviews", json=request)
         replay = client.post("/api/study/cards/study_card:one/reviews", json=request)
 
@@ -169,7 +184,9 @@ def test_study_api_accepts_evidence_cards_and_replays_review_requests(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_source_edit_creates_a_new_version_in_one_transaction(monkeypatch) -> None:
+async def test_source_edit_creates_a_new_version_in_one_transaction(
+    monkeypatch,
+) -> None:
     previous = _card()
     replacement = previous.model_copy(update={"id": "study_card:two", "version": 2})
     queries: list[str] = []
@@ -194,12 +211,14 @@ async def test_source_edit_creates_a_new_version_in_one_transaction(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_card_version_and_artifact_owner_link_share_one_atomic_transaction(monkeypatch) -> None:
+async def test_card_version_and_artifact_owner_link_share_one_atomic_transaction(
+    monkeypatch,
+) -> None:
     """Owner publication cannot be repaired after a version commit."""
     import deeper_notebook.study.repository as repository_module
 
-    card_record = _card().model_copy(update={"id": "study_card:atomic"}).model_dump(
-        mode="python"
+    card_record = (
+        _card().model_copy(update={"id": "study_card:atomic"}).model_dump(mode="python")
     )
     queries: list[str] = []
     repo_created = False
@@ -220,7 +239,9 @@ async def test_card_version_and_artifact_owner_link_share_one_atomic_transaction
     monkeypatch.setattr(repository_module, "repo_query", fake_query)
     monkeypatch.setattr(repository_module, "repo_create", fake_create)
 
-    await repository_module.StudyRepository().create_card_version_with_artifact_owner(_card())
+    await repository_module.StudyRepository().create_card_version_with_artifact_owner(
+        _card()
+    )
 
     atomic_queries = [query for query in queries if "BEGIN TRANSACTION" in query]
     assert len(atomic_queries) == 1
@@ -235,7 +256,11 @@ async def test_card_version_and_artifact_owner_link_share_one_atomic_transaction
     [
         (None, [{"plan_id": "study_plan:appeared", "syllabus_unit_id": "unit"}], True),
         (("study_plan:expected", "unit"), [], True),
-        (("study_plan:expected", "unit"), [{"plan_id": "study_plan:other", "syllabus_unit_id": "unit"}], True),
+        (
+            ("study_plan:expected", "unit"),
+            [{"plan_id": "study_plan:other", "syllabus_unit_id": "unit"}],
+            True,
+        ),
     ],
 )
 async def test_card_owner_preflight_is_bound_before_any_card_mutation(
@@ -244,8 +269,8 @@ async def test_card_owner_preflight_is_bound_before_any_card_mutation(
     """Owner disappearance/appearance/cross-plan races cannot publish a card."""
     import deeper_notebook.study.repository as repository_module
 
-    card_record = _card().model_copy(update={"id": "study_card:race"}).model_dump(
-        mode="python"
+    card_record = (
+        _card().model_copy(update={"id": "study_card:race"}).model_dump(mode="python")
     )
     calls: list[tuple[str, dict[str, object]]] = []
     preflight_calls = 0
@@ -262,7 +287,12 @@ async def test_card_owner_preflight_is_bound_before_any_card_mutation(
         if "study_plan_artifact" in query:
             preflight_calls += 1
             return (
-                [{"plan_id": preflight_owner[0], "syllabus_unit_id": preflight_owner[1]}]
+                [
+                    {
+                        "plan_id": preflight_owner[0],
+                        "syllabus_unit_id": preflight_owner[1],
+                    }
+                ]
                 if preflight_owner
                 else []
             )
@@ -284,11 +314,13 @@ async def test_card_owner_preflight_is_bound_before_any_card_mutation(
 
 
 @pytest.mark.asyncio
-async def test_card_owner_preflight_none_preserves_legacy_unlinked_card(monkeypatch) -> None:
+async def test_card_owner_preflight_none_preserves_legacy_unlinked_card(
+    monkeypatch,
+) -> None:
     import deeper_notebook.study.repository as repository_module
 
-    card_record = _card().model_copy(update={"id": "study_card:legacy"}).model_dump(
-        mode="python"
+    card_record = (
+        _card().model_copy(update={"id": "study_card:legacy"}).model_dump(mode="python")
     )
     calls: list[tuple[str, dict[str, object]]] = []
 
@@ -303,7 +335,9 @@ async def test_card_owner_preflight_none_preserves_legacy_unlinked_card(monkeypa
         return []
 
     monkeypatch.setattr(repository_module, "repo_query", fake_query)
-    created = await repository_module.StudyRepository().create_card_version_with_artifact_owner(_card())
+    created = await repository_module.StudyRepository().create_card_version_with_artifact_owner(
+        _card()
+    )
     assert created.id == "study_card:legacy"
     transaction_sql, transaction_values = next(
         (query, values) for query, values in calls if "BEGIN TRANSACTION" in query
@@ -332,7 +366,9 @@ class _OrphanConflictRepository(_MemoryRepository):
         super().__init__()
         self.created_cards: list[StudyCard] = []
 
-    async def create_card_version_with_artifact_owner(self, card: StudyCard) -> StudyCard:
+    async def create_card_version_with_artifact_owner(
+        self, card: StudyCard
+    ) -> StudyCard:
         self.created_cards.append(card)
         raise StudyCardArtifactOwnerConflict("card artifact owner changed")
 
@@ -341,7 +377,9 @@ class _OrphanConflictRepository(_MemoryRepository):
 
 
 @pytest.mark.asyncio
-async def test_study_api_does_not_expose_orphan_card_when_owner_link_conflicts(monkeypatch) -> None:
+async def test_study_api_does_not_expose_orphan_card_when_owner_link_conflicts(
+    monkeypatch,
+) -> None:
     store = _OrphanConflictRepository()
     monkeypatch.setattr(study_router, "_repository", lambda: store)
     app = FastAPI()

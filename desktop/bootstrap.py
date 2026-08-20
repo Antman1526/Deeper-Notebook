@@ -5,6 +5,7 @@ The launcher's frozen Python only carries pywebview/aiohttp/httpx; upstream's
 FastAPI + langchain + esperanto stack lives in a user-managed venv that uv
 provisions on first launch (or whenever requirements.lock changes).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -77,9 +78,11 @@ def extract_python_runtime(tarball: Path, dest_parent: Path) -> Path:
         else:
             reason = "v0.8.83: bundled runtime changed — stale"
         import logging
+
         logging.getLogger(__name__).warning(
             "%s python-runtime at %s; wiping and re-extracting",
-            reason, runtime_dir,
+            reason,
+            runtime_dir,
         )
         shutil.rmtree(runtime_dir, ignore_errors=True)
 
@@ -280,17 +283,22 @@ def ensure_venv(
     progress("Installing dependencies (this takes about a minute)…")
     _run_logged(
         [
-            str(uv_binary), "pip", "install",
-            "--python", str(venv_python()),
-            "-r", str(lock_path),
+            str(uv_binary),
+            "pip",
+            "install",
+            "--python",
+            str(venv_python()),
+            "-r",
+            str(lock_path),
         ],
         "uv-install",
     )
 
     # Make upstream importable from the venv by writing a .pth file pointing
     # at the bundled upstream/ source dir.
-    site_packages = next(venv_dir().glob("lib/python*/site-packages"), None) \
-        or (venv_dir() / "Lib" / "site-packages")  # Windows
+    site_packages = next(venv_dir().glob("lib/python*/site-packages"), None) or (
+        venv_dir() / "Lib" / "site-packages"
+    )  # Windows
     (site_packages / "deeper_notebook_upstream.pth").write_text(
         str(upstream_dir) + "\n"
     )
@@ -319,12 +327,12 @@ def ensure_venv(
     # not checked here — they fail at use-time with their own clear
     # errors via the credential / model layer.
     _CRITICAL_IMPORTS = [
-        "prometheus_client",   # api/metrics.py — v0.7.124
-        "surrealdb",           # database layer
-        "fastapi",             # API framework itself
-        "langgraph",           # all graph workflows
-        "loguru",              # logging
-        "pydantic",            # request/response models
+        "prometheus_client",  # api/metrics.py — v0.7.124
+        "surrealdb",  # database layer
+        "fastapi",  # API framework itself
+        "langgraph",  # all graph workflows
+        "loguru",  # logging
+        "pydantic",  # request/response models
     ]
     progress("Verifying critical packages installed…")
     missing = _verify_critical_imports(venv_python(), _CRITICAL_IMPORTS)
@@ -351,7 +359,8 @@ def ensure_venv(
 
 
 def _verify_critical_imports(
-    python_exe: Path, modules: list[str],
+    python_exe: Path,
+    modules: list[str],
 ) -> list[str]:
     """v0.7.141 — Run each `import X` in the freshly-installed venv,
     return the list of modules that failed.

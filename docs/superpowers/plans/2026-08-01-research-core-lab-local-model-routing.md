@@ -101,6 +101,7 @@
 ResearchMode = Literal["read", "write", "ask", "search", "graph", "podcast"]
 DocumentRenderMode = Literal["reading", "source", "live-preview", "canvas"]
 
+
 class DocumentTabTarget(_Strict):
     kind: Literal["document"]
     container_id: str
@@ -111,17 +112,22 @@ class DocumentTabTarget(_Strict):
     knowledge_document_id: str | None = None
     render_mode: DocumentRenderMode = "reading"
 
+
 class AskTabTarget(_Strict):
     kind: Literal["ask"]
     thread_id: str | None = None
     selected_document_ids: list[str] = Field(default_factory=list, max_length=128)
+
 
 class SearchTabTarget(_Strict):
     kind: Literal["search"]
     query: str = Field(default="", max_length=512)
     search_mode: Literal["exact", "text", "semantic"] = "text"
     space_ids: list[str] = Field(default_factory=list, max_length=32)
-    authority_kinds: list[Literal["app_owned", "external_read_only"]] = Field(default_factory=list, max_length=2)
+    authority_kinds: list[Literal["app_owned", "external_read_only"]] = Field(
+        default_factory=list, max_length=2
+    )
+
 
 class GraphTabTarget(_Strict):
     kind: Literal["graph"]
@@ -130,21 +136,29 @@ class GraphTabTarget(_Strict):
     relation_kinds: list[str] = Field(default_factory=list, max_length=32)
     viewport: GraphViewport = Field(default_factory=GraphViewport)
 
+
 class PodcastTabTarget(_Strict):
     kind: Literal["podcast"]
     production_id: str | None = None
     seed_document_ids: list[str] = Field(default_factory=list, max_length=128)
 
+
 KnowledgeTabTarget = Annotated[
-    DocumentTabTarget | AskTabTarget | SearchTabTarget | GraphTabTarget | PodcastTabTarget,
+    DocumentTabTarget
+    | AskTabTarget
+    | SearchTabTarget
+    | GraphTabTarget
+    | PodcastTabTarget,
     Field(discriminator="kind"),
 ]
+
 
 class KnowledgeTabStateV2(_Strict):
     id: str
     mode: ResearchMode
     title: str
     target: KnowledgeTabTarget
+
 
 class KnowledgeWorkspaceDocumentV2(_Strict):
     version: Literal[2] = 2
@@ -161,19 +175,33 @@ class KnowledgeWorkspaceDocumentV2(_Strict):
 
 ```python
 ModelRole = Literal[
-    "research_chat", "evidence_extraction", "claim_verification",
-    "editorial_writing", "embedding_retrieval", "vision_analysis",
-    "code_data_analysis", "podcast_outline", "podcast_script",
-    "speech_to_text", "text_to_speech",
+    "research_chat",
+    "evidence_extraction",
+    "claim_verification",
+    "editorial_writing",
+    "embedding_retrieval",
+    "vision_analysis",
+    "code_data_analysis",
+    "podcast_outline",
+    "podcast_script",
+    "speech_to_text",
+    "text_to_speech",
 ]
 Readiness = Literal[
-    "ready_verified", "ready_unverified", "requires_runtime",
-    "runtime_unavailable", "installed_unsupported", "incomplete", "planned", "removed",
+    "ready_verified",
+    "ready_unverified",
+    "requires_runtime",
+    "runtime_unavailable",
+    "installed_unsupported",
+    "incomplete",
+    "planned",
+    "removed",
 ]
 ResourceTier = Literal["light", "standard", "heavyweight"]
 ExecutionPolicy = Literal["strict_local", "local_preferred", "custom"]
 ComputeProfile = Literal["efficient", "balanced", "maximum_quality"]
 SelectionSource = Literal["automatic", "role_override", "production_override"]
+
 
 class RouteRequest(_Strict):
     role: ModelRole
@@ -184,6 +212,7 @@ class RouteRequest(_Strict):
     compute_profile: ComputeProfile
     role_override_model_id: str | None = None
     production_override_model_id: str | None = None
+
 
 class ModelRoutePlan(_Strict):
     role: ModelRole

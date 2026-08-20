@@ -5,6 +5,7 @@ flag lifecycle, and auto_repair's safe-guard early returns. The full
 export/move/reimport happy path needs a real surreal binary and is exercised
 by scripts/repair_desktop_db.sh + the launcher in the field, not here.
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +15,7 @@ import pytest
 from desktop import db_repair
 
 # --- crash-signature detection -------------------------------------------------
+
 
 def test_detects_the_lq_key_collision():
     sample = (
@@ -25,22 +27,27 @@ def test_detects_the_lq_key_collision():
 
 
 def test_detection_is_case_insensitive():
-    assert db_repair.looks_like_lq_corruption(
-        "The Key Being Inserted Already Exists"
-    ) is True
+    assert (
+        db_repair.looks_like_lq_corruption("The Key Being Inserted Already Exists")
+        is True
+    )
 
 
-@pytest.mark.parametrize("text", [
-    "",
-    "worker started; subscribing to commands",
-    "ConnectionError: connection refused",
-    "some unrelated 'already exists' note about a file",  # not the LQ phrase
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "worker started; subscribing to commands",
+        "ConnectionError: connection refused",
+        "some unrelated 'already exists' note about a file",  # not the LQ phrase
+    ],
+)
 def test_ignores_unrelated_or_empty_logs(text):
     assert db_repair.looks_like_lq_corruption(text) is False
 
 
 # --- one-shot flag lifecycle ---------------------------------------------------
+
 
 def test_flag_set_check_clear_roundtrip(tmp_path):
     assert db_repair.needs_repair(tmp_path) is False
@@ -58,6 +65,7 @@ def test_clear_is_idempotent_when_absent(tmp_path):
 
 
 # --- auto_repair safe-guard early returns -------------------------------------
+
 
 def test_auto_repair_returns_false_when_binary_missing(tmp_path):
     data = tmp_path / "surreal_data"

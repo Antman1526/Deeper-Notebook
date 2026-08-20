@@ -5,6 +5,7 @@ stays active) and is only honored when explicitly set True for a single turn.
 The full provision path is the live-DB chat integration, so the cross-layer
 wiring is guarded by source + a request-model default test.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,7 +27,9 @@ def test_request_bypass_defaults_false():
 
 def test_request_bypass_can_be_set_true():
     req = ExecuteChatRequest(
-        session_id="chat_session:x", message="hi", context={},
+        session_id="chat_session:x",
+        message="hi",
+        context={},
         bypass_privacy_gate=True,
     )
     assert req.bypass_privacy_gate is True
@@ -35,7 +38,12 @@ def test_request_bypass_can_be_set_true():
 def test_router_threads_bypass_into_state():
     src = _src("api/routers/chat.py")
     # Both /chat/execute and /chat/stream set the state key from the request.
-    assert src.count('state_values["bypass_privacy_gate"] = bool(request.bypass_privacy_gate)') == 2
+    assert (
+        src.count(
+            'state_values["bypass_privacy_gate"] = bool(request.bypass_privacy_gate)'
+        )
+        == 2
+    )
 
 
 def test_node_passes_bypass_to_provision():

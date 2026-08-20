@@ -59,7 +59,10 @@ async def _local_semantic_suggestions(
     if model is None:
         return []
     embeddings = await model.aembed(
-        [f"{transcript}\n{source.relative_path}", *[f"{item.name}" for item in notebooks]]
+        [
+            f"{transcript}\n{source.relative_path}",
+            *[f"{item.name}" for item in notebooks],
+        ]
     )
     if len(embeddings) != len(notebooks) + 1:
         return []
@@ -169,7 +172,8 @@ async def _route_capture_media(
     repository: Any,
     get_speech_to_text: Callable[[], Awaitable[Any | None]],
     load_notebooks: Callable[[], Awaitable[list[Any]]],
-    semantic_suggester: Callable[..., Awaitable[list[CaptureNotebookSuggestion]]] | None = None,
+    semantic_suggester: Callable[..., Awaitable[list[CaptureNotebookSuggestion]]]
+    | None = None,
 ) -> CaptureRouteResponse:
     roots = [_resolved_root(path) for path in await repository.list_roots()]
     notebooks = [

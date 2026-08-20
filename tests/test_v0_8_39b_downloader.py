@@ -17,6 +17,7 @@ Coverage:
     filename, non-.gguf filename).
   - Endpoint 404 for unknown job_id.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,8 +50,16 @@ def _reset_jobs():
 def test_recommendations_have_required_fields():
     """Every recommendation must have the keys the frontend expects.
     A field missing here would cascade to undefined-error renders."""
-    required = {"id", "label", "description", "repo_id", "filename",
-                "approx_size_gb", "tags", "context_length"}
+    required = {
+        "id",
+        "label",
+        "description",
+        "repo_id",
+        "filename",
+        "approx_size_gb",
+        "tags",
+        "context_length",
+    }
     for entry in dl_mod.RECOMMENDATIONS:
         missing = required - entry.keys()
         assert not missing, f"Recommendation {entry.get('id', '?')} missing: {missing}"
@@ -133,8 +142,9 @@ async def test_start_download_completes_and_renames(tmp_path):
         def stream(self, method, url, headers=None):
             return _FakeStreamCtx(_FakeStreamResponse())
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _FakeAsyncClient):
+    with patch(
+        "deeper_notebook.local_models.downloader.httpx.AsyncClient", _FakeAsyncClient
+    ):
         job = await dl_mod.start_download(
             "bartowski/Some-Model-GGUF",
             "model.gguf",
@@ -194,8 +204,9 @@ async def test_start_download_dedupes_in_flight(tmp_path):
         def stream(self, m, u, headers=None):
             return _BlockingStreamCtx()
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _BlockingClient):
+    with patch(
+        "deeper_notebook.local_models.downloader.httpx.AsyncClient", _BlockingClient
+    ):
         job1 = await dl_mod.start_download("repo/a", "x.gguf", tmp_path)
         job2 = await dl_mod.start_download("repo/a", "x.gguf", tmp_path)
 
@@ -221,7 +232,9 @@ async def test_start_download_handles_http_error(tmp_path):
 
         def raise_for_status(self):
             raise httpx.HTTPStatusError(
-                "Not Found", request=self.request, response=self,
+                "Not Found",
+                request=self.request,
+                response=self,
             )
 
     class _Ctx:
@@ -244,8 +257,7 @@ async def test_start_download_handles_http_error(tmp_path):
         def stream(self, m, u, headers=None):
             return _Ctx()
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _Client):
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient", _Client):
         job = await dl_mod.start_download("repo/bad", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)
 
@@ -267,36 +279,40 @@ def app():
 
 def test_download_endpoint_requires_repo_id(app):
     with TestClient(app) as client:
-        resp = client.post("/api/local-models/download",
-                           json={"filename": "x.gguf"})
+        resp = client.post("/api/local-models/download", json={"filename": "x.gguf"})
     assert resp.status_code == 400
     assert "repo_id" in resp.text
 
 
 def test_download_endpoint_requires_filename(app):
     with TestClient(app) as client:
-        resp = client.post("/api/local-models/download",
-                           json={"repo_id": "repo/a"})
+        resp = client.post("/api/local-models/download", json={"repo_id": "repo/a"})
     assert resp.status_code == 400
 
 
 def test_download_endpoint_rejects_path_traversal(app):
     with TestClient(app) as client:
-        resp = client.post("/api/local-models/download",
-                           json={"repo_id": "r/a", "filename": "../etc/passwd"})
+        resp = client.post(
+            "/api/local-models/download",
+            json={"repo_id": "r/a", "filename": "../etc/passwd"},
+        )
     assert resp.status_code == 400
     assert "path" in resp.text.lower()
 
 
 def test_download_endpoint_rejects_non_gguf(app):
     with TestClient(app) as client:
-        resp = client.post("/api/local-models/download",
-                           json={"repo_id": "r/a", "filename": "evil.exe"})
+        resp = client.post(
+            "/api/local-models/download",
+            json={"repo_id": "r/a", "filename": "evil.exe"},
+        )
     assert resp.status_code == 400
     assert "gguf" in resp.text.lower()
 
 
-def test_download_endpoint_honors_nested_manifest_target_path(app, monkeypatch, tmp_path):
+def test_download_endpoint_honors_nested_manifest_target_path(
+    app, monkeypatch, tmp_path
+):
     import deeper_notebook.local_models as lm
 
     calls: list[tuple[str, str, Path]] = []
@@ -347,7 +363,9 @@ def test_download_endpoint_honors_nested_manifest_target_path(app, monkeypatch, 
     assert resp.json()["target_path"] == str(target)
 
 
-def test_download_endpoint_rejects_target_path_outside_model_dir(app, monkeypatch, tmp_path):
+def test_download_endpoint_rejects_target_path_outside_model_dir(
+    app, monkeypatch, tmp_path
+):
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path / "models"))
     outside = tmp_path / "outside" / "model.gguf"
 
@@ -365,7 +383,9 @@ def test_download_endpoint_rejects_target_path_outside_model_dir(app, monkeypatc
     assert "configured model directory" in resp.text
 
 
-def test_download_endpoint_rejects_target_path_filename_mismatch(app, monkeypatch, tmp_path):
+def test_download_endpoint_rejects_target_path_filename_mismatch(
+    app, monkeypatch, tmp_path
+):
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
@@ -388,7 +408,9 @@ def test_download_status_404_for_unknown_job(app):
     assert resp.status_code == 404
 
 
-def test_recommendations_endpoint_returns_static_fallback_without_manifest(app, monkeypatch, tmp_path):
+def test_recommendations_endpoint_returns_static_fallback_without_manifest(
+    app, monkeypatch, tmp_path
+):
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
     with TestClient(app) as client:
@@ -418,14 +440,16 @@ def test_recommendations_endpoint_returns_manifest_cards_when_manifest_exists(
     manifest = tmp_path / "manifests" / "model_inventory.md"
     manifest.parent.mkdir(parents=True)
     manifest.write_text(
-        "\n".join([
-            "# Local Model Inventory",
-            "",
-            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
-            "|---|---|---|---|---|---|---|",
-            f"| General Chat - GGUF | primary | `bartowski/Qwen2.5-7B-Instruct-GGUF` | `{gguf_path}` | GGUF | missing from scan | exact quant |",
-            f"| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `{mlx_path}` | MLX | missing from scan | coding and agent workflows |",
-        ])
+        "\n".join(
+            [
+                "# Local Model Inventory",
+                "",
+                "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+                "|---|---|---|---|---|---|---|",
+                f"| General Chat - GGUF | primary | `bartowski/Qwen2.5-7B-Instruct-GGUF` | `{gguf_path}` | GGUF | missing from scan | exact quant |",
+                f"| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `{mlx_path}` | MLX | missing from scan | coding and agent workflows |",
+            ]
+        )
     )
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
 
@@ -437,7 +461,9 @@ def test_recommendations_endpoint_returns_manifest_cards_when_manifest_exists(
     assert body["source"] == "manifest"
     assert body["manifest_path"] == str(manifest)
     assert body["recommendations"][0]["runtime_type"] == "MLX"
-    assert body["recommendations"][0]["setup_task"]["action_type"] == "download_snapshot"
+    assert (
+        body["recommendations"][0]["setup_task"]["action_type"] == "download_snapshot"
+    )
     assert body["recommendations"][1]["runtime_type"] == "GGUF"
     assert body["recommendations"][1]["setup_task"]["action_type"] == "download_gguf"
     assert body["recommendations"][1]["setup_task"]["target_path"] == str(gguf_path)

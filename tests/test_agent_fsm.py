@@ -3,6 +3,7 @@
 Pure unit tests for transitions, the declared-state parser, completion
 validation, and the step driver (anti-hallucinated-done + backstop).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -30,18 +31,21 @@ def test_terminal_states():
     assert not is_terminal(AgentState.CLARIFY)
 
 
-@pytest.mark.parametrize("frm,to,ok", [
-    (AgentState.TODO, AgentState.WORKING, True),
-    (AgentState.TODO, AgentState.CLARIFY, True),
-    (AgentState.TODO, AgentState.COMPLETE, False),  # can't finish before starting
-    (AgentState.WORKING, AgentState.WORKING, True),
-    (AgentState.WORKING, AgentState.COMPLETE, True),
-    (AgentState.WORKING, AgentState.CLARIFY, True),
-    (AgentState.CLARIFY, AgentState.WORKING, True),
-    (AgentState.CLARIFY, AgentState.COMPLETE, False),  # must resume work first
-    (AgentState.COMPLETE, AgentState.WORKING, False),  # terminal
-    (AgentState.FAILED, AgentState.WORKING, False),    # terminal
-])
+@pytest.mark.parametrize(
+    "frm,to,ok",
+    [
+        (AgentState.TODO, AgentState.WORKING, True),
+        (AgentState.TODO, AgentState.CLARIFY, True),
+        (AgentState.TODO, AgentState.COMPLETE, False),  # can't finish before starting
+        (AgentState.WORKING, AgentState.WORKING, True),
+        (AgentState.WORKING, AgentState.COMPLETE, True),
+        (AgentState.WORKING, AgentState.CLARIFY, True),
+        (AgentState.CLARIFY, AgentState.WORKING, True),
+        (AgentState.CLARIFY, AgentState.COMPLETE, False),  # must resume work first
+        (AgentState.COMPLETE, AgentState.WORKING, False),  # terminal
+        (AgentState.FAILED, AgentState.WORKING, False),  # terminal
+    ],
+)
 def test_can_transition(frm, to, ok):
     assert can_transition(frm, to) is ok
 

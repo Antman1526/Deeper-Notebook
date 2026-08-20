@@ -4,6 +4,7 @@ Admin-only endpoints (auth-protected by PasswordAuthMiddleware)
 for managing MCP server registry rows. Read by the Settings UI
 in Task 10 and by the chat-graph node in Task 8.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
@@ -18,8 +19,10 @@ from pydantic import BaseModel
 try:
     from surrealdb.errors import SurrealError as _SurrealIdError
 except ImportError:  # pragma: no cover — older surrealdb clients
+
     class _SurrealIdError(Exception):
         pass
+
 
 _BAD_RECORD_ID_ERRORS = (ValueError, TypeError, _SurrealIdError)
 
@@ -39,6 +42,7 @@ class MCPServerUpdate(BaseModel):
     rejects an empty body with 400). Using None as sentinel rather than
     model_fields_set so callers can always send a plain JSON object.
     """
+
     priority: int | None = None
     enabled: bool | None = None
 
@@ -71,6 +75,7 @@ async def list_mcp_recommendations():
     assistant use case (Context7 — code-doc lookup).
     """
     from deeper_notebook.mcp.recommendations import RECOMMENDATIONS
+
     return {"recommendations": RECOMMENDATIONS}
 
 
@@ -153,7 +158,11 @@ async def create_mcp_server(body: MCPServerCreate):
     except Exception as exc:
         # v0.8.0 — mcp_server_name_unique index raises on duplicate names.
         exc_str = str(exc).lower()
-        if "unique" in exc_str or "duplicate" in exc_str or "already contains" in exc_str:
+        if (
+            "unique" in exc_str
+            or "duplicate" in exc_str
+            or "already contains" in exc_str
+        ):
             raise HTTPException(
                 status_code=409,
                 detail="An MCP server with that name already exists",

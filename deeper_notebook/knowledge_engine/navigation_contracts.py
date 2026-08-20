@@ -86,7 +86,9 @@ NavigationLocalId = Annotated[
     Field(min_length=1, max_length=128, pattern=_NAVIGATION_LOCAL_ID),
 ]
 
-TargetKind = Literal["document", "block", "search", "graph", "workspace", "ask", "podcast"]
+TargetKind = Literal[
+    "document", "block", "search", "graph", "workspace", "ask", "podcast"
+]
 TargetState = Literal["available", "stale", "unavailable", "missing"]
 
 
@@ -170,13 +172,17 @@ class SearchTarget(_Strict):
 class AskTarget(_Strict):
     kind: Literal["ask"] = "ask"
     thread_id: NavigationLocalId | None = None
-    selected_document_ids: list[KnowledgeDocumentId] = Field(default_factory=list, max_length=128)
+    selected_document_ids: list[KnowledgeDocumentId] = Field(
+        default_factory=list, max_length=128
+    )
 
 
 class PodcastTarget(_Strict):
     kind: Literal["podcast"] = "podcast"
     production_id: NavigationLocalId | None = None
-    seed_document_ids: list[KnowledgeDocumentId] = Field(default_factory=list, max_length=128)
+    seed_document_ids: list[KnowledgeDocumentId] = Field(
+        default_factory=list, max_length=128
+    )
 
 
 class GraphTarget(_Strict):
@@ -205,7 +211,13 @@ class WorkspaceTarget(_Strict):
 
 
 KnowledgeTarget = Annotated[
-    DocumentTarget | BlockTarget | SearchTarget | AskTarget | PodcastTarget | GraphTarget | WorkspaceTarget,
+    DocumentTarget
+    | BlockTarget
+    | SearchTarget
+    | AskTarget
+    | PodcastTarget
+    | GraphTarget
+    | WorkspaceTarget,
     Field(discriminator="kind"),
 ]
 
@@ -225,8 +237,12 @@ class NamedWorkspaceTab(_Strict):
     @model_validator(mode="after")
     def legacy_mode_is_derived(self) -> "NamedWorkspaceTab":
         derived = {
-            "document": "read", "block": "read", "graph": "graph",
-            "search": "search", "ask": "ask", "podcast": "podcast",
+            "document": "read",
+            "block": "read",
+            "graph": "graph",
+            "search": "search",
+            "ask": "ask",
+            "podcast": "podcast",
         }.get(self.target.kind, "read")
         if self.mode is None:
             object.__setattr__(self, "mode", derived)
@@ -491,9 +507,11 @@ class UpdateBookmark(_Strict):
     position: int | None = Field(default=None, ge=0)
 
     _display_label = field_validator("display_label")(
-        lambda value: None
-        if value is None
-        else _display_text(value, label="display label", limit=512)
+        lambda value: (
+            None
+            if value is None
+            else _display_text(value, label="display label", limit=512)
+        )
     )
     _tags = field_validator("tags")(
         lambda value: None if value is None else normalize_tags(value)

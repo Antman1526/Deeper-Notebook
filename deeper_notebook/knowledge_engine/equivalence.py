@@ -156,7 +156,9 @@ def digest_from_sources(
             )
     documents = [snapshot.document for _, snapshot in snapshots]
     blocks = [block for _, snapshot in snapshots for block in snapshot.blocks]
-    relations = [relation for _, snapshot in snapshots for relation in snapshot.relations]
+    relations = [
+        relation for _, snapshot in snapshots for relation in snapshot.relations
+    ]
     tasks = [task for _, snapshot in snapshots for task in snapshot.tasks]
     assets = [asset for _, snapshot in snapshots for asset in snapshot.assets]
     return ProjectionDigest(
@@ -170,7 +172,9 @@ def digest_from_sources(
         ),
         tag_count=sum(len(item.tags) for item in [*documents, *tasks]),
         asset_count=len(assets),
-        document_hashes={item.relative_locator: item.content_hash for item in documents},
+        document_hashes={
+            item.relative_locator: item.content_hash for item in documents
+        },
         identity_pairs=identities,
         outgoing_membership=outgoing,
         backlink_membership=backlinks,

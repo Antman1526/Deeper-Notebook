@@ -25,6 +25,7 @@ This test suite verifies:
      `str(X.created)` / `str(X.updated)` calls to `iso(...)`.
   3. Forward-guard against regression on migrated files.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -47,6 +48,7 @@ def test_iso_returns_none_for_none():
     have to write `iso(x) if x else None` at every call site —
     defeats the centralization."""
     from api.utils.iso import iso
+
     assert iso(None) is None
 
 
@@ -56,6 +58,7 @@ def test_iso_uses_t_separator_for_datetime():
     `str(datetime)` produces a SPACE separator that Safari refuses;
     `.isoformat()` produces a T separator that Safari accepts."""
     from api.utils.iso import iso
+
     dt = datetime(2026, 5, 22, 10, 14, 41, 123456, tzinfo=timezone.utc)
     result = iso(dt)
     assert result is not None
@@ -76,6 +79,7 @@ def test_iso_passes_strings_through_unchanged():
     don't try to round-trip parse → reformat — the str is what the
     DB gave us, leave it alone."""
     from api.utils.iso import iso
+
     already_iso = "2026-05-22T10:14:41.123456+00:00"
     assert iso(already_iso) == already_iso
 
@@ -87,6 +91,7 @@ def test_iso_handles_naive_datetime_without_crashing():
     layer, but defense-in-depth here means a stray naive datetime
     in a test fixture doesn't crash the response."""
     from api.utils.iso import iso
+
     dt_naive = datetime(2026, 5, 22, 10, 14, 41)
     result = iso(dt_naive)
     assert result is not None and "T" in result
@@ -131,9 +136,9 @@ def test_migrated_routers_do_not_use_str_on_created_or_updated():
             # Match `created=str(X.created)` and friends — anything
             # that turns a `.created` or `.updated` attribute into a
             # str() coercion in a response-construction context.
-            if ("str(" in stripped and (
+            if "str(" in stripped and (
                 ".created)" in stripped or ".updated)" in stripped
-            )):
+            ):
                 offenders.append((rel, i, stripped))
 
     assert not offenders, (
@@ -154,6 +159,7 @@ def test_iso_helper_lives_at_api_utils_iso():
     moves the helper, all migrated routers need updating in lock-
     step. This test makes the dependency explicit."""
     import importlib
+
     mod = importlib.import_module("api.utils.iso")
     assert hasattr(mod, "iso"), "api.utils.iso.iso is missing"
 

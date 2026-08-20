@@ -1,4 +1,5 @@
 """Config persistence for the desktop launcher and first-run wizard."""
+
 from __future__ import annotations
 
 import os
@@ -50,7 +51,9 @@ class Config:
     theme: str = "research-core-dark"
     openchronicle_choice: str = "skip"
     encryption_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
-    execution_policy: Literal["strict_local", "local_preferred", "custom"] = "strict_local"
+    execution_policy: Literal["strict_local", "local_preferred", "custom"] = (
+        "strict_local"
+    )
     compute_profile: Literal["efficient", "balanced", "maximum_quality"] = "balanced"
     local_model_memory_limit_bytes: int | None = None
     role_overrides: dict[str, str] = field(default_factory=dict)

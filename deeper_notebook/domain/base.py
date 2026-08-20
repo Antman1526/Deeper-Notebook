@@ -76,9 +76,7 @@ class ObjectModel(BaseModel):
         # `limit=True` doesn't silently become `LIMIT 1`.
         if limit is not None:
             if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
-                raise InvalidInputError(
-                    f"limit must be a positive int, got {limit!r}"
-                )
+                raise InvalidInputError(f"limit must be a positive int, got {limit!r}")
         if offset is not None:
             if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
                 raise InvalidInputError(
@@ -114,9 +112,10 @@ class ObjectModel(BaseModel):
                             )
                         validated_clauses.append(parts[0].lower())
                     elif len(parts) == 2:
-                        if not allowed_field_pattern.match(
-                            parts[0].lower()
-                        ) or parts[1].lower() not in allowed_directions:
+                        if (
+                            not allowed_field_pattern.match(parts[0].lower())
+                            or parts[1].lower() not in allowed_directions
+                        ):
                             raise InvalidInputError(
                                 f"Invalid order_by clause: '{clause.strip()}'"
                             )

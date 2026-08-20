@@ -15,12 +15,14 @@ class WizardTestCase(AioHTTPTestCase):
 
     def setUp(self):
         import tempfile
+
         self._tmpdir = tempfile.mkdtemp()
         self.cfg_path = Path(self._tmpdir) / "config.toml"
         super().setUp()
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self._tmpdir, ignore_errors=True)
         super().tearDown()
 
@@ -34,10 +36,16 @@ class WizardTestCase(AioHTTPTestCase):
         assert 'value="mlx"' in body
 
     async def test_post_save_writes_config(self):
-        payload = {"model_dir": str(self.cfg_path.parent / "AI"),
-                   "provider": "llamacpp", "default_model": "x.gguf"}
-        resp = await self.client.post("/api/save", data=json.dumps(payload),
-                                      headers={"Content-Type": "application/json"})
+        payload = {
+            "model_dir": str(self.cfg_path.parent / "AI"),
+            "provider": "llamacpp",
+            "default_model": "x.gguf",
+        }
+        resp = await self.client.post(
+            "/api/save",
+            data=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        )
         assert resp.status == 200
         assert self.cfg_path.exists()
         text = self.cfg_path.read_text()
@@ -62,14 +70,18 @@ class WizardTestCase(AioHTTPTestCase):
 
     async def test_post_save_rejects_invalid_provider(self):
         payload = {"model_dir": "/tmp", "provider": "bogus", "default_model": ""}
-        resp = await self.client.post("/api/save", data=json.dumps(payload),
-                                      headers={"Content-Type": "application/json"})
+        resp = await self.client.post(
+            "/api/save",
+            data=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        )
         assert resp.status == 400
 
 
 @pytest.mark.asyncio
 async def test_build_app_returns_aiohttp_application(tmp_path):
     from aiohttp import web
+
     app = build_app(tmp_path / "config.toml", on_done=lambda: None)
     assert isinstance(app, web.Application)
 
@@ -85,6 +97,7 @@ class DismissOpenChronicleTestCase(AioHTTPTestCase):
     combo, hits the dismiss endpoint, and asserts the OTHER fields are
     still intact afterwards.
     """
+
     cfg_path: Path
 
     async def get_application(self):
@@ -92,18 +105,21 @@ class DismissOpenChronicleTestCase(AioHTTPTestCase):
 
     def setUp(self):
         import tempfile
+
         self._tmpdir = tempfile.mkdtemp()
         self.cfg_path = Path(self._tmpdir) / "config.toml"
         super().setUp()
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self._tmpdir, ignore_errors=True)
         super().tearDown()
 
     async def test_dismiss_preserves_all_other_config_fields(self):
         # Seed a config with non-default values
         from desktop.config import Config
+
         original = Config(
             model_dir=Path(self._tmpdir) / "models",
             provider="ollama",
@@ -118,13 +134,15 @@ class DismissOpenChronicleTestCase(AioHTTPTestCase):
 
         resp = await self.client.post(
             "/api/config/dismiss_openchronicle_reminder",
-            data="{}", headers={"Content-Type": "application/json"},
+            data="{}",
+            headers={"Content-Type": "application/json"},
         )
         assert resp.status == 200
 
         # Reload + check: openchronicle_choice flipped to "skip", everything
         # else preserved exactly.
         from desktop.config import load_or_create
+
         reloaded = load_or_create(self.cfg_path)
         assert reloaded.openchronicle_choice == "skip"  # what we changed
         # The crucial assertions — everything else preserved

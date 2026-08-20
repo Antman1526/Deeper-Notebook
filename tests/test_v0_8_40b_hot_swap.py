@@ -13,6 +13,7 @@ suite proves the wiring; Supervisor.hot_swap_chat itself is reviewed
 manually + the path-validation branches are exercised here via mock
 callbacks.
 """
+
 from __future__ import annotations
 
 import json
@@ -64,7 +65,8 @@ def server():
 
 def test_hot_swap_route_requires_token(server):
     code, body = _http_request(
-        "POST", f"{server.url}/hot_swap_chat",
+        "POST",
+        f"{server.url}/hot_swap_chat",
         body={"path": "/tmp/foo.gguf"},
     )
     assert code == HTTPStatus.UNAUTHORIZED
@@ -73,7 +75,8 @@ def test_hot_swap_route_requires_token(server):
 def test_hot_swap_route_missing_path_field_returns_400(server):
     server.register_callback("hot_swap_chat", lambda _p: (True, ""))
     code, body = _http_request(
-        "POST", f"{server.url}/hot_swap_chat",
+        "POST",
+        f"{server.url}/hot_swap_chat",
         body={},
         token=server.token,
     )
@@ -90,7 +93,8 @@ def test_hot_swap_route_dispatches_to_callback(server):
 
     server.register_callback("hot_swap_chat", _cb)
     code, body = _http_request(
-        "POST", f"{server.url}/hot_swap_chat",
+        "POST",
+        f"{server.url}/hot_swap_chat",
         body={"path": "/abs/path/to/new.gguf"},
         token=server.token,
     )
@@ -108,7 +112,8 @@ def test_hot_swap_route_failure_returns_400_with_detail(server):
 
     server.register_callback("hot_swap_chat", _cb)
     code, body = _http_request(
-        "POST", f"{server.url}/hot_swap_chat",
+        "POST",
+        f"{server.url}/hot_swap_chat",
         body={"path": "/nonexistent.gguf"},
         token=server.token,
     )
@@ -120,7 +125,8 @@ def test_hot_swap_route_failure_returns_400_with_detail(server):
 def test_hot_swap_route_no_callback_returns_503(server):
     """No registered callback → 503. Same shape as /restart_sidecar."""
     code, body = _http_request(
-        "POST", f"{server.url}/hot_swap_chat",
+        "POST",
+        f"{server.url}/hot_swap_chat",
         body={"path": "/foo.gguf"},
         token=server.token,
     )
@@ -132,7 +138,8 @@ def test_restart_sidecar_route_still_works(server):
     that the original /restart_sidecar route still functions."""
     server.register_callback("restart_sidecar", lambda k: (True, f"ok {k}"))
     code, body = _http_request(
-        "POST", f"{server.url}/restart_sidecar",
+        "POST",
+        f"{server.url}/restart_sidecar",
         body={"kind": "chat"},
         token=server.token,
     )

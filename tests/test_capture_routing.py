@@ -118,9 +118,7 @@ async def test_prefers_injected_local_semantic_notebook_suggestions(
         assert source.path == str(media)
         assert [notebook.id for notebook in notebooks] == ["notebook:semantic"]
         return [
-            CaptureNotebook(
-                id="notebook:semantic", name="Unrelated title"
-            ).model_copy(
+            CaptureNotebook(id="notebook:semantic", name="Unrelated title").model_copy(
                 update={"score": 0.91, "reason": "Local semantic match"}
             )
         ]

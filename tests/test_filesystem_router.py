@@ -4,6 +4,7 @@ These tests use a real tempdir on disk rather than mocking the filesystem,
 because the whole point of the router is host-FS access. Each test creates
 its own isolated temp tree via the `tmp_path` fixture so they're parallel-safe.
 """
+
 from __future__ import annotations
 
 import os
@@ -84,7 +85,8 @@ def test_fs_home_prefers_canonical_exports_when_both_exist(
 
 
 def test_fs_list_returns_entries_sorted_dirs_first(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     (tmp_path / "z-folder").mkdir()
     (tmp_path / "a-folder").mkdir()
@@ -105,7 +107,8 @@ def test_fs_list_returns_entries_sorted_dirs_first(
 
 
 def test_fs_list_hidden_files_excluded_by_default(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     (tmp_path / "visible.txt").write_text("v")
     (tmp_path / ".hidden").write_text("h")
@@ -116,11 +119,13 @@ def test_fs_list_hidden_files_excluded_by_default(
 
 
 def test_fs_list_show_hidden_includes_dotfiles(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     (tmp_path / ".hidden").write_text("h")
     r = client.get(
-        "/api/fs/list", params={"path": str(tmp_path), "show_hidden": True},
+        "/api/fs/list",
+        params={"path": str(tmp_path), "show_hidden": True},
     )
     names = [e["name"] for e in r.json()["entries"]]
     assert ".hidden" in names
@@ -130,7 +135,8 @@ def test_fs_list_only_dirs_filter(client: TestClient, tmp_path: Path) -> None:
     (tmp_path / "d").mkdir()
     (tmp_path / "f.txt").write_text("x")
     r = client.get(
-        "/api/fs/list", params={"path": str(tmp_path), "only": "dirs"},
+        "/api/fs/list",
+        params={"path": str(tmp_path), "only": "dirs"},
     )
     names = [e["name"] for e in r.json()["entries"]]
     assert names == ["d"]
@@ -158,13 +164,15 @@ def test_fs_list_rejects_system_paths(client: TestClient) -> None:
 
 def test_fs_list_404_on_missing_path(client: TestClient, tmp_path: Path) -> None:
     r = client.get(
-        "/api/fs/list", params={"path": str(tmp_path / "does-not-exist")},
+        "/api/fs/list",
+        params={"path": str(tmp_path / "does-not-exist")},
     )
     assert r.status_code == 404
 
 
 def test_fs_list_400_when_path_is_file(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     f = tmp_path / "file.txt"
     f.write_text("x")
@@ -174,7 +182,9 @@ def test_fs_list_400_when_path_is_file(
 
 
 def test_fs_list_truncated_for_large_directory(
-    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When the directory has more than MAX_ENTRIES, the response is
     truncated and the flag set so the UI can show a "load more" hint."""
@@ -204,7 +214,8 @@ def test_fs_mkdir_creates_directory(client: TestClient, tmp_path: Path) -> None:
 
 
 def test_fs_mkdir_idempotent_when_exists(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     target = tmp_path / "already-exists"
     target.mkdir()
@@ -214,7 +225,8 @@ def test_fs_mkdir_idempotent_when_exists(
 
 
 def test_fs_mkdir_409_when_path_is_file(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     f = tmp_path / "conflict"
     f.write_text("x")
@@ -226,7 +238,8 @@ def test_fs_mkdir_409_when_path_is_file(
 def test_fs_mkdir_creates_parents(client: TestClient, tmp_path: Path) -> None:
     target = tmp_path / "a" / "b" / "c"
     r = client.post(
-        "/api/fs/mkdir", json={"path": str(target), "parents": True},
+        "/api/fs/mkdir",
+        json={"path": str(target), "parents": True},
     )
     assert r.status_code == 200, r.text
     assert target.exists()

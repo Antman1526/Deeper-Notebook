@@ -1,4 +1,5 @@
 """Free localhost port discovery."""
+
 from __future__ import annotations
 
 import logging
@@ -69,10 +70,7 @@ def find_free_ports(n: int) -> list[int]:
 
     for attempt in range(_MAX_REPROBE_ATTEMPTS):
         with ExitStack() as stack:
-            socks = [
-                stack.enter_context(_make_probe_socket())
-                for _ in range(n)
-            ]
+            socks = [stack.enter_context(_make_probe_socket()) for _ in range(n)]
             for s in socks:
                 s.bind(("127.0.0.1", 0))
             ports = [s.getsockname()[1] for s in socks]
@@ -95,10 +93,7 @@ def find_free_ports(n: int) -> list[int]:
         _MAX_REPROBE_ATTEMPTS,
     )
     with ExitStack() as stack:
-        socks = [
-            stack.enter_context(_make_probe_socket())
-            for _ in range(n)
-        ]
+        socks = [stack.enter_context(_make_probe_socket()) for _ in range(n)]
         for s in socks:
             s.bind(("127.0.0.1", 0))
         return [s.getsockname()[1] for s in socks]

@@ -50,6 +50,7 @@ class NormalizedSourceID:
     canonical: str
     record: RecordID
 
+
 # This is intentionally the only Source query in the Study authority.  It
 # excludes asset paths, source bodies, and the rest of provenance while still
 # allowing the UI to report bounded readiness and fingerprint availability.
@@ -125,8 +126,7 @@ def normalize_source_id(source_id: str) -> NormalizedSourceID:
         # permissive RecordID parser otherwise accepts
         # ``source:⟨target⟩suffix⟩`` and aliases it to a different row.
         if any(
-            character == "⟩"
-            and (index == 0 or encoded_body[index - 1] != "\\")
+            character == "⟩" and (index == 0 or encoded_body[index - 1] != "\\")
             for index, character in enumerate(encoded_body)
         ):
             raise StudySourceNotFoundError("source not found")
@@ -241,7 +241,9 @@ class StudySourceService:
         self, source_id: str | NormalizedSourceID
     ) -> dict[str, Any] | None:
         normalized_id = (
-            source_id if isinstance(source_id, NormalizedSourceID) else normalize_source_id(source_id)
+            source_id
+            if isinstance(source_id, NormalizedSourceID)
+            else normalize_source_id(source_id)
         )
         try:
             rows = await repo_query(
@@ -305,7 +307,11 @@ class StudySourceService:
         if isinstance(value, bool):
             return value
         length = projection.get("text_length")
-        return isinstance(length, (int, float)) and not isinstance(length, bool) and length > 0
+        return (
+            isinstance(length, (int, float))
+            and not isinstance(length, bool)
+            and length > 0
+        )
 
     @staticmethod
     def _missing_item(source_id: str) -> StudySourceReadinessItem:

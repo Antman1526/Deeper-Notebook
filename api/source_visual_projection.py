@@ -56,7 +56,11 @@ def _datetime(value: object) -> datetime | None:
             return None
     else:
         return None
-    return result.replace(tzinfo=timezone.utc) if result.tzinfo is None else result.astimezone(timezone.utc)
+    return (
+        result.replace(tzinfo=timezone.utc)
+        if result.tzinfo is None
+        else result.astimezone(timezone.utc)
+    )
 
 
 def _source_revisions(rows: Sequence[object]) -> dict[str, datetime]:
@@ -158,10 +162,11 @@ async def project_search_source_visuals(
         # Canonical source hits carry their own id; source-insight hits bind
         # their source through parent_id. Never infer from note metadata.
         source_id = copied.get("id")
-        if not (
-            isinstance(source_id, str)
-            and source_id.startswith("source:")
-        ) and isinstance(copied.get("id"), str) and copied["id"].startswith("source_insight:"):
+        if (
+            not (isinstance(source_id, str) and source_id.startswith("source:"))
+            and isinstance(copied.get("id"), str)
+            and copied["id"].startswith("source_insight:")
+        ):
             source_id = copied.get("parent_id")
         if isinstance(source_id, str) and source_id.startswith("source:"):
             projection = projections.get(source_id)
@@ -191,7 +196,8 @@ async def project_capture_linked_sources(
         dict.fromkeys(
             value
             for item in items[:_MAX_ROWS]
-            if isinstance((value := item.get("sha256")), str) and _SHA256.fullmatch(value)
+            if isinstance((value := item.get("sha256")), str)
+            and _SHA256.fullmatch(value)
         )
     )
     copies = [dict(item) for item in items]
@@ -204,7 +210,10 @@ async def project_capture_linked_sources(
         return copies
     by_file_hash: dict[str, SourceVisualRecord] = {}
     for record in records if isinstance(records, Sequence) else ():
-        if isinstance(record, SourceVisualRecord) and record.source_file_sha256 in values:
+        if (
+            isinstance(record, SourceVisualRecord)
+            and record.source_file_sha256 in values
+        ):
             by_file_hash.setdefault(record.source_file_sha256, record)
     for copied in copies:
         file_hash = copied.get("sha256")

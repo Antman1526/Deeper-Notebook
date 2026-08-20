@@ -18,8 +18,13 @@ def test_cornell_transformation_row_shape() -> None:
     text = UP.read_text(encoding="utf-8")
     assert "insert into transformation" in text
     # Every field the transformation table defines as required.
-    for field in ('name: "Cornell Notes"', 'title: "Cornell Notes"',
-                  "description:", "prompt:", "apply_default: False"):
+    for field in (
+        'name: "Cornell Notes"',
+        'title: "Cornell Notes"',
+        "description:",
+        "prompt:",
+        "apply_default: False",
+    ):
         assert field in text, f"migration 47 missing {field}"
 
 

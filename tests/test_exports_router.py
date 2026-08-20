@@ -5,6 +5,7 @@ endpoints with stubbed domain objects (no real SurrealDB needed). Tests
 real on-disk writes via tmp_path so any filesystem-layer regressions
 (permissions, path normalization, zip layout) are caught.
 """
+
 from __future__ import annotations
 
 import json
@@ -36,7 +37,11 @@ def client() -> TestClient:
 
 class _FakeNote:
     def __init__(
-        self, id: str, title: str, content: str, note_type: str = "ai",
+        self,
+        id: str,
+        title: str,
+        content: str,
+        note_type: str = "ai",
         created: str = "2026-05-01T00:00:00Z",
         updated: str = "2026-05-01T00:00:00Z",
     ) -> None:
@@ -47,8 +52,12 @@ class _FakeNote:
 
 class _FakeSource:
     def __init__(
-        self, id: str, title: str, full_text: str,
-        file_path: Optional[str] = None, url: Optional[str] = None,
+        self,
+        id: str,
+        title: str,
+        full_text: str,
+        file_path: Optional[str] = None,
+        url: Optional[str] = None,
     ) -> None:
         self.id, self.title, self.full_text = id, title, full_text
         self.asset = SimpleNamespace(file_path=file_path, url=url)
@@ -56,7 +65,10 @@ class _FakeSource:
 
 class _FakeNotebook:
     def __init__(
-        self, id: str, name: str, notes: list[_FakeNote],
+        self,
+        id: str,
+        name: str,
+        notes: list[_FakeNote],
         sources: Optional[list[_FakeSource]] = None,
         description: str = "test notebook",
     ) -> None:
@@ -143,7 +155,9 @@ def test_plan_filenames_overview_wins_zero_then_pages_indexed() -> None:
 
 
 def test_export_notebook_folder_writes_overview_and_pages(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     notes = [
         _FakeNote("note:ov", "📋 00 · Demo — Overview", "Overview body."),
@@ -180,7 +194,9 @@ def test_export_notebook_folder_writes_overview_and_pages(
 
 
 def test_export_notebook_folder_404_when_notebook_missing(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     r = client.post(
         "/api/notebooks/notebook:nope/export",
@@ -190,7 +206,9 @@ def test_export_notebook_folder_404_when_notebook_missing(
 
 
 def test_export_notebook_folder_400_when_empty_and_no_sources(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     nb = _FakeNotebook("notebook:empty", "Empty", notes=[])
     patched_domain["notebooks"]["notebook:empty"] = nb
@@ -203,7 +221,9 @@ def test_export_notebook_folder_400_when_empty_and_no_sources(
 
 
 def test_export_notebook_folder_409_on_existing_file_without_overwrite(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     """v0.7.90 — the pre-flight overwrite check must catch existing files
     BEFORE writing anything else, so a re-run doesn't half-clobber an
@@ -224,7 +244,9 @@ def test_export_notebook_folder_409_on_existing_file_without_overwrite(
 
 
 def test_export_notebook_folder_overwrite_replaces_files(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     notes = [_FakeNote("note:1", "Some Note", "fresh body")]
     nb = _FakeNotebook("notebook:1", "Demo", notes)
@@ -243,7 +265,9 @@ def test_export_notebook_folder_overwrite_replaces_files(
 
 
 def test_export_notebook_folder_with_sources(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     notes = [_FakeNote("note:1", "📋 00 · Overview", "body")]
     sources = [
@@ -279,7 +303,9 @@ def test_export_notebook_folder_with_sources(
 
 
 def test_export_notebook_zip_creates_archive(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     notes = [
         _FakeNote("note:ov", "📋 00 · Demo — Overview", "Overview body."),
@@ -302,7 +328,9 @@ def test_export_notebook_zip_creates_archive(
 
 
 def test_export_notebook_zip_missing_parent_dir_400(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     notes = [_FakeNote("note:1", "T", "body")]
     nb = _FakeNotebook("notebook:1", "Demo", notes)
@@ -322,13 +350,16 @@ def test_export_notebook_zip_missing_parent_dir_400(
 
 
 def test_export_note_writes_markdown_file(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     note = _FakeNote("note:1", "Single Note", "Body content.")
     patched_domain["notes"]["note:1"] = note
     target = tmp_path / "single.md"
     r = client.post(
-        "/api/notes/note:1/export", json={"destination": str(target)},
+        "/api/notes/note:1/export",
+        json={"destination": str(target)},
     )
     assert r.status_code == 200, r.text
     assert target.exists()
@@ -338,7 +369,9 @@ def test_export_note_writes_markdown_file(
 
 
 def test_export_note_404_when_missing(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     r = client.post(
         "/api/notes/note:nope/export",
@@ -348,7 +381,9 @@ def test_export_note_404_when_missing(
 
 
 def test_export_note_forces_md_extension(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     note = _FakeNote("note:1", "Note", "body")
     patched_domain["notes"]["note:1"] = note
@@ -364,19 +399,24 @@ def test_export_note_forces_md_extension(
 
 
 def test_export_note_refuses_directory_destination(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     note = _FakeNote("note:1", "Note", "body")
     patched_domain["notes"]["note:1"] = note
     r = client.post(
-        "/api/notes/note:1/export", json={"destination": str(tmp_path)},
+        "/api/notes/note:1/export",
+        json={"destination": str(tmp_path)},
     )
     assert r.status_code == 400
     assert "directory" in r.json()["detail"].lower()
 
 
 def test_export_note_409_when_target_exists_without_overwrite(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     note = _FakeNote("note:1", "Note", "fresh")
     patched_domain["notes"]["note:1"] = note
@@ -391,7 +431,9 @@ def test_export_note_409_when_target_exists_without_overwrite(
 
 
 def test_export_note_overwrite_replaces_file(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ) -> None:
     note = _FakeNote("note:1", "Note", "fresh body content")
     patched_domain["notes"]["note:1"] = note
@@ -406,7 +448,8 @@ def test_export_note_overwrite_replaces_file(
 
 
 def test_export_refuses_system_destination(
-    client: TestClient, patched_domain,
+    client: TestClient,
+    patched_domain,
 ) -> None:
     note = _FakeNote("note:1", "Note", "body")
     patched_domain["notes"]["note:1"] = note
@@ -423,7 +466,10 @@ def test_export_refuses_system_destination(
 
 
 def test_import_creates_new_notebook_from_folder(
-    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """v0.7.94 happy path: a folder containing .md files (no manifest) is
     imported into a fresh notebook. Notes save in alphabetical order so
@@ -447,6 +493,7 @@ def test_import_creates_new_notebook_from_folder(
         def __init__(self, *, name, description=None):
             self.name, self.description = name, description
             self.id = notebook_id
+
         async def save(self):
             saved_notebooks.append(self)
 
@@ -454,12 +501,15 @@ def test_import_creates_new_notebook_from_folder(
         def __init__(self, *, title=None, content=None, note_type=None):
             self.title, self.content, self.note_type = title, content, note_type
             self.id = f"note:imp-{len(saved_notes)}"
+
         async def save(self):
             saved_notes.append(self)
+
         async def add_to_notebook(self, _id):
             pass
 
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
     monkeypatch.setattr(exports_mod, "Note", _NoteStub)
 
@@ -479,7 +529,10 @@ def test_import_creates_new_notebook_from_folder(
 
 
 def test_import_zip_archive(
-    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """v0.7.94 — .zip imports work the same as folder imports."""
     zip_path = tmp_path / "bundle.zip"
@@ -494,9 +547,11 @@ def test_import_zip_archive(
         )
         zf.writestr(
             "manifest.json",
-            json.dumps({
-                "notebook": {"name": "From Manifest", "description": "from-zip"},
-            }),
+            json.dumps(
+                {
+                    "notebook": {"name": "From Manifest", "description": "from-zip"},
+                }
+            ),
         )
 
     saved_notebooks: list = []
@@ -506,6 +561,7 @@ def test_import_zip_archive(
         def __init__(self, *, name, description=None):
             self.name, self.description = name, description
             self.id = "notebook:zip-1"
+
         async def save(self):
             saved_notebooks.append(self)
 
@@ -513,12 +569,15 @@ def test_import_zip_archive(
         def __init__(self, *, title=None, content=None, note_type=None):
             self.title, self.content, self.note_type = title, content, note_type
             self.id = f"note:zimp-{len(saved_notes)}"
+
         async def save(self):
             saved_notes.append(self)
+
         async def add_to_notebook(self, _id):
             pass
 
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
     monkeypatch.setattr(exports_mod, "Note", _NoteStub)
 
@@ -534,7 +593,10 @@ def test_import_zip_archive(
 
 
 def test_import_into_existing_notebook(
-    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """mode='into_existing' appends notes to an existing notebook —
     Notebook.get returns the target rather than constructing a new one."""
@@ -554,8 +616,10 @@ def test_import_into_existing_notebook(
             self.title, self.content = title, content
             self.note_type = note_type
             self.id = f"note:add-{len(saved_notes)}"
+
         async def save(self):
             saved_notes.append(self)
+
         async def add_to_notebook(self, _id):
             pass
 
@@ -563,6 +627,7 @@ def test_import_into_existing_notebook(
         return existing
 
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod, "Note", _NoteStub)
     monkeypatch.setattr(exports_mod.Notebook, "get", staticmethod(_get_notebook))
 
@@ -584,7 +649,10 @@ def test_import_into_existing_notebook(
 
 
 def test_import_into_existing_404_when_target_missing(
-    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    monkeypatch,
+    tmp_path: Path,
 ):
     folder = tmp_path / "x"
     folder.mkdir()
@@ -594,12 +662,14 @@ def test_import_into_existing_404_when_target_missing(
         return None
 
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod.Notebook, "get", staticmethod(_get_none))
 
     r = client.post(
         "/api/notebooks/import",
         json={
-            "source_path": str(folder), "mode": "into_existing",
+            "source_path": str(folder),
+            "mode": "into_existing",
             "target_notebook_id": "notebook:nope",
         },
     )
@@ -607,7 +677,8 @@ def test_import_into_existing_404_when_target_missing(
 
 
 def test_import_400_when_into_existing_missing_target_id(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ):
     folder = tmp_path / "x"
     folder.mkdir()
@@ -621,7 +692,8 @@ def test_import_400_when_into_existing_missing_target_id(
 
 
 def test_import_400_when_no_md_files_found(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ):
     folder = tmp_path / "empty"
     folder.mkdir()
@@ -635,7 +707,10 @@ def test_import_400_when_no_md_files_found(
 
 
 def test_import_single_md_file_becomes_one_note_notebook(
-    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """A single .md file (not a folder, not a zip) becomes a one-note
     notebook — useful for casual import of any markdown file."""
@@ -649,6 +724,7 @@ def test_import_single_md_file_becomes_one_note_notebook(
         def __init__(self, *, name, description=None):
             self.name, self.description = name, description
             self.id = notebook_id
+
         async def save(self):
             pass
 
@@ -657,12 +733,15 @@ def test_import_single_md_file_becomes_one_note_notebook(
             self.title, self.content = title, content
             self.note_type = note_type
             self.id = f"note:lonely-{len(saved_notes)}"
+
         async def save(self):
             saved_notes.append(self)
+
         async def add_to_notebook(self, _id):
             pass
 
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
     monkeypatch.setattr(exports_mod, "Note", _NoteStub)
 
@@ -676,7 +755,9 @@ def test_import_single_md_file_becomes_one_note_notebook(
 
 
 def test_import_zip_rejects_traversal_member(
-    client: TestClient, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """v0.7.94 security: a zip with a '../escape.md' member must be
     rejected, not silently extracted to the parent directory."""
@@ -693,11 +774,14 @@ def test_import_zip_rejects_traversal_member(
 
 
 def test_import_rejects_oversized_file(
-    client: TestClient, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """v0.7.94 — per-file cap (5 MB by default) prevents a single bloated
     .md file from consuming all the API's memory during import."""
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod, "_MAX_IMPORT_FILE_BYTES", 100)
     md = tmp_path / "big.md"
     md.write_text("---\ntitle: x\n---\n" + ("a" * 500))
@@ -710,7 +794,10 @@ def test_import_rejects_oversized_file(
 
 
 def test_import_round_trip_export_then_import_preserves_titles(
-    client: TestClient, patched_domain, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """v0.7.94 — export → import round-trip preserves note titles.
     Validates that _render_note_content's frontmatter matches what
@@ -738,6 +825,7 @@ def test_import_round_trip_export_then_import_preserves_titles(
         def __init__(self, *, name, description=None):
             self.name, self.description = name, description
             self.id = new_notebook_id
+
         async def save(self):
             pass
 
@@ -746,12 +834,15 @@ def test_import_round_trip_export_then_import_preserves_titles(
             self.title, self.content = title, content
             self.note_type = note_type
             self.id = f"note:rt-{len(saved_notes)}"
+
         async def save(self):
             saved_notes.append(self)
+
         async def add_to_notebook(self, _id):
             pass
 
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
     monkeypatch.setattr(exports_mod, "Note", _NoteStub)
 
@@ -772,19 +863,17 @@ def test_import_round_trip_export_then_import_preserves_titles(
 
 
 def test_import_preview_folder_returns_plan_without_touching_db(
-    client: TestClient, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """Preview must NOT call Notebook.save / Note.save. We assert that
     by setting them to a raising-stub — if the endpoint accidentally
     invokes them, the test fails."""
     folder = tmp_path / "preview-folder"
     folder.mkdir()
-    (folder / "00-overview.md").write_text(
-        "---\ntitle: My Overview\n---\nbody"
-    )
-    (folder / "01-arch.md").write_text(
-        "---\ntitle: Architecture\n---\nbody"
-    )
+    (folder / "00-overview.md").write_text("---\ntitle: My Overview\n---\nbody")
+    (folder / "01-arch.md").write_text("---\ntitle: Architecture\n---\nbody")
     (folder / "manifest.json").write_text(
         json.dumps({"notebook": {"name": "Hint Name", "description": "Hint Desc"}})
     )
@@ -793,16 +882,19 @@ def test_import_preview_folder_returns_plan_without_touching_db(
     class _RaisingDomain:
         def __init__(self, *_a, **_kw):
             raise AssertionError("preview must NOT instantiate domain models")
+
         async def save(self):
             raise AssertionError("preview must NOT save")
 
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod, "Notebook", _RaisingDomain)
     monkeypatch.setattr(exports_mod, "Note", _RaisingDomain)
     monkeypatch.setattr(exports_mod, "Source", _RaisingDomain)
 
     r = client.post(
-        "/api/notebooks/import/preview", json={"source_path": str(folder)},
+        "/api/notebooks/import/preview",
+        json={"source_path": str(folder)},
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -820,14 +912,17 @@ def test_import_preview_folder_returns_plan_without_touching_db(
 
 
 def test_import_preview_zip_detects_kind(
-    client: TestClient, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
 ):
     zip_path = tmp_path / "p.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
         zf.writestr("a.md", "---\ntitle: A\n---\nbody")
 
     r = client.post(
-        "/api/notebooks/import/preview", json={"source_path": str(zip_path)},
+        "/api/notebooks/import/preview",
+        json={"source_path": str(zip_path)},
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -840,7 +935,8 @@ def test_import_preview_single_md(client: TestClient, tmp_path: Path):
     md = tmp_path / "single.md"
     md.write_text("---\ntitle: Single\n---\nbody")
     r = client.post(
-        "/api/notebooks/import/preview", json={"source_path": str(md)},
+        "/api/notebooks/import/preview",
+        json={"source_path": str(md)},
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -849,14 +945,16 @@ def test_import_preview_single_md(client: TestClient, tmp_path: Path):
 
 
 def test_import_preview_warns_on_empty_bundle(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ):
     folder = tmp_path / "empty"
     folder.mkdir()
     (folder / "ignored.txt").write_text("not markdown")
     # No .md files → preview still returns 200 but warns
     r = client.post(
-        "/api/notebooks/import/preview", json={"source_path": str(folder)},
+        "/api/notebooks/import/preview",
+        json={"source_path": str(folder)},
     )
     # An empty folder has no md/json → _read_import_entries returns [] →
     # preview reports no notes/sources, with a helpful warning.
@@ -868,7 +966,8 @@ def test_import_preview_warns_on_empty_bundle(
 
 
 def test_import_preview_404_when_path_missing(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ):
     r = client.post(
         "/api/notebooks/import/preview",
@@ -883,7 +982,9 @@ def test_import_preview_404_when_path_missing(
 
 
 def test_export_notebook_html_folder_writes_html_files(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     notes = [
         _FakeNote("note:1", "📋 00 · Demo — Overview", "# Heading\n\n**bold** body"),
@@ -915,7 +1016,9 @@ def test_export_notebook_html_folder_writes_html_files(
 
 
 def test_export_notebook_html_zip(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     notes = [_FakeNote("note:1", "📄 01 · Section", "**body**")]
     nb = _FakeNotebook("notebook:1", "Demo", notes)
@@ -941,7 +1044,9 @@ def test_export_notebook_html_zip(
 
 
 def test_html_export_escapes_attribute_positions(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     """v0.7.97 — Note titles can contain <, >, ", which would break the
     <title> tag if not escaped. Verify _html_escape is applied."""
@@ -967,7 +1072,9 @@ def test_html_export_escapes_attribute_positions(
 
 
 def test_export_zip_default_compression_is_deflated(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     notes = [_FakeNote("note:1", "T", "body")]
     nb = _FakeNotebook("notebook:1", "Demo", notes)
@@ -984,7 +1091,9 @@ def test_export_zip_default_compression_is_deflated(
 
 
 def test_export_zip_with_stored_compression(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     """v0.7.98 — compression='stored' must produce an uncompressed zip
     (compress_size == file_size for stored entries)."""
@@ -995,7 +1104,8 @@ def test_export_zip_with_stored_compression(
     r = client.post(
         "/api/notebooks/notebook:1/export",
         json={
-            "destination": str(target), "format": "zip",
+            "destination": str(target),
+            "format": "zip",
             "compression": "stored",
         },
     )
@@ -1010,7 +1120,9 @@ def test_export_zip_with_stored_compression(
 
 
 def test_export_zip_with_bzip2_compression(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     notes = [_FakeNote("note:1", "T", "x" * 5000)]
     nb = _FakeNotebook("notebook:1", "Demo", notes)
@@ -1019,7 +1131,8 @@ def test_export_zip_with_bzip2_compression(
     r = client.post(
         "/api/notebooks/notebook:1/export",
         json={
-            "destination": str(target), "format": "zip",
+            "destination": str(target),
+            "format": "zip",
             "compression": "bzip2",
         },
     )
@@ -1030,7 +1143,9 @@ def test_export_zip_with_bzip2_compression(
 
 
 def test_export_zip_rejects_invalid_compression_via_pydantic(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     """Pydantic Literal validation catches typos before the request
     reaches our handler — verifies the request schema actually constrains
@@ -1038,7 +1153,8 @@ def test_export_zip_rejects_invalid_compression_via_pydantic(
     r = client.post(
         "/api/notebooks/notebook:nope/export",
         json={
-            "destination": str(tmp_path / "x.zip"), "format": "zip",
+            "destination": str(tmp_path / "x.zip"),
+            "format": "zip",
             "compression": "nonsense",
         },
     )
@@ -1051,7 +1167,9 @@ def test_export_zip_rejects_invalid_compression_via_pydantic(
 
 
 def test_import_vectorizes_imported_sources(
-    client: TestClient, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """v0.7.104 regression: imported Source records must have vectorize()
     called after save() so they get embeddings and become searchable
@@ -1063,7 +1181,9 @@ def test_import_vectorizes_imported_sources(
     (folder / "00-overview.md").write_text("---\ntitle: Overview\n---\nbody")
     sources_dir = folder / "sources"
     sources_dir.mkdir()
-    (sources_dir / "src-1.md").write_text("---\ntitle: First Source\n---\nimported source text")
+    (sources_dir / "src-1.md").write_text(
+        "---\ntitle: First Source\n---\nimported source text"
+    )
     (sources_dir / "src-2.md").write_text("---\ntitle: Second Source\n---\nmore text")
 
     saved_sources: list = []
@@ -1074,10 +1194,13 @@ def test_import_vectorizes_imported_sources(
             self.title = title
             self.full_text = None
             self.id = f"source:imp-{len(saved_sources)}"
+
         async def save(self):
             saved_sources.append(self)
+
         async def add_to_notebook(self, _id):
             pass
+
         async def vectorize(self):
             vectorize_calls.append(self.id)
 
@@ -1085,6 +1208,7 @@ def test_import_vectorizes_imported_sources(
         def __init__(self, *, name, description=None):
             self.name, self.description = name, description
             self.id = "notebook:vec-1"
+
         async def save(self):
             pass
 
@@ -1093,12 +1217,15 @@ def test_import_vectorizes_imported_sources(
             self.title, self.content = title, content
             self.note_type = note_type
             self.id = "note:vec-1"
+
         async def save(self):
             pass
+
         async def add_to_notebook(self, _id):
             pass
 
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
     monkeypatch.setattr(exports_mod, "Note", _NoteStub)
     monkeypatch.setattr(exports_mod, "Source", _SourceStub)
@@ -1106,7 +1233,9 @@ def test_import_vectorizes_imported_sources(
     r = client.post(
         "/api/notebooks/import",
         json={
-            "source_path": str(folder), "mode": "new", "import_sources": True,
+            "source_path": str(folder),
+            "mode": "new",
+            "import_sources": True,
         },
     )
     assert r.status_code == 200, r.text
@@ -1116,7 +1245,9 @@ def test_import_vectorizes_imported_sources(
 
 
 def test_import_vectorize_failure_is_non_fatal(
-    client: TestClient, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """v0.7.104 — If vectorize fails (e.g. embedding backend down),
     the import must still succeed: source is saved + text-searchable,
@@ -1132,10 +1263,13 @@ def test_import_vectorize_failure_is_non_fatal(
             self.title = title
             self.full_text = None
             self.id = "source:vec-fail-1"
+
         async def save(self):
             pass
+
         async def add_to_notebook(self, _id):
             pass
+
         async def vectorize(self):
             raise RuntimeError("embedding backend unavailable")
 
@@ -1143,6 +1277,7 @@ def test_import_vectorize_failure_is_non_fatal(
         def __init__(self, *, name, description=None):
             self.id = "notebook:vec-fail-1"
             self.name = name
+
         async def save(self):
             pass
 
@@ -1152,12 +1287,15 @@ def test_import_vectorize_failure_is_non_fatal(
             self.title = title
             self.content = content
             self.note_type = note_type
+
         async def save(self):
             pass
+
         async def add_to_notebook(self, _id):
             pass
 
     import api.routers.exports as exports_mod
+
     monkeypatch.setattr(exports_mod, "Notebook", _NotebookStub)
     monkeypatch.setattr(exports_mod, "Note", _NoteStub)
     monkeypatch.setattr(exports_mod, "Source", _SourceStub)
@@ -1165,7 +1303,9 @@ def test_import_vectorize_failure_is_non_fatal(
     r = client.post(
         "/api/notebooks/import",
         json={
-            "source_path": str(folder), "mode": "new", "import_sources": True,
+            "source_path": str(folder),
+            "mode": "new",
+            "import_sources": True,
         },
     )
     assert r.status_code == 200, r.text
@@ -1185,7 +1325,9 @@ def test_import_vectorize_failure_is_non_fatal(
 
 
 def test_export_combined_md_concatenates_pages_into_single_file(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     """v0.7.111 — combined_md produces ONE .md file with all notes
     concatenated, separated by horizontal rules so renderers paginate
@@ -1195,8 +1337,7 @@ def test_export_combined_md_concatenates_pages_into_single_file(
         _FakeNote("note:p1", "📄 01 · Architecture", "Arch body."),
         _FakeNote("note:p2", "📄 02 · Backend", "Backend body."),
     ]
-    nb = _FakeNotebook("notebook:1", "Demo", notes,
-                       description="A test notebook")
+    nb = _FakeNotebook("notebook:1", "Demo", notes, description="A test notebook")
     patched_domain["notebooks"]["notebook:1"] = nb
 
     target = tmp_path / "combined.md"
@@ -1225,7 +1366,9 @@ def test_export_combined_md_concatenates_pages_into_single_file(
 
 
 def test_export_combined_html_includes_print_friendly_page_breaks(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     """v0.7.111 — combined_html embeds print CSS so each note paginates
     when the user prints-to-PDF from the browser."""
@@ -1253,7 +1396,9 @@ def test_export_combined_html_includes_print_friendly_page_breaks(
 
 
 def test_export_combined_auto_corrects_file_extension(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     """v0.7.111 — caller passes 'combined' without an extension; we
     must append .md or .html based on format. Otherwise the file is
@@ -1274,7 +1419,9 @@ def test_export_combined_auto_corrects_file_extension(
 
 
 def test_export_combined_md_with_sources(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     notes = [_FakeNote("note:1", "Page", "body")]
     sources = [_FakeSource("source:1", "Doc", "source text content")]
@@ -1285,7 +1432,8 @@ def test_export_combined_md_with_sources(
     r = client.post(
         "/api/notebooks/notebook:1/export",
         json={
-            "destination": str(target), "format": "combined_md",
+            "destination": str(target),
+            "format": "combined_md",
             "include_sources": True,
         },
     )
@@ -1297,7 +1445,9 @@ def test_export_combined_md_with_sources(
 
 
 def test_export_combined_refuses_directory_target(
-    client: TestClient, patched_domain, tmp_path: Path,
+    client: TestClient,
+    patched_domain,
+    tmp_path: Path,
 ):
     notes = [_FakeNote("note:1", "T", "body")]
     nb = _FakeNotebook("notebook:1", "Demo", notes)
@@ -1321,6 +1471,7 @@ def test_html_export_escapes_raw_script_tag_in_note_content() -> None:
     sharing a notebook export by email/Drive could execute the author's
     script in the recipient's browser."""
     from api.routers.exports import _markdown_to_html
+
     payload = "Hello <script>alert(document.cookie)</script> world"
     html = _markdown_to_html(payload)
     # Literal <script> tag is escaped — does NOT appear as raw HTML
@@ -1335,6 +1486,7 @@ def test_html_export_escapes_inline_xss_vectors() -> None:
     """v0.7.117 — Common XSS vectors (img onerror, iframe, event handlers)
     must all be rendered as escaped literal text, not active HTML."""
     from api.routers.exports import _markdown_to_html
+
     vectors = [
         "<img src=x onerror=alert(1)>",
         "<iframe src='javascript:alert(1)'></iframe>",
@@ -1358,6 +1510,7 @@ def test_html_export_preserves_safe_markdown_after_xss_lockdown() -> None:
     rendering. Bold, code blocks, tables, lists, links, blockquotes
     all still work."""
     from api.routers.exports import _markdown_to_html
+
     safe_md = """
 # Heading
 
@@ -1395,7 +1548,9 @@ def foo():
 
 
 def test_import_zip_rejects_symlink_entries(
-    client: TestClient, monkeypatch, tmp_path: Path,
+    client: TestClient,
+    monkeypatch,
+    tmp_path: Path,
 ):
     """v0.7.117 — Zip imports must reject entries with the Unix symlink
     mode bit (0o120000) set. A malicious zip with 'passwords.md' →

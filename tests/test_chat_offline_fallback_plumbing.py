@@ -1,4 +1,5 @@
 """v0.8.68 — offline_fallback flows node-result → ExecuteChatResponse."""
+
 from __future__ import annotations
 
 from api.routers.chat import ExecuteChatResponse

@@ -76,9 +76,9 @@ def test_theme_storage_uses_canonical_identity_and_mirrors_legacy() -> None:
     theme_switcher = (
         ROOT / "frontend/src/components/deeper-notebook/ThemeSwitcher.tsx"
     ).read_text(encoding="utf-8")
-    theme_storage = (
-        ROOT / "frontend/src/lib/theme-storage.ts"
-    ).read_text(encoding="utf-8")
+    theme_storage = (ROOT / "frontend/src/lib/theme-storage.ts").read_text(
+        encoding="utf-8"
+    )
 
     assert "const CANONICAL_THEME_KEY = 'dn-theme'" in theme_storage
     assert "const LEGACY_THEME_KEY = 'onp-theme'" in theme_storage

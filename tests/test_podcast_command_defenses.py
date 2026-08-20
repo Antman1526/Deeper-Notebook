@@ -11,6 +11,7 @@ Two issues fixed:
 These tests exercise the two helpers without touching SurrealDB or
 podcast-creator — pure logic checks.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -91,6 +92,7 @@ def test_result_field_extraction_uses_safe_get_pattern():
         (missing transcript key entirely)
     Without raising.
     """
+
     # Recreate the logic inline since it's embedded in the command
     def transcript_value(result):
         return (

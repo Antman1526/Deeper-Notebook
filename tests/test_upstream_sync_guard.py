@@ -1,4 +1,5 @@
 """Smoke tests for the safe upstream sync guard."""
+
 from __future__ import annotations
 
 import os
@@ -143,9 +144,9 @@ def test_prepare_writes_merge_report_and_protected_path_changes(tmp_path):
     assert result.returncode == 0, result.stderr
     assert (snapshot_dir / "merge-status.txt").exists()
     assert (snapshot_dir / "changed-files.txt").read_text(encoding="utf-8")
-    protected_changes = (
-        snapshot_dir / "protected-plus-path-changes.txt"
-    ).read_text(encoding="utf-8")
+    protected_changes = (snapshot_dir / "protected-plus-path-changes.txt").read_text(
+        encoding="utf-8"
+    )
     assert "api/routers/studio.py" in protected_changes
     assert "deeper_notebook/database/migrations/23.surrealql" in protected_changes
     assert "deeper_notebook/database/migrations/23.surrealql" in protected_changes

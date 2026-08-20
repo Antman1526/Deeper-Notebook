@@ -14,6 +14,7 @@ Covers:
   * Env-knob DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD honored
   * Invalid env value falls back to default with a warning
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -63,7 +64,7 @@ def _make_checkpoint_db(path: Path, threads_and_counts: dict[str, int]) -> None:
     # window function sorts lexicographically and we need newest-last.
     for thread_id, count in threads_and_counts.items():
         for i in range(count):
-            cid = f"{i:06d}-checkpoint"   # 000000-checkpoint = oldest
+            cid = f"{i:06d}-checkpoint"  # 000000-checkpoint = oldest
             conn.execute(
                 "INSERT INTO checkpoints (thread_id, checkpoint_ns, "
                 "checkpoint_id, parent_checkpoint_id, type, "
@@ -147,9 +148,7 @@ def test_prune_keeps_most_recent_n_per_thread(tmp_path):
     # Survivors are the NEWEST checkpoints (000090..000099)
     conn = sqlite3.connect(str(path))
     surviving_ids = sorted(
-        row[0] for row in conn.execute(
-            "SELECT checkpoint_id FROM checkpoints"
-        )
+        row[0] for row in conn.execute("SELECT checkpoint_id FROM checkpoints")
     )
     conn.close()
     expected = sorted(f"{i:06d}-checkpoint" for i in range(90, 100))
@@ -162,11 +161,14 @@ def test_prune_independent_per_thread(tmp_path):
     from deeper_notebook.utils.checkpoint_prune import prune_old_checkpoints
 
     path = tmp_path / "checkpoints.sqlite"
-    _make_checkpoint_db(path, {
-        "heavy-thread": 80,
-        "light-thread": 5,    # under the cap — should be untouched
-        "medium-thread": 25,  # mostly under the cap of 10 — but trimmed
-    })
+    _make_checkpoint_db(
+        path,
+        {
+            "heavy-thread": 80,
+            "light-thread": 5,  # under the cap — should be untouched
+            "medium-thread": 25,  # mostly under the cap of 10 — but trimmed
+        },
+    )
 
     result = prune_old_checkpoints(path, keep_per_thread=10)
 
@@ -179,9 +181,7 @@ def test_prune_independent_per_thread(tmp_path):
     # Verify each thread's row count
     conn = sqlite3.connect(str(path))
     counts = dict(
-        conn.execute(
-            "SELECT thread_id, COUNT(*) FROM checkpoints GROUP BY thread_id"
-        )
+        conn.execute("SELECT thread_id, COUNT(*) FROM checkpoints GROUP BY thread_id")
     )
     conn.close()
     assert counts["heavy-thread"] == 10

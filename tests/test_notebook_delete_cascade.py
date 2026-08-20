@@ -327,9 +327,7 @@ def test_post_commit_upload_cleanup_is_filesystem_only(
         "repo_upsert",
     ):
         mock = AsyncMock(
-            side_effect=AssertionError(
-                f"post-commit cleanup touched repository.{name}"
-            )
+            side_effect=AssertionError(f"post-commit cleanup touched repository.{name}")
         )
         monkeypatch.setattr(repository_module, name, mock)
         repository_api_mocks[name] = mock
@@ -487,9 +485,7 @@ def test_embedded_surreal_success_returns_result_and_commits(make_notebook):
             assert result["deleted_notes"] == 1
             assert result["deleted_sources"] == 1
             assert result["unlinked_sources"] == 1
-            assert result["deleted_chat_session_ids"] == [
-                RecordID("chat_session", "a")
-            ]
+            assert result["deleted_chat_session_ids"] == [RecordID("chat_session", "a")]
             assert db.query("SELECT VALUE id FROM notebook") == [
                 RecordID("notebook", "other")
             ]

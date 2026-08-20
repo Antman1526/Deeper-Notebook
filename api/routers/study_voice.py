@@ -24,7 +24,9 @@ from deeper_notebook.study.voice_service import (
 
 def _require_study_workbench() -> None:
     if not study_workbench_enabled():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Study plan not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Study plan not found"
+        )
 
 
 def _service() -> StudyVoiceService:
@@ -40,12 +42,17 @@ router = APIRouter(
 
 def _voice_error(exc: StudyVoiceError) -> HTTPException:
     if isinstance(exc, StudyVoiceNotFound):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Study plan not found")
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Study plan not found"
+        )
     if isinstance(exc, StudyVoiceValidationError):
         if exc.reason == "audio_too_large":
             return HTTPException(
                 status_code=413,
-                detail={"code": exc.reason, "message": "Audio upload exceeds the local limit"},
+                detail={
+                    "code": exc.reason,
+                    "message": "Audio upload exceeds the local limit",
+                },
             )
         return HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -64,11 +71,17 @@ def _voice_error(exc: StudyVoiceError) -> HTTPException:
     if isinstance(exc, StudyVoiceUnavailable):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "local_speech_unavailable", "message": "Local speech is unavailable"},
+            detail={
+                "code": "local_speech_unavailable",
+                "message": "Local speech is unavailable",
+            },
         )
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail={"code": "study_voice_unavailable", "message": "Study voice is unavailable"},
+        detail={
+            "code": "study_voice_unavailable",
+            "message": "Study voice is unavailable",
+        },
     )
 
 

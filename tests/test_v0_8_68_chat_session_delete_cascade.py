@@ -3,6 +3,7 @@
 Standalone session deletes previously left dangling session→notebook /
 session→source graph edges; only a full notebook delete swept them.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,9 +30,7 @@ def _capture(monkeypatch):
         return True
 
     monkeypatch.setattr(nb, "repo_query", _fake_repo_query)
-    monkeypatch.setattr(
-        nb.ObjectModel, "delete", _fake_super_delete
-    )
+    monkeypatch.setattr(nb.ObjectModel, "delete", _fake_super_delete)
     return queries
 
 

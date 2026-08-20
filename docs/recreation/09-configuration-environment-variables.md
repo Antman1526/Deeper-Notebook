@@ -22,6 +22,7 @@ class SettingAliases:
     legacy: str | None = None
     legacy_short: str | None = None
 
+
 def _short_aliases(suffix: str) -> SettingAliases:
     return SettingAliases(
         canonical=f"DEEPER_NOTEBOOK_{suffix}",
@@ -30,15 +31,16 @@ def _short_aliases(suffix: str) -> SettingAliases:
         legacy_short=f"ONP_{suffix}",
     )
 
+
 def resolve_env(canonical, default=None, *, getter=None, with_receipt=False):
     """Resolve one registered setting without ever exposing its value."""
-    aliases = _setting_for(canonical)        # raises KeyError if unregistered
+    aliases = _setting_for(canonical)  # raises KeyError if unregistered
     read = getter or os.environ.get
     values = {name: read(name) for name in aliases.precedence}
     winner = next((n for n in aliases.precedence if values[n] is not None), None)
     ...
     if winner is not None and used_legacy:
-        _warn_legacy_once(winner, canonical)   # LegacyEnvironmentWarning, once
+        _warn_legacy_once(winner, canonical)  # LegacyEnvironmentWarning, once
 ```
 
 Two consequences a recreator must honour:
@@ -186,9 +188,12 @@ Clamp with a safe fallback — a garbage value must never crash a request path:
 ```python
 def _timeout_sec() -> float:
     raw = _env("DEEPER_NOTEBOOK_WEB_SEARCH_TIMEOUT_SEC")
-    if not raw: return _DEFAULT_TIMEOUT_SEC
-    try: t = float(raw)
-    except ValueError: return _DEFAULT_TIMEOUT_SEC
+    if not raw:
+        return _DEFAULT_TIMEOUT_SEC
+    try:
+        t = float(raw)
+    except ValueError:
+        return _DEFAULT_TIMEOUT_SEC
     return max(1.0, min(t, _TIMEOUT_CEILING_SEC))
 ```
 

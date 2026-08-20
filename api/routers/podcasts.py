@@ -142,7 +142,9 @@ def _path_free_receipt_text(value: str, *, field: str) -> str:
     return normalized
 
 
-def _safe_included_item(entry: PodcastSelectionPreviewEntryResponse) -> dict[str, object]:
+def _safe_included_item(
+    entry: PodcastSelectionPreviewEntryResponse,
+) -> dict[str, object]:
     stable_id = _path_free_receipt_text(entry.stable_id, field="stable_id")
     if "/" in stable_id or "\\" in stable_id or stable_id.lower().startswith("file:"):
         raise ValueError("stable_id must be a path-free reference")
@@ -154,7 +156,15 @@ def _safe_included_item(entry: PodcastSelectionPreviewEntryResponse) -> dict[str
     return {
         "stable_id": stable_id,
         "authority_kind": entry.authority_kind,
-        **({"revision_id": _path_free_receipt_text(entry.revision_id, field="revision_id")} if entry.revision_id is not None else {}),
+        **(
+            {
+                "revision_id": _path_free_receipt_text(
+                    entry.revision_id, field="revision_id"
+                )
+            }
+            if entry.revision_id is not None
+            else {}
+        ),
         **({"fingerprint": entry.fingerprint} if entry.fingerprint is not None else {}),
     }
 
@@ -191,8 +201,7 @@ def _selection_summary(
     }
     if selections is not None:
         summary["included_items"] = [
-            _safe_included_item(entry)
-            for entry in included_entries
+            _safe_included_item(entry) for entry in included_entries
         ]
         summary["selections"] = _validated_selection_references(selections)
         production_settings = _normalize_retry_settings(
@@ -538,7 +547,9 @@ async def submit_podcast_studio(
                 compute_profile=payload.compute_profile,
                 include_transcription=payload.include_transcription,
                 selection_summary=_selection_summary(
-                    PodcastSelectionPreviewResponse.model_validate(preview.model_dump()),
+                    PodcastSelectionPreviewResponse.model_validate(
+                        preview.model_dump()
+                    ),
                     selections=payload.selections,
                     mode=payload.mode,
                     custom_prompt=payload.custom_prompt,
@@ -854,7 +865,9 @@ async def list_podcast_episodes(
                     error_message=error_message,
                     generation_stage=getattr(episode, "generation_stage", None),
                     selection_summary=getattr(episode, "selection_summary", None),
-                    selection_fingerprint=getattr(episode, "selection_fingerprint", None),
+                    selection_fingerprint=getattr(
+                        episode, "selection_fingerprint", None
+                    ),
                     editorial_brief=getattr(episode, "editorial_brief", None),
                     model_plan_receipts=getattr(episode, "model_plan_receipts", []),
                 )
@@ -1188,7 +1201,11 @@ def _validate_stored_v2_summary(summary: dict[str, object]) -> None:
             raise ValueError("podcast selection summary authority is invalid")
         revision_id = item.get("revision_id")
         if revision_id is not None:
-            if not isinstance(revision_id, str) or "/" in revision_id or "\\" in revision_id:
+            if (
+                not isinstance(revision_id, str)
+                or "/" in revision_id
+                or "\\" in revision_id
+            ):
                 raise ValueError("podcast selection summary revision ID is unsafe")
             _path_free_receipt_text(revision_id, field="revision_id")
         fingerprint = item.get("fingerprint")
@@ -1207,7 +1224,9 @@ def _validate_stored_v2_summary(summary: dict[str, object]) -> None:
         authority = item["authority_kind"]
         receipt_authorities[authority] = receipt_authorities.get(authority, 0) + 1
     if receipt_authorities != authority_counts:
-        raise ValueError("podcast selection summary authority receipts are inconsistent")
+        raise ValueError(
+            "podcast selection summary authority receipts are inconsistent"
+        )
 
 
 async def _resolve_retry_selection(

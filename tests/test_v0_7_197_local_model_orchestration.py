@@ -25,6 +25,7 @@ on the very first launch of a fresh .app install:
 
 These tests are AST-level so they don't depend on running services.
 """
+
 from __future__ import annotations
 
 import re

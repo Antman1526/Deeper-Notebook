@@ -81,7 +81,7 @@ def test_wrapper_recovers_crashed_stage_without_mutating_shared_symlink(tmp_path
     next_bin.parent.mkdir(parents=True)
     next_bin.write_text(
         "#!/bin/sh\n"
-        "if [ \"${NEXT_SLEEP:-0}\" != 0 ]; then sleep \"$NEXT_SLEEP\"; fi\n"
+        'if [ "${NEXT_SLEEP:-0}" != 0 ]; then sleep "$NEXT_SLEEP"; fi\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -274,7 +274,7 @@ def test_wrapper_parent_sigkill_does_not_delete_stage_with_surviving_build_child
     next_bin.write_text(
         "#!/bin/sh\n"
         f"echo $$ > {child_pid_file}\n"
-        "if [ \"${NEXT_SLEEP:-30}\" != 0 ]; then sleep \"${NEXT_SLEEP:-30}\"; fi\n"
+        'if [ "${NEXT_SLEEP:-30}" != 0 ]; then sleep "${NEXT_SLEEP:-30}"; fi\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -455,9 +455,7 @@ def test_simultaneous_stale_recoverers_have_one_owner_and_preserve_successor(
 ):
     _, shared, node_modules, temp_dir, lock, env = _fixture(
         tmp_path,
-        "#!/bin/sh\n"
-        "sleep \"${NEXT_SLEEP:-0}\"\n"
-        "exit 0\n",
+        '#!/bin/sh\nsleep "${NEXT_SLEEP:-0}"\nexit 0\n',
     )
     env["NEXT_SLEEP"] = "1"
     stale_stage = temp_dir / f"deeper-notebook-feature-contract-{'0' * 32}"
@@ -517,9 +515,7 @@ def test_simultaneous_stale_recoverers_have_one_owner_and_preserve_successor(
 def test_reader_never_observes_empty_or_partial_owner_metadata(tmp_path: Path):
     _, _, node_modules, _, lock, env = _fixture(
         tmp_path,
-        "#!/bin/sh\n"
-        "sleep 0.75\n"
-        "exit 0\n",
+        "#!/bin/sh\nsleep 0.75\nexit 0\n",
     )
     process = subprocess.Popen(
         ["node", str(tmp_path / "frontend/scripts/run-feature-build-contract.mjs")],

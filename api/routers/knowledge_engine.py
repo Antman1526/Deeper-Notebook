@@ -60,7 +60,9 @@ def _service(request: Request) -> Any:
     if service is None:
         raise _error(status.HTTP_404_NOT_FOUND, "knowledge_engine_disabled")
     if not callable(getattr(service, "status", None)):
-        raise _error(status.HTTP_503_SERVICE_UNAVAILABLE, "knowledge_engine_unavailable")
+        raise _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "knowledge_engine_unavailable"
+        )
     return service
 
 
@@ -187,7 +189,10 @@ async def list_documents(
             limit=limit,
             offset=offset,
         )
-        return [KnowledgeDocumentListResponse(**_document_summary(item)) for item in documents]
+        return [
+            KnowledgeDocumentListResponse(**_document_summary(item))
+            for item in documents
+        ]
     except HTTPException:
         raise
     except Exception as exc:

@@ -9,6 +9,7 @@ type hints into strings that LangChain's RunnableLambda-generated input
 schema cannot resolve at submit time ("optimize_prompt_command_input is not
 fully defined" → 500). @command modules must use runtime annotations.
 """
+
 import asyncio
 import os
 import time
@@ -83,7 +84,9 @@ async def _gate_offline(model_ids: list[str]) -> None:
                 provider, name, _ = await _resolve_model_config(mid)
             except Exception:
                 continue
-            if (provider or "").strip().lower().replace("-", "_") not in LOCAL_PROVIDERS:
+            if (provider or "").strip().lower().replace(
+                "-", "_"
+            ) not in LOCAL_PROVIDERS:
                 cloud.append(f"{name} ({provider})")
         if cloud:
             raise ValueError(
@@ -109,10 +112,12 @@ async def _load_example_items(source_ids: list[str]) -> list[dict]:
         text = (getattr(source, "full_text", None) or "").strip()
         if not text:
             continue
-        items.append({
-            "id": str(sid).replace(":", "_"),
-            "input_text": text[:_MAX_INPUT_CHARS],
-        })
+        items.append(
+            {
+                "id": str(sid).replace(":", "_"),
+                "input_text": text[:_MAX_INPUT_CHARS],
+            }
+        )
     return items
 
 
@@ -148,15 +153,14 @@ async def optimize_prompt_command(
 
         if input_data.target_model_id and input_data.optimizer_model_id:
             target_id, optimizer_id = (
-                input_data.target_model_id, input_data.optimizer_model_id
+                input_data.target_model_id,
+                input_data.optimizer_model_id,
             )
         else:
             target_id, optimizer_id = await _default_model_ids()
         await _gate_offline([target_id, optimizer_id])
 
-        run_dir = os.path.join(
-            DATA_FOLDER, "prompt_optimizer", str(uuid.uuid4())
-        )
+        run_dir = os.path.join(DATA_FOLDER, "prompt_optimizer", str(uuid.uuid4()))
 
         from deeper_notebook.prompt_optimizer.runner import (
             PromptOptimizerError,
@@ -164,7 +168,8 @@ async def optimize_prompt_command(
         )
 
         timeout = float(
-            resolve_env("DEEPER_NOTEBOOK_PROMPT_OPT_TIMEOUT_SEC", "1800").strip() or 1800
+            resolve_env("DEEPER_NOTEBOOK_PROMPT_OPT_TIMEOUT_SEC", "1800").strip()
+            or 1800
         )
         try:
             result = await asyncio.wait_for(

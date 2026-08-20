@@ -17,6 +17,7 @@ User flow:
 Daily auto-send is a v0.6.1 follow-up (background scheduler). For v0.6 the
 user clicks "Send digest now" when they want one.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -80,6 +81,7 @@ def _get_send_lock() -> asyncio.Lock:
 # Request/response shapes
 # ────────────────────────────────────────────────────────────────────────────────
 
+
 class GmailStatusResponse(BaseModel):
     connected: bool
     email_address: Optional[str] = None
@@ -122,6 +124,7 @@ class SendResult(BaseModel):
 # Status + settings
 # ────────────────────────────────────────────────────────────────────────────────
 
+
 @router.get("/status", response_model=GmailStatusResponse)
 async def gmail_status() -> GmailStatusResponse:
     g = await GmailIntegration.get()
@@ -159,10 +162,17 @@ async def update_settings(body: UpdateSettingsRequest):
         g.enabled = body.enabled
     if body.frequency is not None:
         if body.frequency not in {"daily", "weekly", "manual"}:
-            raise HTTPException(status_code=400, detail="frequency must be daily|weekly|manual")
+            raise HTTPException(
+                status_code=400, detail="frequency must be daily|weekly|manual"
+            )
         g.frequency = body.frequency
-    for field in ("include_notebooks", "include_sources", "include_notes",
-                  "include_podcasts", "include_memory"):
+    for field in (
+        "include_notebooks",
+        "include_sources",
+        "include_notes",
+        "include_podcasts",
+        "include_memory",
+    ):
         val = getattr(body, field)
         if val is not None:
             setattr(g, field, val)
@@ -205,6 +215,7 @@ async def forget_credentials():
 # OAuth flow
 # ────────────────────────────────────────────────────────────────────────────────
 
+
 @router.get("/connect")
 async def connect(request: Request):
     """Redirect to Google's consent screen.
@@ -246,8 +257,8 @@ async def connect(request: Request):
         "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": " ".join(_GMAIL_SCOPES + ["openid", "email"]),
-        "access_type": "offline",        # so we get a refresh_token
-        "prompt": "consent",              # force refresh_token re-issue
+        "access_type": "offline",  # so we get a refresh_token
+        "prompt": "consent",  # force refresh_token re-issue
         "state": state,
     }
     return RedirectResponse(f"{_GOOGLE_AUTH_URL}?{urlencode(params)}")
@@ -267,11 +278,11 @@ async def callback(
 
     if error:
         log.warning("Gmail OAuth callback error from Google: %s", error)
-        return _result_page("Gmail connection cancelled",
-                            f"Google returned: {error}", ok=False)
+        return _result_page(
+            "Gmail connection cancelled", f"Google returned: {error}", ok=False
+        )
     if not code or not state:
-        return _result_page("Gmail connection failed",
-                            "Missing code/state.", ok=False)
+        return _result_page("Gmail connection failed", "Missing code/state.", ok=False)
     if state not in _oauth_states or _oauth_states[state] < datetime.now(timezone.utc):
         _oauth_states.pop(state, None)
         log.warning("Gmail OAuth state mismatch — possible CSRF or stale link")
@@ -294,13 +305,16 @@ async def callback(
     redirect_uri = _callback_url(request, preserve_callback_path=True)
     async with httpx.AsyncClient(timeout=15) as client:
         try:
-            r = await client.post(_GOOGLE_TOKEN_URL, data={
-                "client_id": g.client_id,
-                "client_secret": g.client_secret,
-                "code": code,
-                "grant_type": "authorization_code",
-                "redirect_uri": redirect_uri,
-            })
+            r = await client.post(
+                _GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": g.client_id,
+                    "client_secret": g.client_secret,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": redirect_uri,
+                },
+            )
             r.raise_for_status()
             tok = r.json()
         except HTTPException:
@@ -404,16 +418,14 @@ async def send_test() -> SendResult:
 # Internals
 # ────────────────────────────────────────────────────────────────────────────────
 
-def _callback_url(
-    request: Request, *, preserve_callback_path: bool = False
-) -> str:
+
+def _callback_url(request: Request, *, preserve_callback_path: bool = False) -> str:
     """Build redirect_uri from the request's host so it matches whatever
     port the dynamically-allocated upstream API is on."""
     base = str(request.base_url).rstrip("/")
     namespace = API_NAMESPACE
-    if (
-        preserve_callback_path
-        and request.url.path.startswith(f"{LEGACY_API_NAMESPACE}/")
+    if preserve_callback_path and request.url.path.startswith(
+        f"{LEGACY_API_NAMESPACE}/"
     ):
         namespace = LEGACY_API_NAMESPACE
     return f"{base}{namespace}/gmail/callback"
@@ -468,12 +480,15 @@ async def _refresh_access_token(g: GmailIntegration) -> bool:
         return False
     async with httpx.AsyncClient(timeout=10) as client:
         try:
-            r = await client.post(_GOOGLE_TOKEN_URL, data={
-                "client_id": g.client_id,
-                "client_secret": g.client_secret,
-                "refresh_token": g.refresh_token,
-                "grant_type": "refresh_token",
-            })
+            r = await client.post(
+                _GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": g.client_id,
+                    "client_secret": g.client_secret,
+                    "refresh_token": g.refresh_token,
+                    "grant_type": "refresh_token",
+                },
+            )
             r.raise_for_status()
             tok = r.json()
         except HTTPException:
@@ -499,7 +514,9 @@ async def _refresh_access_token(g: GmailIntegration) -> bool:
     return True
 
 
-async def _send_digest_now(g: GmailIntegration, label: str = "Digest") -> tuple[bool, str, int]:
+async def _send_digest_now(
+    g: GmailIntegration, label: str = "Digest"
+) -> tuple[bool, str, int]:
     """Build + send a digest email under the single-flight send lock (E-4), so
     concurrent sends (scheduler + /send-test, or overlapping ticks) serialize
     and can't produce duplicate emails. Returns (ok, message, item_count)."""
@@ -507,23 +524,31 @@ async def _send_digest_now(g: GmailIntegration, label: str = "Digest") -> tuple[
         g_latest = await GmailIntegration.get()
         if label != "Test":
             from deeper_notebook.digest.scheduler import _should_send
+
             if not await _should_send(g_latest):
-                log.info("digest-scheduler: already sent or no longer due after acquiring send lock")
+                log.info(
+                    "digest-scheduler: already sent or no longer due after acquiring send lock"
+                )
                 return (True, "Already sent recently", 0)
         return await _send_digest_now_inner(g_latest, label)
 
 
-async def _send_digest_now_inner(g: GmailIntegration, label: str = "Digest") -> tuple[bool, str, int]:
+async def _send_digest_now_inner(
+    g: GmailIntegration, label: str = "Digest"
+) -> tuple[bool, str, int]:
     """Build + send a digest email. Returns (ok, message, item_count)."""
     if g.needs_refresh:
         refreshed = await _refresh_access_token(g)
         if not refreshed:
-            return (False,
-                    "Could not refresh OAuth token — try Disconnect + Connect again.",
-                    0)
+            return (
+                False,
+                "Could not refresh OAuth token — try Disconnect + Connect again.",
+                0,
+            )
 
     # Build digest content from recent activity
     from deeper_notebook.digest import build_digest_html
+
     html, n = await build_digest_html(g)
 
     msg = MIMEMultipart("alternative")
@@ -550,9 +575,7 @@ async def _send_digest_now_inner(g: GmailIntegration, label: str = "Digest") -> 
             # fragments via traceback/formatting, the raw base64 message). Log
             # it for the operator; return only the status code. Mirrors the
             # v0.8.24 sanitization sweep.
-            log.warning(
-                "Gmail send failed: HTTP %s — %s", r.status_code, r.text[:500]
-            )
+            log.warning("Gmail send failed: HTTP %s — %s", r.status_code, r.text[:500])
             return (False, f"Gmail API error (HTTP {r.status_code}).", n)
 
     # v0.7.81 — guard the post-send save. The Gmail API call ALREADY
@@ -587,5 +610,6 @@ async def _send_digest_now_inner(g: GmailIntegration, label: str = "Digest") -> 
 def _strip_html(s: str) -> str:
     """Naive HTML-to-text for the plain-text MIME alternative."""
     import re
+
     txt = re.sub(r"<[^>]+>", "", s)
     return re.sub(r"\s+", " ", txt).strip()

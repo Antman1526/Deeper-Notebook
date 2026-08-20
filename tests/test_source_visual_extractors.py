@@ -15,9 +15,18 @@ AUDIO_FIXTURE = FIXTURES / "fixture-artwork.m4a"
 
 def test_deterministic_fixture_hashes_and_sizes() -> None:
     expected = {
-        "fixture.pdf": (10804, "70157b96704b56a375b08409113f0ec9fe4a3dea3f667fe3d9dda9c5baf35851"),
-        "fixture.mp4": (2366, "138e8e58cb9b5897685ceb8bf0e4e65f8af38e1cbe783531b0a95be242388fa2"),
-        "fixture-artwork.m4a": (2196, "be46e54decae40cecee1bf092681415dc75f34ddec689affbf962f756161119a"),
+        "fixture.pdf": (
+            10804,
+            "70157b96704b56a375b08409113f0ec9fe4a3dea3f667fe3d9dda9c5baf35851",
+        ),
+        "fixture.mp4": (
+            2366,
+            "138e8e58cb9b5897685ceb8bf0e4e65f8af38e1cbe783531b0a95be242388fa2",
+        ),
+        "fixture-artwork.m4a": (
+            2196,
+            "be46e54decae40cecee1bf092681415dc75f34ddec689affbf962f756161119a",
+        ),
     }
     for name, (size, digest) in expected.items():
         path = FIXTURES / name
@@ -33,7 +42,12 @@ def test_extract_pdf_candidates_is_bounded_and_deduplicated() -> None:
     assert len(candidates) <= 64
     assert all(candidate.origin == "embedded" for candidate in candidates)
     assert all(1 <= candidate.locator["page"] <= 24 for candidate in candidates)
-    assert len({hashlib.sha256(candidate.encoded_bytes).hexdigest() for candidate in candidates}) == len(candidates)
+    assert len(
+        {
+            hashlib.sha256(candidate.encoded_bytes).hexdigest()
+            for candidate in candidates
+        }
+    ) == len(candidates)
 
 
 def test_extract_pdf_stops_after_64_inspected_embedded_resources(
@@ -98,7 +112,11 @@ def test_video_duration_parser_accepts_only_bounded_hh_mm_ss_xx() -> None:
     )
 
     assert _duration_ms_from_text(b"Duration: 00:01:02.50, start: 0.0") == 62_500
-    for value in (b"Duration: 00:01:02.5,", b"Duration: 00:01:02.500,", b"Duration: 0:01:02.50,"):
+    for value in (
+        b"Duration: 00:01:02.5,",
+        b"Duration: 00:01:02.500,",
+        b"Duration: 0:01:02.50,",
+    ):
         with pytest.raises(SourceVisualMediaError, match="VIDEO_DURATION_INVALID"):
             _duration_ms_from_text(value)
 
@@ -109,12 +127,18 @@ async def test_extract_video_candidates_uses_three_bounded_timestamps() -> None:
 
     candidates = await extract_video_candidates(VIDEO_FIXTURE)
     assert len(candidates) == 3
-    assert [candidate.locator["timestamp_ms"] for candidate in candidates] == [1_000, 2_000, 3_000]
+    assert [candidate.locator["timestamp_ms"] for candidate in candidates] == [
+        1_000,
+        2_000,
+        3_000,
+    ]
     assert all(candidate.origin == "video_frame" for candidate in candidates)
 
 
 @pytest.mark.asyncio
-async def test_video_attempt_timeout_is_15_seconds_and_total_timeout_is_60(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_video_attempt_timeout_is_15_seconds_and_total_timeout_is_60(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import deeper_notebook.source_visuals.extractors as extractors
 
     monkeypatch.setattr(extractors, "VIDEO_FRAME_TIMEOUT_SECONDS", 0.01)
@@ -304,7 +328,9 @@ async def test_video_attempt_never_returns_after_frame_validation_deadline(
 
 
 @pytest.mark.asyncio
-async def test_extract_video_subprocess_contract_is_async_bounded_and_no_shell() -> None:
+async def test_extract_video_subprocess_contract_is_async_bounded_and_no_shell() -> (
+    None
+):
     import deeper_notebook.source_visuals.extractors as extractors
 
     source = inspect.getsource(extractors)
@@ -379,7 +405,11 @@ async def test_audio_artwork_requires_attachment_on_exact_first_video_stream(
     import deeper_notebook.source_visuals.extractors as extractors
 
     candidate = extractors.VisualCandidate(
-        "audio_artwork", {"resource_id": "attached-picture-0"}, b"frame", 1.0, "candidate"
+        "audio_artwork",
+        {"resource_id": "attached-picture-0"},
+        b"frame",
+        1.0,
+        "candidate",
     )
 
     async def fake_run(*_args: str, **_kwargs: object) -> tuple[bytes, bytes]:
@@ -389,7 +419,9 @@ async def test_audio_artwork_requires_attachment_on_exact_first_video_stream(
         )
 
     monkeypatch.setattr(extractors, "_run_ffmpeg", fake_run)
-    monkeypatch.setattr(extractors, "_candidate_from_bytes", lambda **_kwargs: candidate)
+    monkeypatch.setattr(
+        extractors, "_candidate_from_bytes", lambda **_kwargs: candidate
+    )
     assert await extractors.extract_audio_artwork(AUDIO_FIXTURE) is None
 
 
@@ -400,12 +432,18 @@ async def test_audio_artwork_accepts_attachment_on_exact_first_video_stream(
     import deeper_notebook.source_visuals.extractors as extractors
 
     candidate = extractors.VisualCandidate(
-        "audio_artwork", {"resource_id": "attached-picture-0"}, b"frame", 1.0, "candidate"
+        "audio_artwork",
+        {"resource_id": "attached-picture-0"},
+        b"frame",
+        1.0,
+        "candidate",
     )
 
     async def fake_run(*_args: str, **_kwargs: object) -> tuple[bytes, bytes]:
         return b"frame", b"Stream #0:1: Video: mjpeg (attached pic)"
 
     monkeypatch.setattr(extractors, "_run_ffmpeg", fake_run)
-    monkeypatch.setattr(extractors, "_candidate_from_bytes", lambda **_kwargs: candidate)
+    monkeypatch.setattr(
+        extractors, "_candidate_from_bytes", lambda **_kwargs: candidate
+    )
     assert await extractors.extract_audio_artwork(AUDIO_FIXTURE) is candidate

@@ -30,7 +30,8 @@ class TestWarmupRetry:
         fake_conn = object()
         acquire_mock = AsyncMock(return_value=fake_conn)
         with patch(
-            "deeper_notebook.database.repository._acquire", acquire_mock,
+            "deeper_notebook.database.repository._acquire",
+            acquire_mock,
         ):
             result = await _warmup_pool_acquire_with_retry(timeout_s=10.0)
         assert result is fake_conn
@@ -52,10 +53,15 @@ class TestWarmupRetry:
                 raise RuntimeError(f"transient failure {call_count[0]}")
             return fake_conn
 
-        with patch(
-            "deeper_notebook.database.repository._acquire", flaky_acquire,
-        ), patch(
-            "asyncio.sleep", AsyncMock(),  # don't actually wait
+        with (
+            patch(
+                "deeper_notebook.database.repository._acquire",
+                flaky_acquire,
+            ),
+            patch(
+                "asyncio.sleep",
+                AsyncMock(),  # don't actually wait
+            ),
         ):
             result = await _warmup_pool_acquire_with_retry(timeout_s=10.0)
         assert result is fake_conn
@@ -71,10 +77,15 @@ class TestWarmupRetry:
         async def always_fails():
             raise RuntimeError("connection refused")
 
-        with patch(
-            "deeper_notebook.database.repository._acquire", always_fails,
-        ), patch(
-            "asyncio.sleep", AsyncMock(),
+        with (
+            patch(
+                "deeper_notebook.database.repository._acquire",
+                always_fails,
+            ),
+            patch(
+                "asyncio.sleep",
+                AsyncMock(),
+            ),
         ):
             with pytest.raises(RuntimeError, match="connection refused"):
                 await _warmup_pool_acquire_with_retry(timeout_s=10.0)
@@ -96,10 +107,15 @@ class TestWarmupRetry:
         async def hang_forever():
             await asyncio.sleep(60)
 
-        with patch(
-            "deeper_notebook.database.repository._acquire", hang_forever,
-        ), patch(
-            "api.main._WARMUP_RETRY_DELAYS_S", (0.001, 0.001, 0.001),
+        with (
+            patch(
+                "deeper_notebook.database.repository._acquire",
+                hang_forever,
+            ),
+            patch(
+                "api.main._WARMUP_RETRY_DELAYS_S",
+                (0.001, 0.001, 0.001),
+            ),
         ):
             with pytest.raises(asyncio.TimeoutError):
                 # Tiny per-attempt timeout so the test is fast
@@ -116,10 +132,15 @@ class TestWarmupRetry:
             raise RuntimeError("nope")
 
         sleep_mock = AsyncMock()
-        with patch(
-            "deeper_notebook.database.repository._acquire", always_fails,
-        ), patch(
-            "asyncio.sleep", sleep_mock,
+        with (
+            patch(
+                "deeper_notebook.database.repository._acquire",
+                always_fails,
+            ),
+            patch(
+                "asyncio.sleep",
+                sleep_mock,
+            ),
         ):
             with pytest.raises(RuntimeError):
                 await _warmup_pool_acquire_with_retry(timeout_s=10.0)

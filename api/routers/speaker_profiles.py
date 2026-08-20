@@ -46,9 +46,7 @@ async def list_speaker_profiles():
         raise
     except Exception as e:
         logger.error(f"Failed to fetch speaker profiles: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to fetch speaker profiles"
-        )
+        raise HTTPException(status_code=500, detail="Failed to fetch speaker profiles")
 
 
 @router.get("/speaker-profiles/{profile_name}", response_model=SpeakerProfileResponse)
@@ -71,9 +69,7 @@ async def get_speaker_profile(profile_name: str):
         raise
     except Exception as e:
         logger.error(f"Failed to fetch speaker profile '{profile_name}': {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to fetch speaker profile"
-        )
+        raise HTTPException(status_code=500, detail="Failed to fetch speaker profile")
 
 
 class SpeakerProfileCreate(BaseModel):
@@ -111,9 +107,7 @@ async def create_speaker_profile(profile_data: SpeakerProfileCreate):
         raise
     except Exception as e:
         logger.error(f"Failed to create speaker profile: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to create speaker profile"
-        )
+        raise HTTPException(status_code=500, detail="Failed to create speaker profile")
 
 
 @router.put("/speaker-profiles/{profile_id}", response_model=SpeakerProfileResponse)
@@ -140,9 +134,7 @@ async def update_speaker_profile(profile_id: str, profile_data: SpeakerProfileCr
         raise
     except Exception as e:
         logger.error(f"Failed to update speaker profile: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to update speaker profile"
-        )
+        raise HTTPException(status_code=500, detail="Failed to update speaker profile")
 
 
 @router.delete("/speaker-profiles/{profile_id}")
@@ -167,9 +159,7 @@ async def delete_speaker_profile(profile_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to delete speaker profile: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to delete speaker profile"
-        )
+        raise HTTPException(status_code=500, detail="Failed to delete speaker profile")
 
 
 @router.post(

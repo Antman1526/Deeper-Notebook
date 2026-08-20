@@ -30,9 +30,7 @@ StudyAssistantRole = Literal[
     "progress_coach",
 ]
 StudyAuthority = Literal["ask", "coach", "plan", "create"]
-StudySessionStatus = Literal[
-    "queued", "running", "completed", "failed", "cancelled"
-]
+StudySessionStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 StudyDecision = Literal["pending", "accepted", "rejected", "deferred"]
 StudyMemoryProvenance = Literal[
     "user_confirmed",
@@ -81,7 +79,9 @@ _MAX_NETWORK_SCOPE = 8
 _MAX_ERROR_CODE = 96
 
 _RecordID = Annotated[str, Field(min_length=1, max_length=512)]
-_UnitID = Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")]
+_UnitID = Annotated[
+    str, Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+]
 
 
 def _nonblank(value: str, *, field_name: str) -> str:
@@ -166,7 +166,9 @@ class StudyCitation(_FrozenContract):
 class StudyProposedAction(_FrozenContract):
     """A visible, inert action proposal awaiting an explicit user decision."""
 
-    action: str = Field(min_length=1, max_length=96, pattern=r"^[a-z][a-z0-9_.-]{0,95}$")
+    action: str = Field(
+        min_length=1, max_length=96, pattern=r"^[a-z][a-z0-9_.-]{0,95}$"
+    )
     label: str = Field(min_length=1, max_length=200)
     unit_id: _UnitID | None = None
     expected_revision: int | None = Field(default=None, ge=1)
@@ -180,7 +182,9 @@ class StudyProposedAction(_FrozenContract):
 class StudyRetrievalReceipt(_FrozenContract):
     """Metadata-only retrieval receipt used in assistant responses."""
 
-    source_ids: tuple[_RecordID, ...] = Field(default_factory=tuple, max_length=_MAX_SOURCE_IDS)
+    source_ids: tuple[_RecordID, ...] = Field(
+        default_factory=tuple, max_length=_MAX_SOURCE_IDS
+    )
     citation_count: int = Field(default=0, ge=0, le=_MAX_CITATIONS)
 
     @field_validator("source_ids", mode="before")
@@ -273,7 +277,9 @@ class StudyAssistantInvocation(_FrozenContract):
         for value in values:
             _nonblank(value, field_name="approved_network_scope")
             if len(value) > 512 or not value.startswith("https://"):
-                raise ValueError("approved network scope must contain bounded HTTPS origins")
+                raise ValueError(
+                    "approved network scope must contain bounded HTTPS origins"
+                )
             result.append(value)
         if len(set(result)) != len(result):
             raise ValueError("approved network scope entries must be unique")
@@ -299,7 +305,9 @@ class StudyAssistantInvocation(_FrozenContract):
             or self.mutates_syllabus
         )
         if self.mutates_syllabus:
-            raise ValueError("assistant invocations cannot mutate the syllabus directly")
+            raise ValueError(
+                "assistant invocations cannot mutate the syllabus directly"
+            )
         if self.syllabus_mutation not in {"none", "propose"}:
             raise ValueError("assistant invocations can only propose syllabus changes")
         if self.authority != "plan" and self.syllabus_mutation != "none":
@@ -309,7 +317,9 @@ class StudyAssistantInvocation(_FrozenContract):
                 "plan authority can only propose syllabus, source, card, and schedule changes"
             )
         if self.authority == "create" and (self.network_allowed or protected):
-            raise ValueError("create authority cannot expand network or mutate Study state")
+            raise ValueError(
+                "create authority cannot expand network or mutate Study state"
+            )
         if self.authority in {"ask", "coach"} and protected:
             raise ValueError("ask and coach authority are read-only")
         return self
@@ -333,7 +343,9 @@ class StudyAssistantResponse(_FrozenContract):
     proposed_actions: tuple[StudyProposedAction, ...] = Field(
         default_factory=tuple, max_length=_MAX_ACTIONS
     )
-    retrieval_receipt: StudyRetrievalReceipt = Field(default_factory=StudyRetrievalReceipt)
+    retrieval_receipt: StudyRetrievalReceipt = Field(
+        default_factory=StudyRetrievalReceipt
+    )
     error_code: str | None = Field(default=None, max_length=_MAX_ERROR_CODE)
     created_at: datetime
     completed_at: datetime | None = None
@@ -345,7 +357,9 @@ class StudyAssistantResponse(_FrozenContract):
 
     @field_validator("invocation_id", "response_id", "session_id", "error_code")
     @classmethod
-    def response_optional_text_is_safe(cls, value: str | None, info: object) -> str | None:
+    def response_optional_text_is_safe(
+        cls, value: str | None, info: object
+    ) -> str | None:
         if value is None:
             return None
         return _nonblank(value, field_name=str(getattr(info, "field_name", "value")))
@@ -395,7 +409,9 @@ class StudyAssistantSession(_FrozenContract):
     @field_validator("session_id")
     @classmethod
     def session_id_is_exact(cls, value: str) -> str:
-        return _record_id_text(value, field_name="session_id", table="study_assistant_session")
+        return _record_id_text(
+            value, field_name="session_id", table="study_assistant_session"
+        )
 
     @field_validator("plan_id")
     @classmethod
@@ -428,7 +444,9 @@ class StudyAssistantHandoff(_FrozenContract):
     session_id: str
     role: StudyAssistantRole
     observation: str = Field(min_length=1, max_length=16_384)
-    evidence: tuple[StudyCitation, ...] = Field(default_factory=tuple, max_length=_MAX_CITATIONS)
+    evidence: tuple[StudyCitation, ...] = Field(
+        default_factory=tuple, max_length=_MAX_CITATIONS
+    )
     proposed_action: str | None = Field(default=None, max_length=2_000)
     origin: StudyAssistantRole
     user_decision: StudyDecision = "pending"
@@ -440,7 +458,9 @@ class StudyAssistantHandoff(_FrozenContract):
     def handoff_id_is_exact(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return _record_id_text(value, field_name="handoff_id", table="study_assistant_handoff")
+        return _record_id_text(
+            value, field_name="handoff_id", table="study_assistant_handoff"
+        )
 
     @field_validator("plan_id")
     @classmethod
@@ -450,7 +470,9 @@ class StudyAssistantHandoff(_FrozenContract):
     @field_validator("session_id")
     @classmethod
     def handoff_session_id_is_exact(cls, value: str) -> str:
-        return _record_id_text(value, field_name="session_id", table="study_assistant_session")
+        return _record_id_text(
+            value, field_name="session_id", table="study_assistant_session"
+        )
 
     @field_validator("request_id", "proposed_action")
     @classmethod
@@ -488,7 +510,9 @@ class StudyPlanMemory(_FrozenContract):
     schema_version: Literal[1] = 1
     memory_id: str | None = Field(default=None, max_length=512)
     plan_id: _RecordID
-    memory_key: str = Field(min_length=1, max_length=128, pattern=r"^[a-z0-9][a-z0-9_.-]{0,127}$")
+    memory_key: str = Field(
+        min_length=1, max_length=128, pattern=r"^[a-z0-9][a-z0-9_.-]{0,127}$"
+    )
     value: str = Field(min_length=1, max_length=4_000)
     provenance: StudyMemoryProvenance
     status: StudyMemoryStatus

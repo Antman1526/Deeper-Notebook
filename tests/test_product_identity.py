@@ -65,15 +65,9 @@ def _materialize_test_contracts(
         complete.setdefault(
             "scope",
             {
-                "paths": sorted(
-                    {str(entry["path"]) for entry in owned_entries}
-                ),
-                "patterns": sorted(
-                    {str(entry["pattern"]) for entry in owned_entries}
-                ),
-                "sources": sorted(
-                    {str(entry["source"]) for entry in owned_entries}
-                ),
+                "paths": sorted({str(entry["path"]) for entry in owned_entries}),
+                "patterns": sorted({str(entry["pattern"]) for entry in owned_entries}),
+                "sources": sorted({str(entry["source"]) for entry in owned_entries}),
             },
         )
         complete.setdefault(
@@ -86,8 +80,7 @@ def _materialize_test_contracts(
 
 def _write_allowlist(path: Path, entries: list[dict[str, object]]) -> Path:
     has_compatibility = any(
-        entry.get("category") == "compatibility_alias"
-        for entry in entries
+        entry.get("category") == "compatibility_alias" for entry in entries
     )
     path.write_text(
         json.dumps(
@@ -105,10 +98,7 @@ def _write_allowlist(path: Path, entries: list[dict[str, object]]) -> Path:
                                     "The focused audit fixture exercises a "
                                     "specific compatibility validation branch."
                                 ),
-                                "proof": (
-                                    "static:"
-                                    "regression-fixture-contract-v1"
-                                ),
+                                "proof": ("static:regression-fixture-contract-v1"),
                             }
                         },
                     )
@@ -169,9 +159,7 @@ def _approval(
         actual_column,
         context_sha256(context)
         if line is None
-        else occurrence_digest(
-            pattern=pattern, context=context, column=actual_column
-        ),
+        else occurrence_digest(pattern=pattern, context=context, column=actual_column),
     )
     return key, Approval(
         category=category,
@@ -185,9 +173,7 @@ def _approval(
             category=category,
             explanation=rationale,
             compatibility_contract=(
-                compatibility_contract
-                if category == "compatibility_alias"
-                else None
+                compatibility_contract if category == "compatibility_alias" else None
             ),
         ),
     )
@@ -225,9 +211,7 @@ def _rationale(
             compatibility_contract
             if compatibility_contract is not None
             else (
-                "test-compatibility-v1"
-                if category == "compatibility_alias"
-                else None
+                "test-compatibility-v1" if category == "compatibility_alias" else None
             )
         ),
     }
@@ -274,10 +258,7 @@ def test_audit_distinguishes_compatibility_from_active_branding():
         pattern="Open Notebook Plus",
         context="Open Notebook Plus",
     )
-    assert (
-        classify_match(active_key, allowlist)
-        == "unexpected_active_identity"
-    )
+    assert classify_match(active_key, allowlist) == "unexpected_active_identity"
 
 
 def test_distribution_metadata_is_canonical():
@@ -364,13 +345,8 @@ def test_legacy_installer_path_is_unexpected_and_app_id_remains_stable():
         context_sha256(legacy_installer),
     )
 
-    assert (
-        classify_match(legacy_key, allowlist)
-        == "unexpected_active_identity"
-    )
-    installer = (ROOT / "desktop/build/deeper-notebook.iss").read_text(
-        encoding="utf-8"
-    )
+    assert classify_match(legacy_key, allowlist) == "unexpected_active_identity"
+    installer = (ROOT / "desktop/build/deeper-notebook.iss").read_text(encoding="utf-8")
     assert "AppId={{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}" in installer
 
 
@@ -696,8 +672,7 @@ def _valid_contract(**overrides: object) -> dict[str, object]:
     return contract
 
 
-def test_allowlist_accepts_proof_backed_structured_compatibility_contract(
-):
+def test_allowlist_accepts_proof_backed_structured_compatibility_contract():
     loaded = load_allowlist(ALLOWLIST_PATH)
 
     assert any(
@@ -831,19 +806,13 @@ def _write_v5_contract_allowlist(
                 ),
                 "proof": proof,
                 "scope": {
-                    "paths": scope_paths or sorted(
-                        {str(entry["path"]) for entry in entries}
-                    ),
-                    "patterns": sorted(
-                        {str(entry["pattern"]) for entry in entries}
-                    ),
-                    "sources": sorted(
-                        {str(entry["source"]) for entry in entries}
-                    ),
+                    "paths": scope_paths
+                    or sorted({str(entry["path"]) for entry in entries}),
+                    "patterns": sorted({str(entry["pattern"]) for entry in entries}),
+                    "sources": sorted({str(entry["source"]) for entry in entries}),
                 },
                 "coverage_sha256": (
-                    coverage_sha256
-                    or _test_coverage_digest(entries, contract_id)
+                    coverage_sha256 or _test_coverage_digest(entries, contract_id)
                 ),
             }
         },
@@ -977,9 +946,7 @@ def test_regression_fixture_contract_rejects_active_production_paths(
 
     with pytest.raises(
         ValueError,
-        match=(
-            "canonical compatibility contract|kind-specific boundary|active UI"
-        ),
+        match=("canonical compatibility contract|kind-specific boundary|active UI"),
     ):
         load_allowlist(allowlist_path)
 
@@ -1128,10 +1095,7 @@ def test_same_file_laundering_is_rejected_by_load_and_audit(
         tmp_path / "repo",
         {
             path: context + "\n",
-            proof_path: (
-                "def test_exact_compatibility_selector():\n"
-                "    assert True\n"
-            ),
+            proof_path: ("def test_exact_compatibility_selector():\n    assert True\n"),
         },
     )
     entry = _contract_entry(
@@ -1406,9 +1370,7 @@ def test_installation_issue_log_command_names_existing_compose_service():
     issue_path = ROOT / ".github/ISSUE_TEMPLATE/installation_issue.yml"
     issue_source = issue_path.read_text(encoding="utf-8")
     issue = yaml.safe_load(issue_source)
-    compose = yaml.safe_load(
-        (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-    )
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
     logs_field = next(item for item in issue["body"] if item.get("id") == "logs")
     description = logs_field["attributes"]["description"]
     command = re.search(
@@ -1445,10 +1407,7 @@ def test_installation_issue_log_command_names_existing_compose_service():
         == "compose-service-identifier-v1"
     )
     assert issue_entries[image_line]["category"] == "upstream_reference"
-    assert (
-        issue_entries[image_line]["rationale"]["compatibility_contract"]
-        is None
-    )
+    assert issue_entries[image_line]["rationale"]["compatibility_contract"] is None
 
 
 @pytest.mark.parametrize(
@@ -1626,9 +1585,7 @@ def test_compatibility_contract_mapping_uses_only_proof_backed_groups(
     key = next(
         key
         for key, contract_id in selectors.items()
-        if key[0] == path
-        and key[1] == pattern
-        and contract_id == expected_contract
+        if key[0] == path and key[1] == pattern and contract_id == expected_contract
     )
     occurrence = {
         field: value
@@ -1972,13 +1929,7 @@ def test_allowlist_regeneration_is_deterministic_and_semantic(tmp_path):
     line = "Upgrade notes retain Open Notebook Plus for archival accuracy."
     repo = _init_tracked_repo(
         tmp_path / "repo",
-        {
-            path: (
-                "# Release History\n\n"
-                "## Version 1 migration\n\n"
-                f"{line}\n"
-            )
-        },
+        {path: (f"# Release History\n\n## Version 1 migration\n\n{line}\n")},
     )
     allowlist_path = _write_allowlist(
         tmp_path / "allowlist.json",
@@ -2106,8 +2057,7 @@ def test_repository_category_examples_match_their_actual_roles():
         for entry in entries
     )
     assert any(
-        entry["path"] == "CHANGELOG.md"
-        and entry["category"] == "historical_reference"
+        entry["path"] == "CHANGELOG.md" and entry["category"] == "historical_reference"
         for entry in entries
     )
     assert any(
@@ -2116,8 +2066,7 @@ def test_repository_category_examples_match_their_actual_roles():
         for entry in entries
     )
     assert any(
-        entry["path"] == "Makefile"
-        and entry["category"] == "upstream_reference"
+        entry["path"] == "Makefile" and entry["category"] == "upstream_reference"
         for entry in entries
     )
 
@@ -2162,15 +2111,13 @@ def test_logging_contract_prefers_canonical_names_and_container_path(
 
 
 def test_active_logging_provision_maintainer_and_wrapper_copy_is_canonical():
-    logging_source = (ROOT / "deeper_notebook/logging.py").read_text(
-        encoding="utf-8"
-    )
+    logging_source = (ROOT / "deeper_notebook/logging.py").read_text(encoding="utf-8")
     provision_source = (ROOT / "deeper_notebook/ai/provision.py").read_text(
         encoding="utf-8"
     )
-    maintainer_source = (
-        ROOT / "docs/7-DEVELOPMENT/maintainer-guide.md"
-    ).read_text(encoding="utf-8")
+    maintainer_source = (ROOT / "docs/7-DEVELOPMENT/maintainer-guide.md").read_text(
+        encoding="utf-8"
+    )
     wrapper_source = (ROOT / "desktop/__init__.py").read_text(encoding="utf-8")
 
     assert "DEEPER_NOTEBOOK_LOG_LEVEL" in logging_source
@@ -2240,9 +2187,7 @@ def test_same_file_legacy_injection_is_not_covered_by_existing_approval(tmp_path
 def test_active_user_copy_uses_canonical_paths_and_settings():
     expected = {
         "frontend/src/app/(dashboard)/page.tsx": ("~/.deeper-notebook/",),
-        "frontend/src/lib/api/client.ts": (
-            "~/.deeper-notebook/logs/api.log",
-        ),
+        "frontend/src/lib/api/client.ts": ("~/.deeper-notebook/logs/api.log",),
         "docs/4-AI-PROVIDERS/local-models-tool-calling.md": (
             "DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID",
             "~/.deeper-notebook/launcher.env",
@@ -2267,21 +2212,13 @@ def test_active_user_copy_uses_canonical_paths_and_settings():
 
 def test_current_runtime_descriptions_use_deeper_notebook_name():
     expected_copy = {
-        "api/routers/auth.py": (
-            "Authentication router for Deeper Notebook API."
-        ),
-        "api/updates_service.py": (
-            "Deeper Notebook is privacy-first"
-        ),
+        "api/routers/auth.py": ("Authentication router for Deeper Notebook API."),
+        "api/updates_service.py": ("Deeper Notebook is privacy-first"),
         "deeper_notebook/exceptions.py": (
             "Base exception class for Deeper Notebook errors."
         ),
-        "deeper_notebook/domain/__init__.py": (
-            "Domain models for Deeper Notebook."
-        ),
-        "deeper_notebook/utils/__init__.py": (
-            "Utils package for Deeper Notebook."
-        ),
+        "deeper_notebook/domain/__init__.py": ("Domain models for Deeper Notebook."),
+        "deeper_notebook/utils/__init__.py": ("Utils package for Deeper Notebook."),
         "deeper_notebook/utils/token_utils.py": (
             "Token utilities for Deeper Notebook."
         ),
@@ -2291,9 +2228,7 @@ def test_current_runtime_descriptions_use_deeper_notebook_name():
         "deeper_notebook/utils/embedding.py": (
             "Unified embedding utilities for Deeper Notebook."
         ),
-        "deeper_notebook/utils/text_utils.py": (
-            "Text utilities for Deeper Notebook."
-        ),
+        "deeper_notebook/utils/text_utils.py": ("Text utilities for Deeper Notebook."),
         "deeper_notebook/utils/chunking.py": (
             "Chunking utilities for Deeper Notebook."
         ),
@@ -2321,9 +2256,9 @@ def test_podcast_default_profile_names_use_deeper_notebook():
 
 def test_current_bootstrap_and_connection_test_copy_use_deeper_notebook():
     bootstrap = (ROOT / "desktop/bootstrap.py").read_text(encoding="utf-8")
-    connection_tester = (
-        ROOT / "deeper_notebook/ai/connection_tester.py"
-    ).read_text(encoding="utf-8")
+    connection_tester = (ROOT / "deeper_notebook/ai/connection_tester.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "open 'Deeper Notebook.app'" in bootstrap
     assert 'text="Hello from Deeper Notebook"' in connection_tester
@@ -2344,12 +2279,8 @@ def test_current_cli_and_development_banners_use_deeper_notebook():
             "Development environment startup for Deeper Notebook",
             "=== Deeper Notebook Dev Startup ===",
         ),
-        ".pre-commit-config.yaml": (
-            "Pre-commit hooks for Deeper Notebook",
-        ),
-        ".env.example": (
-            "default ~/.deeper-notebook/logs",
-        ),
+        ".pre-commit-config.yaml": ("Pre-commit hooks for Deeper Notebook",),
+        ".env.example": ("default ~/.deeper-notebook/logs",),
     }
 
     for path, snippets in expected_copy.items():
@@ -2360,23 +2291,17 @@ def test_current_cli_and_development_banners_use_deeper_notebook():
 
 def test_current_operator_scripts_use_deeper_notebook_copy_and_compat_paths():
     expected_copy = {
-        "commands/__init__.py": (
-            "Surreal-commands integration for Deeper Notebook.",
-        ),
+        "commands/__init__.py": ("Surreal-commands integration for Deeper Notebook.",),
         "scripts/upstream_sync_guard.sh": (
             "Safe upstream integration guard for Deeper Notebook.",
             "deeper-notebook-upstream-sync-",
         ),
-        "scripts/ralph.sh": (
-            "autonomous AI agent loop for Deeper Notebook",
-        ),
+        "scripts/ralph.sh": ("autonomous AI agent loop for Deeper Notebook",),
         "scripts/backup_restore.py": (
             "Backup + restore for the Deeper Notebook data",
             "DEEPER_NOTEBOOK_DATA_DIR",
         ),
-        "scripts/create-signing-identity.sh": (
-            "Deeper Notebook Local",
-        ),
+        "scripts/create-signing-identity.sh": ("Deeper Notebook Local",),
         "scripts/live_source_ingestion_smoke.py": (
             "running native Deeper Notebook app",
             "Deeper Notebook live ingestion smoke marker",
@@ -2393,9 +2318,7 @@ def test_current_operator_scripts_use_deeper_notebook_copy_and_compat_paths():
         for snippet in snippets:
             assert snippet in source, f"{path}: {snippet}"
 
-    repair = (ROOT / "scripts/repair_desktop_db.sh").read_text(
-        encoding="utf-8"
-    )
+    repair = (ROOT / "scripts/repair_desktop_db.sh").read_text(encoding="utf-8")
     assert "/Applications/Deeper Notebook.app/" in repair
     assert "/Applications/Open Notebook Plus.app/" in repair
     assert "${HOME}/.deeper-notebook" in repair
@@ -2428,8 +2351,7 @@ def test_audit_scans_tracked_paths_and_content(tmp_path):
     unexpected = report["categories"]["unexpected_active_identity"]
 
     assert any(
-        match["source"] == "path"
-        and match["path"] == "legacy/open-notebook-plus.txt"
+        match["source"] == "path" and match["path"] == "legacy/open-notebook-plus.txt"
         for match in unexpected
     )
     assert any(
@@ -2444,9 +2366,7 @@ def test_audit_skips_only_its_self_referential_allowlist_metadata(tmp_path):
     repo = _init_tracked_repo(
         tmp_path / "repo",
         {
-            "scripts/rebrand-allowlist.json": (
-                '{"pattern": "Open Notebook Plus"}\n'
-            ),
+            "scripts/rebrand-allowlist.json": ('{"pattern": "Open Notebook Plus"}\n'),
             "active.txt": "Deeper Notebook\n",
         },
     )
@@ -2503,15 +2423,10 @@ def test_exact_context_does_not_hide_active_imports(tmp_path):
 
 
 def test_exact_context_does_not_hide_distinct_same_line_active_occurrence(tmp_path):
-    line = (
-        'legacy_module = open_notebook; submit_command('
-        '"open_notebook", "work", {})'
-    )
+    line = 'legacy_module = open_notebook; submit_command("open_notebook", "work", {})'
     repo = _init_tracked_repo(
         tmp_path / "repo",
-        {
-            "commands/example_commands.py": f"{line}\n"
-        },
+        {"commands/example_commands.py": f"{line}\n"},
     )
     key, approval = _approval(
         path="commands/example_commands.py",
@@ -2614,12 +2529,8 @@ def test_check_exits_for_unexpected_identity_and_passes_for_clean_repo(tmp_path)
 
 def test_vault_legacy_route_selector_rejects_an_unapproved_new_route(tmp_path):
     legacy_api_namespace = "/" + "api/" + "onp"
-    approved_line = (
-        f'    assert test_client.get("{legacy_api_namespace}/vaults").status_code == 404'
-    )
-    unapproved_line = (
-        f'    assert test_client.get("{legacy_api_namespace}/unapproved").status_code == 404'
-    )
+    approved_line = f'    assert test_client.get("{legacy_api_namespace}/vaults").status_code == 404'
+    unapproved_line = f'    assert test_client.get("{legacy_api_namespace}/unapproved").status_code == 404'
     root = _init_tracked_repo(
         tmp_path / "repo",
         {
@@ -2676,8 +2587,7 @@ def test_frontend_alias_contract_survives_additional_canonical_feature_flag():
     feature_aliases = [
         contract_id
         for key, contract_id in selectors.items()
-        if key[0] == "frontend/src/lib/features.ts"
-        and key[1] == legacy_alias_pattern
+        if key[0] == "frontend/src/lib/features.ts" and key[1] == legacy_alias_pattern
     ]
 
     assert len(feature_aliases) == 4

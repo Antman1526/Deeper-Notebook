@@ -58,26 +58,30 @@ from deeper_notebook.workspace.persistence import (
 
 
 def populated() -> KnowledgeWorkspaceDocument:
-    return KnowledgeWorkspaceDocument.model_validate({
-        "version": 1,
-        "active_pane_id": "pane-1",
-        "next_id": 2,
-        "panes": {
-            "pane-1": {
-                "id": "pane-1",
-                "active_tab_id": "tab:one",
-                "tabs": [{
-                    "id": "tab:one",
-                    "vault_id": "vault:one",
-                    "note_id": "note:one",
-                    "title": "One",
-                    "relative_path": "Projects/One.md",
-                    "view_mode": "reading",
-                }],
+    return KnowledgeWorkspaceDocument.model_validate(
+        {
+            "version": 1,
+            "active_pane_id": "pane-1",
+            "next_id": 2,
+            "panes": {
+                "pane-1": {
+                    "id": "pane-1",
+                    "active_tab_id": "tab:one",
+                    "tabs": [
+                        {
+                            "id": "tab:one",
+                            "vault_id": "vault:one",
+                            "note_id": "note:one",
+                            "title": "One",
+                            "relative_path": "Projects/One.md",
+                            "view_mode": "reading",
+                        }
+                    ],
+                },
             },
-        },
-        "layout": {"type": "pane", "pane_id": "pane-1"},
-    })
+            "layout": {"type": "pane", "pane_id": "pane-1"},
+        }
+    )
 
 
 def test_missing_workspace_returns_default(tmp_path: Path):
@@ -113,8 +117,10 @@ def test_failed_replace_preserves_previous_document(tmp_path: Path, monkeypatch)
     path = tmp_path / "knowledge.json"
     save_knowledge_workspace(populated(), path=path)
     original = path.read_bytes()
-    monkeypatch.setattr("deeper_notebook.workspace.persistence.os.replace",
-                        lambda *_: (_ for _ in ()).throw(OSError("injected")))
+    monkeypatch.setattr(
+        "deeper_notebook.workspace.persistence.os.replace",
+        lambda *_: (_ for _ in ()).throw(OSError("injected")),
+    )
     with pytest.raises(OSError, match="injected"):
         save_knowledge_workspace(default_knowledge_workspace(), path=path)
     assert path.read_bytes() == original
@@ -213,38 +219,56 @@ Create a minimal FastAPI app with the new router and monkeypatch the persistence
 ```py
 @pytest.mark.asyncio
 async def test_get_returns_default_and_put_survives_new_client(api_app):
-    async with AsyncClient(transport=ASGITransport(app=api_app),
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app), base_url="http://test"
+    ) as client:
         initial = await client.get("/api/deeper-notebook/workspace/knowledge")
         assert initial.status_code == 200
         payload = initial.json()
-        payload["panes"]["pane-1"]["tabs"] = [{
-            "id": "tab:one", "vault_id": "vault:one", "note_id": "note:one",
-            "title": "One", "relative_path": "One.md", "view_mode": "reading",
-        }]
+        payload["panes"]["pane-1"]["tabs"] = [
+            {
+                "id": "tab:one",
+                "vault_id": "vault:one",
+                "note_id": "note:one",
+                "title": "One",
+                "relative_path": "One.md",
+                "view_mode": "reading",
+            }
+        ]
         payload["panes"]["pane-1"]["active_tab_id"] = "tab:one"
-        saved = await client.put("/api/deeper-notebook/workspace/knowledge",
-                                 json=payload)
+        saved = await client.put(
+            "/api/deeper-notebook/workspace/knowledge", json=payload
+        )
         assert saved.status_code == 200
-    async with AsyncClient(transport=ASGITransport(app=api_app),
-                           base_url="http://test") as restarted_client:
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app), base_url="http://test"
+    ) as restarted_client:
         restored = await restarted_client.get(
-            "/api/deeper-notebook/workspace/knowledge")
+            "/api/deeper-notebook/workspace/knowledge"
+        )
     assert restored.json()["panes"]["pane-1"]["active_tab_id"] == "tab:one"
 
 
 @pytest.mark.asyncio
 async def test_put_rejects_absolute_relative_path(api_app):
     payload = default_knowledge_workspace().model_dump(mode="json")
-    payload["panes"]["pane-1"]["tabs"] = [{
-        "id": "tab:bad", "vault_id": "v", "note_id": "n", "title": "Bad",
-        "relative_path": "C:\\Users\\me\\secret.md", "view_mode": "reading",
-    }]
+    payload["panes"]["pane-1"]["tabs"] = [
+        {
+            "id": "tab:bad",
+            "vault_id": "v",
+            "note_id": "n",
+            "title": "Bad",
+            "relative_path": "C:\\Users\\me\\secret.md",
+            "view_mode": "reading",
+        }
+    ]
     payload["panes"]["pane-1"]["active_tab_id"] = "tab:bad"
-    async with AsyncClient(transport=ASGITransport(app=api_app),
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app), base_url="http://test"
+    ) as client:
         response = await client.put(
-            "/api/deeper-notebook/workspace/knowledge", json=payload)
+            "/api/deeper-notebook/workspace/knowledge", json=payload
+        )
     assert response.status_code == 422
 ```
 

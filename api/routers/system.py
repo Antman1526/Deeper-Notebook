@@ -28,6 +28,7 @@ Design choices:
     spawn. The whitelist is explicit; new use cases require adding the
     var name + a CHANGELOG note explaining why it's safe.
 """
+
 from __future__ import annotations
 
 import os
@@ -51,10 +52,12 @@ router = APIRouter()
 # DEEPER_NOTEBOOK_LOCAL_N_CTX — pushed by v0.8.40d after a successful
 #   hot_swap_chat so provision.py's router sees the new GGUF's native
 #   context length without app restart.
-_ALLOWED_ENV_VARS: frozenset[str] = frozenset({
-    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
-    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
-})
+_ALLOWED_ENV_VARS: frozenset[str] = frozenset(
+    {
+        "DEEPER_NOTEBOOK_LOCAL_N_CTX",
+        "DEEPER_NOTEBOOK_LOCAL_N_CTX",
+    }
+)
 
 
 class EnvRefreshRequest(BaseModel):
@@ -64,6 +67,7 @@ class EnvRefreshRequest(BaseModel):
     are honored; everything else is rejected with a 400 listing the
     offending names so the launcher knows to update its allowlist.
     """
+
     vars: dict[str, str]
 
 
@@ -108,7 +112,7 @@ async def env_refresh(
             status_code=401,
             detail="Missing or malformed Authorization header",
         )
-    presented = authorization[len("Bearer "):].strip()
+    presented = authorization[len("Bearer ") :].strip()
     if not secrets.compare_digest(presented, expected_token):
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -164,6 +168,7 @@ async def network_status() -> dict:
     degrades to {"status": "unknown"} so a probe bug can't paint the UI
     red or break the shell render."""
     import time as _time
+
     try:
         state = await get_network_state_with_settings()
         fallback_name = None

@@ -26,9 +26,7 @@ from deeper_notebook.exceptions import InvalidInputError, NotFoundError
 router = APIRouter()
 
 
-async def _cleanup_checkpoint_threads(
-    session_ids: list[str], *, context: str
-) -> int:
+async def _cleanup_checkpoint_threads(session_ids: list[str], *, context: str) -> int:
     """v0.8.48 — best-effort LangGraph checkpoint cleanup for chat
     sessions cascade-deleted by a notebook delete.
 
@@ -59,7 +57,8 @@ async def _cleanup_checkpoint_threads(
     except Exception as exc:  # import / attribute access failure
         logger.warning(
             "Checkpoint cleanup unavailable for {} (non-fatal): {}",
-            context, exc,
+            context,
+            exc,
         )
         return 0
     if delete_thread is None:
@@ -73,11 +72,15 @@ async def _cleanup_checkpoint_threads(
             logger.warning(
                 "Checkpoint cleanup failed for session {} ({}) — "
                 "non-fatal, row already deleted: {}",
-                sid, context, cleanup_exc,
+                sid,
+                context,
+                cleanup_exc,
             )
     logger.debug(
         "Cleaned up {}/{} checkpoint thread(s) for {}",
-        cleaned, len(session_ids), context,
+        cleaned,
+        len(session_ids),
+        context,
     )
     return cleaned
 
@@ -165,9 +168,7 @@ async def get_notebooks(
         raise
     except Exception as e:
         logger.error(f"Error fetching notebooks: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching notebooks"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching notebooks")
 
 
 @router.post("/notebooks", response_model=NotebookResponse)
@@ -199,9 +200,7 @@ async def create_notebook(notebook: NotebookCreate):
         raise
     except Exception as e:
         logger.error(f"Error creating notebook: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error creating notebook"
-        )
+        raise HTTPException(status_code=500, detail="Error creating notebook")
 
 
 @router.get(
@@ -276,9 +275,7 @@ async def get_notebook(notebook_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching notebook {notebook_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching notebook"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching notebook")
 
 
 # v0.8.74 — Suggested starter questions (improvement roadmap, Batch 1).
@@ -301,9 +298,7 @@ _SUGGESTED_QUESTIONS_SYSTEM = (
 
 
 @router.get("/notebooks/{notebook_id}/suggested-questions")
-async def get_suggested_questions(
-    notebook_id: str, limit: int = Query(4, ge=1, le=8)
-):
+async def get_suggested_questions(notebook_id: str, limit: int = Query(4, ge=1, le=8)):
     """Generate starter questions grounded in the notebook's sources.
 
     Best-effort: returns ``{"questions": []}`` on any failure (no sources, no
@@ -333,7 +328,9 @@ async def get_suggested_questions(
     try:
         sources = await notebook.get_sources()
     except Exception as e:
-        logger.warning(f"suggested-questions: get_sources failed for {notebook_id}: {e}")
+        logger.warning(
+            f"suggested-questions: get_sources failed for {notebook_id}: {e}"
+        )
         return {"questions": []}
     if not sources:
         return {"questions": []}
@@ -518,9 +515,7 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating notebook {notebook_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error updating notebook"
-        )
+        raise HTTPException(status_code=500, detail="Error updating notebook")
 
 
 @router.post("/notebooks/{notebook_id}/sources/{source_id}")
@@ -579,9 +574,7 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
         logger.error(
             f"Error linking source {source_id} to notebook {notebook_id}: {str(e)}"
         )
-        raise HTTPException(
-            status_code=500, detail="Error linking source to notebook"
-        )
+        raise HTTPException(status_code=500, detail="Error linking source to notebook")
 
 
 @router.delete("/notebooks/{notebook_id}/sources/{source_id}")
@@ -640,7 +633,9 @@ async def delete_notebook(
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
 
-        result = await notebook.delete(delete_exclusive_sources=delete_exclusive_sources)
+        result = await notebook.delete(
+            delete_exclusive_sources=delete_exclusive_sources
+        )
 
         # v0.8.48 — clean up the LangGraph checkpoint threads for the chat
         # sessions this delete cascaded away (see _cleanup_checkpoint_threads).
@@ -667,6 +662,4 @@ async def delete_notebook(
         raise
     except Exception as e:
         logger.error(f"Error deleting notebook {notebook_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error deleting notebook"
-        )
+        raise HTTPException(status_code=500, detail="Error deleting notebook")

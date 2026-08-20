@@ -7,6 +7,7 @@ the same PasswordAuthMiddleware as the rest of the API.
     POST /api/updates/skip          — remember a version the user skipped
     PUT  /api/updates/settings      — toggle automatic checking on/off
 """
+
 from __future__ import annotations
 
 from typing import Literal

@@ -5,6 +5,7 @@ The full OAuth round-trip and the network-bound _refresh_access_token are
 intentionally NOT covered here (would require mocking httpx + Google);
 that's left for a future integration suite.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -36,8 +37,8 @@ def test_result_page_escapes_title_and_body():
 def test_result_page_color_reflects_ok_flag():
     ok_page = gmail_mod._result_page("Connected!", "yay", ok=True).body.decode()
     fail_page = gmail_mod._result_page("Failed", "boo", ok=False).body.decode()
-    assert "#14B870" in ok_page   # green
-    assert "#C44" in fail_page     # red
+    assert "#14B870" in ok_page  # green
+    assert "#C44" in fail_page  # red
 
 
 def test_purge_stale_states_drops_expired_entries():
@@ -263,17 +264,12 @@ def test_v0824_send_test_endpoint_sanitizes_exception_detail():
         f"OAuth access token leaked into send-test response: {detail!r}. "
         f"v0.8.24 fix: emit type(exc).__name__, not str(exc)."
     )
-    assert "WS frame" not in detail, (
-        f"SurrealDB internal leaked: {detail!r}."
-    )
-    assert "alice@example.com" not in detail, (
-        f"User email leaked: {detail!r}."
-    )
+    assert "WS frame" not in detail, f"SurrealDB internal leaked: {detail!r}."
+    assert "alice@example.com" not in detail, f"User email leaked: {detail!r}."
     # And the type name IS present so the operator can correlate
     # with the log line written by log.exception above.
     assert "RuntimeError" in detail, (
-        f"Expected exception type name in {detail!r} for operator "
-        f"triage."
+        f"Expected exception type name in {detail!r} for operator triage."
     )
 
 
@@ -345,9 +341,7 @@ def test_v0824_oauth_callback_sanitizes_token_exchange_error():
         f"OAuth client_id leaked into HTML page. v0.8.24 fix: emit "
         f"only type(exc).__name__, point user at launcher.log."
     )
-    assert "GOCSPX-SUPER" not in body, (
-        f"Client-secret fragment leaked into HTML page."
-    )
+    assert "GOCSPX-SUPER" not in body, f"Client-secret fragment leaked into HTML page."
     # And the type name IS present for operator triage.
     assert "RuntimeError" in body, (
         f"Expected exception type name in callback HTML for triage."

@@ -48,9 +48,12 @@ Create tests that parse a `SlideDeckDocument` and `InfographicDocument`, call th
 ```python
 from open_notebook.studio.exporters import export_infographic, export_slide_deck
 
+
 def test_visual_exporters_reject_the_wrong_document(tmp_path):
     with pytest.raises(TypeError, match="SlideDeckDocument"):
-        export_slide_deck(infographic_document(), tmp_path / "wrong.pptx", tmp_path / "wrong.pdf")
+        export_slide_deck(
+            infographic_document(), tmp_path / "wrong.pptx", tmp_path / "wrong.pdf"
+        )
 ```
 
 - [x] **Step 2: Verify RED**

@@ -30,6 +30,7 @@ Five fixes:
    stuck-running worker polled forever. After 15 min (450 ticks)
    fall back to 30s background pulse.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -70,10 +71,7 @@ def test_command_service_uses_iso_for_list_jobs():
     code_only = "\n".join(
         ln for ln in src.splitlines() if not ln.lstrip().startswith("#")
     )
-    assert (
-        'str(row.get("created")) if row.get("created") else None'
-        not in code_only
-    ), (
+    assert 'str(row.get("created")) if row.get("created") else None' not in code_only, (
         "v0.7.202 regression: list_command_jobs reverted to raw "
         "str(row.get('created')). Safari new Date() breaks."
     )
@@ -90,10 +88,7 @@ def test_healthz_deep_has_defensive_check_defaults():
     instead of the structured 503 payload."""
     src = _src("api/main.py")
     # Pin the defensive-default block by its v0.7.202 marker.
-    assert (
-        'checks["database"] = {"ok": False, "status": "unknown"}'
-        in src
-    )
+    assert 'checks["database"] = {"ok": False, "status": "unknown"}' in src
     assert 'checks["migrations"] = {"ok": False}' in src
 
 

@@ -74,7 +74,9 @@ def test_invocation_idempotency_ignores_server_generated_created_at() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_session_uses_parameterized_record_id_and_projects_safe_fields(monkeypatch):
+async def test_create_session_uses_parameterized_record_id_and_projects_safe_fields(
+    monkeypatch,
+):
     calls: list[tuple[str, dict[str, object]]] = []
 
     async def query(sql, params):
@@ -100,7 +102,9 @@ async def test_create_session_uses_parameterized_record_id_and_projects_safe_fie
         ]
 
     monkeypatch.setattr(assistant_repository, "repo_query", query)
-    result = await StudyAssistantRepository().create_session(_invocation(), request_id="request-one")
+    result = await StudyAssistantRepository().create_session(
+        _invocation(), request_id="request-one"
+    )
     assert result.session_id == "study_assistant_session:one"
     assert result.role == "source_guide"
     assert not hasattr(result, "provider_payload")
@@ -176,11 +180,11 @@ async def test_handoff_request_lookup_is_exact_projection_only(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_completion_persists_session_and_handoff_in_one_guarded_transaction(monkeypatch):
+async def test_completion_persists_session_and_handoff_in_one_guarded_transaction(
+    monkeypatch,
+):
     calls: list[tuple[str, dict[str, object]]] = []
-    handoff = _handoff().model_copy(
-        update={"request_id": "request-one:handoff"}
-    )
+    handoff = _handoff().model_copy(update={"request_id": "request-one:handoff"})
     session_row = {
         "id": "study_assistant_session:one",
         "plan_id": PLAN_ID,
@@ -242,21 +246,26 @@ async def test_completion_persists_session_and_handoff_in_one_guarded_transactio
     transaction, params = next(
         (sql, params) for sql, params in calls if "BEGIN TRANSACTION" in sql
     )
-    assert "status = \"running\"" in transaction
+    assert 'status = "running"' in transaction
     assert "revision = $expected_revision" in transaction
     assert "CREATE $assistant_handoff CONTENT $handoff_payload" in transaction
     assert "UPDATE $assistant_session MERGE $session_patch" in transaction
     assert "study_assistant_authority_guard_failed" in transaction
     assert "$study_plan" in transaction
     assert "$syllabus_approved_at" in transaction
-    assert "time::floor(approved_at, 1us) = time::floor($syllabus_approved_at, 1us)" in transaction
+    assert (
+        "time::floor(approved_at, 1us) = time::floor($syllabus_approved_at, 1us)"
+        in transaction
+    )
     assert "crypto::sha256(full_text)" in transaction
     assert params["expected_revision"] == 2
     assert params["plan_revision"] == 3
 
 
 @pytest.mark.parametrize("state", ["approved", "generating", "active", "completed"])
-def test_completion_authority_guard_accepts_learning_lifecycle_states(state: str) -> None:
+def test_completion_authority_guard_accepts_learning_lifecycle_states(
+    state: str,
+) -> None:
     assert state in assistant_repository._ASSISTANT_PLAN_STATES
 
 
@@ -335,7 +344,9 @@ async def test_concurrent_mismatched_session_winner_is_a_typed_conflict(monkeypa
 
     monkeypatch.setattr(assistant_repository, "repo_query", query)
     with pytest.raises(StudyAssistantConflictError):
-        await StudyAssistantRepository().create_session(loser, request_id="same-request")
+        await StudyAssistantRepository().create_session(
+            loser, request_id="same-request"
+        )
 
 
 @pytest.mark.asyncio
@@ -354,7 +365,9 @@ async def test_concurrent_mismatched_handoff_winner_is_a_typed_conflict(monkeypa
         "user_decision": "pending",
         "created_at": NOW,
         "idempotency_hash": assistant_repository._handoff_hash(
-            _handoff().model_copy(update={"observation": "Different observation won concurrently."}),
+            _handoff().model_copy(
+                update={"observation": "Different observation won concurrently."}
+            ),
             "same-handoff",
         ),
     }
@@ -370,7 +383,9 @@ async def test_concurrent_mismatched_handoff_winner_is_a_typed_conflict(monkeypa
 
     monkeypatch.setattr(assistant_repository, "repo_query", query)
     with pytest.raises(StudyAssistantConflictError):
-        await StudyAssistantRepository().append_handoff(handoff, request_id="same-handoff")
+        await StudyAssistantRepository().append_handoff(
+            handoff, request_id="same-handoff"
+        )
 
 
 @pytest.mark.asyncio
@@ -412,7 +427,9 @@ async def test_concurrent_mismatched_memory_winner_is_a_typed_conflict(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_memory_and_progress_pages_cap_before_projection_materialization(monkeypatch):
+async def test_memory_and_progress_pages_cap_before_projection_materialization(
+    monkeypatch,
+):
     memory_row = {
         "id": "study_plan_memory:one",
         "plan_id": PLAN_ID,
@@ -439,7 +456,10 @@ async def test_memory_and_progress_pages_cap_before_projection_materialization(m
     async def query(sql, params):
         calls.append((sql, params))
         if "study_plan_memory" in sql:
-            return [dict(memory_row, memory_key=f"preference.answer_style.{i}") for i in range(500)]
+            return [
+                dict(memory_row, memory_key=f"preference.answer_style.{i}")
+                for i in range(500)
+            ]
         return [dict(progress_row, request_id=f"progress-{i}") for i in range(500)]
 
     monkeypatch.setattr(assistant_repository, "repo_query", query)

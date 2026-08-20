@@ -4,6 +4,7 @@ MCP-server / web-search results are attacker-influenceable and were injected
 verbatim into the conversation. The fence wraps them as DATA with a directive
 not to follow embedded instructions, and escapes any forged end-delimiter.
 """
+
 from __future__ import annotations
 
 from deeper_notebook.graphs.chat import _fence_untrusted_tool_output

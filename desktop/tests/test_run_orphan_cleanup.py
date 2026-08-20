@@ -11,6 +11,7 @@ This test patches the phases to:
   2. Inject a failure in a post-supervisor phase
   3. Assert stop_all() WAS called before run() re-raises
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -56,14 +57,19 @@ def _patch_post_phases(mp, **overrides):
         mp.setattr(f"desktop.app.{name}", impl)
 
 
-@pytest.mark.parametrize("failing_phase", [
-    "_phase_auto_register",
-    "_phase_start_model_manager",
-    "_phase_start_memory_dashboard",
-    "_phase_install_tray",
-    "_phase_open_window",
-])
-def test_run_calls_stop_all_when_post_supervisor_phase_raises(monkeypatch, failing_phase):
+@pytest.mark.parametrize(
+    "failing_phase",
+    [
+        "_phase_auto_register",
+        "_phase_start_model_manager",
+        "_phase_start_memory_dashboard",
+        "_phase_install_tray",
+        "_phase_open_window",
+    ],
+)
+def test_run_calls_stop_all_when_post_supervisor_phase_raises(
+    monkeypatch, failing_phase
+):
     """Each post-supervisor phase, if it raises, must trigger sv.stop_all()
     so SurrealDB / FastAPI / Next.js children aren't orphaned on the user's
     machine."""
@@ -71,14 +77,18 @@ def test_run_calls_stop_all_when_post_supervisor_phase_raises(monkeypatch, faili
 
     # The supervisor starts successfully and attaches to ctx
     sv_holder = {}
+
     def _fake_start_supervisor(ctx):
         sv_holder["sv"] = _attach_fake_sv(ctx)
+
     monkeypatch.setattr(app_mod, "_phase_start_supervisor", _fake_start_supervisor)
 
     _patch_pre_phases(monkeypatch)
+
     # One phase raises; the rest are no-ops
     def _boom(_ctx):
         raise RuntimeError("simulated phase failure")
+
     _patch_post_phases(monkeypatch, **{failing_phase: _boom})
 
     with pytest.raises(RuntimeError, match=r"simulated phase failure"):
@@ -98,8 +108,10 @@ def test_run_does_not_call_stop_all_on_success(monkeypatch):
     from desktop import app as app_mod
 
     sv_holder = {}
+
     def _fake_start_supervisor(ctx):
         sv_holder["sv"] = _attach_fake_sv(ctx)
+
     monkeypatch.setattr(app_mod, "_phase_start_supervisor", _fake_start_supervisor)
 
     _patch_pre_phases(monkeypatch)
@@ -126,6 +138,7 @@ def test_run_swallows_stop_all_error_but_reraises_original(monkeypatch):
 
     def _boom(_ctx):
         raise ValueError("the real reason")
+
     _patch_post_phases(monkeypatch, _phase_install_tray=_boom)
 
     with pytest.raises(ValueError, match=r"the real reason"):

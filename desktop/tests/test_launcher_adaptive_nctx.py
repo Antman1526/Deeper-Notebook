@@ -14,6 +14,7 @@ chat failure. These tests pin:
   - that an explicit DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX still overrides the adaptive
     default (operator retains full control).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -25,7 +26,7 @@ def _patch_ram(monkeypatch, gib, platform="darwin"):
     """Make desktop.launcher see `gib` GiB of physical RAM on `platform`."""
     monkeypatch.setattr("desktop.launcher.sys.platform", platform)
     page = 16384
-    pages = int(gib * (1024 ** 3) / page)
+    pages = int(gib * (1024**3) / page)
     monkeypatch.setattr(
         "desktop.launcher.os.sysconf_names",
         {"SC_PHYS_PAGES": 1, "SC_PAGE_SIZE": 2},
@@ -39,15 +40,13 @@ def _patch_ram(monkeypatch, gib, platform="darwin"):
             return page
         raise ValueError(name)
 
-    monkeypatch.setattr(
-        "desktop.launcher.os.sysconf", fake_sysconf, raising=False
-    )
+    monkeypatch.setattr("desktop.launcher.os.sysconf", fake_sysconf, raising=False)
     # v0.8.67l — report ample AVAILABLE RAM so the pressure backoff is a no-op
     # here; the backoff itself is covered by the _pressure_adjusted_ctx_max
     # tests below. Keeps the total-RAM-tier assertions deterministic.
     monkeypatch.setattr(
         "desktop.launcher.Supervisor._available_ram_bytes",
-        staticmethod(lambda: gib * (1024 ** 3)),
+        staticmethod(lambda: gib * (1024**3)),
     )
 
 
@@ -55,12 +54,12 @@ def _patch_ram(monkeypatch, gib, platform="darwin"):
     "gib,expected",
     [
         (128, 98304),
-        (64, 98304),   # the user's machine
-        (56, 98304),   # lower edge of the top tier
+        (64, 98304),  # the user's machine
+        (56, 98304),  # lower edge of the top tier
         (48, 65536),
-        (40, 65536),   # lower edge
+        (40, 65536),  # lower edge
         (32, 49152),
-        (28, 49152),   # lower edge
+        (28, 49152),  # lower edge
         (24, 32768),
         (16, 32768),
         (8, 32768),
@@ -131,7 +130,7 @@ def test_no_env_uses_adaptive_default(monkeypatch):
 
 # --- v0.8.67l memory-pressure backoff (pure) ----------------------------------
 
-_GIB = 1024 ** 3
+_GIB = 1024**3
 
 
 def test_pressure_backoff_noop_when_roomy():

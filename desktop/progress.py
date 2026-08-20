@@ -7,6 +7,7 @@ Publishes structured events to:
 Thread-safe; the launcher's main thread publishes, the wizard server's
 SSE handler subscribes from its own request-handler thread.
 """
+
 from __future__ import annotations
 
 import json
@@ -21,7 +22,7 @@ from typing import Iterator, TypedDict
 class ProgressEvent(TypedDict):
     ts: str
     step: str
-    status: str   # "running" | "done" | "error"
+    status: str  # "running" | "done" | "error"
     message: str
 
 
@@ -45,7 +46,10 @@ class ProgressBus:
     def _rotate_if_oversized(self) -> None:
         """Cheap stat check on startup; move to .old if over the cap."""
         try:
-            if self.log_path.exists() and self.log_path.stat().st_size > self._MAX_LOG_BYTES:
+            if (
+                self.log_path.exists()
+                and self.log_path.stat().st_size > self._MAX_LOG_BYTES
+            ):
                 old = self.log_path.with_suffix(self.log_path.suffix + ".old")
                 old.unlink(missing_ok=True)
                 self.log_path.rename(old)
@@ -69,8 +73,9 @@ class ProgressBus:
                 except queue.Full:
                     pass
 
-    def subscribe(self, timeout: float = 60.0, replay: bool = False
-                  ) -> Iterator[ProgressEvent]:
+    def subscribe(
+        self, timeout: float = 60.0, replay: bool = False
+    ) -> Iterator[ProgressEvent]:
         """Yield events until `ready/done` arrives or timeout idles out.
 
         replay=True yields all events published so far (history) first, then

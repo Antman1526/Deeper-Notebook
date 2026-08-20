@@ -8,6 +8,7 @@ OpenAI/Azure-style providers. Runs fully local with local models — in
 keeping with the app's privacy-first stance, no data leaves the machine
 unless the chosen models are cloud models (the caller gates that).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -62,11 +63,19 @@ def ensure_skillopt_prompts(dest_dir: Optional[Path] = None) -> int:
         )
     return copied
 
+
 # Providers whose esperanto config carries an OpenAI-compatible base_url we
 # can hand straight to SkillOpt's openai_chat backend.
 _OPENAI_COMPATIBLE_PROVIDERS = {
-    "openai", "openai_compatible", "ollama", "azure", "deepseek",
-    "groq", "mistral", "xai", "openrouter",
+    "openai",
+    "openai_compatible",
+    "ollama",
+    "azure",
+    "deepseek",
+    "groq",
+    "mistral",
+    "xai",
+    "openrouter",
 }
 
 _PROVIDER_DEFAULT_ENDPOINTS = {

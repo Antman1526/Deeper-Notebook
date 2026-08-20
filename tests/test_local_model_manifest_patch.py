@@ -1,4 +1,5 @@
 """Safe manifest row preview/apply tests for local model curation."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,13 +21,15 @@ def _write_manifest(root: Path) -> Path:
     manifest = root / "manifests" / "model_inventory.md"
     manifest.parent.mkdir(parents=True)
     manifest.write_text(
-        "\n".join([
-            "# Local Model Inventory",
-            "",
-            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
-            "|---|---|---|---|---|---|---|",
-            f"| Coding Assistant - GGUF | primary | `local/Qwen3-Coder` | `{root / 'GGUF' / 'qwen-coder.gguf'}` | GGUF | downloaded - verified | ready |",
-        ])
+        "\n".join(
+            [
+                "# Local Model Inventory",
+                "",
+                "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+                "|---|---|---|---|---|---|---|",
+                f"| Coding Assistant - GGUF | primary | `local/Qwen3-Coder` | `{root / 'GGUF' / 'qwen-coder.gguf'}` | GGUF | downloaded - verified | ready |",
+            ]
+        )
         + "\n"
     )
     return manifest
@@ -59,7 +62,9 @@ def test_manifest_row_preview_validates_without_writing(monkeypatch, tmp_path):
     assert manifest.read_text() == original
 
 
-def test_manifest_row_apply_appends_normalized_row_and_creates_backup(monkeypatch, tmp_path):
+def test_manifest_row_apply_appends_normalized_row_and_creates_backup(
+    monkeypatch, tmp_path
+):
     manifest = _write_manifest(tmp_path)
     original = manifest.read_text()
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(tmp_path))
@@ -137,7 +142,9 @@ def test_manifest_row_preview_requires_configured_model_dir(monkeypatch, tmp_pat
     with TestClient(_app()) as client:
         resp = client.post(
             "/api/local-models/manifest/rows/preview",
-            json={"row": "| A | b | `repo/name` | `/tmp/model.gguf` | GGUF | suggested | note |"},
+            json={
+                "row": "| A | b | `repo/name` | `/tmp/model.gguf` | GGUF | suggested | note |"
+            },
         )
 
     assert resp.status_code == 400

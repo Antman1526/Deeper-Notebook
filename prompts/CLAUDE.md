@@ -23,9 +23,7 @@ Centralized prompt repository using `ai_prompter` library to:
 from ai_prompter import Prompter
 
 # Load template + render with variables
-system_prompt = Prompter(prompt_template="ask/entry", parser=parser).render(
-    data=state
-)
+system_prompt = Prompter(prompt_template="ask/entry", parser=parser).render(data=state)
 
 # Then invoke LLM
 model = await provision_langchain_model(system_prompt, ...)
@@ -134,7 +132,10 @@ Guides models with extended thinking capability to separate reasoning from outpu
 4. **Reference in calling code** (graphs/):
    ```python
    from ai_prompter import Prompter
-   prompt = Prompter(prompt_template="new_workflow/template_name").render(data=context_dict)
+
+   prompt = Prompter(prompt_template="new_workflow/template_name").render(
+       data=context_dict
+   )
    ```
 5. **If structured output needed**: Pass `parser=PydanticOutputParser(...)` to Prompter
 6. **Document in graphs/CLAUDE.md** how new template fits into workflow chain
@@ -158,9 +159,7 @@ Guides models with extended thinking capability to separate reasoning from outpu
 ```python
 from ai_prompter import Prompter
 
-prompt = Prompter(prompt_template="ask/entry").render(
-    data={"question": "What is RAG?"}
-)
+prompt = Prompter(prompt_template="ask/entry").render(data={"question": "What is RAG?"})
 print(prompt)  # Inspect Jinja2 output before sending to LLM
 ```
 
@@ -169,9 +168,11 @@ print(prompt)  # Inspect Jinja2 output before sending to LLM
 from pydantic import BaseModel
 from langchain_core.output_parsers.pydantic import PydanticOutputParser
 
+
 class Strategy(BaseModel):
     reasoning: str
     searches: list
+
 
 parser = PydanticOutputParser(pydantic_object=Strategy)
 prompt = Prompter(prompt_template="ask/entry", parser=parser).render(

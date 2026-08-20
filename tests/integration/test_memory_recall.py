@@ -59,11 +59,19 @@ async def test_recall_recent_memory_against_real_surrealdb(clean_namespace):
     now = datetime.now(timezone.utc)
     dummy_embedding = [0.0] * 768
     facts_payload = [
-        {"text": "fact-OLDER",  "created_at": now.replace(microsecond=0), "embedding": dummy_embedding},
-        {"text": "fact-NEWER",  "created_at": now, "embedding": dummy_embedding},
+        {
+            "text": "fact-OLDER",
+            "created_at": now.replace(microsecond=0),
+            "embedding": dummy_embedding,
+        },
+        {"text": "fact-NEWER", "created_at": now, "embedding": dummy_embedding},
     ]
     prefs_payload = [
-        {"text": "pref-OLDER", "created_at": now.replace(microsecond=0), "embedding": dummy_embedding},
+        {
+            "text": "pref-OLDER",
+            "created_at": now.replace(microsecond=0),
+            "embedding": dummy_embedding,
+        },
         {"text": "pref-NEWER", "created_at": now, "embedding": dummy_embedding},
     ]
     for row in facts_payload:
@@ -100,8 +108,7 @@ async def test_recall_recent_memory_against_real_surrealdb(clean_namespace):
     fact_texts = [f["text"] for f in result["facts"]]
     pref_texts = [p["text"] for p in result["preferences"]]
     assert fact_texts[0] == "fact-NEWER", (
-        f"v0.8.30: facts must be ordered by created_at DESC. "
-        f"Got order: {fact_texts}"
+        f"v0.8.30: facts must be ordered by created_at DESC. Got order: {fact_texts}"
     )
     assert pref_texts[0] == "pref-NEWER", (
         f"v0.8.30: preferences must be ordered by created_at DESC. "

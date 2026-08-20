@@ -1,4 +1,5 @@
 """Ollama provider: detection + model listing only. Ollama daemon is user-managed."""
+
 from __future__ import annotations
 
 import httpx
@@ -9,7 +10,9 @@ from desktop.providers import ProviderEnv
 class OllamaProvider:
     name: str = "ollama"
 
-    def __init__(self, base_url: str = "http://127.0.0.1:11434", timeout: float = 1.0) -> None:
+    def __init__(
+        self, base_url: str = "http://127.0.0.1:11434", timeout: float = 1.0
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 

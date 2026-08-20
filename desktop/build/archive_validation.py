@@ -67,7 +67,9 @@ def _validate_layout(
     name_set = set(names)
     root = _normalise_member_name(expected_root)
     if any(not name.parts or name.parts[0] != root.parts[0] for name in name_set):
-        raise ValueError(f"archive contains an unexpected top-level layout (expected {root})")
+        raise ValueError(
+            f"archive contains an unexpected top-level layout (expected {root})"
+        )
     if not any(name == root or root in name.parents for name in name_set):
         raise ValueError(f"archive is missing expected root {root}")
 

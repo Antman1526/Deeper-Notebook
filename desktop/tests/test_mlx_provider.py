@@ -82,17 +82,19 @@ def test_start_spawns_mlx_server_and_returns_openai_compatible_env(
     assert isinstance(env, ProviderEnv)
     assert env["OPENAI_COMPATIBLE_BASE_URL"] == "http://127.0.0.1:51231/v1"
     assert env["OPENAI_COMPATIBLE_API_KEY"] == "sk-no-key"
-    assert captured == [[
-        configured_python,
-        "-m",
-        "mlx_lm.server",
-        "--model",
-        str(mlx_model_root / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"),
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "51231",
-    ]]
+    assert captured == [
+        [
+            configured_python,
+            "-m",
+            "mlx_lm.server",
+            "--model",
+            str(mlx_model_root / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "51231",
+        ]
+    ]
 
     provider.stop()
     fake_proc.terminate.assert_called_once()
@@ -123,7 +125,9 @@ def test_start_can_defer_configured_model_validation(mlx_model_root, monkeypatch
     provider.stop()
 
 
-def test_start_can_return_before_a_configured_worker_is_ready(mlx_model_root, monkeypatch):
+def test_start_can_return_before_a_configured_worker_is_ready(
+    mlx_model_root, monkeypatch
+):
     fake_proc = MagicMock(spec=subprocess.Popen)
     fake_proc.poll.return_value = None
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake_proc)
@@ -181,9 +185,7 @@ def test_start_refuses_missing_path_even_without_validation(
     assert spawned == [], "must not spawn a server for a nonexistent model"
 
 
-def test_start_captures_stderr_to_data_root_log(
-    mlx_model_root, monkeypatch, tmp_path
-):
+def test_start_captures_stderr_to_data_root_log(mlx_model_root, monkeypatch, tmp_path):
     """v0.8.85 — the MLX server's stderr must land in a log, not DEVNULL:
     a dying server's traceback was the missing evidence for hours."""
     captured = {}
@@ -198,9 +200,7 @@ def test_start_captures_stderr_to_data_root_log(
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
     monkeypatch.setattr("desktop.providers.mlx.find_free_port", lambda: 51230)
-    monkeypatch.setattr(
-        "desktop.data_root.active_data_root", lambda: tmp_path
-    )
+    monkeypatch.setattr("desktop.data_root.active_data_root", lambda: tmp_path)
 
     provider = MlxProvider(model_dir=mlx_model_root)
     provider.start(

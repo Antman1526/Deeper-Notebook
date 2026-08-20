@@ -227,8 +227,12 @@ async def test_assistant_session_handoff_memory_and_progress_are_durable(
         user_decision="pending",
         created_at=now,
     )
-    first_handoff = await assistant.append_handoff(handoff, request_id="handoff-request")
-    retry_handoff = await assistant.append_handoff(handoff, request_id="handoff-request")
+    first_handoff = await assistant.append_handoff(
+        handoff, request_id="handoff-request"
+    )
+    retry_handoff = await assistant.append_handoff(
+        handoff, request_id="handoff-request"
+    )
     assert first_handoff == retry_handoff
     assert await assistant.list_handoffs(plan_id, limit=999) == (first_handoff,)
 
@@ -248,16 +252,26 @@ async def test_assistant_session_handoff_memory_and_progress_are_durable(
     )
     assert persisted_memory.memory_key == memory.memory_key
     assert (
-        await assistant.upsert_memory(memory, expected_revision=0, request_id="memory-request")
+        await assistant.upsert_memory(
+            memory, expected_revision=0, request_id="memory-request"
+        )
         == persisted_memory
     )
     assert await assistant.get_memory(plan_id, memory.memory_key) == persisted_memory
 
     for index, invalid in enumerate(
         (
-            {"status": "inferred", "confirmation_required": False, "confirmed_at": None},
+            {
+                "status": "inferred",
+                "confirmation_required": False,
+                "confirmed_at": None,
+            },
             {"status": "active", "confirmation_required": True, "confirmed_at": None},
-            {"status": "confirmed", "confirmation_required": False, "confirmed_at": now},
+            {
+                "status": "confirmed",
+                "confirmation_required": False,
+                "confirmed_at": now,
+            },
         )
     ):
         with pytest.raises(Exception):
@@ -337,8 +351,8 @@ async def test_assistant_completion_publishes_one_atomic_replay_receipt(
         },
     )
     await repo_query(
-        'CREATE $study_syllabus CONTENT { schema_version: 1, plan_id: $plan_id, '
-        'version: 1, source_manifest_sha256: $manifest, '
+        "CREATE $study_syllabus CONTENT { schema_version: 1, plan_id: $plan_id, "
+        "version: 1, source_manifest_sha256: $manifest, "
         'approved_at: d"2026-08-12T12:00:00.123456789Z", created_at: $created_at } RETURN AFTER;',
         {
             "study_syllabus": ensure_record_id(
@@ -403,33 +417,30 @@ async def test_assistant_completion_publishes_one_atomic_replay_receipt(
     assert completed.response_id == "study_assistant_response:completion"
     assert persisted_handoff.observation == handoff.observation
     assert await assistant.get_session(running.session_id) == completed
-    assert (
-        await assistant.complete_session(
-            running.session_id,
-            handoff,
-            expected_revision=running.revision,
-            response_id="study_assistant_response:completion",
-            completed_at=now,
-            authority_guard={
-                "plan_revision": 1,
-                "plan_state": "active",
-                "syllabus_version": 1,
-                "source_ids": (evidence_id,),
-                "syllabus_approved_at": approved_at,
-                "source_manifest_sha256": "a" * 64,
-                "model_route": "local",
-                "network_allowed": False,
-                "network_scope": (),
-                "source_evidence": (
-                    {
-                        "source_id": evidence_id,
-                        "full_text_sha256": evidence_sha256,
-                    },
-                ),
-            },
-        )
-        == (completed, persisted_handoff)
-    )
+    assert await assistant.complete_session(
+        running.session_id,
+        handoff,
+        expected_revision=running.revision,
+        response_id="study_assistant_response:completion",
+        completed_at=now,
+        authority_guard={
+            "plan_revision": 1,
+            "plan_state": "active",
+            "syllabus_version": 1,
+            "source_ids": (evidence_id,),
+            "syllabus_approved_at": approved_at,
+            "source_manifest_sha256": "a" * 64,
+            "model_route": "local",
+            "network_allowed": False,
+            "network_scope": (),
+            "source_evidence": (
+                {
+                    "source_id": evidence_id,
+                    "full_text_sha256": evidence_sha256,
+                },
+            ),
+        },
+    ) == (completed, persisted_handoff)
 
     drift_invocation = invocation.model_copy(
         update={
@@ -489,9 +500,12 @@ async def test_assistant_completion_publishes_one_atomic_replay_receipt(
     persisted_drift = await assistant.get_session(drift_running.session_id)
     assert persisted_drift is not None
     assert persisted_drift.status == "running"
-    assert await assistant.get_handoff_by_request(
-        plan_id, "assistant-authority-drift:handoff"
-    ) is None
+    assert (
+        await assistant.get_handoff_by_request(
+            plan_id, "assistant-authority-drift:handoff"
+        )
+        is None
+    )
 
 
 async def test_assistant_concurrent_mismatched_idempotency_winners_fail_closed(
@@ -502,7 +516,11 @@ async def test_assistant_concurrent_mismatched_idempotency_winners_fail_closed(
     assistant = StudyAssistantRepository()
     plan_id = "study_plan:assistant-concurrency"
     await repository.create(
-        StudyPlan(plan_id=plan_id, goal="Verify concurrent receipts", starting_level="beginner")
+        StudyPlan(
+            plan_id=plan_id,
+            goal="Verify concurrent receipts",
+            starting_level="beginner",
+        )
     )
     now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 
@@ -529,19 +547,30 @@ async def test_assistant_concurrent_mismatched_idempotency_winners_fail_closed(
         ),
         return_exceptions=True,
     )
-    assert sum(isinstance(result, StudyAssistantConflictError) for result in session_results) == 1
+    assert (
+        sum(
+            isinstance(result, StudyAssistantConflictError)
+            for result in session_results
+        )
+        == 1
+    )
     assert sum(not isinstance(result, BaseException) for result in session_results) == 1
-    winning_session = next(result for result in session_results if not isinstance(result, BaseException))
-    assert await assistant.create_session(
-        StudyAssistantInvocation(
-            plan_id=plan_id,
-            role=winning_session.role,
-            authority=winning_session.authority,
-            prompt="Same prompt",
-            created_at=now,
-        ),
-        request_id="concurrent-session",
-    ) == winning_session
+    winning_session = next(
+        result for result in session_results if not isinstance(result, BaseException)
+    )
+    assert (
+        await assistant.create_session(
+            StudyAssistantInvocation(
+                plan_id=plan_id,
+                role=winning_session.role,
+                authority=winning_session.authority,
+                prompt="Same prompt",
+                created_at=now,
+            ),
+            request_id="concurrent-session",
+        )
+        == winning_session
+    )
 
     running_results = await asyncio.gather(
         assistant.update_session(
@@ -556,10 +585,13 @@ async def test_assistant_concurrent_mismatched_idempotency_winners_fail_closed(
         ),
         return_exceptions=True,
     )
-    assert sum(
-        isinstance(result, StudyAssistantConflictError)
-        for result in running_results
-    ) == 1
+    assert (
+        sum(
+            isinstance(result, StudyAssistantConflictError)
+            for result in running_results
+        )
+        == 1
+    )
     assert sum(not isinstance(result, BaseException) for result in running_results) == 1
 
     session_id = winning_session.session_id
@@ -588,20 +620,31 @@ async def test_assistant_concurrent_mismatched_idempotency_winners_fail_closed(
         ),
         return_exceptions=True,
     )
-    assert sum(isinstance(result, StudyAssistantConflictError) for result in handoff_results) == 1
+    assert (
+        sum(
+            isinstance(result, StudyAssistantConflictError)
+            for result in handoff_results
+        )
+        == 1
+    )
     assert sum(not isinstance(result, BaseException) for result in handoff_results) == 1
-    winning_handoff = next(result for result in handoff_results if not isinstance(result, BaseException))
-    assert await assistant.append_handoff(
-        StudyAssistantHandoff(
-            plan_id=plan_id,
-            session_id=session_id,
-            role="source_guide",
-            observation=winning_handoff.observation,
-            origin="source_guide",
-            created_at=now,
-        ),
-        request_id="concurrent-handoff",
-    ) == winning_handoff
+    winning_handoff = next(
+        result for result in handoff_results if not isinstance(result, BaseException)
+    )
+    assert (
+        await assistant.append_handoff(
+            StudyAssistantHandoff(
+                plan_id=plan_id,
+                session_id=session_id,
+                role="source_guide",
+                observation=winning_handoff.observation,
+                origin="source_guide",
+                created_at=now,
+            ),
+            request_id="concurrent-handoff",
+        )
+        == winning_handoff
+    )
 
     memory_results = await asyncio.gather(
         assistant.upsert_memory(
@@ -636,7 +679,12 @@ async def test_assistant_concurrent_mismatched_idempotency_winners_fail_closed(
         ),
         return_exceptions=True,
     )
-    assert sum(isinstance(result, StudyAssistantConflictError) for result in memory_results) == 1
+    assert (
+        sum(
+            isinstance(result, StudyAssistantConflictError) for result in memory_results
+        )
+        == 1
+    )
     assert sum(not isinstance(result, BaseException) for result in memory_results) == 1
 
 
@@ -680,7 +728,9 @@ async def test_plan_artifact_link_is_atomic_and_retry_idempotent(clean_namespace
     ]
 
 
-async def test_study_artifact_provisional_record_accepts_plan_owner_token(clean_namespace):
+async def test_study_artifact_provisional_record_accepts_plan_owner_token(
+    clean_namespace,
+):
     await repo_query(
         "CREATE $source CONTENT $data RETURN AFTER;",
         {
@@ -875,7 +925,9 @@ async def test_real_studio_claim_serializes_independent_services(
     assert generation_calls == 2
 
 
-async def test_real_studio_stale_claim_takeover_is_atomic_and_owner_fenced(clean_namespace):
+async def test_real_studio_stale_claim_takeover_is_atomic_and_owner_fenced(
+    clean_namespace,
+):
     operation_id = _artifact_identity(
         "study_plan:stale-claim", 1, "a" * 64, "foundations", "quiz"
     )
@@ -964,7 +1016,9 @@ async def test_manifestless_plan_lifecycle_binds_exact_syllabus_manifest_atomica
             "data": {"title": "Lifecycle source", "full_text": "Initial evidence"},
         },
     )
-    await repository.add_source(created.plan_id, "source:lifecycle", expected_revision=1)
+    await repository.add_source(
+        created.plan_id, "source:lifecycle", expected_revision=1
+    )
     analyzing = await repository.get(created.plan_id)
     assert analyzing is not None
     assert analyzing.state == "analyzing_sources"
@@ -976,10 +1030,13 @@ async def test_manifestless_plan_lifecycle_binds_exact_syllabus_manifest_atomica
             expected_revision=2,
             lifecycle_action="edit",
         )
-    assert await repo_query(
-        "SELECT id FROM study_syllabus WHERE plan_id = $plan_id",
-        {"plan_id": created.plan_id},
-    ) == []
+    assert (
+        await repo_query(
+            "SELECT id FROM study_syllabus WHERE plan_id = $plan_id",
+            {"plan_id": created.plan_id},
+        )
+        == []
+    )
 
     await repository.save_syllabus(
         _manifest_syllabus(1, "b" * 64),
@@ -997,10 +1054,12 @@ async def test_manifestless_plan_lifecycle_binds_exact_syllabus_manifest_atomica
         )
     still_proposed = await repository.get(created.plan_id)
     assert still_proposed == proposed
-    assert (await repo_query(
-        "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 1",
-        {"plan_id": created.plan_id},
-    ))[0].get("approved_at") is None
+    assert (
+        await repo_query(
+            "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 1",
+            {"plan_id": created.plan_id},
+        )
+    )[0].get("approved_at") is None
 
     await repository.save_syllabus(
         _manifest_syllabus(2, "c" * 64),
@@ -1018,10 +1077,12 @@ async def test_manifestless_plan_lifecycle_binds_exact_syllabus_manifest_atomica
         )
     stale = await repository.get(created.plan_id)
     assert stale == editing
-    assert (await repo_query(
-        "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 2",
-        {"plan_id": created.plan_id},
-    ))[0].get("approved_at") is None
+    assert (
+        await repo_query(
+            "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 2",
+            {"plan_id": created.plan_id},
+        )
+    )[0].get("approved_at") is None
 
     approved = await repository.approve_syllabus(
         created.plan_id, syllabus_version=2, expected_revision=4
@@ -1032,7 +1093,9 @@ async def test_manifestless_plan_lifecycle_binds_exact_syllabus_manifest_atomica
     assert approved.source_manifest_sha256 == "c" * 64
 
 
-async def test_syllabus_read_projects_exact_or_latest_ordered_immutable_version(clean_namespace):
+async def test_syllabus_read_projects_exact_or_latest_ordered_immutable_version(
+    clean_namespace,
+):
     repository = StudyPlanRepository()
     created = await repository.create(_plan())
     await repository.save_syllabus(_syllabus(1), expected_revision=created.version)
@@ -1091,7 +1154,9 @@ async def test_plan_source_removal_does_not_delete_source_record(clean_namespace
         "SELECT id, title, full_text FROM source WHERE id = $source_id",
         {"source_id": source_id},
     )
-    await repository.add_source("study_plan:integration", "source:owned-elsewhere", expected_revision=1)
+    await repository.add_source(
+        "study_plan:integration", "source:owned-elsewhere", expected_revision=1
+    )
 
     removed = await repository.remove_source(
         "study_plan:integration", "source:owned-elsewhere", expected_revision=2
@@ -1120,10 +1185,13 @@ async def test_guarded_approval_missing_or_stale_is_atomic(clean_namespace):
         )
     after_missing = await repository.get(created.plan_id)
     assert after_missing == before
-    assert await repo_query(
-        "SELECT id FROM study_syllabus WHERE plan_id = $plan_id",
-        {"plan_id": created.plan_id},
-    ) == []
+    assert (
+        await repo_query(
+            "SELECT id FROM study_syllabus WHERE plan_id = $plan_id",
+            {"plan_id": created.plan_id},
+        )
+        == []
+    )
 
     await repository.add_source(created.plan_id, "source:guard", expected_revision=1)
     await repository.save_syllabus(
@@ -1137,10 +1205,12 @@ async def test_guarded_approval_missing_or_stale_is_atomic(clean_namespace):
     assert still_pending is not None
     assert still_pending.version == 3
     assert still_pending.state == "syllabus_proposed"
-    assert (await repo_query(
-        "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 1",
-        {"plan_id": created.plan_id},
-    ))[0].get("approved_at") is None
+    assert (
+        await repo_query(
+            "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 1",
+            {"plan_id": created.plan_id},
+        )
+    )[0].get("approved_at") is None
 
     await repository.save_syllabus(
         _syllabus(2), expected_revision=3, lifecycle_action="edit"
@@ -1157,10 +1227,12 @@ async def test_guarded_approval_missing_or_stale_is_atomic(clean_namespace):
     assert unchanged is not None
     assert unchanged.approved_syllabus_version == 1
     assert unchanged.version == 5
-    assert (await repo_query(
-        "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 2",
-        {"plan_id": created.plan_id},
-    ))[0].get("approved_at") is None
+    assert (
+        await repo_query(
+            "SELECT approved_at FROM study_syllabus WHERE plan_id = $plan_id AND version = 2",
+            {"plan_id": created.plan_id},
+        )
+    )[0].get("approved_at") is None
 
 
 async def test_guarded_link_and_syllabus_mutations_roll_back(clean_namespace):
@@ -1168,28 +1240,43 @@ async def test_guarded_link_and_syllabus_mutations_roll_back(clean_namespace):
     created = await repository.create(_plan())
 
     with pytest.raises(Exception, match="study source|plan"):
-        await repository.add_source(created.plan_id, "source:stale", expected_revision=99)
-    assert await repo_query(
-        "SELECT id FROM study_plan_source WHERE plan_id = $plan_id",
-        {"plan_id": created.plan_id},
-    ) == []
+        await repository.add_source(
+            created.plan_id, "source:stale", expected_revision=99
+        )
+    assert (
+        await repo_query(
+            "SELECT id FROM study_plan_source WHERE plan_id = $plan_id",
+            {"plan_id": created.plan_id},
+        )
+        == []
+    )
 
     with pytest.raises(Exception, match="study source|plan"):
-        await repository.remove_source(created.plan_id, "source:stale", expected_revision=99)
+        await repository.remove_source(
+            created.plan_id, "source:stale", expected_revision=99
+        )
     assert await repository.get(created.plan_id) == created
 
     with pytest.raises(Exception, match="study syllabus|plan"):
         await repository.save_syllabus(_syllabus(1), expected_revision=99)
-    assert await repo_query(
-        "SELECT id FROM study_syllabus WHERE plan_id = $plan_id",
-        {"plan_id": created.plan_id},
-    ) == []
+    assert (
+        await repo_query(
+            "SELECT id FROM study_syllabus WHERE plan_id = $plan_id",
+            {"plan_id": created.plan_id},
+        )
+        == []
+    )
 
     with pytest.raises(Exception, match="study source|plan"):
-        await repository.add_source("study_plan:missing", "source:missing", expected_revision=1)
-    assert await repo_query(
-        "SELECT id FROM study_plan_source WHERE source_id = 'source:missing'",
-    ) == []
+        await repository.add_source(
+            "study_plan:missing", "source:missing", expected_revision=1
+        )
+    assert (
+        await repo_query(
+            "SELECT id FROM study_plan_source WHERE source_id = 'source:missing'",
+        )
+        == []
+    )
 
     await repository.add_source(created.plan_id, "source:existing", expected_revision=1)
     with pytest.raises(Exception, match="study plan|source"):
@@ -1205,13 +1292,18 @@ async def test_guarded_link_and_syllabus_mutations_roll_back(clean_namespace):
             _syllabus(2).model_copy(update={"plan_id": "study_plan:missing"}),
             expected_revision=1,
         )
-    assert await repo_query(
-        "SELECT id FROM study_syllabus WHERE plan_id = $plan_id",
-        {"plan_id": "study_plan:missing"},
-    ) == []
+    assert (
+        await repo_query(
+            "SELECT id FROM study_syllabus WHERE plan_id = $plan_id",
+            {"plan_id": "study_plan:missing"},
+        )
+        == []
+    )
 
 
-async def test_mapping_update_rejects_invalid_contract_without_db_change(clean_namespace):
+async def test_mapping_update_rejects_invalid_contract_without_db_change(
+    clean_namespace,
+):
     repository = StudyPlanRepository()
     created = await repository.create(_plan())
     for changes in (

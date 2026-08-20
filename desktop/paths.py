@@ -28,6 +28,7 @@ Migration: replaces 9 ad-hoc resolvers across desktop/. The
 forward-guard test `test_no_unsafe_home_fallback_in_desktop`
 catches any future regression that reintroduces the `"."` fallback.
 """
+
 from __future__ import annotations
 
 import os

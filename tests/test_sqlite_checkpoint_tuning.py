@@ -12,6 +12,7 @@ The helper at deeper_notebook.utils.sqlite_checkpoint:
 - Process-wide singleton per path → both graphs share state
 - Light corruption recovery → rename aside + start fresh on integrity_check fail
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -33,6 +34,7 @@ def _reset_cache():
 # ---------------------------------------------------------------------------
 # PRAGMA tuning
 # ---------------------------------------------------------------------------
+
 
 def test_connection_uses_wal_mode(tmp_path):
     conn = ckpt.get_checkpoint_connection(str(tmp_path / "chat.db"))
@@ -57,6 +59,7 @@ def test_connection_uses_synchronous_normal(tmp_path):
 # Shared singleton
 # ---------------------------------------------------------------------------
 
+
 def test_same_path_returns_same_connection(tmp_path):
     """Both chat.py and source_chat.py target the same file; the
     helper must give them the SAME connection object so they don't
@@ -76,6 +79,7 @@ def test_different_paths_get_different_connections(tmp_path):
 # ---------------------------------------------------------------------------
 # Corruption recovery
 # ---------------------------------------------------------------------------
+
 
 def test_corrupted_file_is_renamed_and_fresh_one_created(tmp_path):
     """Drop bytes that aren't valid SQLite into the checkpoint path,
@@ -124,6 +128,7 @@ def test_directories_auto_created(tmp_path):
 def test_tuning_failure_closes_connection_before_corruption_recovery(tmp_path):
     """Windows cannot rename a corrupt DB while its failed tuning connection
     remains open, so _open_tuned must release that handle before re-raising."""
+
     class FailingConnection:
         closed = False
 
@@ -144,6 +149,7 @@ def test_tuning_failure_closes_connection_before_corruption_recovery(tmp_path):
 # ---------------------------------------------------------------------------
 # Concurrency (smoke — WAL should let a reader and writer coexist)
 # ---------------------------------------------------------------------------
+
 
 def test_reader_and_writer_can_coexist_under_wal(tmp_path):
     """Open two connections to the same file (via different paths to

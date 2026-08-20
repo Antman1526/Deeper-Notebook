@@ -5,6 +5,7 @@ The global GZipMiddleware buffered the token stream (it only exempts
 defeating real-time per-token delivery. SelectiveGZipMiddleware bypasses GZip
 for the streaming endpoints while keeping it for large JSON responses.
 """
+
 from __future__ import annotations
 
 from fastapi import FastAPI
@@ -24,12 +25,14 @@ def _build_app() -> FastAPI:
         async def gen():
             for i in range(8):
                 yield f'{{"token": "{i}"}}\n'
+
         return StreamingResponse(gen(), media_type="application/x-ndjson")
 
     @app.post("/api/sources/s1/chat/sessions/x/messages")
     async def source_messages():
         async def gen():
             yield "x" * 4000  # big enough that GZip WOULD compress if applied
+
         return StreamingResponse(gen(), media_type="text/plain")
 
     @app.get("/api/notebooks")

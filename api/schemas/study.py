@@ -55,9 +55,7 @@ class StudyCardResponse(BaseModel):
 
     @classmethod
     def from_card(cls, card: StudyCard) -> "StudyCardResponse":
-        return cls(
-            **card.model_dump(exclude={"schema_version", "created", "updated"})
-        )
+        return cls(**card.model_dump(exclude={"schema_version", "created", "updated"}))
 
 
 class StudyReviewResponse(BaseModel):

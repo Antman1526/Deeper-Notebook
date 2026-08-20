@@ -19,6 +19,7 @@ uses loguru throughout — same pattern as
 tests/test_memory_recall.py (v0.8.19) and tests/test_digest_builder.py
 (v0.8.27).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,10 +35,12 @@ def _capture_loguru(level: str = "DEBUG") -> tuple[list[dict], int]:
     in finally to clean up."""
     captured: list[dict] = []
     sink_id = logger.add(
-        lambda msg: captured.append({
-            "level": msg.record["level"].name,
-            "message": msg.record["message"],
-        }),
+        lambda msg: captured.append(
+            {
+                "level": msg.record["level"].name,
+                "message": msg.record["message"],
+            }
+        ),
         level=level,
     )
     return captured, sink_id
@@ -131,7 +134,9 @@ def test_v0828_dec_quiet_on_invalid_token(monkeypatch):
             raise InvalidToken("wrong key")
 
     monkeypatch.setattr(
-        gmail_mod, "_fernet", lambda: _RaiseInvalidToken(),
+        gmail_mod,
+        "_fernet",
+        lambda: _RaiseInvalidToken(),
     )
 
     captured, sink_id = _capture_loguru(level="DEBUG")
@@ -162,7 +167,9 @@ def test_v0828_dec_warns_on_unexpected_exception(monkeypatch):
             raise RuntimeError("simulated cryptography lib bug")
 
     monkeypatch.setattr(
-        gmail_mod, "_fernet", lambda: _RaiseRuntimeError(),
+        gmail_mod,
+        "_fernet",
+        lambda: _RaiseRuntimeError(),
     )
 
     captured, sink_id = _capture_loguru(level="WARNING")

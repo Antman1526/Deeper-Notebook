@@ -26,6 +26,7 @@ Not in scope: multi-tenant isolation, network attackers (nothing listens off-loo
 MAX_URL_LENGTH = 2_048
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 
+
 def _canonical_hostname(hostname: str) -> str:
     if not hostname or "%" in hostname or "\\" in hostname:
         _reject("URL hostname is malformed")
@@ -50,7 +51,7 @@ Model-callable ingestion routes both branches through the boundary:
 
 ```python
 if url_engine == "crawl4ai":
-    checked_response = await fetch_public_url(url)          # fetch once, through policy
+    checked_response = await fetch_public_url(url)  # fetch once, through policy
     content = await extract_url_with_crawl4ai(url, prefetched=checked_response)
 if processed_state is None:
     # Do not delegate a raw URL to content-core, whose fetcher has a
@@ -71,7 +72,8 @@ The B608 burn-down (79 → 0) audited every flagged site. One was genuinely weak
 # Parse before interpolating: RecordID.parse rejects anything that is not a
 # well-formed record id, so a hostile job_id cannot smuggle SurrealQL.
 record_id = ensure_record_id(
-    job_id if job_id.startswith("command:") else f"command:{job_id}")
+    job_id if job_id.startswith("command:") else f"command:{job_id}"
+)
 ```
 
 The remaining 78 were verified and carry inline `# nosec B608` tags. Placement is
@@ -81,13 +83,13 @@ becomes query text:
 ```python
 candidate[i] = candidate[i] + TAG
 if ast.dump(ast.parse("\n".join(candidate))) != baseline:
-    continue          # tag would alter a string constant → try the closing line instead
+    continue  # tag would alter a string constant → try the closing line instead
 ```
 
 Validated-identifier example:
 
 ```python
-allowed_fields     = {"name", "created", "updated"}
+allowed_fields = {"name", "created", "updated"}
 allowed_directions = {"asc", "desc"}
 # ... parts checked, HTTPException(400) otherwise ...
 ```
@@ -113,8 +115,8 @@ remaining expansion-DoS concern.
 
 ```python
 with tarfile.open(tarball, "r:gz") as t:
-    validate_tar_members(t, expected_root="python")     # path-traversal defence
-    t.extractall(runtime_dir, filter="data")            # nosec B202 - validated above
+    validate_tar_members(t, expected_root="python")  # path-traversal defence
+    t.extractall(runtime_dir, filter="data")  # nosec B202 - validated above
 ```
 
 Every downloaded runtime is SHA-256 verified with `hmac.compare_digest` before use, and

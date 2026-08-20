@@ -20,9 +20,14 @@ def test_surreal_provider_is_registered_after_import():
     # Importing _register installs the provider as a side effect.
     importlib.import_module("desktop.memory._register")
 
-    assert VectorStoreConfig._provider_configs.default["surreal"] == "SurrealVectorStoreConfig"
-    assert VectorStoreFactory.provider_to_class["surreal"] == \
-        "desktop.memory.surreal_store.SurrealMemoryStore"
+    assert (
+        VectorStoreConfig._provider_configs.default["surreal"]
+        == "SurrealVectorStoreConfig"
+    )
+    assert (
+        VectorStoreFactory.provider_to_class["surreal"]
+        == "desktop.memory.surreal_store.SurrealMemoryStore"
+    )
 
 
 def test_surreal_provider_passes_mem0_pydantic_validation():

@@ -190,6 +190,7 @@ Publishes structured events to:
 Thread-safe; the launcher's main thread publishes, the wizard server's
 SSE handler subscribes from its own request-handler thread.
 """
+
 from __future__ import annotations
 
 import json
@@ -204,7 +205,7 @@ from typing import Iterator, TypedDict
 class ProgressEvent(TypedDict):
     ts: str
     step: str
-    status: str   # "running" | "done" | "error"
+    status: str  # "running" | "done" | "error"
     message: str
 
 
@@ -236,8 +237,9 @@ class ProgressBus:
                 except queue.Full:
                     pass
 
-    def subscribe(self, timeout: float = 60.0, replay: bool = False
-                  ) -> Iterator[ProgressEvent]:
+    def subscribe(
+        self, timeout: float = 60.0, replay: bool = False
+    ) -> Iterator[ProgressEvent]:
         """Yield events until `ready/done` arrives or timeout idles out.
 
         replay=True yields all events published so far (history) first, then
@@ -315,6 +317,7 @@ from fastapi.testclient import TestClient
 
 # Allow importing the shim package by adding desktop to sys.path
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from desktop_shims.whisper_shim import build_app
@@ -380,6 +383,7 @@ Exposes:
     GET  /health                       → {"status": "ok"}
     POST /v1/audio/transcriptions      → multipart form (file), returns {"text": ...}
 """
+
 from __future__ import annotations
 
 import argparse
@@ -436,6 +440,7 @@ def main(argv: list[str] | None = None) -> int:
     app = build_app(model=model)
 
     import uvicorn
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
@@ -482,6 +487,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
@@ -492,8 +498,10 @@ def _fake_piper_voices():
     """Build a {voice_name: piper_voice_obj} dict. piper_voice_obj.synthesize
     writes WAV bytes to the given file-like object.
     """
+
     def make(text_per_call: str):
         v = MagicMock()
+
         def synth(text, wav_file, **kw):
             # Minimal valid WAV
             with wave.open(wav_file, "wb") as w:
@@ -501,8 +509,10 @@ def _fake_piper_voices():
                 w.setsampwidth(2)
                 w.setframerate(22050)
                 w.writeframes(b"\x00\x00" * 100)
+
         v.synthesize.side_effect = synth
         return v
+
     return {"alex": make("alex"), "sam": make("sam")}
 
 
@@ -516,11 +526,14 @@ def test_health_returns_200():
 def test_speech_returns_wav():
     app = build_app(voices=_fake_piper_voices())
     with TestClient(app) as c:
-        r = c.post("/v1/audio/speech", json={
-            "input": "Hello world",
-            "voice": "alex",
-            "model": "piper-amy-en",
-        })
+        r = c.post(
+            "/v1/audio/speech",
+            json={
+                "input": "Hello world",
+                "voice": "alex",
+                "model": "piper-amy-en",
+            },
+        )
         assert r.status_code == 200
         assert r.headers["content-type"] == "audio/wav"
         # Body is a valid WAV
@@ -531,9 +544,14 @@ def test_speech_returns_wav():
 def test_speech_unknown_voice_falls_back_to_first():
     app = build_app(voices=_fake_piper_voices())
     with TestClient(app) as c:
-        r = c.post("/v1/audio/speech", json={
-            "input": "Hello", "voice": "nobody", "model": "x",
-        })
+        r = c.post(
+            "/v1/audio/speech",
+            json={
+                "input": "Hello",
+                "voice": "nobody",
+                "model": "x",
+            },
+        )
         assert r.status_code == 200  # falls back, doesn't error
 
 
@@ -566,6 +584,7 @@ Exposes:
     GET  /health                  → {"status": "ok", "voices": [...]}
     POST /v1/audio/speech         → JSON {input, voice?, model?} → audio/wav
 """
+
 from __future__ import annotations
 
 import argparse
@@ -621,8 +640,8 @@ def build_app(voices: dict[str, Any]) -> FastAPI:
 def _load_voice(model_path: Path) -> Any:
     """Lazy-load a Piper voice object from an .onnx path."""
     from piper.voice import PiperVoice
-    return PiperVoice.load(str(model_path),
-                           config_path=str(model_path) + ".json")
+
+    return PiperVoice.load(str(model_path), config_path=str(model_path) + ".json")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -630,8 +649,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
-        "--voice", action="append", required=True,
-        help='Voice in form NAME=PATH (e.g. alex=/path/to/amy.onnx). Repeatable.',
+        "--voice",
+        action="append",
+        required=True,
+        help="Voice in form NAME=PATH (e.g. alex=/path/to/amy.onnx). Repeatable.",
     )
     args = parser.parse_args(argv)
 
@@ -645,6 +666,7 @@ def main(argv: list[str] | None = None) -> int:
     app = build_app(voices=voices)
 
     import uvicorn
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
@@ -707,8 +729,9 @@ def ensure_secondary_tts_voice(
     cfg_url, cfg_rel, cfg_label, _ = PIPER_RYAN_CONFIG
     onnx = model_dir / onnx_rel
     cfg = model_dir / cfg_rel
-    if (_download_one(onnx_url, onnx, onnx_label, progress)
-            and _download_one(cfg_url, cfg, cfg_label, progress)):
+    if _download_one(onnx_url, onnx, onnx_label, progress) and _download_one(
+        cfg_url, cfg, cfg_label, progress
+    ):
         return (onnx, cfg)
     return None
 ```
@@ -767,10 +790,10 @@ Add three new spawn methods to `Supervisor`. Wire into `start_all`.
 In `desktop/launcher.py`, inside `Supervisor.__init__`, add (after `upstream_root`):
 
 ```python
-        whisper_model_path: Path | None = None,
-        piper_voices: dict[str, Path] | None = None,
-        nomic_embed_path: Path | None = None,
-        progress: "ProgressBus | None" = None,
+whisper_model_path: Path | None = (None,)
+piper_voices: dict[str, Path] | None = (None,)
+nomic_embed_path: Path | None = (None,)
+progress: "ProgressBus | None" = (None,)
 ```
 
 Then in `__init__`:
@@ -786,6 +809,7 @@ Then in `__init__`:
 Add at the top of the file:
 ```python
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from desktop.progress import ProgressBus
 ```
@@ -793,48 +817,69 @@ if TYPE_CHECKING:
 Now add `_progress` helper and three spawn methods after `_spawn_next`:
 
 ```python
-    def _progress(self, step: str, status: str, message: str = "") -> None:
-        if self.progress is not None:
-            try:
-                self.progress.publish(step, status, message)
-            except Exception:
-                pass
+def _progress(self, step: str, status: str, message: str = "") -> None:
+    if self.progress is not None:
+        try:
+            self.progress.publish(step, status, message)
+        except Exception:
+            pass
 
-    def _spawn_llamacpp_embed(self, port: int) -> None:
-        if self.nomic_embed_path is None or not self.nomic_embed_path.exists():
-            return  # silently skip; embeddings just won't work this session
-        args = [
-            str(self.venv_python), "-m", "llama_cpp.server",
-            "--model", str(self.nomic_embed_path),
-            "--host", "127.0.0.1", "--port", str(port),
-            "--embedding", "true",
-        ]
-        self._spawn(args, cwd=self.upstream_root, name="llamacpp_embed")
 
-    def _spawn_whisper(self, port: int) -> None:
-        if self.whisper_model_path is None or not self.whisper_model_path.exists():
-            return
-        args = [
-            str(self.venv_python), "-m", "desktop_shims.whisper_shim",
-            "--host", "127.0.0.1", "--port", str(port),
-            "--model", str(self.whisper_model_path),
-        ]
-        self._spawn(args, cwd=self.upstream_root, name="whisper")
+def _spawn_llamacpp_embed(self, port: int) -> None:
+    if self.nomic_embed_path is None or not self.nomic_embed_path.exists():
+        return  # silently skip; embeddings just won't work this session
+    args = [
+        str(self.venv_python),
+        "-m",
+        "llama_cpp.server",
+        "--model",
+        str(self.nomic_embed_path),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--embedding",
+        "true",
+    ]
+    self._spawn(args, cwd=self.upstream_root, name="llamacpp_embed")
 
-    def _spawn_piper(self, port: int) -> None:
-        if not self.piper_voices:
-            return
-        voice_args = []
-        for name, path in self.piper_voices.items():
-            if path.exists():
-                voice_args.extend(["--voice", f"{name}={path}"])
-        if not voice_args:
-            return
-        args = [
-            str(self.venv_python), "-m", "desktop_shims.piper_shim",
-            "--host", "127.0.0.1", "--port", str(port),
-        ] + voice_args
-        self._spawn(args, cwd=self.upstream_root, name="piper")
+
+def _spawn_whisper(self, port: int) -> None:
+    if self.whisper_model_path is None or not self.whisper_model_path.exists():
+        return
+    args = [
+        str(self.venv_python),
+        "-m",
+        "desktop_shims.whisper_shim",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--model",
+        str(self.whisper_model_path),
+    ]
+    self._spawn(args, cwd=self.upstream_root, name="whisper")
+
+
+def _spawn_piper(self, port: int) -> None:
+    if not self.piper_voices:
+        return
+    voice_args = []
+    for name, path in self.piper_voices.items():
+        if path.exists():
+            voice_args.extend(["--voice", f"{name}={path}"])
+    if not voice_args:
+        return
+    args = [
+        str(self.venv_python),
+        "-m",
+        "desktop_shims.piper_shim",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+    ] + voice_args
+    self._spawn(args, cwd=self.upstream_root, name="piper")
 ```
 
 - [ ] **Step 2: Extend `start_all` to allocate 6 ports and spawn the new processes**
@@ -842,8 +887,9 @@ Now add `_progress` helper and three spawn methods after `_spawn_next`:
 Replace the existing `start_all` body's `find_free_ports(3)` line with:
 
 ```python
-        (surreal_port, api_port, frontend_port,
-         embed_port, whisper_port, piper_port) = find_free_ports(6)
+(surreal_port, api_port, frontend_port, embed_port, whisper_port, piper_port) = (
+    find_free_ports(6)
+)
 ```
 
 After existing `self._spawn_next(...)` block, append:
@@ -895,18 +941,27 @@ def test_supervisor_spawns_v03_children_when_paths_set(cfg, tmp_path, monkeypatc
         return p
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    embed = tmp_path / "nomic.gguf"; embed.write_bytes(b"x" * 2_000_000)
-    whisper = tmp_path / "whisper.bin"; whisper.write_bytes(b"x" * 2_000_000)
-    amy = tmp_path / "amy.onnx"; amy.write_bytes(b"x" * 200_000)
+    embed = tmp_path / "nomic.gguf"
+    embed.write_bytes(b"x" * 2_000_000)
+    whisper = tmp_path / "whisper.bin"
+    whisper.write_bytes(b"x" * 2_000_000)
+    amy = tmp_path / "amy.onnx"
+    amy.write_bytes(b"x" * 200_000)
 
     sv = Supervisor(
-        cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-        surreal_arch="darwin-arm64", node_arch="darwin-arm64",
-        nomic_embed_path=embed, whisper_model_path=whisper,
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+        nomic_embed_path=embed,
+        whisper_model_path=whisper,
         piper_voices={"alex": amy},
     )
     sv.start_all()
@@ -922,16 +977,27 @@ def test_supervisor_spawns_v03_children_when_paths_set(cfg, tmp_path, monkeypatc
 
 def test_supervisor_skips_v03_children_when_paths_missing(cfg, tmp_path, monkeypatch):
     spawned: list[list[str]] = []
-    monkeypatch.setattr(subprocess, "Popen",
-                        lambda a, **kw: (spawned.append(list(a)),
-                                         MagicMock(spec=subprocess.Popen,
-                                                   poll=MagicMock(return_value=None)))[1])
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n)))
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda a, **kw: (
+            spawned.append(list(a)),
+            MagicMock(spec=subprocess.Popen, poll=MagicMock(return_value=None)),
+        )[1],
+    )
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: list(range(40001, 40001 + n))
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
     sv.start_all()
     try:
         joined = [" ".join(a) for a in spawned]
@@ -992,7 +1058,8 @@ def register_voice_models(
         )
         if cred:
             _ensure_model(
-                client=client, existing_keys=set(),
+                client=client,
+                existing_keys=set(),
                 name="whisper-base-en",
                 provider="openai_compatible",
                 model_type="speech_to_text",
@@ -1012,7 +1079,8 @@ def register_voice_models(
         if cred:
             for voice_id in ("piper-amy-en", "piper-ryan-en"):
                 _ensure_model(
-                    client=client, existing_keys=set(),
+                    client=client,
+                    existing_keys=set(),
                     name=voice_id,
                     provider="openai_compatible",
                     model_type="text_to_speech",
@@ -1031,7 +1099,8 @@ def register_voice_models(
         )
         if cred:
             _ensure_model(
-                client=client, existing_keys=set(),
+                client=client,
+                existing_keys=set(),
                 name="nomic-embed-text-v1.5",
                 provider="openai_compatible",
                 model_type="embedding",
@@ -1049,7 +1118,9 @@ def register_default_episode_profile(client: httpx.Client) -> None:
             if p.get("name") == PROFILE_NAME:
                 return  # already exists
     except Exception as exc:
-        log.warning("Could not list episode profiles: %s — skipping profile bootstrap", exc)
+        log.warning(
+            "Could not list episode profiles: %s — skipping profile bootstrap", exc
+        )
         return
 
     # Look up the IDs we just registered for chat model + piper voices
@@ -1058,11 +1129,18 @@ def register_default_episode_profile(client: httpx.Client) -> None:
     except Exception:
         return
     by_name = {m.get("name"): m.get("id") for m in models}
-    chat_id = (by_name.get("Hermes-3-Llama-3.1-8B-Q4_K_M")
-               or by_name.get("Mistral-7B-Instruct-v0.3-Q4_K_M")
-               or next((mid for name, mid in by_name.items()
-                        if not name.startswith(("piper-", "whisper-", "nomic-"))),
-                       None))
+    chat_id = (
+        by_name.get("Hermes-3-Llama-3.1-8B-Q4_K_M")
+        or by_name.get("Mistral-7B-Instruct-v0.3-Q4_K_M")
+        or next(
+            (
+                mid
+                for name, mid in by_name.items()
+                if not name.startswith(("piper-", "whisper-", "nomic-"))
+            ),
+            None,
+        )
+    )
     amy_id = by_name.get("piper-amy-en")
     ryan_id = by_name.get("piper-ryan-en")
     if not (chat_id and amy_id and ryan_id):
@@ -1090,17 +1168,22 @@ def register_default_episode_profile(client: httpx.Client) -> None:
 Then in the existing `auto_register()` function, after the existing registration logic and the `/api/models/auto-assign` call, add:
 
 ```python
-        if any(p is not None for p in
-               (kwargs.get("whisper_port"), kwargs.get("piper_port"),
-                kwargs.get("embed_port"))):
-            register_voice_models(
-                client,
-                whisper_port=kwargs.get("whisper_port"),
-                piper_port=kwargs.get("piper_port"),
-                embed_port=kwargs.get("embed_port"),
-                cfg=cfg,
-            )
-            register_default_episode_profile(client)
+if any(
+    p is not None
+    for p in (
+        kwargs.get("whisper_port"),
+        kwargs.get("piper_port"),
+        kwargs.get("embed_port"),
+    )
+):
+    register_voice_models(
+        client,
+        whisper_port=kwargs.get("whisper_port"),
+        piper_port=kwargs.get("piper_port"),
+        embed_port=kwargs.get("embed_port"),
+        cfg=cfg,
+    )
+    register_default_episode_profile(client)
 ```
 
 Update the `auto_register` signature to accept `**kwargs` for the new ports:
@@ -1120,11 +1203,15 @@ def auto_register(
 And pass them through to `_do_register`:
 
 ```python
-    with httpx.Client(base_url=api_base_url, timeout=15.0) as client:
-        _do_register(client, cfg, llamacpp_port,
-                     whisper_port=whisper_port,
-                     piper_port=piper_port,
-                     embed_port=embed_port)
+with httpx.Client(base_url=api_base_url, timeout=15.0) as client:
+    _do_register(
+        client,
+        cfg,
+        llamacpp_port,
+        whisper_port=whisper_port,
+        piper_port=piper_port,
+        embed_port=embed_port,
+    )
 ```
 
 (Adjust `_do_register` signature similarly.)
@@ -1139,23 +1226,35 @@ def test_register_voice_models_creates_credentials_and_models(monkeypatch):
     from desktop.config import Config
 
     created = []
+
     class FakeClient:
         def post(self, path, json):
             created.append((path, json))
-            class R: status_code = 201
+
+            class R:
+                status_code = 201
+
             R.json = lambda: {"id": f"id-{json.get('name', '')}"}
             return R()
+
         def get(self, path):
-            class R: status_code = 200
+            class R:
+                status_code = 200
+
             R.json = lambda: []
             R.raise_for_status = lambda: None
             return R()
 
-    cfg = Config(model_dir=Path("/tmp"), provider="none", default_model="",
-                 surreal_user="root", surreal_password="x"*24)
-    register_voice_models(FakeClient(),
-                          whisper_port=1234, piper_port=2345, embed_port=3456,
-                          cfg=cfg)
+    cfg = Config(
+        model_dir=Path("/tmp"),
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="x" * 24,
+    )
+    register_voice_models(
+        FakeClient(), whisper_port=1234, piper_port=2345, embed_port=3456, cfg=cfg
+    )
     paths = [p for p, _ in created]
     assert "/api/credentials" in paths
     payloads = [j for _, j in created]
@@ -1195,23 +1294,31 @@ Hook the launcher to actually use ProgressBus, the new Supervisor params, and pa
 In `desktop/__main__.py`, after the `log_dir` block and before `_bootstrap_progress`:
 
 ```python
-    from desktop.progress import ProgressBus
-    progress_bus = ProgressBus(log_path=log_dir / "progress.jsonl")
-    progress_bus.publish("startup", "running", "Launcher starting…")
+from desktop.progress import ProgressBus
+
+progress_bus = ProgressBus(log_path=log_dir / "progress.jsonl")
+progress_bus.publish("startup", "running", "Launcher starting…")
 ```
 
 After `ensure_embedding_model(...)`, add:
 
 ```python
-    try:
-        from desktop.model_downloads import ensure_secondary_tts_voice, ensure_tts_model, ensure_stt_model
-        ensure_tts_model(_model_dir, progress=_bootstrap_progress)
-        ensure_secondary_tts_voice(_model_dir, progress=_bootstrap_progress)
-        ensure_stt_model(_model_dir, progress=_bootstrap_progress)
-    except Exception:
-        import traceback
-        _bootstrap_progress("Warning: voice model downloads failed: "
-                            + traceback.format_exc())
+try:
+    from desktop.model_downloads import (
+        ensure_secondary_tts_voice,
+        ensure_tts_model,
+        ensure_stt_model,
+    )
+
+    ensure_tts_model(_model_dir, progress=_bootstrap_progress)
+    ensure_secondary_tts_voice(_model_dir, progress=_bootstrap_progress)
+    ensure_stt_model(_model_dir, progress=_bootstrap_progress)
+except Exception:
+    import traceback
+
+    _bootstrap_progress(
+        "Warning: voice model downloads failed: " + traceback.format_exc()
+    )
 ```
 
 Just before the `sv = Supervisor(...)` line, compute the voice paths:
@@ -1232,27 +1339,34 @@ Just before the `sv = Supervisor(...)` line, compute the voice paths:
 Update the Supervisor construction to pass the new params:
 
 ```python
-    sv = Supervisor(
-        cfg=cfg, repo_root=repo_root(), bin_dir=bin_dir,
-        surreal_arch=arch, node_arch=arch,
-        extra_env=extra_env, debug_mode=True,
-        venv_python=venv_py, upstream_root=upstream_dir(),
-        whisper_model_path=whisper_path if whisper_path.exists() else None,
-        piper_voices=piper_voices,
-        nomic_embed_path=nomic_path if nomic_path.exists() else None,
-        progress=progress_bus,
-    )
+sv = Supervisor(
+    cfg=cfg,
+    repo_root=repo_root(),
+    bin_dir=bin_dir,
+    surreal_arch=arch,
+    node_arch=arch,
+    extra_env=extra_env,
+    debug_mode=True,
+    venv_python=venv_py,
+    upstream_root=upstream_dir(),
+    whisper_model_path=whisper_path if whisper_path.exists() else None,
+    piper_voices=piper_voices,
+    nomic_embed_path=nomic_path if nomic_path.exists() else None,
+    progress=progress_bus,
+)
 ```
 
 Update the `auto_register(...)` call to pass voice ports:
 
 ```python
-    auto_register(
-        api_base_url=api_base, cfg=cfg, llamacpp_port=llamacpp_port,
-        whisper_port=getattr(sv, "whisper_port", None),
-        piper_port=getattr(sv, "piper_port", None),
-        embed_port=getattr(sv, "embed_port", None),
-    )
+auto_register(
+    api_base_url=api_base,
+    cfg=cfg,
+    llamacpp_port=llamacpp_port,
+    whisper_port=getattr(sv, "whisper_port", None),
+    piper_port=getattr(sv, "piper_port", None),
+    embed_port=getattr(sv, "embed_port", None),
+)
 ```
 
 After `auto_register(...)` returns, signal ready:
@@ -1303,37 +1417,42 @@ def build_app(config_path: Path, on_done: Callable[[], None],
 Inside `build_app`, after the existing `index`/`save` route handlers, add:
 
 ```python
-    async def progress_stream(req: web.Request) -> web.StreamResponse:
-        if progress_bus is None:
-            return web.json_response({"error": "no progress bus"}, status=503)
-        resp = web.StreamResponse(status=200, headers={
+async def progress_stream(req: web.Request) -> web.StreamResponse:
+    if progress_bus is None:
+        return web.json_response({"error": "no progress bus"}, status=503)
+    resp = web.StreamResponse(
+        status=200,
+        headers={
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-        })
-        await resp.prepare(req)
-        # subscribe in a thread (bus.subscribe is blocking) and pump via loop
-        import asyncio
-        loop = asyncio.get_event_loop()
-        q: asyncio.Queue = asyncio.Queue()
+        },
+    )
+    await resp.prepare(req)
+    # subscribe in a thread (bus.subscribe is blocking) and pump via loop
+    import asyncio
 
-        def reader():
-            for evt in progress_bus.subscribe(timeout=120.0, replay=True):
-                loop.call_soon_threadsafe(q.put_nowait, evt)
-            loop.call_soon_threadsafe(q.put_nowait, None)
+    loop = asyncio.get_event_loop()
+    q: asyncio.Queue = asyncio.Queue()
 
-        import threading
-        threading.Thread(target=reader, daemon=True).start()
+    def reader():
+        for evt in progress_bus.subscribe(timeout=120.0, replay=True):
+            loop.call_soon_threadsafe(q.put_nowait, evt)
+        loop.call_soon_threadsafe(q.put_nowait, None)
 
-        while True:
-            evt = await q.get()
-            if evt is None:
-                break
-            await resp.write(f"data: {json.dumps(evt)}\n\n".encode())
-            if evt["step"] == "ready" and evt["status"] == "done":
-                break
-        await resp.write_eof()
-        return resp
+    import threading
+
+    threading.Thread(target=reader, daemon=True).start()
+
+    while True:
+        evt = await q.get()
+        if evt is None:
+            break
+        await resp.write(f"data: {json.dumps(evt)}\n\n".encode())
+        if evt["step"] == "ready" and evt["status"] == "done":
+            break
+    await resp.write_eof()
+    return resp
 ```
 
 And register the route:
@@ -1376,17 +1495,22 @@ from desktop.progress import ProgressBus
 class WizardProgressTestCase(AioHTTPTestCase):
     async def get_application(self):
         import tempfile
+
         self._tmpdir = tempfile.mkdtemp()
         self.bus = ProgressBus(Path(self._tmpdir) / "progress.jsonl")
-        return build_app(Path(self._tmpdir) / "config.toml",
-                         on_done=lambda: None,
-                         progress_bus=self.bus)
+        return build_app(
+            Path(self._tmpdir) / "config.toml",
+            on_done=lambda: None,
+            progress_bus=self.bus,
+        )
 
     async def test_progress_returns_503_without_bus(self):
         # Build app without bus to verify the no-bus path
-        app2 = build_app(Path(self._tmpdir) / "x.toml", on_done=lambda: None,
-                         progress_bus=None)
+        app2 = build_app(
+            Path(self._tmpdir) / "x.toml", on_done=lambda: None, progress_bus=None
+        )
         from aiohttp.test_utils import TestClient, TestServer
+
         async with TestClient(TestServer(app2)) as c2:
             r = await c2.get("/api/progress")
             assert r.status == 503
@@ -1403,8 +1527,11 @@ class WizardProgressTestCase(AioHTTPTestCase):
         assert resp.status == 200
         body = await resp.text()
         # Each event is "data: {...}\n\n"
-        events = [json.loads(line[6:]) for line in body.splitlines()
-                  if line.startswith("data: ")]
+        events = [
+            json.loads(line[6:])
+            for line in body.splitlines()
+            if line.startswith("data: ")
+        ]
         assert any(e["step"] == "step.x" for e in events)
         assert any(e["step"] == "ready" for e in events)
 ```
@@ -1570,13 +1697,14 @@ The wizard server now accepts a ProgressBus — pass ours through.
 In `desktop/__main__.py`, where the wizard is run:
 
 ```python
-    if first_run:
-        from desktop.first_run.server import run_wizard_blocking
-        # progress_bus needs to be ready BEFORE the wizard runs so screen 6
-        # can subscribe immediately. Re-order so progress_bus is created before
-        # the wizard call.
-        ...
-        run_wizard_blocking(cfg_path, progress_bus=progress_bus)
+if first_run:
+    from desktop.first_run.server import run_wizard_blocking
+
+    # progress_bus needs to be ready BEFORE the wizard runs so screen 6
+    # can subscribe immediately. Re-order so progress_bus is created before
+    # the wizard call.
+    ...
+    run_wizard_blocking(cfg_path, progress_bus=progress_bus)
 ```
 
 You'll need to move the `progress_bus = ProgressBus(...)` line ABOVE the `if first_run:` block so it's defined before the wizard call. Adjust accordingly.
@@ -1744,15 +1872,18 @@ def _voice_injection_js() -> str:
 In `_theme_injection_js(theme_id)`, before the closing `)();`, append:
 
 ```python
-    voice_js = _voice_injection_js()
-    # Inject after the theme style so DOM is ready
-    return base_js + f"""
-    (function() {{
-        var script = document.createElement('script');
-        script.textContent = {json.dumps(voice_js)};
-        document.head.appendChild(script);
-    }})();
-    """
+voice_js = _voice_injection_js()
+# Inject after the theme style so DOM is ready
+return (
+    base_js
+    + f"""
+(function() {{
+    var script = document.createElement('script');
+    script.textContent = {json.dumps(voice_js)};
+    document.head.appendChild(script);
+}})();
+"""
+)
 ```
 
 (Add `import json` and `from pathlib import Path` to the top of `window.py` if not present.)
@@ -1902,6 +2033,7 @@ from desktop.model_manager.server import build_app
 class ModelManagerTest(AioHTTPTestCase):
     async def get_application(self):
         import tempfile
+
         self._tmpdir = Path(tempfile.mkdtemp())
         (self._tmpdir / "GGUF").mkdir()
         (self._tmpdir / "GGUF" / "test.gguf").write_bytes(b"x" * 2_000_000)
@@ -1939,6 +2071,7 @@ Exposes:
     POST   /api/download                  → {category, name} — kick off a download
     DELETE /api/installed/<rel-path>      → remove a model file
 """
+
 from __future__ import annotations
 
 import json
@@ -1958,7 +2091,8 @@ def _classify(rel: str) -> str:
     if rel.startswith("TTS/") and rel.endswith(".onnx"):
         return "tts"
     if rel.startswith("GGUF/") and (
-            "embed" in rel.lower() or "bge" in rel.lower() or "nomic" in rel.lower()):
+        "embed" in rel.lower() or "bge" in rel.lower() or "nomic" in rel.lower()
+    ):
         return "embedding"
     return "chat"
 
@@ -1977,12 +2111,14 @@ def build_app(model_dir: Path) -> web.Application:
             for p in model_dir.rglob("*"):
                 if p.is_file() and p.stat().st_size >= _MIN_BYTES:
                     rel = str(p.relative_to(model_dir))
-                    models.append({
-                        "name": p.name,
-                        "rel": rel,
-                        "size_mb": p.stat().st_size // 1024 // 1024,
-                        "class": _classify(rel),
-                    })
+                    models.append(
+                        {
+                            "name": p.name,
+                            "rel": rel,
+                            "size_mb": p.stat().st_size // 1024 // 1024,
+                            "class": _classify(rel),
+                        }
+                    )
         return web.json_response({"models": models})
 
     async def catalog(_: web.Request) -> web.Response:
@@ -2166,6 +2302,7 @@ Note: pywebview's tray support varies by platform — on macOS we use the
 `menu` API; on Windows we use `Tray`. For v0.3 we implement Mac; Windows
 gets the same behavior in v0.4.
 """
+
 from __future__ import annotations
 
 from typing import Callable
@@ -2183,12 +2320,16 @@ def install_tray(
     """
     try:
         from webview.menu import Menu, MenuAction
+
         menu = [
-            Menu("Open Notebook Plus", [
-                MenuAction("Open Main Window", on_open_main),
-                MenuAction("Manage Models…", on_open_manager),
-                MenuAction("Quit", on_quit),
-            ])
+            Menu(
+                "Open Notebook Plus",
+                [
+                    MenuAction("Open Main Window", on_open_main),
+                    MenuAction("Manage Models…", on_open_manager),
+                    MenuAction("Quit", on_quit),
+                ],
+            )
         ]
         webview.set_menu(menu)
     except Exception:
@@ -2201,37 +2342,44 @@ def install_tray(
 Near the bottom, just before `open_window(...)`:
 
 ```python
-    # Start the model-manager aiohttp server in a background thread so
-    # the tray can open it on demand.
-    from desktop.model_manager.server import build_app as mm_build_app
-    import aiohttp.web as _aio_web
-    import threading as _th, asyncio as _aio
+# Start the model-manager aiohttp server in a background thread so
+# the tray can open it on demand.
+from desktop.model_manager.server import build_app as mm_build_app
+import aiohttp.web as _aio_web
+import threading as _th, asyncio as _aio
 
-    mm_port = [0]
-    def _start_mm():
-        loop = _aio.new_event_loop()
-        _aio.set_event_loop(loop)
-        app = mm_build_app(Path(cfg.model_dir))
-        runner = _aio_web.AppRunner(app)
-        loop.run_until_complete(runner.setup())
-        site = _aio_web.TCPSite(runner, "127.0.0.1", 0)
-        loop.run_until_complete(site.start())
-        mm_port[0] = site._server.sockets[0].getsockname()[1]
-        loop.run_forever()
-    _mm_thread = _th.Thread(target=_start_mm, daemon=True)
-    _mm_thread.start()
-    # wait briefly for port
-    import time as _time
-    while mm_port[0] == 0:
-        _time.sleep(0.02)
+mm_port = [0]
 
-    from desktop.tray import install_tray
-    install_tray(
-        on_open_main=lambda: webview.windows[0].show(),
-        on_open_manager=lambda: webview.create_window(
-            "Models", f"http://127.0.0.1:{mm_port[0]}/", width=920, height=640),
-        on_quit=lambda: (sv.stop_all(), webview.windows[0].destroy()),
-    )
+
+def _start_mm():
+    loop = _aio.new_event_loop()
+    _aio.set_event_loop(loop)
+    app = mm_build_app(Path(cfg.model_dir))
+    runner = _aio_web.AppRunner(app)
+    loop.run_until_complete(runner.setup())
+    site = _aio_web.TCPSite(runner, "127.0.0.1", 0)
+    loop.run_until_complete(site.start())
+    mm_port[0] = site._server.sockets[0].getsockname()[1]
+    loop.run_forever()
+
+
+_mm_thread = _th.Thread(target=_start_mm, daemon=True)
+_mm_thread.start()
+# wait briefly for port
+import time as _time
+
+while mm_port[0] == 0:
+    _time.sleep(0.02)
+
+from desktop.tray import install_tray
+
+install_tray(
+    on_open_main=lambda: webview.windows[0].show(),
+    on_open_manager=lambda: webview.create_window(
+        "Models", f"http://127.0.0.1:{mm_port[0]}/", width=920, height=640
+    ),
+    on_quit=lambda: (sv.stop_all(), webview.windows[0].destroy()),
+)
 ```
 
 - [ ] **Step 3: Sanity-import**
@@ -2260,12 +2408,16 @@ git -c user.email="anthonyjeromehenry@gmail.com" -c user.name="Antman1526" \
 In the existing `datas = [...]` list, add:
 
 ```python
-    # v0.3 — shims, manager, voice JS
-    (str(PROJECT_ROOT / "desktop" / "desktop_shims"), "upstream/desktop_shims"),
-    (str(ROOT / "model_manager" / "static"), "desktop/model_manager/static"),
-    (str(ROOT / "model_manager" / "catalog.json"), "desktop/model_manager"),
-    (str(ROOT / "first_run" / "static" / "voice_injection.js"),
-        "desktop/first_run/static"),
+# v0.3 — shims, manager, voice JS
+((str(PROJECT_ROOT / "desktop" / "desktop_shims"), "upstream/desktop_shims"),)
+((str(ROOT / "model_manager" / "static"), "desktop/model_manager/static"),)
+((str(ROOT / "model_manager" / "catalog.json"), "desktop/model_manager"),)
+(
+    (
+        str(ROOT / "first_run" / "static" / "voice_injection.js"),
+        "desktop/first_run/static",
+    ),
+)
 ```
 
 - [ ] **Step 2: Spec parses**

@@ -134,7 +134,9 @@ async def test_progress_repository_caps_pages_before_materialization(
 
 
 @pytest.mark.asyncio
-async def test_progress_projection_rehydrates_terminal_receipt_outside_newest_page() -> None:
+async def test_progress_projection_rehydrates_terminal_receipt_outside_newest_page() -> (
+    None
+):
     newer = tuple(_receipt(f"new-{index}", score=0.7) for index in range(51))
     proposal_id = project_mastery(newer, (), now=NOW).proposals[0].proposal_id
     terminal = make_progress_receipt(
@@ -156,7 +158,9 @@ async def test_progress_projection_rehydrates_terminal_receipt_outside_newest_pa
             return newer[:limit]
 
         async def list_progress_by_requests(self, plan_id: str, request_ids):
-            assert tuple(request_ids) == (decision_terminal_request_id(PLAN_ID, proposal_id),)
+            assert tuple(request_ids) == (
+                decision_terminal_request_id(PLAN_ID, proposal_id),
+            )
             return (terminal,)
 
         async def append_progress(self, receipt):

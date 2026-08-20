@@ -27,6 +27,7 @@ Design — safe by construction:
   * The flag is cleared after exactly one attempt, so a repair that doesn't
     fix the problem can NEVER cause a boot loop.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -117,7 +118,9 @@ def auto_repair(
     backup_dir = Path(backup_dir)
 
     if not surreal_bin.exists():
-        log.error("db_repair: surreal binary not found at %s — cannot repair", surreal_bin)
+        log.error(
+            "db_repair: surreal binary not found at %s — cannot repair", surreal_bin
+        )
         return False
     if not data_dir.exists():
         log.info("db_repair: no surreal_data at %s — nothing to repair", data_dir)
@@ -129,7 +132,8 @@ def auto_repair(
     def _start(dir_: Path) -> subprocess.Popen:
         proc = subprocess.Popen(
             [
-                str(surreal_bin), "start",
+                str(surreal_bin),
+                "start",
                 f"--user={surreal_user}",
                 f"--pass={surreal_password}",
                 f"--bind=127.0.0.1:{port}",
@@ -159,12 +163,18 @@ def auto_repair(
     def _run(action: str) -> None:
         subprocess.run(
             [
-                str(surreal_bin), action,
-                "--endpoint", f"http://127.0.0.1:{port}",
-                "--username", surreal_user,
-                "--password", surreal_password,
-                "--namespace", namespace,
-                "--database", database,
+                str(surreal_bin),
+                action,
+                "--endpoint",
+                f"http://127.0.0.1:{port}",
+                "--username",
+                surreal_user,
+                "--password",
+                surreal_password,
+                "--namespace",
+                namespace,
+                "--database",
+                database,
                 str(export),
             ],
             check=True,
@@ -191,7 +201,9 @@ def auto_repair(
     try:
         shutil.copytree(data_dir, physbak)
     except Exception as exc:
-        log.error("db_repair: physical backup failed (%s) — aborting, no changes made", exc)
+        log.error(
+            "db_repair: physical backup failed (%s) — aborting, no changes made", exc
+        )
         return False
 
     # 2) Move the stale dir aside (never delete) and 3) import into a fresh dir.
@@ -211,7 +223,9 @@ def auto_repair(
             _stop(proc)
         log.warning(
             "db_repair: SUCCESS. Rebuilt clean DB. Backups: %s , %s ; old DB: %s",
-            export, physbak, stale,
+            export,
+            physbak,
+            stale,
         )
         return True
     except Exception as exc:
@@ -226,6 +240,9 @@ def auto_repair(
             log.error(
                 "db_repair: RESTORE FAILED (%s). Your data is safe at %s (and export %s); "
                 "move it back to %s manually.",
-                exc2, stale, export, data_dir,
+                exc2,
+                stale,
+                export,
+                data_dir,
             )
         return False

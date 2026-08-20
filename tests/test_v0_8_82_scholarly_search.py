@@ -2,6 +2,7 @@
 
 No live network: ``httpx.AsyncClient`` is monkeypatched throughout.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,8 +24,9 @@ def _clear_setting(monkeypatch, canonical: str) -> None:
     out here, so this stays correct if the alias scheme changes.
     """
     aliases = _SETTINGS.get(canonical)
-    for name in (aliases.precedence if aliases else (canonical,)):
+    for name in aliases.precedence if aliases else (canonical,):
         monkeypatch.delenv(name, raising=False)
+
 
 OPENALEX_PAYLOAD = {
     "results": [
@@ -142,7 +144,9 @@ def test_openalex_respects_limit_and_skips_untitled():
     assert [r["title"] for r in results] == ["Kept"]
 
 
-@pytest.mark.parametrize("payload", [None, {}, {"results": "nope"}, {"results": [1, 2]}])
+@pytest.mark.parametrize(
+    "payload", [None, {}, {"results": "nope"}, {"results": [1, 2]}]
+)
 def test_openalex_malformed_payload_degrades_to_empty(payload):
     assert ss.parse_openalex(payload, 5) == []
 

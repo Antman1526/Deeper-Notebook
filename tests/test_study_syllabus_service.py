@@ -47,7 +47,9 @@ def _plan(*, version: int = 2, state: str = "editing") -> StudyPlan:
     )
 
 
-def _source(*, text: str = "Velocity is displacement over time.", fingerprint: str | None = None):
+def _source(
+    *, text: str = "Velocity is displacement over time.", fingerprint: str | None = None
+):
     return SimpleNamespace(
         id="source:one",
         title="Mechanics notes",
@@ -75,7 +77,9 @@ def _ready() -> StudySourceReadiness:
     )
 
 
-def _document(*, unit_id: str = "foundations", source_ids: list[str] | None = None) -> dict:
+def _document(
+    *, unit_id: str = "foundations", source_ids: list[str] | None = None
+) -> dict:
     return {
         "schema_version": 1,
         "artifact_type": "study_syllabus",
@@ -108,11 +112,15 @@ class FakeModel:
         response = self.responses.pop(0)
         if isinstance(response, BaseException):
             raise response
-        return SimpleNamespace(content=json.dumps(response) if isinstance(response, dict) else response)
+        return SimpleNamespace(
+            content=json.dumps(response) if isinstance(response, dict) else response
+        )
 
 
 class FakeRepository:
-    def __init__(self, *, plan: StudyPlan | None = None, syllabi: tuple[StudySyllabus, ...] = ()):
+    def __init__(
+        self, *, plan: StudyPlan | None = None, syllabi: tuple[StudySyllabus, ...] = ()
+    ):
         self.plan = plan or _plan()
         self.syllabi = {syllabus.version: syllabus for syllabus in syllabi}
         self.saved_artifacts: list[object] = []
@@ -122,7 +130,9 @@ class FakeRepository:
     async def get(self, plan_id: str) -> StudyPlan | None:
         return self.plan if plan_id == self.plan.plan_id else None
 
-    async def get_syllabus(self, plan_id: str, *, version: int | None = None) -> StudySyllabus | None:
+    async def get_syllabus(
+        self, plan_id: str, *, version: int | None = None
+    ) -> StudySyllabus | None:
         if plan_id != self.plan.plan_id:
             return None
         if version is None:
@@ -142,7 +152,10 @@ class FakeRepository:
             raise StudySyllabusConflict("version_exists")
         if lifecycle_action == "propose" and self.plan.state != "analyzing_sources":
             raise StudySyllabusConflict("invalid_lifecycle")
-        if lifecycle_action == "edit" and self.plan.state not in {"syllabus_proposed", "editing"}:
+        if lifecycle_action == "edit" and self.plan.state not in {
+            "syllabus_proposed",
+            "editing",
+        }:
             raise StudySyllabusConflict("invalid_lifecycle")
         self.syllabi[syllabus.version] = syllabus
         self.saved.append(syllabus)
@@ -158,7 +171,9 @@ class FakeRepository:
             )
         return syllabus
 
-    async def approve_syllabus(self, plan_id: str, *, syllabus_version: int, expected_revision: int) -> StudyPlan:
+    async def approve_syllabus(
+        self, plan_id: str, *, syllabus_version: int, expected_revision: int
+    ) -> StudyPlan:
         if expected_revision != self.plan.version:
             raise StudySyllabusConflict("revision_conflict")
         syllabus = self.syllabi[syllabus_version]
@@ -176,7 +191,11 @@ class FakeRepository:
 
 
 class FakeSourceService:
-    def __init__(self, source: object | None = None, readiness: StudySourceReadiness | None = None):
+    def __init__(
+        self,
+        source: object | None = None,
+        readiness: StudySourceReadiness | None = None,
+    ):
         self.source = source or _source()
         self.receipt = readiness or _ready()
 
@@ -224,7 +243,11 @@ async def test_proposal_requires_current_revision_before_reading_sources():
 async def test_proposal_rejects_not_ready_sources_and_no_evidence():
     not_ready = StudySourceReadiness(
         ready=False,
-        items=(_ready().items[0].model_copy(update={"ready": False, "reason": "processing"}),),
+        items=(
+            _ready()
+            .items[0]
+            .model_copy(update={"ready": False, "reason": "processing"}),
+        ),
     )
     service = StudySyllabusService(
         repository=FakeRepository(plan=_plan(state="analyzing_sources")),
@@ -261,8 +284,14 @@ async def test_generation_uses_bounded_context_120_second_timeout_and_one_repair
 
     assert syllabus.units
     assert len(model.calls) == 2
-    assert all(isinstance(message, HumanMessage) for call in model.calls for message in call[-1:])
-    assert all(len(str(message.content)) <= 70_000 for call in model.calls for message in call)
+    assert all(
+        isinstance(message, HumanMessage)
+        for call in model.calls
+        for message in call[-1:]
+    )
+    assert all(
+        len(str(message.content)) <= 70_000 for call in model.calls for message in call
+    )
 
 
 @pytest.mark.asyncio
@@ -294,8 +323,16 @@ async def test_generation_timeout_and_malformed_output_are_typed():
         {
             **_document(),
             "units": [
-                {**_document()["units"][0], "unit_id": "a", "prerequisite_unit_ids": ["b"]},
-                {**_document()["units"][0], "unit_id": "b", "prerequisite_unit_ids": ["a"]},
+                {
+                    **_document()["units"][0],
+                    "unit_id": "a",
+                    "prerequisite_unit_ids": ["b"],
+                },
+                {
+                    **_document()["units"][0],
+                    "unit_id": "b",
+                    "prerequisite_unit_ids": ["a"],
+                },
             ],
         },
     ],
@@ -320,13 +357,19 @@ async def test_generation_rejects_duplicate_or_cyclic_prerequisites(document):
 def test_source_manifest_is_deterministic_over_sorted_ids_and_fingerprints():
     first = [
         _source(fingerprint="b" * 64),
-        SimpleNamespace(id="source:two", full_text="Second", provenance={"content_fingerprint": "a" * 64}),
+        SimpleNamespace(
+            id="source:two",
+            full_text="Second",
+            provenance={"content_fingerprint": "a" * 64},
+        ),
     ]
     second = list(reversed(first))
 
     assert source_manifest(first) == source_manifest(second)
     expected_payload = "source:one\x00" + "b" * 64 + "\n" + "source:two\x00" + "a" * 64
-    assert source_manifest(first) == hashlib.sha256(expected_payload.encode()).hexdigest()
+    assert (
+        source_manifest(first) == hashlib.sha256(expected_payload.encode()).hexdigest()
+    )
 
 
 @pytest.mark.asyncio
@@ -382,7 +425,9 @@ async def test_approval_is_explicit_and_binds_exact_version():
         source_loader=lambda _source_id: source,
     )
 
-    approved = await service.approve("study_plan:one", syllabus_version=1, expected_revision=2)
+    approved = await service.approve(
+        "study_plan:one", syllabus_version=1, expected_revision=2
+    )
 
     assert approved.state == "approved"
     assert approved.approved_syllabus_version == 1

@@ -117,7 +117,10 @@ class EvaluationRepository:
                 f"SELECT {_RUN_PROJECTION} FROM evaluation_run "  # nosec B608
                 f"WHERE notebook_id = $notebook_id AND {selector_field} = ${selector_field} "
                 "ORDER BY created DESC LIMIT 1",
-                {"notebook_id": ensure_record_id(notebook_id), selector_field: selector_value},
+                {
+                    "notebook_id": ensure_record_id(notebook_id),
+                    selector_field: selector_value,
+                },
             )
             return dict(rows[0]) if rows else None
         except Exception as exc:
@@ -226,7 +229,11 @@ class EvaluationRepository:
                 "confidence, citation_markers, evidence, explanation "
                 "FROM claim_verdict WHERE evaluation_run_id IN $run_ids "
                 "ORDER BY created ASC",
-                {"run_ids": [ensure_record_id(run_id) for run_id in evaluation_run_ids]},
+                {
+                    "run_ids": [
+                        ensure_record_id(run_id) for run_id in evaluation_run_ids
+                    ]
+                },
             )
             result: dict[str, list[ClaimVerdict]] = {
                 str(run_id): [] for run_id in evaluation_run_ids

@@ -53,7 +53,9 @@ async def _source(source_id: str) -> datetime:
     return updated
 
 
-def _record(source_id: str, updated: datetime, *, asset: str = ASSET) -> SourceVisualRecord:
+def _record(
+    source_id: str, updated: datetime, *, asset: str = ASSET
+) -> SourceVisualRecord:
     return SourceVisualRecord(
         source_id=source_id,
         source_updated_at=updated,
@@ -152,9 +154,7 @@ async def test_migration_46_up_down_up_is_schemafull_and_preserves_sources(
     assert len(before) == 1
     seeded = _record(source_id, updated)
     await _insert_ready(seeded)
-    seeded_identity = hashlib.sha256(
-        f"{source_id}\0{CONTENT}".encode()
-    ).hexdigest()
+    seeded_identity = hashlib.sha256(f"{source_id}\0{CONTENT}".encode()).hexdigest()
     assert await repo_query(f"SELECT * FROM source_visual_cache:{seeded_identity};")
 
     root = Path(__file__).resolve().parents[2]
@@ -166,7 +166,9 @@ async def test_migration_46_up_down_up_is_schemafull_and_preserves_sources(
     await repo_query(up)
     tables_after_up = _tables(await repo_query("INFO FOR DB;"))
     assert "SCHEMAFULL" in str(tables_after_up["source_visual_cache"])
-    assert await repo_query(f"SELECT * FROM source_visual_cache:{seeded_identity};") == []
+    assert (
+        await repo_query(f"SELECT * FROM source_visual_cache:{seeded_identity};") == []
+    )
 
     # SurrealDB v2 rejects an undeclared value from durable SCHEMAFULL state by
     # filtering it; keep the fixture to fields that are durably representable.
@@ -340,14 +342,17 @@ async def test_post_delete_refresh_reacquires_until_a_new_claim_command_is_bound
         now=delete_time + timedelta(seconds=4),
     )
     assert bound.command_id == "command:visual_post_delete_reacquire"
-    assert await repository.post_delete_refresh_needs_reacquire(
-        source_id=source_id,
-        content_sha256=CONTENT,
-        extractor_version=VERSION,
-        request_id=request_id,
-        source_updated_at=updated,
-        now=delete_time + timedelta(seconds=5),
-    ) is False
+    assert (
+        await repository.post_delete_refresh_needs_reacquire(
+            source_id=source_id,
+            content_sha256=CONTENT,
+            extractor_version=VERSION,
+            request_id=request_id,
+            source_updated_at=updated,
+            now=delete_time + timedelta(seconds=5),
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -441,7 +446,12 @@ async def test_operation_replay_conflict_and_stale_projection_are_exact(
     assert conflict.value.code == "REQUEST_CONFLICT"
 
     claim = await repository.acquire_claim(
-        source_id, CONTENT, VERSION, OWNER_A, now=NOW, lease_until=NOW + timedelta(seconds=90)
+        source_id,
+        CONTENT,
+        VERSION,
+        OWNER_A,
+        now=NOW,
+        lease_until=NOW + timedelta(seconds=90),
     )
     assert claim.owner_token == OWNER_A
     ready = await repository.publish_ready(
@@ -455,7 +465,9 @@ async def test_operation_replay_conflict_and_stale_projection_are_exact(
     )
     assert ready.source_id == source_id
     assert (await repository.list_current({source_id: updated}))[source_id] == ready
-    assert await repository.list_current({source_id: updated + timedelta(seconds=1)}) == {}
+    assert (
+        await repository.list_current({source_id: updated + timedelta(seconds=1)}) == {}
+    )
 
 
 @pytest.mark.asyncio
@@ -470,16 +482,24 @@ async def test_concurrent_ready_publication_has_one_cache_identity(
     updated = await _source(source_id)
     row = _record(source_id, updated).model_dump()
     row["source_id"] = ensure_record_id(source_id)
-    await repo_query("CREATE source_visual_cache:unique_one CONTENT $row;", {"row": row})
+    await repo_query(
+        "CREATE source_visual_cache:unique_one CONTENT $row;", {"row": row}
+    )
     with pytest.raises(RuntimeError, match="idx_source_visual_identity"):
-        await repo_query("CREATE source_visual_cache:unique_two CONTENT $row;", {"row": row})
+        await repo_query(
+            "CREATE source_visual_cache:unique_two CONTENT $row;", {"row": row}
+        )
     rows = await repo_query(
         "SELECT id, source_id, content_sha256 FROM source_visual_cache "
         "WHERE source_id = $source AND content_sha256 = $content;",
         {"source": ensure_record_id(source_id), "content": CONTENT},
     )
     assert rows == [
-        {"id": "source_visual_cache:unique_one", "source_id": source_id, "content_sha256": CONTENT}
+        {
+            "id": "source_visual_cache:unique_one",
+            "source_id": source_id,
+            "content_sha256": CONTENT,
+        }
     ]
 
 
@@ -492,7 +512,9 @@ async def test_database_failure_restores_exact_tombstoned_file(
     source_id = "source:visual_delete_restore"
     updated = await _source(source_id)
     store = SourceVisualStore(data_folder=tmp_path)
-    record = _stored_record(store, source_id, updated, "3" * 64, b"restore-after-db-error")
+    record = _stored_record(
+        store, source_id, updated, "3" * 64, b"restore-after-db-error"
+    )
 
     class DatabaseFailure:
         async def delete_ready_if_current(self, current: SourceVisualRecord) -> bool:
@@ -501,7 +523,10 @@ async def test_database_failure_restores_exact_tombstoned_file(
 
     with pytest.raises(RuntimeError, match="simulated database failure"):
         await SourceVisualCleanup(store, DatabaseFailure()).delete_record(record)
-    assert SourceVisualStore(data_folder=tmp_path).read_exact(record) == b"restore-after-db-error"
+    assert (
+        SourceVisualStore(data_folder=tmp_path).read_exact(record)
+        == b"restore-after-db-error"
+    )
     assert store.list_tombstones(limit=100) == ()
 
 
@@ -526,7 +551,12 @@ async def test_command_finalization_and_concurrent_publication_are_owner_fenced(
         now=NOW,
     )
     await repository.acquire_claim(
-        source_id, CONTENT, VERSION, OWNER_A, now=NOW, lease_until=NOW + timedelta(seconds=90)
+        source_id,
+        CONTENT,
+        VERSION,
+        OWNER_A,
+        now=NOW,
+        lease_until=NOW + timedelta(seconds=90),
     )
     finalized = await repository.bind_command_and_finalize_operation(
         source_id,
@@ -613,7 +643,9 @@ async def test_file_before_db_db_before_cleanup_restart_and_bounded_eviction(
     assert len(store.list_tombstones(limit=100)) == 1
 
     monkeypatch.setattr(store, "remove_tombstone", original_remove)
-    restarted = SourceVisualCleanup(SourceVisualStore(data_folder=tmp_path), SourceVisualRepository())
+    restarted = SourceVisualCleanup(
+        SourceVisualStore(data_folder=tmp_path), SourceVisualRepository()
+    )
     assert await restarted.reconcile_tombstones(limit=100) == 1
     assert SourceVisualStore(data_folder=tmp_path).list_tombstones(limit=100) == ()
 

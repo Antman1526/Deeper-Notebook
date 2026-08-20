@@ -78,12 +78,16 @@ def _build_fake_frontend(root: Path) -> None:
 class TestPatchRewritesHappyPath:
     def test_substitutes_localhost_port_in_all_three_files(self, tmp_path):
         from desktop.next_rewrites_patcher import patch_rewrites_for_api_port
+
         _build_fake_frontend(tmp_path)
         # Use a non-default port; default port 5055 short-circuits.
         result = patch_rewrites_for_api_port(tmp_path, 54321)
         assert result == tmp_path  # tmp_path is writable, no copy needed
-        for rel in ("server.js", ".next/required-server-files.json",
-                    ".next/routes-manifest.json"):
+        for rel in (
+            "server.js",
+            ".next/required-server-files.json",
+            ".next/routes-manifest.json",
+        ):
             content = (tmp_path / rel).read_text()
             assert "localhost:54321" in content, (
                 f"{rel} should contain replacement; got {content!r}"
@@ -94,10 +98,14 @@ class TestPatchRewritesHappyPath:
 
     def test_creates_orig_backups_on_first_patch(self, tmp_path):
         from desktop.next_rewrites_patcher import patch_rewrites_for_api_port
+
         _build_fake_frontend(tmp_path)
         patch_rewrites_for_api_port(tmp_path, 12345)
-        for rel in ("server.js", ".next/required-server-files.json",
-                    ".next/routes-manifest.json"):
+        for rel in (
+            "server.js",
+            ".next/required-server-files.json",
+            ".next/routes-manifest.json",
+        ):
             orig_path = tmp_path / (rel + ".orig")
             assert orig_path.exists(), (
                 f"{orig_path} missing — patch should create .orig backup"
@@ -109,13 +117,17 @@ class TestPatchRewritesHappyPath:
         """Round-trip: every patch reads from .orig, so patching multiple
         times with different ports always works from the pristine baseline."""
         from desktop.next_rewrites_patcher import patch_rewrites_for_api_port
+
         _build_fake_frontend(tmp_path)
         patch_rewrites_for_api_port(tmp_path, 11111)
         patch_rewrites_for_api_port(tmp_path, 22222)
         patch_rewrites_for_api_port(tmp_path, 33333)
         # Final state: only the LAST port should be in the live files
-        for rel in ("server.js", ".next/required-server-files.json",
-                    ".next/routes-manifest.json"):
+        for rel in (
+            "server.js",
+            ".next/required-server-files.json",
+            ".next/routes-manifest.json",
+        ):
             content = (tmp_path / rel).read_text()
             assert "localhost:33333" in content
             assert "localhost:11111" not in content
@@ -126,14 +138,13 @@ class TestPatchRewritesHappyPath:
         """If api_port=5055 (the build-time default), patching is a
         no-op — saves filesystem work for dev environments."""
         from desktop.next_rewrites_patcher import patch_rewrites_for_api_port
+
         _build_fake_frontend(tmp_path)
         before_mtime = (tmp_path / "server.js").stat().st_mtime
         result = patch_rewrites_for_api_port(tmp_path, 5055)
         assert result == tmp_path
         after_mtime = (tmp_path / "server.js").stat().st_mtime
-        assert before_mtime == after_mtime, (
-            "Default port should not touch the file"
-        )
+        assert before_mtime == after_mtime, "Default port should not touch the file"
         # And no .orig should have been created either
         assert not (tmp_path / "server.js.orig").exists()
 
@@ -153,6 +164,7 @@ class TestPatchRewritesErrors:
             PatchError,
             patch_rewrites_for_api_port,
         )
+
         # Build the files but with a DIFFERENT URL that doesn't match
         # the build-time default.
         (tmp_path / ".next").mkdir(parents=True, exist_ok=True)
@@ -160,9 +172,7 @@ class TestPatchRewritesErrors:
         (tmp_path / ".next" / "required-server-files.json").write_text(
             '{"rewrites": "no localhost"}'
         )
-        (tmp_path / ".next" / "routes-manifest.json").write_text(
-            '{"version": 3}'
-        )
+        (tmp_path / ".next" / "routes-manifest.json").write_text('{"version": 3}')
         with pytest.raises(PatchError, match="next.config.ts"):
             patch_rewrites_for_api_port(tmp_path, 9999)
 
@@ -171,6 +181,7 @@ class TestPatchRewritesErrors:
         older bundle without the full manifest set), patch what we
         can and warn about the rest."""
         from desktop.next_rewrites_patcher import patch_rewrites_for_api_port
+
         # Only create one of the three target files
         (tmp_path / "server.js").write_text(SAMPLE_SERVER_JS)
         # .next/ dir + the other files are missing
@@ -191,6 +202,7 @@ class TestRestoreOriginals:
             patch_rewrites_for_api_port,
             restore_originals,
         )
+
         _build_fake_frontend(tmp_path)
         patch_rewrites_for_api_port(tmp_path, 88888)
         # Files are now patched
@@ -199,8 +211,11 @@ class TestRestoreOriginals:
         restored = restore_originals(tmp_path)
         assert restored == 3
         # Files match the pristine baseline again
-        for rel in ("server.js", ".next/required-server-files.json",
-                    ".next/routes-manifest.json"):
+        for rel in (
+            "server.js",
+            ".next/required-server-files.json",
+            ".next/routes-manifest.json",
+        ):
             content = (tmp_path / rel).read_text()
             assert "localhost:5055" in content
             assert "localhost:88888" not in content
@@ -209,6 +224,7 @@ class TestRestoreOriginals:
         """If patching never ran, restore should be a clean no-op
         (returns 0) rather than crashing on missing .orig files."""
         from desktop.next_rewrites_patcher import restore_originals
+
         _build_fake_frontend(tmp_path)
         # No .orig files exist yet
         restored = restore_originals(tmp_path)
@@ -223,6 +239,7 @@ class TestRestoreOriginals:
 class TestWritabilityDetection:
     def test_writable_dir_detected(self, tmp_path):
         from desktop.next_rewrites_patcher import _is_writable
+
         assert _is_writable(tmp_path) is True
 
     def test_readonly_dir_falls_back_to_copy(self, tmp_path, monkeypatch):
@@ -242,10 +259,7 @@ class TestWritabilityDetection:
         monkeypatch.setenv("HOME", str(tmp_path / "fake-home"))
         result = patcher.patch_rewrites_for_api_port(src, 55555)
         expected = (
-            tmp_path
-            / "fake-home"
-            / ".deeper-notebook"
-            / patcher.WRITABLE_COPY_NAME
+            tmp_path / "fake-home" / ".deeper-notebook" / patcher.WRITABLE_COPY_NAME
         )
         assert result == expected
         # The writable copy should have the patched content
@@ -264,6 +278,7 @@ def test_patch_returns_path_for_launcher_to_use_as_cwd(tmp_path):
     the return value is always a valid directory containing
     server.js."""
     from desktop.next_rewrites_patcher import patch_rewrites_for_api_port
+
     _build_fake_frontend(tmp_path)
     result = patch_rewrites_for_api_port(tmp_path, 60000)
     assert result.is_dir()

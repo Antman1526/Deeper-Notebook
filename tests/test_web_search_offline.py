@@ -1,5 +1,6 @@
 """v0.8.68 — run_web_search returns empty immediately when offline (no 25s
 provider budget burn, no HTTP attempts)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -27,17 +28,18 @@ def test_offline_short_circuits(monkeypatch):
     monkeypatch.setenv("SERPER_API_KEY", "test-key")
 
     async def _offline():
-        return NetworkState(status="offline", forced_offline=False,
-                            checked_at=0.0, source="probe")
-    monkeypatch.setattr(
-        network, "get_network_state_with_settings", _offline
-    )
+        return NetworkState(
+            status="offline", forced_offline=False, checked_at=0.0, source="probe"
+        )
+
+    monkeypatch.setattr(network, "get_network_state_with_settings", _offline)
 
     attempts = []
 
     async def _no_attempt(*args, **kwargs):
         attempts.append(1)
         return []
+
     monkeypatch.setattr(ws, "_do_attempt", _no_attempt)
 
     assert _run(ws.run_web_search("test query")) == []
@@ -48,14 +50,15 @@ def test_online_still_walks_the_chain(monkeypatch):
     monkeypatch.setenv("SERPER_API_KEY", "test-key")
 
     async def _online():
-        return NetworkState(status="online", forced_offline=False,
-                            checked_at=0.0, source="probe")
-    monkeypatch.setattr(
-        network, "get_network_state_with_settings", _online
-    )
+        return NetworkState(
+            status="online", forced_offline=False, checked_at=0.0, source="probe"
+        )
+
+    monkeypatch.setattr(network, "get_network_state_with_settings", _online)
 
     async def _fake_attempt(client, provider, target, query, n, timeout):
         return [{"title": "t", "url": "https://x", "snippet": "s"}]
+
     monkeypatch.setattr(ws, "_do_attempt", _fake_attempt)
 
     results = _run(ws.run_web_search("test query"))

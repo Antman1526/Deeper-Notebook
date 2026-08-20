@@ -5,6 +5,7 @@ mlx-lm 0.31's server answers ``GET /v1/models`` with HTTP 200 and zero bytes
 successful chat completion on the same server). The probe's subject is "is the
 server up", so a JSON parse failure on a 200 must not mark it unhealthy.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -60,9 +61,12 @@ def test_read_timeout_with_live_port_is_healthy():
     client.__enter__ = MagicMock(return_value=client)
     client.__exit__ = MagicMock(return_value=False)
     client.get.side_effect = httpx.ReadTimeout("timed out")
-    with patch.object(httpx, "Client", return_value=client), patch(
-        "deeper_notebook.health.local_models._port_accepts_connection",
-        return_value=True,
+    with (
+        patch.object(httpx, "Client", return_value=client),
+        patch(
+            "deeper_notebook.health.local_models._port_accepts_connection",
+            return_value=True,
+        ),
     ):
         result = _probe_openai_compatible(
             name="MLX (local)", base_url="http://127.0.0.1:1/v1"
@@ -76,9 +80,12 @@ def test_read_timeout_with_dead_port_is_unhealthy():
     client.__enter__ = MagicMock(return_value=client)
     client.__exit__ = MagicMock(return_value=False)
     client.get.side_effect = httpx.ReadTimeout("timed out")
-    with patch.object(httpx, "Client", return_value=client), patch(
-        "deeper_notebook.health.local_models._port_accepts_connection",
-        return_value=False,
+    with (
+        patch.object(httpx, "Client", return_value=client),
+        patch(
+            "deeper_notebook.health.local_models._port_accepts_connection",
+            return_value=False,
+        ),
     ):
         result = _probe_openai_compatible(
             name="MLX (local)", base_url="http://127.0.0.1:1/v1"

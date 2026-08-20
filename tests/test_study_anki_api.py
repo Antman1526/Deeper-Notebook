@@ -66,14 +66,20 @@ def _receipt(
     )
 
 
-def test_feature_off_is_uniform_404_before_body_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_feature_off_is_uniform_404_before_body_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(study_anki, "study_workbench_enabled", lambda: False)
     app = FastAPI()
     app.include_router(study_anki.router, prefix="/api")
     with TestClient(app) as client:
         responses = [
-            client.post("/api/study/plans/not-a-plan/anki/import", data={"options": "{"}),
-            client.post("/api/study/plans/not-a-plan/anki/export", json={"unexpected": True}),
+            client.post(
+                "/api/study/plans/not-a-plan/anki/import", data={"options": "{"}
+            ),
+            client.post(
+                "/api/study/plans/not-a-plan/anki/export", json={"unexpected": True}
+            ),
             client.get("/api/study/plans/not-a-plan/anki/import/../../etc/passwd"),
         ]
     assert {response.status_code for response in responses} == {404}
@@ -96,7 +102,13 @@ def test_upload_preview_does_not_publish_and_returns_bounded_summary(
     monkeypatch.setattr(study_anki, "_publish_import", forbidden_publish)
     response = client.post(
         "/api/study/plans/study_plan%3Aone/anki/import",
-        files={"file": ("deck.apkg", io.BytesIO(package.read_bytes()), "application/octet-stream")},
+        files={
+            "file": (
+                "deck.apkg",
+                io.BytesIO(package.read_bytes()),
+                "application/octet-stream",
+            )
+        },
         data={"options": json.dumps({"schema_version": 1})},
     )
     assert response.status_code == 422
@@ -113,24 +125,37 @@ def test_valid_preview_requires_explicit_publish_and_replay_is_bound(
     receipt = _receipt(package, request_id)
     published: list[str] = []
 
-    async def fake_publish(plan_id: str, job: object, options: object, caller_request_id: str):
+    async def fake_publish(
+        plan_id: str, job: object, options: object, caller_request_id: str
+    ):
         published.append(caller_request_id)
         return receipt
 
     monkeypatch.setattr(study_anki, "_publish_import", fake_publish)
     preview = client.post(
         "/api/study/plans/study_plan%3Aone/anki/import",
-        files={"file": ("valid.apkg", package.read_bytes(), "application/octet-stream")},
+        files={
+            "file": ("valid.apkg", package.read_bytes(), "application/octet-stream")
+        },
         data={"options": json.dumps({"schema_version": 1})},
     )
     assert preview.status_code == 200
     job_id = preview.json()["job_id"]
     assert preview.json()["status"] == "preview_ready"
-    assert client.get(f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}").json()["receipt_id"] is None
+    assert (
+        client.get(f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}").json()[
+            "receipt_id"
+        ]
+        is None
+    )
 
     missing_confirmation = client.post(
         f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}:publish",
-        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+        json={
+            "upload_id": job_id,
+            "request_id": request_id,
+            "options": {"schema_version": 1},
+        },
     )
     assert missing_confirmation.status_code == 200
     assert missing_confirmation.json()["status"] == "published"
@@ -139,12 +164,20 @@ def test_valid_preview_requires_explicit_publish_and_replay_is_bound(
 
     replay = client.post(
         f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}:publish",
-        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+        json={
+            "upload_id": job_id,
+            "request_id": request_id,
+            "options": {"schema_version": 1},
+        },
     )
     assert replay.status_code == 200 and replay.json()["status"] == "replayed"
     mismatch = client.post(
         f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}:publish",
-        json={"upload_id": job_id, "request_id": "different-request", "options": {"schema_version": 1}},
+        json={
+            "upload_id": job_id,
+            "request_id": "different-request",
+            "options": {"schema_version": 1},
+        },
     )
     assert mismatch.status_code == 409
 
@@ -157,7 +190,11 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
     package = build_apkg(tmp_path / "crash-window.apkg")
     request_id = "crash-window-request"
     receipt = _receipt(package, request_id)
-    state: dict[str, object] = {"metadata": None, "complete_calls": 0, "native_committed": False}
+    state: dict[str, object] = {
+        "metadata": None,
+        "complete_calls": 0,
+        "native_committed": False,
+    }
     owner_token = "a" * 64
 
     class FakeJobs:
@@ -167,7 +204,11 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
 
         async def get(self, job_id: str, plan_id: str) -> AnkiJobMetadata | None:
             metadata = state["metadata"]
-            if isinstance(metadata, AnkiJobMetadata) and metadata.job_id == job_id and metadata.plan_id == plan_id:
+            if (
+                isinstance(metadata, AnkiJobMetadata)
+                and metadata.job_id == job_id
+                and metadata.plan_id == plan_id
+            ):
                 return metadata
             return None
 
@@ -187,9 +228,9 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
                     update={
                         "status": "publishing",
                         "claim_request_id": request_id,
-                            "claim_options_sha256": options_sha256,
-                            "claim_package_sha256": package_sha256,
-                            "claim_payload_sha256": payload_sha256,
+                        "claim_options_sha256": options_sha256,
+                        "claim_package_sha256": package_sha256,
+                        "claim_payload_sha256": payload_sha256,
                         "claim_owner_token": owner_token,
                         "claim_expires_at": datetime.now(UTC) + timedelta(minutes=5),
                     }
@@ -215,7 +256,9 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
                 raise RuntimeError("simulated crash after native publication")
             metadata = state["metadata"]
             assert isinstance(metadata, AnkiJobMetadata)
-            repaired = metadata.model_copy(update={"status": "published", "receipt_id": receipt_id})
+            repaired = metadata.model_copy(
+                update={"status": "published", "receipt_id": receipt_id}
+            )
             state["metadata"] = repaired
             return repaired
 
@@ -236,20 +279,34 @@ def test_publish_retry_reconciles_receipt_after_durable_complete_crash(
 
     preview = client.post(
         "/api/study/plans/study_plan%3Aone/anki/import",
-        files={"file": ("crash-window.apkg", package.read_bytes(), "application/octet-stream")},
+        files={
+            "file": (
+                "crash-window.apkg",
+                package.read_bytes(),
+                "application/octet-stream",
+            )
+        },
         data={"options": json.dumps({"schema_version": 1})},
     )
     assert preview.status_code == 200
     job_id = preview.json()["job_id"]
     first = client.post(
         f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}:publish",
-        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+        json={
+            "upload_id": job_id,
+            "request_id": request_id,
+            "options": {"schema_version": 1},
+        },
     )
     assert first.status_code == 503
 
     retry = client.post(
         f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}:publish",
-        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+        json={
+            "upload_id": job_id,
+            "request_id": request_id,
+            "options": {"schema_version": 1},
+        },
     )
     assert retry.status_code == 200
     assert retry.json()["status"] == "replayed"
@@ -305,14 +362,24 @@ def test_durable_claim_uses_repository_canonical_plan_payload(
     encoded_plan_id = plan_id.replace(":", "%3A")
     preview = client.post(
         f"/api/study/plans/{encoded_plan_id}/anki/import",
-        files={"file": ("canonical-plan.apkg", package.read_bytes(), "application/octet-stream")},
+        files={
+            "file": (
+                "canonical-plan.apkg",
+                package.read_bytes(),
+                "application/octet-stream",
+            )
+        },
         data={"options": json.dumps({"schema_version": 1})},
     )
     assert preview.status_code == 200
     job_id = preview.json()["job_id"]
     response = client.post(
         f"/api/study/plans/{encoded_plan_id}/anki/import/{job_id}:publish",
-        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+        json={
+            "upload_id": job_id,
+            "request_id": request_id,
+            "options": {"schema_version": 1},
+        },
     )
     assert response.status_code == 200
     assert claims == [receipt.payload_sha256]
@@ -325,7 +392,9 @@ def test_publish_rejects_divergent_receipt_payload_before_durable_complete(
 ) -> None:
     package = build_apkg(tmp_path / "divergent-receipt.apkg")
     request_id = "divergent-receipt-request"
-    receipt = _receipt(package, request_id).model_copy(update={"payload_sha256": "f" * 64})
+    receipt = _receipt(package, request_id).model_copy(
+        update={"payload_sha256": "f" * 64}
+    )
     complete_calls: list[tuple[object, ...]] = []
     state: dict[str, AnkiJobMetadata] = {}
 
@@ -353,14 +422,24 @@ def test_publish_rejects_divergent_receipt_payload_before_durable_complete(
     )
     preview = client.post(
         "/api/study/plans/study_plan%3Aone/anki/import",
-        files={"file": ("divergent-receipt.apkg", package.read_bytes(), "application/octet-stream")},
+        files={
+            "file": (
+                "divergent-receipt.apkg",
+                package.read_bytes(),
+                "application/octet-stream",
+            )
+        },
         data={"options": json.dumps({"schema_version": 1})},
     )
     assert preview.status_code == 200
     job_id = preview.json()["job_id"]
     response = client.post(
         f"/api/study/plans/study_plan%3Aone/anki/import/{job_id}:publish",
-        json={"upload_id": job_id, "request_id": request_id, "options": {"schema_version": 1}},
+        json={
+            "upload_id": job_id,
+            "request_id": request_id,
+            "options": {"schema_version": 1},
+        },
     )
     assert response.status_code == 409
     assert complete_calls == []
@@ -421,14 +500,20 @@ async def test_replay_rejects_receipt_from_same_request_different_package(
 
         async def complete(self, *args: object, **kwargs: object) -> AnkiJobMetadata:
             complete_calls.append(args)
-            return metadata.model_copy(update={"status": "published", "receipt_id": receipt_a.receipt_id})
+            return metadata.model_copy(
+                update={"status": "published", "receipt_id": receipt_a.receipt_id}
+            )
 
     class FakeReceipts:
-        async def _find_by_request(self, plan_id: str, request_id: str) -> AnkiCompatibilityReceipt:
+        async def _find_by_request(
+            self, plan_id: str, request_id: str
+        ) -> AnkiCompatibilityReceipt:
             return receipt_a
 
     monkeypatch.setattr(study_anki, "_durable_metadata_enabled", lambda: True)
-    monkeypatch.setattr(study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job))
+    monkeypatch.setattr(
+        study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job)
+    )
     monkeypatch.setattr(study_anki, "AnkiJobRepository", FakeJobs)
     monkeypatch.setattr(study_anki, "AnkiImportRepository", FakeReceipts)
 
@@ -499,11 +584,15 @@ async def test_published_replay_rejects_receipt_from_different_package(
             return metadata
 
     class FakeReceipts:
-        async def find_by_receipt(self, plan_id: str, receipt_id: str) -> AnkiCompatibilityReceipt:
+        async def find_by_receipt(
+            self, plan_id: str, receipt_id: str
+        ) -> AnkiCompatibilityReceipt:
             return receipt_a
 
     monkeypatch.setattr(study_anki, "_durable_metadata_enabled", lambda: True)
-    monkeypatch.setattr(study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job))
+    monkeypatch.setattr(
+        study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job)
+    )
     monkeypatch.setattr(study_anki, "AnkiJobRepository", FakeJobs)
     monkeypatch.setattr(study_anki, "AnkiImportRepository", FakeReceipts)
 
@@ -546,7 +635,9 @@ def test_upload_bound_and_download_symlink_are_rejected(
     link.symlink_to(outside)
     download_id = "anki_download:" + "c" * 64
     study_anki._DOWNLOADS[download_id] = link
-    assert client.get(f"/api/study/plans/anki/download/{download_id}").status_code == 404
+    assert (
+        client.get(f"/api/study/plans/anki/download/{download_id}").status_code == 404
+    )
 
 
 def test_export_returns_opaque_download_id_and_download_has_safe_headers(

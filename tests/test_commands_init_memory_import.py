@@ -13,6 +13,7 @@ This test pins the guarded-import contract: when a `memory_commands`
 module exists in the package, it gets imported and the symbols are
 bound to the package namespace.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -53,6 +54,7 @@ def test_memory_commands_registered_when_module_present(tmp_path, monkeypatch):
     time, the guarded import picks it up and the symbols are bound."""
     # Find the commands package on disk
     import commands as _commands_pkg
+
     pkg_path = Path(_commands_pkg.__file__).parent
     target = pkg_path / "memory_commands.py"
 
@@ -60,14 +62,17 @@ def test_memory_commands_registered_when_module_present(tmp_path, monkeypatch):
     # real one. Otherwise plant a stub that mimics the real module.
     cleanup = False
     if not target.exists():
-        target.write_text(dedent("""
+        target.write_text(
+            dedent("""
             # Stub memory_commands for v0.7.47 regression test.
             def memory_extract_turn(*args, **kwargs):
                 return {"ok": True, "stub": True}
 
             def memory_summarize_session(*args, **kwargs):
                 return {"ok": True, "stub": True}
-        """).strip() + "\n")
+        """).strip()
+            + "\n"
+        )
         cleanup = True
 
     try:
@@ -99,6 +104,7 @@ def test_memory_commands_import_failure_doesnt_break_package(tmp_path):
     package still loads cleanly. The guard only catches ImportError
     on the FROM line; other exceptions still propagate."""
     import commands as _commands_pkg
+
     pkg_path = Path(_commands_pkg.__file__).parent
     target = pkg_path / "memory_commands.py"
 

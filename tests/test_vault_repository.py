@@ -1546,9 +1546,7 @@ async def test_backlinks_project_source_note_title_for_display_identity():
     assert "source_note_id.title AS source_note_title" in link_query
     assert "target_note_id.title AS target_note_title" in link_query
     assert "target_note_id.vault_file_id AS target_vault_file_id" in link_query
-    assert (
-        "target_note_id.vault_file_id.vault_id AS target_vault_id" in link_query
-    )
+    assert "target_note_id.vault_file_id.vault_id AS target_vault_id" in link_query
     assert (
         "target_note_id.vault_file_id.relative_path AS target_relative_path"
         in link_query
@@ -2007,10 +2005,7 @@ def test_trust_manifest_parser_accepts_canonical_connector_documents():
 
     assert len(manifest.entries) == 1
     assert manifest.entries[0].manifest_id == "source-alpha"
-    assert (
-        manifest.entries[0].canonical_relative_path
-        == "Obsidian Brain/source.md"
-    )
+    assert manifest.entries[0].canonical_relative_path == "Obsidian Brain/source.md"
     assert manifest.entries[0].reviewer == "owner"
     assert manifest.entries[0].content_hash == "a" * 64
 

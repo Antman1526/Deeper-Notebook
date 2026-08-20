@@ -73,17 +73,12 @@ def _isolate_data_root_home(tmp_path, monkeypatch):
 
     def guarded_resolve(*, home=None, failure_injector=None):
         candidate = (
-            Path(home)
-            if home is not None
-            else Path(os.environ["HOME"])
+            Path(home) if home is not None else Path(os.environ["HOME"])
         ).resolve()
         assert candidate.is_relative_to(allowed_root), (
-            f"test attempted data-root resolution outside {allowed_root}: "
-            f"{candidate}"
+            f"test attempted data-root resolution outside {allowed_root}: {candidate}"
         )
-        return original_resolve(
-            home=home, failure_injector=failure_injector
-        )
+        return original_resolve(home=home, failure_injector=failure_injector)
 
     monkeypatch.setattr(data_root, "resolve_data_root", guarded_resolve)
 

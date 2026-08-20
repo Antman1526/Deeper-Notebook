@@ -19,6 +19,7 @@ Both findings caught by an external audit after the v0.8.42 ship:
      return 206 with a mismatched range and silently corrupt
      the file.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -66,13 +67,16 @@ def test_hot_swap_chat_restores_n_ctx_on_restart_failure(tmp_path):
     # different value. After rollback we expect to see the OLD value
     # again (8192) — not the resolved-from-new 65536.
     resolve_calls = [65536]  # first call returns the new value
+
     def _fake_resolve():
         return resolve_calls.pop(0) if resolve_calls else 8192
+
     sup._resolve_chat_llm_n_ctx = _fake_resolve
 
     # restart_sidecar returns failure to trigger the rollback path.
     def _fail_restart(kind):
         return False, "Simulated spawn failure"
+
     sup.restart_sidecar = _fail_restart
 
     ok, detail = sup.hot_swap_chat(str(new_gguf))
@@ -109,22 +113,34 @@ async def test_resume_aborts_when_content_range_doesnt_match_request(tmp_path):
             "content-length": "1500",
             "content-range": "bytes 0-1499/3000",
         }
-        def raise_for_status(self): pass
+
+        def raise_for_status(self):
+            pass
+
         async def aiter_bytes(self, chunk_size=1024 * 1024):
             yield b"X" * 1500  # never written if guard works
 
     class _Ctx:
-        async def __aenter__(self): return _MismatchResp()
-        async def __aexit__(self, *_a): pass
+        async def __aenter__(self):
+            return _MismatchResp()
+
+        async def __aexit__(self, *_a):
+            pass
 
     class _Client:
-        def __init__(self, *a, **k): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): pass
-        def stream(self, m, u, headers=None): return _Ctx()
+        def __init__(self, *a, **k):
+            pass
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _Client):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            pass
+
+        def stream(self, m, u, headers=None):
+            return _Ctx()
+
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient", _Client):
         job = await dl_mod.start_download("r/a", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)
 
@@ -154,22 +170,34 @@ async def test_resume_accepts_matching_content_range(tmp_path):
             "content-length": "2200",
             "content-range": "bytes 800-2999/3000",
         }
-        def raise_for_status(self): pass
+
+        def raise_for_status(self):
+            pass
+
         async def aiter_bytes(self, chunk_size=1024 * 1024):
             yield new_bytes
 
     class _Ctx:
-        async def __aenter__(self): return _GoodResp()
-        async def __aexit__(self, *_a): pass
+        async def __aenter__(self):
+            return _GoodResp()
+
+        async def __aexit__(self, *_a):
+            pass
 
     class _Client:
-        def __init__(self, *a, **k): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): pass
-        def stream(self, m, u, headers=None): return _Ctx()
+        def __init__(self, *a, **k):
+            pass
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _Client):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            pass
+
+        def stream(self, m, u, headers=None):
+            return _Ctx()
+
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient", _Client):
         job = await dl_mod.start_download("r/a", "x.gguf", tmp_path)
         await asyncio.wait_for(job._task, timeout=5.0)
 

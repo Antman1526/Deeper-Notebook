@@ -13,6 +13,7 @@ Tests:
     (defense — never blindly mutate os.environ).
   - Mixed whitelist + reject in a single payload returns both lists.
 """
+
 from __future__ import annotations
 
 import os
@@ -51,8 +52,10 @@ def test_endpoint_503_when_no_token_configured(app, monkeypatch):
             headers={"Authorization": "Bearer anything"},
         )
     assert resp.status_code == 503
-    assert "control plane" in resp.json()["detail"].lower() or \
-           "control_token" in resp.json()["detail"].lower()
+    assert (
+        "control plane" in resp.json()["detail"].lower()
+        or "control_token" in resp.json()["detail"].lower()
+    )
 
 
 def test_endpoint_401_when_authorization_header_missing(app, token_env):

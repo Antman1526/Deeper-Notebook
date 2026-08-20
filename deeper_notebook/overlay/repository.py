@@ -33,9 +33,7 @@ _HASH = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ERROR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _OVERLAY_NOTE_ID = re.compile(r"^overlay_note:[A-Za-z0-9_-]+$")
 _ZERO_HASH = "0" * 64
-_OVERLAY_SPACE_FIELDS = (
-    "id, slug, display_name, root_version, created_at, updated_at"
-)
+_OVERLAY_SPACE_FIELDS = "id, slug, display_name, root_version, created_at, updated_at"
 _OVERLAY_NOTE_FIELDS = (
     "id, space_id, projected_note_id, stable_id, kind, date_key, "
     "relative_path, title, content_hash, revision, projection_state, "
@@ -365,8 +363,7 @@ class OverlayRepository:
 
     @staticmethod
     def _reserve_create_transaction() -> str:
-        return (
-            """
+        return """
         BEGIN TRANSACTION;
         UPSERT $space_id MERGE $space;
         LET $existing_receipt = (
@@ -475,9 +472,8 @@ class OverlayRepository:
             receipt: $reserved_receipt
         };
         COMMIT TRANSACTION;
-        """  # nosec B608
-            .replace("__OVERLAY_NOTE_FIELDS__", _OVERLAY_NOTE_FIELDS)
-            .replace("__OVERLAY_RECEIPT_FIELDS__", _OVERLAY_RECEIPT_FIELDS)
+        """.replace("__OVERLAY_NOTE_FIELDS__", _OVERLAY_NOTE_FIELDS).replace(  # nosec B608
+            "__OVERLAY_RECEIPT_FIELDS__", _OVERLAY_RECEIPT_FIELDS
         )
 
     async def reserve_update(
@@ -710,8 +706,7 @@ class OverlayRepository:
 
     @staticmethod
     def _reserve_update_transaction() -> str:
-        return (
-            """
+        return """
         BEGIN TRANSACTION;
         LET $note = (
             SELECT __OVERLAY_NOTE_FIELDS__ FROM $note_id LIMIT 1
@@ -779,9 +774,8 @@ class OverlayRepository:
             receipt: $reserved_receipt
         };
         COMMIT TRANSACTION;
-        """  # nosec B608
-            .replace("__OVERLAY_NOTE_FIELDS__", _OVERLAY_NOTE_FIELDS)
-            .replace("__OVERLAY_RECEIPT_FIELDS__", _OVERLAY_RECEIPT_FIELDS)
+        """.replace("__OVERLAY_NOTE_FIELDS__", _OVERLAY_NOTE_FIELDS).replace(  # nosec B608
+            "__OVERLAY_RECEIPT_FIELDS__", _OVERLAY_RECEIPT_FIELDS
         )
 
     async def commit_revision(

@@ -13,14 +13,10 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_SCRIPT = REPOSITORY_ROOT / "desktop" / "build" / "release_manifest.py"
 INSTALLER_SCRIPT = REPOSITORY_ROOT / "desktop" / "build" / "deeper-notebook.iss"
 WORKFLOW_FILE = REPOSITORY_ROOT / ".github" / "workflows" / "build-desktop.yml"
-WINDOWS_WORKFLOW_FILE = (
-    REPOSITORY_ROOT / ".github" / "workflows" / "build-windows.yml"
-)
+WINDOWS_WORKFLOW_FILE = REPOSITORY_ROOT / ".github" / "workflows" / "build-windows.yml"
 PYINSTALLER_SPEC = REPOSITORY_ROOT / "desktop" / "build" / "pyinstaller.spec"
 MAC_POST_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "post_build_mac.sh"
-WINDOWS_POST_BUILD = (
-    REPOSITORY_ROOT / "desktop" / "build" / "post_build_windows.ps1"
-)
+WINDOWS_POST_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "post_build_windows.ps1"
 WINDOWS_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "build_windows.ps1"
 MAKEFILE = REPOSITORY_ROOT / "Makefile"
 
@@ -182,17 +178,20 @@ def test_release_surfaces_use_exact_deeper_notebook_artifact_names() -> None:
     compatibility_start = workflow.index("  macos-compatibility-upgrade:")
     release_start = workflow.index("  release:")
     active_workflow = workflow[:compatibility_start] + workflow[release_start:]
-    release_sources = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (
-            WINDOWS_WORKFLOW_FILE,
-            PYINSTALLER_SPEC,
-            MAC_POST_BUILD,
-            WINDOWS_POST_BUILD,
-            WINDOWS_BUILD,
-            INSTALLER_SCRIPT,
+    release_sources = (
+        "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                WINDOWS_WORKFLOW_FILE,
+                PYINSTALLER_SPEC,
+                MAC_POST_BUILD,
+                WINDOWS_POST_BUILD,
+                WINDOWS_BUILD,
+                INSTALLER_SCRIPT,
+            )
         )
-    ) + active_workflow
+        + active_workflow
+    )
 
     for artifact_name in (
         "Deeper-Notebook-mac-arm64.dmg",
@@ -209,8 +208,7 @@ def test_macos_checksum_manifests_are_portable_after_artifact_download() -> None
 
     assert (
         "cd release\n"
-        "          shasum -a 256 Deeper-Notebook-mac-arm64.dmg > SHA256SUMS"
-        in workflow
+        "          shasum -a 256 Deeper-Notebook-mac-arm64.dmg > SHA256SUMS" in workflow
     )
     assert (
         "cd release\n"
@@ -227,14 +225,12 @@ def test_windows_checksum_manifests_are_portable_after_artifact_download() -> No
     assert (
         '"  Deeper-Notebook-windows-x64.zip" '
         "| Set-Content -NoNewline -Encoding utf8 "
-        "release/windows-zip/SHA256SUMS"
-        in workflow
+        "release/windows-zip/SHA256SUMS" in workflow
     )
     assert (
         '"  Deeper-Notebook-Setup-x64.exe" '
         "| Set-Content -NoNewline -Encoding utf8 "
-        "release/windows-setup/SHA256SUMS"
-        in workflow
+        "release/windows-setup/SHA256SUMS" in workflow
     )
 
 
@@ -269,7 +265,9 @@ def test_legacy_installer_filename_was_git_moved() -> None:
     ).exists()
 
 
-def test_compatibility_jobs_build_exact_approved_baseline_in_separate_worktree() -> None:
+def test_compatibility_jobs_build_exact_approved_baseline_in_separate_worktree() -> (
+    None
+):
     workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
 
     assert "macos-compatibility-upgrade:" in workflow
@@ -314,7 +312,9 @@ def test_makefile_build_contract_is_portable_and_uses_canonical_outputs() -> Non
     assert "/Applications/Deeper Notebook.app" in makefile
 
 
-def test_makefile_prepares_build_venv_before_desktop_memory_precondition_tests() -> None:
+def test_makefile_prepares_build_venv_before_desktop_memory_precondition_tests() -> (
+    None
+):
     makefile = MAKEFILE.read_text(encoding="utf-8")
 
     assert "build-mac-test: build-mac-venv" in makefile
@@ -325,7 +325,8 @@ def test_makefile_prepares_build_venv_before_desktop_memory_precondition_tests()
 def test_makefile_requires_a_deep_strict_codesign_verification() -> None:
     makefile = MAKEFILE.read_text(encoding="utf-8")
     verify_lines = [
-        line for line in makefile.splitlines()
+        line
+        for line in makefile.splitlines()
         if "codesign" in line and "--verify" in line
     ]
 
@@ -349,15 +350,13 @@ def test_installer_version_matches_the_canonical_desktop_version() -> None:
 
     assert installer_match is not None
     assert desktop_match is not None
-    assert installer_match.group(1) == desktop_match.group(1) == "0.8.110"
+    assert installer_match.group(1) == desktop_match.group(1) == "0.8.111"
 
 
 def test_installer_removes_only_the_exact_retired_start_menu_shortcut() -> None:
     installer = INSTALLER_SCRIPT.read_text(encoding="utf-8")
     install_delete = installer.split("[InstallDelete]", 1)[1].split("[Icons]", 1)[0]
-    shortcut_cleanup = (
-        'Type: files; Name: "{autoprograms}\\Open Notebook Plus.lnk"'
-    )
+    shortcut_cleanup = 'Type: files; Name: "{autoprograms}\\Open Notebook Plus.lnk"'
 
     assert shortcut_cleanup in install_delete
     assert install_delete.count("{autoprograms}") == 1
@@ -401,8 +400,7 @@ def test_legacy_macos_probe_requires_a_visible_window_owned_by_legacy_pid() -> N
     assert "kCGWindowName" in compatibility
     assert "kCGWindowOwnerName" in compatibility
     assert (
-        'wait_for_pid_visible_window "$legacy_pid" '
-        '"Open notebook+" "Open notebook+"'
+        'wait_for_pid_visible_window "$legacy_pid" "Open notebook+" "Open notebook+"'
     ) in compatibility
     assert compatibility.index(
         'wait_for_pid_visible_window "$legacy_pid"'
@@ -418,12 +416,12 @@ def test_windows_upgrade_leaves_only_the_canonical_start_menu_shortcut() -> None
     assert "[Environment]::GetFolderPath('Programs')" in compatibility
     assert "[Environment]::GetFolderPath('CommonPrograms')" in compatibility
     assert (
-        '$canonicalShortcuts = @($programs | ForEach-Object { '
+        "$canonicalShortcuts = @($programs | ForEach-Object { "
         'Join-Path $_ "Deeper Notebook.lnk" } | Where-Object { Test-Path $_ })'
         in compatibility
     )
     assert (
-        '$legacyShortcuts = @($programs | ForEach-Object { '
+        "$legacyShortcuts = @($programs | ForEach-Object { "
         'Join-Path $_ "Open Notebook Plus.lnk" } | Where-Object { Test-Path $_ })'
         in compatibility
     )
@@ -437,7 +435,7 @@ def test_macos_dmg_creation_retries_only_resource_busy_and_verifies_image() -> N
     assert "DMG_CREATE_ATTEMPTS=3" in post_build
     assert '"Resource busy"' in post_build
     assert "hdiutil verify" in post_build
-    assert "exit \"${_status}\"" in post_build
+    assert 'exit "${_status}"' in post_build
 
 
 def test_windows_installer_replaces_and_removes_reserved_internal_tree() -> None:
@@ -457,7 +455,7 @@ def test_windows_repair_closes_package_before_replacing_internal_tree() -> None:
 
     assert (
         "pwsh desktop/build/stop_windows_package.ps1 "
-        "-ProcessId $process.Id -ScopePath \"$installDir\""
+        '-ProcessId $process.Id -ScopePath "$installDir"'
     ) in workflow
     assert "Stop-Process -Id $process.Id -Force" not in workflow
     assert "CloseMainWindow()" in stopper

@@ -101,9 +101,7 @@ def _resolve_url() -> str:
 def _resolve_creds() -> tuple[str, str]:
     user = os.environ.get("SURREAL_USER", "root")
     password = (
-        os.environ.get("SURREAL_PASSWORD")
-        or os.environ.get("SURREAL_PASS")
-        or "root"
+        os.environ.get("SURREAL_PASSWORD") or os.environ.get("SURREAL_PASS") or "root"
     )
     return user, password
 
@@ -264,9 +262,11 @@ async def surreal_db() -> AsyncIterator[dict[str, Any]]:
 # schema is already in place). Any other underscore-prefixed table is
 # treated as a SurrealDB system / internal table.
 _PROTECTED_TABLE_PREFIXES = ("_",)
-_PROTECTED_TABLE_NAMES = frozenset({
-    "_sbl_migrations",  # explicit guard even though the prefix catches it
-})
+_PROTECTED_TABLE_NAMES = frozenset(
+    {
+        "_sbl_migrations",  # explicit guard even though the prefix catches it
+    }
+)
 
 
 async def _discover_tables() -> list[str]:
@@ -290,11 +290,7 @@ async def _discover_tables() -> list[str]:
     if not rows:
         return []
     head = rows[0] if isinstance(rows, list) else rows
-    tables_section = (
-        head.get("tables")
-        or head.get("tb")
-        or {}
-    )
+    tables_section = head.get("tables") or head.get("tb") or {}
     discovered = list(tables_section.keys())
 
     # Apply the deny-list. We do this AFTER discovery so an unknown
@@ -302,7 +298,8 @@ async def _discover_tables() -> list[str]:
     # `_audit_log`) is automatically excluded without requiring a
     # conftest edit.
     return [
-        name for name in discovered
+        name
+        for name in discovered
         if name not in _PROTECTED_TABLE_NAMES
         and not any(name.startswith(p) for p in _PROTECTED_TABLE_PREFIXES)
     ]

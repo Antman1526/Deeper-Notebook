@@ -34,9 +34,7 @@ def test_windows_owned_directory_uses_held_handle_for_path_operations(
         "_open_windows_directory_handle",
         lambda _path: next(handles),
     )
-    monkeypatch.setattr(
-        data_root, "_close_windows_handle", closed.append
-    )
+    monkeypatch.setattr(data_root, "_close_windows_handle", closed.append)
 
     def create_owned(path, _reason):
         path.mkdir()
@@ -60,10 +58,7 @@ def test_windows_owned_directory_uses_held_handle_for_path_operations(
         "_open_windows_append_file",
         lambda path: os.open(
             path,
-            os.O_CREAT
-            | os.O_APPEND
-            | os.O_WRONLY
-            | getattr(os, "O_BINARY", 0),
+            os.O_CREAT | os.O_APPEND | os.O_WRONLY | getattr(os, "O_BINARY", 0),
         ),
     )
     monkeypatch.setattr(data_root, "_fsync_directory", lambda _path: None)
@@ -71,12 +66,8 @@ def test_windows_owned_directory_uses_held_handle_for_path_operations(
     owned = tmp_path / "owned"
     with data_root.open_owned_directory(owned) as directory:
         assert directory.windows_handle == 102
-        data_root.atomic_replace_json(
-            directory, "receipt.json", {"status": "started"}
-        )
-        data_root.append_recovery_log(
-            directory, "launcher.log", b"failure\n"
-        )
+        data_root.atomic_replace_json(directory, "receipt.json", {"status": "started"})
+        data_root.append_recovery_log(directory, "launcher.log", b"failure\n")
         data_root.unlink_owned_file(directory, "receipt.json")
 
         assert not (owned / "receipt.json").exists()
@@ -102,9 +93,7 @@ def test_windows_private_directory_creation_sets_owner_and_protected_acl(
     monkeypatch.setattr(
         ctypes,
         "WinDLL",
-        lambda name, **_kwargs: (
-            advapi32 if name == "advapi32" else kernel32
-        ),
+        lambda name, **_kwargs: advapi32 if name == "advapi32" else kernel32,
         raising=False,
     )
     monkeypatch.setattr(
@@ -126,9 +115,7 @@ def test_windows_private_directory_creation_sets_owner_and_protected_acl(
     assert len(local_free.calls) == 1
 
 
-def test_windows_directory_flush_requests_write_access(
-    tmp_path, monkeypatch
-):
+def test_windows_directory_flush_requests_write_access(tmp_path, monkeypatch):
     create = _FakeNativeCall(123)
     flush = _FakeNativeCall(1)
     close = _FakeNativeCall(1)
@@ -181,9 +168,7 @@ def test_windows_directory_handle_closes_when_reparse_query_fails(
     assert closed == [201]
 
 
-def test_windows_append_handle_closes_when_reparse_query_fails(
-    tmp_path, monkeypatch
-):
+def test_windows_append_handle_closes_when_reparse_query_fails(tmp_path, monkeypatch):
     create = _FakeNativeCall(202)
     kernel32 = SimpleNamespace(CreateFileW=create)
     closed: list[int] = []

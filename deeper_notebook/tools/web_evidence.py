@@ -199,7 +199,11 @@ def _freshness(
     timestamp_valid: bool,
     max_age: timedelta | None,
 ) -> Literal["fresh", "stale", "unknown"]:
-    if not timestamp_valid or not isinstance(max_age, timedelta) or max_age < timedelta(0):
+    if (
+        not timestamp_valid
+        or not isinstance(max_age, timedelta)
+        or max_age < timedelta(0)
+    ):
         return "unknown"
     try:
         age = datetime.now(timezone.utc) - retrieved_at

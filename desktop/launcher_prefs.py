@@ -23,6 +23,7 @@ Only whitelisted keys may be written to the file. A PUT request with an
 unknown key returns 400. This prevents the file from becoming an accidental
 secrets store if the caller sends an arbitrary env var.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,13 +43,15 @@ log = logging.getLogger(__name__)
 # Do NOT add arbitrary env vars here; the goal is to expose a small, well-
 # understood set of knobs — not a general-purpose secrets store.
 # ---------------------------------------------------------------------------
-ALLOWED_KEYS: frozenset[str] = frozenset({
-    "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
-    "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
-    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
-    "DEEPER_NOTEBOOK_CHAT_LLM_CTX",
-    "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX",
-})
+ALLOWED_KEYS: frozenset[str] = frozenset(
+    {
+        "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
+        "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
+        "DEEPER_NOTEBOOK_LOCAL_N_CTX",
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX",
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX",
+    }
+)
 
 
 def _canonicalize_prefs(prefs: dict[str, str]) -> dict[str, str]:

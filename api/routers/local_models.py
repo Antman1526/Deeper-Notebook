@@ -9,6 +9,7 @@ via /healthz/sidecars/{kind}/log. The launcher (v0.8.38) writes
 the rolling tail to {DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR}/supervisor.{kind}.tail;
 this router reads it on demand.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -70,16 +71,32 @@ async def local_models_settings_put(body: dict):
         model_dir = validate_model_root(Path(body.get("model_dir", cfg.model_dir)))
         execution_policy = body.get("execution_policy", cfg.execution_policy)
         compute_profile = body.get("compute_profile", cfg.compute_profile)
-        if not isinstance(execution_policy, str) or execution_policy not in {"strict_local", "local_preferred", "custom"}:
+        if not isinstance(execution_policy, str) or execution_policy not in {
+            "strict_local",
+            "local_preferred",
+            "custom",
+        }:
             raise ValueError("Unsupported execution policy.")
-        if not isinstance(compute_profile, str) or compute_profile not in {"efficient", "balanced", "maximum_quality"}:
+        if not isinstance(compute_profile, str) or compute_profile not in {
+            "efficient",
+            "balanced",
+            "maximum_quality",
+        }:
             raise ValueError("Unsupported compute profile.")
-        memory_limit = body.get("local_model_memory_limit_bytes", cfg.local_model_memory_limit_bytes)
-        if memory_limit is not None and (type(memory_limit) is not int or memory_limit < 0):
+        memory_limit = body.get(
+            "local_model_memory_limit_bytes", cfg.local_model_memory_limit_bytes
+        )
+        if memory_limit is not None and (
+            type(memory_limit) is not int or memory_limit < 0
+        ):
             raise ValueError("Memory limit must be non-negative.")
         role_overrides = body.get("role_overrides", cfg.role_overrides)
-        trusted_roots = body.get("trusted_external_model_roots", cfg.trusted_external_model_roots)
-        if not isinstance(role_overrides, dict) or not isinstance(trusted_roots, list | tuple):
+        trusted_roots = body.get(
+            "trusted_external_model_roots", cfg.trusted_external_model_roots
+        )
+        if not isinstance(role_overrides, dict) or not isinstance(
+            trusted_roots, list | tuple
+        ):
             raise ValueError("Invalid local model settings.")
         validated_overrides = {
             _safe_settings_text(key): _safe_settings_text(value)
@@ -112,7 +129,9 @@ async def local_models_route_plan(body: dict, request: Request):
             role=body["role"],
             required_context_tokens=int(body.get("required_context_tokens", 0)),
             modalities=tuple(body.get("modalities", ["text"])),
-            requires_structured_output=bool(body.get("requires_structured_output", False)),
+            requires_structured_output=bool(
+                body.get("requires_structured_output", False)
+            ),
             execution_policy=body.get("execution_policy", "strict_local"),
             compute_profile=body.get("compute_profile", "balanced"),
             role_override_model_id=body.get("role_override_model_id"),
@@ -120,7 +139,9 @@ async def local_models_route_plan(body: dict, request: Request):
             memory_reservation_bytes=int(body.get("memory_reservation_bytes", 0)),
         )
     except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="Invalid route-plan request.") from exc
+        raise HTTPException(
+            status_code=422, detail="Invalid route-plan request."
+        ) from exc
     transport = getattr(request.app.state, "local_model_transport", None)
     if transport is not None:
         loopback_endpoint = "http://127.0.0.1/local-models/route-plan"
@@ -177,10 +198,7 @@ def _is_local_sidecar_url(url: str) -> bool:
     https:// is intentionally NOT matched today — none of our
     bundled sidecars use TLS, and a user-configured https endpoint
     is more likely to be a remote service than a local sidecar."""
-    return (
-        url.startswith("http://127.0.0.1")
-        or url.startswith("http://localhost")
-    )
+    return url.startswith("http://127.0.0.1") or url.startswith("http://localhost")
 
 
 @router.get("/api/local-models/health")
@@ -205,9 +223,7 @@ async def local_models_health():
     creds = await _load_local_credentials()
     results = await asyncio.to_thread(probe_all_local_models, creds)
     healthy = sum(1 for r in results if r["status"] == "healthy")
-    total_configured = sum(
-        1 for r in results if r["status"] != "not_configured"
-    )
+    total_configured = sum(1 for r in results if r["status"] != "not_configured")
     if total_configured == 0:
         overall = "down"
     elif healthy == total_configured:
@@ -387,8 +403,7 @@ async def local_models_role_routing():
         manifest_entries,
     )
     route_matches = [
-        find_manifest_matches(route.model, manifest_entries)
-        for route in routes
+        find_manifest_matches(route.model, manifest_entries) for route in routes
     ]
     route_alignments = [
         _manifest_alignment_to_dict(route, matches, available=bool(manifest_entries))
@@ -444,8 +459,7 @@ async def local_models_role_routing():
                     launcher_config=launcher_config,
                 ),
                 "manifest_matches": [
-                    _manifest_entry_to_dict(entry)
-                    for entry in matches
+                    _manifest_entry_to_dict(entry) for entry in matches
                 ],
                 "manifest_alignment": alignment,
                 "manifest_alternatives": [
@@ -519,7 +533,9 @@ def _launcher_config_summary(model_dir: Path):
     matches_inventory = False
     if raw_model_dir:
         try:
-            matches_inventory = Path(raw_model_dir).expanduser().resolve() == model_dir.resolve()
+            matches_inventory = (
+                Path(raw_model_dir).expanduser().resolve() == model_dir.resolve()
+            )
         except OSError:
             matches_inventory = False
 
@@ -617,7 +633,8 @@ def _manifest_row_preview_to_dict(preview):
         "duplicate": preview.duplicate,
         "duplicate_entry": (
             _manifest_entry_to_dict(getattr(preview, "duplicate_entry", None))
-            if getattr(preview, "duplicate_entry", None) else None
+            if getattr(preview, "duplicate_entry", None)
+            else None
         ),
     }
 
@@ -627,7 +644,8 @@ def _manifest_row_apply_to_dict(result):
     data["backup_path"] = result.backup_path
     data["detail"] = (
         "Manifest row applied with backup."
-        if result.backup_path else "Manifest row applied."
+        if result.backup_path
+        else "Manifest row applied."
     )
     return data
 
@@ -651,9 +669,7 @@ def _manifest_alignment_to_dict(route, matches, *, available: bool):
         }
 
     primary_count = sum(
-        1
-        for entry in matches
-        if str(entry.role).strip().lower().startswith("primary")
+        1 for entry in matches if str(entry.role).strip().lower().startswith("primary")
     )
     if primary_count:
         return {
@@ -670,8 +686,7 @@ def _manifest_alignment_to_dict(route, matches, *, available: bool):
             "status": "curated",
             "label": "Manifest curated",
             "reason": (
-                "The selected route model appears in the manifest as "
-                f"{role_text}."
+                f"The selected route model appears in the manifest as {role_text}."
             ),
             "matched_count": len(matches),
             "primary_count": 0,
@@ -725,23 +740,27 @@ def _manifest_alternatives_for_route(route, alignment, reconciliation_entries):
             continue
         scored.append((score, item))
 
-    scored.sort(key=lambda pair: (
-        -pair[0],
-        _manifest_role_priority(pair[1].entry.role),
-        pair[1].entry.category.lower(),
-        pair[1].entry.repo.lower(),
-    ))
+    scored.sort(
+        key=lambda pair: (
+            -pair[0],
+            _manifest_role_priority(pair[1].entry.role),
+            pair[1].entry.category.lower(),
+            pair[1].entry.repo.lower(),
+        )
+    )
     return [item for _, item in scored[:3]]
 
 
 def _manifest_alternative_to_dict(item, route_role: str):
     data = _manifest_entry_to_dict(item.entry)
-    data.update({
-        "matched_model_name": item.matched_model_name,
-        "matched_model_path": item.matched_model_path,
-        "matched_model_runtime": item.matched_model_runtime,
-        "reason": _manifest_alternative_reason(item, route_role),
-    })
+    data.update(
+        {
+            "matched_model_name": item.matched_model_name,
+            "matched_model_path": item.matched_model_path,
+            "matched_model_runtime": item.matched_model_runtime,
+            "reason": _manifest_alternative_reason(item, route_role),
+        }
+    )
     return data
 
 
@@ -775,13 +794,19 @@ def _manifest_role_relevance_score(role: str, entry) -> int:
     category = f"{entry.category} {entry.notes}".lower()
     runtime = entry.runtime_type.lower()
     if role == "coding_research":
-        score = _keyword_score(category, ("coding", "debugging", "terminal", "agentic"), 60)
+        score = _keyword_score(
+            category, ("coding", "debugging", "terminal", "agentic"), 60
+        )
     elif role == "source_synthesis":
         score = _keyword_score(category, ("research", "reasoning", "general chat"), 60)
     elif role == "chat":
-        score = _keyword_score(category, ("general chat", "creative", "research", "reasoning"), 60)
+        score = _keyword_score(
+            category, ("general chat", "creative", "research", "reasoning"), 60
+        )
     elif role == "study_fast":
-        score = _keyword_score(category, ("general chat", "research", "creative", "fable"), 60)
+        score = _keyword_score(
+            category, ("general chat", "research", "creative", "fable"), 60
+        )
     elif role == "embedding":
         score = _keyword_score(category, ("embedding", "retrieval", "embed"), 80)
     else:
@@ -845,17 +870,20 @@ def _manifest_reconciliation_counts(entries):
 
 def _manifest_reconciliation_entry_to_dict(item):
     data = _manifest_entry_to_dict(item.entry)
-    data.update({
-        "status": item.status,
-        "status_reason": item.status_reason,
-        "matched_model_name": item.matched_model_name,
-        "matched_model_path": item.matched_model_path,
-        "matched_model_runtime": item.matched_model_runtime,
-        "setup_task": (
-            _manifest_setup_task_to_dict(item.setup_task)
-            if item.setup_task else None
-        ),
-    })
+    data.update(
+        {
+            "status": item.status,
+            "status_reason": item.status_reason,
+            "matched_model_name": item.matched_model_name,
+            "matched_model_path": item.matched_model_path,
+            "matched_model_runtime": item.matched_model_runtime,
+            "setup_task": (
+                _manifest_setup_task_to_dict(item.setup_task)
+                if item.setup_task
+                else None
+            ),
+        }
+    )
     return data
 
 
@@ -886,8 +914,7 @@ def _manifest_recommendation_to_dict(rec):
         "approx_size_gb": rec.approx_size_gb,
         "context_length": rec.context_length,
         "setup_task": (
-            _manifest_setup_task_to_dict(rec.setup_task)
-            if rec.setup_task else None
+            _manifest_setup_task_to_dict(rec.setup_task) if rec.setup_task else None
         ),
     }
 
@@ -1054,7 +1081,9 @@ async def local_models_manifest_row_apply(body: dict):
     from deeper_notebook.local_models import ManifestRowError, append_manifest_row
 
     row = (body.get("row") or "").strip() if isinstance(body, dict) else ""
-    allow_duplicate = bool(body.get("allow_duplicate")) if isinstance(body, dict) else False
+    allow_duplicate = (
+        bool(body.get("allow_duplicate")) if isinstance(body, dict) else False
+    )
     if not row:
         raise HTTPException(status_code=400, detail="Body must include `row`.")
 
@@ -1174,10 +1203,7 @@ async def local_models_set_launch_default(body: dict):
 
     rows = await asyncio.to_thread(enumerate_models, model_dir)
     match = next(
-        (
-            row for row in rows
-            if _launcher_model_ref(row, model_dir) == requested_ref
-        ),
+        (row for row in rows if _launcher_model_ref(row, model_dir) == requested_ref),
         None,
     )
     if match is None:
@@ -1258,10 +1284,7 @@ async def local_models_benchmark_list():
     from deeper_notebook.local_models import list_benchmark_jobs
 
     return {
-        "benchmarks": [
-            _benchmark_job_to_dict(job)
-            for job in list_benchmark_jobs()
-        ]
+        "benchmarks": [_benchmark_job_to_dict(job) for job in list_benchmark_jobs()]
     }
 
 
@@ -1318,8 +1341,7 @@ async def local_models_recommendations():
         "source": "manifest",
         "manifest_path": str(model_manifest_path(model_dir)),
         "recommendations": [
-            _manifest_recommendation_to_dict(rec)
-            for rec in recommendations
+            _manifest_recommendation_to_dict(rec) for rec in recommendations
         ],
     }
 
@@ -1375,6 +1397,7 @@ async def local_models_download(body: dict):
     # defense-in-depth (matching the filename guard above), keeping malformed
     # input + traversal out of the composed URL.
     import re as _re
+
     if not _re.fullmatch(
         r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*", repo_id
     ):
@@ -1482,8 +1505,7 @@ async def local_models_snapshot_installs_list():
         await reconcile_snapshot_installs(model_dir)
     return {
         "snapshot_installs": [
-            _snapshot_install_job_to_dict(job)
-            for job in list_snapshot_installs()
+            _snapshot_install_job_to_dict(job) for job in list_snapshot_installs()
         ]
     }
 
@@ -1532,6 +1554,7 @@ async def local_models_download_cancel(job_id: str):
           rather than retry.
     """
     from deeper_notebook.local_models import cancel_job, get_job
+
     job = get_job(job_id)
     if job is None:
         raise HTTPException(
@@ -1610,6 +1633,7 @@ async def local_models_download_status(job_id: str):
     that to repopulate, then poll individual job IDs.
     """
     from deeper_notebook.local_models import get_job
+
     job = get_job(job_id)
     if job is None:
         raise HTTPException(
@@ -1683,7 +1707,7 @@ async def sidecar_log(kind: str):
         # somehow grew past the deque's maxlen (e.g. user manually
         # edited it).
         if len(data) > 8 * 1024:
-            data = data[-8 * 1024:]
+            data = data[-8 * 1024 :]
         try:
             return data.decode("utf-8", errors="replace")
         except Exception:
@@ -1695,6 +1719,7 @@ async def sidecar_log(kind: str):
     # the pattern list. Falls back to None when no pattern matches —
     # UI then renders just the raw tail.
     from deeper_notebook.utils.error_classifier import classify_sidecar_error
+
     hint = classify_sidecar_error(log_text)
 
     return {"kind": kind, "log": log_text, "hint": hint, "available": True}
@@ -1768,8 +1793,7 @@ async def local_models_set_active(body: dict):
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Path must be inside the configured model directory "
-                f"({model_dir})."
+                f"Path must be inside the configured model directory ({model_dir})."
             ),
         )
 
@@ -1822,14 +1846,16 @@ async def local_models_set_active(body: dict):
     if status_code >= 500:
         raise HTTPException(
             status_code=502,
-            detail=lbody.get("error") or lbody.get("detail")
-                   or f"Launcher returned HTTP {status_code}",
+            detail=lbody.get("error")
+            or lbody.get("detail")
+            or f"Launcher returned HTTP {status_code}",
         )
     if status_code >= 400:
         raise HTTPException(
             status_code=400,
-            detail=lbody.get("error") or lbody.get("detail")
-                   or f"Launcher returned HTTP {status_code}",
+            detail=lbody.get("error")
+            or lbody.get("detail")
+            or f"Launcher returned HTTP {status_code}",
         )
     if lbody.get("ok", False):
         os.environ.update(
@@ -1930,16 +1956,18 @@ async def sidecar_restart(kind: str):
     if status_code >= 500:
         raise HTTPException(
             status_code=502,
-            detail=body.get("error") or body.get("detail")
-                   or f"Launcher returned HTTP {status_code}",
+            detail=body.get("error")
+            or body.get("detail")
+            or f"Launcher returned HTTP {status_code}",
         )
     # 400/401 from the launcher → bubble as 400 so the UI sees a
     # specific message ("Sidecar never spawned this session", etc).
     if status_code >= 400:
         raise HTTPException(
             status_code=400,
-            detail=body.get("error") or body.get("detail")
-                   or f"Launcher returned HTTP {status_code}",
+            detail=body.get("error")
+            or body.get("detail")
+            or f"Launcher returned HTTP {status_code}",
         )
 
     return {

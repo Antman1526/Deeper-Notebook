@@ -2,6 +2,7 @@
 MCP servers, not just servers[0]. Pre-fix, every server after the first was
 silently ignored, so the multi-server Settings UI was a single-server selector.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -61,8 +62,12 @@ def test_tool_name_collision_first_server_wins(monkeypatch):
     """If two servers expose the same tool name, the first (higher-priority)
     server's tool is kept and the dup is dropped (logged)."""
     tools_by_url = {
-        "http://a": [{"name": "search", "description": "from A", "input_schema": _schema()}],
-        "http://b": [{"name": "search", "description": "from B", "input_schema": _schema()}],
+        "http://a": [
+            {"name": "search", "description": "from A", "input_schema": _schema()}
+        ],
+        "http://b": [
+            {"name": "search", "description": "from B", "input_schema": _schema()}
+        ],
     }
     chat_mod = _patch_per_url_client(monkeypatch, tools_by_url)
 

@@ -27,6 +27,7 @@ Three discrete bugs from the v0.7.199 deferred list:
    status" in FastAPI logs, Sentry, and OTel exporters. Replaced
    with 503 + descriptive detail.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -49,8 +50,7 @@ def test_search_router_bubbles_typed_exceptions():
     # branch must be gone.
     assert (
         "except DatabaseOperationError as e:\n"
-        '        logger.error(f"Database error during search: {str(e)}")'
-        in src
+        '        logger.error(f"Database error during search: {str(e)}")' in src
     ) is False, (
         "v0.7.200 regression: DatabaseOperationError caught + "
         "collapsed to HTTPException(500). Defeats the v0.7.179-183 "
@@ -58,16 +58,14 @@ def test_search_router_bubbles_typed_exceptions():
     )
     assert (
         "except InvalidInputError as e:\n"
-        "        raise HTTPException(status_code=400, detail=str(e))"
-        in src
+        "        raise HTTPException(status_code=400, detail=str(e))" in src
     ) is False, (
         "v0.7.200 regression: InvalidInputError caught + collapsed "
         "to HTTPException(400). Same global-sweep defeat."
     )
     # The new combined handler must exist.
     assert (
-        "except (NotFoundError, InvalidInputError, DatabaseOperationError):"
-        in src
+        "except (NotFoundError, InvalidInputError, DatabaseOperationError):" in src
     ), "v0.7.200 regression: combined typed-exception handler removed."
 
 
@@ -103,10 +101,7 @@ def test_ask_simple_disconnect_uses_standard_status():
         "Operators cannot graph this status in Sentry/OTel."
     )
     # And 503 (or some standard equivalent) must take its place.
-    assert (
-        "status_code=503" in src
-        and "Client disconnected before answer ready" in src
-    )
+    assert "status_code=503" in src and "Client disconnected before answer ready" in src
 
 
 def test_no_remaining_onkeypress_in_search_or_session_manager():

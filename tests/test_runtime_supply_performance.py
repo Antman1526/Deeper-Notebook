@@ -55,10 +55,13 @@ def test_snapshot_terminal_history_bound_preserves_queued_jobs(monkeypatch):
     snapshot_installer._prune_job_history()
 
     assert snapshot_installer.get_snapshot_install("active") is active
-    assert sum(
-        job.status == "completed"
-        for job in snapshot_installer.list_snapshot_installs()
-    ) == 2
+    assert (
+        sum(
+            job.status == "completed"
+            for job in snapshot_installer.list_snapshot_installs()
+        )
+        == 2
+    )
 
 
 def test_benchmark_terminal_history_bound_preserves_running_jobs(monkeypatch):
@@ -73,6 +76,6 @@ def test_benchmark_terminal_history_bound_preserves_running_jobs(monkeypatch):
     benchmarks._prune_job_history()
 
     assert benchmarks.get_benchmark_job("active") is active
-    assert sum(
-        job.status == "completed" for job in benchmarks.list_benchmark_jobs()
-    ) == 2
+    assert (
+        sum(job.status == "completed" for job in benchmarks.list_benchmark_jobs()) == 2
+    )

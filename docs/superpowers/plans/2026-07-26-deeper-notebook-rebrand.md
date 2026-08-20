@@ -201,19 +201,27 @@ Test the classifier independently of the still-unrebranded working tree:
 ```python
 def test_audit_distinguishes_compatibility_from_active_branding():
     allowlist = {
-        ("desktop/build/deeper-notebook.iss", "AppId={{572C65B3",):
-            "compatibility_alias"
+        (
+            "desktop/build/deeper-notebook.iss",
+            "AppId={{572C65B3",
+        ): "compatibility_alias"
     }
-    assert classify_match(
-        "desktop/build/deeper-notebook.iss",
-        "AppId={{572C65B3",
-        allowlist,
-    ) == "compatibility_alias"
-    assert classify_match(
-        "frontend/src/app/layout.tsx",
-        "Open Notebook Plus",
-        allowlist,
-    ) == "unexpected_active_identity"
+    assert (
+        classify_match(
+            "desktop/build/deeper-notebook.iss",
+            "AppId={{572C65B3",
+            allowlist,
+        )
+        == "compatibility_alias"
+    )
+    assert (
+        classify_match(
+            "frontend/src/app/layout.tsx",
+            "Open Notebook Plus",
+            allowlist,
+        )
+        == "unexpected_active_identity"
+    )
 ```
 
 Seed the allowlist only with known compatibility data: Surreal namespace/database values, surreal-command app IDs, the stable Windows installer GUID context, historical specs/changelogs, and accurate `lfnovo/open-notebook` references. Do not allowlist active UI, package metadata, artifact names, update URLs, or downstream support links.
@@ -418,18 +426,20 @@ production Python directly reads a legacy key outside
 Add canonical keys and retain legacy keys:
 
 ```python
-ALLOWED_KEYS = frozenset({
-    "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
-    "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
-    "DEEPER_NOTEBOOK_LOCAL_N_CTX",
-    "DN_CHAT_LLM_CTX",
-    "DN_CHAT_LLM_CTX_MAX",
-    "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
-    "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
-    "OPEN_NOTEBOOK_LOCAL_N_CTX",
-    "ONP_CHAT_LLM_CTX",
-    "ONP_CHAT_LLM_CTX_MAX",
-})
+ALLOWED_KEYS = frozenset(
+    {
+        "DEEPER_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
+        "DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
+        "DEEPER_NOTEBOOK_LOCAL_N_CTX",
+        "DN_CHAT_LLM_CTX",
+        "DN_CHAT_LLM_CTX_MAX",
+        "OPEN_NOTEBOOK_LOCAL_DRAFT_MODEL_PATH",
+        "OPEN_NOTEBOOK_LOCAL_DRAFT_N_PREDICT",
+        "OPEN_NOTEBOOK_LOCAL_N_CTX",
+        "ONP_CHAT_LLM_CTX",
+        "ONP_CHAT_LLM_CTX_MAX",
+    }
+)
 ```
 
 When both aliases occur in `launcher.env`, write only the canonical winner back.
@@ -623,6 +633,7 @@ git commit -m "feat(desktop): migrate legacy state to Deeper Notebook"
 def test_canonical_import_is_primary():
     from deeper_notebook.domain.notebook import Note as canonical
     from open_notebook.domain.notebook import Note as legacy
+
     assert legacy is canonical
 
 
@@ -718,9 +729,7 @@ class LegacyAliasFinder(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname: str, path=None, target=None):
         if not fullname.startswith("open_notebook."):
             return None
-        canonical_name = fullname.replace(
-            "open_notebook", "deeper_notebook", 1
-        )
+        canonical_name = fullname.replace("open_notebook", "deeper_notebook", 1)
         canonical_spec = importlib.util.find_spec(canonical_name)
         if canonical_spec is None:
             return None
@@ -735,6 +744,7 @@ class LegacyAliasFinder(importlib.abc.MetaPathFinder):
 
 ```python
 """Deprecated import compatibility for Deeper Notebook."""
+
 from __future__ import annotations
 
 import importlib

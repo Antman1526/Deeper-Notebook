@@ -5,6 +5,7 @@ The endpoint generates corpus-grounded starter questions via one bounded LLM
 call and MUST degrade to an empty list on any failure (no sources, no model,
 LLM error) so it can never block opening a notebook.
 """
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -45,8 +46,9 @@ def _patch_model(content):
 
 @pytest.mark.asyncio
 async def test_parses_and_cleans_questions():
-    nb = _FakeNotebook([_FakeSource("Deep Learning", ["ml", "ai"]),
-                        _FakeSource("RAG systems")])
+    nb = _FakeNotebook(
+        [_FakeSource("Deep Learning", ["ml", "ai"]), _FakeSource("RAG systems")]
+    )
     llm_out = (
         "What is deep learning?\n"
         "- How does RAG improve answers?\n"
@@ -54,16 +56,18 @@ async def test_parses_and_cleans_questions():
         "This line is not a question\n"
         '"Why do transformers scale well?"'
     )
-    with patch("api.routers.notebooks.Notebook.get",
-               new=AsyncMock(return_value=nb)), _patch_model(llm_out):
+    with (
+        patch("api.routers.notebooks.Notebook.get", new=AsyncMock(return_value=nb)),
+        _patch_model(llm_out),
+    ):
         out = await get_suggested_questions("notebook:x", limit=4)
 
     qs = out["questions"]
     assert qs[0] == "What is deep learning?"
-    assert "How does RAG improve answers?" in qs          # bullet stripped
-    assert "What are embeddings used for?" in qs           # numbering stripped
-    assert "Why do transformers scale well?" in qs         # quotes stripped
-    assert "This line is not a question" not in qs         # no '?' → dropped
+    assert "How does RAG improve answers?" in qs  # bullet stripped
+    assert "What are embeddings used for?" in qs  # numbering stripped
+    assert "Why do transformers scale well?" in qs  # quotes stripped
+    assert "This line is not a question" not in qs  # no '?' → dropped
     assert all("?" in q for q in qs)
     assert len(qs) <= 4
 
@@ -72,8 +76,10 @@ async def test_parses_and_cleans_questions():
 async def test_respects_limit():
     nb = _FakeNotebook([_FakeSource("S1")])
     llm_out = "\n".join(f"Question number {i}?" for i in range(10))
-    with patch("api.routers.notebooks.Notebook.get",
-               new=AsyncMock(return_value=nb)), _patch_model(llm_out):
+    with (
+        patch("api.routers.notebooks.Notebook.get", new=AsyncMock(return_value=nb)),
+        _patch_model(llm_out),
+    ):
         out = await get_suggested_questions("notebook:x", limit=3)
     assert len(out["questions"]) == 3
 
@@ -81,8 +87,7 @@ async def test_respects_limit():
 @pytest.mark.asyncio
 async def test_empty_when_no_sources():
     nb = _FakeNotebook([])
-    with patch("api.routers.notebooks.Notebook.get",
-               new=AsyncMock(return_value=nb)):
+    with patch("api.routers.notebooks.Notebook.get", new=AsyncMock(return_value=nb)):
         out = await get_suggested_questions("notebook:x", limit=4)
     assert out == {"questions": []}
 
@@ -90,10 +95,12 @@ async def test_empty_when_no_sources():
 @pytest.mark.asyncio
 async def test_degrades_to_empty_on_llm_error():
     nb = _FakeNotebook([_FakeSource("S1", ["t"])])
-    with patch("api.routers.notebooks.Notebook.get",
-               new=AsyncMock(return_value=nb)), patch(
-        "deeper_notebook.ai.provision.provision_langchain_model",
-        new=AsyncMock(side_effect=RuntimeError("no model configured")),
+    with (
+        patch("api.routers.notebooks.Notebook.get", new=AsyncMock(return_value=nb)),
+        patch(
+            "deeper_notebook.ai.provision.provision_langchain_model",
+            new=AsyncMock(side_effect=RuntimeError("no model configured")),
+        ),
     ):
         out = await get_suggested_questions("notebook:x", limit=4)
     assert out == {"questions": []}

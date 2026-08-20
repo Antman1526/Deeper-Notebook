@@ -37,7 +37,9 @@ class AnkiJobMetadata(BaseModel):
     transformed_count: int = Field(ge=0, le=10_000)
     skipped_count: int = Field(ge=0, le=10_000)
     rejected_count: int = Field(ge=0, le=10_000)
-    status: Literal["preview_ready", "processing", "publishing", "failed", "cancelled", "published"] = "preview_ready"
+    status: Literal[
+        "preview_ready", "processing", "publishing", "failed", "cancelled", "published"
+    ] = "preview_ready"
     claim_request_id: str | None = Field(default=None, max_length=256)
     claim_options_sha256: str | None = Field(default=None, pattern=_HEX64)
     claim_package_sha256: str | None = Field(default=None, pattern=_HEX64)
@@ -136,9 +138,17 @@ def _metadata(value: object, model: type[BaseModel]) -> BaseModel | None:
 
 def _canonical_record(table: str, value: str):
     try:
-        if table == "study_anki_job" and isinstance(value, str) and value.startswith("anki_job:"):
+        if (
+            table == "study_anki_job"
+            and isinstance(value, str)
+            and value.startswith("anki_job:")
+        ):
             record = RecordID(table, value.split(":", 1)[1])
-        elif table == "study_anki_export" and isinstance(value, str) and value.startswith("anki_download:"):
+        elif (
+            table == "study_anki_export"
+            and isinstance(value, str)
+            and value.startswith("anki_download:")
+        ):
             record = RecordID(table, value.split(":", 1)[1])
         else:
             record = ensure_record_id(value)
@@ -244,7 +254,11 @@ class AnkiJobRepository:
         )
         row = _metadata(updated, AnkiJobMetadata)
         if row is not None:
-            return AnkiClaimResult("owner", owner_token) if row.claim_owner_token == owner_token else AnkiClaimResult("replay")
+            return (
+                AnkiClaimResult("owner", owner_token)
+                if row.claim_owner_token == owner_token
+                else AnkiClaimResult("replay")
+            )
         current = await self.get(job_id, plan_id)
         if current is None:
             return AnkiClaimResult("missing")
@@ -334,7 +348,9 @@ class AnkiJobRepository:
         )
         return _metadata(result, AnkiJobMetadata)  # type: ignore[return-value]
 
-    async def list_expired(self, *, limit: int = MAX_METADATA_ROWS) -> tuple[tuple[str, str], ...]:
+    async def list_expired(
+        self, *, limit: int = MAX_METADATA_ROWS
+    ) -> tuple[tuple[str, str], ...]:
         """List bounded expired job rows before two-phase file cleanup."""
         bounded = max(1, min(int(limit), MAX_METADATA_ROWS))
         rows = await repo_query(
@@ -345,7 +361,8 @@ class AnkiJobRepository:
         return tuple(
             (row["job_id"], row["file_token"])
             for row in _rows(rows)
-            if isinstance(row.get("job_id"), str) and isinstance(row.get("file_token"), str)
+            if isinstance(row.get("job_id"), str)
+            and isinstance(row.get("file_token"), str)
         )
 
     async def delete_expired(self, job_id: str) -> bool:
@@ -376,7 +393,9 @@ class AnkiExportRepository:
                 "IF $active[0].total >= $limit { THROW 'study_anki_export_capacity'; }; "
                 "CREATE $export_record CONTENT $export; COMMIT TRANSACTION; RETURN $export;",
                 {
-                    "export_record": _canonical_record("study_anki_export", metadata.download_id),
+                    "export_record": _canonical_record(
+                        "study_anki_export", metadata.download_id
+                    ),
                     "export": metadata.model_dump(mode="python"),
                     "limit": MAX_METADATA_ROWS,
                 },
@@ -401,11 +420,16 @@ class AnkiExportRepository:
             "syllabus_version, package_sha256, receipt_id, card_count, stable_note_guids, "
             "stable_model_ids, stable_deck_ids, created_at, expires_at "
             "FROM $export WHERE download_id = $download_id LIMIT 1;",
-            {"export": _canonical_record("study_anki_export", download_id), "download_id": download_id},
+            {
+                "export": _canonical_record("study_anki_export", download_id),
+                "download_id": download_id,
+            },
         )
         return _metadata(rows, AnkiExportMetadata)  # type: ignore[return-value]
 
-    async def list_expired(self, *, limit: int = MAX_METADATA_ROWS) -> tuple[tuple[str, str], ...]:
+    async def list_expired(
+        self, *, limit: int = MAX_METADATA_ROWS
+    ) -> tuple[tuple[str, str], ...]:
         """List bounded expired export rows before two-phase file cleanup."""
         bounded = max(1, min(int(limit), MAX_METADATA_ROWS))
         rows = await repo_query(
@@ -416,7 +440,8 @@ class AnkiExportRepository:
         return tuple(
             (row["download_id"], row["file_token"])
             for row in _rows(rows)
-            if isinstance(row.get("download_id"), str) and isinstance(row.get("file_token"), str)
+            if isinstance(row.get("download_id"), str)
+            and isinstance(row.get("file_token"), str)
         )
 
     async def delete_expired(self, download_id: str) -> bool:

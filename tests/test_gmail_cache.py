@@ -15,6 +15,7 @@ These tests guard four behaviors of the v0.7.157 fix:
 4. A SurrealDB call that exceeds the timeout returns a default
    instance instead of blocking the caller indefinitely.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -87,12 +88,15 @@ async def test_save_invalidates_cache():
     fake_row_before = {"email_address": "old@example.com", "enabled": False}
     fake_row_after = {"email_address": "new@example.com", "enabled": True}
 
-    with patch(
-        "deeper_notebook.domain.gmail.repo_query",
-        new=AsyncMock(side_effect=[[fake_row_before], [fake_row_after]]),
-    ) as mock_query, patch(
-        "deeper_notebook.domain.gmail.repo_upsert",
-        new=AsyncMock(return_value=None),
+    with (
+        patch(
+            "deeper_notebook.domain.gmail.repo_query",
+            new=AsyncMock(side_effect=[[fake_row_before], [fake_row_after]]),
+        ) as mock_query,
+        patch(
+            "deeper_notebook.domain.gmail.repo_upsert",
+            new=AsyncMock(return_value=None),
+        ),
     ):
         first = await GmailIntegration.get()
         assert first.email_address == "old@example.com"
@@ -120,8 +124,10 @@ async def test_timeout_returns_default_instance():
         await asyncio.sleep(10.0)
         return [{"email_address": "would_have_returned"}]
 
-    with patch("deeper_notebook.domain.gmail.repo_query", new=_slow_query), \
-         patch.object(gmail_mod, "_QUERY_TIMEOUT_S", 0.05):
+    with (
+        patch("deeper_notebook.domain.gmail.repo_query", new=_slow_query),
+        patch.object(gmail_mod, "_QUERY_TIMEOUT_S", 0.05),
+    ):
         result = await GmailIntegration.get()
 
     # Default-constructed instance: empty / inactive

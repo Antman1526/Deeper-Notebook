@@ -25,10 +25,10 @@ from deeper_notebook.environment import resolve_env
 # request-response phase. Mirror the chat_service.py pattern: set
 # explicit connect/read/write/pool budgets at client construction.
 _DISCOVERY_HTTP_TIMEOUT = httpx.Timeout(
-    connect=5.0,   # TLS handshake + DNS — fail fast on dead endpoints
-    read=30.0,     # provider catalog GET can be slow on first request
+    connect=5.0,  # TLS handshake + DNS — fail fast on dead endpoints
+    read=30.0,  # provider catalog GET can be slow on first request
     write=10.0,
-    pool=5.0,      # connection pool acquire — bound the queue
+    pool=5.0,  # connection pool acquire — bound the queue
 )
 from pydantic import SecretStr
 
@@ -62,7 +62,11 @@ PROVIDER_ENV_CONFIG: dict[str, dict] = {
         "optional": ["GOOGLE_APPLICATION_CREDENTIALS"],
     },
     "azure": {
-        "required": ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_VERSION"],
+        "required": [
+            "AZURE_OPENAI_API_KEY",
+            "AZURE_OPENAI_ENDPOINT",
+            "AZURE_OPENAI_API_VERSION",
+        ],
         "optional": [
             "AZURE_OPENAI_ENDPOINT_LLM",
             "AZURE_OPENAI_ENDPOINT_EMBEDDING",
@@ -154,7 +158,11 @@ def validate_url(url: str, provider: str) -> None:
 
             # Block IPv4-mapped IPv6 addresses pointing to link-local
             # e.g. ::ffff:169.254.169.254 bypasses IPv6 is_link_local check
-            if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped and ip.ipv4_mapped.is_link_local:
+            if (
+                hasattr(ip, "ipv4_mapped")
+                and ip.ipv4_mapped
+                and ip.ipv4_mapped.is_link_local
+            ):
                 raise ValueError(
                     "Link-local addresses (169.254.x.x) are not allowed for security reasons. "
                     "These addresses are used for cloud metadata endpoints."
@@ -188,7 +196,9 @@ def validate_url(url: str, provider: str) -> None:
                                 "These addresses are used for cloud metadata endpoints."
                             )
                     except ValueError as inner_ve:
-                        if "link-local" in str(inner_ve).lower() or "Link-local" in str(inner_ve):
+                        if "link-local" in str(inner_ve).lower() or "Link-local" in str(
+                            inner_ve
+                        ):
                             raise
                         # Skip non-IP addresses (e.g., IPv6 zones)
                         continue
@@ -223,8 +233,12 @@ def require_encryption_key() -> None:
     legacy ProviderConfig — even though encryption was working
     perfectly. Same fix applied to `get_provider_status` below.
     """
-    has_singular = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env))
-    has_plural = bool(resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env))
+    has_singular = bool(
+        resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEY", getter=get_secret_from_env)
+    )
+    has_plural = bool(
+        resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", getter=get_secret_from_env)
+    )
     if not (has_singular or has_plural):
         raise ValueError(
             "Encryption key not configured. "
@@ -234,7 +248,9 @@ def require_encryption_key() -> None:
         )
 
 
-def credential_to_response(cred: Credential, model_count: int = 0) -> CredentialResponse:
+def credential_to_response(
+    cred: Credential, model_count: int = 0
+) -> CredentialResponse:
     """Convert a Credential domain object to API response."""
     return CredentialResponse(
         id=cred.id or "",
@@ -485,17 +501,27 @@ async def test_credential(credential_id: str) -> dict:
             )
             lc_model = model.to_langchain()
             await lc_model.ainvoke("Hi")
-            return {"provider": provider, "success": True, "message": "Connection successful"}
+            return {
+                "provider": provider,
+                "success": True,
+                "message": "Connection successful",
+            }
 
         elif test_type == "embedding":
             model = AIFactory.create_embedding(
                 model_name=test_model, provider=provider, config=config
             )
             await model.aembed(["test"])
-            return {"provider": provider, "success": True, "message": "Connection successful"}
+            return {
+                "provider": provider,
+                "success": True,
+                "message": "Connection successful",
+            }
 
         elif test_type == "text_to_speech":
-            AIFactory.create_text_to_speech(model_name=test_model, provider=provider, config=config)
+            AIFactory.create_text_to_speech(
+                model_name=test_model, provider=provider, config=config
+            )
             return {
                 "provider": provider,
                 "success": True,
@@ -516,14 +542,31 @@ async def test_credential(credential_id: str) -> dict:
         # "403") can't misclassify the result. The auth keywords stay as
         # reliable substrings.
         import re as _re
+
         if _re.search(r"\b401\b", error_msg) or "unauthorized" in low:
-            return {"provider": provider, "success": False, "message": "Invalid API key"}
+            return {
+                "provider": provider,
+                "success": False,
+                "message": "Invalid API key",
+            }
         elif _re.search(r"\b403\b", error_msg) or "forbidden" in low:
-            return {"provider": provider, "success": False, "message": "API key lacks required permissions"}
+            return {
+                "provider": provider,
+                "success": False,
+                "message": "API key lacks required permissions",
+            }
         elif "rate" in low and "limit" in low:
-            return {"provider": provider, "success": True, "message": "Rate limited - but connection works"}
+            return {
+                "provider": provider,
+                "success": True,
+                "message": "Rate limited - but connection works",
+            }
         elif "not found" in error_msg.lower() and "model" in error_msg.lower():
-            return {"provider": provider, "success": True, "message": "API key valid (test model not available)"}
+            return {
+                "provider": provider,
+                "success": True,
+                "message": "API key valid (test model not available)",
+            }
         else:
             # v0.7.201 — was `f"Error: {truncated}"` with str(e)[:100]
             # returned to the API client. Same info-leak class as
@@ -567,6 +610,7 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
     # cloud-metadata + bad schemes. Blocking getaddrinfo → run off the loop.
     if base_url:
         import asyncio as _asyncio
+
         try:
             await _asyncio.to_thread(validate_url, base_url, provider)
         except ValueError as exc:
@@ -590,22 +634,25 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
             "claude-sonnet-4-5",
         ],
         "voyage": [
-            "voyage-3", "voyage-3-lite", "voyage-code-3",
-            "voyage-finance-2", "voyage-law-2", "voyage-multilingual-2",
+            "voyage-3",
+            "voyage-3-lite",
+            "voyage-code-3",
+            "voyage-finance-2",
+            "voyage-law-2",
+            "voyage-multilingual-2",
         ],
         "elevenlabs": [
-            "eleven_multilingual_v2", "eleven_turbo_v2_5",
-            "eleven_turbo_v2", "eleven_monolingual_v1",
+            "eleven_multilingual_v2",
+            "eleven_turbo_v2_5",
+            "eleven_turbo_v2",
+            "eleven_monolingual_v1",
         ],
     }
 
     if provider in STATIC_MODELS:
         if not api_key and provider != "ollama":
             return []
-        return [
-            {"name": m, "provider": provider}
-            for m in STATIC_MODELS[provider]
-        ]
+        return [{"name": m, "provider": provider} for m in STATIC_MODELS[provider]]
 
     # API-based discovery URLs (OpenAI-style /models endpoints)
     url_map = {
@@ -654,7 +701,8 @@ async def discover_with_config(provider: str, config: dict) -> list[dict]:
                 # branch above. Let the client's structured Timeout
                 # apply.
                 response = await client.get(
-                    f"{base_url.rstrip('/')}/models", headers=headers,
+                    f"{base_url.rstrip('/')}/models",
+                    headers=headers,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -899,9 +947,7 @@ async def migrate_from_provider_config() -> dict:
                 # The credentials_service was missed in the v0.7.177 sweep
                 # — fixing it now closes the gap. Full detail is preserved
                 # in logger.error above for ops triage.
-                errors.append(
-                    f"{provider}/{old_cred.name}: {type(e).__name__}"
-                )
+                errors.append(f"{provider}/{old_cred.name}: {type(e).__name__}")
 
     logger.info(
         f"=== ProviderConfig migration complete === "
@@ -952,7 +998,9 @@ async def migrate_from_env() -> dict:
                 not_configured.append(provider)
                 continue
 
-            logger.info(f"[{provider}] Env vars detected, checking for existing credentials")
+            logger.info(
+                f"[{provider}] Env vars detected, checking for existing credentials"
+            )
 
             existing = await Credential.get_by_provider(provider)
             if existing:

@@ -23,9 +23,9 @@ def test_version_matches_changelog():
     inside the Unreleased block, sorted newest-first). Catches
     drift the moment somebody bumps the CHANGELOG without bumping
     the constant (or vice versa)."""
-    changelog = (
-        Path(__file__).resolve().parent.parent / "CHANGELOG.md"
-    ).read_text(encoding="utf-8")
+    changelog = (Path(__file__).resolve().parent.parent / "CHANGELOG.md").read_text(
+        encoding="utf-8"
+    )
     m = re.search(r"^- \*\*v(\d+\.\d+\.\d+)\*\*", changelog, re.MULTILINE)
     assert m is not None, (
         "v0.7.210: could not find a `- **vX.Y.Z**` bullet in "

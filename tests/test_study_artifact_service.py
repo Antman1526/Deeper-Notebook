@@ -30,7 +30,9 @@ from deeper_notebook.study.source_service import (
 from deeper_notebook.study.syllabus_service import source_manifest
 
 
-def _plan(*, state: str = "approved", version: int = 3, manifest: str | None = None) -> StudyPlan:
+def _plan(
+    *, state: str = "approved", version: int = 3, manifest: str | None = None
+) -> StudyPlan:
     return StudyPlan(
         plan_id="study_plan:one",
         goal="Learn mechanics",
@@ -252,16 +254,37 @@ class FakeRepository:
     async def get(self, plan_id: str) -> StudyPlan | None:
         return self.plan if plan_id == self.plan.plan_id else None
 
-    async def get_syllabus(self, plan_id: str, *, version: int | None = None) -> StudySyllabus | None:
+    async def get_syllabus(
+        self, plan_id: str, *, version: int | None = None
+    ) -> StudySyllabus | None:
         if plan_id != self.plan.plan_id or version not in (None, self.syllabus.version):
             return None
         return self.syllabus
 
-    async def link_artifact(self, plan_id: str, artifact_id: str, *, artifact_kind: str, metadata: dict[str, object]) -> dict[str, object]:
-        existing = next((item for item in self.links if item["plan_id"] == plan_id and item["artifact_id"] == artifact_id), None)
+    async def link_artifact(
+        self,
+        plan_id: str,
+        artifact_id: str,
+        *,
+        artifact_kind: str,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        existing = next(
+            (
+                item
+                for item in self.links
+                if item["plan_id"] == plan_id and item["artifact_id"] == artifact_id
+            ),
+            None,
+        )
         if existing is not None:
             return existing
-        link = {"plan_id": plan_id, "artifact_id": artifact_id, "artifact_kind": artifact_kind, "metadata": metadata}
+        link = {
+            "plan_id": plan_id,
+            "artifact_id": artifact_id,
+            "artifact_kind": artifact_kind,
+            "metadata": metadata,
+        }
         self.links.append(link)
         return link
 
@@ -286,41 +309,82 @@ def reset_artifacts() -> None:
 @pytest.mark.asyncio
 async def test_unit_generation_requires_approved_matching_manifest() -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(state="editing", version=2), syllabus=_syllabus(source))
-    service = StudyArtifactService(repository=repository, source_service=FakeSourceService(source))
+    repository = FakeRepository(
+        plan=_plan(state="editing", version=2), syllabus=_syllabus(source)
+    )
+    service = StudyArtifactService(
+        repository=repository, source_service=FakeSourceService(source)
+    )
 
     with pytest.raises(StudyArtifactConflict, match="syllabus_not_approved"):
-        await service.generate_unit("study_plan:one", "foundations", ["study_guide"], expected_revision=2)
+        await service.generate_unit(
+            "study_plan:one", "foundations", ["study_guide"], expected_revision=2
+        )
 
 
 @pytest.mark.asyncio
-async def test_unit_generation_allowlist_bounds_and_exact_unit_source_subset(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_unit_generation_allowlist_bounds_and_exact_unit_source_subset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
     source_service = FakeSourceService(source)
     generated = AsyncMock(side_effect=lambda request: _complete(request.artifact_id))
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generated)
-    service = StudyArtifactService(repository=repository, source_service=source_service, source_loader=lambda _: source)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generated
+    )
+    service = StudyArtifactService(
+        repository=repository,
+        source_service=source_service,
+        source_loader=lambda _: source,
+    )
 
     with pytest.raises(StudyArtifactConflict, match="unsupported_artifact_type"):
-        await service.generate_unit("study_plan:one", "foundations", ["report"], expected_revision=3)
+        await service.generate_unit(
+            "study_plan:one", "foundations", ["report"], expected_revision=3
+        )
     with pytest.raises(StudyArtifactConflict, match="unit_source_not_linked"):
-        bad_syllabus = repository.syllabus.model_copy(update={"units": (_unit(source_ids=("source:other",)),)})
+        bad_syllabus = repository.syllabus.model_copy(
+            update={"units": (_unit(source_ids=("source:other",)),)}
+        )
         repository.syllabus = bad_syllabus
-        await service.generate_unit("study_plan:one", "foundations", ["study_guide"], expected_revision=3)
+        await service.generate_unit(
+            "study_plan:one", "foundations", ["study_guide"], expected_revision=3
+        )
 
 
 @pytest.mark.asyncio
-async def test_completed_artifacts_link_idempotently_and_retry_does_not_duplicate(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_completed_artifacts_link_idempotently_and_retry_does_not_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", AsyncMock(side_effect=lambda request: _complete(request.artifact_id)))
-    service = StudyArtifactService(repository=repository, source_service=FakeSourceService(source), source_loader=lambda _: source)
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact",
+        AsyncMock(side_effect=lambda request: _complete(request.artifact_id)),
+    )
+    service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+    )
 
-    first = await service.generate_unit("study_plan:one", "foundations", ["study_guide"], expected_revision=3)
-    second = await service.generate_unit("study_plan:one", "foundations", ["study_guide"], expected_revision=3)
+    first = await service.generate_unit(
+        "study_plan:one", "foundations", ["study_guide"], expected_revision=3
+    )
+    second = await service.generate_unit(
+        "study_plan:one", "foundations", ["study_guide"], expected_revision=3
+    )
 
     assert len(first) == len(second) == 1
     assert len(repository.links) == 1
@@ -328,38 +392,76 @@ async def test_completed_artifacts_link_idempotently_and_retry_does_not_duplicat
 
 
 @pytest.mark.asyncio
-async def test_failed_generation_never_creates_a_plan_link_and_hides_raw_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_failed_generation_never_creates_a_plan_link_and_hides_raw_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", AsyncMock(side_effect=RuntimeError("provider secret/path")))
-    service = StudyArtifactService(repository=repository, source_service=FakeSourceService(source), source_loader=lambda _: source)
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact",
+        AsyncMock(side_effect=RuntimeError("provider secret/path")),
+    )
+    service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+    )
 
-    with pytest.raises(StudyArtifactGenerationError, match="artifact_generation_failed") as error:
-        await service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+    with pytest.raises(
+        StudyArtifactGenerationError, match="artifact_generation_failed"
+    ) as error:
+        await service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
     assert "provider secret/path" not in str(error.value)
     assert repository.links == []
 
 
 @pytest.mark.asyncio
-async def test_cancellation_marks_provisional_artifact_cancelled_without_link(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_cancellation_marks_provisional_artifact_cancelled_without_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", AsyncMock(side_effect=asyncio.CancelledError()))
-    service = StudyArtifactService(repository=repository, source_service=FakeSourceService(source), source_loader=lambda _: source)
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact",
+        AsyncMock(side_effect=asyncio.CancelledError()),
+    )
+    service = StudyArtifactService(
+        repository=repository,
+        source_service=FakeSourceService(source),
+        source_loader=lambda _: source,
+    )
 
     with pytest.raises(StudyArtifactCancelled, match="generation_cancelled"):
-        await service.generate_unit("study_plan:one", "foundations", ["mind_map"], expected_revision=3)
+        await service.generate_unit(
+            "study_plan:one", "foundations", ["mind_map"], expected_revision=3
+        )
     assert repository.links == []
     assert FakeArtifact.created[0].status == "cancelled"
 
 
 @pytest.mark.asyncio
-async def test_concurrent_identical_generation_serializes_to_one_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_concurrent_identical_generation_serializes_to_one_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact
+    )
     started = asyncio.Event()
     release = asyncio.Event()
     generation_calls = 0
@@ -371,18 +473,24 @@ async def test_concurrent_identical_generation_serializes_to_one_artifact(monkey
         await release.wait()
         return _complete(request.artifact_id)
 
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generate
+    )
     service = StudyArtifactService(
         repository=repository,
         source_service=FakeSourceService(source),
         source_loader=lambda _: source,
     )
     first = asyncio.create_task(
-        service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+        service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
     )
     await started.wait()
     second = asyncio.create_task(
-        service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+        service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
     )
     await asyncio.sleep(0)
     release.set()
@@ -396,10 +504,16 @@ async def test_concurrent_identical_generation_serializes_to_one_artifact(monkey
 
 
 @pytest.mark.asyncio
-async def test_independent_services_converge_on_persistent_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_independent_services_converge_on_persistent_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", PersistentRaceArtifact)
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", PersistentRaceArtifact
+    )
     started = asyncio.Event()
     release = asyncio.Event()
     generation_calls = 0
@@ -414,7 +528,9 @@ async def test_independent_services_converge_on_persistent_claim(monkeypatch: py
         artifact.output_payload = {"markdown": "completed"}
         return artifact
 
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generate
+    )
     first_service = StudyArtifactService(
         repository=repository,
         source_service=FakeSourceService(source),
@@ -428,11 +544,15 @@ async def test_independent_services_converge_on_persistent_claim(monkeypatch: py
         lock_store={},
     )
     first = asyncio.create_task(
-        first_service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+        first_service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
     )
     await started.wait()
     second = asyncio.create_task(
-        second_service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+        second_service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
     )
     await asyncio.sleep(0)
     release.set()
@@ -450,10 +570,16 @@ async def test_source_drift_after_durable_claim_aborts_before_generation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
     generated = AsyncMock(side_effect=lambda request: _complete(request.artifact_id))
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generated)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generated
+    )
     service = StudyArtifactService(
         repository=repository,
         source_service=FakeSourceService(source),
@@ -469,7 +595,9 @@ async def test_source_drift_after_durable_claim_aborts_before_generation(
     service._claim_provisional = claim_then_mutate  # type: ignore[method-assign]
 
     with pytest.raises(StudyArtifactConflict, match="sources_changed"):
-        await service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+        await service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
 
     generated.assert_not_awaited()
     assert repository.links == []
@@ -481,8 +609,12 @@ async def test_reclaimed_owner_cannot_overwrite_completed_output_or_link(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FencedRaceArtifact)
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FencedRaceArtifact
+    )
     old_started = asyncio.Event()
     release_old = asyncio.Event()
     generation_calls = 0
@@ -516,7 +648,9 @@ async def test_reclaimed_owner_cannot_overwrite_completed_output_or_link(
         assert current is not None
         return current
 
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generate
+    )
     old_service = StudyArtifactService(
         repository=repository,
         source_service=FakeSourceService(source),
@@ -534,7 +668,9 @@ async def test_reclaimed_owner_cannot_overwrite_completed_output_or_link(
         lock_store={},
     )
     old_task = asyncio.create_task(
-        old_service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+        old_service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
     )
     await old_started.wait()
     current_time[0] = now + timedelta(seconds=241)
@@ -571,7 +707,9 @@ async def test_expired_owner_cannot_publish_before_takeover_and_fresh_retry_is_e
         plan=_plan(manifest=source_manifest([source])),
         syllabus=_syllabus(source),
     )
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FencedRaceArtifact)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FencedRaceArtifact
+    )
     now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
     current_time = [now]
     generation_calls = 0
@@ -603,7 +741,9 @@ async def test_expired_owner_cannot_publish_before_takeover_and_fresh_retry_is_e
         assert current is not None
         return current
 
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generate
+    )
     stale_service = StudyArtifactService(
         repository=repository,
         source_service=FakeSourceService(source),
@@ -673,7 +813,9 @@ async def test_owner_fence_rejects_missing_malformed_or_naive_lease(
         generation_claim_lease_until=lease_until,
     )
     FencedRaceArtifact.records[operation_id] = artifact
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FencedRaceArtifact)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FencedRaceArtifact
+    )
     service = StudyArtifactService(
         clock=lambda: datetime(2026, 8, 12, 12, 0, tzinfo=UTC),
     )
@@ -687,10 +829,16 @@ async def test_plan_authority_drift_after_claim_aborts_before_generation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
     generated = AsyncMock(side_effect=lambda request: _complete(request.artifact_id))
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generated)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generated
+    )
     service = StudyArtifactService(
         repository=repository,
         source_service=FakeSourceService(source),
@@ -711,7 +859,9 @@ async def test_plan_authority_drift_after_claim_aborts_before_generation(
     service._claim_provisional = claim_then_revise  # type: ignore[method-assign]
 
     with pytest.raises(StudyArtifactConflict, match="study_authority_changed"):
-        await service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+        await service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
     generated.assert_not_awaited()
     assert repository.links == []
 
@@ -721,24 +871,32 @@ async def test_plan_authority_drift_during_generation_cannot_link_stale_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
     generation_started = asyncio.Event()
     release_generation = asyncio.Event()
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", FakeArtifact
+    )
 
     async def generate(request: object) -> FakeArtifact:
         generation_started.set()
         await release_generation.wait()
         return _complete(request.artifact_id)
 
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generate)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generate
+    )
     service = StudyArtifactService(
         repository=repository,
         source_service=FakeSourceService(source),
         source_loader=lambda _: source,
     )
     task = asyncio.create_task(
-        service.generate_unit("study_plan:one", "foundations", ["quiz"], expected_revision=3)
+        service.generate_unit(
+            "study_plan:one", "foundations", ["quiz"], expected_revision=3
+        )
     )
     await generation_started.wait()
     repository.plan = StudyPlan.model_validate(
@@ -752,8 +910,12 @@ async def test_plan_authority_drift_during_generation_cannot_link_stale_output(
 
 
 @pytest.mark.asyncio
-async def test_expired_running_claim_is_reclaimed_with_bounded_owner(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", LeasedArtifact)
+async def test_expired_running_claim_is_reclaimed_with_bounded_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", LeasedArtifact
+    )
     now = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
     stale = LeasedArtifact(
         id="studio_artifact:stale",
@@ -815,9 +977,13 @@ async def test_two_independent_expired_claimers_converge_on_one_owner() -> None:
     async def claim(service: StudyArtifactService) -> object:
         current = await PersistentRaceArtifact.get(operation_id)
         assert current is not None
-        return await service._claim_provisional(current, operation_id, "quiz", ("source:one",))
+        return await service._claim_provisional(
+            current, operation_id, "quiz", ("source:one",)
+        )
 
-    results = await asyncio.gather(claim(first_service), claim(second_service), return_exceptions=True)
+    results = await asyncio.gather(
+        claim(first_service), claim(second_service), return_exceptions=True
+    )
 
     assert sum(isinstance(result, StudyArtifactConflict) for result in results) == 1
     successes = [result for result in results if isinstance(result, tuple)]
@@ -826,9 +992,13 @@ async def test_two_independent_expired_claimers_converge_on_one_owner() -> None:
 
 
 @pytest.mark.asyncio
-async def test_expired_claim_retry_generates_and_links_once(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_expired_claim_retry_generates_and_links_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = _source()
-    repository = FakeRepository(plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source))
+    repository = FakeRepository(
+        plan=_plan(manifest=source_manifest([source])), syllabus=_syllabus(source)
+    )
     operation_id = _artifact_identity(
         "study_plan:one", 1, source_manifest([source]), "foundations", "quiz"
     )
@@ -852,8 +1022,12 @@ async def test_expired_claim_retry_generates_and_links_once(monkeypatch: pytest.
         return artifact
 
     generated.side_effect = complete
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.StudioArtifact", PersistentRaceArtifact)
-    monkeypatch.setattr("deeper_notebook.study.artifact_service.generate_artifact", generated)
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.StudioArtifact", PersistentRaceArtifact
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.study.artifact_service.generate_artifact", generated
+    )
     service = StudyArtifactService(
         repository=repository,
         source_service=FakeSourceService(source),
@@ -875,10 +1049,17 @@ async def test_expired_claim_retry_generates_and_links_once(monkeypatch: pytest.
 
 def test_artifact_identity_changes_for_every_authority_dimension() -> None:
     base = _artifact_identity("study_plan:one", 1, "a" * 64, "foundations", "quiz")
-    assert _artifact_identity("study_plan:one", 2, "a" * 64, "foundations", "quiz") != base
-    assert _artifact_identity("study_plan:one", 1, "b" * 64, "foundations", "quiz") != base
+    assert (
+        _artifact_identity("study_plan:one", 2, "a" * 64, "foundations", "quiz") != base
+    )
+    assert (
+        _artifact_identity("study_plan:one", 1, "b" * 64, "foundations", "quiz") != base
+    )
     assert _artifact_identity("study_plan:one", 1, "a" * 64, "advanced", "quiz") != base
-    assert _artifact_identity("study_plan:one", 1, "a" * 64, "foundations", "flashcards") != base
+    assert (
+        _artifact_identity("study_plan:one", 1, "a" * 64, "foundations", "flashcards")
+        != base
+    )
 
 
 def _complete(artifact_id: str) -> FakeArtifact:

@@ -327,7 +327,10 @@ def decode_progress_event_details(details: str | None) -> dict[str, Any] | None:
                             for entry in item
                         ):
                             return None
-                    elif not isinstance(item, (str, int, float, bool)) and item is not None:
+                    elif (
+                        not isinstance(item, (str, int, float, bool))
+                        and item is not None
+                    ):
                         return None
             elif not isinstance(value, (str, int, float, bool)) and value is not None:
                 return None
@@ -335,15 +338,19 @@ def decode_progress_event_details(details: str | None) -> dict[str, Any] | None:
                 return None
         phase = values.get("phase")
         if phase == "intent":
-            if set(values) != {
-                "base_plan_sha256",
-                "base_revision",
-                "decision",
-                "phase",
-                "proposal_id",
-                "target_plan_sha256",
-                "target_weekly_minutes",
-            } or values.get("decision") != "accepted":
+            if (
+                set(values)
+                != {
+                    "base_plan_sha256",
+                    "base_revision",
+                    "decision",
+                    "phase",
+                    "proposal_id",
+                    "target_plan_sha256",
+                    "target_weekly_minutes",
+                }
+                or values.get("decision") != "accepted"
+            ):
                 return None
             base_revision = values.get("base_revision")
             proposal_id = values.get("proposal_id")
@@ -380,15 +387,19 @@ def decode_progress_event_details(details: str | None) -> dict[str, Any] | None:
                 ):
                     return None
             else:
-                if set(values) != {
-                    "base_plan_sha256",
-                    "base_revision",
-                    "decision",
-                    "intent_request_id",
-                    "phase",
-                    "proposal_id",
-                    "target_plan_sha256",
-                } or values.get("decision") != "accepted":
+                if (
+                    set(values)
+                    != {
+                        "base_plan_sha256",
+                        "base_revision",
+                        "decision",
+                        "intent_request_id",
+                        "phase",
+                        "proposal_id",
+                        "target_plan_sha256",
+                    }
+                    or values.get("decision") != "accepted"
+                ):
                     return None
                 base_revision = values.get("base_revision")
                 proposal_id = values.get("proposal_id")
@@ -402,10 +413,15 @@ def decode_progress_event_details(details: str | None) -> dict[str, Any] | None:
                     or any(ord(char) < 32 or ord(char) == 127 for char in proposal_id)
                     or not isinstance(intent_request_id, str)
                     or not 1 <= len(intent_request_id) <= 256
-                    or any(ord(char) < 32 or ord(char) == 127 for char in intent_request_id)
+                    or any(
+                        ord(char) < 32 or ord(char) == 127 for char in intent_request_id
+                    )
                 ):
                     return None
-                hashes = (values.get("base_plan_sha256"), values.get("target_plan_sha256"))
+                hashes = (
+                    values.get("base_plan_sha256"),
+                    values.get("target_plan_sha256"),
+                )
                 if any(
                     not isinstance(value, str)
                     or len(value) != 64
@@ -440,9 +456,7 @@ def decode_progress_event_details(details: str | None) -> dict[str, Any] | None:
                 or any(ord(char) < 32 or ord(char) == 127 for char in proposal_id)
                 or not isinstance(client_request_id, str)
                 or not 1 <= len(client_request_id) <= 256
-                or any(
-                    ord(char) < 32 or ord(char) == 127 for char in client_request_id
-                )
+                or any(ord(char) < 32 or ord(char) == 127 for char in client_request_id)
             ):
                 return None
             if decision == "accepted":
@@ -495,14 +509,10 @@ def decode_progress_event_details(details: str | None) -> dict[str, Any] | None:
                 or any(ord(char) < 32 or ord(char) == 127 for char in proposal_id)
                 or not isinstance(client_request_id, str)
                 or not 1 <= len(client_request_id) <= 256
-                or any(
-                    ord(char) < 32 or ord(char) == 127 for char in client_request_id
-                )
+                or any(ord(char) < 32 or ord(char) == 127 for char in client_request_id)
                 or not isinstance(claim_request_id, str)
                 or not 1 <= len(claim_request_id) <= 256
-                or any(
-                    ord(char) < 32 or ord(char) == 127 for char in claim_request_id
-                )
+                or any(ord(char) < 32 or ord(char) == 127 for char in claim_request_id)
             ):
                 return None
             if decision == "accepted":
@@ -515,14 +525,15 @@ def decode_progress_event_details(details: str | None) -> dict[str, Any] | None:
                     or not isinstance(target_plan_sha256, str)
                     or len(target_plan_sha256) != 64
                     or any(
-                        char not in "0123456789abcdef"
-                        for char in target_plan_sha256
+                        char not in "0123456789abcdef" for char in target_plan_sha256
                     )
                 ):
                     return None
         return dict(values)
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
+
+
 def _receipt(value: object) -> StudyProgressReceipt | None:
     if isinstance(value, StudyProgressReceipt):
         return value
@@ -713,9 +724,7 @@ def project_mastery(
             observations[explicit_concept_id] = []
 
     due_reviews = sum(int(state[3]) for state in latest_card_state.values())
-    latest_due_concepts = {
-        state[2] for state in latest_card_state.values() if state[3]
-    }
+    latest_due_concepts = {state[2] for state in latest_card_state.values() if state[3]}
 
     concepts: list[StudyMasteryConcept] = []
     prerequisite_by_concept: dict[str, tuple[str, ...]] = {}

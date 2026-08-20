@@ -14,6 +14,7 @@
 # api/auth.py
 security = HTTPBearer(auto_error=False)
 
+
 def check_api_password(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> bool:
@@ -65,6 +66,7 @@ before fetch:
 ```python
 MAX_URL_LENGTH = 2_048
 ALLOWED_SCHEMES = frozenset({"http", "https"})
+
 
 def _canonical_hostname(hostname: str) -> str:
     if not hostname or "%" in hostname or "\\" in hostname:
@@ -119,8 +121,10 @@ for item in evidence:
         continue
     checked = await _maybe_await(self.url_validator(url))
     checked_url = str(_value(checked, "url", ""))
-    if checked_url != url and not StudyAssistantService._url_in_scope(checked_url, scope):
-        continue    # a redirect must ALSO land in scope
+    if checked_url != url and not StudyAssistantService._url_in_scope(
+        checked_url, scope
+    ):
+        continue  # a redirect must ALSO land in scope
 ```
 
 `_url_in_scope` requires `https`, rejects `.`/`..` path segments, normalises with
@@ -135,14 +139,14 @@ The window is an app shell, not a browser. Settings are **pinned**, not inherite
 ```python
 def apply_webview_security_settings(webview) -> dict:
     desired = {
-        "OPEN_EXTERNAL_LINKS_IN_BROWSER": True,   # links leave the shell
-        "ALLOW_DOWNLOADS": False,                 # no page-initiated writes
+        "OPEN_EXTERNAL_LINKS_IN_BROWSER": True,  # links leave the shell
+        "ALLOW_DOWNLOADS": False,  # no page-initiated writes
         "OPEN_DEVTOOLS_IN_DEBUG": False,
     }
     settings = getattr(webview, "settings", None)
     if not isinstance(settings, dict):
         return {}
-    ...   # only keys this pywebview defines are set (forward-compatible)
+    ...  # only keys this pywebview defines are set (forward-compatible)
 ```
 
 pywebview 5.4 already defaults `OPEN_EXTERNAL_LINKS_IN_BROWSER` to `True`; pinning makes
@@ -170,8 +174,13 @@ parsed by `RecordID.parse` (`ensure_record_id`) before ever touching a query str
 **Memory shim id whitelist** — hostile ids are rejected at the boundary:
 
 ```python
-bad_ids = ["abc'; DROP TABLE memory_fact;", "abc def",
-           "abc\nDELETE memory_fact", "abc:other_id", ""]
+bad_ids = [
+    "abc'; DROP TABLE memory_fact;",
+    "abc def",
+    "abc\nDELETE memory_fact",
+    "abc:other_id",
+    "",
+]
 # each must yield 4xx, or be refused client-side by the HTTP layer,
 # and mem.delete must never be called
 ```

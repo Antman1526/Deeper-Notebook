@@ -13,6 +13,7 @@ The fix streams in 1 MiB chunks. These tests confirm:
   2. The function correctly writes ALL chunks (no truncation).
   3. Cleanup on exception still works (the existing try/except path).
 """
+
 from __future__ import annotations
 
 import io

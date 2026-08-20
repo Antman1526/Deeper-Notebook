@@ -249,12 +249,8 @@ async def test_strict_overlay_hydration_queries_project_only_public_fields():
 
 
 def test_reservation_outputs_exclude_internal_schema_fields():
-    create_statement = " ".join(
-        OverlayRepository._reserve_create_transaction().split()
-    )
-    update_statement = " ".join(
-        OverlayRepository._reserve_update_transaction().split()
-    )
+    create_statement = " ".join(OverlayRepository._reserve_create_transaction().split())
+    update_statement = " ".join(OverlayRepository._reserve_update_transaction().split())
 
     assert "SELECT * FROM overlay_note" not in create_statement
     assert "SELECT * FROM overlay_mutation_receipt" not in create_statement
@@ -294,17 +290,21 @@ async def test_overlay_page_query_preserves_both_identity_domains():
         target_overlay_note_id="overlay_note:one",
         target_title="2026-07-29",
     )
-    connection = ScriptedConnection([{
-        "page": {
-            "overlay": _note_row(projection_state="current"),
-            "note": {"id": "note:one", "title": "2026-07-29"},
-            "blocks": [],
-            "tasks": [],
-            "outgoing_links": [link],
-            "backlinks": [backlink],
-            "graph": None,
-        }
-    }])
+    connection = ScriptedConnection(
+        [
+            {
+                "page": {
+                    "overlay": _note_row(projection_state="current"),
+                    "note": {"id": "note:one", "title": "2026-07-29"},
+                    "blocks": [],
+                    "tasks": [],
+                    "outgoing_links": [link],
+                    "backlinks": [backlink],
+                    "graph": None,
+                }
+            }
+        ]
+    )
     repository = OverlayRepository(
         connection_factory=ReusableFactory(connection),
         clock=lambda: NOW,
@@ -323,10 +323,7 @@ async def test_overlay_page_query_preserves_both_identity_domains():
         "note:source",
         "note:two",
     }
-    assert {
-        (edge["source"], edge["target"])
-        for edge in page.graph.edges
-    } == {
+    assert {(edge["source"], edge["target"]) for edge in page.graph.edges} == {
         ("note:one", "note:two"),
         ("note:source", "note:one"),
     }
@@ -337,15 +334,14 @@ async def test_overlay_page_query_preserves_both_identity_domains():
         " relative_path, title, content_hash, revision, projection_state,"
         " encoding, newline, created_at, updated_at FROM $overlay_note_id"
     ) in query
-    assert query.count(
-        "source_note_id.overlay_note_id AS source_overlay_note_id"
-    ) == 2
-    assert query.count(
-        "source_note_id.overlay_note_id.relative_path AS source_relative_path"
-    ) == 2
-    assert query.count(
-        "target_note_id.overlay_note_id AS target_overlay_note_id"
-    ) == 2
+    assert query.count("source_note_id.overlay_note_id AS source_overlay_note_id") == 2
+    assert (
+        query.count(
+            "source_note_id.overlay_note_id.relative_path AS source_relative_path"
+        )
+        == 2
+    )
+    assert query.count("target_note_id.overlay_note_id AS target_overlay_note_id") == 2
 
 
 def test_owned_projection_page_query_preserves_both_identity_domains():
@@ -360,15 +356,14 @@ def test_owned_projection_page_query_preserves_both_identity_domains():
         " encoding, newline, created_at, updated_at FROM $overlay_note_id"
     ) in query
     assert "overlay: $overlay" in query
-    assert query.count(
-        "source_note_id.overlay_note_id AS source_overlay_note_id"
-    ) == 2
-    assert query.count(
-        "source_note_id.overlay_note_id.relative_path AS source_relative_path"
-    ) == 2
-    assert query.count(
-        "target_note_id.overlay_note_id AS target_overlay_note_id"
-    ) == 2
+    assert query.count("source_note_id.overlay_note_id AS source_overlay_note_id") == 2
+    assert (
+        query.count(
+            "source_note_id.overlay_note_id.relative_path AS source_relative_path"
+        )
+        == 2
+    )
+    assert query.count("target_note_id.overlay_note_id AS target_overlay_note_id") == 2
 
 
 @pytest.mark.asyncio
@@ -384,21 +379,25 @@ async def test_owned_projection_return_hydrates_the_same_overlay_local_graph():
         target_overlay_note_id="overlay_note:one",
         target_title="2026-07-29",
     )
-    connection = ScriptedConnection([{
-        "outcome": "projected",
-        "page": {
-            "overlay": _note_row(
-                content_hash="a" * 64,
-                projection_state="current",
-            ),
-            "note": {"id": "note:one", "title": "2026-07-29"},
-            "blocks": [],
-            "tasks": [],
-            "outgoing_links": [link],
-            "backlinks": [backlink],
-            "graph": None,
-        },
-    }])
+    connection = ScriptedConnection(
+        [
+            {
+                "outcome": "projected",
+                "page": {
+                    "overlay": _note_row(
+                        content_hash="a" * 64,
+                        projection_state="current",
+                    ),
+                    "note": {"id": "note:one", "title": "2026-07-29"},
+                    "blocks": [],
+                    "tasks": [],
+                    "outgoing_links": [link],
+                    "backlinks": [backlink],
+                    "graph": None,
+                },
+            }
+        ]
+    )
     repository = VaultRepository(
         connection_factory=ReusableFactory(connection),
     )
@@ -418,10 +417,7 @@ async def test_owned_projection_return_hydrates_the_same_overlay_local_graph():
         "note:source",
         "note:two",
     }
-    assert {
-        (edge["source"], edge["target"])
-        for edge in page.graph.edges
-    } == {
+    assert {(edge["source"], edge["target"]) for edge in page.graph.edges} == {
         ("note:one", "note:two"),
         ("note:source", "note:one"),
     }

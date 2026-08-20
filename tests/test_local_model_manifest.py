@@ -1,4 +1,5 @@
 """Local model manifest parsing and route-match tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -94,11 +95,13 @@ def load_model_manifest_from_text(status: str, manifest: Path):
     from deeper_notebook.local_models.manifest import parse_model_manifest
 
     return parse_model_manifest(
-        "\n".join([
-            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
-            "|---|---|---|---|---|---|---|",
-            f"| Test | primary | `example/model` | `MLX/example__model` | MLX | {status} | test |",
-        ]),
+        "\n".join(
+            [
+                "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+                "|---|---|---|---|---|---|---|",
+                f"| Test | primary | `example/model` | `MLX/example__model` | MLX | {status} | test |",
+            ]
+        ),
         manifest_path=manifest,
     )[0]
 
@@ -107,15 +110,17 @@ def _write_manifest(root: Path) -> Path:
     manifest = root / "manifests" / "model_inventory.md"
     manifest.parent.mkdir(parents=True)
     manifest.write_text(
-        "\n".join([
-            "# Local Model Inventory",
-            "",
-            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
-            "|---|---|---|---|---|---|---|",
-            "| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `"
-            + str(root / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit")
-            + "` | MLX | downloaded - verified | coding and agent workflows |",
-        ])
+        "\n".join(
+            [
+                "# Local Model Inventory",
+                "",
+                "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+                "|---|---|---|---|---|---|---|",
+                "| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `"
+                + str(root / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit")
+                + "` | MLX | downloaded - verified | coding and agent workflows |",
+            ]
+        )
     )
     return manifest
 
@@ -154,7 +159,9 @@ def test_find_manifest_matches_uses_path_and_repo_keys(tmp_path):
     assert matches[0].category == "Coding Assistant - Mac MLX"
 
 
-def test_find_unmatched_manifest_entries_reports_curated_models_missing_from_scan(tmp_path):
+def test_find_unmatched_manifest_entries_reports_curated_models_missing_from_scan(
+    tmp_path,
+):
     _write_manifest(tmp_path)
     scanned = [
         LocalModelInfo(
@@ -177,22 +184,26 @@ def test_find_unmatched_manifest_entries_reports_curated_models_missing_from_sca
     assert unmatched[0].repo == "mlx-community/North-Mini-Code-1.0-6bit"
 
 
-def test_build_manifest_reconciliation_classifies_matched_missing_and_unsupported(tmp_path):
+def test_build_manifest_reconciliation_classifies_matched_missing_and_unsupported(
+    tmp_path,
+):
     manifest = tmp_path / "manifests" / "model_inventory.md"
     manifest.parent.mkdir(parents=True)
     mlx_path = tmp_path / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"
     transformers_path = tmp_path / "Transformers" / "microsoft__FastContext-1.0-4B-SFT"
     missing_path = tmp_path / "MLX" / "missing__Curated-Model-4bit"
     manifest.write_text(
-        "\n".join([
-            "# Local Model Inventory",
-            "",
-            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
-            "|---|---|---|---|---|---|---|",
-            f"| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `{mlx_path}` | MLX | downloaded - verified | ready |",
-            f"| Agentic Workflows - Transformers | backup | `microsoft/FastContext-1.0-4B-SFT` | `{transformers_path}` | Transformers | skipped - existing verified | needs runtime |",
-            f"| Reasoning - Mac MLX | backup | `missing/Curated-Model-4bit` | `{missing_path}` | MLX | missing from scan | should be checked |",
-        ])
+        "\n".join(
+            [
+                "# Local Model Inventory",
+                "",
+                "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+                "|---|---|---|---|---|---|---|",
+                f"| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `{mlx_path}` | MLX | downloaded - verified | ready |",
+                f"| Agentic Workflows - Transformers | backup | `microsoft/FastContext-1.0-4B-SFT` | `{transformers_path}` | Transformers | skipped - existing verified | needs runtime |",
+                f"| Reasoning - Mac MLX | backup | `missing/Curated-Model-4bit` | `{missing_path}` | MLX | missing from scan | should be checked |",
+            ]
+        )
     )
     models = [
         LocalModelInfo(
@@ -221,34 +232,52 @@ def test_build_manifest_reconciliation_classifies_matched_missing_and_unsupporte
         ),
     ]
 
-    reconciliation = build_manifest_reconciliation(load_model_manifest(tmp_path), models)
+    reconciliation = build_manifest_reconciliation(
+        load_model_manifest(tmp_path), models
+    )
     by_repo = {row.entry.repo: row for row in reconciliation}
 
     assert by_repo["mlx-community/North-Mini-Code-1.0-6bit"].status == "matched"
     assert by_repo["microsoft/FastContext-1.0-4B-SFT"].status == "unsupported_runtime"
-    assert by_repo["microsoft/FastContext-1.0-4B-SFT"].matched_model_runtime == "transformers"
+    assert (
+        by_repo["microsoft/FastContext-1.0-4B-SFT"].matched_model_runtime
+        == "transformers"
+    )
     assert by_repo["missing/Curated-Model-4bit"].status == "missing"
     assert by_repo["missing/Curated-Model-4bit"].setup_task is not None
-    assert by_repo["missing/Curated-Model-4bit"].setup_task.action_type == "download_snapshot"
+    assert (
+        by_repo["missing/Curated-Model-4bit"].setup_task.action_type
+        == "download_snapshot"
+    )
     assert by_repo["missing/Curated-Model-4bit"].setup_task.command == (
         f"huggingface-cli download missing/Curated-Model-4bit --local-dir {missing_path}"
     )
     assert by_repo["microsoft/FastContext-1.0-4B-SFT"].setup_task is not None
-    assert by_repo["microsoft/FastContext-1.0-4B-SFT"].setup_task.action_type == "configure_runtime"
+    assert (
+        by_repo["microsoft/FastContext-1.0-4B-SFT"].setup_task.action_type
+        == "configure_runtime"
+    )
 
 
 def test_build_manifest_reconciliation_creates_direct_gguf_download_task(tmp_path):
     manifest = tmp_path / "manifests" / "model_inventory.md"
     manifest.parent.mkdir(parents=True)
-    gguf_path = tmp_path / "GGUF" / "bartowski__Qwen2.5-7B-Instruct-GGUF" / "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+    gguf_path = (
+        tmp_path
+        / "GGUF"
+        / "bartowski__Qwen2.5-7B-Instruct-GGUF"
+        / "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+    )
     manifest.write_text(
-        "\n".join([
-            "# Local Model Inventory",
-            "",
-            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
-            "|---|---|---|---|---|---|---|",
-            f"| General Chat - GGUF | primary | `bartowski/Qwen2.5-7B-Instruct-GGUF` | `{gguf_path}` | GGUF | missing from scan | exact quant |",
-        ])
+        "\n".join(
+            [
+                "# Local Model Inventory",
+                "",
+                "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+                "|---|---|---|---|---|---|---|",
+                f"| General Chat - GGUF | primary | `bartowski/Qwen2.5-7B-Instruct-GGUF` | `{gguf_path}` | GGUF | missing from scan | exact quant |",
+            ]
+        )
     )
 
     reconciliation = build_manifest_reconciliation(load_model_manifest(tmp_path), [])
@@ -273,14 +302,16 @@ def test_build_manifest_recommendations_rank_mlx_and_emit_setup_tasks(tmp_path):
         / "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
     )
     manifest.write_text(
-        "\n".join([
-            "# Local Model Inventory",
-            "",
-            "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
-            "|---|---|---|---|---|---|---|",
-            f"| General Chat - GGUF | primary | `bartowski/Qwen2.5-7B-Instruct-GGUF` | `{gguf_path}` | GGUF | missing from scan | exact quant |",
-            f"| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `{mlx_path}` | MLX | missing from scan | coding and agent workflows |",
-        ])
+        "\n".join(
+            [
+                "# Local Model Inventory",
+                "",
+                "| Category | Role | Repo | Local Path | Runtime Type | Estimated Status | Notes |",
+                "|---|---|---|---|---|---|---|",
+                f"| General Chat - GGUF | primary | `bartowski/Qwen2.5-7B-Instruct-GGUF` | `{gguf_path}` | GGUF | missing from scan | exact quant |",
+                f"| Coding Assistant - Mac MLX | primary | `mlx-community/North-Mini-Code-1.0-6bit` | `{mlx_path}` | MLX | missing from scan | coding and agent workflows |",
+            ]
+        )
     )
 
     cards = build_manifest_recommendations(load_model_manifest(tmp_path), [])

@@ -252,7 +252,9 @@ def test_approval_requires_the_exact_syllabus_and_source_manifest() -> None:
         editing.transition("approved", expected_version=editing.version)
 
 
-def test_model_copy_cannot_bypass_lifecycle_or_approval_and_revalidates_updates() -> None:
+def test_model_copy_cannot_bypass_lifecycle_or_approval_and_revalidates_updates() -> (
+    None
+):
     unbound_plan = _plan(
         source_manifest_sha256=None,
         approved_syllabus_version=None,
@@ -293,7 +295,10 @@ def test_model_copy_revalidates_every_frozen_contract() -> None:
     source_link = StudyPlanSourceLink(source_id="source:one")
     with pytest.raises(ValidationError, match="source_id"):
         source_link.model_copy(update={"source_id": ""})
-    assert source_link.model_copy(update={"source_id": "source:two"}).source_id == "source:two"
+    assert (
+        source_link.model_copy(update={"source_id": "source:two"}).source_id
+        == "source:two"
+    )
 
     unit = _unit()
     with pytest.raises(ValidationError, match="objectives"):
@@ -350,7 +355,9 @@ def test_transition_uses_only_the_allowlisted_lifecycle() -> None:
 
 
 def test_plan_preferences_bind_explicit_remote_authority() -> None:
-    with pytest.raises(ValueError, match="cloud model route requires network authority"):
+    with pytest.raises(
+        ValueError, match="cloud model route requires network authority"
+    ):
         StudyPlanPreferences(
             weekly_minutes=120,
             session_minutes=30,

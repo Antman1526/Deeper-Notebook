@@ -32,6 +32,7 @@ middleware, CORS, and memory shim.
    Chromium/Firefox refuse. Now `allow_credentials` follows the
    "is wildcard?" check.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

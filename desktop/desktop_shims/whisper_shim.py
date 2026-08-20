@@ -12,6 +12,7 @@ The --model argument accepts either a faster-whisper model size string
 a pre-converted CTranslate2 model.  On first run the model is downloaded
 from HuggingFace (~150 MB for base.en) and cached in ~/.cache/huggingface.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -97,9 +98,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
-        "--model", required=True,
+        "--model",
+        required=True,
         help="faster-whisper model name ('base.en', 'small', etc.) or path to "
-             "a CTranslate2 model directory",
+        "a CTranslate2 model directory",
     )
     args = parser.parse_args(argv)
 
@@ -111,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     app = build_app(model=model)
 
     import uvicorn
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 

@@ -11,12 +11,14 @@ skillopt is an OPTIONAL dependency (same policy as crawl4ai): the feature
 detects availability and the API returns an actionable error when the
 package isn't installed.
 """
+
 from __future__ import annotations
 
 
 def skillopt_available() -> bool:
     try:
         import skillopt  # noqa: F401
+
         return True
     except ImportError:
         return False

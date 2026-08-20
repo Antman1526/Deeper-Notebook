@@ -6,6 +6,7 @@ other credentials. Whether upstream actually consumes this credential via
 the chat path is decided at integration time (spec §3.2); for v0.4 we just
 make it visible.
 """
+
 from __future__ import annotations
 
 import logging

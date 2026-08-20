@@ -6,6 +6,7 @@ Order of resolution:
      score-deltas merge
   3. Last-resort defaults (kind="chat", all scores=0.5)
 """
+
 from __future__ import annotations
 
 import re
@@ -17,12 +18,12 @@ from desktop.auto_register import model_registry as reg
 
 @dataclass(frozen=True)
 class ModelDescriptor:
-    name: str                       # original model name as registered
-    kind: str                       # "chat" | "reasoning" | "embed" | "stt" | "tts"
+    name: str  # original model name as registered
+    kind: str  # "chat" | "reasoning" | "embed" | "stt" | "tts"
     scores: dict[str, float] = field(default_factory=dict)
-    context_len: int = 0            # tokens
-    ram_gb_q4: float = 0.0          # rough memory footprint at Q4
-    source: str = "default"         # "registry" | "fallback" | "default" — useful in logs
+    context_len: int = 0  # tokens
+    ram_gb_q4: float = 0.0  # rough memory footprint at Q4
+    source: str = "default"  # "registry" | "fallback" | "default" — useful in logs
 
     def score(self, axis: str) -> float:
         return self.scores.get(axis, 0.5)
@@ -46,7 +47,9 @@ def score_model(name: str) -> ModelDescriptor:
         return ModelDescriptor(
             name=name,
             kind=entry["kind"],
-            scores={**reg.DEFAULT_SCORES, **entry.get("scores", {})} if entry["kind"] in ("chat", "reasoning") else {},
+            scores={**reg.DEFAULT_SCORES, **entry.get("scores", {})}
+            if entry["kind"] in ("chat", "reasoning")
+            else {},
             context_len=entry.get("context_len", 0),
             ram_gb_q4=entry.get("ram_gb_q4", 0.0),
             source="registry",

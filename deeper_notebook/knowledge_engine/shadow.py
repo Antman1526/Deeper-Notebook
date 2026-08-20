@@ -101,9 +101,8 @@ def _operation_id(
 
 def _failure_code(error: Exception) -> str:
     value = getattr(error, "code", None)
-    if (
-        isinstance(value, str)
-        and re.fullmatch(r"knowledge_engine_[a-z0-9_]{1,103}", value)
+    if isinstance(value, str) and re.fullmatch(
+        r"knowledge_engine_[a-z0-9_]{1,103}", value
     ):
         return value
     return "knowledge_engine_projection_failed"
@@ -185,7 +184,9 @@ class KnowledgeShadowCoordinator:
             ),
             claims=(
                 _claim("vault_mount", mount.id, "space", space_id, revision_id),
-                _claim("vault_file", vault_file_id, "document", document_id, revision_id),
+                _claim(
+                    "vault_file", vault_file_id, "document", document_id, revision_id
+                ),
                 _claim("note", projected_note_id, "document", document_id, revision_id),
             ),
         )
@@ -231,8 +232,20 @@ class KnowledgeShadowCoordinator:
                 content_hash,
             ),
             claims=(
-                _claim("overlay_space", overlay_note.space_id, "space", space_id, revision_id),
-                _claim("overlay_note", overlay_note.id, "document", document_id, revision_id),
+                _claim(
+                    "overlay_space",
+                    overlay_note.space_id,
+                    "space",
+                    space_id,
+                    revision_id,
+                ),
+                _claim(
+                    "overlay_note",
+                    overlay_note.id,
+                    "document",
+                    document_id,
+                    revision_id,
+                ),
                 _claim(
                     "note",
                     overlay_note.projected_note_id,

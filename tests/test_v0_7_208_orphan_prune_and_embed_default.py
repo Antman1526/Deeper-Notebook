@@ -22,6 +22,7 @@
      (c) the candidate has ZERO models linked.
    Together these eliminate any chance of a false-positive delete.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

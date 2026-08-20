@@ -7,6 +7,7 @@ model, and an LLM judge converts the output into the soft 0-1 score the
 trainer's validation gate consumes. Reflection delegates to the library's
 generic minibatch analyst.
 """
+
 from __future__ import annotations
 
 import json
@@ -81,17 +82,25 @@ class ExamplesDataLoader(BaseDataLoader):
         rng.shuffle(pool)
         payload = pool[: max(1, min(batch_size, len(pool)))]
         return BatchSpec(
-            phase="train", split="train", seed=seed,
-            batch_size=len(payload), payload=payload,
+            phase="train",
+            split="train",
+            seed=seed,
+            batch_size=len(payload),
+            payload=payload,
         )
 
-    def build_eval_batch(self, env_num: int, split: str, seed: int, **kwargs) -> BatchSpec:
+    def build_eval_batch(
+        self, env_num: int, split: str, seed: int, **kwargs
+    ) -> BatchSpec:
         pool = list(self.val_items)
         if env_num and env_num > 0:
             pool = pool[:env_num]
         return BatchSpec(
-            phase="eval", split=split, seed=seed,
-            batch_size=len(pool), payload=pool,
+            phase="eval",
+            split=split,
+            seed=seed,
+            batch_size=len(pool),
+            payload=pool,
         )
 
 
@@ -154,7 +163,9 @@ class TransformationAdapter(EnvAdapter):
         except Exception as exc:
             logger.warning(f"prompt-optimizer rollout failed for {item_id}: {exc}")
             return {
-                "id": item_id, "hard": 0, "soft": 0.0,
+                "id": item_id,
+                "hard": 0,
+                "soft": 0.0,
                 "prediction": f"<target call failed: {exc}>",
                 "question": input_text[:2000],
                 "task_type": "transformation",
@@ -167,7 +178,8 @@ class TransformationAdapter(EnvAdapter):
         )
         try:
             judge_raw, _ = chat_optimizer(
-                system=_JUDGE_SYSTEM, user=judge_user,
+                system=_JUDGE_SYSTEM,
+                user=judge_user,
                 max_completion_tokens=512,
             )
             soft = parse_judge_score(judge_raw)
@@ -181,7 +193,8 @@ class TransformationAdapter(EnvAdapter):
             with open(os.path.join(out_dir, f"{item_id}.json"), "w") as f:
                 json.dump(
                     {"id": item_id, "prediction": prediction, "soft": soft},
-                    f, ensure_ascii=False,
+                    f,
+                    ensure_ascii=False,
                 )
         except Exception:
             pass
@@ -195,7 +208,9 @@ class TransformationAdapter(EnvAdapter):
             "task_type": "transformation",
         }
 
-    def rollout(self, env_manager, skill_content: str, out_dir: str, **kwargs) -> list[dict]:
+    def rollout(
+        self, env_manager, skill_content: str, out_dir: str, **kwargs
+    ) -> list[dict]:
         items: list[dict] = env_manager
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             return list(
@@ -207,7 +222,9 @@ class TransformationAdapter(EnvAdapter):
         return run_minibatch_reflect(
             results=results,
             skill_content=skill_content,
-            prediction_dir=kwargs.get("prediction_dir", os.path.join(out_dir, "predictions")),
+            prediction_dir=kwargs.get(
+                "prediction_dir", os.path.join(out_dir, "predictions")
+            ),
             patches_dir=kwargs.get("patches_dir", os.path.join(out_dir, "patches")),
             workers=self.analyst_workers,
             failure_only=False,

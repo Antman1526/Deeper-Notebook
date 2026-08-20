@@ -64,9 +64,7 @@ _CATEGORY_OVERRIDES = {
     ("desktop/tests/test_emergency_log.py", "open-notebook-plus"): (
         "compatibility_alias"
     ),
-    ("tests/test_product_identity.py", "OpenNotebook"): (
-        "compatibility_alias"
-    ),
+    ("tests/test_product_identity.py", "OpenNotebook"): ("compatibility_alias"),
     (
         "frontend/src/components/deeper-notebook/ThemeSwitcher.tsx",
         "onp-theme",
@@ -75,17 +73,13 @@ _CATEGORY_OVERRIDES = {
         "frontend/src/components/deeper-notebook/ThemeSwitcher.test.tsx",
         "onp-theme",
     ): "compatibility_alias",
-    ("tests/test_task5_brand_namespace.py", "onp-theme"): (
-        "compatibility_alias"
-    ),
+    ("tests/test_task5_brand_namespace.py", "onp-theme"): ("compatibility_alias"),
     ("tests/test_local_model_benchmarks.py", "open-notebook-plus"): (
         "compatibility_alias"
     ),
     ("desktop/__init__.py", "open-notebook-plus"): "historical_reference",
     ("desktop/paths.py", "Open Notebook Plus"): "migration_documentation",
-    ("deeper_notebook/logging.py", "OPEN_NOTEBOOK_"): (
-        "migration_documentation"
-    ),
+    ("deeper_notebook/logging.py", "OPEN_NOTEBOOK_"): ("migration_documentation"),
     ("deeper_notebook/logging.py", "ONP_"): "migration_documentation",
     ("scripts/persisted_queue_inventory.py", "open_notebook"): (
         "migration_documentation"
@@ -172,9 +166,7 @@ _COMPATIBILITY_CONTRACT_FIELDS = frozenset(
         "coverage_sha256",
     }
 )
-_COMPATIBILITY_SCOPE_FIELDS = frozenset(
-    {"paths", "patterns", "sources"}
-)
+_COMPATIBILITY_SCOPE_FIELDS = frozenset({"paths", "patterns", "sources"})
 COMPATIBILITY_CONTRACT_KINDS = frozenset(
     {
         "env_alias",
@@ -260,8 +252,7 @@ _DEFAULT_COMPATIBILITY_CONTRACTS = {
             "canonical settings take precedence."
         ),
         "proof": (
-            "tests/test_environment_aliases.py::"
-            "test_all_four_precedence_positions"
+            "tests/test_environment_aliases.py::test_all_four_precedence_positions"
         ),
     },
     "python-import-shim-v1": {
@@ -562,9 +553,7 @@ _KIND_PROOF_PATHS = {
             "desktop/tests/test_launcher_prefs.py",
         }
     ),
-    "import_shim": frozenset(
-        {"tests/test_python_import_compatibility.py"}
-    ),
+    "import_shim": frozenset({"tests/test_python_import_compatibility.py"}),
     "data_migration": frozenset(
         {
             "desktop/tests/test_data_root_migration.py",
@@ -572,12 +561,8 @@ _KIND_PROOF_PATHS = {
             "desktop/tests/test_emergency_log.py",
         }
     ),
-    "installer_upgrade": frozenset(
-        {"desktop/tests/test_release_manifest.py"}
-    ),
-    "legacy_api_route": frozenset(
-        {"tests/test_task6_active_product.py"}
-    ),
+    "installer_upgrade": frozenset({"desktop/tests/test_release_manifest.py"}),
+    "legacy_api_route": frozenset({"tests/test_task6_active_product.py"}),
     "persisted_identifier": frozenset(
         {
             "tests/test_persisted_queue_identifiers.py",
@@ -697,11 +682,16 @@ _KIND_SCOPE_EXACT_PATHS = {
             "deeper_notebook/research/graph.py",
             "deeper_notebook/local_models/benchmarks.py",
             "deeper_notebook/podcasts/profile_names.py",
-            "frontend/src/components/deeper-notebook/ThemeSwitcher.tsx", "frontend/src/components/deeper-notebook/ThemeGallery.test.tsx",
-            "frontend/src/components/deeper-notebook/ThemeSwitcher.test.tsx", "frontend/src/components/providers/ThemeProvider.test.tsx",
-            "frontend/src/lib/theme-storage.ts", "frontend/src/lib/stores/theme-store.test.ts",
-            "frontend/src/lib/theme-script.test.ts", "frontend/src/lib/theme-script.ts",
-            "tests/test_local_model_benchmarks.py", "tests/test_persisted_queue_identifiers.py",
+            "frontend/src/components/deeper-notebook/ThemeSwitcher.tsx",
+            "frontend/src/components/deeper-notebook/ThemeGallery.test.tsx",
+            "frontend/src/components/deeper-notebook/ThemeSwitcher.test.tsx",
+            "frontend/src/components/providers/ThemeProvider.test.tsx",
+            "frontend/src/lib/theme-storage.ts",
+            "frontend/src/lib/stores/theme-store.test.ts",
+            "frontend/src/lib/theme-script.test.ts",
+            "frontend/src/lib/theme-script.ts",
+            "tests/test_local_model_benchmarks.py",
+            "tests/test_persisted_queue_identifiers.py",
             "scripts/repair_desktop_db.sh",
             "tests/integration/conftest.py",
             "tests/test_domain.py",
@@ -752,7 +742,10 @@ _KIND_SCOPE_EXACT_PATHS = {
             "frontend/src/lib/api/onp.ts",
             "frontend/src/lib/task6-active-brand.test.ts",
             "tests/test_gmail_router.py",
-            "tests/test_knowledge_engine_api.py", "tests/test_overlay_api.py", "tests/test_task6_active_product.py", "tests/test_vault_api.py",
+            "tests/test_knowledge_engine_api.py",
+            "tests/test_overlay_api.py",
+            "tests/test_task6_active_product.py",
+            "tests/test_vault_api.py",
         }
     ),
     "data_migration": frozenset(
@@ -792,7 +785,7 @@ _KIND_SCOPE_PREFIXES = {
 }
 _AUDIT_METADATA_PATHS = frozenset({"scripts/rebrand-allowlist.json"})
 _PINNED_SELECTOR_INVENTORY_SHA256 = (
-    "c911e7e3c442687ae56ae982dc5feb03d209223b5093e1cd618030af1e5668bc"
+    "2f3d7ac4765d379613a92682e9b02071e36837f451f4b59c0512d851b9600b94"
 )
 _SEMANTIC_SELECTOR_PATHS = frozenset(
     {
@@ -810,10 +803,7 @@ _GENERIC_EXPLANATIONS = frozenset(
     {
         "compatibility behavior is intentionally preserved.",
         "historical product name retained for accuracy.",
-        (
-            "historical reference retained for accuracy and migration "
-            "compatibility."
-        ),
+        ("historical reference retained for accuracy and migration compatibility."),
         "this legacy reference is retained for compatibility.",
     }
 )
@@ -833,9 +823,7 @@ _STRUCTURAL_LOCATOR_RE = re.compile(
 
 def _humanize(value: str) -> str:
     value = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
-    return " ".join(
-        word for word in re.split(r"[^A-Za-z0-9]+", value) if word
-    ).lower()
+    return " ".join(word for word in re.split(r"[^A-Za-z0-9]+", value) if word).lower()
 
 
 def _scrub_structural_terms(value: str) -> str:
@@ -1004,10 +992,7 @@ def _workflow_scope(lines: list[str], line_number: int) -> str | None:
     for line in reversed(lines[:line_number]):
         match = re.match(r"^\s*-\s+name:\s*(.+?)\s*$", line)
         if match:
-            return (
-                f'the "{_scrub_structural_terms(match.group(1))}" '
-                "workflow step"
-            )
+            return f'the "{_scrub_structural_terms(match.group(1))}" workflow step'
     return None
 
 
@@ -1146,11 +1131,7 @@ def _statement_semantics(line: str, pattern: str, column: int) -> str:
     role = _pattern_role(pattern, line)
     window_start = max(0, start - 100)
     window_end = min(len(line), end + 100)
-    marked = (
-        line[window_start:start]
-        + f" current {role} "
-        + line[end:window_end]
-    )
+    marked = line[window_start:start] + f" current {role} " + line[end:window_end]
     marked = _scrub_structural_terms(marked)
     marked = re.sub(r"[`*_#|<>{}\[\]();]+", " ", marked)
     marked = " ".join(marked.split()).strip(" .,:;-")
@@ -1192,10 +1173,7 @@ def _role_specific_purpose(
             "the original project terminology remains visible so inherited "
             "documentation stays attributable to its upstream source"
         )
-    if (
-        relative_path == "deeper_notebook/identity.py"
-        and pattern == "open_notebook"
-    ):
+    if relative_path == "deeper_notebook/identity.py" and pattern == "open_notebook":
         return (
             "the declared legacy Python package name remains available so "
             "compatibility imports resolve after the package rename"
@@ -1311,26 +1289,20 @@ def semantic_explanation_for_occurrence(
             purpose = f"{purpose}, while {nearby_context}"
         context_label = _semantic_context_label(lines, line_number)
         if context_label and context_label.casefold() not in scope.casefold():
-            purpose = (
-                f"{purpose}; the local example is introduced by "
-                f"{context_label}"
-            )
+            purpose = f"{purpose}; the local example is introduced by {context_label}"
 
     templates = {
         "compatibility_alias": (
             "{role} keeps the legacy behavior in {scope} because {purpose}."
         ),
         "historical_reference": (
-            "{role} preserves the historical record in {scope} because "
-            "{purpose}."
+            "{role} preserves the historical record in {scope} because {purpose}."
         ),
         "migration_documentation": (
-            "{role} documents the upgrade boundary in {scope} because "
-            "{purpose}."
+            "{role} documents the upgrade boundary in {scope} because {purpose}."
         ),
         "upstream_reference": (
-            "{role} retains inherited terminology in {scope} because "
-            "{purpose}."
+            "{role} retains inherited terminology in {scope} because {purpose}."
         ),
     }
     try:
@@ -1489,9 +1461,7 @@ def _validate_compatibility_proof(
     static_kind = _STATIC_COMPATIBILITY_PROOFS.get(proof)
     if static_kind is not None:
         if static_kind != kind:
-            raise ValueError(
-                "static compatibility proof does not prove contract kind"
-            )
+            raise ValueError("static compatibility proof does not prove contract kind")
         return
     if proof.startswith("static:"):
         raise ValueError(
@@ -1504,9 +1474,7 @@ def _validate_compatibility_proof(
         )
     relative_path, symbol = proof.split("::", 1)
     if relative_path not in _KIND_PROOF_PATHS[kind]:
-        raise ValueError(
-            "tracked proof reference path does not prove contract kind"
-        )
+        raise ValueError("tracked proof reference path does not prove contract kind")
     proof_path = Path(relative_path)
     if (
         not relative_path
@@ -1514,31 +1482,23 @@ def _validate_compatibility_proof(
         or proof_path.is_absolute()
         or ".." in proof_path.parts
     ):
-        raise ValueError(
-            "compatibility contract requires a tracked proof reference"
-        )
+        raise ValueError("compatibility contract requires a tracked proof reference")
     target = root / proof_path
     if not target.is_file():
-        raise ValueError(
-            "compatibility contract requires a tracked proof reference"
-        )
+        raise ValueError("compatibility contract requires a tracked proof reference")
     tracked = subprocess.run(
         ["git", "-C", str(root), "ls-files", "--error-unmatch", "--", relative_path],
         check=False,
         capture_output=True,
     )
     if tracked.returncode != 0:
-        raise ValueError(
-            "compatibility contract requires a tracked proof reference"
-        )
+        raise ValueError("compatibility contract requires a tracked proof reference")
     source = target.read_text(encoding="utf-8")
     if target.suffix == ".py":
         try:
             tree = ast.parse(source)
         except SyntaxError as exc:
-            raise ValueError(
-                "compatibility contract proof must be parseable"
-            ) from exc
+            raise ValueError("compatibility contract proof must be parseable") from exc
         symbols = {
             node.name
             for node in ast.walk(tree)
@@ -1556,16 +1516,13 @@ def _validate_compatibility_proof(
                 "compatibility contract proof must reference a behavioral test"
             )
     else:
-        matching_lines = [
-            line for line in source.splitlines() if symbol in line
-        ]
+        matching_lines = [line for line in source.splitlines() if symbol in line]
         if not matching_lines:
             raise ValueError(
                 "compatibility contract requires a tracked proof reference"
             )
         if not any(
-            re.search(r"\b(?:it|test|describe)\s*\(", line)
-            for line in matching_lines
+            re.search(r"\b(?:it|test|describe)\s*\(", line) for line in matching_lines
         ):
             raise ValueError(
                 "compatibility contract proof must reference a behavioral test"
@@ -1579,17 +1536,11 @@ def _scope_path_allowed(kind: str, path: str) -> bool:
             or path.startswith("desktop/tests/")
             or path.startswith("fixtures/")
             or path.startswith("frontend/tests/")
-            or (
-                path.startswith("frontend/src/")
-                and ".test." in Path(path).name
-            )
+            or (path.startswith("frontend/src/") and ".test." in Path(path).name)
         )
     if path in _KIND_SCOPE_EXACT_PATHS.get(kind, frozenset()):
         return True
-    return any(
-        path.startswith(prefix)
-        for prefix in _KIND_SCOPE_PREFIXES.get(kind, ())
-    )
+    return any(path.startswith(prefix) for prefix in _KIND_SCOPE_PREFIXES.get(kind, ()))
 
 
 def _validate_contract_scope(
@@ -1626,12 +1577,8 @@ def _validate_contract_scope(
             "compatibility contract scope patterns must be built-in patterns"
         )
     if not set(sources).issubset({"path", "content"}):
-        raise ValueError(
-            "compatibility contract scope sources must be path or content"
-        )
-    if kind == "env_alias" and not set(patterns).issubset(
-        {"OPEN_NOTEBOOK_", "ONP_"}
-    ):
+        raise ValueError("compatibility contract scope sources must be path or content")
+    if kind == "env_alias" and not set(patterns).issubset({"OPEN_NOTEBOOK_", "ONP_"}):
         raise ValueError("env_alias scope contains a non-environment pattern")
     if kind == "import_shim" and set(patterns) != {"open_notebook"}:
         raise ValueError("import_shim scope must use the legacy package pattern")
@@ -1687,12 +1634,8 @@ def _materialize_compatibility_contracts(
         contract: dict[str, object] = dict(base)
         contract["scope"] = {
             "paths": sorted({str(entry["path"]) for entry in owned_entries}),
-            "patterns": sorted(
-                {str(entry["pattern"]) for entry in owned_entries}
-            ),
-            "sources": sorted(
-                {str(entry["source"]) for entry in owned_entries}
-            ),
+            "patterns": sorted({str(entry["pattern"]) for entry in owned_entries}),
+            "sources": sorted({str(entry["source"]) for entry in owned_entries}),
         }
         contract["coverage_sha256"] = compatibility_coverage_digest(
             owned_entries,
@@ -1871,9 +1814,8 @@ def _pinned_selector_inventory(root: Path) -> dict[OccurrenceKey, str]:
             return {}
         if key[0] in _SEMANTIC_SELECTOR_PATHS:
             continue
-        if (
-            contract == "persisted-queue-identifier-v1"
-            and not key[0].startswith("tests/")
+        if contract == "persisted-queue-identifier-v1" and not key[0].startswith(
+            "tests/"
         ):
             continue
         selectors[key] = contract
@@ -1919,7 +1861,12 @@ def _frontend_semantic_selectors(
             r"process\.env\.(NEXT_PUBLIC_(?:DN|ONP)_[A-Z0-9_]+)",
             source,
         )
-        if expected_names.issubset(references) and all(references.count(name) == 1 for name in expected_names) and {name for name in references if name.split("_")[2] == "ONP"} == {name for name in expected_names if name.split("_")[2] == "ONP"}:
+        if (
+            expected_names.issubset(references)
+            and all(references.count(name) == 1 for name in expected_names)
+            and {name for name in references if name.split("_")[2] == "ONP"}
+            == {name for name in expected_names if name.split("_")[2] == "ONP"}
+        ):
             for occurrence in _selector_occurrences_for_path(
                 root,
                 features_path,
@@ -2050,9 +1997,7 @@ def compatibility_contract_for_occurrence(
         return None
     if selectors is None:
         selector_root = (
-            root.resolve()
-            if root is not None
-            else Path(__file__).resolve().parents[1]
+            root.resolve() if root is not None else Path(__file__).resolve().parents[1]
         )
         selectors = compatibility_selector_inventory(selector_root)
     contract = selectors.get(key)
@@ -2080,14 +2025,10 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
             "entries fields"
         )
     if payload.get("schema_version") != ALLOWLIST_SCHEMA_VERSION:
-        raise ValueError(
-            f"allowlist schema_version must be {ALLOWLIST_SCHEMA_VERSION}"
-        )
+        raise ValueError(f"allowlist schema_version must be {ALLOWLIST_SCHEMA_VERSION}")
     persisted_identifiers = payload.get("persisted_queue_identifiers")
     if not isinstance(persisted_identifiers, list):
-        raise ValueError(
-            "allowlist persisted_queue_identifiers must be a list"
-        )
+        raise ValueError("allowlist persisted_queue_identifiers must be a list")
     queue_identifier_fields = {
         "registration": frozenset(
             {"kind", "path", "symbol", "callee", "app", "command"}
@@ -2103,22 +2044,17 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                 "invocation",
             }
         ),
-        "lookup": frozenset(
-            {"kind", "path", "symbol", "callee", "command_id"}
-        ),
+        "lookup": frozenset({"kind", "path", "symbol", "callee", "command_id"}),
     }
     for identifier in persisted_identifiers:
         if not isinstance(identifier, dict):
-            raise ValueError(
-                "each persisted queue identifier must be an object"
-            )
+            raise ValueError("each persisted queue identifier must be an object")
         expected_fields = queue_identifier_fields.get(identifier.get("kind"))
         if (
             expected_fields is None
             or frozenset(identifier) != expected_fields
             or not all(
-                isinstance(value, str) and value
-                for value in identifier.values()
+                isinstance(value, str) and value for value in identifier.values()
             )
         ):
             raise ValueError(
@@ -2228,11 +2164,7 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
             raise ValueError("content approvals require a positive line")
         if source == "path" and line is not None:
             raise ValueError("path approvals require line=null")
-        if (
-            not isinstance(column, int)
-            or isinstance(column, bool)
-            or column < 1
-        ):
+        if not isinstance(column, int) or isinstance(column, bool) or column < 1:
             raise ValueError("allowlist column must be a positive integer")
         if not _SHA256_RE.fullmatch(digest):
             raise ValueError("allowlist context_sha256 must be 64 lowercase hex chars")
@@ -2311,8 +2243,7 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
                 or compatibility_contract not in contracts
             ):
                 raise ValueError(
-                    "compatibility_alias requires a structured compatibility "
-                    "contract"
+                    "compatibility_alias requires a structured compatibility contract"
                 )
             if selectors is None:
                 selectors = compatibility_selector_inventory(root)
@@ -2364,8 +2295,7 @@ def load_allowlist(path: Path) -> dict[OccurrenceKey, Approval]:
             referenced_contracts.add(compatibility_contract)
         elif compatibility_contract is not None:
             raise ValueError(
-                "non-compatibility rationale cannot reference a compatibility "
-                "contract"
+                "non-compatibility rationale cannot reference a compatibility contract"
             )
         if "*" in allowlisted_path:
             raise ValueError("allowlist paths must be exact; wildcards are disallowed")
@@ -2470,9 +2400,7 @@ def audit_repository(
     """Scan tracked path names and UTF-8 text contents for legacy references."""
     root = root.resolve()
     selector_inventory = (
-        selectors
-        if selectors is not None
-        else compatibility_selector_inventory(root)
+        selectors if selectors is not None else compatibility_selector_inventory(root)
     )
     categorized: dict[str, list[dict[str, object]]] = {
         category: [] for category in CATEGORIES
@@ -2782,8 +2710,7 @@ def regenerate_allowlist(
                 category = "historical_reference"
             else:
                 raise ValueError(
-                    "unclassified occurrence requires explicit review: "
-                    f"{match}"
+                    f"unclassified occurrence requires explicit review: {match}"
                 )
         if category == "compatibility_alias":
             if match_path.suffix.lower() in {".md", ".mdx", ".rst"}:
@@ -2825,8 +2752,7 @@ def regenerate_allowlist(
         semantic_key = semantic_explanation_key(explanation)
         if semantic_key in semantic_keys:
             raise ValueError(
-                "semantic rationale generation produced a duplicate: "
-                f"{explanation}"
+                f"semantic rationale generation produced a duplicate: {explanation}"
             )
         semantic_keys.add(semantic_key)
         line = match.get("line")

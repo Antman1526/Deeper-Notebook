@@ -1,5 +1,6 @@
 """v0.8.68 — network-state service tests. No live network: the TCP probe is
 injected. Each test resets the module cache via the public reset helper."""
+
 from __future__ import annotations
 
 import asyncio
@@ -36,6 +37,7 @@ def test_offline_when_probe_fails(monkeypatch):
 def test_unknown_on_probe_exception(monkeypatch):
     def _boom():
         raise OSError("probe broke")
+
     monkeypatch.setattr(network, "_probe_once", _boom)
     state = _run(network.get_network_state(forced_offline_lookup=lambda: False))
     assert state.status == "unknown"
@@ -89,7 +91,9 @@ def test_forced_offline_wins_without_probe(monkeypatch):
 
 
 def test_probe_host_env_parsing(monkeypatch):
-    monkeypatch.setenv("DEEPER_NOTEBOOK_NET_PROBE_HOSTS", "example.com:443, 10.0.0.1:8443")
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_NET_PROBE_HOSTS", "example.com:443, 10.0.0.1:8443"
+    )
     assert network._probe_targets() == [("example.com", 443), ("10.0.0.1", 8443)]
 
 

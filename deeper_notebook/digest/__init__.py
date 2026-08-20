@@ -4,6 +4,7 @@ Queries SurrealDB for recent activity across notebooks/sources/notes/podcasts/
 memory and renders an HTML email body. Sections respect the user's per-section
 toggles from GmailIntegration.
 """
+
 from __future__ import annotations
 
 import html as _html
@@ -60,11 +61,13 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
             {"since": since_iso},
         )
         if rows:
-            sections.append(_render_section(
-                "Notebooks",
-                f"{len(rows)} notebook{'s' if len(rows) != 1 else ''} created or updated",
-                [_render_notebook(r) for r in rows],
-            ))
+            sections.append(
+                _render_section(
+                    "Notebooks",
+                    f"{len(rows)} notebook{'s' if len(rows) != 1 else ''} created or updated",
+                    [_render_notebook(r) for r in rows],
+                )
+            )
             total += len(rows)
 
     if g.include_sources:
@@ -76,11 +79,13 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
             {"since": since_iso},
         )
         if rows:
-            sections.append(_render_section(
-                "Sources added",
-                f"{len(rows)} new source{'s' if len(rows) != 1 else ''} (PDFs, links, transcripts)",
-                [_render_source(r) for r in rows],
-            ))
+            sections.append(
+                _render_section(
+                    "Sources added",
+                    f"{len(rows)} new source{'s' if len(rows) != 1 else ''} (PDFs, links, transcripts)",
+                    [_render_source(r) for r in rows],
+                )
+            )
             total += len(rows)
 
     if g.include_notes:
@@ -90,11 +95,13 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
             {"since": since_iso},
         )
         if rows:
-            sections.append(_render_section(
-                "Notes written",
-                f"{len(rows)} new note{'s' if len(rows) != 1 else ''}",
-                [_render_note(r) for r in rows],
-            ))
+            sections.append(
+                _render_section(
+                    "Notes written",
+                    f"{len(rows)} new note{'s' if len(rows) != 1 else ''}",
+                    [_render_note(r) for r in rows],
+                )
+            )
             total += len(rows)
 
     if g.include_podcasts:
@@ -106,11 +113,13 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
             {"since": since_iso},
         )
         if rows:
-            sections.append(_render_section(
-                "Podcast episodes",
-                f"{len(rows)} podcast{'s' if len(rows) != 1 else ''} generated",
-                [_render_podcast(r) for r in rows],
-            ))
+            sections.append(
+                _render_section(
+                    "Podcast episodes",
+                    f"{len(rows)} podcast{'s' if len(rows) != 1 else ''} generated",
+                    [_render_podcast(r) for r in rows],
+                )
+            )
             total += len(rows)
 
     if g.include_memory:
@@ -121,18 +130,20 @@ async def build_digest_html(g: GmailIntegration) -> tuple[str, int]:
             {"since": since_iso},
         )
         if rows:
-            sections.append(_render_section(
-                "Memory facts",
-                f"{len(rows)} fact{'s' if len(rows) != 1 else ''} extracted",
-                [_render_memory(r) for r in rows],
-            ))
+            sections.append(
+                _render_section(
+                    "Memory facts",
+                    f"{len(rows)} fact{'s' if len(rows) != 1 else ''} extracted",
+                    [_render_memory(r) for r in rows],
+                )
+            )
             total += len(rows)
 
     if total == 0:
         sections.append(
             '<p style="color:#888;font-style:italic;">No notebook activity '
-            'in the digest window. Quiet days are fine — your digest will '
-            'show up again next time you create something.</p>'
+            "in the digest window. Quiet days are fine — your digest will "
+            "show up again next time you create something.</p>"
         )
 
     window = "since last digest" if g.last_sent_at else "in the last 7 days"
@@ -175,7 +186,9 @@ def _render_section(title: str, sub: str, items: list[str]) -> str:
 def _render_notebook(r: dict) -> str:
     name = _esc(r.get("name") or "(untitled)")
     desc = _esc((r.get("description") or "")[:120])
-    return f"<strong>{name}</strong>" + (f" — <span style='color:#888;'>{desc}</span>" if desc else "")
+    return f"<strong>{name}</strong>" + (
+        f" — <span style='color:#888;'>{desc}</span>" if desc else ""
+    )
 
 
 def _render_source(r: dict) -> str:
@@ -227,7 +240,8 @@ async def _safe_query(query: str, vars: dict) -> list[dict]:
             # Benign: table doesn't exist yet (fresh install). DEBUG
             # keeps launcher.log quiet on the every-tick scheduler.
             logger.debug(
-                "digest _safe_query: table-missing (benign): {}", exc,
+                "digest _safe_query: table-missing (benign): {}",
+                exc,
             )
         elif any(s in msg for s in _SCHEMA_ERROR_SUBSTRINGS):
             # Genuine bug — the query is no longer valid against the
@@ -243,8 +257,7 @@ async def _safe_query(query: str, vars: dict) -> list[dict]:
             # Unknown error — also worth surfacing because the digest
             # is misreporting activity.
             logger.warning(
-                "digest _safe_query: unexpected error — section will "
-                "be omitted: {}",
+                "digest _safe_query: unexpected error — section will be omitted: {}",
                 exc,
             )
         return []

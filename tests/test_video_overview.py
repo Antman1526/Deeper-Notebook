@@ -59,23 +59,38 @@ def _document(tmp_path: Path) -> VideoOverviewDocument:
     )
 
 
-def test_compose_video_overview_creates_decodable_mp4_and_safe_vtt(tmp_path: Path) -> None:
+def test_compose_video_overview_creates_decodable_mp4_and_safe_vtt(
+    tmp_path: Path,
+) -> None:
     output = compose_video_overview(_document(tmp_path), tmp_path / "outputs")
 
     assert output.mp4_path.is_file()
     assert output.mp4_path.stat().st_size > 1_000
     assert output.vtt_path.read_text(encoding="utf-8").startswith("WEBVTT\n")
     assert "--> with" not in output.vtt_path.read_text(encoding="utf-8")
-    assert "00:00:00.000 --> 00:00:00.400" in output.vtt_path.read_text(encoding="utf-8")
+    assert "00:00:00.000 --> 00:00:00.400" in output.vtt_path.read_text(
+        encoding="utf-8"
+    )
     subprocess.run(
-        [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-i", str(output.mp4_path), "-f", "null", "-"],
+        [
+            imageio_ffmpeg.get_ffmpeg_exe(),
+            "-v",
+            "error",
+            "-i",
+            str(output.mp4_path),
+            "-f",
+            "null",
+            "-",
+        ],
         check=True,
         capture_output=True,
         text=True,
     )
 
 
-def test_video_overview_contract_rejects_non_monotonic_or_oversized_documents(tmp_path: Path) -> None:
+def test_video_overview_contract_rejects_non_monotonic_or_oversized_documents(
+    tmp_path: Path,
+) -> None:
     document = _document(tmp_path)
     with pytest.raises(ValidationError, match="caption segments must be monotonic"):
         VideoOverviewDocument(
@@ -93,7 +108,9 @@ def test_video_overview_contract_rejects_non_monotonic_or_oversized_documents(tm
             slide_image_paths=document.slide_image_paths,
             narration_audio_path=document.narration_audio_path,
             narration_segments=[
-                VideoNarrationSegment(start_seconds=0, end_seconds=3_601, text="Too long")
+                VideoNarrationSegment(
+                    start_seconds=0, end_seconds=3_601, text="Too long"
+                )
             ],
             caption_language="en",
         )

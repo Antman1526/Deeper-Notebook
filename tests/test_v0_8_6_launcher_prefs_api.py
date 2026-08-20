@@ -5,6 +5,7 @@ Three test cases (hermetic — no live SurrealDB or real filesystem needed):
 2. PUT writes and GET reflects the new values.
 3. PUT with None removes the key.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,12 +17,14 @@ from httpx import ASGITransport, AsyncClient
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def prefs_dir(tmp_path, monkeypatch):
     """Redirect desktop.launcher_prefs to a temp directory."""
     prefs_path = tmp_path / ".open-notebook-plus" / "launcher.env"
 
     import desktop.launcher_prefs as lp
+
     monkeypatch.setattr(lp, "_prefs_path", lambda: prefs_path)
     return prefs_path
 
@@ -41,6 +44,7 @@ def api_app(monkeypatch):
 # ---------------------------------------------------------------------------
 # Test cases
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_get_returns_empty_when_no_file(prefs_dir, api_app):
@@ -66,17 +70,11 @@ async def test_put_writes_and_get_reflects(prefs_dir, api_app):
             json={"prefs": {"DEEPER_NOTEBOOK_CHAT_LLM_CTX": "8192"}},
         )
         assert put_resp.status_code == 200
-        assert (
-            put_resp.json()["prefs"]["DEEPER_NOTEBOOK_CHAT_LLM_CTX"]
-            == "8192"
-        )
+        assert put_resp.json()["prefs"]["DEEPER_NOTEBOOK_CHAT_LLM_CTX"] == "8192"
 
         get_resp = await client.get("/api/launcher-prefs")
     assert get_resp.status_code == 200
-    assert (
-        get_resp.json()["prefs"]["DEEPER_NOTEBOOK_CHAT_LLM_CTX"]
-        == "8192"
-    )
+    assert get_resp.json()["prefs"]["DEEPER_NOTEBOOK_CHAT_LLM_CTX"] == "8192"
 
 
 @pytest.mark.asyncio
@@ -84,7 +82,9 @@ async def test_put_with_none_removes_key(prefs_dir, api_app):
     """Case 3: PUT with null value removes the key from the file."""
     # Seed with two keys.
     prefs_dir.parent.mkdir(parents=True, exist_ok=True)
-    prefs_dir.write_text("DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nDEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=32768\n")
+    prefs_dir.write_text(
+        "DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192\nDEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=32768\n"
+    )
 
     async with AsyncClient(
         transport=ASGITransport(app=api_app), base_url="http://test"

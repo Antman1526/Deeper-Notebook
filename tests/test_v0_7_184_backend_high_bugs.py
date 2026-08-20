@@ -31,6 +31,7 @@ Three independent bugs surfaced by the round-9 audit:
   asserts the sanitised wire payload and the absence of the raw
   exception text.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -94,7 +95,7 @@ def test_chat_stream_handler_no_longer_has_dead_clause():
     # The InvalidInputError handler exists in the stream region
     # and yields an event (rather than raising — which would be
     # wrong for streaming context).
-    idx_iie = src.find('except InvalidInputError as e:', idx_nf)
+    idx_iie = src.find("except InvalidInputError as e:", idx_nf)
     assert idx_iie != -1, (
         "v0.7.184 regression: streaming InvalidInputError handler "
         "is gone or reverted to the v0.7.183 bulk form."
@@ -124,7 +125,9 @@ def test_chat_stream_does_not_leak_raw_exception_in_error_event():
     assert catch_all_idx != -1, "couldn't find generic catch-all"
     catch_all_body = block[catch_all_idx : catch_all_idx + 800]
     # The body must NOT yield str(e) directly.
-    assert 'yield json.dumps({"type": "error", "detail": str(e)})' not in catch_all_body, (
+    assert (
+        'yield json.dumps({"type": "error", "detail": str(e)})' not in catch_all_body
+    ), (
         "v0.7.184 regression: streaming catch-all echoes str(e) "
         "into the SSE error event. Use a generic message; the raw "
         "exception still lives in the log."

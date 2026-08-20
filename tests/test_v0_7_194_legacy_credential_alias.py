@@ -30,6 +30,7 @@ on a freshly-launched v0.7.193 .app:
 This test is AST-level — it pins the canonical-name resolution
 in llamacpp.py without depending on a running SurrealDB.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -105,9 +106,7 @@ def test_legacy_name_used_when_pre_existing(monkeypatch, tmp_path):
     client.put.assert_called_once()
     put_call = client.put.call_args
     assert put_call.args[0] == "/api/credentials/credential:legacy-abc"
-    assert put_call.kwargs["json"] == {
-        "base_url": "http://127.0.0.1:51027/v1"
-    }
+    assert put_call.kwargs["json"] == {"base_url": "http://127.0.0.1:51027/v1"}
     # And no POST should have been issued (which would create a duplicate).
     client.post.assert_not_called()
 

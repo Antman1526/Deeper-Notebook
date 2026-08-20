@@ -23,6 +23,7 @@ Three independent surfaces tightened:
     phase, leaving TLS handshake + pool-acquire stages unbounded.
     Same pattern chat_service.py uses. Audit finding #7.
 """
+
 from __future__ import annotations
 
 import re
@@ -49,15 +50,14 @@ def test_config_version_check_uses_monotonic_clock():
     NTP jumps, DST transitions."""
     src = _read_source("api/routers/config.py")
     # The timestamp field is set with monotonic.
-    assert "_version_cache[\"timestamp\"] = time.monotonic()" in src, (
+    assert '_version_cache["timestamp"] = time.monotonic()' in src, (
         "v0.7.187 regression: config.py version cache reverted to "
         "time.time(). Laptop sleep + NTP corrections will silently "
         "break the TTL."
     )
     # The age comparison uses monotonic too.
-    assert "time.monotonic() - _version_cache[\"timestamp\"]" in src, (
-        "v0.7.187 regression: config.py cache-age comparison "
-        "reverted to time.time()."
+    assert 'time.monotonic() - _version_cache["timestamp"]' in src, (
+        "v0.7.187 regression: config.py cache-age comparison reverted to time.time()."
     )
 
 
@@ -75,8 +75,7 @@ def test_config_no_remaining_time_time_for_ttl():
     # Strip comment lines (which legitimately mention `time.time()`
     # in rationale text) before checking.
     code_only = "\n".join(
-        line for line in region.splitlines()
-        if not line.lstrip().startswith("#")
+        line for line in region.splitlines() if not line.lstrip().startswith("#")
     )
     assert "time.time()" not in code_only, (
         "v0.7.187 regression: time.time() back in version-cache "

@@ -15,8 +15,7 @@ class ResidualInstallError(RuntimeError):
 def _residue_inventory(install_dir: Path) -> list[str]:
     try:
         return sorted(
-            path.relative_to(install_dir).as_posix()
-            for path in install_dir.rglob("*")
+            path.relative_to(install_dir).as_posix() for path in install_dir.rglob("*")
         )
     except OSError as exc:
         return [f"<inventory failed: {exc}>"]
@@ -44,8 +43,7 @@ def wait_for_install_directory_removal(
     residue = _residue_inventory(install_dir)
     details = ", ".join(residue) if residue else "<empty directory>"
     raise ResidualInstallError(
-        f"Install directory remains after uninstall: {install_dir}; "
-        f"residue: {details}"
+        f"Install directory remains after uninstall: {install_dir}; residue: {details}"
     )
 
 

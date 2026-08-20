@@ -91,7 +91,9 @@ async def _dedupe_table(table: str) -> int:
                 # the rest of the cleanup.
                 logger.warning(
                     "dedup_edges: failed to delete duplicate {} edge {}: {}",
-                    table, edge_id, exc,
+                    table,
+                    edge_id,
+                    exc,
                 )
     return deleted
 
@@ -112,13 +114,15 @@ async def dedupe_legacy_edges() -> dict[str, int]:
                 logger.info(
                     "dedup_edges: removed {} duplicate {} edge(s) "
                     "(pre-v0.7.60/73 legacy data)",
-                    n, table,
+                    n,
+                    table,
                 )
         except Exception as exc:
             logger.warning(
                 "dedup_edges: {} table sweep failed (non-fatal, will retry "
                 "next startup): {}",
-                table, exc,
+                table,
+                exc,
             )
             results[table] = 0
     return results

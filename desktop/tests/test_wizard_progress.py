@@ -16,19 +16,23 @@ from desktop.progress import ProgressBus
 class WizardProgressTestCase(AioHTTPTestCase):
     async def get_application(self):
         import tempfile
+
         self._tmpdir = tempfile.mkdtemp()
         self.bus = ProgressBus(Path(self._tmpdir) / "progress.jsonl")
-        return build_app(Path(self._tmpdir) / "config.toml",
-                         on_done=lambda: None,
-                         progress_bus=self.bus)
+        return build_app(
+            Path(self._tmpdir) / "config.toml",
+            on_done=lambda: None,
+            progress_bus=self.bus,
+        )
 
     async def test_progress_returns_503_without_bus(self):
         # Build a separate app without a bus to verify the no-bus path
         import tempfile
+
         tmp2 = tempfile.mkdtemp()
-        app2 = build_app(Path(tmp2) / "x.toml", on_done=lambda: None,
-                         progress_bus=None)
+        app2 = build_app(Path(tmp2) / "x.toml", on_done=lambda: None, progress_bus=None)
         from aiohttp.test_utils import TestClient, TestServer
+
         async with TestClient(TestServer(app2)) as c2:
             r = await c2.get("/api/progress")
             assert r.status == 503
@@ -44,7 +48,10 @@ class WizardProgressTestCase(AioHTTPTestCase):
         resp = await self.client.get("/api/progress")
         assert resp.status == 200
         body = await resp.text()
-        events = [json.loads(line[6:]) for line in body.splitlines()
-                  if line.startswith("data: ")]
+        events = [
+            json.loads(line[6:])
+            for line in body.splitlines()
+            if line.startswith("data: ")
+        ]
         assert any(e["step"] == "step.x" for e in events)
         assert any(e["step"] == "ready" for e in events)

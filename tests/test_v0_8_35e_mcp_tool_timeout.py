@@ -22,6 +22,7 @@ These tests:
      continues so the model can adapt).
   3. The env var overrides the default.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -106,18 +107,27 @@ async def test_fast_tool_completes_normally(monkeypatch):
 
     tools = [_make_tool("mcp_search", _fast)]
     monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools",
+        chat_mod,
+        "_resolve_chat_tools",
         AsyncMock(return_value=tools),
     )
 
-    model = _ScriptedModel([
-        # Round 1: model emits one tool call
-        _FakeAIMessage(tool_calls=[{
-            "name": "mcp_search", "args": {"q": "hi"}, "id": "call-1",
-        }]),
-        # Round 2: model returns final answer (no more tool calls)
-        _FakeAIMessage(tool_calls=[]),
-    ])
+    model = _ScriptedModel(
+        [
+            # Round 1: model emits one tool call
+            _FakeAIMessage(
+                tool_calls=[
+                    {
+                        "name": "mcp_search",
+                        "args": {"q": "hi"},
+                        "id": "call-1",
+                    }
+                ]
+            ),
+            # Round 2: model returns final answer (no more tool calls)
+            _FakeAIMessage(tool_calls=[]),
+        ]
+    )
 
     ai, _captures = await chat_mod.bind_mcp_and_run_tool_loop(model, [])
 
@@ -143,6 +153,7 @@ async def test_hanging_tool_times_out_and_feeds_error_to_model(monkeypatch):
     (apologize, try a different tool, give up) instead of the stream
     freezing forever.
     """
+
     async def _hang(**kwargs):
         # Sleep way longer than the test's tiny timeout. asyncio.wait_for
         # cancels this coroutine when it fires.
@@ -154,16 +165,25 @@ async def test_hanging_tool_times_out_and_feeds_error_to_model(monkeypatch):
 
     tools = [_make_tool("mcp_search", _hang)]
     monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools",
+        chat_mod,
+        "_resolve_chat_tools",
         AsyncMock(return_value=tools),
     )
 
-    model = _ScriptedModel([
-        _FakeAIMessage(tool_calls=[{
-            "name": "mcp_search", "args": {"q": "hi"}, "id": "call-1",
-        }]),
-        _FakeAIMessage(tool_calls=[]),
-    ])
+    model = _ScriptedModel(
+        [
+            _FakeAIMessage(
+                tool_calls=[
+                    {
+                        "name": "mcp_search",
+                        "args": {"q": "hi"},
+                        "id": "call-1",
+                    }
+                ]
+            ),
+            _FakeAIMessage(tool_calls=[]),
+        ]
+    )
 
     # Wrap the whole loop in its OWN outer bound so a regression in
     # the timeout wrap can't hang the test.
@@ -185,8 +205,7 @@ async def test_hanging_tool_times_out_and_feeds_error_to_model(monkeypatch):
     # Either the literal word "timeout" or "timed out" — be lenient on
     # exact phrasing so a future copy edit doesn't break the test.
     assert "time" in body, (
-        f"Expected ToolMessage to mention a timeout, got: "
-        f"{tool_msgs[0].content!r}"
+        f"Expected ToolMessage to mention a timeout, got: {tool_msgs[0].content!r}"
     )
 
 
@@ -205,16 +224,25 @@ async def test_default_timeout_when_env_var_unset(monkeypatch):
 
     tools = [_make_tool("mcp_search", _slow_but_ok)]
     monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools",
+        chat_mod,
+        "_resolve_chat_tools",
         AsyncMock(return_value=tools),
     )
 
-    model = _ScriptedModel([
-        _FakeAIMessage(tool_calls=[{
-            "name": "mcp_search", "args": {}, "id": "call-1",
-        }]),
-        _FakeAIMessage(tool_calls=[]),
-    ])
+    model = _ScriptedModel(
+        [
+            _FakeAIMessage(
+                tool_calls=[
+                    {
+                        "name": "mcp_search",
+                        "args": {},
+                        "id": "call-1",
+                    }
+                ]
+            ),
+            _FakeAIMessage(tool_calls=[]),
+        ]
+    )
 
     ai, _ = await asyncio.wait_for(
         chat_mod.bind_mcp_and_run_tool_loop(model, []),

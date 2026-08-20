@@ -137,7 +137,12 @@ async def _generate_json_with_repair(
     raw_output = _response_text(response)
     try:
         document = _parse_json_document(raw_output, schema)
-    except (json.JSONDecodeError, TypeError, ValueError, ValidationError) as first_error:
+    except (
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+        ValidationError,
+    ) as first_error:
         repair_messages = [
             *messages,
             HumanMessage(
@@ -154,7 +159,12 @@ async def _generate_json_with_repair(
         repaired_output = _response_text(repaired_response)
         try:
             document = _parse_json_document(repaired_output, schema)
-        except (json.JSONDecodeError, TypeError, ValueError, ValidationError) as repair_error:
+        except (
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+            ValidationError,
+        ) as repair_error:
             raise StructuredArtifactGenerationError(
                 errors=_validation_receipt(repair_error),
                 attempts=2,

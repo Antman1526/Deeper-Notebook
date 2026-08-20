@@ -10,6 +10,7 @@ recency ceiling:
 These tests mock the SurrealDB client (SurrealMemoryStore.from_test_client)
 and the mem0 client — no live DB / mem0 / model needed.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -64,8 +65,11 @@ def _rows(table: str, n: int) -> list[dict]:
 
 
 def test_prune_keeps_newest_and_deletes_rest():
-    rows = {"memory_fact": _rows("memory_fact", 5),
-            "memory_preference": [], "memory_episode": []}
+    rows = {
+        "memory_fact": _rows("memory_fact", 5),
+        "memory_preference": [],
+        "memory_episode": [],
+    }
     client = _FakeClient(rows)
     store = SurrealMemoryStore.from_test_client(client)
 
@@ -77,8 +81,9 @@ def test_prune_keeps_newest_and_deletes_rest():
     assert deleted["memory_episode"] == 0
     # The deleted ids are exactly the 3 oldest (r2, r3, r4).
     fact_deletes = [d for d in client.deletes if d[0] == "memory_fact"]
-    assert fact_deletes == [("memory_fact",
-                             ["memory_fact:r2", "memory_fact:r3", "memory_fact:r4"])]
+    assert fact_deletes == [
+        ("memory_fact", ["memory_fact:r2", "memory_fact:r3", "memory_fact:r4"])
+    ]
 
 
 def test_prune_noop_under_ceiling():
@@ -95,8 +100,13 @@ def test_prune_noop_under_ceiling():
 def test_prune_query_shape_avoids_order_idiom_trap():
     """Pin the v0.8.19/v0.8.30 lesson: the SELECT must include created_at in
     its projection and must NOT use SELECT VALUE; eviction uses DELETE … IN."""
-    client = _FakeClient({"memory_fact": _rows("memory_fact", 3),
-                          "memory_preference": [], "memory_episode": []})
+    client = _FakeClient(
+        {
+            "memory_fact": _rows("memory_fact", 3),
+            "memory_preference": [],
+            "memory_episode": [],
+        }
+    )
     store = SurrealMemoryStore.from_test_client(client)
     store.prune(keep_per_table=1)
 
@@ -111,8 +121,13 @@ def test_prune_query_shape_avoids_order_idiom_trap():
 
 
 def test_prune_batches_large_eviction_lists():
-    client = _FakeClient({"memory_fact": _rows("memory_fact", 2500),
-                          "memory_preference": [], "memory_episode": []})
+    client = _FakeClient(
+        {
+            "memory_fact": _rows("memory_fact", 2500),
+            "memory_preference": [],
+            "memory_episode": [],
+        }
+    )
     store = SurrealMemoryStore.from_test_client(client)
     deleted = store.prune(keep_per_table=0)
 
@@ -159,12 +174,14 @@ class _FakeMemClient:
 def test_prune_memories_noop_without_vector_store():
     class _NoStore:
         pass
+
     assert writer_mod.prune_memories(_NoStore(), keep_per_table=10) == {}
 
 
 def test_prune_memories_noop_when_store_lacks_prune():
     class _StoreNoPrune:
         pass
+
     assert writer_mod.prune_memories(_FakeMemClient(_StoreNoPrune()), 10) == {}
 
 
@@ -178,17 +195,22 @@ def test_prune_memories_high_water_skips_under_threshold():
     # keep=100, high_water=1.5 → threshold 150; counts below → skip.
     store = _FakeStore(counts={t: 120 for t in ALL_MEMORY_TABLES})
     result = writer_mod.prune_memories(
-        _FakeMemClient(store), keep_per_table=100, high_water=1.5,
+        _FakeMemClient(store),
+        keep_per_table=100,
+        high_water=1.5,
     )
     assert result == {}
     assert store.pruned_with is None  # never pruned
 
 
 def test_prune_memories_high_water_prunes_over_threshold():
-    store = _FakeStore(counts={"memory_fact": 200, "memory_preference": 0,
-                               "memory_episode": 0})
+    store = _FakeStore(
+        counts={"memory_fact": 200, "memory_preference": 0, "memory_episode": 0}
+    )
     writer_mod.prune_memories(
-        _FakeMemClient(store), keep_per_table=100, high_water=1.5,
+        _FakeMemClient(store),
+        keep_per_table=100,
+        high_water=1.5,
     )
     assert store.pruned_with == 100  # memory_fact 200 > 150 → pruned
 

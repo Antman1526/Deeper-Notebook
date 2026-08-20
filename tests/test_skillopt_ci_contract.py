@@ -24,17 +24,16 @@ def _load_runner():
 def test_skillopt_ci_runner_uses_exact_desktop_lock_and_19_test_contract():
     runner = _load_runner()
 
-    assert runner.locked_skillopt_requirement(
-        ROOT / "desktop/requirements.lock"
-    ) == "skillopt==0.1.0"
+    assert (
+        runner.locked_skillopt_requirement(ROOT / "desktop/requirements.lock")
+        == "skillopt==0.1.0"
+    )
     assert runner.expected_test_count() == 19
 
 
 def test_desktop_ci_explicitly_runs_locked_skillopt_integration_when_installed():
     install_command = 'python -m pip install "skillopt==0.1.0"'
-    command = (
-        "python desktop/build/run_skillopt_integration.py --require-installed"
-    )
+    command = "python desktop/build/run_skillopt_integration.py --require-installed"
     desktop_workflow = (ROOT / ".github/workflows/build-desktop.yml").read_text(
         encoding="utf-8"
     )

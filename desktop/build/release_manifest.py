@@ -29,7 +29,9 @@ def git_sha() -> str:
     ).strip()
 
 
-def build_manifest(artifact: Path, platform: str, architecture: str) -> dict[str, object]:
+def build_manifest(
+    artifact: Path, platform: str, architecture: str
+) -> dict[str, object]:
     if not artifact.is_file():
         raise ValueError(f"artifact does not exist: {artifact}")
 

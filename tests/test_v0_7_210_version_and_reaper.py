@@ -19,6 +19,7 @@ Fixes:
      the frontend polls forever (previously the reaper only ran
      at API startup).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,7 +36,7 @@ def test_api_version_endpoint_defined():
     returning the bundled ONP version + name."""
     src = _src("api/main.py")
     assert '@app.get("/api/version")' in src
-    assert 'from desktop import __version__ as desktop_version' in src
+    assert "from desktop import __version__ as desktop_version" in src
     assert '"name": PRODUCT_NAME' in src
     assert '"description": DESCRIPTION' in src
 
@@ -108,10 +109,7 @@ def test_sidebar_renders_version_badge():
     src = _src("frontend/src/components/layout/AppSidebar.tsx")
     bridge = _src("frontend/src/lib/desktop-version.ts")
     assert "readDesktopVersion(window)" in src
-    assert (
-        "return bridge.DEEPER_NOTEBOOK_VERSION || bridge.ONP_VERSION"
-        in bridge
-    )
+    assert "return bridge.DEEPER_NOTEBOOK_VERSION || bridge.ONP_VERSION" in bridge
     assert "v0.7.210 — Version badge" in src
     # The badge is hidden when collapsed (matches the existing
     # sidebar pattern for footer chrome).
@@ -146,9 +144,7 @@ def test_periodic_reaper_cancelled_on_shutdown():
     FastAPI shutdown and the process refuses to exit until the
     next 5-min wakeup."""
     src = _src("api/main.py")
-    assert (
-        "v0.7.210 — Stop the periodic stale-command reaper" in src
-    )
+    assert "v0.7.210 — Stop the periodic stale-command reaper" in src
     assert "if reaper_task is not None and not reaper_task.done():" in src
     assert "reaper_task.cancel()" in src
 

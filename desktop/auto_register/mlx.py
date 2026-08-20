@@ -1,4 +1,5 @@
 """Native MLX OpenAI-compatible model registration."""
+
 from __future__ import annotations
 
 import logging

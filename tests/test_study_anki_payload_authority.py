@@ -121,7 +121,9 @@ async def test_crash_replay_rejects_same_package_request_with_different_options(
 
         async def complete(self, *args: object, **kwargs: object) -> AnkiJobMetadata:
             complete_calls.append(args)
-            return metadata.model_copy(update={"status": "published", "receipt_id": receipt.receipt_id})
+            return metadata.model_copy(
+                update={"status": "published", "receipt_id": receipt.receipt_id}
+            )
 
     class FakeReceipts:
         async def _find_by_request(
@@ -130,7 +132,9 @@ async def test_crash_replay_rejects_same_package_request_with_different_options(
             return receipt
 
     monkeypatch.setattr(study_anki, "_durable_metadata_enabled", lambda: True)
-    monkeypatch.setattr(study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job))
+    monkeypatch.setattr(
+        study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job)
+    )
     monkeypatch.setattr(study_anki, "AnkiJobRepository", FakeJobs)
     monkeypatch.setattr(study_anki, "AnkiImportRepository", FakeReceipts)
 
@@ -188,7 +192,9 @@ async def test_published_replay_rejects_same_package_request_with_different_opti
             return receipt
 
     monkeypatch.setattr(study_anki, "_durable_metadata_enabled", lambda: True)
-    monkeypatch.setattr(study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job))
+    monkeypatch.setattr(
+        study_anki, "_load_job", lambda *_args, **_kwargs: _async_return(job)
+    )
     monkeypatch.setattr(study_anki, "AnkiJobRepository", FakeJobs)
     monkeypatch.setattr(study_anki, "AnkiImportRepository", FakeReceipts)
 

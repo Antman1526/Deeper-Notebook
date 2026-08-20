@@ -140,7 +140,10 @@ class TestTextUtilities:
         """v0.8.65g — an UNCLOSED <think> (model cut off mid-thought) must not
         leave a raw '<think>' tag in the reply."""
         # No text before the (unclosed) tag → show the reasoning tail.
-        assert clean_thinking_content("<think>still reasoning about it") == "still reasoning about it"
+        assert (
+            clean_thinking_content("<think>still reasoning about it")
+            == "still reasoning about it"
+        )
         # Text BEFORE an unclosed tag → that's the answer.
         assert clean_thinking_content("Paris.<think>but wait") == "Paris."
         assert "<think>" not in clean_thinking_content("<think>x")
@@ -148,7 +151,10 @@ class TestTextUtilities:
     def test_clean_thinking_content_normal_answer_unchanged(self):
         """Regression: a normal answer (with or without thinking) is untouched."""
         assert clean_thinking_content("Just a plain answer.") == "Just a plain answer."
-        assert clean_thinking_content("<think>hmm</think>The answer is 4.") == "The answer is 4."
+        assert (
+            clean_thinking_content("<think>hmm</think>The answer is 4.")
+            == "The answer is 4."
+        )
 
 
 # ============================================================================
@@ -315,15 +321,18 @@ class TestExtractTextContent:
 
     def test_extract_text_content_plain_string_passes_through(self):
         from deeper_notebook.utils.text_utils import extract_text_content
+
         assert extract_text_content("hello") == "hello"
 
     def test_extract_text_content_gemini_envelope(self):
         from deeper_notebook.utils.text_utils import extract_text_content
+
         content = [{"type": "text", "text": "hi there", "extras": {}}]
         assert extract_text_content(content) == "hi there"
 
     def test_extract_text_content_multi_part_envelope(self):
         from deeper_notebook.utils.text_utils import extract_text_content
+
         content = [
             {"type": "text", "text": "Part 1. "},
             {"type": "text", "text": "Part 2."},
@@ -332,6 +341,7 @@ class TestExtractTextContent:
 
     def test_extract_text_content_mixed_string_and_envelope(self):
         from deeper_notebook.utils.text_utils import extract_text_content
+
         content = ["raw string ", {"type": "text", "text": "envelope"}]
         assert extract_text_content(content) == "raw string envelope"
 
@@ -340,6 +350,7 @@ class TestExtractTextContent:
         instead of a string. The old code appended that as-is and then
         crashed at "".join with TypeError. Now we coerce to str first."""
         from deeper_notebook.utils.text_utils import extract_text_content
+
         content = [{"type": "text", "text": ["nested", "list"]}]
         # Should NOT raise; coerced via str(...)
         result = extract_text_content(content)
@@ -352,6 +363,7 @@ class TestExtractTextContent:
         "" silently → 'blank chat reply' bug with no log trail. Now we
         fall back to str(content) so SOMETHING gets through."""
         from deeper_notebook.utils.text_utils import extract_text_content
+
         content = [{"type": "image_url", "image_url": "https://x.png"}]
         result = extract_text_content(content)
         # Original empty string was the bug; now we get the repr.
@@ -360,6 +372,7 @@ class TestExtractTextContent:
 
     def test_extract_text_content_unknown_type_falls_back_to_str(self):
         from deeper_notebook.utils.text_utils import extract_text_content
+
         # Not a string, not a list — falls through to str(content)
         result = extract_text_content({"single": "dict"})
         assert "single" in result and "dict" in result
@@ -367,5 +380,6 @@ class TestExtractTextContent:
     def test_extract_text_content_empty_list_falls_back_to_str(self):
         """Empty list → no text parts → fallback. Old behavior returned ""."""
         from deeper_notebook.utils.text_utils import extract_text_content
+
         # str([]) is "[]" — at least not blank, signals weird shape to caller.
         assert extract_text_content([]) == "[]"

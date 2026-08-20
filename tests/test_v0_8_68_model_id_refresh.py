@@ -6,6 +6,7 @@ discovery register models that 404 on first use. The blacklist below is
 models known retired/removed upstream as of 2026-06; extend it when
 providers retire more.
 """
+
 from __future__ import annotations
 
 RETIRED_MODEL_IDS = {

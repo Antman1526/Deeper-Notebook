@@ -25,11 +25,14 @@ async def get_notes(
     # with `offset`. `limit` caps at 1000 so the per-call ceiling
     # can't be bypassed even by curious callers.
     limit: int = Query(
-        200, ge=1, le=1000,
+        200,
+        ge=1,
+        le=1000,
         description="Max rows to return (default 200, max 1000).",
     ),
     offset: int = Query(
-        0, ge=0,
+        0,
+        ge=0,
         description="Rows to skip for pagination (default 0).",
     ),
 ):
@@ -49,7 +52,9 @@ async def get_notes(
         else:
             # v0.7.159 — paginated; see Query() defaults above.
             notes = await Note.get_all(
-                order_by="updated desc", limit=limit, offset=offset,
+                order_by="updated desc",
+                limit=limit,
+                offset=offset,
             )
 
         return [
@@ -97,7 +102,8 @@ async def create_note(note_data: NoteCreate):
             # erroring the whole create-note request. 60s default is
             # generous for a one-sentence prompt; tunable via env.
             _title_timeout = float(
-                resolve_env("DEEPER_NOTEBOOK_NOTE_TITLE_TIMEOUT_SEC", "60").strip() or 60
+                resolve_env("DEEPER_NOTEBOOK_NOTE_TITLE_TIMEOUT_SEC", "60").strip()
+                or 60
             )
             result = None
             try:
@@ -120,7 +126,8 @@ async def create_note(note_data: NoteCreate):
                 )
                 first_line = (
                     note_data.content.strip().splitlines()[0]
-                    if note_data.content else "Untitled"
+                    if note_data.content
+                    else "Untitled"
                 )
                 # v0.7.204 — was `first_line[:80]` (bare-char slice).
                 # On CJK content the first 80 chars can be 240+ bytes,
@@ -139,9 +146,7 @@ async def create_note(note_data: NoteCreate):
                     "80",
                 )
                 try:
-                    _max_title_len = max(
-                        20, min(int(_max_title_len_raw), 500)
-                    )
+                    _max_title_len = max(20, min(int(_max_title_len_raw), 500))
                 except ValueError:
                     _max_title_len = 80
                 title = first_line[:_max_title_len] or "Untitled Note"

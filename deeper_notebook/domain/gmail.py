@@ -7,6 +7,7 @@ OAuth tokens are encrypted with the same Fernet key used for Credential records
 The token-expiry math is approximate: Google access tokens are valid for ~1h.
 We store `token_expires_at` and refresh proactively when ~5 min away from expiry.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -110,6 +111,7 @@ def _fernet() -> Optional[Fernet]:
         # the urlsafe base64-encoded user-provided string.
         import base64
         import hashlib
+
         digest = hashlib.sha256(key.encode()).digest()
         fkey = base64.urlsafe_b64encode(digest)
         return Fernet(fkey)
@@ -231,7 +233,9 @@ class GmailIntegration(BaseModel):
             now = time.monotonic()
             cached = _CACHE.get("value")
             if cached is not None and (now - _CACHE["ts"]) < _CACHE_TTL_S:
-                return cached.model_copy()  # v0.8.66 (E-3) — copy, never alias the cache
+                return (
+                    cached.model_copy()
+                )  # v0.8.66 (E-3) — copy, never alias the cache
 
             try:
                 # v0.7.157 — bounded wait. If SurrealDB hasn't responded in
@@ -321,12 +325,15 @@ class GmailIntegration(BaseModel):
     async def save(self) -> None:
         """Encrypt-and-persist. SurrealDB upsert preserves fields we don't set."""
         from deeper_notebook.database.repository import ensure_record_id
+
         data = {
             "client_id_enc": _enc(self.client_id),
             "client_secret_enc": _enc(self.client_secret),
             "access_token_enc": _enc(self.access_token),
             "refresh_token_enc": _enc(self.refresh_token),
-            "token_expires_at": self.token_expires_at.isoformat() if self.token_expires_at else None,
+            "token_expires_at": self.token_expires_at.isoformat()
+            if self.token_expires_at
+            else None,
             "email_address": self.email_address,
             "enabled": self.enabled,
             "frequency": self.frequency,
@@ -335,7 +342,9 @@ class GmailIntegration(BaseModel):
             "include_notes": self.include_notes,
             "include_podcasts": self.include_podcasts,
             "include_memory": self.include_memory,
-            "last_sent_at": self.last_sent_at.isoformat() if self.last_sent_at else None,
+            "last_sent_at": self.last_sent_at.isoformat()
+            if self.last_sent_at
+            else None,
         }
         # v0.8.66 (audit C2) — the credential/token surface must ALWAYS be
         # written, even when None. `repo_upsert` issues `UPSERT … MERGE $data`,
@@ -352,18 +361,21 @@ class GmailIntegration(BaseModel):
         # since they are never legitimately None and we don't want a partial
         # save to wipe them.
         _ALWAYS_WRITE = {
-            "client_id_enc", "client_secret_enc",
-            "access_token_enc", "refresh_token_enc",
-            "token_expires_at", "email_address",
+            "client_id_enc",
+            "client_secret_enc",
+            "access_token_enc",
+            "refresh_token_enc",
+            "token_expires_at",
+            "email_address",
         }
-        data = {
-            k: v for k, v in data.items()
-            if v is not None or k in _ALWAYS_WRITE
-        }
+        data = {k: v for k, v in data.items() if v is not None or k in _ALWAYS_WRITE}
         await repo_upsert(
             # v0.8.66 — FULL record id, not bare "singleton" (repo_upsert runs
             # `UPSERT {id} MERGE`; a bare id is parsed as a TABLE → orphan rows).
-            "gmail_integration", SINGLETON_ID, data, add_timestamp=True,
+            "gmail_integration",
+            SINGLETON_ID,
+            data,
+            add_timestamp=True,
         )
         # v0.7.157 — invalidate the read cache so the next .get() sees
         # the freshly-persisted state instead of a stale snapshot.
@@ -378,7 +390,9 @@ class GmailIntegration(BaseModel):
         """True if access_token is missing or near-expired (5 min buffer)."""
         if not self.access_token or not self.token_expires_at:
             return True
-        return datetime.now(timezone.utc) + timedelta(minutes=5) >= self.token_expires_at
+        return (
+            datetime.now(timezone.utc) + timedelta(minutes=5) >= self.token_expires_at
+        )
 
 
 def _parse_dt(v) -> Optional[datetime]:

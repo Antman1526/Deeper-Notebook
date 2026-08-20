@@ -8,6 +8,7 @@ opaque context-overflow errors mid-transform.
 
 These tests pin the new `_truncate_transformation_input` contract.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -17,6 +18,7 @@ from deeper_notebook.graphs import transformation
 # ---------------------------------------------------------------------------
 # _truncate_transformation_input — pure function tests
 # ---------------------------------------------------------------------------
+
 
 def test_short_input_passes_through(monkeypatch):
     """Input under the cap is returned unchanged — no marker, no warning."""
@@ -91,6 +93,7 @@ def test_empty_input_is_unchanged(monkeypatch):
 # ---------------------------------------------------------------------------
 # run_transformation integration — ensure the cap is actually wired in
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_run_transformation_applies_cap_to_input_text(monkeypatch):

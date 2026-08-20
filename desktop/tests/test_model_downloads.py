@@ -7,6 +7,7 @@ migrated from urllib to httpx.stream to enable resumable downloads
 semantics being asserted (skip-if-present, fail-gracefully,
 min_bytes override) are unchanged.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,7 +57,9 @@ class _FakeStreamResponse:
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
             raise httpx.HTTPStatusError(
-                f"status {self.status_code}", request=None, response=None  # type: ignore[arg-type]
+                f"status {self.status_code}",
+                request=None,
+                response=None,  # type: ignore[arg-type]
             )
 
     def iter_bytes(self, chunk_size: int | None = None):
@@ -140,9 +143,7 @@ def test_download_one_preserves_tmp_on_error_for_resume(tmp_path):
         "desktop.model_downloads.httpx.stream",
         return_value=_FailingResponse(b""),
     ):
-        result = _download_one(
-            "https://example.com/model.gguf", dest, "test model"
-        )
+        result = _download_one("https://example.com/model.gguf", dest, "test model")
 
     assert result is False
     tmp = dest.with_suffix(dest.suffix + ".tmp")
@@ -173,9 +174,7 @@ def test_download_one_resumes_from_existing_tmp(tmp_path):
         "desktop.model_downloads.httpx.stream",
         return_value=_FakeStreamResponse(second_half, status_code=206),
     ) as mock_stream:
-        result = _download_one(
-            "https://example.com/model.gguf", dest, "test model"
-        )
+        result = _download_one("https://example.com/model.gguf", dest, "test model")
 
     assert result is True
     # The final file = partial + remainder, concatenated.
@@ -205,9 +204,7 @@ def test_download_one_restarts_from_zero_when_server_ignores_range(tmp_path):
         # status 200 — server ignored our Range header.
         return_value=_FakeStreamResponse(full_content, status_code=200),
     ):
-        result = _download_one(
-            "https://example.com/model.gguf", dest, "test model"
-        )
+        result = _download_one("https://example.com/model.gguf", dest, "test model")
 
     assert result is True
     # File content = ONLY the fresh download. Pre-existing partial
@@ -223,7 +220,9 @@ def test_download_one_calls_progress(tmp_path):
 
     with _patch_stream(fake_content):
         _download_one(
-            "https://example.com/model.gguf", dest, "my model",
+            "https://example.com/model.gguf",
+            dest,
+            "my model",
             progress=messages.append,
         )
 
@@ -284,6 +283,7 @@ def test_ensure_embedding_model_skips_if_already_present(tmp_path):
 def test_ensure_secondary_tts_voice_skips_when_present(tmp_path, monkeypatch):
     """v0.6.29 — files need to be within 80% of expected size (78 MB onnx)."""
     from desktop.model_downloads import PIPER_RYAN_CONFIG, PIPER_RYAN_MODEL
+
     _, _, _, onnx_size_mb = PIPER_RYAN_MODEL
     _, _, _, cfg_size_mb = PIPER_RYAN_CONFIG
 
@@ -318,7 +318,9 @@ def test_download_one_re_downloads_when_partial_file_exists(tmp_path):
 
     with _patch_stream(fake_content) as mock_stream:
         result = _download_one(
-            "https://example.com/model.gguf", dest, "test model",
+            "https://example.com/model.gguf",
+            dest,
+            "test model",
             expected_size_mb=280,
         )
 
@@ -336,7 +338,9 @@ def test_download_one_skips_when_size_within_expected_tolerance(tmp_path):
 
     with patch("desktop.model_downloads.httpx.stream") as mock_stream:
         result = _download_one(
-            "https://example.com/model.gguf", dest, "test model",
+            "https://example.com/model.gguf",
+            dest,
+            "test model",
             expected_size_mb=280,
         )
 
@@ -383,7 +387,9 @@ def test_download_one_min_bytes_override_accepts_small_real_file(tmp_path):
 
     with patch("desktop.model_downloads.httpx.stream") as mock_stream:
         result = _download_one(
-            "https://example.com/voice.onnx.json", dest, "voice cfg",
+            "https://example.com/voice.onnx.json",
+            dest,
+            "voice cfg",
             min_bytes=2048,
         )
 
@@ -403,7 +409,9 @@ def test_download_one_min_bytes_override_rejects_tiny_html_error_page(tmp_path):
 
     with _patch_stream(fresh_content):
         result = _download_one(
-            "https://example.com/voice.onnx.json", dest, "voice cfg",
+            "https://example.com/voice.onnx.json",
+            dest,
+            "voice cfg",
             min_bytes=2048,
         )
 
@@ -415,6 +423,7 @@ def test_download_one_min_bytes_override_rejects_tiny_html_error_page(tmp_path):
 # ---------------------------------------------------------------------------
 # v0.8.67p — ensure_stt_model fetches the faster-whisper CTranslate2 model
 # ---------------------------------------------------------------------------
+
 
 def test_ensure_stt_model_downloads_faster_whisper_not_ggml(tmp_path):
     """The whisper shim uses faster-whisper, so ensure_stt_model must fetch the

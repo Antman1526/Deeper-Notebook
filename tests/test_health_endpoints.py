@@ -10,6 +10,7 @@ endpoints split that into:
             Returns 503 on any check failure so the user (or an
             external uptime poller) can detect partial-failure.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -84,7 +85,8 @@ def test_livez_returns_alive_with_no_io(app, monkeypatch):
     # Patch BOTH the source AND the spot where the readyz handler resolves it
     monkeypatch.setattr(config_mod, "check_database_health", boom)
     monkeypatch.setattr(
-        async_migrate, "AsyncMigrationManager",
+        async_migrate,
+        "AsyncMigrationManager",
         lambda: (_ for _ in ()).throw(RuntimeError("migration check should not run")),
     )
 
@@ -201,8 +203,11 @@ def test_readyz_response_shape_stable_across_states(app, monkeypatch):
     from deeper_notebook.database import async_migrate
 
     expected_keys = {
-        "database", "database_error", "migrations_applied",
-        "migrations_pending", "migrations_error",
+        "database",
+        "database_error",
+        "migrations_applied",
+        "migrations_pending",
+        "migrations_error",
     }
 
     # Failure case

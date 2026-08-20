@@ -8,4 +8,3 @@ from deeper_notebook.tools.opencode import (
     build_opencode_tool,
     opencode_enabled,
 )
-

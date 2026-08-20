@@ -113,7 +113,9 @@ def snapshot():
 async def test_commit_snapshot_uses_one_transaction(snapshot, fake_connection):
     repository = KnowledgeRepository(connection_factory=fake_connection.factory)
 
-    receipt = await repository.commit_snapshot(snapshot, operation_id="shadow-project-one")
+    receipt = await repository.commit_snapshot(
+        snapshot, operation_id="shadow-project-one"
+    )
 
     assert len(fake_connection.queries) == 2
     claim_statement, _ = fake_connection.queries[0]
@@ -214,9 +216,7 @@ async def test_commit_snapshot_rejects_operation_replay_with_other_hash(
     await repository.commit_snapshot(snapshot, operation_id="same-operation")
     changed = snapshot.model_copy(
         update={
-            "revision": snapshot.revision.model_copy(
-                update={"content_hash": "b" * 64}
-            )
+            "revision": snapshot.revision.model_copy(update={"content_hash": "b" * 64})
         }
     )
 
@@ -256,7 +256,9 @@ async def test_commit_snapshot_keeps_schema_string_foreign_keys_as_strings(
 ):
     repository = KnowledgeRepository(connection_factory=fake_connection.factory)
 
-    await repository.commit_snapshot(snapshot, operation_id="schema-string-foreign-keys")
+    await repository.commit_snapshot(
+        snapshot, operation_id="schema-string-foreign-keys"
+    )
 
     _, variables = fake_connection.queries[-1]
     assert variables["document_id"] == snapshot.document.id
@@ -324,7 +326,9 @@ async def test_failure_receipt_replay_is_exactly_idempotent(snapshot, fake_conne
 
 
 @pytest.mark.asyncio
-async def test_failure_receipt_rejects_a_different_input_hash(snapshot, fake_connection):
+async def test_failure_receipt_rejects_a_different_input_hash(
+    snapshot, fake_connection
+):
     repository = KnowledgeRepository(connection_factory=fake_connection.factory)
     await repository.record_projection_failure(
         operation_id="failure-hash-conflict",

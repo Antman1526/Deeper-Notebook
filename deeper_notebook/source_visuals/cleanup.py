@@ -271,10 +271,7 @@ class SourceVisualCleanup:
                 # when a later exact ready record has republished those bytes.
                 # In either phase, read_exact revalidates the full record/path,
                 # descriptor identity, size, and hash under storage authority.
-                if (
-                    len(self._store.read_exact(record))
-                    != claim.tombstone.byte_size
-                ):
+                if len(self._store.read_exact(record)) != claim.tombstone.byte_size:
                     continue
                 self._store.release_tombstone_deletion_claim(claim)
             except (OSError, SourceVisualStorageError):
@@ -321,9 +318,9 @@ class SourceVisualCleanup:
                         self._store.remove_tombstone(tombstone)
                     await _await_if_needed(remover(orphan))
                     processed += 1
-                elif isinstance(current, SourceVisualRecord) and _matches_delete_fenced_orphan_authority(
-                    record, current
-                ):
+                elif isinstance(
+                    current, SourceVisualRecord
+                ) and _matches_delete_fenced_orphan_authority(record, current):
                     # The newer authoritative publisher retained this exact
                     # canonical; its row restores ownership, so only retire
                     # the stale marker.

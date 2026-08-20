@@ -49,9 +49,7 @@ def _roots(tmp_path: Path) -> tuple[Path, Path, Path]:
         (True, True, "ready"),
     ],
 )
-def test_classifies_roots(
-    tmp_path, canonical_exists, legacy_exists, expected
-):
+def test_classifies_roots(tmp_path, canonical_exists, legacy_exists, expected):
     canonical, legacy, _ = _roots(tmp_path)
     if canonical_exists:
         canonical.mkdir()
@@ -69,14 +67,14 @@ def test_active_data_root_uses_explicit_controlled_data_root(tmp_path, monkeypat
     assert controlled_root.is_dir()
 
 
-def test_active_data_root_rejects_controlled_root_through_symlink(tmp_path, monkeypatch):
+def test_active_data_root_rejects_controlled_root_through_symlink(
+    tmp_path, monkeypatch
+):
     target = tmp_path / "target"
     target.mkdir()
     redirected_parent = tmp_path / "redirected"
     redirected_parent.symlink_to(target, target_is_directory=True)
-    monkeypatch.setenv(
-        "DEEPER_NOTEBOOK_DATA_DIR", str(redirected_parent / "runtime")
-    )
+    monkeypatch.setenv("DEEPER_NOTEBOOK_DATA_DIR", str(redirected_parent / "runtime"))
 
     with pytest.raises(ValueError, match="symlink"):
         data_root.active_data_root()
@@ -132,9 +130,7 @@ def test_same_volume_migration_uses_atomic_no_replace(tmp_path, monkeypatch):
         calls.append((Path(source), Path(destination)))
         return real_rename(source, destination)
 
-    monkeypatch.setattr(
-        data_root, "_rename_directory_no_replace", tracked_rename
-    )
+    monkeypatch.setattr(data_root, "_rename_directory_no_replace", tracked_rename)
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "ready"
@@ -156,9 +152,7 @@ def test_started_receipt_is_durable_before_root_move(tmp_path, monkeypatch):
             assert observed_started["status"] == "started"
         return real_rename(source, destination)
 
-    monkeypatch.setattr(
-        data_root, "_rename_directory_no_replace", tracked_rename
-    )
+    monkeypatch.setattr(data_root, "_rename_directory_no_replace", tracked_rename)
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "ready"
@@ -198,9 +192,7 @@ def test_nonempty_conflicting_canonical_is_never_replaced(tmp_path, monkeypatch)
             root_moves.append((Path(source), Path(destination)))
         return real_rename(source, destination)
 
-    monkeypatch.setattr(
-        data_root, "_rename_directory_no_replace", tracked_rename
-    )
+    monkeypatch.setattr(data_root, "_rename_directory_no_replace", tracked_rename)
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "migration-conflict"
@@ -209,9 +201,7 @@ def test_nonempty_conflicting_canonical_is_never_replaced(tmp_path, monkeypatch)
     assert legacy.is_dir()
 
 
-def test_canonical_created_during_preflight_is_never_replaced(
-    tmp_path, monkeypatch
-):
+def test_canonical_created_during_preflight_is_never_replaced(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
     real_snapshot = data_root._snapshot_critical_hashes
@@ -229,12 +219,8 @@ def test_canonical_created_during_preflight_is_never_replaced(
             root_moves.append((Path(source), Path(destination)))
         return real_rename(source, destination)
 
-    monkeypatch.setattr(
-        data_root, "_snapshot_critical_hashes", race_destination
-    )
-    monkeypatch.setattr(
-        data_root, "_rename_directory_no_replace", tracked_rename
-    )
+    monkeypatch.setattr(data_root, "_snapshot_critical_hashes", race_destination)
+    monkeypatch.setattr(data_root, "_rename_directory_no_replace", tracked_rename)
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "migration-conflict"
@@ -244,9 +230,7 @@ def test_canonical_created_during_preflight_is_never_replaced(
     assert legacy.is_dir()
 
 
-def test_failed_validation_rolls_back_and_leaves_legacy_root(
-    tmp_path, monkeypatch
-):
+def test_failed_validation_rolls_back_and_leaves_legacy_root(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
     real_snapshot = data_root._snapshot_critical_hashes
@@ -260,9 +244,7 @@ def test_failed_validation_rolls_back_and_leaves_legacy_root(
             result["config.toml"] = "validation-mismatch"
         return result
 
-    monkeypatch.setattr(
-        data_root, "_snapshot_critical_hashes", changed_snapshot
-    )
+    monkeypatch.setattr(data_root, "_snapshot_critical_hashes", changed_snapshot)
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "migration-failed"
@@ -272,9 +254,7 @@ def test_failed_validation_rolls_back_and_leaves_legacy_root(
     assert json.loads(decision.receipt_path.read_text())["status"] == "rolled-back"
 
 
-def test_rollback_destination_race_preserves_both_roots(
-    tmp_path, monkeypatch
-):
+def test_rollback_destination_race_preserves_both_roots(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
     real_rename = data_root._rename_directory_no_replace
@@ -325,9 +305,7 @@ def test_rerun_after_success_is_idempotent(tmp_path, monkeypatch):
             second_root_moves.append((Path(source), Path(destination)))
         return real_rename(source, destination)
 
-    monkeypatch.setattr(
-        data_root, "_rename_directory_no_replace", tracked_rename
-    )
+    monkeypatch.setattr(data_root, "_rename_directory_no_replace", tracked_rename)
     second = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert second.state == "ready"
@@ -472,9 +450,7 @@ def test_unknown_lock_owner_is_never_reclaimed(tmp_path, payload):
     assert json.loads(lock_path.read_text()) == payload
 
 
-def test_reused_pid_with_different_start_time_is_recovered(
-    tmp_path, monkeypatch
-):
+def test_reused_pid_with_different_start_time_is_recovered(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
     receipts.mkdir(mode=0o700)
@@ -501,9 +477,7 @@ def test_reused_pid_with_different_start_time_is_recovered(
     assert not lock_path.exists()
 
 
-def test_unverifiable_lock_start_time_is_never_reclaimed(
-    tmp_path, monkeypatch
-):
+def test_unverifiable_lock_start_time_is_never_reclaimed(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
     receipts.mkdir(mode=0o700)
@@ -520,16 +494,12 @@ def test_unverifiable_lock_start_time_is_never_reclaimed(
         )
     )
     monkeypatch.setattr(data_root, "_pid_exists", lambda pid: True)
-    monkeypatch.setattr(
-        data_root, "_process_start_time", lambda pid: "now-observable"
-    )
+    monkeypatch.setattr(data_root, "_process_start_time", lambda pid: "now-observable")
 
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "migration-deferred"
-    assert json.loads(lock_path.read_text())["migration_id"] == (
-        "unknown-live-owner"
-    )
+    assert json.loads(lock_path.read_text())["migration_id"] == ("unknown-live-owner")
 
 
 @pytest.mark.parametrize(
@@ -561,9 +531,7 @@ def test_windows_process_status_is_query_only_and_tri_state(
         lambda *_args, **_kwargs: FakeKernel32(),
         raising=False,
     )
-    monkeypatch.setattr(
-        ctypes, "get_last_error", lambda: last_error, raising=False
-    )
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: last_error, raising=False)
 
     assert data_root._windows_process_status(4321) == expected
     assert calls == [(0x1000, False, 4321)]
@@ -571,9 +539,7 @@ def test_windows_process_status_is_query_only_and_tri_state(
 
 def test_windows_pid_probe_never_calls_os_kill(monkeypatch):
     monkeypatch.setattr(data_root.sys, "platform", "win32")
-    monkeypatch.setattr(
-        data_root, "_windows_process_status", lambda pid: "unknown"
-    )
+    monkeypatch.setattr(data_root, "_windows_process_status", lambda pid: "unknown")
 
     def unsafe_kill(*_args):
         raise AssertionError("os.kill must never probe a Windows PID")
@@ -800,11 +766,10 @@ def test_cross_device_root_is_deferred_without_copy(tmp_path, monkeypatch):
     assert not canonical.exists()
 
 
-def test_exdev_from_root_rename_is_deferred_without_copy(
-    tmp_path, monkeypatch
-):
+def test_exdev_from_root_rename_is_deferred_without_copy(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
+
     def unavailable_atomic_rename(_source, _destination):
         raise data_root._AtomicRenameUnavailable("EXDEV")
 
@@ -821,9 +786,7 @@ def test_exdev_from_root_rename_is_deferred_without_copy(
     assert not canonical.exists()
 
 
-def test_receipt_file_and_parent_are_fsynced_around_transitions(
-    tmp_path, monkeypatch
-):
+def test_receipt_file_and_parent_are_fsynced_around_transitions(tmp_path, monkeypatch):
     canonical, legacy, receipts = _roots(tmp_path)
     _seed_legacy(legacy)
     events: list[tuple[str, Path | None]] = []
@@ -854,9 +817,7 @@ def test_receipt_file_and_parent_are_fsynced_around_transitions(
     monkeypatch.setattr(data_root.os, "fsync", tracked_fsync)
     monkeypatch.setattr(data_root, "_fsync_directory", tracked_fsync_directory)
     monkeypatch.setattr(data_root.os, "replace", tracked_replace)
-    monkeypatch.setattr(
-        data_root, "_rename_directory_no_replace", tracked_rename
-    )
+    monkeypatch.setattr(data_root, "_rename_directory_no_replace", tracked_rename)
     decision = migrate_data_root(canonical, legacy, receipt_dir=receipts)
 
     assert decision.state == "ready"
@@ -897,9 +858,9 @@ def test_production_code_has_no_direct_data_directory_construction():
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
-                if (
-                    isinstance(node, ast.Constant)
-                    and node.value in {".deeper-notebook", ".open-notebook-plus"}
-                ):
+                if isinstance(node, ast.Constant) and node.value in {
+                    ".deeper-notebook",
+                    ".open-notebook-plus",
+                }:
                     violations.append(f"{relative}:{node.lineno}")
     assert violations == []

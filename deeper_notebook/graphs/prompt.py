@@ -37,9 +37,7 @@ async def call_model(state: dict, config: RunnableConfig) -> dict:
     # chat.py/source_chat.py/transformation.py for the same fix —
     # repr of a list of LangChain Messages adds wrapper noise that
     # mis-triggers the 105k large_context cutoff for cosmetic reasons.
-    content_for_sizing = "\n".join(
-        extract_text_content(m.content) for m in payload
-    )
+    content_for_sizing = "\n".join(extract_text_content(m.content) for m in payload)
     chain = await provision_langchain_model(
         content_for_sizing,
         config.get("configurable", {}).get("model_id"),
@@ -56,7 +54,8 @@ async def call_model(state: dict, config: RunnableConfig) -> dict:
     timeout = _transform_node_timeout_sec()
     try:
         response = await asyncio.wait_for(
-            chain.ainvoke(payload), timeout=timeout,
+            chain.ainvoke(payload),
+            timeout=timeout,
         )
     except asyncio.TimeoutError as exc:
         raise ExternalServiceError(

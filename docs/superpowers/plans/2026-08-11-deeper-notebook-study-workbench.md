@@ -159,11 +159,23 @@ def test_syllabus_is_bounded_versioned_and_requires_unique_units():
         plan_id="study_plan:one",
         version=1,
         source_manifest_sha256="a" * 64,
-        units=[StudySyllabusUnit(unit_id="foundations", title="Foundations", objectives=["Explain the core idea"], estimated_minutes=60)],
+        units=[
+            StudySyllabusUnit(
+                unit_id="foundations",
+                title="Foundations",
+                objectives=["Explain the core idea"],
+                estimated_minutes=60,
+            )
+        ],
     )
     assert syllabus.units[0].unit_id == "foundations"
     with pytest.raises(ValidationError):
-        StudySyllabus(plan_id="study_plan:one", version=1, source_manifest_sha256="a" * 64, units=[syllabus.units[0], syllabus.units[0]])
+        StudySyllabus(
+            plan_id="study_plan:one",
+            version=1,
+            source_manifest_sha256="a" * 64,
+            units=[syllabus.units[0], syllabus.units[0]],
+        )
 ```
 
 Also test blank text, more than 64 units, more than 20 objectives per unit, naive datetimes, unknown extra fields, illegal lifecycle transitions, duplicate source links, and approval without a source manifest.
@@ -177,7 +189,18 @@ Expected: collection error because `deeper_notebook.study.plans` is absent.
 - [ ] **Step 3: Implement frozen bounded contracts**
 
 ```python
-StudyPlanState = Literal["draft", "analyzing_sources", "syllabus_proposed", "editing", "approved", "generating", "active", "completed", "archived"]
+StudyPlanState = Literal[
+    "draft",
+    "analyzing_sources",
+    "syllabus_proposed",
+    "editing",
+    "approved",
+    "generating",
+    "active",
+    "completed",
+    "archived",
+]
+
 
 class StudySyllabusUnit(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -188,6 +211,7 @@ class StudySyllabusUnit(BaseModel):
     estimated_minutes: int = Field(ge=5, le=10_080)
     source_ids: list[str] = Field(default_factory=list, max_length=100)
     activities: list[StudyActivity] = Field(default_factory=list, max_length=50)
+
 
 class StudySyllabus(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -233,11 +257,22 @@ git commit -m "feat(study): define plan and syllabus contracts"
 @pytest.mark.asyncio
 async def test_approval_uses_expected_plan_and_syllabus_versions(monkeypatch):
     calls = []
+
     async def query(sql, params):
         calls.append((sql, params))
-        return [{**PLAN_RECORD, "state": "approved", "active_syllabus_version": 1, "revision": 3}]
+        return [
+            {
+                **PLAN_RECORD,
+                "state": "approved",
+                "active_syllabus_version": 1,
+                "revision": 3,
+            }
+        ]
+
     monkeypatch.setattr(plan_repository, "repo_query", query)
-    result = await StudyPlanRepository().approve_syllabus("study_plan:one", syllabus_version=1, expected_revision=2)
+    result = await StudyPlanRepository().approve_syllabus(
+        "study_plan:one", syllabus_version=1, expected_revision=2
+    )
     assert "revision = $expected_revision" in calls[0][0]
     assert result.state == "approved"
 ```
@@ -258,11 +293,25 @@ Migration 41 defines `study_plan`, `study_plan_source`, `study_syllabus`, `study
 class StudyPlanRepositoryError(RuntimeError):
     pass
 
+
 class StudyPlanRepository:
-    async def approve_syllabus(self, plan_id: str, *, syllabus_version: int, expected_revision: int) -> StudyPlan:
+    async def approve_syllabus(
+        self, plan_id: str, *, syllabus_version: int, expected_revision: int
+    ) -> StudyPlan:
         rows = await repo_query(
             "BEGIN TRANSACTION; UPDATE $syllabus SET approved_at = time::now() WHERE plan_id = $plan_id AND version = $version; UPDATE $plan MERGE $plan_patch WHERE revision = $expected_revision RETURN AFTER; COMMIT TRANSACTION;",
-            {"syllabus": ..., "plan": ensure_record_id(plan_id), "plan_id": ensure_record_id(plan_id), "version": syllabus_version, "expected_revision": expected_revision, "plan_patch": {"state": "approved", "active_syllabus_version": syllabus_version, "revision": expected_revision + 1}},
+            {
+                "syllabus": ...,
+                "plan": ensure_record_id(plan_id),
+                "plan_id": ensure_record_id(plan_id),
+                "version": syllabus_version,
+                "expected_revision": expected_revision,
+                "plan_patch": {
+                    "state": "approved",
+                    "active_syllabus_version": syllabus_version,
+                    "revision": expected_revision + 1,
+                },
+            },
         )
         return _plan_from_record(_one_record(rows))
 ```
@@ -299,11 +348,18 @@ git commit -m "feat(study): persist plans and syllabus versions"
 
 ```python
 def test_create_plan_forbids_unknown_fields(client, repository):
-    response = client.post("/api/study/plans", json={"title": "Physics", "goal": "Learn mechanics", "unexpected": True})
+    response = client.post(
+        "/api/study/plans",
+        json={"title": "Physics", "goal": "Learn mechanics", "unexpected": True},
+    )
     assert response.status_code == 422
 
+
 def test_approve_syllabus_requires_exact_revision(client, repository):
-    response = client.post("/api/study/plans/study_plan%3Aone/syllabus:approve", json={"syllabus_version": 1, "expected_revision": 7})
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/syllabus:approve",
+        json={"syllabus_version": 1, "expected_revision": 7},
+    )
     assert response.status_code == 409
 ```
 
@@ -320,13 +376,18 @@ Expected: 404 or import failure for absent routes.
 ```python
 router = APIRouter(prefix="/study/plans", tags=["study-plans"])
 
+
 @router.post("", response_model=StudyPlanResponse, status_code=201)
 async def create_study_plan(payload: CreateStudyPlanRequest) -> StudyPlanResponse:
     _require_study_workbench()
     try:
-        return StudyPlanResponse.from_plan(await _repository().create(payload.to_plan()))
+        return StudyPlanResponse.from_plan(
+            await _repository().create(payload.to_plan())
+        )
     except StudyPlanRepositoryError:
-        raise HTTPException(status_code=503, detail="Study plans are unavailable") from None
+        raise HTTPException(
+            status_code=503, detail="Study plans are unavailable"
+        ) from None
 ```
 
 Register `study_plans.router` under `/api` without moving the existing `study.router` registration.
@@ -362,8 +423,18 @@ git commit -m "feat(study): expose additive plan APIs"
 
 ```python
 @pytest.mark.asyncio
-async def test_readiness_marks_missing_text_without_reading_or_copying_source(monkeypatch):
-    monkeypatch.setattr(source_service.Source, "get", AsyncMock(return_value=SimpleNamespace(id="source:one", title="Lecture", full_text="", command="command:one")))
+async def test_readiness_marks_missing_text_without_reading_or_copying_source(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        source_service.Source,
+        "get",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id="source:one", title="Lecture", full_text="", command="command:one"
+            )
+        ),
+    )
     receipt = await StudySourceService().readiness([LINK])
     assert receipt.ready is False
     assert receipt.items[0].reason == "processing"
@@ -424,6 +495,7 @@ async def test_proposal_is_typed_and_does_not_approve_or_generate_artifacts(fake
     assert syllabus.approved_at is None
     assert repo.saved_artifacts == []
 
+
 @pytest.mark.asyncio
 async def test_approval_rejects_source_manifest_drift():
     with pytest.raises(StudySyllabusConflict, match="sources_changed"):
@@ -447,12 +519,22 @@ class StudySyllabusDocument(ArtifactDocumentBase):
     units: list[StudySyllabusUnitDocument] = Field(min_length=1, max_length=64)
     knowledge_gaps: list[str] = Field(default_factory=list, max_length=32)
 
+
 async def propose(self, plan_id: str, *, expected_revision: int) -> StudySyllabus:
-    plan, links, sources = await self._load_ready_plan_sources(plan_id, expected_revision)
+    plan, links, sources = await self._load_ready_plan_sources(
+        plan_id, expected_revision
+    )
     context_text, citations = artifact_context(sources)
-    result = await generate_structured_document(model=await self._resolve_model(plan), schema=StudySyllabusDocument, messages=self._messages(plan, context_text), timeout_seconds=120)
+    result = await generate_structured_document(
+        model=await self._resolve_model(plan),
+        schema=StudySyllabusDocument,
+        messages=self._messages(plan, context_text),
+        timeout_seconds=120,
+    )
     syllabus = self._to_syllabus(plan, result.document, citations)
-    return await self.repository.save_syllabus(syllabus, expected_revision=expected_revision)
+    return await self.repository.save_syllabus(
+        syllabus, expected_revision=expected_revision
+    )
 ```
 
 Use a deterministic SHA-256 over sorted source IDs plus content fingerprints as the approval manifest. Validate the prerequisite graph is acyclic before persistence.
@@ -603,7 +685,9 @@ git commit -m "feat(study): add approved syllabus workspace"
 @pytest.mark.asyncio
 async def test_unit_generation_requires_approved_matching_manifest():
     with pytest.raises(StudyArtifactConflict, match="syllabus_not_approved"):
-        await service.generate_unit("study_plan:one", "foundations", ["study_guide"], expected_revision=2)
+        await service.generate_unit(
+            "study_plan:one", "foundations", ["study_guide"], expected_revision=2
+        )
 ```
 
 Test supported type allowlist (`study_guide`, `course_pack`, `flashcards`, `quiz`, `mind_map`), idempotent links, evidence failures, cancellation, and no duplicate artifacts on retry.
@@ -650,7 +734,13 @@ git commit -m "feat(study): generate unit learning artifacts"
 ```python
 def test_create_authority_cannot_enable_network_or_mutate_syllabus():
     with pytest.raises(ValidationError):
-        StudyAssistantInvocation(role="research_scout", authority="create", prompt="Research", network_allowed=True, approved_network_scope=None)
+        StudyAssistantInvocation(
+            role="research_scout",
+            authority="create",
+            prompt="Research",
+            network_allowed=True,
+            approved_network_scope=None,
+        )
 ```
 
 Cover all twelve roles, four authority modes, 16 KiB prompt cap, 32 citations, 20 proposed actions, 50 handoffs per query page, plan-local memory provenance, and confirmation required for inferred memory.
@@ -701,6 +791,7 @@ async def test_source_guide_retrieves_only_selected_plan_sources():
     assert set(response.retrieval_receipt.source_ids) == {"source:allowed"}
     assert "source:other" not in model.last_prompt
 
+
 @pytest.mark.asyncio
 async def test_research_scout_fails_closed_without_explicit_web_scope():
     with pytest.raises(StudyAssistantPolicyError, match="network_not_approved"):
@@ -719,10 +810,18 @@ Expected: missing service/router.
 
 ```python
 ROLE_POLICIES: dict[StudyAssistantRole, AssistantPolicy] = {
-    "study_director": AssistantPolicy(model_role="chat", tools=("read_plan", "read_progress")),
-    "source_guide": AssistantPolicy(model_role="source_synthesis", tools=("retrieve_plan_sources",)),
-    "practice_coach": AssistantPolicy(model_role="study_fast", tools=("read_plan", "read_progress")),
-    "research_scout": AssistantPolicy(model_role="research_synthesis", tools=("approved_web_research",)),
+    "study_director": AssistantPolicy(
+        model_role="chat", tools=("read_plan", "read_progress")
+    ),
+    "source_guide": AssistantPolicy(
+        model_role="source_synthesis", tools=("retrieve_plan_sources",)
+    ),
+    "practice_coach": AssistantPolicy(
+        model_role="study_fast", tools=("read_plan", "read_progress")
+    ),
+    "research_scout": AssistantPolicy(
+        model_role="research_synthesis", tools=("approved_web_research",)
+    ),
 }
 ```
 
@@ -816,9 +915,16 @@ git commit -m "feat(study): add source-aware tutor dock"
 
 ```python
 @pytest.mark.asyncio
-async def test_voice_tutor_fails_closed_when_local_speech_model_is_absent(client, monkeypatch):
-    monkeypatch.setattr(model_manager, "get_speech_to_text", AsyncMock(return_value=None))
-    response = client.post("/api/study/plans/study_plan%3Aone/voice:transcribe", files={"audio": ("question.webm", b"audio", "audio/webm")})
+async def test_voice_tutor_fails_closed_when_local_speech_model_is_absent(
+    client, monkeypatch
+):
+    monkeypatch.setattr(
+        model_manager, "get_speech_to_text", AsyncMock(return_value=None)
+    )
+    response = client.post(
+        "/api/study/plans/study_plan%3Aone/voice:transcribe",
+        files={"audio": ("question.webm", b"audio", "audio/webm")},
+    )
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "local_speech_unavailable"
 ```
@@ -940,13 +1046,18 @@ git commit -m "feat(study): project mastery and adaptations"
 
 ```python
 def test_import_rejects_path_traversal_before_sqlite_open(tmp_path):
-    package = malicious_zip(tmp_path, {"../outside": b"x", "collection.anki2": b"not sqlite"})
+    package = malicious_zip(
+        tmp_path, {"../outside": b"x", "collection.anki2": b"not sqlite"}
+    )
     with pytest.raises(AnkiPackageRejected, match="unsafe_member_path"):
         inspect_anki_package(package)
 
+
 def test_import_is_atomic_when_one_note_is_invalid(valid_package, repository):
     with pytest.raises(AnkiPackageRejected):
-        import_anki_package("study_plan:one", valid_package, options=OPTIONS, request_id="request-1")
+        import_anki_package(
+            "study_plan:one", valid_package, options=OPTIONS, request_id="request-1"
+        )
     assert repository.published_cards == []
 ```
 
@@ -1003,7 +1114,10 @@ def test_export_uses_stable_ids_and_round_trips_basic_reverse_and_cloze(tmp_path
     first = export_anki_package(PLAN_EXPORT, tmp_path / "first.apkg")
     second = export_anki_package(PLAN_EXPORT, tmp_path / "second.apkg")
     assert first.receipt.card_count == second.receipt.card_count == 3
-    assert inspect_export(first.path).stable_note_guids == inspect_export(second.path).stable_note_guids
+    assert (
+        inspect_export(first.path).stable_note_guids
+        == inspect_export(second.path).stable_note_guids
+    )
 ```
 
 ```tsx

@@ -10,6 +10,7 @@ Covers:
       - tail file present → log content + classified hint
       - oversized tail file → capped at 8 KiB
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,22 +36,25 @@ class TestClassifySidecarError:
         """Tail with no recognizable failure → no hint (UI shows raw log only)."""
         assert classify_sidecar_error("starting up...\nready to serve\n") is None
 
-    @pytest.mark.parametrize("needle,expected_keyword", [
-        ("failed to load model from gguf-file", "could not be loaded"),
-        ("CUDA error: out of memory", "Out of memory"),
-        # "cuda error" comes before "ggml-cuda" in _SIDECAR_PATTERNS, so
-        # this string actually matches the broader "cuda error" hint
-        # ("GPU error — falling back to CPU…") rather than the
-        # CUDA-backend-specific one. Documenting the first-match-wins
-        # ordering with the assertion.
-        ("ggml-cuda.cu:123 cuda error", "GPU"),
-        ("bind: address already in use", "Port already in use"),
-        ("ImportError: No module named foo", "dependency missing"),
-        ("Killed: 9", "killed"),
-        ("Segmentation fault: 11", "segfault"),
-        ("ModuleNotFoundError: llama_cpp", "dependency missing"),
-        ("Metal error: command queue", "Apple GPU"),
-    ])
+    @pytest.mark.parametrize(
+        "needle,expected_keyword",
+        [
+            ("failed to load model from gguf-file", "could not be loaded"),
+            ("CUDA error: out of memory", "Out of memory"),
+            # "cuda error" comes before "ggml-cuda" in _SIDECAR_PATTERNS, so
+            # this string actually matches the broader "cuda error" hint
+            # ("GPU error — falling back to CPU…") rather than the
+            # CUDA-backend-specific one. Documenting the first-match-wins
+            # ordering with the assertion.
+            ("ggml-cuda.cu:123 cuda error", "GPU"),
+            ("bind: address already in use", "Port already in use"),
+            ("ImportError: No module named foo", "dependency missing"),
+            ("Killed: 9", "killed"),
+            ("Segmentation fault: 11", "segfault"),
+            ("ModuleNotFoundError: llama_cpp", "dependency missing"),
+            ("Metal error: command queue", "Apple GPU"),
+        ],
+    )
     def test_pattern_matches(self, needle, expected_keyword):
         """Each pattern in the table returns a hint mentioning the keyword."""
         hint = classify_sidecar_error(needle)

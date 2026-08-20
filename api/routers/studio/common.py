@@ -113,7 +113,9 @@ def _artifact_response(artifact: StudioArtifact) -> StudioArtifactResponse:
         citations=artifact.citations,
         export_paths=artifact.export_paths,
         revision_of_id=(
-            str(artifact.revision_of_id) if artifact.revision_of_id is not None else None
+            str(artifact.revision_of_id)
+            if artifact.revision_of_id is not None
+            else None
         ),
         created=_iso(getattr(artifact, "created", None)),
         updated=_iso(getattr(artifact, "updated", None)),
@@ -184,7 +186,9 @@ def _set_workflow_step_status(
     run.steps = [
         {
             **step,
-            "status": status_value if step.get("id") in step_ids else step.get("status", "pending"),
+            "status": status_value
+            if step.get("id") in step_ids
+            else step.get("status", "pending"),
         }
         for step in run.steps
     ]
@@ -281,9 +285,7 @@ async def _artifact_sources(artifact: StudioArtifact) -> list[Source]:
     canonical module's classes, escaping the patch and hitting the live
     database. Behaviour, ordering, and the 404 contract are unchanged.
     """
-    return await artifact_sources(
-        artifact, source_cls=Source, notebook_cls=Notebook
-    )
+    return await artifact_sources(artifact, source_cls=Source, notebook_cls=Notebook)
 
 
 def _artifact_not_ready_sources(sources: list[Source]) -> list[dict[str, str | None]]:
@@ -293,11 +295,13 @@ def _artifact_not_ready_sources(sources: list[Source]) -> list[dict[str, str | N
         if text:
             continue
         command = getattr(source, "command", None)
-        not_ready.append({
-            "source_id": str(getattr(source, "id", "")),
-            "title": getattr(source, "title", None) or "Untitled source",
-            "command_id": str(command) if command is not None else None,
-        })
+        not_ready.append(
+            {
+                "source_id": str(getattr(source, "id", "")),
+                "title": getattr(source, "title", None) or "Untitled source",
+                "command_id": str(command) if command is not None else None,
+            }
+        )
     return not_ready
 
 
@@ -314,7 +318,10 @@ def _env_int(name: str, default: int) -> int:
         import logging
 
         logging.getLogger(__name__).warning(
-            "Invalid %s=%r; using default %d", name, raw, default,
+            "Invalid %s=%r; using default %d",
+            name,
+            raw,
+            default,
         )
         return default
 

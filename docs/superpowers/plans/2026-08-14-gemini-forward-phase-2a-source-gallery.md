@@ -55,17 +55,21 @@
 ```python
 def test_source_visual_flag_defaults_off_and_accepts_explicit_enable(monkeypatch):
     import deeper_notebook.feature_flags as flags
+
     monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED", raising=False)
     assert flags.source_visuals_enabled() is False
     monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED", "1")
     assert flags.source_visuals_enabled() is True
+
 
 def test_migration_46_is_symmetric_and_schema_full():
     ups, downs = AsyncMigrationManager._discover_migrations()
     assert ups[45].version == 46
     assert "DEFINE TABLE IF NOT EXISTS source_visual_cache SCHEMAFULL" in ups[45].sql
     assert "DEFINE TABLE IF NOT EXISTS source_visual_claim SCHEMAFULL" in ups[45].sql
-    assert "DEFINE TABLE IF NOT EXISTS source_visual_operation SCHEMAFULL" in ups[45].sql
+    assert (
+        "DEFINE TABLE IF NOT EXISTS source_visual_operation SCHEMAFULL" in ups[45].sql
+    )
     assert downs[45] is not None
     assert "REMOVE TABLE IF EXISTS source_visual_operation" in downs[45].sql
     assert "REMOVE TABLE IF EXISTS source_visual_claim" in downs[45].sql
@@ -106,6 +110,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 SHA256 = r"^[0-9a-f]{64}$"
 SourceVisualOrigin = Literal["embedded", "video_frame", "audio_artwork"]
 
+
 class SourceVisualLocator(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     page: int | None = Field(default=None, ge=1, le=24)
@@ -114,9 +119,16 @@ class SourceVisualLocator(BaseModel):
 
     @model_validator(mode="after")
     def exactly_one_locator(self):
-        if sum(value is not None for value in (self.page, self.timestamp_ms, self.resource_id)) != 1:
+        if (
+            sum(
+                value is not None
+                for value in (self.page, self.timestamp_ms, self.resource_id)
+            )
+            != 1
+        ):
             raise ValueError("source visual locator must contain exactly one value")
         return self
+
 
 class SourceVisualAuthority(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -129,6 +141,7 @@ class SourceVisualAuthority(BaseModel):
     full_text_sha256: str | None = Field(default=None, pattern=SHA256)
     content_sha256: str = Field(pattern=SHA256)
     extractor_version: str = Field(min_length=1, max_length=64)
+
 
 class SourceVisualRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -223,14 +236,20 @@ Cover canonical JSON stability, explicit `null` fields, full-text change, source
 ```python
 def test_canonical_fingerprint_is_stable_and_versioned():
     left = canonical_fingerprint_payload(
-        source_id="source:one", normalized_source_type="upload",
-        asset_url=None, source_file_sha256="a" * 64,
-        full_text_sha256="b" * 64, extractor_version="source-visual-v1",
+        source_id="source:one",
+        normalized_source_type="upload",
+        asset_url=None,
+        source_file_sha256="a" * 64,
+        full_text_sha256="b" * 64,
+        extractor_version="source-visual-v1",
     )
     right = canonical_fingerprint_payload(
-        full_text_sha256="b" * 64, source_file_sha256="a" * 64,
-        asset_url=None, normalized_source_type="upload",
-        source_id="source:one", extractor_version="source-visual-v1",
+        full_text_sha256="b" * 64,
+        source_file_sha256="a" * 64,
+        asset_url=None,
+        normalized_source_type="upload",
+        source_id="source:one",
+        extractor_version="source-visual-v1",
     )
     assert left == right
     assert fingerprint_payload(left) == fingerprint_payload(right)
@@ -265,13 +284,21 @@ Use 1 MiB reads, `os.open(..., O_RDONLY | O_NOFOLLOW)` where available, `fstat` 
 
 ```python
 def fingerprint_payload(payload: dict[str, object]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
-def canonical_fingerprint_payload(*, source_id: str, normalized_source_type: str,
-                                  asset_url: str | None, source_file_sha256: str | None,
-                                  full_text_sha256: str | None,
-                                  extractor_version: str) -> dict[str, object]:
+
+def canonical_fingerprint_payload(
+    *,
+    source_id: str,
+    normalized_source_type: str,
+    asset_url: str | None,
+    source_file_sha256: str | None,
+    full_text_sha256: str | None,
+    extractor_version: str,
+) -> dict[str, object]:
     return {
         "schema_version": 1,
         "source_id": source_id,
@@ -289,10 +316,15 @@ Use parameter-bound record IDs and one transaction per state change. `acquire_cl
 
 ```python
 def claim_identity(source_id: str, content_sha256: str, extractor_version: str) -> str:
-    return hashlib.sha256(f"{source_id}\0{content_sha256}\0{extractor_version}".encode()).hexdigest()
+    return hashlib.sha256(
+        f"{source_id}\0{content_sha256}\0{extractor_version}".encode()
+    ).hexdigest()
+
 
 def operation_identity(source_id: str, request_id: str, operation: str) -> str:
-    return hashlib.sha256(f"{source_id}\0{request_id}\0{operation}".encode()).hexdigest()
+    return hashlib.sha256(
+        f"{source_id}\0{request_id}\0{operation}".encode()
+    ).hexdigest()
 ```
 
 The query must compare `source.updated` in the same transaction before publishing a ready row. `list_current` accepts at most 200 revisions, binds them as variables, and validates each row independently.
@@ -328,7 +360,9 @@ Cover canonical relative path, exclusive temp creation, fsync-before-rename, ass
 ```python
 def test_asset_relpath_contains_only_derived_hash_segments():
     relpath = asset_relpath("source:one", "a" * 64, "b" * 64)
-    assert relpath == f"{sha256(b'source:one').hexdigest()[:2]}/{'a' * 64}/{'b' * 64}.webp"
+    assert (
+        relpath == f"{sha256(b'source:one').hexdigest()[:2]}/{'a' * 64}/{'b' * 64}.webp"
+    )
 ```
 
 - [ ] **Step 2: Run RED**
@@ -475,14 +509,21 @@ Inside a process-wide `asyncio.Semaphore(2)`, recompute authority, reject stale 
 ```python
 from deeper_notebook.identity import LEGACY_COMMAND_APP
 
-@command("extract_source_visual", app=LEGACY_COMMAND_APP, retry={
-    "max_attempts": 3,
-    "wait_strategy": "exponential_jitter",
-    "wait_min": 1,
-    "wait_max": 10,
-    "stop_on": [SourceVisualAuthorityError, SourceVisualMediaError],
-})
-async def extract_source_visual_command(input_data: ExtractSourceVisualInput) -> ExtractSourceVisualOutput:
+
+@command(
+    "extract_source_visual",
+    app=LEGACY_COMMAND_APP,
+    retry={
+        "max_attempts": 3,
+        "wait_strategy": "exponential_jitter",
+        "wait_min": 1,
+        "wait_max": 10,
+        "stop_on": [SourceVisualAuthorityError, SourceVisualMediaError],
+    },
+)
+async def extract_source_visual_command(
+    input_data: ExtractSourceVisualInput,
+) -> ExtractSourceVisualOutput:
     return await SourceVisualService().execute(input_data)
 ```
 

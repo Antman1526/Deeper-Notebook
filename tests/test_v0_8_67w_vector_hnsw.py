@@ -6,6 +6,7 @@ SurrealDB KNN operator format `<|limit|>` based on the maximum limits configured
 - _MAX_PREFERENCES = 10
 - _MAX_EPISODES = 2
 """
+
 from __future__ import annotations
 
 import asyncio

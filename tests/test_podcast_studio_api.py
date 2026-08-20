@@ -63,7 +63,11 @@ class _Engine:
         )()
 
     async def list_documents(self, *, space_id, limit, offset):
-        assert (space_id, limit, offset) == ("knowledge_engine_space:second_brain", 500, 0)
+        assert (space_id, limit, offset) == (
+            "knowledge_engine_space:second_brain",
+            500,
+            0,
+        )
         return [_document()]
 
 
@@ -308,7 +312,9 @@ async def test_preview_resolves_a_current_block_without_exposing_its_text(
         )
 
     assert response.status_code == 200
-    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_block:research"
+    assert (
+        response.json()["entries"][0]["stable_id"] == "knowledge_engine_block:research"
+    )
     assert response.json()["entries"][0]["state"] == "included"
     assert "Selected research block stays server-side." not in response.text
 
@@ -335,7 +341,10 @@ async def test_preview_resolves_a_saved_bookmark_without_exposing_target_body(
         )
 
     assert response.status_code == 200
-    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"
+    assert (
+        response.json()["entries"][0]["stable_id"]
+        == "knowledge_engine_document:external"
+    )
     assert response.json()["entries"][0]["authority_kind"] == "external_read_only"
     assert "This body is server-resolved only." not in response.text
 
@@ -362,7 +371,10 @@ async def test_preview_resolves_a_saved_folder_without_exposing_target_body(
         )
 
     assert response.status_code == 200
-    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"
+    assert (
+        response.json()["entries"][0]["stable_id"]
+        == "knowledge_engine_document:external"
+    )
     assert "This body is server-resolved only." not in response.text
 
 
@@ -388,7 +400,10 @@ async def test_preview_resolves_a_saved_workspace_without_exposing_target_body(
         )
 
     assert response.status_code == 200
-    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"
+    assert (
+        response.json()["entries"][0]["stable_id"]
+        == "knowledge_engine_document:external"
+    )
     assert "This body is server-resolved only." not in response.text
 
 
@@ -396,11 +411,29 @@ async def test_preview_resolves_a_saved_workspace_without_exposing_target_body(
 async def test_preview_resolves_a_unified_text_search_without_exposing_body(
     app_with_knowledge_engine: FastAPI,
 ) -> None:
-    async with AsyncClient(transport=ASGITransport(app=app_with_knowledge_engine), base_url="http://test") as client:
-        response = await client.post("/api/podcasts/selection/preview", json={"selections": [{"kind": "saved_search", "query": "server-resolved", "search_mode": "text", "space_ids": ["knowledge_engine_space:second_brain"], "authority_kinds": ["external_read_only"]}]})
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_knowledge_engine), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/podcasts/selection/preview",
+            json={
+                "selections": [
+                    {
+                        "kind": "saved_search",
+                        "query": "server-resolved",
+                        "search_mode": "text",
+                        "space_ids": ["knowledge_engine_space:second_brain"],
+                        "authority_kinds": ["external_read_only"],
+                    }
+                ]
+            },
+        )
 
     assert response.status_code == 200
-    assert response.json()["entries"][0]["stable_id"] == "knowledge_engine_document:external"
+    assert (
+        response.json()["entries"][0]["stable_id"]
+        == "knowledge_engine_document:external"
+    )
     assert "This body is server-resolved only." not in response.text
 
 
@@ -621,7 +654,9 @@ async def test_studio_submit_persists_full_editorial_intent_and_validated_overri
     assert response.status_code == 200
     assert len(calls) == 1
     assert calls[0]["editorial_brief"] == editorial_brief
-    assert calls[0]["model_plan_receipts"][-1]["selection_source"] == "production_override"
+    assert (
+        calls[0]["model_plan_receipts"][-1]["selection_source"] == "production_override"
+    )
 
 
 def test_readiness_rejects_unknown_or_path_production_overrides() -> None:
@@ -639,8 +674,12 @@ def test_readiness_rejects_unknown_or_path_production_overrides() -> None:
         )
 
 
-@pytest.mark.parametrize("model_id", ["org/model", "manifest:org/model", "model:alpha", "gguf:local-name"])
-def test_model_override_identifiers_accept_bounded_opaque_namespaces(model_id: str) -> None:
+@pytest.mark.parametrize(
+    "model_id", ["org/model", "manifest:org/model", "model:alpha", "gguf:local-name"]
+)
+def test_model_override_identifiers_accept_bounded_opaque_namespaces(
+    model_id: str,
+) -> None:
     from api.schemas.podcast_studio import (
         PodcastReadinessRequest,
         PodcastStageModelPlanResponse,
@@ -661,7 +700,16 @@ def test_model_override_identifiers_accept_bounded_opaque_namespaces(model_id: s
     assert plan.override_choices == [model_id]
 
 
-@pytest.mark.parametrize("model_id", ["/Users/Antman/model", "\\\\server\\share\\model", "C:\\Models\\model", "C:/Models/model", "file:///Users/Antman/model"])
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "/Users/Antman/model",
+        "\\\\server\\share\\model",
+        "C:\\Models\\model",
+        "C:/Models/model",
+        "file:///Users/Antman/model",
+    ],
+)
 def test_model_override_identifiers_reject_absolute_path_forms(model_id: str) -> None:
     from api.schemas.podcast_studio import (
         PodcastReadinessRequest,
@@ -805,13 +853,15 @@ async def test_confirmed_submit_uses_server_resolved_content_once_per_idempotenc
     assert calls[0]["include_transcription"] is False
     assert calls[0]["selection_summary"] == {
         "authority_counts": {"app_owned": 1},
-        "included_items": [{
-            "stable_id": "notebook:research",
-            "authority_kind": "app_owned",
-            "fingerprint": hashlib.sha256(
-                b"Private app-owned notebook material"
-            ).hexdigest(),
-        }],
+        "included_items": [
+            {
+                "stable_id": "notebook:research",
+                "authority_kind": "app_owned",
+                "fingerprint": hashlib.sha256(
+                    b"Private app-owned notebook material"
+                ).hexdigest(),
+            }
+        ],
         "included_count": 1,
         "production_settings": {
             "mode": "deep_dive",
@@ -970,13 +1020,13 @@ async def test_preview_reports_a_missing_saved_folder_without_side_effects(
         response = await client.post(
             "/api/podcasts/selection/preview",
             json={
-                    "selections": [
-                        {
-                            "kind": "knowledge_collection",
-                            "collection_kind": "folder",
-                            "collection_id": "knowledge_bookmark_folder:unavailable",
-                        }
-                    ]
+                "selections": [
+                    {
+                        "kind": "knowledge_collection",
+                        "collection_kind": "folder",
+                        "collection_id": "knowledge_bookmark_folder:unavailable",
+                    }
+                ]
             },
         )
 

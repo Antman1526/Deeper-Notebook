@@ -3,6 +3,7 @@
 Default OFF (no env) so the single-user desktop path is unchanged; when
 DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN is set, excess requests per IP get 429.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -27,9 +28,17 @@ def _app() -> FastAPI:
     return app
 
 
-@pytest.mark.parametrize("val,expected", [
-    (None, 0), ("", 0), ("0", 0), ("-3", 0), ("abc", 0), ("5", 5),
-])
+@pytest.mark.parametrize(
+    "val,expected",
+    [
+        (None, 0),
+        ("", 0),
+        ("0", 0),
+        ("-3", 0),
+        ("abc", 0),
+        ("5", 5),
+    ],
+)
 def test_limit_parsing(monkeypatch, val, expected):
     if val is None:
         monkeypatch.delenv("DEEPER_NOTEBOOK_RATE_LIMIT_PER_MIN", raising=False)

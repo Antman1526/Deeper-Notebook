@@ -11,6 +11,7 @@ the frontend fell back to the baked localhost:5055 ("/api/config returned
 status 500"). This test reproduces that bundle shape and asserts the patch now
 resolves to the real dir and succeeds.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,7 +33,9 @@ def _make_symlinked_bundle(root: Path) -> Path:
     # The 3 rewrite-target files, each carrying the baked default host.
     (res / "server.js").write_text('const dest = "http://localhost:5055/api";\n')
     (res_next / "required-server-files.json").write_text(
-        json.dumps({"config": {"rewrites": [{"destination": "http://localhost:5055/api/:p*"}]}})
+        json.dumps(
+            {"config": {"rewrites": [{"destination": "http://localhost:5055/api/:p*"}]}}
+        )
     )
     (res_next / "routes-manifest.json").write_text(
         json.dumps({"rewrites": [{"destination": "http://localhost:5055/api/:p*"}]})
@@ -119,23 +122,14 @@ def test_patch_real_dir_unchanged_path(tmp_path, monkeypatch):
     assert "localhost:5055" not in (fe / "server.js").read_text()
 
 
-def test_frozen_runtime_never_mutates_the_signed_frontend(
-    tmp_path, monkeypatch
-):
+def test_frozen_runtime_never_mutates_the_signed_frontend(tmp_path, monkeypatch):
     """A writable app bundle is still signed and must remain immutable."""
     fe = tmp_path / "Deeper Notebook.app" / "Contents" / "Resources" / "frontend"
     (fe / ".next").mkdir(parents=True)
     (fe / "server.js").write_text('dest "http://localhost:5055/api"\n')
-    (fe / ".next" / "required-server-files.json").write_text(
-        "http://localhost:5055/x"
-    )
-    (fe / ".next" / "routes-manifest.json").write_text(
-        "http://localhost:5055/y"
-    )
-    source_before = {
-        rel: (fe / rel).read_bytes()
-        for rel in nrp.REWRITE_TARGET_FILES
-    }
+    (fe / ".next" / "required-server-files.json").write_text("http://localhost:5055/x")
+    (fe / ".next" / "routes-manifest.json").write_text("http://localhost:5055/y")
+    source_before = {rel: (fe / rel).read_bytes() for rel in nrp.REWRITE_TARGET_FILES}
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))

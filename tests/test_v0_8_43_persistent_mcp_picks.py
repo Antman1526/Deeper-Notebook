@@ -11,6 +11,7 @@ page reload + navigation. Tests:
   - `ChatSessionResponse` exposes the field.
   - The migration file is syntactically valid SurrealQL.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

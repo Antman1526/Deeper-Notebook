@@ -8,6 +8,7 @@ builder + citation capture) AND its integration into the chat tool loop
 No live network: httpx.AsyncClient is monkeypatched. No secret values are ever
 asserted on or logged.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -351,9 +352,7 @@ def test_provider_chain_override_searxng_is_all_urls_only(monkeypatch):
 @pytest.mark.asyncio
 async def test_searxng_url_failover(monkeypatch):
     """First SearXNG instance 429s → second instance answers → results returned."""
-    monkeypatch.setenv(
-        "SEARXNG_BASE_URL", "https://down.example/,https://up.example/"
-    )
+    monkeypatch.setenv("SEARXNG_BASE_URL", "https://down.example/,https://up.example/")
 
     def handler(method, url, kw):
         if "down.example" in url:
@@ -491,9 +490,7 @@ def test_format_results_empty():
 
 
 def test_format_results_numbered():
-    text = ws.format_results(
-        "q", [{"title": "T", "url": "http://u", "snippet": "S"}]
-    )
+    text = ws.format_results("q", [{"title": "T", "url": "http://u", "snippet": "S"}])
     assert "[1]" in text and "http://u" in text and "T" in text
 
 
@@ -550,9 +547,7 @@ class _RecordingModel:
 
 @pytest.mark.asyncio
 async def test_loop_binds_web_search_when_key_set(monkeypatch):
-    monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
-    )
+    monkeypatch.setattr(chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[]))
     monkeypatch.setenv("SERPER_API_KEY", "k")  # opt in
     model = _RecordingModel([_FakeAIMessage([])])
     await chat_mod.bind_mcp_and_run_tool_loop(model, [], max_iterations=2)
@@ -580,9 +575,7 @@ async def test_loop_binds_web_search_even_when_mcp_resolve_fails(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_loop_omits_web_search_without_key(monkeypatch):
-    monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
-    )
+    monkeypatch.setattr(chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         "deeper_notebook.tools.opencode.opencode_enabled", lambda: False
     )
@@ -594,9 +587,7 @@ async def test_loop_omits_web_search_without_key(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_loop_omits_web_search_when_disabled_by_picker(monkeypatch):
-    monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
-    )
+    monkeypatch.setattr(chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         "deeper_notebook.tools.opencode.opencode_enabled", lambda: False
     )

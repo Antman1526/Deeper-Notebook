@@ -37,8 +37,8 @@ def check_api_password(
     Returns True without checking if DEEPER_NOTEBOOK_PASSWORD is not configured."""
     password = resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env)
     if not password:
-        return True          # unconfigured → open (desktop default)
-    ...                      # else compare; 401 on mismatch/absence
+        return True  # unconfigured → open (desktop default)
+    ...  # else compare; 401 on mismatch/absence
 ```
 
 Used as `_authenticated: bool = Depends(check_api_password)`.
@@ -177,6 +177,7 @@ try:
     from surreal_commands.core.service import get_command_service
 except ImportError:
     from deeper_notebook.database.repository import repo_query
+
     ...  # direct UPDATE fallback on the command table
 ```
 

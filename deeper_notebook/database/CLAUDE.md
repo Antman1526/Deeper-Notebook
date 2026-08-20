@@ -117,7 +117,9 @@ from open_notebook.database.repository import repo_create, repo_query, repo_upda
 record = await repo_create("notebooks", {"title": "Research"})
 
 # Query
-results = await repo_query("SELECT * FROM notebooks WHERE title = $title", {"title": "Research"})
+results = await repo_query(
+    "SELECT * FROM notebooks WHERE title = $title", {"title": "Research"}
+)
 
 # Update
 await repo_update("notebooks", record["id"], {"title": "Updated Research"})

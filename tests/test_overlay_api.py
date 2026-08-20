@@ -415,9 +415,7 @@ async def test_overlay_identity_enrichment_times_out_without_blocking_canonical_
         overlay_router, "_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS", 0.01, raising=False
     )
     page = _page(
-        _note(
-            "overlay_note:timeout", kind="unique", title="Timeout", date_key=None
-        )
+        _note("overlay_note:timeout", kind="unique", title="Timeout", date_key=None)
     )
     request = SimpleNamespace(
         app=SimpleNamespace(

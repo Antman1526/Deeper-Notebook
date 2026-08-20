@@ -6,6 +6,7 @@ screen while guaranteeing it never opens smaller than the previous
 default. These tests pin that pure math (the AppKit screen read in
 `_preferred_window_size` is environment-specific and not unit-tested).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -42,8 +43,15 @@ def test_fallback_respects_a_higher_floor():
 
 @pytest.mark.parametrize(
     "sw,sh",
-    [(1280, 800), (1440, 900), (1680, 1050), (1920, 1200),
-     (2560, 1440), (3008, 1692), (5120, 2880)],
+    [
+        (1280, 800),
+        (1440, 900),
+        (1680, 1050),
+        (1920, 1200),
+        (2560, 1440),
+        (3008, 1692),
+        (5120, 2880),
+    ],
 )
 def test_never_smaller_than_floor(sw, sh):
     w, h = _fit_window_size(sw, sh, 1280, 800)

@@ -63,9 +63,7 @@ _ALLOWED_STAGES = frozenset(
         "core_ready",
     }
 )
-_VERSION_RE = re.compile(
-    r"^v?[0-9]+(?:\.[0-9]+){0,4}(?:[-+][A-Za-z0-9.-]{1,16})?$"
-)
+_VERSION_RE = re.compile(r"^v?[0-9]+(?:\.[0-9]+){0,4}(?:[-+][A-Za-z0-9.-]{1,16})?$")
 _MAX_AUTO_EXPORT_ENTRIES = 64
 _MAX_AUTO_EXPORT_SCAN_ENTRIES = 256
 _MAX_AUTO_EXPORT_SIZE_BYTES = 4_294_967_296
@@ -141,7 +139,9 @@ class AutoExportSnapshot(_Contract):
     integrity: Literal["verified", "unknown"] = "unknown"
     file_count: int = Field(ge=0, le=_MAX_AUTO_EXPORT_ENTRIES)
     newest_age_seconds: int | None = Field(default=None, ge=0, le=31_536_000_000)
-    newest_size_bytes: int | None = Field(default=None, ge=0, le=_MAX_AUTO_EXPORT_SIZE_BYTES)
+    newest_size_bytes: int | None = Field(
+        default=None, ge=0, le=_MAX_AUTO_EXPORT_SIZE_BYTES
+    )
     newest_timestamp: str | None = Field(default=None, min_length=1, max_length=40)
 
 
@@ -174,7 +174,9 @@ class RuntimeSnapshot(_Contract):
 
     schema_version: Literal["runtime-snapshot-v1"] = "runtime-snapshot-v1"
     status: SnapshotState
-    reasons: list[ReasonCode] = Field(default_factory=list, max_length=_MAX_RUNTIME_REASONS)
+    reasons: list[ReasonCode] = Field(
+        default_factory=list, max_length=_MAX_RUNTIME_REASONS
+    )
     readiness: ReadinessSnapshot
     startup: StartupSnapshot
     updates: UpdateSnapshot
@@ -184,7 +186,9 @@ class RuntimeSnapshot(_Contract):
     provenance: ProvenanceSnapshot
     # Defaulted so this is an ADDITIVE schema change: runtime-snapshot-v1
     # consumers that predate it simply ignore an unknown key.
-    model_config_health: ModelConfigSnapshot = Field(default_factory=ModelConfigSnapshot)
+    model_config_health: ModelConfigSnapshot = Field(
+        default_factory=ModelConfigSnapshot
+    )
 
 
 Provider = Callable[[], Any] | Callable[[], Awaitable[Any]]
@@ -256,7 +260,9 @@ async def default_readiness_provider() -> Mapping[str, Any]:
     }
 
 
-def _default_startup_receipts(root_provider: Callable[[], Path]) -> Mapping[str, Any] | None:
+def _default_startup_receipts(
+    root_provider: Callable[[], Path],
+) -> Mapping[str, Any] | None:
     try:
         root = Path(root_provider()).expanduser()
     except Exception:
@@ -327,7 +333,11 @@ def _bounded_items(value: Sequence[Any], limit: int):
 
 
 def _safe_version(value: Any) -> str | None:
-    if not isinstance(value, str) or len(value) > 32 or not _VERSION_RE.fullmatch(value):
+    if (
+        not isinstance(value, str)
+        or len(value) > 32
+        or not _VERSION_RE.fullmatch(value)
+    ):
         return None
     return value
 
@@ -346,7 +356,11 @@ def _normalise_readiness(value: Any) -> tuple[ReadinessSnapshot, list[ReasonCode
         if migration_value not in {"applied", "pending", "unknown"}:
             pending = checks.get("migrations_pending")
             migration_value = (
-                "pending" if pending is True else "applied" if pending is False else "unknown"
+                "pending"
+                if pending is True
+                else "applied"
+                if pending is False
+                else "unknown"
             )
         migrations: MigrationState = migration_value
 
@@ -367,10 +381,14 @@ def _normalise_readiness(value: Any) -> tuple[ReadinessSnapshot, list[ReasonCode
             state = "unknown"
         else:
             state = "degraded"
-        return ReadinessSnapshot(state=state, database=database, migrations=migrations), reasons
+        return ReadinessSnapshot(
+            state=state, database=database, migrations=migrations
+        ), reasons
     except Exception:
         return (
-            ReadinessSnapshot(state="unknown", database="unknown", migrations="unknown"),
+            ReadinessSnapshot(
+                state="unknown", database="unknown", migrations="unknown"
+            ),
             ["readiness_unknown"],
         )
 
@@ -437,9 +455,13 @@ def _normalise_vault(value: Any) -> tuple[VaultSnapshot, list[ReasonCode]]:
     try:
         raw = value.get("mounts") if isinstance(value, Mapping) else value
         if raw is None:
-            return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
+            return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), [
+                "vault_unknown"
+            ]
         if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
-            return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
+            return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), [
+                "vault_unknown"
+            ]
         ready = degraded = unavailable = 0
         saw_item = False
         # A mounted-source summary is normally tiny, but this boundary must
@@ -456,20 +478,30 @@ def _normalise_vault(value: Any) -> tuple[VaultSnapshot, list[ReasonCode]]:
             elif status in {"disconnected", "unavailable"}:
                 unavailable += 1
         if saw_item and not (ready or degraded or unavailable):
-            return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
+            return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), [
+                "vault_unknown"
+            ]
         reasons: list[ReasonCode] = []
         if degraded:
             reasons.append("vault_degraded")
         if unavailable:
             reasons.append("vault_unavailable")
         state: SnapshotState = "degraded" if (degraded or unavailable) else "ready"
-        return VaultSnapshot(state=state, ready=ready, degraded=degraded, unavailable=unavailable), reasons
+        return VaultSnapshot(
+            state=state, ready=ready, degraded=degraded, unavailable=unavailable
+        ), reasons
     except Exception:
-        return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), ["vault_unknown"]
+        return VaultSnapshot(state="unknown", ready=0, degraded=0, unavailable=0), [
+            "vault_unknown"
+        ]
 
 
 def _bounded_count(value: Any) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= _MAX_COUNT:
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= _MAX_COUNT
+    ):
         return value
     return None
 
@@ -487,7 +519,10 @@ def _normalise_knowledge(value: Any) -> tuple[KnowledgeSnapshot, list[ReasonCode
         if failed and failed > 0:
             return (
                 KnowledgeSnapshot(
-                    state="degraded", projected=projected, unchanged=unchanged, failed=failed
+                    state="degraded",
+                    projected=projected,
+                    unchanged=unchanged,
+                    failed=failed,
                 ),
                 ["knowledge_degraded"],
             )
@@ -515,7 +550,10 @@ def _normalise_backup(value: Any) -> tuple[AutoExportSnapshot, list[ReasonCode]]
         newest_mtime: float | None = None
         newest_size: int | None = None
         for seen, entry in enumerate(directory.iterdir()):
-            if seen >= _MAX_AUTO_EXPORT_SCAN_ENTRIES or count >= _MAX_AUTO_EXPORT_ENTRIES:
+            if (
+                seen >= _MAX_AUTO_EXPORT_SCAN_ENTRIES
+                or count >= _MAX_AUTO_EXPORT_ENTRIES
+            ):
                 break
             try:
                 if (
@@ -555,7 +593,8 @@ def _normalise_backup(value: Any) -> tuple[AutoExportSnapshot, list[ReasonCode]]
                     file_count=count,
                     newest_size_bytes=(
                         newest_size
-                        if newest_size is not None and newest_size <= _MAX_AUTO_EXPORT_SIZE_BYTES
+                        if newest_size is not None
+                        and newest_size <= _MAX_AUTO_EXPORT_SIZE_BYTES
                         else None
                     ),
                 ),
@@ -595,7 +634,9 @@ def _normalise_backup(value: Any) -> tuple[AutoExportSnapshot, list[ReasonCode]]
             reasons,
         )
     except Exception:
-        return AutoExportSnapshot(state="unknown", file_count=0), ["auto_export_unknown"]
+        return AutoExportSnapshot(state="unknown", file_count=0), [
+            "auto_export_unknown"
+        ]
 
 
 _SOURCE_FINGERPRINT_RE = re.compile(r"^[a-f0-9]{64}$")
@@ -604,7 +645,11 @@ _SOURCE_FINGERPRINT_RE = re.compile(r"^[a-f0-9]{64}$")
 def _normalise_provenance(value: Any) -> tuple[ProvenanceSnapshot, list[ReasonCode]]:
     try:
         raw = value.get("mounts") if isinstance(value, Mapping) else value
-        if raw is None or not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        if (
+            raw is None
+            or not isinstance(raw, Sequence)
+            or isinstance(raw, (str, bytes))
+        ):
             raise TypeError("provenance mounts are not a bounded sequence")
         mount_count = 0
         external_read_only_count = 0
@@ -618,7 +663,10 @@ def _normalise_provenance(value: Any) -> tuple[ProvenanceSnapshot, list[ReasonCo
                 continue
             status = entry.get("status")
             write_policy = entry.get("write_policy")
-            if status not in _KNOWN_VAULT_STATES and write_policy not in _KNOWN_WRITE_POLICIES:
+            if (
+                status not in _KNOWN_VAULT_STATES
+                and write_policy not in _KNOWN_WRITE_POLICIES
+            ):
                 continue
             recognized_item = True
             mount_count += 1
@@ -629,7 +677,9 @@ def _normalise_provenance(value: Any) -> tuple[ProvenanceSnapshot, list[ReasonCo
                 or entry.get("source_hash")
                 or entry.get("content_hash")
             )
-            if isinstance(fingerprint, str) and _SOURCE_FINGERPRINT_RE.fullmatch(fingerprint):
+            if isinstance(fingerprint, str) and _SOURCE_FINGERPRINT_RE.fullmatch(
+                fingerprint
+            ):
                 fingerprints_available = True
         if saw_item and not recognized_item:
             raise TypeError("provenance mount entries are invalid")
@@ -726,7 +776,9 @@ async def build_runtime_snapshot(
     updates_raw = await _invoke(configured.update_status or _default_update_status)
     vault_raw = await _invoke(configured.vault_summary)
     knowledge_raw = await _invoke(configured.knowledge_summary)
-    backup_raw = await _invoke(configured.auto_export_directory or default_auto_export_directory)
+    backup_raw = await _invoke(
+        configured.auto_export_directory or default_auto_export_directory
+    )
 
     readiness, reasons = _normalise_readiness(readiness_raw)
     startup, startup_reasons = _normalise_startup(startup_raw)

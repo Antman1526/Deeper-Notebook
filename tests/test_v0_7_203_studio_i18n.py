@@ -21,6 +21,7 @@ These tests:
   - AST pin: no hardcoded English on the Studio render tree.
   - AST pin: all 10 locales have the full `studio.*` namespace.
 """
+
 from __future__ import annotations
 
 import re
@@ -28,8 +29,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCALES = (
-    "en-US", "zh-CN", "zh-TW", "pt-BR", "ja-JP",
-    "it-IT", "fr-FR", "ru-RU", "bn-IN", "es-ES",
+    "en-US",
+    "zh-CN",
+    "zh-TW",
+    "pt-BR",
+    "ja-JP",
+    "it-IT",
+    "fr-FR",
+    "ru-RU",
+    "bn-IN",
+    "es-ES",
 )
 STUDIO_KEYS = (
     "backToNotebooks",
@@ -110,8 +119,7 @@ def test_all_locales_have_full_studio_namespace():
             if not re.search(rf"\b{key}:\s*\"", src):
                 missing.append((code, key))
     assert not missing, (
-        f"v0.7.203 regression: missing studio.* keys in non-en-US "
-        f"locales: {missing!r}"
+        f"v0.7.203 regression: missing studio.* keys in non-en-US locales: {missing!r}"
     )
 
 
@@ -175,8 +183,13 @@ def test_studio_page_uses_t_studio_namespace():
     extraction."""
     src = _src("frontend/src/app/(dashboard)/studio/page.tsx")
     # Static keys referenced via `t('studio.X')` directly.
-    for key in ("studio.title", "studio.subtitle", "studio.step1Title",
-                "studio.notebookModeTitle", "studio.generateNotebook"):
+    for key in (
+        "studio.title",
+        "studio.subtitle",
+        "studio.step1Title",
+        "studio.notebookModeTitle",
+        "studio.generateNotebook",
+    ):
         assert f"t('{key}')" in src or f't("{key}")' in src, (
             f"v0.7.203 regression: Studio page no longer references "
             f"t('{key}'). String may have been re-hardcoded."

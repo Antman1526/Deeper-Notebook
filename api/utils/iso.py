@@ -36,6 +36,7 @@ Forward-guard test at `tests/test_v0_7_181_iso_helper.py` pins that
 files migrated to this helper do not regress back to the unsafe
 `str(...)` form.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

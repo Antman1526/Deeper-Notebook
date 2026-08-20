@@ -29,6 +29,7 @@ Three small but visible UX wins:
     the next window-focus refetch. Matches the pattern useSourceChat
     already uses.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -86,9 +87,7 @@ def test_source_detail_uses_formatdatetime_not_tolocalestring():
     """v0.7.189: SourceDetailContent's absolute-time display must
     use formatDateTime(value, language), not raw `.toLocaleString()`.
     Mixing both produces two different formats on the same screen."""
-    src = _read_source(
-        "frontend/src/components/source/SourceDetailContent.tsx"
-    )
+    src = _read_source("frontend/src/components/source/SourceDetailContent.tsx")
     # The bad pattern is gone.
     bad = "new Date(source.created).toLocaleString()"
     assert bad not in src, (
@@ -112,9 +111,7 @@ def test_rebuild_embeddings_uses_formatdatetime():
 
 def test_gmail_integration_uses_formatdatetime():
     """v0.7.189: GmailIntegration last_sent_at uses formatDateTime."""
-    src = _read_source(
-        "frontend/src/components/deeper-notebook/GmailIntegration.tsx"
-    )
+    src = _read_source("frontend/src/components/deeper-notebook/GmailIntegration.tsx")
     assert "formatDateTime(status.last_sent_at, language)" in src
     assert "useTranslation" in src, (
         "v0.7.189 regression: GmailIntegration must import "

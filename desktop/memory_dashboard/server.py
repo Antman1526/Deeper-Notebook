@@ -4,6 +4,7 @@ Most data requests proxy through to the memory retriever shim (which has the
 mem0 client). This server itself is thin — just serves the static UI and
 provides a /api/theme endpoint so the dashboard adopts the user's wizard theme.
 """
+
 from __future__ import annotations
 
 import json
@@ -56,10 +57,12 @@ def _save_capture_state(state: dict) -> None:
     """
     p = _capture_state_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps({
-        "last_seen": state.get("last_seen", ""),
-        "muted_apps": sorted(set(state.get("muted_apps", []))),
-    })
+    payload = json.dumps(
+        {
+            "last_seen": state.get("last_seen", ""),
+            "muted_apps": sorted(set(state.get("muted_apps", []))),
+        }
+    )
     tmp = p.with_suffix(p.suffix + ".tmp")
     try:
         tmp.write_text(payload)
@@ -111,6 +114,7 @@ def build_app(
 
     async def _cleanup(_: web.Application) -> None:
         await shared_client.aclose()
+
     app.on_cleanup.append(_cleanup)
 
     async def index(_: web.Request) -> web.Response:
@@ -154,7 +158,11 @@ def build_app(
     async def capture_inbox(req: web.Request) -> web.Response:
         if not openchronicle_bridge_url:
             return web.json_response(
-                {"available": False, "events": [], "reason": "openchronicle not detected"}
+                {
+                    "available": False,
+                    "events": [],
+                    "reason": "openchronicle not detected",
+                }
             )
         minutes = int(req.query.get("minutes", "30"))
         url = f"{openchronicle_bridge_url}/context/recent"
@@ -169,18 +177,24 @@ def build_app(
             # sessions. Events with no `ts` always pass (we can't compare).
             last_seen = state.get("last_seen", "")
             if last_seen:
-                events = [e for e in events
-                          if not e.get("ts") or e["ts"] > last_seen]
+                events = [e for e in events if not e.get("ts") or e["ts"] > last_seen]
             # v0.5.8 — per-app mute. Drop events whose `app` field matches
             # any muted app (case-insensitive substring match).
             muted_apps = [a.lower() for a in state.get("muted_apps", [])]
             if muted_apps:
-                events = [e for e in events
-                          if not any(m in (e.get("app") or "").lower() for m in muted_apps)]
-            return web.json_response({
-                "available": True, "events": events,
-                "last_seen": last_seen, "muted_apps": state.get("muted_apps", []),
-            })
+                events = [
+                    e
+                    for e in events
+                    if not any(m in (e.get("app") or "").lower() for m in muted_apps)
+                ]
+            return web.json_response(
+                {
+                    "available": True,
+                    "events": events,
+                    "last_seen": last_seen,
+                    "muted_apps": state.get("muted_apps", []),
+                }
+            )
         except Exception as exc:
             return web.json_response(
                 {"available": True, "events": [], "error": str(exc)},
@@ -220,7 +234,9 @@ def build_app(
         elif action == "unmute":
             muted.discard(app_name)
         else:
-            return web.json_response({"error": "action must be mute|unmute"}, status=400)
+            return web.json_response(
+                {"error": "action must be mute|unmute"}, status=400
+            )
         state["muted_apps"] = sorted(muted)
         _save_capture_state(state)
         return web.json_response({"ok": True, "muted_apps": state["muted_apps"]})
@@ -236,9 +252,11 @@ def build_app(
             return web.json_response({"available": False, "slots": {}})
         try:
             defaults_resp = await shared_client.get(
-                f"{upstream_api_url}/api/models/defaults", timeout=5)
+                f"{upstream_api_url}/api/models/defaults", timeout=5
+            )
             models_resp = await shared_client.get(
-                f"{upstream_api_url}/api/models", timeout=5)
+                f"{upstream_api_url}/api/models", timeout=5
+            )
             defaults_resp.raise_for_status()
             models_resp.raise_for_status()
             defaults = defaults_resp.json() or {}
@@ -252,14 +270,14 @@ def build_app(
         id_to_name = {m.get("id", ""): m.get("name", "") for m in models}
         # Order matches the Settings panel for consistency.
         slot_to_field = [
-            ("Chat",            "default_chat_model"),
-            ("Tools",           "default_tools_model"),
-            ("Reasoning",       "default_reasoning_model"),
-            ("Transformation",  "default_transformation_model"),
-            ("Large Context",   "large_context_model"),
-            ("Embedding",       "default_embedding_model"),
-            ("Text-to-Speech",  "default_text_to_speech_model"),
-            ("Speech-to-Text",  "default_speech_to_text_model"),
+            ("Chat", "default_chat_model"),
+            ("Tools", "default_tools_model"),
+            ("Reasoning", "default_reasoning_model"),
+            ("Transformation", "default_transformation_model"),
+            ("Large Context", "large_context_model"),
+            ("Embedding", "default_embedding_model"),
+            ("Text-to-Speech", "default_text_to_speech_model"),
+            ("Speech-to-Text", "default_speech_to_text_model"),
         ]
         slots = {}
         for label, field in slot_to_field:
@@ -275,22 +293,38 @@ def build_app(
         footer so users see at a glance if anything's broken without having
         to tail launcher.log.
         """
-        async def _probe(name: str, url: str, ok_status: int = 200) -> tuple[str, bool, str | None]:
+
+        async def _probe(
+            name: str, url: str, ok_status: int = 200
+        ) -> tuple[str, bool, str | None]:
             if not url:
                 return (name, False, "not wired")
             try:
                 r = await shared_client.get(url, timeout=2)
-                return (name, r.status_code == ok_status, None if r.status_code == ok_status
-                        else f"HTTP {r.status_code}")
+                return (
+                    name,
+                    r.status_code == ok_status,
+                    None if r.status_code == ok_status else f"HTTP {r.status_code}",
+                )
             except Exception as exc:
                 return (name, False, type(exc).__name__)
 
         import asyncio
+
         results = await asyncio.gather(
-            _probe("memory_retriever", f"{memory_retriever_url}/health" if memory_retriever_url else ""),
-            _probe("upstream_api", f"{upstream_api_url}/health" if upstream_api_url else ""),
-            _probe("openchronicle_bridge",
-                   f"{openchronicle_bridge_url}/health" if openchronicle_bridge_url else ""),
+            _probe(
+                "memory_retriever",
+                f"{memory_retriever_url}/health" if memory_retriever_url else "",
+            ),
+            _probe(
+                "upstream_api", f"{upstream_api_url}/health" if upstream_api_url else ""
+            ),
+            _probe(
+                "openchronicle_bridge",
+                f"{openchronicle_bridge_url}/health"
+                if openchronicle_bridge_url
+                else "",
+            ),
         )
         services = {name: {"ok": ok, "detail": detail} for name, ok, detail in results}
         all_ok = all(v["ok"] for v in services.values() if v["detail"] != "not wired")
@@ -299,6 +333,7 @@ def build_app(
     async def theme(_: web.Request) -> web.Response:
         try:
             from desktop.config import default_config_path, load_or_create
+
             cfg = load_or_create(default_config_path())
             return web.json_response({"theme": cfg.theme})
         except Exception:

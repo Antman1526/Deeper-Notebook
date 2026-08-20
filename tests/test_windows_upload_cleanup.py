@@ -57,9 +57,7 @@ def _fake_windows_upload_kernel(*, reparse_handle: int | None = None):
 
 
 def test_windows_upload_cleanup_pins_chain_and_deletes_by_handle(monkeypatch):
-    kernel, create_file, set_information, close_handle = (
-        _fake_windows_upload_kernel()
-    )
+    kernel, create_file, set_information, close_handle = _fake_windows_upload_kernel()
     monkeypatch.setattr(
         ctypes,
         "WinDLL",
@@ -77,9 +75,7 @@ def test_windows_upload_cleanup_pins_chain_and_deletes_by_handle(monkeypatch):
     for call in create_file.calls:
         assert call[2] == 0x00000003  # read/write sharing; no delete share
         assert call[5] & 0x00200000  # OPEN_REPARSE_POINT
-    assert all(
-        call[1] & 0x00010000 == 0 for call in create_file.calls[:-1]
-    )
+    assert all(call[1] & 0x00010000 == 0 for call in create_file.calls[:-1])
     assert create_file.calls[-1][1] & 0x00010000  # DELETE access
     assert len(set_information.calls) == 1
     assert set_information.calls[0][1] == 4  # FileDispositionInfo
@@ -88,8 +84,8 @@ def test_windows_upload_cleanup_pins_chain_and_deletes_by_handle(monkeypatch):
 
 
 def test_windows_upload_cleanup_refuses_reparse_component(monkeypatch):
-    kernel, _create_file, set_information, close_handle = (
-        _fake_windows_upload_kernel(reparse_handle=102)
+    kernel, _create_file, set_information, close_handle = _fake_windows_upload_kernel(
+        reparse_handle=102
     )
     monkeypatch.setattr(
         ctypes,

@@ -8,6 +8,7 @@ regression guards (same style as the v0.8.44 source-chat parity tests and
 the v0.8.67n launcher anchors) — they fail loudly if a refactor drops one
 link of the chain, without needing a live graph/DB.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -47,11 +48,13 @@ def test_source_chat_router_emits_offline_fallback_event():
         "SSE stream must emit the offline_fallback event when the gate acted"
     )
     # Dual-path guard: the Pydantic-state branch must also capture the field.
-    assert 'getattr(\n                                output, "offline_fallback", None\n                            )' in router_src or \
-        'getattr(output, "offline_fallback", None)' in router_src.replace("\n", " ").replace("  ", " ") or \
-        '"offline_fallback": getattr(' in router_src, (
-        "Pydantic-state branch must capture offline_fallback too"
-    )
+    assert (
+        'getattr(\n                                output, "offline_fallback", None\n                            )'
+        in router_src
+        or 'getattr(output, "offline_fallback", None)'
+        in router_src.replace("\n", " ").replace("  ", " ")
+        or '"offline_fallback": getattr(' in router_src
+    ), "Pydantic-state branch must capture offline_fallback too"
 
 
 def test_use_source_chat_stashes_offline_fallback():

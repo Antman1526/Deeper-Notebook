@@ -34,6 +34,7 @@ Two bugs, one symptom:
   llama.cpp embedding. The fix lives in the shared `_ensure_credential`
   helper so every auto_register sub-module benefits without a sweep.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -156,9 +157,7 @@ def test_ensure_credential_skips_put_when_caller_passes_no_url():
     client = MagicMock()
     client.get.return_value = MagicMock(
         raise_for_status=lambda: None,
-        json=lambda: [
-            {"id": "credential:noop", "name": "openai", "base_url": None}
-        ],
+        json=lambda: [{"id": "credential:noop", "name": "openai", "base_url": None}],
     )
 
     result = _ensure_credential(

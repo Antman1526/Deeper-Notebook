@@ -7,6 +7,7 @@ records a 'truncated' vs 'complete' outcome (no behavior change, no gate).
 Mirrors the v0.8.35e mocking harness (_ScriptedModel / _FakeAIMessage /
 _make_tool / _resolve_chat_tools AsyncMock).
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -38,6 +39,7 @@ class _ScriptedModel:
 def _make_tool(name, coroutine):
     class _T:
         pass
+
     t = _T()
     t.name = name
     t.coroutine = coroutine
@@ -65,7 +67,9 @@ async def test_truncated_when_loop_hits_cap_with_pending_tools(monkeypatch):
         return "result"
 
     monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[_make_tool("mcp_search", _ok)])
+        chat_mod,
+        "_resolve_chat_tools",
+        AsyncMock(return_value=[_make_tool("mcp_search", _ok)]),
     )
     # Every response keeps requesting tools → the loop never stops naturally;
     # with max_iterations=2 it force-stops with tool calls still pending.
@@ -84,13 +88,17 @@ async def test_complete_when_model_stops_requesting_tools(monkeypatch):
         return "result"
 
     monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[_make_tool("mcp_search", _ok)])
+        chat_mod,
+        "_resolve_chat_tools",
+        AsyncMock(return_value=[_make_tool("mcp_search", _ok)]),
     )
     # Round 1 calls a tool; round 2 returns no tool calls → natural completion.
-    model = _ScriptedModel([
-        _FakeAIMessage([_tool_call(1)]),
-        _FakeAIMessage([]),
-    ])
+    model = _ScriptedModel(
+        [
+            _FakeAIMessage([_tool_call(1)]),
+            _FakeAIMessage([]),
+        ]
+    )
 
     await chat_mod.bind_mcp_and_run_tool_loop(model, [], max_iterations=4)
 
@@ -101,9 +109,7 @@ async def test_complete_when_model_stops_requesting_tools(monkeypatch):
 async def test_no_outcome_recorded_when_no_tools_bound(monkeypatch):
     """No MCP tools → no tool loop → no outcome (it isn't a 'tool loop')."""
     seen = _capture_outcomes(monkeypatch)
-    monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[])
-    )
+    monkeypatch.setattr(chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         "deeper_notebook.tools.opencode.opencode_enabled", lambda: False
     )
@@ -133,7 +139,9 @@ async def test_complete_when_tools_bound_but_model_uses_none(monkeypatch):
         return "result"
 
     monkeypatch.setattr(
-        chat_mod, "_resolve_chat_tools", AsyncMock(return_value=[_make_tool("mcp_search", _ok)])
+        chat_mod,
+        "_resolve_chat_tools",
+        AsyncMock(return_value=[_make_tool("mcp_search", _ok)]),
     )
     model = _ScriptedModel([_FakeAIMessage([])])  # no tool calls at all
 

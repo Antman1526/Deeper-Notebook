@@ -31,6 +31,7 @@ developer is on macOS and Windows is a secondary platform.
      Normalised path comparison: strip drive letter + flip
      backslashes to forward slashes.
 """
+
 from __future__ import annotations
 
 import os
@@ -56,6 +57,7 @@ def test_user_home_falls_back_to_path_home(monkeypatch):
     MUST return a writable directory (Path.home()), never `.` or
     `~`."""
     from desktop.paths import user_home
+
     monkeypatch.delenv("HOME", raising=False)
     monkeypatch.delenv("USERPROFILE", raising=False)
     result = user_home()
@@ -72,6 +74,7 @@ def test_user_home_prefers_home_env(monkeypatch, tmp_path):
     """v0.7.185: explicit HOME env wins. Useful for tests + sandboxed
     shells. Order: HOME → USERPROFILE → Path.home()."""
     from desktop.paths import user_home
+
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("USERPROFILE", raising=False)
     assert user_home() == tmp_path
@@ -81,6 +84,7 @@ def test_user_home_falls_through_to_userprofile_on_windows(monkeypatch, tmp_path
     """v0.7.185: USERPROFILE wins when HOME isn't set (Windows
     standard env var)."""
     from desktop.paths import user_home
+
     monkeypatch.delenv("HOME", raising=False)
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     assert user_home() == tmp_path
@@ -93,6 +97,7 @@ def test_user_home_never_returns_dot_or_tilde(monkeypatch, tmp_path):
     Three branches: both env set, neither set, USERPROFILE only.
     None should produce the bad fallback."""
     from desktop.paths import user_home
+
     monkeypatch.delenv("HOME", raising=False)
     monkeypatch.delenv("USERPROFILE", raising=False)
     result = user_home()
@@ -115,7 +120,9 @@ def test_no_unsafe_home_fallback_in_desktop():
     for path in desktop_dir.rglob("*.py"):
         if "__pycache__" in str(path) or path.name == "paths.py":
             continue
-        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        for i, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
             # The exact bad shape: `HOME", ".")` or similar.
             if 'os.environ.get("HOME"' in line and '"."' in line:
                 rel = path.relative_to(ROOT).as_posix()
@@ -144,8 +151,7 @@ def test_launcher_uses_as_uri_for_surreal_data_dir():
     # Skip comment lines so the rationale block (which documents
     # the old bad shape) doesn't false-trigger.
     code_only = "\n".join(
-        line for line in src.splitlines()
-        if not line.lstrip().startswith("#")
+        line for line in src.splitlines() if not line.lstrip().startswith("#")
     )
     bad = 'f"file://{data_dir}"'
     assert bad not in code_only, (
@@ -219,6 +225,7 @@ def test_filesystem_denylist_still_blocks_posix_system_paths():
     from fastapi import HTTPException
 
     from api.routers.filesystem import _resolve_and_validate
+
     # Use a fake denied path; the function resolves before comparing.
     with pytest.raises(HTTPException) as exc_info:
         _resolve_and_validate("/etc/passwd", must_exist=False)

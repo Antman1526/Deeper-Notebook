@@ -50,9 +50,10 @@ def test_cancel_command_job_guards_private_core_service_import():
 
 ```python
 idx = src.index("async def get_source(")
-region = src[idx: idx + WINDOW]
+region = src[idx : idx + WINDOW]
 assert "insights_count=insights_count" in region, (
-    "regression: endpoint queries the count but doesn't pass it to SourceResponse")
+    "regression: endpoint queries the count but doesn't pass it to SourceResponse"
+)
 ```
 
 Insertions that push the target past the window produce a confusing failure. Keep
@@ -149,7 +150,8 @@ patch the predicate:
 
 ```python
 monkeypatch.setattr(
-    "deeper_notebook.tools.scholarly_search.scholarly_search_enabled", lambda: False)
+    "deeper_notebook.tools.scholarly_search.scholarly_search_enabled", lambda: False
+)
 ```
 
 **Client pooling.** Pool identity is keyed on the client *class*, so a monkeypatched

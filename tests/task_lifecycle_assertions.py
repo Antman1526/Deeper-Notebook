@@ -1,4 +1,5 @@
 """AST assertions for lifespan-managed background tasks."""
+
 from __future__ import annotations
 
 import ast

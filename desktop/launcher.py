@@ -5,6 +5,7 @@ frontend in dependency order. Each child gets the per-session env (DB creds,
 ports, model provider). Window code (window.py) opens once frontend_url returns
 HTTP 200.
 """
+
 from __future__ import annotations
 
 import json
@@ -55,13 +56,18 @@ class ResourceGovernor:
         self._heavyweight_mlx: str | None = None
         self._queued_heavyweight_swaps: list[str] = []
 
-    def reserve(self, name: str, bytes_needed: int, *, heavyweight_mlx: bool = False) -> str:
+    def reserve(
+        self, name: str, bytes_needed: int, *, heavyweight_mlx: bool = False
+    ) -> str:
         required = max(0, int(bytes_needed))
         if heavyweight_mlx and self._heavyweight_mlx not in {None, name}:
             if name not in self._queued_heavyweight_swaps:
                 self._queued_heavyweight_swaps.append(name)
             return "queued"
-        if self.memory_limit_bytes is not None and sum(self._reservations.values()) + required > self.memory_limit_bytes:
+        if (
+            self.memory_limit_bytes is not None
+            and sum(self._reservations.values()) + required > self.memory_limit_bytes
+        ):
             return "blocked"
         self._reservations[name] = required
         if heavyweight_mlx:
@@ -73,8 +79,19 @@ class ResourceGovernor:
         if self._heavyweight_mlx == name:
             self._heavyweight_mlx = None
 
-    def start_provider(self, name: str, *, reservation_bytes: int, spawn, health_check, heavyweight_mlx: bool = False) -> bool:
-        if self.reserve(name, reservation_bytes, heavyweight_mlx=heavyweight_mlx) != "reserved":
+    def start_provider(
+        self,
+        name: str,
+        *,
+        reservation_bytes: int,
+        spawn,
+        health_check,
+        heavyweight_mlx: bool = False,
+    ) -> bool:
+        if (
+            self.reserve(name, reservation_bytes, heavyweight_mlx=heavyweight_mlx)
+            != "reserved"
+        ):
             return False
         proc = spawn()
         if health_check(proc):
@@ -90,7 +107,10 @@ class ResourceGovernor:
         return {
             "memory_limit_bytes": self.memory_limit_bytes,
             "reserved_bytes": reserved,
-            "memory_pressure": "limited" if self.memory_limit_bytes is not None and reserved >= self.memory_limit_bytes else "normal",
+            "memory_pressure": "limited"
+            if self.memory_limit_bytes is not None
+            and reserved >= self.memory_limit_bytes
+            else "normal",
             "reservations": dict(self._reservations),
             "queued_heavyweight_swaps": list(self._queued_heavyweight_swaps),
         }
@@ -362,9 +382,7 @@ class Supervisor:
         return frontend_dir
 
     @staticmethod
-    def _ensure_source_standalone_assets(
-        frontend_dir: Path, server_dir: Path
-    ) -> None:
+    def _ensure_source_standalone_assets(frontend_dir: Path, server_dir: Path) -> None:
         """Make source-build static/public assets visible beside server.js."""
         for source, destination in (
             (frontend_dir / ".next" / "static", server_dir / ".next" / "static"),
@@ -434,6 +452,7 @@ class Supervisor:
             default_pid_file,
             reap_orphans,
         )
+
         self._singleton = acquire_singleton(
             default_pid_file(),
             on_signal_cleanup=lambda _signum: self.stop_all(),
@@ -460,9 +479,17 @@ class Supervisor:
             # Reap is best-effort — never let a scan failure block boot.
             log.debug("Orphan reap failed (non-fatal): %s", exc)
 
-        (surreal_port, api_port, frontend_port,
-         embed_port, whisper_port, piper_port,
-         chat_llm_port, memory_port, openchronicle_port) = find_free_ports(9)
+        (
+            surreal_port,
+            api_port,
+            frontend_port,
+            embed_port,
+            whisper_port,
+            piper_port,
+            chat_llm_port,
+            memory_port,
+            openchronicle_port,
+        ) = find_free_ports(9)
 
         api_url = f"http://127.0.0.1:{api_port}"
         # v0.7.147 — Pin DATA_FOLDER to a per-user, ALWAYS-writable absolute
@@ -491,8 +518,11 @@ class Supervisor:
         # restart endpoint has no way to call back into the launcher.
         try:
             from desktop.launcher_control import ControlServer
+
             self._control_server = ControlServer()
-            self._control_server.register_callback("restart_sidecar", self.restart_sidecar)
+            self._control_server.register_callback(
+                "restart_sidecar", self.restart_sidecar
+            )
             # v0.8.40b — chat-GGUF hot-swap callback. Receives the
             # new absolute path; updates chat_llm_path + restarts the
             # chat sidecar without quitting the app.
@@ -508,105 +538,107 @@ class Supervisor:
             log.warning("launcher control server failed to start: %s", exc)
             control_url = ""
             control_token = ""
-        self.session_env = normalize_product_environment({
-            **launcher_environment,
-            **self.extra_env,
-            "DATA_FOLDER": str(data_folder),
-            # The packaged API/worker import source files from the signed
-            # Resources/upstream tree. Rewriting their adjacent .pyc files at
-            # runtime invalidates the macOS bundle seal after first launch.
-            "PYTHONDONTWRITEBYTECODE": "1",
-            # v0.8.40 — expose control plane to the API subprocess.
-            # Empty string when the control server failed to start.
-            "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL": control_url,
-            "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN": control_token,
-            "SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
-            "SURREAL_USER": self.cfg.surreal_user,
-            "SURREAL_PASSWORD": self.cfg.surreal_password,
-            "SURREAL_NAMESPACE": "open_notebook",
-            "SURREAL_DATABASE": "open_notebook",
-            "API_PORT": str(api_port),
-            # v0.7.205 — DO NOT put `PORT` in the shared session_env.
-            # Background: `PORT=<frontend_port>` was set here so the
-            # Next.js child would honour the dynamic port. But
-            # `session_env` is the env every child inherits via
-            # `_spawn(env=self.session_env)`. uvicorn's pydantic_settings
-            # in `llama_cpp.server` (and any other server we spawn
-            # that uses uvicorn's env-driven config) reads `PORT` from
-            # env and treats it as authoritative, OVERRIDING any
-            # `--port <X>` CLI arg.
-            #
-            # Symptom: a fresh launch allocated api_port=60432,
-            # frontend_port=60433, embed_port=60434. The embed server
-            # was spawned with `--port 60434` but uvicorn picked up
-            # `PORT=60433` from inherited env and bound 60433 instead.
-            # macOS then routed `127.0.0.1:60433` to the more-specific
-            # Python listener (embed server) instead of node's
-            # `*:60433` (Next.js) — so the webview opened the
-            # frontend URL and got `{"detail":"Not Found"}` from
-            # llama_cpp.server's FastAPI root, not the actual
-            # Next.js UI.
-            #
-            # PORT is now passed ONLY to the Next.js spawn via a
-            # per-child env override in `_spawn_next` below.
-            # Upstream Next.js reads these (see frontend/next.config.ts and
-            # frontend/src/app/config/route.ts):
-            # - API_URL: where the browser makes direct API calls
-            # - INTERNAL_API_URL: where the Next.js server-side proxy forwards
-            # - NEXT_PUBLIC_API_URL: client-bundle fallback
-            # All three point at our dynamic uvicorn port.
-            "API_URL": api_url,
-            "INTERNAL_API_URL": api_url,
-            "NEXT_PUBLIC_API_URL": api_url,
-            "NEXT_PUBLIC_API_BASE": api_url,  # legacy, kept for safety
-            "DEEPER_NOTEBOOK_ENCRYPTION_KEY": self.cfg.encryption_key,
-            "DEEPER_NOTEBOOK_MODEL_DIR": str(self.cfg.model_dir),
-            "DEEPER_NOTEBOOK_EXECUTION_POLICY": self.cfg.execution_policy,
-            "DEEPER_NOTEBOOK_COMPUTE_PROFILE": self.cfg.compute_profile,
-            "DEEPER_NOTEBOOK_LOCAL_MODEL_MEMORY_LIMIT_BYTES": str(
-                self.cfg.local_model_memory_limit_bytes or 0
-            ),
-            # v0.4 memory layer: predeclare URLs so the surreal-commands worker
-            # (spawned before these servers actually bind) sees them in its env.
-            # The real servers come up later in start_all; worker connects
-            # lazily on first command invocation.
-            "MEMORY_CHAT_LLM_URL": f"http://127.0.0.1:{chat_llm_port}/v1",
-            "MEMORY_EMBED_URL": f"http://127.0.0.1:{embed_port}/v1",
-            "MEMORY_SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
-            # v0.8.4 — CRITICAL fix: the v0.8.0 Phase 3 smart router
-            # in deeper_notebook/ai/provision.py reads this env var to
-            # know where the local llama.cpp chat sidecar lives so it
-            # can probe `/v1/models` for health. Without it set,
-            # `_local_chat_healthy_cached()` returns False every call,
-            # so `pick_provider(local_chat_healthy=False)` always took
-            # the cloud branch — i.e. v0.8.0 smart routing's "prefer
-            # local when healthy" code path was effectively dead in
-            # production. The launcher's chat_llm_port matches what
-            # auto_register registers as the Local-GGUF credential
-            # (since v0.7.193), so threading the same value through
-            # here gives provision.py the URL it expected the whole
-            # time.
-            "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL": (
-                f"http://127.0.0.1:{chat_llm_port}/v1"
-            ),
-            # v0.8.7 — Export the same n_ctx value the sidecar will
-            # use, so the router's pick_provider() math matches reality.
-            # Pre-v0.8.7 the router defaulted to 32768 regardless of
-            # what the launcher had auto-detected (e.g. Hermes-3
-            # native 131k → sidecar bound at 131k, but router only
-            # gave it ~31k of headroom before flipping to cloud).
-            # An explicit DEEPER_NOTEBOOK_LOCAL_N_CTX already in
-            # os.environ wins (v0.8.5 precedence chain in provision.py
-            # reads it first), so this is the GGUF-autodetect channel
-            # rather than an override.
-            "DEEPER_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
-            # v0.8.38 — point the API at the launcher's log dir so
-            # `GET /healthz/sidecars/{kind}/log` can read the per-
-            # sidecar `.tail` files (last ~50 stderr lines) the new
-            # _start_tail_drainer writes. Without this the API has
-            # no way to surface why a sidecar died.
-            "DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR": str(self.log_dir),
-        })
+        self.session_env = normalize_product_environment(
+            {
+                **launcher_environment,
+                **self.extra_env,
+                "DATA_FOLDER": str(data_folder),
+                # The packaged API/worker import source files from the signed
+                # Resources/upstream tree. Rewriting their adjacent .pyc files at
+                # runtime invalidates the macOS bundle seal after first launch.
+                "PYTHONDONTWRITEBYTECODE": "1",
+                # v0.8.40 — expose control plane to the API subprocess.
+                # Empty string when the control server failed to start.
+                "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL": control_url,
+                "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN": control_token,
+                "SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
+                "SURREAL_USER": self.cfg.surreal_user,
+                "SURREAL_PASSWORD": self.cfg.surreal_password,
+                "SURREAL_NAMESPACE": "open_notebook",
+                "SURREAL_DATABASE": "open_notebook",
+                "API_PORT": str(api_port),
+                # v0.7.205 — DO NOT put `PORT` in the shared session_env.
+                # Background: `PORT=<frontend_port>` was set here so the
+                # Next.js child would honour the dynamic port. But
+                # `session_env` is the env every child inherits via
+                # `_spawn(env=self.session_env)`. uvicorn's pydantic_settings
+                # in `llama_cpp.server` (and any other server we spawn
+                # that uses uvicorn's env-driven config) reads `PORT` from
+                # env and treats it as authoritative, OVERRIDING any
+                # `--port <X>` CLI arg.
+                #
+                # Symptom: a fresh launch allocated api_port=60432,
+                # frontend_port=60433, embed_port=60434. The embed server
+                # was spawned with `--port 60434` but uvicorn picked up
+                # `PORT=60433` from inherited env and bound 60433 instead.
+                # macOS then routed `127.0.0.1:60433` to the more-specific
+                # Python listener (embed server) instead of node's
+                # `*:60433` (Next.js) — so the webview opened the
+                # frontend URL and got `{"detail":"Not Found"}` from
+                # llama_cpp.server's FastAPI root, not the actual
+                # Next.js UI.
+                #
+                # PORT is now passed ONLY to the Next.js spawn via a
+                # per-child env override in `_spawn_next` below.
+                # Upstream Next.js reads these (see frontend/next.config.ts and
+                # frontend/src/app/config/route.ts):
+                # - API_URL: where the browser makes direct API calls
+                # - INTERNAL_API_URL: where the Next.js server-side proxy forwards
+                # - NEXT_PUBLIC_API_URL: client-bundle fallback
+                # All three point at our dynamic uvicorn port.
+                "API_URL": api_url,
+                "INTERNAL_API_URL": api_url,
+                "NEXT_PUBLIC_API_URL": api_url,
+                "NEXT_PUBLIC_API_BASE": api_url,  # legacy, kept for safety
+                "DEEPER_NOTEBOOK_ENCRYPTION_KEY": self.cfg.encryption_key,
+                "DEEPER_NOTEBOOK_MODEL_DIR": str(self.cfg.model_dir),
+                "DEEPER_NOTEBOOK_EXECUTION_POLICY": self.cfg.execution_policy,
+                "DEEPER_NOTEBOOK_COMPUTE_PROFILE": self.cfg.compute_profile,
+                "DEEPER_NOTEBOOK_LOCAL_MODEL_MEMORY_LIMIT_BYTES": str(
+                    self.cfg.local_model_memory_limit_bytes or 0
+                ),
+                # v0.4 memory layer: predeclare URLs so the surreal-commands worker
+                # (spawned before these servers actually bind) sees them in its env.
+                # The real servers come up later in start_all; worker connects
+                # lazily on first command invocation.
+                "MEMORY_CHAT_LLM_URL": f"http://127.0.0.1:{chat_llm_port}/v1",
+                "MEMORY_EMBED_URL": f"http://127.0.0.1:{embed_port}/v1",
+                "MEMORY_SURREAL_URL": f"ws://127.0.0.1:{surreal_port}/rpc",
+                # v0.8.4 — CRITICAL fix: the v0.8.0 Phase 3 smart router
+                # in deeper_notebook/ai/provision.py reads this env var to
+                # know where the local llama.cpp chat sidecar lives so it
+                # can probe `/v1/models` for health. Without it set,
+                # `_local_chat_healthy_cached()` returns False every call,
+                # so `pick_provider(local_chat_healthy=False)` always took
+                # the cloud branch — i.e. v0.8.0 smart routing's "prefer
+                # local when healthy" code path was effectively dead in
+                # production. The launcher's chat_llm_port matches what
+                # auto_register registers as the Local-GGUF credential
+                # (since v0.7.193), so threading the same value through
+                # here gives provision.py the URL it expected the whole
+                # time.
+                "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL": (
+                    f"http://127.0.0.1:{chat_llm_port}/v1"
+                ),
+                # v0.8.7 — Export the same n_ctx value the sidecar will
+                # use, so the router's pick_provider() math matches reality.
+                # Pre-v0.8.7 the router defaulted to 32768 regardless of
+                # what the launcher had auto-detected (e.g. Hermes-3
+                # native 131k → sidecar bound at 131k, but router only
+                # gave it ~31k of headroom before flipping to cloud).
+                # An explicit DEEPER_NOTEBOOK_LOCAL_N_CTX already in
+                # os.environ wins (v0.8.5 precedence chain in provision.py
+                # reads it first), so this is the GGUF-autodetect channel
+                # rather than an override.
+                "DEEPER_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
+                # v0.8.38 — point the API at the launcher's log dir so
+                # `GET /healthz/sidecars/{kind}/log` can read the per-
+                # sidecar `.tail` files (last ~50 stderr lines) the new
+                # _start_tail_drainer writes. Without this the API has
+                # no way to surface why a sidecar died.
+                "DEEPER_NOTEBOOK_LAUNCHER_LOG_DIR": str(self.log_dir),
+            }
+        )
 
         # v0.8.67l — self-heal a live-query-corrupted DB BEFORE SurrealDB starts
         # (clean slate, nothing connected yet). The flag is set by the worker
@@ -628,7 +660,8 @@ class Supervisor:
             # dead app, empty chatbot). Raised + env-tunable; proc.poll() still
             # fails fast on an actual crash, so the bigger ceiling only ever
             # waits on a slow-but-alive start.
-            "127.0.0.1", surreal_port,
+            "127.0.0.1",
+            surreal_port,
             timeout=_startup_timeout(
                 "DEEPER_NOTEBOOK_SURREAL_TCP_TIMEOUT",
                 90.0,
@@ -709,6 +742,7 @@ class Supervisor:
             PatchError,
             patch_rewrites_for_api_port,
         )
+
         next_cwd = self._next_frontend_dir()
         try:
             next_cwd = patch_rewrites_for_api_port(next_cwd, api_port)
@@ -719,7 +753,8 @@ class Supervisor:
             log.error(
                 "Could not patch Next.js rewrites for api_port=%d: %s. "
                 "Frontend will likely fail to reach the API.",
-                api_port, exc,
+                api_port,
+                exc,
             )
 
         self._progress("supervisor.next", "running")
@@ -747,7 +782,9 @@ class Supervisor:
         # v0.6.5 — replace 6 copy-pasted try/except blocks with one helper
         # that logs + reports through _progress. Avoids the silent-swallow
         # bug that made debugging missing/broken optional services painful.
-        self._try_spawn("supervisor.llamacpp_embed", self._spawn_llamacpp_embed, embed_port)
+        self._try_spawn(
+            "supervisor.llamacpp_embed", self._spawn_llamacpp_embed, embed_port
+        )
         self._try_spawn("supervisor.whisper", self._spawn_whisper, whisper_port)
         self._try_spawn("supervisor.piper", self._spawn_piper, piper_port)
 
@@ -786,13 +823,13 @@ class Supervisor:
         # v0.4 additions — order matters: chat LLM must be up before the
         # memory retriever boots, because the retriever instantiates
         # mem0.Memory which validates the LLM endpoint at startup.
-        self._try_spawn("supervisor.llamacpp_chat", self._spawn_llamacpp_chat, chat_llm_port)
+        self._try_spawn(
+            "supervisor.llamacpp_chat", self._spawn_llamacpp_chat, chat_llm_port
+        )
         # v0.7.197 chat_alive mirrors _spawn_llamacpp_chat's preconditions
         # (used immediately below for the v0.7.198 _wait_tcp gate, and
         # below in the v0.7.197 conditional stash).
-        chat_alive = (
-            self.chat_llm_path is not None and self.chat_llm_path.exists()
-        )
+        chat_alive = self.chat_llm_path is not None and self.chat_llm_path.exists()
         # v0.7.198 — Wait for the chat server to actually bind its port
         # BEFORE spawning the memory retriever. llama-cpp typically
         # takes 10-30 s to mmap a multi-GB GGUF and warm; without this
@@ -842,7 +879,9 @@ class Supervisor:
                 self._spawn_openchronicle_bridge,
                 openchronicle_port,
             )
-        self.openchronicle_port = openchronicle_port if self.openchronicle_available else 0
+        self.openchronicle_port = (
+            openchronicle_port if self.openchronicle_available else 0
+        )
         # Final milestone: everything start_all() owns is up. Subtracting
         # `frontend_up` from this isolates the local-model sidecars (embed,
         # chat, whisper, piper, memory), which is where a large GGUF mmap
@@ -1134,8 +1173,7 @@ class Supervisor:
             # .app). The process-group flag remains so `taskkill /T`
             # in stop_all can target the whole subtree.
             popen_kwargs["creationflags"] = (
-                subprocess.CREATE_NEW_PROCESS_GROUP
-                | subprocess.CREATE_NO_WINDOW
+                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
             )
 
         proc = subprocess.Popen(args, **popen_kwargs)
@@ -1165,6 +1203,7 @@ class Supervisor:
             rb"(?i)(--pass=|password[=:]|surreal_password[=:]|encryption_key[=:])"
             rb"([^\s\"']+)"
         )
+
         def _redact(b: bytes) -> bytes:
             return secret_pat.sub(rb"\1[REDACTED]", b)
 
@@ -1218,6 +1257,7 @@ class Supervisor:
             rb"(?i)(--pass=|password[=:]|surreal_password[=:]|encryption_key[=:])"
             rb"([^\s\"']+)"
         )
+
         def _redact(b: bytes) -> bytes:
             return secret_pat.sub(rb"\1[REDACTED]", b)
 
@@ -1253,7 +1293,9 @@ class Supervisor:
                 return
 
         t = threading.Thread(
-            target=drain_tail, name=f"drain-tail-{name}", daemon=True,
+            target=drain_tail,
+            name=f"drain-tail-{name}",
+            daemon=True,
         )
         t.start()
         self._drain_threads.append(t)
@@ -1279,7 +1321,8 @@ class Supervisor:
         # POSIX. Audit finding #2.
         self._spawn(
             [
-                str(binary), "start",
+                str(binary),
+                "start",
                 f"--user={self.cfg.surreal_user}",
                 f"--pass={self.cfg.surreal_password}",
                 f"--bind=127.0.0.1:{port}",
@@ -1295,8 +1338,14 @@ class Supervisor:
         # cwd MUST be upstream_root so top-level api, commands, and canonical
         # deeper_notebook imports resolve consistently in the bundled runtime.
         args = [
-            str(self.venv_python), "-m", "uvicorn", "api.main:app",
-            "--host", "127.0.0.1", "--port", str(port),
+            str(self.venv_python),
+            "-m",
+            "uvicorn",
+            "api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
         ]
         self._spawn(args, cwd=self.upstream_root, name="api")
 
@@ -1326,9 +1375,13 @@ class Supervisor:
             )
             max_tasks = 5
         args = [
-            str(self.venv_python), "-m", "surreal_commands.cli.worker",
-            "--import-modules", "commands",
-            "--max-tasks", str(max_tasks),
+            str(self.venv_python),
+            "-m",
+            "surreal_commands.cli.worker",
+            "--import-modules",
+            "commands",
+            "--max-tasks",
+            str(max_tasks),
         ]
         self._spawn(args, cwd=self.upstream_root, name="worker")
 
@@ -1345,6 +1398,7 @@ class Supervisor:
             return
         try:
             from desktop import db_repair
+
             data_home = active_data_root()
             if not db_repair.needs_repair(data_home):
                 return
@@ -1354,7 +1408,9 @@ class Supervisor:
                 "running automatic backup-first repair before boot…"
             )
             try:
-                repair_port = int(resolve_env("DEEPER_NOTEBOOK_REPAIR_PORT", "18799") or 18799)
+                repair_port = int(
+                    resolve_env("DEEPER_NOTEBOOK_REPAIR_PORT", "18799") or 18799
+                )
             except ValueError:
                 repair_port = 18799
             ok = db_repair.auto_repair(
@@ -1439,7 +1495,7 @@ class Supervisor:
             )
         except OSError:
             return
-        for old in files[max(1, keep):]:
+        for old in files[max(1, keep) :]:
             try:
                 old.unlink()
             except OSError:
@@ -1471,7 +1527,8 @@ class Supervisor:
         # sessions produced NO backup at all — the protection rarely fired.
         try:
             first_delay = float(
-                resolve_env("DEEPER_NOTEBOOK_AUTO_EXPORT_FIRST_DELAY_SECS", "600") or 600
+                resolve_env("DEEPER_NOTEBOOK_AUTO_EXPORT_FIRST_DELAY_SECS", "600")
+                or 600
             )
         except ValueError:
             first_delay = 600.0
@@ -1496,12 +1553,18 @@ class Supervisor:
                     out = backup_dir / f"auto-export-{ts}.surql"
                     subprocess.run(
                         [
-                            str(binary), "export",
-                            "--endpoint", f"http://127.0.0.1:{surreal_port}",
-                            "--username", user,
-                            "--password", password,
-                            "--namespace", "open_notebook",
-                            "--database", "open_notebook",
+                            str(binary),
+                            "export",
+                            "--endpoint",
+                            f"http://127.0.0.1:{surreal_port}",
+                            "--username",
+                            user,
+                            "--password",
+                            password,
+                            "--namespace",
+                            "open_notebook",
+                            "--database",
+                            "open_notebook",
                             str(out),
                         ],
                         check=True,
@@ -1510,7 +1573,9 @@ class Supervisor:
                         stderr=subprocess.DEVNULL,
                     )
                     if out.exists() and out.stat().st_size > 0:
-                        log.info("auto-export: wrote %s (%d bytes)", out, out.stat().st_size)
+                        log.info(
+                            "auto-export: wrote %s (%d bytes)", out, out.stat().st_size
+                        )
                         self._prune_old_exports(backup_dir, keep)
                     else:
                         log.warning("auto-export: produced an empty file; removing")
@@ -1527,8 +1592,10 @@ class Supervisor:
             log.debug("auto-export: could not start thread (%s)", exc)
 
     def _spawn_next(self, port: int, *, next_cwd: Path | None = None) -> None:
-        node_bin = self.bin_dir / f"node-{self.node_arch}" / (
-            "node.exe" if self.node_arch.startswith("windows") else "bin/node"
+        node_bin = (
+            self.bin_dir
+            / f"node-{self.node_arch}"
+            / ("node.exe" if self.node_arch.startswith("windows") else "bin/node")
         )
         # The standalone build produces server.js with everything inlined.
         #
@@ -1581,7 +1648,9 @@ class Supervisor:
                 heavyweight_mlx=heavyweight_mlx,
             )
             if reservation != "reserved":
-                self._progress(step, reservation, "Local resource governor deferred spawn")
+                self._progress(
+                    step, reservation, "Local resource governor deferred spawn"
+                )
                 return
         if kind is not None and args:
             # Args is typically (port,) for sidecars. Store the int +
@@ -1813,7 +1882,10 @@ class Supervisor:
             return False, f"File not found: {new_path}"
         if target.suffix.lower() != ".gguf":
             return False, "new_path must be a .gguf file"
-        if self.cfg.model_dir not in target.parents and target.parent != self.cfg.model_dir:
+        if (
+            self.cfg.model_dir not in target.parents
+            and target.parent != self.cfg.model_dir
+        ):
             # Path-traversal guard — must live under model_dir.
             return False, (
                 f"new_path must be inside the configured model_dir "
@@ -1827,7 +1899,9 @@ class Supervisor:
         # giving a mismatched (path, n_ctx) pair on next retry.
         old_n_ctx = self.chat_llm_n_ctx
         log.info(
-            "hot_swap_chat: %s → %s", old_path, target,
+            "hot_swap_chat: %s → %s",
+            old_path,
+            target,
         )
         # Mutate the path BEFORE restart so the respawn picks it up.
         self.chat_llm_path = target
@@ -1842,9 +1916,9 @@ class Supervisor:
             self.chat_llm_n_ctx = self._resolve_chat_llm_n_ctx()
         except Exception as exc:
             log.warning(
-                "hot_swap_chat: n_ctx re-resolve failed (%s); "
-                "keeping old value %d",
-                exc, self.chat_llm_n_ctx,
+                "hot_swap_chat: n_ctx re-resolve failed (%s); keeping old value %d",
+                exc,
+                self.chat_llm_n_ctx,
             )
 
         # Now restart — the spawn function reads self.chat_llm_path
@@ -1873,9 +1947,11 @@ class Supervisor:
         # using the OLD n_ctx until app relaunch. That's the v0.8.40b
         # baseline behaviour, so we're never WORSE off here.
         try:
-            self._push_env_to_api({
-                "DEEPER_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
-            })
+            self._push_env_to_api(
+                {
+                    "DEEPER_NOTEBOOK_LOCAL_N_CTX": str(self.chat_llm_n_ctx),
+                }
+            )
         except Exception as exc:
             log.warning(
                 "hot_swap_chat: env-refresh push failed (router will "
@@ -1926,17 +2002,25 @@ class Supervisor:
             body = resp.json()
             log.info(
                 "env-refresh: updated=%s rejected=%s",
-                body.get("updated", []), body.get("rejected", []),
+                body.get("updated", []),
+                body.get("rejected", []),
             )
 
     def _spawn_llamacpp_embed(self, port: int) -> None:
         if self.nomic_embed_path is None or not self.nomic_embed_path.exists():
             return  # silently skip; embeddings just won't work this session
         args = [
-            str(self.venv_python), "-m", "llama_cpp.server",
-            "--model", str(self.nomic_embed_path),
-            "--host", "127.0.0.1", "--port", str(port),
-            "--embedding", "true",
+            str(self.venv_python),
+            "-m",
+            "llama_cpp.server",
+            "--model",
+            str(self.nomic_embed_path),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--embedding",
+            "true",
             # v0.8.67c — GPU-offload the embedder too (Metal on Apple Silicon).
             # Tiny model, but it keeps source-embedding fast and consistent with
             # the chat sidecar; CPU on non-macOS by default.
@@ -1949,9 +2033,15 @@ class Supervisor:
         if self.whisper_model_path is None:
             return
         args = [
-            str(self.venv_python), "-m", "desktop_shims.whisper_shim",
-            "--host", "127.0.0.1", "--port", str(port),
-            "--model", str(self.whisper_model_path),
+            str(self.venv_python),
+            "-m",
+            "desktop_shims.whisper_shim",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--model",
+            str(self.whisper_model_path),
         ]
         self._spawn(args, cwd=self.upstream_root, name="whisper")
 
@@ -1965,14 +2055,21 @@ class Supervisor:
         if not voice_args:
             return
         args = [
-            str(self.venv_python), "-m", "desktop_shims.piper_shim",
-            "--host", "127.0.0.1", "--port", str(port),
+            str(self.venv_python),
+            "-m",
+            "desktop_shims.piper_shim",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
         ] + voice_args
         self._spawn(args, cwd=self.upstream_root, name="piper")
 
     @staticmethod
     def _detect_gguf_context_length(
-        gguf_path: Path, *, fallback: int = 32768,
+        gguf_path: Path,
+        *,
+        fallback: int = 32768,
     ) -> int:
         """v0.7.206 — Read a GGUF file's `<arch>.context_length` metadata
         without loading the whole model into memory.
@@ -1993,9 +2090,9 @@ class Supervisor:
             from gguf import GGUFReader  # type: ignore[import-not-found]
         except Exception as exc:
             log.debug(
-                "gguf library not available for metadata probe; "
-                "using fallback %d: %s",
-                fallback, exc,
+                "gguf library not available for metadata probe; using fallback %d: %s",
+                fallback,
+                exc,
             )
             return fallback
 
@@ -2029,9 +2126,10 @@ class Supervisor:
                     return ctx_int
         except Exception as exc:
             log.debug(
-                "Failed to read GGUF context_length from %s: %s; "
-                "using fallback %d",
-                gguf_path, exc, fallback,
+                "Failed to read GGUF context_length from %s: %s; using fallback %d",
+                gguf_path,
+                exc,
+                fallback,
             )
         return fallback
 
@@ -2065,7 +2163,7 @@ class Supervisor:
             total = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
         except (ValueError, OSError, AttributeError):
             return default
-        gib = total / (1024 ** 3)
+        gib = total / (1024**3)
         if gib >= 56:
             return 98304
         if gib >= 40:
@@ -2116,7 +2214,7 @@ class Supervisor:
         the total-RAM tier from _default_ctx_max() is returned unchanged."""
         if not avail_bytes or avail_bytes <= 0:
             return tier
-        headroom = 5 * 1024 ** 3
+        headroom = 5 * 1024**3
         for cand in (98304, 65536, 49152, 32768):
             if cand > tier:
                 continue
@@ -2169,13 +2267,15 @@ class Supervisor:
                 if n_ctx_int < 512:
                     log.warning(
                         "DEEPER_NOTEBOOK_CHAT_LLM_CTX=%s too low (<512); using %d instead",
-                        env_n_ctx, ctx_max,
+                        env_n_ctx,
+                        ctx_max,
                     )
                     n_ctx_int = ctx_max
             except ValueError:
                 log.warning(
                     "DEEPER_NOTEBOOK_CHAT_LLM_CTX=%r is not an int; using %d",
-                    env_n_ctx, ctx_max,
+                    env_n_ctx,
+                    ctx_max,
                 )
                 n_ctx_int = ctx_max
             return n_ctx_int
@@ -2196,7 +2296,8 @@ class Supervisor:
         log.info(
             "llamacpp_chat: n_ctx=%d (auto-detected, capped at "
             "DEEPER_NOTEBOOK_CHAT_LLM_CTX_MAX=%d). Override with DEEPER_NOTEBOOK_CHAT_LLM_CTX.",
-            n_ctx_int, ctx_max,
+            n_ctx_int,
+            ctx_max,
         )
         return n_ctx_int
 
@@ -2271,10 +2372,17 @@ class Supervisor:
         n_ctx = str(self.chat_llm_n_ctx) if self.chat_llm_n_ctx > 0 else "32768"
 
         args = [
-            str(self.venv_python), "-m", "llama_cpp.server",
-            "--model", str(self.chat_llm_path),
-            "--host", "127.0.0.1", "--port", str(port),
-            "--n_ctx", n_ctx,
+            str(self.venv_python),
+            "-m",
+            "llama_cpp.server",
+            "--model",
+            str(self.chat_llm_path),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--n_ctx",
+            n_ctx,
             # v0.8.67c — offload the model to the GPU (Metal on Apple Silicon).
             # Without this, llama_cpp.server defaults to n_gpu_layers=0 and the
             # whole model runs on CPU — so slow the chat never returns a
@@ -2306,11 +2414,9 @@ class Supervisor:
         ).strip()
         if _draft_path_str:
             from pathlib import Path as _Path
+
             _draft_path = _Path(_draft_path_str)
-            if (
-                _draft_path.is_file()
-                and _draft_path.stat().st_size >= _MIN_GGUF_BYTES
-            ):
+            if _draft_path.is_file() and _draft_path.stat().st_size >= _MIN_GGUF_BYTES:
                 args.extend(["--model_draft", str(_draft_path)])
                 # Only emit --n_predict_draft when the draft model was
                 # accepted above; bare n_predict without a draft model
@@ -2326,9 +2432,12 @@ class Supervisor:
                     try:
                         _draft_n = int(_draft_n_env)
                         if _draft_n > 0:
-                            args.extend([
-                                "--n_predict_draft", str(_draft_n),
-                            ])
+                            args.extend(
+                                [
+                                    "--n_predict_draft",
+                                    str(_draft_n),
+                                ]
+                            )
                     except ValueError:
                         # Stale or malformed env value — log and skip
                         # rather than crash the chat sidecar over a
@@ -2340,8 +2449,7 @@ class Supervisor:
                             _draft_n_env,
                         )
                 log.info(
-                    "llamacpp_chat: speculative decoding enabled "
-                    "(--model_draft=%s)",
+                    "llamacpp_chat: speculative decoding enabled (--model_draft=%s)",
                     _draft_path,
                 )
             else:
@@ -2357,9 +2465,15 @@ class Supervisor:
 
     def _spawn_memory_retriever(self, port: int) -> None:
         args = [
-            str(self.venv_python), "-m", "desktop_shims.memory_shim",
-            "--host", "127.0.0.1", "--port", str(port),
-            "--surreal-url", self.session_env["SURREAL_URL"],
+            str(self.venv_python),
+            "-m",
+            "desktop_shims.memory_shim",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--surreal-url",
+            self.session_env["SURREAL_URL"],
             "--embed-url",
             f"http://127.0.0.1:{self.embed_port}/v1" if self.embed_port else "",
             "--llm-url",
@@ -2380,12 +2494,16 @@ class Supervisor:
         # in the shim was dead code as long as this launcher line
         # forced the default URL. Read the env now; fall back to the
         # same default the shim would have used.
-        mcp_url = os.environ.get(
-            "OPENCHRONICLE_MCP_URL", "http://127.0.0.1:8742/mcp"
-        )
+        mcp_url = os.environ.get("OPENCHRONICLE_MCP_URL", "http://127.0.0.1:8742/mcp")
         args = [
-            str(self.venv_python), "-m", "desktop_shims.openchronicle_shim",
-            "--host", "127.0.0.1", "--port", str(port),
-            "--mcp-url", mcp_url,
+            str(self.venv_python),
+            "-m",
+            "desktop_shims.openchronicle_shim",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--mcp-url",
+            mcp_url,
         ]
         self._spawn(args, cwd=self.upstream_root, name="openchronicle")

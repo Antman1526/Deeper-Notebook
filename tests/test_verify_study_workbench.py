@@ -161,7 +161,9 @@ def test_receipt_rejects_stale_pid_nonce_and_source_hash(tmp_path: Path):
         )
 
 
-def test_restart_receipt_is_awaiting_restart_and_has_exact_parity_identities(tmp_path: Path):
+def test_restart_receipt_is_awaiting_restart_and_has_exact_parity_identities(
+    tmp_path: Path,
+):
     from scripts.verify_study_workbench import (
         ProofRefusal,
         RestartReceipt,
@@ -293,7 +295,9 @@ def _handoff_children():
     identities = {
         "api": ProcessIdentity("api", 1001, "api-start", "a" * 64, 43121),
         "worker": ProcessIdentity("worker", 1002, "worker-start", "b" * 64, None),
-        "frontend": ProcessIdentity("frontend", 1003, "frontend-start", "c" * 64, 43122),
+        "frontend": ProcessIdentity(
+            "frontend", 1003, "frontend-start", "c" * 64, 43122
+        ),
         "model": ProcessIdentity("model", 1004, "model-start", "d" * 64, 43124),
     }
     children = [
@@ -326,7 +330,9 @@ def test_handoff_rejects_dead_worker_before_receipt(monkeypatch):
     )
 
     with pytest.raises(ProofRefusal, match="worker.*alive|worker.*dead|worker.*exit"):
-        assert_stack_handoff(children, {"api": 43121, "frontend": 43122, "model": 43124})
+        assert_stack_handoff(
+            children, {"api": 43121, "frontend": 43122, "model": 43124}
+        )
 
 
 def test_handoff_rejects_changed_identity(monkeypatch):
@@ -340,9 +346,9 @@ def test_handoff_rejects_changed_identity(monkeypatch):
     changed = ProcessIdentity("worker", 1002, "worker-replaced", "b" * 64, None)
     monkeypatch.setattr(
         "scripts.verify_study_workbench.process_identity",
-        lambda pid, role, listener_port=None: changed
-        if role == "worker"
-        else identities[role],
+        lambda pid, role, listener_port=None: (
+            changed if role == "worker" else identities[role]
+        ),
     )
     monkeypatch.setattr(
         "scripts.verify_study_workbench._listener_pids",
@@ -350,7 +356,9 @@ def test_handoff_rejects_changed_identity(monkeypatch):
     )
 
     with pytest.raises(ProofRefusal, match="worker.*identity|identity.*worker"):
-        assert_stack_handoff(children, {"api": 43121, "frontend": 43122, "model": 43124})
+        assert_stack_handoff(
+            children, {"api": 43121, "frontend": 43122, "model": 43124}
+        )
 
 
 def test_handoff_rejects_missing_listener(monkeypatch):
@@ -367,7 +375,9 @@ def test_handoff_rejects_missing_listener(monkeypatch):
     )
 
     with pytest.raises(ProofRefusal, match="listener"):
-        assert_stack_handoff(children, {"api": 43121, "frontend": 43122, "model": 43124})
+        assert_stack_handoff(
+            children, {"api": 43121, "frontend": 43122, "model": 43124}
+        )
 
 
 def test_replacement_reusing_any_old_role_identity_is_rejected():
@@ -377,10 +387,7 @@ def test_replacement_reusing_any_old_role_identity_is_rejected():
         assert_replacement_identities,
     )
 
-    previous = {
-        role: identity
-        for role, identity in _handoff_children()[0].items()
-    }
+    previous = {role: identity for role, identity in _handoff_children()[0].items()}
     current = {
         role: ProcessIdentity(
             role,
@@ -426,7 +433,9 @@ def test_listener_probe_distinguishes_empty_and_probe_failures(monkeypatch):
         stderr = ""
         returncode = 0
 
-    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: Result())
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench.subprocess.run", lambda *a, **k: Result()
+    )
     assert _listener_pids(43121) == set()
 
     class LsofEmpty:
@@ -434,17 +443,22 @@ def test_listener_probe_distinguishes_empty_and_probe_failures(monkeypatch):
         stderr = ""
         returncode = 1
 
-    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: LsofEmpty())
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench.subprocess.run", lambda *a, **k: LsofEmpty()
+    )
     assert _listener_pids(43121) == set()
 
     for failure in (
         OSError("lsof unavailable"),
         subprocess.TimeoutExpired("lsof", 3),
     ):
+
         def raise_failure(*_args, _failure=failure, **_kwargs):
             raise _failure
 
-        monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", raise_failure)
+        monkeypatch.setattr(
+            "scripts.verify_study_workbench.subprocess.run", raise_failure
+        )
         with pytest.raises(ProofRefusal, match="listener_probe"):
             _listener_pids(43121)
 
@@ -453,7 +467,9 @@ def test_listener_probe_distinguishes_empty_and_probe_failures(monkeypatch):
         stderr = "permission denied"
         returncode = 1
 
-    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: Nonzero())
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench.subprocess.run", lambda *a, **k: Nonzero()
+    )
     with pytest.raises(ProofRefusal, match="listener_probe"):
         _listener_pids(43121)
 
@@ -462,7 +478,9 @@ def test_listener_probe_distinguishes_empty_and_probe_failures(monkeypatch):
         stderr = ""
         returncode = 0
 
-    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: Malformed())
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench.subprocess.run", lambda *a, **k: Malformed()
+    )
     with pytest.raises(ProofRefusal, match="listener_probe"):
         _listener_pids(43121)
 
@@ -471,7 +489,9 @@ def test_listener_probe_distinguishes_empty_and_probe_failures(monkeypatch):
         stderr = ""
         returncode = 0
 
-    monkeypatch.setattr("scripts.verify_study_workbench.subprocess.run", lambda *a, **k: MacOSFraming())
+    monkeypatch.setattr(
+        "scripts.verify_study_workbench.subprocess.run", lambda *a, **k: MacOSFraming()
+    )
     assert _listener_pids(43121) == {43121}
 
 
@@ -508,15 +528,19 @@ def test_authoritative_source_evidence_uses_full_hash_and_returned_offsets():
     source = {
         "id": "source:long",
         "full_text": full_text,
-        "provenance": {"content_fingerprint": hashlib.sha256(full_text.encode()).hexdigest()},
+        "provenance": {
+            "content_fingerprint": hashlib.sha256(full_text.encode()).hexdigest()
+        },
     }
 
     evidence = _authoritative_source_evidence(source, match)
 
-    assert evidence.content_fingerprint == hashlib.sha256(full_text.encode()).hexdigest()
+    assert (
+        evidence.content_fingerprint == hashlib.sha256(full_text.encode()).hexdigest()
+    )
     assert evidence.start == start
     assert evidence.end == start + len("Authoritative evidence target.")
-    assert evidence.quote == full_text[evidence.start:evidence.end]
+    assert evidence.quote == full_text[evidence.start : evidence.end]
 
     with pytest.raises(ProofRefusal, match="hash_mismatch"):
         _authoritative_source_evidence(
@@ -560,6 +584,7 @@ def test_stack_stop_runs_exact_cleanup_assertions(monkeypatch, tmp_path: Path):
         return SimpleNamespace(owned_processes=0, ports=0, roots=0)
 
     monkeypatch.setattr("scripts.verify_study_workbench.cleanup_owned", fake_cleanup)
+
     def fake_remove_surreal():
         stack.container_removed = True
         called["removed"] = True

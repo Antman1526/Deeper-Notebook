@@ -15,6 +15,7 @@ These tests verify the Pydantic shape AND that the plumbing from the
 provision layer through the graph state actually surfaces the value
 (mocked end-to-end — no live SurrealDB/LLM required).
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -74,6 +75,7 @@ class TestProvisionChatModelExposesSelection:
 
     def _run(self, coro):
         import asyncio
+
         # v0.8.46c — `asyncio.run()` creates a FRESH loop per call and
         # closes it after. The prior `get_event_loop().run_until_complete()`
         # inherited the process-wide "current" loop, which a preceding
@@ -93,16 +95,15 @@ class TestProvisionChatModelExposesSelection:
         monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         # v0.8.20 — helper is now async; AsyncMock satisfies the await.
         monkeypatch.setattr(
-            provision_mod, "_local_chat_healthy_cached",
+            provision_mod,
+            "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
         )
 
         async def _fake_provision(content, model_id, default_type, **kwargs):
             return object()
 
-        monkeypatch.setattr(
-            provision_mod, "provision_langchain_model", _fake_provision
-        )
+        monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
 
         selection_out: dict = {}
         self._run(
@@ -125,16 +126,15 @@ class TestProvisionChatModelExposesSelection:
         monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
         # v0.8.20 — helper is now async; AsyncMock satisfies the await.
         monkeypatch.setattr(
-            provision_mod, "_local_chat_healthy_cached",
+            provision_mod,
+            "_local_chat_healthy_cached",
             AsyncMock(return_value=True),
         )
 
         async def _fake_provision(content, model_id, default_type, **kwargs):
             return object()
 
-        monkeypatch.setattr(
-            provision_mod, "provision_langchain_model", _fake_provision
-        )
+        monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
 
         selection_out: dict = {}
         # v0.8.67u — Use space-separated repeating pattern to prevent tiktoken regex backtracking.
@@ -162,17 +162,17 @@ class TestProvisionChatModelExposesSelection:
         class _Defaults:
             auto_route_enabled = False
             auto_route_provider_pref = "auto"
+
         monkeypatch.setattr(
-            provision_mod.model_manager, "get_defaults",
+            provision_mod.model_manager,
+            "get_defaults",
             AsyncMock(return_value=_Defaults()),
         )
 
         async def _fake_provision(content, model_id, default_type, **kwargs):
             return object()
 
-        monkeypatch.setattr(
-            provision_mod, "provision_langchain_model", _fake_provision
-        )
+        monkeypatch.setattr(provision_mod, "provision_langchain_model", _fake_provision)
 
         selection_out: dict = {}
         self._run(

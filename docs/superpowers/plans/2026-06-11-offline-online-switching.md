@@ -27,6 +27,7 @@
 ```python
 """v0.8.68 — network-state service tests. No live network: the TCP probe is
 injected. Each test resets the module cache via the public reset helper."""
+
 from __future__ import annotations
 
 import asyncio
@@ -63,6 +64,7 @@ def test_offline_when_probe_fails(monkeypatch):
 def test_unknown_on_probe_exception(monkeypatch):
     def _boom():
         raise OSError("probe broke")
+
     monkeypatch.setattr(network, "_probe_once", _boom)
     state = _run(network.get_network_state(forced_offline_lookup=lambda: False))
     assert state.status == "unknown"
@@ -153,6 +155,7 @@ Design (spec 2026-06-11):
   - forced_offline_lookup: callers pass a callable for the user's
     Offline-mode toggle so this module has no settings/DB dependency.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -229,7 +232,9 @@ def _probe_once() -> bool:
         except OSError as exc:
             last_exc = exc
             continue
-    if last_exc is not None and not isinstance(last_exc, (socket.timeout, ConnectionError, OSError)):
+    if last_exc is not None and not isinstance(
+        last_exc, (socket.timeout, ConnectionError, OSError)
+    ):
         raise last_exc
     return False
 
@@ -238,8 +243,10 @@ def report_network_failure() -> None:
     """A real outbound call failed with a network-classified error."""
     global _state
     _state = NetworkState(
-        status="offline", forced_offline=False,
-        checked_at=time.monotonic(), source="call-failure",
+        status="offline",
+        forced_offline=False,
+        checked_at=time.monotonic(),
+        source="call-failure",
     )
     logger.info("v0.8.68 network-state: flipped OFFLINE (cloud call failed)")
 
@@ -248,8 +255,10 @@ def report_network_success() -> None:
     """A real outbound call succeeded — we are definitely online."""
     global _state
     _state = NetworkState(
-        status="online", forced_offline=False,
-        checked_at=time.monotonic(), source="call-success",
+        status="online",
+        forced_offline=False,
+        checked_at=time.monotonic(),
+        source="call-success",
     )
 
 
@@ -260,7 +269,8 @@ def reset_network_state_for_tests() -> None:
 
 
 async def get_network_state(
-    *, forced_offline_lookup: Callable[[], bool] | None = None,
+    *,
+    forced_offline_lookup: Callable[[], bool] | None = None,
 ) -> NetworkState:
     """Current network state. Forced-offline check first (no probe), then
     TTL cache, then a single-flight thread-side TCP probe."""
@@ -272,8 +282,10 @@ async def get_network_state(
             forced = False  # settings hiccup must never brick cloud access
         if forced:
             return NetworkState(
-                status="offline", forced_offline=True,
-                checked_at=time.monotonic(), source="override",
+                status="offline",
+                forced_offline=True,
+                checked_at=time.monotonic(),
+                source="override",
             )
 
     now = time.monotonic()
@@ -293,8 +305,10 @@ async def get_network_state(
             logger.debug(f"v0.8.68 network probe errored ({exc!r}) → unknown")
             status = "unknown"
         _state = NetworkState(
-            status=status, forced_offline=False,
-            checked_at=time.monotonic(), source="probe",
+            status=status,
+            forced_offline=False,
+            checked_at=time.monotonic(),
+            source="probe",
         )
     return _state
 ```
@@ -349,16 +363,17 @@ In `api/models.py`, add to BOTH `SettingsResponse` and `SettingsUpdate` (locate 
 
 In `get_settings()` add to the `SettingsResponse(...)` kwargs:
 ```python
-            offline_mode=settings.offline_mode,
+offline_mode = (settings.offline_mode,)
 ```
 In `update_settings()` add with the other `if ... is not None` blocks (before `await settings.update()`):
 ```python
-        if settings_update.offline_mode is not None:
-            settings.offline_mode = settings_update.offline_mode
-            # v0.8.68 — bust the network-state cache so the toggle takes
-            # effect on the next chat turn, not after the 30s accessor TTL.
-            from open_notebook.health.network import invalidate_forced_offline_cache
-            invalidate_forced_offline_cache()
+if settings_update.offline_mode is not None:
+    settings.offline_mode = settings_update.offline_mode
+    # v0.8.68 — bust the network-state cache so the toggle takes
+    # effect on the next chat turn, not after the 30s accessor TTL.
+    from open_notebook.health.network import invalidate_forced_offline_cache
+
+    invalidate_forced_offline_cache()
 ```
 and add `offline_mode=settings.offline_mode,` to the PUT's returned `SettingsResponse(...)`.
 
@@ -388,6 +403,7 @@ async def forced_offline_enabled() -> bool:
         return _forced_cache[1]
     try:
         from open_notebook.domain.content_settings import ContentSettings
+
         settings = await ContentSettings.get_instance()
         value = bool(getattr(settings, "offline_mode", False))
     except Exception:
@@ -402,8 +418,10 @@ async def get_network_state_with_settings() -> NetworkState:
     sync forced_offline_lookup callable — resolve it first."""
     if await forced_offline_enabled():
         return NetworkState(
-            status="offline", forced_offline=True,
-            checked_at=time.monotonic(), source="override",
+            status="offline",
+            forced_offline=True,
+            checked_at=time.monotonic(),
+            source="override",
         )
     return await get_network_state()
 ```
@@ -421,6 +439,7 @@ def reset_network_state_for_tests() -> None:
 
 ```python
 """v0.8.68 — Offline-mode toggle: schema field, forced accessor caching."""
+
 from __future__ import annotations
 
 import asyncio
@@ -443,11 +462,13 @@ def _run(coro):
 
 def test_content_settings_has_offline_mode_default_false():
     from open_notebook.domain.content_settings import ContentSettings
+
     assert ContentSettings.model_fields["offline_mode"].default is False
 
 
 def test_settings_schemas_carry_offline_mode():
     from api.models import SettingsResponse, SettingsUpdate
+
     assert "offline_mode" in SettingsResponse.model_fields
     assert "offline_mode" in SettingsUpdate.model_fields
 
@@ -460,6 +481,7 @@ def test_forced_offline_enabled_reads_settings(monkeypatch):
         return _FakeSettings()
 
     from open_notebook.domain.content_settings import ContentSettings
+
     monkeypatch.setattr(ContentSettings, "get_instance", _fake_get_instance)
     assert _run(network.forced_offline_enabled()) is True
 
@@ -469,6 +491,7 @@ def test_forced_offline_db_error_defaults_false(monkeypatch):
         raise RuntimeError("db down")
 
     from open_notebook.domain.content_settings import ContentSettings
+
     monkeypatch.setattr(ContentSettings, "get_instance", _boom)
     assert _run(network.forced_offline_enabled()) is False
 
@@ -484,13 +507,14 @@ def test_forced_offline_cached_until_invalidated(monkeypatch):
         return _FakeSettings()
 
     from open_notebook.domain.content_settings import ContentSettings
+
     monkeypatch.setattr(ContentSettings, "get_instance", _fake_get_instance)
 
     async def scenario():
         await network.forced_offline_enabled()
-        await network.forced_offline_enabled()   # cache hit
+        await network.forced_offline_enabled()  # cache hit
         network.invalidate_forced_offline_cache()
-        await network.forced_offline_enabled()   # re-read
+        await network.forced_offline_enabled()  # re-read
 
     _run(scenario())
     assert len(calls) == 2
@@ -504,6 +528,7 @@ def test_state_with_settings_forced(monkeypatch):
         return _FakeSettings()
 
     from open_notebook.domain.content_settings import ContentSettings
+
     monkeypatch.setattr(ContentSettings, "get_instance", _fake_get_instance)
     state = _run(network.get_network_state_with_settings())
     assert state.status == "offline" and state.forced_offline is True
@@ -533,6 +558,7 @@ git commit -m "feat: v0.8.68 persisted Offline-mode toggle (settings field + for
 
 ```python
 """v0.8.68 — offline gate: cloud language models substitute local offline."""
+
 from __future__ import annotations
 
 import asyncio
@@ -551,7 +577,9 @@ def _run(coro):
 
 
 def _state(status):
-    return NetworkState(status=status, forced_offline=False, checked_at=0.0, source="probe")
+    return NetworkState(
+        status=status, forced_offline=False, checked_at=0.0, source="probe"
+    )
 
 
 def _model(id, provider, type="language", name="m"):
@@ -568,12 +596,14 @@ def _reset():
 def _patch_state(monkeypatch, status):
     async def _fake():
         return _state(status)
+
     monkeypatch.setattr(offline_gate, "get_network_state_with_settings", _fake)
 
 
 def _patch_model_get(monkeypatch, table):
     async def _fake_get(model_id):
         return table.get(model_id)
+
     monkeypatch.setattr(offline_gate, "_get_model_record", _fake_get)
 
 
@@ -584,7 +614,9 @@ def test_none_candidate_passes_through(monkeypatch):
 
 def test_local_candidate_never_gated(monkeypatch):
     _patch_state(monkeypatch, "offline")
-    _patch_model_get(monkeypatch, {"model:local": _model("model:local", "openai_compatible")})
+    _patch_model_get(
+        monkeypatch, {"model:local": _model("model:local", "openai_compatible")}
+    )
     assert _run(offline_gate.gate_language_model_id("model:local")) == "model:local"
 
 
@@ -602,10 +634,13 @@ def test_unknown_treated_as_online(monkeypatch):
 
 def test_cloud_offline_substitutes_local(monkeypatch):
     _patch_state(monkeypatch, "offline")
-    _patch_model_get(monkeypatch, {"model:gpt": _model("model:gpt", "openai", name="gpt-4o")})
+    _patch_model_get(
+        monkeypatch, {"model:gpt": _model("model:gpt", "openai", name="gpt-4o")}
+    )
 
     async def _fake_find():
         return _model("model:gemma", "openai_compatible", name="gemma-4-E4B")
+
     monkeypatch.setattr(offline_gate, "find_local_language_model", _fake_find)
 
     out: dict = {}
@@ -626,6 +661,7 @@ def test_cloud_offline_no_local_raises_fast(monkeypatch):
 
     async def _fake_find():
         return None
+
     monkeypatch.setattr(offline_gate, "find_local_language_model", _fake_find)
 
     with pytest.raises(ConfigurationError):
@@ -637,6 +673,7 @@ def test_record_load_failure_passes_through(monkeypatch):
 
     async def _boom(model_id):
         raise RuntimeError("db hiccup")
+
     monkeypatch.setattr(offline_gate, "_get_model_record", _boom)
     # Gate must never turn a DB hiccup into a blocked turn.
     assert _run(offline_gate.gate_language_model_id("model:gpt")) == "model:gpt"
@@ -644,15 +681,20 @@ def test_record_load_failure_passes_through(monkeypatch):
 
 def test_non_language_candidate_never_gated(monkeypatch):
     _patch_state(monkeypatch, "offline")
-    _patch_model_get(monkeypatch, {"model:emb": _model("model:emb", "openai", type="embedding")})
+    _patch_model_get(
+        monkeypatch, {"model:emb": _model("model:emb", "openai", type="embedding")}
+    )
     assert _run(offline_gate.gate_language_model_id("model:emb")) == "model:emb"
 
 
 def test_find_local_prefers_default_chat(monkeypatch):
     async def _fake_defaults():
         return SimpleNamespace(default_chat_model="model:gemma")
+
     monkeypatch.setattr(offline_gate, "_get_defaults", _fake_defaults)
-    _patch_model_get(monkeypatch, {"model:gemma": _model("model:gemma", "openai_compatible")})
+    _patch_model_get(
+        monkeypatch, {"model:gemma": _model("model:gemma", "openai_compatible")}
+    )
     got = _run(offline_gate.find_local_language_model())
     assert got.id == "model:gemma"
 
@@ -660,6 +702,7 @@ def test_find_local_prefers_default_chat(monkeypatch):
 def test_find_local_falls_back_to_query(monkeypatch):
     async def _fake_defaults():
         return SimpleNamespace(default_chat_model="model:gpt")
+
     monkeypatch.setattr(offline_gate, "_get_defaults", _fake_defaults)
     _patch_model_get(monkeypatch, {"model:gpt": _model("model:gpt", "openai")})
 
@@ -669,6 +712,7 @@ def test_find_local_falls_back_to_query(monkeypatch):
             _model("model:alpha", "openai_compatible", name="alpha"),
             _model("model:cloudy", "anthropic", name="cloudy"),
         ]
+
     monkeypatch.setattr(offline_gate, "_get_language_models", _fake_by_type)
     got = _run(offline_gate.find_local_language_model())
     assert got.id == "model:alpha"  # local providers only, name-sorted
@@ -702,6 +746,7 @@ ConfigurationError when we are offline, the candidate is cloud, and no
 local model exists: that turn was going to fail anyway, so fail fast with
 an actionable message instead of a 300s hang.
 """
+
 from __future__ import annotations
 
 from loguru import logger
@@ -714,18 +759,22 @@ LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "openai_compatible"})
 
 # --- thin indirections so tests can patch without touching domain models ---
 
+
 async def _get_model_record(model_id: str):
     from open_notebook.ai.models import Model
+
     return await Model.get(model_id)
 
 
 async def _get_defaults():
     from open_notebook.ai.models import model_manager
+
     return await model_manager.get_defaults()
 
 
 async def _get_language_models(model_type: str):
     from open_notebook.ai.models import Model
+
     return await Model.get_models_by_type(model_type)
 
 
@@ -753,7 +802,8 @@ async def find_local_language_model():
 
     try:
         candidates = [
-            m for m in await _get_language_models("language")
+            m
+            for m in await _get_language_models("language")
             if _is_local(getattr(m, "provider", None))
         ]
         candidates.sort(key=lambda m: (getattr(m, "name", "") or "").lower())
@@ -804,17 +854,17 @@ async def gate_language_model_id(
             "work offline."
         )
     reason = "forced-offline" if state.forced_offline else "offline"
-    logger.info(
-        f"v0.8.68 offline-gate: {candidate_id} → {fallback.id} ({reason})"
-    )
+    logger.info(f"v0.8.68 offline-gate: {candidate_id} → {fallback.id} ({reason})")
     if fallback_out is not None:
-        fallback_out.update({
-            "offline_fallback": True,
-            "from_model_id": candidate_id,
-            "to_model_id": fallback.id,
-            "to_model_name": getattr(fallback, "name", None),
-            "reason": reason,
-        })
+        fallback_out.update(
+            {
+                "offline_fallback": True,
+                "from_model_id": candidate_id,
+                "to_model_id": fallback.id,
+                "to_model_name": getattr(fallback, "name", None),
+                "reason": reason,
+            }
+        )
     return fallback.id
 ```
 
@@ -845,29 +895,27 @@ git commit -m "feat: v0.8.68 offline gate — substitute local model for cloud c
 In `open_notebook/ai/models.py`, inside `ModelManager`, add ABOVE `get_default_model` and rewrite `get_default_model` to use it (behavior-preserving refactor):
 
 ```python
-    async def get_default_model_id(self, model_type: str) -> Optional[str]:
-        """v0.8.68 — id-only resolution extracted from get_default_model so
-        the offline gate (open_notebook/ai/offline_gate.py) can inspect the
-        candidate's provider BEFORE instantiation. Mapping unchanged."""
-        defaults = await self.get_defaults()
-        model_id = None
-        if model_type == "chat":
-            model_id = defaults.default_chat_model
-        elif model_type == "transformation":
-            model_id = (
-                defaults.default_transformation_model or defaults.default_chat_model
-            )
-        elif model_type == "tools":
-            model_id = defaults.default_tools_model or defaults.default_chat_model
-        elif model_type == "embedding":
-            model_id = defaults.default_embedding_model
-        elif model_type == "text_to_speech":
-            model_id = defaults.default_text_to_speech_model
-        elif model_type == "speech_to_text":
-            model_id = defaults.default_speech_to_text_model
-        elif model_type == "large_context":
-            model_id = defaults.large_context_model
-        return model_id
+async def get_default_model_id(self, model_type: str) -> Optional[str]:
+    """v0.8.68 — id-only resolution extracted from get_default_model so
+    the offline gate (open_notebook/ai/offline_gate.py) can inspect the
+    candidate's provider BEFORE instantiation. Mapping unchanged."""
+    defaults = await self.get_defaults()
+    model_id = None
+    if model_type == "chat":
+        model_id = defaults.default_chat_model
+    elif model_type == "transformation":
+        model_id = defaults.default_transformation_model or defaults.default_chat_model
+    elif model_type == "tools":
+        model_id = defaults.default_tools_model or defaults.default_chat_model
+    elif model_type == "embedding":
+        model_id = defaults.default_embedding_model
+    elif model_type == "text_to_speech":
+        model_id = defaults.default_text_to_speech_model
+    elif model_type == "speech_to_text":
+        model_id = defaults.default_speech_to_text_model
+    elif model_type == "large_context":
+        model_id = defaults.large_context_model
+    return model_id
 ```
 
 Then replace the body of `get_default_model` so the mapping lives in ONE place:
@@ -912,6 +960,7 @@ Expected: same pass count as before the edit (no regressions).
 
 ```python
 """v0.8.68 — provision_langchain_model consults the offline gate."""
+
 from __future__ import annotations
 
 import asyncio
@@ -946,12 +995,15 @@ def _patch_manager(monkeypatch, *, default_id="model:gpt", got=None):
     async def _fake_get_model(model_id, **kwargs):
         got["model_id"] = model_id
         from esperanto import LanguageModel
+
         fake = _FakeEsperantoModel()
         # provision checks isinstance(model, LanguageModel)
         monkeypatch.setattr(provision, "LanguageModel", object, raising=False)
         return fake
 
-    monkeypatch.setattr(provision.model_manager, "get_default_model_id", _fake_default_id)
+    monkeypatch.setattr(
+        provision.model_manager, "get_default_model_id", _fake_default_id
+    )
     monkeypatch.setattr(provision.model_manager, "get_model", _fake_get_model)
     # isinstance check: make every object pass for these unit tests
     monkeypatch.setattr(provision, "LanguageModel", object)
@@ -966,12 +1018,18 @@ def test_gate_substitution_flows_through(monkeypatch):
             fallback_out["offline_fallback"] = True
             fallback_out["to_model_id"] = "model:gemma"
         return "model:gemma"
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     out: dict = {}
-    model = _run(provision.provision_langchain_model(
-        "hello", None, "chat", fallback_out=out,
-    ))
+    model = _run(
+        provision.provision_langchain_model(
+            "hello",
+            None,
+            "chat",
+            fallback_out=out,
+        )
+    )
     assert isinstance(model, _FakeLangchain)
     assert got["model_id"] == "model:gemma"
     assert out.get("offline_fallback") is True
@@ -982,6 +1040,7 @@ def test_gate_passthrough_keeps_candidate(monkeypatch):
 
     async def _fake_gate(candidate_id, *, fallback_out=None):
         return candidate_id
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     _run(provision.provision_langchain_model("hello", "model:explicit", "chat"))
@@ -993,6 +1052,7 @@ def test_gate_configuration_error_propagates(monkeypatch):
 
     async def _fake_gate(candidate_id, *, fallback_out=None):
         raise ConfigurationError("offline, no local model")
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     with pytest.raises(ConfigurationError):
@@ -1004,6 +1064,7 @@ def test_no_candidate_still_raises_configuration_error(monkeypatch):
 
     async def _fake_gate(candidate_id, *, fallback_out=None):
         return candidate_id
+
     monkeypatch.setattr(provision, "gate_language_model_id", _fake_gate)
 
     with pytest.raises(ConfigurationError):
@@ -1135,26 +1196,29 @@ git commit -m "feat: v0.8.68 wire offline gate into provision_langchain_model (r
 In `open_notebook/graphs/chat.py` `call_model_with_messages`, replace the provisioning block (currently lines ~784-797):
 
 ```python
-        # v0.8.68 — offline-fallback info from the provisioning gate. Empty
-        # dict when no substitution happened; threaded into the node result
-        # (same pattern as selection_out / v0.8.1) so the router can show
-        # "Answered with <local model> (offline)" in the UI.
-        offline_fallback_out: dict = {}
-        selection_out: dict = {}
-        if model_id:
-            model = await provision_langchain_model(
-                content_for_sizing, model_id, "chat",
-                fallback_out=offline_fallback_out, max_tokens=8192,
-            )
-        else:
-            model = await provision_langchain_chat_model(
-                content_for_sizing,
-                selection_out=selection_out,
-                max_tokens=8192,
-                # v0.8.63 — honor the user's explicit "send to cloud anyway"
-                # consent for this turn (skips the privacy gate).
-                privacy_gate_bypass=bool(state.get("bypass_privacy_gate")),
-            )
+# v0.8.68 — offline-fallback info from the provisioning gate. Empty
+# dict when no substitution happened; threaded into the node result
+# (same pattern as selection_out / v0.8.1) so the router can show
+# "Answered with <local model> (offline)" in the UI.
+offline_fallback_out: dict = {}
+selection_out: dict = {}
+if model_id:
+    model = await provision_langchain_model(
+        content_for_sizing,
+        model_id,
+        "chat",
+        fallback_out=offline_fallback_out,
+        max_tokens=8192,
+    )
+else:
+    model = await provision_langchain_chat_model(
+        content_for_sizing,
+        selection_out=selection_out,
+        max_tokens=8192,
+        # v0.8.63 — honor the user's explicit "send to cloud anyway"
+        # consent for this turn (skips the privacy gate).
+        privacy_gate_bypass=bool(state.get("bypass_privacy_gate")),
+    )
 ```
 
 NOTE: `selection_out: dict = {}` already exists just above this block — do not duplicate it; move/merge so it is declared once.
@@ -1164,46 +1228,52 @@ NOTE: `selection_out: dict = {}` already exists just above this block — do not
 Still in `call_model_with_messages`, wrap the tool-loop call (currently `ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(...)` at ~line 825):
 
 ```python
-        # v0.8.68 — mid-turn offline retry (spec §3 "mid-turn failure leg").
-        # A captive portal / mid-session drop passes the TCP probe or the
-        # TTL cache but fails the real provider call. When that failure is
-        # network-classified AND this turn wasn't already on a local model,
-        # flip the network state and retry ONCE with the gated (now local)
-        # model. Any other error — or a second failure — propagates to the
-        # existing classify_error leg below.
-        try:
-            ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
-                model, payload,
-                exclude_server_names=state.get("disabled_mcp_servers") or None,
-                agent_state_out=agent_state_out,
-                notebook_id=notebook_id,
-            )
-        except Exception as e:
-            from open_notebook.exceptions import NetworkError
-            from open_notebook.health.network import report_network_failure
-            error_class, _ = classify_error(e)
-            already_local = bool(offline_fallback_out.get("offline_fallback"))
-            if error_class is not NetworkError or already_local:
-                raise
-            report_network_failure()
-            _logger.warning(
-                "v0.8.68 — cloud call failed mid-turn with a network error; "
-                "retrying once on the local fallback model"
-            )
-            retry_fallback: dict = {}
-            model = await provision_langchain_model(
-                content_for_sizing, model_id, "chat",
-                fallback_out=retry_fallback, max_tokens=8192,
-            )
-            if not retry_fallback.get("offline_fallback"):
-                raise  # gate didn't substitute (no local model) — original error stands
-            offline_fallback_out.update(retry_fallback)
-            ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
-                model, payload,
-                exclude_server_names=state.get("disabled_mcp_servers") or None,
-                agent_state_out=agent_state_out,
-                notebook_id=notebook_id,
-            )
+# v0.8.68 — mid-turn offline retry (spec §3 "mid-turn failure leg").
+# A captive portal / mid-session drop passes the TCP probe or the
+# TTL cache but fails the real provider call. When that failure is
+# network-classified AND this turn wasn't already on a local model,
+# flip the network state and retry ONCE with the gated (now local)
+# model. Any other error — or a second failure — propagates to the
+# existing classify_error leg below.
+try:
+    ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
+        model,
+        payload,
+        exclude_server_names=state.get("disabled_mcp_servers") or None,
+        agent_state_out=agent_state_out,
+        notebook_id=notebook_id,
+    )
+except Exception as e:
+    from open_notebook.exceptions import NetworkError
+    from open_notebook.health.network import report_network_failure
+
+    error_class, _ = classify_error(e)
+    already_local = bool(offline_fallback_out.get("offline_fallback"))
+    if error_class is not NetworkError or already_local:
+        raise
+    report_network_failure()
+    _logger.warning(
+        "v0.8.68 — cloud call failed mid-turn with a network error; "
+        "retrying once on the local fallback model"
+    )
+    retry_fallback: dict = {}
+    model = await provision_langchain_model(
+        content_for_sizing,
+        model_id,
+        "chat",
+        fallback_out=retry_fallback,
+        max_tokens=8192,
+    )
+    if not retry_fallback.get("offline_fallback"):
+        raise  # gate didn't substitute (no local model) — original error stands
+    offline_fallback_out.update(retry_fallback)
+    ai_message, mcp_captures = await bind_mcp_and_run_tool_loop(
+        model,
+        payload,
+        exclude_server_names=state.get("disabled_mcp_servers") or None,
+        agent_state_out=agent_state_out,
+        notebook_id=notebook_id,
+    )
 ```
 
 (`agent_state_out: dict = {}` is declared just above the original call — keep that declaration before this block.)
@@ -1233,11 +1303,12 @@ In `api/models.py`, in `ExecuteChatResponse` next to `selected_provider` (~line 
 In `api/routers/chat.py` `/chat/execute` handler (~line 921), add alongside the other dual-guard reads:
 
 ```python
-        # v0.8.68 — offline-fallback info (None when the gate didn't act).
-        offline_fallback = (
-            result.get("offline_fallback") if isinstance(result, dict)
-            else getattr(result, "offline_fallback", None)
-        )
+# v0.8.68 — offline-fallback info (None when the gate didn't act).
+offline_fallback = (
+    result.get("offline_fallback")
+    if isinstance(result, dict)
+    else getattr(result, "offline_fallback", None)
+)
 ```
 
 and add `offline_fallback=offline_fallback,` to the `ExecuteChatResponse(...)` construction (~line 984).
@@ -1245,10 +1316,11 @@ and add `offline_fallback=offline_fallback,` to the `ExecuteChatResponse(...)` c
 In `_stream_chat_events`: at the done-payload build (~line 1298-1340, where `selected_provider_raw` is read from `output`), add the same dual-guard read:
 
 ```python
-                        offline_fallback_raw = (
-                            output.get("offline_fallback") if isinstance(output, dict)
-                            else getattr(output, "offline_fallback", None)
-                        )
+offline_fallback_raw = (
+    output.get("offline_fallback")
+    if isinstance(output, dict)
+    else getattr(output, "offline_fallback", None)
+)
 ```
 
 and `"offline_fallback": offline_fallback_raw,` in the emitted done-event dict next to `"selected_provider"`. Repeat for the second read site (~line 1415-1441, `final_result`): add `offline_fallback_out = final_result.get("offline_fallback") ...` with the dual guard and include it in that payload dict too. Mirror exactly how `selected_provider` flows in both places.
@@ -1257,6 +1329,7 @@ and `"offline_fallback": offline_fallback_raw,` in the emitted done-event dict n
 
 ```python
 """v0.8.68 — offline_fallback flows node-result → ExecuteChatResponse."""
+
 from __future__ import annotations
 
 from api.models import ExecuteChatResponse
@@ -1306,6 +1379,7 @@ git commit -m "feat: v0.8.68 thread offline-fallback info through chat graph + r
 
 ```python
 """v0.8.68 — /api/system/network-status: never 500s, reports gate state."""
+
 from __future__ import annotations
 
 import pytest
@@ -1333,8 +1407,10 @@ def client():
 
 def test_online_payload(client, monkeypatch):
     async def _fake():
-        return NetworkState(status="online", forced_offline=False,
-                            checked_at=1.0, source="probe")
+        return NetworkState(
+            status="online", forced_offline=False, checked_at=1.0, source="probe"
+        )
+
     monkeypatch.setattr(system_router, "get_network_state_with_settings", _fake)
     body = client.get("/api/system/network-status").json()
     assert body["status"] == "online"
@@ -1343,14 +1419,19 @@ def test_online_payload(client, monkeypatch):
 
 def test_offline_includes_fallback_model(client, monkeypatch):
     async def _fake():
-        return NetworkState(status="offline", forced_offline=False,
-                            checked_at=1.0, source="call-failure")
+        return NetworkState(
+            status="offline",
+            forced_offline=False,
+            checked_at=1.0,
+            source="call-failure",
+        )
 
     class _Rec:
         name = "gemma-4-E4B"
 
     async def _fake_find():
         return _Rec()
+
     monkeypatch.setattr(system_router, "get_network_state_with_settings", _fake)
     monkeypatch.setattr(system_router, "find_local_language_model", _fake_find)
     body = client.get("/api/system/network-status").json()
@@ -1361,6 +1442,7 @@ def test_offline_includes_fallback_model(client, monkeypatch):
 def test_internal_error_returns_unknown_not_500(client, monkeypatch):
     async def _boom():
         raise RuntimeError("probe machinery exploded")
+
     monkeypatch.setattr(system_router, "get_network_state_with_settings", _boom)
     r = client.get("/api/system/network-status")
     assert r.status_code == 200
@@ -1392,6 +1474,7 @@ async def network_status() -> dict:
     degrades to {"status": "unknown"} so a probe bug can't paint the UI
     red or break the shell render."""
     import time as _time
+
     try:
         state = await get_network_state_with_settings()
         fallback_name = None
@@ -1442,6 +1525,7 @@ git commit -m "feat: v0.8.68 GET /api/system/network-status (never-500, fallback
 provider budget). Find the tool's async entry function in
 open_notebook/tools/web_search.py (the one decorated/bound for the chat
 loop, named `web_search`) and assert the offline early-return."""
+
 from __future__ import annotations
 
 import asyncio
@@ -1462,8 +1546,10 @@ def _reset():
 
 def test_offline_short_circuits(monkeypatch):
     async def _fake():
-        return NetworkState(status="offline", forced_offline=False,
-                            checked_at=0.0, source="probe")
+        return NetworkState(
+            status="offline", forced_offline=False, checked_at=0.0, source="probe"
+        )
+
     monkeypatch.setattr(ws, "get_network_state_with_settings", _fake)
 
     called = []
@@ -1537,6 +1623,7 @@ git commit -m "feat: v0.8.68 web_search short-circuits offline instead of burnin
 ```python
 """v0.8.68 — digest scheduler defers sends while offline, retries, and
 drops a day-old pending digest (sending two at once next day is worse)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -1564,15 +1651,19 @@ def _run(coro):
 
 def _offline():
     async def _fake():
-        return NetworkState(status="offline", forced_offline=False,
-                            checked_at=0.0, source="probe")
+        return NetworkState(
+            status="offline", forced_offline=False, checked_at=0.0, source="probe"
+        )
+
     return _fake
 
 
 def _online():
     async def _fake():
-        return NetworkState(status="online", forced_offline=False,
-                            checked_at=0.0, source="probe")
+        return NetworkState(
+            status="online", forced_offline=False, checked_at=0.0, source="probe"
+        )
+
     return _fake
 
 
@@ -1609,6 +1700,7 @@ def test_network_failed_send_marks_pending(monkeypatch):
 
     async def _fake_send(g, label="Digest"):
         from open_notebook.exceptions import NetworkError
+
         raise NetworkError("no route to host")
 
     deferred = _run(scheduler.send_or_defer(object(), _fake_send))
@@ -1692,12 +1784,17 @@ async def send_or_defer(g, send_fn) -> bool:
         log.info("digest-scheduler: offline — digest deferred (will retry)")
         return True
     try:
-        await send_fn(g, label=getattr(g, "frequency", "digest").title()
-                      if getattr(g, "frequency", None) else "Digest")
+        await send_fn(
+            g,
+            label=getattr(g, "frequency", "digest").title()
+            if getattr(g, "frequency", None)
+            else "Digest",
+        )
     except Exception as exc:
         from open_notebook.exceptions import NetworkError
         from open_notebook.utils.error_classifier import classify_error
         from open_notebook.health.network import report_network_failure
+
         error_class, _ = classify_error(exc)
         if error_class is NetworkError or isinstance(exc, NetworkError):
             report_network_failure()
@@ -1730,38 +1827,45 @@ async def retry_pending_if_any(g, send_fn) -> None:
 Then, at the existing fire site (~line 89), replace the direct call:
 
 ```python
-        # Lazy import to avoid circular (router imports digest module)
-        from api.routers.gmail import _send_digest_now
-        log.info("digest-scheduler: firing %s send for %s",
-                 g.frequency, g.email_address)
-        ok, msg, n = await _send_digest_now(g, label=g.frequency.title())
+# Lazy import to avoid circular (router imports digest module)
+from api.routers.gmail import _send_digest_now
+
+log.info("digest-scheduler: firing %s send for %s", g.frequency, g.email_address)
+ok, msg, n = await _send_digest_now(g, label=g.frequency.title())
 ```
 
 with:
 
 ```python
-        # Lazy import to avoid circular (router imports digest module)
-        from api.routers.gmail import _send_digest_now
-        log.info("digest-scheduler: firing %s send for %s",
-                 g.frequency, g.email_address)
-        # v0.8.68 — offline-aware: defer instead of silently failing.
-        async def _send(gi, label="Digest"):
-            return await _send_digest_now(gi, label=label)
-        await send_or_defer(g, _send)
+# Lazy import to avoid circular (router imports digest module)
+from api.routers.gmail import _send_digest_now
+
+log.info("digest-scheduler: firing %s send for %s", g.frequency, g.email_address)
+
+
+# v0.8.68 — offline-aware: defer instead of silently failing.
+async def _send(gi, label="Digest"):
+    return await _send_digest_now(gi, label=label)
+
+
+await send_or_defer(g, _send)
 ```
 
 And in the scheduler's periodic tick loop (the function that sleeps and re-checks — found in Step 1), add a retry call each tick BEFORE the `_should_send` check:
 
 ```python
-            # v0.8.68 — flush a deferred digest as soon as we're back online.
-            try:
-                from api.routers.gmail import _send_digest_now as _sdn
-                gi = await GmailIntegration.get()
-                async def _send(g2, label="Digest"):
-                    return await _sdn(g2, label=label)
-                await retry_pending_if_any(gi, _send)
-            except Exception as exc:
-                log.warning("digest-scheduler: pending-retry pass failed: %s", exc)
+# v0.8.68 — flush a deferred digest as soon as we're back online.
+try:
+    from api.routers.gmail import _send_digest_now as _sdn
+
+    gi = await GmailIntegration.get()
+
+    async def _send(g2, label="Digest"):
+        return await _sdn(g2, label=label)
+
+    await retry_pending_if_any(gi, _send)
+except Exception as exc:
+    log.warning("digest-scheduler: pending-retry pass failed: %s", exc)
 ```
 
 (Use the module's existing way of obtaining `GmailIntegration` in the loop — mirror the surrounding code.)

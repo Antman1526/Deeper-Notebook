@@ -45,7 +45,9 @@ async def _source_authority(source_id: str):
     try:
         return await compute_source_visual_authority(source)
     except SourceVisualAuthorityError:
-        raise HTTPException(status_code=409, detail="Source visual authority is unavailable") from None
+        raise HTTPException(
+            status_code=409, detail="Source visual authority is unavailable"
+        ) from None
 
 
 async def _require_source(source_id: str):
@@ -59,10 +61,15 @@ async def _require_source(source_id: str):
 
 
 def _conflict() -> HTTPException:
-    return HTTPException(status_code=409, detail="Source visual receipt is stale or conflicts")
+    return HTTPException(
+        status_code=409, detail="Source visual receipt is stale or conflicts"
+    )
 
 
-def _payload(value: object, model: type[SourceVisualRefreshRequest] | type[SourceVisualDeleteRequest]) -> str:
+def _payload(
+    value: object,
+    model: type[SourceVisualRefreshRequest] | type[SourceVisualDeleteRequest],
+) -> str:
     try:
         if not isinstance(value, Mapping):
             raise ValueError
@@ -70,7 +77,9 @@ def _payload(value: object, model: type[SourceVisualRefreshRequest] | type[Sourc
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=422, detail="Invalid source visual request") from None
+        raise HTTPException(
+            status_code=422, detail="Invalid source visual request"
+        ) from None
 
 
 def _job_response(value: object, *, status_code: int) -> JSONResponse:
@@ -103,14 +112,23 @@ async def get_source_visual_asset(
     repo = repository or SourceVisualRepository()
     asset_store = store or SourceVisualStore()
     try:
-        current = await repo.list_current({authority.source_id: authority.source_updated_at})
-        record = current.get(authority.source_id) if isinstance(current, Mapping) else None
+        current = await repo.list_current(
+            {authority.source_id: authority.source_updated_at}
+        )
+        record = (
+            current.get(authority.source_id) if isinstance(current, Mapping) else None
+        )
         if record is None or record.content_sha256 != authority.content_sha256:
             raise _conflict()
         body = asset_store.read_exact(record)
     except HTTPException:
         raise
-    except (SourceVisualRepositoryError, SourceVisualStorageError, ValueError, TypeError):
+    except (
+        SourceVisualRepositoryError,
+        SourceVisualStorageError,
+        ValueError,
+        TypeError,
+    ):
         raise _conflict() from None
     headers = {
         "ETag": f'"{record.asset_sha256}"',
@@ -130,9 +148,15 @@ async def submit_source_visual_refresh(source_id: str, payload: object) -> JSONR
     await _require_source(source_id)
     try:
         job = await submit_source_visual(source_id, request_id, explicit=True)
-    except (SourceVisualConflictError, SourceVisualRepositoryError, SourceVisualAuthorityError):
+    except (
+        SourceVisualConflictError,
+        SourceVisualRepositoryError,
+        SourceVisualAuthorityError,
+    ):
         raise _conflict() from None
-    return _job_response(job, status_code=200 if getattr(job, "outcome", None) == "replayed" else 202)
+    return _job_response(
+        job, status_code=200 if getattr(job, "outcome", None) == "replayed" else 202
+    )
 
 
 async def delete_source_visual(
@@ -153,7 +177,8 @@ async def delete_source_visual(
         existing = await repo.get_operation(authority.source_id, request_id, "delete")
         if existing is not None:
             if (
-                getattr(existing, "source_updated_at", None) != authority.source_updated_at
+                getattr(existing, "source_updated_at", None)
+                != authority.source_updated_at
                 or getattr(existing, "content_sha256", None) != authority.content_sha256
             ):
                 raise SourceVisualConflictError("REQUEST_CONFLICT")
@@ -161,8 +186,12 @@ async def delete_source_visual(
                 return _job_response(existing, status_code=200)
             if getattr(existing, "outcome", None) != "queued":
                 raise SourceVisualConflictError("REQUEST_CONFLICT")
-        current = await repo.list_current({authority.source_id: authority.source_updated_at})
-        record = current.get(authority.source_id) if isinstance(current, Mapping) else None
+        current = await repo.list_current(
+            {authority.source_id: authority.source_updated_at}
+        )
+        record = (
+            current.get(authority.source_id) if isinstance(current, Mapping) else None
+        )
         if record is not None and record.content_sha256 != authority.content_sha256:
             raise SourceVisualConflictError("SOURCE_STALE")
         if existing is None:
@@ -185,7 +214,11 @@ async def delete_source_visual(
             outcome="deleted",
         )
         return _job_response(completed, status_code=200)
-    except (SourceVisualConflictError, SourceVisualRepositoryError, SourceVisualStorageError):
+    except (
+        SourceVisualConflictError,
+        SourceVisualRepositoryError,
+        SourceVisualStorageError,
+    ):
         raise _conflict() from None
 
 
@@ -198,7 +231,9 @@ async def source_visual_asset_endpoint(
 
 
 @router.post("/{source_id}/visual:refresh")
-async def source_visual_refresh_endpoint(source_id: str, request: Request) -> JSONResponse:
+async def source_visual_refresh_endpoint(
+    source_id: str, request: Request
+) -> JSONResponse:
     _guard()
     try:
         payload = await request.json()
@@ -208,7 +243,9 @@ async def source_visual_refresh_endpoint(source_id: str, request: Request) -> JS
 
 
 @router.delete("/{source_id}/visual")
-async def source_visual_delete_endpoint(source_id: str, request: Request) -> JSONResponse:
+async def source_visual_delete_endpoint(
+    source_id: str, request: Request
+) -> JSONResponse:
     _guard()
     try:
         payload = await request.json()

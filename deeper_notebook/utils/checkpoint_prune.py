@@ -30,6 +30,7 @@ SQLite's WAL journal mode (set in
 allows concurrent readers, and our DELETE acquires a short write
 lock that yields back as soon as the transaction commits.
 """
+
 from __future__ import annotations
 
 import os
@@ -60,20 +61,24 @@ def _keep_per_thread() -> int:
         if n < 1:
             logger.warning(
                 "DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD={} is < 1; using default {}",
-                raw, _DEFAULT_KEEP_PER_THREAD,
+                raw,
+                _DEFAULT_KEEP_PER_THREAD,
             )
             return _DEFAULT_KEEP_PER_THREAD
         return n
     except ValueError:
         logger.warning(
             "DEEPER_NOTEBOOK_CHECKPOINT_KEEP_PER_THREAD={!r} is not an integer; using default {}",
-            raw, _DEFAULT_KEEP_PER_THREAD,
+            raw,
+            _DEFAULT_KEEP_PER_THREAD,
         )
         return _DEFAULT_KEEP_PER_THREAD
 
 
 def prune_old_checkpoints(
-    sqlite_path: str | Path, *, keep_per_thread: Optional[int] = None,
+    sqlite_path: str | Path,
+    *,
+    keep_per_thread: Optional[int] = None,
 ) -> dict[str, int]:
     """Delete old checkpoints + orphaned writes from the LangGraph
     SQLite store.
@@ -140,9 +145,7 @@ def prune_old_checkpoints(
             return result
 
         # Count distinct threads for the observability counter.
-        cur = conn.execute(
-            "SELECT COUNT(DISTINCT thread_id) FROM checkpoints"
-        )
+        cur = conn.execute("SELECT COUNT(DISTINCT thread_id) FROM checkpoints")
         result["threads_seen"] = int(cur.fetchone()[0])
 
         # Atomic delete in a single transaction. The window function
@@ -210,7 +213,8 @@ def prune_old_checkpoints(
     except Exception as exc:
         logger.warning(
             "Checkpoint prune failed for {}: {}. Will retry on next interval.",
-            path, exc,
+            path,
+            exc,
         )
         return result
     finally:
@@ -234,7 +238,8 @@ def prune_old_checkpoints(
     else:
         logger.debug(
             "Checkpoint prune: nothing to remove ({} threads under cap of {})",
-            result["threads_seen"], keep,
+            result["threads_seen"],
+            keep,
         )
 
     # v0.7.125 — Prometheus counters. Best-effort so a metrics-import
@@ -244,13 +249,14 @@ def prune_old_checkpoints(
             checkpoint_prune_rows_deleted_total,
             checkpoint_prune_runs_total,
         )
+
         checkpoint_prune_runs_total.inc()
-        checkpoint_prune_rows_deleted_total.labels(
-            table="checkpoints"
-        ).inc(result["checkpoints_deleted"])
-        checkpoint_prune_rows_deleted_total.labels(
-            table="writes"
-        ).inc(result["writes_deleted"])
+        checkpoint_prune_rows_deleted_total.labels(table="checkpoints").inc(
+            result["checkpoints_deleted"]
+        )
+        checkpoint_prune_rows_deleted_total.labels(table="writes").inc(
+            result["writes_deleted"]
+        )
     except Exception:
         pass
 
@@ -294,7 +300,8 @@ async def run_prune_loop(stop_event, *, interval_hours: Optional[float] = None) 
         # block every other concurrent HTTP request for the duration.
         try:
             await asyncio.to_thread(
-                prune_old_checkpoints, LANGGRAPH_CHECKPOINT_FILE,
+                prune_old_checkpoints,
+                LANGGRAPH_CHECKPOINT_FILE,
             )
         except Exception as exc:
             logger.warning("Checkpoint prune loop iteration failed: {}", exc)

@@ -127,9 +127,7 @@ def _core_gradient() -> Image.Image:
 
     for y in range(SIZE):
         for x in range(SIZE):
-            amount = (
-                (x - start[0]) * delta_x + (y - start[1]) * delta_y
-            ) / denominator
+            amount = ((x - start[0]) * delta_x + (y - start[1]) * delta_y) / denominator
             amount = min(1.0, max(0.0, amount))
             pixels[x, y] = (
                 round(top[0] * (1 - amount) + bottom[0] * amount),

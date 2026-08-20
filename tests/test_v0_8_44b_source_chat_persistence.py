@@ -14,6 +14,7 @@ shared ChatSession domain tests in test_v0_8_43_persistent_mcp_picks):
     a clear).
   - The SSE precedence: request body wins, session value falls back.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -81,11 +82,10 @@ def test_sse_precedence_request_wins_else_session_fallback():
     refactor that breaks it is caught here. Request body (incl. an
     explicit empty list) wins; only a null body falls back to the
     session's persisted picks."""
+
     def effective(request_val, session_val):
         # Mirror of api/routers/source_chat.py send-message handler.
-        return (
-            request_val if request_val is not None else session_val
-        )
+        return request_val if request_val is not None else session_val
 
     # Request null → session fallback
     assert effective(None, ["SearXNG"]) == ["SearXNG"]

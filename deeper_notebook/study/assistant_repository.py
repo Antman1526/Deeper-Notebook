@@ -32,7 +32,9 @@ from .assistants import (
     prompt_sha256,
 )
 
-MIGRATION_PATH = Path(__file__).resolve().parents[1] / "database" / "migrations" / "43.surrealql"
+MIGRATION_PATH = (
+    Path(__file__).resolve().parents[1] / "database" / "migrations" / "43.surrealql"
+)
 MIGRATION_DOWN_PATH = MIGRATION_PATH.with_name("43_down.surrealql")
 
 _MAX_PAGE_SIZE = 50
@@ -190,7 +192,9 @@ def _table_record(value: str | RecordID, table: str) -> RecordID:
     try:
         record = ensure_record_id(value)
     except Exception as exc:
-        raise StudyAssistantNotFoundError(f"invalid {table.replace('_', ' ')} ID") from exc
+        raise StudyAssistantNotFoundError(
+            f"invalid {table.replace('_', ' ')} ID"
+        ) from exc
     if getattr(record, "table_name", None) != table:
         raise StudyAssistantNotFoundError(f"invalid {table.replace('_', ' ')} ID")
     token = getattr(record, "id", None)
@@ -218,7 +222,11 @@ def _page(limit: int, offset: int, *, cap: int = _MAX_PAGE_SIZE) -> tuple[int, i
 
 
 def _revision(value: int, *, allow_zero: bool = False) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < (0 if allow_zero else 1):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value < (0 if allow_zero else 1)
+    ):
         raise StudyAssistantRepositoryError("invalid expected revision")
     return value
 
@@ -230,7 +238,9 @@ def _safe_datetime(value: object, field_name: str) -> datetime:
         try:
             result = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError as exc:
-            raise StudyAssistantRepositoryError(f"invalid persisted {field_name}") from exc
+            raise StudyAssistantRepositoryError(
+                f"invalid persisted {field_name}"
+            ) from exc
     else:
         raise StudyAssistantRepositoryError(f"invalid persisted {field_name}")
     if result.tzinfo is None or result.utcoffset() is None:
@@ -301,8 +311,10 @@ def _memory_hash(
 
 def _row_hash(row: Mapping[str, Any]) -> str | None:
     value = row.get("idempotency_hash")
-    if isinstance(value, str) and len(value) == 64 and all(
-        character in "0123456789abcdef" for character in value
+    if (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
     ):
         return value
     return None
@@ -337,7 +349,11 @@ def _has_marker(exc: BaseException, marker: str) -> bool:
 def _citation(value: object) -> StudyCitation:
     if not isinstance(value, Mapping):
         raise StudyAssistantRepositoryError("invalid persisted citation")
-    safe = {field: value.get(field) for field in StudyCitation.model_fields if field in value}
+    safe = {
+        field: value.get(field)
+        for field in StudyCitation.model_fields
+        if field in value
+    }
     try:
         return StudyCitation.model_validate(safe)
     except Exception as exc:
@@ -365,12 +381,16 @@ def _session_from(value: object) -> StudyAssistantSession:
         "revision": row.get("revision", 1),
         "created_at": _safe_datetime(row.get("created_at"), "created_at"),
         "updated_at": _safe_datetime(row.get("updated_at"), "updated_at"),
-        "completed_at": _safe_optional_datetime(row.get("completed_at"), "completed_at"),
+        "completed_at": _safe_optional_datetime(
+            row.get("completed_at"), "completed_at"
+        ),
     }
     try:
         return StudyAssistantSession.model_validate(values)
     except Exception as exc:
-        raise StudyAssistantRepositoryError("invalid persisted assistant session") from exc
+        raise StudyAssistantRepositoryError(
+            "invalid persisted assistant session"
+        ) from exc
 
 
 def _handoff_from(value: object) -> StudyAssistantHandoff:
@@ -396,7 +416,9 @@ def _handoff_from(value: object) -> StudyAssistantHandoff:
     try:
         return StudyAssistantHandoff.model_validate(values)
     except Exception as exc:
-        raise StudyAssistantRepositoryError("invalid persisted assistant handoff") from exc
+        raise StudyAssistantRepositoryError(
+            "invalid persisted assistant handoff"
+        ) from exc
 
 
 def _memory_from(value: object) -> StudyPlanMemory:
@@ -412,7 +434,9 @@ def _memory_from(value: object) -> StudyPlanMemory:
         "provenance": row.get("provenance"),
         "status": row.get("status"),
         "confirmation_required": row.get("confirmation_required"),
-        "confirmed_at": _safe_optional_datetime(row.get("confirmed_at"), "confirmed_at"),
+        "confirmed_at": _safe_optional_datetime(
+            row.get("confirmed_at"), "confirmed_at"
+        ),
         "created_at": _safe_datetime(row.get("created_at"), "created_at"),
         "updated_at": _safe_datetime(row.get("updated_at"), "updated_at"),
         "revision": row.get("revision", 1),
@@ -456,9 +480,16 @@ class StudyAssistantRepository:
         request_id = request_id or invocation.request_id or invocation.invocation_id
         if request_id is None:
             request_id = _stable_token(
-                invocation.plan_id, invocation.role, invocation.authority, prompt_sha256(invocation.prompt)
+                invocation.plan_id,
+                invocation.role,
+                invocation.authority,
+                prompt_sha256(invocation.prompt),
             )
-        if not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 256:
+        if (
+            not isinstance(request_id, str)
+            or not request_id.strip()
+            or len(request_id) > 256
+        ):
             raise StudyAssistantRepositoryError("invalid assistant request ID")
         plan_id = _table_record(invocation.plan_id, "study_plan")
         plan_value = _record_value(invocation.plan_id, plan_id)
@@ -491,14 +522,16 @@ class StudyAssistantRepository:
 
         try:
             existing = await repo_query(
-                    f"SELECT {_SESSION_PROJECTION} FROM study_assistant_session "  # nosec B608
-                    "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
+                f"SELECT {_SESSION_PROJECTION} FROM study_assistant_session "  # nosec B608
+                "WHERE plan_id = $plan_id AND request_id = $request_id LIMIT 1;",
                 {"plan_id": plan_value, "request_id": request_id},
             )
             if existing:
                 row = _one(existing, kind="assistant session")
                 if not matches(row):
-                    raise StudyAssistantConflictError("assistant request ID was already used")
+                    raise StudyAssistantConflictError(
+                        "assistant request ID was already used"
+                    )
                 return _session_from(row)
             rows = await repo_query(
                 "CREATE $assistant_session CONTENT $payload RETURN AFTER;",
@@ -522,13 +555,17 @@ class StudyAssistantRepository:
                     row = _one(replay, kind="assistant session")
                     if matches(row):
                         return _session_from(row)
-                    raise StudyAssistantConflictError("assistant request ID was already used")
+                    raise StudyAssistantConflictError(
+                        "assistant request ID was already used"
+                    )
             except StudyAssistantRepositoryError:
                 raise
             except Exception:
                 pass
             logger.exception("Failed to create assistant session")
-            raise StudyAssistantUnavailableError("Study assistant sessions are unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study assistant sessions are unavailable"
+            ) from exc
 
     async def get_session(self, session_id: str) -> StudyAssistantSession | None:
         record = _table_record(session_id, "study_assistant_session")
@@ -543,7 +580,9 @@ class StudyAssistantRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to load assistant session")
-            raise StudyAssistantUnavailableError("Study assistant sessions are unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study assistant sessions are unavailable"
+            ) from exc
 
     async def update_session(
         self,
@@ -559,7 +598,9 @@ class StudyAssistantRepository:
         expected_revision = _revision(expected_revision)
         now = completed_at or datetime.now(UTC)
         if now.tzinfo is None or now.utcoffset() is None:
-            raise StudyAssistantRepositoryError("session timestamp must be timezone-aware")
+            raise StudyAssistantRepositoryError(
+                "session timestamp must be timezone-aware"
+            )
         patch = {
             "status": status,
             "response_id": response_id,
@@ -606,9 +647,13 @@ class StudyAssistantRepository:
             raise
         except Exception as exc:
             if _conflict(exc):
-                raise StudyAssistantConflictError("assistant session revision conflict") from exc
+                raise StudyAssistantConflictError(
+                    "assistant session revision conflict"
+                ) from exc
             logger.exception("Failed to update assistant session")
-            raise StudyAssistantUnavailableError("Study assistant sessions are unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study assistant sessions are unavailable"
+            ) from exc
 
     async def complete_session(
         self,
@@ -671,7 +716,10 @@ class StudyAssistantRepository:
             or syllabus_approved_at.utcoffset() is None
             or not isinstance(source_manifest_sha256, str)
             or len(source_manifest_sha256) != 64
-            or any(character not in "0123456789abcdef" for character in source_manifest_sha256)
+            or any(
+                character not in "0123456789abcdef"
+                for character in source_manifest_sha256
+            )
             or model_route not in {"local", "cloud"}
             or not isinstance(network_allowed, bool)
             or len(network_scope) > 8
@@ -751,7 +799,7 @@ class StudyAssistantRepository:
             "WHERE revision = $plan_revision AND state = $plan_state "
             "AND active_syllabus_version = $syllabus_version "
             "AND source_links = $source_ids "
-            "AND (preferences.model_route ?? \"local\") = $model_route "
+            'AND (preferences.model_route ?? "local") = $model_route '
             "AND (preferences.network_allowed ?? false) = $network_allowed "
             "AND (preferences.approved_network_scope ?? []) = $network_scope)[0]; "
             "LET $authority_syllabus = (SELECT id FROM study_syllabus "
@@ -787,9 +835,9 @@ class StudyAssistantRepository:
             "COMMIT TRANSACTION; RETURN $completed_session;"
         )
 
-        async def canonical_receipt() -> tuple[
-            StudyAssistantSession, StudyAssistantHandoff
-        ] | None:
+        async def canonical_receipt() -> (
+            tuple[StudyAssistantSession, StudyAssistantHandoff] | None
+        ):
             session_rows = await repo_query(
                 f"SELECT {_SESSION_PROJECTION} FROM $assistant_session LIMIT 1;",  # nosec B608
                 {"assistant_session": session_record},
@@ -820,7 +868,7 @@ class StudyAssistantRepository:
                 "AND state = $plan_state "
                 "AND active_syllabus_version = $syllabus_version "
                 "AND source_links = $source_ids "
-                "AND (preferences.model_route ?? \"local\") = $model_route "
+                'AND (preferences.model_route ?? "local") = $model_route '
                 "AND (preferences.network_allowed ?? false) = $network_allowed "
                 "AND (preferences.approved_network_scope ?? []) = $network_scope "
                 "LIMIT 1;",
@@ -842,8 +890,7 @@ class StudyAssistantRepository:
                 params,
             )
             source_matches = source_rows is True or any(
-                item is True
-                or (isinstance(item, Mapping) and True in item.values())
+                item is True or (isinstance(item, Mapping) and True in item.values())
                 for item in (source_rows if isinstance(source_rows, list) else [])
             )
             return (
@@ -909,7 +956,11 @@ class StudyAssistantRepository:
                 handoff.role,
                 handoff.observation,
             )
-        if not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 256:
+        if (
+            not isinstance(request_id, str)
+            or not request_id.strip()
+            or len(request_id) > 256
+        ):
             raise StudyAssistantRepositoryError("invalid handoff request ID")
         plan_id = _table_record(handoff.plan_id, "study_plan")
         plan_value = _record_value(handoff.plan_id, plan_id)
@@ -918,7 +969,9 @@ class StudyAssistantRepository:
         )
         payload = handoff.model_dump(mode="python", exclude={"handoff_id"})
         payload["request_id"] = request_id
-        payload["evidence"] = [item.model_dump(mode="python") for item in handoff.evidence]
+        payload["evidence"] = [
+            item.model_dump(mode="python") for item in handoff.evidence
+        ]
         payload["plan_id"] = handoff.plan_id
         idempotency_hash = _handoff_hash(handoff, request_id)
         payload["idempotency_hash"] = idempotency_hash
@@ -936,7 +989,9 @@ class StudyAssistantRepository:
             if existing:
                 row = _one(existing, kind="assistant handoff")
                 if not matches(row):
-                    raise StudyAssistantConflictError("handoff request ID was already used")
+                    raise StudyAssistantConflictError(
+                        "handoff request ID was already used"
+                    )
                 return _handoff_from(row)
             rows = await repo_query(
                 "CREATE $assistant_handoff CONTENT $payload RETURN AFTER;",
@@ -960,13 +1015,17 @@ class StudyAssistantRepository:
                     row = _one(replay, kind="assistant handoff")
                     if matches(row):
                         return _handoff_from(row)
-                    raise StudyAssistantConflictError("handoff request ID was already used")
+                    raise StudyAssistantConflictError(
+                        "handoff request ID was already used"
+                    )
             except StudyAssistantRepositoryError:
                 raise
             except Exception:
                 pass
             logger.exception("Failed to append assistant handoff")
-            raise StudyAssistantUnavailableError("Study assistant handoffs are unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study assistant handoffs are unavailable"
+            ) from exc
 
     async def get_handoff(self, handoff_id: str) -> StudyAssistantHandoff | None:
         record = _table_record(handoff_id, "study_assistant_handoff")
@@ -981,7 +1040,9 @@ class StudyAssistantRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to load assistant handoff")
-            raise StudyAssistantUnavailableError("Study assistant handoffs are unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study assistant handoffs are unavailable"
+            ) from exc
 
     async def get_handoff_by_request(
         self, plan_id: str, request_id: str
@@ -1027,14 +1088,15 @@ class StudyAssistantRepository:
                 {"plan_id": plan_value, "limit": page_limit, "offset": page_offset},
             )
             return tuple(
-                _handoff_from(row)
-                for row in _flatten_bounded(rows, limit=page_limit)
+                _handoff_from(row) for row in _flatten_bounded(rows, limit=page_limit)
             )
         except StudyAssistantRepositoryError:
             raise
         except Exception as exc:
             logger.exception("Failed to list assistant handoffs")
-            raise StudyAssistantUnavailableError("Study assistant handoffs are unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study assistant handoffs are unavailable"
+            ) from exc
 
     async def upsert_memory(
         self,
@@ -1055,7 +1117,11 @@ class StudyAssistantRepository:
                     memory.model_dump(mode="json", exclude={"memory_id", "revision"})
                 ),
             )
-        if not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 256:
+        if (
+            not isinstance(request_id, str)
+            or not request_id.strip()
+            or len(request_id) > 256
+        ):
             raise StudyAssistantRepositoryError("invalid memory request ID")
         idempotency_hash = _memory_hash(
             memory,
@@ -1143,14 +1209,22 @@ class StudyAssistantRepository:
             except Exception:
                 pass
             if _conflict(exc):
-                raise StudyAssistantConflictError("plan memory revision conflict") from exc
+                raise StudyAssistantConflictError(
+                    "plan memory revision conflict"
+                ) from exc
             logger.exception("Failed to upsert plan memory")
-            raise StudyAssistantUnavailableError("Study plan memory is unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study plan memory is unavailable"
+            ) from exc
 
     async def get_memory(self, plan_id: str, memory_key: str) -> StudyPlanMemory | None:
         plan = _table_record(plan_id, "study_plan")
         plan_value = _record_value(plan_id, plan)
-        if not isinstance(memory_key, str) or not memory_key.strip() or len(memory_key) > 128:
+        if (
+            not isinstance(memory_key, str)
+            or not memory_key.strip()
+            or len(memory_key) > 128
+        ):
             raise StudyAssistantRepositoryError("invalid memory key")
         try:
             rows = await repo_query(
@@ -1164,7 +1238,9 @@ class StudyAssistantRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to load plan memory")
-            raise StudyAssistantUnavailableError("Study plan memory is unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study plan memory is unavailable"
+            ) from exc
 
     async def list_memory(
         self,
@@ -1194,14 +1270,15 @@ class StudyAssistantRepository:
                 params,
             )
             return tuple(
-                _memory_from(row)
-                for row in _flatten_bounded(rows, limit=page_limit)
+                _memory_from(row) for row in _flatten_bounded(rows, limit=page_limit)
             )
         except StudyAssistantRepositoryError:
             raise
         except Exception as exc:
             logger.exception("Failed to list plan memory")
-            raise StudyAssistantUnavailableError("Study plan memory is unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study plan memory is unavailable"
+            ) from exc
 
     async def confirm_memory(
         self,
@@ -1224,7 +1301,9 @@ class StudyAssistantRepository:
             request_id=f"confirm:{memory_key}:{current.revision}",
         )
 
-    async def append_progress(self, receipt: StudyProgressReceipt) -> StudyProgressReceipt:
+    async def append_progress(
+        self, receipt: StudyProgressReceipt
+    ) -> StudyProgressReceipt:
         plan = _table_record(receipt.plan_id, "study_plan")
         plan_value = _record_value(receipt.plan_id, plan)
         receipt_id = ensure_record_id(
@@ -1243,7 +1322,9 @@ class StudyAssistantRepository:
                 if current.model_dump(exclude={"receipt_id"}) != receipt.model_dump(
                     exclude={"receipt_id"}
                 ):
-                    raise StudyAssistantConflictError("progress request ID was already used")
+                    raise StudyAssistantConflictError(
+                        "progress request ID was already used"
+                    )
                 return current
             rows = await repo_query(
                 "CREATE $progress_receipt CONTENT $payload RETURN AFTER;",
@@ -1278,7 +1359,9 @@ class StudyAssistantRepository:
             except Exception:
                 pass
             logger.exception("Failed to append study progress")
-            raise StudyAssistantUnavailableError("Study progress is unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study progress is unavailable"
+            ) from exc
 
     async def list_progress(
         self,
@@ -1297,14 +1380,15 @@ class StudyAssistantRepository:
                 {"plan_id": plan_value, "limit": page_limit, "offset": page_offset},
             )
             return tuple(
-                _progress_from(row)
-                for row in _flatten_bounded(rows, limit=page_limit)
+                _progress_from(row) for row in _flatten_bounded(rows, limit=page_limit)
             )
         except StudyAssistantRepositoryError:
             raise
         except Exception as exc:
             logger.exception("Failed to list study progress")
-            raise StudyAssistantUnavailableError("Study progress is unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study progress is unavailable"
+            ) from exc
 
     async def get_progress_by_request(
         self,
@@ -1314,7 +1398,11 @@ class StudyAssistantRepository:
         """Read one append-only progress receipt for retry reconciliation."""
         plan = _table_record(plan_id, "study_plan")
         plan_value = _record_value(plan_id, plan)
-        if not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 256:
+        if (
+            not isinstance(request_id, str)
+            or not request_id.strip()
+            or len(request_id) > 256
+        ):
             raise StudyAssistantRepositoryError("invalid progress request ID")
         try:
             rows = await repo_query(
@@ -1327,7 +1415,9 @@ class StudyAssistantRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to load study progress request")
-            raise StudyAssistantUnavailableError("Study progress is unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study progress is unavailable"
+            ) from exc
 
     async def list_progress_by_requests(
         self,
@@ -1380,7 +1470,9 @@ class StudyAssistantRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to batch-load study progress")
-            raise StudyAssistantUnavailableError("Study progress is unavailable") from exc
+            raise StudyAssistantUnavailableError(
+                "Study progress is unavailable"
+            ) from exc
 
 
 __all__ = [

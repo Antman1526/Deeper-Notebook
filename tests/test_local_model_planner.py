@@ -198,7 +198,9 @@ def test_escalation_receipt_is_redacted_bounded_and_only_allows_declared_failure
     assert planner.escalation_plan(plan, reason="provider_error").allowed is False
 
 
-@pytest.mark.parametrize("unsafe_unit_id", ["x" * 129, "raw source\noutput", "../../raw-output"])
+@pytest.mark.parametrize(
+    "unsafe_unit_id", ["x" * 129, "raw source\noutput", "../../raw-output"]
+)
 def test_escalation_omits_unsafe_bounded_unit_ids(unsafe_unit_id):
     first = _candidate("first", tier_memory=4 * 1024**3, latency_ms=100)
     second = _candidate("second", tier_memory=10 * 1024**3, latency_ms=100)

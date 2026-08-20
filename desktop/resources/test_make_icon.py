@@ -140,10 +140,13 @@ def _assert_spark_visible(image: Image.Image) -> None:
     assert cyan_pixels, f"{size}px frame lost the cyan spark core"
     if size == 16:
         assert len(light_pixels) >= 6
-        assert _contrast(
-            APPROVED_PALETTE["light"],
-            APPROVED_PALETTE["dark_teal"],
-        ) >= 4.5
+        assert (
+            _contrast(
+                APPROVED_PALETTE["light"],
+                APPROVED_PALETTE["dark_teal"],
+            )
+            >= 4.5
+        )
 
 
 @pytest.fixture(scope="module")
@@ -228,9 +231,10 @@ def test_generation_is_deterministic_and_matches_committed_artifacts(
         committed = COMMITTED_ARTIFACTS[name]
         first_bytes = first[name].read_bytes()
         second_bytes = second[name].read_bytes()
-        assert hashlib.sha256(first_bytes).digest() == hashlib.sha256(
-            second_bytes
-        ).digest()
+        assert (
+            hashlib.sha256(first_bytes).digest()
+            == hashlib.sha256(second_bytes).digest()
+        )
         assert first_bytes == committed.read_bytes()
 
 

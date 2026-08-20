@@ -47,11 +47,19 @@ async def test_raw_web_search_wrapper_preserves_legacy_shape(monkeypatch):
 def test_research_candidate_keeps_optional_evidence():
     evidence = normalize_web_results(
         [{"title": "T", "url": "https://example.com/source", "snippet": "S"}],
-        query="q", provider="tavily",
+        query="q",
+        provider="tavily",
     )[0]
     candidate = normalize_candidates([evidence])[0]
     assert candidate.evidence == evidence
-    assert ResearchRun.model_validate(ResearchRun(objective="q", candidates=[candidate]).model_dump()).candidates[0].evidence == evidence
+    assert (
+        ResearchRun.model_validate(
+            ResearchRun(objective="q", candidates=[candidate]).model_dump()
+        )
+        .candidates[0]
+        .evidence
+        == evidence
+    )
 ```
 
 Also extend the Research API fixture assertion to require an additive `evidence` object containing the actual provider, `source_fingerprint`, `evidence_id`, freshness, and degraded state. Add a regression proving a candidate with evidence still requires the existing approval URL validation.
@@ -80,13 +88,18 @@ async def run_web_search(query: str, *, max_results: int | None = None) -> list[
     return results
 
 
-async def run_web_search_with_evidence(query: str, *, max_results: int | None = None) -> tuple[WebEvidence, ...]:
+async def run_web_search_with_evidence(
+    query: str, *, max_results: int | None = None
+) -> tuple[WebEvidence, ...]:
     results, provider, degraded = await _run_web_search_result(...)
     if not results or provider is None:
         return ()
     return normalize_web_results(
-        results, query=query, provider=provider,
-        max_results=max_results, degraded=degraded,
+        results,
+        query=query,
+        provider=provider,
+        max_results=max_results,
+        degraded=degraded,
     )
 ```
 

@@ -13,6 +13,7 @@ This lets the user declare a new key first, the old key second, sweep
 existing data through `re_encrypt_value`, then drop the old key once
 everything is re-encrypted — zero credential loss.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -32,6 +33,7 @@ def _clear_cache():
 # ---------------------------------------------------------------------------
 # _get_encryption_keys_from_env
 # ---------------------------------------------------------------------------
+
 
 def test_singular_env_var_still_works(monkeypatch):
     """Back-compat: a pre-v0.7.17 deploy with only the singular env var
@@ -58,7 +60,9 @@ def test_plural_strips_whitespace_and_drops_empty(monkeypatch):
     )
     monkeypatch.delenv("DEEPER_NOTEBOOK_ENCRYPTION_KEY", raising=False)
     assert encryption._get_encryption_keys_from_env() == [
-        "key-one", "key-two", "key-three"
+        "key-one",
+        "key-two",
+        "key-three",
     ]
 
 
@@ -84,6 +88,7 @@ def test_empty_plural_falls_back_to_singular(monkeypatch):
 # encrypt/decrypt round-trip
 # ---------------------------------------------------------------------------
 
+
 def test_encrypt_decrypt_single_key(monkeypatch):
     monkeypatch.setenv("DEEPER_NOTEBOOK_ENCRYPTION_KEY", "single-key")
     monkeypatch.delenv("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", raising=False)
@@ -95,9 +100,7 @@ def test_encrypt_decrypt_single_key(monkeypatch):
 
 def test_encrypt_decrypt_with_multifernet(monkeypatch):
     """Encrypt under first key, decrypt under MultiFernet works."""
-    monkeypatch.setenv(
-        "DEEPER_NOTEBOOK_ENCRYPTION_KEYS", "new-key,old-key"
-    )
+    monkeypatch.setenv("DEEPER_NOTEBOOK_ENCRYPTION_KEYS", "new-key,old-key")
     monkeypatch.delenv("DEEPER_NOTEBOOK_ENCRYPTION_KEY", raising=False)
 
     cipher = encryption.encrypt_value("sk-test-1")
@@ -107,6 +110,7 @@ def test_encrypt_decrypt_with_multifernet(monkeypatch):
 # ---------------------------------------------------------------------------
 # Rotation scenarios — the core v0.7.17 win
 # ---------------------------------------------------------------------------
+
 
 def test_data_encrypted_under_old_key_decrypts_after_adding_new(monkeypatch):
     """The rotation scenario:
@@ -212,6 +216,7 @@ def test_re_encrypt_with_unknown_key_raises(monkeypatch):
 # ---------------------------------------------------------------------------
 # Backward compatibility — no test breakage for callers using legacy API
 # ---------------------------------------------------------------------------
+
 
 def test_get_fernet_returns_primary_key(monkeypatch):
     """get_fernet() must remain a thin wrapper around the primary key."""

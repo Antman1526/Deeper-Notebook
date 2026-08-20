@@ -526,8 +526,7 @@ def test_controlled_verify_is_get_only_and_requires_a_changed_process_identity(
     assert report["controlled_proof"]["prior_instance_pid"] == 12344
     assert report["controlled_proof"]["current_instance_pid"] == 12345
     expected_child_space = (
-        "knowledge_engine_space:"
-        + hashlib.sha256(b"vault_mount:child").hexdigest()
+        "knowledge_engine_space:" + hashlib.sha256(b"vault_mount:child").hexdigest()
     )
     assert checkpoint_requests == [
         tuple(
@@ -747,9 +746,7 @@ def test_controlled_proof_waits_for_every_persisted_checkpoint_before_mutation(
     assert all(item["status"] == "completed" for item in checkpoints)
     assert len(paths) == 2
     assert all(
-        path.startswith(
-            "/api/deeper-notebook/knowledge-engine/backfill-checkpoints?"
-        )
+        path.startswith("/api/deeper-notebook/knowledge-engine/backfill-checkpoints?")
         for path in paths
     )
     assert sleeps == [module.BACKFILL_POLL_SECONDS]
@@ -883,7 +880,7 @@ def test_projection_capture_is_bounded_redacted_and_proves_required_membership(
                 "content_hash": "d" * 64,
                 "parse_status": "unsupported",
                 "deleted_state": "present",
-            }
+            },
         ],
         f"/api/deeper-notebook/vaults/{child_id}/files?limit=500&offset=0": [
             {

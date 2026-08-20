@@ -20,6 +20,7 @@ Design choices:
     (unconfigured, endpoint down, malformed response, timeout) returns `[]`
     so chat is never blocked by a flaky classifier.
 """
+
 from __future__ import annotations
 
 import json
@@ -69,7 +70,9 @@ def _classifier_url() -> str | None:
 
 
 def _classifier_model() -> str:
-    return (resolve_env("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_MODEL") or "").strip() or "default"
+    return (
+        resolve_env("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_MODEL") or ""
+    ).strip() or "default"
 
 
 def _classifier_timeout() -> float:
@@ -145,7 +148,7 @@ async def classify_via_model_async(text: str) -> list[str]:
         # Best-effort: a flaky/missing classifier must never block chat. The
         # regex floor (privacy_gate.detect_sensitive) still applies.
         logger.debug(
-            "privacy classifier unavailable/failed (regex floor still "
-            "applies): {}", exc,
+            "privacy classifier unavailable/failed (regex floor still applies): {}",
+            exc,
         )
         return []

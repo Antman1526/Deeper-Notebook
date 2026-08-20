@@ -8,6 +8,7 @@ Exposes:
     POST   /api/download                  → {category, name} — kick off a download
     DELETE /api/installed/<rel-path>      → remove a model file
 """
+
 from __future__ import annotations
 
 import json
@@ -36,14 +37,13 @@ def _classify(rel: str) -> str:
     if rel.startswith("TTS/") and rel.endswith(".onnx"):
         return "tts"
     if rel.startswith("GGUF/") and (
-            "embed" in rel.lower() or "bge" in rel.lower() or "nomic" in rel.lower()):
+        "embed" in rel.lower() or "bge" in rel.lower() or "nomic" in rel.lower()
+    ):
         return "embedding"
     return "chat"
 
 
-def build_app(
-    model_dir: Path, *, config_path: Path | None = None
-) -> web.Application:
+def build_app(model_dir: Path, *, config_path: Path | None = None) -> web.Application:
     app = web.Application()
     model_dir = Path(model_dir)
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -57,8 +57,10 @@ def build_app(
     async def index(_: web.Request) -> web.Response:
         if (STATIC_DIR / "index.html").exists():
             return web.FileResponse(STATIC_DIR / "index.html")
-        return web.Response(text="<html><body>Model Manager (static UI not built yet)</body></html>",
-                            content_type="text/html")
+        return web.Response(
+            text="<html><body>Model Manager (static UI not built yet)</body></html>",
+            content_type="text/html",
+        )
 
     async def theme(_: web.Request) -> web.Response:
         try:
@@ -74,12 +76,14 @@ def build_app(
             for p in model_dir.rglob("*"):
                 if p.is_file() and p.stat().st_size >= _MIN_BYTES:
                     rel = str(p.relative_to(model_dir))
-                    models.append({
-                        "name": p.name,
-                        "rel": rel,
-                        "size_mb": p.stat().st_size // 1024 // 1024,
-                        "class": _classify(rel),
-                    })
+                    models.append(
+                        {
+                            "name": p.name,
+                            "rel": rel,
+                            "size_mb": p.stat().st_size // 1024 // 1024,
+                            "class": _classify(rel),
+                        }
+                    )
         return web.json_response({"models": models})
 
     async def catalog(_: web.Request) -> web.Response:

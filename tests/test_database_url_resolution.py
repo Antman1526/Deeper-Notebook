@@ -15,6 +15,7 @@ The desktop bundle always sets SURREAL_URL explicitly (in
 desktop/launcher.py:136), so it's unaffected. The fix unblocks the
 documented backward-compat path for Docker users and pre-2024 deploys.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -71,6 +72,7 @@ def test_fallback_path_was_malformed_pre_v076(monkeypatch):
     host=host, port=None (default 80 for ws), path=/rpc:port — wrong.
     """
     from urllib.parse import urlparse
+
     # The buggy form — what we used to produce
     buggy = "ws://localhost/rpc:8000"
     parsed = urlparse(buggy)

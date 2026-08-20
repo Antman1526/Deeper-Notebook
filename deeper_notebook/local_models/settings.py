@@ -1,4 +1,5 @@
 """Owner-only persistence for non-secret device-local model preferences."""
+
 from __future__ import annotations
 
 import json
@@ -15,7 +16,9 @@ _PROFILES = {"efficient", "balanced", "maximum_quality"}
 
 
 def _safe_text(value: object) -> str:
-    if not isinstance(value, str) or any(ord(char) < 32 or ord(char) == 127 for char in value):
+    if not isinstance(value, str) or any(
+        ord(char) < 32 or ord(char) == 127 for char in value
+    ):
         raise ValueError("Settings strings cannot contain control characters.")
     return value
 
@@ -73,7 +76,9 @@ class LocalModelSettingsStore:
             compute_profile=raw.get("compute_profile", "balanced"),
             local_model_memory_limit_bytes=raw.get("local_model_memory_limit_bytes"),
             role_overrides=dict(raw.get("role_overrides", {})),
-            trusted_external_model_roots=tuple(raw.get("trusted_external_model_roots", ())),
+            trusted_external_model_roots=tuple(
+                raw.get("trusted_external_model_roots", ())
+            ),
         )
 
     def save(self, settings: LocalModelSettings) -> None:

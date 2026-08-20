@@ -140,7 +140,9 @@ def speaker_profile_for_overview_mode(
         )
     if len(speakers) == spec.speaker_count:
         return speaker_profile
-    return speaker_profile.model_copy(update={"speakers": speakers[: spec.speaker_count]})
+    return speaker_profile.model_copy(
+        update={"speakers": speakers[: spec.speaker_count]}
+    )
 
 
 def build_state_and_config(
@@ -168,7 +170,9 @@ def build_state_and_config(
     )
     resolved_language = resolve_language_name(language) if language else None
     normalized_mode = normalize_podcast_mode(mode)
-    speaker_profile = speaker_profile_for_overview_mode(speaker_profile, normalized_mode)
+    speaker_profile = speaker_profile_for_overview_mode(
+        speaker_profile, normalized_mode
+    )
     # The overview mode owns the allowable outline range; the familiar
     # short/medium/long control remains a bounded preference inside it.
     num_segments = segments_for_overview_mode(

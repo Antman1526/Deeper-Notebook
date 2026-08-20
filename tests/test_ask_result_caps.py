@@ -10,6 +10,7 @@ them 100-300 KB — large enough to overflow a 16k-context local LLM
 These tests pin the new `_truncate_ask_results` contract so a future
 refactor can't silently reintroduce the unbounded payload.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -19,6 +20,7 @@ from deeper_notebook.graphs import ask
 # ---------------------------------------------------------------------------
 # _truncate_ask_results — pure function tests
 # ---------------------------------------------------------------------------
+
 
 def _result(rid: str, matches: list[str] | str | None) -> dict:
     """Build a vector_search-shaped result dict for testing."""
@@ -63,7 +65,9 @@ def test_truncate_truncates_oversize_matches(monkeypatch):
     the source and its top semantic content without blowing context.
     """
     monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_MAX_RESULTS", raising=False)
-    monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False)  # 1500 default
+    monkeypatch.delenv(
+        "DEEPER_NOTEBOOK_ASK_PER_RESULT_CHAR_CAP", raising=False
+    )  # 1500 default
 
     big = "A" * 30_000  # one match, 30 KB
     out = ask._truncate_ask_results([_result("source:big", [big])])
@@ -195,6 +199,7 @@ def test_truncate_handles_result_without_matches(monkeypatch):
 # ---------------------------------------------------------------------------
 # provide_answer integration — ensure the truncator is actually wired in
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_provide_answer_invokes_truncation(monkeypatch):

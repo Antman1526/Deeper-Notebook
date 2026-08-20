@@ -195,9 +195,7 @@ def parse_arxiv_atom(xml_text: str, n: int) -> list[dict]:
         if not title or not url:
             continue
         summary = (
-            " ".join((summary_el.text or "").split())
-            if summary_el is not None
-            else ""
+            " ".join((summary_el.text or "").split()) if summary_el is not None else ""
         )
         published = (published_el.text or "")[:10] if published_el is not None else ""
         snippet = f"{published}. {summary}".strip(" .") if published else summary
@@ -298,7 +296,9 @@ def build_scholarly_search_tool(captures: list | None = None):
     from pydantic import BaseModel, Field
 
     class ScholarlySearchInput(BaseModel):
-        query: str = Field(..., description="Topic, title, author, or research question.")
+        query: str = Field(
+            ..., description="Topic, title, author, or research question."
+        )
 
     async def _invoke(query: str) -> str:
         results = await run_scholarly_search(query)

@@ -11,6 +11,7 @@ These tests pin the pure-function heuristics so a future tweak can't
 silently regress the recommendation logic. The endpoint itself is
 exercised via FastAPI TestClient with DB calls stubbed.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -22,6 +23,7 @@ from api.routers import podcasts as podcasts_mod
 # ---------------------------------------------------------------------------
 # Pure helpers
 # ---------------------------------------------------------------------------
+
 
 def test_score_signals_picks_tutorial_for_how_to():
     s = podcasts_mod._score_signals(
@@ -76,6 +78,7 @@ def test_score_signals_picks_interview():
 # Length heuristic — volume → minutes
 # ---------------------------------------------------------------------------
 
+
 def test_length_quick_brief_for_small_content():
     assert podcasts_mod._length_from_volume(0, 0) == 4
     assert podcasts_mod._length_from_volume(2_500, 1) == 4
@@ -101,6 +104,7 @@ def test_length_deep_dive_for_huge_content():
 # /podcasts/suggest endpoint — integration with stubbed DB
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def app_with_suggest():
     """Minimal FastAPI app exposing only /podcasts/suggest, so these
@@ -110,8 +114,9 @@ def app_with_suggest():
     return a
 
 
-def _make_repo_query_stub(*, notebook_name=None, source_ids=None,
-                          sources_data=None, presets=None):
+def _make_repo_query_stub(
+    *, notebook_name=None, source_ids=None, sources_data=None, presets=None
+):
     """Build a stub for `repo_query` that returns the right shape per
     SQL query. Recognizes:
       - notebook name lookup
@@ -120,9 +125,15 @@ def _make_repo_query_stub(*, notebook_name=None, source_ids=None,
       - episode_profile name list
     """
     presets = presets or [
-        "Open Notebook Plus Local", "Deep Dive", "Quick Brief",
-        "Tutorial", "News Roundup", "Debate", "Recap & Review",
-        "Story Mode", "Q&A Interview",
+        "Open Notebook Plus Local",
+        "Deep Dive",
+        "Quick Brief",
+        "Tutorial",
+        "News Roundup",
+        "Debate",
+        "Recap & Review",
+        "Story Mode",
+        "Q&A Interview",
     ]
     source_ids = source_ids or []
     sources_data = sources_data or []
@@ -144,15 +155,19 @@ def _make_repo_query_stub(*, notebook_name=None, source_ids=None,
 
 def test_suggest_recommends_tutorial_for_how_to_sources(app_with_suggest, monkeypatch):
     sources = [
-        {"title": "How to build a CRDT", "topics": ["tutorial", "step-by-step"],
-         "chars": 4000},
-        {"title": "A beginners guide to attention", "topics": [],
-         "chars": 3000},
+        {
+            "title": "How to build a CRDT",
+            "topics": ["tutorial", "step-by-step"],
+            "chars": 4000,
+        },
+        {"title": "A beginners guide to attention", "topics": [], "chars": 3000},
     ]
     monkeypatch.setattr(
-        podcasts_mod, "repo_query",
-        _make_repo_query_stub(source_ids=["source:1", "source:2"],
-                              sources_data=sources),
+        podcasts_mod,
+        "repo_query",
+        _make_repo_query_stub(
+            source_ids=["source:1", "source:2"], sources_data=sources
+        ),
     )
     with TestClient(app_with_suggest) as c:
         resp = c.post(
@@ -174,9 +189,9 @@ def test_suggest_recommends_debate_for_versus_titles(app_with_suggest, monkeypat
         {"title": "The case against semicolons", "topics": [], "chars": 3000},
     ]
     monkeypatch.setattr(
-        podcasts_mod, "repo_query",
-        _make_repo_query_stub(source_ids=["s:1", "s:2", "s:3"],
-                              sources_data=sources),
+        podcasts_mod,
+        "repo_query",
+        _make_repo_query_stub(source_ids=["s:1", "s:2", "s:3"], sources_data=sources),
     )
     with TestClient(app_with_suggest) as c:
         resp = c.post(
@@ -190,7 +205,8 @@ def test_suggest_falls_back_to_quick_brief_when_small(app_with_suggest, monkeypa
     """One small source with no keyword signals → Quick Brief by volume rule."""
     sources = [{"title": "My note", "topics": [], "chars": 800}]
     monkeypatch.setattr(
-        podcasts_mod, "repo_query",
+        podcasts_mod,
+        "repo_query",
         _make_repo_query_stub(source_ids=["s:1"], sources_data=sources),
     )
     with TestClient(app_with_suggest) as c:
@@ -202,12 +218,10 @@ def test_suggest_falls_back_to_quick_brief_when_small(app_with_suggest, monkeypa
 
 def test_suggest_falls_back_to_deep_dive_when_huge(app_with_suggest, monkeypatch):
     """Large content with no keyword signals → Deep Dive by volume rule."""
-    sources = [
-        {"title": f"Doc {i}", "topics": [], "chars": 8000}
-        for i in range(10)
-    ]
+    sources = [{"title": f"Doc {i}", "topics": [], "chars": 8000} for i in range(10)]
     monkeypatch.setattr(
-        podcasts_mod, "repo_query",
+        podcasts_mod,
+        "repo_query",
         _make_repo_query_stub(
             source_ids=[f"s:{i}" for i in range(10)],
             sources_data=sources,
@@ -278,16 +292,16 @@ def test_suggest_medium_volume_matches_canonical_and_legacy_local_profile_names(
 def test_suggest_uses_notebook_title_when_provided(app_with_suggest, monkeypatch):
     sources = [{"title": "Source A", "topics": [], "chars": 5000}]
     monkeypatch.setattr(
-        podcasts_mod, "repo_query",
+        podcasts_mod,
+        "repo_query",
         _make_repo_query_stub(
             notebook_name="Quantum Computing Research",
-            source_ids=["s:1"], sources_data=sources,
+            source_ids=["s:1"],
+            sources_data=sources,
         ),
     )
     with TestClient(app_with_suggest) as c:
-        resp = c.post(
-            "/api/podcasts/suggest", json={"notebook_id": "notebook:42"}
-        )
+        resp = c.post("/api/podcasts/suggest", json={"notebook_id": "notebook:42"})
     body = resp.json()
     assert body["title"] == "Quantum Computing Research"
     assert "Quantum Computing Research" in body["briefing_addition"]
@@ -299,9 +313,11 @@ def test_suggest_falls_back_when_chosen_preset_missing(app_with_suggest, monkeyp
     rather than recommend a non-existent name."""
     sources = [{"title": "Tiny", "topics": [], "chars": 500}]
     monkeypatch.setattr(
-        podcasts_mod, "repo_query",
+        podcasts_mod,
+        "repo_query",
         _make_repo_query_stub(
-            source_ids=["s:1"], sources_data=sources,
+            source_ids=["s:1"],
+            sources_data=sources,
             presets=["Deep Dive", "Story Mode"],  # no Quick Brief
         ),
     )
@@ -316,7 +332,8 @@ def test_suggest_falls_back_when_chosen_preset_missing(app_with_suggest, monkeyp
 def test_suggest_handles_empty_input(app_with_suggest, monkeypatch):
     """Nothing selected → don't crash. Return a sensible default."""
     monkeypatch.setattr(
-        podcasts_mod, "repo_query",
+        podcasts_mod,
+        "repo_query",
         _make_repo_query_stub(source_ids=[], sources_data=[]),
     )
     with TestClient(app_with_suggest) as c:
@@ -324,9 +341,7 @@ def test_suggest_handles_empty_input(app_with_suggest, monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     # Volume rule fires (0 sources → Quick Brief), title is fallback
-    assert body["episode_profile_name"] in {
-        "Quick Brief", "Open Notebook Plus Local"
-    }
+    assert body["episode_profile_name"] in {"Quick Brief", "Open Notebook Plus Local"}
     assert body["title"] == "Untitled Episode"
 
 
@@ -334,7 +349,8 @@ def test_suggest_response_shape_stable(app_with_suggest, monkeypatch):
     """Every response must include all SuggestResponse keys so the
     frontend can rely on the shape without optional-chaining hell."""
     monkeypatch.setattr(
-        podcasts_mod, "repo_query",
+        podcasts_mod,
+        "repo_query",
         _make_repo_query_stub(
             source_ids=["s:1"],
             sources_data=[{"title": "T", "topics": [], "chars": 1000}],
@@ -344,8 +360,12 @@ def test_suggest_response_shape_stable(app_with_suggest, monkeypatch):
         resp = c.post("/api/podcasts/suggest", json={"source_ids": ["s:1"]})
     body = resp.json()
     for required in (
-        "episode_profile_name", "length_minutes", "title",
-        "briefing_addition", "reasoning", "matched_signals",
+        "episode_profile_name",
+        "length_minutes",
+        "title",
+        "briefing_addition",
+        "reasoning",
+        "matched_signals",
     ):
         assert required in body, f"missing key {required}"
     assert isinstance(body["matched_signals"], dict)

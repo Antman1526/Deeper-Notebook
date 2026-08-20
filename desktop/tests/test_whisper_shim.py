@@ -44,9 +44,7 @@ def test_models_use_canonical_owner_identity():
     with TestClient(app) as c:
         body = c.get("/v1/models").json()
 
-    assert {model["owned_by"] for model in body["data"]} == {
-        "deeper-notebook"
-    }
+    assert {model["owned_by"] for model in body["data"]} == {"deeper-notebook"}
 
 
 def test_transcribe_returns_text():

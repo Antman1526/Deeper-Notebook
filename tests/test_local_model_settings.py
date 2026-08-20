@@ -1,4 +1,5 @@
 """Device-local model-routing preferences remain safe and restartable."""
+
 from __future__ import annotations
 
 from pathlib import Path

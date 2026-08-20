@@ -4,6 +4,7 @@ Reads from the `mcp_server` SurrealDB table (migration 17). The
 chat graph calls `list_enabled_servers()` once per turn to
 discover which MCP endpoints to expose as tools.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -53,6 +54,7 @@ def _project_server(row: object) -> dict | None:
 
 async def list_enabled_servers() -> list[dict]:
     from deeper_notebook.database.repository import repo_query
+
     # v0.8.1 — sort by priority ASC then created ASC so the chat graph's
     # servers[0] pick is deterministic: the operator's explicitly preferred
     # server wins over insertion-order. Tied priorities fall back to created

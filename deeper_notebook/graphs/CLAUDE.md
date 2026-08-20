@@ -65,15 +65,16 @@ except Exception as e:
 # Invoke a graph with config override
 config = {"configurable": {"model_id": "model:custom_id"}}
 result = await chat_graph.ainvoke(
-    {"messages": [HumanMessage(content="...")], "notebook": notebook},
-    config=config
+    {"messages": [HumanMessage(content="...")], "notebook": notebook}, config=config
 )
 
 # Source processing (content → save → transform)
-result = await source_graph.ainvoke({
-    "content_state": {...},  # ProcessSourceState from content-core
-    "apply_transformations": [t1, t2],
-    "source_id": "source:123",
-    "embed": True
-})
+result = await source_graph.ainvoke(
+    {
+        "content_state": {...},  # ProcessSourceState from content-core
+        "apply_transformations": [t1, t2],
+        "source_id": "source:123",
+        "embed": True,
+    }
+)
 ```

@@ -19,6 +19,7 @@ This test drives the helper concurrently from N coroutines with the
 probe slowed down so the race window is wide enough to deterministically
 trigger N probes without the fix, and exactly 1 with the fix.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -53,6 +54,7 @@ def test_health_cache_single_flight_under_concurrency(monkeypatch):
         return [{"name": "Local GGUF (llama.cpp)", "status": "healthy"}]
 
     import deeper_notebook.health.local_models as health_mod
+
     monkeypatch.setattr(health_mod, "probe_all_local_models", _slow_probe)
     monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
 
@@ -62,9 +64,9 @@ def test_health_cache_single_flight_under_concurrency(monkeypatch):
         # With single-flight, the first acquirer probes, the other 4
         # await the lock; when they enter under the lock the cache is
         # already populated and they return its value → probe_call_count == 1.
-        return await asyncio.gather(*[
-            provision_mod._local_chat_healthy_cached() for _ in range(5)
-        ])
+        return await asyncio.gather(
+            *[provision_mod._local_chat_healthy_cached() for _ in range(5)]
+        )
 
     loop = asyncio.new_event_loop()
     try:
@@ -105,13 +107,14 @@ def test_health_cache_single_flight_does_not_serialize_cache_hits(monkeypatch):
         return []
 
     import deeper_notebook.health.local_models as health_mod
+
     monkeypatch.setattr(health_mod, "probe_all_local_models", _probe_should_not_run)
     monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://localhost:8080")
 
     async def _drive() -> list[bool]:
-        return await asyncio.gather(*[
-            provision_mod._local_chat_healthy_cached() for _ in range(3)
-        ])
+        return await asyncio.gather(
+            *[provision_mod._local_chat_healthy_cached() for _ in range(3)]
+        )
 
     loop = asyncio.new_event_loop()
     try:
@@ -120,6 +123,4 @@ def test_health_cache_single_flight_does_not_serialize_cache_hits(monkeypatch):
         loop.close()
 
     assert all(r is True for r in results)
-    assert probe_called[0] is False, (
-        "Cache-hit path must not call the probe at all"
-    )
+    assert probe_called[0] is False, "Cache-hit path must not call the probe at all"

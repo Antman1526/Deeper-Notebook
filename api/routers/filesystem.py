@@ -23,6 +23,7 @@ Safety rationale:
   * Directory listings are capped at MAX_ENTRIES so a user pointing the
     picker at /tmp doesn't OOM the API.
 """
+
 from __future__ import annotations
 
 import os
@@ -50,8 +51,8 @@ _DENIED_PREFIXES: tuple[str, ...] = (
     "/System",  # macOS
     "/Library/Apple",
     "/private/var/db",
-    "/proc",     # Linux
-    "/sys",      # Linux
+    "/proc",  # Linux
+    "/sys",  # Linux
     "/dev",
     "/Windows",  # Windows (PyInstaller bundle on win sees this case-insensitively)
     "/$Recycle.Bin",
@@ -69,17 +70,17 @@ MAX_ENTRIES = 500
 
 class FsEntry(BaseModel):
     name: str
-    path: str         # absolute, canonical
+    path: str  # absolute, canonical
     is_dir: bool
-    size: Optional[int] = None       # bytes; None for dirs
-    modified: Optional[str] = None   # ISO 8601
+    size: Optional[int] = None  # bytes; None for dirs
+    modified: Optional[str] = None  # ISO 8601
 
 
 class FsListResponse(BaseModel):
     path: str
     parent: Optional[str] = None
     entries: list[FsEntry]
-    truncated: bool = False           # True if MAX_ENTRIES was reached
+    truncated: bool = False  # True if MAX_ENTRIES was reached
     warnings: list[str] = []
 
 
@@ -88,7 +89,7 @@ class FsHomeResponse(BaseModel):
     desktop: Optional[str] = None
     documents: Optional[str] = None
     downloads: Optional[str] = None
-    default_exports: str               # ~/DeeperNotebook-Exports
+    default_exports: str  # ~/DeeperNotebook-Exports
 
 
 class FsMkdirRequest(BaseModel):
@@ -122,12 +123,11 @@ def _resolve_and_validate(path: str, *, must_exist: bool = True) -> Path:
         resolved = Path(expanded).resolve()
     except (OSError, RuntimeError) as exc:
         # Resolve can raise on Windows reparse-point loops, etc.
-        raise HTTPException(
-            status_code=400, detail=f"Could not normalize path: {exc}"
-        )
+        raise HTTPException(status_code=400, detail=f"Could not normalize path: {exc}")
     if not resolved.is_absolute():
         raise HTTPException(
-            status_code=400, detail="path must resolve to an absolute location",
+            status_code=400,
+            detail="path must resolve to an absolute location",
         )
     resolved_str = str(resolved)
     # v0.7.185 — Audit finding #5: previously this just did
@@ -158,7 +158,8 @@ def _resolve_and_validate(path: str, *, must_exist: bool = True) -> Path:
             )
     if must_exist and not resolved.exists():
         raise HTTPException(
-            status_code=404, detail=f"Path does not exist: {resolved_str}",
+            status_code=404,
+            detail=f"Path does not exist: {resolved_str}",
         )
     return resolved
 
@@ -222,7 +223,8 @@ def fs_list(
     path: str = Query(..., description="Absolute path to a directory"),
     show_hidden: bool = Query(False, description="Include dotfiles"),
     only: Literal["all", "dirs", "files"] = Query(
-        "all", description="Filter entries by kind",
+        "all",
+        description="Filter entries by kind",
     ),
 ) -> FsListResponse:
     """List the contents of a directory on the host filesystem.
@@ -234,7 +236,8 @@ def fs_list(
     resolved = _resolve_and_validate(path)
     if not resolved.is_dir():
         raise HTTPException(
-            status_code=400, detail=f"Path is not a directory: {resolved}",
+            status_code=400,
+            detail=f"Path is not a directory: {resolved}",
         )
 
     warnings: list[str] = []
@@ -253,11 +256,13 @@ def fs_list(
                 break
     except PermissionError as exc:
         raise HTTPException(
-            status_code=403, detail=f"Permission denied listing {resolved}: {exc}",
+            status_code=403,
+            detail=f"Permission denied listing {resolved}: {exc}",
         )
     except OSError as exc:
         raise HTTPException(
-            status_code=500, detail=f"Could not list {resolved}: {exc}",
+            status_code=500,
+            detail=f"Could not list {resolved}: {exc}",
         )
 
     formatted = [_format_entry(c) for c in raw_entries]
@@ -304,11 +309,13 @@ def fs_mkdir(req: FsMkdirRequest) -> FsMkdirResponse:
         resolved.mkdir(parents=req.parents, exist_ok=True)
     except PermissionError as exc:
         raise HTTPException(
-            status_code=403, detail=f"Permission denied creating {resolved}: {exc}",
+            status_code=403,
+            detail=f"Permission denied creating {resolved}: {exc}",
         )
     except OSError as exc:
         raise HTTPException(
-            status_code=500, detail=f"Could not create {resolved}: {exc}",
+            status_code=500,
+            detail=f"Could not create {resolved}: {exc}",
         )
     logger.info("fs/mkdir: created {!r}", str(resolved))
     return FsMkdirResponse(path=str(resolved), created=True)

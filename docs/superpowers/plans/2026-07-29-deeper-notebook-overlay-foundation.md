@@ -167,15 +167,19 @@ def test_overlay_note_forbids_paths_and_invalid_hashes():
     )
     assert note.source_authority == "overlay"
     with pytest.raises(ValidationError):
-        OverlayNote.model_validate({
-            **note.model_dump(),
-            "relative_path": "/Users/owner/private.md",
-        })
+        OverlayNote.model_validate(
+            {
+                **note.model_dump(),
+                "relative_path": "/Users/owner/private.md",
+            }
+        )
     with pytest.raises(ValidationError):
-        OverlayNote.model_validate({
-            **note.model_dump(),
-            "content_hash": "not-a-hash",
-        })
+        OverlayNote.model_validate(
+            {
+                **note.model_dump(),
+                "content_hash": "not-a-hash",
+            }
+        )
 
 
 def test_update_requires_expected_revision_and_idempotency():
@@ -1117,12 +1121,8 @@ from deeper_notebook.overlay.service import OverlayService
 async def test_daily_creation_is_idempotent_across_service_instances(fixture):
     first_service = fixture.service()
     second_service = fixture.service()
-    first = await first_service.create_daily(
-        CreateDailyNote(date_key="2026-07-29")
-    )
-    second = await second_service.create_daily(
-        CreateDailyNote(date_key="2026-07-29")
-    )
+    first = await first_service.create_daily(CreateDailyNote(date_key="2026-07-29"))
+    second = await second_service.create_daily(CreateDailyNote(date_key="2026-07-29"))
     assert first.overlay.id == second.overlay.id
     assert first.overlay.content_hash == second.overlay.content_hash
     assert list(fixture.layout.daily_root.glob("*.md")) == [
@@ -1642,6 +1642,7 @@ Backend:
 
 ```python
 KnowledgeSourceAuthority = Literal["external-vault", "overlay"]
+
 
 class KnowledgeTabState(BaseModel):
     id: str = Field(min_length=1, max_length=128)

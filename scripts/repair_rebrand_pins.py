@@ -235,6 +235,32 @@ def main() -> int:
         capture_output=True,
         check=False,
     )
+
+    # v0.8.111 — recompute the inventory digest AFTER regeneration. Regenerating
+    # rewrites entries, which invalidates the digest set a few lines above, so
+    # the tool used to leave behind a stale constant: the pinned inventory then
+    # loaded EMPTY and every compatibility contract resolved to None, surfacing
+    # as "compatibility entry must use its exact canonical compatibility
+    # contract" — a message that says nothing about digests. Found exactly that
+    # way while adopting the formatter.
+    payload = json.loads(ALLOWLIST.read_text(encoding="utf-8"))
+    settled = _inventory_digest(payload)
+    audit_source = AUDIT.read_text(encoding="utf-8")
+    current = re.search(r'"([0-9a-f]{64})"', audit_source)
+    if current and current.group(1) != settled:
+        AUDIT.write_text(audit_source.replace(current.group(1), settled, 1))
+        print(f"inventory digest re-settled -> {settled[:16]}…")
+        ra_settled = importlib_reload(__import__("rebrand_audit"))
+        payload = json.loads(ALLOWLIST.read_text(encoding="utf-8"))
+        changed = 0
+        for cid, contract in payload["compatibility_contracts"].items():
+            actual = ra_settled.compatibility_coverage_digest(payload["entries"], cid)
+            if contract.get("coverage_sha256") != actual:
+                contract["coverage_sha256"] = actual
+                changed += 1
+        if changed:
+            ALLOWLIST.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+            print(f"coverage digests re-settled: {changed}")
     result = subprocess.run(
         [sys.executable, str(AUDIT), "--check"],
         cwd=ROOT,

@@ -9,6 +9,7 @@ Exposes:
     GET  /health                  → {"status": "ok", "voices": [...]}
     POST /v1/audio/speech         → JSON {input, voice?, model?} → audio/wav
 """
+
 from __future__ import annotations
 
 import argparse
@@ -95,6 +96,7 @@ def build_app(voices: dict[str, Any]) -> FastAPI:
             # piper >= 0.0.3 returns an iterable of AudioChunk objects;
             # convert the float32 arrays to int16 PCM and write one WAV.
             import numpy as np
+
             chunks = list(v.synthesize(req.input))
             if not chunks:
                 raise HTTPException(status_code=500, detail="Piper returned no audio")
@@ -123,8 +125,8 @@ def build_app(voices: dict[str, Any]) -> FastAPI:
 def _load_voice(model_path: Path) -> Any:
     """Lazy-load a Piper voice object from an .onnx path."""
     from piper.voice import PiperVoice
-    return PiperVoice.load(str(model_path),
-                           config_path=str(model_path) + ".json")
+
+    return PiperVoice.load(str(model_path), config_path=str(model_path) + ".json")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -132,8 +134,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
-        "--voice", action="append", required=True,
-        help='Voice in form NAME=PATH (e.g. alex=/path/to/amy.onnx). Repeatable.',
+        "--voice",
+        action="append",
+        required=True,
+        help="Voice in form NAME=PATH (e.g. alex=/path/to/amy.onnx). Repeatable.",
     )
     args = parser.parse_args(argv)
 
@@ -147,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     app = build_app(voices=voices)
 
     import uvicorn
+
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 

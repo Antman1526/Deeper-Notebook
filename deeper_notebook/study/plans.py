@@ -124,7 +124,9 @@ class StudyActivity(_FrozenContract):
     @field_validator("source_ids")
     @classmethod
     def source_ids_are_not_blank(cls, values: tuple[str, ...]) -> tuple[str, ...]:
-        return tuple(_require_nonblank(value, field_name="source_id") for value in values)
+        return tuple(
+            _require_nonblank(value, field_name="source_id") for value in values
+        )
 
 
 class StudyPlanPreferences(_FrozenContract):
@@ -147,14 +149,22 @@ class StudyPlanPreferences(_FrozenContract):
         if len(set(values)) != len(values):
             raise ValueError("approved network scope entries must be unique")
         for value in values:
-            if not value.strip() or len(value) > 512 or not value.startswith("https://"):
-                raise ValueError("approved network scope must contain bounded HTTPS origins")
+            if (
+                not value.strip()
+                or len(value) > 512
+                or not value.startswith("https://")
+            ):
+                raise ValueError(
+                    "approved network scope must contain bounded HTTPS origins"
+                )
         return values
 
     @model_validator(mode="after")
     def remote_authority_is_explicit(self) -> "StudyPlanPreferences":
         if self.network_allowed != bool(self.approved_network_scope):
-            raise ValueError("network authority and approved scope must be supplied together")
+            raise ValueError(
+                "network authority and approved scope must be supplied together"
+            )
         if self.model_route == "cloud" and not self.network_allowed:
             raise ValueError("cloud model route requires network authority")
         return self
@@ -177,7 +187,9 @@ class StudySyllabusUnit(_FrozenContract):
     unit_id: _UnitId
     title: str = Field(min_length=1, max_length=200)
     objectives: tuple[_Objective, ...] = Field(min_length=1, max_length=20)
-    prerequisite_unit_ids: tuple[_UnitId, ...] = Field(default_factory=tuple, max_length=20)
+    prerequisite_unit_ids: tuple[_UnitId, ...] = Field(
+        default_factory=tuple, max_length=20
+    )
     estimated_minutes: int = Field(ge=5, le=10_080)
     source_ids: tuple[_SourceId, ...] = Field(default_factory=tuple, max_length=100)
     activities: tuple[StudyActivity, ...] = Field(default_factory=tuple, max_length=50)
@@ -204,7 +216,9 @@ class StudySyllabusUnit(_FrozenContract):
         cls, values: tuple[str, ...], info: object
     ) -> tuple[str, ...]:
         field_name = str(info.field_name).removesuffix("s")
-        return tuple(_require_nonblank(value, field_name=field_name) for value in values)
+        return tuple(
+            _require_nonblank(value, field_name=field_name) for value in values
+        )
 
 
 class StudySyllabus(_FrozenContract):
@@ -323,7 +337,9 @@ class StudyPlan(_FrozenContract):
                 f"Expected plan version {expected_version}, current version is {self.version}"
             )
         if next_state not in _ALLOWED_TRANSITIONS[self.state]:
-            raise ValueError(f"Transition from {self.state} to {next_state} is not allowed")
+            raise ValueError(
+                f"Transition from {self.state} to {next_state} is not allowed"
+            )
         if next_state in _APPROVAL_BOUND_STATES:
             self._require_approval_binding()
         return StudyPlan.model_validate(

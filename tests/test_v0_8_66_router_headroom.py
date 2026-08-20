@@ -2,6 +2,7 @@
 headroom, not a flat 1000, so a near-full prompt routes to cloud instead of
 overflowing the local sidecar (llama.cpp 400 context_length_exceeded).
 """
+
 from __future__ import annotations
 
 from deeper_notebook.ai.router import pick_provider

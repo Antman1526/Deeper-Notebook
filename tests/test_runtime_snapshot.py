@@ -215,15 +215,34 @@ async def test_throwing_provider_containers_fail_closed_to_unknown() -> None:
 
     for readiness, startup, vault, knowledge in (
         (ThrowingMapping(), None, None, None),
-        ({"database": "online", "migrations": "applied"}, {"stages": ThrowingSequence()}, None, None),
-        ({"database": "online", "migrations": "applied"}, None, ThrowingMapping(), None),
-        ({"database": "online", "migrations": "applied"}, None, None, ThrowingMapping()),
+        (
+            {"database": "online", "migrations": "applied"},
+            {"stages": ThrowingSequence()},
+            None,
+            None,
+        ),
+        (
+            {"database": "online", "migrations": "applied"},
+            None,
+            ThrowingMapping(),
+            None,
+        ),
+        (
+            {"database": "online", "migrations": "applied"},
+            None,
+            None,
+            ThrowingMapping(),
+        ),
     ):
         snapshot = await build_runtime_snapshot(
             _providers(
                 readiness=lambda value=readiness: value,
-                startup_receipts=(lambda value=startup: value) if startup is not None else None,
-                vault_summary=(lambda value=vault: value) if vault is not None else None,
+                startup_receipts=(lambda value=startup: value)
+                if startup is not None
+                else None,
+                vault_summary=(lambda value=vault: value)
+                if vault is not None
+                else None,
                 knowledge_summary=(lambda value=knowledge: value)
                 if knowledge is not None
                 else None,
@@ -270,7 +289,11 @@ async def test_router_bounds_lazy_mount_projection_before_materializing() -> Non
     class LazyMounts:
         def __iter__(self):
             for index in range(mount_bound):
-                yield type("Mount", (), {"status": "ready-read-only", "write_policy": "read-only"})()
+                yield type(
+                    "Mount",
+                    (),
+                    {"status": "ready-read-only", "write_policy": "read-only"},
+                )()
             raise AssertionError("mount summary was materialized past the bound")
 
     class Repository:
@@ -353,7 +376,9 @@ async def test_provider_failures_are_redacted_without_running_side_effects():
 
 
 @pytest.mark.asyncio
-async def test_auto_export_metadata_is_bounded_and_contains_no_paths(tmp_path: Path) -> None:
+async def test_auto_export_metadata_is_bounded_and_contains_no_paths(
+    tmp_path: Path,
+) -> None:
     from api.runtime_snapshot import build_runtime_snapshot
 
     (tmp_path / "auto-export-001.surql").write_text("private source content")
@@ -369,7 +394,9 @@ async def test_auto_export_metadata_is_bounded_and_contains_no_paths(tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_default_update_projection_does_not_check_network_or_write_state(monkeypatch):
+async def test_default_update_projection_does_not_check_network_or_write_state(
+    monkeypatch,
+):
     import api.updates_service as updates_service
     from api.runtime_snapshot import RuntimeSnapshotProviders, build_runtime_snapshot
 
@@ -461,7 +488,9 @@ async def test_router_uses_vault_list_only_and_never_mounts_or_scans(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_authenticated_router_degrades_malformed_optional_inputs(monkeypatch) -> None:
+async def test_authenticated_router_degrades_malformed_optional_inputs(
+    monkeypatch,
+) -> None:
     from api.routers.runtime import router
 
     app = FastAPI()
@@ -505,7 +534,9 @@ async def test_auto_export_receipt_projects_bounded_valid_and_stale_metadata(
     export.write_text("private source content", encoding="utf-8")
     os.utime(export, (now, now))
 
-    valid = await build_runtime_snapshot(_providers(auto_export_directory=lambda: tmp_path))
+    valid = await build_runtime_snapshot(
+        _providers(auto_export_directory=lambda: tmp_path)
+    )
     assert valid.backup.freshness == "valid"
     assert valid.backup.newest_size_bytes == len("private source content")
     assert valid.backup.newest_timestamp is not None
@@ -515,7 +546,9 @@ async def test_auto_export_receipt_projects_bounded_valid_and_stale_metadata(
 
     stale_timestamp = now - (runtime_snapshot.AUTO_EXPORT_STALE_AFTER_SECONDS + 1)
     os.utime(export, (stale_timestamp, stale_timestamp))
-    stale = await build_runtime_snapshot(_providers(auto_export_directory=lambda: tmp_path))
+    stale = await build_runtime_snapshot(
+        _providers(auto_export_directory=lambda: tmp_path)
+    )
     assert stale.backup.freshness == "stale"
     assert stale.backup.state == "degraded"
     assert "auto_export_stale" in stale.reasons
@@ -525,7 +558,9 @@ async def test_auto_export_receipt_projects_bounded_valid_and_stale_metadata(
 async def test_absent_auto_export_receipt_is_unknown_without_paths() -> None:
     from api.runtime_snapshot import build_runtime_snapshot
 
-    snapshot = await build_runtime_snapshot(_providers(auto_export_directory=lambda: None))
+    snapshot = await build_runtime_snapshot(
+        _providers(auto_export_directory=lambda: None)
+    )
 
     assert snapshot.backup.freshness == "unknown"
     assert snapshot.backup.newest_timestamp is None
@@ -589,7 +624,9 @@ async def test_malformed_provenance_degrades_without_raw_details() -> None:
 
 
 @pytest.mark.asyncio
-async def test_existing_backup_directory_without_exports_is_unknown(tmp_path: Path) -> None:
+async def test_existing_backup_directory_without_exports_is_unknown(
+    tmp_path: Path,
+) -> None:
     from api.runtime_snapshot import build_runtime_snapshot
 
     (tmp_path / "manual-export.txt").write_text("not an auto export", encoding="utf-8")

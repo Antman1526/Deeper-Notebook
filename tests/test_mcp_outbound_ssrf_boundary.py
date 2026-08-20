@@ -1,4 +1,5 @@
 """Regression coverage for the final MCP outbound URL boundary."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -42,7 +43,9 @@ async def test_mcp_session_rejects_blocked_authorities_before_transport(
 
 
 @pytest.mark.asyncio
-async def test_chat_discovery_fails_soft_for_directly_edited_link_local_url(monkeypatch):
+async def test_chat_discovery_fails_soft_for_directly_edited_link_local_url(
+    monkeypatch,
+):
     """Legacy/link-local rows produce no tools and never initiate transport."""
     import mcp.client.streamable_http as streamable_http
 
@@ -267,6 +270,7 @@ async def test_mcp_transport_connects_only_to_resolution_approved_before_rebindi
             return object()
 
     backend = PinnedMCPNetworkBackend(approved, delegate=_Delegate())
+
     # Simulate a second DNS answer that would be link-local. The backend must
     # use the immutable validation receipt rather than resolve again.
     async def changed_resolution(hostname, port):

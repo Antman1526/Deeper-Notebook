@@ -44,7 +44,9 @@ from deeper_notebook.source_visuals.storage import (
 _AwaitableValue = TypeVar("_AwaitableValue")
 _CLAIM_LEASE_SECONDS = 90
 _GLOBAL_MEDIA_SEMAPHORE = asyncio.Semaphore(2)
-_FINGERPRINT_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+_FINGERPRINT_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = (
+    weakref.WeakValueDictionary()
+)
 _FINGERPRINT_LOCKS_GUARD = asyncio.Lock()
 
 
@@ -80,7 +82,9 @@ class ExtractSourceVisualOutput(CommandOutput):
     )
 
 
-async def _await_if_needed(value: _AwaitableValue | Awaitable[_AwaitableValue]) -> _AwaitableValue:
+async def _await_if_needed(
+    value: _AwaitableValue | Awaitable[_AwaitableValue],
+) -> _AwaitableValue:
     if inspect.isawaitable(value):
         return await value
     return value
@@ -286,7 +290,9 @@ class SourceVisualService:
             owner_token=input_data.claim_owner_token,
         )
 
-    async def execute(self, input_data: ExtractSourceVisualInput) -> ExtractSourceVisualOutput:
+    async def execute(
+        self, input_data: ExtractSourceVisualInput
+    ) -> ExtractSourceVisualOutput:
         """Execute bounded extraction without changing source content or paths."""
 
         started = time.monotonic()
@@ -334,7 +340,9 @@ class SourceVisualService:
                     candidate = await _run_boundary(select_candidate, candidates)
                     if candidate is None:
                         raise SourceVisualMediaError("NO_ELIGIBLE_CANDIDATE")
-                    prepared = await _run_boundary(prepare_webp, candidate.encoded_bytes)
+                    prepared = await _run_boundary(
+                        prepare_webp, candidate.encoded_bytes
+                    )
                     alt_text = await _run_boundary(
                         build_alt_text,
                         str(getattr(source, "title", "") or "Source"),
@@ -395,7 +403,9 @@ class SourceVisualService:
                         origin=candidate.origin,
                         width=stored.width,
                         height=stored.height,
-                        duration_ms=min(60_000, int((time.monotonic() - started) * 1_000)),
+                        duration_ms=min(
+                            60_000, int((time.monotonic() - started) * 1_000)
+                        ),
                         outcome="ready",
                     )
         except asyncio.CancelledError:

@@ -17,6 +17,7 @@ Tests:
     (matches the v0.8.39 inventory filter — zero-byte = failed prior
     download).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,10 +49,14 @@ async def test_start_download_skips_when_final_already_exists(tmp_path):
             "httpx.AsyncClient called even though file already exists",
         )
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _explode_async_client):
+    with patch(
+        "deeper_notebook.local_models.downloader.httpx.AsyncClient",
+        _explode_async_client,
+    ):
         job = await dl_mod.start_download(
-            "bartowski/Some-Model-GGUF", "model.gguf", tmp_path,
+            "bartowski/Some-Model-GGUF",
+            "model.gguf",
+            tmp_path,
         )
 
     assert job.status == "completed"
@@ -90,22 +95,34 @@ async def test_start_download_does_not_poison_registry_after_skip(tmp_path):
     class _R:
         status_code = 200
         headers = {"content-length": str(len(fake_bytes))}
-        def raise_for_status(self): pass
+
+        def raise_for_status(self):
+            pass
+
         async def aiter_bytes(self, chunk_size=1024 * 1024):
             yield fake_bytes
 
     class _Ctx:
-        async def __aenter__(self): return _R()
-        async def __aexit__(self, *_a): pass
+        async def __aenter__(self):
+            return _R()
+
+        async def __aexit__(self, *_a):
+            pass
 
     class _Client:
-        def __init__(self, *a, **k): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): pass
-        def stream(self, m, u, headers=None): return _Ctx()
+        def __init__(self, *a, **k):
+            pass
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _Client):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            pass
+
+        def stream(self, m, u, headers=None):
+            return _Ctx()
+
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient", _Client):
         second = await dl_mod.start_download("r/x", "model.gguf", tmp_path)
         # Real download was kicked off — should have a background task.
         assert second._task is not None
@@ -131,22 +148,34 @@ async def test_start_download_does_not_skip_zero_byte_stub(tmp_path):
     class _R:
         status_code = 200
         headers = {"content-length": str(len(fake_bytes))}
-        def raise_for_status(self): pass
+
+        def raise_for_status(self):
+            pass
+
         async def aiter_bytes(self, chunk_size=1024 * 1024):
             yield fake_bytes
 
     class _Ctx:
-        async def __aenter__(self): return _R()
-        async def __aexit__(self, *_a): pass
+        async def __aenter__(self):
+            return _R()
+
+        async def __aexit__(self, *_a):
+            pass
 
     class _Client:
-        def __init__(self, *a, **k): pass
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): pass
-        def stream(self, m, u, headers=None): return _Ctx()
+        def __init__(self, *a, **k):
+            pass
 
-    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient",
-               _Client):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            pass
+
+        def stream(self, m, u, headers=None):
+            return _Ctx()
+
+    with patch("deeper_notebook.local_models.downloader.httpx.AsyncClient", _Client):
         job = await dl_mod.start_download("r/x", "model.gguf", tmp_path)
         assert job._task is not None
         await asyncio.wait_for(job._task, timeout=5.0)

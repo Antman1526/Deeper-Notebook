@@ -12,6 +12,7 @@ a frozen-launcher crash with NOTHING for the user to see:
 The emergency-log path in __main__.py writes to a fixed path that doesn't
 depend on any of the modules that might have failed.
 """
+
 from __future__ import annotations
 
 import os
@@ -32,9 +33,7 @@ def test_emergency_log_writes_to_launcher_log(tmp_path, monkeypatch):
     except RuntimeError as exc:
         _emergency_log(exc)
 
-    log_path = (
-        tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
-    )
+    log_path = tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
     assert log_path.exists()
     text = log_path.read_text()
     assert "EARLY-INIT FAILURE" in text
@@ -49,9 +48,7 @@ def test_emergency_log_appends_to_existing_file(tmp_path, monkeypatch):
     from desktop.__main__ import _emergency_log
     from desktop.data_root import open_recovery_log_directory
 
-    log_path = (
-        tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
-    )
+    log_path = tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
     with open_recovery_log_directory(home=tmp_path):
         pass
     log_path.write_text("PREVIOUS-LOG-CONTENT\n")
@@ -63,7 +60,7 @@ def test_emergency_log_appends_to_existing_file(tmp_path, monkeypatch):
 
     text = log_path.read_text()
     assert "PREVIOUS-LOG-CONTENT" in text  # prior content preserved
-    assert "second failure" in text       # new failure appended
+    assert "second failure" in text  # new failure appended
 
 
 def test_emergency_log_swallows_its_own_failure(monkeypatch, capsys):
@@ -113,9 +110,7 @@ def test_emergency_log_does_not_reenter_failed_data_root_resolution(
     original = RuntimeError("simulated early failure")
     entrypoint._emergency_log(original)
 
-    log_path = (
-        tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
-    )
+    log_path = tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
     assert "simulated early failure" in log_path.read_text(encoding="utf-8")
     assert not (tmp_path / ".deeper-notebook").exists()
     assert not (tmp_path / ".open-notebook-plus").exists()
@@ -167,9 +162,7 @@ def test_emergency_log_dirfd_cannot_be_redirected_after_open(
     entrypoint._emergency_log(RuntimeError("descriptor-bound"))
 
     assert not (canonical / "launcher.log").exists()
-    assert "descriptor-bound" in (
-        held / "launcher.log"
-    ).read_text(encoding="utf-8")
+    assert "descriptor-bound" in (held / "launcher.log").read_text(encoding="utf-8")
     assert "Launcher early-init failure" in capsys.readouterr().err
 
 
@@ -179,9 +172,7 @@ def test_recovery_log_adopts_and_appends_to_existing_owned_file(tmp_path):
         open_recovery_log_directory,
     )
 
-    log_path = (
-        tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
-    )
+    log_path = tmp_path / ".deeper-notebook-recovery" / "logs" / "launcher.log"
     with open_recovery_log_directory(home=tmp_path):
         pass
     log_path.write_bytes(b"existing-log\n")

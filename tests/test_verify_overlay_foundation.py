@@ -169,9 +169,7 @@ class _ControlledProofHandler(BaseHTTPRequestHandler):
     pages: dict[str, dict[str, object]] = {}
     unique_count = 0
     openapi_payload: object = {
-        "paths": {
-            "/api/deeper-notebook/vaults/{vault_id}/pages/{note_id}": {"get": {}}
-        }
+        "paths": {"/api/deeper-notebook/vaults/{vault_id}/pages/{note_id}": {"get": {}}}
     }
 
     @classmethod
@@ -186,9 +184,7 @@ class _ControlledProofHandler(BaseHTTPRequestHandler):
         cls.unique_count = 0
         cls.openapi_payload = {
             "paths": {
-                "/api/deeper-notebook/vaults/{vault_id}/pages/{note_id}": {
-                    "get": {}
-                }
+                "/api/deeper-notebook/vaults/{vault_id}/pages/{note_id}": {"get": {}}
             }
         }
 
@@ -410,9 +406,7 @@ def test_controlled_proof_refuses_malformed_openapi_before_mutation(
         )
 
     assert result.returncode == 5
-    assert "openapi_route_audit_failed" in inputs["report"].read_text(
-        encoding="utf-8"
-    )
+    assert "openapi_route_audit_failed" in inputs["report"].read_text(encoding="utf-8")
     assert not [
         request
         for request in _ControlledProofHandler.requests

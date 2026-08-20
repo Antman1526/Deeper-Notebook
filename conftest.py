@@ -83,6 +83,8 @@ def pytest_runtest_protocol(item, nextitem):
         # Printed, not raised: this hook runs after the test's own report is
         # finalized, so raising here surfaces as a confusing protocol-level
         # error rather than a failure attributed to the offending test.
-        print(f"\nENV LEAK {item.nodeid}: added={added} removed={removed} changed={changed}")
+        print(
+            f"\nENV LEAK {item.nodeid}: added={added} removed={removed} changed={changed}"
+        )
     os.environ.clear()
     os.environ.update(before)

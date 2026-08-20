@@ -129,7 +129,9 @@ class FakeRepository:
             current.model_dump()
             | {
                 "source_links": current.source_links + (link,),
-                "state": "analyzing_sources" if current.state == "draft" else current.state,
+                "state": "analyzing_sources"
+                if current.state == "draft"
+                else current.state,
                 "version": current.version + 1,
             }
         )
@@ -142,15 +144,20 @@ class FakeRepository:
         current = self.plans.get(plan_id)
         if current is None or current.version != expected_revision:
             raise StudyPlanConflictError("study plan revision conflict")
-        links = tuple(link for link in current.source_links if link.source_id != source_id)
+        links = tuple(
+            link for link in current.source_links if link.source_id != source_id
+        )
         removed = len(links) != len(current.source_links)
         if removed:
             self.plans[plan_id] = StudyPlan.model_validate(
-                current.model_dump() | {"source_links": links, "version": current.version + 1}
+                current.model_dump()
+                | {"source_links": links, "version": current.version + 1}
             )
         return removed
 
-    async def get_syllabus(self, plan_id: str, *, version: int | None = None) -> StudySyllabus | None:
+    async def get_syllabus(
+        self, plan_id: str, *, version: int | None = None
+    ) -> StudySyllabus | None:
         self.calls += 1
         if version is None:
             versions = [key[1] for key in self.syllabi if key[0] == plan_id]
@@ -170,7 +177,10 @@ class FakeRepository:
             raise StudyPlanConflictError("study plan revision conflict")
         if lifecycle_action == "propose" and current.state != "analyzing_sources":
             raise StudyPlanConflictError("study plan lifecycle conflict")
-        if lifecycle_action == "edit" and current.state not in {"syllabus_proposed", "editing"}:
+        if lifecycle_action == "edit" and current.state not in {
+            "syllabus_proposed",
+            "editing",
+        }:
             raise StudyPlanConflictError("study plan lifecycle conflict")
         self.syllabi[(syllabus.plan_id, syllabus.version)] = syllabus
         if lifecycle_action == "propose":
@@ -229,10 +239,16 @@ def client(monkeypatch: pytest.MonkeyPatch, repository: FakeRepository) -> TestC
     return TestClient(app)
 
 
-def test_create_plan_projects_only_public_fields_and_forbids_unknown_fields(client: TestClient) -> None:
+def test_create_plan_projects_only_public_fields_and_forbids_unknown_fields(
+    client: TestClient,
+) -> None:
     invalid = client.post(
         "/api/study/plans",
-        json={"goal": "Learn mechanics", "starting_level": "Beginner", "unexpected": True},
+        json={
+            "goal": "Learn mechanics",
+            "starting_level": "Beginner",
+            "unexpected": True,
+        },
     )
     created = client.post(
         "/api/study/plans",
@@ -286,7 +302,9 @@ def test_patch_requires_strict_payload_and_exact_revision(client: TestClient) ->
     assert updated.json()["version"] == 2
 
 
-def test_source_links_require_exact_revision_and_only_project_source_id(client: TestClient) -> None:
+def test_source_links_require_exact_revision_and_only_project_source_id(
+    client: TestClient,
+) -> None:
     stale = client.post(
         "/api/study/plans/study_plan%3Aone/sources",
         json={"source_id": "source:one", "expected_revision": 7},
@@ -314,7 +332,10 @@ def test_syllabus_read_and_update_require_exact_plan_revision(
     fetched = client.get("/api/study/plans/study_plan%3Aone/syllabus?version=1")
     forbidden_schema_version = client.put(
         "/api/study/plans/study_plan%3Aone/syllabus",
-        json={"expected_revision": 1, **_syllabus().model_dump(mode="json", exclude={"plan_id", "approved_at"})},
+        json={
+            "expected_revision": 1,
+            **_syllabus().model_dump(mode="json", exclude={"plan_id", "approved_at"}),
+        },
     )
     stale = client.put(
         "/api/study/plans/study_plan%3Aone/syllabus",
@@ -362,7 +383,9 @@ def test_approve_syllabus_rejects_illegal_lifecycle_and_stale_revision(
     assert stale.status_code == 409
 
 
-def test_feature_off_returns_404_before_constructing_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_feature_off_returns_404_before_constructing_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     app = FastAPI()
     app.include_router(study_plans.router, prefix="/api")
     calls = 0
@@ -437,7 +460,11 @@ def test_unit_artifact_generation_returns_metadata_only_and_rejects_bad_request(
     )
     malformed = client.post(
         "/api/study/plans/study_plan%3Aone/generate",
-        json={"unit_id": "motion", "artifact_types": ["report"], "expected_revision": 3},
+        json={
+            "unit_id": "motion",
+            "artifact_types": ["report"],
+            "expected_revision": 3,
+        },
     )
 
     assert response.status_code == 200
@@ -471,7 +498,9 @@ def test_unit_artifact_domain_errors_are_safe(
     status_code: int,
 ) -> None:
     class Service:
-        async def generate_unit(self, *args: object, **kwargs: object) -> list[dict[str, str]]:
+        async def generate_unit(
+            self, *args: object, **kwargs: object
+        ) -> list[dict[str, str]]:
             del args, kwargs
             raise error
 
@@ -650,9 +679,7 @@ def test_readiness_with_legacy_wrong_table_link_returns_safe_bounded_items(
     )
     monkeypatch.setattr(source_service, "repo_query", query)
 
-    response = client.get(
-        "/api/study/plans/study_plan%3Aone/sources/readiness"
-    )
+    response = client.get("/api/study/plans/study_plan%3Aone/sources/readiness")
 
     assert response.status_code == 200
     assert response.json()["ready"] is False
@@ -687,7 +714,9 @@ def test_propose_syllabus_returns_typed_version_without_approval(
         def __init__(self, **kwargs: object) -> None:
             del kwargs
 
-        async def propose(self, plan_id: str, *, expected_revision: int) -> StudySyllabus:
+        async def propose(
+            self, plan_id: str, *, expected_revision: int
+        ) -> StudySyllabus:
             assert plan_id == "study_plan:one"
             assert expected_revision == 1
             return _syllabus()
@@ -712,7 +741,9 @@ def test_manifestless_api_plan_can_complete_explicit_syllabus_lifecycle(
         def __init__(self, *, repository: FakeRepository) -> None:
             self.repository = repository
 
-        async def propose(self, plan_id: str, *, expected_revision: int) -> StudySyllabus:
+        async def propose(
+            self, plan_id: str, *, expected_revision: int
+        ) -> StudySyllabus:
             syllabus = _syllabus(plan_id=plan_id, version=2)
             return await self.repository.save_syllabus(
                 syllabus,
@@ -794,7 +825,9 @@ def test_syllabus_domain_errors_are_safe_and_typed(
         def __init__(self, **kwargs: object) -> None:
             del kwargs
 
-        async def propose(self, plan_id: str, *, expected_revision: int) -> StudySyllabus:
+        async def propose(
+            self, plan_id: str, *, expected_revision: int
+        ) -> StudySyllabus:
             del plan_id, expected_revision
             raise error
 

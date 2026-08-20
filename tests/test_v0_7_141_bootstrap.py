@@ -59,8 +59,7 @@ def test_build_mac_lock_invokes_uv_pip_compile():
     assert match, "Couldn't locate build-mac-lock recipe body"
     recipe = match.group(1)
     assert "uv pip compile" in recipe, (
-        "build-mac-lock should regenerate the lockfile via "
-        "`uv pip compile`"
+        "build-mac-lock should regenerate the lockfile via `uv pip compile`"
     )
     assert "pyproject.toml" in recipe, (
         "build-mac-lock should read deps from pyproject.toml"

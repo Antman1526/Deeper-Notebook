@@ -14,6 +14,7 @@ This module is read-only and pure — no I/O outside the configured
 model_dir, no mutation of any model state. Safe to call from the
 FastAPI event loop in a `to_thread` shim.
 """
+
 from deeper_notebook.local_models.benchmarks import (
     BenchmarkJob,
     BenchmarkMeasurement,

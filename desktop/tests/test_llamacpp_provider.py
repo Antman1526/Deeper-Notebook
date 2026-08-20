@@ -104,7 +104,9 @@ def test_start_raises_if_server_never_ready(gguf_dir, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: fake_proc)
     monkeypatch.setattr("desktop.providers.llamacpp.find_free_port", lambda: 51112)
     monkeypatch.setattr(time, "sleep", lambda _: None)
-    p = LlamaCppProvider(model_dir=gguf_dir, ready_probe=lambda port: False, max_wait=0.01)
+    p = LlamaCppProvider(
+        model_dir=gguf_dir, ready_probe=lambda port: False, max_wait=0.01
+    )
     with pytest.raises(RuntimeError, match="ready"):
         p.start("model_b.gguf")
 
@@ -148,7 +150,9 @@ def test_pick_default_model_empty_dir_returns_empty_string(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_start_captures_stderr_to_log_file_on_premature_exit(gguf_dir, monkeypatch, tmp_path):
+def test_start_captures_stderr_to_log_file_on_premature_exit(
+    gguf_dir, monkeypatch, tmp_path
+):
     """v0.7.151 regression.
 
     The user's launcher.log showed `RuntimeError: llama_cpp.server exited
@@ -170,12 +174,14 @@ def test_start_captures_stderr_to_log_file_on_premature_exit(gguf_dir, monkeypat
         captured_stderr_fh.append(stderr)
         if hasattr(stderr, "write"):
             # Provider opened a real file — write a realistic Hermes-3 crash
-            stderr.write(b"llama_model_load: error loading model architecture: unknown\n")
+            stderr.write(
+                b"llama_model_load: error loading model architecture: unknown\n"
+            )
             stderr.write(b"unknown model architecture: 'hermes3'\n")
             stderr.write(b"llama_load_model_from_file: failed to load model\n")
             stderr.flush()
         proc = MagicMock()
-        proc.poll.return_value = 1   # already exited
+        proc.poll.return_value = 1  # already exited
         proc.returncode = 1
         return proc
 
@@ -211,7 +217,9 @@ def test_start_captures_stderr_to_log_file_on_premature_exit(gguf_dir, monkeypat
     assert "unknown model architecture" in contents
 
 
-def test_start_includes_stderr_log_path_when_stderr_empty(gguf_dir, monkeypatch, tmp_path):
+def test_start_includes_stderr_log_path_when_stderr_empty(
+    gguf_dir, monkeypatch, tmp_path
+):
     """When stderr is empty (process died before writing anything), the
     error message must STILL reference the logfile path AND give a hint
     about likely causes — otherwise the user has no breadcrumb to follow.
@@ -246,7 +254,9 @@ def test_start_includes_stderr_log_path_when_stderr_empty(gguf_dir, monkeypatch,
     assert "llamacpp_chat_stderr.log" in msg
 
 
-def test_start_falls_back_to_devnull_when_log_dir_unwritable(gguf_dir, monkeypatch, tmp_path):
+def test_start_falls_back_to_devnull_when_log_dir_unwritable(
+    gguf_dir, monkeypatch, tmp_path
+):
     """If the log_dir can't be created (e.g. parent is read-only),
     fall back to DEVNULL — don't crash before even spawning.
 
@@ -297,11 +307,13 @@ def test_start_falls_back_to_devnull_when_log_dir_unwritable(gguf_dir, monkeypat
 def _capture_argv_popen(captured: list):
     """Build a fake Popen that records the argv it was called with so the
     test can assert on the flags the provider passed to llama_cpp.server."""
+
     def fake(args, stdout=None, stderr=None, **kwargs):
         captured.append(list(args))
         proc = MagicMock()
         proc.poll.return_value = None  # still alive — ready_probe drives the loop
         return proc
+
     return fake
 
 
@@ -328,7 +340,9 @@ def test_start_omits_draft_model_flag_when_unset(gguf_dir, monkeypatch):
     )
 
 
-def test_start_appends_draft_model_flag_when_path_valid(gguf_dir, monkeypatch, tmp_path):
+def test_start_appends_draft_model_flag_when_path_valid(
+    gguf_dir, monkeypatch, tmp_path
+):
     """v0.8.2 Item A — when draft_model_path points at a real GGUF (>=1MB),
     --model_draft <abs path> must be appended to the spawned argv so
     llama_cpp.server picks up speculative decoding."""
@@ -353,7 +367,7 @@ def test_start_appends_draft_model_flag_when_path_valid(gguf_dir, monkeypatch, t
     assert "--model_draft" in argv, f"expected --model_draft in argv; got {argv}"
     idx = argv.index("--model_draft")
     assert argv[idx + 1] == str(draft_path), (
-        f"--model_draft value must be the absolute draft path; got argv[{idx+1}]={argv[idx+1]!r}"
+        f"--model_draft value must be the absolute draft path; got argv[{idx + 1}]={argv[idx + 1]!r}"
     )
 
 
@@ -430,14 +444,18 @@ def test_start_appends_n_predict_draft_when_both_set(gguf_dir, monkeypatch, tmp_
     p.stop()
 
     argv = captured[0]
-    assert "--n_predict_draft" in argv, f"expected --n_predict_draft in argv; got {argv}"
+    assert "--n_predict_draft" in argv, (
+        f"expected --n_predict_draft in argv; got {argv}"
+    )
     idx = argv.index("--n_predict_draft")
-    assert argv[idx + 1] == "16", f"argv[{idx+1}]={argv[idx+1]!r} (want '16')"
+    assert argv[idx + 1] == "16", f"argv[{idx + 1}]={argv[idx + 1]!r} (want '16')"
     # And the model_draft pair must still be present + correct
     assert "--model_draft" in argv
 
 
-def test_start_omits_n_predict_draft_when_draft_path_missing(gguf_dir, monkeypatch, tmp_path):
+def test_start_omits_n_predict_draft_when_draft_path_missing(
+    gguf_dir, monkeypatch, tmp_path
+):
     """v0.8.2 Item C — a stale DEEPER_NOTEBOOK_LOCAL_DRAFT_N_PREDICT without
     a valid draft_model_path must NOT emit a stray `--n_predict_draft`
     flag (llama_cpp.server would reject the argv at parse time)."""
@@ -449,8 +467,8 @@ def test_start_omits_n_predict_draft_when_draft_path_missing(gguf_dir, monkeypat
     p = LlamaCppProvider(
         model_dir=gguf_dir,
         ready_probe=lambda port: True,
-        draft_model_path=None,           # no draft model
-        draft_n_predict=32,              # but n_predict set anyway
+        draft_model_path=None,  # no draft model
+        draft_n_predict=32,  # but n_predict set anyway
     )
     p.start("model_b.gguf")
     p.stop()
@@ -462,7 +480,9 @@ def test_start_omits_n_predict_draft_when_draft_path_missing(gguf_dir, monkeypat
     assert "--model_draft" not in argv
 
 
-def test_start_includes_stderr_tail_on_never_ready_timeout(gguf_dir, monkeypatch, tmp_path):
+def test_start_includes_stderr_tail_on_never_ready_timeout(
+    gguf_dir, monkeypatch, tmp_path
+):
     """v0.7.151 — when the process is still alive but never binds the
     port (max_wait timeout), include the stderr tail too. The model may
     be silently hung (mmap blocking, slow GPU init) and the user needs

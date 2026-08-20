@@ -26,7 +26,9 @@ from tests.fixtures.anki.build_fixtures import build_apkg
 
 def test_inspects_basic_reverse_and_cloze_without_publishing(tmp_path: Path) -> None:
     basic = inspect_anki_package(build_apkg(tmp_path / "basic.apkg"))
-    reverse = inspect_anki_package(build_apkg(tmp_path / "reverse.apkg", kind="reverse"))
+    reverse = inspect_anki_package(
+        build_apkg(tmp_path / "reverse.apkg", kind="reverse")
+    )
     cloze = inspect_anki_package(build_apkg(tmp_path / "cloze.apkg", kind="cloze"))
 
     assert [(card.kind, card.front) for card in basic.cards] == [
@@ -36,7 +38,10 @@ def test_inspects_basic_reverse_and_cloze_without_publishing(tmp_path: Path) -> 
     assert cloze.cards[0].kind == "cloze"
     assert "[…]" in cloze.cards[0].front
     assert cloze.cards[0].back.startswith("What is inertia?")
-    assert all(card.deck_name == "Mechanics" for card in (*basic.cards, *reverse.cards, *cloze.cards))
+    assert all(
+        card.deck_name == "Mechanics"
+        for card in (*basic.cards, *reverse.cards, *cloze.cards)
+    )
     assert basic.cards[0].tags == ("mechanics", "physics")
 
 
@@ -59,7 +64,7 @@ def test_media_is_mapped_to_bounded_placeholders(tmp_path: Path) -> None:
     package = build_apkg(
         tmp_path / "media.apkg",
         front='<img src="diagram.png"> Name the diagram',
-        back='Listen [sound:answer.mp3]',
+        back="Listen [sound:answer.mp3]",
         media={"diagram.png": b"png", "answer.mp3": b"mp3"},
     )
     inspection = inspect_anki_package(package)
@@ -163,7 +168,9 @@ def test_archive_rejects_overlong_and_control_character_names(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize("variant", ["collection.anki21b", "collection.anki99"])
-def test_unknown_or_ambiguous_collection_variant_is_rejected(tmp_path: Path, variant: str) -> None:
+def test_unknown_or_ambiguous_collection_variant_is_rejected(
+    tmp_path: Path, variant: str
+) -> None:
     package = build_apkg(tmp_path / "unknown.apkg", collection_member=variant)
     with pytest.raises(AnkiPackageRejected, match="unsupported_collection"):
         inspect_anki_package(package)
@@ -237,7 +244,8 @@ def test_sqlite_header_schema_and_active_templates_are_rejected(tmp_path: Path) 
         inspect_anki_package(invalid)
 
     hostile = build_apkg(
-        tmp_path / "hostile.apkg", hostile_template='<script src="file:///etc/passwd"></script>{{Front}}'
+        tmp_path / "hostile.apkg",
+        hostile_template='<script src="file:///etc/passwd"></script>{{Front}}',
     )
     with pytest.raises(AnkiPackageRejected, match="unsafe_template"):
         inspect_anki_package(hostile)
@@ -455,7 +463,9 @@ def test_import_is_explicit_atomic_and_replay_compares_full_payload(
     assert "CREATE $card_record_0" in mutation and "study_plan_card" in mutation
     assert str(mutation_params["card_record_0"]).startswith("study_card:")
     assert "CREATE $receipt_record" in mutation
-    assert mutation_params["card_1"]["artifact_card_id"].startswith("anki_card:reverse:")
+    assert mutation_params["card_1"]["artifact_card_id"].startswith(
+        "anki_card:reverse:"
+    )
     assert str(mutation_params["receipt_record"]).startswith("study_anki_import:")
     assert "state IN ['approved', 'generating', 'active', 'completed']" in mutation
     assert "active_syllabus_version != NONE" in mutation
@@ -467,17 +477,36 @@ def test_import_is_explicit_atomic_and_replay_compares_full_payload(
 
     async def replay_query(query: str, params: dict[str, object]):
         if query.startswith("SELECT"):
-            return [existing.model_dump(mode="python") | {"id": "study_anki_import:one"}]
+            return [
+                existing.model_dump(mode="python") | {"id": "study_anki_import:one"}
+            ]
         raise AssertionError("replay must not mutate")
 
-    monkeypatch.setattr("deeper_notebook.study.anki_repository.repo_query", replay_query)
-    assert asyncio.run(
-        repository.publish("study_plan:one", inspect_anki_package(package), AnkiImportOptions(), "anki-request-one")
-    ).payload_sha256 == receipt.payload_sha256
+    monkeypatch.setattr(
+        "deeper_notebook.study.anki_repository.repo_query", replay_query
+    )
+    assert (
+        asyncio.run(
+            repository.publish(
+                "study_plan:one",
+                inspect_anki_package(package),
+                AnkiImportOptions(),
+                "anki-request-one",
+            )
+        ).payload_sha256
+        == receipt.payload_sha256
+    )
 
     changed = AnkiImportOptions(syllabus_unit_id="unit-two")
     with pytest.raises(AnkiImportConflict):
-        asyncio.run(repository.publish("study_plan:one", inspect_anki_package(package), changed, "anki-request-one"))
+        asyncio.run(
+            repository.publish(
+                "study_plan:one",
+                inspect_anki_package(package),
+                changed,
+                "anki-request-one",
+            )
+        )
 
     changed_inspection = inspect_anki_package(package).model_copy(
         update={"skipped_count": 1}
@@ -496,7 +525,9 @@ def test_import_is_explicit_atomic_and_replay_compares_full_payload(
 def test_import_rejects_one_invalid_card_before_repository_mutation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    package = build_apkg(tmp_path / "invalid-card.apkg", back="<iframe src='x'></iframe>")
+    package = build_apkg(
+        tmp_path / "invalid-card.apkg", back="<iframe src='x'></iframe>"
+    )
     called = False
 
     async def forbidden(*args, **kwargs):
@@ -506,7 +537,9 @@ def test_import_rejects_one_invalid_card_before_repository_mutation(
 
     monkeypatch.setattr("deeper_notebook.study.anki_repository.repo_query", forbidden)
     with pytest.raises(AnkiPackageRejected, match="unsafe_field"):
-        asyncio.run(import_anki_package("study_plan:one", package, AnkiImportOptions(), "bad"))
+        asyncio.run(
+            import_anki_package("study_plan:one", package, AnkiImportOptions(), "bad")
+        )
     assert called is False
 
 
@@ -586,9 +619,7 @@ def test_import_rejects_ambiguous_authority_tokens_before_any_query(
     monkeypatch.setattr("deeper_notebook.study.anki_repository.repo_query", forbidden)
     with pytest.raises(AnkiImportRepositoryError, match=message):
         asyncio.run(
-            import_anki_package(
-                plan_id, package, AnkiImportOptions(), request_id
-            )
+            import_anki_package(plan_id, package, AnkiImportOptions(), request_id)
         )
     assert called is False
 
@@ -597,12 +628,8 @@ def test_import_revalidates_unchecked_contract_copies_before_any_query(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     inspection = inspect_anki_package(build_apkg(tmp_path / "unchecked.apkg"))
-    invalid_options = AnkiImportOptions().model_copy(
-        update={"deck_names": ("",)}
-    )
-    invalid_inspection = inspection.model_copy(
-        update={"package_sha256": "not-a-sha"}
-    )
+    invalid_options = AnkiImportOptions().model_copy(update={"deck_names": ("",)})
+    invalid_inspection = inspection.model_copy(update={"package_sha256": "not-a-sha"})
     called = False
 
     async def forbidden(*args, **kwargs):

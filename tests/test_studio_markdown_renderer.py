@@ -3,9 +3,7 @@ from deeper_notebook.studio.schemas import parse_artifact_document
 
 
 def _render(artifact_type: str, document: dict) -> str:
-    return render_artifact_markdown(
-        parse_artifact_document(artifact_type, document)
-    )
+    return render_artifact_markdown(parse_artifact_document(artifact_type, document))
 
 
 def test_generic_renderer_keeps_sections_bullets_and_citations():

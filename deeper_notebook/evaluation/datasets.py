@@ -263,7 +263,9 @@ def load_golden_corpus(corpus_path: Path, manifest_path: Path) -> GoldenCorpus:
             "manifest case or category counts do not match corpus"
         )
     if len(cases) != 66 or category_counts != _V1_CATEGORY_COUNTS:
-        raise DatasetIntegrityError("v1 requires exactly six cases in eleven categories")
+        raise DatasetIntegrityError(
+            "v1 requires exactly six cases in eleven categories"
+        )
     material_claim_ids = tuple(
         str(value) for value in manifest_raw.get("material_claim_ids", [])
     )

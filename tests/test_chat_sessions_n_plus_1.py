@@ -12,6 +12,7 @@ a coroutine that records its call timestamps; if the router still
 awaits sequentially, the timestamp deltas reveal it. If it runs
 under `asyncio.gather`, the calls overlap.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,22 +41,24 @@ async def test_message_counts_are_fetched_concurrently_for_chat_sessions():
     # Build a list of N fake sessions with the minimal attribute surface
     # the router consumes.
     sessions = [
-        type("FakeSession", (), dict(
-            id=f"chat_session:{i}",
-            title=f"session-{i}",
-            created="2026-05-21T00:00:00Z",
-            updated="2026-05-21T00:00:00Z",
-            model_override=None,
-        ))()
+        type(
+            "FakeSession",
+            (),
+            dict(
+                id=f"chat_session:{i}",
+                title=f"session-{i}",
+                created="2026-05-21T00:00:00Z",
+                updated="2026-05-21T00:00:00Z",
+                model_override=None,
+            ),
+        )()
         for i in range(N_SESSIONS)
     ]
 
     # The router under test fans out msg_counts via asyncio.gather over
     # the same coroutine we're mocking, so we can exercise the gather
     # path in isolation.
-    msg_counts = await asyncio.gather(*[
-        slow_count(None, str(s.id)) for s in sessions
-    ])
+    msg_counts = await asyncio.gather(*[slow_count(None, str(s.id)) for s in sessions])
 
     assert msg_counts == [7] * N_SESSIONS
 
@@ -87,14 +90,20 @@ async def test_session_row_fetches_are_concurrent_for_source_chat():
     async def slow_fetch(_q, _params):
         starts.append(time.monotonic())
         await asyncio.sleep(PER_CALL_DELAY)
-        return [{"id": "chat_session:x", "title": "t", "model_override": None,
-                 "created": "2026-05-21T00:00:00Z",
-                 "updated": "2026-05-21T00:00:00Z"}]
+        return [
+            {
+                "id": "chat_session:x",
+                "title": "t",
+                "model_override": None,
+                "created": "2026-05-21T00:00:00Z",
+                "updated": "2026-05-21T00:00:00Z",
+            }
+        ]
 
     session_ids = [f"chat_session:{i}" for i in range(N_SESSIONS)]
-    rows = await asyncio.gather(*[
-        slow_fetch("SELECT * FROM $id", {"id": sid}) for sid in session_ids
-    ])
+    rows = await asyncio.gather(
+        *[slow_fetch("SELECT * FROM $id", {"id": sid}) for sid in session_ids]
+    )
 
     assert len(rows) == N_SESSIONS
 

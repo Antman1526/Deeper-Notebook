@@ -40,7 +40,9 @@ class AnkiHttpOptions(_Strict):
             _visible(value, maximum=64, field_name="syllabus_unit_id")
             if not value[0].islower() and not value[0].isdigit():
                 raise ValueError("invalid syllabus_unit_id")
-            if any(char not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for char in value):
+            if any(
+                char not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for char in value
+            ):
                 raise ValueError("invalid syllabus_unit_id")
         return value
 
@@ -67,7 +69,9 @@ class AnkiImportPublishRequest(_Strict):
     @field_validator("upload_id", "request_id")
     @classmethod
     def ids_are_safe(cls, value: str, info: object) -> str:
-        return _visible(value, maximum=256, field_name=str(getattr(info, "field_name", "id")))
+        return _visible(
+            value, maximum=256, field_name=str(getattr(info, "field_name", "id"))
+        )
 
 
 class AnkiImportPreviewResponse(_Strict):

@@ -12,6 +12,7 @@ behaviors — always preserve the most-recent message, prepend a
 SystemMessage marker only when messages were actually dropped, log a
 warning on truncation — are identical and live here.
 """
+
 from __future__ import annotations
 
 import os

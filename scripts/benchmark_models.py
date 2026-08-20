@@ -54,6 +54,7 @@ Exit code:
 
 Author: Antman's v0.7.139 hardening arc.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -286,7 +287,8 @@ async def _run_chat_probe(
 
 
 async def _run_studio_outline_probe(
-    client: httpx.AsyncClient, model: dict,
+    client: httpx.AsyncClient,
+    model: dict,
 ) -> ProbeResult:
     """Variant of _run_chat_probe whose success criterion is "did the
     output parse as valid JSON matching the outline schema". This is
@@ -303,7 +305,9 @@ async def _run_studio_outline_probe(
     cases.
     """
     res = await _run_chat_probe(
-        client, model, STUDIO_OUTLINE_PROMPT,
+        client,
+        model,
+        STUDIO_OUTLINE_PROMPT,
         probe_name="STUDIO_OUTLINE",
     )
     # Short-circuit on transport-level errors only — those leave
@@ -338,8 +342,7 @@ async def _run_studio_outline_probe(
         return res
     # Each page should have at least one of title/focus
     valid_pages = sum(
-        1 for p in pages
-        if isinstance(p, dict) and (p.get("title") or p.get("focus"))
+        1 for p in pages if isinstance(p, dict) and (p.get("title") or p.get("focus"))
     )
     if valid_pages == 0:
         res.success = False
@@ -359,14 +362,17 @@ async def _run_studio_outline_probe(
 
 
 async def _run_podcast_turn_probe(
-    client: httpx.AsyncClient, model: dict,
+    client: httpx.AsyncClient,
+    model: dict,
 ) -> ProbeResult:
     """Probe the model's ability to produce multi-speaker dialogue —
     the foundation of podcast transcript generation. Doesn't run the
     full podcast pipeline (no TTS, no full episode), just the LLM
     layer that produces the transcript."""
     res = await _run_chat_probe(
-        client, model, PODCAST_TURN_PROMPT,
+        client,
+        model,
+        PODCAST_TURN_PROMPT,
         probe_name="PODCAST_TRANSCRIPT_TURN",
     )
     if not res.success:
@@ -393,6 +399,7 @@ async def _run_podcast_turn_probe(
 def _render_markdown(reports: list[ModelReport], *, total_wall_clock_s: float) -> str:
     """Produce the human-readable benchmark report."""
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     out: list[str] = []
     out.append("# Model Benchmark Report")
@@ -434,8 +441,10 @@ def _render_markdown(reports: list[ModelReport], *, total_wall_clock_s: float) -
             if not r:
                 continue
             ok = "✅" if r.success else "❌"
-            notes = r.error if r.error else (
-                ", ".join(f"{k}={v}" for k, v in r.meta.items()) or "—"
+            notes = (
+                r.error
+                if r.error
+                else (", ".join(f"{k}={v}" for k, v in r.meta.items()) or "—")
             )
             # Trim notes to fit narrow table cells
             notes = notes[:80] + ("…" if len(notes) > 80 else "")
@@ -542,22 +551,30 @@ async def benchmark_all(
             )
             # Run probes serially so we don't hammer the worker queue.
             r1 = await _run_chat_probe(
-                client, m, NOTEBOOK_CHAT_PROMPT,
+                client,
+                m,
+                NOTEBOOK_CHAT_PROMPT,
                 probe_name="NOTEBOOK_CHAT",
                 per_call_timeout_s=per_call_timeout_s,
             )
-            print(f"    NOTEBOOK_CHAT: {'OK' if r1.success else 'FAIL'} "
-                  f"({r1.elapsed_s:.1f}s)")
+            print(
+                f"    NOTEBOOK_CHAT: {'OK' if r1.success else 'FAIL'} "
+                f"({r1.elapsed_s:.1f}s)"
+            )
             rep.results.append(r1)
 
             r2 = await _run_studio_outline_probe(client, m)
-            print(f"    STUDIO_OUTLINE: {'OK' if r2.success else 'FAIL'} "
-                  f"({r2.elapsed_s:.1f}s)")
+            print(
+                f"    STUDIO_OUTLINE: {'OK' if r2.success else 'FAIL'} "
+                f"({r2.elapsed_s:.1f}s)"
+            )
             rep.results.append(r2)
 
             r3 = await _run_podcast_turn_probe(client, m)
-            print(f"    PODCAST_TURN: {'OK' if r3.success else 'FAIL'} "
-                  f"({r3.elapsed_s:.1f}s)")
+            print(
+                f"    PODCAST_TURN: {'OK' if r3.success else 'FAIL'} "
+                f"({r3.elapsed_s:.1f}s)"
+            )
             rep.results.append(r3)
 
             reports.append(rep)
@@ -588,7 +605,10 @@ def _parse_args() -> argparse.Namespace:
         "--timeout",
         type=float,
         default=float(
-            os.environ.get("DEEPER_NOTEBOOK_BENCHMARK_PER_CALL_TIMEOUT_SEC", "90").strip() or 90
+            os.environ.get(
+                "DEEPER_NOTEBOOK_BENCHMARK_PER_CALL_TIMEOUT_SEC", "90"
+            ).strip()
+            or 90
         ),
         help="Per-call timeout in seconds (default: 90)",
     )

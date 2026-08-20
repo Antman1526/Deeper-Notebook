@@ -4,6 +4,7 @@ Was a flat 100-CHAR slice that cut mid-word with no marker, so the LLM treated a
 fragment as the whole note. Now a ~160-token budget with an explicit ' […]'
 marker, trimmed on a word boundary. 'long' mode is unchanged.
 """
+
 from __future__ import annotations
 
 from deeper_notebook.domain.notebook import Note

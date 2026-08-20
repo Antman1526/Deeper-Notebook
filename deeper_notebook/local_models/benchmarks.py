@@ -147,9 +147,7 @@ BENCHMARK_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 def _prune_job_history() -> None:
     """Keep bounded terminal benchmark history while retaining active jobs."""
     terminal = {"completed", "failed"}
-    terminal_ids = [
-        job_id for job_id, job in _JOBS.items() if job.status in terminal
-    ]
+    terminal_ids = [job_id for job_id, job in _JOBS.items() if job.status in terminal]
     excess = len(terminal_ids) - _MAX_TERMINAL_JOBS
     for job_id in terminal_ids[: max(0, excess)]:
         _JOBS.pop(job_id, None)

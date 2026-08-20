@@ -25,9 +25,7 @@ from deeper_notebook.vault.parsers.markdown import ByteOffsetMapper, ScanContext
 FIXTURES = Path(__file__).parent / "fixtures" / "vault"
 
 PARSER_RUNTIME_LIMIT_SECONDS = (
-    16.0
-    if sys.platform == "darwin" and platform.machine() == "x86_64"
-    else 8.0
+    16.0 if sys.platform == "darwin" and platform.machine() == "x86_64" else 8.0
 )
 PARSER_SUBPROCESS_TIMEOUT_SECONDS = PARSER_RUNTIME_LIMIT_SECONDS + 12.0
 
@@ -1051,7 +1049,9 @@ def test_projection_line_budget_counts_cr_only_and_unterminated_lines() -> None:
 
 
 def test_projection_budget_subprocess_rss_and_time_are_bounded() -> None:
-    code = RSS_SAMPLER_CODE + """
+    code = (
+        RSS_SAMPLER_CODE
+        + """
 import json
 import threading
 import time
@@ -1086,6 +1086,7 @@ else:
     monitor.join()
     raise SystemExit("projection unexpectedly succeeded")
 """
+    )
     completed = subprocess.run(
         [sys.executable, "-c", code],
         cwd=Path(__file__).parents[1],
@@ -1132,7 +1133,9 @@ def test_exact_wikilink_output_boundary_is_accepted() -> None:
     ],
 )
 def test_single_line_transient_bombs_fail_with_bounded_rss(kind: str) -> None:
-    code = RSS_SAMPLER_CODE + """
+    code = (
+        RSS_SAMPLER_CODE
+        + """
 import json
 import sys
 import threading
@@ -1178,6 +1181,7 @@ else:
     monitor.join()
     raise SystemExit("transient bomb unexpectedly succeeded")
 """
+    )
     completed = subprocess.run(
         [sys.executable, "-c", code, kind],
         cwd=Path(__file__).parents[1],
@@ -1194,7 +1198,9 @@ else:
 
 
 def test_multibyte_single_line_offset_mapping_has_bounded_rss() -> None:
-    code = RSS_SAMPLER_CODE + """
+    code = (
+        RSS_SAMPLER_CODE
+        + """
 import json
 import threading
 import time
@@ -1221,6 +1227,7 @@ print(json.dumps({
     "rss_growth": max(0, peak_rss[0] - baseline_rss),
 }))
 """
+    )
     completed = subprocess.run(
         [sys.executable, "-c", code],
         cwd=Path(__file__).parents[1],

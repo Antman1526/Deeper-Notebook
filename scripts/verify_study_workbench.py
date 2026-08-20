@@ -98,7 +98,11 @@ _WORKFLOW_STAGE_CODES = frozenset(
 
 def _internal_blocker(stage: object) -> str:
     """Return a bounded diagnostic code without exposing exception payloads."""
-    code = stage if isinstance(stage, str) and stage in _WORKFLOW_STAGE_CODES else "unknown"
+    code = (
+        stage
+        if isinstance(stage, str) and stage in _WORKFLOW_STAGE_CODES
+        else "unknown"
+    )
     return f"verification_internal_error:{code}"
 
 
@@ -675,7 +679,10 @@ def assert_replacement_identities(
         if isinstance(current, Mapping)
         else {item.role: item for item in current}
     )
-    if set(previous_by_role) != _EXPECTED_STACK_ROLES or set(current_by_role) != _EXPECTED_STACK_ROLES:
+    if (
+        set(previous_by_role) != _EXPECTED_STACK_ROLES
+        or set(current_by_role) != _EXPECTED_STACK_ROLES
+    ):
         raise ProofRefusal("restart_role_set_invalid")
     previous_tokens = {
         (item.pid, item.start_token) for item in previous_by_role.values()
@@ -1035,7 +1042,9 @@ def validate_restart_receipt(
     ):
         raise ProofRefusal("restart_receipt_invalid")
     if any(
-        not _is_sha256(item.argv_sha256) or item.pid <= 1 or not item.start_token
+        not _is_sha256(item.argv_sha256)
+        or item.pid <= 1
+        or not item.start_token
         or (item.listener_port is not None and not 1 <= item.listener_port <= 65535)
         for item in receipt.previous_processes
     ):
@@ -1049,7 +1058,9 @@ def validate_restart_receipt(
         if item.listener_port != expected_port:
             raise ProofRefusal("restart_role_listener_mismatch")
     if not receipt.source_ids or any(
-        not isinstance(item, str) or not item.strip() or len(item) > 512
+        not isinstance(item, str)
+        or not item.strip()
+        or len(item) > 512
         or any(ord(character) < 32 for character in item)
         for item in receipt.source_ids
     ):
@@ -1062,7 +1073,10 @@ def validate_restart_receipt(
         or not isinstance(receipt.syllabus_version, int)
         or receipt.syllabus_version < 1
         or not receipt.artifact_ids
-        or any(not isinstance(item, str) or not item.strip() for item in receipt.artifact_ids)
+        or any(
+            not isinstance(item, str) or not item.strip()
+            for item in receipt.artifact_ids
+        )
         or not isinstance(receipt.card_id, str)
         or not receipt.card_id.strip()
         or not isinstance(receipt.anki_job_id, str)
@@ -1099,14 +1113,17 @@ def validate_restart_receipt(
         (receipt.model_port, "model"),
     ):
         _validate_port(port, label)
-    if len(
-        {
-            receipt.previous_listener_port,
-            receipt.frontend_port,
-            receipt.surreal_port,
-            receipt.model_port,
-        }
-    ) != 4:
+    if (
+        len(
+            {
+                receipt.previous_listener_port,
+                receipt.frontend_port,
+                receipt.surreal_port,
+                receipt.model_port,
+            }
+        )
+        != 4
+    ):
         raise ProofRefusal("restart_receipt_ports_not_unique")
     if not re.fullmatch(r"dn-study-[a-f0-9]{12}", receipt.surreal_container_name):
         raise ProofRefusal("restart_inputs_mismatch")
@@ -1409,7 +1426,11 @@ def _authoritative_source_evidence(
     """
     full_text = source_payload.get("full_text")
     provenance = source_payload.get("provenance")
-    declared = provenance.get("content_fingerprint") if isinstance(provenance, Mapping) else None
+    declared = (
+        provenance.get("content_fingerprint")
+        if isinstance(provenance, Mapping)
+        else None
+    )
     if not isinstance(full_text, str) or not full_text.strip():
         raise ProofRefusal("source_evidence_full_text_missing")
     computed = _sha256_bytes(full_text.encode("utf-8"))
@@ -1475,6 +1496,7 @@ def _workflow(
     trace: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Exercise real HTTP routes; returned values contain metadata only."""
+
     def mark(stage: str) -> None:
         if trace is not None:
             trace["code"] = stage
@@ -1979,7 +2001,10 @@ def _workflow(
             if isinstance(exported, dict)
             else None
         )
-        if not isinstance(state["anki_receipt_id"], str) or not state["anki_receipt_id"]:
+        if (
+            not isinstance(state["anki_receipt_id"], str)
+            or not state["anki_receipt_id"]
+        ):
             raise ProofRefusal("anki_receipt_id_missing")
         download_id = (
             exported.get("download_id") if isinstance(exported, dict) else None
@@ -2091,7 +2116,9 @@ def _workflow(
             {200},
             "restart_source_read",
         )
-        readiness_items = readiness.get("items") if isinstance(readiness, dict) else None
+        readiness_items = (
+            readiness.get("items") if isinstance(readiness, dict) else None
+        )
         if (
             not isinstance(readiness, dict)
             or readiness.get("ready") is not True
@@ -2140,7 +2167,11 @@ def _workflow(
         )
         if not artifact_ids:
             raise ProofRefusal("restart_artifact_parity_inputs_missing")
-        units = syllabus_payload.get("units") if isinstance(syllabus_payload, dict) else None
+        units = (
+            syllabus_payload.get("units")
+            if isinstance(syllabus_payload, dict)
+            else None
+        )
         if artifact_ids:
             unit_id = (
                 units[0].get("unit_id")
@@ -2167,7 +2198,11 @@ def _workflow(
             )
             returned_artifact_ids = tuple(
                 item.get("artifact_id")
-                for item in (generated.get("artifacts", []) if isinstance(generated, dict) else [])
+                for item in (
+                    generated.get("artifacts", [])
+                    if isinstance(generated, dict)
+                    else []
+                )
                 if isinstance(item, dict) and isinstance(item.get("artifact_id"), str)
             )
             if set(returned_artifact_ids) != set(artifact_ids):
@@ -2176,11 +2211,19 @@ def _workflow(
         if (
             not isinstance(assistant_receipts, (tuple, list))
             or len(assistant_receipts) != 2
-            or {item.role for item in assistant_receipts if isinstance(item, AssistantReceipt)}
+            or {
+                item.role
+                for item in assistant_receipts
+                if isinstance(item, AssistantReceipt)
+            }
             != {"source_guide", "practice_coach"}
         ):
             raise ProofRefusal("restart_assistant_parity_inputs_missing")
-        units = syllabus_payload.get("units") if isinstance(syllabus_payload, dict) else None
+        units = (
+            syllabus_payload.get("units")
+            if isinstance(syllabus_payload, dict)
+            else None
+        )
         unit_id = (
             units[0].get("unit_id")
             if isinstance(units, list) and units and isinstance(units[0], dict)
@@ -2235,7 +2278,10 @@ def _workflow(
                 "restart_card_read",
             )
             reviewed_card = reviewed.get("card") if isinstance(reviewed, dict) else None
-            if not isinstance(reviewed_card, dict) or reviewed_card.get("id") != state["card_id"]:
+            if (
+                not isinstance(reviewed_card, dict)
+                or reviewed_card.get("id") != state["card_id"]
+            ):
                 raise ProofRefusal("restart_card_parity_mismatch")
         _expect(
             _http_request(
@@ -2265,7 +2311,10 @@ def _workflow(
             ):
                 raise ProofRefusal("restart_anki_job_parity_mismatch")
             publish_receipt_id = state.get("anki_publish_receipt_id")
-            if isinstance(publish_receipt_id, str) and anki_status.get("receipt_id") != publish_receipt_id:
+            if (
+                isinstance(publish_receipt_id, str)
+                and anki_status.get("receipt_id") != publish_receipt_id
+            ):
                 raise ProofRefusal("restart_anki_receipt_parity_mismatch")
         if isinstance(state.get("anki_download_id"), str):
             downloaded = _http_request(
@@ -2844,7 +2893,9 @@ class Stack:
         self.children.append(frontend_child)
         _wait_port(self.inputs.frontend_port, time.monotonic() + 90)
         self._refresh(frontend_child, listener_port=self.inputs.frontend_port)
-        self._require_owned_listener(frontend_child, self.inputs.frontend_port, "frontend")
+        self._require_owned_listener(
+            frontend_child, self.inputs.frontend_port, "frontend"
+        )
         assert_stack_handoff(self.children, self.listener_ports)
 
     def _start_model(self, env: Mapping[str, str]) -> None:
@@ -3182,7 +3233,11 @@ def _run_real_phase(inputs: Inputs, phase: str) -> int:
                 # Stack.stop has already proved exact child/container
                 # identities and all four listeners are gone. Only then is
                 # this task-owned root eligible for deletion.
-                if cleanup_receipt is None or cleanup_receipt.owned_processes or cleanup_receipt.ports:
+                if (
+                    cleanup_receipt is None
+                    or cleanup_receipt.owned_processes
+                    or cleanup_receipt.ports
+                ):
                     raise ProofRefusal("owned_cleanup_incomplete")
                 validate_task_root(inputs.task_root)
                 shutil.rmtree(inputs.task_root)
@@ -3297,9 +3352,9 @@ class _FixtureHandler(http.server.BaseHTTPRequestHandler):
                     ),
                     "provenance": {
                         "content_fingerprint": _sha256_bytes(
-                            self.state.sources.get(source_id, "Synthetic evidence.").encode(
-                                "utf-8"
-                            )
+                            self.state.sources.get(
+                                source_id, "Synthetic evidence."
+                            ).encode("utf-8")
                         )
                     },
                     "status": "completed",

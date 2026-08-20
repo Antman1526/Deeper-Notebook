@@ -14,12 +14,22 @@ def _fake_memory_client():
     """Memory mock that returns canned search results."""
     client = MagicMock()
     client.search.return_value = [
-        {"id": "fact:1", "text": "user likes coffee", "score": 0.95,
-         "metadata": {"kind": "fact", "scope": "user"},
-         "confidence": 0.9, "created_at": "2026-05-10T00:00:00Z"},
-        {"id": "pref:1", "text": "bullet points", "score": 0.85,
-         "metadata": {"kind": "preference", "scope": "user"},
-         "confidence": 0.85, "created_at": "2026-05-09T00:00:00Z"},
+        {
+            "id": "fact:1",
+            "text": "user likes coffee",
+            "score": 0.95,
+            "metadata": {"kind": "fact", "scope": "user"},
+            "confidence": 0.9,
+            "created_at": "2026-05-10T00:00:00Z",
+        },
+        {
+            "id": "pref:1",
+            "text": "bullet points",
+            "score": 0.85,
+            "metadata": {"kind": "preference", "scope": "user"},
+            "confidence": 0.85,
+            "created_at": "2026-05-09T00:00:00Z",
+        },
     ]
     return client
 
@@ -36,9 +46,7 @@ def test_models_use_canonical_owner_identity():
     with TestClient(app) as c:
         body = c.get("/models").json()
 
-    assert {model["owned_by"] for model in body["data"]} == {
-        "deeper-notebook"
-    }
+    assert {model["owned_by"] for model in body["data"]} == {"deeper-notebook"}
 
 
 def test_relevant_returns_topk_records():
@@ -83,6 +91,7 @@ def test_delete_rejects_injection_in_id():
     rejected by httpx before they hit the server, which is even better
     (defense in depth)."""
     from httpx import InvalidURL
+
     # starlette's TestClient prefers httpx2 when it is installed and raises
     # httpx2.InvalidURL, an unrelated class from httpx.InvalidURL. The build
     # venv already has httpx2; the test venv does not yet. Catch both so the
@@ -115,17 +124,21 @@ def test_delete_rejects_injection_in_id():
 
 # ---------------------------------------------------------- ONP v0.5 Capture Inbox
 
+
 def test_capture_approve_calls_mem_client_add_with_source_metadata():
     mem = _fake_memory_client()
     app = build_app(mem_client=mem)
     with TestClient(app) as c:
-        r = c.post("/api/memory/capture/approve", json={
-            "text": "User read the Self-RAG paper",
-            "source_app": "Safari",
-            "event_id": "evt-abc",
-            "ts": "2026-05-12T14:30:00Z",
-            "kind": "fact",
-        })
+        r = c.post(
+            "/api/memory/capture/approve",
+            json={
+                "text": "User read the Self-RAG paper",
+                "source_app": "Safari",
+                "event_id": "evt-abc",
+                "ts": "2026-05-12T14:30:00Z",
+                "kind": "fact",
+            },
+        )
         assert r.status_code == 200
         mem.add.assert_called_once()
         call = mem.add.call_args
@@ -153,21 +166,22 @@ def test_capture_approve_rejects_invalid_kind():
     mem = _fake_memory_client()
     app = build_app(mem_client=mem)
     with TestClient(app) as c:
-        r = c.post("/api/memory/capture/approve",
-                   json={"text": "hi", "kind": "banana"})
+        r = c.post("/api/memory/capture/approve", json={"text": "hi", "kind": "banana"})
         assert r.status_code == 400
         mem.add.assert_not_called()
 
 
 # ---------------------------------------------------------- v0.5.8 Memory edit
 
+
 def test_memory_update_calls_mem_client_update():
     mem = _fake_memory_client()
     app = build_app(mem_client=mem)
     with TestClient(app) as c:
-        r = c.post("/api/memory/update", json={
-            "kind": "fact", "id": "abc-123", "text": "user prefers tabs"
-        })
+        r = c.post(
+            "/api/memory/update",
+            json={"kind": "fact", "id": "abc-123", "text": "user prefers tabs"},
+        )
         assert r.status_code == 200
         mem.update.assert_called_once()
         # Full record id is reconstructed from kind + id
@@ -183,9 +197,10 @@ def test_memory_update_accepts_full_record_id():
     mem = _fake_memory_client()
     app = build_app(mem_client=mem)
     with TestClient(app) as c:
-        r = c.post("/api/memory/update", json={
-            "kind": "fact", "id": "memory_fact:xyz", "text": "y"
-        })
+        r = c.post(
+            "/api/memory/update",
+            json={"kind": "fact", "id": "memory_fact:xyz", "text": "y"},
+        )
         assert r.status_code == 200
         call = mem.update.call_args
         assert call.kwargs["memory_id"] == "memory_fact:xyz"
@@ -196,10 +211,10 @@ def test_memory_update_rejects_missing_fields():
     app = build_app(mem_client=mem)
     with TestClient(app) as c:
         for bad in [
-            {"kind": "fact", "id": "abc"},               # no text
-            {"kind": "fact", "text": "x"},                # no id
-            {"id": "abc", "text": "x"},                   # no kind
-            {"kind": "banana", "id": "abc", "text": "x"}, # invalid kind
+            {"kind": "fact", "id": "abc"},  # no text
+            {"kind": "fact", "text": "x"},  # no id
+            {"id": "abc", "text": "x"},  # no kind
+            {"kind": "banana", "id": "abc", "text": "x"},  # invalid kind
         ]:
             r = c.post("/api/memory/update", json=bad)
             assert r.status_code == 400

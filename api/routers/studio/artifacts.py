@@ -245,7 +245,11 @@ async def _resolve_artifact_model_route(
 
 
 def _has_generated_output(artifact: StudioArtifact) -> bool:
-    return bool(artifact.output_payload) or bool(artifact.citations) or bool(artifact.export_paths)
+    return (
+        bool(artifact.output_payload)
+        or bool(artifact.citations)
+        or bool(artifact.export_paths)
+    )
 
 
 async def _snapshot_artifact_revision(artifact: StudioArtifact) -> None:
@@ -333,7 +337,10 @@ def _artifact_markdown_export(artifact: StudioArtifact, content: str) -> str:
         "source_ids:",
     ]
     if source_ids:
-        lines.extend(f"  - {json.dumps(source_id, ensure_ascii=False)}" for source_id in source_ids)
+        lines.extend(
+            f"  - {json.dumps(source_id, ensure_ascii=False)}"
+            for source_id in source_ids
+        )
     else:
         lines[-1] = "source_ids: []"
     lines.extend(["---", "", content.strip(), ""])
@@ -341,7 +348,9 @@ def _artifact_markdown_export(artifact: StudioArtifact, content: str) -> str:
     if artifact.citations:
         lines.extend(["", "## Stored Citations", ""])
         for citation in artifact.citations:
-            title = citation.get("title") or citation.get("source_id") or "Untitled source"
+            title = (
+                citation.get("title") or citation.get("source_id") or "Untitled source"
+            )
             source_id = citation.get("source_id") or ""
             marker = citation.get("marker") or ""
             preview = citation.get("preview") or ""
@@ -358,7 +367,7 @@ def _strip_artifact_markdown_line(line: str) -> str:
         text = text[1:].lstrip()
     for prefix in ("- ", "* "):
         if text.startswith(prefix):
-            text = text[len(prefix):].lstrip()
+            text = text[len(prefix) :].lstrip()
             break
     return text.replace("**", "").strip()
 
@@ -472,28 +481,34 @@ def _course_pack_modules(content: str) -> list[dict[str, object]]:
                 _strip_artifact_markdown_line(line)
                 for line in current_lines
                 if _strip_artifact_markdown_line(line)
-                and not _strip_artifact_markdown_line(line).lower().startswith((
-                    "learner handout",
-                    "hands-on exercise",
-                    "knowledge check",
-                    "facilitator notes",
-                    "instructor notes",
-                ))
+                and not _strip_artifact_markdown_line(line)
+                .lower()
+                .startswith(
+                    (
+                        "learner handout",
+                        "hands-on exercise",
+                        "knowledge check",
+                        "facilitator notes",
+                        "instructor notes",
+                    )
+                )
             ),
             "",
         )
         module_content = "\n".join(current_lines)
-        modules.append({
-            "title": current_title,
-            "summary": summary,
-            "has_facilitator_notes": bool(
-                re.search(
-                    r"(facilitator notes?|instructor notes?|demo script)",
-                    module_content,
-                    re.IGNORECASE,
-                )
-            ),
-        })
+        modules.append(
+            {
+                "title": current_title,
+                "summary": summary,
+                "has_facilitator_notes": bool(
+                    re.search(
+                        r"(facilitator notes?|instructor notes?|demo script)",
+                        module_content,
+                        re.IGNORECASE,
+                    )
+                ),
+            }
+        )
         current_title = ""
         current_lines = []
 
@@ -565,7 +580,9 @@ def _course_pack_assessment_markdown(content: str) -> str:
     body = "\n".join(selected).strip()
     if body:
         return "# Course Pack Assessment\n\n" + body + "\n"
-    return "# Course Pack Assessment\n\nNo dedicated assessment sections were generated.\n"
+    return (
+        "# Course Pack Assessment\n\nNo dedicated assessment sections were generated.\n"
+    )
 
 
 def _citation_warnings(
@@ -612,7 +629,9 @@ def _artifact_output_payload(
     return payload
 
 
-def _course_pack_checklist_export(artifact: StudioArtifact, modules: list[dict[str, object]]) -> dict[str, object]:
+def _course_pack_checklist_export(
+    artifact: StudioArtifact, modules: list[dict[str, object]]
+) -> dict[str, object]:
     return {
         "artifact_id": str(artifact.id),
         "notebook_id": str(artifact.notebook_id),
@@ -635,87 +654,93 @@ def _course_pack_lms_index_html(
     content: str,
     modules: list[dict[str, object]],
 ) -> str:
-    module_items = "\n".join(
-        f"<li>{html.escape(str(module['title']))}</li>"
-        for module in modules
-    ) or "<li>Course Pack content</li>"
-    return "\n".join([
-        "<!doctype html>",
-        '<html lang="en">',
-        "<head>",
-        '  <meta charset="utf-8" />',
-        f"  <title>{html.escape(artifact.title)}</title>",
-        '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
-        "  <style>",
-        "    body { font-family: system-ui, sans-serif; line-height: 1.55; margin: 2rem; max-width: 920px; }",
-        "    pre { white-space: pre-wrap; border: 1px solid #ddd; padding: 1rem; overflow-wrap: anywhere; }",
-        "  </style>",
-        "</head>",
-        "<body>",
-        f"  <h1>{html.escape(artifact.title)}</h1>",
-        f"  <p>{PRODUCT_NAME} Course Pack export.</p>",
-        "  <h2>Modules</h2>",
-        f"  <ol>{module_items}</ol>",
-        "  <h2>Course Pack Markdown</h2>",
-        f"  <pre>{html.escape(content)}</pre>",
-        "</body>",
-        "</html>",
-        "",
-    ])
+    module_items = (
+        "\n".join(f"<li>{html.escape(str(module['title']))}</li>" for module in modules)
+        or "<li>Course Pack content</li>"
+    )
+    return "\n".join(
+        [
+            "<!doctype html>",
+            '<html lang="en">',
+            "<head>",
+            '  <meta charset="utf-8" />',
+            f"  <title>{html.escape(artifact.title)}</title>",
+            '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+            "  <style>",
+            "    body { font-family: system-ui, sans-serif; line-height: 1.55; margin: 2rem; max-width: 920px; }",
+            "    pre { white-space: pre-wrap; border: 1px solid #ddd; padding: 1rem; overflow-wrap: anywhere; }",
+            "  </style>",
+            "</head>",
+            "<body>",
+            f"  <h1>{html.escape(artifact.title)}</h1>",
+            f"  <p>{PRODUCT_NAME} Course Pack export.</p>",
+            "  <h2>Modules</h2>",
+            f"  <ol>{module_items}</ol>",
+            "  <h2>Course Pack Markdown</h2>",
+            f"  <pre>{html.escape(content)}</pre>",
+            "</body>",
+            "</html>",
+            "",
+        ]
+    )
 
 
 def _course_pack_scorm_manifest(artifact: StudioArtifact) -> str:
     identifier = html.escape(_artifact_export_slug(artifact.id, fallback="course-pack"))
     title = html.escape(artifact.title)
-    return "\n".join([
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        f'<manifest identifier="{identifier}" version="1.0"',
-        '  xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2"',
-        '  xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2"',
-        '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
-        '  xsi:schemaLocation="http://www.imsproject.org/xsd/imscp_rootv1p1p2 imscp_rootv1p1p2.xsd http://www.adlnet.org/xsd/adlcp_rootv1p2 adlcp_rootv1p2.xsd">',
-        "  <metadata>",
-        "    <schema>ADL SCORM</schema>",
-        "    <schemaversion>1.2</schemaversion>",
-        "  </metadata>",
-        "  <organizations default=\"deeper-notebook-course-pack\">",
-        "    <organization identifier=\"deeper-notebook-course-pack\">",
-        f"      <title>{title}</title>",
-        "      <item identifier=\"course-pack-launch\" identifierref=\"course-pack-resource\">",
-        f"        <title>{title}</title>",
-        "      </item>",
-        "    </organization>",
-        "  </organizations>",
-        "  <resources>",
-        "    <resource identifier=\"course-pack-resource\" type=\"webcontent\" adlcp:scormtype=\"sco\" href=\"index.html\">",
-        "      <file href=\"index.html\" />",
-        "      <file href=\"instructor-guide.md\" />",
-        "      <file href=\"learner-handout.md\" />",
-        "      <file href=\"module-checklist.json\" />",
-        "      <file href=\"assessment.md\" />",
-        "    </resource>",
-        "  </resources>",
-        "</manifest>",
-        "",
-    ])
+    return "\n".join(
+        [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            f'<manifest identifier="{identifier}" version="1.0"',
+            '  xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2"',
+            '  xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2"',
+            '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+            '  xsi:schemaLocation="http://www.imsproject.org/xsd/imscp_rootv1p1p2 imscp_rootv1p1p2.xsd http://www.adlnet.org/xsd/adlcp_rootv1p2 adlcp_rootv1p2.xsd">',
+            "  <metadata>",
+            "    <schema>ADL SCORM</schema>",
+            "    <schemaversion>1.2</schemaversion>",
+            "  </metadata>",
+            '  <organizations default="deeper-notebook-course-pack">',
+            '    <organization identifier="deeper-notebook-course-pack">',
+            f"      <title>{title}</title>",
+            '      <item identifier="course-pack-launch" identifierref="course-pack-resource">',
+            f"        <title>{title}</title>",
+            "      </item>",
+            "    </organization>",
+            "  </organizations>",
+            "  <resources>",
+            '    <resource identifier="course-pack-resource" type="webcontent" adlcp:scormtype="sco" href="index.html">',
+            '      <file href="index.html" />',
+            '      <file href="instructor-guide.md" />',
+            '      <file href="learner-handout.md" />',
+            '      <file href="module-checklist.json" />',
+            '      <file href="assessment.md" />',
+            "    </resource>",
+            "  </resources>",
+            "</manifest>",
+            "",
+        ]
+    )
 
 
 def _course_pack_tincan_xml(artifact: StudioArtifact) -> str:
     title = html.escape(artifact.title)
     activity_id = html.escape(f"{ACTIVITY_URN_PREFIX}{artifact.id}")
-    return "\n".join([
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<tincan xmlns="http://projecttincan.com/tincan.xsd">',
-        "  <activities>",
-        f'    <activity id="{activity_id}" type="http://adlnet.gov/expapi/activities/course">',
-        f"      <name>{title}</name>",
-        f"      <description>{PRODUCT_NAME} Course Pack export.</description>",
-        "      <launch lang=\"en-US\">index.html</launch>",
-        "    </activity>",
-        "  </activities>",
-        "</tincan>",
-        "",
-    ])
+    return "\n".join(
+        [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<tincan xmlns="http://projecttincan.com/tincan.xsd">',
+            "  <activities>",
+            f'    <activity id="{activity_id}" type="http://adlnet.gov/expapi/activities/course">',
+            f"      <name>{title}</name>",
+            f"      <description>{PRODUCT_NAME} Course Pack export.</description>",
+            '      <launch lang="en-US">index.html</launch>',
+            "    </activity>",
+            "  </activities>",
+            "</tincan>",
+            "",
+        ]
+    )
 
 
 def _course_pack_xapi_statements(
@@ -791,26 +816,38 @@ def _persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[st
     }
     course_pack_modules = _course_pack_modules(content)
     if artifact.artifact_type in _COURSE_PACK_ARTIFACT_TYPES:
-        instructor_path = _artifact_export_path(export_dir, f"{stem}-instructor-guide", ".md")
-        learner_path = _artifact_export_path(export_dir, f"{stem}-learner-handout", ".md")
-        checklist_path = _artifact_export_path(export_dir, f"{stem}-module-checklist", ".json")
+        instructor_path = _artifact_export_path(
+            export_dir, f"{stem}-instructor-guide", ".md"
+        )
+        learner_path = _artifact_export_path(
+            export_dir, f"{stem}-learner-handout", ".md"
+        )
+        checklist_path = _artifact_export_path(
+            export_dir, f"{stem}-module-checklist", ".json"
+        )
         assessment_path = _artifact_export_path(export_dir, f"{stem}-assessment", ".md")
         scorm_path = _artifact_export_path(export_dir, f"{stem}-scorm", ".zip")
         xapi_path = _artifact_export_path(export_dir, f"{stem}-xapi", ".zip")
-        export_paths.update({
-            "instructor_guide": str(instructor_path),
-            "learner_handout": str(learner_path),
-            "module_checklist": str(checklist_path),
-            "assessment": str(assessment_path),
-            "scorm_package": str(scorm_path),
-            "xapi_package": str(xapi_path),
-        })
-    data_table_csv = _data_table_csv(content) if artifact.artifact_type == "data_table" else ""
+        export_paths.update(
+            {
+                "instructor_guide": str(instructor_path),
+                "learner_handout": str(learner_path),
+                "module_checklist": str(checklist_path),
+                "assessment": str(assessment_path),
+                "scorm_package": str(scorm_path),
+                "xapi_package": str(xapi_path),
+            }
+        )
+    data_table_csv = (
+        _data_table_csv(content) if artifact.artifact_type == "data_table" else ""
+    )
     if data_table_csv:
         csv_path = _artifact_export_path(export_dir, f"{stem}-data-table", ".csv")
         export_paths["csv"] = str(csv_path)
     artifact.export_paths = export_paths
-    markdown_path.write_text(_artifact_markdown_export(artifact, content), encoding="utf-8")
+    markdown_path.write_text(
+        _artifact_markdown_export(artifact, content), encoding="utf-8"
+    )
     if data_table_csv:
         csv_path.write_text(data_table_csv, encoding="utf-8")
     if artifact.artifact_type in _COURSE_PACK_ARTIFACT_TYPES:
@@ -831,7 +868,9 @@ def _persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[st
             encoding="utf-8",
         )
         assessment_path.write_text(
-            _artifact_markdown_export(artifact, _course_pack_assessment_markdown(content)),
+            _artifact_markdown_export(
+                artifact, _course_pack_assessment_markdown(content)
+            ),
             encoding="utf-8",
         )
         _write_course_pack_lms_packages(
@@ -848,7 +887,9 @@ def _persist_artifact_exports(artifact: StudioArtifact, content: str) -> dict[st
             },
         )
     json_path.write_text(
-        json.dumps(_artifact_response(artifact).model_dump(), ensure_ascii=False, indent=2),
+        json.dumps(
+            _artifact_response(artifact).model_dump(), ensure_ascii=False, indent=2
+        ),
         encoding="utf-8",
     )
     return export_paths
@@ -864,13 +905,15 @@ def _artifact_context(sources: list[Source]) -> tuple[str, list[dict[str, str]]]
         marker = f"[S{index}]"
         source_id = str(getattr(source, "id", ""))
         title = getattr(source, "title", None) or source_id or "Untitled source"
-        citations.append({
-            "source_id": source_id,
-            "title": title,
-            "marker": marker,
-            "location": f"Source {marker}",
-            "preview": _citation_preview(text),
-        })
+        citations.append(
+            {
+                "source_id": source_id,
+                "title": title,
+                "marker": marker,
+                "location": f"Source {marker}",
+                "preview": _citation_preview(text),
+            }
+        )
         blocks.append(
             f"## Source {marker}: {title}\n"
             f"Source ID: {source_id}\n\n"
@@ -886,11 +929,13 @@ def _artifact_not_ready_sources(sources: list[Source]) -> list[dict[str, str | N
         if text:
             continue
         command = getattr(source, "command", None)
-        not_ready.append({
-            "source_id": str(getattr(source, "id", "")),
-            "title": getattr(source, "title", None) or "Untitled source",
-            "command_id": str(command) if command is not None else None,
-        })
+        not_ready.append(
+            {
+                "source_id": str(getattr(source, "id", "")),
+                "title": getattr(source, "title", None) or "Untitled source",
+                "command_id": str(command) if command is not None else None,
+            }
+        )
     return not_ready
 
 
@@ -898,9 +943,21 @@ def _artifact_not_ready_sources(sources: list[Source]) -> list[dict[str, str | N
 # even though content_core itself attempts to extract anything; this list
 # matches what the spec promises for documents and common training media.
 _ALLOWED_EXTENSIONS: set[str] = {
-    ".pdf", ".doc", ".docx", ".txt", ".md", ".markdown",
-    ".ppt", ".pptx", ".html", ".htm",
-    ".mp3", ".mp4", ".m4a", ".wav", ".mov",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".txt",
+    ".md",
+    ".markdown",
+    ".ppt",
+    ".pptx",
+    ".html",
+    ".htm",
+    ".mp3",
+    ".mp4",
+    ".m4a",
+    ".wav",
+    ".mov",
 }
 
 _MAX_STUDIO_LINKS = 20
@@ -1010,9 +1067,7 @@ async def update_studio_artifact(
             errors = [
                 {
                     "type": str(error.get("type", "validation_error"))[:120],
-                    "location": [
-                        str(part)[:120] for part in error.get("loc", ())
-                    ],
+                    "location": [str(part)[:120] for part in error.get("loc", ())],
                     "message": str(error.get("msg", "Invalid value"))[:240],
                 }
                 for error in exc.errors(include_url=False)[:12]

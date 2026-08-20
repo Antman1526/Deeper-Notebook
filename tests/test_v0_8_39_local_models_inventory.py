@@ -11,6 +11,7 @@ Backend-only this phase. Covers:
   - GET /api/local-models/inventory endpoint (env precedence, dir
     missing, dir present)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -86,22 +87,26 @@ def test_inventory_never_follows_an_untrusted_external_mlx_root(tmp_path):
 
     assert enumerate_models(selected_root) == []
 
+
 # ---------------------------------------------------------------------------
 # parse_quant_from_filename
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("filename,expected", [
-    ("qwen2.5-7b-instruct-q4_k_m.gguf", "Q4_K_M"),
-    ("hermes-3-llama-3.1-8b.Q5_K_M.gguf", "Q5_K_M"),
-    ("Llama-3.2-3B-Instruct-Q8_0.gguf", "Q8_0"),
-    ("phi-3-mini-4k-instruct.IQ4_XS.gguf", "IQ4_XS"),
-    # Longest-match-wins: Q5_K_M not Q5
-    ("foo-q5_k_m.gguf", "Q5_K_M"),
-    # No quant marker
-    ("model.gguf", None),
-    ("", None),
-])
+@pytest.mark.parametrize(
+    "filename,expected",
+    [
+        ("qwen2.5-7b-instruct-q4_k_m.gguf", "Q4_K_M"),
+        ("hermes-3-llama-3.1-8b.Q5_K_M.gguf", "Q5_K_M"),
+        ("Llama-3.2-3B-Instruct-Q8_0.gguf", "Q8_0"),
+        ("phi-3-mini-4k-instruct.IQ4_XS.gguf", "IQ4_XS"),
+        # Longest-match-wins: Q5_K_M not Q5
+        ("foo-q5_k_m.gguf", "Q5_K_M"),
+        # No quant marker
+        ("model.gguf", None),
+        ("", None),
+    ],
+)
 def test_parse_quant_from_filename(filename, expected):
     assert parse_quant_from_filename(filename) == expected
 
@@ -111,16 +116,19 @@ def test_parse_quant_from_filename(filename, expected):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("filename,expected", [
-    ("qwen2.5-7b-instruct-q4_k_m.gguf", 7.0),
-    ("hermes-3-8b.gguf", 8.0),
-    ("llama-3.2-1.5b-instruct-q4.gguf", 1.5),
-    ("model-13b.gguf", 13.0),
-    # No param marker → None
-    ("model.gguf", None),
-    ("foo-bar.gguf", None),
-    ("", None),
-])
+@pytest.mark.parametrize(
+    "filename,expected",
+    [
+        ("qwen2.5-7b-instruct-q4_k_m.gguf", 7.0),
+        ("hermes-3-8b.gguf", 8.0),
+        ("llama-3.2-1.5b-instruct-q4.gguf", 1.5),
+        ("model-13b.gguf", 13.0),
+        # No param marker → None
+        ("model.gguf", None),
+        ("foo-bar.gguf", None),
+        ("", None),
+    ],
+)
 def test_parse_param_count_b(filename, expected):
     assert parse_param_count_b(filename) == expected
 
@@ -320,7 +328,9 @@ def app():
 
 
 def test_inventory_endpoint_returns_unavailable_when_dir_missing(
-    app, monkeypatch, tmp_path,
+    app,
+    monkeypatch,
+    tmp_path,
 ):
     bogus = tmp_path / "does-not-exist"
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(bogus))
@@ -379,7 +389,9 @@ def test_inventory_endpoint_lists_mlx_models(app, monkeypatch, tmp_path):
 
 
 def test_inventory_endpoint_includes_safe_launcher_config_summary(
-    app, monkeypatch, tmp_path,
+    app,
+    monkeypatch,
+    tmp_path,
 ):
     model_dir = tmp_path / "AI_Models"
     model_dir.mkdir()
@@ -389,14 +401,16 @@ def test_inventory_endpoint_includes_safe_launcher_config_summary(
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.toml"
     config_path.write_text(
-        "\n".join([
-            f"model_dir = '{model_dir}'",
-            "provider = 'mlx'",
-            "default_model = 'MLX/mlx-community__North-Mini-Code-1.0-6bit'",
-            "surreal_user = 'root'",
-            "surreal_password = 'do-not-leak'",
-            "encryption_key = 'also-do-not-leak'",
-        ])
+        "\n".join(
+            [
+                f"model_dir = '{model_dir}'",
+                "provider = 'mlx'",
+                "default_model = 'MLX/mlx-community__North-Mini-Code-1.0-6bit'",
+                "surreal_user = 'root'",
+                "surreal_password = 'do-not-leak'",
+                "encryption_key = 'also-do-not-leak'",
+            ]
+        )
     )
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
     monkeypatch.setenv("HOME", str(config_home))
@@ -419,7 +433,9 @@ def test_inventory_endpoint_includes_safe_launcher_config_summary(
 
 
 def test_inventory_endpoint_marks_activation_state(
-    app, monkeypatch, tmp_path,
+    app,
+    monkeypatch,
+    tmp_path,
 ):
     model_dir = tmp_path / "AI_Models"
     gguf = model_dir / "GGUF" / "Qwen3-8B-Q4_K_M.gguf"
@@ -433,11 +449,13 @@ def test_inventory_endpoint_marks_activation_state(
     config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
-        "\n".join([
-            f"model_dir = '{model_dir}'",
-            "provider = 'mlx'",
-            "default_model = 'MLX/mlx-community__North-Mini-Code-1.0-6bit'",
-        ])
+        "\n".join(
+            [
+                f"model_dir = '{model_dir}'",
+                "provider = 'mlx'",
+                "default_model = 'MLX/mlx-community__North-Mini-Code-1.0-6bit'",
+            ]
+        )
     )
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
     monkeypatch.setenv("DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL", str(gguf))
@@ -455,12 +473,19 @@ def test_inventory_endpoint_marks_activation_state(
     assert "live chat model" in by_name["Qwen3-8B-Q4_K_M"]["activation_detail"]
 
     assert by_name["mlx-community/North-Mini-Code-1.0-6bit"]["is_live_active"] is False
-    assert by_name["mlx-community/North-Mini-Code-1.0-6bit"]["is_launch_default"] is True
-    assert by_name["mlx-community/North-Mini-Code-1.0-6bit"]["activation_mode"] == "launch_default"
+    assert (
+        by_name["mlx-community/North-Mini-Code-1.0-6bit"]["is_launch_default"] is True
+    )
+    assert (
+        by_name["mlx-community/North-Mini-Code-1.0-6bit"]["activation_mode"]
+        == "launch_default"
+    )
 
 
 def test_set_launch_default_updates_native_config_for_mlx_model(
-    app, monkeypatch, tmp_path,
+    app,
+    monkeypatch,
+    tmp_path,
 ):
     model_dir = tmp_path / "AI_Models"
     repo = model_dir / "MLX" / "mlx-community__North-Mini-Code-1.0-6bit"
@@ -472,16 +497,18 @@ def test_set_launch_default_updates_native_config_for_mlx_model(
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.toml"
     config_path.write_text(
-        "\n".join([
-            f"model_dir = '{model_dir}'",
-            "provider = 'none'",
-            "default_model = ''",
-            "surreal_user = 'root'",
-            "surreal_password = 'keep-this-secret'",
-            "theme = 'dracula'",
-            "openchronicle_choice = 'prompt'",
-            "encryption_key = 'keep-this-key'",
-        ])
+        "\n".join(
+            [
+                f"model_dir = '{model_dir}'",
+                "provider = 'none'",
+                "default_model = ''",
+                "surreal_user = 'root'",
+                "surreal_password = 'keep-this-secret'",
+                "theme = 'dracula'",
+                "openchronicle_choice = 'prompt'",
+                "encryption_key = 'keep-this-key'",
+            ]
+        )
     )
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
     monkeypatch.setenv("HOME", str(config_home))
@@ -512,7 +539,9 @@ def test_set_launch_default_updates_native_config_for_mlx_model(
 
 
 def test_set_launch_default_updates_native_config_for_gguf_model(
-    app, monkeypatch, tmp_path,
+    app,
+    monkeypatch,
+    tmp_path,
 ):
     model_dir = tmp_path / "AI_Models"
     gguf = model_dir / "GGUF" / "Qwen3-8B-Q4_K_M.gguf"
@@ -523,16 +552,18 @@ def test_set_launch_default_updates_native_config_for_gguf_model(
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.toml"
     config_path.write_text(
-        "\n".join([
-            f"model_dir = '{model_dir}'",
-            "provider = 'none'",
-            "default_model = ''",
-            "surreal_user = 'root'",
-            "surreal_password = 'keep-this-secret'",
-            "theme = 'dracula'",
-            "openchronicle_choice = 'prompt'",
-            "encryption_key = 'keep-this-key'",
-        ])
+        "\n".join(
+            [
+                f"model_dir = '{model_dir}'",
+                "provider = 'none'",
+                "default_model = ''",
+                "surreal_user = 'root'",
+                "surreal_password = 'keep-this-secret'",
+                "theme = 'dracula'",
+                "openchronicle_choice = 'prompt'",
+                "encryption_key = 'keep-this-key'",
+            ]
+        )
     )
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
     monkeypatch.setenv("HOME", str(config_home))
@@ -558,7 +589,9 @@ def test_set_launch_default_updates_native_config_for_gguf_model(
 
 
 def test_set_launch_default_rejects_inventory_only_model(
-    app, monkeypatch, tmp_path,
+    app,
+    monkeypatch,
+    tmp_path,
 ):
     model_dir = tmp_path / "AI_Models"
     repo = model_dir / "Transformers" / "microsoft__FastContext-1.0-4B-SFT"
@@ -569,13 +602,15 @@ def test_set_launch_default_rejects_inventory_only_model(
     config_dir = config_home / ".deeper-notebook"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
-        "\n".join([
-            f"model_dir = '{model_dir}'",
-            "provider = 'none'",
-            "default_model = ''",
-            "surreal_user = 'root'",
-            "surreal_password = 'keep-this-secret'",
-        ])
+        "\n".join(
+            [
+                f"model_dir = '{model_dir}'",
+                "provider = 'none'",
+                "default_model = ''",
+                "surreal_user = 'root'",
+                "surreal_password = 'keep-this-secret'",
+            ]
+        )
     )
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
     monkeypatch.setenv("HOME", str(config_home))
@@ -626,7 +661,10 @@ def test_inventory_endpoint_marks_runtime_capabilities(app, monkeypatch, tmp_pat
     assert by_name["microsoft/FastContext-1.0-4B-SFT"]["runtime"] == "transformers"
     assert by_name["microsoft/FastContext-1.0-4B-SFT"]["runnable"] is False
     assert by_name["microsoft/FastContext-1.0-4B-SFT"]["activation_supported"] is False
-    assert by_name["microsoft/FastContext-1.0-4B-SFT"]["runtime_status"] == "inventory_only"
+    assert (
+        by_name["microsoft/FastContext-1.0-4B-SFT"]["runtime_status"]
+        == "inventory_only"
+    )
     assert "provider" in by_name["microsoft/FastContext-1.0-4B-SFT"]["runtime_note"]
     assert (
         by_name["microsoft/FastContext-1.0-4B-SFT"]["setup_href"]

@@ -28,7 +28,8 @@ _SOURCE_VISUAL_SEARCH_BATCH_LIMIT = 200
 def _exact_results(results: list[dict], query: str) -> list[dict]:
     needle = query.casefold()
     return [
-        result for result in results
+        result
+        for result in results
         if str(result.get("title", "")).casefold() == needle
         or any(str(match).casefold() == needle for match in result.get("matches", []))
     ]
@@ -99,15 +100,22 @@ async def search_knowledge_base(search_request: SearchRequest):
     # raise via env if you've intentionally over-loaded the box.
     import asyncio
     import os
+
     _search_timeout = float(
         resolve_env("DEEPER_NOTEBOOK_SEARCH_TIMEOUT_SEC", "60").strip() or 60
     )
-    if search_request.space_ids or search_request.authority_kinds or search_request.tags:
+    if (
+        search_request.space_ids
+        or search_request.authority_kinds
+        or search_request.tags
+    ):
         raise HTTPException(
             status_code=422,
             detail="Search filters are not supported by the current search index.",
         )
-    effective_type = "vector" if search_request.match_mode == "semantic" else search_request.type
+    effective_type = (
+        "vector" if search_request.match_mode == "semantic" else search_request.type
+    )
     try:
         if effective_type == "vector":
             # Check if embedding model is available for vector search
@@ -161,7 +169,9 @@ async def search_knowledge_base(search_request: SearchRequest):
 
         normalized_results = results or []
         if search_request.match_mode == "exact":
-            normalized_results = _exact_results(normalized_results, search_request.query)
+            normalized_results = _exact_results(
+                normalized_results, search_request.query
+            )
         if source_visuals_enabled():
             source_rows = await _authoritative_search_source_rows(normalized_results)
             if source_rows:
@@ -175,9 +185,7 @@ async def search_knowledge_base(search_request: SearchRequest):
 
             sentinel = disabled_visual_status().model_dump(mode="json")
             normalized_results = [
-                {**row, "visual_status": sentinel}
-                if isinstance(row, dict)
-                else row
+                {**row, "visual_status": sentinel} if isinstance(row, dict) else row
                 for row in normalized_results
             ]
         return SearchResponse(
@@ -262,6 +270,7 @@ async def stream_ask_response(
     # async LLM clients honour cancellation), stopping mid-token.
     # Mirrors the pattern v0.7.184 applied in chat.py.
     import asyncio
+
     try:
         final_answer = None
         final_answer_buffer = ""
@@ -314,20 +323,19 @@ async def stream_ask_response(
             node_name = metadata.get("langgraph_node")
 
             # Per-token streaming for write_final_answer ONLY.
-            if (
-                etype == "on_chat_model_stream"
-                and node_name == "write_final_answer"
-            ):
+            if etype == "on_chat_model_stream" and node_name == "write_final_answer":
                 chunk = event.get("data", {}).get("chunk")
                 content = getattr(chunk, "content", None)
                 if isinstance(content, str) and content:
                     final_answer_buffer += content
                     yield (
                         "data: "
-                        + json.dumps({
-                            "type": "final_answer_delta",
-                            "content": content,
-                        })
+                        + json.dumps(
+                            {
+                                "type": "final_answer_delta",
+                                "content": content,
+                            }
+                        )
                         + "\n\n"
                     )
 
@@ -358,14 +366,16 @@ async def stream_ask_response(
                         continue
                     yield (
                         "data: "
-                        + json.dumps({
-                            "type": "strategy",
-                            "reasoning": strategy.reasoning,
-                            "searches": [
-                                {"term": s.term, "instructions": s.instructions}
-                                for s in strategy.searches
-                            ],
-                        })
+                        + json.dumps(
+                            {
+                                "type": "strategy",
+                                "reasoning": strategy.reasoning,
+                                "searches": [
+                                    {"term": s.term, "instructions": s.instructions}
+                                    for s in strategy.searches
+                                ],
+                            }
+                        )
                         + "\n\n"
                     )
                 elif node_name == "provide_answer":
@@ -388,10 +398,12 @@ async def stream_ask_response(
                     # tokens the streaming consumer saw).
                     yield (
                         "data: "
-                        + json.dumps({
-                            "type": "final_answer",
-                            "content": final_answer,
-                        })
+                        + json.dumps(
+                            {
+                                "type": "final_answer",
+                                "content": final_answer,
+                            }
+                        )
                         + "\n\n"
                     )
 
@@ -481,9 +493,7 @@ async def ask_knowledge_base(ask_request: AskRequest, fastapi_request: Request):
 
 
 @router.post("/search/ask/simple", response_model=AskResponse)
-async def ask_knowledge_base_simple(
-    ask_request: AskRequest, fastapi_request: Request
-):
+async def ask_knowledge_base_simple(ask_request: AskRequest, fastapi_request: Request):
     """Ask the knowledge base a question and return a simple response (non-streaming)."""
     try:
         # Validate models exist
@@ -546,7 +556,9 @@ async def ask_knowledge_base_simple(
                     status_code=503,
                     detail="Client disconnected before answer ready",
                 )
-            node_output = chunk.get("write_final_answer") if isinstance(chunk, dict) else None
+            node_output = (
+                chunk.get("write_final_answer") if isinstance(chunk, dict) else None
+            )
             if node_output is not None:
                 if isinstance(node_output, dict):
                     final_answer = node_output.get("final_answer")

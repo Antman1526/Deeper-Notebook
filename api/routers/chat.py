@@ -162,7 +162,7 @@ async def _fire_memory_summarize_session(
             chat_graph.get_state,
             config=RunnableConfig(configurable={"thread_id": chat_session_id}),
         )
-        msgs = (current_state.values.get("messages", []) if current_state else [])
+        msgs = current_state.values.get("messages", []) if current_state else []
         if not msgs:
             return
         # Render as "USER: ..." / "ASSISTANT: ..." lines so the
@@ -228,7 +228,8 @@ class UpdateSessionRequest(BaseModel):
     # in practice but is preserved as-is so the UI can distinguish "I
     # explicitly cleared the list" from "I never set it."
     disabled_mcp_servers: Optional[list[str]] = Field(
-        None, description="MCP server names disabled for this session",
+        None,
+        description="MCP server names disabled for this session",
     )
 
 
@@ -253,7 +254,8 @@ class ChatSessionResponse(BaseModel):
     )
     # v0.8.43 — persistent MCP server disable picks (null = none).
     disabled_mcp_servers: Optional[list[str]] = Field(
-        None, description="MCP server names disabled for this session",
+        None,
+        description="MCP server names disabled for this session",
     )
 
 
@@ -407,11 +409,14 @@ async def get_sessions(
     # the underlying SELECT was still unbounded). Default cap = 100
     # newest sessions; 1000 hard ceiling.
     limit: int = Query(
-        100, ge=1, le=1000,
+        100,
+        ge=1,
+        le=1000,
         description="Max sessions to return (default 100, max 1000).",
     ),
     offset: int = Query(
-        0, ge=0,
+        0,
+        ge=0,
         description="Sessions to skip for pagination (default 0).",
     ),
 ):
@@ -426,7 +431,8 @@ async def get_sessions(
         # v0.7.169 — pass through `limit` / `offset` so the inner
         # SELECT is bounded server-side.
         sessions_list = await notebook.get_chat_sessions(
-            limit=limit, offset=offset,
+            limit=limit,
+            offset=offset,
         )
 
         # v0.7.161 — N+1 fix: parallelize the per-session LangGraph
@@ -441,10 +447,12 @@ async def get_sessions(
         # made; the bigger fix (denormalize total_messages onto the
         # chat_session row at write time) requires a schema migration
         # and a LangGraph checkpoint hook; tracked as deferred.
-        msg_counts = await asyncio.gather(*[
-            get_session_message_count(chat_graph, str(session.id))
-            for session in sessions_list
-        ])
+        msg_counts = await asyncio.gather(
+            *[
+                get_session_message_count(chat_graph, str(session.id))
+                for session in sessions_list
+            ]
+        )
 
         results = [
             ChatSessionResponse(
@@ -456,10 +464,10 @@ async def get_sessions(
                 updated=iso(session.updated),
                 message_count=msg_count,
                 model_override=getattr(session, "model_override", None),
-            # v0.8.43 — surface the persistent MCP disable picks. Use
-            # getattr so pre-migration rows (where the field isn't on
-            # the model instance yet) return None safely.
-            disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None),
+                # v0.8.43 — surface the persistent MCP disable picks. Use
+                # getattr so pre-migration rows (where the field isn't on
+                # the model instance yet) return None safely.
+                disabled_mcp_servers=getattr(session, "disabled_mcp_servers", None),
             )
             for session, msg_count in zip(sessions_list, msg_counts)
         ]
@@ -476,9 +484,7 @@ async def get_sessions(
         raise
     except Exception as e:
         logger.error(f"Error fetching chat sessions: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching chat sessions"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching chat sessions")
 
 
 @router.post("/chat/sessions", response_model=ChatSessionResponse)
@@ -523,9 +529,7 @@ async def create_session(request: CreateSessionRequest):
         raise
     except Exception as e:
         logger.error(f"Error creating chat session: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error creating chat session"
-        )
+        raise HTTPException(status_code=500, detail="Error creating chat session")
 
 
 @router.get(
@@ -764,7 +768,8 @@ async def delete_session(session_id: str):
                 "LangGraph checkpoint cleanup failed for session {} "
                 "(non-fatal — the row is already deleted; "
                 "checkpoint_prune will catch the orphan): {}",
-                full_session_id, cleanup_exc,
+                full_session_id,
+                cleanup_exc,
             )
 
         return SuccessResponse(success=True, message="Session deleted successfully")
@@ -820,6 +825,7 @@ async def execute_chat(request: ExecuteChatRequest):
         # auto-GCs when no caller holds it — no memory growth on a
         # long-running install with many session_ids.
         from api.utils.session_locks import get_session_lock
+
         session_lock = await get_session_lock(full_session_id)
         async with session_lock:
             # Get current state
@@ -901,7 +907,8 @@ async def execute_chat(request: ExecuteChatRequest):
             except asyncio.TimeoutError as exc:
                 logger.warning(
                     "Chat /chat: timed out after {}s for session {}",
-                    _chat_timeout, full_session_id,
+                    _chat_timeout,
+                    full_session_id,
                 )
                 raise HTTPException(
                     status_code=504,
@@ -935,7 +942,8 @@ async def execute_chat(request: ExecuteChatRequest):
         # below (response conversion + memory extractor) share the
         # same source-of-truth list.
         result_messages = (
-            result.get("messages", []) if isinstance(result, dict)
+            result.get("messages", [])
+            if isinstance(result, dict)
             else (getattr(result, "messages", None) or [])
         )
 
@@ -944,35 +952,42 @@ async def execute_chat(request: ExecuteChatRequest):
         # Pydantic guard as messages above so a future LangGraph state
         # shape change doesn't silently drop the field.
         selected_provider = (
-            result.get("selected_provider") if isinstance(result, dict)
+            result.get("selected_provider")
+            if isinstance(result, dict)
             else getattr(result, "selected_provider", None)
         )
         selected_model_id = (
-            result.get("selected_model_id") if isinstance(result, dict)
+            result.get("selected_model_id")
+            if isinstance(result, dict)
             else getattr(result, "selected_model_id", None)
         )
         # v0.8.68 — offline-fallback info (None when the gate didn't act).
         offline_fallback = (
-            result.get("offline_fallback") if isinstance(result, dict)
+            result.get("offline_fallback")
+            if isinstance(result, dict)
             else getattr(result, "offline_fallback", None)
         )
         # v0.8.1 Item 3 — MCP tool-call payloads captured this turn.
         mcp_tool_calls = (
-            result.get("mcp_tool_calls") if isinstance(result, dict)
+            result.get("mcp_tool_calls")
+            if isinstance(result, dict)
             else getattr(result, "mcp_tool_calls", None)
         )
         # v0.8.58 — privacy-gate decision (None when the gate didn't act).
         privacy_gated = (
-            result.get("privacy_gated") if isinstance(result, dict)
+            result.get("privacy_gated")
+            if isinstance(result, dict)
             else getattr(result, "privacy_gated", None)
         )
         privacy_categories = (
-            result.get("privacy_categories") if isinstance(result, dict)
+            result.get("privacy_categories")
+            if isinstance(result, dict)
             else getattr(result, "privacy_categories", None)
         )
         # v0.8.60 — agent-FSM terminal state (None when the FSM is off).
         agent_state = (
-            result.get("agent_state") if isinstance(result, dict)
+            result.get("agent_state")
+            if isinstance(result, dict)
             else getattr(result, "agent_state", None)
         )
 
@@ -1152,6 +1167,7 @@ async def _stream_chat_events(
         # disconnect), the GeneratorExit cleanup runs the finally so
         # the lock IS released even mid-stream.
         from api.utils.session_locks import get_session_lock
+
         session_lock = await get_session_lock(full_session_id)
         await session_lock.acquire()
         try:
@@ -1190,10 +1206,15 @@ async def _stream_chat_events(
             user_message = HumanMessage(content=request.message)
             state_values["messages"].append(user_message)
 
-            yield json.dumps({
-                "type": "start",
-                "session_id": request.session_id,
-            }) + "\n"
+            yield (
+                json.dumps(
+                    {
+                        "type": "start",
+                        "session_id": request.session_id,
+                    }
+                )
+                + "\n"
+            )
 
             # Stream events from the LangGraph. astream_events yields a rich
             # event stream — we filter for `on_chat_model_stream` which fires
@@ -1223,8 +1244,8 @@ async def _stream_chat_events(
                 # local LLM from churning out tokens nobody will see.
                 if await fastapi_request.is_disconnected():
                     logger.info(
-                        "chat stream: client disconnected for session {}; "
-                        "halting", full_session_id,
+                        "chat stream: client disconnected for session {}; halting",
+                        full_session_id,
                     )
                     # v0.8.66 (audit M-B5) — if the turn already COMPLETED
                     # (final_result captured via the outer on_chain_end) but the
@@ -1282,12 +1303,17 @@ async def _stream_chat_events(
                         if visible.startswith(_streamed_visible) and len(visible) > len(
                             _streamed_visible
                         ):
-                            delta = visible[len(_streamed_visible):]
+                            delta = visible[len(_streamed_visible) :]
                             _streamed_visible = visible
-                            yield json.dumps({
-                                "type": "token",
-                                "content": delta,
-                            }) + "\n"
+                            yield (
+                                json.dumps(
+                                    {
+                                        "type": "token",
+                                        "content": delta,
+                                    }
+                                )
+                                + "\n"
+                            )
                         elif visible != _streamed_visible:
                             # A <think> opened AFTER some answer text → visible
                             # shrank; resync silently (the `done` event carries
@@ -1324,7 +1350,8 @@ async def _stream_chat_events(
                         # the final output if available, so we can emit it
                         # as a dedicated NDJSON event before stream-close.
                         mcp_calls_raw = (
-                            output.get("mcp_tool_calls") if isinstance(output, dict)
+                            output.get("mcp_tool_calls")
+                            if isinstance(output, dict)
                             else getattr(output, "mcp_tool_calls", None)
                         )
                         # v0.8.1 follow-up — also capture the smart-router
@@ -1337,35 +1364,42 @@ async def _stream_chat_events(
                         # on the Pydantic-state branch — frontends saw
                         # null even when the graph populated them.
                         selected_provider_raw = (
-                            output.get("selected_provider") if isinstance(output, dict)
+                            output.get("selected_provider")
+                            if isinstance(output, dict)
                             else getattr(output, "selected_provider", None)
                         )
                         selected_model_id_raw = (
-                            output.get("selected_model_id") if isinstance(output, dict)
+                            output.get("selected_model_id")
+                            if isinstance(output, dict)
                             else getattr(output, "selected_model_id", None)
                         )
                         # v0.8.58 — same dual-path capture for the privacy-gate
                         # decision so the Pydantic-state branch doesn't drop it.
                         privacy_gated_raw = (
-                            output.get("privacy_gated") if isinstance(output, dict)
+                            output.get("privacy_gated")
+                            if isinstance(output, dict)
                             else getattr(output, "privacy_gated", None)
                         )
                         privacy_categories_raw = (
-                            output.get("privacy_categories") if isinstance(output, dict)
+                            output.get("privacy_categories")
+                            if isinstance(output, dict)
                             else getattr(output, "privacy_categories", None)
                         )
                         # v0.8.60 — agent-FSM terminal state (dual-path).
                         agent_state_raw = (
-                            output.get("agent_state") if isinstance(output, dict)
+                            output.get("agent_state")
+                            if isinstance(output, dict)
                             else getattr(output, "agent_state", None)
                         )
                         # v0.8.68 — offline-fallback info (dual-path).
                         offline_fallback_raw = (
-                            output.get("offline_fallback") if isinstance(output, dict)
+                            output.get("offline_fallback")
+                            if isinstance(output, dict)
                             else getattr(output, "offline_fallback", None)
                         )
                         final_result = (
-                            output if isinstance(output, dict)
+                            output
+                            if isinstance(output, dict)
                             else {
                                 "messages": msgs,
                                 "mcp_tool_calls": mcp_calls_raw,
@@ -1393,12 +1427,14 @@ async def _stream_chat_events(
         messages: list = []
         if final_result and "messages" in final_result:
             for msg in final_result.get("messages", []):
-                messages.append({
-                    "id": getattr(msg, "id", f"msg_{len(messages)}"),
-                    "type": msg.type if hasattr(msg, "type") else "unknown",
-                    "content": msg.content if hasattr(msg, "content") else str(msg),
-                    "timestamp": None,
-                })
+                messages.append(
+                    {
+                        "id": getattr(msg, "id", f"msg_{len(messages)}"),
+                        "type": msg.type if hasattr(msg, "type") else "unknown",
+                        "content": msg.content if hasattr(msg, "content") else str(msg),
+                        "timestamp": None,
+                    }
+                )
 
         # Update session timestamp (same as /chat/execute)
         try:
@@ -1438,14 +1474,20 @@ async def _stream_chat_events(
         # actually made this turn; clients that don't handle this event
         # type will receive it as an unknown event and skip it.
         mcp_tool_calls_out = (
-            final_result.get("mcp_tool_calls") if isinstance(final_result, dict)
+            final_result.get("mcp_tool_calls")
+            if isinstance(final_result, dict)
             else None
         )
         if mcp_tool_calls_out:
-            yield json.dumps({
-                "type": "mcp_tool_calls",
-                "calls": mcp_tool_calls_out,
-            }) + "\n"
+            yield (
+                json.dumps(
+                    {
+                        "type": "mcp_tool_calls",
+                        "calls": mcp_tool_calls_out,
+                    }
+                )
+                + "\n"
+            )
 
         # v0.8.1 follow-up — surface smart-router decision in the `done`
         # event so SSE clients can render the local/cloud badge without
@@ -1453,44 +1495,53 @@ async def _stream_chat_events(
         # routing didn't run / explicit model_override / no on_chain_end
         # event) to keep the wire shape stable for clients that destructure.
         selected_provider_out = (
-            final_result.get("selected_provider") if isinstance(final_result, dict)
+            final_result.get("selected_provider")
+            if isinstance(final_result, dict)
             else None
         )
         selected_model_id_out = (
-            final_result.get("selected_model_id") if isinstance(final_result, dict)
+            final_result.get("selected_model_id")
+            if isinstance(final_result, dict)
             else None
         )
         # v0.8.58 — privacy-gate decision parity with /chat/execute.
         privacy_gated_out = (
-            final_result.get("privacy_gated") if isinstance(final_result, dict)
+            final_result.get("privacy_gated")
+            if isinstance(final_result, dict)
             else None
         )
         privacy_categories_out = (
-            final_result.get("privacy_categories") if isinstance(final_result, dict)
+            final_result.get("privacy_categories")
+            if isinstance(final_result, dict)
             else None
         )
         # v0.8.60 — agent-FSM terminal state parity with /chat/execute.
         agent_state_out_evt = (
-            final_result.get("agent_state") if isinstance(final_result, dict)
-            else None
+            final_result.get("agent_state") if isinstance(final_result, dict) else None
         )
         # v0.8.68 — offline-fallback parity with /chat/execute so SSE
         # clients can render the "Answered with <model> (offline)" pill.
         offline_fallback_out = (
-            final_result.get("offline_fallback") if isinstance(final_result, dict)
+            final_result.get("offline_fallback")
+            if isinstance(final_result, dict)
             else None
         )
 
-        yield json.dumps({
-            "type": "done",
-            "messages": messages,
-            "selected_provider": selected_provider_out,
-            "selected_model_id": selected_model_id_out,
-            "privacy_gated": privacy_gated_out,
-            "privacy_categories": privacy_categories_out,
-            "agent_state": agent_state_out_evt,
-            "offline_fallback": offline_fallback_out,
-        }) + "\n"
+        yield (
+            json.dumps(
+                {
+                    "type": "done",
+                    "messages": messages,
+                    "selected_provider": selected_provider_out,
+                    "selected_model_id": selected_model_id_out,
+                    "privacy_gated": privacy_gated_out,
+                    "privacy_categories": privacy_categories_out,
+                    "agent_state": agent_state_out_evt,
+                    "offline_fallback": offline_fallback_out,
+                }
+            )
+            + "\n"
+        )
 
     except NotFoundError:
         # Streaming context — the HTTP response has already started
@@ -1522,9 +1573,9 @@ async def _stream_chat_events(
         detail = str(e)
         privacy_blocked = "privacy gate blocked" in detail.lower()
         logger.info(
-            "chat stream: ConfigurationError for session {} "
-            "(privacy_blocked={})",
-            request.session_id, privacy_blocked,
+            "chat stream: ConfigurationError for session {} (privacy_blocked={})",
+            request.session_id,
+            privacy_blocked,
         )
         evt: dict = {"type": "error", "detail": detail}
         if privacy_blocked:
@@ -1545,7 +1596,9 @@ async def _stream_chat_events(
         # no hint to deselect sources or pick a larger-context model.
         logger.info(
             "chat stream: {} for session {}: {}",
-            type(e).__name__, request.session_id, str(e),
+            type(e).__name__,
+            request.session_id,
+            str(e),
         )
         yield json.dumps({"type": "error", "detail": str(e)}) + "\n"
     except Exception as e:
@@ -1557,12 +1610,19 @@ async def _stream_chat_events(
         # the client gets a generic message.
         logger.error(
             "Error in /chat/stream for session {}: {}\n{}",
-            request.session_id, str(e), traceback.format_exc(),
+            request.session_id,
+            str(e),
+            traceback.format_exc(),
         )
-        yield json.dumps({
-            "type": "error",
-            "detail": "Chat stream failed unexpectedly.",
-        }) + "\n"
+        yield (
+            json.dumps(
+                {
+                    "type": "error",
+                    "detail": "Chat stream failed unexpectedly.",
+                }
+            )
+            + "\n"
+        )
 
 
 @router.post("/chat/stream")

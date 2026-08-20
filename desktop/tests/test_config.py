@@ -46,9 +46,13 @@ def test_load_or_create_reads_existing(tmp_path):
 
 def test_save_round_trips(tmp_path):
     cfg_path = tmp_path / "config.toml"
-    cfg = Config(model_dir=tmp_path / "AI", provider="llamacpp",
-                 default_model="x.gguf", surreal_user="root",
-                 surreal_password="ABCDEFGHIJKLMNOPQRSTUVWX")
+    cfg = Config(
+        model_dir=tmp_path / "AI",
+        provider="llamacpp",
+        default_model="x.gguf",
+        surreal_user="root",
+        surreal_password="ABCDEFGHIJKLMNOPQRSTUVWX",
+    )
     cfg.save(cfg_path)
     loaded = load_or_create(cfg_path)
     assert loaded == cfg
@@ -70,9 +74,11 @@ def test_load_or_create_accepts_mlx_provider(tmp_path):
 
 def test_invalid_provider_raises(tmp_path):
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text('model_dir = "/tmp"\nprovider = "bogus"\n'
-                        'default_model = ""\nsurreal_user = "root"\n'
-                        'surreal_password = "AAAAAAAAAAAAAAAAAAAAAAAA"\n')
+    cfg_path.write_text(
+        'model_dir = "/tmp"\nprovider = "bogus"\n'
+        'default_model = ""\nsurreal_user = "root"\n'
+        'surreal_password = "AAAAAAAAAAAAAAAAAAAAAAAA"\n'
+    )
     with pytest.raises(ValueError, match="provider"):
         load_or_create(cfg_path)
 
@@ -116,16 +122,27 @@ def test_theme_defaults_to_research_core_dark(tmp_path):
 
 def test_existing_theme_is_not_replaced_by_new_default(tmp_path):
     cfg_path = tmp_path / "config.toml"
-    Config(model_dir=tmp_path, provider="none", default_model="",
-           surreal_user="root", surreal_password="A" * 24,
-           theme="light-blue").save(cfg_path)
+    Config(
+        model_dir=tmp_path,
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="A" * 24,
+        theme="light-blue",
+    ).save(cfg_path)
     assert load_or_create(cfg_path).theme == "light-blue"
 
 
 def test_theme_round_trips(tmp_path):
     cfg_path = tmp_path / "config.toml"
-    cfg = Config(model_dir=tmp_path, provider="none", default_model="",
-                 surreal_user="root", surreal_password="A" * 24, theme="dracula")
+    cfg = Config(
+        model_dir=tmp_path,
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="A" * 24,
+        theme="dracula",
+    )
     cfg.save(cfg_path)
     assert load_or_create(cfg_path).theme == "dracula"
 
@@ -133,12 +150,18 @@ def test_theme_round_trips(tmp_path):
 def test_encryption_key_defaults_to_random():
     """Two fresh Configs must have different keys; missing key is regenerated."""
     cfg1 = Config(
-        model_dir=Path("/tmp"), provider="none", default_model="",
-        surreal_user="root", surreal_password="A" * 24,
+        model_dir=Path("/tmp"),
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="A" * 24,
     )
     cfg2 = Config(
-        model_dir=Path("/tmp"), provider="none", default_model="",
-        surreal_user="root", surreal_password="A" * 24,
+        model_dir=Path("/tmp"),
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="A" * 24,
     )
     assert cfg1.encryption_key != cfg2.encryption_key
     assert len(cfg1.encryption_key) >= 32
@@ -170,9 +193,14 @@ def test_openchronicle_choice_defaults_to_skip(tmp_path):
 
 def test_openchronicle_choice_round_trips(tmp_path):
     cfg_path = tmp_path / "config.toml"
-    cfg = Config(model_dir=tmp_path, provider="none", default_model="",
-                 surreal_user="root", surreal_password="A" * 24,
-                 openchronicle_choice="prompt")
+    cfg = Config(
+        model_dir=tmp_path,
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="A" * 24,
+        openchronicle_choice="prompt",
+    )
     cfg.save(cfg_path)
     assert load_or_create(cfg_path).openchronicle_choice == "prompt"
 
@@ -183,6 +211,7 @@ def test_config_file_is_owner_only_on_unix(tmp_path, monkeypatch):
     umask the file would be world-readable on shared Macs/Linux."""
     import os
     import sys
+
     if sys.platform == "win32":
         pytest.skip("Unix permission bits don't apply to Windows ACLs")
     # Pretend umask is something permissive (022) so we can verify chmod

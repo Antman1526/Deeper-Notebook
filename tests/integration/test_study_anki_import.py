@@ -58,9 +58,7 @@ async def _published_state(plan_id: str) -> tuple[list[dict[str, object]], ...]:
     return cards, links, receipts
 
 
-async def _seed_unit(
-    plan_id: str, unit_id: str, *, syllabus_version: int = 1
-) -> None:
+async def _seed_unit(plan_id: str, unit_id: str, *, syllabus_version: int = 1) -> None:
     await repo_query(
         "CREATE study_unit CONTENT $unit;",
         {
@@ -91,8 +89,12 @@ async def test_anki_import_publishes_native_cards_and_reuses_exact_payload(
     options = AnkiImportOptions(syllabus_unit_id="native-import")
 
     first = await import_anki_package(plan_id, package, options, "anki-request-one")
-    same_request = await import_anki_package(plan_id, package, options, "anki-request-one")
-    same_payload = await import_anki_package(plan_id, package, options, "anki-request-two")
+    same_request = await import_anki_package(
+        plan_id, package, options, "anki-request-one"
+    )
+    same_payload = await import_anki_package(
+        plan_id, package, options, "anki-request-two"
+    )
 
     assert first == same_request == same_payload
     assert first.card_count == 2
@@ -108,7 +110,9 @@ async def test_anki_import_publishes_native_cards_and_reuses_exact_payload(
     assert len(receipts) == 1
     assert {str(card["id"]) for card in cards} == set(first.card_ids)
     assert {str(link["card_id"]) for link in links} == set(first.card_ids)
-    assert all(card["artifact_id"] == f"anki_import:{first.package_sha256}" for card in cards)
+    assert all(
+        card["artifact_id"] == f"anki_import:{first.package_sha256}" for card in cards
+    )
     assert all(card["current"] is True and card["due"] is not None for card in cards)
     assert all(link["syllabus_unit_id"] == "native-import" for link in links)
     assert receipts[0] == {
@@ -144,7 +148,9 @@ async def test_concurrent_same_payload_imports_converge_on_one_native_publicatio
     plan_id = "study_plan:anki-race"
     await StudyPlanRepository().create(_approved_plan(plan_id))
     await _seed_unit(plan_id, "race-unit")
-    inspection = inspect_anki_package(build_apkg(tmp_path / "race.apkg", kind="reverse"))
+    inspection = inspect_anki_package(
+        build_apkg(tmp_path / "race.apkg", kind="reverse")
+    )
     options = AnkiImportOptions(syllabus_unit_id="race-unit")
     first_repository = AnkiImportRepository()
     second_repository = AnkiImportRepository()
@@ -155,8 +161,12 @@ async def test_concurrent_same_payload_imports_converge_on_one_native_publicatio
         return_exceptions=True,
     )
 
-    failures = [result for result in (first, second) if isinstance(result, BaseException)]
-    successes = [result for result in (first, second) if not isinstance(result, BaseException)]
+    failures = [
+        result for result in (first, second) if isinstance(result, BaseException)
+    ]
+    successes = [
+        result for result in (first, second) if not isinstance(result, BaseException)
+    ]
     assert len(successes) >= 1
     assert all(isinstance(error, AnkiImportConflict) for error in failures)
     winner = successes[0]
@@ -211,13 +221,17 @@ async def test_anki_import_rejections_never_publish_partial_native_state(
     before = await _published_state(plan_id)
 
     with pytest.raises(AnkiPackageRejected, match="unsafe_field"):
-        await import_anki_package(plan_id, invalid_package, AnkiImportOptions(), "invalid-package")
+        await import_anki_package(
+            plan_id, invalid_package, AnkiImportOptions(), "invalid-package"
+        )
     with pytest.raises(AnkiImportRepositoryError, match="unavailable"):
         await import_anki_package(
             "study_plan:missing", package, AnkiImportOptions(), "missing-plan"
         )
     with pytest.raises(AnkiImportRepositoryError, match="Invalid Study Plan ID"):
-        await import_anki_package("source:not-a-plan", package, AnkiImportOptions(), "wrong-plan")
+        await import_anki_package(
+            "source:not-a-plan", package, AnkiImportOptions(), "wrong-plan"
+        )
     with pytest.raises(AnkiImportRepositoryError, match="unavailable"):
         await import_anki_package(
             archived_plan_id, package, AnkiImportOptions(), "archived-plan"
@@ -242,7 +256,9 @@ async def test_anki_import_rejections_never_publish_partial_native_state(
         )
 
     assert await _published_state(plan_id) == before
-    archived_cards, archived_links, archived_receipts = await _published_state(archived_plan_id)
+    archived_cards, archived_links, archived_receipts = await _published_state(
+        archived_plan_id
+    )
     assert archived_cards == []
     assert archived_links == []
     assert archived_receipts == []

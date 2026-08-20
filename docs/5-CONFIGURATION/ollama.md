@@ -643,18 +643,14 @@ import requests
 import os
 
 # Test Ollama connection
-ollama_base = os.environ.get('OLLAMA_API_BASE', 'http://localhost:11434')
-response = requests.get(f'{ollama_base}/api/tags')
+ollama_base = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
+response = requests.get(f"{ollama_base}/api/tags")
 print(f"Available models: {response.json()}")
 
 # Generate text
-payload = {
-    "model": "qwen3",
-    "prompt": "Explain quantum computing",
-    "stream": False
-}
-response = requests.post(f'{ollama_base}/api/generate', json=payload)
-print(response.json()['response'])
+payload = {"model": "qwen3", "prompt": "Explain quantum computing", "stream": False}
+response = requests.post(f"{ollama_base}/api/generate", json=payload)
+print(response.json()["response"])
 ```
 
 ### Health Check Script

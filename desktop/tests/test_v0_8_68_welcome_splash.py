@@ -6,6 +6,7 @@ self-contained (paints with zero network), correct URL embedding, a
 probe/replace loop with no terminal error state, and the loaded-event
 gating that keeps the watchdog armed while the splash is showing.
 """
+
 from __future__ import annotations
 
 import json

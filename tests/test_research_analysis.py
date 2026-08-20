@@ -34,7 +34,9 @@ async def test_research_analysis_uses_only_saved_sources_and_strict_receipts(
 
     extracted = await analysis.extract_research_evidence(run)
     compared = await analysis.compare_research_evidence(run)
-    run = run.with_stage_result("extract", extracted).with_stage_result("compare", compared)
+    run = run.with_stage_result("extract", extracted).with_stage_result(
+        "compare", compared
+    )
     synthesized = await analysis.synthesize_research_evidence(run)
     run = run.with_stage_result("synthesize", synthesized)
     validated = await analysis.validate_research_evidence(run)

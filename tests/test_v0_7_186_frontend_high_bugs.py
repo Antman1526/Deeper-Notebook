@@ -28,6 +28,7 @@ Two bugs that would degrade the everyday UX of the desktop app:
     BEFORE the setState (so cleanup always sees it) + an
     AbortController wired to the fetch's `signal`.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

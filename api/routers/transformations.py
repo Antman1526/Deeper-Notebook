@@ -37,18 +37,23 @@ async def get_transformations(
     # silently return multi-MB JSON. Default cap = 200; hard ceiling
     # 1000 prevents bypass by curious callers.
     limit: int = Query(
-        200, ge=1, le=1000,
+        200,
+        ge=1,
+        le=1000,
         description="Max rows to return (default 200, max 1000).",
     ),
     offset: int = Query(
-        0, ge=0,
+        0,
+        ge=0,
         description="Rows to skip for pagination (default 0).",
     ),
 ):
     """Get all transformations."""
     try:
         transformations = await Transformation.get_all(
-            order_by="name asc", limit=limit, offset=offset,
+            order_by="name asc",
+            limit=limit,
+            offset=offset,
         )
 
         return [
@@ -74,9 +79,7 @@ async def get_transformations(
         raise
     except Exception as e:
         logger.error(f"Error fetching transformations: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching transformations"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching transformations")
 
 
 class OptimizePromptRequest(BaseModel):
@@ -124,11 +127,14 @@ async def optimize_transformation_prompt(
             raise HTTPException(status_code=501, detail="Optimizer unavailable")
 
         _timeout = float(
-            resolve_env("DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip() or 10
+            resolve_env("DEEPER_NOTEBOOK_SUBMIT_COMMAND_TIMEOUT_SEC", "10").strip()
+            or 10
         )
         job_id = await _asyncio.wait_for(
             _asyncio.to_thread(
-                submit_command, "open_notebook", "optimize_prompt",
+                submit_command,
+                "open_notebook",
+                "optimize_prompt",
                 {
                     "transformation_id": transformation_id,
                     "source_ids": request.source_ids,
@@ -144,7 +150,7 @@ async def optimize_transformation_prompt(
         return {
             "job_id": str(job_id),
             "message": "Prompt optimization started — this runs many model "
-                       "calls and can take several minutes.",
+            "calls and can take several minutes.",
         }
     except HTTPException:
         raise
@@ -192,9 +198,7 @@ async def create_transformation(transformation_data: TransformationCreate):
         raise
     except Exception as e:
         logger.error(f"Error creating transformation: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error creating transformation"
-        )
+        raise HTTPException(status_code=500, detail="Error creating transformation")
 
 
 @router.post("/transformations/execute", response_model=TransformationExecuteResponse)
@@ -220,7 +224,8 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
         import os
 
         _xform_timeout = float(
-            resolve_env("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "180").strip() or 180
+            resolve_env("DEEPER_NOTEBOOK_TRANSFORMATION_TIMEOUT_SEC", "180").strip()
+            or 180
         )
         try:
             result = await asyncio.wait_for(
@@ -266,9 +271,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
         raise  # Let global exception handlers return proper status codes
     except Exception as e:
         logger.error(f"Error executing transformation: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error executing transformation"
-        )
+        raise HTTPException(status_code=500, detail="Error executing transformation")
 
 
 @router.get("/transformations/default-prompt", response_model=DefaultPromptResponse)
@@ -291,9 +294,7 @@ async def get_default_prompt():
         raise
     except Exception as e:
         logger.error(f"Error fetching default prompt: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching default prompt"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching default prompt")
 
 
 @router.put("/transformations/default-prompt", response_model=DefaultPromptResponse)
@@ -320,9 +321,7 @@ async def update_default_prompt(prompt_update: DefaultPromptUpdate):
         raise
     except Exception as e:
         logger.error(f"Error updating default prompt: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error updating default prompt"
-        )
+        raise HTTPException(status_code=500, detail="Error updating default prompt")
 
 
 @router.get(
@@ -353,9 +352,7 @@ async def get_transformation(transformation_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching transformation {transformation_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error fetching transformation"
-        )
+        raise HTTPException(status_code=500, detail="Error fetching transformation")
 
 
 @router.put(
@@ -403,9 +400,7 @@ async def update_transformation(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating transformation {transformation_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error updating transformation"
-        )
+        raise HTTPException(status_code=500, detail="Error updating transformation")
 
 
 @router.delete("/transformations/{transformation_id}")
@@ -426,6 +421,4 @@ async def delete_transformation(transformation_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting transformation {transformation_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error deleting transformation"
-        )
+        raise HTTPException(status_code=500, detail="Error deleting transformation")

@@ -34,21 +34,25 @@ class TestAskNodeTimeout:
 
     def test_default_timeout(self, monkeypatch):
         from deeper_notebook.graphs.ask import _ask_node_timeout_sec
+
         monkeypatch.delenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", raising=False)
         assert _ask_node_timeout_sec() == 120.0
 
     def test_env_override(self, monkeypatch):
         from deeper_notebook.graphs.ask import _ask_node_timeout_sec
+
         monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", "30")
         assert _ask_node_timeout_sec() == 30.0
 
     def test_garbage_env_falls_back_to_default(self, monkeypatch):
         from deeper_notebook.graphs.ask import _ask_node_timeout_sec
+
         monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", "not-a-float")
         assert _ask_node_timeout_sec() == 120.0
 
     def test_zero_or_negative_falls_back_to_default(self, monkeypatch):
         from deeper_notebook.graphs.ask import _ask_node_timeout_sec
+
         for v in ("0", "-1", "-0.5"):
             monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", v)
             assert _ask_node_timeout_sec() == 120.0
@@ -65,8 +69,10 @@ class TestAskNodeTimeout:
         monkeypatch.setenv("DEEPER_NOTEBOOK_ASK_NODE_TIMEOUT_SEC", "0.05")
 
         hung_model = MagicMock()
+
         async def _hang(*args, **kwargs):
             await asyncio.sleep(60)
+
         hung_model.ainvoke = _hang
 
         with pytest.raises(ExternalServiceError) as exc_info:
@@ -121,15 +127,19 @@ class TestRunTransformationTimeout:
         async def hung_graph_invoke(input):
             await asyncio.sleep(60)
 
-        with patch(
-            "commands.source_commands.Source.get",
-            AsyncMock(return_value=fake_source),
-        ), patch(
-            "commands.source_commands.Transformation.get",
-            AsyncMock(return_value=fake_transformation),
-        ), patch(
-            "commands.source_commands.transform_graph.ainvoke",
-            new=hung_graph_invoke,
+        with (
+            patch(
+                "commands.source_commands.Source.get",
+                AsyncMock(return_value=fake_source),
+            ),
+            patch(
+                "commands.source_commands.Transformation.get",
+                AsyncMock(return_value=fake_transformation),
+            ),
+            patch(
+                "commands.source_commands.transform_graph.ainvoke",
+                new=hung_graph_invoke,
+            ),
         ):
             with pytest.raises(RuntimeError) as exc_info:
                 await run_transformation_command(
@@ -154,15 +164,19 @@ class TestRunTransformationTimeout:
         fake_source = MagicMock()
         fake_transformation = MagicMock()
 
-        with patch(
-            "commands.source_commands.Source.get",
-            AsyncMock(return_value=fake_source),
-        ), patch(
-            "commands.source_commands.Transformation.get",
-            AsyncMock(return_value=fake_transformation),
-        ), patch(
-            "commands.source_commands.transform_graph.ainvoke",
-            AsyncMock(return_value={"output": "done"}),
+        with (
+            patch(
+                "commands.source_commands.Source.get",
+                AsyncMock(return_value=fake_source),
+            ),
+            patch(
+                "commands.source_commands.Transformation.get",
+                AsyncMock(return_value=fake_transformation),
+            ),
+            patch(
+                "commands.source_commands.transform_graph.ainvoke",
+                AsyncMock(return_value={"output": "done"}),
+            ),
         ):
             result = await run_transformation_command(
                 RunTransformationInput(
@@ -204,8 +218,11 @@ class TestPodcastGenerationTimeout:
             await asyncio.sleep(60)
 
         import os as _os
+
         timeout = float(
-            _os.environ.get("DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800").strip()
+            _os.environ.get(
+                "DEEPER_NOTEBOOK_PODCAST_GENERATION_TIMEOUT_SEC", "1800"
+            ).strip()
             or 1800
         )
         with pytest.raises(asyncio.TimeoutError):
@@ -234,6 +251,7 @@ class TestAllModelFlowsHaveTimeouts:
 
     def _read(self, path: str) -> str:
         from pathlib import Path
+
         return Path(path).read_text()
 
     def test_ask_graph_has_per_node_timeout_helper(self):

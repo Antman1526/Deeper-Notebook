@@ -44,7 +44,8 @@ def _transform_node_timeout_sec() -> float:
             logger.warning(
                 "DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC={} must be positive; "
                 "using default {}s",
-                raw, _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC,
+                raw,
+                _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC,
             )
             return _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC
         return val
@@ -52,9 +53,11 @@ def _transform_node_timeout_sec() -> float:
         logger.warning(
             "DEEPER_NOTEBOOK_TRANSFORM_NODE_TIMEOUT_SEC={!r} not a float; using "
             "default {}s",
-            raw, _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC,
+            raw,
+            _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC,
         )
         return _DEFAULT_TRANSFORM_NODE_TIMEOUT_SEC
+
 
 # v0.7.10 — Input-text cap for transformations.
 #
@@ -128,7 +131,9 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
         if not content:
             content = source.full_text
         transformation_template_text = transformation.prompt
-        default_prompts: DefaultPrompts = DefaultPrompts(transformation_instructions=None)
+        default_prompts: DefaultPrompts = DefaultPrompts(
+            transformation_instructions=None
+        )
         if default_prompts.transformation_instructions:
             transformation_template_text = f"{default_prompts.transformation_instructions}\n\n{transformation_template_text}"
 
@@ -142,16 +147,17 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
         # doesn't overflow a 16k-context local server. See
         # `_truncate_transformation_input` docstring for rationale.
         content_str = _truncate_transformation_input(content_str)
-        payload = [SystemMessage(content=system_prompt), HumanMessage(content=content_str)]
+        payload = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=content_str),
+        ]
         # v0.7.75 — size against the actual message text, not str(payload).
         # Same fix as v0.7.65 chat.py/source_chat.py: Python's repr of a
         # list of LangChain Message objects adds ~80-120 chars of
         # wrapper boilerplate per message, which the 105k large_context
         # cutoff in provision_langchain_model would then mis-trigger
         # earlier than the actual prompt size warrants.
-        content_for_sizing = "\n".join(
-            extract_text_content(m.content) for m in payload
-        )
+        content_for_sizing = "\n".join(extract_text_content(m.content) for m in payload)
         chain = await provision_langchain_model(
             content_for_sizing,
             config.get("configurable", {}).get("model_id"),
@@ -165,7 +171,8 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
         timeout = _transform_node_timeout_sec()
         try:
             response = await asyncio.wait_for(
-                chain.ainvoke(payload), timeout=timeout,
+                chain.ainvoke(payload),
+                timeout=timeout,
             )
         except asyncio.TimeoutError as exc:
             raise ExternalServiceError(

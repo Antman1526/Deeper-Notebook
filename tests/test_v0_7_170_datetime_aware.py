@@ -23,6 +23,7 @@ input to UTC-aware. The fix is the same one-liner pattern
 sites; documenting the convention in tests prevents future code
 from re-introducing the inconsistency.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -140,10 +141,11 @@ def test_repo_update_normalizes_naive_created_string():
     `datetime.now(timezone.utc)` for updated).
     """
     from pathlib import Path
+
     root = Path(__file__).resolve().parent.parent
     src = (root / "deeper_notebook/database/repository.py").read_text()
 
-    assert "parsed = datetime.fromisoformat(data[\"created\"])" in src
+    assert 'parsed = datetime.fromisoformat(data["created"])' in src
     # The normalization must immediately follow the parse.
     idx = src.index("parsed = datetime.fromisoformat")
     region = src[idx : idx + 200]

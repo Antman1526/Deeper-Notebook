@@ -227,9 +227,7 @@ def test_projection_digest_normalizes_redacted_membership_order() -> None:
         document_hashes={"Pages/B.md": "b" * 64, "Pages/A.md": "a" * 64},
         outgoing_membership={"Pages/B.md": ["Pages/C.md", "Pages/A.md"]},
         backlink_membership={"Pages/B.md": ["Pages/C.md", "Pages/A.md"]},
-        overlay_revision_mappings={
-            "overlay_note:b": "knowledge_engine_revision:b"
-        },
+        overlay_revision_mappings={"overlay_note:b": "knowledge_engine_revision:b"},
     )
 
     assert list(digest.document_hashes) == ["Pages/A.md", "Pages/B.md"]
@@ -238,7 +236,9 @@ def test_projection_digest_normalizes_redacted_membership_order() -> None:
 
 
 @pytest.mark.parametrize("field", ["outgoing_membership", "backlink_membership"])
-@pytest.mark.parametrize("locator", ["/Users/Antman/private.md", "../private.md", "Pages\\private.md"])
+@pytest.mark.parametrize(
+    "locator", ["/Users/Antman/private.md", "../private.md", "Pages\\private.md"]
+)
 def test_projection_digest_rejects_noncanonical_membership_keys(
     field: str, locator: str
 ) -> None:
@@ -274,7 +274,10 @@ def test_projection_digest_requires_sha256_exact_search_membership_keys() -> Non
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("identity_pairs", {"note:/Users/Antman/private": "knowledge_engine_document:one"}),
+        (
+            "identity_pairs",
+            {"note:/Users/Antman/private": "knowledge_engine_document:one"},
+        ),
         ("overlay_revision_mappings", {"overlay_note:one": "C:\\secrets"}),
         ("graph_edges", ["note:one->note:/Users/Antman/private:wikilink"]),
     ],
@@ -312,8 +315,16 @@ def test_equivalence_difference_cannot_retain_paths_or_tokens(value: str) -> Non
     ("view_kind", "target_ids", "view_state"),
     [
         ("document", ["knowledge_engine_document:one"], {"kind": "graph", "depth": 1}),
-        ("document", ["knowledge_engine_document:one"], {"kind": "document", "absolute_path": "/Users/Antman/private.md"}),
-        ("document", ["knowledge_engine_document:one"], {"kind": "document", "canonical_bytes": b"secret"}),
+        (
+            "document",
+            ["knowledge_engine_document:one"],
+            {"kind": "document", "absolute_path": "/Users/Antman/private.md"},
+        ),
+        (
+            "document",
+            ["knowledge_engine_document:one"],
+            {"kind": "document", "canonical_bytes": b"secret"},
+        ),
         ("collection", ["knowledge_engine_document:one"], {"kind": "collection"}),
     ],
 )
@@ -441,9 +452,7 @@ def _external_space(*, capabilities: list[str] | None = None) -> KnowledgeSpace:
     )
 
 
-def _external_document(
-    *, capabilities: list[str] | None = None
-) -> KnowledgeDocument:
+def _external_document(*, capabilities: list[str] | None = None) -> KnowledgeDocument:
     return KnowledgeDocument(
         id="knowledge_engine_document:external",
         space_id="knowledge_engine_space:external",

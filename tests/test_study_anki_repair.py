@@ -18,13 +18,17 @@ from deeper_notebook.study.anki_repository import (
 from tests.fixtures.anki.build_fixtures import build_apkg
 
 
-def test_inspection_retains_original_note_identity_and_clean_fields(tmp_path: Path) -> None:
+def test_inspection_retains_original_note_identity_and_clean_fields(
+    tmp_path: Path,
+) -> None:
     inspection = inspect_anki_package(
         build_apkg(tmp_path / "reverse.apkg", kind="reverse")
     )
 
     assert len(inspection.cards) == 2
-    assert {card.source_note_id for card in inspection.cards} == {inspection.cards[0].note_id}
+    assert {card.source_note_id for card in inspection.cards} == {
+        inspection.cards[0].note_id
+    }
     assert inspection.cards[0].source_fields == (
         "What is inertia?",
         "Resistance to a change in motion.",
@@ -66,7 +70,9 @@ def test_cloze_export_round_trip_preserves_raw_tokens_and_extra(tmp_path: Path) 
     assert round_trip.cards[0].source_fields[1] == "Mnemonic"
 
 
-def test_cloze_ordinal_three_round_trips_with_matching_native_receipt(tmp_path: Path) -> None:
+def test_cloze_ordinal_three_round_trips_with_matching_native_receipt(
+    tmp_path: Path,
+) -> None:
     from api.routers.study_anki import export_anki_package, inspect_export
 
     package = build_apkg(
@@ -106,7 +112,9 @@ def test_cloze_ordinal_three_round_trips_with_matching_native_receipt(tmp_path: 
     assert exported.cards[0].template_ord == 2
 
 
-def test_partial_multicloze_subset_fails_closed_without_expanding_cards(tmp_path: Path) -> None:
+def test_partial_multicloze_subset_fails_closed_without_expanding_cards(
+    tmp_path: Path,
+) -> None:
     from api.routers.study_anki import export_anki_package
 
     package = build_apkg(
@@ -165,7 +173,10 @@ def test_multicloze_export_receipt_counts_native_cards(tmp_path: Path) -> None:
                     "source_note_id": "note-multi",
                     "source_model_kind": "cloze",
                     "template_ord": 0,
-                    "source_fields": ("The {{c1::first}} and {{c2::second}}", "Mnemonic"),
+                    "source_fields": (
+                        "The {{c1::first}} and {{c2::second}}",
+                        "Mnemonic",
+                    ),
                 }
             ],
         },
@@ -176,7 +187,9 @@ def test_multicloze_export_receipt_counts_native_cards(tmp_path: Path) -> None:
     assert result.receipt.card_count == inspection.card_count == 2
 
 
-def test_export_semantic_identity_is_stable_when_cards_arrive_out_of_order(tmp_path: Path) -> None:
+def test_export_semantic_identity_is_stable_when_cards_arrive_out_of_order(
+    tmp_path: Path,
+) -> None:
     from api.routers.study_anki import export_anki_package
     from tests.test_study_anki_export import PLAN_EXPORT
 
@@ -188,7 +201,9 @@ def test_export_semantic_identity_is_stable_when_cards_arrive_out_of_order(tmp_p
     assert first.receipt.stable_note_guids == second.receipt.stable_note_guids
 
 
-def test_import_persists_bounded_compatibility_projection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_import_persists_bounded_compatibility_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     package = build_apkg(tmp_path / "compat.apkg", kind="cloze", back="Mnemonic")
     mutations: list[tuple[str, dict[str, object]]] = []
 
@@ -221,7 +236,10 @@ def test_migration_45_is_additive_and_reversible() -> None:
     assert "study_anki_job" in up
     assert "study_anki_export" in up
     assert "claim_payload_sha256 ON TABLE study_anki_job TYPE option<string>" in up
-    assert "template_ord ON TABLE study_anki_card_compat TYPE int ASSERT $value >= 0 AND $value <= 999" in up
+    assert (
+        "template_ord ON TABLE study_anki_card_compat TYPE int ASSERT $value >= 0 AND $value <= 999"
+        in up
+    )
     assert "REMOVE TABLE IF EXISTS study_anki_card_compat" in down
     assert "REMOVE TABLE IF EXISTS study_anki_job" in down
     assert "REMOVE TABLE IF EXISTS study_anki_export" in down
@@ -242,7 +260,9 @@ def test_metadata_create_contains_active_capacity_guard() -> None:
     assert "MAX_METADATA_ROWS" in source
 
 
-def test_task_owned_roots_are_under_canonical_data_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_task_owned_roots_are_under_canonical_data_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(study_anki, "DATA_FOLDER", tmp_path / "canonical-data")
     import_root = study_anki._import_root()
     export_root = study_anki._export_root()
@@ -252,7 +272,9 @@ def test_task_owned_roots_are_under_canonical_data_folder(tmp_path: Path, monkey
 
 
 @pytest.mark.asyncio
-async def test_durable_job_claim_rejects_different_request_or_options(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_durable_job_claim_rejects_different_request_or_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from deeper_notebook.study.anki_jobs import AnkiJobRepository
 
     calls: list[str] = []
@@ -261,24 +283,26 @@ async def test_durable_job_claim_rejects_different_request_or_options(monkeypatc
         calls.append(query)
         if query.startswith("UPDATE"):
             return []
-        return [{
-            "job_id": "anki_job:" + "a" * 64,
-            "plan_id": "study_plan:one",
-            "file_token": "upload-" + "d" * 64 + ".apkg",
-            "package_sha256": "b" * 64,
-            "collection_sha256": "e" * 64,
-            "collection_member": "collection.anki2",
-            "card_count": 1,
-            "transformed_count": 0,
-            "skipped_count": 0,
-            "rejected_count": 0,
-            "claim_request_id": "request-one",
-            "claim_options_sha256": "c" * 64,
-            "status": "publishing",
-            "created_at": "2026-08-12T00:00:00+00:00",
-            "updated_at": "2026-08-12T00:00:00+00:00",
-            "expires_at": "2026-08-13T00:00:00+00:00",
-        }]
+        return [
+            {
+                "job_id": "anki_job:" + "a" * 64,
+                "plan_id": "study_plan:one",
+                "file_token": "upload-" + "d" * 64 + ".apkg",
+                "package_sha256": "b" * 64,
+                "collection_sha256": "e" * 64,
+                "collection_member": "collection.anki2",
+                "card_count": 1,
+                "transformed_count": 0,
+                "skipped_count": 0,
+                "rejected_count": 0,
+                "claim_request_id": "request-one",
+                "claim_options_sha256": "c" * 64,
+                "status": "publishing",
+                "created_at": "2026-08-12T00:00:00+00:00",
+                "updated_at": "2026-08-12T00:00:00+00:00",
+                "expires_at": "2026-08-13T00:00:00+00:00",
+            }
+        ]
 
     monkeypatch.setattr("deeper_notebook.study.anki_jobs.repo_query", fake_query)
     decision = await AnkiJobRepository().claim(
@@ -308,25 +332,31 @@ async def test_terminal_job_writes_require_publishing_cas_and_exact_package(
     monkeypatch.setattr("deeper_notebook.study.anki_jobs.repo_query", fake_query)
     repository = AnkiJobRepository()
     package_sha256 = "b" * 64
-    assert await repository.complete(
-        "anki_job:" + "a" * 64,
-        "study_plan:one",
-        "request-one",
-        "c" * 64,
-        "study_anki_import:receipt",
-        "d" * 64,
-        package_sha256=package_sha256,
-        payload_sha256="f" * 64,
-    ) is None
-    assert await repository.fail(
-        "anki_job:" + "a" * 64,
-        "study_plan:one",
-        "request-one",
-        "c" * 64,
-        "d" * 64,
-        package_sha256=package_sha256,
-        payload_sha256="f" * 64,
-    ) is None
+    assert (
+        await repository.complete(
+            "anki_job:" + "a" * 64,
+            "study_plan:one",
+            "request-one",
+            "c" * 64,
+            "study_anki_import:receipt",
+            "d" * 64,
+            package_sha256=package_sha256,
+            payload_sha256="f" * 64,
+        )
+        is None
+    )
+    assert (
+        await repository.fail(
+            "anki_job:" + "a" * 64,
+            "study_plan:one",
+            "request-one",
+            "c" * 64,
+            "d" * 64,
+            package_sha256=package_sha256,
+            payload_sha256="f" * 64,
+        )
+        is None
+    )
 
     assert len(calls) == 2
     for query, params in calls:
@@ -368,7 +398,11 @@ def test_status_rehydrates_from_durable_metadata_after_cache_clear(
 
     class FakeJobs:
         async def get(self, job_id: str, plan_id: str):
-            return metadata if job_id == metadata.job_id and plan_id == metadata.plan_id else None
+            return (
+                metadata
+                if job_id == metadata.job_id and plan_id == metadata.plan_id
+                else None
+            )
 
     monkeypatch.setattr(study_anki, "_test_in_memory_metadata", lambda: False)
     monkeypatch.setattr(study_anki, "study_workbench_enabled", lambda: True)

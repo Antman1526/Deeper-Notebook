@@ -71,6 +71,7 @@ Each step is ≤5 minutes. TDD throughout: write the failing test, run it (verif
 # tests/test_phase1_local_model_health.py
 """Phase 1 — Local-model health module produces a structured
 report the API can serve to the frontend."""
+
 from __future__ import annotations
 from unittest.mock import patch, MagicMock
 
@@ -108,6 +109,7 @@ this module probes the local llama-cpp / whisper / piper / memory
 shims to verify they actually respond, not just that their port
 is bound.
 """
+
 from __future__ import annotations
 from typing import Literal, TypedDict
 
@@ -120,7 +122,10 @@ class HealthResult(TypedDict):
 
 
 def probe_local_model(
-    *, name: str, kind: str, base_url: str,
+    *,
+    name: str,
+    kind: str,
+    base_url: str,
 ) -> HealthResult:
     """Probe a single local sidecar. Returns a HealthResult dict.
 
@@ -129,12 +134,14 @@ def probe_local_model(
     """
     if ":0/" in base_url or base_url.endswith(":0"):
         return {
-            "name": name, "status": "not_configured",
+            "name": name,
+            "status": "not_configured",
             "detail": "port not allocated this session",
             "latency_ms": None,
         }
     return {
-        "name": name, "status": "unknown",
+        "name": name,
+        "status": "unknown",
         "detail": "no probe implemented yet",
         "latency_ms": None,
     }
@@ -177,7 +184,8 @@ def test_probe_openai_compatible_healthy(httpx_mock):
     from open_notebook.health.local_models import probe_local_model
 
     result = probe_local_model(
-        name="local_chat", kind="openai_compatible",
+        name="local_chat",
+        kind="openai_compatible",
         base_url="http://127.0.0.1:5000/v1",
     )
     assert result["status"] == "healthy"
@@ -192,7 +200,8 @@ def test_probe_openai_compatible_unhealthy_connect_refused():
 
     # Use a port that's definitely unbound on the test runner.
     result = probe_local_model(
-        name="local_chat", kind="openai_compatible",
+        name="local_chat",
+        kind="openai_compatible",
         base_url="http://127.0.0.1:1/v1",
     )
     assert result["status"] == "unhealthy"
@@ -216,23 +225,31 @@ import httpx
 
 
 _PROBE_TIMEOUT = httpx.Timeout(
-    connect=2.0, read=5.0, write=2.0, pool=2.0,
+    connect=2.0,
+    read=5.0,
+    write=2.0,
+    pool=2.0,
 )
 
 
 def probe_local_model(
-    *, name: str, kind: str, base_url: str,
+    *,
+    name: str,
+    kind: str,
+    base_url: str,
 ) -> HealthResult:
     if ":0/" in base_url or base_url.endswith(":0"):
         return {
-            "name": name, "status": "not_configured",
+            "name": name,
+            "status": "not_configured",
             "detail": "port not allocated this session",
             "latency_ms": None,
         }
     if kind == "openai_compatible":
         return _probe_openai_compatible(name=name, base_url=base_url)
     return {
-        "name": name, "status": "unknown",
+        "name": name,
+        "status": "unknown",
         "detail": f"no probe for kind={kind!r}",
         "latency_ms": None,
     }
@@ -250,23 +267,28 @@ def _probe_openai_compatible(*, name: str, base_url: str) -> HealthResult:
                 models = [m.get("id", "?") for m in data.get("data", [])]
                 detail = ", ".join(models[:3]) if models else "no models listed"
                 return {
-                    "name": name, "status": "healthy",
-                    "detail": detail, "latency_ms": latency_ms,
+                    "name": name,
+                    "status": "healthy",
+                    "detail": detail,
+                    "latency_ms": latency_ms,
                 }
             return {
-                "name": name, "status": "unhealthy",
+                "name": name,
+                "status": "unhealthy",
                 "detail": f"HTTP {resp.status_code}",
                 "latency_ms": latency_ms,
             }
     except httpx.ConnectError as exc:
         return {
-            "name": name, "status": "unhealthy",
+            "name": name,
+            "status": "unhealthy",
             "detail": f"connect refused: {exc}",
             "latency_ms": None,
         }
     except Exception as exc:
         return {
-            "name": name, "status": "unhealthy",
+            "name": name,
+            "status": "unhealthy",
             "detail": f"{type(exc).__name__}: {exc}",
             "latency_ms": None,
         }
@@ -301,10 +323,16 @@ def test_probe_all_iterates_credentials():
     from open_notebook.health.local_models import probe_all_local_models
 
     creds = [
-        {"name": "chat", "kind": "openai_compatible",
-         "base_url": "http://127.0.0.1:0/v1"},
-        {"name": "embed", "kind": "openai_compatible",
-         "base_url": "http://127.0.0.1:0/v1"},
+        {
+            "name": "chat",
+            "kind": "openai_compatible",
+            "base_url": "http://127.0.0.1:0/v1",
+        },
+        {
+            "name": "embed",
+            "kind": "openai_compatible",
+            "base_url": "http://127.0.0.1:0/v1",
+        },
     ]
     results = probe_all_local_models(creds)
     assert len(results) == 2
@@ -329,10 +357,13 @@ def probe_all_local_models(credentials: list[dict]) -> list[HealthResult]:
     follow-up optimization."""
     out: list[HealthResult] = []
     for cred in credentials:
-        out.append(probe_local_model(
-            name=cred["name"], kind=cred["kind"],
-            base_url=cred["base_url"],
-        ))
+        out.append(
+            probe_local_model(
+                name=cred["name"],
+                kind=cred["kind"],
+                base_url=cred["base_url"],
+            )
+        )
     return out
 ```
 
@@ -348,17 +379,27 @@ def test_router_returns_health_payload(monkeypatch):
 
     # Stub the probe to avoid real HTTP.
     from open_notebook.health import local_models as hm
+
     monkeypatch.setattr(
-        hm, "probe_all_local_models",
-        lambda creds: [{"name": "chat", "status": "healthy",
-                        "detail": "ok", "latency_ms": 12.3}],
+        hm,
+        "probe_all_local_models",
+        lambda creds: [
+            {"name": "chat", "status": "healthy", "detail": "ok", "latency_ms": 12.3}
+        ],
     )
     # Stub the credential fetch (in-test we don't have SurrealDB).
     from api.routers import local_models as router_mod
+
     monkeypatch.setattr(
-        router_mod, "_load_local_credentials",
-        lambda: [{"name": "chat", "kind": "openai_compatible",
-                  "base_url": "http://127.0.0.1:1234/v1"}],
+        router_mod,
+        "_load_local_credentials",
+        lambda: [
+            {
+                "name": "chat",
+                "kind": "openai_compatible",
+                "base_url": "http://127.0.0.1:1234/v1",
+            }
+        ],
     )
     client = TestClient(app)
     r = client.get("/api/local-models/health")
@@ -373,6 +414,7 @@ def test_router_returns_health_payload(monkeypatch):
 ```python
 # api/routers/local_models.py
 """Phase 1 — local-model health endpoint."""
+
 from __future__ import annotations
 from fastapi import APIRouter
 
@@ -397,7 +439,9 @@ def _load_local_credentials() -> list[dict]:
             if c.provider == "openai_compatible"
             and (c.base_url or "").startswith("http://127.0.0.1")
         ]
+
     import asyncio
+
     return asyncio.get_event_loop().run_until_complete(_fetch())
 
 
@@ -408,9 +452,7 @@ def local_models_health():
     creds = _load_local_credentials()
     results = probe_all_local_models(creds)
     healthy = sum(1 for r in results if r["status"] == "healthy")
-    total_configured = sum(
-        1 for r in results if r["status"] != "not_configured"
-    )
+    total_configured = sum(1 for r in results if r["status"] != "not_configured")
     if total_configured == 0:
         overall = "down"
     elif healthy == total_configured:
@@ -423,6 +465,7 @@ def local_models_health():
 ```python
 # api/main.py — add after other router registrations
 from api.routers import local_models as _local_models_router
+
 app.include_router(_local_models_router.router, tags=["health"])
 ```
 
@@ -603,25 +646,32 @@ try:
     from open_notebook.health.local_models import (
         probe_all_local_models,
     )
+
     creds_for_probe = []
     if getattr(sv, "chat_llm_port", 0):
-        creds_for_probe.append({
-            "name": "Local GGUF (llama.cpp)",
-            "kind": "openai_compatible",
-            "base_url": f"http://127.0.0.1:{sv.chat_llm_port}/v1",
-        })
+        creds_for_probe.append(
+            {
+                "name": "Local GGUF (llama.cpp)",
+                "kind": "openai_compatible",
+                "base_url": f"http://127.0.0.1:{sv.chat_llm_port}/v1",
+            }
+        )
     if getattr(sv, "embed_port", 0):
-        creds_for_probe.append({
-            "name": "Local Embeddings (llama.cpp)",
-            "kind": "openai_compatible",
-            "base_url": f"http://127.0.0.1:{sv.embed_port}/v1",
-        })
+        creds_for_probe.append(
+            {
+                "name": "Local Embeddings (llama.cpp)",
+                "kind": "openai_compatible",
+                "base_url": f"http://127.0.0.1:{sv.embed_port}/v1",
+            }
+        )
     if creds_for_probe:
         results = probe_all_local_models(creds_for_probe)
         for r in results:
             log.info(
                 "phase1.health %s: %s (%s, %.0fms)",
-                r["name"], r["status"], r["detail"],
+                r["name"],
+                r["status"],
+                r["detail"],
                 r.get("latency_ms") or 0,
             )
 except Exception as exc:
@@ -651,6 +701,7 @@ git commit -m "Phase 1 closeout: startup health probe + sidebar badges + /api/lo
 ```python
 # tests/test_phase2_mcp_integration.py
 """Phase 2 — MCP server client + chat-graph integration."""
+
 from __future__ import annotations
 
 
@@ -665,13 +716,27 @@ def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
     ]
 
     class FakeSession:
-        async def __aenter__(self): return self
-        async def __aexit__(self, *a): return False
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
         async def list_tools(self):
-            return type("X", (), {"tools": [
-                type("T", (), {"name": t["name"], "description": t["description"]})()
-                for t in fake_tools
-            ]})()
+            return type(
+                "X",
+                (),
+                {
+                    "tools": [
+                        type(
+                            "T",
+                            (),
+                            {"name": t["name"], "description": t["description"]},
+                        )()
+                        for t in fake_tools
+                    ]
+                },
+            )()
 
     monkeypatch.setattr(
         "open_notebook.mcp.client._open_session",
@@ -679,6 +744,7 @@ def test_mcp_client_lists_tools_via_streamable_http(monkeypatch):
     )
     client = MCPClient(url="http://127.0.0.1:8742/mcp")
     import asyncio
+
     names = asyncio.get_event_loop().run_until_complete(client.list_tool_names())
     assert names == ["web_search", "fetch_url"]
 ```
@@ -699,6 +765,7 @@ chat graph can call `await client.list_tool_names()` and
 `await client.call_tool(name, args)` without dealing with the
 session lifecycle directly.
 """
+
 from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -772,19 +839,27 @@ def test_mcp_registry_lists_enabled_servers(monkeypatch):
 
     async def _fake_repo_query(q, params=None):
         return [
-            {"id": "mcp_server:1", "name": "OpenChronicle",
-             "url": "http://127.0.0.1:8742/mcp", "enabled": True},
-            {"id": "mcp_server:2", "name": "DuckDuckGo",
-             "url": "http://127.0.0.1:8743/mcp", "enabled": False},
+            {
+                "id": "mcp_server:1",
+                "name": "OpenChronicle",
+                "url": "http://127.0.0.1:8742/mcp",
+                "enabled": True,
+            },
+            {
+                "id": "mcp_server:2",
+                "name": "DuckDuckGo",
+                "url": "http://127.0.0.1:8743/mcp",
+                "enabled": False,
+            },
         ]
+
     monkeypatch.setattr(
         "open_notebook.database.repository.repo_query",
         _fake_repo_query,
     )
     import asyncio
-    servers = asyncio.get_event_loop().run_until_complete(
-        list_enabled_servers()
-    )
+
+    servers = asyncio.get_event_loop().run_until_complete(list_enabled_servers())
     assert len(servers) == 1
     assert servers[0]["name"] == "OpenChronicle"
 ```
@@ -798,9 +873,9 @@ from __future__ import annotations
 
 async def list_enabled_servers() -> list[dict]:
     from open_notebook.database.repository import repo_query
+
     rows = await repo_query(
-        "SELECT id, name, url, enabled FROM mcp_server "
-        "WHERE enabled = true",
+        "SELECT id, name, url, enabled FROM mcp_server WHERE enabled = true",
     )
     return rows or []
 ```
@@ -844,11 +919,18 @@ def test_chat_graph_exposes_mcp_tools_when_enabled(monkeypatch):
     )
     from open_notebook.graphs.chat import _resolve_chat_tools
     import asyncio
+
     tools = asyncio.get_event_loop().run_until_complete(
-        _resolve_chat_tools(force_servers=[
-            {"id": "mcp_server:1", "name": "test",
-             "url": "http://x", "enabled": True}
-        ])
+        _resolve_chat_tools(
+            force_servers=[
+                {
+                    "id": "mcp_server:1",
+                    "name": "test",
+                    "url": "http://x",
+                    "enabled": True,
+                }
+            ]
+        )
     )
     tool_names = [t.name for t in tools]
     assert "mcp_search" in tool_names
@@ -872,7 +954,9 @@ async def _resolve_chat_tools(*, force_servers=None):
     from open_notebook.mcp.client import MCPClient
     from open_notebook.mcp.registry import list_enabled_servers
 
-    servers = force_servers if force_servers is not None else await list_enabled_servers()
+    servers = (
+        force_servers if force_servers is not None else await list_enabled_servers()
+    )
     if not servers:
         return []
     server = servers[0]
@@ -887,10 +971,10 @@ async def _resolve_chat_tools(*, force_servers=None):
         return result.get("text") or "(no result)"
 
     return [
-        Tool(name="mcp_search", description="Search the web via MCP",
-             coroutine=_search),
-        Tool(name="mcp_fetch", description="Fetch a URL via MCP",
-             coroutine=_fetch),
+        Tool(
+            name="mcp_search", description="Search the web via MCP", coroutine=_search
+        ),
+        Tool(name="mcp_fetch", description="Fetch a URL via MCP", coroutine=_fetch),
     ]
 ```
 
@@ -924,30 +1008,38 @@ def test_mcp_router_lists_and_creates(monkeypatch):
 
     # In-memory stub for repo_query/upsert.
     state = {"rows": []}
+
     async def _q(query, params=None):
-        if "SELECT" in query: return state["rows"]
+        if "SELECT" in query:
+            return state["rows"]
         if "DELETE" in query:
-            state["rows"] = [r for r in state["rows"]
-                             if r["id"] != params["id"]]
+            state["rows"] = [r for r in state["rows"] if r["id"] != params["id"]]
             return []
         return state["rows"]
+
     async def _u(table, data):
-        data["id"] = f"mcp_server:{len(state['rows'])+1}"
+        data["id"] = f"mcp_server:{len(state['rows']) + 1}"
         state["rows"].append(data)
         return data
+
     monkeypatch.setattr(
-        "open_notebook.database.repository.repo_query", _q,
+        "open_notebook.database.repository.repo_query",
+        _q,
     )
     monkeypatch.setattr(
-        "open_notebook.database.repository.repo_upsert", _u,
+        "open_notebook.database.repository.repo_upsert",
+        _u,
     )
     client = TestClient(app)
     # Create
-    r = client.post("/api/mcp", json={
-        "name": "OpenChronicle",
-        "url": "http://127.0.0.1:8742/mcp",
-        "enabled": True,
-    })
+    r = client.post(
+        "/api/mcp",
+        json={
+            "name": "OpenChronicle",
+            "url": "http://127.0.0.1:8742/mcp",
+            "enabled": True,
+        },
+    )
     assert r.status_code in (200, 201)
     # List
     r = client.get("/api/mcp")
@@ -976,6 +1068,7 @@ class MCPServerCreate(BaseModel):
 @router.get("/api/mcp")
 async def list_mcp_servers():
     from open_notebook.database.repository import repo_query
+
     rows = await repo_query("SELECT id, name, url, enabled FROM mcp_server")
     return rows or []
 
@@ -983,12 +1076,14 @@ async def list_mcp_servers():
 @router.post("/api/mcp")
 async def create_mcp_server(body: MCPServerCreate):
     from open_notebook.database.repository import repo_upsert
+
     return await repo_upsert("mcp_server", body.model_dump())
 
 
 @router.delete("/api/mcp/{server_id}")
 async def delete_mcp_server(server_id: str):
     from open_notebook.database.repository import repo_query
+
     await repo_query("DELETE mcp_server WHERE id = $id", {"id": server_id})
     return {"ok": True}
 
@@ -997,6 +1092,7 @@ async def delete_mcp_server(server_id: str):
 async def test_mcp_server(server_id: str):
     from open_notebook.database.repository import repo_query
     from open_notebook.mcp.client import MCPClient
+
     rows = await repo_query(
         "SELECT url FROM mcp_server WHERE id = $id LIMIT 1",
         {"id": server_id},
@@ -1014,6 +1110,7 @@ async def test_mcp_server(server_id: str):
 ```python
 # api/main.py — register
 from api.routers import mcp as _mcp_router
+
 app.include_router(_mcp_router.router, tags=["mcp"])
 ```
 
@@ -1162,7 +1259,8 @@ def test_router_prefers_local_when_healthy_and_fits():
         default_provider="auto",
     )
     assert choice == ModelChoice(
-        model_id="model:hermes-3", reason="local: healthy + fits in n_ctx",
+        model_id="model:hermes-3",
+        reason="local: healthy + fits in n_ctx",
     )
 
 
@@ -1196,7 +1294,8 @@ class ModelChoice:
 
 
 def pick_provider(
-    *, content_tokens: int,
+    *,
+    content_tokens: int,
     local_chat_healthy: bool,
     local_chat_n_ctx: int,
     cloud_model_id: str | None,
@@ -1207,7 +1306,11 @@ def pick_provider(
         return ModelChoice(cloud_model_id, "user-forced cloud")
     if default_provider == "local" and local_model_id:
         return ModelChoice(local_model_id, "user-forced local")
-    if local_chat_healthy and local_model_id and content_tokens < local_chat_n_ctx - 1000:
+    if (
+        local_chat_healthy
+        and local_model_id
+        and content_tokens < local_chat_n_ctx - 1000
+    ):
         return ModelChoice(local_model_id, "local: healthy + fits in n_ctx")
     if cloud_model_id:
         return ModelChoice(
@@ -1220,7 +1323,8 @@ def pick_provider(
     # llama-cpp server will return its own 400 if truly oversized.
     if local_model_id:
         return ModelChoice(
-            local_model_id, "local fallback (no cloud configured)",
+            local_model_id,
+            "local fallback (no cloud configured)",
         )
     raise ValueError("No model available — neither local nor cloud")
 ```

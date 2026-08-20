@@ -17,6 +17,7 @@ This test is AST-level — verifies the source file calls the right
 helper and produces the right HTTP status, without needing a live
 SurrealDB / running command broker.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

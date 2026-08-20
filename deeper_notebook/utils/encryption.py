@@ -191,7 +191,8 @@ def _derive_fernet_key_sha256(key: str) -> bytes:
 
 
 def _derive_fernet_key_pbkdf2(
-    key: str, iterations: int = _KDF_PBKDF2_ITERATIONS,
+    key: str,
+    iterations: int = _KDF_PBKDF2_ITERATIONS,
 ) -> bytes:
     """v0.7.123 — PBKDF2-HMAC-SHA256 with 600k iterations.
     ~250ms per guess on modern hardware. Deterministic salt derived
@@ -199,7 +200,11 @@ def _derive_fernet_key_pbkdf2(
     needing a separate salt-storage mechanism."""
     salt = _derive_kdf_salt(key)
     derived = hashlib.pbkdf2_hmac(
-        "sha256", key.encode(), salt, iterations, dklen=32,
+        "sha256",
+        key.encode(),
+        salt,
+        iterations,
+        dklen=32,
     )
     return base64.urlsafe_b64encode(derived)
 
@@ -207,7 +212,10 @@ def _derive_fernet_key_pbkdf2(
 def _selected_kdf() -> str:
     """Read the configured KDF from env. Defaults to 'sha256' for
     backward compatibility — existing deployments see no change."""
-    return resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KDF", "sha256").strip().lower() or "sha256"
+    return (
+        resolve_env("DEEPER_NOTEBOOK_ENCRYPTION_KDF", "sha256").strip().lower()
+        or "sha256"
+    )
 
 
 # Order in which to try KDFs during decryption. Listed in PREFERENCE
@@ -425,6 +433,4 @@ def decrypt_value(value: str) -> str:
         # responses (credentials read paths) and can leak Fernet/cryptography
         # internals or input fragments. Mirrors the v0.7.201 /readyz sanitization.
         logger.error(f"Decryption failed: {e}")
-        raise ValueError(
-            "Decryption failed due to an internal error. See server logs."
-        )
+        raise ValueError("Decryption failed due to an internal error. See server logs.")

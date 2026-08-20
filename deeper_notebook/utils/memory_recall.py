@@ -70,6 +70,7 @@ def _episode_recall_enabled() -> bool:
         return _DEFAULT_EPISODE_RECALL
     return raw not in ("0", "false", "no", "off")
 
+
 # v0.7.84 — once a user's memory tables grow past this row count, the
 # "most recent N" heuristic starts losing relevant older facts. Switch
 # to semantic search above this threshold (unless the env var forces a
@@ -150,9 +151,7 @@ async def recall_recent_memory() -> dict[str, list[dict[str, Any]]]:
         "preferences": [
             {"text": _coerce_text(t)} for t in preferences if _coerce_text(t)
         ],
-        "episodes": [
-            {"text": _coerce_text(t)} for t in episodes if _coerce_text(t)
-        ],
+        "episodes": [{"text": _coerce_text(t)} for t in episodes if _coerce_text(t)],
     }
 
 
@@ -212,7 +211,8 @@ async def recall_relevant_memory(
     except asyncio.TimeoutError:
         logger.debug(
             "recall_relevant_memory: embedding timed out after {}s — "
-            "caller will fall back to recency", _recall_embed_timeout,
+            "caller will fall back to recency",
+            _recall_embed_timeout,
         )
         # v0.7.124 — Prometheus counter for visibility into how often
         # the timeout path actually fires. If this counter rises,
@@ -220,6 +220,7 @@ async def recall_relevant_memory(
         # degrading.
         try:
             from api.metrics import record_memory_fallthrough
+
             record_memory_fallthrough("embed_timeout")
         except Exception:
             pass
@@ -232,6 +233,7 @@ async def recall_relevant_memory(
         )
         try:
             from api.metrics import record_memory_fallthrough
+
             record_memory_fallthrough("embed_error")
         except Exception:
             pass
@@ -300,17 +302,13 @@ async def _count_memory_rows() -> int:
     and the "no matches" short-circuit discarded episodes-only semantic hits
     (the v0.8.49 episode-recall regression).
     """
-    rows = await _safe_select(
-        "SELECT VALUE count() FROM memory_fact GROUP ALL", {}
-    )
+    rows = await _safe_select("SELECT VALUE count() FROM memory_fact GROUP ALL", {})
     fact_n = int(rows[0]) if rows and isinstance(rows[0], (int, float)) else 0
     rows = await _safe_select(
         "SELECT VALUE count() FROM memory_preference GROUP ALL", {}
     )
     pref_n = int(rows[0]) if rows and isinstance(rows[0], (int, float)) else 0
-    rows = await _safe_select(
-        "SELECT VALUE count() FROM memory_episode GROUP ALL", {}
-    )
+    rows = await _safe_select("SELECT VALUE count() FROM memory_episode GROUP ALL", {})
     episode_n = int(rows[0]) if rows and isinstance(rows[0], (int, float)) else 0
     return fact_n + pref_n + episode_n
 
@@ -349,14 +347,17 @@ def _recall_budget_sec() -> float:
         if val <= 0:
             logger.warning(
                 "DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC={} must be positive; "
-                "using default {}s", raw, _DEFAULT_RECALL_BUDGET_SEC,
+                "using default {}s",
+                raw,
+                _DEFAULT_RECALL_BUDGET_SEC,
             )
             return _DEFAULT_RECALL_BUDGET_SEC
         return val
     except ValueError:
         logger.warning(
             "DEEPER_NOTEBOOK_MEMORY_RECALL_BUDGET_SEC={!r} not a float; using default {}s",
-            raw, _DEFAULT_RECALL_BUDGET_SEC,
+            raw,
+            _DEFAULT_RECALL_BUDGET_SEC,
         )
         return _DEFAULT_RECALL_BUDGET_SEC
 
@@ -389,7 +390,8 @@ async def recall_memory(
     budget = _recall_budget_sec()
     try:
         return await asyncio.wait_for(
-            _recall_memory_inner(query), timeout=budget,
+            _recall_memory_inner(query),
+            timeout=budget,
         )
     except asyncio.TimeoutError:
         logger.warning(
@@ -403,6 +405,7 @@ async def recall_memory(
         # because observability broke.
         try:
             from api.metrics import record_memory_fallthrough
+
             record_memory_fallthrough("outer_budget")
         except Exception:
             pass
@@ -490,7 +493,8 @@ async def _safe_select(query: str, vars: dict) -> list[Any]:
     )
     try:
         result = await asyncio.wait_for(
-            repo_query(query, vars), timeout=_query_timeout,
+            repo_query(query, vars),
+            timeout=_query_timeout,
         )
         if isinstance(result, list):
             return result
@@ -503,6 +507,7 @@ async def _safe_select(query: str, vars: dict) -> list[Any]:
         # v0.7.124 — Prometheus counter for the timeout path.
         try:
             from api.metrics import record_memory_fallthrough
+
             record_memory_fallthrough("query_timeout")
         except Exception:
             pass
@@ -525,13 +530,15 @@ async def _safe_select(query: str, vars: dict) -> list[Any]:
         )
         log_fn = logger.warning if is_schema_error else logger.debug
         log_fn(
-            "memory recall query failed (returning empty): {}", exc,
+            "memory recall query failed (returning empty): {}",
+            exc,
         )
         # v0.7.124 — Prometheus counter for the error path (distinct
         # from timeout — useful for differentiating "table missing"
         # vs "pool overloaded").
         try:
             from api.metrics import record_memory_fallthrough
+
             record_memory_fallthrough("query_error")
         except Exception:
             pass

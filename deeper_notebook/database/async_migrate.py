@@ -147,9 +147,11 @@ class AsyncMigrationManager:
             mig_dir = Path(__file__).resolve().parent / "migrations"
         files = sorted(
             (p for p in mig_dir.iterdir() if p.suffix == ".surrealql"),
-            key=lambda p: int(re.match(r"(\d+)", p.stem).group(1))  # type: ignore[union-attr]
-            if re.match(r"(\d+)", p.stem)
-            else 999999,
+            key=lambda p: (
+                int(re.match(r"(\d+)", p.stem).group(1))  # type: ignore[union-attr]
+                if re.match(r"(\d+)", p.stem)
+                else 999999
+            ),
         )
         ups_by_n: dict[int, AsyncMigration] = {}
         downs_by_n: dict[int, AsyncMigration] = {}

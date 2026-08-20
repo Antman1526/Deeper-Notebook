@@ -23,6 +23,7 @@ Three small but defensible improvements:
     be replayed cross-machine; without the TZ marker every
     timestamp was ambiguous.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,7 +49,7 @@ def test_api_main_exposes_track_task_helper():
     """v0.7.190: module-level _track_task helper anchors background
     tasks to _BACKGROUND_TASKS so the asyncio GC can't reap them."""
     src = _read_source("api/main.py")
-    assert "_BACKGROUND_TASKS: \"set[asyncio.Task]\" = set()" in src, (
+    assert '_BACKGROUND_TASKS: "set[asyncio.Task]" = set()' in src, (
         "v0.7.190 regression: _BACKGROUND_TASKS module-level set is "
         "gone. Fire-and-forget tasks risk GC under pressure."
     )
@@ -173,7 +174,7 @@ def test_repo_query_default_call_unchanged():
     sig_idx = src.find("async def repo_query(")
     assert sig_idx != -1
     end = src.find(")", sig_idx)
-    sig_text = src[sig_idx:end + 1]
+    sig_text = src[sig_idx : end + 1]
     # Must accept (query_str, vars=None) positionally as before.
     assert "query_str: str" in sig_text
     assert "vars: Optional[dict[str, Any]] = None" in sig_text

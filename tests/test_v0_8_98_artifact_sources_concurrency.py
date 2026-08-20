@@ -73,6 +73,7 @@ async def test_missing_source_raises_404_naming_the_first_missing_id(monkeypatch
 async def test_fetches_actually_overlap(monkeypatch):
     """Sequential loading of 6 sources at 20ms each takes >=120ms;
     concurrent loading takes roughly one delay."""
+
     async def fake_get(source_id: str):
         await asyncio.sleep(0.02)
         return _FakeSource(source_id)

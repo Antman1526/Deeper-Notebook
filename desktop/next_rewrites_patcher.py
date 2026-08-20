@@ -54,6 +54,7 @@ Long-term consideration:
   Tracked as a deferred follow-up. This module is the pragmatic
   unblock that works with the existing build artifacts.
 """
+
 from __future__ import annotations
 
 import logging
@@ -165,7 +166,8 @@ def _copy_to_writable(frontend_dir: Path) -> Path:
     if needs_copy:
         log.info(
             "Copying frontend to writable location: %s -> %s",
-            frontend_dir, user_dir,
+            frontend_dir,
+            user_dir,
         )
         # Wipe + recopy. Using shutil.copytree with dirs_exist_ok=True
         # would merge with stale files from prior builds, leading to
@@ -234,9 +236,7 @@ def patch_rewrites_for_api_port(
         # No-op shortcut: port already matches the baked default.
         # Avoids unnecessary file I/O on dev environments running
         # against the canonical port.
-        log.debug(
-            "api_port=5055 matches build-time default; no patch needed"
-        )
+        log.debug("api_port=5055 matches build-time default; no patch needed")
         return frontend_dir
 
     # v0.8.65e — resolve the symlinked-bundle case. PyInstaller 6.x's macOS
@@ -257,7 +257,8 @@ def patch_rewrites_for_api_port(
         real_dir = server_js.resolve().parent
         log.info(
             "Frontend exposed via symlinks; using resolved real dir: %s -> %s",
-            frontend_dir, real_dir,
+            frontend_dir,
+            real_dir,
         )
         frontend_dir = real_dir
 
@@ -269,9 +270,9 @@ def patch_rewrites_for_api_port(
     frozen_runtime = bool(getattr(sys, "frozen", False))
     if frozen_runtime or not _is_writable(frontend_dir):
         log.info(
-            "Frontend at %s requires a writable runtime copy "
-            "(frozen=%s)",
-            frontend_dir, frozen_runtime,
+            "Frontend at %s requires a writable runtime copy (frozen=%s)",
+            frontend_dir,
+            frozen_runtime,
         )
         try:
             work_dir = _copy_to_writable(frontend_dir)
@@ -310,7 +311,8 @@ def patch_rewrites_for_api_port(
             log.warning(
                 "Expected %r in pristine %s but found none — has "
                 "next.config.ts been changed?",
-                BUILD_TIME_DEFAULT_HOST, target,
+                BUILD_TIME_DEFAULT_HOST,
+                target,
             )
             continue
         patched = pristine.replace(BUILD_TIME_DEFAULT_HOST, replacement_host)
@@ -328,7 +330,9 @@ def patch_rewrites_for_api_port(
 
     log.info(
         "Patched %d Next.js rewrite manifest(s) for api_port=%d (%d substitutions total)",
-        files_patched, api_port, total_hits,
+        files_patched,
+        api_port,
+        total_hits,
     )
     return work_dir
 

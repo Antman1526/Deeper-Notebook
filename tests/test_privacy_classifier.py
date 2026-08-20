@@ -4,6 +4,7 @@ An optional local OpenAI-compatible classifier catches unstructured PII the
 regex floor can't. Additive + best-effort: unconfigured / errors → [] (regex
 floor still applies). These tests mock httpx — no live endpoint.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -19,7 +20,8 @@ from deeper_notebook.ai.router import ModelChoice
 
 def test_parse_clean_array():
     assert pc.parse_categories('["person_name", "home_address"]') == [
-        "home_address", "person_name"
+        "home_address",
+        "person_name",
     ]
 
 
@@ -81,8 +83,10 @@ class _FakeAsyncClient:
 
 def _patch_httpx(monkeypatch, payload=None, raise_exc=None):
     import httpx
+
     monkeypatch.setattr(
-        httpx, "AsyncClient",
+        httpx,
+        "AsyncClient",
         lambda *a, **k: _FakeAsyncClient(payload=payload, raise_exc=raise_exc),
     )
 
@@ -95,23 +99,32 @@ async def test_classify_unconfigured_returns_empty(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_classify_empty_text_returns_empty(monkeypatch):
-    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1"
+    )
     assert await pc.classify_via_model_async("   ") == []
 
 
 @pytest.mark.asyncio
 async def test_classify_parses_model_categories(monkeypatch):
-    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
-    _patch_httpx(monkeypatch, payload={
-        "choices": [{"message": {"content": '["person_name", "home_address"]'}}]
-    })
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1"
+    )
+    _patch_httpx(
+        monkeypatch,
+        payload={
+            "choices": [{"message": {"content": '["person_name", "home_address"]'}}]
+        },
+    )
     out = await pc.classify_via_model_async("Jane Doe lives at 5 Elm St")
     assert out == ["home_address", "person_name"]
 
 
 @pytest.mark.asyncio
 async def test_classify_best_effort_on_error(monkeypatch):
-    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1"
+    )
     _patch_httpx(monkeypatch, raise_exc=RuntimeError("connection refused"))
     # Must swallow and return [] — never block chat on a flaky classifier.
     assert await pc.classify_via_model_async("anything") == []
@@ -119,7 +132,9 @@ async def test_classify_best_effort_on_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_classify_no_choices_returns_empty(monkeypatch):
-    monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1")
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", "http://localhost:9999/v1"
+    )
     _patch_httpx(monkeypatch, payload={"choices": []})
     assert await pc.classify_via_model_async("text") == []
 
@@ -134,10 +149,14 @@ def test_classifier_url_unset_is_none(monkeypatch):
     assert pc._classifier_url() is None
 
 
-@pytest.mark.parametrize("sentinel", ["auto", "sidecar", "chat-sidecar", "local", "AUTO"])
+@pytest.mark.parametrize(
+    "sentinel", ["auto", "sidecar", "chat-sidecar", "local", "AUTO"]
+)
 def test_classifier_url_auto_resolves_to_sidecar(monkeypatch, sentinel):
     monkeypatch.setenv("DEEPER_NOTEBOOK_PRIVACY_CLASSIFIER_URL", sentinel)
-    monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setenv(
+        "DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", "http://127.0.0.1:8080/v1"
+    )
     assert pc._classifier_url() == "http://127.0.0.1:8080/v1"
 
 
@@ -183,9 +202,12 @@ def test_gate_reroutes_on_model_finding_when_regex_clean(monkeypatch):
 
 def test_gate_passthrough_when_no_findings_at_all(monkeypatch):
     out = apply_privacy_gate(
-        CLOUD, content="what's the capital of France?",
-        local_model_id="model:local", cloud_model_id="model:cloud",
-        mode="on", extra_findings=[],
+        CLOUD,
+        content="what's the capital of France?",
+        local_model_id="model:local",
+        cloud_model_id="model:cloud",
+        mode="on",
+        extra_findings=[],
     )
     assert out is CLOUD
 
@@ -193,9 +215,12 @@ def test_gate_passthrough_when_no_findings_at_all(monkeypatch):
 def test_gate_unions_regex_and_model_findings(monkeypatch):
     """Both a regex secret AND a model finding present → both named in reason."""
     out = apply_privacy_gate(
-        CLOUD, content="email me at a@b.com",  # regex: email
-        local_model_id="model:local", cloud_model_id="model:cloud",
-        mode="on", extra_findings=["person_name"],
+        CLOUD,
+        content="email me at a@b.com",  # regex: email
+        local_model_id="model:local",
+        cloud_model_id="model:cloud",
+        mode="on",
+        extra_findings=["person_name"],
     )
     assert out.model_id == "model:local"
     assert "email" in out.reason and "person_name" in out.reason
@@ -209,8 +234,12 @@ def test_gate_unions_regex_and_model_findings(monkeypatch):
 def test_findings_out_populated_when_gate_acts():
     out_list: list[str] = []
     apply_privacy_gate(
-        CLOUD, content="ssn 123-45-6789", local_model_id="model:local",
-        cloud_model_id="model:cloud", mode="on", findings_out=out_list,
+        CLOUD,
+        content="ssn 123-45-6789",
+        local_model_id="model:local",
+        cloud_model_id="model:cloud",
+        mode="on",
+        findings_out=out_list,
     )
     assert "us_ssn" in out_list
 
@@ -218,9 +247,13 @@ def test_findings_out_populated_when_gate_acts():
 def test_findings_out_includes_model_categories():
     out_list: list[str] = []
     apply_privacy_gate(
-        CLOUD, content="clean of regex", local_model_id="model:local",
-        cloud_model_id="model:cloud", mode="on",
-        extra_findings=["person_name"], findings_out=out_list,
+        CLOUD,
+        content="clean of regex",
+        local_model_id="model:local",
+        cloud_model_id="model:cloud",
+        mode="on",
+        extra_findings=["person_name"],
+        findings_out=out_list,
     )
     assert out_list == ["person_name"]
 
@@ -228,9 +261,12 @@ def test_findings_out_includes_model_categories():
 def test_findings_out_empty_on_passthrough():
     out_list: list[str] = []
     apply_privacy_gate(
-        CLOUD, content="what is the capital of France?",
-        local_model_id="model:local", cloud_model_id="model:cloud",
-        mode="on", findings_out=out_list,
+        CLOUD,
+        content="what is the capital of France?",
+        local_model_id="model:local",
+        cloud_model_id="model:cloud",
+        mode="on",
+        findings_out=out_list,
     )
     assert out_list == []  # nothing detected → not populated
 
@@ -239,10 +275,15 @@ def test_findings_out_populated_before_block(monkeypatch):
     """Even on the no-local BLOCK path, findings_out is populated (before the
     ConfigurationError) so the caller could log the categories."""
     from deeper_notebook.exceptions import ConfigurationError
+
     out_list: list[str] = []
     with pytest.raises(ConfigurationError):
         apply_privacy_gate(
-            CLOUD, content="ssn 123-45-6789", local_model_id=None,
-            cloud_model_id="model:cloud", mode="on", findings_out=out_list,
+            CLOUD,
+            content="ssn 123-45-6789",
+            local_model_id=None,
+            cloud_model_id="model:cloud",
+            mode="on",
+            findings_out=out_list,
         )
     assert "us_ssn" in out_list

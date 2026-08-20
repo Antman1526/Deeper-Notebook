@@ -29,6 +29,7 @@ Out of scope this iteration:
     fine. The API can poll /healthz/sidecars/{kind}/log afterwards
     for the new sidecar's startup log.
 """
+
 from __future__ import annotations
 
 import json
@@ -80,11 +81,14 @@ class _ControlHandler(BaseHTTPRequestHandler):
         header = self.headers.get("Authorization", "")
         prefix = "Bearer "
         if not header.startswith(prefix):
-            self._send_json(HTTPStatus.UNAUTHORIZED, {
-                "error": "Missing or malformed Authorization header",
-            })
+            self._send_json(
+                HTTPStatus.UNAUTHORIZED,
+                {
+                    "error": "Missing or malformed Authorization header",
+                },
+            )
             return False
-        token = header[len(prefix):].strip()
+        token = header[len(prefix) :].strip()
         expected = getattr(self.server, "token", "")
         if not expected or not secrets.compare_digest(token, expected):
             self._send_json(HTTPStatus.UNAUTHORIZED, {"error": "Invalid token"})
@@ -110,7 +114,7 @@ class _ControlHandler(BaseHTTPRequestHandler):
         # is a control surface, not a general HTTP framework.
         ROUTE_MAP = {
             "/restart_sidecar": ("kind", "restart_sidecar"),
-            "/hot_swap_chat":   ("path", "hot_swap_chat"),
+            "/hot_swap_chat": ("path", "hot_swap_chat"),
         }
         if self.path not in ROUTE_MAP:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "Unknown path"})
@@ -122,30 +126,33 @@ class _ControlHandler(BaseHTTPRequestHandler):
         if length > 4096:
             # Defensive — a launcher-control request body should be
             # tiny; reject anything that looks malicious upfront.
-            self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-                            {"error": "Body too large"})
+            self._send_json(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "Body too large"}
+            )
             return
 
         try:
             raw = self.rfile.read(length) if length > 0 else b""
             body = json.loads(raw or b"{}")
         except json.JSONDecodeError:
-            self._send_json(HTTPStatus.BAD_REQUEST,
-                            {"error": "Body is not valid JSON"})
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Body is not valid JSON"})
             return
 
         value = (body.get(required_field) or "").strip()
         if not value:
-            self._send_json(HTTPStatus.BAD_REQUEST,
-                            {"error": f"Missing {required_field!r} field"})
+            self._send_json(
+                HTTPStatus.BAD_REQUEST, {"error": f"Missing {required_field!r} field"}
+            )
             return
 
         cb: RestartCallback | None = getattr(self.server, "callbacks", {}).get(
             callback_name
         )
         if cb is None:
-            self._send_json(HTTPStatus.SERVICE_UNAVAILABLE,
-                            {"error": f"{callback_name} callback not registered"})
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": f"{callback_name} callback not registered"},
+            )
             return
 
         try:
@@ -154,21 +161,27 @@ class _ControlHandler(BaseHTTPRequestHandler):
             # Never let a callback exception kill the control server;
             # log + return a typed 500.
             log.exception("%s callback raised for value=%r", callback_name, value)
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {
-                "ok": False,
-                "error": f"Callback raised: {exc.__class__.__name__}: {exc}",
-            })
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {
+                    "ok": False,
+                    "error": f"Callback raised: {exc.__class__.__name__}: {exc}",
+                },
+            )
             return
 
         status = HTTPStatus.OK if success else HTTPStatus.BAD_REQUEST
-        self._send_json(status, {
-            "ok": success,
-            # Echo the request field so callers can correlate. For
-            # restart_sidecar this is 'kind'; for hot_swap_chat it's
-            # 'path'.
-            required_field: value,
-            "detail": detail,
-        })
+        self._send_json(
+            status,
+            {
+                "ok": success,
+                # Echo the request field so callers can correlate. For
+                # restart_sidecar this is 'kind'; for hot_swap_chat it's
+                # 'path'.
+                required_field: value,
+                "detail": detail,
+            },
+        )
 
 
 class ControlServer:

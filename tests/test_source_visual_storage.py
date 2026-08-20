@@ -116,17 +116,13 @@ def _hold_store_mutation(
         release.wait(timeout=5)
 
 
-def _enter_store_mutation(
-    data_folder: str, entered: "mp.synchronize.Event"
-) -> None:
+def _enter_store_mutation(data_folder: str, entered: "mp.synchronize.Event") -> None:
     store = SourceVisualStore(data_folder=data_folder)
     with store.mutation_guard():
         entered.set()
 
 
-def _crash_in_store_mutation(
-    data_folder: str, entered: "mp.synchronize.Event"
-) -> None:
+def _crash_in_store_mutation(data_folder: str, entered: "mp.synchronize.Event") -> None:
     store = SourceVisualStore(data_folder=data_folder)
     with store.mutation_guard():
         entered.set()
@@ -325,7 +321,9 @@ def test_publish_rejects_temp_path_exchange_after_descriptor_verification(
         store.publish(staged)
 
     assert error.value.code == "ASSET_HASH_MISMATCH"
-    assert not (store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)).exists()
+    assert not (
+        store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)
+    ).exists()
 
 
 def test_publish_accepts_matching_destination_that_appears_at_link_boundary(
@@ -333,9 +331,7 @@ def test_publish_accepts_matching_destination_that_appears_at_link_boundary(
 ):
     store = SourceVisualStore(data_folder=tmp_path)
     staged = store.stage("source:one", "a" * 64, _prepared())
-    canonical = store.root / asset_relpath(
-        "source:one", "a" * 64, staged.asset_sha256
-    )
+    canonical = store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)
     original_link = os.link
     appeared = False
 
@@ -489,9 +485,7 @@ def test_publish_destination_appearance_at_no_replace_boundary_preserves_both(
 ):
     store = SourceVisualStore(data_folder=tmp_path)
     staged = store.stage("source:one", "a" * 64, _prepared())
-    canonical = store.root / asset_relpath(
-        "source:one", "a" * 64, staged.asset_sha256
-    )
+    canonical = store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)
     original_link = os.link
     appeared = False
 
@@ -519,9 +513,7 @@ def test_publish_source_exchange_at_link_boundary_preserves_verified_and_foreign
     staged = store.stage("source:one", "a" * 64, _prepared())
     temp_path = store.root / ".tmp" / staged.temp_name
     held = temp_path.with_suffix(".held")
-    canonical = store.root / asset_relpath(
-        "source:one", "a" * 64, staged.asset_sha256
-    )
+    canonical = store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)
     original_link = os.link
     exchanged = False
 
@@ -1110,8 +1102,10 @@ def test_publish_fsyncs_destination_before_unlinking_staged_source(
 
     store.publish(staged)
 
-    assert events.index("link") < events.index("fsync:destination") < events.index(
-        "unlink"
+    assert (
+        events.index("link")
+        < events.index("fsync:destination")
+        < events.index("unlink")
     )
     assert events[-1] == "fsync:stage"
 
@@ -1464,10 +1458,14 @@ def test_delete_fenced_orphan_partial_write_leaves_no_final_marker(
         partial = memoryview(data)[:-1]
         return original_write(fd, partial)
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.write", fail_after_first_write)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.write", fail_after_first_write
+    )
     with pytest.raises(SourceVisualStorageError):
         store.mark_delete_fenced_orphan(record)
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.write", original_write)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.write", original_write
+    )
 
     assert store.list_delete_fenced_orphans() == ()
 
@@ -1482,7 +1480,10 @@ def test_fresh_store_reconciles_bounded_orphan_write_residue(
     marker_name = f".delete-fenced-{record.asset_sha256}.orphan"
     write_name = f".orphan-write-{record.asset_sha256}-{'f' * 32}.tmp"
     payload = json.dumps(
-        {"record": record.model_dump(mode="json"), "byte_size": len(b"orphan-write-crash")},
+        {
+            "record": record.model_dump(mode="json"),
+            "byte_size": len(b"orphan-write-crash"),
+        },
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
@@ -1539,7 +1540,9 @@ def test_delete_fenced_orphan_removal_preserves_foreign_marker_replacement(
             marker_path.write_bytes(b"foreign-marker")
         return original_stat(name, *args, **kwargs)
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.stat", exchange_before_stat)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.stat", exchange_before_stat
+    )
     with pytest.raises(SourceVisualStorageError):
         store.remove_delete_fenced_orphan(orphan)
 
@@ -1574,7 +1577,10 @@ async def test_orphan_reconciliation_claims_exact_identity_before_removing_absen
     repository = MarkerRepository()
     store.mark_delete_fenced_orphan(record)
 
-    assert await SourceVisualCleanup(store, repository).reconcile_delete_fenced_orphans() == 1
+    assert (
+        await SourceVisualCleanup(store, repository).reconcile_delete_fenced_orphans()
+        == 1
+    )
     assert repository.claims[0]["source_id"] == record.source_id
     assert repository.claims[0]["content_sha256"] == record.content_sha256
     assert repository.claims[0]["extractor_version"] == record.extractor_version
@@ -1602,7 +1608,12 @@ async def test_orphan_reconciliation_preserves_marker_when_repository_fails(
             raise RuntimeError("database unavailable")
 
     store.mark_delete_fenced_orphan(record)
-    assert await SourceVisualCleanup(store, FailingRepository([])).reconcile_delete_fenced_orphans() == 0
+    assert (
+        await SourceVisualCleanup(
+            store, FailingRepository([])
+        ).reconcile_delete_fenced_orphans()
+        == 0
+    )
     assert len(store.list_delete_fenced_orphans()) == 1
 
 
@@ -1624,10 +1635,17 @@ async def test_orphan_reconciliation_revalidates_matching_ready_bytes_before_ret
     monkeypatch.setattr(
         store,
         "read_exact",
-        lambda _record: (_ for _ in ()).throw(SourceVisualStorageError("ASSET_HASH_MISMATCH")),
+        lambda _record: (_ for _ in ()).throw(
+            SourceVisualStorageError("ASSET_HASH_MISMATCH")
+        ),
     )
 
-    assert await SourceVisualCleanup(store, MatchingRepository([record])).reconcile_delete_fenced_orphans() == 0
+    assert (
+        await SourceVisualCleanup(
+            store, MatchingRepository([record])
+        ).reconcile_delete_fenced_orphans()
+        == 0
+    )
     assert len(store.list_delete_fenced_orphans()) == 1
 
 
@@ -1753,7 +1771,9 @@ def test_stage_recovers_unverified_temp_after_initial_fstat_failure(
     temp_dir = store.root / ".tmp"
     assert not list(temp_dir.glob("stage-*.tmp"))
     assert len(list(temp_dir.glob(".unverified-stage-*"))) == 1
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fstat", original_fstat)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fstat", original_fstat
+    )
 
     recovered = SourceVisualStore(data_folder=tmp_path)
     staged = recovered.stage("source:two", "b" * 64, _prepared())
@@ -1782,7 +1802,10 @@ def test_stage_initial_fstat_failure_artifact_is_retired_under_mutation_guard(
         if descriptor in created_stage_fds:
             temp_dir = store.root / ".tmp"
             stage_path = next(
-                iter(list(temp_dir.glob(".unverified-stage-*")) + list(temp_dir.glob("stage-*.tmp")))
+                iter(
+                    list(temp_dir.glob(".unverified-stage-*"))
+                    + list(temp_dir.glob("stage-*.tmp"))
+                )
             )
             held = stage_path.with_suffix(".held")
             stage_path.rename(held)
@@ -1807,7 +1830,9 @@ def test_stage_initial_fstat_failure_artifact_is_retired_under_mutation_guard(
         if candidate.suffix == ".tmp"
     )
     assert unverified.read_bytes() == b"foreign-stage"
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fstat", original_fstat)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fstat", original_fstat
+    )
     assert store.reconcile_staged_files(limit=100, now=time.time() + 601) == 0
     assert not unverified.exists()
 
@@ -1818,9 +1843,7 @@ def test_publish_rejects_same_inode_bytes_changed_at_link_boundary(
     store = SourceVisualStore(data_folder=tmp_path)
     staged = store.stage("source:one", "a" * 64, _prepared())
     stage_path = store.root / ".tmp" / staged.temp_name
-    canonical = store.root / asset_relpath(
-        "source:one", "a" * 64, staged.asset_sha256
-    )
+    canonical = store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)
     original_link = os.link
 
     def mutate_then_link(*args: object, **kwargs: object) -> None:
@@ -1928,9 +1951,7 @@ def test_publish_rechecks_bytes_after_staged_source_path_transition(
     store = SourceVisualStore(data_folder=tmp_path)
     staged = store.stage("source:one", "a" * 64, _prepared())
     stage_path = store.root / ".tmp" / staged.temp_name
-    canonical = store.root / asset_relpath(
-        "source:one", "a" * 64, staged.asset_sha256
-    )
+    canonical = store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)
     original_rename = os.rename
 
     def mutate_then_rename(*args: object, **kwargs: object) -> None:
@@ -1978,9 +1999,7 @@ def test_created_cache_directory_fsync_failure_prevents_child_creation(
 
 
 @pytest.mark.parametrize("nested", [False, True])
-def test_store_rejects_symlinked_data_folder_ancestors(
-    tmp_path: Path, nested: bool
-):
+def test_store_rejects_symlinked_data_folder_ancestors(tmp_path: Path, nested: bool):
     target = tmp_path / "target"
     target.mkdir()
     alias = tmp_path / "alias"
@@ -2018,7 +2037,9 @@ def test_stage_failure_preserves_a_foreign_temp_path_exchange(
 
     assert error.value.code == "ASSET_IO_FAILED"
     assert held is not None and held.exists()
-    assert next((store.root / ".tmp").glob("stage-*.tmp")).read_bytes() == b"foreign-temp"
+    assert (
+        next((store.root / ".tmp").glob("stage-*.tmp")).read_bytes() == b"foreign-temp"
+    )
 
 
 @pytest.mark.asyncio
@@ -2071,9 +2092,7 @@ def test_cache_size_counts_owned_stage_tombstone_and_quarantine_inodes_once(
     canonical = store.root / record.asset_relpath
     tombstone_path = canonical.with_name(tombstone.tombstone_name)
     os.link(tombstone_path, canonical)
-    quarantine = canonical.with_name(
-        f".expired-{'c' * 16}-{record.asset_sha256}.webp"
-    )
+    quarantine = canonical.with_name(f".expired-{'c' * 16}-{record.asset_sha256}.webp")
     os.link(tombstone_path, quarantine)
     staged = store.stage("source:two", "b" * 64, _prepared(b"staged-bytes"))
 
@@ -2085,9 +2104,7 @@ def test_publish_revalidates_final_canonical_path_after_final_hash(
 ):
     store = SourceVisualStore(data_folder=tmp_path)
     staged = store.stage("source:one", "a" * 64, _prepared())
-    canonical = store.root / asset_relpath(
-        "source:one", "a" * 64, staged.asset_sha256
-    )
+    canonical = store.root / asset_relpath("source:one", "a" * 64, staged.asset_sha256)
     held = canonical.with_name(f"{canonical.name}.held")
     storage = __import__(
         "deeper_notebook.source_visuals.storage", fromlist=["_hash_fd"]
@@ -2173,7 +2190,9 @@ def test_fresh_store_reconciles_post_move_foreign_fence_and_counts_it(
     assert list(parent.glob(".unlink-fence-*"))
     assert store.cache_size_bytes() == len(b"derived-webp") + len(foreign)
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fsync", original_fsync)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fsync", original_fsync
+    )
     recovered_store = SourceVisualStore(data_folder=tmp_path)
     assert recovered_store.reconcile_staged_files(limit=100) == 0
     assert canonical.read_bytes() == foreign
@@ -2211,7 +2230,9 @@ def test_unverified_stage_is_counted_then_recovered_by_another_stage(
     unverified = next((store.root / ".tmp").glob(".unverified-stage-*"))
     unverified.write_bytes(b"unverified")
     assert store.cache_size_bytes() == unverified.stat().st_size
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fstat", original_fstat)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fstat", original_fstat
+    )
     staged = store.stage("source:two", "b" * 64, _prepared())
 
     assert staged.temp_name
@@ -2484,9 +2505,10 @@ async def test_delete_claim_heartbeat_fences_reconciliation_past_initial_lease(
     clock[0] += 301
     await asyncio.sleep(0.05)
 
-    assert await SourceVisualCleanup(store_b, repository).reconcile_tombstones(
-        limit=100
-    ) == 0
+    assert (
+        await SourceVisualCleanup(store_b, repository).reconcile_tombstones(limit=100)
+        == 0
+    )
     assert not (store_a.root / record.asset_relpath).exists()
 
     repository.release_delete.set()
@@ -2648,7 +2670,10 @@ async def test_stale_deletion_claim_reconciles_exact_tombstone_and_clears_claim(
     )
     repository = _Repository([record] if row_present else [])
 
-    assert await SourceVisualCleanup(store, repository).reconcile_tombstones(limit=100) == 1
+    assert (
+        await SourceVisualCleanup(store, repository).reconcile_tombstones(limit=100)
+        == 1
+    )
     assert not list(parent.glob(".deleting-*.claim"))
     if row_present:
         assert store.read_exact(record) == b"derived-webp"
@@ -2679,9 +2704,12 @@ async def test_stale_completed_deletion_claim_without_tombstone_is_released(
         "deeper_notebook.source_visuals.storage.time.time",
         lambda: original_time() + 601,
     )
-    assert await SourceVisualCleanup(store, _Repository([])).reconcile_tombstones(
-        limit=100
-    ) == 1
+    assert (
+        await SourceVisualCleanup(store, _Repository([])).reconcile_tombstones(
+            limit=100
+        )
+        == 1
+    )
 
     assert not list(parent.glob(".deleting-*.claim"))
     assert completed.phase == "db_deleted"
@@ -2709,9 +2737,12 @@ async def test_expired_restored_claim_without_tombstone_is_released_for_exact_re
         lambda: original_time() + 601,
     )
 
-    assert await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
-        limit=100
-    ) == 1
+    assert (
+        await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
+            limit=100
+        )
+        == 1
+    )
     assert store.read_exact(record) == b"derived-webp"
     assert not list(parent.glob(".deleting-*.claim"))
 
@@ -2728,9 +2759,12 @@ async def test_live_restored_claim_without_tombstone_is_not_released(tmp_path: P
     store.restore_tombstone(tombstone)
     parent = (store.root / record.asset_relpath).parent
 
-    assert await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
-        limit=100
-    ) == 0
+    assert (
+        await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
+            limit=100
+        )
+        == 0
+    )
     assert store.read_exact(record) == b"derived-webp"
     assert list(parent.glob(".deleting-*.claim"))
 
@@ -2755,9 +2789,12 @@ async def test_expired_restored_claim_with_mismatched_ready_row_is_preserved(
         lambda: original_time() + 601,
     )
 
-    assert await SourceVisualCleanup(store, _Repository([mismatched])).reconcile_tombstones(
-        limit=100
-    ) == 0
+    assert (
+        await SourceVisualCleanup(
+            store, _Repository([mismatched])
+        ).reconcile_tombstones(limit=100)
+        == 0
+    )
     assert list(parent.glob(".deleting-*.claim"))
     assert store.read_exact(record) == b"derived-webp"
 
@@ -2787,9 +2824,12 @@ async def test_expired_restored_claim_with_invalid_canonical_is_preserved(
         lambda: original_time() + 601,
     )
 
-    assert await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
-        limit=100
-    ) == 0
+    assert (
+        await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
+            limit=100
+        )
+        == 0
+    )
     assert list(parent.glob(".deleting-*.claim"))
 
 
@@ -2895,7 +2935,9 @@ def test_claim_replacement_keeps_an_exact_claim_visible_to_another_store(
     original_replace = os.replace
     observed: list[object] = []
 
-    def observe_atomic_replace(source: object, destination: object, *args: object, **kwargs: object) -> None:
+    def observe_atomic_replace(
+        source: object, destination: object, *args: object, **kwargs: object
+    ) -> None:
         if destination == claim.claim_name:
             root_fd = parent_fd = None
             try:
@@ -2914,7 +2956,9 @@ def test_claim_replacement_keeps_an_exact_claim_visible_to_another_store(
                     os.close(root_fd)
         original_replace(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.replace", observe_atomic_replace)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.replace", observe_atomic_replace
+    )
     if operation == "renew":
         updated = store_a.renew_tombstone_deletion_claim(claim)
         assert updated.phase == "pending"
@@ -2938,7 +2982,9 @@ def test_interrupted_initial_claim_write_is_counted_then_recovered(
     claim_fds: set[int] = set()
     writes: dict[int, int] = {}
 
-    def track_claim_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+    def track_claim_open(
+        path: object, flags: int, *args: object, **kwargs: object
+    ) -> int:
         descriptor = original_open(path, flags, *args, **kwargs)
         if str(path).startswith((".deleting-", ".claim-write-")) and flags & os.O_EXCL:
             claim_fds.add(descriptor)
@@ -2952,8 +2998,12 @@ def test_interrupted_initial_claim_write_is_counted_then_recovered(
             return original_write(descriptor, memoryview(data)[:1])
         raise OSError("claim write interrupted")
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.open", track_claim_open)
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.write", interrupt_claim_write)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.open", track_claim_open
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.write", interrupt_claim_write
+    )
     with pytest.raises(SourceVisualStorageError) as error:
         store.tombstone_with_deletion_claim(record)
 
@@ -2963,7 +3013,9 @@ def test_interrupted_initial_claim_write_is_counted_then_recovered(
     assert len(claim_writes) == 1
     assert store.cache_size_bytes() == len(b"derived-webp") + 1
     monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.open", original_open)
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.write", original_write)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.write", original_write
+    )
 
     recovered = SourceVisualStore(data_folder=tmp_path)
     staged = recovered.stage("source:two", "b" * 64, _prepared())
@@ -2983,7 +3035,9 @@ def test_interrupted_claim_data_fsync_is_recovered_before_next_mutation(
     original_fsync = os.fsync
     claim_fds: set[int] = set()
 
-    def track_claim_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+    def track_claim_open(
+        path: object, flags: int, *args: object, **kwargs: object
+    ) -> int:
         descriptor = original_open(path, flags, *args, **kwargs)
         if str(path).startswith(".claim-write-") and flags & os.O_EXCL:
             claim_fds.add(descriptor)
@@ -2994,8 +3048,12 @@ def test_interrupted_claim_data_fsync_is_recovered_before_next_mutation(
             raise OSError("claim fsync interrupted")
         original_fsync(descriptor)
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.open", track_claim_open)
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fsync", fail_claim_fsync)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.open", track_claim_open
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fsync", fail_claim_fsync
+    )
     with pytest.raises(SourceVisualStorageError) as error:
         store.tombstone_with_deletion_claim(record)
 
@@ -3003,11 +3061,15 @@ def test_interrupted_claim_data_fsync_is_recovered_before_next_mutation(
     parent = (store.root / record.asset_relpath).parent
     assert len(list(parent.glob(".claim-write-*"))) == 1
     monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.open", original_open)
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.fsync", original_fsync)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.fsync", original_fsync
+    )
 
-    assert SourceVisualStore(data_folder=tmp_path).stage(
-        "source:two", "b" * 64, _prepared()
-    ).temp_name
+    assert (
+        SourceVisualStore(data_folder=tmp_path)
+        .stage("source:two", "b" * 64, _prepared())
+        .temp_name
+    )
     assert not list(parent.glob(".claim-write-*"))
 
 
@@ -3019,12 +3081,18 @@ def test_initial_claim_link_failure_leaves_only_recoverable_private_write(
     record = _record(stored)
     original_link = os.link
 
-    def fail_claim_publication(source: object, destination: object, *args: object, **kwargs: object) -> None:
-        if str(source).startswith(".claim-write-") and str(destination).startswith(".deleting-"):
+    def fail_claim_publication(
+        source: object, destination: object, *args: object, **kwargs: object
+    ) -> None:
+        if str(source).startswith(".claim-write-") and str(destination).startswith(
+            ".deleting-"
+        ):
             raise OSError("claim link interrupted")
         original_link(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", fail_claim_publication)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.link", fail_claim_publication
+    )
     with pytest.raises(SourceVisualStorageError) as error:
         store.tombstone_with_deletion_claim(record)
 
@@ -3034,9 +3102,11 @@ def test_initial_claim_link_failure_leaves_only_recoverable_private_write(
     assert not list(parent.glob(".deleting-*.claim"))
     monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.link", original_link)
 
-    assert SourceVisualStore(data_folder=tmp_path).stage(
-        "source:two", "b" * 64, _prepared()
-    ).temp_name
+    assert (
+        SourceVisualStore(data_folder=tmp_path)
+        .stage("source:two", "b" * 64, _prepared())
+        .temp_name
+    )
     assert not list(parent.glob(".claim-write-*"))
 
 
@@ -3055,7 +3125,9 @@ def test_post_link_claim_write_crash_retires_matching_second_link(
             raise SourceVisualStorageError("CACHE_RECOVERY_REQUIRED")
         original_retire(parent_fd, name, expected_stat)
 
-    monkeypatch.setattr(store, "_retire_non_authoritative_file_at", crash_after_claim_link)
+    monkeypatch.setattr(
+        store, "_retire_non_authoritative_file_at", crash_after_claim_link
+    )
     with pytest.raises(SourceVisualStorageError) as error:
         store.tombstone_with_deletion_claim(record)
 
@@ -3084,12 +3156,16 @@ def test_claim_replacement_failure_preserves_old_claim_and_recovers_temp(
     assert claim is not None
     original_replace = os.replace
 
-    def fail_claim_replace(source: object, destination: object, *args: object, **kwargs: object) -> None:
+    def fail_claim_replace(
+        source: object, destination: object, *args: object, **kwargs: object
+    ) -> None:
         if str(source).startswith(".claim-write-") and destination == claim.claim_name:
             raise OSError("claim replacement interrupted")
         original_replace(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.replace", fail_claim_replace)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.replace", fail_claim_replace
+    )
     with pytest.raises(SourceVisualStorageError) as error:
         store.renew_tombstone_deletion_claim(claim)
 
@@ -3097,7 +3173,9 @@ def test_claim_replacement_failure_preserves_old_claim_and_recovers_temp(
     parent = (store.root / record.asset_relpath).parent
     assert len(list(parent.glob(".claim-write-*"))) == 1
     assert store.list_tombstone_deletion_claims(limit=100) == (claim,)
-    monkeypatch.setattr("deeper_notebook.source_visuals.storage.os.replace", original_replace)
+    monkeypatch.setattr(
+        "deeper_notebook.source_visuals.storage.os.replace", original_replace
+    )
 
     recovered = SourceVisualStore(data_folder=tmp_path)
     assert recovered.stage("source:two", "b" * 64, _prepared()).temp_name
@@ -3159,7 +3237,9 @@ async def test_database_error_is_not_masked_when_claim_release_fails(
     original_release = store.release_tombstone_deletion_claim
     monkeypatch.setattr(store, "release_tombstone_deletion_claim", fail_release)
     with pytest.raises(RuntimeError, match="database unavailable"):
-        await SourceVisualCleanup(store, FailingRepository([record])).delete_record(record)
+        await SourceVisualCleanup(store, FailingRepository([record])).delete_record(
+            record
+        )
 
     assert store.read_exact(record) == b"derived-webp"
     parent = (store.root / record.asset_relpath).parent
@@ -3171,9 +3251,12 @@ async def test_database_error_is_not_masked_when_claim_release_fails(
         lambda: original_time() + 601,
     )
 
-    assert await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
-        limit=100
-    ) == 1
+    assert (
+        await SourceVisualCleanup(store, _Repository([record])).reconcile_tombstones(
+            limit=100
+        )
+        == 1
+    )
     assert not list(parent.glob(".deleting-*.claim"))
 
 
@@ -3224,9 +3307,7 @@ def test_mutation_guard_is_reentrant_for_stage_in_the_same_thread(tmp_path: Path
 def test_storage_fails_closed_before_mutation_when_locking_is_unsupported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    storage = __import__(
-        "deeper_notebook.source_visuals.storage", fromlist=["fcntl"]
-    )
+    storage = __import__("deeper_notebook.source_visuals.storage", fromlist=["fcntl"])
     monkeypatch.setattr(storage, "fcntl", None)
     store = SourceVisualStore(data_folder=tmp_path)
 
@@ -3242,7 +3323,9 @@ def test_process_mutation_guard_registry_retires_unused_roots(tmp_path: Path):
         "deeper_notebook.source_visuals.storage", fromlist=["_PROCESS_MUTATION_GUARDS"]
     )
     storage._PROCESS_MUTATION_GUARDS.clear()
-    stores = [SourceVisualStore(data_folder=tmp_path / str(index)) for index in range(24)]
+    stores = [
+        SourceVisualStore(data_folder=tmp_path / str(index)) for index in range(24)
+    ]
     for store in stores:
         with store.mutation_guard():
             pass

@@ -76,6 +76,7 @@ The entire upstream tree (`api/`, `frontend/`, `open_notebook/`, `prompts/`, `co
 ```python
 # desktop/__init__.py
 """open-notebook-Plus desktop wrapper. See docs/superpowers/specs/2026-05-09-open-notebook-plus-desktop-design.md."""
+
 __version__ = "0.1.0"
 ```
 
@@ -203,9 +204,13 @@ def test_load_or_create_reads_existing(tmp_path):
 
 def test_save_round_trips(tmp_path):
     cfg_path = tmp_path / "config.toml"
-    cfg = Config(model_dir=tmp_path / "AI", provider="llamacpp",
-                 default_model="x.gguf", surreal_user="root",
-                 surreal_password="ABCDEFGHIJKLMNOPQRSTUVWX")
+    cfg = Config(
+        model_dir=tmp_path / "AI",
+        provider="llamacpp",
+        default_model="x.gguf",
+        surreal_user="root",
+        surreal_password="ABCDEFGHIJKLMNOPQRSTUVWX",
+    )
     cfg.save(cfg_path)
     loaded = load_or_create(cfg_path)
     assert loaded == cfg
@@ -213,9 +218,11 @@ def test_save_round_trips(tmp_path):
 
 def test_invalid_provider_raises(tmp_path):
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text('model_dir = "/tmp"\nprovider = "bogus"\n'
-                        'default_model = ""\nsurreal_user = "root"\n'
-                        'surreal_password = "AAAAAAAAAAAAAAAAAAAAAAAA"\n')
+    cfg_path.write_text(
+        'model_dir = "/tmp"\nprovider = "bogus"\n'
+        'default_model = ""\nsurreal_user = "root"\n'
+        'surreal_password = "AAAAAAAAAAAAAAAAAAAAAAAA"\n'
+    )
     with pytest.raises(ValueError, match="provider"):
         load_or_create(cfg_path)
 ```
@@ -230,6 +237,7 @@ Expected: All FAIL with `ModuleNotFoundError: No module named 'desktop.config'`.
 ```python
 # desktop/config.py
 """Config persistence for the desktop launcher and first-run wizard."""
+
 from __future__ import annotations
 
 import os
@@ -353,6 +361,7 @@ Expected: `ModuleNotFoundError`.
 ```python
 # desktop/ports.py
 """Free localhost port discovery."""
+
 from __future__ import annotations
 
 import socket
@@ -370,8 +379,10 @@ def find_free_ports(n: int) -> list[int]:
     if n == 0:
         return []
     with ExitStack() as stack:
-        socks = [stack.enter_context(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-                 for _ in range(n)]
+        socks = [
+            stack.enter_context(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+            for _ in range(n)
+        ]
         for s in socks:
             s.bind(("127.0.0.1", 0))
         return [s.getsockname()[1] for s in socks]
@@ -441,6 +452,7 @@ build/
 ```python
 # desktop/build/fetch_runtimes.py
 """Download pinned SurrealDB + Node.js runtimes into desktop/bin/ for the host platform."""
+
 from __future__ import annotations
 
 import platform
@@ -524,8 +536,14 @@ def main() -> int:
     fetch_node(cfg["node"]["version"], cfg["node"]["urls"][arch], arch)
 
     # Sanity check
-    surreal = BIN / (f"surreal-{arch}.exe" if arch.startswith("windows") else f"surreal-{arch}")
-    node_bin = BIN / f"node-{arch}" / ("node.exe" if arch.startswith("windows") else "bin/node")
+    surreal = BIN / (
+        f"surreal-{arch}.exe" if arch.startswith("windows") else f"surreal-{arch}"
+    )
+    node_bin = (
+        BIN
+        / f"node-{arch}"
+        / ("node.exe" if arch.startswith("windows") else "bin/node")
+    )
     print(f"\nVerifying:")
     print(f"  surreal: {surreal} ({surreal.stat().st_size // 1024 // 1024} MB)")
     print(f"  node:    {node_bin} ({node_bin.stat().st_size // 1024 // 1024} MB)")
@@ -607,6 +625,7 @@ Each provider knows how to detect availability, list models, and (for backends
 that need a process) spawn one and yield env vars to inject into the upstream
 FastAPI process so existing langchain integrations Just Work.
 """
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
@@ -668,20 +687,25 @@ def provider():
 
 
 def test_is_available_true_when_endpoint_responds(provider, monkeypatch):
-    monkeypatch.setattr(httpx, "get", lambda *a, **kw: httpx.Response(200, json={"models": []}))
+    monkeypatch.setattr(
+        httpx, "get", lambda *a, **kw: httpx.Response(200, json={"models": []})
+    )
     assert provider.is_available() is True
 
 
 def test_is_available_false_when_endpoint_unreachable(provider, monkeypatch):
     def raise_(*a, **kw):
         raise httpx.ConnectError("nope")
+
     monkeypatch.setattr(httpx, "get", raise_)
     assert provider.is_available() is False
 
 
 def test_list_models_returns_names(provider, monkeypatch):
     payload = {"models": [{"name": "llama3.1:latest"}, {"name": "mistral:7b"}]}
-    monkeypatch.setattr(httpx, "get", lambda *a, **kw: httpx.Response(200, json=payload))
+    monkeypatch.setattr(
+        httpx, "get", lambda *a, **kw: httpx.Response(200, json=payload)
+    )
     assert provider.list_models() == ["llama3.1:latest", "mistral:7b"]
 
 
@@ -706,6 +730,7 @@ Expected: `ModuleNotFoundError`.
 ```python
 # desktop/providers/ollama.py
 """Ollama provider: detection + model listing only. Ollama daemon is user-managed."""
+
 from __future__ import annotations
 
 import httpx
@@ -716,7 +741,9 @@ from desktop.providers import ProviderEnv
 class OllamaProvider:
     name: str = "ollama"
 
-    def __init__(self, base_url: str = "http://127.0.0.1:11434", timeout: float = 1.0) -> None:
+    def __init__(
+        self, base_url: str = "http://127.0.0.1:11434", timeout: float = 1.0
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
@@ -838,7 +865,9 @@ def test_start_raises_if_server_never_ready(gguf_dir, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: fake_proc)
     monkeypatch.setattr("desktop.providers.llamacpp.find_free_port", lambda: 51112)
     monkeypatch.setattr(time, "sleep", lambda _: None)
-    p = LlamaCppProvider(model_dir=gguf_dir, ready_probe=lambda port: False, max_wait=0.01)
+    p = LlamaCppProvider(
+        model_dir=gguf_dir, ready_probe=lambda port: False, max_wait=0.01
+    )
     with pytest.raises(RuntimeError, match="ready"):
         p.start("model_b.gguf")
 ```
@@ -853,6 +882,7 @@ Expected: `ModuleNotFoundError`.
 ```python
 # desktop/providers/llamacpp.py
 """llama.cpp provider: scan a directory for GGUFs, spawn llama-cpp-python server."""
+
 from __future__ import annotations
 
 import subprocess
@@ -873,7 +903,10 @@ MIN_GGUF_BYTES = 1 * 1024 * 1024
 
 def _http_ready(port: int) -> bool:
     try:
-        return httpx.get(f"http://127.0.0.1:{port}/v1/models", timeout=0.5).status_code == 200
+        return (
+            httpx.get(f"http://127.0.0.1:{port}/v1/models", timeout=0.5).status_code
+            == 200
+        )
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
         return False
 
@@ -908,19 +941,29 @@ class LlamaCppProvider:
 
         port = find_free_port()
         self._proc = subprocess.Popen(
-            [sys.executable, "-m", "llama_cpp.server",
-             "--model", str(path),
-             "--host", "127.0.0.1",
-             "--port", str(port)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [
+                sys.executable,
+                "-m",
+                "llama_cpp.server",
+                "--model",
+                str(path),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         self._port = port
 
         deadline = time.monotonic() + self._max_wait
         while time.monotonic() < deadline:
             if self._proc.poll() is not None:
-                raise RuntimeError(f"llama_cpp.server exited prematurely "
-                                   f"(returncode={self._proc.returncode})")
+                raise RuntimeError(
+                    f"llama_cpp.server exited prematurely "
+                    f"(returncode={self._proc.returncode})"
+                )
             if self._ready_probe(port):
                 # Upstream uses esperanto's openai_compatible provider; these
                 # are the env var names esperanto's OpenAICompatibleLanguageModel
@@ -1010,6 +1053,7 @@ vars routing the upstream FastAPI request handler at Paperclip's chat endpoint
 
 Paperclip URL configured via Settings page once shipped.
 """
+
 from __future__ import annotations
 
 from desktop.providers import ProviderEnv
@@ -1022,10 +1066,14 @@ class PaperclipProvider:
         return False  # always unavailable until Phase 2 lands
 
     def list_models(self) -> list[str]:
-        raise NotImplementedError("Phase 2 — see TODO in desktop/providers/paperclip.py")
+        raise NotImplementedError(
+            "Phase 2 — see TODO in desktop/providers/paperclip.py"
+        )
 
     def start(self, model: str) -> ProviderEnv:
-        raise NotImplementedError("Phase 2 — see TODO in desktop/providers/paperclip.py")
+        raise NotImplementedError(
+            "Phase 2 — see TODO in desktop/providers/paperclip.py"
+        )
 
     def stop(self) -> None:
         return None
@@ -1086,6 +1134,7 @@ OpenAI-compatible bridge.
 
 Reference: https://github.com/NousResearch/hermes-agent/releases/tag/v2026.5.7
 """
+
 from __future__ import annotations
 
 from desktop.providers import ProviderEnv
@@ -1170,22 +1219,33 @@ def test_supervisor_starts_all_children_in_order(cfg, tmp_path, monkeypatch):
     def fake_popen(args, **kw):
         first = args[0] if isinstance(args, list) else args.split()[0]
         if "surreal" in first:
-            started.append("surreal"); return procs["surreal"]
+            started.append("surreal")
+            return procs["surreal"]
         if "uvicorn" in (args[1] if len(args) > 1 else "") or "uvicorn" in first:
-            started.append("api"); return procs["api"]
+            started.append("api")
+            return procs["api"]
         if "worker" in " ".join(args) if isinstance(args, list) else "worker" in args:
-            started.append("worker"); return procs["worker"]
+            started.append("worker")
+            return procs["worker"]
         if "node" in first or "next" in " ".join(args):
-            started.append("next"); return procs["next"]
+            started.append("next")
+            return procs["next"]
         raise AssertionError(f"unexpected popen: {args}")
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: [40001, 40002, 40003])
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: [40001, 40002, 40003]
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
     sv.start_all()
     try:
         assert started == ["surreal", "api", "worker", "next"]
@@ -1198,12 +1258,19 @@ def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
     procs = [_alive_proc() for _ in range(4)]
     seq = iter(procs)
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: next(seq))
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: [40001, 40002, 40003])
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: [40001, 40002, 40003]
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64")
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+    )
     sv.start_all()
     sv.stop_all()
     for p in procs:
@@ -1212,14 +1279,23 @@ def test_supervisor_stop_all_terminates_children(cfg, tmp_path, monkeypatch):
 
 def test_supervisor_writes_session_env(cfg, tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: _alive_proc())
-    monkeypatch.setattr("desktop.launcher.find_free_ports", lambda n: [40001, 40002, 40003])
+    monkeypatch.setattr(
+        "desktop.launcher.find_free_ports", lambda n: [40001, 40002, 40003]
+    )
     monkeypatch.setattr("desktop.launcher._wait_tcp", lambda *a, **kw: None)
     monkeypatch.setattr("desktop.launcher._wait_http", lambda *a, **kw: None)
 
-    sv = Supervisor(cfg=cfg, repo_root=tmp_path, bin_dir=tmp_path / "bin",
-                    surreal_arch="darwin-arm64", node_arch="darwin-arm64",
-                    extra_env={"OLLAMA_BASE_URL": "http://127.0.0.1:11434",
-                               "DEFAULT_MODEL": "llama3.1"})
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=tmp_path,
+        bin_dir=tmp_path / "bin",
+        surreal_arch="darwin-arm64",
+        node_arch="darwin-arm64",
+        extra_env={
+            "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+            "DEFAULT_MODEL": "llama3.1",
+        },
+    )
     sv.start_all()
     try:
         assert sv.session_env["OLLAMA_BASE_URL"] == "http://127.0.0.1:11434"
@@ -1247,6 +1323,7 @@ frontend in dependency order. Each child gets the per-session env (DB creds,
 ports, model provider). Window code (window.py) opens once frontend_url returns
 HTTP 200.
 """
+
 from __future__ import annotations
 
 import os
@@ -1358,7 +1435,8 @@ class Supervisor:
             args,
             cwd=str(cwd) if cwd else None,
             env=self.session_env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
         self._procs.append(proc)
         return proc
@@ -1366,21 +1444,38 @@ class Supervisor:
     def _spawn_surreal(self, port: int) -> None:
         ext = ".exe" if self.surreal_arch.startswith("windows") else ""
         binary = self.bin_dir / f"surreal-{self.surreal_arch}{ext}"
-        data_dir = Path(os.environ.get("HOME", os.environ.get("USERPROFILE", "."))) \
-            / ".open-notebook-plus" / "surreal_data"
+        data_dir = (
+            Path(os.environ.get("HOME", os.environ.get("USERPROFILE", ".")))
+            / ".open-notebook-plus"
+            / "surreal_data"
+        )
         data_dir.mkdir(parents=True, exist_ok=True)
-        self._spawn([
-            str(binary), "start",
-            "--user", self.cfg.surreal_user,
-            "--pass", self.cfg.surreal_password,
-            "--bind", f"127.0.0.1:{port}",
-            f"file://{data_dir}",
-        ])
+        self._spawn(
+            [
+                str(binary),
+                "start",
+                "--user",
+                self.cfg.surreal_user,
+                "--pass",
+                self.cfg.surreal_password,
+                "--bind",
+                f"127.0.0.1:{port}",
+                f"file://{data_dir}",
+            ]
+        )
 
     def _spawn_api(self, port: int) -> None:
         self._spawn(
-            [sys.executable, "-m", "uvicorn", "api.app:app",
-             "--host", "127.0.0.1", "--port", str(port)],
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "api.app:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ],
             cwd=self.repo_root,
         )
 
@@ -1393,8 +1488,10 @@ class Supervisor:
         )
 
     def _spawn_next(self, port: int) -> None:
-        node_bin = self.bin_dir / f"node-{self.node_arch}" / (
-            "node.exe" if self.node_arch.startswith("windows") else "bin/node"
+        node_bin = (
+            self.bin_dir
+            / f"node-{self.node_arch}"
+            / ("node.exe" if self.node_arch.startswith("windows") else "bin/node")
         )
         self._spawn(
             [str(node_bin), "start-server.js"],
@@ -1429,6 +1526,7 @@ git commit -m "desktop: Supervisor for Surreal/API/worker/Next children with ses
 # desktop/window.py
 """PyWebView window wrapper. Opens a native window pointed at a URL and
 calls a teardown callback on close."""
+
 from __future__ import annotations
 
 from typing import Callable
@@ -1436,8 +1534,13 @@ from typing import Callable
 import webview
 
 
-def open_window(url: str, on_close: Callable[[], None], title: str = "open-notebook-Plus",
-                width: int = 1280, height: int = 800) -> None:
+def open_window(
+    url: str,
+    on_close: Callable[[], None],
+    title: str = "open-notebook-Plus",
+    width: int = 1280,
+    height: int = 800,
+) -> None:
     """Blocking — returns when the user closes the window."""
     window = webview.create_window(title, url, width=width, height=height)
     window.events.closed += on_close
@@ -1469,6 +1572,7 @@ git commit -m "desktop: PyWebView window wrapper"
 ```python
 # desktop/__main__.py
 """`python -m desktop` — boots config → wizard if needed → supervisor → window."""
+
 from __future__ import annotations
 
 import platform
@@ -1504,6 +1608,7 @@ def main() -> int:
 
     if first_run:
         from desktop.first_run.server import run_wizard_blocking
+
         run_wizard_blocking(cfg_path)
 
     cfg = load_or_create(cfg_path)
@@ -1520,8 +1625,14 @@ def main() -> int:
         if cfg.default_model:
             extra_env = lc.start(cfg.default_model)
 
-    sv = Supervisor(cfg=cfg, repo_root=repo_root(), bin_dir=bin_dir,
-                    surreal_arch=arch, node_arch=arch, extra_env=extra_env)
+    sv = Supervisor(
+        cfg=cfg,
+        repo_root=repo_root(),
+        bin_dir=bin_dir,
+        surreal_arch=arch,
+        node_arch=arch,
+        extra_env=extra_env,
+    )
     sv.start_all()
     try:
         open_window(sv.frontend_url, on_close=sv.stop_all)
@@ -1576,12 +1687,14 @@ class WizardTestCase(AioHTTPTestCase):
 
     def setUp(self):
         import tempfile
+
         self._tmpdir = tempfile.mkdtemp()
         self.cfg_path = Path(self._tmpdir) / "config.toml"
         super().setUp()
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self._tmpdir, ignore_errors=True)
         super().tearDown()
 
@@ -1593,10 +1706,16 @@ class WizardTestCase(AioHTTPTestCase):
         assert "open-notebook-Plus" in body
 
     async def test_post_save_writes_config(self):
-        payload = {"model_dir": str(self.cfg_path.parent / "AI"),
-                   "provider": "llamacpp", "default_model": "x.gguf"}
-        resp = await self.client.post("/api/save", data=json.dumps(payload),
-                                      headers={"Content-Type": "application/json"})
+        payload = {
+            "model_dir": str(self.cfg_path.parent / "AI"),
+            "provider": "llamacpp",
+            "default_model": "x.gguf",
+        }
+        resp = await self.client.post(
+            "/api/save",
+            data=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        )
         assert resp.status == 200
         assert self.cfg_path.exists()
         text = self.cfg_path.read_text()
@@ -1605,14 +1724,18 @@ class WizardTestCase(AioHTTPTestCase):
 
     async def test_post_save_rejects_invalid_provider(self):
         payload = {"model_dir": "/tmp", "provider": "bogus", "default_model": ""}
-        resp = await self.client.post("/api/save", data=json.dumps(payload),
-                                      headers={"Content-Type": "application/json"})
+        resp = await self.client.post(
+            "/api/save",
+            data=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        )
         assert resp.status == 400
 
 
 @pytest.mark.asyncio
 async def test_build_app_returns_aiohttp_application(tmp_path):
     from aiohttp import web
+
     app = build_app(tmp_path / "config.toml", on_done=lambda: None)
     assert isinstance(app, web.Application)
 ```
@@ -1635,6 +1758,7 @@ Expected: `ModuleNotFoundError`.
 Only used the very first time the app boots (no config.toml exists). Once the
 user clicks Done, the wizard writes the config and signals completion.
 """
+
 from __future__ import annotations
 
 import secrets
@@ -1705,16 +1829,23 @@ def run_wizard_blocking(config_path: Path) -> None:
     t.start()
     while site_port == 0:
         import time as _t
+
         _t.sleep(0.05)
 
-    window = webview.create_window("open-notebook-Plus — Setup",
-                                   f"http://127.0.0.1:{site_port}/",
-                                   width=720, height=540)
+    window = webview.create_window(
+        "open-notebook-Plus — Setup",
+        f"http://127.0.0.1:{site_port}/",
+        width=720,
+        height=540,
+    )
+
     def _watch_done():
         import time as _t
+
         while not done.is_set():
             _t.sleep(0.2)
         window.destroy()
+
     threading.Thread(target=_watch_done, daemon=True).start()
     webview.start()
 
@@ -1940,6 +2071,7 @@ is_win = sys.platform == "win32"
 
 # arch suffix used by fetch_runtimes.py
 import platform as _pl
+
 _machine = _pl.machine().lower()
 if is_mac:
     arch = "darwin-arm64" if _machine in ("arm64", "aarch64") else "darwin-x86_64"
@@ -1974,11 +2106,19 @@ datas = [
 ]
 
 hiddenimports = [
-    "uvicorn", "uvicorn.protocols.http.h11_impl", "uvicorn.lifespan.on",
-    "uvicorn.loops.auto", "uvicorn.protocols.websockets.auto",
-    "surreal_commands.worker", "llama_cpp.server",
-    "langchain_openai", "langchain_anthropic", "langchain_ollama",
-    "langchain_google_genai", "langchain_groq", "langchain_mistralai",
+    "uvicorn",
+    "uvicorn.protocols.http.h11_impl",
+    "uvicorn.lifespan.on",
+    "uvicorn.loops.auto",
+    "uvicorn.protocols.websockets.auto",
+    "surreal_commands.worker",
+    "llama_cpp.server",
+    "langchain_openai",
+    "langchain_anthropic",
+    "langchain_ollama",
+    "langchain_google_genai",
+    "langchain_groq",
+    "langchain_mistralai",
     "langchain_deepseek",
 ]
 
@@ -1990,12 +2130,16 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["streamlit"],  # upstream lint config mentions Streamlit; runtime doesn't need it
+    excludes=[
+        "streamlit"
+    ],  # upstream lint config mentions Streamlit; runtime doesn't need it
 )
 pyz = PYZ(a.pure)
 
 exe = EXE(
-    pyz, a.scripts, [],
+    pyz,
+    a.scripts,
+    [],
     exclude_binaries=True,
     name="open-notebook-Plus",
     console=False,
@@ -2003,7 +2147,9 @@ exe = EXE(
 )
 
 coll = COLLECT(
-    exe, a.binaries, a.datas,
+    exe,
+    a.binaries,
+    a.datas,
     name="open-notebook-Plus",
 )
 

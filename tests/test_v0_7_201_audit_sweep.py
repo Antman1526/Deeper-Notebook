@@ -30,6 +30,7 @@ Five discrete bugs:
    lfnovo repo; switched to Plus fork. Markdown editor had
    hardcoded `data-color-mode="light"`; now follows next-themes.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -50,8 +51,9 @@ def test_test_credential_does_not_leak_str_exception():
     # Strip Python `# ...` comments so the historical-rationale block
     # doesn't false-positive the regex.
     code_only = "\n".join(
-        ln for ln in src.splitlines() if "#" not in ln.split('"')[0]
-        or not ln.lstrip().startswith("#")
+        ln
+        for ln in src.splitlines()
+        if "#" not in ln.split('"')[0] or not ln.lstrip().startswith("#")
     )
     # Simpler: strip lines starting with `#`.
     code_only = "\n".join(
@@ -118,14 +120,8 @@ def test_notes_router_has_notfound_bubble_in_list_and_create():
     `except Exception` block and collapsed to 500."""
     src = _src("api/routers/notes.py")
     # Pin both v0.7.201 markers — one in list_notes, one in create_note.
-    assert (
-        "v0.7.201 — bubble typed exceptions to the global classifier"
-        in src
-    )
-    assert (
-        "v0.7.201 — same bubble-pattern fix as list_notes"
-        in src
-    )
+    assert "v0.7.201 — bubble typed exceptions to the global classifier" in src
+    assert "v0.7.201 — same bubble-pattern fix as list_notes" in src
 
 
 def test_setup_banner_points_at_deeper_notebook_repo():
@@ -136,8 +132,9 @@ def test_setup_banner_points_at_deeper_notebook_repo():
         "match the downstream build."
     )
     code_only = "\n".join(
-        ln for ln in src.splitlines() if not ln.lstrip().startswith("//")
-        and not ln.lstrip().startswith("{/*")
+        ln
+        for ln in src.splitlines()
+        if not ln.lstrip().startswith("//") and not ln.lstrip().startswith("{/*")
     )
     assert "Antman1526/open-notebook-Plus" not in code_only
     assert "lfnovo/open-notebook" not in code_only
@@ -160,10 +157,7 @@ def test_active_documentation_uses_downstream_links_and_preserves_upstream():
     readme = _src("README.md")
     assert "https://github.com/Antman1526/Deeper-Notebook" in readme
     assert "https://github.com/lfnovo/open-notebook" in readme
-    assert (
-        "git clone https://github.com/Antman1526/Deeper-Notebook.git"
-        in readme
-    )
+    assert "git clone https://github.com/Antman1526/Deeper-Notebook.git" in readme
 
     issue_templates = "\n".join(
         _src(path) for path in active_paths if path.startswith(".github/")

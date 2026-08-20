@@ -1,4 +1,5 @@
 """RED-to-GREEN coverage for hostile MCP discovery and result payloads."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -253,7 +254,9 @@ async def test_chat_discovery_bounds_servers_and_cache(monkeypatch):
     await chat_module._resolve_chat_tools(force_servers=servers)
 
     assert calls["n"] <= chat_module._MAX_MCP_SERVERS
-    assert len(chat_module._tool_discovery_cache) <= chat_module._TOOL_DISCOVERY_CACHE_MAX
+    assert (
+        len(chat_module._tool_discovery_cache) <= chat_module._TOOL_DISCOVERY_CACHE_MAX
+    )
 
 
 @pytest.mark.asyncio
@@ -324,9 +327,7 @@ async def test_mcp_registry_bounds_and_skips_malformed_rows(monkeypatch):
             },
         ]
 
-    monkeypatch.setattr(
-        "deeper_notebook.database.repository.repo_query", _repo_query
-    )
+    monkeypatch.setattr("deeper_notebook.database.repository.repo_query", _repo_query)
     servers = await registry_module.list_enabled_servers()
 
     assert [server["name"] for server in servers] == ["first", "second"]
@@ -350,9 +351,7 @@ async def test_mcp_registry_does_not_materialize_hostile_mapping(monkeypatch):
             )
         ]
 
-    monkeypatch.setattr(
-        "deeper_notebook.database.repository.repo_query", _repo_query
-    )
+    monkeypatch.setattr("deeper_notebook.database.repository.repo_query", _repo_query)
 
     servers = await registry_module.list_enabled_servers()
     assert [server["name"] for server in servers] == ["safe"]

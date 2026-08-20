@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 @dataclass
 class _FakeAudioChunk:
     """Minimal stand-in for piper.voice.AudioChunk."""
+
     sample_rate: int = 22050
     sample_width: int = 2
     sample_channels: int = 1
@@ -33,10 +34,12 @@ def _fake_piper_voices():
     """Build a {voice_name: piper_voice_obj} dict. piper_voice_obj.synthesize
     returns an iterable of AudioChunk-like objects (new piper >= 0.0.3 API).
     """
+
     def make():
         v = MagicMock()
         v.synthesize.return_value = [_FakeAudioChunk()]
         return v
+
     return {"alex": make(), "sam": make()}
 
 
@@ -52,19 +55,20 @@ def test_models_use_canonical_owner_identity():
     with TestClient(app) as c:
         body = c.get("/v1/models").json()
 
-    assert {model["owned_by"] for model in body["data"]} == {
-        "deeper-notebook"
-    }
+    assert {model["owned_by"] for model in body["data"]} == {"deeper-notebook"}
 
 
 def test_speech_returns_wav():
     app = build_app(voices=_fake_piper_voices())
     with TestClient(app) as c:
-        r = c.post("/v1/audio/speech", json={
-            "input": "Hello world",
-            "voice": "alex",
-            "model": "piper-amy-en",
-        })
+        r = c.post(
+            "/v1/audio/speech",
+            json={
+                "input": "Hello world",
+                "voice": "alex",
+                "model": "piper-amy-en",
+            },
+        )
         assert r.status_code == 200
         assert r.headers["content-type"] == "audio/wav"
         # Body is a valid WAV
@@ -75,9 +79,14 @@ def test_speech_returns_wav():
 def test_speech_unknown_voice_falls_back_to_first():
     app = build_app(voices=_fake_piper_voices())
     with TestClient(app) as c:
-        r = c.post("/v1/audio/speech", json={
-            "input": "Hello", "voice": "nobody", "model": "x",
-        })
+        r = c.post(
+            "/v1/audio/speech",
+            json={
+                "input": "Hello",
+                "voice": "nobody",
+                "model": "x",
+            },
+        )
         assert r.status_code == 200  # falls back, doesn't error
 
 
@@ -128,7 +137,7 @@ def test_speech_max_chars_is_local_friendly():
     reasonable range so an over-zealous refactor can't degrade UX
     OR safety."""
     from desktop_shims.piper_shim import _MAX_INPUT_CHARS
+
     assert 10_000 <= _MAX_INPUT_CHARS <= 200_000, (
-        f"_MAX_INPUT_CHARS={_MAX_INPUT_CHARS} is outside the "
-        "safe range for local TTS"
+        f"_MAX_INPUT_CHARS={_MAX_INPUT_CHARS} is outside the safe range for local TTS"
     )

@@ -38,9 +38,7 @@ RESTART_STATE_VERSION = 1
 MAX_RESTART_STATE_BYTES = 128 * 1024
 MAX_EXTERNAL_FILES = 1_000
 MAX_EXTERNAL_BYTES = 32 * 1024 * 1024
-REQUIRED_VAULT_READ_ROUTE = (
-    "GET /api/deeper-notebook/vaults/{vault_id}/pages/{note_id}"
-)
+REQUIRED_VAULT_READ_ROUTE = "GET /api/deeper-notebook/vaults/{vault_id}/pages/{note_id}"
 ALLOWED_VAULT_POST_ROUTES = frozenset(
     {
         "POST /api/deeper-notebook/vaults",

@@ -101,9 +101,7 @@ def _counts(verdicts: list[object]) -> dict[str, int]:
     return result
 
 
-def _evaluation_payload(
-    run: dict[str, Any], verdicts: list[object]
-) -> dict[str, Any]:
+def _evaluation_payload(run: dict[str, Any], verdicts: list[object]) -> dict[str, Any]:
     """Project one run through the existing public detail response shape."""
     return {
         "run": {
@@ -182,12 +180,16 @@ async def get_latest_evaluation(
     except HTTPException:
         raise
     except ValueError:
-        raise HTTPException(status_code=422, detail="Evaluation selector is invalid") from None
+        raise HTTPException(
+            status_code=422, detail="Evaluation selector is invalid"
+        ) from None
     except Exception as exc:
         # Repository errors are deliberately not projected as raw DB details.
         # Keep the existing router's fail-soft boundary for unavailable storage.
         if isinstance(exc, EvaluationRepositoryError):
-            raise HTTPException(status_code=503, detail="Evaluations are unavailable") from None
+            raise HTTPException(
+                status_code=503, detail="Evaluations are unavailable"
+            ) from None
         raise
     if run is None:
         # Missing and cross-notebook selectors intentionally have one response.
@@ -219,7 +221,9 @@ async def batch_latest_evaluations(
         raise
     except Exception as exc:
         if isinstance(exc, EvaluationRepositoryError):
-            raise HTTPException(status_code=503, detail="Evaluations are unavailable") from None
+            raise HTTPException(
+                status_code=503, detail="Evaluations are unavailable"
+            ) from None
         raise
 
     # The query is newest-first; first row wins for each requested ID. Keep the

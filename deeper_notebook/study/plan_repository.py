@@ -120,12 +120,20 @@ def _record_id(value: str | RecordID, table: str) -> RecordID:
         record = ensure_record_id(value)
     except Exception as exc:  # pragma: no cover - exact driver exception varies
         label = "study plan" if table == "study_plan" else table.replace("_", " ")
-        error_type = StudyPlanNotFoundError if table == "study_plan" else StudyPlanRepositoryError
+        error_type = (
+            StudyPlanNotFoundError
+            if table == "study_plan"
+            else StudyPlanRepositoryError
+        )
         raise error_type(f"invalid {label} ID") from exc
     rendered = str(record)
     if rendered.split(":", 1)[0] != table:
         label = "study plan" if table == "study_plan" else table.replace("_", " ")
-        error_type = StudyPlanNotFoundError if table == "study_plan" else StudyPlanRepositoryError
+        error_type = (
+            StudyPlanNotFoundError
+            if table == "study_plan"
+            else StudyPlanRepositoryError
+        )
         raise error_type(f"invalid {label} ID")
     return record
 
@@ -223,14 +231,15 @@ def _guard_plan_sql(
         predicate += " AND revision = $expected_revision"
     state_guard = ""
     if expected_state is not None:
-        states = (expected_state,) if isinstance(expected_state, str) else expected_state
+        states = (
+            (expected_state,) if isinstance(expected_state, str) else expected_state
+        )
         checks = " AND ".join(f'$plan_guard.state != "{state}"' for state in states)
         state_guard = f'IF {checks} {{ THROW "study_plan_state_guard_failed"; }}; '
     return (
         "LET $plan_guard = (SELECT id, revision, state FROM $plan WHERE "  # nosec B608
         f"{predicate})[0]; IF $plan_guard = NONE {{ "
-        'THROW "study_plan_guard_failed"; }; '
-        + state_guard
+        'THROW "study_plan_guard_failed"; }; ' + state_guard
     )
 
 
@@ -358,7 +367,9 @@ def _syllabus_from_records(
                 )
             )
         except Exception as exc:
-            raise StudyPlanRepositoryError("invalid persisted study syllabus units") from exc
+            raise StudyPlanRepositoryError(
+                "invalid persisted study syllabus units"
+            ) from exc
 
     try:
         return StudySyllabus.model_validate(
@@ -376,7 +387,9 @@ def _syllabus_from_records(
 
 
 def _plan_data(plan: StudyPlan) -> dict[str, Any]:
-    data = plan.model_dump(mode="python", exclude={"plan_id", "version", "approved_syllabus_version"})
+    data = plan.model_dump(
+        mode="python", exclude={"plan_id", "version", "approved_syllabus_version"}
+    )
     data["plan_id"] = plan.plan_id
     data["revision"] = plan.version
     data["active_syllabus_version"] = plan.approved_syllabus_version
@@ -405,7 +418,9 @@ def _syllabus_data(syllabus: StudySyllabus) -> dict[str, Any]:
     }
 
 
-def _unit_data(syllabus: StudySyllabus, unit: StudySyllabusUnit, position: int) -> dict[str, Any]:
+def _unit_data(
+    syllabus: StudySyllabus, unit: StudySyllabusUnit, position: int
+) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "plan_id": syllabus.plan_id,
@@ -417,7 +432,9 @@ def _unit_data(syllabus: StudySyllabus, unit: StudySyllabusUnit, position: int) 
         "prerequisite_unit_ids": list(unit.prerequisite_unit_ids),
         "estimated_minutes": unit.estimated_minutes,
         "source_ids": list(unit.source_ids),
-        "activities": [activity.model_dump(mode="python") for activity in unit.activities],
+        "activities": [
+            activity.model_dump(mode="python") for activity in unit.activities
+        ],
     }
 
 
@@ -464,7 +481,11 @@ class StudyPlanRepository:
             plan = _record_id(plan_id, "study_plan")
             canonical_plan_id = str(plan)
             if version is not None:
-                if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+                if (
+                    isinstance(version, bool)
+                    or not isinstance(version, int)
+                    or version < 1
+                ):
                     raise StudyPlanRepositoryError("invalid syllabus version")
                 syllabus_rows = await repo_query(
                     f"SELECT {_SYLLABUS_PROJECTION} FROM study_syllabus "  # nosec B608
@@ -481,7 +502,9 @@ class StudyPlanRepository:
             if syllabus_row is None:
                 return None
             syllabus_version = syllabus_row.get("version")
-            if isinstance(syllabus_version, bool) or not isinstance(syllabus_version, int):
+            if isinstance(syllabus_version, bool) or not isinstance(
+                syllabus_version, int
+            ):
                 raise StudyPlanRepositoryError("invalid persisted study syllabus")
             unit_rows = await repo_query(
                 f"SELECT {_UNIT_PROJECTION} FROM study_unit "  # nosec B608
@@ -507,7 +530,11 @@ class StudyPlanRepository:
         artifact_id: str,
     ) -> dict[str, Any] | None:
         """Read one plan/artifact link as bounded metadata."""
-        if not isinstance(artifact_id, str) or not artifact_id or len(artifact_id) > 512:
+        if (
+            not isinstance(artifact_id, str)
+            or not artifact_id
+            or len(artifact_id) > 512
+        ):
             raise StudyPlanRepositoryError("invalid artifact ID")
         try:
             _record_id(plan_id, "study_plan")
@@ -522,7 +549,9 @@ class StudyPlanRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to load study artifact link")
-            raise StudyPlanRepositoryError("Failed to load study artifact link") from exc
+            raise StudyPlanRepositoryError(
+                "Failed to load study artifact link"
+            ) from exc
 
     async def find_artifact_link(
         self,
@@ -565,7 +594,9 @@ class StudyPlanRepository:
             raise
         except Exception as exc:
             logger.exception("Failed to find study artifact link")
-            raise StudyPlanRepositoryError("Failed to find study artifact link") from exc
+            raise StudyPlanRepositoryError(
+                "Failed to find study artifact link"
+            ) from exc
 
     async def link_artifact(
         self,
@@ -576,9 +607,17 @@ class StudyPlanRepository:
         metadata: Mapping[str, Any],
     ) -> dict[str, Any]:
         """Atomically/idempotently publish one completed artifact pointer."""
-        if not isinstance(artifact_id, str) or not artifact_id or len(artifact_id) > 512:
+        if (
+            not isinstance(artifact_id, str)
+            or not artifact_id
+            or len(artifact_id) > 512
+        ):
             raise StudyPlanRepositoryError("invalid artifact ID")
-        if not isinstance(artifact_kind, str) or not artifact_kind or len(artifact_kind) > 128:
+        if (
+            not isinstance(artifact_kind, str)
+            or not artifact_kind
+            or len(artifact_kind) > 128
+        ):
             raise StudyPlanRepositoryError("invalid artifact kind")
         if not isinstance(metadata, Mapping) or len(metadata) > 16:
             raise StudyPlanRepositoryError("invalid artifact metadata")
@@ -629,7 +668,9 @@ class StudyPlanRepository:
                 {"limit": page_limit, "offset": page_offset},
             )
             records = _flatten_dicts(rows)
-            return [_plan_from_record(record) for record in records if "revision" in record]
+            return [
+                _plan_from_record(record) for record in records if "revision" in record
+            ]
         except StudyPlanRepositoryError:
             raise
         except Exception as exc:
@@ -646,11 +687,15 @@ class StudyPlanRepository:
         expected_revision = _expected_revision(expected_revision)
         if isinstance(changes, StudyPlan):
             raw_patch = _plan_data(changes)
-            raw_patch = {key: raw_patch[key] for key in _PLAN_UPDATE_FIELDS if key in raw_patch}
+            raw_patch = {
+                key: raw_patch[key] for key in _PLAN_UPDATE_FIELDS if key in raw_patch
+            }
         elif isinstance(changes, Mapping):
             unknown = set(changes) - _PLAN_UPDATE_FIELDS
             if unknown:
-                raise StudyPlanRepositoryError("study plan update contains protected fields")
+                raise StudyPlanRepositoryError(
+                    "study plan update contains protected fields"
+                )
             raw_patch = dict(changes)
         else:
             raise StudyPlanRepositoryError("invalid study plan update")
@@ -661,13 +706,19 @@ class StudyPlanRepository:
             patch = dict(raw_patch)
             if "preferences" in patch:
                 preferences = patch["preferences"]
-                if preferences is not None and not isinstance(preferences, StudyPlanPreferences):
+                if preferences is not None and not isinstance(
+                    preferences, StudyPlanPreferences
+                ):
                     try:
                         preferences = StudyPlanPreferences.model_validate(preferences)
                     except Exception as exc:
-                        raise StudyPlanRepositoryError("invalid study plan update") from exc
+                        raise StudyPlanRepositoryError(
+                            "invalid study plan update"
+                        ) from exc
                 patch["preferences"] = (
-                    preferences.model_dump(mode="python") if preferences is not None else None
+                    preferences.model_dump(mode="python")
+                    if preferences is not None
+                    else None
                 )
             if isinstance(patch.get("target_date"), str):
                 try:
@@ -681,7 +732,11 @@ class StudyPlanRepository:
                 candidate = current.model_copy(update=patch)
             except Exception as exc:
                 raise StudyPlanRepositoryError("invalid study plan update") from exc
-            patch = {key: getattr(candidate, key) for key in _PLAN_UPDATE_FIELDS if key in patch}
+            patch = {
+                key: getattr(candidate, key)
+                for key in _PLAN_UPDATE_FIELDS
+                if key in patch
+            }
             if isinstance(patch.get("preferences"), StudyPlanPreferences):
                 patch["preferences"] = patch["preferences"].model_dump(mode="python")
             if isinstance(patch.get("target_date"), date):
@@ -723,7 +778,11 @@ class StudyPlanRepository:
             link_record = ensure_record_id(
                 f"study_plan_source:{_stable_record_token(plan_id, link.source_id)}"
             )
-            where_revision = " AND revision = $expected_revision" if expected_revision is not None else ""
+            where_revision = (
+                " AND revision = $expected_revision"
+                if expected_revision is not None
+                else ""
+            )
             params: dict[str, Any] = {
                 "plan": plan_record,
                 "link": link_record,
@@ -746,9 +805,14 @@ class StudyPlanRepository:
             )
             await repo_query(transaction, params)
             updated = await self.get(plan_id)
-            if updated is None or link.source_id not in {item.source_id for item in updated.source_links}:
+            if updated is None or link.source_id not in {
+                item.source_id for item in updated.source_links
+            }:
                 raise StudyPlanConflictError("study plan revision conflict")
-            if expected_revision is not None and updated.version != expected_revision + 1:
+            if (
+                expected_revision is not None
+                and updated.version != expected_revision + 1
+            ):
                 raise StudyPlanConflictError("study plan revision conflict")
             return link
         except StudyPlanRepositoryError:
@@ -757,7 +821,9 @@ class StudyPlanRepository:
             logger.exception("Failed to add study source link")
             if _is_transaction_conflict(exc):
                 raise StudyPlanConflictError("study plan revision conflict") from exc
-            raise StudyPlanRepositoryError("Study source link already exists or plan is unavailable") from exc
+            raise StudyPlanRepositoryError(
+                "Study source link already exists or plan is unavailable"
+            ) from exc
 
     async def remove_source(
         self,
@@ -777,7 +843,11 @@ class StudyPlanRepository:
             if expected_revision is not None:
                 expected_revision = _expected_revision(expected_revision)
                 params["expected_revision"] = expected_revision
-            where_revision = " AND revision = $expected_revision" if expected_revision is not None else ""
+            where_revision = (
+                " AND revision = $expected_revision"
+                if expected_revision is not None
+                else ""
+            )
             before = await self.get(plan_id)
             if before is None:
                 raise StudyPlanNotFoundError("study plan not found")
@@ -799,11 +869,19 @@ class StudyPlanRepository:
             )
             after = await self.get(plan_id)
             if after is None:
-                raise StudyPlanRepositoryError("invalid source link transaction receipt")
-            before_had_link = link.source_id in {item.source_id for item in before.source_links}
-            after_has_link = link.source_id in {item.source_id for item in after.source_links}
+                raise StudyPlanRepositoryError(
+                    "invalid source link transaction receipt"
+                )
+            before_had_link = link.source_id in {
+                item.source_id for item in before.source_links
+            }
+            after_has_link = link.source_id in {
+                item.source_id for item in after.source_links
+            }
             if before_had_link and after_has_link:
-                raise StudyPlanRepositoryError("invalid source link transaction receipt")
+                raise StudyPlanRepositoryError(
+                    "invalid source link transaction receipt"
+                )
             return before_had_link
         except StudyPlanRepositoryError:
             raise
@@ -811,7 +889,9 @@ class StudyPlanRepository:
             logger.exception("Failed to remove study source link")
             if _is_transaction_conflict(exc):
                 raise StudyPlanConflictError("study plan revision conflict") from exc
-            raise StudyPlanRepositoryError("Failed to remove study source link") from exc
+            raise StudyPlanRepositoryError(
+                "Failed to remove study source link"
+            ) from exc
 
     async def save_syllabus(
         self,
@@ -881,7 +961,8 @@ class StudyPlanRepository:
             statements.append("COMMIT TRANSACTION; RETURN { saved: true };")
             await repo_query(" ".join(statements), params)
             persisted = await repo_query(
-                "SELECT id, plan_id, version FROM $syllabus;", {"syllabus": syllabus_record}
+                "SELECT id, plan_id, version FROM $syllabus;",
+                {"syllabus": syllabus_record},
             )
             if _record_or_none(persisted, kind="syllabus") is None:
                 raise StudyPlanRepositoryError("invalid syllabus transaction receipt")
@@ -894,7 +975,9 @@ class StudyPlanRepository:
             logger.exception("Failed to save study syllabus")
             if _is_transaction_conflict(exc):
                 raise StudyPlanConflictError("study plan revision conflict") from exc
-            raise StudyPlanRepositoryError("study syllabus version already exists or is unavailable") from exc
+            raise StudyPlanRepositoryError(
+                "study syllabus version already exists or is unavailable"
+            ) from exc
 
     async def approve_syllabus(
         self,
@@ -903,7 +986,11 @@ class StudyPlanRepository:
         syllabus_version: int,
         expected_revision: int,
     ) -> StudyPlan:
-        if isinstance(syllabus_version, bool) or not isinstance(syllabus_version, int) or syllabus_version < 1:
+        if (
+            isinstance(syllabus_version, bool)
+            or not isinstance(syllabus_version, int)
+            or syllabus_version < 1
+        ):
             raise StudyPlanRepositoryError("invalid syllabus version")
         expected_revision = _expected_revision(expected_revision)
         try:

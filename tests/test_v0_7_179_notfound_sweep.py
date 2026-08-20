@@ -27,6 +27,7 @@ also import `NotFoundError` so the re-raise clauses compile.
 Stops a future contributor from adding a new endpoint that swallows
 404s silently.
 """
+
 from __future__ import annotations
 
 import ast
@@ -50,8 +51,7 @@ def test_notebooks_router_reraises_typed_exceptions():
     Without it, legitimate not-found responses become 500s."""
     src = _read_source("api/routers/notebooks.py")
     assert (
-        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
-        in src
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError" in src
     ), "v0.7.179 regression: NotFoundError import gone from notebooks.py"
     # At least one typed re-raise clause present.
     assert "except (NotFoundError, InvalidInputError):" in src, (
@@ -65,8 +65,7 @@ def test_podcasts_router_reraises_typed_exceptions():
     """v0.7.179: same pin for podcasts.py."""
     src = _read_source("api/routers/podcasts.py")
     assert (
-        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
-        in src
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError" in src
     ), "v0.7.179 regression: NotFoundError import gone from podcasts.py"
     assert "except (NotFoundError, InvalidInputError):" in src
 
@@ -75,8 +74,7 @@ def test_models_router_reraises_typed_exceptions():
     """v0.7.179: same pin for models.py."""
     src = _read_source("api/routers/models.py")
     assert (
-        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
-        in src
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError" in src
     ), "v0.7.179 regression: NotFoundError import gone from models.py"
     assert "except (NotFoundError, InvalidInputError):" in src
 
@@ -87,8 +85,7 @@ def test_sources_router_reraises_typed_exceptions():
     surface."""
     src = _read_source("api/routers/sources.py")
     assert (
-        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError"
-        in src
+        "from deeper_notebook.exceptions import InvalidInputError, NotFoundError" in src
     )
     assert "except (NotFoundError, InvalidInputError):" in src
 
@@ -117,12 +114,14 @@ def test_fixed_routers_have_no_unpaired_broad_handlers():
         "api/routers/sources.py",
     ):
         src = _read_source(rel)
-        broad_count = src.count("except Exception as e:") + src.count(
-            "except Exception as exc:"
-        ) + src.count("except Exception:")
-        typed_count = src.count("except (NotFoundError, InvalidInputError):") + src.count(
-            "except NotFoundError:"
+        broad_count = (
+            src.count("except Exception as e:")
+            + src.count("except Exception as exc:")
+            + src.count("except Exception:")
         )
+        typed_count = src.count(
+            "except (NotFoundError, InvalidInputError):"
+        ) + src.count("except NotFoundError:")
         # We require at least one typed clause per file (proof of
         # the v0.7.179 pattern), and ideally a typed clause for
         # most broad handlers. Loose ratio: typed_count >=

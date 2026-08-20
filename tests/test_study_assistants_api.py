@@ -96,9 +96,7 @@ def test_policy_failure_is_safe(monkeypatch) -> None:
 
 def test_changed_body_request_id_is_reported_as_conflict(monkeypatch) -> None:
     async def fail(*_args, **_kwargs):
-        raise study_assistants.StudyAssistantPolicyError(
-            "assistant_request_conflict"
-        )
+        raise study_assistants.StudyAssistantPolicyError("assistant_request_conflict")
 
     fake = FakeService()
     fake.invoke = fail

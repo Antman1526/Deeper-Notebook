@@ -226,9 +226,7 @@ def _open_controlled_file(path: Path, upload_root: Path) -> tuple[int, str]:
     try:
         for component in components[:-1]:
             try:
-                child_fd = os.open(
-                    component, child_directory_flags, dir_fd=parent_fd
-                )
+                child_fd = os.open(component, child_directory_flags, dir_fd=parent_fd)
             except FileNotFoundError:
                 raise SourceVisualAuthorityError("SOURCE_FILE_MISSING") from None
             except OSError as exc:
@@ -242,9 +240,7 @@ def _open_controlled_file(path: Path, upload_root: Path) -> tuple[int, str]:
             parent_fd = child_fd
 
         try:
-            file_descriptor = os.open(
-                components[-1], file_flags, dir_fd=parent_fd
-            )
+            file_descriptor = os.open(components[-1], file_flags, dir_fd=parent_fd)
         except FileNotFoundError:
             raise SourceVisualAuthorityError("SOURCE_FILE_MISSING") from None
         except OSError as exc:
@@ -306,9 +302,7 @@ async def compute_source_visual_authority(source: object) -> SourceVisualAuthori
     if source_updated_at is None:
         raise SourceVisualAuthorityError("SOURCE_REVISION_MISSING")
 
-    normalized_source_type = _first(
-        source, "normalized_source_type", "source_type"
-    )
+    normalized_source_type = _first(source, "normalized_source_type", "source_type")
     if normalized_source_type is None:
         normalized_source_type = "unknown"
     normalized_source_type = str(normalized_source_type)

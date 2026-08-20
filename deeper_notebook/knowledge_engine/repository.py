@@ -327,7 +327,10 @@ class KnowledgeRepository:
         receipt = _receipt_from(rows[0])
         if receipt.input_hash != variables["input_hash"]:
             raise KnowledgeRepositoryError("operation_conflict")
-        if receipt.status == "projected" or receipt.error_code == "projection_in_progress":
+        if (
+            receipt.status == "projected"
+            or receipt.error_code == "projection_in_progress"
+        ):
             return False, receipt.model_copy(update={"status": "unchanged"})
         # A prior recorded failure is retryable through the normal transaction.
         return False, None
@@ -400,9 +403,7 @@ class KnowledgeRepository:
         try:
             return KnowledgeBlockIdentity.model_validate(rows[0])
         except ValidationError:
-            raise KnowledgeRepositoryError(
-                "knowledge_engine_block_invalid"
-            ) from None
+            raise KnowledgeRepositoryError("knowledge_engine_block_invalid") from None
 
     async def get_current_block_content(
         self,
@@ -436,9 +437,7 @@ class KnowledgeRepository:
         try:
             return KnowledgeBlockContent.model_validate(rows[0])
         except ValidationError:
-            raise KnowledgeRepositoryError(
-                "knowledge_engine_block_invalid"
-            ) from None
+            raise KnowledgeRepositoryError("knowledge_engine_block_invalid") from None
 
     async def resolve_legacy_page(
         self, *, legacy_note_id: str, block_keys: tuple[str, ...]

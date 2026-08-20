@@ -3,6 +3,7 @@
 See the historical desktop design specification at
 docs/superpowers/specs/2026-05-09-open-notebook-plus-desktop-design.md.
 """
+
 # v0.7.210 — synced from "0.1.0" (set at project start, never
 # updated) to the actual current release. The version string is
 # now displayed on the launch splash, the system-tray About line,
@@ -18,4 +19,4 @@ docs/superpowers/specs/2026-05-09-open-notebook-plus-desktop-design.md.
 # the macOS bundle CFBundleShortVersionString). It is a separate track from
 # pyproject.toml's `version`, which versions the upstream/Docker image — see
 # the note there. Don't conflate them.
-__version__ = "0.8.110"
+__version__ = "0.8.111"

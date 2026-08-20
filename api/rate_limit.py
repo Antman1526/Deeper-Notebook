@@ -9,6 +9,7 @@ auth-brute-force and download/discover cost-amplification gaps (the
 
 Sliding window, per-IP, in-memory, zero new dependencies.
 """
+
 from __future__ import annotations
 
 import os
@@ -23,8 +24,13 @@ from deeper_notebook.environment import resolve_env
 
 # Liveness/metrics probes must never be rate-limited (orchestrators poll them).
 _EXEMPT_PREFIXES = (
-    "/health", "/livez", "/readyz", "/metrics", "/api/healthz",
-    "/api/version", "/api/config",
+    "/health",
+    "/livez",
+    "/readyz",
+    "/metrics",
+    "/api/healthz",
+    "/api/version",
+    "/api/config",
 )
 _WINDOW_SEC = 60.0
 # Full-table cleanup is intentionally amortized.  The current client's deque
@@ -74,9 +80,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # client arrives while at capacity, sweep first so expired entries can
         # be reclaimed before LRU eviction; otherwise retain the bounded table
         # and defer the sweep until the cadence elapses.
-        if (
-            now - self._last_prune_at >= _PRUNE_INTERVAL_SEC
-            or (ip not in self._hits and len(self._hits) >= _MAX_CLIENTS)
+        if now - self._last_prune_at >= _PRUNE_INTERVAL_SEC or (
+            ip not in self._hits and len(self._hits) >= _MAX_CLIENTS
         ):
             self._prune_clients(cutoff, now)
         dq = self._hits.get(ip)

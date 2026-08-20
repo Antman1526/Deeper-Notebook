@@ -25,6 +25,43 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.111 — 2026-08-19 — `ruff format` adopted
+
+Enabled in `.pre-commit-config.yaml`; 701 files reformatted and the tree is now
+stable (1,126 files already formatted, so the hook is a no-op going forward).
+
+It stayed off for three releases because the rebrand allowlist pinned approvals
+to line and column, so a repo-wide reformat invalidated them wholesale and
+`--regenerate` refused to rebuild. v0.8.109 re-keyed approvals onto content;
+this is the payoff.
+
+**Adoption was reviewed, not driven to green.** ~1,046 pins relocated
+automatically; 38 re-approvals were listed with their before/after text in
+`docs/verification/2026-08-19-formatter-adoption-review.md` and checked before
+being applied. One proposed mapping was WRONG — it would have moved a regex
+approval onto an unrelated `assert` — and the review caught it. Two further
+approvals were carried onto the occurrence the audit itself named, where
+substring nesting made ordinal mapping ambiguous. No new approvals were created
+and no category was re-judged.
+
+🐛 **A third `repair_rebrand_pins.py` bug fixed.** It set the inventory digest
+and then ran `--regenerate`, which rewrites entries and invalidates the digest
+just written. The stale constant made the pinned inventory load EMPTY, every
+compatibility contract resolve to `None`, and the failure surface as
+"compatibility entry must use its exact canonical compatibility contract" — a
+message that says nothing about digests. The digest is now re-settled after
+regeneration.
+
+⚠️ **Do not remove the `# fmt: skip` / `# fmt: off` guards** in
+`tests/test_environment_aliases.py` and `desktop/tests/test_data_root_migration.py`.
+Ruff joins adjacent string literals, and those tests write `"open_" "notebook"`
+split on purpose so they do not trip their own scan.
+
+- **v0.8.111** ✨ **`ruff format` adopted** — 701 files, hook enabled, tree
+  stable. 38 re-approvals reviewed line by line (one proposed mapping was wrong
+  and the review caught it); a third repair-tool bug fixed along the way.
+
+
 ## v0.8.110 — 2026-08-19 — Formatter adoption attempted; two real hazards fixed instead
 
 Adoption was driven end to end and **reverted again**, deliberately. The

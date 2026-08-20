@@ -310,9 +310,7 @@ async def test_read_canvas_returns_only_a_hash_bound_document(
     root.mkdir()
     maps = root / "maps"
     maps.mkdir()
-    content = (
-        b'{"nodes":[{"id":"idea","type":"text","x":0,"y":0,"width":100,"height":80,"text":"Idea"}],"edges":[]}'
-    )
+    content = b'{"nodes":[{"id":"idea","type":"text","x":0,"y":0,"width":100,"height":80,"text":"Idea"}],"edges":[]}'
     (maps / "plan.canvas").write_bytes(content)
     mount = _mount(root)
     file = VaultFile(
@@ -328,7 +326,9 @@ async def test_read_canvas_returns_only_a_hash_bound_document(
         parse_status="parsed",
         deleted_state="present",
     )
-    repository = FakeRepository([mount], [], [], files={(mount.id, file.relative_path): file})
+    repository = FakeRepository(
+        [mount], [], [], files={(mount.id, file.relative_path): file}
+    )
 
     result = await VaultService(repository).read_canvas(mount.id, file.relative_path)
 

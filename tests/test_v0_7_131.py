@@ -78,9 +78,7 @@ class TestRequestIDValidation:
     def test_control_chars_rejected(self):
         client = self._make_client()
         for malicious in ("a\rb", "a\tb", "a\x00b", "<script>alert(1)</script>"):
-            r = client.get(
-                "/echo-request-id", headers={"X-Request-ID": malicious}
-            )
+            r = client.get("/echo-request-id", headers={"X-Request-ID": malicious})
             returned = r.json()["request_id"]
             assert returned != malicious, (
                 f"Expected {malicious!r} to be rejected, got it back verbatim"
@@ -144,7 +142,9 @@ class TestMetricsAuth:
         assert "onp_http_requests_total" in r.text or "process_" in r.text
 
     def test_token_set_no_header_rejected(self, monkeypatch):
-        monkeypatch.setenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
+        monkeypatch.setenv(
+            "DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc"
+        )
         client = self._make_client()
         r = client.get("/metrics")
         assert r.status_code == 401
@@ -153,13 +153,17 @@ class TestMetricsAuth:
         assert "Bearer" in r.headers.get("WWW-Authenticate", "")
 
     def test_token_set_wrong_token_rejected(self, monkeypatch):
-        monkeypatch.setenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
+        monkeypatch.setenv(
+            "DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc"
+        )
         client = self._make_client()
         r = client.get("/metrics", headers={"Authorization": "Bearer wrong-token"})
         assert r.status_code == 401
 
     def test_token_set_correct_token_accepted(self, monkeypatch):
-        monkeypatch.setenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
+        monkeypatch.setenv(
+            "DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc"
+        )
         client = self._make_client()
         r = client.get(
             "/metrics",
@@ -170,13 +174,15 @@ class TestMetricsAuth:
 
     def test_malformed_header_rejected(self, monkeypatch):
         """No 'Bearer ' prefix → 401, even if the literal token follows."""
-        monkeypatch.setenv("DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc")
+        monkeypatch.setenv(
+            "DEEPER_NOTEBOOK_METRICS_AUTH_TOKEN", "secret-scrape-token-abc"
+        )
         client = self._make_client()
         # Common mistakes a hand-written scraper might make:
         for bad in (
-            "secret-scrape-token-abc",         # no scheme
+            "secret-scrape-token-abc",  # no scheme
             "bearer secret-scrape-token-abc",  # lowercase scheme
-            "Basic c2VjcmV0",                  # wrong scheme
+            "Basic c2VjcmV0",  # wrong scheme
         ):
             r = client.get("/metrics", headers={"Authorization": bad})
             assert r.status_code == 401, f"Expected 401 for {bad!r}"
@@ -209,16 +215,19 @@ class TestDiscoverTablesShapeParsing:
     @pytest.mark.asyncio
     async def test_v2_shape_tables_key(self):
         from tests.integration.conftest import _discover_tables
+
         # SurrealDB v2 returns {"tables": {<name>: <ddl>, ...}, ...}
-        fake_rows = [{
-            "tables": {
-                "notebook": "DEFINE TABLE notebook ...",
-                "source": "DEFINE TABLE source ...",
-                "reference": "DEFINE TABLE reference ...",
-            },
-            "functions": {},
-            "scopes": {},
-        }]
+        fake_rows = [
+            {
+                "tables": {
+                    "notebook": "DEFINE TABLE notebook ...",
+                    "source": "DEFINE TABLE source ...",
+                    "reference": "DEFINE TABLE reference ...",
+                },
+                "functions": {},
+                "scopes": {},
+            }
+        ]
         with patch(
             "deeper_notebook.database.repository.repo_query",
             AsyncMock(return_value=fake_rows),
@@ -229,6 +238,7 @@ class TestDiscoverTablesShapeParsing:
     @pytest.mark.asyncio
     async def test_older_shape_tb_key(self):
         from tests.integration.conftest import _discover_tables
+
         # Older SurrealDB returned the alias key `tb`.
         fake_rows = [{"tb": {"notebook": "...", "source": "..."}}]
         with patch(
@@ -244,14 +254,17 @@ class TestDiscoverTablesShapeParsing:
         must never be returned — they'd force migration re-run if
         truncated between tests."""
         from tests.integration.conftest import _discover_tables
-        fake_rows = [{
-            "tables": {
-                "notebook": "...",
-                "_sbl_migrations": "...",  # must be skipped
-                "_audit_log": "...",       # future-proofing — any "_*"
-                "source": "...",
-            },
-        }]
+
+        fake_rows = [
+            {
+                "tables": {
+                    "notebook": "...",
+                    "_sbl_migrations": "...",  # must be skipped
+                    "_audit_log": "...",  # future-proofing — any "_*"
+                    "source": "...",
+                },
+            }
+        ]
         with patch(
             "deeper_notebook.database.repository.repo_query",
             AsyncMock(return_value=fake_rows),
@@ -262,6 +275,7 @@ class TestDiscoverTablesShapeParsing:
     @pytest.mark.asyncio
     async def test_empty_db_returns_empty_list(self):
         from tests.integration.conftest import _discover_tables
+
         for empty in ([], [{"tables": {}}], [{}]):
             with patch(
                 "deeper_notebook.database.repository.repo_query",

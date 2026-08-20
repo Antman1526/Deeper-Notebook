@@ -24,8 +24,7 @@ def locked_skillopt_requirement(lock_path: Path) -> str:
     ]
     if pins != ["skillopt==0.1.0"]:
         raise RuntimeError(
-            "desktop lock must contain exactly skillopt==0.1.0; "
-            f"found {pins}"
+            f"desktop lock must contain exactly skillopt==0.1.0; found {pins}"
         )
     return pins[0]
 

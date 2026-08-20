@@ -30,6 +30,7 @@ Public API (all preserved from the old flat module):
   _list_ollama_models(...)   — re-exported for test patching
   _list_local_ggufs(...)     — re-exported for test patching
 """
+
 from __future__ import annotations
 
 import logging
@@ -72,14 +73,14 @@ _TYPE_TO_KIND = {
 
 # Our slot name → upstream DefaultModels field name.
 _SLOT_TO_DEFAULT_FIELD = {
-    "chat":            "default_chat_model",
-    "tools":           "default_tools_model",
-    "transformation":  "default_transformation_model",
-    "large_context":   "large_context_model",
-    "embedding":       "default_embedding_model",
-    "tts":             "default_text_to_speech_model",
-    "stt":             "default_speech_to_text_model",
-    "reasoning":       "default_reasoning_model",   # ONP v0.5 — 8th slot
+    "chat": "default_chat_model",
+    "tools": "default_tools_model",
+    "transformation": "default_transformation_model",
+    "large_context": "large_context_model",
+    "embedding": "default_embedding_model",
+    "tts": "default_text_to_speech_model",
+    "stt": "default_speech_to_text_model",
+    "reasoning": "default_reasoning_model",  # ONP v0.5 — 8th slot
 }
 
 
@@ -97,7 +98,9 @@ def _assign_capability_aware_defaults(client: httpx.Client) -> None:
         r.raise_for_status()
         current = r.json() or {}
     except Exception as exc:
-        log.warning("could not read /api/models/defaults — skipping assignment: %s", exc)
+        log.warning(
+            "could not read /api/models/defaults — skipping assignment: %s", exc
+        )
         return
 
     # 2. Read all registered models, score them.
@@ -130,7 +133,9 @@ def _assign_capability_aware_defaults(client: httpx.Client) -> None:
     for slot, pick in picks.items():
         upstream_field = _SLOT_TO_DEFAULT_FIELD[slot]
         if current.get(upstream_field):
-            log.info("assign %-15s SKIP (manual override: %s)", slot, current[upstream_field])
+            log.info(
+                "assign %-15s SKIP (manual override: %s)", slot, current[upstream_field]
+            )
             continue
         if pick.model is None:
             log.info("assign %-15s MISS (%s)", slot, pick.reason)
@@ -141,7 +146,10 @@ def _assign_capability_aware_defaults(client: httpx.Client) -> None:
         body[upstream_field] = m.get("id") or m.get("name")
         log.info(
             "assign %-15s → %-40s score=%.2f  %s",
-            slot, pick.model.name, pick.score, pick.reason,
+            slot,
+            pick.model.name,
+            pick.score,
+            pick.reason,
         )
 
     if not body:
@@ -152,14 +160,16 @@ def _assign_capability_aware_defaults(client: httpx.Client) -> None:
     try:
         r = client.put("/api/models/defaults", json=body)
         if r.status_code >= 300:
-            log.warning("PUT /api/models/defaults returned %s: %s",
-                        r.status_code, r.text[:200])
+            log.warning(
+                "PUT /api/models/defaults returned %s: %s", r.status_code, r.text[:200]
+            )
     except Exception as exc:
         log.warning("PUT /api/models/defaults failed (non-fatal): %s", exc)
 
 
 def _prune_orphan_legacy_credentials(
-    client: httpx.Client, existing_creds: list[dict],
+    client: httpx.Client,
+    existing_creds: list[dict],
 ) -> None:
     """v0.7.208 — Delete orphan credentials left over from the
     v0.6.x → v0.7.194 rename pair.
@@ -211,21 +221,22 @@ def _prune_orphan_legacy_credentials(
         try:
             r = client.get("/api/models")
             r.raise_for_status()
-            linked = [
-                m for m in r.json()
-                if (m.get("credential") or "") == cred_id
-            ]
+            linked = [m for m in r.json() if (m.get("credential") or "") == cred_id]
         except Exception as exc:
             log.warning(
                 "v0.7.208 orphan-prune: could not fetch /api/models "
-                "(skipping cred=%s): %s", cred_id, exc,
+                "(skipping cred=%s): %s",
+                cred_id,
+                exc,
             )
             continue
         if linked:
             log.info(
                 "v0.7.208 orphan-prune: cred=%s name=%r has %d "
                 "linked models; KEEPING (not an orphan).",
-                cred_id, modern_name, len(linked),
+                cred_id,
+                modern_name,
+                len(linked),
             )
             continue
         # Three constraints met — safe to delete.
@@ -236,18 +247,22 @@ def _prune_orphan_legacy_credentials(
                     "v0.7.208 orphan-prune: deleted orphan cred=%s "
                     "name=%r (0 linked models, legacy "
                     "`%s` row also present)",
-                    cred_id, modern_name, legacy_name,
+                    cred_id,
+                    modern_name,
+                    legacy_name,
                 )
             else:
                 log.warning(
                     "v0.7.208 orphan-prune: DELETE for cred=%s "
                     "returned HTTP %d (leaving in place)",
-                    cred_id, d.status_code,
+                    cred_id,
+                    d.status_code,
                 )
         except Exception as exc:
             log.warning(
                 "v0.7.208 orphan-prune: DELETE for cred=%s failed: %s",
-                cred_id, exc,
+                cred_id,
+                exc,
             )
 
 
@@ -281,7 +296,9 @@ def auto_register(
     try:
         with httpx.Client(base_url=api_base_url, timeout=15.0) as client:
             _do_register(
-                client, cfg, llamacpp_port,
+                client,
+                cfg,
+                llamacpp_port,
                 mlx_base_url=mlx_base_url,
                 mlx_model_ref=mlx_model_ref,
                 whisper_port=whisper_port,
@@ -316,7 +333,9 @@ def _do_register(
             existing_cred_names.add(cred.get("name", "").lower())
             existing_creds_full.append(cred)
     except Exception as exc:
-        log.warning("Could not fetch existing credentials: %s — skipping auto-register", exc)
+        log.warning(
+            "Could not fetch existing credentials: %s — skipping auto-register", exc
+        )
         return
 
     # v0.7.208 — Orphan-credential cleanup. v0.7.194 fixed the legacy-
@@ -355,15 +374,17 @@ def _do_register(
             if _attempt == 4:
                 log.warning(
                     "Could not fetch existing models after retries: %s — "
-                    "skipping auto-register", exc,
+                    "skipping auto-register",
+                    exc,
                 )
                 return
             log.debug(
                 "auto-register: /api/models not ready (attempt %d/5): %s; retrying",
-                _attempt + 1, exc,
+                _attempt + 1,
+                exc,
             )
             _time.sleep(1.0)
-    for m in (_models_json or []):
+    for m in _models_json or []:
         existing_model_keys.add((m.get("name", "").lower(), m.get("type", "").lower()))
 
     registered_any = False
@@ -372,15 +393,20 @@ def _do_register(
     # Discover models here so the call to _list_ollama_models is patchable at
     # the desktop.auto_register namespace (matching existing test patch paths).
     ollama_models = _list_ollama_models()
-    if register_ollama_models(client, ollama_models, existing_cred_names, existing_model_keys):
+    if register_ollama_models(
+        client, ollama_models, existing_cred_names, existing_model_keys
+    ):
         registered_any = True
 
     # --- 3 & 4. llama.cpp / openai_compatible (with or without live server) --
     # Discover GGUFs here so the call is patchable at desktop.auto_register.
     local_ggufs = _list_local_ggufs(cfg.model_dir)
     if register_llamacpp_models(
-        client, existing_cred_names, existing_model_keys,
-        model_dir=cfg.model_dir, llamacpp_port=llamacpp_port,
+        client,
+        existing_cred_names,
+        existing_model_keys,
+        model_dir=cfg.model_dir,
+        llamacpp_port=llamacpp_port,
         local_ggufs=local_ggufs,
     ):
         registered_any = True
@@ -437,9 +463,12 @@ def _do_register(
     # --- v0.4 memory layer --------------------------------------------------
     if memory_port is not None:
         from desktop.auto_register.memory import register_memory_credential
+
         # v0.6.22 — thread the existing-names set through (same fix as voice.py)
         register_memory_credential(
-            client, memory_port=memory_port, cfg=cfg,
+            client,
+            memory_port=memory_port,
+            cfg=cfg,
             existing_cred_names=existing_cred_names,
         )
 

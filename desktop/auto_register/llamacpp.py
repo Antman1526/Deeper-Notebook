@@ -1,4 +1,5 @@
 """llama.cpp / openai_compatible model registration."""
+
 from __future__ import annotations
 
 import logging
@@ -63,9 +64,7 @@ def register_llamacpp_models(
         legacy_name = "Local GGUF (llama.cpp)"
         modern_name = "llama.cpp (local)"
         cred_name = (
-            legacy_name
-            if legacy_name.lower() in existing_cred_names
-            else modern_name
+            legacy_name if legacy_name.lower() in existing_cred_names else modern_name
         )
         cred_id = _ensure_credential(
             client=client,
@@ -118,7 +117,9 @@ def register_llamacpp_models(
                 is_embedding = _is_embedding_gguf(model_name)
                 model_type = "embedding" if is_embedding else "language"
                 # Route embeddings to the embed credential when known.
-                target_cred = embed_cred_id if (is_embedding and embed_cred_id) else cred_id
+                target_cred = (
+                    embed_cred_id if (is_embedding and embed_cred_id) else cred_id
+                )
                 if _ensure_model(
                     client=client,
                     existing_keys=existing_model_keys,

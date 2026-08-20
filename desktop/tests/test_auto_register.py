@@ -1,4 +1,5 @@
 """Tests for desktop.auto_register — model discovery and idempotent registration."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,7 +25,9 @@ def _make_ollama_response(model_names: list[str]) -> httpx.Response:
     import json
 
     body = json.dumps({"models": [{"name": n} for n in model_names]}).encode()
-    return httpx.Response(200, content=body, headers={"content-type": "application/json"})
+    return httpx.Response(
+        200, content=body, headers={"content-type": "application/json"}
+    )
 
 
 def test_list_ollama_models_returns_names_when_reachable(monkeypatch):
@@ -120,16 +123,18 @@ def _mock_client_responses(
     #   GET /api/models          — read all to score
     registered_model = {"id": "model:1", "name": "llama3.1:latest", "type": "language"}
     client.get.side_effect = [
-        make_resp(200, credentials_list),    # GET /credentials (existence check)
-        make_resp(200, models_list),         # GET /models      (existence check)
-        make_resp(200, {}),                  # GET /api/models/defaults (no manual overrides)
+        make_resp(200, credentials_list),  # GET /credentials (existence check)
+        make_resp(200, models_list),  # GET /models      (existence check)
+        make_resp(200, {}),  # GET /api/models/defaults (no manual overrides)
         make_resp(200, [registered_model]),  # GET /api/models  (scoring pool)
     ]
 
     # POST /credentials, POST /models (auto-assign endpoint no longer called)
     client.post.side_effect = [
-        make_resp(201, {"id": post_credential_id, "name": "Ollama (local)"}),  # POST /credentials
-        make_resp(200, registered_model),                                       # POST /models
+        make_resp(
+            201, {"id": post_credential_id, "name": "Ollama (local)"}
+        ),  # POST /credentials
+        make_resp(200, registered_model),  # POST /models
     ]
     # v0.5 — PUT /api/models/defaults replaces the old auto-assign POST
     client.put.side_effect = [
@@ -180,9 +185,13 @@ def test_auto_register_is_idempotent(tmp_path):
         client2.__exit__ = MagicMock(return_value=False)
         # Both credential and model already exist — nothing to create.
         existing_cred = {"id": "credential:1", "name": "Ollama (local)"}
-        existing_model = {"id": "model:1", "name": "llama3.1:latest", "type": "language"}
+        existing_model = {
+            "id": "model:1",
+            "name": "llama3.1:latest",
+            "type": "language",
+        }
         client2.get.side_effect = [
-            make_resp2(200, [existing_cred]),   # GET /credentials
+            make_resp2(200, [existing_cred]),  # GET /credentials
             make_resp2(200, [existing_model]),  # GET /models
         ]
         mock_client_cls.return_value = client2
@@ -217,20 +226,25 @@ def test_auto_register_retries_models_fetch_then_registers(tmp_path, monkeypatch
     client.__exit__ = MagicMock(return_value=False)
     registered_model = {"id": "model:1", "name": "llama3.1:latest", "type": "language"}
     client.get.side_effect = [
-        make_resp(200, []),                  # GET /credentials (existence)
-        httpx.ConnectError("transient"),     # GET /api/models attempt 1 → fails
-        make_resp(200, []),                  # GET /api/models attempt 2 → ok (empty)
-        make_resp(200, {}),                  # GET /api/models/defaults
+        make_resp(200, []),  # GET /credentials (existence)
+        httpx.ConnectError("transient"),  # GET /api/models attempt 1 → fails
+        make_resp(200, []),  # GET /api/models attempt 2 → ok (empty)
+        make_resp(200, {}),  # GET /api/models/defaults
         make_resp(200, [registered_model]),  # GET /api/models (scoring pool)
     ]
     client.post.side_effect = [
-        make_resp(201, {"id": "credential:1", "name": "Ollama (local)"}),  # POST /credentials
-        make_resp(200, registered_model),                                   # POST /models
+        make_resp(
+            201, {"id": "credential:1", "name": "Ollama (local)"}
+        ),  # POST /credentials
+        make_resp(200, registered_model),  # POST /models
     ]
     client.put.side_effect = [make_resp(200, {})]
 
     with (
-        patch("desktop.auto_register._list_ollama_models", return_value=["llama3.1:latest"]),
+        patch(
+            "desktop.auto_register._list_ollama_models",
+            return_value=["llama3.1:latest"],
+        ),
         patch("desktop.auto_register._list_local_ggufs", return_value=[]),
         patch("desktop.auto_register.register_osaurus_models", return_value=False),
         patch("httpx.Client", return_value=client),
@@ -254,29 +268,43 @@ def test_register_voice_models_creates_credentials_and_models(monkeypatch):
     from desktop.config import Config
 
     created = []
+
     class FakeClient:
         def post(self, path, json=None):
             created.append((path, json))
+
             class R:
                 status_code = 201
                 text = ""
+
                 def json(self):
                     return {"id": f"id-{json.get('name', '')}" if json else "id"}
+
             return R()
+
         def get(self, path):
             class R:
                 status_code = 200
                 text = ""
-                def raise_for_status(self): pass
+
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     return []
+
             return R()
 
-    cfg = Config(model_dir=Path("/tmp"), provider="none", default_model="",
-                 surreal_user="root", surreal_password="x" * 24)
-    register_voice_models(FakeClient(),
-                          whisper_port=1234, piper_port=2345, embed_port=3456,
-                          cfg=cfg)
+    cfg = Config(
+        model_dir=Path("/tmp"),
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="x" * 24,
+    )
+    register_voice_models(
+        FakeClient(), whisper_port=1234, piper_port=2345, embed_port=3456, cfg=cfg
+    )
     paths = [p for p, _ in created]
     assert "/api/credentials" in paths
     payloads = [j for _, j in created if j is not None]
@@ -307,17 +335,26 @@ def test_register_voice_models_is_idempotent_when_creds_already_exist():
     class FakeClient:
         def post(self, path, json=None):
             posted.append((path, json))
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {"id": "id-x"}
+
+                def json(self):
+                    return {"id": "id-x"}
+
             return R()
+
         def get(self, path):
             gotten.append(path)
+
             class R:
                 status_code = 200
                 text = ""
-                def raise_for_status(self): pass
+
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     # Simulate existing creds (so _ensure_credential's
                     # "name already exists" GET path returns the real ID)
@@ -326,12 +363,20 @@ def test_register_voice_models_is_idempotent_when_creds_already_exist():
                         {"name": "Piper (local)", "id": "cred:2"},
                         {"name": "Local Embeddings (llama.cpp)", "id": "cred:3"},
                     ]
+
             return R()
 
-    cfg = Config(model_dir=Path("/tmp"), provider="none", default_model="",
-                 surreal_user="root", surreal_password="x" * 24)
+    cfg = Config(
+        model_dir=Path("/tmp"),
+        provider="none",
+        default_model="",
+        surreal_user="root",
+        surreal_password="x" * 24,
+    )
     existing_cred_names = {
-        "whisper (local)", "piper (local)", "local embeddings (llama.cpp)"
+        "whisper (local)",
+        "piper (local)",
+        "local embeddings (llama.cpp)",
     }
     existing_model_keys = {
         ("whisper-base-en", "speech_to_text"),
@@ -341,7 +386,10 @@ def test_register_voice_models_is_idempotent_when_creds_already_exist():
     }
     register_voice_models(
         FakeClient(),
-        whisper_port=1234, piper_port=2345, embed_port=3456, cfg=cfg,
+        whisper_port=1234,
+        piper_port=2345,
+        embed_port=3456,
+        cfg=cfg,
         existing_cred_names=existing_cred_names,
         existing_model_keys=existing_model_keys,
     )
@@ -364,23 +412,34 @@ def test_register_memory_credential_is_idempotent_when_cred_exists():
     class FakeClient:
         def post(self, path, json=None):
             posted.append((path, json))
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {"id": "id-x"}
+
+                def json(self):
+                    return {"id": "id-x"}
+
             return R()
+
         def get(self, path):
             class R:
                 status_code = 200
                 text = ""
-                def raise_for_status(self): pass
+
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     return [{"name": "Memory (local)", "id": "cred:42"}]
+
             return R()
 
     existing = {"memory (local)"}
     register_memory_credential(
-        FakeClient(), memory_port=8767, cfg=None,
+        FakeClient(),
+        memory_port=8767,
+        cfg=None,
         existing_cred_names=existing,
     )
     # No POST: credential already exists, the existing-set tells us so.
@@ -400,7 +459,10 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
         def get(self, path):
             class R:
                 status_code = 200
-                def raise_for_status(self): pass
+
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/episode-profiles":
                         return []  # no existing profile
@@ -421,15 +483,20 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
                             {"name": "nomic-embed-text-v1.5", "id": "model:nomic"},
                         ]
                     return []
+
             return R()
 
         def post(self, path, json=None):
             if path == "/api/episode-profiles":
                 posted_episode_profiles.append(json)
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {}
+
+                def json(self):
+                    return {}
+
             return R()
 
     register_default_episode_profile(FakeClient())
@@ -437,6 +504,7 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
     # POSTed when no existing profiles match. All must reference the
     # chat model via outline_llm/transcript_llm + a valid speaker profile.
     from desktop.auto_register.episode_profile import _PRESETS
+
     assert len(posted_episode_profiles) == len(_PRESETS), (
         f"expected {len(_PRESETS)} preset POSTs, got {len(posted_episode_profiles)}"
     )
@@ -461,7 +529,10 @@ def test_episode_profile_picks_qwen_chat_model_over_voice_models():
             "default_length_minutes is not in the backend schema"
         )
         assert profile["speaker_config"] in {
-            "Local Duo", "Local Solo", "Local Debate", "Local Interview"
+            "Local Duo",
+            "Local Solo",
+            "Local Debate",
+            "Local Interview",
         }, f"speaker_config {profile['speaker_config']!r} not in expected set"
         # Each preset must carry its purpose-built briefing + segments.
         assert profile["default_briefing"], (
@@ -500,7 +571,9 @@ def test_episode_profile_skips_bge_embedding_in_chat_pick():
     class FakeClient:
         def get(self, path):
             class R:
-                def raise_for_status(self): pass
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/episode-profiles":
                         return []
@@ -517,13 +590,19 @@ def test_episode_profile_skips_bge_embedding_in_chat_pick():
                             {"name": "piper-ryan-en", "id": "model:ryan"},
                         ]
                     return []
+
             return R()
+
         def post(self, path, json=None):
             if path == "/api/episode-profiles":
                 posted.append(json)
+
             class R:
                 status_code = 201
-                def json(self): return {}
+
+                def json(self):
+                    return {}
+
             return R()
 
     register_default_episode_profile(FakeClient())
@@ -547,7 +626,9 @@ def test_speaker_profile_registers_local_piper_library():
     class FakeClient:
         def get(self, path):
             class R:
-                def raise_for_status(self): pass
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/speaker-profiles":
                         return []  # nothing exists yet
@@ -558,14 +639,20 @@ def test_speaker_profile_registers_local_piper_library():
                             {"name": "Qwen-7B-chat", "id": "model:q"},
                         ]
                     return []
+
             return R()
+
         def post(self, path, json=None):
             if path == "/api/speaker-profiles":
                 posted.append(json)
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {}
+
+                def json(self):
+                    return {}
+
             return R()
 
     register_default_speaker_profile(FakeClient())
@@ -574,8 +661,7 @@ def test_speaker_profile_registers_local_piper_library():
     expected = _build_presets("model:amy", "model:ryan")
     assert len(posted) == len(expected)
     names = {p["name"] for p in posted}
-    assert names == {"Local Duo", "Local Solo", "Local Debate",
-                     "Local Interview"}
+    assert names == {"Local Duo", "Local Solo", "Local Debate", "Local Interview"}
 
     # All presets use the piper model IDs (profile-level + per-speaker)
     for profile in posted:
@@ -600,7 +686,9 @@ def test_speaker_profile_registration_is_idempotent():
     class FakeClient:
         def get(self, path):
             class R:
-                def raise_for_status(self): pass
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/speaker-profiles":
                         return [{"name": n} for n in existing]
@@ -610,14 +698,20 @@ def test_speaker_profile_registration_is_idempotent():
                             {"name": "piper-ryan-en", "id": "model:ryan"},
                         ]
                     return []
+
             return R()
+
         def post(self, path, json=None):
             if path == "/api/speaker-profiles":
                 posted.append(json)
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {}
+
+                def json(self):
+                    return {}
+
             return R()
 
     register_default_speaker_profile(FakeClient())
@@ -640,7 +734,9 @@ def test_speaker_profile_skips_when_piper_voices_missing():
     class FakeClient:
         def get(self, path):
             class R:
-                def raise_for_status(self): pass
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/speaker-profiles":
                         return []
@@ -649,12 +745,18 @@ def test_speaker_profile_skips_when_piper_voices_missing():
                         # mid-flight.
                         return [{"name": "Qwen-7B-chat", "id": "model:q"}]
                     return []
+
             return R()
+
         def post(self, path, json=None):
             posted.append(json)
+
             class R:
                 status_code = 201
-                def json(self): return {}
+
+                def json(self):
+                    return {}
+
             return R()
 
     register_default_speaker_profile(FakeClient())
@@ -678,13 +780,19 @@ def test_episode_profile_library_is_idempotent():
     class FakeClient:
         def get(self, path):
             class R:
-                def raise_for_status(self): pass
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/episode-profiles":
                         return [{"name": n} for n in existing_names]
                     if path == "/api/speaker-profiles":
-                        return [{"name": "Local Duo"}, {"name": "Local Debate"},
-                                {"name": "Local Interview"}, {"name": "Local Solo"}]
+                        return [
+                            {"name": "Local Duo"},
+                            {"name": "Local Debate"},
+                            {"name": "Local Interview"},
+                            {"name": "Local Solo"},
+                        ]
                     if path == "/api/models":
                         return [
                             {"name": "Qwen-7B-chat", "id": "model:q"},
@@ -692,14 +800,20 @@ def test_episode_profile_library_is_idempotent():
                             {"name": "piper-ryan-en", "id": "model:ryan"},
                         ]
                     return []
+
             return R()
+
         def post(self, path, json=None):
             if path == "/api/episode-profiles":
                 posted.append(json)
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {}
+
+                def json(self):
+                    return {}
+
             return R()
 
     register_default_episode_profile(FakeClient())
@@ -726,7 +840,9 @@ def test_episode_profile_preserves_legacy_default_without_duplicate():
     class FakeClient:
         def get(self, path):
             class R:
-                def raise_for_status(self): pass
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/episode-profiles":
                         return [{"name": "Open Notebook Plus Local"}]
@@ -740,6 +856,7 @@ def test_episode_profile_preserves_legacy_default_without_duplicate():
                     if path == "/api/models":
                         return [{"name": "Qwen-7B-chat", "id": "model:q"}]
                     return []
+
             return R()
 
         def post(self, path, json=None):
@@ -750,7 +867,8 @@ def test_episode_profile_preserves_legacy_default_without_duplicate():
                 status_code = 201
                 text = ""
 
-                def json(self): return {}
+                def json(self):
+                    return {}
 
             return R()
 
@@ -773,15 +891,25 @@ def test_ensure_credential_does_not_post_when_existing_set_lies():
         def get(self, path):
             class R:
                 status_code = 200
-                def raise_for_status(self): pass
-                def json(self): return [{"name": "Other Cred", "id": "cred:other"}]
+
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return [{"name": "Other Cred", "id": "cred:other"}]
+
             return R()
+
         def post(self, path, json=None):
             posted.append((path, json))
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {"id": "id-new"}
+
+                def json(self):
+                    return {"id": "id-new"}
+
             return R()
 
     existing = {"mismatch cred"}  # claims to exist
@@ -808,15 +936,24 @@ def test_ensure_credential_returns_existing_id_on_match():
         def get(self, path):
             class R:
                 status_code = 200
-                def raise_for_status(self): pass
+
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     return [{"name": "Whisper (local)", "id": "cred:whisper-1"}]
+
             return R()
+
         def post(self, path, json=None):
             posted.append((path, json))
+
             class R:
                 status_code = 201
-                def json(self): return {"id": "would-be-duplicate"}
+
+                def json(self):
+                    return {"id": "would-be-duplicate"}
+
             return R()
 
     result = _ensure_credential(
@@ -847,7 +984,9 @@ def test_episode_profile_skips_when_no_speaker_profiles_exist():
     class FakeClient:
         def get(self, path):
             class R:
-                def raise_for_status(self): pass
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/episode-profiles":
                         return []
@@ -856,13 +995,19 @@ def test_episode_profile_skips_when_no_speaker_profiles_exist():
                     if path == "/api/models":
                         return [{"name": "Qwen-7B-chat", "id": "model:q"}]
                     return []
+
             return R()
+
         def post(self, path, json=None):
             posted.append({"path": path, "json": json})
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {}
+
+                def json(self):
+                    return {}
+
             return R()
 
     register_default_episode_profile(FakeClient())
@@ -896,7 +1041,9 @@ def test_episode_profile_skips_when_only_migration_seeded_speakers_exist():
     class FakeClient:
         def get(self, path):
             class R:
-                def raise_for_status(self): pass
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/episode-profiles":
                         return []
@@ -910,14 +1057,20 @@ def test_episode_profile_skips_when_only_migration_seeded_speakers_exist():
                     if path == "/api/models":
                         return [{"name": "Qwen", "id": "model:q"}]
                     return []
+
             return R()
+
         def post(self, path, json=None):
             if path == "/api/episode-profiles":
                 posted.append(json)
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {}
+
+                def json(self):
+                    return {}
+
             return R()
 
     register_default_episode_profile(FakeClient())
@@ -950,7 +1103,9 @@ def test_episode_profile_falls_back_to_local_duo_when_preferred_missing():
     class FakeClient:
         def get(self, path):
             class R:
-                def raise_for_status(self): pass
+                def raise_for_status(self):
+                    pass
+
                 def json(self):
                     if path == "/api/episode-profiles":
                         return []
@@ -964,14 +1119,20 @@ def test_episode_profile_falls_back_to_local_duo_when_preferred_missing():
                             {"name": "piper-ryan-en", "id": "model:ryan"},
                         ]
                     return []
+
             return R()
+
         def post(self, path, json=None):
             if path == "/api/episode-profiles":
                 posted.append(json)
+
             class R:
                 status_code = 201
                 text = ""
-                def json(self): return {}
+
+                def json(self):
+                    return {}
+
             return R()
 
     register_default_episode_profile(FakeClient())

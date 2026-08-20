@@ -21,11 +21,7 @@ builder = ContextBuilder(notebook_id="notebook:123")
 context = await builder.build()
 
 # Single source with insights
-builder = ContextBuilder(
-    source_id="source:456",
-    include_insights=True,
-    max_tokens=2000
-)
+builder = ContextBuilder(source_id="source:456", include_insights=True, max_tokens=2000)
 context = await builder.build()
 ```
 
@@ -35,26 +31,18 @@ context = await builder.build()
 from open_notebook.utils.context_builder import (
     build_notebook_context,
     build_source_context,
-    build_mixed_context
+    build_mixed_context,
 )
 
 # Build notebook context
-context = await build_notebook_context(
-    notebook_id="notebook:123",
-    max_tokens=5000
-)
+context = await build_notebook_context(notebook_id="notebook:123", max_tokens=5000)
 
 # Build single source context
-context = await build_source_context(
-    source_id="source:456",
-    include_insights=True
-)
+context = await build_source_context(source_id="source:456", include_insights=True)
 
 # Build mixed context
 context = await build_mixed_context(
-    source_ids=["source:1", "source:2"],
-    note_ids=["note:1", "note:2"],
-    max_tokens=3000
+    source_ids=["source:1", "source:2"], note_ids=["note:1", "note:2"], max_tokens=3000
 )
 ```
 
@@ -67,26 +55,23 @@ from open_notebook.utils.context_builder import ContextConfig
 config = ContextConfig(
     sources={
         "source:doc1": "insights",
-        "source:doc2": "full content", 
-        "source:doc3": "not in"  # Exclude
+        "source:doc2": "full content",
+        "source:doc3": "not in",  # Exclude
     },
     notes={
         "note:summary": "full content",
-        "note:draft": "not in"  # Exclude
+        "note:draft": "not in",  # Exclude
     },
     include_insights=True,
     max_tokens=3000,
     priority_weights={
         "source": 120,  # Higher priority
-        "note": 80,     # Medium priority  
-        "insight": 100  # High priority
-    }
+        "note": 80,  # Medium priority
+        "insight": 100,  # High priority
+    },
 )
 
-builder = ContextBuilder(
-    notebook_id="notebook:project",
-    context_config=config
-)
+builder = ContextBuilder(notebook_id="notebook:project", context_config=config)
 context = await builder.build()
 ```
 
@@ -102,7 +87,7 @@ item = ContextItem(
     id="source:important",
     type="source",
     content={"title": "Key Document", "summary": "..."},
-    priority=150  # Very high priority
+    priority=150,  # Very high priority
 )
 builder.add_item(item)
 
@@ -123,15 +108,14 @@ builder = ContextBuilder(
     notebook_id="notebook:123",
     include_insights=True,
     max_tokens=2000,
-    
     # Custom parameters for future extensions
     user_id="user:456",
     custom_filter="advanced",
-    experimental_feature=True
+    experimental_feature=True,
 )
 
 # Access custom parameters
-user_id = builder.params.get('user_id')
+user_id = builder.params.get("user_id")
 ```
 
 ## Output Format
@@ -140,22 +124,18 @@ The ContextBuilder returns a structured response:
 
 ```python
 {
-    "sources": [...],           # List of source contexts
-    "notes": [...],             # List of note contexts  
-    "insights": [...],          # List of insight contexts
-    "total_tokens": 1234,       # Total token count
-    "total_items": 10,          # Total number of items
+    "sources": [...],  # List of source contexts
+    "notes": [...],  # List of note contexts
+    "insights": [...],  # List of insight contexts
+    "total_tokens": 1234,  # Total token count
+    "total_items": 10,  # Total number of items
     "notebook_id": "notebook:123",  # If provided
     "metadata": {
         "source_count": 5,
         "note_count": 3,
         "insight_count": 2,
-        "config": {
-            "include_insights": true,
-            "include_notes": true,
-            "max_tokens": 2000
-        }
-    }
+        "config": {"include_insights": true, "include_notes": true, "max_tokens": 2000},
+    },
 }
 ```
 

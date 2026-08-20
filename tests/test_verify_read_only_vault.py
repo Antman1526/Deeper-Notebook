@@ -92,9 +92,20 @@ def _api_responses(root: Path):
     return {
         ("GET", ""): [],
         ("POST", ""): lambda _: next(mounts),
-        ("GET", "/parent"): _mount_detail(root, "parent", "2nd Brains", "mixed", None, False),
-        ("GET", "/obsidian"): _mount_detail(root / "Obsidian Brain", "obsidian", "Obsidian Brain", "obsidian", "parent", True),
-        ("GET", "/logseq"): _mount_detail(root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True),
+        ("GET", "/parent"): _mount_detail(
+            root, "parent", "2nd Brains", "mixed", None, False
+        ),
+        ("GET", "/obsidian"): _mount_detail(
+            root / "Obsidian Brain",
+            "obsidian",
+            "Obsidian Brain",
+            "obsidian",
+            "parent",
+            True,
+        ),
+        ("GET", "/logseq"): _mount_detail(
+            root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True
+        ),
         ("POST", "/parent/trust/import"): {"changed": 0, "unchanged": 21},
         ("POST", "/obsidian/scan"): {"parsed": 0, "unchanged": 12},
         ("POST", "/logseq/scan"): {"parsed": 0, "unchanged": 9},
@@ -104,7 +115,14 @@ def _api_responses(root: Path):
     }
 
 
-def _mount_detail(root: Path, mount_id: str, name: str, format_mode: str, parent_id: str | None, watch_enabled: bool):
+def _mount_detail(
+    root: Path,
+    mount_id: str,
+    name: str,
+    format_mode: str,
+    parent_id: str | None,
+    watch_enabled: bool,
+):
     return {
         "id": mount_id,
         "name": name,
@@ -115,7 +133,9 @@ def _mount_detail(root: Path, mount_id: str, name: str, format_mode: str, parent
     }
 
 
-def test_check_only_never_calls_api_and_exports_only_aggregate_source_inventory(tmp_path, monkeypatch, capsys):
+def test_check_only_never_calls_api_and_exports_only_aggregate_source_inventory(
+    tmp_path, monkeypatch, capsys
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -123,7 +143,20 @@ def test_check_only_never_calls_api_and_exports_only_aggregate_source_inventory(
     calls = []
     monkeypatch.setattr(verifier, "_request_json", lambda *args: calls.append(args))
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 0
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(root),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 0
+    )
 
     report = json.loads(output.read_text())
     assert calls == []
@@ -143,7 +176,20 @@ def test_check_only_never_calls_api_and_exports_only_aggregate_source_inventory(
     sensitive_file.write_text("sensitive fixture")
     sensitive_hash = verifier._hash_file(sensitive_file)
     output.unlink()
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 0
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(root),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 0
+    )
     captured = capsys.readouterr()
     rendered = output.read_text() + captured.out + captured.err
     assert sensitive_relative_name not in rendered
@@ -174,8 +220,12 @@ def test_manifest_counts_supports_legacy_records_only_when_unambiguous(tmp_path)
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
-    manifest = root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
-    manifest.write_text(json.dumps({"records": [{"id": "source-1", "evidenceClass": "source"}]}))
+    manifest = (
+        root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    )
+    manifest.write_text(
+        json.dumps({"records": [{"id": "source-1", "evidenceClass": "source"}]})
+    )
 
     counts = verifier._manifest_counts(root, verifier._capture_root_identity(root))
 
@@ -187,14 +237,21 @@ def test_manifest_counts_supports_legacy_records_only_when_unambiguous(tmp_path)
     [
         {"documents": "not-a-list"},
         {"documents": [{"id": "source-1", "evidenceClass": "source"}], "records": []},
-        {"documents": [{"id": "source-1", "evidenceClass": "source"}, {"id": "source-1", "evidenceClass": "source"}]},
+        {
+            "documents": [
+                {"id": "source-1", "evidenceClass": "source"},
+                {"id": "source-1", "evidenceClass": "source"},
+            ]
+        },
     ],
 )
 def test_manifest_counts_rejects_malformed_or_ambiguous_manifest(tmp_path, payload):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
-    manifest = root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    manifest = (
+        root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    )
     manifest.write_text(json.dumps(payload))
 
     with pytest.raises(verifier.VerificationError):
@@ -203,24 +260,32 @@ def test_manifest_counts_rejects_malformed_or_ambiguous_manifest(tmp_path, paylo
 
 @pytest.mark.parametrize("records_key", ["documents", "records"])
 @pytest.mark.parametrize("evidence_class", [None, "", "   "])
-def test_manifest_counts_rejects_missing_or_blank_evidence_class(tmp_path, records_key, evidence_class):
+def test_manifest_counts_rejects_missing_or_blank_evidence_class(
+    tmp_path, records_key, evidence_class
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
     record = {"id": "source-1"}
     if evidence_class is not None:
         record["evidenceClass"] = evidence_class
-    manifest = root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    manifest = (
+        root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    )
     manifest.write_text(json.dumps({records_key: [record]}))
 
-    with pytest.raises(verifier.VerificationError, match="^connector manifest has invalid records$") as exc_info:
+    with pytest.raises(
+        verifier.VerificationError, match="^connector manifest has invalid records$"
+    ) as exc_info:
         verifier._manifest_counts(root, verifier._capture_root_identity(root))
 
     assert str(root) not in str(exc_info.value)
     assert "source-1" not in str(exc_info.value)
 
 
-def test_controlled_execution_proves_two_unchanged_scans_and_trust(tmp_path, monkeypatch):
+def test_controlled_execution_proves_two_unchanged_scans_and_trust(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -234,7 +299,12 @@ def test_controlled_execution_proves_two_unchanged_scans_and_trust(tmp_path, mon
         return result(payload) if callable(result) else result
 
     monkeypatch.setattr(verifier, "_request_json", request)
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 0
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 0
+    )
 
     report = json.loads(output.read_text())
     assert report["source_files_changed"] == 0
@@ -243,7 +313,13 @@ def test_controlled_execution_proves_two_unchanged_scans_and_trust(tmp_path, mon
     assert report["trust_records"] == 21
     assert report["synthesis_records"] == 9
     assert report["synthesis_with_derived_from"] == 9
-    assert ("POST", "/parent/trust/import", {"manifest_relative_path": "brain-engine/generated/deepercode-connector/manifest.json"}) in requests
+    assert (
+        "POST",
+        "/parent/trust/import",
+        {
+            "manifest_relative_path": "brain-engine/generated/deepercode-connector/manifest.json"
+        },
+    ) in requests
     assert sum(path.endswith("/scan") for _, path, _ in requests) == 4
     assert ("POST", "/parent/scan", None) not in requests
     assert ("POST", "/obsidian/scan", None) in requests
@@ -251,7 +327,9 @@ def test_controlled_execution_proves_two_unchanged_scans_and_trust(tmp_path, mon
     assert str(root) not in output.read_text()
 
 
-def test_reconciliation_mismatch_is_nonzero_and_report_stays_sanitized(tmp_path, monkeypatch):
+def test_reconciliation_mismatch_is_nonzero_and_report_stays_sanitized(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -268,7 +346,12 @@ def test_reconciliation_mismatch_is_nonzero_and_report_stays_sanitized(tmp_path,
         ),
     )
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 1
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 1
+    )
     report = json.loads(output.read_text())
     assert "trust_count_mismatch" in report["failures"]
     assert str(root) not in output.read_text()
@@ -287,7 +370,20 @@ def test_git_status_lock_is_recorded_without_repairing_it(tmp_path, monkeypatch)
     assert snapshot.git_status_available is False
     assert lock.read_text() == "pre-existing lock"
     output = tmp_path / "report.json"
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 0
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(root),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 0
+    )
     report = json.loads(output.read_text())
     assert report["git_status"] == "git_status_unavailable"
     assert report["git_status_available"] is False
@@ -296,7 +392,20 @@ def test_git_status_lock_is_recorded_without_repairing_it(tmp_path, monkeypatch)
 def test_rejects_root_before_api_or_output(tmp_path):
     verifier = _load_verifier()
     output = tmp_path / "report.json"
-    assert verifier.main(["--root", "/", "--api", "http://api", "--output", str(output), "--check-only"]) == 2
+    assert (
+        verifier.main(
+            [
+                "--root",
+                "/",
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 2
+    )
     assert not output.exists()
 
 
@@ -306,18 +415,46 @@ def test_rejects_home_before_api_or_output(tmp_path, monkeypatch):
     home.mkdir()
     output = tmp_path / "report.json"
     monkeypatch.setattr(verifier.Path, "home", classmethod(lambda cls: home))
-    assert verifier.main(["--root", str(home), "--api", "http://api", "--output", str(output), "--check-only"]) == 2
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(home),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 2
+    )
     assert not output.exists()
 
 
 @pytest.mark.parametrize("output_name", [".", "report.json"])
-def test_rejects_output_inside_or_equal_to_source_before_check_only_write(tmp_path, output_name):
+def test_rejects_output_inside_or_equal_to_source_before_check_only_write(
+    tmp_path, output_name
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
     output = root if output_name == "." else root / output_name
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 2
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(root),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 2
+    )
     assert not (root / "report.json").exists()
 
 
@@ -329,7 +466,20 @@ def test_rejects_output_symlink_resolved_inside_source_before_write(tmp_path):
     redirect.symlink_to(root, target_is_directory=True)
     output = redirect / "report.json"
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 2
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(root),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 2
+    )
     assert not (root / "report.json").exists()
 
 
@@ -351,9 +501,11 @@ def test_non_git_inventory_excludes_git_and_all_symlinks(tmp_path, monkeypatch):
     monkeypatch.setattr(
         verifier.subprocess,
         "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, b"", b"")
-        if command[3:5] == ["ls-files", "--cached"]
-        else real_run(command, **kwargs),
+        lambda command, **kwargs: (
+            subprocess.CompletedProcess(command, 1, b"", b"")
+            if command[3:5] == ["ls-files", "--cached"]
+            else real_run(command, **kwargs)
+        ),
     )
 
     files = [path.as_posix() for path in verifier._relative_files(root)]
@@ -363,7 +515,9 @@ def test_non_git_inventory_excludes_git_and_all_symlinks(tmp_path, monkeypatch):
     assert "linked-dir/escaped.md" not in files
 
 
-def test_git_inventory_includes_ignored_regular_files_and_detects_their_mutation(tmp_path):
+def test_git_inventory_includes_ignored_regular_files_and_detects_their_mutation(
+    tmp_path,
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -381,7 +535,9 @@ def test_git_inventory_includes_ignored_regular_files_and_detects_their_mutation
     assert verifier._snapshot_differences(before, after)[0] is True
 
 
-def test_pre_request_source_mismatch_aborts_before_first_api_call(tmp_path, monkeypatch):
+def test_pre_request_source_mismatch_aborts_before_first_api_call(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -404,7 +560,12 @@ def test_pre_request_source_mismatch_aborts_before_first_api_call(tmp_path, monk
     monkeypatch.setattr(verifier, "_snapshot", snapshot_before_first_request)
     monkeypatch.setattr(verifier, "_request_json", lambda *args: calls.append(args))
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 1
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 1
+    )
     assert calls == []
     report = json.loads(output.read_text())
     assert "source_hash_mismatch" in report["failures"]
@@ -412,7 +573,9 @@ def test_pre_request_source_mismatch_aborts_before_first_api_call(tmp_path, monk
 
 
 @pytest.mark.parametrize("kind", ["missing", "file", "home_symlink"])
-def test_rejects_malformed_roots_without_path_disclosure(tmp_path, monkeypatch, capsys, kind):
+def test_rejects_malformed_roots_without_path_disclosure(
+    tmp_path, monkeypatch, capsys, kind
+):
     verifier = _load_verifier()
     home = tmp_path / "synthetic-home"
     home.mkdir()
@@ -424,12 +587,27 @@ def test_rejects_malformed_roots_without_path_disclosure(tmp_path, monkeypatch, 
     monkeypatch.setattr(verifier.Path, "home", classmethod(lambda cls: home))
     output = tmp_path / "report.json"
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 2
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(root),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 2
+    )
     assert str(root) not in capsys.readouterr().err
     assert not output.exists()
 
 
-def test_scan_stops_on_first_source_or_git_mutation_and_reports_mismatch(tmp_path, monkeypatch):
+def test_scan_stops_on_first_source_or_git_mutation_and_reports_mismatch(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -446,7 +624,12 @@ def test_scan_stops_on_first_source_or_git_mutation_and_reports_mismatch(tmp_pat
         return result(payload) if callable(result) else result
 
     monkeypatch.setattr(verifier, "_request_json", request)
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 1
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 1
+    )
     report = json.loads(output.read_text())
     assert "source_hash_mismatch" in report["failures"]
     assert report["git_status_changed"] is False
@@ -455,7 +638,9 @@ def test_scan_stops_on_first_source_or_git_mutation_and_reports_mismatch(tmp_pat
     assert str(root) not in output.read_text()
 
 
-def test_scan_stops_on_first_git_status_mutation_and_leaves_lock_untouched(tmp_path, monkeypatch):
+def test_scan_stops_on_first_git_status_mutation_and_leaves_lock_untouched(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -474,7 +659,12 @@ def test_scan_stops_on_first_git_status_mutation_and_leaves_lock_untouched(tmp_p
         return result(payload) if callable(result) else result
 
     monkeypatch.setattr(verifier, "_request_json", request)
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 1
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 1
+    )
     report = json.loads(output.read_text())
     assert report["source_files_changed"] == 0
     assert report["git_status_changed"] is True
@@ -486,26 +676,39 @@ def test_scan_stops_on_first_git_status_mutation_and_leaves_lock_untouched(tmp_p
     assert lock.read_text() == "external writer lock"
 
 
-def test_trust_derived_from_arrays_must_match_manifest_by_record_id(tmp_path, monkeypatch):
+def test_trust_derived_from_arrays_must_match_manifest_by_record_id(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
     output = tmp_path / "report.json"
     responses = _api_responses(root)
-    responses[("GET", "/parent/trust")][12]["derived_from"] = ["different-but-not-empty"]
+    responses[("GET", "/parent/trust")][12]["derived_from"] = [
+        "different-but-not-empty"
+    ]
     monkeypatch.setattr(
         verifier,
         "_request_json",
-        lambda method, api, path, payload=None: responses[(method, path)](payload)
-        if callable(responses[(method, path)])
-        else responses[(method, path)],
+        lambda method, api, path, payload=None: (
+            responses[(method, path)](payload)
+            if callable(responses[(method, path)])
+            else responses[(method, path)]
+        ),
     )
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 1
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 1
+    )
     assert "derived_from_mismatch" in json.loads(output.read_text())["failures"]
 
 
-def test_conflicting_existing_mount_is_rejected_before_scan_or_trust_import(tmp_path, monkeypatch):
+def test_conflicting_existing_mount_is_rejected_before_scan_or_trust_import(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -517,18 +720,27 @@ def test_conflicting_existing_mount_is_rejected_before_scan_or_trust_import(tmp_
         if (method, path) == ("GET", ""):
             return [{"id": "unrelated", "name": "2nd Brains"}]
         if (method, path) == ("GET", "/unrelated"):
-            return _mount_detail(root / "wrong", "unrelated", "2nd Brains", "mixed", None, False)
+            return _mount_detail(
+                root / "wrong", "unrelated", "2nd Brains", "mixed", None, False
+            )
         raise AssertionError(f"unexpected API request: {method} {path}")
 
     monkeypatch.setattr(verifier, "_request_json", request)
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 2
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 2
+    )
     assert calls == [("GET", ""), ("GET", "/unrelated")]
     report = json.loads(output.read_text())
     assert report["failures"] == ["verification_operation_failed"]
     assert str(root) not in output.read_text()
 
 
-def test_existing_mount_is_reused_only_after_exact_detail_validation(tmp_path, monkeypatch):
+def test_existing_mount_is_reused_only_after_exact_detail_validation(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -536,8 +748,17 @@ def test_existing_mount_is_reused_only_after_exact_detail_validation(tmp_path, m
     responses = _api_responses(root)
     existing = {
         "parent": _mount_detail(root, "parent", "2nd Brains", "mixed", None, False),
-        "obsidian": _mount_detail(root / "Obsidian Brain", "obsidian", "Obsidian Brain", "obsidian", "parent", True),
-        "logseq": _mount_detail(root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True),
+        "obsidian": _mount_detail(
+            root / "Obsidian Brain",
+            "obsidian",
+            "Obsidian Brain",
+            "obsidian",
+            "parent",
+            True,
+        ),
+        "logseq": _mount_detail(
+            root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True
+        ),
     }
     requests = []
 
@@ -551,11 +772,18 @@ def test_existing_mount_is_reused_only_after_exact_detail_validation(tmp_path, m
         return result(payload) if callable(result) else result
 
     monkeypatch.setattr(verifier, "_request_json", request)
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 0
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 0
+    )
     assert not any(method == "POST" and path == "" for method, path in requests)
 
 
-def test_api_url_construction_and_errors_do_not_disclose_payload_or_paths(tmp_path, monkeypatch):
+def test_api_url_construction_and_errors_do_not_disclose_payload_or_paths(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     seen = []
     secret_path = tmp_path / "private source.md"
@@ -566,12 +794,16 @@ def test_api_url_construction_and_errors_do_not_disclose_payload_or_paths(tmp_pa
 
     monkeypatch.setattr(verifier, "urlopen", fail)
     with pytest.raises(verifier.VerificationError) as exc:
-        verifier._request_json("POST", "http://api/base/", "/mount/scan", {"path": str(secret_path)})
+        verifier._request_json(
+            "POST", "http://api/base/", "/mount/scan", {"path": str(secret_path)}
+        )
     assert seen == ["http://api/base/vaults/mount/scan"]
     assert str(secret_path) not in str(exc.value)
 
 
-def test_existing_output_hard_link_to_source_is_rejected_without_truncating_source(tmp_path, capsys):
+def test_existing_output_hard_link_to_source_is_rejected_without_truncating_source(
+    tmp_path, capsys
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -580,13 +812,28 @@ def test_existing_output_hard_link_to_source_is_rejected_without_truncating_sour
     output = tmp_path / "report.json"
     os.link(source, output)
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 2
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(root),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 2
+    )
     assert source.read_text() == original
     assert output.read_text() == original
     assert str(root) not in capsys.readouterr().err
 
 
-def test_failed_scan_after_mutation_still_snapshots_and_writes_sanitized_report(tmp_path, monkeypatch, capsys):
+def test_failed_scan_after_mutation_still_snapshots_and_writes_sanitized_report(
+    tmp_path, monkeypatch, capsys
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -601,7 +848,12 @@ def test_failed_scan_after_mutation_still_snapshots_and_writes_sanitized_report(
         return result(payload) if callable(result) else result
 
     monkeypatch.setattr(verifier, "_request_json", request)
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 2
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 2
+    )
     report = json.loads(output.read_text())
     assert "source_hash_mismatch" in report["failures"]
     assert "scan_request_failed" in report["failures"]
@@ -609,7 +861,9 @@ def test_failed_scan_after_mutation_still_snapshots_and_writes_sanitized_report(
     assert str(root) not in capsys.readouterr().err
 
 
-def test_malformed_mount_list_and_new_mount_detail_fail_closed_before_import(tmp_path, monkeypatch):
+def test_malformed_mount_list_and_new_mount_detail_fail_closed_before_import(
+    tmp_path, monkeypatch
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -621,7 +875,12 @@ def test_malformed_mount_list_and_new_mount_detail_fail_closed_before_import(tmp
         return {"not": "a list"}
 
     monkeypatch.setattr(verifier, "_request_json", malformed_list)
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 2
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 2
+    )
     assert calls == [("GET", "")]
 
     output.unlink()
@@ -638,11 +897,18 @@ def test_malformed_mount_list_and_new_mount_detail_fail_closed_before_import(tmp
         raise AssertionError("trust import or scan must not happen")
 
     monkeypatch.setattr(verifier, "_request_json", malformed_new_detail)
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 2
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 2
+    )
     assert calls == [("GET", ""), ("POST", ""), ("GET", "/parent")]
 
 
-def test_snapshot_failures_are_sanitized_and_do_not_traceback(tmp_path, monkeypatch, capsys):
+def test_snapshot_failures_are_sanitized_and_do_not_traceback(
+    tmp_path, monkeypatch, capsys
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -652,7 +918,20 @@ def test_snapshot_failures_are_sanitized_and_do_not_traceback(tmp_path, monkeypa
         raise PermissionError(f"cannot read {path}")
 
     monkeypatch.setattr(verifier, "_hash_file", bad_hash)
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 2
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(root),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 2
+    )
     error = capsys.readouterr().err
     assert "Traceback" not in error
     assert str(root) not in error
@@ -671,11 +950,15 @@ def test_output_parent_swap_to_source_is_rejected_before_any_source_write(tmp_pa
     report_dir.symlink_to(root, target_is_directory=True)
 
     with pytest.raises(verifier.VerificationError):
-        verifier._write_report(target, verifier._capture_root_identity(root), {"failures": []})
+        verifier._write_report(
+            target, verifier._capture_root_identity(root), {"failures": []}
+        )
     assert not (root / "report.json").exists()
 
 
-def test_root_rebind_during_api_request_fails_closed_without_report_in_rebound_root(tmp_path, monkeypatch, capsys):
+def test_root_rebind_during_api_request_fails_closed_without_report_in_rebound_root(
+    tmp_path, monkeypatch, capsys
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
@@ -693,7 +976,12 @@ def test_root_rebind_during_api_request_fails_closed_without_report_in_rebound_r
 
     monkeypatch.setattr(verifier, "_request_json", request)
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 2
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 2
+    )
     assert not output.exists()
     assert not (root / "report.json").exists()
     assert str(root) not in capsys.readouterr().err
@@ -705,21 +993,49 @@ def test_unchanged_root_identity_allows_check_only_report(tmp_path):
     _fixture(root)
     output = tmp_path / "report.json"
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output), "--check-only"]) == 0
+    assert (
+        verifier.main(
+            [
+                "--root",
+                str(root),
+                "--api",
+                "http://api",
+                "--output",
+                str(output),
+                "--check-only",
+            ]
+        )
+        == 0
+    )
     assert output.exists()
 
 
-def test_local_http_server_exercises_requests_mount_details_scan_failure_and_sanitization(tmp_path, capsys):
+def test_local_http_server_exercises_requests_mount_details_scan_failure_and_sanitization(
+    tmp_path, capsys
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
     output = tmp_path / "report.json"
     records = []
-    ids = {"2nd Brains": "parent", "Obsidian Brain": "obsidian", "Logseq Brain": "logseq"}
+    ids = {
+        "2nd Brains": "parent",
+        "Obsidian Brain": "obsidian",
+        "Logseq Brain": "logseq",
+    }
     details = {
         "parent": _mount_detail(root, "parent", "2nd Brains", "mixed", None, False),
-        "obsidian": _mount_detail(root / "Obsidian Brain", "obsidian", "Obsidian Brain", "obsidian", "parent", True),
-        "logseq": _mount_detail(root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True),
+        "obsidian": _mount_detail(
+            root / "Obsidian Brain",
+            "obsidian",
+            "Obsidian Brain",
+            "obsidian",
+            "parent",
+            True,
+        ),
+        "logseq": _mount_detail(
+            root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True
+        ),
     }
 
     class Handler(BaseHTTPRequestHandler):
@@ -756,7 +1072,10 @@ def test_local_http_server_exercises_requests_mount_details_scan_failure_and_san
     thread.start()
     try:
         api = f"http://127.0.0.1:{server.server_port}/api/deeper-notebook"
-        assert verifier.main(["--root", str(root), "--api", api, "--output", str(output)]) == 2
+        assert (
+            verifier.main(["--root", str(root), "--api", api, "--output", str(output)])
+            == 2
+        )
     finally:
         server.shutdown()
         thread.join()
@@ -767,7 +1086,11 @@ def test_local_http_server_exercises_requests_mount_details_scan_failure_and_san
     assert str(root) not in output.read_text()
     assert str(root) not in capsys.readouterr().err
     assert all(path.startswith("/api/deeper-notebook/vaults") for _, path, _ in records)
-    assert any(payload and payload.get("path") == str(root) for method, _, payload in records if method == "POST")
+    assert any(
+        payload and payload.get("path") == str(root)
+        for method, _, payload in records
+        if method == "POST"
+    )
 
 
 def test_local_http_server_exercises_successful_canonical_scan_flow(tmp_path):
@@ -775,11 +1098,24 @@ def test_local_http_server_exercises_successful_canonical_scan_flow(tmp_path):
     root = tmp_path / "fixture"
     _fixture(root)
     output = tmp_path / "report.json"
-    ids = {"2nd Brains": "parent", "Obsidian Brain": "obsidian", "Logseq Brain": "logseq"}
+    ids = {
+        "2nd Brains": "parent",
+        "Obsidian Brain": "obsidian",
+        "Logseq Brain": "logseq",
+    }
     details = {
         "parent": _mount_detail(root, "parent", "2nd Brains", "mixed", None, False),
-        "obsidian": _mount_detail(root / "Obsidian Brain", "obsidian", "Obsidian Brain", "obsidian", "parent", True),
-        "logseq": _mount_detail(root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True),
+        "obsidian": _mount_detail(
+            root / "Obsidian Brain",
+            "obsidian",
+            "Obsidian Brain",
+            "obsidian",
+            "parent",
+            True,
+        ),
+        "logseq": _mount_detail(
+            root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True
+        ),
     }
     paths = []
 
@@ -809,7 +1145,9 @@ def test_local_http_server_exercises_successful_canonical_scan_flow(tmp_path):
 
         def do_POST(self):
             paths.append(self.path)
-            payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
+            payload = json.loads(
+                self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}"
+            )
             if self.path == "/api/deeper-notebook/vaults":
                 return self._reply({"id": ids[payload["name"]]})
             if self.path.endswith("/trust/import"):
@@ -821,7 +1159,10 @@ def test_local_http_server_exercises_successful_canonical_scan_flow(tmp_path):
     thread.start()
     try:
         api = f"http://127.0.0.1:{server.server_port}/api/deeper-notebook"
-        assert verifier.main(["--root", str(root), "--api", api, "--output", str(output)]) == 0
+        assert (
+            verifier.main(["--root", str(root), "--api", api, "--output", str(output)])
+            == 0
+        )
     finally:
         server.shutdown()
         thread.join()
@@ -832,17 +1173,34 @@ def test_local_http_server_exercises_successful_canonical_scan_flow(tmp_path):
     assert all(path.startswith("/api/deeper-notebook/vaults") for path in paths)
 
 
-@pytest.mark.parametrize("mutation_point", ["mount", "trust", "summary", "malformed_scan"])
-def test_http_api_operations_reconcile_source_mutations_before_failure(tmp_path, mutation_point):
+@pytest.mark.parametrize(
+    "mutation_point", ["mount", "trust", "summary", "malformed_scan"]
+)
+def test_http_api_operations_reconcile_source_mutations_before_failure(
+    tmp_path, mutation_point
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
     output = tmp_path / f"{mutation_point}.json"
-    ids = {"2nd Brains": "parent", "Obsidian Brain": "obsidian", "Logseq Brain": "logseq"}
+    ids = {
+        "2nd Brains": "parent",
+        "Obsidian Brain": "obsidian",
+        "Logseq Brain": "logseq",
+    }
     details = {
         "parent": _mount_detail(root, "parent", "2nd Brains", "mixed", None, False),
-        "obsidian": _mount_detail(root / "Obsidian Brain", "obsidian", "Obsidian Brain", "obsidian", "parent", True),
-        "logseq": _mount_detail(root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True),
+        "obsidian": _mount_detail(
+            root / "Obsidian Brain",
+            "obsidian",
+            "Obsidian Brain",
+            "obsidian",
+            "parent",
+            True,
+        ),
+        "logseq": _mount_detail(
+            root / "Logseq Brain", "logseq", "Logseq Brain", "logseq", "parent", True
+        ),
     }
 
     def mutate():
@@ -874,7 +1232,9 @@ def test_http_api_operations_reconcile_source_mutations_before_failure(tmp_path,
             return self._reply(details[self.path.rsplit("/", 1)[-1]])
 
         def do_POST(self):
-            payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
+            payload = json.loads(
+                self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}"
+            )
             if self.path == "/api/deeper-notebook/vaults":
                 if mutation_point == "mount":
                     mutate()
@@ -883,7 +1243,10 @@ def test_http_api_operations_reconcile_source_mutations_before_failure(tmp_path,
                 if mutation_point == "trust":
                     mutate()
                 return self._reply({"changed": 0})
-            if self.path.endswith("/obsidian/scan") and mutation_point == "malformed_scan":
+            if (
+                self.path.endswith("/obsidian/scan")
+                and mutation_point == "malformed_scan"
+            ):
                 mutate()
                 return self._reply({"parsed": "not-an-int"})
             return self._reply({"parsed": 0})
@@ -893,7 +1256,10 @@ def test_http_api_operations_reconcile_source_mutations_before_failure(tmp_path,
     thread.start()
     try:
         api = f"http://127.0.0.1:{server.server_port}/api/deeper-notebook"
-        assert verifier.main(["--root", str(root), "--api", api, "--output", str(output)]) != 0
+        assert (
+            verifier.main(["--root", str(root), "--api", api, "--output", str(output)])
+            != 0
+        )
     finally:
         server.shutdown()
         thread.join()
@@ -904,12 +1270,16 @@ def test_http_api_operations_reconcile_source_mutations_before_failure(tmp_path,
     assert report["failures"] != []
 
 
-def test_derived_from_values_are_never_disclosed_in_report_or_errors(tmp_path, monkeypatch, capsys):
+def test_derived_from_values_are_never_disclosed_in_report_or_errors(
+    tmp_path, monkeypatch, capsys
+):
     verifier = _load_verifier()
     root = tmp_path / "fixture"
     _fixture(root)
     secret = "/private/absolute/path/SECRET-derivation-token"
-    manifest = root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    manifest = (
+        root / "brain-engine" / "generated" / "deepercode-connector" / "manifest.json"
+    )
     payload = json.loads(manifest.read_text())
     payload["documents"][12]["derivedFrom"] = [secret]
     manifest.write_text(json.dumps(payload))
@@ -919,12 +1289,19 @@ def test_derived_from_values_are_never_disclosed_in_report_or_errors(tmp_path, m
     monkeypatch.setattr(
         verifier,
         "_request_json",
-        lambda method, api, path, payload=None: responses[(method, path)](payload)
-        if callable(responses[(method, path)])
-        else responses[(method, path)],
+        lambda method, api, path, payload=None: (
+            responses[(method, path)](payload)
+            if callable(responses[(method, path)])
+            else responses[(method, path)]
+        ),
     )
 
-    assert verifier.main(["--root", str(root), "--api", "http://api", "--output", str(output)]) == 1
+    assert (
+        verifier.main(
+            ["--root", str(root), "--api", "http://api", "--output", str(output)]
+        )
+        == 1
+    )
     captured = capsys.readouterr()
     rendered = output.read_text() + captured.out + captured.err
     assert secret not in rendered

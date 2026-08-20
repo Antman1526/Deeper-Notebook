@@ -21,6 +21,7 @@ Why in-process rather than `surreal_commands`:
     deployments should swap to surreal_commands; that's tracked as
     v0.8.39d.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -97,13 +98,18 @@ class DownloadJob:
     Status transitions:
       queued → downloading → (completed | failed | cancelled)
     """
+
     job_id: str
     repo_id: str
     filename: str
     target_path: str
     # v0.8.39e added "cancelled" terminal status.
     status: Literal[
-        "queued", "downloading", "completed", "failed", "cancelled",
+        "queued",
+        "downloading",
+        "completed",
+        "failed",
+        "cancelled",
     ] = "queued"
     bytes_downloaded: int = 0
     bytes_total: int = 0  # 0 until first chunk reveals Content-Length
@@ -132,9 +138,7 @@ _MAX_TERMINAL_JOBS = 512
 def _prune_job_history() -> None:
     """Retain recent terminal jobs while never evicting active transfers."""
     terminal = {"completed", "failed", "cancelled"}
-    terminal_ids = [
-        job_id for job_id, job in _JOBS.items() if job.status in terminal
-    ]
+    terminal_ids = [job_id for job_id, job in _JOBS.items() if job.status in terminal]
     excess = len(terminal_ids) - _MAX_TERMINAL_JOBS
     for job_id in terminal_ids[: max(0, excess)]:
         _JOBS.pop(job_id, None)
@@ -188,7 +192,8 @@ def _write_part_meta(dest_dir: Path, job: "DownloadJob") -> None:
             "bytes_total": job.bytes_total,
         }
         _part_meta_path(dest_dir, job.filename).write_text(
-            _json.dumps(meta), encoding="utf-8",
+            _json.dumps(meta),
+            encoding="utf-8",
         )
     except OSError:
         pass

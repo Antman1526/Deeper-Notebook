@@ -19,7 +19,9 @@ async def get_auth_status():
     Supports Docker secrets via DEEPER_NOTEBOOK_PASSWORD_FILE and the
     deprecated DEEPER_NOTEBOOK_PASSWORD_FILE alias.
     """
-    auth_enabled = bool(resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env))
+    auth_enabled = bool(
+        resolve_env("DEEPER_NOTEBOOK_PASSWORD", getter=get_secret_from_env)
+    )
 
     return {
         "auth_enabled": auth_enabled,

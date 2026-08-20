@@ -111,7 +111,9 @@ def snapshot_from_parsed(
         block.parser_id: engine_record_id(
             "block",
             space_id,
-            _block_source_key(envelope.relative_locator, block.stable_source_id, block.parser_id),
+            _block_source_key(
+                envelope.relative_locator, block.stable_source_id, block.parser_id
+            ),
         )
         for block in parsed.blocks
     }
@@ -186,7 +188,9 @@ def snapshot_from_parsed(
             markdown=block.markdown,
             plain_text=block.plain_text,
             properties=dict(block.properties),
-            raw_task_state=_raw_block_task_state(envelope.source_kind, block.markdown, block.task_state),
+            raw_task_state=_raw_block_task_state(
+                envelope.source_kind, block.markdown, block.task_state
+            ),
             normalized_task_state=(
                 _normalize_task_state(block.task_state)
                 if block.task_state is not None
@@ -298,7 +302,12 @@ def _relations_from_parsed(
         (link.link_kind, link) for link in links
     ]
     seen_embed_keys = {
-        _embed_key(link.source_block_parser_id, link.target_text, link.source_start, link.source_end)
+        _embed_key(
+            link.source_block_parser_id,
+            link.target_text,
+            link.source_start,
+            link.source_end,
+        )
         for link in links
         if link.link_kind == "embed"
     }

@@ -19,7 +19,9 @@ import fitz
 import imageio_ffmpeg
 from PIL import Image, ImageDraw
 
-FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "source_visuals"
+FIXTURE_ROOT = (
+    Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "source_visuals"
+)
 FIXTURE_PATHS = (
     FIXTURE_ROOT / "fixture.pdf",
     FIXTURE_ROOT / "fixture.mp4",
@@ -43,9 +45,15 @@ def _image_bytes(*, width: int, height: int, background: tuple[int, int, int]) -
     draw = ImageDraw.Draw(image)
     # Fixed geometry and colors give the scoring tests a useful, non-uniform
     # image without embedding timestamps or machine-specific metadata.
-    draw.rectangle((width // 8, height // 8, width * 7 // 8, height * 7 // 8), fill=(20, 70, 130))
-    draw.line((0, 0, width - 1, height - 1), fill=(240, 210, 60), width=max(1, width // 80))
-    draw.line((width - 1, 0, 0, height - 1), fill=(60, 210, 160), width=max(1, width // 80))
+    draw.rectangle(
+        (width // 8, height // 8, width * 7 // 8, height * 7 // 8), fill=(20, 70, 130)
+    )
+    draw.line(
+        (0, 0, width - 1, height - 1), fill=(240, 210, 60), width=max(1, width // 80)
+    )
+    draw.line(
+        (width - 1, 0, 0, height - 1), fill=(60, 210, 160), width=max(1, width // 80)
+    )
     from io import BytesIO
 
     stream = BytesIO()
@@ -172,12 +180,19 @@ def _assert_fixture(path: Path) -> None:
 def create_fixtures() -> None:
     FIXTURE_ROOT.mkdir(parents=True, exist_ok=True)
     allowed = {path.name for path in FIXTURE_PATHS}
-    unexpected = sorted(path.name for path in FIXTURE_ROOT.iterdir() if path.name not in allowed)
+    unexpected = sorted(
+        path.name for path in FIXTURE_ROOT.iterdir() if path.name not in allowed
+    )
     if unexpected:
-        raise RuntimeError("unexpected files in source visual fixture directory: " + ", ".join(unexpected))
+        raise RuntimeError(
+            "unexpected files in source visual fixture directory: "
+            + ", ".join(unexpected)
+        )
     existing = [path for path in FIXTURE_PATHS if path.exists()]
     if existing:
-        raise RuntimeError("fixture paths already exist; remove only the exact fixture files before regenerating")
+        raise RuntimeError(
+            "fixture paths already exist; remove only the exact fixture files before regenerating"
+        )
 
     _write_pdf(FIXTURE_PATHS[0])
     _write_video(FIXTURE_PATHS[1])
@@ -194,7 +209,9 @@ def main() -> int:
         return 1
     for path in FIXTURE_PATHS:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        print(f"{path.relative_to(FIXTURE_ROOT.parent.parent.parent)} {path.stat().st_size} {digest}")
+        print(
+            f"{path.relative_to(FIXTURE_ROOT.parent.parent.parent)} {path.stat().st_size} {digest}"
+        )
     return 0
 
 

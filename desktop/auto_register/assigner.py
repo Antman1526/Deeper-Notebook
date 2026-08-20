@@ -8,6 +8,7 @@ Every pick comes with a human-readable `reason` for logging, so users can run
 `cat ~/.deeper-notebook/logs/auto_register.log` and see WHY each slot got
 the model it got.
 """
+
 from __future__ import annotations
 
 import os
@@ -40,11 +41,12 @@ def _probe_total_ram_gb() -> float | None:
     """
     try:
         import psutil  # type: ignore
-        return psutil.virtual_memory().total / (1024 ** 3)
+
+        return psutil.virtual_memory().total / (1024**3)
     except Exception:
         pass
     try:
-        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / (1024 ** 3)
+        return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / (1024**3)
     except (OSError, AttributeError, ValueError):
         return None
 
@@ -152,13 +154,11 @@ _RECIPES: dict[str, dict] = {
 SLOTS = tuple(_RECIPES.keys())
 
 
-def _format_top_axes(weights: dict[str, float], desc: ModelDescriptor, n: int = 2) -> str:
+def _format_top_axes(
+    weights: dict[str, float], desc: ModelDescriptor, n: int = 2
+) -> str:
     """Top contributing positive axes for explainability in the reason string."""
-    pairs = [
-        (axis, w * desc.score(axis))
-        for axis, w in weights.items()
-        if w > 0
-    ]
+    pairs = [(axis, w * desc.score(axis)) for axis, w in weights.items() if w > 0]
     pairs.sort(key=lambda p: -p[1])
     return ", ".join(f"{axis}={desc.score(axis):.2f}" for axis, _ in pairs[:n])
 
@@ -168,6 +168,7 @@ def _score(desc: ModelDescriptor, recipe: dict) -> float:
     if recipe.get("ctx_bias") and desc.context_len > 0:
         # log10(ctx_len / 32k), clipped to [0, 1.5]
         import math
+
         bonus = min(1.5, max(0.0, math.log10(max(desc.context_len, 1) / 32_000)))
         base += recipe["ctx_bias"] * bonus
     return base
@@ -181,14 +182,22 @@ def pick_for_slot(slot: str, pool: list[ModelDescriptor]) -> Pick:
     if recipe["require"]:
         candidates = [d for d in candidates if recipe["require"](d)]
     if not candidates:
-        return Pick(slot=slot, model=None, score=0.0,
-                    reason=f"no eligible models (kinds={recipe['kinds']})")
+        return Pick(
+            slot=slot,
+            model=None,
+            score=0.0,
+            reason=f"no eligible models (kinds={recipe['kinds']})",
+        )
 
     if not recipe["weights"]:
         # Type-only slots (embedding/tts/stt) — first registered wins
         chosen = sorted(candidates, key=lambda d: d.name)[0]
-        return Pick(slot=slot, model=chosen, score=1.0,
-                    reason=f"first {chosen.kind} registered ({chosen.source})")
+        return Pick(
+            slot=slot,
+            model=chosen,
+            score=1.0,
+            reason=f"first {chosen.kind} registered ({chosen.source})",
+        )
 
     scored = [(d, _score(d, recipe)) for d in candidates]
     # Deterministic tie-break: name ascending
@@ -196,7 +205,9 @@ def pick_for_slot(slot: str, pool: list[ModelDescriptor]) -> Pick:
     chosen, top = scored[0]
     top_axes = _format_top_axes(recipe["weights"], chosen)
     return Pick(
-        slot=slot, model=chosen, score=top,
+        slot=slot,
+        model=chosen,
+        score=top,
         reason=f"{top_axes} ({chosen.source})",
     )
 
@@ -239,7 +250,9 @@ def pick_chat_llm_file(
             if _cand.name.lower() == _pin_name.lower():
                 return _cand
         # named pin not found in gguf_dir → fall through to the heuristic.
-    ceiling = ram_ceiling_gb if ram_ceiling_gb is not None else _get_chat_ram_ceiling_gb()
+    ceiling = (
+        ram_ceiling_gb if ram_ceiling_gb is not None else _get_chat_ram_ceiling_gb()
+    )
     recipe = _RECIPES["chat"]
 
     pool: list[tuple[float, Path, ModelDescriptor]] = []

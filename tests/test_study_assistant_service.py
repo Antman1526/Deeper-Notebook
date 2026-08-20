@@ -319,11 +319,14 @@ async def test_concurrent_identical_invocations_have_one_running_owner() -> None
     )
 
     assert sum(isinstance(result, StudyAssistantResponse) for result in results) == 1
-    assert sum(
-        isinstance(result, StudyAssistantPolicyError)
-        and str(result) == "assistant_invocation_in_progress"
-        for result in results
-    ) == 1
+    assert (
+        sum(
+            isinstance(result, StudyAssistantPolicyError)
+            and str(result) == "assistant_invocation_in_progress"
+            for result in results
+        )
+        == 1
+    )
     assert model.call_count == 1
     assert len(repository.completions) == 1
 
@@ -699,7 +702,9 @@ async def test_running_retry_does_not_load_context_or_mutate_the_winner() -> Non
     repository.session = SimpleNamespace(
         session_id="study_assistant_session:one", revision=2, status="running"
     )
-    with pytest.raises(StudyAssistantPolicyError, match="assistant_invocation_in_progress"):
+    with pytest.raises(
+        StudyAssistantPolicyError, match="assistant_invocation_in_progress"
+    ):
         await subject.invoke("study_plan:one", "source_guide", invocation())
     assert loader.loaded == []
     assert model.last_prompt == ""
@@ -709,7 +714,9 @@ async def test_running_retry_does_not_load_context_or_mutate_the_winner() -> Non
 @pytest.mark.asyncio
 async def test_completed_retry_replays_full_receipt_without_model_or_context() -> None:
     subject, model, loader, repository = service()
-    action = StudyProposedAction(action="navigate.unit", label="Open unit", unit_id="unit-one")
+    action = StudyProposedAction(
+        action="navigate.unit", label="Open unit", unit_id="unit-one"
+    )
     repository.session = SimpleNamespace(
         session_id="study_assistant_session:one",
         revision=3,
@@ -722,7 +729,9 @@ async def test_completed_retry_replays_full_receipt_without_model_or_context() -
         SimpleNamespace(
             session_id="study_assistant_session:one",
             observation="Full replay answer",
-            evidence=(StudyCitation(source_id="source:allowed", quote="TEXT source:allowed"),),
+            evidence=(
+                StudyCitation(source_id="source:allowed", quote="TEXT source:allowed"),
+            ),
             proposed_action='[{"action":"navigate.unit","label":"Open unit","unit_id":"unit-one","expected_revision":null}]',
             created_at=NOW,
         ),
@@ -779,9 +788,7 @@ async def test_completion_uses_one_atomic_repository_boundary() -> None:
     response = await subject.invoke("study_plan:one", "source_guide", invocation())
     assert response.status == "completed"
     assert len(repository.completions) == 1
-    assert repository.updates == [
-        {"status": "running", "expected_revision": 1}
-    ]
+    assert repository.updates == [{"status": "running", "expected_revision": 1}]
     assert repository.completions[0][2]["authority_guard"] == {
         "plan_revision": 3,
         "plan_state": "approved",

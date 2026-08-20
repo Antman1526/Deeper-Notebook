@@ -143,9 +143,7 @@ async def _page_identity(
             )
         )
         resolved = await asyncio.wait_for(
-            service.resolve_legacy_page(
-                legacy_note_id=legacy_note_id, block_keys=keys
-            ),
+            service.resolve_legacy_page(legacy_note_id=legacy_note_id, block_keys=keys),
             timeout=_IDENTITY_ENRICHMENT_TIMEOUT_SECONDS,
         )
         document_id = getattr(resolved, "document_id", None)
@@ -170,7 +168,8 @@ async def _page_identity(
 
 
 async def _graph_document_identities(
-    request: Request, note_ids: list[str],
+    request: Request,
+    note_ids: list[str],
 ) -> dict[str, str]:
     """Read-only bounded legacy-to-unified identities for graph actions.
 
@@ -210,7 +209,9 @@ async def _graph_document_identities(
             if isinstance(item, dict)
             else getattr(item, "document_id", None)
         )
-        if isinstance(document_id, str) and _KNOWLEDGE_DOCUMENT_ID.fullmatch(document_id):
+        if isinstance(document_id, str) and _KNOWLEDGE_DOCUMENT_ID.fullmatch(
+            document_id
+        ):
             identities[note_id] = document_id
     return identities
 
@@ -441,7 +442,11 @@ async def graph(
         payload = result.model_dump()
         document_ids = await _graph_document_identities(
             request,
-            [node["id"] for node in payload["nodes"] if isinstance(node.get("id"), str)],
+            [
+                node["id"]
+                for node in payload["nodes"]
+                if isinstance(node.get("id"), str)
+            ],
         )
         for node in payload["nodes"]:
             note_id = node.get("id")

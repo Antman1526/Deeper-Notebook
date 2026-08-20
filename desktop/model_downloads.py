@@ -4,6 +4,7 @@ Each download is idempotent and skipped when the target file exists.
 Failures are non-fatal — logged to ~/.deeper-notebook/logs/downloads.log
 and the launcher continues without that model.
 """
+
 from __future__ import annotations
 
 import logging
@@ -101,10 +102,14 @@ PIPER_RYAN_CONFIG = (
 )
 
 
-def _download_one(url: str, dest: Path, label: str,
-                  progress: Callable[[str], None] | None = None,
-                  expected_size_mb: int = 0,
-                  min_bytes: int = 0) -> bool:
+def _download_one(
+    url: str,
+    dest: Path,
+    label: str,
+    progress: Callable[[str], None] | None = None,
+    expected_size_mb: int = 0,
+    min_bytes: int = 0,
+) -> bool:
     """Download url to dest atomically. Returns True if file is present after.
 
     v0.6.29 fixes:
@@ -153,7 +158,9 @@ def _download_one(url: str, dest: Path, label: str,
         # Don't trust it; delete and re-download.
         log.warning(
             "Existing %s is only %d bytes (expected >= %d) — re-downloading",
-            dest.name, existing_bytes, min_bytes_ok,
+            dest.name,
+            existing_bytes,
+            min_bytes_ok,
         )
         try:
             dest.unlink()
@@ -196,7 +203,9 @@ def _download_one(url: str, dest: Path, label: str,
             headers["Range"] = f"bytes={start_at_byte}-"
             log.info(
                 "Resuming %s from byte %d (%.1f MB already on disk)",
-                label, start_at_byte, start_at_byte / 1024 / 1024,
+                label,
+                start_at_byte,
+                start_at_byte / 1024 / 1024,
             )
 
         timeout = httpx.Timeout(
@@ -207,7 +216,11 @@ def _download_one(url: str, dest: Path, label: str,
         )
 
         with httpx.stream(
-            "GET", url, headers=headers, follow_redirects=True, timeout=timeout,
+            "GET",
+            url,
+            headers=headers,
+            follow_redirects=True,
+            timeout=timeout,
         ) as resp:
             # If we asked for a Range and the server replied with the
             # whole file (200 instead of 206), we have to start over.
@@ -216,7 +229,10 @@ def _download_one(url: str, dest: Path, label: str,
                 log.warning(
                     "Server %s ignored Range header for %s — restarting "
                     "from byte 0 (will not corrupt; just lose %.1f MB of "
-                    "redundant work)", url, label, start_at_byte / 1024 / 1024,
+                    "redundant work)",
+                    url,
+                    label,
+                    start_at_byte / 1024 / 1024,
                 )
                 start_at_byte = 0
             resp.raise_for_status()
@@ -234,10 +250,7 @@ def _download_one(url: str, dest: Path, label: str,
                     # 2 seconds so we don't flood the launcher log
                     # with megabyte-level updates.
                     if time.monotonic() - last_progress_emit >= 2.0:
-                        progress(
-                            f"Downloading {label}: "
-                            f"{written // 1024 // 1024} MB"
-                        )
+                        progress(f"Downloading {label}: {written // 1024 // 1024} MB")
                         last_progress_emit = time.monotonic()
 
         tmp.rename(dest)
@@ -288,9 +301,11 @@ def ensure_stt_model(
     all_ok = True
     for url, fname, min_bytes in FASTER_WHISPER_STT_FILES:
         if not _download_one(
-            url, dest_dir / fname,
+            url,
+            dest_dir / fname,
             f"faster-whisper base.en / {fname}",
-            progress, min_bytes=min_bytes,
+            progress,
+            min_bytes=min_bytes,
         ):
             all_ok = False
     return dest_dir if all_ok else None
@@ -315,9 +330,11 @@ def ensure_tts_model(
     cfg_url, cfg_rel, cfg_label, _cfg_size = PIPER_VOICE_CONFIG
     onnx = model_dir / onnx_rel
     cfg = model_dir / cfg_rel
-    if (_download_one(onnx_url, onnx, onnx_label, progress, expected_size_mb=onnx_size)
-            and _download_one(cfg_url, cfg, cfg_label, progress,
-                              min_bytes=_PIPER_CONFIG_MIN_BYTES)):
+    if _download_one(
+        onnx_url, onnx, onnx_label, progress, expected_size_mb=onnx_size
+    ) and _download_one(
+        cfg_url, cfg, cfg_label, progress, min_bytes=_PIPER_CONFIG_MIN_BYTES
+    ):
         return (onnx, cfg)
     return None
 
@@ -331,8 +348,10 @@ def ensure_secondary_tts_voice(
     cfg_url, cfg_rel, cfg_label, _cfg_size = PIPER_RYAN_CONFIG
     onnx = model_dir / onnx_rel
     cfg = model_dir / cfg_rel
-    if (_download_one(onnx_url, onnx, onnx_label, progress, expected_size_mb=onnx_size)
-            and _download_one(cfg_url, cfg, cfg_label, progress,
-                              min_bytes=_PIPER_CONFIG_MIN_BYTES)):
+    if _download_one(
+        onnx_url, onnx, onnx_label, progress, expected_size_mb=onnx_size
+    ) and _download_one(
+        cfg_url, cfg, cfg_label, progress, min_bytes=_PIPER_CONFIG_MIN_BYTES
+    ):
         return (onnx, cfg)
     return None

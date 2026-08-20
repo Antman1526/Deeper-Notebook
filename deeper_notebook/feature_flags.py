@@ -1,4 +1,5 @@
 """Feature flags for Deeper Notebook product surfaces."""
+
 from __future__ import annotations
 
 import os

@@ -14,6 +14,7 @@ validate_url is wrapped in asyncio.to_thread(). Allowed patterns:
 Disallowed:
     validate_url(...)   # direct sync call from async handler
 """
+
 from __future__ import annotations
 
 import ast

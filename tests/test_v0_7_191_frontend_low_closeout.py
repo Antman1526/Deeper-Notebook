@@ -27,6 +27,7 @@ Four small but defensible improvements:
     load chat" UI was unreachable. AlertCircle import dropped
     with it.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -101,8 +102,7 @@ def test_use_sources_uses_predicate_invalidation():
     )
     # The predicate is used at the mutation sites.
     assert (
-        "queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery"
-        in src
+        "queryClient.invalidateQueries({ predicate: q => _isSourcesListQuery" in src
     ), (
         "v0.7.191 regression: mutation invalidations reverted to the "
         "broad `['sources']` form. Per-source status polls will be "
@@ -110,8 +110,7 @@ def test_use_sources_uses_predicate_invalidation():
     )
     # And the broad-form bad pattern is GONE from non-comment lines.
     code_only = "\n".join(
-        line for line in src.splitlines()
-        if not line.lstrip().startswith("//")
+        line for line in src.splitlines() if not line.lstrip().startswith("//")
     )
     bad = "queryClient.invalidateQueries({ queryKey: ['sources'] })"
     assert bad not in code_only, (
@@ -136,8 +135,7 @@ def test_chat_column_has_no_unreachable_unable_to_load_branch():
     # rationale comment that mentions the removed branch doesn't
     # false-trigger.
     code_only = "\n".join(
-        line for line in src.splitlines()
-        if not line.lstrip().startswith("//")
+        line for line in src.splitlines() if not line.lstrip().startswith("//")
     )
     assert "if (!sources && !notes)" not in code_only, (
         "v0.7.191 regression: dead unreachable branch is back. "

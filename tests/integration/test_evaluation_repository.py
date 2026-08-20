@@ -169,8 +169,6 @@ async def test_repository_batches_newest_message_runs_with_notebook_ownership(
         "metrics"
     ] == {"generation": 2}
 
-    verdicts = await repository.list_verdicts_for_runs(
-        [str(run["id"]) for run in runs]
-    )
+    verdicts = await repository.list_verdicts_for_runs([str(run["id"]) for run in runs])
     assert [verdict.claim for verdict in verdicts[newest.id]] == ["Newest claim"]
     assert verdicts[second.id] == []

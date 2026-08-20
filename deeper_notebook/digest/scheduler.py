@@ -12,6 +12,7 @@ State of the world it manages:
   - If frequency == "weekly": send if 6d23h+ since last_sent_at
   - First-time: send if connected + enabled and last_sent_at is None
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,7 +29,7 @@ _TICK_INTERVAL_SEC = 300  # 5 minutes
 
 # Per-frequency minimum delta between sends.
 _INTERVAL_BY_FREQ = {
-    "daily":  timedelta(hours=23),
+    "daily": timedelta(hours=23),
     "weekly": timedelta(days=6, hours=23),
 }
 
@@ -73,6 +74,7 @@ async def _offline_now() -> bool:
     digests from sending."""
     try:
         from deeper_notebook.health.network import get_network_state_with_settings
+
         return (await get_network_state_with_settings()).status == "offline"
     except Exception:
         return False
@@ -81,10 +83,7 @@ async def _offline_now() -> bool:
 def _mark_pending() -> None:
     global _pending_digest_since
     now = datetime.now(timezone.utc)
-    if (
-        _pending_digest_since is None
-        or now - _pending_digest_since > _PENDING_MAX_AGE
-    ):
+    if _pending_digest_since is None or now - _pending_digest_since > _PENDING_MAX_AGE:
         # Fresh deferral, or a stale (>24h) marker — re-stamp. With the
         # daily/weekly last_sent_at semantics an old pending digest simply
         # merges into the next due one, so the timestamp is informational.
@@ -99,7 +98,7 @@ def _backoff_for(consecutive: int) -> timedelta:
     enforced afterwards regardless.
     """
     exp = min(max(0, consecutive - 1), 16)
-    delay = _FAILURE_BACKOFF_MIN * (2 ** exp)
+    delay = _FAILURE_BACKOFF_MIN * (2**exp)
     return min(delay, _FAILURE_BACKOFF_MAX)
 
 
@@ -138,21 +137,24 @@ async def _tick() -> None:
         if await _offline_now():
             _mark_pending()
             log.info(
-                "digest-scheduler: offline — digest deferred (will retry "
-                "next tick)"
+                "digest-scheduler: offline — digest deferred (will retry next tick)"
             )
             return
         # Lazy import to avoid circular (router imports digest module)
         from api.routers.gmail import _send_digest_now
-        log.info("digest-scheduler: firing %s send for %s",
-                 g.frequency, g.email_address)
+
+        log.info(
+            "digest-scheduler: firing %s send for %s", g.frequency, g.email_address
+        )
         ok, msg, n = await _send_digest_now(g, label=g.frequency.title())
         log.info("digest-scheduler: result ok=%s items=%d msg=%r", ok, n, msg)
         if ok:
             # Success — clear backoff state and the pending marker.
             _pending_digest_since = None
             _failure_state["consecutive_failures"] = 0
-            _failure_state["next_retry_after"] = datetime.fromtimestamp(0, tz=timezone.utc)
+            _failure_state["next_retry_after"] = datetime.fromtimestamp(
+                0, tz=timezone.utc
+            )
         else:
             # Soft failure (HTTP non-200 from Gmail, refresh failed, etc).
             _record_failure(reason=msg)
@@ -189,7 +191,9 @@ def _record_failure(reason: str) -> None:
     _failure_state["next_retry_after"] = datetime.now(timezone.utc) + delay
     log.warning(
         "digest-scheduler: failure #%d (%s) — backing off %s",
-        n, reason, delay,
+        n,
+        reason,
+        delay,
     )
 
 

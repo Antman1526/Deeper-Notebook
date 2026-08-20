@@ -25,6 +25,7 @@ Two fixes:
      (default 32768) for RAM safety. Capable users can raise
      the cap via env or override per-spawn with DEEPER_NOTEBOOK_CHAT_LLM_CTX.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -80,7 +81,8 @@ def test_gguf_context_detect_handles_missing_gguf_lib():
         from desktop.launcher import Supervisor
 
         result = Supervisor._detect_gguf_context_length(
-            P("/nonexistent/path.gguf"), fallback=12345,
+            P("/nonexistent/path.gguf"),
+            fallback=12345,
         )
         assert result == 12345, (
             f"expected fallback 12345 on missing GGUF, got {result!r}"
@@ -100,11 +102,10 @@ def test_gguf_context_detect_handles_corrupt_path():
     # Using this very test file as bait.
     bad_path = Path(__file__)
     result = Supervisor._detect_gguf_context_length(
-        bad_path, fallback=99999,
+        bad_path,
+        fallback=99999,
     )
-    assert result == 99999, (
-        f"expected fallback 99999 for non-GGUF file, got {result!r}"
-    )
+    assert result == 99999, f"expected fallback 99999 for non-GGUF file, got {result!r}"
 
 
 def test_explicit_env_var_still_wins():

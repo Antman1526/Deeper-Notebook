@@ -69,7 +69,9 @@ async def start_exam_attempt(payload: StartExamRequest) -> ExamAttemptResponse:
         )
         created = await _repository().create(attempt)
     except StudyExamConflict as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
     except StudyExamError:
         raise HTTPException(status_code=503, detail="ExamLab is unavailable") from None
     return ExamAttemptResponse.from_attempt(created)
@@ -110,7 +112,9 @@ async def submit_exam_attempt(
     except StudyExamNotFound:
         raise HTTPException(status_code=404, detail="Exam attempt not found") from None
     except StudyExamConflict as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
     except StudyExamError:
         raise HTTPException(status_code=503, detail="ExamLab is unavailable") from None
     return ExamAttemptResponse.from_attempt(saved)
@@ -126,11 +130,15 @@ async def seed_missed_questions(attempt_id: str) -> SeedMissesResponse:
     except StudyExamNotFound:
         raise HTTPException(status_code=404, detail="Exam attempt not found") from None
     except StudyExamConflict as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
     already = len(attempt.seeded_indices)
     if not pairs:
         return SeedMissesResponse(
-            created=0, already_seeded=already, seeded_indices=list(attempt.seeded_indices)
+            created=0,
+            already_seeded=already,
+            seeded_indices=list(attempt.seeded_indices),
         )
     study_repository = StudyRepository()
     seeded: list[int] = []

@@ -27,11 +27,13 @@ class TestBriefTruncation:
 
     def test_single_line_short_passthrough(self):
         from api.routers.studio import _brief
+
         exc = ValueError("oh no")
         assert _brief(exc) == "oh no"
 
     def test_single_line_long_truncated_with_ellipsis(self):
         from api.routers.studio import _brief
+
         long_msg = "x" * 500
         result = _brief(ValueError(long_msg))
         assert len(result) <= 200
@@ -41,6 +43,7 @@ class TestBriefTruncation:
 
     def test_multi_line_preserves_first_line(self):
         from api.routers.studio import _brief
+
         msg = "TypeError: cannot convert int to str\n  at line 42\n  at line 50"
         result = _brief(TypeError(msg))
         # First line preserved verbatim
@@ -50,6 +53,7 @@ class TestBriefTruncation:
 
     def test_multi_line_singular_pluralization(self):
         from api.routers.studio import _brief
+
         msg = "Error\nOne extra line"
         result = _brief(RuntimeError(msg))
         # Should say "1 more line" (singular), not "1 more lines"
@@ -61,6 +65,7 @@ class TestBriefTruncation:
         ellipsized, but room is reserved for the multi-line suffix
         so the operator still sees the line count."""
         from api.routers.studio import _brief
+
         first = "x" * 500
         msg = f"{first}\nline 2\nline 3"
         result = _brief(RuntimeError(msg))
@@ -91,6 +96,7 @@ class TestUpstreamProbe:
     @pytest.mark.asyncio
     async def test_no_credentials_returns_ok_status(self):
         from api.main import _probe_upstream_providers
+
         with patch(
             "deeper_notebook.domain.credential.Credential.get_all",
             AsyncMock(return_value=[]),
@@ -103,6 +109,7 @@ class TestUpstreamProbe:
     @pytest.mark.asyncio
     async def test_credential_list_failure_returns_error(self):
         from api.main import _probe_upstream_providers
+
         with patch(
             "deeper_notebook.domain.credential.Credential.get_all",
             AsyncMock(side_effect=RuntimeError("db down")),
@@ -115,13 +122,17 @@ class TestUpstreamProbe:
     @pytest.mark.asyncio
     async def test_all_providers_healthy(self):
         from api.main import _probe_upstream_providers
+
         creds = [_FakeCredential(1, "openai"), _FakeCredential(2, "anthropic")]
-        with patch(
-            "deeper_notebook.domain.credential.Credential.get_all",
-            AsyncMock(return_value=creds),
-        ), patch(
-            "deeper_notebook.ai.connection_tester.test_provider_connection",
-            AsyncMock(return_value=(True, "Connection successful")),
+        with (
+            patch(
+                "deeper_notebook.domain.credential.Credential.get_all",
+                AsyncMock(return_value=creds),
+            ),
+            patch(
+                "deeper_notebook.ai.connection_tester.test_provider_connection",
+                AsyncMock(return_value=(True, "Connection successful")),
+            ),
         ):
             result = await _probe_upstream_providers(timeout_seconds=1.0)
         assert result["status"] == "ok"
@@ -132,19 +143,24 @@ class TestUpstreamProbe:
     @pytest.mark.asyncio
     async def test_mixed_health_returns_degraded(self):
         from api.main import _probe_upstream_providers
+
         creds = [_FakeCredential(1, "openai"), _FakeCredential(2, "anthropic")]
+
         # First returns success, second returns failure.
         # `test_provider_connection` returns a tuple, so the AsyncMock
         # needs side_effect to return different values per call.
         async def fake_probe(provider, config_id=None):
             return (True, "ok") if provider == "openai" else (False, "401")
 
-        with patch(
-            "deeper_notebook.domain.credential.Credential.get_all",
-            AsyncMock(return_value=creds),
-        ), patch(
-            "deeper_notebook.ai.connection_tester.test_provider_connection",
-            new=fake_probe,
+        with (
+            patch(
+                "deeper_notebook.domain.credential.Credential.get_all",
+                AsyncMock(return_value=creds),
+            ),
+            patch(
+                "deeper_notebook.ai.connection_tester.test_provider_connection",
+                new=fake_probe,
+            ),
         ):
             result = await _probe_upstream_providers(timeout_seconds=1.0)
         assert result["status"] == "degraded"
@@ -161,12 +177,15 @@ class TestUpstreamProbe:
             return (True, "would have succeeded")
 
         creds = [_FakeCredential(1, "openai")]
-        with patch(
-            "deeper_notebook.domain.credential.Credential.get_all",
-            AsyncMock(return_value=creds),
-        ), patch(
-            "deeper_notebook.ai.connection_tester.test_provider_connection",
-            new=slow_probe,
+        with (
+            patch(
+                "deeper_notebook.domain.credential.Credential.get_all",
+                AsyncMock(return_value=creds),
+            ),
+            patch(
+                "deeper_notebook.ai.connection_tester.test_provider_connection",
+                new=slow_probe,
+            ),
         ):
             result = await _probe_upstream_providers(timeout_seconds=0.2)
         assert result["ok"] is False
@@ -186,12 +205,15 @@ class TestUpstreamProbe:
             return (True, "ok")
 
         creds = [_FakeCredential(1, "openai"), _FakeCredential(2, "anthropic")]
-        with patch(
-            "deeper_notebook.domain.credential.Credential.get_all",
-            AsyncMock(return_value=creds),
-        ), patch(
-            "deeper_notebook.ai.connection_tester.test_provider_connection",
-            new=raising_probe,
+        with (
+            patch(
+                "deeper_notebook.domain.credential.Credential.get_all",
+                AsyncMock(return_value=creds),
+            ),
+            patch(
+                "deeper_notebook.ai.connection_tester.test_provider_connection",
+                new=raising_probe,
+            ),
         ):
             result = await _probe_upstream_providers(timeout_seconds=1.0)
         assert result["status"] == "degraded"
@@ -219,21 +241,27 @@ class TestHealthzDeepProbeFlag:
 
     def test_default_omits_upstream_providers_key(self):
         client = self._make_client()
-        with patch(
-            "api.routers.config.check_database_health",
-            AsyncMock(return_value={"status": "online"}),
-        ), patch(
-            "deeper_notebook.database.async_migrate.AsyncMigrationManager"
-        ) as mgr_cls:
+        with (
+            patch(
+                "api.routers.config.check_database_health",
+                AsyncMock(return_value={"status": "online"}),
+            ),
+            patch(
+                "deeper_notebook.database.async_migrate.AsyncMigrationManager"
+            ) as mgr_cls,
+        ):
             mgr = MagicMock()
             mgr.needs_migration = AsyncMock(return_value=False)
             mgr_cls.return_value = mgr
-            with patch(
-                "deeper_notebook.ai.models.model_manager.get_embedding_model",
-                AsyncMock(return_value=MagicMock()),
-            ), patch(
-                "deeper_notebook.ai.models.model_manager.get_default_model",
-                AsyncMock(return_value=MagicMock()),
+            with (
+                patch(
+                    "deeper_notebook.ai.models.model_manager.get_embedding_model",
+                    AsyncMock(return_value=MagicMock()),
+                ),
+                patch(
+                    "deeper_notebook.ai.models.model_manager.get_default_model",
+                    AsyncMock(return_value=MagicMock()),
+                ),
             ):
                 r = client.get("/healthz/deep")
         assert r.status_code in (200, 503)
@@ -244,24 +272,31 @@ class TestHealthzDeepProbeFlag:
 
     def test_probe_flag_includes_upstream_providers_key(self):
         client = self._make_client()
-        with patch(
-            "api.routers.config.check_database_health",
-            AsyncMock(return_value={"status": "online"}),
-        ), patch(
-            "deeper_notebook.database.async_migrate.AsyncMigrationManager"
-        ) as mgr_cls:
+        with (
+            patch(
+                "api.routers.config.check_database_health",
+                AsyncMock(return_value={"status": "online"}),
+            ),
+            patch(
+                "deeper_notebook.database.async_migrate.AsyncMigrationManager"
+            ) as mgr_cls,
+        ):
             mgr = MagicMock()
             mgr.needs_migration = AsyncMock(return_value=False)
             mgr_cls.return_value = mgr
-            with patch(
-                "deeper_notebook.ai.models.model_manager.get_embedding_model",
-                AsyncMock(return_value=MagicMock()),
-            ), patch(
-                "deeper_notebook.ai.models.model_manager.get_default_model",
-                AsyncMock(return_value=MagicMock()),
-            ), patch(
-                "deeper_notebook.domain.credential.Credential.get_all",
-                AsyncMock(return_value=[]),
+            with (
+                patch(
+                    "deeper_notebook.ai.models.model_manager.get_embedding_model",
+                    AsyncMock(return_value=MagicMock()),
+                ),
+                patch(
+                    "deeper_notebook.ai.models.model_manager.get_default_model",
+                    AsyncMock(return_value=MagicMock()),
+                ),
+                patch(
+                    "deeper_notebook.domain.credential.Credential.get_all",
+                    AsyncMock(return_value=[]),
+                ),
             ):
                 r = client.get("/healthz/deep?probe_providers=true")
         body = r.json()

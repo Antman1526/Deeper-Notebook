@@ -1,5 +1,6 @@
 """v0.8.68 — podcast submit fails fast offline when profiles use cloud
 models, instead of hanging the worker against an unreachable provider."""
+
 from __future__ import annotations
 
 import asyncio
@@ -24,8 +25,12 @@ def _reset():
     network.reset_network_state_for_tests()
 
 
-def _profiles(*, tts_provider, outline_provider="openai_compatible",
-              transcript_provider="openai_compatible"):
+def _profiles(
+    *,
+    tts_provider,
+    outline_provider="openai_compatible",
+    transcript_provider="openai_compatible",
+):
     async def _tts():
         return (tts_provider, "voice-model", {})
 
@@ -45,11 +50,11 @@ def _profiles(*, tts_provider, outline_provider="openai_compatible",
 
 def _patch_state(monkeypatch, status, forced=False):
     async def _fake():
-        return NetworkState(status=status, forced_offline=forced,
-                            checked_at=0.0, source="probe")
-    monkeypatch.setattr(
-        network, "get_network_state_with_settings", _fake
-    )
+        return NetworkState(
+            status=status, forced_offline=forced, checked_at=0.0, source="probe"
+        )
+
+    monkeypatch.setattr(network, "get_network_state_with_settings", _fake)
 
 
 def test_offline_cloud_tts_raises_fast(monkeypatch):

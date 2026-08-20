@@ -23,6 +23,7 @@ table on insert; `filters["kind"]` chooses on search. Default "fact".
 The `__init__` signature must match `SurrealVectorStoreConfig` (Task 2.5)
 because mem0's `VectorStoreFactory.create()` calls `cls(**config.model_dump())`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -68,6 +69,7 @@ def _validate_vector_id(vector_id: Any) -> str:
         raise ValueError(f"Invalid vector_id (must be memory_<kind>:<id>): {s!r}")
     return s
 
+
 # ---------------------------------------------------------- sync/async bridge
 #
 # mem0's VectorStoreBase methods are sync, but surrealdb's Python client is
@@ -91,8 +93,9 @@ def _get_bg_loop() -> asyncio.AbstractEventLoop:
     with _bg_loop_lock:
         if _bg_loop is None or _bg_loop.is_closed():
             loop = asyncio.new_event_loop()
-            t = threading.Thread(target=loop.run_forever, name="surreal-async-loop",
-                                 daemon=True)
+            t = threading.Thread(
+                target=loop.run_forever, name="surreal-async-loop", daemon=True
+            )
             t.start()
             _bg_loop = loop
         return _bg_loop
@@ -130,15 +133,19 @@ class SurrealMemoryStore(VectorStoreBase):
     For tests, use the `from_test_client` classmethod with a mock client.
     """
 
-    def __init__(self, *,
-                 collection_name: str = "memory",
-                 embedding_model_dims: int = 768,
-                 surreal_url: str,
-                 namespace: str = "open_notebook",
-                 database: str = "open_notebook",
-                 user: str,
-                 password: str):
+    def __init__(
+        self,
+        *,
+        collection_name: str = "memory",
+        embedding_model_dims: int = 768,
+        surreal_url: str,
+        namespace: str = "open_notebook",
+        database: str = "open_notebook",
+        user: str,
+        password: str,
+    ):
         from surrealdb import Surreal
+
         self._client = Surreal(surreal_url)
         self._connect_args = (namespace, database, user, password)
         self._connected = False
@@ -210,9 +217,7 @@ class SurrealMemoryStore(VectorStoreBase):
             _meta = payload.get("metadata", {}) or {}
             text_val = payload.get("data") or payload.get("text", "")
             scope_val = payload.get("scope") or _meta.get("scope", "user")
-            confidence_val = payload.get(
-                "confidence", _meta.get("confidence", 1.0)
-            )
+            confidence_val = payload.get("confidence", _meta.get("confidence", 1.0))
             # Preserve the non-bulky metadata for recall filters. Drop `data`
             # (held in `text`) and the raw embedding to avoid duplicating storage.
             stored_meta = {
@@ -245,8 +250,9 @@ class SurrealMemoryStore(VectorStoreBase):
                 row["id"] = _id
             self._exec(f"CREATE {table} CONTENT $row", {"row": row})
 
-    def search(self, query: str, vectors, top_k: int = 5,
-               filters: dict | None = None) -> list[OutputData]:
+    def search(
+        self, query: str, vectors, top_k: int = 5, filters: dict | None = None
+    ) -> list[OutputData]:
         """Vector cosine search. `query` (text) is unused — we operate on the
         precomputed `vectors` embedding. `filters['kind']` narrows to a single
         memory table; otherwise we union the three."""
@@ -365,10 +371,13 @@ class SurrealMemoryStore(VectorStoreBase):
             # for distinct timestamps). `confidence` is added to the projection
             # because the ORDER BY field must be selected (the "missing order
             # idiom" trap noted above).
-            rows = self._exec(
-                f"SELECT id, created_at, confidence FROM {table} "  # nosec B608
-                "ORDER BY created_at DESC, confidence DESC"
-            ) or []
+            rows = (
+                self._exec(
+                    f"SELECT id, created_at, confidence FROM {table} "  # nosec B608
+                    "ORDER BY created_at DESC, confidence DESC"
+                )
+                or []
+            )
             # rows[:keep] are the newest survivors; rows[keep:] are evicted.
             old_ids = [
                 r["id"]
@@ -381,7 +390,7 @@ class SurrealMemoryStore(VectorStoreBase):
                 for i in range(0, len(old_ids), 1000):
                     self._exec(
                         f"DELETE {table} WHERE id IN $ids",
-                        {"ids": old_ids[i:i + 1000]},
+                        {"ids": old_ids[i : i + 1000]},
                     )
             deleted[table] = len(old_ids)
         return deleted
@@ -394,8 +403,7 @@ class SurrealMemoryStore(VectorStoreBase):
         for table in _ALL_TABLES:
             self._exec(f"DEFINE TABLE {table}")
 
-    def keyword_search(self, query: str, top_k: int = 5,
-                       filters: dict | None = None):
+    def keyword_search(self, query: str, top_k: int = 5, filters: dict | None = None):
         """BM25 / FTS not wired in v0.4. Returning None tells mem0 to skip
         hybrid scoring and rely on vector search alone."""
         return None

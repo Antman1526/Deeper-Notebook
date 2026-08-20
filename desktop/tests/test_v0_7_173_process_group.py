@@ -16,6 +16,7 @@ behavior is hard to assert without a real Popen, but a future
 refactor that drops the kwarg or reverts to a bare terminate()
 fails deterministically here.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

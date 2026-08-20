@@ -19,6 +19,7 @@ Background:
     window-focus refetch (`refetchOnWindowFocus: true` on the
     notebooks query). AST-level pin since the contract is structural.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,6 +38,7 @@ def _read_source(rel: str) -> str:
 @pytest.fixture()
 def client():
     from api.main import app
+
     return TestClient(app)
 
 
@@ -57,9 +59,7 @@ def test_notebooks_archived_filter_uses_where_clause(client):
         captured["params"] = params
         return []
 
-    with patch(
-        "api.routers.notebooks.repo_query", new=fake_repo_query
-    ):
+    with patch("api.routers.notebooks.repo_query", new=fake_repo_query):
         r = client.get(
             "/api/notebooks?archived=false",
             headers={"x-skip-error-toast": "1"},
@@ -88,9 +88,7 @@ def test_notebooks_archived_filter_skipped_when_unset(client):
         captured["params"] = params
         return []
 
-    with patch(
-        "api.routers.notebooks.repo_query", new=fake_repo_query
-    ):
+    with patch("api.routers.notebooks.repo_query", new=fake_repo_query):
         r = client.get(
             "/api/notebooks",
             headers={"x-skip-error-toast": "1"},
@@ -114,9 +112,7 @@ def test_notebooks_archived_true_also_works(client):
         captured["params"] = params
         return []
 
-    with patch(
-        "api.routers.notebooks.repo_query", new=fake_repo_query
-    ):
+    with patch("api.routers.notebooks.repo_query", new=fake_repo_query):
         r = client.get(
             "/api/notebooks?archived=true",
             headers={"x-skip-error-toast": "1"},

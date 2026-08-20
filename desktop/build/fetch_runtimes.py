@@ -1,4 +1,5 @@
 """Download pinned SurrealDB + Node.js + uv + python-build-standalone runtimes into desktop/bin/ for the host platform."""
+
 from __future__ import annotations
 
 import hashlib
@@ -115,9 +116,12 @@ def download(url: str, dest: Path, expected_sha256: str | None = None) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     staging = dest.with_name(f".{dest.name}.{secrets.token_hex(8)}.part")
     try:
-        with urllib.request.urlopen(  # nosec B310
-            url, timeout=DOWNLOAD_SOCKET_TIMEOUT_SECONDS
-        ) as r, staging.open("wb") as f:
+        with (
+            urllib.request.urlopen(  # nosec B310
+                url, timeout=DOWNLOAD_SOCKET_TIMEOUT_SECONDS
+            ) as r,
+            staging.open("wb") as f,
+        ):
             shutil.copyfileobj(r, f)
         _verify_download(staging, expected_sha256)
         staging.replace(dest)
@@ -155,9 +159,7 @@ def _uv_root(arch: str) -> str:
 
 def _replace_runtime_tree(staged: Path, destination: Path) -> None:
     """Replace a verified runtime tree without deleting the last good copy first."""
-    backup = destination.with_name(
-        f".{destination.name}.{secrets.token_hex(8)}.backup"
-    )
+    backup = destination.with_name(f".{destination.name}.{secrets.token_hex(8)}.backup")
     had_destination = destination.exists()
     if had_destination:
         destination.replace(backup)
@@ -172,7 +174,10 @@ def _replace_runtime_tree(staged: Path, destination: Path) -> None:
 
 
 def fetch_surreal(
-    version: str, url: str, arch: str, expected_sha256: str | None = None,
+    version: str,
+    url: str,
+    arch: str,
+    expected_sha256: str | None = None,
 ) -> None:
     BIN.mkdir(parents=True, exist_ok=True)
     if arch.startswith("windows"):
@@ -202,7 +207,10 @@ def fetch_surreal(
 
 
 def fetch_node(
-    version: str, url: str, arch: str, expected_sha256: str | None = None,
+    version: str,
+    url: str,
+    arch: str,
+    expected_sha256: str | None = None,
 ) -> None:
     out_dir = BIN / f"node-{arch}"
     staging_dir = BIN / f".node-{arch}.{secrets.token_hex(8)}.extract"
@@ -231,7 +239,10 @@ def fetch_node(
 
 
 def fetch_uv(
-    version: str, url: str, arch: str, expected_sha256: str | None = None,
+    version: str,
+    url: str,
+    arch: str,
+    expected_sha256: str | None = None,
 ) -> None:
     """Extract the uv binary into desktop/bin/uv (or uv.exe on Windows)."""
     BIN.mkdir(parents=True, exist_ok=True)
@@ -272,7 +283,8 @@ def fetch_uv(
                 # Find the member named */uv (not uvx), then stage it before
                 # atomically replacing the last verified runtime.
                 uv_member = next(
-                    m for m in t.getmembers()
+                    m
+                    for m in t.getmembers()
                     if m.name.endswith("/uv") or m.name == "uv"
                 )
                 uv_member.name = uv_name  # flatten to just "uv"
@@ -323,7 +335,9 @@ def fetch_python_standalone(
         shutil.rmtree(out_dir)
 
     size_mb = tarball.stat().st_size // 1024 // 1024
-    print(f"  python-build-standalone {version} (Python {python_version}) -> {tarball} ({size_mb} MB)")
+    print(
+        f"  python-build-standalone {version} (Python {python_version}) -> {tarball} ({size_mb} MB)"
+    )
 
 
 def main() -> int:

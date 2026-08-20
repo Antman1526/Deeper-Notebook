@@ -6,6 +6,7 @@ the user and only replaced by the cleaned answer at the `done` event, so users
 saw raw reasoning flash by. `_visible_streamed_text` derives the visible
 (non-think) prefix from the accumulated stream so only the answer is emitted.
 """
+
 from __future__ import annotations
 
 from api.routers.chat import _visible_streamed_text
@@ -21,7 +22,7 @@ def _simulate_stream(chunks: list[str]) -> str:
         accum += c
         visible = _visible_streamed_text(accum)
         if visible.startswith(sent) and len(visible) > len(sent):
-            emitted.append(visible[len(sent):])
+            emitted.append(visible[len(sent) :])
             sent = visible
         elif visible != sent:
             sent = visible  # resync (think opened after answer text)
@@ -56,7 +57,9 @@ def test_trailing_partial_open_tag_withheld():
 
 def test_stream_split_tag_never_leaks_think():
     """The open tag is split across chunks; the answer streams cleanly."""
-    out = _simulate_stream(["<th", "ink>reason", "ing here</think>", "Final ", "answer."])
+    out = _simulate_stream(
+        ["<th", "ink>reason", "ing here</think>", "Final ", "answer."]
+    )
     assert "<think>" not in out and "reasoning" not in out
     assert out == "Final answer."
 

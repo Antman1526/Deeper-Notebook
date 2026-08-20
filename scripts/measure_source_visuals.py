@@ -69,7 +69,9 @@ def _measure_sync(
     candidates = list(extractor(fixture))  # type: ignore[operator]
     output_bytes = _prepare_and_publish(store, kind, candidates)
     duration = time.perf_counter() - started
-    return KindMeasurement(duration, len(candidates), output_bytes, _fixture_sha256(fixture))
+    return KindMeasurement(
+        duration, len(candidates), output_bytes, _fixture_sha256(fixture)
+    )
 
 
 async def _measure_async(
@@ -80,10 +82,16 @@ async def _measure_async(
 ) -> KindMeasurement:
     started = time.perf_counter()
     extracted = await extractor(fixture)  # type: ignore[operator]
-    candidates = [] if extracted is None else (extracted if isinstance(extracted, list) else [extracted])
+    candidates = (
+        []
+        if extracted is None
+        else (extracted if isinstance(extracted, list) else [extracted])
+    )
     output_bytes = _prepare_and_publish(store, kind, candidates)
     duration = time.perf_counter() - started
-    return KindMeasurement(duration, len(candidates), output_bytes, _fixture_sha256(fixture))
+    return KindMeasurement(
+        duration, len(candidates), output_bytes, _fixture_sha256(fixture)
+    )
 
 
 async def main() -> int:
@@ -143,12 +151,16 @@ async def main() -> int:
 
     RECEIPT_PATH.parent.mkdir(parents=True, exist_ok=True)
     temporary = RECEIPT_PATH.with_name(f"{RECEIPT_PATH.name}.tmp-{os.getpid()}")
-    temporary.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     temporary.chmod(0o600)
     temporary.replace(RECEIPT_PATH)
     print(json.dumps(receipt, indent=2, sort_keys=True))
     if not receipt["passed"]:
-        raise RuntimeError("nonempty visual extraction, cache, or source-row budget exceeded")
+        raise RuntimeError(
+            "nonempty visual extraction, cache, or source-row budget exceeded"
+        )
     return 0
 
 

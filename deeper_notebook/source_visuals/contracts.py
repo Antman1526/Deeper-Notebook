@@ -23,10 +23,13 @@ class SourceVisualLocator(BaseModel):
 
     @model_validator(mode="after")
     def exactly_one_locator(self) -> "SourceVisualLocator":
-        if sum(
-            value is not None
-            for value in (self.page, self.timestamp_ms, self.resource_id)
-        ) != 1:
+        if (
+            sum(
+                value is not None
+                for value in (self.page, self.timestamp_ms, self.resource_id)
+            )
+            != 1
+        ):
             raise ValueError("source visual locator must contain exactly one value")
         return self
 

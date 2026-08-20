@@ -420,11 +420,13 @@ def test_graph_exposes_only_bounded_unified_document_identities(client):
         del test_client.app.state.knowledge_engine_service
 
     assert response.status_code == 200
-    assert response.json()["nodes"] == [{
-        "id": "note:one",
-        "title": "One",
-        "knowledge_document_id": "knowledge_engine_document:current",
-    }]
+    assert response.json()["nodes"] == [
+        {
+            "id": "note:one",
+            "title": "One",
+            "knowledge_document_id": "knowledge_engine_document:current",
+        }
+    ]
     assert service.calls == [("note:one", ())]
     assert "/Users/" not in response.text
 

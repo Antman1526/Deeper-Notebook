@@ -126,47 +126,91 @@ KnowledgeTarget = Annotated[
     Field(discriminator="kind"),
 ]
 
+
 class KnowledgeNavigationRepository:
     async def create_folder(self, command: CreateFolder) -> BookmarkFolder:
         raise NotImplementedError
-    async def update_folder(self, folder_id: str, command: UpdateFolder) -> BookmarkFolder:
+
+    async def update_folder(
+        self, folder_id: str, command: UpdateFolder
+    ) -> BookmarkFolder:
         raise NotImplementedError
-    async def delete_folder(self, folder_id: str, command: DeleteFolder) -> NavigationReceipt:
+
+    async def delete_folder(
+        self, folder_id: str, command: DeleteFolder
+    ) -> NavigationReceipt:
         raise NotImplementedError
+
     async def list_folders(self) -> list[BookmarkFolder]:
         raise NotImplementedError
+
     async def create_bookmark(self, command: CreateBookmark) -> Bookmark:
         raise NotImplementedError
-    async def update_bookmark(self, bookmark_id: str, command: UpdateBookmark) -> Bookmark:
+
+    async def update_bookmark(
+        self, bookmark_id: str, command: UpdateBookmark
+    ) -> Bookmark:
         raise NotImplementedError
-    async def delete_bookmark(self, bookmark_id: str, command: DeleteBookmark) -> NavigationReceipt:
+
+    async def delete_bookmark(
+        self, bookmark_id: str, command: DeleteBookmark
+    ) -> NavigationReceipt:
         raise NotImplementedError
-    async def list_bookmarks(self, filters: BookmarkFilters, cursor: str | None, limit: int) -> BookmarkPage:
+
+    async def list_bookmarks(
+        self, filters: BookmarkFilters, cursor: str | None, limit: int
+    ) -> BookmarkPage:
         raise NotImplementedError
-    async def create_workspace(self, command: CreateWorkspace) -> NamedKnowledgeWorkspace:
+
+    async def create_workspace(
+        self, command: CreateWorkspace
+    ) -> NamedKnowledgeWorkspace:
         raise NotImplementedError
-    async def update_workspace(self, workspace_id: str, command: UpdateWorkspace) -> NamedKnowledgeWorkspace:
+
+    async def update_workspace(
+        self, workspace_id: str, command: UpdateWorkspace
+    ) -> NamedKnowledgeWorkspace:
         raise NotImplementedError
-    async def duplicate_workspace(self, workspace_id: str, command: DuplicateWorkspace) -> NamedKnowledgeWorkspace:
+
+    async def duplicate_workspace(
+        self, workspace_id: str, command: DuplicateWorkspace
+    ) -> NamedKnowledgeWorkspace:
         raise NotImplementedError
-    async def delete_workspace(self, workspace_id: str, command: DeleteWorkspace) -> NavigationReceipt:
+
+    async def delete_workspace(
+        self, workspace_id: str, command: DeleteWorkspace
+    ) -> NavigationReceipt:
         raise NotImplementedError
+
     async def get_workspace(self, workspace_id: str) -> NamedKnowledgeWorkspace:
         raise NotImplementedError
+
     async def list_workspaces(self) -> list[NamedKnowledgeWorkspaceSummary]:
         raise NotImplementedError
+
     async def random_candidate_count(self, filters: RandomNoteFilters) -> int:
         raise NotImplementedError
-    async def random_candidate_at(self, filters: RandomNoteFilters, offset: int) -> KnowledgeOpenDescriptor | None:
+
+    async def random_candidate_at(
+        self, filters: RandomNoteFilters, offset: int
+    ) -> KnowledgeOpenDescriptor | None:
         raise NotImplementedError
+
 
 class KnowledgeNavigationService:
     async def hydrate_target(self, target: KnowledgeTarget) -> HydratedKnowledgeTarget:
         raise NotImplementedError
-    async def list_bookmarks(self, filters: BookmarkFilters, cursor: str | None, limit: int) -> HydratedBookmarkPage:
+
+    async def list_bookmarks(
+        self, filters: BookmarkFilters, cursor: str | None, limit: int
+    ) -> HydratedBookmarkPage:
         raise NotImplementedError
-    async def workspace_restore_plan(self, workspace_id: str, revision: int) -> WorkspaceRestorePlan:
+
+    async def workspace_restore_plan(
+        self, workspace_id: str, revision: int
+    ) -> WorkspaceRestorePlan:
         raise NotImplementedError
+
     async def random_note(self, filters: RandomNoteFilters) -> RandomNoteResult:
         raise NotImplementedError
 ```
@@ -457,8 +501,12 @@ git commit -m "feat: define navigation productivity contracts"
 
 ```python
 @pytest.mark.asyncio
-async def test_create_bookmark_replays_same_operation_and_rejects_new_payload(fake_connection):
-    repository = KnowledgeNavigationRepository(connection_factory=fake_connection.factory)
+async def test_create_bookmark_replays_same_operation_and_rejects_new_payload(
+    fake_connection,
+):
+    repository = KnowledgeNavigationRepository(
+        connection_factory=fake_connection.factory
+    )
     command = create_bookmark_command(operation_id="bookmark-create-1")
     first = await repository.create_bookmark(command)
     replay = await repository.create_bookmark(command)
@@ -471,10 +519,14 @@ async def test_create_bookmark_replays_same_operation_and_rejects_new_payload(fa
 
 @pytest.mark.asyncio
 async def test_update_requires_exact_revision_and_rolls_back_receipt(fake_connection):
-    repository = KnowledgeNavigationRepository(connection_factory=fake_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=fake_connection.factory
+    )
     existing = await repository.create_bookmark(create_bookmark_command())
     fake_connection.fail_after_receipt = True
-    with pytest.raises(KnowledgeNavigationRepositoryError, match="repository_unavailable"):
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="repository_unavailable"
+    ):
         await repository.update_bookmark(
             existing.id,
             update_bookmark_command(expected_revision=existing.revision),
@@ -484,13 +536,19 @@ async def test_update_requires_exact_revision_and_rolls_back_receipt(fake_connec
 
 @pytest.mark.asyncio
 async def test_folder_reparent_rejects_cycle_and_depth_seventeen(fake_connection):
-    repository = KnowledgeNavigationRepository(connection_factory=fake_connection.factory)
+    repository = KnowledgeNavigationRepository(
+        connection_factory=fake_connection.factory
+    )
     parent = None
     for index in range(16):
         parent = await repository.create_folder(
-            create_folder_command(name=f"Level {index}", parent_folder_id=parent.id if parent else None)
+            create_folder_command(
+                name=f"Level {index}", parent_folder_id=parent.id if parent else None
+            )
         )
-    with pytest.raises(KnowledgeNavigationRepositoryError, match="folder_depth_exceeded"):
+    with pytest.raises(
+        KnowledgeNavigationRepositoryError, match="folder_depth_exceeded"
+    ):
         await repository.create_folder(
             create_folder_command(name="Level 16", parent_folder_id=parent.id)
         )
@@ -744,7 +802,10 @@ async def test_create_bookmark_is_revisioned_and_redacted(api_client):
         "/api/deeper-notebook/knowledge/bookmarks",
         json={
             "operation_id": "bookmark-create-api-1",
-            "target": {"kind": "document", "document_id": "knowledge_engine_document:plan"},
+            "target": {
+                "kind": "document",
+                "document_id": "knowledge_engine_document:plan",
+            },
             "display_label": "Research plan",
             "folder_id": None,
             "tags": ["Research"],
@@ -847,7 +908,9 @@ git commit -m "feat: expose global knowledge bookmarks"
 
 ```python
 @pytest.mark.asyncio
-async def test_restore_plan_hydrates_every_target_without_mutating_current_session(service, current_session_path):
+async def test_restore_plan_hydrates_every_target_without_mutating_current_session(
+    service, current_session_path
+):
     before = current_session_path.read_bytes()
     plan = await service.workspace_restore_plan("named_knowledge_workspace:desk", 3)
     assert plan.workspace_id == "named_knowledge_workspace:desk"
@@ -863,7 +926,9 @@ async def test_restore_revision_conflict_returns_409_and_no_snapshot(api_client)
         json={"revision": 2},
     )
     assert response.status_code == 409
-    assert response.json() == {"detail": {"code": "knowledge_workspace_revision_conflict"}}
+    assert response.json() == {
+        "detail": {"code": "knowledge_workspace_revision_conflict"}
+    }
 ```
 
 - [ ] **Step 2: Extend Current Session with backward-compatible navigation defaults**
@@ -883,7 +948,9 @@ class KnowledgeWorkspaceNavigation(BaseModel):
     search_query: str = Field(default="", max_length=512)
     active_draft_id: str | None = Field(default=None, max_length=128)
     selected_space_ids: list[str] = Field(default_factory=list, max_length=32)
-    authority_filters: list[Literal["app_owned", "external_read_only"]] = Field(default_factory=list, max_length=2)
+    authority_filters: list[Literal["app_owned", "external_read_only"]] = Field(
+        default_factory=list, max_length=2
+    )
     metrics_visible: bool = True
 
 
@@ -893,7 +960,9 @@ class KnowledgeWorkspaceDocument(BaseModel):
     next_id: int
     panes: dict[str, KnowledgePaneState]
     layout: KnowledgeLayoutNode
-    navigation: KnowledgeWorkspaceNavigation = Field(default_factory=KnowledgeWorkspaceNavigation)
+    navigation: KnowledgeWorkspaceNavigation = Field(
+        default_factory=KnowledgeWorkspaceNavigation
+    )
 ```
 
 Add `knowledge_document_id: str | None = None` and
@@ -1004,7 +1073,9 @@ async def random_note(self, filters: RandomNoteFilters) -> RandomNoteResult:
         count = await self._repository.random_candidate_count(filters)
         if count == 0:
             return RandomNoteResult(state="empty", document=None)
-        document = await self._repository.random_candidate_at(filters, min(offset, count - 1))
+        document = await self._repository.random_candidate_at(
+            filters, min(offset, count - 1)
+        )
     if document is None:
         raise KnowledgeNavigationServiceError("knowledge_engine_unavailable")
     return RandomNoteResult(state="selected", document=document)

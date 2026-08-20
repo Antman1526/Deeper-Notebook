@@ -15,6 +15,7 @@ tests pin:
   - DEEPER_NOTEBOOK_DB_POOL_DISABLED falls back to per-query behavior
   - close_pool() drains everything
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -90,6 +91,7 @@ async def fresh_pool():
 # _db_pool_size — env-driven cap
 # ---------------------------------------------------------------------------
 
+
 def test_pool_size_default_is_4(monkeypatch):
     monkeypatch.delenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", raising=False)
     assert repo._db_pool_size() == 4
@@ -116,6 +118,7 @@ def test_pool_size_falls_back_outside_range(monkeypatch):
 # ---------------------------------------------------------------------------
 # Pool reuse — the perf win we're paying for
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_connection_is_reused_across_acquires(
@@ -165,9 +168,7 @@ async def test_cancelled_query_marks_connection_broken(
 
 
 @pytest.mark.asyncio
-async def test_pool_grows_lazily_up_to_cap(
-    monkeypatch, fake_async_surreal, fresh_pool
-):
+async def test_pool_grows_lazily_up_to_cap(monkeypatch, fake_async_surreal, fresh_pool):
     """Concurrent acquires force new connections up to the cap."""
     monkeypatch.setenv("DEEPER_NOTEBOOK_DB_POOL_SIZE", "3")
 
@@ -227,6 +228,7 @@ async def test_pool_blocks_at_cap(monkeypatch, fake_async_surreal, fresh_pool):
 # Broken-connection handling
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_exception_in_block_marks_connection_broken(
     monkeypatch, fake_async_surreal, fresh_pool
@@ -250,6 +252,7 @@ async def test_exception_in_block_marks_connection_broken(
 # ---------------------------------------------------------------------------
 # Disable flag — fallback to pre-v0.7.18 behavior
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_pool_disabled_opens_and_closes_per_call(
@@ -275,6 +278,7 @@ async def test_pool_disabled_opens_and_closes_per_call(
 # ---------------------------------------------------------------------------
 # close_pool — graceful shutdown
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_close_pool_closes_all_idle_connections(

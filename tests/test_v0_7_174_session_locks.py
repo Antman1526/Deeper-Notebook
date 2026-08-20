@@ -26,6 +26,7 @@ This test verifies:
   - AST-level pin that both /chat and /source/chat streaming paths
     invoke get_session_lock around their critical section.
 """
+
 from __future__ import annotations
 
 import asyncio

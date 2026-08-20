@@ -267,7 +267,9 @@ class StudyAssistantService:
         *,
         timeout_seconds: float | None = None,
     ) -> StudyAssistantResponse:
-        effective_timeout = min(float(timeout_seconds or invocation.timeout_seconds), 120.0)
+        effective_timeout = min(
+            float(timeout_seconds or invocation.timeout_seconds), 120.0
+        )
         state: dict[str, object] = {"session": None, "owns_session": False}
         try:
             async with asyncio.timeout(effective_timeout):
@@ -341,9 +343,7 @@ class StudyAssistantService:
                 expected_revision=int(_value(session, "revision", 1)),
             )
         except StudyAssistantConflictError as exc:
-            raise StudyAssistantPolicyError(
-                "assistant_invocation_in_progress"
-            ) from exc
+            raise StudyAssistantPolicyError("assistant_invocation_in_progress") from exc
         state.update(session=session, owns_session=True)
         (
             context,
@@ -358,9 +358,9 @@ class StudyAssistantService:
             )
             if not web_ids:
                 raise StudyAssistantPolicyError("web_evidence_required")
-            context = (
-                f"{context}\n\nAPPROVED WEB EVIDENCE\n{web_context}"
-            )[:_MAX_CONTEXT_CHARS]
+            context = (f"{context}\n\nAPPROVED WEB EVIDENCE\n{web_context}")[
+                :_MAX_CONTEXT_CHARS
+            ]
             allowed_citations += web_ids
             evidence_texts.update(web_texts)
         await self._assert_authority(plan_id, invocation, authority)
@@ -539,10 +539,7 @@ class StudyAssistantService:
         )
         context_budget = max(
             4_096,
-            _MAX_CONTEXT_CHARS
-            - len(invocation.prompt)
-            - 2_048
-            - web_reserve,
+            _MAX_CONTEXT_CHARS - len(invocation.prompt) - 2_048 - web_reserve,
         )
         source_context, evidence_texts = self._bounded_source_context(
             source_entries,
@@ -597,7 +594,9 @@ class StudyAssistantService:
         if invocation.network_allowed:
             if not plan_network_allowed:
                 raise StudyAssistantPolicyError("network_not_approved_by_plan")
-            if any(item not in plan_scope for item in invocation.approved_network_scope):
+            if any(
+                item not in plan_scope for item in invocation.approved_network_scope
+            ):
                 raise StudyAssistantPolicyError("network_scope_not_approved_by_plan")
         if invocation.model_route == "cloud" and plan_model_route != "cloud":
             raise StudyAssistantPolicyError("cloud_route_not_approved_by_plan")
@@ -609,7 +608,10 @@ class StudyAssistantService:
             _value(plan, "version"),
             _value(plan, "state"),
             _value(plan, "approved_syllabus_version"),
-            tuple(str(_value(link, "source_id", "")) for link in _value(plan, "source_links", ())),
+            tuple(
+                str(_value(link, "source_id", ""))
+                for link in _value(plan, "source_links", ())
+            ),
             _value(syllabus, "version"),
             _value(syllabus, "approved_at"),
             _value(syllabus, "source_manifest_sha256"),
@@ -652,8 +654,7 @@ class StudyAssistantService:
 
         scoped_boundaries = tuple(
             dict.fromkeys(
-                StudyAssistantService._search_scope_filter(item)
-                for item in scope
+                StudyAssistantService._search_scope_filter(item) for item in scope
             )
         )
         if not scoped_boundaries:
@@ -702,9 +703,7 @@ class StudyAssistantService:
         raw_evidence = await _maybe_await(
             research(invocation.prompt, tuple(invocation.approved_network_scope))
         )
-        return await self._web_context(
-            raw_evidence, invocation.approved_network_scope
-        )
+        return await self._web_context(raw_evidence, invocation.approved_network_scope)
 
     async def _web_context(
         self,
@@ -735,9 +734,7 @@ class StudyAssistantService:
             if not snippet.strip():
                 continue
             entries.append((url, snippet))
-        context, texts = self._bounded_source_context(
-            entries, budget=_MAX_SOURCE_CHARS
-        )
+        context, texts = self._bounded_source_context(entries, budget=_MAX_SOURCE_CHARS)
         return context, tuple(texts), texts
 
     @staticmethod

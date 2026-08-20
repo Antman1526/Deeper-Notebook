@@ -7,6 +7,7 @@ These tests pin the contract: macOS offloads all layers by default (-1), other
 OSes stay on CPU (0) unless the operator opts in, and a bad env value can never
 silently disable offload on macOS.
 """
+
 from __future__ import annotations
 
 import pytest

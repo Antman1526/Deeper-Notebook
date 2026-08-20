@@ -102,6 +102,7 @@ async def start_rebuild(request: RebuildRequest):
         # Run the selected counts concurrently. asyncio.gather preserves
         # the input order, and skipped branches contribute 0 cleanly.
         import asyncio as _asyncio
+
         coros = []
         if request.include_sources:
             coros.append(_count_sources())
@@ -142,9 +143,7 @@ async def start_rebuild(request: RebuildRequest):
     except Exception as e:
         logger.error(f"Failed to start rebuild: {e}")
         logger.exception(e)
-        raise HTTPException(
-            status_code=500, detail="Failed to start rebuild operation"
-        )
+        raise HTTPException(status_code=500, detail="Failed to start rebuild operation")
 
 
 @router.get("/rebuild/{command_id}/status", response_model=RebuildStatusResponse)
@@ -216,6 +215,4 @@ async def get_rebuild_status(command_id: str):
     except Exception as e:
         logger.error(f"Failed to get rebuild status: {e}")
         logger.exception(e)
-        raise HTTPException(
-            status_code=500, detail="Failed to get rebuild status"
-        )
+        raise HTTPException(status_code=500, detail="Failed to get rebuild status")

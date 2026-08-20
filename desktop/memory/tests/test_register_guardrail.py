@@ -15,6 +15,7 @@ to surface.
 These tests assert the SHAPE of the targets we mutate. If they break, we know
 to revisit _register.py before shipping.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -26,7 +27,9 @@ import pytest
 def _reload_mem0_clean():
     """Reload mem0 modules so we test the unpatched shape."""
     for mod_name in list(sys.modules):
-        if mod_name.startswith("mem0") or mod_name.startswith("desktop.memory._register"):
+        if mod_name.startswith("mem0") or mod_name.startswith(
+            "desktop.memory._register"
+        ):
             del sys.modules[mod_name]
 
 
@@ -37,6 +40,7 @@ def test_VectorStoreConfig_has_provider_configs_as_mutable_dict():
     supporting __setitem__."""
     _reload_mem0_clean()
     from mem0.vector_stores.configs import VectorStoreConfig
+
     attr = VectorStoreConfig._provider_configs
     assert hasattr(attr, "default"), (
         "mem0 changed _provider_configs shape — no .default attribute. "
@@ -58,6 +62,7 @@ def test_VectorStoreFactory_provider_to_class_is_mutable_dict():
     monkey-patch needs to find the new mutation point."""
     _reload_mem0_clean()
     from mem0.utils.factory import VectorStoreFactory
+
     assert isinstance(VectorStoreFactory.provider_to_class, dict)
     try:
         VectorStoreFactory.provider_to_class["__guardrail_test__"] = "x"
@@ -74,6 +79,7 @@ def test_register_module_installs_surreal_provider():
     importlib.import_module("desktop.memory._register")
     from mem0.utils.factory import VectorStoreFactory
     from mem0.vector_stores.configs import VectorStoreConfig
+
     assert "surreal" in VectorStoreConfig._provider_configs.default
     assert "surreal" in VectorStoreFactory.provider_to_class
     cfg_mod = importlib.import_module("mem0.configs.vector_stores.surreal")

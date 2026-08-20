@@ -150,9 +150,11 @@ class StudyProgressRepository:
         plan_id: str,
         request_ids: list[str] | tuple[str, ...],
     ) -> tuple[StudyProgressReceipt, ...]:
-        if isinstance(request_ids, (str, bytes)) or not isinstance(
-            request_ids, (list, tuple)
-        ) or len(request_ids) > 100:
+        if (
+            isinstance(request_ids, (str, bytes))
+            or not isinstance(request_ids, (list, tuple))
+            or len(request_ids) > 100
+        ):
             raise StudyProgressRepositoryError("invalid progress request batch")
         try:
             return await self.assistant.list_progress_by_requests(plan_id, request_ids)
@@ -197,7 +199,9 @@ class StudyProgressRepository:
                 return ()
             card_ids: list[RecordID] = []
             for link in link_rows:
-                if not isinstance(link, dict) or not isinstance(link.get("card_id"), str):
+                if not isinstance(link, dict) or not isinstance(
+                    link.get("card_id"), str
+                ):
                     raise StudyProgressRepositoryError("invalid linked Study card")
                 card_id = ensure_record_id(link["card_id"])
                 if str(card_id).split(":", 1)[0] != "study_card":
@@ -242,9 +246,7 @@ class StudyProgressRepository:
             terminal_receipts = await self.list_progress_by_requests(
                 plan_id, terminal_ids
             )
-            return project_mastery(
-                (*terminal_receipts, *receipts), reviews, now=now
-            )
+            return project_mastery((*terminal_receipts, *receipts), reviews, now=now)
         except StudyProgressRepositoryError:
             raise
         except StudyAssistantRepositoryError as exc:
