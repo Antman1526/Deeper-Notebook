@@ -18,7 +18,10 @@ from deeper_notebook.database.repository import (
     repo_insert,
     repo_query,
 )
-from deeper_notebook.domain.notebook import Source
+from deeper_notebook.domain.notebook import (
+    Source,
+    _wait_for_source_search_index_maintenance,
+)
 
 pytestmark = pytest.mark.integration_surreal
 
@@ -258,6 +261,7 @@ async def test_bm25_scores_survive_a_product_source_delete_before_comparison_reb
     assert str(deleted.title) in before_titles
 
     assert await deleted.delete()
+    await _wait_for_source_search_index_maintenance()
     after_delete = await _text_search_rows()
     after_titles, after_scores = _assert_meaningful_text_rows(after_delete)
     assert set(after_titles) == set(expected_survivors)

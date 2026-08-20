@@ -69,3 +69,27 @@ git diff --check
 gitleaks detect --no-git --source <owned-files> --redact --no-banner
 # no leaks found
 ```
+
+### Review repair — coalesced source-index maintenance (2026-08-20)
+
+- Fresh lifecycle RED: the initial post-delete helper held a successful source
+  deletion until a blocked first rebuild. A second RED showed maintenance could
+  start before the race-window post-sweep, leaving a newly deleted straggler
+  unrefreshed. The repair uses a per-event-loop coordinator with a strong task
+  reference only while pending, generation/pending coalescing, serialized
+  fixed-whitelist passes, and a `10s` bounded wait per index.
+- `Source.delete()` schedules in a `finally` immediately after the post-sweep
+  attempt: success, failure, and caller cancellation all retain independently
+  owned maintenance, while no rebuild can run before the sweep. A delete during
+  an active pass yields one trailing convergence pass rather than `4*N`
+  overlapping rebuilds. Per-index errors/timeouts log exact table/index context
+  and detached task failures are consumed.
+- Existing mocked source-delete fixtures now flush maintenance before their
+  repository patch exits; unrelated source-domain tests patch scheduling. This
+  prevents a detached task from falling through to real repository work and
+  contaminating the shared pool. The completed-task regression proves state no
+  longer retains a finished task/event loop.
+
+Verification: focused lifecycle/static selector `26 passed` (one existing
+Pydantic warning); one fresh real-Surreal benchmark `5 passed in 15.06s`.
+Scoped Ruff/format/compileall/diff-check and Gitleaks passed; no broad suite.

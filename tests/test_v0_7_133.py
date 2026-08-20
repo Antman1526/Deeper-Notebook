@@ -202,7 +202,10 @@ class TestSourceDeletePostSweep:
 
     @pytest.mark.asyncio
     async def test_post_sweep_runs_after_super_delete(self):
-        from deeper_notebook.domain.notebook import Source
+        from deeper_notebook.domain.notebook import (
+            Source,
+            _wait_for_source_search_index_maintenance,
+        )
 
         src = Source(title="t", full_text="x")
         src.id = "source:fake"
@@ -234,6 +237,7 @@ class TestSourceDeletePostSweep:
             ),
         ):
             await src.delete()
+            await _wait_for_source_search_index_maintenance()
 
         # Locate the position of __SUPER_DELETE__ in the call log.
         super_idx = call_log.index("__SUPER_DELETE__")
@@ -262,7 +266,10 @@ class TestSourceDeletePostSweep:
         """If the post-sweep query raises (transient DB hiccup), the
         delete still returns successfully — the orphan rows are present
         but unreachable since the source row is already gone."""
-        from deeper_notebook.domain.notebook import Source
+        from deeper_notebook.domain.notebook import (
+            Source,
+            _wait_for_source_search_index_maintenance,
+        )
 
         src = Source(title="t", full_text="x")
         src.id = "source:fake"
@@ -296,6 +303,7 @@ class TestSourceDeletePostSweep:
             # Must not raise.
             result = await src.delete()
             assert result is True
+            await _wait_for_source_search_index_maintenance()
 
 
 # ---------------------------------------------------------------------- #

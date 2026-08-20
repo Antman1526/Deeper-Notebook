@@ -4,6 +4,7 @@ import stat
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
+from weakref import WeakKeyDictionary
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -66,10 +67,35 @@ _SOURCE_SEARCH_INDEXES: tuple[tuple[str, str], ...] = (
     ("source_embedding", "idx_source_embed_chunk"),
     ("source_insight", "idx_source_insight"),
 )
+_SOURCE_SEARCH_REBUILD_TIMEOUT_S = 10.0
+
+
+class _SourceSearchIndexMaintenanceState:
+    """One strong maintenance-task reference and generation counter per loop."""
+
+    def __init__(self) -> None:
+        self.task: asyncio.Task[None] | None = None
+        self.generation = 0
+        self.completed_generation = 0
+
+
+_source_search_index_maintenance_states: WeakKeyDictionary[
+    asyncio.AbstractEventLoop, _SourceSearchIndexMaintenanceState
+] = WeakKeyDictionary()
+
+
+def _source_search_index_maintenance_state() -> _SourceSearchIndexMaintenanceState:
+    """Return state bound to the active event loop, never another loop's task."""
+    loop = asyncio.get_running_loop()
+    state = _source_search_index_maintenance_states.get(loop)
+    if state is None:
+        state = _SourceSearchIndexMaintenanceState()
+        _source_search_index_maintenance_states[loop] = state
+    return state
 
 
 async def _refresh_source_search_indexes() -> None:
-    """Best-effort rebuild after a completed source deletion.
+    """Perform one bounded, best-effort maintenance pass.
 
     The primary deletion is irreversible, so a rebuild failure cannot turn it
     into a false failed-delete response.  The warning remains explicit that
@@ -77,7 +103,19 @@ async def _refresh_source_search_indexes() -> None:
     """
     for table, index in _SOURCE_SEARCH_INDEXES:
         try:
-            await repo_query(f"REBUILD INDEX {index} ON TABLE {table}")
+            await asyncio.wait_for(
+                repo_query(f"REBUILD INDEX {index} ON TABLE {table}"),
+                timeout=_SOURCE_SEARCH_REBUILD_TIMEOUT_S,
+            )
+        except TimeoutError:
+            logger.warning(
+                "Search relevance may be degraded until the next successful "
+                "rebuild: timed out rebuilding index {} on table {} after {}s "
+                "following source deletion",
+                index,
+                table,
+                _SOURCE_SEARCH_REBUILD_TIMEOUT_S,
+            )
         except Exception as exc:
             logger.warning(
                 "Search relevance may be degraded until the next successful "
@@ -87,6 +125,59 @@ async def _refresh_source_search_indexes() -> None:
                 table,
                 exc,
             )
+
+
+async def _run_source_search_index_maintenance(
+    state: _SourceSearchIndexMaintenanceState,
+) -> None:
+    """Converge all deletes seen during a pass in one trailing pass."""
+    while state.completed_generation < state.generation:
+        generation = state.generation
+        await _refresh_source_search_indexes()
+        state.completed_generation = generation
+
+
+def _observe_source_search_index_maintenance(
+    task: asyncio.Task[None],
+) -> None:
+    """Consume unexpected task failures so detached work never leaks warnings."""
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        # Event-loop shutdown can cancel detached maintenance. A request/task
+        # cancellation cannot, because callers never await this task directly.
+        return
+    except Exception:
+        logger.exception("Unexpected source-search index maintenance failure")
+    finally:
+        # Retain the task strongly only while it is pending. Keeping a finished
+        # task would also retain its event loop through the per-loop state map.
+        state = _source_search_index_maintenance_states.get(task.get_loop())
+        if state is not None and state.task is task:
+            state.task = None
+
+
+def _schedule_source_search_index_maintenance() -> None:
+    """Record a successful delete and synchronously schedule coalesced work."""
+    state = _source_search_index_maintenance_state()
+    state.generation += 1
+    if state.task is None or state.task.done():
+        task = asyncio.create_task(
+            _run_source_search_index_maintenance(state),
+            name="source-search-index-maintenance",
+        )
+        state.task = task
+        task.add_done_callback(_observe_source_search_index_maintenance)
+
+
+async def _wait_for_source_search_index_maintenance() -> None:
+    """Await the current loop's coalesced maintenance for focused tests only."""
+    state = _source_search_index_maintenance_state()
+    while state.completed_generation < state.generation:
+        task = state.task
+        if task is None:
+            return
+        await asyncio.shield(task)
 
 
 class _UnsafeUploadCleanupError(OSError):
@@ -1092,33 +1183,39 @@ class Source(ObjectModel):
         # a deleted source (the call path goes through Source.id which
         # is already None post-delete on this instance).
         try:
-            await repo_query(
-                "DELETE source_embedding WHERE source = $source_id",
-                {"source_id": source_id},
-            )
-            await repo_query(
-                "DELETE source_insight WHERE source = $source_id",
-                {"source_id": source_id},
-            )
-            logger.debug(
-                "Race-window post-sweep cleared any stragglers for source {}",
-                self.id,
-            )
-        except Exception as e:
-            # Best-effort: if this fails the orphan rows are present but
-            # not user-visible (no source row to associate them with).
-            # Log + continue; periodic cleanup or a future migration
-            # can sweep them up.
-            logger.warning(
-                "Race-window post-sweep failed for source {}: {}. Orphan "
-                "embeddings/insights may exist but are unreachable via "
-                "the API.",
-                self.id,
-                e,
-            )
-
-        if result:
-            await _refresh_source_search_indexes()
+            try:
+                await repo_query(
+                    "DELETE source_embedding WHERE source = $source_id",
+                    {"source_id": source_id},
+                )
+                await repo_query(
+                    "DELETE source_insight WHERE source = $source_id",
+                    {"source_id": source_id},
+                )
+                logger.debug(
+                    "Race-window post-sweep cleared any stragglers for source {}",
+                    self.id,
+                )
+            except Exception as e:
+                # Best-effort: if this fails the orphan rows are present but
+                # not user-visible (no source row to associate them with).
+                # Log + continue; periodic cleanup or a future migration
+                # can sweep them up.
+                logger.warning(
+                    "Race-window post-sweep failed for source {}: {}. Orphan "
+                    "embeddings/insights may exist but are unreachable via "
+                    "the API.",
+                    self.id,
+                    e,
+                )
+        finally:
+            # A completed post-sweep (or its failure/cancellation) must be
+            # followed without another await by independently owned index
+            # maintenance. Rebuilding earlier could miss a straggler removed
+            # by the sweep; omitting this finally would lose maintenance when
+            # a caller is cancelled after the irreversible deletion.
+            if result:
+                _schedule_source_search_index_maintenance()
 
         return result
 
