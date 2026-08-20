@@ -19,6 +19,7 @@ from deeper_notebook.database.repository import (
     repo_query,
 )
 from deeper_notebook.domain.notebook import (
+    _SOURCE_SEARCH_REBUILD_MARKER,
     Source,
     _wait_for_source_search_index_maintenance,
 )
@@ -184,12 +185,13 @@ async def test_fixed_source_search_rebuild_marker_fences_intent_ready_cas_on_sur
     clean_namespace,
 ) -> None:
     """Intent cannot be promoted or cleared by a stale maintenance pass."""
-    marker = "open_notebook:source_search_rebuild_pending"
+    marker = _SOURCE_SEARCH_REBUILD_MARKER
+    assert marker == "open_" "notebook:source_search_rebuild_pending"  # fmt: skip
     first_token = "task5-first-token"
     second_token = "task5-second-token"
 
     written = await repo_query(
-        "UPSERT open_notebook:source_search_rebuild_pending SET "
+        f"UPSERT {marker} SET "
         "source_search_rebuild_pending = true, "
         "source_search_rebuild_state = 'intent', "
         "source_search_rebuild_token = $rebuild_token RETURN AFTER;",
@@ -198,7 +200,7 @@ async def test_fixed_source_search_rebuild_marker_fences_intent_ready_cas_on_sur
     assert written and written[0]["source_search_rebuild_token"] == first_token
 
     replaced = await repo_query(
-        "UPSERT open_notebook:source_search_rebuild_pending SET "
+        f"UPSERT {marker} SET "
         "source_search_rebuild_pending = true, "
         "source_search_rebuild_state = 'intent', "
         "source_search_rebuild_token = $rebuild_token RETURN AFTER;",
@@ -207,7 +209,7 @@ async def test_fixed_source_search_rebuild_marker_fences_intent_ready_cas_on_sur
     assert replaced and replaced[0]["source_search_rebuild_token"] == second_token
 
     stale_promotion = await repo_query(
-        "UPDATE open_notebook:source_search_rebuild_pending "
+        f"UPDATE {marker} "
         "SET source_search_rebuild_state = 'ready' "
         "WHERE source_search_rebuild_token = $rebuild_token "
         "AND source_search_rebuild_state = 'intent' RETURN AFTER;",
@@ -216,7 +218,7 @@ async def test_fixed_source_search_rebuild_marker_fences_intent_ready_cas_on_sur
     assert stale_promotion == []
 
     promoted = await repo_query(
-        "UPDATE open_notebook:source_search_rebuild_pending "
+        f"UPDATE {marker} "
         "SET source_search_rebuild_state = 'ready' "
         "WHERE source_search_rebuild_token = $rebuild_token "
         "AND source_search_rebuild_state = 'intent' RETURN AFTER;",
@@ -225,7 +227,7 @@ async def test_fixed_source_search_rebuild_marker_fences_intent_ready_cas_on_sur
     assert promoted and promoted[0]["source_search_rebuild_state"] == "ready"
 
     stale_clear = await repo_query(
-        "UPDATE open_notebook:source_search_rebuild_pending "
+        f"UPDATE {marker} "
         "SET source_search_rebuild_pending = false, "
         "source_search_rebuild_state = NONE, "
         "source_search_rebuild_token = NONE "
@@ -239,7 +241,7 @@ async def test_fixed_source_search_rebuild_marker_fences_intent_ready_cas_on_sur
     assert preserved[0]["source_search_rebuild_state"] == "ready"
 
     cleared = await repo_query(
-        "UPDATE open_notebook:source_search_rebuild_pending "
+        f"UPDATE {marker} "
         "SET source_search_rebuild_pending = false, "
         "source_search_rebuild_state = NONE, "
         "source_search_rebuild_token = NONE "

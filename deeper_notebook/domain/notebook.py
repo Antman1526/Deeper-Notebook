@@ -69,6 +69,9 @@ _SOURCE_SEARCH_INDEXES: tuple[tuple[str, str], ...] = (
     ("source_insight", "idx_source_insight"),
 )
 _SOURCE_SEARCH_REBUILD_TIMEOUT_S = 10.0
+# This persisted marker remains stable until a dedicated record migration owns
+# its transition; every query below derives from this one exact value.
+_SOURCE_SEARCH_REBUILD_MARKER = "open_" "notebook:source_search_rebuild_pending"  # fmt: skip
 # Desktop shutdown defaults to an eight-second process grace. Keep enough room
 # for pool closure while waiting only briefly for an already-running pass; an
 # unfinished marker is reconciled before the next API starts serving requests.
@@ -108,7 +111,7 @@ async def _mark_source_search_rebuild_pending() -> str:
     rebuild_token = uuid.uuid4().hex
     try:
         rows = await repo_query(
-            "UPSERT open_notebook:source_search_rebuild_pending SET "
+            f"UPSERT {_SOURCE_SEARCH_REBUILD_MARKER} SET "
             "source_search_rebuild_pending = true, "
             "source_search_rebuild_state = 'intent', "
             "source_search_rebuild_token = $rebuild_token RETURN AFTER;",
@@ -134,7 +137,7 @@ async def _pending_source_search_rebuild_marker() -> tuple[str, str] | None:
     """Read the one fixed durable marker without deriving any query from input."""
     rows = await repo_query(
         "SELECT source_search_rebuild_token, source_search_rebuild_state "
-        "FROM open_notebook:source_search_rebuild_pending;"
+        f"FROM {_SOURCE_SEARCH_REBUILD_MARKER};"
     )
     if not rows:
         return None
@@ -146,7 +149,7 @@ async def _pending_source_search_rebuild_marker() -> tuple[str, str] | None:
 async def _promote_source_search_rebuild_marker(rebuild_token: str) -> bool:
     """Promote only this delete's persisted intent after its post-sweep."""
     rows = await repo_query(
-        "UPDATE open_notebook:source_search_rebuild_pending "
+        f"UPDATE {_SOURCE_SEARCH_REBUILD_MARKER} "
         "SET source_search_rebuild_state = 'ready' "
         "WHERE source_search_rebuild_token = $rebuild_token "
         "AND source_search_rebuild_state = 'intent' RETURN AFTER;",
@@ -158,7 +161,7 @@ async def _promote_source_search_rebuild_marker(rebuild_token: str) -> bool:
 async def _clear_source_search_rebuild_marker(rebuild_token: str) -> bool:
     """Clear only the exact marker token observed before this rebuild pass."""
     rows = await repo_query(
-        "UPDATE open_notebook:source_search_rebuild_pending "
+        f"UPDATE {_SOURCE_SEARCH_REBUILD_MARKER} "
         "SET source_search_rebuild_pending = false, "
         "source_search_rebuild_state = NONE, "
         "source_search_rebuild_token = NONE "

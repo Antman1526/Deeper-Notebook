@@ -25,6 +25,7 @@ _SOURCE_REBUILDS = (
     "REBUILD INDEX idx_source_embed_chunk ON TABLE source_embedding",
     "REBUILD INDEX idx_source_insight ON TABLE source_insight",
 )
+_SOURCE_SEARCH_REBUILD_MARKER = notebook_module._SOURCE_SEARCH_REBUILD_MARKER
 
 
 def _source() -> Source:
@@ -135,7 +136,7 @@ async def test_marker_write_failure_aborts_before_any_source_delete_work() -> No
 
     async def unavailable_marker(query: str, params=None):
         calls.append(query)
-        if query.startswith("UPSERT open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPSERT {_SOURCE_SEARCH_REBUILD_MARKER}"):
             raise RuntimeError("marker unavailable")
         return []
 
@@ -149,7 +150,7 @@ async def test_marker_write_failure_aborts_before_any_source_delete_work() -> No
             await _source().delete()
 
     assert calls == [
-        "UPSERT open_notebook:source_search_rebuild_pending SET "
+        f"UPSERT {_SOURCE_SEARCH_REBUILD_MARKER} SET "
         "source_search_rebuild_pending = true, "
         "source_search_rebuild_state = 'intent', "
         "source_search_rebuild_token = $rebuild_token RETURN AFTER;"
@@ -166,7 +167,7 @@ async def test_cancellation_after_marker_write_leaves_marker_for_startup_reconci
     super_delete = AsyncMock(return_value=True)
 
     async def crash_after_marker(query: str, params=None):
-        if query.startswith("UPSERT open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPSERT {_SOURCE_SEARCH_REBUILD_MARKER}"):
             marker["token"] = params["rebuild_token"]
             marker["state"] = "intent"
             return [
@@ -219,7 +220,7 @@ async def test_newer_marker_token_gets_a_trailing_pass_before_exact_cas_clear() 
             return []
         if "SET source_search_rebuild_state = 'ready'" in query:
             raise AssertionError("ready marker must not be promoted")
-        if query.startswith("UPDATE open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPDATE {_SOURCE_SEARCH_REBUILD_MARKER}"):
             expected = params["rebuild_token"]
             clears.append(expected)
             if marker["token"] == expected and marker["state"] == "ready":
@@ -259,7 +260,7 @@ async def test_ready_pass_never_rebuilds_a_newer_intent_before_its_post_sweep() 
 
     async def interleaving_repo_query(query: str, params=None):
         nonlocal embedding_deletes
-        if query.startswith("UPSERT open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPSERT {_SOURCE_SEARCH_REBUILD_MARKER}"):
             marker["token"] = params["rebuild_token"]
             marker["state"] = "intent"
             return [
@@ -311,7 +312,7 @@ async def test_ready_pass_never_rebuilds_a_newer_intent_before_its_post_sweep() 
                 "promotion CAS unexpectedly failed "
                 f"marker={marker!r} params={params!r} query={query!r}"
             )
-        if query.startswith("UPDATE open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPDATE {_SOURCE_SEARCH_REBUILD_MARKER}"):
             expected = params["rebuild_token"]
             clears.append(expected)
             if marker["token"] == expected and marker["state"] == "ready":
@@ -432,7 +433,7 @@ async def test_serializes_false_delete_behind_live_delete_marker_and_maintenance
 
     async def interleaving_repo_query(query: str, params=None):
         nonlocal embedding_deletes, marker_writes
-        if query.startswith("UPSERT open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPSERT {_SOURCE_SEARCH_REBUILD_MARKER}"):
             marker_writes += 1
             token = params["rebuild_token"]
             marker["token"] = token
@@ -477,7 +478,7 @@ async def test_serializes_false_delete_behind_live_delete_marker_and_maintenance
         if query.startswith("REBUILD INDEX"):
             rebuilds.append(query)
             return []
-        if query.startswith("UPDATE open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPDATE {_SOURCE_SEARCH_REBUILD_MARKER}"):
             token = params["rebuild_token"]
             if marker["token"] == token and marker["state"] == "ready":
                 marker["token"] = None
@@ -542,7 +543,7 @@ async def test_false_parent_delete_after_sweeps_promotes_and_rebuilds_marker() -
     rebuilds: list[str] = []
 
     async def marker_aware_repo_query(query: str, params=None):
-        if query.startswith("UPSERT open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPSERT {_SOURCE_SEARCH_REBUILD_MARKER}"):
             marker["token"] = params["rebuild_token"]
             marker["state"] = "intent"
             return [
@@ -580,7 +581,7 @@ async def test_false_parent_delete_after_sweeps_promotes_and_rebuilds_marker() -
         if query.startswith("REBUILD INDEX"):
             rebuilds.append(query)
             return []
-        if query.startswith("UPDATE open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPDATE {_SOURCE_SEARCH_REBUILD_MARKER}"):
             if (
                 marker["token"] == params["rebuild_token"]
                 and marker["state"] == "ready"
@@ -637,7 +638,7 @@ async def test_startup_reconciliation_rebuilds_a_persisted_marker_before_serving
                 marker["state"] = "ready"
                 return [{"source_search_rebuild_state": "ready"}]
             return []
-        if query.startswith("UPDATE open_notebook:source_search_rebuild_pending"):
+        if query.startswith(f"UPDATE {_SOURCE_SEARCH_REBUILD_MARKER}"):
             if (
                 marker["token"] == params["rebuild_token"]
                 and marker["state"] == "ready"

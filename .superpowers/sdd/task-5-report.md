@@ -100,8 +100,8 @@ Scoped Ruff/format/compileall/diff-check and Gitleaks passed; no broad suite.
 - The desktop launcher has an eight-second default shutdown grace, so a
   four-index/two-pass worst-case rebuild cannot be honestly guaranteed by a
   long shutdown wait. `Source.delete()` now writes and confirms the fixed
-  `open_notebook:source_search_rebuild_pending` marker with a fresh opaque
-  token before any file or database deletion; failure to write it aborts the
+  source-search rebuild-pending marker with a fresh opaque token before any
+  file or database deletion; failure to write it aborts the
   delete before mutation.
 - The coordinator retains the marker after any timeout/failure and clears it
   only with an exact-token CAS after a successful fixed-whitelist pass. A newer

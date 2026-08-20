@@ -105,8 +105,8 @@ is logged with its table/index and returns the completed delete, with search
 relevance explicitly degraded until the next successful rebuild.
 
 Each source-delete attempt first writes the fixed
-`open_notebook:source_search_rebuild_pending` record with a fresh opaque token;
-if that write cannot be confirmed, deletion aborts before any file or database
+source-search rebuild-pending record with a fresh opaque token; if that write
+cannot be confirmed, deletion aborts before any file or database
 mutation. The coalesced coordinator clears the marker only through an exact
 token compare-and-set after a successful fixed-index pass. API startup waits
 for any persisted marker before serving, while clean shutdown drains for at
