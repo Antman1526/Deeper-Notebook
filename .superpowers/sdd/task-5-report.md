@@ -133,3 +133,17 @@ Scoped Ruff/format/compileall/diff-check and Gitleaks passed; no broad suite.
   explicitly cancels and awaits the exact loop-owned worker before pool close
   (or re-raise). Cancellation never clears the marker. Deterministic lifecycle
   tests prove the worker is done/cancelled before mocked `close_pool`.
+
+### Review repair — serialized source deletion maintenance (2026-08-20)
+
+- The durable receipt is a singleton record, so `Source.delete()` now holds a
+  per-event-loop async mutex from marker write through pre-sweep, parent delete,
+  post-sweep, exact promotion, and maintenance scheduling. A no-op/false delete
+  cannot overwrite a live deletion token before that deletion finalizes.
+- The post-sweep/promote/schedule finalizer runs after any parent mutation
+  attempt, including a `False` parent result and caller cancellation; it keeps
+  the parent's return/exception semantics while ensuring search convergence is
+  independent. A failed promotion leaves the newer durable token authoritative.
+- Deterministic RED/GREEN coverage proves the B-success/A-false interleaving,
+  false-result sweeps, and cancellation behavior. Focused source/lifespan
+  selector passed `22`; one disposable SurrealDB benchmark/CAS run passed `6`.

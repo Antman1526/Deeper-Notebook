@@ -47,6 +47,8 @@ def _stub_durable_marker_protocol_for_existing_delete_fixtures(monkeypatch, requ
         "test_startup_reconciliation_rebuilds_a_persisted_marker_before_serving",
         "test_ready_pass_never_rebuilds_a_newer_intent_before_its_post_sweep",
         "test_drain_timeout_keeps_marker_and_exposes_worker_for_shutdown_quiescence",
+        "test_serializes_false_delete_behind_live_delete_marker_and_maintenance",
+        "test_false_parent_delete_after_sweeps_promotes_and_rebuilds_marker",
     }
     if request.node.name in marker_tests:
         return
@@ -414,6 +416,197 @@ async def test_drain_timeout_keeps_marker_and_exposes_worker_for_shutdown_quiesc
 
 
 @pytest.mark.asyncio
+async def test_serializes_false_delete_behind_live_delete_marker_and_maintenance() -> (
+    None
+):
+    """A false/no-op delete cannot eclipse a live delete's durable receipt."""
+    b_post_sweep_started = asyncio.Event()
+    release_b_post_sweep = asyncio.Event()
+    a_marker_written = asyncio.Event()
+    marker: dict[str, str | None] = {"token": None, "state": None}
+    marker_tokens: dict[str, str] = {}
+    marker_writes = 0
+    embedding_deletes = 0
+    promotions: list[str] = []
+    rebuilds: list[str] = []
+
+    async def interleaving_repo_query(query: str, params=None):
+        nonlocal embedding_deletes, marker_writes
+        if query.startswith("UPSERT open_notebook:source_search_rebuild_pending"):
+            marker_writes += 1
+            token = params["rebuild_token"]
+            marker["token"] = token
+            marker["state"] = "intent"
+            marker_tokens["B" if marker_writes == 1 else "A"] = token
+            if marker_writes == 2:
+                a_marker_written.set()
+            return [
+                {
+                    "source_search_rebuild_token": token,
+                    "source_search_rebuild_state": "intent",
+                }
+            ]
+        if query.startswith("SELECT source_search_rebuild_token"):
+            return (
+                []
+                if marker["token"] is None
+                else [
+                    {
+                        "source_search_rebuild_token": marker["token"],
+                        "source_search_rebuild_state": marker["state"],
+                    }
+                ]
+            )
+        if query.startswith("DELETE source_embedding"):
+            embedding_deletes += 1
+            if embedding_deletes == 2:
+                b_post_sweep_started.set()
+                await release_b_post_sweep.wait()
+            return []
+        if query.startswith("DELETE source_insight") or query.startswith(
+            "DELETE reference"
+        ):
+            return []
+        if "SET source_search_rebuild_state = 'ready'" in query:
+            token = params["rebuild_token"]
+            promotions.append(token)
+            if marker["token"] == token and marker["state"] == "intent":
+                marker["state"] = "ready"
+                return [{"source_search_rebuild_state": "ready"}]
+            return []
+        if query.startswith("REBUILD INDEX"):
+            rebuilds.append(query)
+            return []
+        if query.startswith("UPDATE open_notebook:source_search_rebuild_pending"):
+            token = params["rebuild_token"]
+            if marker["token"] == token and marker["state"] == "ready":
+                marker["token"] = None
+                marker["state"] = None
+                return [{"source_search_rebuild_pending": False}]
+            return []
+        raise AssertionError(f"unexpected query: {query}")
+
+    async def parent_delete(self) -> bool:
+        return str(self.id) == "source:serialized-b"
+
+    b_task = None
+    a_task = None
+    with (
+        patch(
+            "deeper_notebook.domain.notebook.repo_query",
+            new=interleaving_repo_query,
+        ),
+        patch.object(ObjectModel, "delete", new=parent_delete),
+    ):
+        try:
+            b_task = asyncio.create_task(
+                Source(id="source:serialized-b", title="B").delete()
+            )
+            await asyncio.wait_for(b_post_sweep_started.wait(), timeout=0.05)
+            a_task = asyncio.create_task(
+                Source(id="source:serialized-a", title="A").delete()
+            )
+
+            # Until B has promoted and scheduled, A must not replace B intent.
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(a_marker_written.wait(), timeout=0.01)
+
+            release_b_post_sweep.set()
+            assert await b_task is True
+            await asyncio.wait_for(a_marker_written.wait(), timeout=0.05)
+            assert await a_task is False
+            assert await drain_source_search_index_maintenance() is True
+        finally:
+            release_b_post_sweep.set()
+            for task in (b_task, a_task):
+                if task is not None and not task.done():
+                    task.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await task
+            active = _source_search_index_maintenance_state().task
+            if active is not None and not active.done():
+                active.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await active
+
+    assert promotions == [marker_tokens["B"], marker_tokens["A"]]
+    assert marker == {"token": None, "state": None}
+    assert tuple(rebuilds[-len(_SOURCE_REBUILDS) :]) == _SOURCE_REBUILDS
+
+
+@pytest.mark.asyncio
+async def test_false_parent_delete_after_sweeps_promotes_and_rebuilds_marker() -> None:
+    """A false parent result still follows completed sweeps with maintenance."""
+    marker: dict[str, str | None] = {"token": None, "state": None}
+    sweeps: list[str] = []
+    rebuilds: list[str] = []
+
+    async def marker_aware_repo_query(query: str, params=None):
+        if query.startswith("UPSERT open_notebook:source_search_rebuild_pending"):
+            marker["token"] = params["rebuild_token"]
+            marker["state"] = "intent"
+            return [
+                {
+                    "source_search_rebuild_token": marker["token"],
+                    "source_search_rebuild_state": marker["state"],
+                }
+            ]
+        if query.startswith("SELECT source_search_rebuild_token"):
+            return (
+                []
+                if marker["token"] is None
+                else [
+                    {
+                        "source_search_rebuild_token": marker["token"],
+                        "source_search_rebuild_state": marker["state"],
+                    }
+                ]
+            )
+        if (
+            query.startswith("DELETE source_embedding")
+            or query.startswith("DELETE source_insight")
+            or query.startswith("DELETE reference")
+        ):
+            sweeps.append(query)
+            return []
+        if "SET source_search_rebuild_state = 'ready'" in query:
+            if (
+                marker["token"] == params["rebuild_token"]
+                and marker["state"] == "intent"
+            ):
+                marker["state"] = "ready"
+                return [{"source_search_rebuild_state": "ready"}]
+            return []
+        if query.startswith("REBUILD INDEX"):
+            rebuilds.append(query)
+            return []
+        if query.startswith("UPDATE open_notebook:source_search_rebuild_pending"):
+            if (
+                marker["token"] == params["rebuild_token"]
+                and marker["state"] == "ready"
+            ):
+                marker["token"] = None
+                marker["state"] = None
+                return [{"source_search_rebuild_pending": False}]
+            return []
+        raise AssertionError(f"unexpected query: {query}")
+
+    with (
+        patch(
+            "deeper_notebook.domain.notebook.repo_query",
+            new=marker_aware_repo_query,
+        ),
+        patch.object(ObjectModel, "delete", new=AsyncMock(return_value=False)),
+    ):
+        assert await _source().delete() is False
+        assert await drain_source_search_index_maintenance() is True
+
+    assert len(sweeps) == 5
+    assert tuple(rebuilds) == _SOURCE_REBUILDS
+    assert marker == {"token": None, "state": None}
+
+
+@pytest.mark.asyncio
 async def test_startup_reconciliation_rebuilds_a_persisted_marker_before_serving() -> (
     None
 ):
@@ -518,8 +711,8 @@ async def test_successful_source_delete_rebuilds_only_the_affected_search_indexe
 
 
 @pytest.mark.asyncio
-async def test_failed_source_delete_does_not_rebuild_any_search_index() -> None:
-    """A failed primary deletion is never followed by an index rebuild."""
+async def test_false_source_delete_returns_false_then_rebuilds_search_indexes() -> None:
+    """A false parent result remains false while its sweeps still converge search."""
     calls: list[str] = []
 
     async def fake_repo_query(query: str, params=None):
@@ -535,8 +728,10 @@ async def test_failed_source_delete_does_not_rebuild_any_search_index() -> None:
         patch.object(ObjectModel, "delete", new=failed_super_delete),
     ):
         assert await _source().delete() is False
+        assert not any(query.startswith("REBUILD INDEX") for query in calls)
+        await _wait_for_source_search_index_maintenance()
 
-    assert not any(query.startswith("REBUILD INDEX") for query in calls)
+    assert tuple(calls[-len(_SOURCE_REBUILDS) :]) == _SOURCE_REBUILDS
 
 
 @pytest.mark.asyncio

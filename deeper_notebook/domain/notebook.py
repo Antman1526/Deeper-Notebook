@@ -80,6 +80,10 @@ class _SourceSearchIndexMaintenanceState:
 
     def __init__(self) -> None:
         self.task: asyncio.Task[None] | None = None
+        # Source deletion owns a singleton durable marker. Keep the complete
+        # marker-to-promotion sequence exclusive within its event loop so a
+        # no-op/false delete cannot replace another delete's live token.
+        self.deletion_lock = asyncio.Lock()
         self.generation = 0
         self.completed_generation = 0
 
@@ -1388,131 +1392,117 @@ class Source(ObjectModel):
         against a now-dead source, writing fresh source_embedding rows
         pointing at the deleted source. Orphan data + wasted GPU.
         """
-        # This durable receipt is deliberately first: a forced kill after any
-        # file/database mutation must still trigger a later source-search index
-        # reconciliation. If writing it fails, fail closed before deletion.
-        rebuild_token = await _mark_source_search_rebuild_pending()
-        await self._cancel_processing_command()
-        self._cleanup_uploaded_file()
+        state = _source_search_index_maintenance_state()
+        async with state.deletion_lock:
+            # This durable receipt is deliberately first: a forced kill after
+            # any file/database mutation must still trigger reconciliation. The
+            # mutex protects this singleton receipt through promotion, so one
+            # false/no-op delete cannot eclipse another live delete's token.
+            rebuild_token = await _mark_source_search_rebuild_pending()
+            source_id = ensure_record_id(self.id)
+            result = False
 
-        # Delete associated embeddings and insights to prevent orphaned records
-        source_id = ensure_record_id(self.id)
-        try:
-            await repo_query(
-                "DELETE source_embedding WHERE source = $source_id",
-                {"source_id": source_id},
-            )
-            await repo_query(
-                "DELETE source_insight WHERE source = $source_id",
-                {"source_id": source_id},
-            )
-            # v0.7.76 — also delete the `reference` edges that point this
-            # source at notebooks. Without this, get_sources via
-            # `select in as source from reference where out=$id fetch source`
-            # would fetch null sources (the rows are still there even
-            # after the source record is deleted), and Source(**None)
-            # crashes the notebook view. Symmetric to the v0.7.61 fix
-            # for Notebook.delete -> chat_session edges.
-            await repo_query(
-                "DELETE reference WHERE in = $source_id",
-                {"source_id": source_id},
-            )
-            logger.debug(
-                f"Deleted embeddings, insights, and reference edges for "
-                f"source {self.id}"
-            )
-        except Exception as e:
-            logger.warning(
-                f"Failed to delete embeddings/insights for source {self.id}: {e}. "
-                "Continuing with source deletion."
-            )
-
-        # Call parent delete to remove database record
-        result = await super().delete()
-
-        # v0.7.133 — Race-window post-sweep (Area for Review #11).
-        #
-        # The cancel above (`svc.update_command_result(status="canceled")`)
-        # writes a row to the surreal_commands tracking table but does
-        # NOT actually stop the running worker — surreal_commands has no
-        # cancellation-token mechanism. So between the pre-sweep above
-        # and this point (single-digit ms in practice, but the worker
-        # could complete a write iteration during that window), the
-        # worker could insert one or more fresh `source_embedding` rows
-        # pointing at the now-deleted source.
-        #
-        # We re-run the sweep AFTER super().delete(). The DELETE matches
-        # by `source = $source_id`, and SurrealDB doesn't enforce the
-        # source-existence constraint, so even after the source row is
-        # gone we can still purge by ID. Idempotent + cheap.
-        #
-        # We don't re-sweep `reference` — those edges require an
-        # explicit `Source.add_to_notebook` call which can't race against
-        # a deleted source (the call path goes through Source.id which
-        # is already None post-delete on this instance).
-        try:
             try:
-                await repo_query(
-                    "DELETE source_embedding WHERE source = $source_id",
-                    {"source_id": source_id},
-                )
-                await repo_query(
-                    "DELETE source_insight WHERE source = $source_id",
-                    {"source_id": source_id},
-                )
-                logger.debug(
-                    "Race-window post-sweep cleared any stragglers for source {}",
-                    self.id,
-                )
-            except Exception as e:
-                # Best-effort: if this fails the orphan rows are present but
-                # not user-visible (no source row to associate them with).
-                # Log + continue; periodic cleanup or a future migration
-                # can sweep them up.
-                logger.warning(
-                    "Race-window post-sweep failed for source {}: {}. Orphan "
-                    "embeddings/insights may exist but are unreachable via "
-                    "the API.",
-                    self.id,
-                    e,
-                )
-        finally:
-            # A worker may only rebuild a marker after this delete's post-sweep
-            # has completed (or been attempted). The exact-token promotion
-            # fences an older pass from rebuilding/clearing a newer in-flight
-            # delete. Promotion failures preserve intent for startup recovery.
-            if result:
+                await self._cancel_processing_command()
+                self._cleanup_uploaded_file()
+
+                # Delete associated embeddings and insights to prevent orphaned
+                # records. Reference edges are likewise removed before parent
+                # deletion so notebooks cannot retain null fetched sources.
                 try:
-                    if await _promote_source_search_rebuild_marker(rebuild_token):
-                        _schedule_source_search_index_maintenance()
-                    else:
-                        logger.warning(
-                            "Search relevance may be degraded until the next "
-                            "successful rebuild: source-search marker {} was not "
-                            "promoted after source {} post-sweep",
-                            rebuild_token,
-                            self.id,
-                        )
-                except asyncio.CancelledError:
-                    logger.warning(
-                        "Search relevance may be degraded until the next "
-                        "successful rebuild: source-search marker {} remains "
-                        "intent after cancellation following source {} post-sweep",
-                        rebuild_token,
+                    await repo_query(
+                        "DELETE source_embedding WHERE source = $source_id",
+                        {"source_id": source_id},
+                    )
+                    await repo_query(
+                        "DELETE source_insight WHERE source = $source_id",
+                        {"source_id": source_id},
+                    )
+                    await repo_query(
+                        "DELETE reference WHERE in = $source_id",
+                        {"source_id": source_id},
+                    )
+                    logger.debug(
+                        "Deleted embeddings, insights, and reference edges for "
+                        "source {}",
                         self.id,
                     )
-                    raise
                 except Exception as exc:
                     logger.warning(
-                        "Search relevance may be degraded until the next "
-                        "successful rebuild: could not promote source-search marker "
-                        "{} after source {} post-sweep: {}",
-                        rebuild_token,
+                        "Failed to delete embeddings/insights for source {}: {}. "
+                        "Continuing with source deletion.",
                         self.id,
                         exc,
                     )
 
-        return result
+                # Preserve the parent's bool/exception semantics. The durable
+                # finalizer below still runs after this mutation attempt even
+                # when it returns False.
+                result = await super().delete()
+            finally:
+                # v0.7.133 race-window post-sweep: workers can write after the
+                # pre-sweep but before/while parent deletion settles. This is
+                # deliberately in the mutex-protected finalizer so cancellation
+                # cannot release the singleton marker before promotion.
+                try:
+                    try:
+                        await repo_query(
+                            "DELETE source_embedding WHERE source = $source_id",
+                            {"source_id": source_id},
+                        )
+                        await repo_query(
+                            "DELETE source_insight WHERE source = $source_id",
+                            {"source_id": source_id},
+                        )
+                        logger.debug(
+                            "Race-window post-sweep cleared any stragglers for "
+                            "source {}",
+                            self.id,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Race-window post-sweep failed for source {}: {}. "
+                            "Orphan embeddings/insights may exist but are "
+                            "unreachable via the API.",
+                            self.id,
+                            exc,
+                        )
+                finally:
+                    # Any mutation attempt, including a false/no-op parent
+                    # result or cancellation, must advance its own intent and
+                    # schedule convergence before the deletion mutex releases.
+                    try:
+                        if await _promote_source_search_rebuild_marker(rebuild_token):
+                            _schedule_source_search_index_maintenance()
+                        else:
+                            logger.warning(
+                                "Search relevance may be degraded until the next "
+                                "successful rebuild: source-search marker {} was "
+                                "not promoted after source {} post-sweep",
+                                rebuild_token,
+                                self.id,
+                            )
+                    except asyncio.CancelledError:
+                        logger.warning(
+                            "Search relevance may be degraded until the next "
+                            "successful rebuild: source-search marker {} remains "
+                            "intent after cancellation following source {} "
+                            "post-sweep",
+                            rebuild_token,
+                            self.id,
+                        )
+                        raise
+                    except Exception as exc:
+                        logger.warning(
+                            "Search relevance may be degraded until the next "
+                            "successful rebuild: could not promote source-search "
+                            "marker {} after source {} post-sweep: {}",
+                            rebuild_token,
+                            self.id,
+                            exc,
+                        )
+
+            return result
 
 
 class Note(ObjectModel):
