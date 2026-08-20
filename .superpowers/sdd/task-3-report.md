@@ -63,3 +63,62 @@ Final verification:
 ```
 
 Result: `6` files passed, `70` tests passed, with zero TypeScript errors. The dedicated Explorer suite also passed `45` tests.
+
+## 2026-08-20 Today Productization Task 3 — truthful source embedding metadata
+
+### Scope
+
+- Updated only `api/routers/sources.py` and `tests/test_sources_api.py` for the
+  source-list response contract.
+- Preserved pagination, filtering, sorting, visual projection, command status,
+  and the response shape. No schema, migration, feature-flag, or packaging
+  changes.
+
+### Strict TDD evidence
+
+RED was captured before the router edit:
+
+```sh
+uv run pytest -q tests/test_sources_api.py::TestSourceListingEmbeddingMetrics
+```
+
+Result: `3 failed, 7 warnings`. Both non-zero projected-count cases returned
+the old hard-coded `embedded_chunks=0`; the zero/missing-count case retained
+the stale row `embedded=true` value.
+
+GREEN after the minimal router change:
+
+```sh
+uv run pytest -q tests/test_sources_api.py::TestSourceListingEmbeddingMetrics
+```
+
+Result: `3 passed, 7 warnings`.
+
+### Implementation
+
+- Both source-list query branches now project one bounded aggregate count of
+  related `source_embedding` rows as `embedded_chunks`.
+- Response construction normalizes missing/null counts to zero and derives
+  `embedded` from `embedded_chunks > 0`.
+- The branch-specific tests use non-zero projected counts and assert
+  `Source.get_embedded_chunks()` is not called; a fallback regression covers
+  null and missing counts.
+
+### Verification
+
+- `uv run pytest -q tests/test_sources_api.py` — `25 passed, 7 warnings`.
+- `uv run ruff check api/routers/sources.py tests/test_sources_api.py` — pass.
+- `uv run python -m compileall -q api/routers/sources.py tests/test_sources_api.py` — pass.
+- `git diff --check` — pass.
+- Scoped Gitleaks on each owned file with `--redact` — no leaks.
+- No real-Surreal source-list/projection selector exists under
+  `tests/integration`; the existing `Notebook.get_sources()` edge test does
+  not exercise this API projection and was not reported as equivalent proof.
+
+### Commit and open items
+
+- Commit `dee95e06` (`fix(sources): report embedded chunk counts`).
+- Existing tracked desktop build bytecode modifications and supplied
+  untracked plan/task context remain untouched.
+- The repository-wide real-Surreal, package, browser, and release gates remain
+  outside this bounded task.

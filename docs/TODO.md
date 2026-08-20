@@ -12,19 +12,31 @@ produced it is named so it can be re-run rather than trusted.
 
 ## 0. Blocked on you — I cannot do these
 
-### 0.1 Revoke the leaked Google API key — **urgent, still open**
+### 0.1 Revoke the leaked Google API key — **externally verified invalid**
 
-A live-format key (`AIza…`, 39 chars) is in git history and has been public on
-GitHub. **Purging history does not un-leak it** — forks and clones retain it and
-it may be indexed. Rotation in the Google Cloud console is the only real
-remediation. This has been open across several sessions.
+The historical live-format key was tested without printing or persisting its
+value. Google returned `API_KEY_INVALID`, so it is not currently usable. The
+authenticated local Google account still lacks `apikeys.keys.lookup`, which
+means this repository cannot prove whether the key was deleted, restricted, or
+revoked in its owning Cloud project. The remaining owner action is to confirm
+that state in Google Cloud Console and rotate any consumer that still refers to
+the old identifier. History cleanup does not substitute for that confirmation.
 
-### 0.2 Purge the key and `history.txt` from git history
+### 0.2 Purge the key and `history.txt` from git history — **partially complete**
 
-`git-filter-repo` was staged but the run is blocked by the permission
-classifier, so it needs a human to execute. `history.txt` is a SurrealDB dump
-carrying Fernet-encrypted credential blobs. This is hygiene, **not** a
-substitute for 0.1.
+A full-ref backup bundle was created, permissioned `0600`, independently
+verified, and restore-tested before rewriting. The sanitized mirror contains
+neither the target key nor `history.txt`, and eight affected writable remote
+branch heads were updated with exact force-with-lease protection. The remote
+branch heads now match the sanitized authority.
+
+Nine GitHub-generated pull-request refs remain outside normal Git push
+authority (merged PR heads 1–6 and 9; open PR merge refs 7–8). GitHub Support
+must dereference or purge those cached refs before this can truthfully be
+called a complete remote-history purge. The recoverable backup is
+`/Users/Antman/Downloads/deeper-notebook-origin-full-refs-20260820T174527Z.bundle`
+with SHA-256
+`69564a46f08452675d70d5b2e56ecd77b6fa12edd4e2e8ea01305e74741effd7`.
 
 ### 0.3 Packaged v0.8.114 build — resolved 2026-08-20
 
@@ -163,22 +175,23 @@ until a separately authorized local reranker is configured.
 
 ## 3. Known-wrong small things
 
-### 3.1 `embedded_chunks` is hard-coded to `0` in the sources list view
+### 3.1 Source-list embedding metadata — **complete 2026-08-20**
 
-`api/routers/sources.py:638` — `embedded_chunks=0,  # Not needed in list view`.
-The real count is non-zero (16 for the source checked). This cost real debugging
-time this session: it made a healthy source look unembedded and sent the
-vector-search investigation down a wrong path. Either compute it or drop the
-field from the list response.
+Both source-list query branches now project the authoritative related
+`source_embedding` count as `embedded_chunks`; `embedded` is derived from
+`embedded_chunks > 0`. Focused tests cover notebook-filtered and all-source
+queries, nonzero and missing counts, and prove the implementation does not add
+a per-row `Source.get_embedded_chunks()` call.
 
-### 3.2 `source_visuals_enabled()` is not a registered setting
+### 3.2 Source-visual feature registration — **complete 2026-08-20**
 
-It reads `os.environ` directly instead of going through `resolve_env`, so it
-alone ignores the product's legacy-alias normalization. Larger than it looks:
-the name is absent from `environment.SETTINGS`, so routing it through
-`resolve_env` without registering it makes the flag unreadable (verified — four
-tests fail immediately). The fix is to register the setting, which brings alias
-handling and deprecation policy with it.
+`SOURCE_VISUALS_ENABLED` is registered in the canonical environment registry,
+and `source_visuals_enabled()` now uses the normal alias/deprecation resolver.
+Visual System V2 and Source Visuals default on, while canonical and legacy
+explicit-off values remain authoritative. Mounted frontend consumers subscribe
+to runtime feature changes, so a delayed backend rollback removes queries and
+controls without a reload; malformed or partial authority payloads cannot
+silently re-enable a disabled feature.
 
 ---
 
