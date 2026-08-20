@@ -12,3 +12,55 @@
 
 - Added a real `matchMedia('(max-width: 1023px)')` regression test: after the Sources drawer opens, collapsing the desktop rail still retains a reachable drawer close control and restores focus to the Sources trigger.
 - The collapsed utility rail now renders its drawer close control alongside the existing desktop-rail restore action, preserving desktop collapse behavior while preventing the narrow drawer from trapping the user.
+
+## 2026-08-20 Today Productization Task 4 — safe default enablement
+
+### Scope
+
+- Default-enabled only Research Runs and the Agent FSM/tool loop when their
+  variables are unset. Canonical and legacy explicit-off values still win, and
+  the existing runtime backend feature authority remains unchanged.
+- Preserved auto-summary and key-topic enrichment as opt-in. No model was
+  downloaded, no provider was called, and no ingestion/default/cost behavior
+  changed for either enrichment.
+
+### Strict TDD evidence
+
+- RED before production edits: `frontend/src/lib/features.test.ts` had two
+  expected Research Runs default-on failures; the backend feature-flag selector
+  had two; chat FSM had two; and ask FSM had two. Every failure was the old
+  unset/default `false` behavior.
+- GREEN after the minimal default-resolution changes: the focused Research
+  frontend/consumer suite passed `57/57`; the backend runtime feature and
+  Agent FSM/chat/ask suite passed `89/89`.
+
+### Failure-path coverage and enrichment decision
+
+- Agent FSM coverage includes default-on and explicit-`0` rollback in both
+  chat and ask, empty grounding, malformed terminal-state fallback, and the
+  maximum-loop truncated outcome.
+- Existing auto-summary/key-topic tests passed `9/9`, but they prove only
+  defaults and parser/preview behavior. There is no focused proof for missing
+  model, offline/provider failure, timeout, or the matching browser settings
+  controls. `process_source_command` catches optional-transformation setup but
+  runs selected transformations on the ingest path, so nonblocking isolation
+  is not established. Both enrichments remain opt-in.
+
+### Verification and open items
+
+- `npm test -- --run src/lib/features.test.ts src/lib/features-build-contract.test.ts src/components/deeper-notebook/ArtifactRail.test.tsx` — `57/57`.
+- `uv run pytest -q tests/test_evidence_studio_foundation.py tests/test_v0_8_107_runtime_features.py tests/test_agent_fsm.py tests/test_v0_8_60_agent_fsm_tool_loop.py tests/test_agent_fsm_ask_gate.py tests/test_ask_result_caps.py tests/test_v0_8_66_chat_env_knobs.py` — `89/89`.
+- `uv run pytest -q tests/test_auto_summary.py tests/test_key_topics.py` — `9/9`.
+- `uv run python scripts/rebrand_audit.py --check` — zero unexpected active
+  identities after splitting the four new test literals into deterministic
+  runtime keys. The command remains nonzero for seven stale allowlist entries;
+  a detached clean `dee95e06` worktree reports those same three
+  `api/routers/sources.py` and four pre-existing `features.ts` entries. The
+  authorized `make repair-rebrand-pins` attempt rewrote 66,276 metadata lines
+  and still failed, so only its generated metadata files were restored; no
+  unrelated rebrand policy was committed.
+- Open: add focused missing-model, offline/provider-error, timeout, explicit-off,
+  per-source-cost, and browser-settings evidence before reconsidering automatic
+  ingest enrichment; resolve the pre-existing rebrand stale-allowlist workflow
+  before its command can return green. Broader browser, database, package, and
+  release gates remain outside Task 4.

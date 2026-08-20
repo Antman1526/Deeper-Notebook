@@ -149,6 +149,14 @@ handling and deprecation policy with it.
 
 ## 4. Deferred, with reasons
 
+* **Automatic source summary and key topics remain opt-in** — Task 4 review on
+  2026-08-20 kept both defaults false. The focused parser/default tests pass,
+  but no focused test proves ingestion remains nonblocking under a missing
+  model, offline/provider failure, or timeout; no browser settings spec covers
+  either control. `process_source_command` only isolates setup of the optional
+  transformations, while their execution remains on the ingest path. Do not
+  default-enable either setting or introduce implicit LLM work until those
+  failure paths and the per-source cost boundary are proven.
 * **`act()` warnings** — ~100 across three clusters
   (`GuidedTipsProvider`, Radix internals, unawaited async state). Every test
   passes. No shared fix; do them per-cluster while already in the area.
