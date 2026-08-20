@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -135,21 +136,33 @@ def test_every_knn_predicate_in_the_function_is_two_arg():
 
 
 def _production_python_code() -> list[tuple[Path, str]]:
-    """Return canonical Python source, excluding tests and comments.
+    """Return tracked production Python source, excluding tests and comments.
 
     Query strings may be f-strings, so matching only digit literals would miss
     a one-argument predicate whose K is a Python constant. `ast.unparse()`
-    strips explanatory comments, and tests are excluded because they
-    intentionally document the historical broken syntax.
+    strips explanatory comments. Git's tracked-file inventory prevents ignored
+    build trees, sibling worktrees, and developer-local Python files from
+    changing this repository contract.
     """
-    ignored_parts = {".git", ".venv", "build", "dist", "node_modules", "tests"}
+    tracked = subprocess.run(
+        ["git", "-C", str(REPOSITORY_ROOT), "ls-files", "-z", "--", "*.py"],
+        check=True,
+        capture_output=True,
+    ).stdout.split(b"\0")
     sources: list[tuple[Path, str]] = []
-    for path in REPOSITORY_ROOT.rglob("*.py"):
-        if any(
-            part in ignored_parts for part in path.relative_to(REPOSITORY_ROOT).parts
-        ):
+    for encoded_path in tracked:
+        if not encoded_path:
             continue
-        sources.append((path, ast.unparse(ast.parse(path.read_text()))))
+        relative_path = Path(encoded_path.decode("utf-8"))
+        if "tests" in relative_path.parts:
+            continue
+        path = REPOSITORY_ROOT / relative_path
+        sources.append(
+            (
+                path,
+                ast.unparse(ast.parse(path.read_text(encoding="utf-8-sig"))),
+            )
+        )
     return sources
 
 
