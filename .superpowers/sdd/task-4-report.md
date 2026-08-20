@@ -64,3 +64,16 @@
   ingest enrichment; resolve the pre-existing rebrand stale-allowlist workflow
   before its command can return green. Broader browser, database, package, and
   release gates remain outside Task 4.
+
+### 2026-08-20 review repair — reactive Research Run runtime rollback
+
+- Added `useResearchRunsEnabled()` through the existing runtime external-store
+  authority and made `ArtifactRail` consume it. A mounted rail now removes the
+  default-on Research run control when a later valid backend payload sets
+  `researchRuns: false`.
+- Strict RED: the real `applyRuntimeFeatures({ researchRuns: false })` path ran
+  after mount and left the button visible (`1 failed / 35 passed`). GREEN:
+  ArtifactRail/features/build-contract Vitest `58/58`, backend runtime-feature
+  selector `62/62`, TypeScript, scoped ESLint, and diff checks passed. Existing
+  malformed/unknown/mixed payload tests continue to prove atomic preservation
+  of the prior runtime rollback.

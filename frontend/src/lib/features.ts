@@ -128,6 +128,14 @@ export function isResearchRunsEnabled(): boolean {
   ))
 }
 
+export function useResearchRunsEnabled(): boolean {
+  return useSyncExternalStore(
+    subscribeRuntimeFeatures,
+    isResearchRunsEnabled,
+    isResearchRunsEnabled,
+  )
+}
+
 export function isStudyWorkbenchEnabled(): boolean {
   return resolve('studyWorkbench', envFlag(process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH, undefined, true))
 }

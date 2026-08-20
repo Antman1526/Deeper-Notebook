@@ -42,7 +42,7 @@ import {
   isSlideDeckDocument,
   SlideDeckViewer,
 } from '@/components/deeper-notebook/VisualArtifactViewers'
-import { isEvidenceStudioEnabled, isResearchRunsEnabled } from '@/lib/features'
+import { isEvidenceStudioEnabled, useResearchRunsEnabled } from '@/lib/features'
 import { artifactMarkdown } from '@/lib/studio-artifacts'
 import {
   useCreateStudioArtifact,
@@ -240,7 +240,7 @@ export function ArtifactRail({
   const [selectedEpisodeId, setSelectedEpisodeId] = useState('')
   const [videoUrls, setVideoUrls] = useState<{ media: string; captions: string } | null>(null)
   const enabled = isEvidenceStudioEnabled()
-  const researchRunsEnabled = isResearchRunsEnabled()
+  const researchRunsEnabled = useResearchRunsEnabled()
   const { data: artifacts = [], isLoading } = useStudioArtifacts(notebookId, {
     enabled,
   })

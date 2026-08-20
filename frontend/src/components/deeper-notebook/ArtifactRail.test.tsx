@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { applyRuntimeFeatures, resetRuntimeFeatures } from '@/lib/features'
+
 import { ArtifactRail } from './ArtifactRail'
 
 const useStudioArtifacts = vi.fn()
@@ -14,7 +16,6 @@ const useApproveStudioWorkflowRun = vi.fn()
 const useUpdateStudioArtifact = vi.fn()
 const useComposeVideoOverview = vi.fn()
 const isEvidenceStudioEnabled = vi.fn()
-const isResearchRunsEnabled = vi.fn()
 const evidenceReviewProps = vi.fn()
 
 vi.mock('@/lib/hooks/use-studio', () => ({
@@ -29,10 +30,13 @@ vi.mock('@/lib/hooks/use-studio', () => ({
   useUpdateStudioArtifact: (...args: unknown[]) => useUpdateStudioArtifact(...args),
 }))
 
-vi.mock('@/lib/features', () => ({
-  isEvidenceStudioEnabled: () => isEvidenceStudioEnabled(),
-  isResearchRunsEnabled: () => isResearchRunsEnabled(),
-}))
+vi.mock('@/lib/features', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/features')>()
+  return {
+    ...actual,
+    isEvidenceStudioEnabled: () => isEvidenceStudioEnabled(),
+  }
+})
 
 vi.mock('@/components/evaluation/EvidenceReview', () => ({
   EvidenceReview: (props: Record<string, unknown>) => {
@@ -64,6 +68,7 @@ describe('ArtifactRail', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.clearAllMocks()
+    resetRuntimeFeatures()
     evidenceReviewProps.mockClear()
     createArtifact.mockResolvedValue({ id: 'studio_artifact:new' })
     createWorkflowRun.mockResolvedValue({
@@ -92,7 +97,6 @@ describe('ArtifactRail', () => {
     deleteArtifact.mockResolvedValue({})
     updateArtifact.mockResolvedValue({})
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    isResearchRunsEnabled.mockReturnValue(false)
     useCreateStudioArtifact.mockReturnValue({
       mutateAsync: createArtifact,
       isPending: false,
@@ -404,7 +408,7 @@ describe('ArtifactRail', () => {
 
   it('keeps Research run hidden while the experimental flag is disabled', () => {
     isEvidenceStudioEnabled.mockReturnValue(true)
-    isResearchRunsEnabled.mockReturnValue(false)
+    applyRuntimeFeatures({ researchRuns: false })
     useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
 
     render(
@@ -431,7 +435,6 @@ describe('ArtifactRail', () => {
 
   it('creates and generates a Research run when the experimental flag is enabled', async () => {
     isEvidenceStudioEnabled.mockReturnValue(true)
-    isResearchRunsEnabled.mockReturnValue(true)
     useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
 
     render(
@@ -474,6 +477,38 @@ describe('ArtifactRail', () => {
       })
     })
     expect(generateArtifact).not.toHaveBeenCalled()
+  })
+
+  it('hides Research run after a delayed runtime rollback', async () => {
+    isEvidenceStudioEnabled.mockReturnValue(true)
+    useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+
+    render(
+      <ArtifactRail
+        notebookId="notebook:alpha"
+        sources={[
+          {
+            id: 'source:one',
+            title: 'Source One',
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 0,
+            status: 'completed',
+            created: '2026-06-23T00:00:00Z',
+            updated: '2026-06-23T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Research run' })).toBeInTheDocument()
+
+    applyRuntimeFeatures({ researchRuns: false })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Research run' })).not.toBeInTheDocument()
+    })
   })
 
   it('creates artifacts from selected sources when the source selector is used', async () => {
