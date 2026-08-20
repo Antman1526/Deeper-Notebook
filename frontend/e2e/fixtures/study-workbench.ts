@@ -278,7 +278,13 @@ export async function installStudyWorkbenchFixture(
   })
 
   await jsonRoute(page, ledger, '/config', { apiUrl: '' })
-  await jsonRoute(page, ledger, '/api/config', { version: 'fixture', latestVersion: null, hasUpdate: false, dbStatus: 'healthy' })
+  await jsonRoute(page, ledger, '/api/config', {
+    version: 'fixture',
+    latestVersion: null,
+    hasUpdate: false,
+    dbStatus: 'healthy',
+    sourceUploadMaxBytes: null,
+  })
   await jsonRoute(page, ledger, '/api/auth/status', { auth_required: false })
   await jsonRoute(page, ledger, '/api/version', { version: 'fixture' })
   await jsonRoute(page, ledger, '/api/readyz', { status: 'ready', checks: { database: 'online', database_error: null, migrations_applied: true, migrations_pending: false, migrations_error: null } })
@@ -317,6 +323,9 @@ export async function installStudyWorkbenchFixture(
 
   const cardsPath = '/api/study/cards/due'
   await jsonRoute(page, ledger, cardsPath, studyWorkbenchFixtures.cards)
+  // The backend list endpoint returns summary rows only. An empty fixture is
+  // schema-valid and keeps the ExamLab setup surface deterministic.
+  await jsonRoute(page, ledger, '/api/study/exams/attempts', [])
   const plansPath = '/api/study/plans'
   await page.route((url) => matchesPath(url.pathname, plansPath), async (route) => {
     recordRequest(page, ledger, route, 'GET')

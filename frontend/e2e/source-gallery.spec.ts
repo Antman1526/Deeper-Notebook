@@ -613,6 +613,63 @@ test.describe('source gallery visual contract', () => {
     expect(fixture.ledger.external).toContain('https://evil.example/visual.webp')
   })
 
+  test('Source Gallery inherits the exact same-origin runtime feature authority', async ({ page }) => {
+    const runtimeSourceVisuals = process.env.DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED !== '0'
+    const cell = SOURCE_GALLERY_CELLS.find(candidate => candidate.id === 'sources-ready')!
+    const fixture = await installSourceGalleryFixture(page, {
+      cell,
+      theme: 'gemini-forward-light',
+      viewport: SOURCE_GALLERY_VIEWPORTS[0],
+    })
+    fixture.releaseData()
+    await page.goto(cell.browserPath)
+    const response = await page.evaluate(async () => {
+      const result = await fetch('/api/features')
+      return { status: result.status, body: await result.json() }
+    })
+
+    expect(response).toEqual(expect.objectContaining({
+      status: 200,
+      body: expect.objectContaining({
+        features: expect.objectContaining({ sourceVisuals: runtimeSourceVisuals }),
+      }),
+    }))
+    expect(fixture.base.expectedFrequency['GET /api/features']).toBe(1)
+    // The initial dashboard mount consumes the first response; this explicit
+    // schema probe is the second exact same-origin feature request.
+    expect(fixture.base.ledger.seen['GET /api/features']).toBe(2)
+    expect(fixture.base.ledger.unexpected).toEqual([])
+  })
+
+  test('Source Gallery keeps backend config on the same-origin fixture contract', async ({ page }) => {
+    const cell = SOURCE_GALLERY_CELLS.find(candidate => candidate.id === 'sources-ready')!
+    const fixture = await installSourceGalleryFixture(page, {
+      cell,
+      theme: 'gemini-forward-light',
+      viewport: SOURCE_GALLERY_VIEWPORTS[0],
+    })
+    fixture.releaseData()
+    await page.goto(cell.browserPath)
+    const response = await page.evaluate(async () => {
+      const result = await fetch('/api/config')
+      return { status: result.status, body: await result.json() }
+    })
+
+    expect(response).toEqual({
+      status: 200,
+      body: {
+        version: 'fixture',
+        latestVersion: null,
+        hasUpdate: false,
+        dbStatus: 'healthy',
+        sourceUploadMaxBytes: null,
+      },
+    })
+    expect(fixture.base.expectedFrequency['GET /api/config']).toBe(2)
+    expect(fixture.base.ledger.seen['GET /api/config']).toBe(3)
+    expect(fixture.base.ledger.unexpected).toEqual([])
+  })
+
   test('the final ledger rejects base-frequency mismatches instead of checking only delegated traffic', async ({ page }) => {
     const cell = SOURCE_GALLERY_CELLS.find(candidate => candidate.id === 'sources-ready')!
     const fixture = await installSourceGalleryFixture(page, {

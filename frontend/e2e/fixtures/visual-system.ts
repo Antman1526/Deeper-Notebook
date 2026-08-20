@@ -45,12 +45,40 @@ export interface VisualRequestLedger {
 
 export type VisualRequestFrequencyMap = Readonly<Record<string, number>>
 
+// The runtime hook is mounted by the dashboard layout, not the auth layout.
+// Keep this as an independent explicit authority: new dashboard routes must
+// declare that they consume the backend feature response before a matrix cell
+// can green, while the login surface must never inherit it accidentally.
+const DASHBOARD_RUNTIME_FEATURE_ROUTES = new Set([
+  '/',
+  '/setup-wizard',
+  '/notebooks',
+  '/notebooks/[id]',
+  '/sources',
+  '/sources/[id]',
+  '/knowledge',
+  '/search',
+  '/capture',
+  '/studio',
+  '/podcasts',
+  '/podcasts/studio',
+  '/study',
+  '/study/plans/[planId]',
+  '/transformations',
+  '/settings',
+  '/settings/api-keys',
+  '/settings/launcher-prefs',
+  '/settings/local-models',
+  '/settings/mcp',
+  '/advanced',
+])
+
 /**
  * The route-owned request contract is deliberately explicit. It is not
  * derived from the requests observed by a cell: a route that adds, removes,
  * or duplicates a call must make that change visible here first.
  */
-export const VISUAL_ROUTE_EXPECTED_REQUESTS: Readonly<Record<string, VisualRequestFrequencyMap>> = {
+const VISUAL_ROUTE_BASE_EXPECTED_REQUESTS: Readonly<Record<string, VisualRequestFrequencyMap>> = {
   '/login': {
     'GET /config': 2,
     'GET /api/config': 2,
@@ -322,6 +350,7 @@ export const VISUAL_ROUTE_EXPECTED_REQUESTS: Readonly<Record<string, VisualReque
     'GET /api/deeper-notebook/gmail/status': 1,
     'GET /api/local-models/health': 1,
     'GET /api/study/plans': 1,
+    'GET /api/study/exams/attempts': 1,
     'GET /api/credentials/status': 1,
     'GET /api/credentials/env-status': 1,
     'GET /api/system/db-repair-needed': 1,
@@ -509,6 +538,15 @@ export const VISUAL_ROUTE_EXPECTED_REQUESTS: Readonly<Record<string, VisualReque
   },
 }
 
+export const VISUAL_ROUTE_EXPECTED_REQUESTS: Readonly<Record<string, VisualRequestFrequencyMap>> = Object.freeze(
+  Object.fromEntries(Object.entries(VISUAL_ROUTE_BASE_EXPECTED_REQUESTS).map(([route, expected]) => [
+    route,
+    DASHBOARD_RUNTIME_FEATURE_ROUTES.has(route)
+      ? { ...expected, 'GET /api/features': 1 }
+      : expected,
+  ])) as Record<string, VisualRequestFrequencyMap>,
+)
+
 /**
  * Cell maps are keyed independently even when they currently share a route
  * map. This keeps theme/viewport-specific request drift observable without
@@ -641,6 +679,23 @@ const runtimeSnapshot = {
   backup: { state: 'ready', file_count: 0, newest_age_seconds: 0 },
 } as const
 
+function runtimeFeatureResponse() {
+  // The browser matrix has no FastAPI process. Mirror the bounded backend
+  // authority precisely enough for default-on and canonical runtime rollback:
+  // only the backend's explicit source-visuals `0` changes that predicate.
+  const sourceVisuals = process.env.DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED !== '0'
+  return {
+    features: {
+      evidenceStudio: true,
+      visualRefresh: true,
+      modelFleet: true,
+      researchRuns: true,
+      studyWorkbench: true,
+      sourceVisuals,
+    },
+  } as const
+}
+
 function emptyLedger(): VisualRequestLedger {
   return {
     expected: {},
@@ -711,7 +766,14 @@ function sameOriginApiPath(url: string): string | null {
 
 function jsonBody(pathname: string, page: Page): unknown {
   if (pathname === '/config') return { apiUrl: '' }
-  if (pathname === '/api/config') return { version: 'fixture', latestVersion: null, hasUpdate: false, dbStatus: 'healthy' }
+  if (pathname === '/api/config') return {
+    version: 'fixture',
+    latestVersion: null,
+    hasUpdate: false,
+    dbStatus: 'healthy',
+    sourceUploadMaxBytes: null,
+  }
+  if (pathname === '/api/features') return runtimeFeatureResponse()
   // Keep /login as a real login surface while allowing dashboard routes to
   // render their own route content in the same deterministic browser matrix.
   if (pathname === '/api/auth/status') {
@@ -830,7 +892,7 @@ function registerJsonRoute(
 }
 
 const COMMON_GET_ROUTES = [
-  '/config', '/api/config', '/api/auth/status', '/api/version', '/api/readyz',
+  '/config', '/api/config', '/api/features', '/api/auth/status', '/api/version', '/api/readyz',
   '/healthz/deep', '/api/healthz/deep', '/api/runtime/snapshot', '/api/local-models/health',
   '/api/system/db-repair-needed', '/api/updates/check', '/api/system/network-status',
   '/api/notebooks', '/api/notebooks/notebook-fixture-001', '/api/notebooks/notebook-fixture-001/suggested-questions',

@@ -54,6 +54,72 @@ test.describe('visual system matrix contract', () => {
       'gemini-forward-light',
       VISUAL_MATRIX_VIEWPORTS.find((viewport) => viewport.name === 'mobile')!,
     )['GET /api/sources']).toBe(1)
+    for (const route of VISUAL_ROUTE_MANIFEST.filter((entry) => entry.source.includes('/(dashboard)/'))) {
+      for (const theme of VISUAL_MATRIX_THEMES) {
+        for (const viewport of VISUAL_MATRIX_VIEWPORTS) {
+          expect(
+            expectedVisualRequestFrequency(route.route, theme, viewport)['GET /api/features'],
+            `${route.route}/${theme}/${viewport.name} runtime feature authority`,
+          ).toBe(1)
+        }
+      }
+    }
+    expect(expectedVisualRequestFrequency(
+      '/login',
+      'gemini-forward-light',
+      VISUAL_MATRIX_VIEWPORTS[0],
+    )['GET /api/features']).toBeUndefined()
+  })
+
+  test('fixture serves the exact backend runtime feature schema on the same origin', async ({ page }) => {
+    const fixture = await installVisualSystemFixture(page, { theme: 'gemini-forward-light' })
+    await page.goto('/')
+    const response = await page.evaluate(async () => {
+      const result = await fetch('/api/features')
+      return { status: result.status, body: await result.json() }
+    })
+
+    expect(response).toEqual({
+      status: 200,
+      body: {
+        features: {
+          evidenceStudio: true,
+          visualRefresh: true,
+          modelFleet: true,
+          researchRuns: true,
+          studyWorkbench: true,
+          sourceVisuals: true,
+        },
+      },
+    })
+    // Navigation mounts the dashboard hook once; this test then probes the
+    // same handler directly, so the fixture must record both exact calls.
+    expect(fixture.ledger.seen['GET /api/features']).toBe(2)
+    expect(fixture.ledger.unexpected).toEqual([])
+  })
+
+  test('fixture keeps recent ExamLab attempts under explicit Study-ledger authority', async ({ page }) => {
+    const viewport = VISUAL_MATRIX_VIEWPORTS[0]
+    const fixture = await installVisualSystemFixture(page, {
+      route: '/study',
+      theme: 'gemini-forward-light',
+      viewport,
+    })
+    await page.goto('/study')
+    await page.waitForLoadState('networkidle', { timeout: 1_000 }).catch(() => undefined)
+    await page.waitForTimeout(100)
+    const response = await page.evaluate(async () => {
+      const result = await fetch('/api/study/exams/attempts')
+      return { status: result.status, body: await result.json() }
+    })
+
+    expect(response).toEqual({ status: 200, body: [] })
+    expect(fixture.studyLedger.expected).toContain('GET /api/study/exams/attempts')
+    expect(
+      frequencyMapFromLabels(fixture.studyLedger.seen)['GET /api/study/exams/attempts'],
+      'the initial Study mount plus this exact probe',
+    ).toBe(2)
+    expect(fixture.studyLedger.unexpected).toEqual([])
   })
 
   test('fixture rejects wrong methods and records an unexpected ledger entry', async ({ page }) => {
@@ -1063,7 +1129,6 @@ test('explicit rollback preserves the legacy route and shell contract', async ({
         fixture.ledger,
         fixture.studyLedger,
         additionalExpected,
-        pathname === '/' || pathname === '/setup-wizard' ? ['GET /api/local-models/health'] : [],
       )
       assertNoDiagnosticConsoleErrors(consoleErrors, pageErrors, pathname)
     } finally {
