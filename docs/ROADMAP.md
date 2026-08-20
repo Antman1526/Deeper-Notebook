@@ -50,12 +50,33 @@ Right now it is neither, which is the worst of the three.
 rather than a subsystem; the main Guided Research workspace is live in the
 notebook page.
 
-### 1.3 Adopt a formatter, or decide not to
+### 1.3 Adopt a formatter — now unblocked, needs one reviewed sitting
 
-Measured: `ruff format` touches 700 files and **does not** break the ~469
-source-shape assertions (5,625 passed / 6 failed, all six in the identity
-audit). The blocker is §2.1 below, not the tests. Until that is resolved the
-answer is "not yet", and that should be a decision rather than an accident.
+§2.1 was the blocker and is fixed (v0.8.109). Adoption was then attempted end to
+end on 2026-08-19 and **reverted deliberately** — not because it failed, but
+because of *how* it was passing. Reaching a green audit took a migration,
+several repair runs, re-approving 38 pins by ordinal, and collapsing 160
+allowlist entries. Driving a security allowlist to quiet with successive ad-hoc
+scripts is how you get a gate that passes without meaning anything.
+
+The work is now understood and bounded. `ruff format` touches ~702 files, and
+the fallout is exactly two known, legitimate categories:
+
+* **~1,040 pins relocate automatically.** `make repair-rebrand-pins` handles
+  these; no judgement needed.
+* **~39 pins are genuinely re-split.** Ruff moves a trailing `)` onto its own
+  line, so the approved text changes by punctuation while its meaning does not.
+  Each needs re-approval. The mapping is unambiguous — for every affected
+  (path, pattern) the live occurrence count equals the pinned count, so the
+  k-th live occurrence is the k-th approval.
+* **~160 entries collapse as duplicates.** Two IDENTICAL lines in one file now
+  hash the same, because the key is content plus intra-line ordinal rather than
+  position. One approval covering both is the intended behaviour; the allowlist
+  is a mapping, so the duplicates must be removed rather than tolerated.
+
+Do it as a reviewable diff in one sitting with the allowlist changes actually
+read, not as a byproduct of chasing a green check. That is the whole remaining
+cost, and it is a few hours of attention rather than an engineering problem.
 
 ---
 
