@@ -1,0 +1,102 @@
+-- Migration 50 — fn::text_search returned results in arbitrary order.
+--
+-- The same defect migration 49 fixed in fn::vector_search (DEFECT 3 there), in
+-- the other search leg. The final aggregation carried GROUP BY and ORDER BY on
+-- one statement:
+--
+--     select ... math::max(relevance) as relevance from $final_results
+--     group by id, parent_id, title ORDER BY relevance DESC LIMIT $match_count
+--
+-- SurrealDB 2.6.5 does not apply ORDER BY on a statement that also carries
+-- GROUP BY, so LIMIT sliced an UNORDERED set: the "top N" was an arbitrary N of
+-- everything that matched, in meaningless order. Measured against the live
+-- corpus, `fn::text_search('project', 10, true, true)`:
+--
+--     relevance: -0.5265, -1.0535, -0.5388, -0.4265, -0.152, -1.2667, …
+--
+-- Found by grepping for the pattern after migration 49; it is present in the
+-- text_search definitions all the way back to migration 1.
+--
+-- This matters more now than it did before v0.8.113. Hybrid search fuses the
+-- two legs with Reciprocal Rank Fusion, which scores documents purely by their
+-- RANK within each leg. An arbitrarily ordered text leg does not merely rank
+-- its own results badly — it feeds meaningless ranks into the fusion and
+-- degrades the combined result too.
+--
+-- Body is otherwise byte-identical to migration 4's definition.
+
+REMOVE FUNCTION IF EXISTS fn::text_search;
+
+DEFINE FUNCTION IF NOT EXISTS fn::text_search($query_text: string, $match_count: int, $sources:bool, $show_notes:bool) {
+
+    let $source_title_search =
+        IF $sources {(
+            SELECT id, title,
+            search::highlight('`', '`', 1) as content,
+            id as parent_id,
+            math::max(search::score(1)) AS relevance
+            FROM source
+            WHERE title @1@ $query_text
+            GROUP BY id)}
+        ELSE { [] };
+
+    let $source_embedding_search =
+         IF $sources {(
+            SELECT source.id as id, source.title as title, search::highlight('`', '`', 1) as content, source.id as parent_id, math::max(search::score(1)) AS relevance
+            FROM source_embedding
+            WHERE content @1@ $query_text
+            GROUP BY id)}
+        ELSE { [] };
+
+    let $source_full_search =
+         IF $sources {(
+            SELECT id, title, search::highlight('`', '`', 1) as content, id as parent_id, math::max(search::score(1)) AS relevance
+            FROM source
+            WHERE full_text @1@ $query_text
+            GROUP BY id)}
+        ELSE { [] };
+
+    let $source_insight_search =
+         IF $sources {(
+             SELECT id, insight_type + " - " + (source.title OR '') as title, search::highlight('`', '`', 1) as content, id as parent_id,  math::max(search::score(1)) AS relevance
+            FROM source_insight
+            WHERE content @1@ $query_text
+            GROUP BY id)}
+        ELSE { [] };
+
+    let $note_title_search =
+         IF $show_notes {(
+             SELECT id, title, search::highlight('`', '`', 1) as content,  id as parent_id, math::max(search::score(1)) AS relevance
+            FROM note
+            WHERE title @1@ $query_text
+            GROUP BY id)}
+        ELSE { [] };
+
+     let $note_content_search =
+         IF $show_notes {(
+             SELECT id, title, search::highlight('`', '`', 1) as content,  id as parent_id, math::max(search::score(1)) AS relevance
+            FROM note
+            WHERE content @1@ $query_text
+            GROUP BY id)}
+        ELSE { [] };
+
+    let $source_chunk_results = array::union($source_embedding_search, $source_full_search);
+
+    let $source_asset_results = array::union($source_title_search, $source_insight_search);
+
+    let $source_results = array::union($source_chunk_results, $source_asset_results );
+    let $note_results = array::union($note_title_search, $note_content_search );
+    let $final_results = array::union($source_results, $note_results );
+
+        -- ORDER BY applied OUTSIDE the grouped SELECT; see the header. Sorting
+        -- on the same statement as GROUP BY is silently ignored, which turns
+        -- LIMIT into an arbitrary slice.
+        RETURN (
+            SELECT * FROM (
+                select id, parent_id, title, math::max(relevance) as relevance
+                from $final_results where id is not None
+                group by id, parent_id, title
+            ) ORDER BY relevance DESC LIMIT $match_count
+        );
+
+};

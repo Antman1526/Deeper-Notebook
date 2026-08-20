@@ -1,0 +1,154 @@
+-- Migration 49 — repair fn::vector_search, which returned nothing for every query.
+--
+-- Semantic search has been silently empty since migration 21: HTTP 200, no
+-- error, no log line, an empty result list against a fully embedded corpus.
+-- There are TWO independent defects, and fixing either one alone still returns
+-- nothing. Both were found by bisecting the WHERE clause against SurrealDB
+-- 2.6.5 with one known-matching row in the table.
+--
+-- DEFECT 1 — wrong KNN operator arity.
+--
+-- Migration 21 added HNSW indexes and wrote the ONE-argument operator:
+--
+--     WHERE embedding <|100|> $query
+--
+-- `<|K|>` targets an MTREE index; HNSW requires `<|K,EF|>`, where EF is the
+-- search-time candidate list size. No MTREE index exists on any of these
+-- tables, so the predicate matched nothing. Measured, one matching row:
+--
+--     WHERE embedding <|100|>     $q   ->  0 rows
+--     WHERE embedding <|100,100|> $q   ->  1 row
+--
+-- EF is set equal to K. Larger EF trades latency for recall; equal-to-K is the
+-- documented starting point and the conservative choice for a change whose
+-- whole purpose is to stop returning nothing.
+--
+-- DEFECT 2 — function calls in a WHERE clause that also drives a KNN scan.
+--
+-- Once the operator was corrected the function STILL returned nothing, because
+-- on 2.6.5 a KNN predicate combined with a function-based condition over the
+-- same indexed field yields no rows:
+--
+--     WHERE embedding <|100,100|> $q                                  ->  1 row
+--     WHERE embedding <|100,100|> $q AND embedding != none            ->  1 row
+--     WHERE embedding <|100,100|> $q AND array::len(embedding)=768    ->  0 rows
+--     WHERE embedding <|100,100|> $q AND cosine(embedding,$q) >= 0.0  ->  0 rows
+--
+-- A plain comparison survives; a function call does not. The field itself is
+-- fine — the same expressions compute correctly in the PROJECTION of a KNN
+-- query. Only the filter position is affected.
+--
+-- The fix is to separate the two jobs: the KNN operator selects candidates in a
+-- subquery, and the length and similarity filters run in the outer query, where
+-- they behave normally. This keeps the HNSW index doing the work it was added
+-- for rather than falling back to a full-table cosine scan.
+--
+-- DEFECT 3 — ORDER BY ignored on a grouped SELECT, so results came back
+-- unsorted and LIMIT returned an arbitrary slice rather than the best matches.
+--
+-- Only visible once the first two defects were fixed and rows finally came
+-- back. The final aggregation read:
+--
+--     SELECT ... math::max(similarity) AS similarity FROM $all_results
+--     GROUP BY id, parent_id, title ORDER BY similarity DESC LIMIT $match_count
+--
+-- On 2.6.5 the ORDER BY on a statement that also carries GROUP BY does not
+-- apply. Measured against the live 320-chunk corpus, same query vector:
+--
+--     grouped + ORDER BY on one statement -> 0.835, 1.0, 0.723, 0.709, 0.710 …
+--     grouped, then sorted in an outer SELECT -> 1.0, 0.835, 0.723, 0.723 …
+--
+-- This matters more than it looks: LIMIT ran against an unordered set, so the
+-- "top 10" was an arbitrary 10 of everything above the similarity threshold,
+-- and the order shown to the user was meaningless. Fixed by wrapping the
+-- grouped result in a subquery and sorting outside it.
+--
+-- Ranking note: the indexes are DIST EUCLIDEAN while the function scores by
+-- cosine. For normalized embeddings the two agree on ordering. That mismatch
+-- predates this migration and is left alone deliberately — changing the index
+-- distance would force a rebuild and shift result ordering, which is a
+-- different change from making search return results at all.
+--
+-- Verified on a fresh namespace carrying rows in all three searched tables:
+-- 0 rows before, 3 after; sources-only, notes-only, `min_similarity`, and
+-- `match_count` all behave, and results come back in descending similarity. Regression tests:
+--   tests/integration/test_vector_search_returns_results.py  (real query planner)
+--   tests/test_v0_8_114_knn_operator_arity.py                (runs unconditionally)
+
+REMOVE FUNCTION IF EXISTS fn::vector_search;
+
+DEFINE FUNCTION IF NOT EXISTS fn::vector_search($query: array<float>, $match_count: int, $sources: bool, $show_notes: bool, $min_similarity: float) {
+    let $source_embedding_search =
+        IF $sources {(
+            SELECT
+                source.id as id,
+                source.title as title,
+                content,
+                source.id as parent_id,
+                vector::similarity::cosine(embedding, $query) as similarity
+            FROM (
+                SELECT source, content, embedding FROM source_embedding
+                WHERE embedding <|100,100|> $query
+            )
+            WHERE embedding != none AND array::len(embedding) = array::len($query) AND
+                 vector::similarity::cosine(embedding, $query) >= $min_similarity
+            ORDER BY similarity DESC
+            LIMIT $match_count
+        )}
+        ELSE { [] };
+
+    let $source_insight_search =
+        IF $sources {(
+            SELECT
+                id,
+                insight_type + ' - ' + (source.title OR '') as title,
+                content,
+                source.id as parent_id,
+                vector::similarity::cosine(embedding, $query) as similarity
+            FROM (
+                SELECT id, insight_type, source, content, embedding FROM source_insight
+                WHERE embedding <|100,100|> $query
+            )
+            WHERE embedding != none AND array::len(embedding) = array::len($query) AND
+            vector::similarity::cosine(embedding, $query) >= $min_similarity
+            ORDER BY similarity DESC
+            LIMIT $match_count
+        )}
+        ELSE { [] };
+
+    let $note_content_search =
+        IF $show_notes {(
+            SELECT
+                id,
+                title,
+                content,
+                id as parent_id,
+                vector::similarity::cosine(embedding, $query) as similarity
+            FROM (
+                SELECT id, title, content, embedding FROM note
+                WHERE embedding <|100,100|> $query
+            )
+            WHERE embedding != none AND array::len(embedding) = array::len($query) AND
+            vector::similarity::cosine(embedding, $query) >= $min_similarity
+            ORDER BY similarity DESC
+            LIMIT $match_count
+        )}
+        ELSE { [] };
+
+    let $all_results = array::union(
+        array::union($source_embedding_search, $source_insight_search),
+        $note_content_search
+    );
+
+    -- The ORDER BY is applied OUTSIDE the grouped SELECT on purpose; see
+    -- DEFECT 3 in this migration's header. Sorting on the same statement as
+    -- GROUP BY is silently ignored, which turns LIMIT into an arbitrary slice.
+    RETURN (
+        SELECT * FROM (
+            select id, parent_id, title, math::max(similarity) as similarity,
+            array::flatten(content) as matches
+            from $all_results where id is not None
+            group by id, parent_id, title
+        ) ORDER BY similarity DESC LIMIT $match_count
+    );
+};
