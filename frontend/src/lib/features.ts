@@ -124,6 +124,7 @@ export function isResearchRunsEnabled(): boolean {
   return resolve('researchRuns', envFlag(
     process.env.NEXT_PUBLIC_DN_RESEARCH_RUNS,
     process.env.NEXT_PUBLIC_ONP_RESEARCH_RUNS,
+    true,
   ))
 }
 

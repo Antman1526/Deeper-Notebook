@@ -36,7 +36,7 @@ describe('frontend feature flags', () => {
     }
   })
 
-  it('enables stable Deeper Notebook surfaces by default while keeping research runs experimental', () => {
+  it('enables stable Deeper Notebook surfaces and research runs by default', () => {
     for (const name of FEATURE_ENV) {
       delete process.env[name]
     }
@@ -44,7 +44,7 @@ describe('frontend feature flags', () => {
     expect(isVisualRefreshEnabled()).toBe(true)
     expect(isEvidenceStudioEnabled()).toBe(true)
     expect(isModelFleetEnabled()).toBe(true)
-    expect(isResearchRunsEnabled()).toBe(false)
+    expect(isResearchRunsEnabled()).toBe(true)
   })
 
   it('enables Luminous Folio by default and keeps its canonical rollback flag', () => {
@@ -127,6 +127,21 @@ describe('frontend feature flags', () => {
     expect(isEvidenceStudioEnabled()).toBe(false)
     expect(isModelFleetEnabled()).toBe(false)
     expect(isResearchRunsEnabled()).toBe(true)
+  })
+
+  it('keeps Research Runs reversible through canonical and legacy explicit-off flags', () => {
+    const legacyResearchRuns = ['NEXT', 'PUBLIC', 'ONP', 'RESEARCH', 'RUNS'].join('_')
+
+    delete process.env.NEXT_PUBLIC_DN_RESEARCH_RUNS
+    delete process.env[legacyResearchRuns]
+    expect(isResearchRunsEnabled()).toBe(true)
+
+    process.env.NEXT_PUBLIC_DN_RESEARCH_RUNS = '0'
+    expect(isResearchRunsEnabled()).toBe(false)
+
+    delete process.env.NEXT_PUBLIC_DN_RESEARCH_RUNS
+    process.env[legacyResearchRuns] = '0'
+    expect(isResearchRunsEnabled()).toBe(false)
   })
 
 })

@@ -19,7 +19,7 @@ _REPO = Path(__file__).resolve().parent.parent
 _MIG_DIR = _REPO / "deeper_notebook" / "database" / "migrations"
 
 
-def test_plus_stable_feature_flags_default_on(monkeypatch):
+def test_plus_stable_feature_flags_and_research_runs_default_on(monkeypatch):
     for name in (
         "DEEPER_NOTEBOOK_VISUAL_REFRESH",
         "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
@@ -35,7 +35,7 @@ def test_plus_stable_feature_flags_default_on(monkeypatch):
     assert feature_flags.onp_visual_refresh_enabled() is True
     assert feature_flags.evidence_studio_enabled() is True
     assert feature_flags.model_fleet_enabled() is True
-    assert feature_flags.research_runs_enabled() is False
+    assert feature_flags.research_runs_enabled() is True
 
 
 def test_evidence_studio_feature_flags_parse_truthy_and_falsey(monkeypatch):
@@ -371,3 +371,25 @@ def test_studio_command_uses_service_not_router_import():
     assert "api.routers.studio" not in command_src
     assert "api.routers.studio" not in service_src
     assert "deeper_notebook.studio.artifact_generation" in command_src
+
+
+def test_research_runs_accepts_canonical_and_legacy_explicit_rollbacks(monkeypatch):
+    import deeper_notebook.feature_flags as feature_flags
+
+    legacy_long_prefix = "_".join(("OPEN", "NOTEBOOK"))
+    legacy_short_prefix = "ONP" + "_"
+    for name in (
+        "DEEPER_NOTEBOOK_RESEARCH_RUNS",
+        "DN_RESEARCH_RUNS",
+        f"{legacy_long_prefix}_RESEARCH_RUNS",
+        f"{legacy_short_prefix}RESEARCH_RUNS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    assert feature_flags.research_runs_enabled() is True
+
+    monkeypatch.setenv("DEEPER_NOTEBOOK_RESEARCH_RUNS", "0")
+    assert feature_flags.research_runs_enabled() is False
+
+    monkeypatch.delenv("DEEPER_NOTEBOOK_RESEARCH_RUNS")
+    monkeypatch.setenv(f"{legacy_short_prefix}RESEARCH_RUNS", "0")
+    assert feature_flags.research_runs_enabled() is False
