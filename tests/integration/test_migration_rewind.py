@@ -12,7 +12,7 @@ from deeper_notebook.database.async_migrate import (
     AsyncMigrationRunner,
     get_latest_version,
 )
-from deeper_notebook.database.repository import repo_query
+from deeper_notebook.database.repository import ensure_record_id, repo_query
 
 pytestmark = pytest.mark.integration_surreal
 
@@ -36,6 +36,18 @@ async def _schema_snapshot() -> dict[str, Any]:
     return _freeze({"database": database, "tables": table_info})
 
 
+async def _data_snapshot() -> dict[str, list[dict[str, Any]]]:
+    """Capture every user-table row with stable ordering for teardown proof."""
+    rows = await repo_query("INFO FOR DB;")
+    database = rows[0] if isinstance(rows, list) else rows
+    tables = database.get("tables") or database.get("tb") or {}
+    return {
+        table: _freeze(await repo_query(f"SELECT * FROM {table} ORDER BY id;"))
+        for table in sorted(tables)
+        if not table.startswith("_")
+    }
+
+
 @pytest_asyncio.fixture
 async def migration_schema_authority(
     clean_namespace: dict[str, Any],
@@ -46,6 +58,37 @@ async def migration_schema_authority(
         yield expected
     finally:
         assert await _schema_snapshot() == expected
+
+
+@pytest_asyncio.fixture
+async def migration_data_authority(
+    clean_namespace: dict[str, Any],
+) -> AsyncIterator[dict[str, list[dict[str, Any]]]]:
+    """Seed exact IDs, then prove failed-down teardown restores all table rows."""
+    seeded = {
+        "source:rewind-data-deleted": {
+            "title": "Deleted by failed down",
+            "full_text": "original deleted source body",
+        },
+        "source:rewind-data-updated": {
+            "title": "Updated by failed down",
+            "full_text": "original updated source body",
+        },
+    }
+    for record_id, payload in seeded.items():
+        await repo_query(
+            "CREATE $record SET title = $title, asset = NONE, full_text = $full_text;",
+            {
+                "record": ensure_record_id(record_id),
+                **payload,
+            },
+        )
+
+    expected = await _data_snapshot()
+    try:
+        yield expected
+    finally:
+        assert await _data_snapshot() == expected
 
 
 async def test_migration_rewind_recovers_schema_when_down_fails_before_lowering(
@@ -76,15 +119,29 @@ async def test_migration_rewind_recovers_schema_when_down_fails_before_lowering(
 @pytest_asyncio.fixture
 async def migration_default_data_authority(
     clean_namespace: dict[str, Any],
-) -> AsyncIterator[None]:
-    """Assert the recovery path replays the default-data migration once."""
+) -> AsyncIterator[list[dict[str, Any]]]:
+    """Pin v47's pre-rewind default row so recovery cannot duplicate it."""
+    await repo_query(
+        """
+        CREATE transformation:rewind_cornell_default SET
+            name = 'Cornell Notes',
+            title = 'Cornell Notes',
+            description = 'pre-rewind default authority',
+            prompt = 'pre-rewind default authority',
+            apply_default = false;
+        """
+    )
+    expected = await repo_query(
+        "SELECT * FROM transformation WHERE name = 'Cornell Notes';"
+    )
+    assert len(expected) == 1
     try:
-        yield
+        yield expected
     finally:
         rows = await repo_query(
-            "SELECT id FROM transformation WHERE name = 'Cornell Notes';"
+            "SELECT * FROM transformation WHERE name = 'Cornell Notes';"
         )
-        assert len(rows) == 1
+        assert rows == expected
 
 
 async def test_migration_rewind_replays_default_data_once_after_early_down_failure(
@@ -110,3 +167,39 @@ async def test_migration_rewind_replays_default_data_once_after_early_down_failu
         await migration_rewind(40)
 
     assert await get_latest_version() == 41
+
+
+async def test_migration_rewind_restores_rows_after_failed_down_data_mutation(
+    migration_schema_authority,
+    migration_data_authority,
+    migration_rewind,
+    monkeypatch,
+):
+    """Teardown must restore deleted and updated rows with their original IDs."""
+    original_head = await get_latest_version()
+
+    async def damaged_down_after_data_mutation(self) -> None:
+        await repo_query(
+            "DELETE $record;",
+            {"record": ensure_record_id("source:rewind-data-deleted")},
+        )
+        await repo_query(
+            "UPDATE $record SET full_text = $full_text;",
+            {
+                "record": ensure_record_id("source:rewind-data-updated"),
+                "full_text": "corrupted updated source body",
+            },
+        )
+        raise RuntimeError("injected-down-after-data-mutation")
+
+    monkeypatch.setattr(
+        AsyncMigrationRunner, "run_one_down", damaged_down_after_data_mutation
+    )
+
+    with pytest.raises(RuntimeError, match="injected-down-after-data-mutation"):
+        await migration_rewind(original_head - 1)
+
+    assert await get_latest_version() == original_head
+    assert migration_data_authority["source"] != await repo_query(
+        "SELECT * FROM source ORDER BY id;"
+    )

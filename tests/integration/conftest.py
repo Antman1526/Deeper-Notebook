@@ -29,7 +29,9 @@ Override any of these if your local SurrealDB uses different creds.
 
 from __future__ import annotations
 
+import copy
 import os
+import re
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
@@ -267,6 +269,7 @@ _PROTECTED_TABLE_NAMES = frozenset(
         "_sbl_migrations",  # explicit guard even though the prefix catches it
     }
 )
+_TABLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 async def _discover_tables() -> list[str]:
@@ -303,6 +306,184 @@ async def _discover_tables() -> list[str]:
         if name not in _PROTECTED_TABLE_NAMES
         and not any(name.startswith(p) for p in _PROTECTED_TABLE_PREFIXES)
     ]
+
+
+def _query_table_name(table: str) -> str:
+    """Validate a schema-discovered table before using it as a query descriptor."""
+    if not _TABLE_NAME.fullmatch(table):
+        raise AssertionError(f"unsafe table name from INFO FOR DB: {table!r}")
+    return table
+
+
+async def _snapshot_table_data() -> dict[str, list[dict[str, Any]]]:
+    """Capture raw rows so RecordID values survive failed-down recovery exactly."""
+    data, _ = await _snapshot_rewind_state()
+    return data
+
+
+def _info_mapping(result: Any, description: str) -> dict[str, Any]:
+    """Return one INFO mapping, rejecting an unexpected driver result shape."""
+    if isinstance(result, list):
+        if len(result) != 1:
+            raise AssertionError(
+                f"unexpected {description} result count: {len(result)}"
+            )
+        result = result[0]
+    if not isinstance(result, dict):
+        raise AssertionError(f"unexpected {description} result: {result!r}")
+    return result
+
+
+def _definition_strings(
+    table: str, table_info: dict[str, Any], section: str
+) -> tuple[str, ...]:
+    """Extract normalized DDL strings from one INFO FOR TABLE section."""
+    definitions = table_info.get(section, {})
+    if not isinstance(definitions, dict):
+        raise AssertionError(
+            f"unexpected {section} definitions for table {table!r}: {definitions!r}"
+        )
+    if not all(isinstance(definition, str) for definition in definitions.values()):
+        raise AssertionError(f"non-string {section} definition for table {table!r}")
+    return tuple(definitions[name] for name in sorted(definitions))
+
+
+async def _snapshot_rewind_state() -> tuple[
+    dict[str, list[dict[str, Any]]], dict[str, dict[str, str | tuple[str, ...]]]
+]:
+    """Capture exact user rows plus the DDL needed to recreate their tables.
+
+    Raw driver values are intentional: serializing through ``repo_query``
+    would turn RecordIDs into strings and lose graph/reference fidelity.
+    """
+    from deeper_notebook.database.repository import db_connection
+
+    snapshot: dict[str, list[dict[str, Any]]] = {}
+    definitions: dict[str, dict[str, str | tuple[str, ...]]] = {}
+    async with db_connection() as connection:
+        database_info = _info_mapping(
+            await connection.query("INFO FOR DB;"), "INFO FOR DB"
+        )
+        table_definitions = database_info.get("tables") or database_info.get("tb")
+        if not isinstance(table_definitions, dict):
+            raise AssertionError(
+                f"unexpected INFO FOR DB table definitions: {table_definitions!r}"
+            )
+        tables = sorted(
+            table
+            for table in table_definitions
+            if table not in _PROTECTED_TABLE_NAMES
+            and not any(
+                table.startswith(prefix) for prefix in _PROTECTED_TABLE_PREFIXES
+            )
+        )
+        for table in tables:
+            safe_table = _query_table_name(table)
+            table_definition = table_definitions[safe_table]
+            if not isinstance(table_definition, str):
+                raise AssertionError(
+                    f"non-string table definition for {safe_table!r}: {table_definition!r}"
+                )
+            rows = await connection.query(f"SELECT * FROM {safe_table} ORDER BY id;")
+            if not isinstance(rows, list) or not all(
+                isinstance(row, dict) for row in rows
+            ):
+                raise AssertionError(
+                    f"unexpected row snapshot for table {safe_table!r}"
+                )
+            table_info = _info_mapping(
+                await connection.query(f"INFO FOR TABLE {safe_table};"),
+                f"INFO FOR TABLE {safe_table}",
+            )
+            unsupported = {
+                section: table_info[section]
+                for section in ("lives", "tables")
+                if table_info.get(section)
+            }
+            if unsupported:
+                raise AssertionError(
+                    f"cannot exactly restore unsupported table metadata for "
+                    f"{safe_table!r}: {unsupported!r}"
+                )
+            snapshot[safe_table] = copy.deepcopy(rows)
+            definitions[safe_table] = {
+                "table": table_definition,
+                "fields": _definition_strings(safe_table, table_info, "fields"),
+                "indexes": _definition_strings(safe_table, table_info, "indexes"),
+                "events": _definition_strings(safe_table, table_info, "events"),
+            }
+    return snapshot, definitions
+
+
+def _table_overwrite_definition(table: str, definition: str) -> str:
+    """Turn INFO's normalized table DDL into an explicit replacement DDL."""
+    safe_table = _query_table_name(table)
+    prefix = f"DEFINE TABLE {safe_table} "
+    if not definition.startswith(prefix):
+        raise AssertionError(
+            f"unexpected INFO FOR DB definition for table {safe_table!r}: {definition!r}"
+        )
+    return f"DEFINE TABLE OVERWRITE {safe_table} {definition.removeprefix(prefix)}"
+
+
+async def _restore_table_data(
+    snapshot: dict[str, list[dict[str, Any]]],
+    definitions: dict[str, dict[str, str | tuple[str, ...]]],
+) -> None:
+    """Restore rows exactly, without active VALUE clauses rewriting them.
+
+    A direct DELETE/CREATE under the recovered schema can change fields with
+    ``VALUE`` expressions (notably ``updated = time::now()``). Recreate every
+    validated user table SCHEMALESS, restore raw RecordIDs and payloads, then
+    apply its original captured DDL with explicit table overwrite semantics.
+    """
+    from deeper_notebook.database.repository import db_connection
+
+    if set(snapshot) != set(definitions):
+        raise AssertionError("row snapshot and table definitions disagree")
+
+    tables = sorted(snapshot)
+    statements = ["BEGIN TRANSACTION;"]
+    variables: dict[str, Any] = {}
+    record_index = 0
+    for table in tables:
+        for row in snapshot[table]:
+            record = row.get("id")
+            if record is None:
+                raise AssertionError(f"snapshot row in {table!r} has no id")
+            record_key = f"record_{record_index}"
+            payload_key = f"payload_{record_index}"
+            variables[record_key] = record
+            variables[payload_key] = {
+                key: value for key, value in row.items() if key != "id"
+            }
+            statements.append(f"CREATE ${record_key} CONTENT ${payload_key};")
+            record_index += 1
+    statements.append("COMMIT TRANSACTION;")
+
+    async with db_connection() as connection:
+        for table in tables:
+            await connection.query(f"REMOVE TABLE {_query_table_name(table)};")
+        for table in tables:
+            await connection.query(
+                f"DEFINE TABLE {_query_table_name(table)} SCHEMALESS;"
+            )
+        if record_index:
+            await connection.query("\n".join(statements), variables)
+        for table in tables:
+            table_definitions = definitions[table]
+            table_definition = table_definitions["table"]
+            if not isinstance(table_definition, str):
+                raise AssertionError(f"missing table definition for {table!r}")
+            await connection.query(_table_overwrite_definition(table, table_definition))
+            for section in ("fields", "indexes", "events"):
+                section_definitions = table_definitions[section]
+                if not isinstance(section_definitions, tuple):
+                    raise AssertionError(
+                        f"missing {section} definitions for table {table!r}"
+                    )
+                for definition in section_definitions:
+                    await connection.query(definition)
 
 
 @pytest_asyncio.fixture
@@ -406,10 +587,13 @@ async def migration_rewind(
         # rewound database if a down migration itself raises. The snapshot is
         # schema authority, not only a migration-head proxy: a down migration
         # can alter DDL before it reaches lower_version().
+        original_data, original_table_definitions = await _snapshot_rewind_state()
         rewind = {
             "manager": manager,
             "original_head": original_head,
             "original_schema": await schema_snapshot(),
+            "original_data": original_data,
+            "original_table_definitions": original_table_definitions,
             "failed_down_version": None,
         }
         rewinds.append(rewind)
@@ -451,6 +635,12 @@ async def migration_rewind(
                 await manager.run_migration_up()
             assert await manager.get_current_version() == original_head
             assert await schema_snapshot() == rewind["original_schema"]
+            if failed_down_version is not None:
+                await _restore_table_data(
+                    rewind["original_data"], rewind["original_table_definitions"]
+                )
+                assert await _snapshot_table_data() == rewind["original_data"]
+                assert await schema_snapshot() == rewind["original_schema"]
 
 
 def _freeze_schema_snapshot(value: Any) -> Any:
