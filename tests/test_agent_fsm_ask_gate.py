@@ -1,9 +1,9 @@
 """v0.8.53 — Phase 5.3b: agent-FSM completion gate on the ask graph.
 
-When DEEPER_NOTEBOOK_AGENT_FSM is on and no search produced grounded content,
+When DEEPER_NOTEBOOK_AGENT_FSM is enabled by default or explicitly on and no search produced grounded content,
 `write_final_answer` declares CLARIFY (and skips the synthesis LLM call)
 instead of letting the model hallucinate from an empty context. Default off
-→ unchanged behaviour.
+via explicit rollback → unchanged behaviour.
 """
 
 from __future__ import annotations
@@ -88,10 +88,23 @@ async def test_synthesis_when_fsm_on_and_grounded(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fsm_off_synthesizes_even_with_no_answers(monkeypatch):
-    """Default off: behaviour is unchanged — synthesize regardless, and emit
-    no agent_state tag."""
+async def test_fsm_defaults_on_and_clarifies_without_grounding(monkeypatch):
     monkeypatch.delenv("DEEPER_NOTEBOOK_AGENT_FSM", raising=False)
+    called = _mock_synthesis(monkeypatch)
+
+    out = await ask.write_final_answer(
+        {"question": "q", "answers": []}, {"configurable": {}}
+    )
+
+    assert out["agent_state"] == AgentState.CLARIFY.value
+    assert called["invoke"] == 0
+
+
+@pytest.mark.asyncio
+async def test_fsm_explicit_off_synthesizes_even_with_no_answers(monkeypatch):
+    """Explicit off: behaviour is unchanged — synthesize regardless, and emit
+    no agent_state tag."""
+    monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "0")
     called = _mock_synthesis(monkeypatch)
 
     out = await ask.write_final_answer(
@@ -111,4 +124,4 @@ def test_agent_fsm_enabled_parsing(monkeypatch):
         monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", off)
         assert ask._agent_fsm_enabled() is False
     monkeypatch.delenv("DEEPER_NOTEBOOK_AGENT_FSM", raising=False)
-    assert ask._agent_fsm_enabled() is False
+    assert ask._agent_fsm_enabled() is True

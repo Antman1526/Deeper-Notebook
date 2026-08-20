@@ -122,7 +122,7 @@ async def _ask_invoke(model, payload, *, node: str):
 # to "synthesize" means writing from an empty context — precisely the case
 # where weak local models confidently hallucinate. When DEEPER_NOTEBOOK_AGENT_FSM is on we
 # instead declare CLARIFY (per the agent_fsm state vocabulary) and ask the user
-# to refine, rather than emit an ungrounded answer. Default OFF → unchanged.
+# to refine, rather than emit an ungrounded answer. Explicit off → unchanged.
 _AGENT_FSM_CLARIFY_MESSAGE = (
     "I couldn't find anything relevant to that question in your sources. "
     "Try rephrasing it, using different keywords, or adding sources that "
@@ -131,7 +131,10 @@ _AGENT_FSM_CLARIFY_MESSAGE = (
 
 
 def _agent_fsm_enabled() -> bool:
-    raw = (resolve_env("DEEPER_NOTEBOOK_AGENT_FSM") or "").strip().lower()
+    raw = resolve_env("DEEPER_NOTEBOOK_AGENT_FSM")
+    if raw is None:
+        return True
+    raw = raw.strip().lower()
     return raw in ("on", "1", "true", "yes")
 
 
@@ -338,7 +341,7 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
 
 async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict:
     try:
-        # v0.8.53 — Phase 5.3b agent-FSM completion gate (default off). If no
+        # v0.8.53 — Phase 5.3b agent-FSM completion gate (default on). If no
         # search produced grounded content, don't ask the LLM to synthesize
         # from an empty context (where weak local models hallucinate) — declare
         # CLARIFY and prompt the user to refine. Streaming-safe: search.py

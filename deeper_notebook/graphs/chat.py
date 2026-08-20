@@ -552,7 +552,7 @@ async def _resolve_chat_tools(
 
 
 # v0.8.60 — Phase 5.3c-full. Lightweight agent-FSM integration for the chat
-# tool loop, gated by DEEPER_NOTEBOOK_AGENT_FSM (default off). The loop already terminates
+# tool loop, gated by DEEPER_NOTEBOOK_AGENT_FSM (default on). The loop already terminates
 # when the model stops calling tools; we don't change that. Instead, when
 # enabled, we (a) tell the model it MAY end its turn by declaring a state, and
 # (b) classify the terminal state (clarify / complete / truncated) from the
@@ -560,7 +560,10 @@ async def _resolve_chat_tools(
 # the user a question (clarify) is visible to the client, not silently treated
 # as a finished answer. Tolerant: a missing/garbled tag → None → "complete".
 def _agent_fsm_enabled() -> bool:
-    raw = (resolve_env("DEEPER_NOTEBOOK_AGENT_FSM") or "").strip().lower()
+    raw = resolve_env("DEEPER_NOTEBOOK_AGENT_FSM")
+    if raw is None:
+        return True
+    raw = raw.strip().lower()
     return raw in ("on", "1", "true", "yes")
 
 
@@ -817,7 +820,7 @@ async def bind_mcp_and_run_tool_loop(
         mcp_tools = []
 
     # v0.8.60 — gated agent-FSM prompt contract: tell the model it MAY declare
-    # a terminal <state> (complete/clarify). Default off → payload unchanged.
+    # a terminal <state> (complete/clarify). Explicit off → payload unchanged.
     fsm_enabled = _agent_fsm_enabled()
     if fsm_enabled:
         from langchain_core.messages import SystemMessage as _SystemMessage

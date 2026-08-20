@@ -1,9 +1,9 @@
 """v0.8.60 — Phase 5.3c-full: agent-FSM integration in the chat tool loop.
 
-When DEEPER_NOTEBOOK_AGENT_FSM is on, the loop (a) tells the model it may declare a
+By default and when DEEPER_NOTEBOOK_AGENT_FSM is on, the loop (a) tells the model it may declare a
 terminal <state>, and (b) classifies + surfaces the terminal state via
 agent_state_out — the valuable case being CLARIFY (the model paused to ask
-the user). Default off → no <state> injection, agent_state_out untouched.
+the user). Explicit off → no <state> injection, agent_state_out untouched.
 """
 
 from __future__ import annotations
@@ -94,6 +94,19 @@ async def test_complete_when_no_state_tag(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_malformed_terminal_state_falls_back_to_complete(monkeypatch):
+    monkeypatch.delenv("DEEPER_NOTEBOOK_AGENT_FSM", raising=False)
+    _no_tools(monkeypatch)
+    model = _Model([_Msg(content="Here is the answer.\n<state>not-a-state</state>")])
+    out: dict = {}
+
+    await chat_mod.bind_mcp_and_run_tool_loop(model, [], agent_state_out=out)
+
+    assert out["agent_state"] == "complete"
+    assert _instruction_in(model.payloads[0])
+
+
+@pytest.mark.asyncio
 async def test_truncated_classified_when_loop_hits_cap(monkeypatch):
     monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "on")
     monkeypatch.setattr(
@@ -116,13 +129,25 @@ async def test_truncated_classified_when_loop_hits_cap(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fsm_off_no_injection_no_state(monkeypatch):
+async def test_fsm_defaults_on_and_injects_terminal_state_contract(monkeypatch):
     monkeypatch.delenv("DEEPER_NOTEBOOK_AGENT_FSM", raising=False)
     _no_tools(monkeypatch)
     model = _Model([_Msg(content="answer <state>clarify</state>")])
     out: dict = {}
     await chat_mod.bind_mcp_and_run_tool_loop(model, [], agent_state_out=out)
-    # Off → no classification, no prompt injection (payload passed through as-is).
+
+    assert out["agent_state"] == "clarify"
+    assert _instruction_in(model.payloads[0])
+
+
+@pytest.mark.asyncio
+async def test_fsm_explicit_off_no_injection_no_state(monkeypatch):
+    monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "0")
+    _no_tools(monkeypatch)
+    model = _Model([_Msg(content="answer <state>clarify</state>")])
+    out: dict = {}
+    await chat_mod.bind_mcp_and_run_tool_loop(model, [], agent_state_out=out)
+    # Explicit off → no classification, no prompt injection (payload passed through as-is).
     assert out == {}
     assert not _instruction_in(model.payloads[0])
     assert model.payloads[0] == []
@@ -135,3 +160,5 @@ def test_agent_fsm_enabled_parsing(monkeypatch):
     for off in ("", "off", "0", "false", "no"):
         monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", off)
         assert chat_mod._agent_fsm_enabled() is False
+    monkeypatch.delenv("DEEPER_NOTEBOOK_AGENT_FSM", raising=False)
+    assert chat_mod._agent_fsm_enabled() is True
