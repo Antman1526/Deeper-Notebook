@@ -90,39 +90,63 @@ Guards that already exist and run unconditionally:
 
 ## 2. Search quality
 
-### 2.1 BM25 collection statistics go stale after a bulk `DELETE`
+### 2.1 Source deletion refreshes its affected BM25 indexes
 
-Reproduced: after `DELETE source;`, every `search::score()` in that namespace
-returns exactly `0.0` until the index is rebuilt. `REBUILD INDEX` on the emptied
-table restores real scores.
+**Implemented and measured (2026-08-20).** A realistic product
+`Source.delete()` with one retired source, two surviving sources, and source
+chunks left survivors in the same meaningful, non-tied retrieval order as two
+subsequent comparison rebuilds. `Source.delete()` now performs exactly one
+best-effort rebuild pass over the fixed internal whitelist:
+`source.idx_source_title`, `source.idx_source_full_text`,
+`source_embedding.idx_source_embed_chunk`, and
+`source_insight.idx_source_insight`. It does not rebuild note indexes and never
+interpolates user input. A failed delete performs no rebuild; a rebuild failure
+is logged with its table/index and returns the completed delete, with search
+relevance explicitly degraded until the next successful rebuild.
 
-No product impact known — nothing in the app deletes its whole corpus — but it
-made an integration test **vacuous** (a list of identical zeros is trivially
-"sorted", so an ordering assertion passed without testing anything).
-`tests/integration/test_text_search_ordering.py` now rebuilds before seeding and
-refuses to assert on all-identical scores.
+SurrealDB 2.6.5 changes raw BM25 score magnitudes on repeated identical
+`REBUILD INDEX` passes (the deterministic fixture progressed from
+`[1.9793, 0.8760]` after the delete pass to `[2.2471, 0.9935]` and
+`[2.4984, 1.1035]`), while the survivor identity/order stayed stable. Hybrid
+fusion consumes rank, so the regression protects non-vacuous scores and
+identity/order, not unsupported magnitude idempotence. Evidence:
+`SURREAL_INTEGRATION=1 uv run pytest -q -s tests/integration/test_search_quality_benchmark.py`
+(two fresh namespaces, 5 passed each).
 
-Worth deciding: should deleting a notebook or a large source trigger a rebuild
-of the affected BM25 indexes? Measure first — this may be purely a test concern.
+### 2.2 HNSW candidates now use the final cosine metric
 
-### 2.2 The HNSW indexes are `DIST EUCLIDEAN`; the function ranks by cosine
+**Implemented and migration-tested (2026-08-20).** A deterministic
+real-Surreal 768-dimensional fixture with a non-unit exact cosine winner and
+101 Euclidean-nearer decoys made the old candidate pool return an incorrect
+identity (`euclidean candidate 000`) instead of `cosine winner`. The provider
+stub measurement confirms that short and batch source-relevant embedding paths
+forward raw norms (`5.0`; `[5.0, 10.0]`), so existing data cannot be declared
+unit-normalized. No provider outputs were normalized and no data was
+re-embedded.
 
-Pre-existing and deliberately untouched by migration 49, whose job was to make
-search return anything at all. For normalized embeddings the two agree on
-ordering, so this is likely benign — but nothing verifies the embeddings are
-normalized. Changing the index distance forces a rebuild and shifts result
-ordering, so treat it as its own change with its own before/after measurement.
+Migration 51 drops/redefines `source_embedding_hnsw`, `source_insight_hnsw`,
+and `note_hnsw` as `DIST COSINE`; rollback restores their exact
+`DIST EUCLIDEAN` definitions. Drop/redefine is the required definition rebuild;
+`REBUILD INDEX` alone would preserve the wrong metric. Real up/down/up proof
+and static contracts pass in disposable SurrealDB 2.6.5 namespaces.
 
-### 2.3 `EF` is set equal to `K` (100)
+### 2.3 Keep the shipped `EF=100` authority
 
-The conservative starting point. Larger `EF` trades latency for recall. Worth
-tuning only against a measured recall benchmark, which does not exist yet.
+**Measured; no tuning.** Fixed exact-cosine recall@10 was `1.000` for all
+three queries over 128 vectors in both fresh runs. Median query latency was
+`8.552 ms` then `9.170 ms` for EF 100; the read-only EF 200 comparator was
+also `1.000` recall with `9.188 ms` then `10.053 ms` median latency. There is
+no safe parameterized production setting and no measured recall gain, so EF
+100 remains unchanged.
 
-### 2.4 A reranker leg for hybrid search
+### 2.4 Reranker evaluation is blocked by absent authorized capability
 
-qmd's third leg, deliberately not implemented in v0.8.113: it would add another
-GGUF to the sidecar fleet for a benefit this codebase has not measured. Revisit
-only after 1.2 gives a way to measure retrieval quality at all.
+Repository inventory finds two retrieval legs fused by rank in
+`deeper_notebook/search/fusion.py`; it explicitly says the LLM reranker is not
+implemented. There is no configured local reranker model, cross-encoder, or
+reranker invocation path. No model was downloaded or invoked. The new fixture
+has deterministic retrieval judgments, but it cannot measure a reranker delta
+until a separately authorized local reranker is configured.
 
 ---
 
