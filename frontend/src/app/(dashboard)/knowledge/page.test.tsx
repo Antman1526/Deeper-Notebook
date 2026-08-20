@@ -14,8 +14,8 @@ vi.mock('@/components/layout/AppShell', () => ({ AppShell: ({ children }: { chil
 vi.mock('@/components/vault/KnowledgeExplorer', () => ({ KnowledgeExplorer: () => <section aria-label="Knowledge explorer">Vault authority</section> }))
 vi.mock('@/lib/features', () => ({
   isVisualSystemV2Enabled: mockVisualSystemEnabled,
-  useSourceVisualsEnabled: mockSourceVisualsEnabled,
 }))
+vi.mock('@/lib/features-client', () => ({ useSourceVisualsEnabled: mockSourceVisualsEnabled }))
 vi.mock('@/lib/hooks/use-source-visuals', () => ({ useRecentVisualSources: mockRecentSources }))
 
 const recentSource: SourceListResponse = {

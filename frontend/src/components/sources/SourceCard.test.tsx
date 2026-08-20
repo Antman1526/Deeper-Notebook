@@ -15,8 +15,8 @@ vi.mock('@/lib/hooks/use-sources', () => ({
 
 vi.mock('@/lib/features', () => ({
   isVisualSystemV2Enabled: mockVisualSystemEnabled,
-  useSourceVisualsEnabled: mockSourceVisualsEnabled,
 }))
+vi.mock('@/lib/features-client', () => ({ useSourceVisualsEnabled: mockSourceVisualsEnabled }))
 
 function source(overrides: Partial<SourceListResponse> = {}): SourceListResponse {
   return {

@@ -1,5 +1,3 @@
-import { useSyncExternalStore } from 'react'
-
 const TRUTHY = new Set(['1', 'true', 'yes', 'on', 'enabled'])
 
 // v0.8.107 — runtime overrides for build-time flags.
@@ -128,14 +126,6 @@ export function isResearchRunsEnabled(): boolean {
   ))
 }
 
-export function useResearchRunsEnabled(): boolean {
-  return useSyncExternalStore(
-    subscribeRuntimeFeatures,
-    isResearchRunsEnabled,
-    isResearchRunsEnabled,
-  )
-}
-
 export function isStudyWorkbenchEnabled(): boolean {
   return resolve('studyWorkbench', envFlag(process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH, undefined, true))
 }
@@ -154,12 +144,4 @@ export function isVisualSystemV2Enabled(): boolean {
 
 export function isSourceVisualsEnabled(): boolean {
   return resolve('sourceVisuals', envFlag(process.env.NEXT_PUBLIC_DN_SOURCE_VISUALS, undefined, true))
-}
-
-export function useSourceVisualsEnabled(): boolean {
-  return useSyncExternalStore(
-    subscribeRuntimeFeatures,
-    isSourceVisualsEnabled,
-    isSourceVisualsEnabled,
-  )
 }

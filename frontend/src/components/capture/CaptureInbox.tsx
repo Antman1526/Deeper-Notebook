@@ -6,7 +6,8 @@ import { FolderPlus, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useCaptureActions, useCaptureItems, useCaptureRoots } from '@/lib/hooks/use-capture'
-import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
+import { isVisualSystemV2Enabled } from '@/lib/features'
+import { useSourceVisualsEnabled } from '@/lib/features-client'
 import { CaptureItemRow } from './CaptureItemRow'
 
 export function CaptureInbox() {

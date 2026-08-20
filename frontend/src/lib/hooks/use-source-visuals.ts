@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient, type MutateOptions } from '@tans
 import { sourceVisualsApi } from '@/lib/api/source-visuals'
 import { QUERY_KEYS, shouldRetryMutation } from '@/lib/api/query-client'
 import { sourcesApi } from '@/lib/api/sources'
-import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
+import { isVisualSystemV2Enabled } from '@/lib/features'
+import { useSourceVisualsEnabled } from '@/lib/features-client'
 import type { SourceVisualJob } from '@/lib/types/source-visuals'
 
 type VisualMutationVariables = { sourceId: string; requestId: string }

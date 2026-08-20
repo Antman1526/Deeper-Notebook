@@ -13,8 +13,8 @@ const { mockVisualSystemEnabled, mockSourceVisualsEnabled, mockCaptureItems } = 
 
 vi.mock('@/lib/features', () => ({
   isVisualSystemV2Enabled: mockVisualSystemEnabled,
-  useSourceVisualsEnabled: mockSourceVisualsEnabled,
 }))
+vi.mock('@/lib/features-client', () => ({ useSourceVisualsEnabled: mockSourceVisualsEnabled }))
 vi.mock('@/lib/hooks/use-capture', () => ({
   useCaptureRoots: () => ({ data: [] }),
   useCaptureItems: () => ({ data: mockCaptureItems.current, isLoading: false, isError: false }),

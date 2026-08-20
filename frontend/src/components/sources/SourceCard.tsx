@@ -36,7 +36,8 @@ import { cn } from '@/lib/utils'
 import { ContextToggle } from '@/components/common/ContextToggle'
 import { ContextMode } from '@/app/(dashboard)/notebooks/[id]/page'
 import { SourceCover } from '@/components/deeper-notebook/source-gallery/SourceCover'
-import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
+import { isVisualSystemV2Enabled } from '@/lib/features'
+import { useSourceVisualsEnabled } from '@/lib/features-client'
 
 interface SourceCardProps {
   source: SourceListResponse

@@ -33,9 +33,9 @@ vi.mock('@/lib/features', async (importOriginal) => {
   return {
     ...actual,
     isVisualSystemV2Enabled: mockVisualSystemEnabled,
-    useSourceVisualsEnabled: mockSourceVisualsEnabled,
   }
 })
+vi.mock('@/lib/features-client', () => ({ useSourceVisualsEnabled: mockSourceVisualsEnabled }))
 
 describe('SearchPage', () => {
   beforeEach(() => {

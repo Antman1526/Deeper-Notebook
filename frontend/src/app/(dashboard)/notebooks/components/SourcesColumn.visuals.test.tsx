@@ -29,8 +29,8 @@ const {
 
 vi.mock('@/lib/features', () => ({
   isVisualSystemV2Enabled: mockVisualSystemEnabled,
-  useSourceVisualsEnabled: mockSourceVisualsEnabled,
 }))
+vi.mock('@/lib/features-client', () => ({ useSourceVisualsEnabled: mockSourceVisualsEnabled }))
 
 vi.mock('@/components/sources/SourceCard', () => ({
   SourceCard: (props: {

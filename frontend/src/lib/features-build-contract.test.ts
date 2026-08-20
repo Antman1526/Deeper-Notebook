@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(resolve(process.cwd(), 'src/lib/features.ts'), 'utf8')
+const clientSource = readFileSync(resolve(process.cwd(), 'src/lib/features-client.ts'), 'utf8')
 
 const PUBLIC_FLAG_NAMES = [
   'NEXT_PUBLIC_DN_EVIDENCE_STUDIO',
@@ -21,6 +22,14 @@ const PUBLIC_FLAG_NAMES = [
 ] as const
 
 describe('Next production feature-flag contract', () => {
+  it('keeps pure feature predicates server-safe and confines reactive hooks to the client module', () => {
+    expect(source).not.toMatch(/from\s+['\"]react['\"]/)
+    expect(source).not.toContain('useSyncExternalStore')
+    expect(clientSource).toMatch(/^['\"]use client['\"]/)
+    expect(clientSource).toContain('useSyncExternalStore')
+    expect(clientSource).toContain("from './features'")
+  })
+
   it('uses a static process.env property reference for every public flag', () => {
     for (const name of PUBLIC_FLAG_NAMES) {
       expect(source).toContain(`process.env.${name}`)

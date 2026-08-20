@@ -20,7 +20,8 @@ import { getApiErrorKey } from '@/lib/utils/error-handler'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
 import { SourceGallery } from '@/components/deeper-notebook/source-gallery/SourceGallery'
-import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
+import { isVisualSystemV2Enabled } from '@/lib/features'
+import { useSourceVisualsEnabled } from '@/lib/features-client'
 import { useRefreshSourceVisual, useRemoveSourceVisual } from '@/lib/hooks/use-source-visuals'
 
 export default function SourcesPage() {

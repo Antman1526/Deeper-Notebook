@@ -26,7 +26,8 @@ import { SaveToNotebooksDialog } from '@/components/search/SaveToNotebooksDialog
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
 import { EvidencePeek } from '@/components/deeper-notebook/source-gallery/EvidencePeek'
 import { SourceCover } from '@/components/deeper-notebook/source-gallery/SourceCover'
-import { isVisualSystemV2Enabled, useSourceVisualsEnabled } from '@/lib/features'
+import { isVisualSystemV2Enabled } from '@/lib/features'
+import { useSourceVisualsEnabled } from '@/lib/features-client'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { SearchResult } from '@/lib/types/search'
 

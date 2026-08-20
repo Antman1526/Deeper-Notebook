@@ -52,8 +52,8 @@ vi.mock('@/lib/hooks/use-create-dialogs', () => ({
 
 vi.mock('@/lib/features', () => ({
   isVisualSystemV2Enabled: mockVisualSystemEnabled,
-  useSourceVisualsEnabled: mockSourceVisualsEnabled,
 }))
+vi.mock('@/lib/features-client', () => ({ useSourceVisualsEnabled: mockSourceVisualsEnabled }))
 
 vi.mock('@/lib/hooks/use-source-visuals', () => ({
   useRefreshSourceVisual: () => ({ mutateAsync: mockRefreshVisual }),

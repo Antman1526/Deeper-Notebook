@@ -42,7 +42,8 @@ import {
   isSlideDeckDocument,
   SlideDeckViewer,
 } from '@/components/deeper-notebook/VisualArtifactViewers'
-import { isEvidenceStudioEnabled, useResearchRunsEnabled } from '@/lib/features'
+import { isEvidenceStudioEnabled } from '@/lib/features'
+import { useResearchRunsEnabled } from '@/lib/features-client'
 import { artifactMarkdown } from '@/lib/studio-artifacts'
 import {
   useCreateStudioArtifact,
