@@ -36,13 +36,17 @@ const FEATURE_NAMES = new Set<FeatureName>([
 ])
 
 export function applyRuntimeFeatures(features: unknown): void {
-  if (!features || typeof features !== 'object') return
+  if (!features || typeof features !== 'object' || Array.isArray(features)) return
+  const entries = Object.entries(features as Record<string, unknown>)
+  if (
+    entries.length === 0
+    || entries.some(([key, value]) => !isFeatureName(key) || typeof value !== 'boolean')
+  ) return
+
   const next: Partial<Record<FeatureName, boolean>> = {}
-  for (const [key, value] of Object.entries(features as Record<string, unknown>)) {
-    // Only booleans are adopted. A malformed payload must not flip a flag to a
-    // truthy string, which is the failure mode that would silently re-enable a
-    // rolled-back feature.
-    if (isFeatureName(key) && typeof value === 'boolean') next[key] = value
+  for (const [key, value] of entries) {
+    // The validation above makes this a complete, known boolean authority.
+    next[key as FeatureName] = value as boolean
   }
 
   if (sameRuntimeOverrides(runtimeOverrides, next)) return

@@ -155,6 +155,27 @@ describe('runtime feature overrides', () => {
     expect(isSourceVisualsEnabled()).toBe(false)
   })
 
+  it('preserves the last runtime rollback when a later source-visual value is malformed', () => {
+    applyRuntimeFeatures({ sourceVisuals: false })
+    applyRuntimeFeatures({ sourceVisuals: 'false' })
+
+    expect(isSourceVisualsEnabled()).toBe(false)
+  })
+
+  it('preserves the last runtime rollback when a later payload contains only unknown features', () => {
+    applyRuntimeFeatures({ sourceVisuals: false })
+    applyRuntimeFeatures({ unknownFeature: true })
+
+    expect(isSourceVisualsEnabled()).toBe(false)
+  })
+
+  it('rejects mixed valid and malformed payloads atomically', () => {
+    applyRuntimeFeatures({ sourceVisuals: false })
+    applyRuntimeFeatures({ sourceVisuals: true, visualRefresh: 'false' })
+
+    expect(isSourceVisualsEnabled()).toBe(false)
+  })
+
   it('ignores non-boolean values rather than coercing them', () => {
     // A truthy string here would silently re-enable a rolled-back feature,
     // which is the precise failure this layer exists to prevent.
