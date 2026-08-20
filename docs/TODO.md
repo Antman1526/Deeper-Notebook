@@ -54,22 +54,33 @@ avoid accidental database connections; run it explicitly with:
 SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q
 ```
 
-### 1.3 Audit the remaining SurrealQL defect classes
+### 1.3 Audit the remaining SurrealQL defect classes — **complete 2026-08-20**
 
-Three defect classes were found in `fn::vector_search` this session. Two have
-been swept repo-wide; one remains open.
+Three defect classes were found in `fn::vector_search` this session. All three
+have now been swept across the current production authority.
 
 | Class | Swept? | Result |
 |---|---|---|
 | One-arg KNN `<\|K\|>` against an HNSW index | yes | `fn::vector_search` and Python memory recall use `<\|K,EF\|>`; static + real-Surreal guards cover both |
 | `ORDER BY` on a statement carrying `GROUP BY` | yes | also `fn::text_search`; fixed in 50 |
-| Function call in a WHERE that also drives an indexed scan | **partial** | `fn::vector_search` is fixed in migration 49; a broader repository-wide audit is outside this HNSW repair |
+| Function call in a WHERE that also drives an indexed scan | yes | current/effective `fn::vector_search` (49), `fn::text_search` (50), and all tracked production Python query sites are clean |
 
 The third is the subtle one: on SurrealDB 2.6.5 a `@@`/KNN predicate combined
 with a function-based condition over the same indexed field returns **no rows**,
 silently. A plain comparison survives; `array::len(...)` or
 `vector::similarity::cosine(...)` does not. Anywhere that shape exists, the
 query returns nothing and looks like "no matches".
+
+The final audit used the migrations a fresh database actually applies, not
+superseded forward definitions or down migrations. Migration 49 has three
+inner HNSW predicates with only `embedding <|100,100|> $query`; its
+`array::len(...)` and cosine filters are in outer non-KNN queries. Migration 50
+has six `@1@` full-text predicates with no function call in their `WHERE`
+clauses. Across all 425 tracked production Python modules, the only direct
+indexed predicates are the three bare HNSW queries in
+`deeper_notebook/utils/memory_recall.py`; `deeper_notebook/domain/notebook.py`
+only invokes the two database functions. No current indexed KNN or full-text
+predicate shares its `WHERE` clause with a function call.
 
 Guards that already exist and run unconditionally:
 `tests/test_v0_8_114_knn_operator_arity.py`,
@@ -155,7 +166,7 @@ handling and deprecation policy with it.
 ## Re-running the evidence
 
 ```bash
-uv run pytest tests/ desktop/tests/ -q                      # 5,670 pass
+uv run pytest tests/ desktop/tests/ -q                      # 5,672 pass
 SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q   # 126 passed, 10 warnings (2026-08-20)
 uv run python scripts/rebrand_audit.py --check
 make repair-rebrand-pins
