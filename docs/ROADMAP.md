@@ -1,6 +1,9 @@
 # Roadmap
 
-**Status: 2026-08-19 · desktop `0.8.108` · server/container `1.8.5`**
+**Status: 2026-08-20 · desktop `0.8.114` · server/container `1.8.5`**
+
+> Actionable items live in [`TODO.md`](TODO.md). This file carries the strategy
+> and the reasoning; that one is the list you pick work from.
 
 Why this file exists: an inventory on 2026-08-19 found no roadmap or backlog
 anywhere in the repository — only retrospective per-feature plans under
@@ -155,6 +158,33 @@ Neither urgent nor forced, listed in full under "Areas for Review" in
 PROJECT-DEEP-DIVE: the five near-identical tool-binding blocks (§2.1 there), the
 module-global pooled HTTP client (§2.3), whether ~92 `# nosec` SurrealQL sites
 justify a typed query builder (§4.4), and what could now be deleted.
+
+---
+
+## 2.5 Retrieval was silently broken — resolved 2026-08-20 (v0.8.114)
+
+Worth recording because of *how* it hid rather than what it was.
+
+`fn::vector_search` returned zero results for every query, and had since
+migration 21 — HTTP 200, empty list, no error, no log line, against a fully
+embedded corpus. Three independent defects, each of which alone still returned
+nothing: an MTREE-arity KNN operator (`<|100|>`) against HNSW indexes; a
+SurrealDB 2.6.5 behaviour where a KNN predicate sharing a WHERE clause with a
+function call over the same indexed field matches nothing; and `ORDER BY` being
+ignored on a statement carrying `GROUP BY`. Fixed by migration 49.
+
+The third defect turned out to also affect `fn::text_search`, where it had been
+present since migration 1 — an unordered `LIMIT` returns an arbitrary slice, so
+text search had been answering with mediocre matches rather than the best ones.
+Fixed by migration 50; live top score for "architecture" went 2.586 → 6.363.
+
+**The lesson is §1.2 of TODO.md.** Every surrounding signal read healthy:
+sources reported embedded, chunk counts were non-zero, the query vector was a
+well-formed 768-dim array, the index reported matching DIMENSION and TYPE, and
+`REBUILD INDEX` returned OK. The 5,600-test backend suite was green. The only
+thing that would have caught it is asking the database for results and checking
+that some came back — which is what `tests/integration/` does, and which nothing
+runs, because it is gated behind `SURREAL_INTEGRATION=1`.
 
 ---
 

@@ -25,6 +25,87 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.114 — 2026-08-20 — Semantic search actually returns results
+
+🐛 **`fn::vector_search` returned nothing for every query, and had since
+migration 21.** HTTP 200, empty result list, no error, no log line, against a
+fully embedded corpus. Every surrounding signal looked healthy — sources
+reported embedded, chunk counts were non-zero, the query vector was a
+well-formed 768-dim array, the HNSW index reported the matching DIMENSION and
+TYPE, and `REBUILD INDEX` returned OK. Nothing failed; the filter simply never
+matched.
+
+There were **three** independent defects, and fixing any one alone still
+returned nothing. All three were found by bisecting the WHERE clause against
+SurrealDB 2.6.5.
+
+1. **Wrong KNN operator arity.** Migration 21 wrote `embedding <|100|> $query`.
+   `<|K|>` targets an MTREE index; HNSW requires `<|K,EF|>`. No MTREE index
+   exists on these tables. Measured with one matching row: `<|100|>` → 0 rows,
+   `<|100,100|>` → 1 row.
+
+2. **Function calls in a WHERE clause that also drives a KNN scan.** With the
+   operator corrected the function still returned nothing: on 2.6.5, a KNN
+   predicate combined with a function-based condition over the same indexed
+   field yields no rows. A plain comparison (`embedding != none`) survives; a
+   function call (`array::len(...)`, `vector::similarity::cosine(...)`) does
+   not. The same expressions compute correctly in the PROJECTION of a KNN
+   query — only the filter position is affected. Fixed by letting the KNN
+   operator select candidates in a subquery and running the length and
+   similarity filters in the outer query, which keeps the HNSW index doing the
+   work it was added for instead of falling back to a full-table scan.
+
+3. **`ORDER BY` ignored on a grouped SELECT.** Visible only once rows finally
+   came back. The final aggregation carried `GROUP BY` and `ORDER BY` on the
+   same statement, which 2.6.5 does not apply, so `LIMIT` sliced an *unordered*
+   set: the "top 10" was an arbitrary 10 of everything above the similarity
+   threshold, in meaningless order. Measured on the live 320-chunk corpus:
+   `0.835, 1.0, 0.723, 0.709, 0.710 …` before, `1.0, 0.835, 0.723, 0.723 …`
+   after. Fixed by wrapping the grouped result and sorting outside it.
+
+Shipped as forward migration `49.surrealql` (with `49_down.surrealql`), because
+migration 21's definition is already applied and guarded by `IF NOT EXISTS`.
+
+🐛 **`fn::text_search` had defect 3 too, and had since migration 1.** Found by
+grepping for the pattern after fixing `fn::vector_search`. Shipped as migration
+50. This one was never invisible — it looked like "search quality is mediocre"
+rather than like a bug, because an unordered `LIMIT` returns an arbitrary slice
+of the matching set rather than the best matches. On the live corpus:
+
+    query "architecture"  before: 1.889, 1.2, 2.396, 2.586, 1.2, 1.896  (unsorted)
+                           after: 6.363, 5.229, 5.216, 5.191, 4.227, 2.586
+    query "project"       before: -0.527, -1.054, -0.539, -0.427, -0.152, -1.267
+                           after: 4.409, 4.246, 4.226, 4.216, 3.676, 3.493
+
+The scores rise because the query now returns the top N rather than an arbitrary
+N — the previous all-negative "project" scores were simply a low-relevance slice.
+This also mattered for v0.8.113's hybrid search, which fuses the two legs with
+Reciprocal Rank Fusion: RRF scores documents purely by their RANK within each
+leg, so an arbitrarily ordered leg fed meaningless ranks into the fusion.
+
+Verified against the live 320-chunk database: **0 results before, 10 correctly
+ranked after**, with the exact-match chunk at similarity 1.0 on top. Through the
+API, the natural-language query "what does DeeperCode do" now returns
+`00_What_DeeperCode_Does.md` at 0.81 for both `type: "vector"` and
+`type: "hybrid"`. This also explains why v0.8.113's hybrid search only ever
+showed text-leg results.
+
+🛠 **Two regression tests, deliberately overlapping.**
+`tests/integration/test_vector_search_returns_results.py` exercises the real
+query planner but only runs with `SURREAL_INTEGRATION=1`;
+`tests/test_v0_8_114_knn_operator_arity.py` reads the migration text and runs
+unconditionally. A defect that survived because nothing exercised it deserves a
+guard that cannot be skipped. Each defect was confirmed to fail its test in
+isolation before the fix was restored.
+
+🛠 **`test_repair_desktop_db_script.py` no longer depends on whether the app is
+running.** The repair script aborts early if Deeper Notebook or SurrealDB is
+live, so `test_explicit_exact_target_resolves_both_roots_conflict` failed on a
+machine with the app open and passed everywhere else. `pgrep` is now stubbed for
+these tests, which assert data-root resolution and never asserted that guard.
+
+---
+
 ## v0.8.113 — 2026-08-19 — Hybrid retrieval: fuse both search legs
 
 ✨ **`/api/search` gains `type: "hybrid"`.** It has always run exactly ONE leg —
@@ -61,6 +142,26 @@ Two bugs in my own work, caught by the tests I wrote for it: the fusion kept
 whichever leg was iterated FIRST rather than whichever ranked a document higher
 (contradicting its own docstring), and my first k-sensitivity test proved
 nothing because agreement won at every value of k.
+
+- **v0.8.114** 🐛 **Semantic search returned nothing, for every query, since
+  migration 21.** HTTP 200, empty list, no error, against a fully embedded
+  corpus — and every surrounding signal (embedded flags, chunk counts, index
+  DIMENSION/TYPE, `REBUILD INDEX`) reported healthy. Three independent defects
+  in `fn::vector_search`, each of which alone still returned nothing: the KNN
+  operator used the MTREE arity `<|100|>` against HNSW indexes that require
+  `<|100,100|>`; SurrealDB 2.6.5 drops all rows when a KNN predicate shares a
+  WHERE clause with a function call over the same indexed field (fixed by
+  moving the KNN into a subquery and the filters outside); and `ORDER BY` is
+  ignored on a statement carrying `GROUP BY`, so `LIMIT` returned an arbitrary
+  unordered slice rather than the best matches. Shipped as migration 49.
+  Verified on the live 320-chunk corpus: 0 results before, 10 correctly ranked
+  after. The same ordering defect was then found in `fn::text_search` (present
+  since migration 1) and fixed in migration 50 — an unordered `LIMIT` returned
+  an arbitrary slice, so text search had been answering with mediocre matches;
+  live top score for "architecture" went 2.586 → 6.363. That leg feeds
+  v0.8.113's hybrid fusion, which ranks purely by position, so it degraded
+  hybrid results too. Guarded by a real-planner integration test plus a static test that
+  runs unconditionally, since the integration suite is opt-in.
 
 - **v0.8.113** ✨ **Hybrid retrieval.** `/api/search` ran one leg and threw the
   other away; it can now run both and fuse them with Reciprocal Rank Fusion
