@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from hashlib import sha256
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -30,10 +29,6 @@ from deeper_notebook.vault.repository import VaultMountCreate, VaultRepository
 
 pytestmark = pytest.mark.integration_surreal
 
-ROOT = Path(__file__).resolve().parents[2]
-MIGRATION_38_DOWN = ROOT / "deeper_notebook/database/migrations/38_down.surrealql"
-MIGRATION_39_DOWN = ROOT / "deeper_notebook/database/migrations/39_down.surrealql"
-MIGRATION_40_DOWN = ROOT / "deeper_notebook/database/migrations/40_down.surrealql"
 NOW = datetime(2026, 7, 30, tzinfo=timezone.utc)
 
 
@@ -294,19 +289,19 @@ async def test_receipts_exclude_canonical_bytes_and_absolute_roots(clean_namespa
     assert "/Users/Antman" not in str(rows)
 
 
-async def test_migration_38_down_up_preserves_engine_records(clean_namespace):
+async def test_migration_38_down_up_preserves_engine_records(
+    clean_namespace,
+    migration_rewind,
+):
     snapshot = _snapshot(b"# Native\n\nSticky migration proof\n")
     await KnowledgeRepository().commit_snapshot(
         snapshot, operation_id="native-migration"
     )
 
-    await repo_query(MIGRATION_40_DOWN.read_text(encoding="utf-8"))
-    await repo_query("DELETE type::thing('_sbl_migrations', 40);")
-    await repo_query(MIGRATION_39_DOWN.read_text(encoding="utf-8"))
-    await repo_query("DELETE type::thing('_sbl_migrations', 39);")
-    await repo_query(MIGRATION_38_DOWN.read_text(encoding="utf-8"))
-    await repo_query("DELETE type::thing('_sbl_migrations', 38);")
+    original_head = await migration_rewind(37)
+    assert await get_latest_version() == 37
     await AsyncMigrationManager().run_migration_up()
+    assert await get_latest_version() == original_head
 
     rows = await repo_query(
         "SELECT * FROM $document_id;",
@@ -604,7 +599,7 @@ async def test_backfill_checkpoint_survives_repository_reconstruction(
     tmp_path,
 ):
     """A restart retains legacy identities, dual projections, and exact cursors."""
-    assert await get_latest_version() == 40
+    assert await get_latest_version() == len(AsyncMigrationManager().up_migrations)
     parent_root = tmp_path / "synthetic-parent"
     child_root = tmp_path / "synthetic-child"
     parent_root.mkdir()

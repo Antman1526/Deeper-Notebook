@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 import pytest
@@ -361,3 +361,44 @@ async def clean_namespace(surreal_db: dict[str, Any]) -> AsyncIterator[dict[str,
         from deeper_notebook.database import repository as repo_mod
 
         await repo_mod.close_pool()
+
+
+@pytest_asyncio.fixture
+async def migration_rewind(
+    clean_namespace: dict[str, Any],
+) -> AsyncIterator[Callable[[int], Awaitable[int]]]:
+    """Rewind migration tests through the canonical runner and restore its head.
+
+    Historical migration tests need exact schema versions, but the test-session
+    head advances whenever a new migration is added.  Record the real head
+    before every rewind, use the production runner for each down migration,
+    and restore that recorded head during fixture teardown even if the test
+    body raises.
+    """
+    from deeper_notebook.database.async_migrate import AsyncMigrationManager
+
+    rewinds: list[tuple[AsyncMigrationManager, int]] = []
+
+    async def rewind_to(target_version: int) -> int:
+        manager = AsyncMigrationManager()
+        original_head = await manager.get_current_version()
+        if not 0 <= target_version <= original_head:
+            raise AssertionError(
+                f"cannot rewind migration head {original_head} to {target_version}"
+            )
+
+        # Register before mutating state so teardown restores a partially
+        # rewound database if a down migration itself raises.
+        rewinds.append((manager, original_head))
+        while await manager.get_current_version() > target_version:
+            await manager.runner.run_one_down()
+
+        assert await manager.get_current_version() == target_version
+        return original_head
+
+    try:
+        yield rewind_to
+    finally:
+        for manager, original_head in reversed(rewinds):
+            await manager.run_migration_up()
+            assert await manager.get_current_version() == original_head

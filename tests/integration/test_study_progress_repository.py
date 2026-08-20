@@ -206,7 +206,9 @@ async def test_card_version_owner_race_keeps_one_current_and_one_due_card(
         {"plan_id": plan_id},
     )
     assert {row["card_id"] for row in links} == {row["id"] for row in cards}
-    due = await repository.list_due(datetime(2026, 8, 14, tzinfo=UTC), limit=100)
+    due_at = current[0]["due"]
+    assert due_at is not None
+    due = await repository.list_due(due_at, limit=100)
     assert [card.artifact_card_id for card in due].count("race-card") == 1
 
 

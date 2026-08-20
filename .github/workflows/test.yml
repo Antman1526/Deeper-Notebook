@@ -140,7 +140,7 @@ jobs:
         run: |
           docker run -d --name surrealdb \
             -p 8000:8000 \
-            surrealdb/surrealdb:v2 \
+            surrealdb/surrealdb:v2.6.5 \
             start --user root --pass root --log info memory
 
       - name: Wait for SurrealDB to be ready
