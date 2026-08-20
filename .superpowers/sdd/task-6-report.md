@@ -105,3 +105,43 @@ escalation being blocked.
   retained. The escalation remains blocked.
 - A malicious multiline source/output-looking reason regression first failed,
   then passed with the planner suite (`25 passed`).
+
+## Today productization Task 6 — React-warning and Pillow audit (2026-08-20)
+
+### Scope and warning inventory
+
+- Captured one complete single-worker frontend Vitest run outside the
+  repository at `/private/tmp/deeper-notebook-task6-vitest-before.XXXXXX.log`
+  (SHA-256
+  `17fa879185fbd8c658a062ddea1102e126ae0700ffc380b09a3f3b31ab716075`).
+  It found **0 total / 0 unique** React `act()`/unawaited-state warnings and
+  therefore no application-owned or Radix-only stack owner to repair. Console
+  output was neither filtered nor suppressed.
+- The required first owner, `GuidedTipsProvider`, was rerun separately:
+  `7 passed`, with no React warning. Because the inventory is empty, there is
+  no honest RED/GREEN warning repair to add; the React 19.2 `act` guidance
+  remains the standard for any future cluster:
+  https://react.dev/reference/react/act.
+- The full baseline was not green: `243` files / `1,808` tests ran, with
+  `240` files / `1,803` tests passing and five deterministic Task 2
+  default-on/runtime follow-ups. They are outside this warning-only scope:
+  `AppShell.test.tsx` has two legacy cases that omit
+  `NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2=0`; `use-sources.test.tsx` omits the new
+  `useSourceVisualsEnabled` feature mock; and `theme-script.test.ts` retains
+  two Research Core-default expectations after the Visual System V2 default
+  changed. Task 7 must repair and verify those tests; this task does not claim
+  a full frontend green result.
+
+### Pillow/MoviePy decision
+
+- Installed values are MoviePy `2.2.1` and Pillow `11.3.0`. Current official
+  PyPI metadata for MoviePy `2.2.1` still declares
+  `pillow>=9.2.0,<12.0`, and upstream issue #2553 requesting Pillow 12 support
+  remains open. Official sources:
+  https://pypi.org/pypi/moviepy/json and
+  https://github.com/Zulko/moviepy/issues/2553.
+- The GitHub Advisory API reports 18 unwithdrawn advisories whose ranges affect
+  Pillow `11.3.0`; first patched releases are `12.1.1`, `12.2.0`, or `12.3.0`.
+  MoviePy's upper bound prevents every known fixed release, so no dependency,
+  lockfile, or resolver change was made. Source:
+  https://api.github.com/advisories?ecosystem=pip&affects=pillow&per_page=100.

@@ -192,14 +192,28 @@ handling and deprecation policy with it.
   transformations, while their execution remains on the ingest path. Do not
   default-enable either setting or introduce implicit LLM work until those
   failure paths and the per-source cost boundary are proven.
-* **`act()` warnings** — ~100 across three clusters
-  (`GuidedTipsProvider`, Radix internals, unawaited async state). Every test
-  passes. No shared fix; do them per-cluster while already in the area.
+* **React test-warning inventory (Task 6, 2026-08-20)** — a complete
+  single-worker Vitest capture found **0 total / 0 unique** React `act()` or
+  unawaited-state warnings, so there is no application-owned or Radix-only
+  warning owner to repair or suppress. The focused `GuidedTipsProvider` suite
+  also passed 7/7 without a warning. The full suite did expose five unrelated
+  default-on/runtime regression failures (two stale legacy-shell expectations
+  in `AppShell.test.tsx`, one stale `useSourceVisualsEnabled` mock in
+  `use-sources.test.tsx`, and two stale Research Core defaults in
+  `theme-script.test.ts`); Task 7 must repair those Task 2 follow-ups before
+  claiming a full frontend green gate.
 * **Source-shape tests** — 469 assertions across 88 files that grep exact source
   text. Long assumed to block a formatter; measured 2026-08-19 to not.
   Replace opportunistically, not as a project.
-* **`pillow < 12`** — ~24 CVEs, accepted: moviepy 2.2.1 (latest) still pins
-  `pillow<12.0`. Genuinely unresolvable upstream; re-check when moviepy moves.
+* **`pillow < 12`** — the installed MoviePy 2.2.1 and official current PyPI
+  metadata still require `pillow>=9.2.0,<12.0`, while the official Pillow-12
+  support issue remains open. GitHub's advisory API reports 18 unwithdrawn
+  advisories affecting installed Pillow 11.3.0; their first patched releases
+  are 12.1.1, 12.2.0, or 12.3.0. No resolver override or dependency update is
+  safe. Re-check only after an official compatible MoviePy release exists:
+  https://pypi.org/pypi/moviepy/json,
+  https://github.com/Zulko/moviepy/issues/2553, and
+  https://api.github.com/advisories?ecosystem=pip&affects=pillow&per_page=100.
 * **The two version tracks** — `desktop/__init__.py` (app) and `pyproject.toml`
   (server/container) version different artifacts and are intentionally
   unreconciled. Confusing to every reader; still correct.
