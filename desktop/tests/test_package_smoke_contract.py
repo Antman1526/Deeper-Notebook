@@ -731,6 +731,74 @@ def test_dynamic_smoke_reports_usr_bin_true_as_child_exit(tmp_path: Path) -> Non
     assert "timed out" not in receipt["error"]
 
 
+def test_dynamic_smoke_detects_child_exit_while_a_healthy_probe_is_in_flight(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    readiness = tmp_path / "desktop-readiness.json"
+    receipt_path = tmp_path / "receipt.json"
+    probe_started = tmp_path / "probe-started"
+
+    class DelayedHealthyHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            probe_started.write_text("started", encoding="utf-8")
+            time.sleep(0.2)
+            body = b'{"features":{}}' if self.path == "/api/features" else b"__next_f"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), DelayedHealthyHandler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    port = server.server_address[1]
+    application = (
+        "import json, os, pathlib, sys, time\n"
+        "readiness, probe, url = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]\n"
+        "readiness.write_text(json.dumps({'status':'ready', 'pid':os.getpid(), "
+        "'api_url':url, 'frontend_url':url}), encoding='utf-8')\n"
+        "deadline = time.monotonic() + 2\n"
+        "while not probe.exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+    )
+    try:
+        result = run_smoke(
+            "--executable",
+            sys.executable,
+            "--executable-arg=-c",
+            f"--executable-arg={application}",
+            f"--executable-arg={readiness}",
+            f"--executable-arg={probe_started}",
+            f"--executable-arg=http://127.0.0.1:{port}",
+            "--readiness-file",
+            str(readiness),
+            "--artifact",
+            str(artifact),
+            "--receipt",
+            str(receipt_path),
+            "--timeout-seconds",
+            "2",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=2)
+
+    assert result.returncode == 1, result.stderr
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert "launched application exited with code 0" in receipt["error"]
+    assert receipt["checks"]["api_readiness"] == {
+        "passed": False,
+        "url": f"http://127.0.0.1:{port}/readyz",
+    }
+
+
 def test_sigterm_to_the_verifier_writes_a_receipt_and_leaves_no_owned_group(
     tmp_path: Path,
 ) -> None:
@@ -789,21 +857,37 @@ def test_sigterm_to_the_verifier_writes_a_receipt_and_leaves_no_owned_group(
                 pass
 
 
-def test_hard_verifier_exit_closes_the_monitor_parent_channel(tmp_path: Path) -> None:
+def test_monitor_script_bounds_post_sigkill_cleanup() -> None:
+    assert "post_kill_deadline = time.monotonic() + 1" in smoke._MONITOR_SCRIPT
+    assert "if time.monotonic() >= post_kill_deadline:" in smoke._MONITOR_SCRIPT
+    assert '"event": "cleanup_failed"' in smoke._MONITOR_SCRIPT
+
+
+def test_hard_verifier_exit_reaps_a_stubborn_owned_descendant(tmp_path: Path) -> None:
     application_path = tmp_path / "application.json"
+    stubborn_child_path = tmp_path / "stubborn-child.pid"
     monitor_path = tmp_path / "monitor.json"
     application = (
-        "import json, os, pathlib, sys, time; "
+        "import json, os, pathlib, signal, subprocess, sys, time; "
+        "child = subprocess.Popen([sys.executable, '-c', "
+        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "time.sleep(60)']); "
+        "pathlib.Path(sys.argv[2]).write_text(str(child.pid), encoding='utf-8'); "
         "pathlib.Path(sys.argv[1]).write_text(json.dumps({'pid':os.getpid()}), "
         "encoding='utf-8'); time.sleep(60)"
     )
     verifier = (
-        "import json, os, pathlib, sys; "
-        "from desktop.build import package_smoke as smoke; "
-        "monitor, application_pid = smoke.launch_monitored_process("
-        "[sys.executable, '-c', sys.argv[1], sys.argv[2]], dict(os.environ), 2); "
-        "pathlib.Path(sys.argv[3]).write_text(json.dumps({'monitor':monitor.pid, "
-        "'application':application_pid}), encoding='utf-8'); os._exit(0)"
+        "import json, os, pathlib, sys, time\n"
+        "from desktop.build import package_smoke as smoke\n"
+        "monitor, application_pid = smoke.launch_monitored_process(\n"
+        "    [sys.executable, '-c', sys.argv[1], sys.argv[2], sys.argv[3]], dict(os.environ), 2\n"
+        ")\n"
+        "pathlib.Path(sys.argv[4]).write_text(json.dumps({'monitor':monitor.pid, "
+        "'application':application_pid}), encoding='utf-8')\n"
+        "deadline = time.monotonic() + 2\n"
+        "while not pathlib.Path(sys.argv[3]).exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        "os._exit(0)\n"
     )
     verifier_process = subprocess.Popen(
         [
@@ -812,6 +896,7 @@ def test_hard_verifier_exit_closes_the_monitor_parent_channel(tmp_path: Path) ->
             verifier,
             application,
             str(application_path),
+            str(stubborn_child_path),
             str(monitor_path),
         ],
         cwd=REPOSITORY_ROOT,
@@ -822,8 +907,11 @@ def test_hard_verifier_exit_closes_the_monitor_parent_channel(tmp_path: Path) ->
     identities = json.loads(monitor_path.read_text(encoding="utf-8"))
     monitor_pid = identities["monitor"]
     application_pid = identities["application"]
+    wait_for_path(stubborn_child_path)
+    stubborn_child_pid = int(stubborn_child_path.read_text(encoding="utf-8"))
     try:
         assert_process_is_gone(application_pid)
+        assert_process_is_gone(stubborn_child_pid)
         assert_process_is_gone(monitor_pid)
     finally:
         try:
@@ -1124,6 +1212,68 @@ def test_make_inputs_preserve_a_spaced_environment_value(
     smoke.apply_make_smoke_inputs(args)
 
     assert args.environment == ["DEEPER_NOTEBOOK_TITLE=local smoke value"]
+
+
+def test_make_inputs_reject_unsafe_environment_files(monkeypatch, tmp_path: Path) -> None:
+    for name, value in {
+        "SMOKE_EXECUTABLE": "/tmp/deeper-notebook",
+        "SMOKE_READINESS_FILE": "/tmp/desktop-readiness.json",
+        "SMOKE_ARTIFACT": "/tmp/deeper-notebook.dmg",
+        "SMOKE_RECEIPT": "/tmp/package-smoke-receipt.json",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    regular_file = tmp_path / "regular-environment.txt"
+    regular_file.write_text("DEEPER_NOTEBOOK_TITLE=local smoke", encoding="utf-8")
+    symlink = tmp_path / "environment-link"
+    symlink.symlink_to(regular_file)
+    fifo = tmp_path / "environment.fifo"
+    os.mkfifo(fifo)
+    oversized = tmp_path / "oversized-environment.txt"
+    oversized.write_bytes(b"X" * (smoke.MAX_MAKE_ENVIRONMENT_BYTES + 1))
+    malformed = tmp_path / "malformed-environment.txt"
+    malformed.write_text("missing-separator", encoding="utf-8")
+
+    for environment_file in (symlink, fifo, Path("/dev/null"), oversized, malformed):
+        monkeypatch.setenv("SMOKE_ENVIRONMENT_FILE", str(environment_file))
+        args = smoke.parse_args(["--make-smoke-inputs"])
+        try:
+            smoke.apply_make_smoke_inputs(args)
+        except smoke.SmokeFailure:
+            continue
+        raise AssertionError(f"expected unsafe environment rejection: {environment_file}")
+
+
+def test_make_inputs_reject_environment_file_swapped_before_descriptor_open(
+    monkeypatch, tmp_path: Path
+) -> None:
+    for name, value in {
+        "SMOKE_EXECUTABLE": "/tmp/deeper-notebook",
+        "SMOKE_READINESS_FILE": "/tmp/desktop-readiness.json",
+        "SMOKE_ARTIFACT": "/tmp/deeper-notebook.dmg",
+        "SMOKE_RECEIPT": "/tmp/package-smoke-receipt.json",
+    }.items():
+        monkeypatch.setenv(name, value)
+    environment_file = tmp_path / "smoke-environment.txt"
+    environment_file.write_text("DEEPER_NOTEBOOK_TITLE=original", encoding="utf-8")
+    monkeypatch.setenv("SMOKE_ENVIRONMENT_FILE", str(environment_file))
+    real_open = os.open
+
+    def swap_then_open(path: str | Path, flags: int, *args: int) -> int:
+        replacement = tmp_path / "replacement-environment.txt"
+        replacement.write_text("DEEPER_NOTEBOOK_TITLE=swapped", encoding="utf-8")
+        os.replace(replacement, environment_file)
+        return real_open(path, flags, *args)
+
+    monkeypatch.setattr(os, "open", swap_then_open)
+    args = smoke.parse_args(["--make-smoke-inputs"])
+
+    try:
+        smoke.apply_make_smoke_inputs(args)
+    except smoke.SmokeFailure as error:
+        assert "changed" in str(error)
+    else:
+        raise AssertionError("expected swapped environment file rejection")
 
 
 def test_dynamic_smoke_writes_bounded_receipts_for_invalid_loopback_urls(

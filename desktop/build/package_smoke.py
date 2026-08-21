@@ -26,6 +26,10 @@ from urllib.request import ProxyHandler, build_opener
 RECEIPT_SCHEMA_VERSION = 2
 MAX_TIMEOUT_SECONDS = 300.0
 MAX_READINESS_BYTES = 64 * 1024
+# The Make-owned environment file carries one exact KEY=VALUE item.  Keep its
+# descriptor-bound read small enough that a caller cannot turn a smoke probe
+# into an unbounded local-file read.
+MAX_MAKE_ENVIRONMENT_BYTES = 16 * 1024
 _LOCAL_OPENER = build_opener(ProxyHandler({}))
 _MONITOR_FD_ENV = "DEEPER_NOTEBOOK_PACKAGE_SMOKE_MONITOR_FD"
 _MONITOR_LIVENESS_FD_ENV = "DEEPER_NOTEBOOK_PACKAGE_SMOKE_MONITOR_LIVENESS_FD"
@@ -108,13 +112,20 @@ def terminate_owned_descendants():
             if time.monotonic() >= deadline:
                 break
             time.sleep(0.02)
-    while group_descendants():
-        for pid in group_descendants():
+    post_kill_deadline = time.monotonic() + 1
+    while True:
+        reap_application()
+        descendants = group_descendants()
+        if not descendants:
+            return True
+        if time.monotonic() >= post_kill_deadline:
+            report({"event": "cleanup_failed", "descendants": descendants})
+            return False
+        for pid in descendants:
             try:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        reap_application()
         time.sleep(0.02)
 
 
@@ -135,11 +146,11 @@ while True:
     reap_application()
     readable, _, _ = select.select([parent_descriptor], [], [], 0.05)
     if readable and os.read(parent_descriptor, 4096) == b"":
-        terminate_owned_descendants()
+        cleanup_completed = terminate_owned_descendants()
         os.close(descriptor)
         os.close(liveness_descriptor)
         os.close(parent_descriptor)
-        raise SystemExit(0)
+        raise SystemExit(0 if cleanup_completed else 1)
 '''
 
 
@@ -487,6 +498,7 @@ def _next_monitor_status(
     if not isinstance(descriptor, int) or not isinstance(buffer, bytearray):
         return None
     deadline = time.monotonic() + timeout_seconds
+    polled_descriptor = False
     while True:
         separator = buffer.find(b"\n")
         if separator != -1:
@@ -500,9 +512,12 @@ def _next_monitor_status(
                 raise SmokeFailure("launch monitor wrote invalid status")
             return payload
         remaining = deadline - time.monotonic()
-        if remaining < 0:
+        if remaining < 0 and polled_descriptor:
             return None
-        readable, _, _ = select.select([descriptor], [], [], remaining)
+        # A zero-timeout caller still needs one real nonblocking poll: a
+        # child may exit while a healthy endpoint response is in flight.
+        readable, _, _ = select.select([descriptor], [], [], max(0.0, remaining))
+        polled_descriptor = True
         if not readable:
             return None
         try:
@@ -847,13 +862,8 @@ def apply_make_smoke_inputs(args: argparse.Namespace) -> None:
         raise SmokeFailure("use SMOKE_ENVIRONMENT_FILE for Make environment input")
     if environment_file:
         environment_path = Path(environment_file)
-        try:
-            metadata = environment_path.lstat()
-        except FileNotFoundError as error:
-            raise SmokeFailure("SMOKE_ENVIRONMENT_FILE does not exist") from error
-        if not stat.S_ISREG(metadata.st_mode):
-            raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be a regular file")
-        environment = environment_path.read_bytes().decode("utf-8")
+        environment = read_make_environment_file(environment_path)
+        parse_environment([environment])
         args.environment = [environment]
     else:
         args.environment = []
@@ -863,6 +873,41 @@ def apply_make_smoke_inputs(args: argparse.Namespace) -> None:
     )
     expected_feature = os.environ.get("SMOKE_EXPECTED_FEATURE", "")
     args.expected_feature = [expected_feature] if expected_feature else []
+
+
+def read_make_environment_file(environment_path: Path) -> str:
+    """Read a small caller-owned env file through one verified descriptor."""
+    try:
+        expected = environment_path.lstat()
+    except FileNotFoundError as error:
+        raise SmokeFailure("SMOKE_ENVIRONMENT_FILE does not exist") from error
+    if not stat.S_ISREG(expected.st_mode):
+        raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be a regular file")
+
+    flags = os.O_RDONLY | os.O_NONBLOCK
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(environment_path, flags)
+    except OSError as error:
+        raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be a regular file") from error
+    try:
+        observed = os.fstat(descriptor)
+        if not stat.S_ISREG(observed.st_mode):
+            raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be a regular file")
+        if (expected.st_dev, expected.st_ino) != (observed.st_dev, observed.st_ino):
+            raise SmokeFailure("SMOKE_ENVIRONMENT_FILE changed before it was opened")
+        if observed.st_size > MAX_MAKE_ENVIRONMENT_BYTES:
+            raise SmokeFailure("SMOKE_ENVIRONMENT_FILE exceeds the maximum size")
+        contents = os.read(descriptor, MAX_MAKE_ENVIRONMENT_BYTES + 1)
+    finally:
+        os.close(descriptor)
+    if len(contents) > MAX_MAKE_ENVIRONMENT_BYTES:
+        raise SmokeFailure("SMOKE_ENVIRONMENT_FILE exceeds the maximum size")
+    try:
+        return contents.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be valid UTF-8") from error
 
 
 def parse_timeout_seconds(value: str) -> float:

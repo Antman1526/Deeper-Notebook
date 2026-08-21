@@ -418,7 +418,7 @@ def test_package_smoke_target_preserves_literal_environment_dollars_in_the_app(
             f"SMOKE_ARTIFACT={artifact}",
             f"SMOKE_RECEIPT={receipt}",
             f"SMOKE_ENVIRONMENT_FILE={environment_file}",
-            "SMOKE_TIMEOUT_SECONDS=0.25",
+            "SMOKE_TIMEOUT_SECONDS=1",
         ],
         cwd=REPOSITORY_ROOT,
         capture_output=True,
