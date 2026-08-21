@@ -43,7 +43,11 @@ def test_prepare_smoke_fixture_is_private_offline_and_mode_exact(
     assert default.environment["DEEPER_NOTEBOOK_DATA_DIR"] == str(default.data_dir)
     assert default.environment["UV_CACHE_DIR"] == str(uv_cache_dir)
     assert default.environment["UV_OFFLINE"] == "1"
-    assert default.environment["OPENCHRONICLE_MCP_URL"] == ("http://127.0.0.1:8742/mcp")
+    assert default.environment["OPENCHRONICLE_MCP_URL"] == "http://127.0.0.1:1/mcp"
+    assert default.readiness_file == (
+        default.data_dir / "logs" / "desktop-readiness.json"
+    )
+    assert default.readiness_file.parent.is_dir()
     assert "DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED" not in default.environment
     assert off.environment["DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED"] == "0"
 
@@ -99,6 +103,24 @@ def test_prepare_smoke_fixture_rejects_a_dangling_symlink_root(
 
     with pytest.raises(FileExistsError):
         prepare_smoke_fixture(link, source_visuals=True, uv_cache_dir=tmp_path / "uv")
+
+    assert not target.exists()
+
+
+def test_prepare_smoke_fixture_rejects_a_symlinked_ancestor_before_creation(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlink creation is unavailable")
+
+    with pytest.raises(ValueError, match="symlink"):
+        prepare_smoke_fixture(
+            link / "fixture", source_visuals=True, uv_cache_dir=tmp_path / "uv"
+        )
 
     assert not target.exists()
 

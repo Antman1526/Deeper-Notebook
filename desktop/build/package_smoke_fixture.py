@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from desktop.model_downloads import (
     PIPER_VOICE_MODEL,
 )
 
-OPENCHRONICLE_PLACEHOLDER_URL = "http://127.0.0.1:8742/mcp"
+OPENCHRONICLE_PLACEHOLDER_URL = "http://127.0.0.1:1/mcp"
 FIXTURE_MANIFEST_NAME = "fixture.json"
 
 MODEL_PLACEHOLDERS = {
@@ -71,6 +72,26 @@ def _assert_inside(root: Path, candidate: Path) -> Path:
     return candidate
 
 
+def _reject_symlinked_ancestors(path: Path) -> None:
+    """Reject a new path whose existing parent chain contains a symlink."""
+    absolute = Path(os.path.abspath(path))
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            raise ValueError(
+                f"smoke fixture root ancestor cannot be inspected: {current}"
+            ) from error
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ValueError(
+                f"smoke fixture root must not be below a symlinked ancestor: {current}"
+            )
+
+
 def _make_private_directory(path: Path) -> None:
     path.mkdir(mode=0o700)
     try:
@@ -102,6 +123,7 @@ def prepare_smoke_fixture(
     requested_root = Path(root)
     if _path_exists_without_following(requested_root):
         raise FileExistsError(f"smoke fixture root already exists: {requested_root}")
+    _reject_symlinked_ancestors(requested_root)
     root = requested_root.resolve(strict=False)
     if _path_exists_without_following(root):
         raise FileExistsError(f"smoke fixture root already exists: {root}")
@@ -109,7 +131,8 @@ def prepare_smoke_fixture(
     home = _assert_inside(root, root / "home")
     data_dir = _assert_inside(root, root / "data")
     model_dir = _assert_inside(root, home / "Desktop" / "AI_Models")
-    readiness_file = _assert_inside(root, data_dir / "desktop-readiness.json")
+    logs_dir = _assert_inside(root, data_dir / "logs")
+    readiness_file = _assert_inside(root, logs_dir / "desktop-readiness.json")
     config_path = _assert_inside(root, data_dir / "config.toml")
     manifest_path = _assert_inside(root, root / FIXTURE_MANIFEST_NAME)
     for relative_path in MODEL_PLACEHOLDERS:
@@ -126,6 +149,7 @@ def prepare_smoke_fixture(
     _make_private_directory(home / "Desktop")
     _make_private_directory(model_dir)
     _make_private_directory(data_dir)
+    _make_private_directory(logs_dir)
 
     Config(
         model_dir=model_dir,
