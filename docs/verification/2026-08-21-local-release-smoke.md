@@ -24,7 +24,7 @@ make smoke-release-mac-app \
   RELEASE_SMOKE_OUTPUT_ROOT=/private/tmp/deeper-notebook-release-smoke-staged \
   RELEASE_SMOKE_UV_CACHE_DIR=/Users/Antman/.cache/uv \
   RELEASE_SMOKE_PLAYWRIGHT_MODULE="$REPO/frontend/node_modules/playwright-core/index.js" \
-  RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256=73f868cd45eb2475a3eea471f2e95434f83745174ef79feae8e9b0255d3256ee
+  RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256=4ece62e4a315a309167313b00ecd411a30e990bb4c153ba1fe99b6b5eb8279e1
 
 make smoke-release-installed-mac-app \
   RELEASE_SMOKE_EXECUTABLE="/Applications/Deeper Notebook.app/Contents/MacOS/Deeper Notebook" \
@@ -32,7 +32,7 @@ make smoke-release-installed-mac-app \
   RELEASE_SMOKE_OUTPUT_ROOT=/private/tmp/deeper-notebook-release-smoke-installed \
   RELEASE_SMOKE_UV_CACHE_DIR=/Users/Antman/.cache/uv \
   RELEASE_SMOKE_PLAYWRIGHT_MODULE="$REPO/frontend/node_modules/playwright-core/index.js" \
-  RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256=73f868cd45eb2475a3eea471f2e95434f83745174ef79feae8e9b0255d3256ee
+  RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256=4ece62e4a315a309167313b00ecd411a30e990bb4c153ba1fe99b6b5eb8279e1
 ```
 
 Each output root contains `default.json`, `source-visuals-off.json`,
@@ -48,15 +48,15 @@ start the second mode.
   `cbf03876` (the later commits change only smoke tooling/tests, not packaged
   product source).
 - App executable, both staged and installed: SHA-256
-  `17898d9aae8f731b713fd127ea58ac0fa8539c5ee6a44f5e0f57dc66760d89c1`.
+  `1d48e549250d9359fe05e81487d95a9900b1fe26a4f01cec9ce700e4a9808bb6`.
 - Bundled `surreal-darwin-arm64`, both staged and installed: SHA-256
-  `5254514010b188724fa45c2af411c9ea5015f04ba30f7c9e83a647502f1ed6e4`.
+  `0afb5d9f0eb8902b5d0e9633c15898ddd2d3f8a259904174c9bc9e1ec1df5002`.
 - DMG: SHA-256
-  `73f868cd45eb2475a3eea471f2e95434f83745174ef79feae8e9b0255d3256ee`.
+  `4ece62e4a315a309167313b00ecd411a30e990bb4c153ba1fe99b6b5eb8279e1`.
 - Final staged receipts:
-  `/private/tmp/deeper-notebook-final-staged-20260821T193701Z/`; final
+  `/private/tmp/deeper-notebook-final-staged-20260821T201559Z/`; final
   installed receipts:
-  `/private/tmp/deeper-notebook-final-installed-20260821T193853Z/`. Both
+  `/private/tmp/deeper-notebook-final-installed-20260821T201559Z/`. Both
   `summary.json` files passed. Default mode proves all six features plus the
   Gemini Forward Light/V2 shell; off mode proves a usable Sources page with
   only `sourceVisuals=false`. Both prove GET-only loopback traffic, no visual
@@ -81,7 +81,7 @@ provider-none/offline-cache receipts above, not deleted or rewritten.
 The smoke commands require fresh caller-owned output roots and preserve the
 application, package, user data, credentials, and Task 8 receipt/log root.
 The immediate rollback bundle remains at
-`/Applications/Deeper Notebook.app.backup-20260821T193853Z`; the earlier Task 8
+`/Applications/Deeper Notebook.app.backup-20260821T201559Z`; the earlier Task 8
 backup remains at
 `/Applications/Deeper Notebook.app.backup-20260821T085744Z`. The pre-final
 staged artifacts remain at

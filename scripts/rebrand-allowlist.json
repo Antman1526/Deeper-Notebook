@@ -1934,7 +1934,7 @@
       "source": "content",
       "line": 181,
       "column": 44,
-      "context_sha256": "cd1998c70d95cfad79c325869110f3aa512b4204d28084af90816d1d09f0a073",
+      "context_sha256": "6d82717eba004d8092284e636778cdca43eab8e84b4a7a9823687b72b416ed0f",
       "category": "migration_documentation",
       "rationale": {
         "path": ".superpowers/sdd/final-local-release-report.md",
@@ -1942,9 +1942,9 @@
         "source": "content",
         "line": 181,
         "column": 44,
-        "context_sha256": "cd1998c70d95cfad79c325869110f3aa512b4204d28084af90816d1d09f0a073",
+        "context_sha256": "6d82717eba004d8092284e636778cdca43eab8e84b4a7a9823687b72b416ed0f",
         "category": "migration_documentation",
-        "explanation": "The superpowers sdd final local release report report documents the upgrade boundary in the \"Final Local Release Task 6 — bounded defect audit / Final productization rebuild, install, and release smoke — 2026-08-21\" section because the statement uses that role while expressing Artifacts: bundle ID com.antman1526. current former lowercase package slug , version/build 0.8.114 , arm64 app and bundled Surreal. SHA-256: app executable 17898d9aae8f731b, while the preceding context concerns Build: make build-mac DEEPER NOTEBOOK CODESIGN IDENTITY='Deeper Notebook Local' passed from source...; the following context concerns Recoverable install: the prior app was moved to /Applications/Deeper Notebook.app.backup-20260821T193853Z...; the local example is introduced by must perform the authorized install, prove equality, and rerun.",
+        "explanation": "The superpowers sdd final local release report report documents the upgrade boundary in the \"Final Local Release Task 6 — bounded defect audit / Final productization rebuild, install, and release smoke — 2026-08-21\" section because the statement uses that role while expressing Artifacts: bundle ID com.antman1526. current former lowercase package slug , version/build 0.8.114 , arm64 app and bundled Surreal. SHA-256: app executable 1d48e549250d9359, while the preceding context concerns Build: make build-mac DEEPER NOTEBOOK CODESIGN IDENTITY='Deeper Notebook Local' passed from source...; the following context concerns Recoverable install: the prior app was moved to /Applications/Deeper Notebook.app.backup-20260821T201559Z...; the local example is introduced by must perform the authorized install, prove equality, and rerun.",
         "compatibility_contract": null
       }
     },

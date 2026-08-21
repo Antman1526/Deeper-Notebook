@@ -44,17 +44,17 @@ The final authorized local package was built from source authority `d5925e20`
 and verified with the release-smoke runner through `cbf03876`. The arm64 app,
 bundled runtime, and DMG are byte-identified as follows:
 
-- app executable SHA-256 (staged and installed): `17898d9aae8f731b713fd127ea58ac0fa8539c5ee6a44f5e0f57dc66760d89c1`
-- bundled Surreal runtime SHA-256 (staged and installed): `5254514010b188724fa45c2af411c9ea5015f04ba30f7c9e83a647502f1ed6e4`
-- DMG SHA-256: `73f868cd45eb2475a3eea471f2e95434f83745174ef79feae8e9b0255d3256ee`
-- current pre-install backup: `/Applications/Deeper Notebook.app.backup-20260821T193853Z`
+- app executable SHA-256 (staged and installed): `1d48e549250d9359fe05e81487d95a9900b1fe26a4f01cec9ce700e4a9808bb6`
+- bundled Surreal runtime SHA-256 (staged and installed): `0afb5d9f0eb8902b5d0e9633c15898ddd2d3f8a259904174c9bc9e1ec1df5002`
+- DMG SHA-256: `4ece62e4a315a309167313b00ecd411a30e990bb4c153ba1fe99b6b5eb8279e1`
+- current pre-install backup: `/Applications/Deeper Notebook.app.backup-20260821T201559Z`
 - earlier Task 8 backup: `/Applications/Deeper Notebook.app.backup-20260821T085744Z`
 - pre-final staged artifacts: `/Users/Antman/Downloads/Deeper-Notebook-dist-pre-final-20260821T190049Z`
 
 Final staged receipts are preserved under
-`/private/tmp/deeper-notebook-final-staged-20260821T193701Z/`; final installed
+`/private/tmp/deeper-notebook-final-staged-20260821T201559Z/`; final installed
 receipts are preserved under
-`/private/tmp/deeper-notebook-final-installed-20260821T193853Z/`. Both
+`/private/tmp/deeper-notebook-final-installed-20260821T201559Z/`. Both
 `summary.json` files passed. Their `default.json` receipts prove the Gemini
 Forward Light/V2 shell and all six runtime features enabled. Their
 `source-visuals-off.json` receipts prove the usable Sources surface with only
