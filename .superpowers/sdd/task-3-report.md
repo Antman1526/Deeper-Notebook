@@ -122,3 +122,62 @@ Result: `3 passed, 7 warnings`.
   untracked plan/task context remain untouched.
 - The repository-wide real-Surreal, package, browser, and release gates remain
   outside this bounded task.
+
+## 2026-08-21 Final release cleanup Task 3 — local release proof targets
+
+### Scope and TDD evidence
+
+- Added only the two read-only release Make targets, their static contract tests,
+  the current packaged-release truth in `docs/TODO.md`, and the verification
+  note `docs/verification/2026-08-21-local-release-smoke.md`.
+- Strict RED was `2 failed, 29 deselected`: the release target block was absent
+  and section 0.3 still contained the stale install-deferred truth.
+- GREEN focused release-manifest coverage is `2/2`; the full release-manifest
+  file is `31/31`. Ruff check/format, compileall, Make dry-runs, and
+  `git diff --check` pass.
+
+### Implementation and receipt
+
+- `smoke-release-mac-app` and `smoke-release-installed-mac-app` pass only
+  caller-owned executable/artifact/output/cache/Playwright paths to
+  `desktop/build/package_release_smoke.py`; the installed default path is an
+  input and no target recipe contains copy, removal, kill, xattr, or install
+  operations.
+- Section 0.3 now records exact app, bundled Surreal, and DMG hashes, the
+  preserved Task 8 backup and corrected staged/installed default/off receipts,
+  browser receipts, and separate Developer ID/notary, Windows,
+  credential/Support, and push/publication gates.
+- Staged Gitleaks scanned `11.52 KB` with zero leaks. Atomic commit:
+  `e65b967b` (`docs(release): productize local package proof`).
+
+### Boundaries and open items
+
+No app/browser/network/package/install/`/Applications`/remote/credential action
+was performed. Existing dirty/generated desktop bytecode and supplied
+untracked contexts remain preserved. Sol still owns cumulative full gates,
+fresh review, later repository hygiene, and local-main integration; external
+signing/notarization, Windows, credential/Support, push/publication, and backup
+cleanup remain open.
+
+## 2026-08-21 Task 3 review repair — smoke prerequisites
+
+- Strict RED was `1 failed, 3 passed, 29 deselected`: the new verification
+  contract found both commands still named missing `$REPO/.uv-cache`; the
+  declaration-graph regression also proves that a synthetic direct
+  `smoke-release-installed-mac-app: build-mac-install` and an indirect named
+  install prerequisite fail the contract.
+- Repair commit `e4c339b5` (`fix(release): verify smoke prerequisites`) changes
+  exactly `desktop/tests/test_release_manifest.py` and
+  `docs/verification/2026-08-21-local-release-smoke.md`. The guide now names
+  verified existing caller-owned `/Users/Antman/.cache/uv` in both offline
+  commands; tests parse continued named Make declarations and traverse both
+  release-smoke prerequisite graphs for install/mutation targets.
+- Final GREEN: focused release-manifest `4 passed`; full manifest `33 passed`;
+  Ruff check/format, compileall, both Make dry-runs with the verified cache,
+  `git diff --check`, and post-commit Gitleaks all pass. Staged Gitleaks scanned
+  `3.86 KB` with zero leaks. No app/browser/network/package/install/
+  `/Applications`/remote/credential mutation.
+- Preserve existing dirty/generated desktop bytecode, supplied contexts, and
+  this report. Sol still owns cumulative full release gates, fresh review,
+  hygiene/local-main integration, and external Developer ID/notary, Windows,
+  credential/Support, push/publication, and backup-cleanup gates.

@@ -633,7 +633,7 @@
           "content"
         ]
       },
-      "coverage_sha256": "7107adf1d4e8aef18cc8fb8f6f0559031ff02547458a7d5d0ee342e365c5e1fb"
+      "coverage_sha256": "eb8c9dbbfbe2f1ebd4e29de700ce167a761e978a1e03cf9c3aa5a50ebfbd4826"
     },
     "launcher-pref-env-migration-v1": {
       "kind": "env_alias",
@@ -704,7 +704,7 @@
           "content"
         ]
       },
-      "coverage_sha256": "6a668d97d705a65f50b34943f6e876a29b61569e6041e89497b510c772d4d626"
+      "coverage_sha256": "7c9cf5c47a2128258acddf0addd2a7b89bdff1bec950f2475b9f2692889d7013"
     },
     "legacy-test-fixture-v1": {
       "kind": "regression_fixture",
@@ -1925,6 +1925,26 @@
         "context_sha256": "b7ad87057052468fd1367abc0b1e400b3ca8b3430671a04c313e612d78821514",
         "category": "migration_documentation",
         "explanation": "The superpowers sdd final local release report report documents the upgrade boundary in the \"Final Local Release Task 6 — bounded defect audit / Task 8 final local package and recoverable install — 2026-08-21\" section because the statement uses that role while expressing Independent staged artifacts: frozen package content verifier, bundle ID com.antman1526. current former lowercase package slug , version/build 0.8.114 , arm64 app and bundled..., while the preceding context concerns Package source authority: reviewed frozen HEAD 225f42285e6cb009609ccb0d4cf0bd4f20a9f67b . The sole...; the following context concerns Smoke receipts: corrected staged default staged-corrected-default.json and off staged-corrected-off.json...; the local example is introduced by must perform the authorized install, prove equality, and rerun.",
+        "compatibility_contract": null
+      }
+    },
+    {
+      "path": ".superpowers/sdd/final-local-release-report.md",
+      "pattern": "open-notebook-plus",
+      "source": "content",
+      "line": 181,
+      "column": 44,
+      "context_sha256": "cd1998c70d95cfad79c325869110f3aa512b4204d28084af90816d1d09f0a073",
+      "category": "migration_documentation",
+      "rationale": {
+        "path": ".superpowers/sdd/final-local-release-report.md",
+        "pattern": "open-notebook-plus",
+        "source": "content",
+        "line": 181,
+        "column": 44,
+        "context_sha256": "cd1998c70d95cfad79c325869110f3aa512b4204d28084af90816d1d09f0a073",
+        "category": "migration_documentation",
+        "explanation": "The superpowers sdd final local release report report documents the upgrade boundary in the \"Final Local Release Task 6 — bounded defect audit / Final productization rebuild, install, and release smoke — 2026-08-21\" section because the statement uses that role while expressing Artifacts: bundle ID com.antman1526. current former lowercase package slug , version/build 0.8.114 , arm64 app and bundled Surreal. SHA-256: app executable 17898d9aae8f731b, while the preceding context concerns Build: make build-mac DEEPER NOTEBOOK CODESIGN IDENTITY='Deeper Notebook Local' passed from source...; the following context concerns Recoverable install: the prior app was moved to /Applications/Deeper Notebook.app.backup-20260821T193853Z...; the local example is introduced by must perform the authorized install, prove equality, and rerun.",
         "compatibility_contract": null
       }
     },
@@ -16852,7 +16872,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open Notebook Plus",
       "source": "content",
-      "line": 751,
+      "line": 755,
       "column": 61,
       "context_sha256": "2671c109ec269eff5d1a883c0dcc17ee9ebbdd9f14eb1dcd3bfeff5658d0356c",
       "category": "compatibility_alias",
@@ -16860,7 +16880,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open Notebook Plus",
         "source": "content",
-        "line": 751,
+        "line": 755,
         "column": 61,
         "context_sha256": "2671c109ec269eff5d1a883c0dcc17ee9ebbdd9f14eb1dcd3bfeff5658d0356c",
         "category": "compatibility_alias",
@@ -16872,7 +16892,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open Notebook Plus",
       "source": "content",
-      "line": 755,
+      "line": 759,
       "column": 13,
       "context_sha256": "b42f8791fdc62153ca3eb68145292b1113e6c04ac0573967e07909cff699ec29",
       "category": "compatibility_alias",
@@ -16880,7 +16900,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open Notebook Plus",
         "source": "content",
-        "line": 755,
+        "line": 759,
         "column": 13,
         "context_sha256": "b42f8791fdc62153ca3eb68145292b1113e6c04ac0573967e07909cff699ec29",
         "category": "compatibility_alias",
@@ -16892,7 +16912,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open notebook+",
       "source": "content",
-      "line": 795,
+      "line": 799,
       "column": 53,
       "context_sha256": "826507685332da8d947e4394472e51f6a04099af6ebed81c4bf89ceabfd326dc",
       "category": "compatibility_alias",
@@ -16900,7 +16920,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open notebook+",
         "source": "content",
-        "line": 795,
+        "line": 799,
         "column": 53,
         "context_sha256": "826507685332da8d947e4394472e51f6a04099af6ebed81c4bf89ceabfd326dc",
         "category": "compatibility_alias",
@@ -16912,7 +16932,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open notebook+",
       "source": "content",
-      "line": 795,
+      "line": 799,
       "column": 70,
       "context_sha256": "5668886e726d03001e7f008851bad33bb40cf01acbc9f839440c34e2f1a19446",
       "category": "compatibility_alias",
@@ -16920,7 +16940,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open notebook+",
         "source": "content",
-        "line": 795,
+        "line": 799,
         "column": 70,
         "context_sha256": "5668886e726d03001e7f008851bad33bb40cf01acbc9f839440c34e2f1a19446",
         "category": "compatibility_alias",
@@ -16932,7 +16952,7 @@
       "path": "desktop/tests/test_release_manifest.py",
       "pattern": "Open Notebook Plus",
       "source": "content",
-      "line": 817,
+      "line": 821,
       "column": 24,
       "context_sha256": "330a226c0c24c86036ed6e53ebd6cd431da5416bb668dd61d61c044e2a3df2ae",
       "category": "compatibility_alias",
@@ -16940,7 +16960,7 @@
         "path": "desktop/tests/test_release_manifest.py",
         "pattern": "Open Notebook Plus",
         "source": "content",
-        "line": 817,
+        "line": 821,
         "column": 24,
         "context_sha256": "330a226c0c24c86036ed6e53ebd6cd431da5416bb668dd61d61c044e2a3df2ae",
         "category": "compatibility_alias",

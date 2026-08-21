@@ -38,19 +38,31 @@ called a complete remote-history purge. The recoverable backup is
 with SHA-256
 `69564a46f08452675d70d5b2e56ecd77b6fa12edd4e2e8ea01305e74741effd7`.
 
-### 0.3 Packaged v0.8.114 build — staged and installed local proof recorded
+### 0.3 Packaged v0.8.114 build — final staged and installed local proof recorded
 
-The authorized Task 8 package was verified from frozen package authority
-`225f42285e6cb009609ccb0d4cf0bd4f20a9f67b`. The arm64 app, bundled runtime,
-and DMG are byte-identified as follows:
+The final authorized local package was built from source authority `d5925e20`
+and verified with the release-smoke runner through `cbf03876`. The arm64 app,
+bundled runtime, and DMG are byte-identified as follows:
 
-- app executable SHA-256 (staged and installed): `e06d908649762446fb08cc6de28ce8470b4ba711296650fdfcca6937fc136475`
-- bundled Surreal runtime SHA-256 (staged and installed): `30babdd7fe6d84187cd2196a01df7c623aa1700dc24e5d229b2703c718315b26`
-- DMG SHA-256: `92ab2bf32c783bce103c12cb1d81030b8e3da73784a77264afa3ce5dad98678a`
-- preserved pre-install backup: `/Applications/Deeper Notebook.app.backup-20260821T085744Z`
+- app executable SHA-256 (staged and installed): `17898d9aae8f731b713fd127ea58ac0fa8539c5ee6a44f5e0f57dc66760d89c1`
+- bundled Surreal runtime SHA-256 (staged and installed): `5254514010b188724fa45c2af411c9ea5015f04ba30f7c9e83a647502f1ed6e4`
+- DMG SHA-256: `73f868cd45eb2475a3eea471f2e95434f83745174ef79feae8e9b0255d3256ee`
+- current pre-install backup: `/Applications/Deeper Notebook.app.backup-20260821T193853Z`
+- earlier Task 8 backup: `/Applications/Deeper Notebook.app.backup-20260821T085744Z`
+- pre-final staged artifacts: `/Users/Antman/Downloads/Deeper-Notebook-dist-pre-final-20260821T190049Z`
 
-Task 8 receipts remain preserved under
-`/private/tmp/deeper-notebook-task8-20260821T082218Z/`:
+Final staged receipts are preserved under
+`/private/tmp/deeper-notebook-final-staged-20260821T193701Z/`; final installed
+receipts are preserved under
+`/private/tmp/deeper-notebook-final-installed-20260821T193853Z/`. Both
+`summary.json` files passed. Their `default.json` receipts prove the Gemini
+Forward Light/V2 shell and all six runtime features enabled. Their
+`source-visuals-off.json` receipts prove the usable Sources surface with only
+`sourceVisuals=false`. Both modes used GET-only loopback traffic, emitted no
+source-visual mutation, and shut down cleanly.
+
+The earlier Task 8 receipts remain preserved under
+`/private/tmp/deeper-notebook-task8-20260821T082218Z/` as historical proof:
 
 - `staged-corrected-default.json` and `staged-corrected-off.json` passed
   package startup, readiness, runtime-feature, and clean-shutdown checks.
@@ -63,15 +75,15 @@ Task 8 receipts remain preserved under
 - `installed-browser-off-fresh.json` passed the usable Sources surface,
   `sourceVisuals=false`, GET-only traffic, and zero source-visual mutation.
 
-The original failed `staged-default.json` is retained as a diagnostic receipt:
-its missing isolated configuration selected the first-run wizard before
-readiness. The corrected receipts are the current package proof; no receipt or
-Task 8 log was deleted. The local signature is ad hoc, so Developer ID signing,
+The original failed `staged-default.json` and three failed final staged-smoke
+roots remain retained as diagnostic evidence; none supersedes the passing
+roots above. No receipt or Task 8 log was deleted. The package uses the stable
+local `Deeper Notebook Local` signing identity, not an Apple Developer ID, so
 notarization, Gatekeeper clean-machine proof, and updater/public-distribution
 proof remain open. Windows packaging remains open. Credential-owner action and
 GitHub Support's cached pull-request-ref purge remain open; no credentials were
-entered. Push, publication, remote-history changes, and local-main merge are
-separate owner-authorized gates and were not performed.
+entered. Push, publication, and remote-history changes remain separate
+owner-authorized gates and were not performed.
 
 ---
 
