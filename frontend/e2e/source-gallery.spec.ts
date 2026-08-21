@@ -625,6 +625,12 @@ test.describe('source gallery visual contract', () => {
     })
     fixture.releaseData()
     await page.goto(cell.browserPath)
+    // `page.goto()` does not wait for the hydrated dashboard feature hook.
+    // Prove that mount-owned request completed before issuing this test's
+    // explicit schema probe so request ordering cannot race under load.
+    await expect.poll(
+      () => fixture.base.ledger.seen['GET /api/features'] ?? 0,
+    ).toBe(1)
     const response = await page.evaluate(async () => {
       const result = await fetch('/api/features')
       return { status: result.status, body: await result.json() }
@@ -639,7 +645,9 @@ test.describe('source gallery visual contract', () => {
     expect(fixture.base.expectedFrequency['GET /api/features']).toBe(1)
     // The initial dashboard mount consumes the first response; this explicit
     // schema probe is the second exact same-origin feature request.
-    expect(fixture.base.ledger.seen['GET /api/features']).toBe(2)
+    await expect.poll(
+      () => fixture.base.ledger.seen['GET /api/features'] ?? 0,
+    ).toBe(2)
     expect(fixture.base.ledger.unexpected).toEqual([])
   })
 
