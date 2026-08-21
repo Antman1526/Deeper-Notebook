@@ -13,6 +13,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
+
 from desktop.build import package_smoke as smoke
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -20,6 +22,115 @@ PACKAGE_SMOKE_SCRIPT = REPOSITORY_ROOT / "desktop" / "build" / "package_smoke.py
 PACKAGE_BROWSER_PROBE_SCRIPT = (
     REPOSITORY_ROOT / "desktop" / "build" / "package_browser_probe.cjs"
 )
+
+FAKE_PLAYWRIGHT_MODULE = r"""
+const scenario = process.env.FAKE_SCENARIO || 'duplicates'
+
+const EXPECTED_FEATURES = {
+  evidenceStudio: true,
+  modelFleet: true,
+  researchRuns: true,
+  sourceVisuals: true,
+  studyWorkbench: true,
+  visualRefresh: true,
+}
+
+function fakeRequest(url, method) {
+  return { url: () => url, method: () => method }
+}
+
+function fakeResponse(url, status) {
+  return { url: () => url, status: () => status }
+}
+
+class FakePage {
+  constructor() {
+    this.listeners = { request: [], response: [] }
+    this.routeHandler = null
+  }
+
+  on(event, handler) {
+    this.listeners[event].push(handler)
+  }
+
+  async route(_pattern, handler) {
+    this.routeHandler = handler
+  }
+
+  async emit(url, method, status) {
+    const request = fakeRequest(url, method)
+    for (const handler of this.listeners.request) handler(request)
+    let aborted = false
+    if (this.routeHandler) {
+      await this.routeHandler({
+        request: () => request,
+        abort: async () => { aborted = true },
+        fallback: async () => {},
+      })
+    }
+    if (!aborted && status !== null) {
+      const response = fakeResponse(url, status)
+      for (const handler of this.listeners.response) handler(response)
+    }
+  }
+
+  async goto(url) {
+    const base = new URL(url)
+    if (scenario === 'duplicates') {
+      for (let index = 0; index < 70; index += 1) await this.emit(base.href, 'GET', 200)
+    } else if (scenario === 'distinct') {
+      for (let index = 0; index < 65; index += 1) {
+        await this.emit(new URL(`/distinct/${index}`, base).href, 'GET', 200)
+      }
+    } else if (scenario === 'query-differences') {
+      for (let index = 0; index < 65; index += 1) {
+        await this.emit(new URL(`/?query=${index}`, base).href, 'GET', 200)
+      }
+    } else if (scenario === 'status-differences') {
+      await this.emit(base.href, 'GET', 200)
+      await this.emit(base.href, 'GET', 201)
+    } else if (scenario === 'post') {
+      await this.emit(base.href, 'POST', 200)
+    } else if (scenario === 'bad-status') {
+      await this.emit(base.href, 'GET', 500)
+    } else if (scenario === 'escaped-origin') {
+      await this.emit('http://127.0.0.1:41003/escaped', 'GET', 200)
+    } else if (scenario === 'invalid-url') {
+      for (const handler of this.listeners.request) handler(fakeRequest('not a URL', 'GET'))
+    }
+  }
+
+  async waitForTimeout() {}
+
+  async evaluate(_script, featureAuthorityUrl) {
+    await this.emit(featureAuthorityUrl, 'GET', 200)
+    return { status: 200, body: { features: { ...EXPECTED_FEATURES } } }
+  }
+
+  locator() {
+    return {
+      waitFor: async () => {},
+      getAttribute: async () => 'gemini-forward-light',
+      isVisible: async () => true,
+    }
+  }
+}
+
+const chromium = {
+  launch: async () => {
+    const page = new FakePage()
+    return {
+      newContext: async () => ({
+        addCookies: async () => {},
+        newPage: async () => page,
+      }),
+      close: async () => {},
+    }
+  },
+}
+
+module.exports = { chromium }
+"""
 
 
 def run_smoke(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -30,6 +141,130 @@ def run_smoke(*arguments: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def run_fake_browser_probe(
+    tmp_path: Path, scenario: str
+) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
+    playwright_module = tmp_path / f"fake_playwright_{scenario}.cjs"
+    playwright_module.write_text(FAKE_PLAYWRIGHT_MODULE, encoding="utf-8")
+    environment = os.environ.copy()
+    environment["FAKE_SCENARIO"] = scenario
+    result = subprocess.run(
+        [
+            "node",
+            str(PACKAGE_BROWSER_PROBE_SCRIPT),
+            "--mode",
+            "default",
+            "--frontend-url",
+            "http://127.0.0.1:41001/",
+            "--api-url",
+            "http://127.0.0.1:41002",
+            "--playwright-module",
+            str(playwright_module),
+        ],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+    assert result.stdout.strip(), result.stderr
+    receipt = json.loads(result.stdout)
+    assert isinstance(receipt, dict)
+    return result, receipt
+
+
+def test_browser_probe_coalesces_exact_duplicate_request_and_response_evidence(
+    tmp_path: Path,
+) -> None:
+    result, receipt = run_fake_browser_probe(tmp_path, "duplicates")
+
+    assert result.returncode == 0, result.stderr
+    assert receipt["status"] == "passed"
+    assert len(receipt["observed_requests"]) == 2
+    assert len(receipt["observed_responses"]) == 2
+    assert receipt["observed_requests"] == [
+        {
+            "method": "GET",
+            "url": "http://127.0.0.1:41001/",
+            "path": "/",
+        },
+        {
+            "method": "GET",
+            "url": "http://127.0.0.1:41002/api/features",
+            "path": "/api/features",
+        },
+    ]
+    assert receipt["observed_responses"] == [
+        {
+            "status": 200,
+            "url": "http://127.0.0.1:41001/",
+            "path": "/",
+        },
+        {
+            "status": 200,
+            "url": "http://127.0.0.1:41002/api/features",
+            "path": "/api/features",
+        },
+    ]
+
+
+def test_browser_probe_rejects_more_than_64_distinct_evidence_entries(
+    tmp_path: Path,
+) -> None:
+    result, receipt = run_fake_browser_probe(tmp_path, "distinct")
+
+    assert result.returncode == 1
+    assert receipt == {
+        "status": "failed",
+        "error": "browser evidence exceeded bounded receipt limits",
+    }
+
+
+def test_browser_probe_does_not_coalesce_query_differences(
+    tmp_path: Path,
+) -> None:
+    result, receipt = run_fake_browser_probe(tmp_path, "query-differences")
+
+    assert result.returncode == 1
+    assert receipt == {
+        "status": "failed",
+        "error": "browser evidence exceeded bounded receipt limits",
+    }
+
+
+def test_browser_probe_preserves_distinct_success_status_evidence(
+    tmp_path: Path,
+) -> None:
+    result, receipt = run_fake_browser_probe(tmp_path, "status-differences")
+
+    assert result.returncode == 0, result.stderr
+    assert receipt["status"] == "passed"
+    assert [
+        entry["status"]
+        for entry in receipt["observed_responses"]
+        if entry["url"] == "http://127.0.0.1:41001/"
+    ] == [200, 201]
+
+
+@pytest.mark.parametrize(
+    ("scenario", "error"),
+    [
+        ("post", "blocked non-loopback request"),
+        ("bad-status", "browser evidence exceeded bounded receipt limits"),
+        ("escaped-origin", "blocked non-loopback request"),
+        ("invalid-url", "Invalid URL"),
+    ],
+)
+def test_browser_probe_keeps_invalid_boundaries_fail_closed(
+    tmp_path: Path, scenario: str, error: str
+) -> None:
+    result, receipt = run_fake_browser_probe(tmp_path, scenario)
+
+    assert result.returncode == 1
+    assert receipt["status"] == "failed"
+    assert error in receipt["error"]
 
 
 def test_release_browser_probe_uses_exact_loopback_origins_and_get_only_contract() -> (

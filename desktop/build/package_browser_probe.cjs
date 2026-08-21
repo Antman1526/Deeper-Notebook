@@ -122,6 +122,8 @@ async function main() {
   const { chromium } = require(path.resolve(args['playwright-module']))
   const observed = []
   const responses = []
+  const observedRequestKeys = new Set()
+  const observedResponseKeys = new Set()
   const blocked = []
   let requestEvidenceOverflow = false
   let responseEvidenceOverflow = false
@@ -142,30 +144,36 @@ async function main() {
     page.on('request', (request) => {
       const url = new URL(request.url())
       if (url.protocol === 'http:' || url.protocol === 'https:') {
-        if (observed.length >= MAX_OBSERVED_REQUEST_ENTRIES) {
-          requestEvidenceOverflow = true
-          return
-        }
         const method = request.method()
         if (!hasBoundedString(method) || !hasBoundedString(url.href) || !hasBoundedString(url.pathname)) {
           requestEvidenceInvalid = true
           return
         }
+        const evidenceKey = `${method}\u0000${url.href}`
+        if (observedRequestKeys.has(evidenceKey)) return
+        if (observed.length >= MAX_OBSERVED_REQUEST_ENTRIES) {
+          requestEvidenceOverflow = true
+          return
+        }
+        observedRequestKeys.add(evidenceKey)
         observed.push({ method, url: url.href, path: url.pathname })
       }
     })
     page.on('response', (response) => {
       const url = new URL(response.url())
       if (url.protocol === 'http:' || url.protocol === 'https:') {
-        if (responses.length >= MAX_OBSERVED_RESPONSE_ENTRIES) {
-          responseEvidenceOverflow = true
-          return
-        }
         const status = response.status()
         if (!Number.isInteger(status) || status < 200 || status > 299 || !hasBoundedString(url.href) || !hasBoundedString(url.pathname)) {
           responseEvidenceInvalid = true
           return
         }
+        const evidenceKey = `${status}\u0000${url.href}`
+        if (observedResponseKeys.has(evidenceKey)) return
+        if (responses.length >= MAX_OBSERVED_RESPONSE_ENTRIES) {
+          responseEvidenceOverflow = true
+          return
+        }
+        observedResponseKeys.add(evidenceKey)
         responses.push({ status, url: url.href, path: url.pathname })
       }
     })
