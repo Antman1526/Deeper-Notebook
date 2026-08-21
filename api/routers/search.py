@@ -11,7 +11,6 @@ from api.source_visual_projection import project_search_source_visuals
 from deeper_notebook.ai.models import Model, model_manager
 from deeper_notebook.database.repository import ensure_record_id, repo_query
 from deeper_notebook.domain.notebook import text_search, vector_search
-from deeper_notebook.search.fusion import reciprocal_rank_fusion
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import (
     DatabaseOperationError,
@@ -20,6 +19,7 @@ from deeper_notebook.exceptions import (
 )
 from deeper_notebook.feature_flags import source_visuals_enabled
 from deeper_notebook.graphs.ask import graph as ask_graph
+from deeper_notebook.search.fusion import reciprocal_rank_fusion
 
 router = APIRouter()
 
