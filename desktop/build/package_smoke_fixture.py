@@ -20,7 +20,7 @@ from desktop.model_downloads import (
     PIPER_VOICE_MODEL,
 )
 
-OPENCHRONICLE_PLACEHOLDER_URL = "http://127.0.0.1:1/mcp"
+OPENCHRONICLE_PLACEHOLDER_URL = "http://[::1]:1/mcp"
 FIXTURE_MANIFEST_NAME = "fixture.json"
 
 MODEL_PLACEHOLDERS = {

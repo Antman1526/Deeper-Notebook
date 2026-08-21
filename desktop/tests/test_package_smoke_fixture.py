@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import socket
 import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,7 +45,8 @@ def test_prepare_smoke_fixture_is_private_offline_and_mode_exact(
     assert default.environment["DEEPER_NOTEBOOK_DATA_DIR"] == str(default.data_dir)
     assert default.environment["UV_CACHE_DIR"] == str(uv_cache_dir)
     assert default.environment["UV_OFFLINE"] == "1"
-    assert default.environment["OPENCHRONICLE_MCP_URL"] == "http://127.0.0.1:1/mcp"
+    assert default.environment["OPENCHRONICLE_MCP_URL"] == "http://[::1]:1/mcp"
+    assert default.environment["OPENCHRONICLE_MCP_URL"] != ("http://127.0.0.1:8742/mcp")
     assert default.readiness_file == (
         default.data_dir / "logs" / "desktop-readiness.json"
     )
@@ -61,6 +64,65 @@ def test_prepare_smoke_fixture_is_private_offline_and_mode_exact(
         assert stat.S_IMODE(default.home.stat().st_mode) == 0o700
         assert stat.S_IMODE(default.data_dir.stat().st_mode) == 0o700
         assert stat.S_IMODE((default.data_dir / "config.toml").stat().st_mode) == 0o600
+
+
+def test_ipv6_placeholder_fails_closed_before_openchronicle_post(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from desktop import app as app_mod
+
+    fixture = prepare_smoke_fixture(
+        tmp_path / "fixture", source_visuals=True, uv_cache_dir=tmp_path / "uv"
+    )
+    observed: dict[str, object] = {}
+
+    class GuardedSocket:
+        def __init__(self, family: int, socket_type: int, *_args, **_kwargs):
+            observed["family"] = family
+            observed["socket_type"] = socket_type
+            assert family == socket.AF_INET
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def settimeout(self, timeout: float) -> None:
+            observed["timeout"] = timeout
+
+        def connect(self, address: tuple[str, int]) -> None:
+            observed["address"] = address
+            raise OSError("AF_INET cannot connect to an IPv6 literal")
+
+    post_calls: list[tuple[object, dict[str, object]]] = []
+
+    def forbidden_post(url: object, **kwargs: object) -> None:
+        post_calls.append((url, kwargs))
+
+    monkeypatch.setenv(
+        "OPENCHRONICLE_MCP_URL", fixture.environment["OPENCHRONICLE_MCP_URL"]
+    )
+    monkeypatch.setattr(socket, "socket", GuardedSocket)
+    monkeypatch.setattr("httpx.post", forbidden_post)
+    ctx = SimpleNamespace(
+        cfg=SimpleNamespace(openchronicle_choice="skip"),
+        openchronicle_available=True,
+        progress_bus=None,
+        log_dir=None,
+    )
+
+    app_mod._phase_detect_openchronicle(ctx)
+
+    assert ctx.openchronicle_available is False
+    assert observed == {
+        "family": socket.AF_INET,
+        "socket_type": socket.SOCK_STREAM,
+        "timeout": 0.3,
+        "address": ("::1", 1),
+    }
+    assert post_calls == []
 
 
 def test_prepare_smoke_fixture_requires_a_new_root(tmp_path: Path) -> None:
