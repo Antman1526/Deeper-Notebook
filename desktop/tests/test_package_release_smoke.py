@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -642,6 +644,72 @@ def test_browser_probe_transport_kills_stdout_before_retaining_two_mebibytes(
     assert result.peak_stdout_bytes < 2 * 1024 * 1024
     with pytest.raises(smoke.SmokeFailure, match="exceeded"):
         release_smoke._parse_browser_receipt(result)
+
+
+def test_browser_probe_transport_kills_the_first_byte_over_limit_promptly(
+    tmp_path: Path,
+) -> None:
+    started_at = time.monotonic()
+    result = release_smoke._run_browser_probe(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys, time; "
+                "sys.stdout.buffer.write(b'x' * 65537); "
+                "sys.stdout.flush(); time.sleep(2)"
+            ),
+        ],
+        cwd=tmp_path,
+        timeout_seconds=5.0,
+    )
+    elapsed = time.monotonic() - started_at
+
+    assert result.stdout_limit_exceeded is True
+    assert result.returncode != 0
+    assert len(result.stdout) <= release_smoke.MAX_BROWSER_RECEIPT_BYTES
+    assert elapsed < 1.0
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def test_browser_probe_timeout_terminates_descendants_holding_pipes(
+    tmp_path: Path,
+) -> None:
+    descendant_pid_path = tmp_path / "descendant.pid"
+    started_at = time.monotonic()
+
+    with pytest.raises(subprocess.TimeoutExpired) as raised:
+        release_smoke._run_browser_probe(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import pathlib, subprocess, sys, time; "
+                    "child = subprocess.Popen(['/bin/sleep', '2']); "
+                    "pathlib.Path(sys.argv[1]).write_text(str(child.pid), "
+                    "encoding='utf-8'); time.sleep(2)"
+                ),
+                str(descendant_pid_path),
+            ],
+            cwd=tmp_path,
+            timeout_seconds=0.05,
+        )
+    elapsed = time.monotonic() - started_at
+
+    assert descendant_pid_path.is_file()
+    descendant_pid = int(descendant_pid_path.read_text(encoding="utf-8"))
+    assert elapsed < 1.0
+    assert len(raised.value.output or b"") <= release_smoke.MAX_BROWSER_RECEIPT_BYTES
+    assert len(raised.value.stderr or b"") <= release_smoke.MAX_BROWSER_STDERR_BYTES
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(descendant_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("browser probe descendant survived process-group termination")
 
 
 def test_browser_probe_transport_bounds_stderr_without_deadlocking(

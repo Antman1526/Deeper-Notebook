@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import signal
 import stat
 import subprocess
 import sys
@@ -48,6 +49,8 @@ MAX_BROWSER_STDERR_BYTES = 16 * 1024
 MAX_RELEASE_RECEIPT_BYTES = 64 * 1024
 BROWSER_PROBE_READ_CHUNK_BYTES = 4 * 1024
 BROWSER_PROBE_POLL_SECONDS = 0.05
+BROWSER_PROBE_TERMINATE_GRACE_SECONDS = 0.1
+BROWSER_PROBE_THREAD_JOIN_SECONDS = 0.25
 
 DEFAULT_EXPECTED_FEATURES: dict[str, bool] = {
     "evidenceStudio": True,
@@ -97,10 +100,11 @@ class _BoundedPipeCapture:
         self.limit_exceeded = False
         self.peak_bytes = 0
         self.error: OSError | None = None
+        self._closed_by_parent = threading.Event()
 
     def drain(self, stream: Any) -> None:
         try:
-            while chunk := stream.read(BROWSER_PROBE_READ_CHUNK_BYTES):
+            while chunk := os.read(stream.fileno(), BROWSER_PROBE_READ_CHUNK_BYTES):
                 notify_limit = False
                 with self._lock:
                     remaining = self._limit - len(self._buffer)
@@ -116,7 +120,16 @@ class _BoundedPipeCapture:
                 if notify_limit and self._on_limit_exceeded is not None:
                     self._on_limit_exceeded()
         except OSError as error:
-            self.error = error
+            if not self._closed_by_parent.is_set():
+                self.error = error
+
+    def close_stream(self, stream: Any) -> None:
+        """Unblock a capture reader without treating our own close as a failure."""
+        self._closed_by_parent.set()
+        try:
+            stream.close()
+        except OSError:
+            pass
 
     def captured(self) -> bytes:
         with self._lock:
@@ -277,7 +290,51 @@ def _browser_command(
     ]
 
 
-def _kill_process_quietly(process: subprocess.Popen[bytes]) -> None:
+def _posix_process_group_exists(group_id: int) -> bool:
+    try:
+        os.killpg(group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _terminate_browser_process_tree(process: subprocess.Popen[bytes]) -> None:
+    """Stop the isolated probe process group without touching a successful probe."""
+    if os.name == "posix":
+        group_id = process.pid
+        try:
+            os.killpg(group_id, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            return
+        deadline = time.monotonic() + BROWSER_PROBE_TERMINATE_GRACE_SECONDS
+        while _posix_process_group_exists(group_id) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if _posix_process_group_exists(group_id):
+            try:
+                os.killpg(group_id, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+        return
+
+    if os.name == "nt":
+        try:
+            taskkill = subprocess.Popen(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                taskkill.wait(timeout=BROWSER_PROBE_TERMINATE_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                taskkill.kill()
+                try:
+                    taskkill.wait(timeout=BROWSER_PROBE_THREAD_JOIN_SECONDS)
+                except subprocess.TimeoutExpired:
+                    pass
+        except OSError:
+            pass
     try:
         if process.poll() is None:
             process.kill()
@@ -285,22 +342,74 @@ def _kill_process_quietly(process: subprocess.Popen[bytes]) -> None:
         pass
 
 
+def _wait_for_browser_probe_exit(process: subprocess.Popen[bytes]) -> None:
+    """Wait for the probe leader only after a bounded failure cleanup."""
+    if process.poll() is not None:
+        process.wait()
+        return
+    try:
+        process.wait(timeout=BROWSER_PROBE_THREAD_JOIN_SECONDS)
+    except subprocess.TimeoutExpired:
+        _terminate_browser_process_tree(process)
+        try:
+            process.wait(timeout=BROWSER_PROBE_THREAD_JOIN_SECONDS)
+        except subprocess.TimeoutExpired as error:
+            raise SmokeFailure("browser probe process did not stop") from error
+
+
+def _join_browser_capture_threads(
+    captures: list[tuple[_BoundedPipeCapture, Any, threading.Thread]],
+    process: subprocess.Popen[bytes],
+) -> bool:
+    """Bound output-drain cleanup even if a descendant retained a pipe."""
+    for _capture, _stream, thread in captures:
+        thread.join(BROWSER_PROBE_THREAD_JOIN_SECONDS)
+    if all(not thread.is_alive() for _capture, _stream, thread in captures):
+        return True
+
+    _terminate_browser_process_tree(process)
+    for capture, stream, _thread in captures:
+        capture.close_stream(stream)
+    for _capture, _stream, thread in captures:
+        thread.join(BROWSER_PROBE_THREAD_JOIN_SECONDS)
+    return all(not thread.is_alive() for _capture, _stream, thread in captures)
+
+
 def _run_browser_probe(
     command: list[str], *, cwd: Path, timeout_seconds: float
 ) -> BrowserProbeResult:
     """Run the browser probe without ever accumulating unbounded pipe output."""
+    popen_options: dict[str, Any] = {
+        "cwd": cwd,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": False,
+    }
+    if os.name == "posix":
+        popen_options["start_new_session"] = True
+    elif os.name == "nt":
+        popen_options["creationflags"] = getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        )
     process = subprocess.Popen(
         command,
-        cwd=cwd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=False,
+        **popen_options,
     )
     stdout_limit_event = threading.Event()
+    termination_lock = threading.Lock()
+    termination_started = False
+
+    def terminate_process_tree_once() -> None:
+        nonlocal termination_started
+        with termination_lock:
+            if termination_started:
+                return
+            termination_started = True
+        _terminate_browser_process_tree(process)
 
     def terminate_for_stdout_limit() -> None:
         stdout_limit_event.set()
-        _kill_process_quietly(process)
+        terminate_process_tree_once()
 
     stdout_capture = _BoundedPipeCapture(
         MAX_BROWSER_RECEIPT_BYTES,
@@ -308,8 +417,8 @@ def _run_browser_probe(
     )
     stderr_capture = _BoundedPipeCapture(MAX_BROWSER_STDERR_BYTES)
     if process.stdout is None or process.stderr is None:
-        _kill_process_quietly(process)
-        process.wait()
+        terminate_process_tree_once()
+        _wait_for_browser_probe_exit(process)
         raise SmokeFailure("browser probe could not capture its output pipes")
     stdout_thread = threading.Thread(
         target=stdout_capture.drain,
@@ -323,29 +432,38 @@ def _run_browser_probe(
     )
     stdout_thread.start()
     stderr_thread.start()
+    captures = [
+        (stdout_capture, process.stdout, stdout_thread),
+        (stderr_capture, process.stderr, stderr_thread),
+    ]
     timed_out = False
+    capture_threads_stopped = False
     deadline = time.monotonic() + timeout_seconds
     try:
         while process.poll() is None:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 timed_out = True
-                _kill_process_quietly(process)
+                terminate_process_tree_once()
                 break
             stdout_limit_event.wait(min(remaining, BROWSER_PROBE_POLL_SECONDS))
-        process.wait()
+        _wait_for_browser_probe_exit(process)
     except BaseException:
-        _kill_process_quietly(process)
-        process.wait()
+        terminate_process_tree_once()
+        try:
+            _wait_for_browser_probe_exit(process)
+        except SmokeFailure:
+            pass
         raise
     finally:
-        stdout_thread.join()
-        stderr_thread.join()
-        process.stdout.close()
-        process.stderr.close()
+        capture_threads_stopped = _join_browser_capture_threads(captures, process)
+        for capture, stream, _thread in captures:
+            capture.close_stream(stream)
 
     stdout = stdout_capture.captured()
     stderr = stderr_capture.captured()
+    if not capture_threads_stopped:
+        raise SmokeFailure("browser probe output drain did not stop")
     if stdout_capture.error is not None or stderr_capture.error is not None:
         raise SmokeFailure("browser probe output capture failed")
     if timed_out:
