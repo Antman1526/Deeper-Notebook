@@ -171,11 +171,13 @@ def arguments_for(tmp_path: Path) -> argparse.Namespace:
     executable.write_bytes(b"executable fixture")
     playwright_module = tmp_path / "playwright"
     playwright_module.mkdir()
+    uv_cache_dir = tmp_path / "uv-cache"
+    uv_cache_dir.mkdir()
     return argparse.Namespace(
         executable=executable,
         artifact=artifact,
         output_root=tmp_path / "smoke-output",
-        uv_cache_dir=tmp_path / "uv-cache",
+        uv_cache_dir=uv_cache_dir,
         playwright_module=playwright_module,
         expected_artifact_sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
         timeout_seconds=5.0,
@@ -337,6 +339,47 @@ def test_release_smoke_verifies_artifact_before_any_mode_launch(
         (arguments.output_root / "summary.json").read_text(encoding="utf-8")
     )
     assert "sha256 mismatch" in summary["error"]
+
+
+@pytest.mark.parametrize("cache_state", ["missing", "file"])
+def test_validate_inputs_rejects_invalid_uv_cache_before_fixture_or_process(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cache_state: str
+) -> None:
+    arguments = arguments_for(tmp_path)
+    if cache_state == "missing":
+        arguments.uv_cache_dir.rmdir()
+    else:
+        arguments.uv_cache_dir.rmdir()
+        arguments.uv_cache_dir.write_text("not a directory", encoding="utf-8")
+
+    forbidden_calls: list[str] = []
+    monkeypatch.setattr(
+        release_smoke,
+        "prepare_smoke_fixture",
+        lambda *_args, **_kwargs: forbidden_calls.append("fixture"),
+    )
+    monkeypatch.setattr(
+        release_smoke,
+        "launch_monitored_process",
+        lambda *_args, **_kwargs: forbidden_calls.append("launch"),
+    )
+
+    with pytest.raises(smoke.SmokeFailure, match="uv cache"):
+        release_smoke._validate_inputs(arguments)
+
+    assert forbidden_calls == []
+
+    monkeypatch.setattr(
+        release_smoke,
+        "run_mode",
+        lambda *_args, **_kwargs: forbidden_calls.append("mode"),
+    )
+    assert release_smoke.run_release_smoke(arguments) == 1
+    assert forbidden_calls == []
+    summary = json.loads(
+        (arguments.output_root / "summary.json").read_text(encoding="utf-8")
+    )
+    assert "uv cache" in summary["error"]
 
 
 def test_run_mode_rejects_a_bare_browser_success_receipt(

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_SCRIPT = REPOSITORY_ROOT / "desktop" / "build" / "release_manifest.py"
@@ -533,6 +536,103 @@ def test_release_smoke_verification_uses_verified_offline_uv_cache() -> None:
     assert "$REPO/.uv-cache" not in verification
     assert "caller-owned" in verification.lower()
     assert "offline" in verification.lower()
+
+
+def _release_smoke_make_arguments(
+    *, cache_dir: Path, artifact: Path, output_root: Path, playwright_module: Path
+) -> list[str]:
+    return [
+        "RELEASE_SMOKE_EXECUTABLE=/bin/true",
+        f"RELEASE_SMOKE_ARTIFACT={artifact}",
+        f"RELEASE_SMOKE_OUTPUT_ROOT={output_root}",
+        f"RELEASE_SMOKE_UV_CACHE_DIR={cache_dir}",
+        f"RELEASE_SMOKE_PLAYWRIGHT_MODULE={playwright_module}",
+    ]
+
+
+def _fake_uv_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir()
+    invoked = tmp_path / "uv-invoked.txt"
+    fake_uv = bin_dir / "uv"
+    fake_uv.write_text(
+        "#!/bin/sh\n"
+        f'printf \'%s\\n%s\\n\' "$UV_OFFLINE" "$UV_CACHE_DIR" > {shlex.quote(str(invoked))}\n',
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o700)
+    environment = os.environ.copy()
+    environment["PATH"] = f"{bin_dir}{os.pathsep}{environment['PATH']}"
+    return environment, invoked
+
+
+@pytest.mark.parametrize("target", sorted(RELEASE_SMOKE_TARGETS))
+def test_release_smoke_make_targets_guard_missing_cache_before_uv(
+    tmp_path: Path, target: str
+) -> None:
+    artifact = tmp_path / "release.dmg"
+    artifact.write_bytes(b"release artifact")
+    environment, invoked = _fake_uv_environment(tmp_path)
+    missing_cache = tmp_path / "missing uv cache"
+
+    result = subprocess.run(
+        [
+            "make",
+            target,
+            *_release_smoke_make_arguments(
+                cache_dir=missing_cache,
+                artifact=artifact,
+                output_root=tmp_path / "output",
+                playwright_module=tmp_path / "playwright",
+            ),
+        ],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not invoked.exists()
+    assert "RELEASE_SMOKE_UV_CACHE_DIR" in result.stderr
+
+
+@pytest.mark.parametrize("target", sorted(RELEASE_SMOKE_TARGETS))
+def test_release_smoke_make_targets_bind_caller_cache_and_offline_uv(
+    tmp_path: Path, target: str
+) -> None:
+    artifact = tmp_path / "release.dmg"
+    artifact.write_bytes(b"release artifact")
+    cache_dir = tmp_path / "caller uv cache with spaces"
+    cache_dir.mkdir()
+    playwright_module = tmp_path / "playwright module"
+    playwright_module.mkdir()
+    environment, invoked = _fake_uv_environment(tmp_path)
+
+    result = subprocess.run(
+        [
+            "make",
+            target,
+            *_release_smoke_make_arguments(
+                cache_dir=cache_dir,
+                artifact=artifact,
+                output_root=tmp_path / "output",
+                playwright_module=playwright_module,
+            ),
+        ],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert invoked.read_text(encoding="utf-8").splitlines() == [
+        "1",
+        str(cache_dir),
+    ]
 
 
 def test_packaged_v0_8_114_todo_records_current_local_release_truth() -> None:

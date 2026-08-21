@@ -212,6 +212,20 @@ def _reject_symlinked_output_ancestors(output_root: Path) -> None:
 
 
 def _validate_inputs(arguments: argparse.Namespace) -> str:
+    uv_cache_dir = Path(_argument(arguments, "uv_cache_dir"))
+    try:
+        uv_cache_metadata = uv_cache_dir.stat()
+    except FileNotFoundError as error:
+        raise SmokeFailure(
+            f"uv cache directory does not exist: {uv_cache_dir}"
+        ) from error
+    except OSError as error:
+        raise SmokeFailure(
+            f"could not inspect uv cache directory: {uv_cache_dir}"
+        ) from error
+    if not stat.S_ISDIR(uv_cache_metadata.st_mode):
+        raise SmokeFailure(f"uv cache path is not a directory: {uv_cache_dir}")
+
     executable = Path(_argument(arguments, "executable"))
     artifact = Path(_argument(arguments, "artifact"))
     playwright_module = Path(_argument(arguments, "playwright_module"))

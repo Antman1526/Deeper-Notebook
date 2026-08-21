@@ -553,10 +553,12 @@ export RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256 RELEASE_SMOKE_INSTALLED_EXECUTABLE
 RELEASE_SMOKE_EXPECTED_HASH_ARGUMENT = $(if $(strip $(RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256)), --expected-artifact-sha256 "$${RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256}")
 
 smoke-release-mac-app:
-	@uv run python desktop/build/package_release_smoke.py --executable "$${RELEASE_SMOKE_EXECUTABLE}" --artifact "$${RELEASE_SMOKE_ARTIFACT}" --output-root "$${RELEASE_SMOKE_OUTPUT_ROOT}" --uv-cache-dir "$${RELEASE_SMOKE_UV_CACHE_DIR}" --playwright-module "$${RELEASE_SMOKE_PLAYWRIGHT_MODULE}"$(RELEASE_SMOKE_EXPECTED_HASH_ARGUMENT)
+	@test -d "$${RELEASE_SMOKE_UV_CACHE_DIR}" || { echo "RELEASE_SMOKE_UV_CACHE_DIR must name an existing directory: $${RELEASE_SMOKE_UV_CACHE_DIR}" >&2; exit 1; }
+	@UV_OFFLINE=1 UV_CACHE_DIR="$${RELEASE_SMOKE_UV_CACHE_DIR}" uv run python desktop/build/package_release_smoke.py --executable "$${RELEASE_SMOKE_EXECUTABLE}" --artifact "$${RELEASE_SMOKE_ARTIFACT}" --output-root "$${RELEASE_SMOKE_OUTPUT_ROOT}" --uv-cache-dir "$${RELEASE_SMOKE_UV_CACHE_DIR}" --playwright-module "$${RELEASE_SMOKE_PLAYWRIGHT_MODULE}"$(RELEASE_SMOKE_EXPECTED_HASH_ARGUMENT)
 
 smoke-release-installed-mac-app:
-	@uv run python desktop/build/package_release_smoke.py --executable "$${RELEASE_SMOKE_EXECUTABLE:-$${RELEASE_SMOKE_INSTALLED_EXECUTABLE}}" --artifact "$${RELEASE_SMOKE_ARTIFACT}" --output-root "$${RELEASE_SMOKE_OUTPUT_ROOT}" --uv-cache-dir "$${RELEASE_SMOKE_UV_CACHE_DIR}" --playwright-module "$${RELEASE_SMOKE_PLAYWRIGHT_MODULE}"$(RELEASE_SMOKE_EXPECTED_HASH_ARGUMENT)
+	@test -d "$${RELEASE_SMOKE_UV_CACHE_DIR}" || { echo "RELEASE_SMOKE_UV_CACHE_DIR must name an existing directory: $${RELEASE_SMOKE_UV_CACHE_DIR}" >&2; exit 1; }
+	@UV_OFFLINE=1 UV_CACHE_DIR="$${RELEASE_SMOKE_UV_CACHE_DIR}" uv run python desktop/build/package_release_smoke.py --executable "$${RELEASE_SMOKE_EXECUTABLE:-$${RELEASE_SMOKE_INSTALLED_EXECUTABLE}}" --artifact "$${RELEASE_SMOKE_ARTIFACT}" --output-root "$${RELEASE_SMOKE_OUTPUT_ROOT}" --uv-cache-dir "$${RELEASE_SMOKE_UV_CACHE_DIR}" --playwright-module "$${RELEASE_SMOKE_PLAYWRIGHT_MODULE}"$(RELEASE_SMOKE_EXPECTED_HASH_ARGUMENT)
 
 # Convenience: copy the built .app to /Applications.
 build-mac-install:
