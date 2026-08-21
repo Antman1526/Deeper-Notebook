@@ -1,5 +1,7 @@
 const CANONICAL_THEME_KEY = 'dn-theme'
 const LEGACY_THEME_KEY = 'onp-theme'
+const RECENT_THEME_KEY = 'dn-theme-recents'
+const MAX_RECENT_THEME_IDS = 4
 
 // Same-document consumers use this signal because the browser `storage`
 // event only reaches other documents.
@@ -27,4 +29,25 @@ export function writeStoredTheme(storage: Storage, theme: string): void {
   if (typeof window !== 'undefined' && storage === window.localStorage) {
     window.dispatchEvent(new Event(THEME_SELECTION_CHANGE_EVENT))
   }
+}
+
+export function readRecentThemeIds(storage: Storage): string[] {
+  try {
+    const raw = storage.getItem(RECENT_THEME_KEY)
+    if (!raw) return []
+
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+
+    return [...new Set(parsed.filter((value): value is string => typeof value === 'string'))]
+      .slice(0, MAX_RECENT_THEME_IDS)
+  } catch {
+    return []
+  }
+}
+
+export function recordRecentThemeId(storage: Storage, themeId: string): void {
+  const recentThemeIds = [themeId, ...readRecentThemeIds(storage)]
+  const nextRecentThemeIds = [...new Set(recentThemeIds)].slice(0, MAX_RECENT_THEME_IDS)
+  storage.setItem(RECENT_THEME_KEY, JSON.stringify(nextRecentThemeIds))
 }

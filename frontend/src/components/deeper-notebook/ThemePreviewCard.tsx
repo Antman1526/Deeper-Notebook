@@ -59,12 +59,18 @@ export function ThemePreviewCard({
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-sm font-semibold leading-tight">{theme.label}</h4>
             {selected && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-primary">
+              <span
+                className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-primary"
+                aria-label="Current theme"
+              >
                 Current
               </span>
             )}
             {previewing && (
-              <span className="rounded-full bg-accent px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-accent-foreground">
+              <span
+                className="rounded-full bg-accent px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-accent-foreground"
+                aria-label="Previewing theme"
+              >
                 Previewing
               </span>
             )}

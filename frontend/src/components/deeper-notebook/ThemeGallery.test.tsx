@@ -21,23 +21,54 @@ describe('ThemeGallery', () => {
     localStorage.clear()
   })
 
-  it('renders the categorized catalog and filters by theme copy', () => {
+  it('curates the initial gallery and discloses the remaining catalog on demand', () => {
     render(<ThemeGallery />)
 
-    expect(screen.getByRole('heading', { name: 'Featured', level: 3 })).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Light', level: 3 })).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Dark', level: 3 })).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Accessibility', level: 3 })).toBeVisible()
-    expect(screen.getByRole('heading', { name: 'Classics', level: 3 })).toBeVisible()
-    expect(screen.getByRole('button', { name: /Preview Research Core Light/ })).toBeVisible()
-    expect(screen.getByText('High Contrast Dark')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Recommended' })).toBeVisible()
+    expect(screen.getByText('Archive Paper')).toBeVisible()
+    expect(screen.queryByText('Dracula')).not.toBeInTheDocument()
+    const moreThemesButton = screen.getByRole('button', { name: 'Show more themes' })
+    expect(moreThemesButton).toBeVisible()
+    expect(moreThemesButton).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(moreThemesButton)
+
+    expect(screen.getByText('Dracula')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Classics' })).toBeVisible()
+    expect(moreThemesButton).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('shows Recent after Apply and bypasses disclosure while searching', () => {
+    render(<ThemeGallery />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show more themes' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Dracula' }))
+
+    expect(screen.getByRole('heading', { name: 'Recent' })).toBeVisible()
+    expect(localStorage.getItem('dn-theme-recents')).toBe(JSON.stringify(['dracula']))
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search themes' }), {
+      target: { value: 'nord' },
+    })
+
+    expect(screen.getByText('Nord')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Show more themes' })).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search themes' }), {
       target: { value: 'archival' },
     })
-
     expect(screen.getByText('Archive Paper')).toBeVisible()
     expect(screen.queryByText('High Contrast Dark')).not.toBeInTheDocument()
+  })
+
+  it('shows only catalog-valid persisted recents', () => {
+    localStorage.setItem('dn-theme-recents', JSON.stringify(['not-a-theme', 'dracula']))
+
+    render(<ThemeGallery />)
+
+    expect(screen.getByRole('heading', { name: 'Recent' })).toBeVisible()
+    expect(screen.getByText('Dracula')).toBeVisible()
+    expect(screen.queryByText('not-a-theme')).not.toBeInTheDocument()
   })
 
   it('supports a server render before browser globals are available', () => {
@@ -62,12 +93,14 @@ describe('ThemeGallery', () => {
     expect(document.documentElement).not.toHaveClass('dark')
     expect(canonical.setTheme).not.toHaveBeenCalled()
     expect(localStorage.getItem('dn-theme')).toBe('research-core-dark')
+    expect(localStorage.getItem('dn-theme-recents')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Restore previous theme' }))
     expect(document.documentElement.dataset.theme).toBe('research-core-dark')
     expect(document.documentElement).toHaveClass('dark')
     expect(canonical.setTheme).not.toHaveBeenCalled()
     expect(localStorage.getItem('dn-theme')).toBe('research-core-dark')
+    expect(localStorage.getItem('dn-theme-recents')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
     expect(canonical.setTheme).toHaveBeenCalledWith('archive-paper')
