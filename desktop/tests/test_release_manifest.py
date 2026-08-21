@@ -20,6 +20,14 @@ MAC_POST_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "post_build_mac.sh"
 WINDOWS_POST_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "post_build_windows.ps1"
 WINDOWS_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "build_windows.ps1"
 MAKEFILE = REPOSITORY_ROOT / "Makefile"
+TODO_FILE = REPOSITORY_ROOT / "docs" / "TODO.md"
+
+CURRENT_APP_SHA256 = "e06d908649762446fb08cc6de28ce8470b4ba711296650fdfcca6937fc136475"
+CURRENT_SURREAL_SHA256 = (
+    "30babdd7fe6d84187cd2196a01df7c623aa1700dc24e5d229b2703c718315b26"
+)
+CURRENT_DMG_SHA256 = "92ab2bf32c783bce103c12cb1d81030b8e3da73784a77264afa3ce5dad98678a"
+TASK8_RECEIPT_ROOT = "/private/tmp/deeper-notebook-task8-20260821T082218Z"
 
 COMPATIBLE_BUNDLE_ID = "com.antman1526.open-notebook-plus"
 STABLE_WINDOWS_APP_ID = "{{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}"
@@ -323,7 +331,7 @@ def test_package_smoke_targets_are_explicit_and_never_mutate_applications() -> N
     assert "--make-smoke-inputs" in makefile
     smoke_targets = makefile[
         makefile.index(".PHONY: smoke-mac-app") : makefile.index(
-            "# Convenience: copy the built .app to /Applications."
+            ".PHONY: smoke-release-mac-app"
         )
     ]
     assert "/Applications" not in smoke_targets
@@ -388,6 +396,69 @@ def test_package_smoke_target_does_not_evaluate_environment_injection(
     assert result.returncode != 0
     assert not backtick_marker.exists()
     assert not substitution_marker.exists()
+
+
+def test_release_smoke_make_targets_are_read_only_and_caller_owned() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    start = makefile.index(".PHONY: smoke-release-mac-app")
+    end = makefile.index("# Convenience: copy the built .app to /Applications.")
+    target_slice = makefile[start:end]
+
+    assert "smoke-release-mac-app:" in target_slice
+    assert "smoke-release-installed-mac-app:" in target_slice
+    assert (
+        target_slice.count("uv run python desktop/build/package_release_smoke.py") == 2
+    )
+    for variable in (
+        "RELEASE_SMOKE_EXECUTABLE",
+        "RELEASE_SMOKE_ARTIFACT",
+        "RELEASE_SMOKE_OUTPUT_ROOT",
+        "RELEASE_SMOKE_UV_CACHE_DIR",
+        "RELEASE_SMOKE_PLAYWRIGHT_MODULE",
+        "RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256",
+    ):
+        assert variable in target_slice
+    assert (
+        "RELEASE_SMOKE_INSTALLED_EXECUTABLE ?= "
+        "/Applications/Deeper Notebook.app/Contents/MacOS/Deeper Notebook"
+    ) in target_slice
+
+    recipe_lines = [
+        line.strip().lower()
+        for line in target_slice.splitlines()
+        if line.lstrip().startswith("@")
+    ]
+    forbidden = re.compile(r"(?:^|[\s;])(?:cp|ditto|rm|pkill|xattr|install)(?:$|[\s;])")
+    assert not any(forbidden.search(line) for line in recipe_lines)
+    assert all("build-mac-install" not in line for line in recipe_lines)
+    assert all("/applications/" not in line for line in recipe_lines)
+
+
+def test_packaged_v0_8_114_todo_records_current_local_release_truth() -> None:
+    todo = TODO_FILE.read_text(encoding="utf-8")
+    section = todo.split("### 0.3 ", 1)[1].split("\n---", 1)[0]
+
+    for value in (CURRENT_APP_SHA256, CURRENT_SURREAL_SHA256, CURRENT_DMG_SHA256):
+        assert value in section
+    assert "/Applications/Deeper Notebook.app.backup-20260821T085744Z" in section
+    assert TASK8_RECEIPT_ROOT in section
+    for receipt in (
+        "staged-corrected-default.json",
+        "staged-corrected-off.json",
+        "installed-corrected-default.json",
+        "installed-corrected-off.json",
+        "installed-browser-default-allowlist.json",
+        "installed-browser-off-fresh.json",
+    ):
+        assert receipt in section
+    assert "install proof deferred" not in section.lower()
+    assert "developer id" in section.lower()
+    assert "notar" in section.lower()
+    assert "windows" in section.lower()
+    assert "credential" in section.lower()
+    assert "support" in section.lower()
+    assert "push" in section.lower()
+    assert "publication" in section.lower()
 
 
 def test_package_smoke_target_preserves_literal_environment_dollars_in_the_app(

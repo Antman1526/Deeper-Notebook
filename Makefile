@@ -536,6 +536,28 @@ smoke-mac-app:
 
 smoke-installed-mac-app: smoke-mac-app
 
+# Read-only release proof for an already-built staged or installed app. Every
+# path belongs to the caller; these targets never copy, remove, or alter an
+# application bundle. The installed default is an input path only.
+.PHONY: smoke-release-mac-app smoke-release-installed-mac-app
+RELEASE_SMOKE_EXECUTABLE ?=
+RELEASE_SMOKE_ARTIFACT ?=
+RELEASE_SMOKE_OUTPUT_ROOT ?=
+RELEASE_SMOKE_UV_CACHE_DIR ?=
+RELEASE_SMOKE_PLAYWRIGHT_MODULE ?=
+RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256 ?=
+RELEASE_SMOKE_INSTALLED_EXECUTABLE ?= /Applications/Deeper Notebook.app/Contents/MacOS/Deeper Notebook
+export RELEASE_SMOKE_EXECUTABLE RELEASE_SMOKE_ARTIFACT RELEASE_SMOKE_OUTPUT_ROOT
+export RELEASE_SMOKE_UV_CACHE_DIR RELEASE_SMOKE_PLAYWRIGHT_MODULE
+export RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256 RELEASE_SMOKE_INSTALLED_EXECUTABLE
+RELEASE_SMOKE_EXPECTED_HASH_ARGUMENT = $(if $(strip $(RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256)), --expected-artifact-sha256 "$${RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256}")
+
+smoke-release-mac-app:
+	@uv run python desktop/build/package_release_smoke.py --executable "$${RELEASE_SMOKE_EXECUTABLE}" --artifact "$${RELEASE_SMOKE_ARTIFACT}" --output-root "$${RELEASE_SMOKE_OUTPUT_ROOT}" --uv-cache-dir "$${RELEASE_SMOKE_UV_CACHE_DIR}" --playwright-module "$${RELEASE_SMOKE_PLAYWRIGHT_MODULE}"$(RELEASE_SMOKE_EXPECTED_HASH_ARGUMENT)
+
+smoke-release-installed-mac-app:
+	@uv run python desktop/build/package_release_smoke.py --executable "$${RELEASE_SMOKE_EXECUTABLE:-$${RELEASE_SMOKE_INSTALLED_EXECUTABLE}}" --artifact "$${RELEASE_SMOKE_ARTIFACT}" --output-root "$${RELEASE_SMOKE_OUTPUT_ROOT}" --uv-cache-dir "$${RELEASE_SMOKE_UV_CACHE_DIR}" --playwright-module "$${RELEASE_SMOKE_PLAYWRIGHT_MODULE}"$(RELEASE_SMOKE_EXPECTED_HASH_ARGUMENT)
+
 # Convenience: copy the built .app to /Applications.
 build-mac-install:
 	@if [ ! -d "dist/Deeper Notebook.app" ]; then \

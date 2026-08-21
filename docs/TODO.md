@@ -38,22 +38,40 @@ called a complete remote-history purge. The recoverable backup is
 with SHA-256
 `69564a46f08452675d70d5b2e56ecd77b6fa12edd4e2e8ea01305e74741effd7`.
 
-### 0.3 Packaged v0.8.114 build — staged artifact verified; install proof deferred to Task 8
+### 0.3 Packaged v0.8.114 build — staged and installed local proof recorded
 
-`make build-mac` completed at source commit `d043dd18` and produced a locally
-signed arm64 v0.8.114 bundle. Independent manifest, content, code-signing,
-DMG, and default-on package-smoke checks verified the staged artifact in
-`dist/`:
+The authorized Task 8 package was verified from frozen package authority
+`225f42285e6cb009609ccb0d4cf0bd4f20a9f67b`. The arm64 app, bundled runtime,
+and DMG are byte-identified as follows:
 
-- app executable SHA-256: `911d75c3f425b839e244b9e613195b3313394c8a7e1307676d580e6af0ec439e`
-- DMG SHA-256: `90ec59291a4bd6fb3e33f295b6134709eafdd6c341af851fc83748238b6a80c8`
+- app executable SHA-256 (staged and installed): `e06d908649762446fb08cc6de28ce8470b4ba711296650fdfcca6937fc136475`
+- bundled Surreal runtime SHA-256 (staged and installed): `30babdd7fe6d84187cd2196a01df7c623aa1700dc24e5d229b2703c718315b26`
+- DMG SHA-256: `92ab2bf32c783bce103c12cb1d81030b8e3da73784a77264afa3ce5dad98678a`
+- preserved pre-install backup: `/Applications/Deeper Notebook.app.backup-20260821T085744Z`
 
-The current `/Applications/Deeper Notebook.app` executable was checked
-read-only and has SHA-256
-`1ccaadaa54320b4e605e0f614a889a10954be9e9872f058e41ba2c263f9c7c91`, which
-does not equal the staged artifact. This task did not install or replace the
-application. Do not call v0.8.114 installed until Task 8 performs an
-authorized install and proves hash equality, then reruns installed smoke.
+Task 8 receipts remain preserved under
+`/private/tmp/deeper-notebook-task8-20260821T082218Z/`:
+
+- `staged-corrected-default.json` and `staged-corrected-off.json` passed
+  package startup, readiness, runtime-feature, and clean-shutdown checks.
+- `installed-corrected-default.json` and `installed-corrected-off.json` passed
+  the same checks against `/Applications/Deeper Notebook.app`; the installed
+  executable equals the staged executable hash above.
+- `installed-browser-default-allowlist.json` passed the default Gemini
+  Forward workspace and all six enabled features with GET-only loopback
+  traffic.
+- `installed-browser-off-fresh.json` passed the usable Sources surface,
+  `sourceVisuals=false`, GET-only traffic, and zero source-visual mutation.
+
+The original failed `staged-default.json` is retained as a diagnostic receipt:
+its missing isolated configuration selected the first-run wizard before
+readiness. The corrected receipts are the current package proof; no receipt or
+Task 8 log was deleted. The local signature is ad hoc, so Developer ID signing,
+notarization, Gatekeeper clean-machine proof, and updater/public-distribution
+proof remain open. Windows packaging remains open. Credential-owner action and
+GitHub Support's cached pull-request-ref purge remain open; no credentials were
+entered. Push, publication, remote-history changes, and local-main merge are
+separate owner-authorized gates and were not performed.
 
 ---
 
