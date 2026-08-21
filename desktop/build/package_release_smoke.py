@@ -300,20 +300,41 @@ def _posix_process_group_exists(group_id: int) -> bool:
     return True
 
 
-def _terminate_browser_process_tree(process: subprocess.Popen[bytes]) -> None:
-    """Stop the isolated probe process group without touching a successful probe."""
+def _owned_posix_process_group(process: subprocess.Popen[bytes]) -> int | None:
+    """Capture the session-created group before the leader can be reaped."""
+    if os.name != "posix":
+        return None
+    try:
+        group_id = os.getpgid(process.pid)
+        session_id = os.getsid(process.pid)
+    except OSError as error:
+        raise SmokeFailure(
+            "browser probe could not establish its process group"
+        ) from error
+    if group_id != process.pid or session_id != process.pid:
+        raise SmokeFailure("browser probe did not create an isolated process group")
+    return group_id
+
+
+def _terminate_browser_process_tree(
+    process: subprocess.Popen[bytes], *, posix_group_id: int | None = None
+) -> None:
+    """Terminate the verified browser-probe tree while retaining bounded cleanup."""
     if os.name == "posix":
-        group_id = process.pid
+        if posix_group_id is None:
+            return
         try:
-            os.killpg(group_id, signal.SIGTERM)
+            os.killpg(posix_group_id, signal.SIGTERM)
         except (ProcessLookupError, PermissionError, OSError):
             return
         deadline = time.monotonic() + BROWSER_PROBE_TERMINATE_GRACE_SECONDS
-        while _posix_process_group_exists(group_id) and time.monotonic() < deadline:
+        while (
+            _posix_process_group_exists(posix_group_id) and time.monotonic() < deadline
+        ):
             time.sleep(0.01)
-        if _posix_process_group_exists(group_id):
+        if _posix_process_group_exists(posix_group_id):
             try:
-                os.killpg(group_id, signal.SIGKILL)
+                os.killpg(posix_group_id, signal.SIGKILL)
             except (ProcessLookupError, PermissionError, OSError):
                 pass
         return
@@ -342,7 +363,9 @@ def _terminate_browser_process_tree(process: subprocess.Popen[bytes]) -> None:
         pass
 
 
-def _wait_for_browser_probe_exit(process: subprocess.Popen[bytes]) -> None:
+def _wait_for_browser_probe_exit(
+    process: subprocess.Popen[bytes], *, posix_group_id: int | None
+) -> None:
     """Wait for the probe leader only after a bounded failure cleanup."""
     if process.poll() is not None:
         process.wait()
@@ -350,7 +373,7 @@ def _wait_for_browser_probe_exit(process: subprocess.Popen[bytes]) -> None:
     try:
         process.wait(timeout=BROWSER_PROBE_THREAD_JOIN_SECONDS)
     except subprocess.TimeoutExpired:
-        _terminate_browser_process_tree(process)
+        _terminate_browser_process_tree(process, posix_group_id=posix_group_id)
         try:
             process.wait(timeout=BROWSER_PROBE_THREAD_JOIN_SECONDS)
         except subprocess.TimeoutExpired as error:
@@ -360,6 +383,8 @@ def _wait_for_browser_probe_exit(process: subprocess.Popen[bytes]) -> None:
 def _join_browser_capture_threads(
     captures: list[tuple[_BoundedPipeCapture, Any, threading.Thread]],
     process: subprocess.Popen[bytes],
+    *,
+    posix_group_id: int | None,
 ) -> bool:
     """Bound output-drain cleanup even if a descendant retained a pipe."""
     for _capture, _stream, thread in captures:
@@ -367,7 +392,7 @@ def _join_browser_capture_threads(
     if all(not thread.is_alive() for _capture, _stream, thread in captures):
         return True
 
-    _terminate_browser_process_tree(process)
+    _terminate_browser_process_tree(process, posix_group_id=posix_group_id)
     for capture, stream, _thread in captures:
         capture.close_stream(stream)
     for _capture, _stream, thread in captures:
@@ -395,6 +420,7 @@ def _run_browser_probe(
         command,
         **popen_options,
     )
+    posix_group_id = _owned_posix_process_group(process)
     stdout_limit_event = threading.Event()
     termination_lock = threading.Lock()
     termination_started = False
@@ -405,7 +431,7 @@ def _run_browser_probe(
             if termination_started:
                 return
             termination_started = True
-        _terminate_browser_process_tree(process)
+        _terminate_browser_process_tree(process, posix_group_id=posix_group_id)
 
     def terminate_for_stdout_limit() -> None:
         stdout_limit_event.set()
@@ -418,7 +444,7 @@ def _run_browser_probe(
     stderr_capture = _BoundedPipeCapture(MAX_BROWSER_STDERR_BYTES)
     if process.stdout is None or process.stderr is None:
         terminate_process_tree_once()
-        _wait_for_browser_probe_exit(process)
+        _wait_for_browser_probe_exit(process, posix_group_id=posix_group_id)
         raise SmokeFailure("browser probe could not capture its output pipes")
     stdout_thread = threading.Thread(
         target=stdout_capture.drain,
@@ -447,16 +473,19 @@ def _run_browser_probe(
                 terminate_process_tree_once()
                 break
             stdout_limit_event.wait(min(remaining, BROWSER_PROBE_POLL_SECONDS))
-        _wait_for_browser_probe_exit(process)
+        _wait_for_browser_probe_exit(process, posix_group_id=posix_group_id)
     except BaseException:
         terminate_process_tree_once()
         try:
-            _wait_for_browser_probe_exit(process)
+            _wait_for_browser_probe_exit(process, posix_group_id=posix_group_id)
         except SmokeFailure:
             pass
         raise
     finally:
-        capture_threads_stopped = _join_browser_capture_threads(captures, process)
+        terminate_process_tree_once()
+        capture_threads_stopped = _join_browser_capture_threads(
+            captures, process, posix_group_id=posix_group_id
+        )
         for capture, stream, _thread in captures:
             capture.close_stream(stream)
 

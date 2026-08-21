@@ -712,6 +712,49 @@ def test_browser_probe_timeout_terminates_descendants_holding_pipes(
         pytest.fail("browser probe descendant survived process-group termination")
 
 
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def test_browser_probe_reaps_descendants_after_a_clean_leader_exit(
+    tmp_path: Path,
+) -> None:
+    descendant_pid_path = tmp_path / "clean-leader-descendant.pid"
+    started_at = time.monotonic()
+    result = release_smoke._run_browser_probe(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import pathlib, subprocess, sys; "
+                "child = subprocess.Popen(['/bin/sleep', '2'], "
+                "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, "
+                "stderr=subprocess.DEVNULL); "
+                "pathlib.Path(sys.argv[1]).write_text(str(child.pid), "
+                "encoding='utf-8'); "
+                'sys.stdout.write(\'{"status":"passed"}\'); '
+                "sys.stdout.flush()"
+            ),
+            str(descendant_pid_path),
+        ],
+        cwd=tmp_path,
+        timeout_seconds=5.0,
+    )
+    elapsed = time.monotonic() - started_at
+
+    assert result.returncode == 0
+    assert result.stdout == b'{"status":"passed"}'
+    assert elapsed < 1.0
+    assert descendant_pid_path.is_file()
+    descendant_pid = int(descendant_pid_path.read_text(encoding="utf-8"))
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(descendant_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.01)
+    else:
+        pytest.fail("browser probe clean-exit descendant survived process-group reap")
+
+
 def test_browser_probe_transport_bounds_stderr_without_deadlocking(
     tmp_path: Path,
 ) -> None:
