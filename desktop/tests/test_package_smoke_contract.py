@@ -1276,6 +1276,81 @@ def test_make_inputs_reject_environment_file_swapped_before_descriptor_open(
         raise AssertionError("expected swapped environment file rejection")
 
 
+def run_make_smoke_inputs(
+    *, environment_file: Path, receipt_path: Path
+) -> subprocess.CompletedProcess[str]:
+    environment = {
+        **os.environ,
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "SMOKE_EXECUTABLE": sys.executable,
+        "SMOKE_READINESS_FILE": "/tmp/desktop-readiness.json",
+        "SMOKE_ARTIFACT": "/tmp/deeper-notebook.dmg",
+        "SMOKE_RECEIPT": str(receipt_path),
+        "SMOKE_ENVIRONMENT_FILE": str(environment_file),
+    }
+    return subprocess.run(
+        [sys.executable, str(PACKAGE_SMOKE_SCRIPT), "--make-smoke-inputs"],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+
+def assert_make_input_failure_receipt(
+    result: subprocess.CompletedProcess[str], receipt_path: Path, error: str
+) -> None:
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["schema_version"] == 2
+    assert receipt["status"] == "failed"
+    assert receipt["checks"] == {}
+    assert "executable" not in receipt
+    assert error in receipt["error"]
+    assert error in result.stderr
+    assert list(receipt_path.parent.glob(f".{receipt_path.name}.*.tmp")) == []
+
+
+def test_make_inputs_write_a_receipt_for_an_overlong_environment_path(
+    tmp_path: Path,
+) -> None:
+    receipt_path = tmp_path / "receipt.json"
+    result = run_make_smoke_inputs(
+        environment_file=tmp_path / ("x" * 300), receipt_path=receipt_path
+    )
+
+    assert_make_input_failure_receipt(
+        result,
+        receipt_path,
+        "SMOKE_ENVIRONMENT_FILE could not be inspected: File name too long",
+    )
+
+
+def test_make_inputs_write_a_receipt_for_an_unreadable_environment_parent(
+    tmp_path: Path,
+) -> None:
+    protected_directory = tmp_path / "unreadable"
+    protected_directory.mkdir()
+    environment_file = protected_directory / "smoke-environment.txt"
+    environment_file.write_text("PROBE=blocked", encoding="utf-8")
+    receipt_path = tmp_path / "receipt.json"
+    protected_directory.chmod(0)
+    try:
+        result = run_make_smoke_inputs(
+            environment_file=environment_file, receipt_path=receipt_path
+        )
+    finally:
+        protected_directory.chmod(0o700)
+
+    assert_make_input_failure_receipt(
+        result,
+        receipt_path,
+        "SMOKE_ENVIRONMENT_FILE could not be inspected: Permission denied",
+    )
+
+
 def test_dynamic_smoke_writes_bounded_receipts_for_invalid_loopback_urls(
     monkeypatch, tmp_path: Path
 ) -> None:

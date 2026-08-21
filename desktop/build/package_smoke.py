@@ -881,6 +881,8 @@ def read_make_environment_file(environment_path: Path) -> str:
         expected = environment_path.lstat()
     except FileNotFoundError as error:
         raise SmokeFailure("SMOKE_ENVIRONMENT_FILE does not exist") from error
+    except OSError as error:
+        raise make_environment_file_os_error("be inspected", error) from error
     if not stat.S_ISREG(expected.st_mode):
         raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be a regular file")
 
@@ -890,24 +892,39 @@ def read_make_environment_file(environment_path: Path) -> str:
     try:
         descriptor = os.open(environment_path, flags)
     except OSError as error:
-        raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be a regular file") from error
+        raise make_environment_file_os_error("be opened", error) from error
     try:
-        observed = os.fstat(descriptor)
+        try:
+            observed = os.fstat(descriptor)
+        except OSError as error:
+            raise make_environment_file_os_error("be inspected", error) from error
         if not stat.S_ISREG(observed.st_mode):
             raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be a regular file")
         if (expected.st_dev, expected.st_ino) != (observed.st_dev, observed.st_ino):
             raise SmokeFailure("SMOKE_ENVIRONMENT_FILE changed before it was opened")
         if observed.st_size > MAX_MAKE_ENVIRONMENT_BYTES:
             raise SmokeFailure("SMOKE_ENVIRONMENT_FILE exceeds the maximum size")
-        contents = os.read(descriptor, MAX_MAKE_ENVIRONMENT_BYTES + 1)
+        try:
+            contents = os.read(descriptor, MAX_MAKE_ENVIRONMENT_BYTES + 1)
+        except OSError as error:
+            raise make_environment_file_os_error("be read", error) from error
     finally:
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except OSError as error:
+            raise make_environment_file_os_error("be closed", error) from error
     if len(contents) > MAX_MAKE_ENVIRONMENT_BYTES:
         raise SmokeFailure("SMOKE_ENVIRONMENT_FILE exceeds the maximum size")
     try:
         return contents.decode("utf-8")
     except UnicodeDecodeError as error:
         raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be valid UTF-8") from error
+
+
+def make_environment_file_os_error(operation: str, error: OSError) -> SmokeFailure:
+    """Keep pre-launch filesystem failures inside the receipt error contract."""
+    detail = error.strerror or error.__class__.__name__
+    return SmokeFailure(f"SMOKE_ENVIRONMENT_FILE could not {operation}: {detail}")
 
 
 def parse_timeout_seconds(value: str) -> float:
