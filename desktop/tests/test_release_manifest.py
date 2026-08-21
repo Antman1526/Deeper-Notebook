@@ -312,6 +312,25 @@ def test_makefile_build_contract_is_portable_and_uses_canonical_outputs() -> Non
     assert "/Applications/Deeper Notebook.app" in makefile
 
 
+def test_package_smoke_targets_are_explicit_and_never_mutate_applications() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+
+    assert "smoke-mac-app:" in makefile
+    assert "smoke-installed-mac-app: smoke-mac-app" in makefile
+    assert "$(SMOKE_EXECUTABLE)" in makefile
+    assert "$(SMOKE_ARTIFACT)" in makefile
+    assert "$(SMOKE_RECEIPT)" in makefile
+    assert "$(SMOKE_READINESS_FILE)" in makefile
+    smoke_targets = makefile[
+        makefile.index(".PHONY: smoke-mac-app") : makefile.index(
+            "# Convenience: copy the built .app to /Applications."
+        )
+    ]
+    assert "/Applications" not in smoke_targets
+    assert "rm -" not in smoke_targets
+    assert "cp -" not in smoke_targets
+
+
 def test_makefile_prepares_build_venv_before_desktop_memory_precondition_tests() -> (
     None
 ):

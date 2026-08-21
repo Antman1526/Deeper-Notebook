@@ -515,6 +515,33 @@ build-mac-dmg:
 	@echo "💾 Building .dmg..."
 	@bash desktop/build/post_build_mac.sh
 
+# Smoke an already-built app without installing, copying, or removing it.
+# Every input is caller-owned so this target is safe for local and CI probes.
+.PHONY: smoke-mac-app smoke-installed-mac-app
+SMOKE_EXECUTABLE ?=
+SMOKE_READINESS_FILE ?=
+SMOKE_ARTIFACT ?=
+SMOKE_RECEIPT ?=
+SMOKE_ARTIFACT_SHA256 ?=
+SMOKE_ENVIRONMENT ?=
+SMOKE_EXPECTED_FEATURE ?=
+SMOKE_TIMEOUT_SECONDS ?= 90
+SMOKE_OPTIONAL_ARGS = $(if $(SMOKE_ARTIFACT_SHA256),--expected-artifact-sha256 "$(SMOKE_ARTIFACT)=$(SMOKE_ARTIFACT_SHA256)") $(foreach environment,$(SMOKE_ENVIRONMENT),--environment "$(environment)") $(foreach feature,$(SMOKE_EXPECTED_FEATURE),--expected-feature "$(feature)")
+
+smoke-mac-app:
+	@if [ -z "$(SMOKE_EXECUTABLE)" ] || [ -z "$(SMOKE_READINESS_FILE)" ] || [ -z "$(SMOKE_ARTIFACT)" ] || [ -z "$(SMOKE_RECEIPT)" ]; then \
+		echo "❌ Set SMOKE_EXECUTABLE, SMOKE_READINESS_FILE, SMOKE_ARTIFACT, and SMOKE_RECEIPT."; \
+		exit 2; \
+	fi
+	@uv run python desktop/build/package_smoke.py \
+		--executable "$(SMOKE_EXECUTABLE)" \
+		--readiness-file "$(SMOKE_READINESS_FILE)" \
+		--artifact "$(SMOKE_ARTIFACT)" \
+		--receipt "$(SMOKE_RECEIPT)" \
+		--timeout-seconds "$(SMOKE_TIMEOUT_SECONDS)" $(SMOKE_OPTIONAL_ARGS)
+
+smoke-installed-mac-app: smoke-mac-app
+
 # Convenience: copy the built .app to /Applications.
 build-mac-install:
 	@if [ ! -d "dist/Deeper Notebook.app" ]; then \
