@@ -6,13 +6,16 @@ import argparse
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import time
 from datetime import UTC, datetime
+from http.client import HTTPException
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -20,11 +23,19 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import ProxyHandler, build_opener
 
 RECEIPT_SCHEMA_VERSION = 2
+MAX_TIMEOUT_SECONDS = 300.0
 _LOCAL_OPENER = build_opener(ProxyHandler({}))
 
 
 class SmokeFailure(RuntimeError):
     """A required package proof did not complete."""
+
+
+class SmokeArgumentParser(argparse.ArgumentParser):
+    """Raise receipt-friendly errors instead of exiting before validation."""
+
+    def error(self, message: str) -> None:
+        raise SmokeFailure(message)
 
 
 def utc_now() -> str:
@@ -121,7 +132,7 @@ def wait_for_url(url: str, timeout_seconds: float, marker: str | None = None) ->
                     last_error = f"response did not contain required marker {marker!r}"
                 else:
                     return
-        except (OSError, URLError) as error:
+        except (HTTPException, OSError, URLError, ValueError) as error:
             last_error = str(error)
         time.sleep(0.1)
     raise SmokeFailure(f"timed out waiting for {url}: {last_error}")
@@ -142,35 +153,92 @@ def wait_for_json(url: str, timeout_seconds: float) -> dict[str, Any]:
                     if isinstance(payload, dict):
                         return payload
                     last_error = "response was not a JSON object"
-        except (OSError, URLError, json.JSONDecodeError) as error:
+        except (HTTPException, OSError, URLError, ValueError) as error:
             last_error = str(error)
         time.sleep(0.1)
     raise SmokeFailure(f"timed out waiting for JSON from {url}: {last_error}")
 
 
-def require_loopback_url(url: str, label: str) -> str:
-    """Reject readiness values that could send a local proof off-device."""
-    parsed = urlparse(url)
+def validate_http_url(url: str, label: str, *, loopback_only: bool) -> str:
+    """Reject malformed URLs before a probe can escape receipt handling."""
+    if not url or "\x00" in url or any(character.isspace() for character in url):
+        raise SmokeFailure(f"{label} must be an HTTP URL")
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as error:
+        raise SmokeFailure(f"{label} must be an HTTP URL") from error
     if (
         parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
+        or not hostname
         or parsed.username is not None
         or parsed.password is not None
+        or (port is not None and not 1 <= port <= 65535)
     ):
-        raise SmokeFailure(f"readiness {label} must be an HTTP loopback URL")
+        raise SmokeFailure(f"{label} must be an HTTP URL")
+    if not loopback_only:
+        return url
     try:
-        is_loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+        is_loopback = ipaddress.ip_address(hostname).is_loopback
     except ValueError:
         is_loopback = False
     if not is_loopback:
-        raise SmokeFailure(f"readiness {label} must be an HTTP loopback URL")
+        raise SmokeFailure(f"{label} must be an HTTP loopback URL")
     return url
+
+
+def require_loopback_url(url: str, label: str) -> str:
+    """Reject readiness values that could send a local proof off-device."""
+    try:
+        return validate_http_url(
+            url, f"readiness {label}", loopback_only=True
+        )
+    except SmokeFailure as error:
+        raise SmokeFailure(
+            f"readiness {label} must be an HTTP loopback URL"
+        ) from error
+
+
+def require_absent_readiness_file(readiness_file: Path) -> None:
+    """Refuse a stale or non-regular marker instead of trusting its contents."""
+    try:
+        metadata = readiness_file.lstat()
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SmokeFailure(
+            "readiness file must be an absent regular file before launch"
+        )
+    raise SmokeFailure("readiness file must not exist before launch")
+
+
+def read_regular_readiness_file(readiness_file: Path) -> tuple[dict[str, Any], os.stat_result]:
+    """Read one regular, non-symlink marker produced after this launch begins."""
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(readiness_file, flags)
+    except FileNotFoundError:
+        raise
+    except OSError as error:
+        raise SmokeFailure("readiness file must be a regular file") from error
+    with os.fdopen(descriptor, "r", encoding="utf-8") as marker_file:
+        metadata = os.fstat(marker_file.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise SmokeFailure("readiness file must be a regular file")
+        payload = json.load(marker_file)
+    if not isinstance(payload, dict):
+        raise SmokeFailure("readiness file must contain a JSON object")
+    return payload, metadata
 
 
 def wait_for_readiness(
     readiness_file: Path,
     process: subprocess.Popen[str],
     timeout_seconds: float,
+    launch_started_at_ns: int,
 ) -> tuple[str, str]:
     """Poll the launcher's atomically-written readiness receipt."""
     deadline = time.monotonic() + timeout_seconds
@@ -182,12 +250,22 @@ def wait_for_readiness(
                 f"process exited with code {returncode} before readiness"
             )
         try:
-            payload = json.loads(readiness_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
+            payload, metadata = read_regular_readiness_file(readiness_file)
+        except FileNotFoundError as error:
+            last_error = f"readiness file has not been written: {error}"
+        except json.JSONDecodeError as error:
             last_error = f"readiness file is not valid JSON: {error}"
         else:
-            if not isinstance(payload, dict):
-                last_error = "readiness file must contain a JSON object"
+            if metadata.st_mtime_ns < launch_started_at_ns:
+                raise SmokeFailure("readiness file is not fresh for this launch")
+            if payload.get("status") != "ready":
+                last_error = "readiness file is not ready"
+            elif type(payload.get("pid")) is not int:
+                last_error = "readiness file is missing an integer launch pid"
+            elif payload["pid"] != process.pid:
+                raise SmokeFailure(
+                    "readiness pid does not match launched process"
+                )
             else:
                 api_url = payload.get("api_url")
                 frontend_url = payload.get("frontend_url")
@@ -231,19 +309,34 @@ def check_expected_features(
     return actual_features, feature_results
 
 
-def stop_process(process: subprocess.Popen[str], timeout_seconds: float) -> None:
-    if process.poll() is not None:
-        process.wait(timeout=timeout_seconds)
-        return
+def stop_process(
+    process: subprocess.Popen[str],
+    timeout_seconds: float,
+    owned_process_group: int | None = None,
+) -> None:
+    """Stop only the session created for this smoke process, then reap its leader."""
     if os.name == "posix":
-        os.killpg(process.pid, signal.SIGTERM)
+        # `start_new_session=True` makes this the launcher's process group.
+        # Preserve it at spawn time instead of deriving a PID after the leader
+        # has exited, when that PID could already refer to unrelated work.
+        process_group = owned_process_group or getattr(
+            process, "_package_smoke_owned_process_group", process.pid
+        )
+        try:
+            os.killpg(process_group, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
     else:
-        process.terminate()
+        if process.poll() is None:
+            process.terminate()
     try:
         process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         if os.name == "posix":
-            os.killpg(process.pid, signal.SIGKILL)
+            try:
+                os.killpg(process_group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         else:
             process.kill()
         process.wait(timeout=timeout_seconds)
@@ -271,8 +364,8 @@ def write_receipt(path: Path, receipt: dict[str, Any]) -> None:
         raise
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
+    parser = SmokeArgumentParser(description=__doc__)
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--executable-arg", action="append", default=[])
     parser.add_argument("--api-url")
@@ -287,14 +380,60 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--artifact", type=Path, action="append", default=[])
     parser.add_argument("--expected-artifact-sha256", action="append", default=[])
     parser.add_argument("--receipt", type=Path, required=True)
-    parser.add_argument("--timeout-seconds", type=float, default=60.0)
-    return parser.parse_args()
+    parser.add_argument("--timeout-seconds", default="60.0")
+    return parser.parse_args(arguments)
+
+
+def parse_timeout_seconds(value: str) -> float:
+    """Keep invalid caller timeouts inside the normal receipt failure path."""
+    try:
+        timeout_seconds = float(value)
+    except (TypeError, ValueError) as error:
+        raise SmokeFailure(
+            "timeout-seconds must be a finite number from 0 to 300"
+        ) from error
+    if not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= MAX_TIMEOUT_SECONDS:
+        raise SmokeFailure("timeout-seconds must be a finite number from 0 to 300")
+    return timeout_seconds
+
+
+def receipt_path_from_arguments(arguments: list[str]) -> Path | None:
+    """Find an explicit receipt path even when later CLI parsing fails."""
+    for index, argument in enumerate(arguments):
+        if argument == "--receipt" and index + 1 < len(arguments):
+            return Path(arguments[index + 1])
+        if argument.startswith("--receipt="):
+            return Path(argument.removeprefix("--receipt="))
+    return None
+
+
+def write_argument_failure_receipt(arguments: list[str], error: SmokeFailure) -> None:
+    """Write a minimal, machine-readable failure record when its path is known."""
+    receipt_path = receipt_path_from_arguments(arguments)
+    if receipt_path is None:
+        return
+    timestamp = utc_now()
+    write_receipt(
+        receipt_path,
+        {
+            "schema_version": RECEIPT_SCHEMA_VERSION,
+            "status": "failed",
+            "started_at": timestamp,
+            "completed_at": timestamp,
+            "checks": {},
+            "error": str(error),
+        },
+    )
 
 
 def main() -> int:
-    args = parse_args()
-    if args.timeout_seconds <= 0:
-        raise SystemExit("timeout-seconds must be positive")
+    arguments = sys.argv[1:]
+    try:
+        args = parse_args(arguments)
+    except SmokeFailure as error:
+        write_argument_failure_receipt(arguments, error)
+        print(str(error), file=sys.stderr)
+        return 1
 
     runtime_paths = [str(path) for path in args.required_runtime_path]
     resolved_urls = {
@@ -329,15 +468,20 @@ def main() -> int:
     process: subprocess.Popen[str] | None = None
 
     try:
+        args.timeout_seconds = parse_timeout_seconds(args.timeout_seconds)
         if args.readiness_file is not None:
             if args.api_url is not None or args.frontend_url is not None:
                 raise SmokeFailure(
                     "--api-url and --frontend-url are forbidden with --readiness-file"
                 )
+            require_absent_readiness_file(args.readiness_file)
         elif args.api_url is None or args.frontend_url is None:
             raise SmokeFailure(
                 "--api-url and --frontend-url are required without --readiness-file"
             )
+        else:
+            validate_http_url(args.api_url, "api-url", loopback_only=False)
+            validate_http_url(args.frontend_url, "frontend-url", loopback_only=False)
         launch_environment = os.environ.copy()
         launch_environment.update(parse_environment(args.environment))
         expected_features = parse_expected_features(args.expected_feature)
@@ -365,12 +509,15 @@ def main() -> int:
             )
         receipt["checks"]["bundled_runtime_paths"]["passed"] = True
 
+        launch_started_at_ns = time.time_ns()
         process = subprocess.Popen(
             [str(args.executable), *args.executable_arg],
             env=launch_environment,
             start_new_session=True,
             text=True,
         )
+        if os.name == "posix":
+            setattr(process, "_package_smoke_owned_process_group", process.pid)
         time.sleep(0.1)
         if process.poll() is not None:
             raise SmokeFailure(
@@ -380,7 +527,10 @@ def main() -> int:
 
         if args.readiness_file is not None:
             api_url, frontend_url = wait_for_readiness(
-                args.readiness_file, process, args.timeout_seconds
+                args.readiness_file,
+                process,
+                args.timeout_seconds,
+                launch_started_at_ns,
             )
             resolved_urls.update(api_url=api_url, frontend_url=frontend_url)
             receipt["checks"]["api_readiness"]["url"] = endpoint_url(
@@ -405,14 +555,16 @@ def main() -> int:
             )
             receipt["feature_results"] = feature_results
             receipt["checks"]["runtime_features"] = {
-                "passed": True,
+                "passed": all(
+                    result["passed"] for result in feature_results.values()
+                ),
                 "skipped": False,
                 "url": endpoint_url(api_url, "/api/features"),
                 "expected": expected_features,
                 "actual": actual_features,
                 "results": feature_results,
             }
-            if any(not result["passed"] for result in feature_results.values()):
+            if not receipt["checks"]["runtime_features"]["passed"]:
                 raise SmokeFailure("feature mismatch for expected runtime features")
         else:
             receipt["checks"]["runtime_features"]["passed"] = True
@@ -425,7 +577,7 @@ def main() -> int:
         process = None
         receipt["status"] = "passed"
         return 0
-    except (OSError, SmokeFailure) as error:
+    except (HTTPException, OSError, SmokeFailure, ValueError) as error:
         receipt["error"] = str(error)
         print(str(error), file=sys.stderr)
         return 1

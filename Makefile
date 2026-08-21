@@ -526,7 +526,7 @@ SMOKE_ARTIFACT_SHA256 ?=
 SMOKE_ENVIRONMENT ?=
 SMOKE_EXPECTED_FEATURE ?=
 SMOKE_TIMEOUT_SECONDS ?= 90
-SMOKE_OPTIONAL_ARGS = $(if $(SMOKE_ARTIFACT_SHA256),--expected-artifact-sha256 "$(SMOKE_ARTIFACT)=$(SMOKE_ARTIFACT_SHA256)") $(foreach environment,$(SMOKE_ENVIRONMENT),--environment "$(environment)") $(foreach feature,$(SMOKE_EXPECTED_FEATURE),--expected-feature "$(feature)")
+SMOKE_OPTIONAL_ARGS = $(if $(SMOKE_ARTIFACT_SHA256),--expected-artifact-sha256 "$(SMOKE_ARTIFACT)=$(SMOKE_ARTIFACT_SHA256)") $(if $(SMOKE_ENVIRONMENT),--environment "$(SMOKE_ENVIRONMENT)") $(if $(SMOKE_EXPECTED_FEATURE),--expected-feature "$(SMOKE_EXPECTED_FEATURE)")
 
 smoke-mac-app:
 	@if [ -z "$(SMOKE_EXECUTABLE)" ] || [ -z "$(SMOKE_READINESS_FILE)" ] || [ -z "$(SMOKE_ARTIFACT)" ] || [ -z "$(SMOKE_RECEIPT)" ]; then \

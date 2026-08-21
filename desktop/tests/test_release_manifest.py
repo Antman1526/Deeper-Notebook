@@ -331,6 +331,30 @@ def test_package_smoke_targets_are_explicit_and_never_mutate_applications() -> N
     assert "cp -" not in smoke_targets
 
 
+def test_package_smoke_target_preserves_a_spaced_environment_value() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "-n",
+            "smoke-mac-app",
+            "SMOKE_EXECUTABLE=/tmp/deeper-notebook",
+            "SMOKE_READINESS_FILE=/tmp/desktop-readiness.json",
+            "SMOKE_ARTIFACT=/tmp/deeper-notebook.dmg",
+            "SMOKE_RECEIPT=/tmp/package-smoke-receipt.json",
+            "SMOKE_ENVIRONMENT=DEEPER_NOTEBOOK_TITLE=local smoke value",
+        ],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert '--environment "DEEPER_NOTEBOOK_TITLE=local smoke value"' in result.stdout
+    assert '--environment "smoke"' not in result.stdout
+    assert '--environment "value"' not in result.stdout
+
+
 def test_makefile_prepares_build_venv_before_desktop_memory_precondition_tests() -> (
     None
 ):

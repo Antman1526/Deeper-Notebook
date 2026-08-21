@@ -210,6 +210,7 @@ def test_dynamic_smoke_discovers_loopback_urls_and_checks_features(
                 {
                     "schema_version": 1,
                     "status": "ready",
+                    "pid": 1234,
                     "api_url": "http://127.0.0.1:62000",
                     "frontend_url": "http://127.0.0.1:62001/",
                 }
@@ -284,6 +285,8 @@ def test_dynamic_smoke_rejects_readiness_urls_outside_loopback(
         readiness.write_text(
             json.dumps(
                 {
+                    "status": "ready",
+                    "pid": 4321,
                     "api_url": "https://example.com/api",
                     "frontend_url": "http://127.0.0.1:62001/",
                 }
@@ -319,6 +322,215 @@ def test_dynamic_smoke_rejects_readiness_urls_outside_loopback(
     assert stopped
 
 
+def test_dynamic_smoke_rejects_preexisting_readiness_before_launch(
+    monkeypatch, tmp_path: Path
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    readiness = tmp_path / "desktop-readiness.json"
+    receipt_path = tmp_path / "receipt.json"
+    readiness.write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "pid": 4321,
+                "api_url": "http://127.0.0.1:62000",
+                "frontend_url": "http://127.0.0.1:62001/",
+            }
+        ),
+        encoding="utf-8",
+    )
+    launched: list[object] = []
+
+    class Process:
+        pid = 4321
+
+        def poll(self):
+            return None
+
+    def launch(*_args, **_kwargs):
+        launched.append(object())
+        return Process()
+
+    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "stop_process", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "package_smoke.py",
+            "--executable",
+            sys.executable,
+            "--readiness-file",
+            str(readiness),
+            "--artifact",
+            str(artifact),
+            "--receipt",
+            str(receipt_path),
+            "--timeout-seconds",
+            "0.01",
+        ],
+    )
+
+    assert smoke.main() == 1
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert "must not exist before launch" in receipt["error"]
+    assert launched == []
+
+
+def test_dynamic_smoke_rejects_symlink_readiness_before_launch(
+    monkeypatch, tmp_path: Path
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    marker_target = tmp_path / "marker-target.json"
+    marker_target.write_text("{}", encoding="utf-8")
+    readiness = tmp_path / "desktop-readiness.json"
+    readiness.symlink_to(marker_target)
+    receipt_path = tmp_path / "receipt.json"
+    launched: list[object] = []
+
+    monkeypatch.setattr(
+        smoke.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: launched.append(object()),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "package_smoke.py",
+            "--executable",
+            sys.executable,
+            "--readiness-file",
+            str(readiness),
+            "--artifact",
+            str(artifact),
+            "--receipt",
+            str(receipt_path),
+            "--timeout-seconds",
+            "0.01",
+        ],
+    )
+
+    assert smoke.main() == 1
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert "regular file" in receipt["error"]
+    assert launched == []
+
+
+def test_dynamic_smoke_rejects_unbound_or_stale_readiness_identity(
+    monkeypatch, tmp_path: Path
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    readiness = tmp_path / "desktop-readiness.json"
+    receipt_path = tmp_path / "receipt.json"
+    stopped: list[object] = []
+
+    class Process:
+        pid = 4321
+
+        def poll(self):
+            return None
+
+    def launch(*_args, **_kwargs):
+        readiness.write_text(
+            json.dumps(
+                {
+                    "status": "ready",
+                    "pid": 9999,
+                    "api_url": "http://127.0.0.1:62000",
+                    "frontend_url": "http://127.0.0.1:62001/",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return Process()
+
+    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
+    monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "package_smoke.py",
+            "--executable",
+            sys.executable,
+            "--readiness-file",
+            str(readiness),
+            "--artifact",
+            str(artifact),
+            "--receipt",
+            str(receipt_path),
+            "--timeout-seconds",
+            "0.01",
+        ],
+    )
+
+    assert smoke.main() == 1
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert "does not match launched process" in receipt["error"]
+    assert stopped
+
+
+def test_dynamic_smoke_rejects_readiness_older_than_this_launch(
+    monkeypatch, tmp_path: Path
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    readiness = tmp_path / "desktop-readiness.json"
+    receipt_path = tmp_path / "receipt.json"
+
+    class Process:
+        pid = 4321
+
+        def poll(self):
+            return None
+
+    def launch(*_args, **_kwargs):
+        readiness.write_text(
+            json.dumps(
+                {
+                    "status": "ready",
+                    "pid": 4321,
+                    "api_url": "http://127.0.0.1:62000",
+                    "frontend_url": "http://127.0.0.1:62001/",
+                }
+            ),
+            encoding="utf-8",
+        )
+        os.utime(readiness, ns=(1, 1))
+        return Process()
+
+    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "stop_process", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "package_smoke.py",
+            "--executable",
+            sys.executable,
+            "--readiness-file",
+            str(readiness),
+            "--artifact",
+            str(artifact),
+            "--receipt",
+            str(receipt_path),
+            "--timeout-seconds",
+            "0.01",
+        ],
+    )
+
+    assert smoke.main() == 1
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert "fresh" in receipt["error"]
+
+
 def test_dynamic_smoke_reports_missing_readiness_urls_and_cleans_up(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -335,7 +547,10 @@ def test_dynamic_smoke_reports_missing_readiness_urls_and_cleans_up(
             return None
 
     def launch(*_args, **_kwargs):
-        readiness.write_text('{"status":"ready","api_url":"http://127.0.0.1:62000"}', encoding="utf-8")
+        readiness.write_text(
+            '{"status":"ready","pid":4321,"api_url":"http://127.0.0.1:62000"}',
+            encoding="utf-8",
+        )
         return Process()
 
     monkeypatch.setattr(smoke.subprocess, "Popen", launch)
@@ -453,6 +668,8 @@ def test_dynamic_smoke_records_feature_mismatch_and_cleans_up(
         readiness.write_text(
             json.dumps(
                 {
+                    "status": "ready",
+                    "pid": 4321,
                     "api_url": "http://127.0.0.1:62000",
                     "frontend_url": "http://127.0.0.1:62001/",
                 }
@@ -492,6 +709,7 @@ def test_dynamic_smoke_records_feature_mismatch_and_cleans_up(
         "actual": False,
         "passed": False,
     }
+    assert receipt["checks"]["runtime_features"]["passed"] is False
     assert stopped
 
 
@@ -517,6 +735,101 @@ def test_stop_process_terminates_and_reaps_only_its_process_group(monkeypatch) -
     assert waits == [3]
 
 
+def test_stop_process_uses_the_captured_group_after_its_leader_exits(
+    monkeypatch,
+) -> None:
+    signals: list[tuple[int, int]] = []
+    waits: list[float] = []
+
+    class Process:
+        pid = 9876
+
+        def poll(self):
+            return 17
+
+        def wait(self, *, timeout):
+            waits.append(timeout)
+            return 17
+
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(
+        os,
+        "getpgid",
+        lambda _pid: (_ for _ in ()).throw(AssertionError("must use captured pgid")),
+    )
+
+    smoke.stop_process(Process(), 3, owned_process_group=5432)
+
+    assert signals == [(5432, signal.SIGTERM)]
+    assert waits == [3]
+
+
+def test_dynamic_smoke_writes_bounded_receipts_for_invalid_loopback_urls(
+    monkeypatch, tmp_path: Path
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    stopped: list[object] = []
+
+    class Process:
+        pid = 4321
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
+
+    for index, invalid_api_url in enumerate(
+        (
+            "http://127.0.0.1:not-a-port",
+            "http://127.0.0.1:65536",
+            "http://user:password@127.0.0.1:62000",
+            "http://[::1",
+        )
+    ):
+        readiness = tmp_path / f"desktop-readiness-{index}.json"
+        receipt_path = tmp_path / f"receipt-{index}.json"
+
+        def launch(*_args, readiness=readiness, **_kwargs):
+            readiness.write_text(
+                json.dumps(
+                    {
+                        "status": "ready",
+                        "pid": 4321,
+                        "api_url": invalid_api_url,
+                        "frontend_url": "http://127.0.0.1:62001/",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return Process()
+
+        monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "package_smoke.py",
+                "--executable",
+                sys.executable,
+                "--readiness-file",
+                str(readiness),
+                "--artifact",
+                str(artifact),
+                "--receipt",
+                str(receipt_path),
+                "--timeout-seconds",
+                "0.01",
+            ],
+        )
+
+        assert smoke.main() == 1
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        assert "loopback URL" in receipt["error"]
+
+    assert len(stopped) == 4
+
+
 def test_readiness_mode_forbids_static_urls(tmp_path: Path) -> None:
     result = run_smoke(
         "--executable",
@@ -533,6 +846,42 @@ def test_readiness_mode_forbids_static_urls(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "forbidden" in result.stderr
+
+
+def test_cli_validation_failures_write_a_supplied_receipt(tmp_path: Path) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+
+    for timeout_value in ("0", "not-a-number", "301"):
+        receipt_path = tmp_path / f"timeout-{timeout_value}.json"
+        result = run_smoke(
+            "--executable",
+            sys.executable,
+            "--api-url",
+            "http://127.0.0.1:9/healthz",
+            "--frontend-url",
+            "http://127.0.0.1:9/notebooks",
+            "--artifact",
+            str(artifact),
+            "--receipt",
+            str(receipt_path),
+            "--timeout-seconds",
+            timeout_value,
+        )
+
+        assert result.returncode != 0
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        assert receipt["status"] == "failed"
+        assert "timeout-seconds" in receipt["error"]
+
+    argument_receipt = tmp_path / "argument-error.json"
+    argument_error = run_smoke(
+        "--receipt",
+        str(argument_receipt),
+        "--unknown-option",
+    )
+    assert argument_error.returncode != 0
+    assert json.loads(argument_receipt.read_text(encoding="utf-8"))["status"] == "failed"
 
 
 def test_smoke_records_failed_artifact_signature_in_its_receipt(tmp_path: Path) -> None:
