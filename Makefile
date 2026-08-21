@@ -526,19 +526,12 @@ SMOKE_ARTIFACT_SHA256 ?=
 SMOKE_ENVIRONMENT ?=
 SMOKE_EXPECTED_FEATURE ?=
 SMOKE_TIMEOUT_SECONDS ?= 90
-SMOKE_OPTIONAL_ARGS = $(if $(SMOKE_ARTIFACT_SHA256),--expected-artifact-sha256 "$(SMOKE_ARTIFACT)=$(SMOKE_ARTIFACT_SHA256)") $(if $(SMOKE_ENVIRONMENT),--environment "$(SMOKE_ENVIRONMENT)") $(if $(SMOKE_EXPECTED_FEATURE),--expected-feature "$(SMOKE_EXPECTED_FEATURE)")
+export SMOKE_EXECUTABLE SMOKE_READINESS_FILE SMOKE_ARTIFACT SMOKE_RECEIPT
+export SMOKE_ARTIFACT_SHA256 SMOKE_ENVIRONMENT SMOKE_EXPECTED_FEATURE
+export SMOKE_TIMEOUT_SECONDS
 
 smoke-mac-app:
-	@if [ -z "$(SMOKE_EXECUTABLE)" ] || [ -z "$(SMOKE_READINESS_FILE)" ] || [ -z "$(SMOKE_ARTIFACT)" ] || [ -z "$(SMOKE_RECEIPT)" ]; then \
-		echo "❌ Set SMOKE_EXECUTABLE, SMOKE_READINESS_FILE, SMOKE_ARTIFACT, and SMOKE_RECEIPT."; \
-		exit 2; \
-	fi
-	@uv run python desktop/build/package_smoke.py \
-		--executable "$(SMOKE_EXECUTABLE)" \
-		--readiness-file "$(SMOKE_READINESS_FILE)" \
-		--artifact "$(SMOKE_ARTIFACT)" \
-		--receipt "$(SMOKE_RECEIPT)" \
-		--timeout-seconds "$(SMOKE_TIMEOUT_SECONDS)" $(SMOKE_OPTIONAL_ARGS)
+	@uv run python desktop/build/package_smoke.py --make-smoke-inputs
 
 smoke-installed-mac-app: smoke-mac-app
 

@@ -8,6 +8,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from desktop.build import package_smoke as smoke
@@ -92,7 +93,11 @@ def test_smoke_writes_a_machine_readable_receipt_for_the_required_proofs(
             return None
 
     monkeypatch.setattr(smoke, "_LOCAL_OPENER", Opener())
-    monkeypatch.setattr(smoke.subprocess, "Popen", lambda *_args, **_kwargs: Process())
+    monkeypatch.setattr(
+        smoke,
+        "launch_monitored_process",
+        lambda *_args, **_kwargs: (Process(), Process.pid),
+    )
     monkeypatch.setattr(smoke, "stop_process", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         sys,
@@ -200,11 +205,9 @@ def test_dynamic_smoke_discovers_loopback_urls_and_checks_features(
             observed["waited"] = True
             return 0
 
-    def launch(command, *, env, start_new_session, text):
+    def launch(command, environment, _timeout):
         observed["command"] = command
-        observed["env"] = env
-        observed["start_new_session"] = start_new_session
-        observed["text"] = text
+        observed["env"] = environment
         readiness.write_text(
             json.dumps(
                 {
@@ -217,11 +220,11 @@ def test_dynamic_smoke_discovers_loopback_urls_and_checks_features(
             ),
             encoding="utf-8",
         )
-        return Process()
+        return Process(), Process.pid
 
     monkeypatch.setenv("PACKAGE_SMOKE_PARENT", "preserved")
     monkeypatch.setattr(smoke, "_LOCAL_OPENER", Opener())
-    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "launch_monitored_process", launch)
     monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: process.wait())
     monkeypatch.setattr(
         sys,
@@ -259,8 +262,6 @@ def test_dynamic_smoke_discovers_loopback_urls_and_checks_features(
         "sourceVisuals": {"expected": True, "actual": True, "passed": True}
     }
     assert receipt["checks"]["runtime_features"]["passed"] is True
-    assert observed["start_new_session"] is True
-    assert observed["text"] is True
     assert observed["env"]["PACKAGE_SMOKE_PARENT"] == "preserved"
     assert observed["env"]["DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED"] == "0"
     assert observed["waited"] is True
@@ -293,9 +294,9 @@ def test_dynamic_smoke_rejects_readiness_urls_outside_loopback(
             ),
             encoding="utf-8",
         )
-        return Process()
+        return Process(), Process.pid
 
-    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "launch_monitored_process", launch)
     monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
     monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
@@ -350,9 +351,9 @@ def test_dynamic_smoke_rejects_preexisting_readiness_before_launch(
 
     def launch(*_args, **_kwargs):
         launched.append(object())
-        return Process()
+        return Process(), Process.pid
 
-    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "launch_monitored_process", launch)
     monkeypatch.setattr(smoke, "stop_process", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
@@ -447,9 +448,9 @@ def test_dynamic_smoke_rejects_unbound_or_stale_readiness_identity(
             ),
             encoding="utf-8",
         )
-        return Process()
+        return Process(), Process.pid
 
-    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "launch_monitored_process", launch)
     monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
     monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
@@ -503,9 +504,9 @@ def test_dynamic_smoke_rejects_readiness_older_than_this_launch(
             encoding="utf-8",
         )
         os.utime(readiness, ns=(1, 1))
-        return Process()
+        return Process(), Process.pid
 
-    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "launch_monitored_process", launch)
     monkeypatch.setattr(smoke, "stop_process", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
@@ -551,9 +552,9 @@ def test_dynamic_smoke_reports_missing_readiness_urls_and_cleans_up(
             '{"status":"ready","pid":4321,"api_url":"http://127.0.0.1:62000"}',
             encoding="utf-8",
         )
-        return Process()
+        return Process(), Process.pid
 
-    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "launch_monitored_process", launch)
     monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
     monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
@@ -580,28 +581,26 @@ def test_dynamic_smoke_reports_missing_readiness_urls_and_cleans_up(
     assert stopped
 
 
-def test_dynamic_smoke_reports_child_exit_before_readiness(
+def test_dynamic_smoke_times_out_when_the_retained_monitor_has_no_readiness(
     monkeypatch, tmp_path: Path
 ) -> None:
     artifact = tmp_path / "fixture.dmg"
     artifact.write_bytes(b"fixture artifact")
     readiness = tmp_path / "desktop-readiness.json"
     receipt_path = tmp_path / "receipt.json"
-    poll_results = iter((None, 17, 17))
     waited: list[object] = []
 
     class Process:
         pid = 4321
-        returncode = 17
-
-        def poll(self):
-            return next(poll_results)
-
         def wait(self, **_kwargs):
             waited.append(self)
             return 17
 
-    monkeypatch.setattr(smoke.subprocess, "Popen", lambda *_args, **_kwargs: Process())
+    monkeypatch.setattr(
+        smoke,
+        "launch_monitored_process",
+        lambda *_args, **_kwargs: (Process(), Process.pid),
+    )
     monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         sys,
@@ -623,7 +622,7 @@ def test_dynamic_smoke_reports_child_exit_before_readiness(
 
     assert smoke.main() == 1
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    assert "before readiness" in receipt["error"]
+    assert "timed out waiting for readiness" in receipt["error"]
     assert waited
 
 
@@ -676,10 +675,10 @@ def test_dynamic_smoke_records_feature_mismatch_and_cleans_up(
             ),
             encoding="utf-8",
         )
-        return Process()
+        return Process(), Process.pid
 
     monkeypatch.setattr(smoke._LOCAL_OPENER.__class__, "open", Opener().open)
-    monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+    monkeypatch.setattr(smoke, "launch_monitored_process", launch)
     monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
     monkeypatch.setattr(
         sys,
@@ -764,6 +763,157 @@ def test_stop_process_uses_the_captured_group_after_its_leader_exits(
     assert waits == [3]
 
 
+def test_stop_process_fails_closed_if_its_retained_monitor_exited(monkeypatch) -> None:
+    signals: list[tuple[int, int]] = []
+    read_descriptor, write_descriptor = os.pipe()
+    os.close(write_descriptor)
+
+    class Process:
+        pid = 5432
+        returncode = None
+
+    process = Process()
+    setattr(process, "_package_smoke_retained_monitor", True)
+    setattr(process, "_package_smoke_monitor_liveness_fd", read_descriptor)
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: signals.append((pid, sig)))
+
+    try:
+        smoke.stop_process(process, 1)
+    except smoke.SmokeFailure as error:
+        assert "monitor exited" in str(error)
+    else:
+        raise AssertionError("expected liveness proof to fail closed")
+    finally:
+        os.close(read_descriptor)
+
+    assert signals == []
+
+
+def test_stop_process_escalates_and_reaps_a_stubborn_owned_descendant(
+    tmp_path: Path,
+) -> None:
+    child_pid_path = tmp_path / "stubborn-child.pid"
+    child_pid: int | None = None
+    monitor, application_pid = smoke.launch_monitored_process(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import pathlib, signal, subprocess, sys; "
+                "child = subprocess.Popen([sys.executable, '-c', "
+                "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "time.sleep(60)']); "
+                "pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding='utf-8')"
+            ),
+            str(child_pid_path),
+        ],
+        dict(os.environ),
+        2,
+    )
+    stopped = False
+    try:
+        deadline = time.monotonic() + 2
+        while not child_pid_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert child_pid_path.exists(), "leader did not record its child PID"
+        child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+        while time.monotonic() < deadline:
+            status = subprocess.run(
+                ["ps", "-p", str(application_pid), "-o", "stat="],
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            if status.returncode != 0 or "Z" in status.stdout:
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("application leader did not exit before cleanup")
+        assert os.getpgid(monitor.pid) == monitor.pid
+        assert os.getpgid(child_pid) == monitor.pid
+
+        smoke.stop_process(monitor, 0.1)
+        stopped = True
+
+        assert monitor.returncode is not None
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("stubborn owned descendant survived cleanup")
+    finally:
+        if child_pid is not None:
+            try:
+                os.kill(child_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not stopped:
+            try:
+                smoke.stop_process(monitor, 1)
+            except (OSError, smoke.SmokeFailure, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(monitor.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                monitor.wait(timeout=2)
+
+
+def test_readiness_fifo_is_rejected_without_blocking(tmp_path: Path) -> None:
+    readiness = tmp_path / "desktop-readiness.fifo"
+    os.mkfifo(readiness)
+    probe = (
+        "from pathlib import Path\n"
+        "import sys\n"
+        "from desktop.build import package_smoke as smoke\n"
+        "try:\n"
+        "    smoke.read_regular_readiness_file(Path(sys.argv[1]))\n"
+        "except smoke.SmokeFailure as error:\n"
+        "    print(error)\n"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", probe, str(readiness)],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=2,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "regular file" in result.stdout
+
+
+def test_readiness_rejects_oversized_json_before_parsing(tmp_path: Path) -> None:
+    readiness = tmp_path / "desktop-readiness.json"
+    readiness.write_bytes(b"x" * (smoke.MAX_READINESS_BYTES + 1))
+
+    try:
+        smoke.read_regular_readiness_file(readiness)
+    except smoke.SmokeFailure as error:
+        assert "maximum size" in str(error)
+    else:
+        raise AssertionError("expected oversized readiness rejection")
+
+
+def test_make_inputs_preserve_a_spaced_environment_value(monkeypatch) -> None:
+    monkeypatch.setenv("SMOKE_EXECUTABLE", "/tmp/deeper-notebook")
+    monkeypatch.setenv("SMOKE_READINESS_FILE", "/tmp/desktop-readiness.json")
+    monkeypatch.setenv("SMOKE_ARTIFACT", "/tmp/deeper-notebook.dmg")
+    monkeypatch.setenv("SMOKE_RECEIPT", "/tmp/package-smoke-receipt.json")
+    monkeypatch.setenv("SMOKE_ENVIRONMENT", "DEEPER_NOTEBOOK_TITLE=local smoke value")
+
+    args = smoke.parse_args(["--make-smoke-inputs"])
+    smoke.apply_make_smoke_inputs(args)
+
+    assert args.environment == ["DEEPER_NOTEBOOK_TITLE=local smoke value"]
+
+
 def test_dynamic_smoke_writes_bounded_receipts_for_invalid_loopback_urls(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -802,9 +952,9 @@ def test_dynamic_smoke_writes_bounded_receipts_for_invalid_loopback_urls(
                 ),
                 encoding="utf-8",
             )
-            return Process()
+            return Process(), Process.pid
 
-        monkeypatch.setattr(smoke.subprocess, "Popen", launch)
+        monkeypatch.setattr(smoke, "launch_monitored_process", launch)
         monkeypatch.setattr(
             sys,
             "argv",
@@ -882,6 +1032,62 @@ def test_cli_validation_failures_write_a_supplied_receipt(tmp_path: Path) -> Non
     )
     assert argument_error.returncode != 0
     assert json.loads(argument_receipt.read_text(encoding="utf-8"))["status"] == "failed"
+
+
+def test_keyboard_interrupt_writes_a_cancelled_receipt_and_cleans_up(
+    monkeypatch, tmp_path: Path
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    receipt_path = tmp_path / "receipt.json"
+    stopped: list[object] = []
+
+    class Process:
+        pid = 4321
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(
+        smoke,
+        "launch_monitored_process",
+        lambda *_args, **_kwargs: (Process(), Process.pid),
+    )
+    monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
+    monkeypatch.setattr(
+        smoke,
+        "wait_for_url",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "package_smoke.py",
+            "--executable",
+            sys.executable,
+            "--api-url",
+            "http://127.0.0.1:5055/healthz",
+            "--frontend-url",
+            "http://127.0.0.1:5055/notebooks",
+            "--artifact",
+            str(artifact),
+            "--receipt",
+            str(receipt_path),
+        ],
+    )
+
+    try:
+        result = smoke.main()
+    except KeyboardInterrupt:
+        result = None
+    assert result == 130
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["status"] == "failed"
+    assert receipt["cancelled"] is True
+    assert "cancelled" in receipt["error"]
+    assert receipt["checks"]["clean_shutdown"]["passed"] is True
+    assert stopped
 
 
 def test_smoke_records_failed_artifact_signature_in_its_receipt(tmp_path: Path) -> None:

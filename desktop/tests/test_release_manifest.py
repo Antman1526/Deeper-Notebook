@@ -317,10 +317,8 @@ def test_package_smoke_targets_are_explicit_and_never_mutate_applications() -> N
 
     assert "smoke-mac-app:" in makefile
     assert "smoke-installed-mac-app: smoke-mac-app" in makefile
-    assert "$(SMOKE_EXECUTABLE)" in makefile
-    assert "$(SMOKE_ARTIFACT)" in makefile
-    assert "$(SMOKE_RECEIPT)" in makefile
-    assert "$(SMOKE_READINESS_FILE)" in makefile
+    assert "export SMOKE_EXECUTABLE SMOKE_READINESS_FILE" in makefile
+    assert "--make-smoke-inputs" in makefile
     smoke_targets = makefile[
         makefile.index(".PHONY: smoke-mac-app") : makefile.index(
             "# Convenience: copy the built .app to /Applications."
@@ -329,6 +327,7 @@ def test_package_smoke_targets_are_explicit_and_never_mutate_applications() -> N
     assert "/Applications" not in smoke_targets
     assert "rm -" not in smoke_targets
     assert "cp -" not in smoke_targets
+    assert "$(SMOKE_" not in smoke_targets
 
 
 def test_package_smoke_target_preserves_a_spaced_environment_value() -> None:
@@ -350,9 +349,43 @@ def test_package_smoke_target_preserves_a_spaced_environment_value() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert '--environment "DEEPER_NOTEBOOK_TITLE=local smoke value"' in result.stdout
-    assert '--environment "smoke"' not in result.stdout
-    assert '--environment "value"' not in result.stdout
+    assert "--make-smoke-inputs" in result.stdout
+    assert "DEEPER_NOTEBOOK_TITLE=local smoke value" not in result.stdout
+
+
+def test_package_smoke_target_does_not_evaluate_environment_injection(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    backtick_marker = tmp_path / "backtick-must-not-exist"
+    substitution_marker = tmp_path / "substitution-must-not-exist"
+    receipt = tmp_path / "receipt.json"
+    injected_value = (
+        f'DEEPER_NOTEBOOK_TITLE="quoted" `touch {backtick_marker}` '
+        f'$(touch {substitution_marker})\nwith a legitimate space'
+    )
+    result = subprocess.run(
+        [
+            "make",
+            "smoke-mac-app",
+            "SMOKE_EXECUTABLE=/bin/true",
+            "SMOKE_READINESS_FILE=/tmp/desktop-readiness.json",
+            f"SMOKE_ARTIFACT={artifact}",
+            f"SMOKE_RECEIPT={receipt}",
+            f"SMOKE_ENVIRONMENT={injected_value}",
+            "SMOKE_TIMEOUT_SECONDS=0.01",
+        ],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode != 0
+    assert not backtick_marker.exists()
+    assert not substitution_marker.exists()
 
 
 def test_makefile_prepares_build_venv_before_desktop_memory_precondition_tests() -> (
