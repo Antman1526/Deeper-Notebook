@@ -45,6 +45,30 @@ def _source_for(path: Path, *, source_id: str = "source:file") -> Source:
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_search_index_maintenance(monkeypatch):
+    """Keep file-containment tests scoped to cleanup and database sweeps."""
+
+    async def mark_pending() -> str:
+        return "containment-test-rebuild-token"
+
+    async def promote(_token: str) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "deeper_notebook.domain.notebook._mark_source_search_rebuild_pending",
+        mark_pending,
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.domain.notebook._promote_source_search_rebuild_marker",
+        promote,
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.domain.notebook._schedule_source_search_index_maintenance",
+        lambda: None,
+    )
+
+
 def test_upload_cleanup_refuses_file_symlink(tmp_path, monkeypatch):
     uploads = tmp_path / "uploads"
     uploads.mkdir()

@@ -94,6 +94,9 @@ async def test_source_chat_invokes_trim(monkeypatch):
     from deeper_notebook.graphs import source_chat
 
     monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_CHAT_HISTORY_CHAR_CAP", raising=False)
+    # This test owns history trimming, not the separately covered default-on
+    # Agent FSM terminal instruction. Keep its two-message payload authority.
+    monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "0")
 
     trim_calls: list = []
 

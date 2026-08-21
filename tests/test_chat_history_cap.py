@@ -190,6 +190,9 @@ async def test_call_model_invokes_trimming(monkeypatch):
     `model.invoke()`. The trimmer is invoked the same way; only the
     test's call-site needs `await`."""
     monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
+    # This test owns history trimming, not the separately covered default-on
+    # Agent FSM terminal instruction. Keep its two-message payload authority.
+    monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "0")
 
     called_with: list = []
 

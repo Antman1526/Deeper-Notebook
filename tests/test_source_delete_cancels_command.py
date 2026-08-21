@@ -25,6 +25,34 @@ from surrealdb import RecordID
 from deeper_notebook.domain.notebook import Source
 
 
+@pytest.fixture(autouse=True)
+def _isolate_search_index_maintenance(monkeypatch):
+    """Keep command-cancellation tests scoped to their owned behavior."""
+
+    async def mark_pending() -> str:
+        return "command-test-rebuild-token"
+
+    async def promote(_token: str) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "deeper_notebook.domain.notebook._mark_source_search_rebuild_pending",
+        mark_pending,
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.domain.notebook._promote_source_search_rebuild_marker",
+        promote,
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.domain.notebook._schedule_source_search_index_maintenance",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "deeper_notebook.domain.notebook.repo_query",
+        AsyncMock(return_value=[]),
+    )
+
+
 @pytest.mark.asyncio
 async def test_delete_cancels_running_command(monkeypatch):
     """A source with an in-flight 'running' command gets it cancelled
