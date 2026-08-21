@@ -43,6 +43,18 @@ for (const capture of captures) {
   test(`${capture.theme} theme gallery`, async ({ page }) => {
     const fixture = await installThemeVisualFixture(page, capture.theme)
     await page.route('**/api/features', async route => {
+      const method = route.request().method()
+      if (method !== 'GET' && method !== 'HEAD') {
+        fixture.unexpectedRequests.push(`${method} ${new URL(route.request().url()).pathname}`)
+        await route.fulfill({
+          status: 405,
+          contentType: 'application/json',
+          headers: { Allow: 'GET, HEAD' },
+          body: JSON.stringify({ detail: 'Method not allowed by theme visual fixture' }),
+        })
+        return
+      }
+
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
@@ -70,7 +82,17 @@ for (const capture of captures) {
       caret: 'hide',
       fullPage: true,
     })
-    expect(fixture.unexpectedRequests).toEqual([])
+
+    if (capture.theme === 'gemini-forward-dark') {
+      const unsupportedMethod = await page.evaluate(async () => {
+        const response = await fetch('/api/features', { method: 'POST', body: '{}' })
+        return { status: response.status, allow: response.headers.get('allow') }
+      })
+      expect(unsupportedMethod).toEqual({ status: 405, allow: 'GET, HEAD' })
+      expect(fixture.unexpectedRequests).toEqual(['POST /api/features'])
+    } else {
+      expect(fixture.unexpectedRequests).toEqual([])
+    }
   })
 }
 
