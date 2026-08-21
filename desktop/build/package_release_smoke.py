@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import SplitResult, urlsplit
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
@@ -37,6 +38,8 @@ PACKAGE_BROWSER_PROBE = (
 SUMMARY_RECEIPT_NAME = "summary.json"
 MAX_TIMEOUT_SECONDS = 300.0
 APPLICATION_LIVENESS_POLL_SECONDS = 0.25
+MAX_BROWSER_OBSERVED_REQUESTS = 64
+MAX_BROWSER_OBSERVED_RESPONSES = 64
 
 DEFAULT_EXPECTED_FEATURES: dict[str, bool] = {
     "evidenceStudio": True,
@@ -238,6 +241,7 @@ def _validate_browser_receipt(
     api_url: str,
 ) -> None:
     """Accept only the complete read-only browser proof for one mode."""
+    _validate_browser_receipt_schema(receipt, mode)
     if receipt.get("status") != "passed":
         raise SmokeFailure("browser receipt status must be passed")
     if receipt.get("mode") != mode.browser_mode:
@@ -247,31 +251,39 @@ def _validate_browser_receipt(
     if receipt.get("api_url") != api_url:
         raise SmokeFailure("browser receipt API URL did not match readiness")
 
+    frontend_origin = _browser_origin(frontend_url, "frontend URL", strict=True)
+    api_origin = _browser_origin(api_url, "API URL", strict=True)
+    allowed_origins = {frontend_origin, api_origin}
+    requests = _validate_observed_requests(receipt, allowed_origins)
+    responses = _validate_observed_responses(receipt, allowed_origins)
+    _validate_raw_feature_response(receipt, mode, api_origin, requests, responses)
+    _validate_request_derivatives(receipt, requests)
+
     feature_checks = receipt.get("feature_checks")
-    if not isinstance(feature_checks, dict) or set(feature_checks) != set(
+    if type(feature_checks) is not dict or set(feature_checks) != set(
         mode.expected_features
     ):
         raise SmokeFailure("browser receipt feature checks were incomplete")
     for name, expected in mode.expected_features.items():
         check = feature_checks[name]
-        if not isinstance(check, dict) or set(check) != {
+        if type(check) is not dict or set(check) != {
             "expected",
             "actual",
             "passed",
         }:
             raise SmokeFailure("browser receipt feature check had an invalid shape")
+        feature_response = receipt["feature_response"]
+        actual_features = feature_response["body"]["features"]
         if (
             check["expected"] is not expected
-            or check["actual"] is not expected
+            or check["actual"] is not actual_features[name]
             or check["passed"] is not True
         ):
             raise SmokeFailure("browser receipt feature check did not pass")
 
     for key in ("blocked_requests", "non_get_requests"):
-        if receipt.get(key) != []:
+        if type(receipt.get(key)) is not list or receipt[key] != []:
             raise SmokeFailure(f"browser receipt reported {key}")
-    if receipt.get("visual_mutation_request_observed") is not False:
-        raise SmokeFailure("browser receipt reported a visual mutation request")
 
     if mode.browser_mode == "default":
         theme = receipt.get("theme")
@@ -287,6 +299,176 @@ def _validate_browser_receipt(
         ):
             if receipt.get(key) is not True:
                 raise SmokeFailure(f"browser receipt did not prove {key}")
+        source_list_observed = any(
+            request["path"] == "/api/sources" for request in requests
+        )
+        if receipt["source_list_get_observed"] is not source_list_observed:
+            raise SmokeFailure(
+                "browser receipt source-list result did not match raw requests"
+            )
+
+
+def _validate_browser_receipt_schema(receipt: dict[str, Any], mode: ModeSpec) -> None:
+    common_keys = {
+        "status",
+        "mode",
+        "frontend_url",
+        "api_url",
+        "feature_response",
+        "feature_checks",
+        "observed_requests",
+        "observed_responses",
+        "blocked_requests",
+        "http_methods",
+        "non_get_requests",
+        "visual_mutation_request_observed",
+    }
+    mode_keys = (
+        {"theme", "visual_system_v2_shell_visible"}
+        if mode.browser_mode == "default"
+        else {
+            "sources_main_visible",
+            "sources_heading_visible",
+            "source_list_get_observed",
+        }
+    )
+    if type(receipt) is not dict or set(receipt) != common_keys | mode_keys:
+        raise SmokeFailure("browser receipt had an unexpected schema")
+
+
+def _browser_origin(value: object, label: str, *, strict: bool) -> str:
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise SmokeFailure(f"browser receipt {label} was not a valid URL")
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as error:
+        raise SmokeFailure(f"browser receipt {label} was not a valid URL") from error
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname != "127.0.0.1"
+        or port is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or (strict and (parsed.query or parsed.fragment))
+    ):
+        raise SmokeFailure(f"browser receipt {label} was not a valid loopback URL")
+    return f"{parsed.scheme}://127.0.0.1:{port}"
+
+
+def _validate_evidence_url(
+    entry: dict[str, Any], allowed_origins: set[str], label: str
+) -> SplitResult:
+    value = entry.get("url")
+    origin = _browser_origin(value, label, strict=False)
+    if origin not in allowed_origins:
+        raise SmokeFailure(f"browser receipt {label} escaped the allowed origins")
+    parsed = urlsplit(value)
+    path = entry.get("path")
+    expected_path = parsed.path or "/"
+    if not isinstance(path, str) or path != expected_path:
+        raise SmokeFailure(f"browser receipt {label} had an inconsistent path")
+    return parsed
+
+
+def _validate_observed_requests(
+    receipt: dict[str, Any], allowed_origins: set[str]
+) -> list[dict[str, Any]]:
+    entries = receipt["observed_requests"]
+    if type(entries) is not list or len(entries) > MAX_BROWSER_OBSERVED_REQUESTS:
+        raise SmokeFailure("browser receipt request evidence exceeded its limit")
+    if not entries:
+        raise SmokeFailure("browser receipt did not include request evidence")
+    for entry in entries:
+        if type(entry) is not dict or set(entry) != {"method", "url", "path"}:
+            raise SmokeFailure("browser receipt request evidence had an invalid shape")
+        if entry["method"] != "GET":
+            raise SmokeFailure("browser receipt contained a non-GET request")
+        _validate_evidence_url(entry, allowed_origins, "request evidence")
+    return entries
+
+
+def _validate_observed_responses(
+    receipt: dict[str, Any], allowed_origins: set[str]
+) -> list[dict[str, Any]]:
+    entries = receipt["observed_responses"]
+    if type(entries) is not list or len(entries) > MAX_BROWSER_OBSERVED_RESPONSES:
+        raise SmokeFailure("browser receipt response evidence exceeded its limit")
+    for entry in entries:
+        if type(entry) is not dict or set(entry) != {"status", "url", "path"}:
+            raise SmokeFailure("browser receipt response evidence had an invalid shape")
+        if type(entry["status"]) is not int or not 100 <= entry["status"] <= 599:
+            raise SmokeFailure(
+                "browser receipt response evidence had an invalid status"
+            )
+        _validate_evidence_url(entry, allowed_origins, "response evidence")
+    return entries
+
+
+def _validate_raw_feature_response(
+    receipt: dict[str, Any],
+    mode: ModeSpec,
+    api_origin: str,
+    requests: list[dict[str, Any]],
+    responses: list[dict[str, Any]],
+) -> None:
+    feature_response = receipt["feature_response"]
+    if type(feature_response) is not dict or set(feature_response) != {
+        "status",
+        "body",
+    }:
+        raise SmokeFailure("browser receipt feature response had an invalid shape")
+    body = feature_response["body"]
+    if type(feature_response["status"]) is not int or feature_response["status"] != 200:
+        raise SmokeFailure("browser receipt feature response was not HTTP 200")
+    if type(body) is not dict or set(body) != {"features"}:
+        raise SmokeFailure("browser receipt feature response body had an invalid shape")
+    features = body["features"]
+    if type(features) is not dict or set(features) != set(mode.expected_features):
+        raise SmokeFailure("browser receipt feature response did not match the mode")
+    if any(
+        features[name] is not expected
+        for name, expected in mode.expected_features.items()
+    ):
+        raise SmokeFailure("browser receipt feature response did not match the mode")
+    feature_path = "/api/features"
+    if not any(
+        _browser_origin(request["url"], "request evidence", strict=False) == api_origin
+        and request["path"] == feature_path
+        for request in requests
+    ):
+        raise SmokeFailure("browser receipt did not observe the feature request")
+    if not any(
+        _browser_origin(response["url"], "response evidence", strict=False)
+        == api_origin
+        and response["path"] == feature_path
+        and response["status"] == feature_response["status"]
+        for response in responses
+    ):
+        raise SmokeFailure("browser receipt did not observe the feature response")
+
+
+def _validate_request_derivatives(
+    receipt: dict[str, Any], requests: list[dict[str, Any]]
+) -> None:
+    methods = sorted({request["method"] for request in requests})
+    if receipt["http_methods"] != methods or methods != ["GET"]:
+        raise SmokeFailure("browser receipt HTTP methods did not match raw requests")
+    non_get_requests = [request for request in requests if request["method"] != "GET"]
+    if receipt["non_get_requests"] != non_get_requests:
+        raise SmokeFailure(
+            "browser receipt non-GET requests did not match raw requests"
+        )
+    visual_mutation = any(
+        "/visual" in request["path"] and request["method"] != "GET"
+        for request in requests
+    )
+    if receipt["visual_mutation_request_observed"] is not visual_mutation:
+        raise SmokeFailure(
+            "browser receipt visual-mutation result did not match raw requests"
+        )
+    if visual_mutation:
+        raise SmokeFailure("browser receipt reported a visual mutation request")
 
 
 def _base_mode_receipt(mode: ModeSpec, arguments: argparse.Namespace) -> dict[str, Any]:

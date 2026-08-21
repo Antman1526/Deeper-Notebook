@@ -1,5 +1,9 @@
 const path = require('node:path')
 
+const MAX_OBSERVED_REQUEST_ENTRIES = 64
+const MAX_OBSERVED_RESPONSE_ENTRIES = 64
+const MAX_BLOCKED_REQUEST_ENTRIES = 64
+
 const EXPECTED_FEATURES = Object.freeze({
   evidenceStudio: true,
   modelFleet: true,
@@ -55,6 +59,15 @@ function featureResults(actual, expected) {
   }]))
 }
 
+function hasExactExpectedFeatures(actual, expected) {
+  if (!actual || typeof actual !== 'object' || Array.isArray(actual)) return false
+  const expectedNames = Object.keys(expected)
+  const actualNames = Object.keys(actual)
+  return actualNames.length === expectedNames.length
+    && actualNames.every((name) => Object.prototype.hasOwnProperty.call(expected, name))
+    && expectedNames.every((name) => actual[name] === expected[name])
+}
+
 async function main() {
   const args = parseArgs(process.argv)
   const frontend = parseLoopbackUrl(args['frontend-url'], 'frontend-url')
@@ -67,6 +80,9 @@ async function main() {
   const observed = []
   const responses = []
   const blocked = []
+  let requestEvidenceOverflow = false
+  let responseEvidenceOverflow = false
+  let blockedEvidenceOverflow = false
   let browser = null
   try {
     browser = await chromium.launch({ headless: true })
@@ -80,12 +96,20 @@ async function main() {
     page.on('request', (request) => {
       const url = new URL(request.url())
       if (url.protocol === 'http:' || url.protocol === 'https:') {
+        if (observed.length >= MAX_OBSERVED_REQUEST_ENTRIES) {
+          requestEvidenceOverflow = true
+          return
+        }
         observed.push({ method: request.method(), url: url.href, path: url.pathname })
       }
     })
     page.on('response', (response) => {
       const url = new URL(response.url())
       if (url.protocol === 'http:' || url.protocol === 'https:') {
+        if (responses.length >= MAX_OBSERVED_RESPONSE_ENTRIES) {
+          responseEvidenceOverflow = true
+          return
+        }
         responses.push({ status: response.status(), url: url.href, path: url.pathname })
       }
     })
@@ -94,7 +118,8 @@ async function main() {
       const url = new URL(request.url())
       const isHttpRequest = url.protocol === 'http:' || url.protocol === 'https:'
       if (isHttpRequest && (!allowedOrigins.has(url.origin) || request.method() !== 'GET')) {
-        blocked.push(url.href)
+        if (blocked.length >= MAX_BLOCKED_REQUEST_ENTRIES) blockedEvidenceOverflow = true
+        else blocked.push(url.href)
         await route.abort()
         return
       }
@@ -133,10 +158,13 @@ async function main() {
       visual_mutation_request_observed: visualMutationRequest,
     }
 
+    if (requestEvidenceOverflow || responseEvidenceOverflow || blockedEvidenceOverflow) {
+      throw new Error('browser evidence exceeded bounded receipt limits')
+    }
     if (blocked.length) throw new Error(`blocked non-loopback request: ${blocked[0]}`)
     if (visualMutationRequest) throw new Error('browser emitted a visual mutation request')
     if (nonGetRequests.length) throw new Error(`browser emitted non-GET request: ${nonGetRequests[0].method} ${nonGetRequests[0].path}`)
-    if (features.status !== 200 || !actualFeatures || Object.values(featureChecks).some((check) => !check.passed)) {
+    if (features.status !== 200 || !hasExactExpectedFeatures(actualFeatures, expectedFeatures) || Object.values(featureChecks).some((check) => !check.passed)) {
       throw new Error('browser feature authority did not match the expected mode')
     }
 

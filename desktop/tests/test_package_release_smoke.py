@@ -22,11 +22,44 @@ def browser_receipt_for(
     mode: str, frontend_url: str, api_url: str
 ) -> dict[str, object]:
     mode_spec = release_smoke.MODE_SPECS[mode]
+    features = dict(mode_spec.expected_features)
+    observed_requests = [
+        {"method": "GET", "url": frontend_url, "path": "/"},
+        {
+            "method": "GET",
+            "url": f"{api_url}/api/features",
+            "path": "/api/features",
+        },
+    ]
+    observed_responses = [
+        {"status": 200, "url": frontend_url, "path": "/"},
+        {
+            "status": 200,
+            "url": f"{api_url}/api/features",
+            "path": "/api/features",
+        },
+    ]
+    if mode == "source-visuals-off":
+        observed_requests.append(
+            {
+                "method": "GET",
+                "url": f"{api_url}/api/sources",
+                "path": "/api/sources",
+            }
+        )
+        observed_responses.append(
+            {
+                "status": 200,
+                "url": f"{api_url}/api/sources",
+                "path": "/api/sources",
+            }
+        )
     receipt: dict[str, object] = {
         "status": "passed",
         "mode": mode_spec.browser_mode,
         "frontend_url": frontend_url,
         "api_url": api_url,
+        "feature_response": {"status": 200, "body": {"features": features}},
         "feature_checks": {
             name: {
                 "expected": expected,
@@ -35,7 +68,10 @@ def browser_receipt_for(
             }
             for name, expected in mode_spec.expected_features.items()
         },
+        "observed_requests": observed_requests,
+        "observed_responses": observed_responses,
         "blocked_requests": [],
+        "http_methods": ["GET"],
         "non_get_requests": [],
         "visual_mutation_request_observed": False,
     }
@@ -363,6 +399,97 @@ def test_browser_receipt_validator_requires_the_complete_off_mode_proof() -> Non
 
     with pytest.raises(smoke.SmokeFailure, match="browser receipt"):
         release_smoke._validate_browser_receipt(receipt, mode, frontend_url, api_url)
+
+
+def test_browser_receipt_validator_rejects_contradictory_raw_evidence() -> None:
+    mode = release_smoke.MODE_SPECS["default"]
+    frontend_url = "http://127.0.0.1:52006/"
+    api_url = "http://127.0.0.1:52005"
+    valid = browser_receipt_for("default", frontend_url, api_url)
+    invalid_receipts = [
+        {
+            **valid,
+            "feature_response": {
+                "status": 500,
+                "body": {"features": dict(mode.expected_features)},
+            },
+        },
+        {
+            **valid,
+            "feature_response": {
+                "status": 200,
+                "body": {
+                    "features": {
+                        **mode.expected_features,
+                        "sourceVisuals": False,
+                    }
+                },
+            },
+        },
+        {
+            **valid,
+            "observed_requests": [
+                {
+                    "method": "POST",
+                    "url": f"{api_url}/api/visuals",
+                    "path": "/api/visuals",
+                }
+            ],
+            "http_methods": ["POST"],
+            "non_get_requests": [],
+        },
+        {**valid, "http_methods": []},
+        {**valid, "non_get_requests": [{"method": "POST"}]},
+        {
+            **valid,
+            "observed_requests": [
+                {
+                    "method": "GET",
+                    "url": "http://127.0.0.1:52099/other",
+                    "path": "/other",
+                }
+            ],
+        },
+        {
+            **valid,
+            "observed_responses": [{"status": "200", "url": frontend_url, "path": "/"}],
+        },
+    ]
+
+    for receipt in invalid_receipts:
+        with pytest.raises(smoke.SmokeFailure, match="browser receipt"):
+            release_smoke._validate_browser_receipt(
+                receipt, mode, frontend_url, api_url
+            )
+
+
+def test_browser_receipt_validator_derives_off_source_list_from_raw_requests() -> None:
+    mode = release_smoke.MODE_SPECS["source-visuals-off"]
+    frontend_url = "http://127.0.0.1:52010/"
+    api_url = "http://127.0.0.1:52009"
+    receipt = browser_receipt_for("source-visuals-off", frontend_url, api_url)
+    receipt["observed_requests"] = receipt["observed_requests"][:2]
+
+    with pytest.raises(smoke.SmokeFailure, match="browser receipt"):
+        release_smoke._validate_browser_receipt(receipt, mode, frontend_url, api_url)
+
+
+def test_browser_receipt_validator_rejects_evidence_over_its_bounded_limits() -> None:
+    mode = release_smoke.MODE_SPECS["default"]
+    frontend_url = "http://127.0.0.1:52006/"
+    api_url = "http://127.0.0.1:52005"
+    valid = browser_receipt_for("default", frontend_url, api_url)
+    for field, limit in (
+        ("observed_requests", release_smoke.MAX_BROWSER_OBSERVED_REQUESTS),
+        ("observed_responses", release_smoke.MAX_BROWSER_OBSERVED_RESPONSES),
+    ):
+        receipt = dict(valid)
+        entry = receipt[field][0]
+        receipt[field] = [dict(entry) for _ in range(limit + 1)]
+        with pytest.raises(smoke.SmokeFailure, match="browser receipt"):
+            release_smoke._validate_browser_receipt(
+                receipt, mode, frontend_url, api_url
+            )
 
 
 def test_run_mode_uses_all_feature_expectations_and_cleans_up_on_browser_failure(
