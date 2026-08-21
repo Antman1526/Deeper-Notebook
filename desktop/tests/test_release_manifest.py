@@ -21,6 +21,9 @@ WINDOWS_POST_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "post_build_windows
 WINDOWS_BUILD = REPOSITORY_ROOT / "desktop" / "build" / "build_windows.ps1"
 MAKEFILE = REPOSITORY_ROOT / "Makefile"
 TODO_FILE = REPOSITORY_ROOT / "docs" / "TODO.md"
+VERIFICATION_FILE = (
+    REPOSITORY_ROOT / "docs" / "verification" / "2026-08-21-local-release-smoke.md"
+)
 
 CURRENT_APP_SHA256 = "e06d908649762446fb08cc6de28ce8470b4ba711296650fdfcca6937fc136475"
 CURRENT_SURREAL_SHA256 = (
@@ -28,6 +31,16 @@ CURRENT_SURREAL_SHA256 = (
 )
 CURRENT_DMG_SHA256 = "92ab2bf32c783bce103c12cb1d81030b8e3da73784a77264afa3ce5dad98678a"
 TASK8_RECEIPT_ROOT = "/private/tmp/deeper-notebook-task8-20260821T082218Z"
+
+RELEASE_SMOKE_TARGETS = {
+    "smoke-release-mac-app",
+    "smoke-release-installed-mac-app",
+}
+MUTATING_TARGET_NAME = re.compile(
+    r"(?:^|[-_])(?:build-mac-install|install|uninstall|remove|delete|clean|"
+    r"distclean|copy|ditto|xattr|pkill|kill|publish|deploy|mutate)"
+    r"(?:$|[-_])"
+)
 
 COMPATIBLE_BUNDLE_ID = "com.antman1526.open-notebook-plus"
 STABLE_WINDOWS_APP_ID = "{{572C65B3-D1E8-4EBD-8D64-2BFDF3CA5842}"
@@ -41,6 +54,64 @@ def run_manifest(*arguments: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def _make_target_dependencies(makefile: str) -> dict[str, set[str]]:
+    """Parse named Make target prerequisites, including continued declarations."""
+    dependencies: dict[str, set[str]] = {}
+    pending = ""
+
+    def add_declaration(declaration: str) -> None:
+        if re.search(r":\s*[?+]?=", declaration):
+            return
+        if ":" not in declaration:
+            return
+        target_text, prerequisite_text = declaration.split(":", 1)
+        targets = [target for target in target_text.split() if target]
+        prerequisites = {
+            prerequisite
+            for prerequisite in prerequisite_text.split()
+            if prerequisite != "|"
+        }
+        for target in targets:
+            dependencies.setdefault(target, set()).update(prerequisites)
+
+    for raw_line in makefile.splitlines():
+        line = raw_line.rstrip()
+        if pending:
+            pending = f"{pending} {line.strip()}"
+            if pending.endswith("\\"):
+                pending = pending[:-1].rstrip()
+            else:
+                add_declaration(pending)
+                pending = ""
+            continue
+        if not line or line[0].isspace() or line.lstrip().startswith("#"):
+            continue
+        if line.endswith("\\"):
+            pending = line[:-1].rstrip()
+            continue
+        add_declaration(line)
+    if pending:
+        add_declaration(pending)
+    return dependencies
+
+
+def _release_smoke_prerequisites_are_read_only(makefile: str) -> bool:
+    """Reject install/mutation prerequisites through the named target graph."""
+    dependencies = _make_target_dependencies(makefile)
+    for root in RELEASE_SMOKE_TARGETS:
+        pending = list(dependencies.get(root, set()))
+        visited: set[str] = set()
+        while pending:
+            prerequisite = pending.pop()
+            if prerequisite in visited:
+                continue
+            visited.add(prerequisite)
+            if MUTATING_TARGET_NAME.search(prerequisite):
+                return False
+            pending.extend(dependencies.get(prerequisite, set()))
+    return True
 
 
 def test_writes_manifest_with_artifact_integrity_metadata(tmp_path: Path) -> None:
@@ -432,6 +503,36 @@ def test_release_smoke_make_targets_are_read_only_and_caller_owned() -> None:
     assert not any(forbidden.search(line) for line in recipe_lines)
     assert all("build-mac-install" not in line for line in recipe_lines)
     assert all("/applications/" not in line for line in recipe_lines)
+
+
+def test_release_smoke_prerequisites_are_named_and_read_only() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+
+    assert _release_smoke_prerequisites_are_read_only(makefile)
+
+    direct_mutation = makefile.replace(
+        "smoke-release-installed-mac-app:\n",
+        "smoke-release-installed-mac-app: build-mac-install\n",
+        1,
+    )
+    assert not _release_smoke_prerequisites_are_read_only(direct_mutation)
+
+    indirect_mutation = makefile.replace(
+        "smoke-release-mac-app:\n",
+        "smoke-release-mac-app: release-install-preflight\n",
+        1,
+    )
+    indirect_mutation += "\nrelease-install-preflight: build-mac-install\n"
+    assert not _release_smoke_prerequisites_are_read_only(indirect_mutation)
+
+
+def test_release_smoke_verification_uses_verified_offline_uv_cache() -> None:
+    verification = VERIFICATION_FILE.read_text(encoding="utf-8")
+
+    assert verification.count("RELEASE_SMOKE_UV_CACHE_DIR=/Users/Antman/.cache/uv") == 2
+    assert "$REPO/.uv-cache" not in verification
+    assert "caller-owned" in verification.lower()
+    assert "offline" in verification.lower()
 
 
 def test_packaged_v0_8_114_todo_records_current_local_release_truth() -> None:

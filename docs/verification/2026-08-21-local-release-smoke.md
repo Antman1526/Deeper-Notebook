@@ -10,7 +10,8 @@ publish an application.
 ## Commands
 
 Run from the exact checkout below with a fresh, nonexistent output root for
-each invocation. The UV cache and Playwright module must already exist; the
+each invocation. The verified caller-owned UV cache at
+`/Users/Antman/.cache/uv` and the Playwright module must already exist; the
 workflow is offline and does not download models or contact providers.
 
 ```bash
@@ -21,7 +22,7 @@ make smoke-release-mac-app \
   RELEASE_SMOKE_EXECUTABLE="$REPO/dist/Deeper Notebook.app/Contents/MacOS/Deeper Notebook" \
   RELEASE_SMOKE_ARTIFACT="$REPO/dist/Deeper-Notebook-mac-arm64.dmg" \
   RELEASE_SMOKE_OUTPUT_ROOT=/private/tmp/deeper-notebook-release-smoke-staged \
-  RELEASE_SMOKE_UV_CACHE_DIR="$REPO/.uv-cache" \
+  RELEASE_SMOKE_UV_CACHE_DIR=/Users/Antman/.cache/uv \
   RELEASE_SMOKE_PLAYWRIGHT_MODULE="$REPO/frontend/node_modules/playwright-core/index.js" \
   RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256=92ab2bf32c783bce103c12cb1d81030b8e3da73784a77264afa3ce5dad98678a
 
@@ -29,7 +30,7 @@ make smoke-release-installed-mac-app \
   RELEASE_SMOKE_EXECUTABLE="/Applications/Deeper Notebook.app/Contents/MacOS/Deeper Notebook" \
   RELEASE_SMOKE_ARTIFACT="$REPO/dist/Deeper-Notebook-mac-arm64.dmg" \
   RELEASE_SMOKE_OUTPUT_ROOT=/private/tmp/deeper-notebook-release-smoke-installed \
-  RELEASE_SMOKE_UV_CACHE_DIR="$REPO/.uv-cache" \
+  RELEASE_SMOKE_UV_CACHE_DIR=/Users/Antman/.cache/uv \
   RELEASE_SMOKE_PLAYWRIGHT_MODULE="$REPO/frontend/node_modules/playwright-core/index.js" \
   RELEASE_SMOKE_EXPECTED_ARTIFACT_SHA256=92ab2bf32c783bce103c12cb1d81030b8e3da73784a77264afa3ce5dad98678a
 ```
