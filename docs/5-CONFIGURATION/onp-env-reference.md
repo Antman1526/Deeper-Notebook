@@ -244,7 +244,7 @@ PII. See `docs/7-DEVELOPMENT/phase-5-advanced-memory.md`.
 
 | Env var | Default | What it controls |
 |---|---:|---|
-| `DEEPER_NOTEBOOK_AGENT_FSM` | `off` | When `on` (aliases `1`/`true`/`yes`): (a) the `ask` graph declares `clarify` and asks the user to refine instead of synthesizing an ungrounded answer when no searches returned grounded content (v0.8.53); and (b) the chat MCP tool loop lets the model declare a terminal `<state>complete|clarify</state>`, surfaced as `agent_state` on the chat response / stream `done` event (v0.8.60 — `clarify` = the model paused to ask the user). Off → unchanged. |
+| `DEEPER_NOTEBOOK_AGENT_FSM` | `on` | Enabled by default (aliases `1`/`true`/`yes`): (a) the `ask` graph declares `clarify` and asks the user to refine instead of synthesizing an ungrounded answer when no searches returned grounded content (v0.8.53); and (b) the chat MCP tool loop lets the model declare a terminal `<state>complete|clarify</state>`, surfaced as `agent_state` on the chat response / stream `done` event (v0.8.60 — `clarify` = the model paused to ask the user). Set `0`/`false`/`off` to roll back to the pre-FSM behavior. |
 
 ## Native chat web search (v0.8.64 + v0.8.65)
 

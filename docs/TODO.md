@@ -1,6 +1,6 @@
 # TODO
 
-**Status: 2026-08-20 · desktop `0.8.114` (source) · server/container `1.8.5`**
+**Status: 2026-08-21 · desktop `0.8.114` (source) · server/container `1.8.5`**
 
 Concrete, actionable work items. Strategy and rationale live in
 [`ROADMAP.md`](ROADMAP.md); this file is the list you can pick from.
@@ -38,11 +38,22 @@ called a complete remote-history purge. The recoverable backup is
 with SHA-256
 `69564a46f08452675d70d5b2e56ecd77b6fa12edd4e2e8ea01305e74741effd7`.
 
-### 0.3 Packaged v0.8.114 build — resolved 2026-08-20
+### 0.3 Packaged v0.8.114 build — staged artifact verified; install proof deferred to Task 8
 
-The app was stopped, `make build-mac` completed, and the resulting v0.8.114
-bundle was installed and smoke-tested. The original installation was retained
-as a recoverable backup during verification.
+`make build-mac` completed at source commit `d043dd18` and produced a locally
+signed arm64 v0.8.114 bundle. Independent manifest, content, code-signing,
+DMG, and default-on package-smoke checks verified the staged artifact in
+`dist/`:
+
+- app executable SHA-256: `911d75c3f425b839e244b9e613195b3313394c8a7e1307676d580e6af0ec439e`
+- DMG SHA-256: `90ec59291a4bd6fb3e33f295b6134709eafdd6c341af851fc83748238b6a80c8`
+
+The current `/Applications/Deeper Notebook.app` executable was checked
+read-only and has SHA-256
+`1ccaadaa54320b4e605e0f614a889a10954be9e9872f058e41ba2c263f9c7c91`, which
+does not equal the staged artifact. This task did not install or replace the
+application. Do not call v0.8.114 installed until Task 8 performs an
+authorized install and proves hash equality, then reruns installed smoke.
 
 ---
 
@@ -205,16 +216,6 @@ silently re-enable a disabled feature.
   transformations, while their execution remains on the ingest path. Do not
   default-enable either setting or introduce implicit LLM work until those
   failure paths and the per-source cost boundary are proven.
-* **React test-warning inventory (Task 6, 2026-08-20)** — a complete
-  single-worker Vitest capture found **0 total / 0 unique** React `act()` or
-  unawaited-state warnings, so there is no application-owned or Radix-only
-  warning owner to repair or suppress. The focused `GuidedTipsProvider` suite
-  also passed 7/7 without a warning. The full suite did expose five unrelated
-  default-on/runtime regression failures (two stale legacy-shell expectations
-  in `AppShell.test.tsx`, one stale `useSourceVisualsEnabled` mock in
-  `use-sources.test.tsx`, and two stale Research Core defaults in
-  `theme-script.test.ts`); Task 7 must repair those Task 2 follow-ups before
-  claiming a full frontend green gate.
 * **Source-shape tests** — 469 assertions across 88 files that grep exact source
   text. Long assumed to block a formatter; measured 2026-08-19 to not.
   Replace opportunistically, not as a project.

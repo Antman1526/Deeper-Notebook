@@ -251,7 +251,9 @@ the declared todo items to be satisfied, preventing hallucinated done-claims.
   `ThreadState` (new `agent_state`, `todo`, `clarification` fields).
 - **Streaming:** new SSE event types `agent_state` / `clarify` so the UI shows
   real progress and can prompt the user mid-task.
-- **Config:** `ONP_AGENT_FSM` (default off initially → on after bake-in).
+- **Config:** `DEEPER_NOTEBOOK_AGENT_FSM` (default **on** after bake-in;
+  compatibility aliases remain supported). Set `0`/`false`/`off` for the
+  explicit rollback to the pre-FSM behavior.
 
 ### 5.2 Files & phasing
 
@@ -265,7 +267,8 @@ the declared todo items to be satisfied, preventing hallucinated done-claims.
   `write_final_answer` adopts the FSM state vocabulary: when `ONP_AGENT_FSM`
   is on and no search produced grounded content, it declares `CLARIFY` and
   returns a refine-your-question message instead of an ungrounded synthesis
-  (skips the LLM call); otherwise tags `complete`. Default off. The `ask` DAG
+  (skips the LLM call); otherwise tags `complete`. Default on; explicit
+  `DEEPER_NOTEBOOK_AGENT_FSM=0` restores the pre-FSM path. The `ask` DAG
   doesn't loop, so the FSM's loop driver is unused here — that's 5.3c.
 - **5.3c** wire the FSM loop *driver* + backstop into the chat MCP tool loop;
   frontend progress + clarify prompt.
@@ -284,7 +287,8 @@ the declared todo items to be satisfied, preventing hallucinated done-claims.
     A full plan-execute agent (todo plan + anti-hallucinated-done loop driver)
     would be a separate graph, out of scope for retrofitting chat.
 - Risks: weak local models follow state instructions poorly → keep a token-budget
-  backstop so the loop always terminates; default off until validated.
+  backstop so the loop always terminates; the explicit `0` rollback remains
+  available if a deployment needs the pre-FSM behavior.
 
 ---
 
