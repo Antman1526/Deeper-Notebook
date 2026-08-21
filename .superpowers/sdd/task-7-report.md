@@ -347,3 +347,73 @@ remains outside this repair.
 - No remaining Critical or Important source finding is known. Native package
   proof remains blocked by the running installed app, which was observed
   read-only and never signalled or modified.
+
+## 2026-08-20 — Native macOS package proof RED (Terra fallback)
+
+- Preflight at `6ff9863b` on `codex/today-productization` found the supplied
+  untracked task context only, no installed `/Applications/Deeper Notebook.app`
+  process, no real `surreal-darwin` sidecar, no prior `dist/`, arm64 hardware,
+  and local `Deeper Notebook Local` signing identity. No Developer ID or
+  notary profile is available.
+- Ran the repository-authoritative command exactly once, without an install
+  target or signing override: `make build-mac` (PID/PGID `37889`). It advanced
+  through isolated build-venv creation and desktop dependencies into
+  `build-mac-test`'s `uv run pytest tests/ -q --ignore=tests/integration` gate,
+  then exited before frontend/package stages. `dist/` is absent.
+- The detached command runner did not preserve its numeric exit status; the
+  failed build is evidenced by its exited PID, absent declared artifacts, and
+  current root pytest cache. That cache records twelve failures: one search
+  benchmark, the chat/source-chat trim regressions, four source-delete command
+  regressions, and five source-delete containment regressions. No retry,
+  source repair, artifact smoke, install, process signal, or cleanup was run.
+- The build regenerated the pre-existing nine tracked
+  `desktop/build/__pycache__/*.cpython-312.pyc` files. They remain unrelated
+  dirty state and were not staged, reverted, or otherwise modified by hand.
+
+Open: Sol must decide whether the full backend gate failures are an existing
+test-suite/reproducibility defect and authorize a focused diagnostic/repair.
+Native package/artifact/smoke proof remains blocked; notarization and Windows
+proof also remain outside available authority.
+
+## 2026-08-20 — Native macOS package proof retry (Terra fallback)
+
+- Sol-approved retry ran at exact `d043dd18aa8af1b34247c74a205deea374c836b4`
+  on `codex/today-productization`, after a read-only preflight confirmed the
+  installed `/Applications/Deeper Notebook.app` and real `surreal-darwin`
+  sidecar were absent. Hardware is arm64; the only signing identity remains
+  `Deeper Notebook Local`; no Developer ID or notary profile is available.
+- The repository-authoritative `make build-mac` ran once, captured through an
+  attached session, and exited `0`. Its desktop unit gate was `852 passed, 2
+  skipped`; its backend gate first observed two timing failures, then Make's
+  built-in documented retry passed `2 passed in 4.70s`. It then completed the
+  frontend build, PyInstaller app, local signing, and DMG. Build receipt and
+  complete output: `/private/tmp/deeper-notebook-task7-package-rOTVMN/`.
+- Independent package evidence passed: `release_manifest.py` reports app
+  executable `9252864` bytes / SHA-256
+  `911d75c3f425b839e244b9e613195b3313394c8a7e1307676d580e6af0ec439e` and
+  DMG `193636060` bytes / SHA-256
+  `90ec59291a4bd6fb3e33f295b6134709eafdd6c341af851fc83748238b6a80c8`, both
+  at git `d043`. The app uses the frozen desktop bundle identifier, version
+  `0.8.114`, arm64 (including bundled Surreal); canonical contents and
+  frozen-resource checks passed; `codesign --verify --deep --strict` passed;
+  `hdiutil verify` and a read-only mounted-DMG recheck passed. `spctl` exits
+  `3` with expected local-signing rejection, so this is not Developer-ID or
+  notarization proof.
+- Default isolated package smoke passed in an owned `/private/tmp` root:
+  `/readyz` reported online DB and applied migrations; `/api/features` returned
+  all six default-on booleans including `sourceVisuals: true`; `/login`
+  contained the V2 marker and an independent real browser rendered the V2
+  workspace. Its exact owned process group and listeners exited cleanly.
+- The one permitted fresh-root rollback smoke with
+  `DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED=0` did not reach readiness. Its
+  isolated `uv pip install` exited `1` after `jsonschema-path==0.4.6` timed out
+  downloading from `files.pythonhosted.org` after three retries. No retry or
+  source change was made. This is a network/bootstrap limitation of the
+  optional runtime rollback proof, not evidence that the rollback path failed.
+  Both exact smoke roots and generated Playwright snapshots were moved
+  recoverably to Trash after process/listener checks; generated tracked pycs
+  were restored. No package was installed and `/Applications` was untouched.
+
+Open: native artifact and default-on package proof are green; rerun only the
+isolated rollback smoke when a reliable package-index connection is available.
+Developer ID/notarization, Windows, publish, and release remain out of scope.

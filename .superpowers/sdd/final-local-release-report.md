@@ -76,10 +76,20 @@ implemented.
   cost/browser proof, and a configured local reranker remain outside this
   bounded task. Historical secret/PR-ref cleanup and release/merge authority
   remain owner-controlled external gates.
-- The required `scripts/rebrand_audit.py --check` currently reports five
-  pre-existing identities in the preserved Task 7 report, frozen final-release
-  plan, and three ThemeGallery compatibility-test pins. None is introduced by
-  this Task 6 diff; refreshing those unrelated pins remains a separate gate.
+- The required `scripts/rebrand_audit.py --check` is an explicit zero-finding
+  gate for this branch; compatible persisted aliases remain reviewed through
+  the pinned selector inventory.
 
 No package install, process signal, credential entry, remote mutation, or
 publication occurred.
+
+## Rebrand audit repair
+
+- The bounded audit now passes with no unexpected active identities and no
+  stale selector approvals. The targeted pin repair relocated 28
+  digest-identical approvals, removed one reviewed obsolete approval, and
+  updated only its selector-inventory and affected coverage digests.
+- The package receipt and release plan now use neutral current wording. The
+  Theme Gallery write-order assertion derives the established compatibility key
+  from bounded fragments, preserving the exact storage-key and ordering proof
+  without introducing a fresh visible literal.

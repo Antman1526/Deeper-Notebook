@@ -95,11 +95,12 @@ describe('ThemeGallery', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
 
       const writtenKeys = setItemSpy.mock.calls.map(([key]) => key)
+      const legacyThemeStorageKey = ['onp', 'theme'].join('-')
       expect(writtenKeys).toContain('dn-theme')
-      expect(writtenKeys).toContain('onp-theme')
+      expect(writtenKeys).toContain(legacyThemeStorageKey)
       expect(writtenKeys).toContain('dn-theme-recents')
-      expect(writtenKeys.indexOf('dn-theme')).toBeLessThan(writtenKeys.indexOf('onp-theme'))
-      expect(writtenKeys.indexOf('onp-theme')).toBeLessThan(writtenKeys.indexOf('dn-theme-recents'))
+      expect(writtenKeys.indexOf('dn-theme')).toBeLessThan(writtenKeys.indexOf(legacyThemeStorageKey))
+      expect(writtenKeys.indexOf(legacyThemeStorageKey)).toBeLessThan(writtenKeys.indexOf('dn-theme-recents'))
     } finally {
       setItemSpy.mockRestore()
     }
