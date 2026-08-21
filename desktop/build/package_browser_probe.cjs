@@ -120,6 +120,14 @@ async function main() {
   }
   const allowedOrigins = new Set([frontend.origin, api.origin])
   const { chromium } = require(path.resolve(args['playwright-module']))
+  const requestedDocumentUrl = new URL(
+    args.mode === 'default' ? '/' : '/sources',
+    frontend,
+  ).href
+  const retainsEvidence = (url) => (
+    url.origin === api.origin
+    || (url.origin === frontend.origin && url.href === requestedDocumentUrl)
+  )
   const observed = []
   const responses = []
   const observedRequestKeys = new Set()
@@ -149,6 +157,7 @@ async function main() {
           requestEvidenceInvalid = true
           return
         }
+        if (!retainsEvidence(url)) return
         const evidenceKey = `${method}\u0000${url.href}`
         if (observedRequestKeys.has(evidenceKey)) return
         if (observed.length >= MAX_OBSERVED_REQUEST_ENTRIES) {
@@ -167,6 +176,11 @@ async function main() {
           responseEvidenceInvalid = true
           return
         }
+        if (!allowedOrigins.has(url.origin)) {
+          responseEvidenceInvalid = true
+          return
+        }
+        if (!retainsEvidence(url)) return
         const evidenceKey = `${status}\u0000${url.href}`
         if (observedResponseKeys.has(evidenceKey)) return
         if (responses.length >= MAX_OBSERVED_RESPONSE_ENTRIES) {

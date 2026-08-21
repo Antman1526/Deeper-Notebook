@@ -25,6 +25,7 @@ PACKAGE_BROWSER_PROBE_SCRIPT = (
 
 FAKE_PLAYWRIGHT_MODULE = r"""
 const scenario = process.env.FAKE_SCENARIO || 'duplicates'
+const mode = process.env.FAKE_MODE || 'default'
 
 const EXPECTED_FEATURES = {
   evidenceStudio: true,
@@ -78,13 +79,21 @@ class FakePage {
     const base = new URL(url)
     if (scenario === 'duplicates') {
       for (let index = 0; index < 70; index += 1) await this.emit(base.href, 'GET', 200)
-    } else if (scenario === 'distinct') {
+    } else if (scenario === 'frontend-static-assets') {
+      await this.emit(base.href, 'GET', 200)
+      for (let index = 0; index < 70; index += 1) {
+        await this.emit(new URL(`/static/chunk-${index}.js`, base).href, 'GET', 200)
+      }
+      for (let index = 0; index < 70; index += 1) {
+        await this.emit(new URL(`/?_rsc=${index}`, base).href, 'GET', 200)
+      }
+    } else if (scenario === 'api-distinct') {
       for (let index = 0; index < 65; index += 1) {
-        await this.emit(new URL(`/distinct/${index}`, base).href, 'GET', 200)
+        await this.emit(`http://127.0.0.1:41002/api/asset/${index}`, 'GET', 200)
       }
     } else if (scenario === 'query-differences') {
       for (let index = 0; index < 65; index += 1) {
-        await this.emit(new URL(`/?query=${index}`, base).href, 'GET', 200)
+        await this.emit(`http://127.0.0.1:41002/api/asset?query=${index}`, 'GET', 200)
       }
     } else if (scenario === 'status-differences') {
       await this.emit(base.href, 'GET', 200)
@@ -98,13 +107,22 @@ class FakePage {
     } else if (scenario === 'invalid-url') {
       for (const handler of this.listeners.request) handler(fakeRequest('not a URL', 'GET'))
     }
+    if (mode === 'off') await this.emit('http://127.0.0.1:41002/api/sources', 'GET', 200)
   }
 
   async waitForTimeout() {}
 
   async evaluate(_script, featureAuthorityUrl) {
     await this.emit(featureAuthorityUrl, 'GET', 200)
-    return { status: 200, body: { features: { ...EXPECTED_FEATURES } } }
+    return {
+      status: 200,
+      body: {
+        features: {
+          ...EXPECTED_FEATURES,
+          ...(mode === 'off' ? { sourceVisuals: false } : {}),
+        },
+      },
+    }
   }
 
   locator() {
@@ -112,7 +130,12 @@ class FakePage {
       waitFor: async () => {},
       getAttribute: async () => 'gemini-forward-light',
       isVisible: async () => true,
+      first: () => ({ isVisible: async () => true }),
     }
+  }
+
+  getByRole() {
+    return { waitFor: async () => {}, isVisible: async () => true }
   }
 }
 
@@ -144,18 +167,19 @@ def run_smoke(*arguments: str) -> subprocess.CompletedProcess[str]:
 
 
 def run_fake_browser_probe(
-    tmp_path: Path, scenario: str
+    tmp_path: Path, scenario: str, *, mode: str = "default"
 ) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
     playwright_module = tmp_path / f"fake_playwright_{scenario}.cjs"
     playwright_module.write_text(FAKE_PLAYWRIGHT_MODULE, encoding="utf-8")
     environment = os.environ.copy()
     environment["FAKE_SCENARIO"] = scenario
+    environment["FAKE_MODE"] = mode
     result = subprocess.run(
         [
             "node",
             str(PACKAGE_BROWSER_PROBE_SCRIPT),
             "--mode",
-            "default",
+            mode,
             "--frontend-url",
             "http://127.0.0.1:41001/",
             "--api-url",
@@ -210,10 +234,43 @@ def test_browser_probe_coalesces_exact_duplicate_request_and_response_evidence(
     ]
 
 
-def test_browser_probe_rejects_more_than_64_distinct_evidence_entries(
+def test_browser_probe_omits_distinct_frontend_static_evidence(
     tmp_path: Path,
 ) -> None:
-    result, receipt = run_fake_browser_probe(tmp_path, "distinct")
+    result, receipt = run_fake_browser_probe(tmp_path, "frontend-static-assets")
+
+    assert result.returncode == 0, result.stderr
+    assert receipt["status"] == "passed"
+    assert receipt["observed_requests"] == [
+        {
+            "method": "GET",
+            "url": "http://127.0.0.1:41001/",
+            "path": "/",
+        },
+        {
+            "method": "GET",
+            "url": "http://127.0.0.1:41002/api/features",
+            "path": "/api/features",
+        },
+    ]
+    assert receipt["observed_responses"] == [
+        {
+            "status": 200,
+            "url": "http://127.0.0.1:41001/",
+            "path": "/",
+        },
+        {
+            "status": 200,
+            "url": "http://127.0.0.1:41002/api/features",
+            "path": "/api/features",
+        },
+    ]
+
+
+def test_browser_probe_rejects_more_than_64_distinct_api_evidence_entries(
+    tmp_path: Path,
+) -> None:
+    result, receipt = run_fake_browser_probe(tmp_path, "api-distinct")
 
     assert result.returncode == 1
     assert receipt == {
@@ -265,6 +322,26 @@ def test_browser_probe_keeps_invalid_boundaries_fail_closed(
     assert result.returncode == 1
     assert receipt["status"] == "failed"
     assert error in receipt["error"]
+
+
+def test_browser_probe_off_mode_retains_the_source_list_evidence(
+    tmp_path: Path,
+) -> None:
+    result, receipt = run_fake_browser_probe(tmp_path, "duplicates", mode="off")
+
+    assert result.returncode == 0, result.stderr
+    assert receipt["status"] == "passed"
+    assert receipt["feature_response"]["body"]["features"]["sourceVisuals"] is False
+    assert [request["path"] for request in receipt["observed_requests"]] == [
+        "/sources",
+        "/api/sources",
+        "/api/features",
+    ]
+    assert [response["path"] for response in receipt["observed_responses"]] == [
+        "/sources",
+        "/api/sources",
+        "/api/features",
+    ]
 
 
 def test_release_browser_probe_uses_exact_loopback_origins_and_get_only_contract() -> (
