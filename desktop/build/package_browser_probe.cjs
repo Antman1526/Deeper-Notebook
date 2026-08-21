@@ -90,8 +90,10 @@ async function main() {
       }
     })
     await page.route('**/*', async (route) => {
-      const url = new URL(route.request().url())
-      if ((url.protocol === 'http:' || url.protocol === 'https:') && !allowedOrigins.has(url.origin)) {
+      const request = route.request()
+      const url = new URL(request.url())
+      const isHttpRequest = url.protocol === 'http:' || url.protocol === 'https:'
+      if (isHttpRequest && (!allowedOrigins.has(url.origin) || request.method() !== 'GET')) {
         blocked.push(url.href)
         await route.abort()
         return

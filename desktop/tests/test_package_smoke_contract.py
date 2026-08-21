@@ -44,6 +44,15 @@ def test_release_browser_probe_uses_exact_loopback_origins_and_get_only_contract
     assert "args.mode === 'default' ? '/' : '/sources'" in source
 
 
+def test_release_browser_probe_aborts_non_get_requests_before_they_reach_loopback() -> (
+    None
+):
+    source = PACKAGE_BROWSER_PROBE_SCRIPT.read_text(encoding="utf-8")
+    assert "const request = route.request()" in source
+    assert "request.method() !== 'GET'" in source
+    assert "await route.abort()" in source
+
+
 def test_release_browser_probe_requires_both_127_0_0_1_hosts() -> None:
     source = PACKAGE_BROWSER_PROBE_SCRIPT.read_text(encoding="utf-8")
     assert "frontend.hostname !== '127.0.0.1'" in source
