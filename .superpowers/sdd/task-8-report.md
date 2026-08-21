@@ -95,3 +95,14 @@ stale state. `AlertDialog.onOpenChange` now clears both fields whenever the
 dialog closes, including cancel, dismissal, and successful confirmation. The
 pending route remains unexecuted and successful confirmation still records
 only the existing continuation state.
+
+## Final Local Release Task 8 — recovered package/install receipt — 2026-08-21
+
+This section is separate from the earlier Phase 1 Task 8 report above.
+
+- Frozen package authority: `225f42285e6cb009609ccb0d4cf0bd4f20a9f67b`; the prior authorized build passed once and was not retried.
+- Staged verification passed: contents, `com.antman1526.open-notebook-plus` / `0.8.114`, arm64 app/Surreal, deep/strict local codesign, DMG verify/read-only mount/detach. SHA-256: app `e06d908649762446fb08cc6de28ce8470b4ba711296650fdfcca6937fc136475`, Surreal `30babdd7fe6d84187cd2196a01df7c623aa1700dc24e5d229b2703c718315b26`, DMG `92ab2bf32c783bce103c12cb1d81030b8e3da73784a77264afa3ce5dad98678a`.
+- Original staged-default smoke remains a clean failed receipt because missing isolated config selected first-run wizard before readiness. Corrected provider-none/offline-cache roots passed staged and installed default/off receipts in `/private/tmp/deeper-notebook-task8-20260821T082218Z/`.
+- Prior app backup `/Applications/Deeper Notebook.app.backup-20260821T085744Z` remains readable. The `ditto` installed bundle passed deep/strict signature and exact executable hash equality.
+- Browser receipts `installed-browser-default-allowlist.json` and `installed-browser-off-fresh.json` passed: Gemini Forward workspace/all six features by default; usable Sources, `sourceVisuals=false`, GET-only traffic, and no visual mutation off.
+- Local signing is not Developer ID/notarization. No Windows package, push, publish, credentials, merge, or backup deletion occurred.
