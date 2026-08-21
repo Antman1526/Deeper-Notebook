@@ -682,6 +682,110 @@ test.describe('source gallery visual contract', () => {
     assertExactSourceGalleryLedger(fixture)
   })
 
+  test('source actions keep keyboard menu events out of gallery navigation', async ({ page }) => {
+    const cell = SOURCE_GALLERY_CELLS.find(candidate => candidate.id === 'sources-ready')!
+    const fixture = await installSourceGalleryFixture(page, {
+      cell,
+      theme: 'gemini-forward-light',
+      viewport: SOURCE_GALLERY_VIEWPORTS[3],
+    })
+    await page.route(url => (
+      new URL(url.href).pathname === '/api/sources'
+    ), async route => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'source:fixture',
+            title: 'Fixture field notes',
+            topics: ['evidence'],
+            provenance: { origin: 'local fixture' },
+            source_type: 'upload',
+            notebook_count: 1,
+            is_shared: false,
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 1,
+            summary_preview: 'A source used to verify local visual presentation.',
+            created: '2026-08-15T12:00:00Z',
+            updated: '2026-08-15T12:00:00Z',
+            file_available: true,
+            extracted_char_count: 128,
+            extraction_quality: 'ok',
+            command_id: null,
+            status: 'completed',
+            processing_info: null,
+            visual: null,
+            visual_status: null,
+          },
+          {
+            id: 'source:secondary',
+            title: 'Second fixture source',
+            topics: ['evidence'],
+            provenance: { origin: 'local fixture' },
+            source_type: 'upload',
+            notebook_count: 1,
+            is_shared: false,
+            asset: null,
+            embedded: true,
+            embedded_chunks: 3,
+            insights_count: 1,
+            summary_preview: 'A second source used to verify keyboard isolation.',
+            created: '2026-08-15T12:00:00Z',
+            updated: '2026-08-15T12:00:00Z',
+            file_available: true,
+            extracted_char_count: 128,
+            extraction_quality: 'ok',
+            command_id: null,
+            status: 'completed',
+            processing_info: null,
+            visual: null,
+            visual_status: null,
+          },
+        ]),
+      })
+    })
+    fixture.expectCall('POST /api/sources/source:fixture/visual:refresh')
+    fixture.expectCall('GET /api/sources/source:fixture')
+    fixture.releaseData()
+    await page.goto(cell.browserPath)
+    const sourcePageUrl = page.url()
+
+    const firstCard = page.getByTestId('source-gallery-card-source:fixture').locator('button').first()
+    const secondCard = page.getByTestId('source-gallery-card-source:secondary').locator('button').first()
+    const actions = page.getByRole('button', { name: 'Actions for Fixture field notes' })
+    await expect(firstCard).toHaveAttribute('aria-pressed', 'true')
+    await expect(secondCard).toHaveAttribute('aria-pressed', 'false')
+
+    await actions.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('menuitem', { name: 'Refresh visual' })).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await expect(page.getByRole('menuitem', { name: 'Remove visual' })).toBeFocused()
+    await expect(firstCard).toHaveAttribute('aria-pressed', 'true')
+    await expect(secondCard).toHaveAttribute('aria-pressed', 'false')
+    await page.keyboard.press('ArrowDown')
+    await expect(page.getByRole('menuitem', { name: 'Delete source' })).toBeFocused()
+    await expect(firstCard).toHaveAttribute('aria-pressed', 'true')
+    await expect(secondCard).toHaveAttribute('aria-pressed', 'false')
+    await page.keyboard.press('Space')
+    const confirmation = page.getByRole('alertdialog')
+    await expect(confirmation).toContainText('Are you sure you want to delete "Fixture field notes"?')
+    await expect(page).toHaveURL(sourcePageUrl)
+    await page.getByRole('button', { name: 'Cancel' }).click()
+
+    await actions.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('menuitem', { name: 'Refresh visual' })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => fixture.ledger.seen['POST /api/sources/source:fixture/visual:refresh'] ?? 0).toBe(1)
+    await expect.poll(() => fixture.ledger.seen['GET /api/sources/source:fixture'] ?? 0).toBe(1)
+    await expect(page).toHaveURL(sourcePageUrl)
+    await expect(firstCard).toHaveAttribute('aria-pressed', 'true')
+    await expect(secondCard).toHaveAttribute('aria-pressed', 'false')
+  })
+
   test('Source Gallery keeps backend config on the same-origin fixture contract', async ({ page }) => {
     const cell = SOURCE_GALLERY_CELLS.find(candidate => candidate.id === 'sources-ready')!
     const fixture = await installSourceGalleryFixture(page, {

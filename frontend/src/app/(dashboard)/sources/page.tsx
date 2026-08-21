@@ -148,13 +148,14 @@ export default function SourcesPage() {
       // anywhere in the tree all lost their arrow-key caret movement
       // while the Sources page was the active route. CommandPalette
       // already uses this guard pattern (CommandPalette.tsx:77-84).
-      const target = e.target as HTMLElement | null
+      const target = e.target instanceof Element ? e.target : null
+      const interactiveTarget = target?.closest(
+        'button, a, input, textarea, select, option, summary, [role="button"], [role="link"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]',
+      )
       if (
-        target &&
-        (target.isContentEditable ||
-          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
-          (typeof target.closest === 'function' &&
-            target.closest('button, a, input, textarea, select, option, summary, [role="button"], [role="link"]')))
+        e.defaultPrevented
+        || (target instanceof HTMLElement && target.isContentEditable)
+        || interactiveTarget
       ) {
         return
       }
