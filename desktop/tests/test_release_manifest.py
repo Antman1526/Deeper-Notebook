@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -318,6 +319,7 @@ def test_package_smoke_targets_are_explicit_and_never_mutate_applications() -> N
     assert "smoke-mac-app:" in makefile
     assert "smoke-installed-mac-app: smoke-mac-app" in makefile
     assert "export SMOKE_EXECUTABLE SMOKE_READINESS_FILE" in makefile
+    assert "SMOKE_ENVIRONMENT_FILE" in makefile
     assert "--make-smoke-inputs" in makefile
     smoke_targets = makefile[
         makefile.index(".PHONY: smoke-mac-app") : makefile.index(
@@ -340,7 +342,7 @@ def test_package_smoke_target_preserves_a_spaced_environment_value() -> None:
             "SMOKE_READINESS_FILE=/tmp/desktop-readiness.json",
             "SMOKE_ARTIFACT=/tmp/deeper-notebook.dmg",
             "SMOKE_RECEIPT=/tmp/package-smoke-receipt.json",
-            "SMOKE_ENVIRONMENT=DEEPER_NOTEBOOK_TITLE=local smoke value",
+            "SMOKE_ENVIRONMENT_FILE=/tmp/smoke-environment.txt",
         ],
         cwd=REPOSITORY_ROOT,
         capture_output=True,
@@ -386,6 +388,48 @@ def test_package_smoke_target_does_not_evaluate_environment_injection(
     assert result.returncode != 0
     assert not backtick_marker.exists()
     assert not substitution_marker.exists()
+
+
+def test_package_smoke_target_preserves_literal_environment_dollars_in_the_app(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    observed = tmp_path / "observed-environment.txt"
+    executable = tmp_path / "observe-environment.sh"
+    executable.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s' \"$PROBE\" > {shlex.quote(str(observed))}\n"
+        "exec /bin/sleep 60\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o700)
+    literal_value = 'spaces `backtick` $() $(literal-dollar) "quotes"\nsecond line'
+    environment_file = tmp_path / "smoke-environment.txt"
+    environment_file.write_text(f"PROBE={literal_value}", encoding="utf-8")
+    receipt = tmp_path / "receipt.json"
+
+    result = subprocess.run(
+        [
+            "make",
+            "smoke-mac-app",
+            f"SMOKE_EXECUTABLE={executable}",
+            f"SMOKE_READINESS_FILE={tmp_path / 'desktop-readiness.json'}",
+            f"SMOKE_ARTIFACT={artifact}",
+            f"SMOKE_RECEIPT={receipt}",
+            f"SMOKE_ENVIRONMENT_FILE={environment_file}",
+            "SMOKE_TIMEOUT_SECONDS=0.25",
+        ],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode != 0
+    assert observed.exists(), result.stderr
+    assert observed.read_text(encoding="utf-8") == literal_value
 
 
 def test_makefile_prepares_build_venv_before_desktop_memory_precondition_tests() -> (

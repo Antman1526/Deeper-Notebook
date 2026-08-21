@@ -8,7 +8,9 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from desktop.build import package_smoke as smoke
@@ -25,6 +27,26 @@ def run_smoke(*arguments: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def wait_for_path(path: Path, timeout_seconds: float = 3) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if path.exists():
+            return
+        time.sleep(0.01)
+    raise AssertionError(f"timed out waiting for {path}")
+
+
+def assert_process_is_gone(pid: int, timeout_seconds: float = 3) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"process {pid} survived cleanup")
 
 
 def test_parse_environment_accepts_key_value_pairs() -> None:
@@ -626,6 +648,190 @@ def test_dynamic_smoke_times_out_when_the_retained_monitor_has_no_readiness(
     assert waited
 
 
+def test_dynamic_smoke_rejects_an_exited_child_despite_healthy_unrelated_endpoints(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    readiness = tmp_path / "desktop-readiness.json"
+    receipt_path = tmp_path / "receipt.json"
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            body = b'{"features":{}}' if self.path == "/api/features" else b"__next_f"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    port = server.server_address[1]
+    application = (
+        "import json, os, pathlib, sys; "
+        "pathlib.Path(sys.argv[1]).write_text(json.dumps({'status':'ready', "
+        "'pid':os.getpid(), 'api_url':sys.argv[2], 'frontend_url':sys.argv[2]}), "
+        "encoding='utf-8')"
+    )
+    try:
+        result = run_smoke(
+            "--executable",
+            sys.executable,
+            "--executable-arg=-c",
+            f"--executable-arg={application}",
+            f"--executable-arg={readiness}",
+            f"--executable-arg=http://127.0.0.1:{port}",
+            "--readiness-file",
+            str(readiness),
+            "--artifact",
+            str(artifact),
+            "--receipt",
+            str(receipt_path),
+            "--timeout-seconds",
+            "2",
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=2)
+
+    assert result.returncode == 1
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert "launched application exited with code 0" in receipt["error"]
+    assert receipt["checks"]["process_startup"] == {"passed": False}
+
+
+def test_dynamic_smoke_reports_usr_bin_true_as_child_exit(tmp_path: Path) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    receipt_path = tmp_path / "receipt.json"
+
+    result = run_smoke(
+        "--executable",
+        "/usr/bin/true",
+        "--readiness-file",
+        str(tmp_path / "desktop-readiness.json"),
+        "--artifact",
+        str(artifact),
+        "--receipt",
+        str(receipt_path),
+        "--timeout-seconds",
+        "2",
+    )
+
+    assert result.returncode == 1
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert "launched application exited with code 0" in receipt["error"]
+    assert receipt["checks"]["process_startup"] == {"passed": False}
+    assert "timed out" not in receipt["error"]
+
+
+def test_sigterm_to_the_verifier_writes_a_receipt_and_leaves_no_owned_group(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "fixture.dmg"
+    artifact.write_bytes(b"fixture artifact")
+    readiness = tmp_path / "desktop-readiness.json"
+    receipt_path = tmp_path / "receipt.json"
+    application = (
+        "import json, os, pathlib, sys, time; "
+        "pathlib.Path(sys.argv[1]).write_text(json.dumps({'status':'ready', "
+        "'pid':os.getpid(), 'api_url':'http://127.0.0.1:9', "
+        "'frontend_url':'http://127.0.0.1:9'}), encoding='utf-8'); time.sleep(60)"
+    )
+    verifier = subprocess.Popen(
+        [
+            sys.executable,
+            str(PACKAGE_SMOKE_SCRIPT),
+            "--executable",
+            sys.executable,
+            "--executable-arg=-c",
+            f"--executable-arg={application}",
+            f"--executable-arg={readiness}",
+            "--readiness-file",
+            str(readiness),
+            "--artifact",
+            str(artifact),
+            "--receipt",
+            str(receipt_path),
+            "--timeout-seconds",
+            "5",
+        ],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+    )
+    monitor_pid: int | None = None
+    application_pid: int | None = None
+    try:
+        wait_for_path(readiness)
+        application_pid = json.loads(readiness.read_text(encoding="utf-8"))["pid"]
+        monitor_pid = os.getpgid(application_pid)
+        verifier.send_signal(signal.SIGTERM)
+        assert verifier.wait(timeout=5) == 130
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        assert receipt["cancelled"] is True
+        assert receipt["checks"]["clean_shutdown"]["passed"] is True
+        assert_process_is_gone(application_pid)
+        assert_process_is_gone(monitor_pid)
+    finally:
+        if verifier.poll() is None:
+            verifier.kill()
+            verifier.wait(timeout=2)
+        if monitor_pid is not None:
+            try:
+                os.killpg(monitor_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def test_hard_verifier_exit_closes_the_monitor_parent_channel(tmp_path: Path) -> None:
+    application_path = tmp_path / "application.json"
+    monitor_path = tmp_path / "monitor.json"
+    application = (
+        "import json, os, pathlib, sys, time; "
+        "pathlib.Path(sys.argv[1]).write_text(json.dumps({'pid':os.getpid()}), "
+        "encoding='utf-8'); time.sleep(60)"
+    )
+    verifier = (
+        "import json, os, pathlib, sys; "
+        "from desktop.build import package_smoke as smoke; "
+        "monitor, application_pid = smoke.launch_monitored_process("
+        "[sys.executable, '-c', sys.argv[1], sys.argv[2]], dict(os.environ), 2); "
+        "pathlib.Path(sys.argv[3]).write_text(json.dumps({'monitor':monitor.pid, "
+        "'application':application_pid}), encoding='utf-8'); os._exit(0)"
+    )
+    verifier_process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            verifier,
+            application,
+            str(application_path),
+            str(monitor_path),
+        ],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+    )
+    assert verifier_process.wait(timeout=5) == 0
+    wait_for_path(monitor_path)
+    identities = json.loads(monitor_path.read_text(encoding="utf-8"))
+    monitor_pid = identities["monitor"]
+    application_pid = identities["application"]
+    try:
+        assert_process_is_gone(application_pid)
+        assert_process_is_gone(monitor_pid)
+    finally:
+        try:
+            os.killpg(monitor_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
 def test_dynamic_smoke_records_feature_mismatch_and_cleans_up(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -901,12 +1107,18 @@ def test_readiness_rejects_oversized_json_before_parsing(tmp_path: Path) -> None
         raise AssertionError("expected oversized readiness rejection")
 
 
-def test_make_inputs_preserve_a_spaced_environment_value(monkeypatch) -> None:
+def test_make_inputs_preserve_a_spaced_environment_value(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("SMOKE_EXECUTABLE", "/tmp/deeper-notebook")
     monkeypatch.setenv("SMOKE_READINESS_FILE", "/tmp/desktop-readiness.json")
     monkeypatch.setenv("SMOKE_ARTIFACT", "/tmp/deeper-notebook.dmg")
     monkeypatch.setenv("SMOKE_RECEIPT", "/tmp/package-smoke-receipt.json")
-    monkeypatch.setenv("SMOKE_ENVIRONMENT", "DEEPER_NOTEBOOK_TITLE=local smoke value")
+    environment_file = tmp_path / "smoke-environment.txt"
+    environment_file.write_text(
+        "DEEPER_NOTEBOOK_TITLE=local smoke value", encoding="utf-8"
+    )
+    monkeypatch.setenv("SMOKE_ENVIRONMENT_FILE", str(environment_file))
 
     args = smoke.parse_args(["--make-smoke-inputs"])
     smoke.apply_make_smoke_inputs(args)

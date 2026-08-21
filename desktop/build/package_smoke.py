@@ -29,35 +29,102 @@ MAX_READINESS_BYTES = 64 * 1024
 _LOCAL_OPENER = build_opener(ProxyHandler({}))
 _MONITOR_FD_ENV = "DEEPER_NOTEBOOK_PACKAGE_SMOKE_MONITOR_FD"
 _MONITOR_LIVENESS_FD_ENV = "DEEPER_NOTEBOOK_PACKAGE_SMOKE_MONITOR_LIVENESS_FD"
+_MONITOR_PARENT_FD_ENV = "DEEPER_NOTEBOOK_PACKAGE_SMOKE_PARENT_FD"
 _MONITOR_SCRIPT = r'''
 import json
 import os
+import select
 import signal
 import subprocess
 import sys
-import threading
 import time
 
 descriptor = int(os.environ.pop("DEEPER_NOTEBOOK_PACKAGE_SMOKE_MONITOR_FD"))
 liveness_descriptor = int(
     os.environ.pop("DEEPER_NOTEBOOK_PACKAGE_SMOKE_MONITOR_LIVENESS_FD")
 )
+parent_descriptor = int(
+    os.environ.pop("DEEPER_NOTEBOOK_PACKAGE_SMOKE_PARENT_FD")
+)
+
+
+def report(payload):
+    try:
+        os.write(descriptor, (json.dumps(payload) + "\n").encode("utf-8"))
+    except OSError:
+        pass
+
+
+def group_descendants():
+    group = os.getpgrp()
+    listing = subprocess.run(
+        ["ps", "-axo", "pid=,pgid="],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    descendants = []
+    for line in listing.stdout.splitlines():
+        columns = line.split()
+        if len(columns) != 2:
+            continue
+        try:
+            pid, process_group = (int(column) for column in columns)
+        except ValueError:
+            continue
+        if process_group == group and pid != os.getpid():
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
+            descendants.append(pid)
+    return descendants
+
+
+def reap_application():
+    try:
+        pid, status = os.waitpid(application.pid, os.WNOHANG)
+    except ChildProcessError:
+        return True
+    if pid == 0:
+        return False
+    report({"event": "exited", "pid": application.pid, "returncode": os.waitstatus_to_exitcode(status)})
+    return True
+
+
+def terminate_owned_descendants():
+    for termination_signal in (signal.SIGTERM, signal.SIGKILL):
+        deadline = time.monotonic() + 1
+        while True:
+            reap_application()
+            descendants = group_descendants()
+            if not descendants:
+                return
+            for pid in descendants:
+                try:
+                    os.kill(pid, termination_signal)
+                except ProcessLookupError:
+                    pass
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.02)
+    while group_descendants():
+        for pid in group_descendants():
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        reap_application()
+        time.sleep(0.02)
+
+
 try:
     application = subprocess.Popen(sys.argv[1:])
-    os.write(descriptor, json.dumps({"pid": application.pid}).encode("utf-8"))
+    report({"event": "started", "pid": application.pid})
 except BaseException as error:
-    try:
-        os.write(descriptor, json.dumps({"error": str(error)}).encode("utf-8"))
-    finally:
-        os.close(descriptor)
-    raise
-else:
+    report({"event": "error", "error": str(error)})
     os.close(descriptor)
-
-# Reap the direct application even when it exits before the smoke parent asks
-# for cleanup. Its independently-forked descendants remain in this retained
-# monitor's process group and are still visible to the parent proof.
-threading.Thread(target=application.wait, daemon=True).start()
+    raise
 
 # Keep the group leader alive until the parent has proved that every child in
 # the group has stopped.  In particular, do not let SIGTERM reap the leader
@@ -65,7 +132,14 @@ threading.Thread(target=application.wait, daemon=True).start()
 signal.signal(signal.SIGTERM, lambda *_args: None)
 signal.signal(signal.SIGINT, lambda *_args: None)
 while True:
-    time.sleep(1)
+    reap_application()
+    readable, _, _ = select.select([parent_descriptor], [], [], 0.05)
+    if readable and os.read(parent_descriptor, 4096) == b"":
+        terminate_owned_descendants()
+        os.close(descriptor)
+        os.close(liveness_descriptor)
+        os.close(parent_descriptor)
+        raise SystemExit(0)
 '''
 
 
@@ -158,10 +232,17 @@ def check_artifact_signatures(
     return hashes
 
 
-def wait_for_url(url: str, timeout_seconds: float, marker: str | None = None) -> None:
+def wait_for_url(
+    url: str,
+    timeout_seconds: float,
+    marker: str | None = None,
+    process: subprocess.Popen[str] | None = None,
+) -> None:
     deadline = time.monotonic() + timeout_seconds
     last_error = "not attempted"
     while time.monotonic() < deadline:
+        if process is not None:
+            require_application_running(process)
         try:
             # Package probes target a loopback service launched by this
             # process. Bypass CI/user proxy settings so localhost can never
@@ -173,6 +254,8 @@ def wait_for_url(url: str, timeout_seconds: float, marker: str | None = None) ->
                 elif marker and marker not in body:
                     last_error = f"response did not contain required marker {marker!r}"
                 else:
+                    if process is not None:
+                        require_application_running(process)
                     return
         except (HTTPException, OSError, URLError, ValueError) as error:
             last_error = str(error)
@@ -180,11 +263,15 @@ def wait_for_url(url: str, timeout_seconds: float, marker: str | None = None) ->
     raise SmokeFailure(f"timed out waiting for {url}: {last_error}")
 
 
-def wait_for_json(url: str, timeout_seconds: float) -> dict[str, Any]:
+def wait_for_json(
+    url: str, timeout_seconds: float, process: subprocess.Popen[str] | None = None
+) -> dict[str, Any]:
     """Wait for a successful JSON response from the launched loopback app."""
     deadline = time.monotonic() + timeout_seconds
     last_error = "not attempted"
     while time.monotonic() < deadline:
+        if process is not None:
+            require_application_running(process)
         try:
             with _LOCAL_OPENER.open(url, timeout=min(2.0, timeout_seconds)) as response:
                 body = response.read().decode("utf-8", errors="replace")
@@ -193,6 +280,8 @@ def wait_for_json(url: str, timeout_seconds: float) -> dict[str, Any]:
                 else:
                     payload = json.loads(body)
                     if isinstance(payload, dict):
+                        if process is not None:
+                            require_application_running(process)
                         return payload
                     last_error = "response was not a JSON object"
         except (HTTPException, OSError, URLError, ValueError) as error:
@@ -297,6 +386,7 @@ def wait_for_readiness(
     deadline = time.monotonic() + timeout_seconds
     last_error = "readiness file has not been written"
     while time.monotonic() < deadline:
+        require_application_running(process)
         try:
             payload, metadata = read_regular_readiness_file(readiness_file)
         except FileNotFoundError as error:
@@ -320,6 +410,7 @@ def wait_for_readiness(
                 if not isinstance(api_url, str) or not isinstance(frontend_url, str):
                     last_error = "readiness file is missing api_url or frontend_url"
                 else:
+                    require_application_running(process)
                     return (
                         require_loopback_url(api_url, "api_url"),
                         require_loopback_url(frontend_url, "frontend_url"),
@@ -336,11 +427,14 @@ def endpoint_url(base_url: str, path: str) -> str:
 
 
 def check_expected_features(
-    api_url: str, expected_features: dict[str, bool], timeout_seconds: float
+    api_url: str,
+    expected_features: dict[str, bool],
+    timeout_seconds: float,
+    process: subprocess.Popen[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """Probe dynamic feature flags and return observed values plus assertions."""
     features_url = endpoint_url(api_url, "/api/features")
-    payload = wait_for_json(features_url, timeout_seconds)
+    payload = wait_for_json(features_url, timeout_seconds, process)
     actual_features = payload.get("features")
     if not isinstance(actual_features, dict):
         raise SmokeFailure("feature response did not contain a features object")
@@ -358,38 +452,102 @@ def check_expected_features(
 
 
 def _read_monitor_application_pid(
-    descriptor: int,
+    process: subprocess.Popen[str],
     timeout_seconds: float,
 ) -> int:
-    """Read the private launch identity without polling/reaping its monitor."""
+    """Read the first private launch event without polling/reaping its monitor."""
     deadline = time.monotonic() + timeout_seconds
-    chunks: list[bytes] = []
-    try:
-        while time.monotonic() < deadline:
-            remaining = max(0.0, deadline - time.monotonic())
-            readable, _, _ = select.select([descriptor], [], [], min(0.1, remaining))
-            if not readable:
-                continue
-            chunk = os.read(descriptor, 4096)
-            if not chunk:
-                break
-            chunks.append(chunk)
-            try:
-                payload = json.loads(b"".join(chunks))
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(payload, dict):
-                break
+    while time.monotonic() < deadline:
+        payload = _next_monitor_status(
+            process, min(0.1, max(0.0, deadline - time.monotonic()))
+        )
+        if payload is None:
+            continue
+        if payload.get("event") == "started":
             pid = payload.get("pid")
             if type(pid) is int and pid > 0:
                 return pid
-            message = payload.get("error")
-            if isinstance(message, str) and message:
-                raise SmokeFailure(f"launch monitor failed: {message}")
-            break
-    finally:
-        os.close(descriptor)
+        if payload.get("event") == "exited":
+            returncode = payload.get("returncode")
+            raise SmokeFailure(
+                f"launched application exited with code {returncode} during startup"
+            )
+        message = payload.get("error")
+        if isinstance(message, str) and message:
+            raise SmokeFailure(f"launch monitor failed: {message}")
     raise SmokeFailure("launch monitor did not report an application pid")
+
+
+def _next_monitor_status(
+    process: subprocess.Popen[str], timeout_seconds: float
+) -> dict[str, Any] | None:
+    """Read one newline-framed monitor event, preserving later application exits."""
+    descriptor = getattr(process, "_package_smoke_monitor_status_fd", None)
+    buffer = getattr(process, "_package_smoke_monitor_status_buffer", None)
+    if not isinstance(descriptor, int) or not isinstance(buffer, bytearray):
+        return None
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        separator = buffer.find(b"\n")
+        if separator != -1:
+            line = bytes(buffer[:separator])
+            del buffer[: separator + 1]
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise SmokeFailure("launch monitor wrote invalid status") from error
+            if not isinstance(payload, dict):
+                raise SmokeFailure("launch monitor wrote invalid status")
+            return payload
+        remaining = deadline - time.monotonic()
+        if remaining < 0:
+            return None
+        readable, _, _ = select.select([descriptor], [], [], remaining)
+        if not readable:
+            return None
+        try:
+            chunk = os.read(descriptor, 4096)
+        except BlockingIOError:
+            continue
+        if not chunk:
+            raise SmokeFailure("launch monitor stopped before application status")
+        buffer.extend(chunk)
+
+
+def _application_exit_status(
+    process: subprocess.Popen[str], timeout_seconds: float = 0.0
+) -> int | None:
+    """Return a reported child exit without touching the monitor's wait state."""
+    cached = getattr(process, "_package_smoke_application_exit_status", None)
+    if isinstance(cached, int):
+        return cached
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        payload = _next_monitor_status(
+            process, max(0.0, deadline - time.monotonic())
+        )
+        if payload is None:
+            return None
+        if payload.get("event") == "exited":
+            returncode = payload.get("returncode")
+            if type(returncode) is not int:
+                raise SmokeFailure("launch monitor wrote an invalid exit status")
+            setattr(process, "_package_smoke_application_exit_status", returncode)
+            return returncode
+        if payload.get("event") == "error":
+            message = payload.get("error")
+            raise SmokeFailure(f"launch monitor failed: {message}")
+        if time.monotonic() >= deadline:
+            return None
+
+
+def require_application_running(
+    process: subprocess.Popen[str], timeout_seconds: float = 0.0
+) -> None:
+    """Reject healthy but unrelated services once the launched app exits."""
+    returncode = _application_exit_status(process, timeout_seconds)
+    if returncode is not None:
+        raise SmokeFailure(f"launched application exited with code {returncode}")
 
 
 def launch_monitored_process(
@@ -407,13 +565,16 @@ def launch_monitored_process(
         )
         return process, process.pid
 
-    read_descriptor, write_descriptor = os.pipe()
+    status_read_descriptor, status_write_descriptor = os.pipe()
     liveness_read_descriptor, liveness_write_descriptor = os.pipe()
-    os.set_inheritable(write_descriptor, True)
+    parent_read_descriptor, parent_write_descriptor = os.pipe()
+    os.set_inheritable(status_write_descriptor, True)
     os.set_inheritable(liveness_write_descriptor, True)
+    os.set_inheritable(parent_read_descriptor, True)
     monitor_environment = launch_environment.copy()
-    monitor_environment[_MONITOR_FD_ENV] = str(write_descriptor)
+    monitor_environment[_MONITOR_FD_ENV] = str(status_write_descriptor)
     monitor_environment[_MONITOR_LIVENESS_FD_ENV] = str(liveness_write_descriptor)
+    monitor_environment[_MONITOR_PARENT_FD_ENV] = str(parent_read_descriptor)
     process: subprocess.Popen[str] | None = None
     try:
         process = subprocess.Popen(
@@ -421,21 +582,31 @@ def launch_monitored_process(
             env=monitor_environment,
             start_new_session=True,
             text=True,
-            pass_fds=(write_descriptor, liveness_write_descriptor),
+            pass_fds=(
+                status_write_descriptor,
+                liveness_write_descriptor,
+                parent_read_descriptor,
+            ),
         )
         setattr(process, "_package_smoke_owned_process_group", process.pid)
         setattr(process, "_package_smoke_retained_monitor", True)
         setattr(process, "_package_smoke_monitor_liveness_fd", liveness_read_descriptor)
+        setattr(process, "_package_smoke_monitor_status_fd", status_read_descriptor)
+        setattr(process, "_package_smoke_monitor_status_buffer", bytearray())
+        setattr(process, "_package_smoke_monitor_parent_fd", parent_write_descriptor)
+        os.set_blocking(status_read_descriptor, False)
     except BaseException:
-        os.close(read_descriptor)
+        os.close(status_read_descriptor)
         os.close(liveness_read_descriptor)
+        os.close(parent_write_descriptor)
         raise
     finally:
-        os.close(write_descriptor)
+        os.close(status_write_descriptor)
         os.close(liveness_write_descriptor)
+        os.close(parent_read_descriptor)
     try:
         application_pid = _read_monitor_application_pid(
-            read_descriptor, min(timeout_seconds, 5.0)
+            process, min(timeout_seconds, 5.0)
         )
         return process, application_pid
     except BaseException:
@@ -446,6 +617,8 @@ def launch_monitored_process(
             pass
         if process is None:
             os.close(liveness_read_descriptor)
+            os.close(status_read_descriptor)
+            os.close(parent_write_descriptor)
         raise
 
 
@@ -474,6 +647,10 @@ def _owned_process_group_descendants(
         except ValueError:
             continue
         if group == process_group and pid != leader_pid:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
             descendants.add(pid)
     return descendants
 
@@ -505,11 +682,16 @@ def _assert_retained_monitor_is_live(process: subprocess.Popen[str]) -> None:
         raise SmokeFailure("owned monitor liveness proof is unavailable") from error
 
 
-def _close_retained_monitor_liveness(process: subprocess.Popen[str]) -> None:
-    descriptor = getattr(process, "_package_smoke_monitor_liveness_fd", None)
-    if isinstance(descriptor, int):
-        os.close(descriptor)
-        delattr(process, "_package_smoke_monitor_liveness_fd")
+def _close_retained_monitor_channels(process: subprocess.Popen[str]) -> None:
+    for attribute in (
+        "_package_smoke_monitor_liveness_fd",
+        "_package_smoke_monitor_status_fd",
+        "_package_smoke_monitor_parent_fd",
+    ):
+        descriptor = getattr(process, attribute, None)
+        if isinstance(descriptor, int):
+            os.close(descriptor)
+            delattr(process, attribute)
 
 
 def stop_process(
@@ -560,7 +742,7 @@ def stop_process(
         except ProcessLookupError as error:
             raise SmokeFailure("owned monitor disappeared before reaping") from error
         process.wait(timeout=timeout_seconds)
-        _close_retained_monitor_liveness(process)
+        _close_retained_monitor_channels(process)
         return
 
     if os.name == "posix":
@@ -659,8 +841,22 @@ def apply_make_smoke_inputs(args: argparse.Namespace) -> None:
     args.timeout_seconds = os.environ.get(
         "SMOKE_TIMEOUT_SECONDS", args.timeout_seconds
     )
-    environment = os.environ.get("SMOKE_ENVIRONMENT", "")
-    args.environment = [environment] if environment else []
+    environment_file = os.environ.get("SMOKE_ENVIRONMENT_FILE", "")
+    legacy_environment = os.environ.get("SMOKE_ENVIRONMENT", "")
+    if legacy_environment:
+        raise SmokeFailure("use SMOKE_ENVIRONMENT_FILE for Make environment input")
+    if environment_file:
+        environment_path = Path(environment_file)
+        try:
+            metadata = environment_path.lstat()
+        except FileNotFoundError as error:
+            raise SmokeFailure("SMOKE_ENVIRONMENT_FILE does not exist") from error
+        if not stat.S_ISREG(metadata.st_mode):
+            raise SmokeFailure("SMOKE_ENVIRONMENT_FILE must be a regular file")
+        environment = environment_path.read_bytes().decode("utf-8")
+        args.environment = [environment]
+    else:
+        args.environment = []
     expected_hash = os.environ.get("SMOKE_ARTIFACT_SHA256", "")
     args.expected_artifact_sha256 = (
         [f"{args.artifact[0]}={expected_hash}"] if expected_hash else []
@@ -715,6 +911,10 @@ def write_argument_failure_receipt(arguments: list[str], error: SmokeFailure) ->
     )
 
 
+def _interrupt_on_sigterm(_signum: int, _frame: Any) -> None:
+    raise KeyboardInterrupt
+
+
 def main() -> int:
     arguments = sys.argv[1:]
     try:
@@ -724,6 +924,10 @@ def main() -> int:
         write_argument_failure_receipt(arguments, error)
         print(str(error), file=sys.stderr)
         return 1
+
+    previous_sigterm_handler: Any | None = None
+    if os.name == "posix":
+        previous_sigterm_handler = signal.signal(signal.SIGTERM, _interrupt_on_sigterm)
 
     runtime_paths = [str(path) for path in args.required_runtime_path]
     resolved_urls = {
@@ -806,6 +1010,7 @@ def main() -> int:
             launch_environment,
             args.timeout_seconds,
         )
+        require_application_running(process, min(args.timeout_seconds, 0.1))
         receipt["checks"]["process_startup"]["passed"] = True
 
         if args.readiness_file is not None:
@@ -830,12 +1035,12 @@ def main() -> int:
             if args.readiness_file is not None
             else api_url
         )
-        wait_for_url(api_readiness_url, args.timeout_seconds)
+        wait_for_url(api_readiness_url, args.timeout_seconds, process=process)
         receipt["checks"]["api_readiness"]["passed"] = True
 
         if args.readiness_file is not None:
             actual_features, feature_results = check_expected_features(
-                api_url, expected_features, args.timeout_seconds
+                api_url, expected_features, args.timeout_seconds, process
             )
             receipt["feature_results"] = feature_results
             receipt["checks"]["runtime_features"] = {
@@ -853,7 +1058,9 @@ def main() -> int:
         else:
             receipt["checks"]["runtime_features"]["passed"] = True
 
-        wait_for_url(frontend_url, args.timeout_seconds, args.frontend_marker)
+        wait_for_url(
+            frontend_url, args.timeout_seconds, args.frontend_marker, process
+        )
         receipt["checks"]["frontend_route_load"]["passed"] = True
 
         stop_process(process, args.timeout_seconds)
@@ -879,6 +1086,8 @@ def main() -> int:
                 receipt.setdefault("error", str(error))
         receipt["completed_at"] = utc_now()
         write_receipt(args.receipt, receipt)
+        if previous_sigterm_handler is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm_handler)
 
 
 if __name__ == "__main__":
