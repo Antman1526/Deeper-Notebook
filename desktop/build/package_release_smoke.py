@@ -9,11 +9,12 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import SplitResult, urlsplit
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -43,7 +44,10 @@ MAX_BROWSER_OBSERVED_REQUESTS = 64
 MAX_BROWSER_OBSERVED_RESPONSES = 64
 MAX_BROWSER_RECEIPT_BYTES = 64 * 1024
 MAX_BROWSER_STRING_BYTES = 4 * 1024
+MAX_BROWSER_STDERR_BYTES = 16 * 1024
 MAX_RELEASE_RECEIPT_BYTES = 64 * 1024
+BROWSER_PROBE_READ_CHUNK_BYTES = 4 * 1024
+BROWSER_PROBE_POLL_SECONDS = 0.05
 
 DEFAULT_EXPECTED_FEATURES: dict[str, bool] = {
     "evidenceStudio": True,
@@ -66,6 +70,57 @@ class ModeSpec:
     source_visuals: bool
     expected_features: dict[str, bool]
     receipt_name: str
+
+
+@dataclass(frozen=True)
+class BrowserProbeResult:
+    """Bounded child output needed to decide whether a browser proof is usable."""
+
+    returncode: int
+    stdout: bytes
+    stderr: bytes
+    stdout_limit_exceeded: bool
+    stderr_limit_exceeded: bool
+    peak_stdout_bytes: int
+
+
+class _BoundedPipeCapture:
+    """Drain one child pipe continuously while retaining at most its byte limit."""
+
+    def __init__(
+        self, limit: int, *, on_limit_exceeded: Callable[[], None] | None = None
+    ) -> None:
+        self._limit = limit
+        self._on_limit_exceeded = on_limit_exceeded
+        self._buffer = bytearray()
+        self._lock = threading.Lock()
+        self.limit_exceeded = False
+        self.peak_bytes = 0
+        self.error: OSError | None = None
+
+    def drain(self, stream: Any) -> None:
+        try:
+            while chunk := stream.read(BROWSER_PROBE_READ_CHUNK_BYTES):
+                notify_limit = False
+                with self._lock:
+                    remaining = self._limit - len(self._buffer)
+                    if remaining < len(chunk):
+                        if remaining > 0:
+                            self._buffer.extend(chunk[:remaining])
+                        if not self.limit_exceeded:
+                            self.limit_exceeded = True
+                            notify_limit = True
+                    else:
+                        self._buffer.extend(chunk)
+                    self.peak_bytes = max(self.peak_bytes, len(self._buffer))
+                if notify_limit and self._on_limit_exceeded is not None:
+                    self._on_limit_exceeded()
+        except OSError as error:
+            self.error = error
+
+    def captured(self) -> bytes:
+        with self._lock:
+            return bytes(self._buffer)
 
 
 MODE_SPECS: dict[str, ModeSpec] = {
@@ -222,6 +277,94 @@ def _browser_command(
     ]
 
 
+def _kill_process_quietly(process: subprocess.Popen[bytes]) -> None:
+    try:
+        if process.poll() is None:
+            process.kill()
+    except OSError:
+        pass
+
+
+def _run_browser_probe(
+    command: list[str], *, cwd: Path, timeout_seconds: float
+) -> BrowserProbeResult:
+    """Run the browser probe without ever accumulating unbounded pipe output."""
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=False,
+    )
+    stdout_limit_event = threading.Event()
+
+    def terminate_for_stdout_limit() -> None:
+        stdout_limit_event.set()
+        _kill_process_quietly(process)
+
+    stdout_capture = _BoundedPipeCapture(
+        MAX_BROWSER_RECEIPT_BYTES,
+        on_limit_exceeded=terminate_for_stdout_limit,
+    )
+    stderr_capture = _BoundedPipeCapture(MAX_BROWSER_STDERR_BYTES)
+    if process.stdout is None or process.stderr is None:
+        _kill_process_quietly(process)
+        process.wait()
+        raise SmokeFailure("browser probe could not capture its output pipes")
+    stdout_thread = threading.Thread(
+        target=stdout_capture.drain,
+        args=(process.stdout,),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=stderr_capture.drain,
+        args=(process.stderr,),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    timed_out = False
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        while process.poll() is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                _kill_process_quietly(process)
+                break
+            stdout_limit_event.wait(min(remaining, BROWSER_PROBE_POLL_SECONDS))
+        process.wait()
+    except BaseException:
+        _kill_process_quietly(process)
+        process.wait()
+        raise
+    finally:
+        stdout_thread.join()
+        stderr_thread.join()
+        process.stdout.close()
+        process.stderr.close()
+
+    stdout = stdout_capture.captured()
+    stderr = stderr_capture.captured()
+    if stdout_capture.error is not None or stderr_capture.error is not None:
+        raise SmokeFailure("browser probe output capture failed")
+    if timed_out:
+        raise subprocess.TimeoutExpired(
+            command,
+            timeout_seconds,
+            output=stdout,
+            stderr=stderr,
+        )
+    return BrowserProbeResult(
+        returncode=process.returncode,
+        stdout=stdout,
+        stderr=stderr,
+        stdout_limit_exceeded=stdout_capture.limit_exceeded,
+        stderr_limit_exceeded=stderr_capture.limit_exceeded,
+        peak_stdout_bytes=stdout_capture.peak_bytes,
+    )
+
+
 def _browser_receipt_string(value: object, label: str) -> str:
     """Return a bounded browser-receipt string or fail before retaining it."""
     if not isinstance(value, str) or not value or "\x00" in value:
@@ -246,16 +389,23 @@ def _bounded_diagnostic(error: object) -> str:
     return "release smoke failure omitted an oversized diagnostic"
 
 
-def _parse_browser_receipt(browser: subprocess.CompletedProcess[str]) -> dict[str, Any]:
+def _parse_browser_receipt(browser: Any) -> dict[str, Any]:
     """Parse exactly the probe's stdout JSON; stderr is diagnostic-only."""
-    if not isinstance(browser.stdout, str):
+    if getattr(browser, "stdout_limit_exceeded", False):
+        raise SmokeFailure("browser contract receipt exceeded its byte limit")
+    if getattr(browser, "stderr_limit_exceeded", False):
+        raise SmokeFailure("browser contract diagnostics exceeded their byte limit")
+    if isinstance(browser.stdout, bytes):
+        output = browser.stdout
+    elif isinstance(browser.stdout, str):
+        try:
+            output = browser.stdout.encode("utf-8")
+        except UnicodeEncodeError as error:
+            raise SmokeFailure(
+                "browser contract did not emit UTF-8 JSON on stdout"
+            ) from error
+    else:
         raise SmokeFailure("browser contract did not emit text JSON on stdout")
-    try:
-        output = browser.stdout.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise SmokeFailure(
-            "browser contract did not emit UTF-8 JSON on stdout"
-        ) from error
     if len(output) > MAX_BROWSER_RECEIPT_BYTES:
         raise SmokeFailure("browser contract receipt exceeded its byte limit")
     if not output.strip():
@@ -523,21 +673,24 @@ def _validate_raw_feature_response(
         for name, expected in mode.expected_features.items()
     ):
         raise SmokeFailure("browser receipt feature response did not match the mode")
-    feature_path = "/api/features"
-    if not any(
-        _browser_origin(request["url"], "request evidence", strict=False) == api_origin
-        and request["path"] == feature_path
-        for request in requests
+    feature_url = f"{api_origin}/api/features"
+    feature_requests = [
+        request for request in requests if request["url"] == feature_url
+    ]
+    if len(feature_requests) != 1:
+        raise SmokeFailure(
+            "browser receipt did not observe exactly one canonical feature request"
+        )
+    feature_responses = [
+        response for response in responses if response["url"] == feature_url
+    ]
+    if (
+        len(feature_responses) != 1
+        or feature_responses[0]["status"] != feature_response["status"]
     ):
-        raise SmokeFailure("browser receipt did not observe the feature request")
-    if not any(
-        _browser_origin(response["url"], "response evidence", strict=False)
-        == api_origin
-        and response["path"] == feature_path
-        and response["status"] == feature_response["status"]
-        for response in responses
-    ):
-        raise SmokeFailure("browser receipt did not observe the feature response")
+        raise SmokeFailure(
+            "browser receipt did not correlate the feature response to the canonical API URL"
+        )
 
 
 def _validate_request_derivatives(
@@ -675,13 +828,10 @@ def run_mode(mode: str, arguments: argparse.Namespace) -> dict[str, Any]:
             playwright_module=Path(_argument(arguments, "playwright_module")),
         )
         receipt["browser_command"] = browser_command
-        browser = subprocess.run(
+        browser = _run_browser_probe(
             browser_command,
             cwd=REPOSITORY_ROOT / "frontend",
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=timeout,
+            timeout_seconds=timeout,
         )
         require_application_running(
             process, min(timeout, APPLICATION_LIVENESS_POLL_SECONDS)

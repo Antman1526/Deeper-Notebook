@@ -65,6 +65,12 @@ def test_release_browser_probe_preserves_exact_readiness_urls_in_its_receipt() -
     assert "api_url: args['api-url']" in source
 
 
+def test_release_browser_probe_fetches_feature_authority_from_the_api_origin() -> None:
+    source = PACKAGE_BROWSER_PROBE_SCRIPT.read_text(encoding="utf-8")
+    assert "new URL('/api/features', api.origin).href" in source
+    assert "fetch(featureAuthorityUrl)" in source
+
+
 def test_release_browser_probe_bounds_raw_evidence_receipts() -> None:
     source = PACKAGE_BROWSER_PROBE_SCRIPT.read_text(encoding="utf-8")
     assert "MAX_OBSERVED_REQUEST_ENTRIES = 64" in source

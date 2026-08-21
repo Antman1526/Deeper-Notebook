@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +17,26 @@ from desktop.build import package_smoke as smoke
 from desktop.build import package_smoke_fixture
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+def browser_probe_result(
+    *,
+    returncode: int = 0,
+    stdout: str | bytes = "",
+    stderr: str | bytes = "",
+    stdout_limit_exceeded: bool = False,
+    stderr_limit_exceeded: bool = False,
+) -> release_smoke.BrowserProbeResult:
+    stdout_bytes = stdout.encode("utf-8") if isinstance(stdout, str) else stdout
+    stderr_bytes = stderr.encode("utf-8") if isinstance(stderr, str) else stderr
+    return release_smoke.BrowserProbeResult(
+        returncode=returncode,
+        stdout=stdout_bytes,
+        stderr=stderr_bytes,
+        stdout_limit_exceeded=stdout_limit_exceeded,
+        stderr_limit_exceeded=stderr_limit_exceeded,
+        peak_stdout_bytes=len(stdout_bytes),
+    )
 
 
 def browser_receipt_for(
@@ -127,13 +148,10 @@ def prepare_ready_mode(
         ),
     )
     monkeypatch.setattr(
-        release_smoke.subprocess,
-        "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            args=["node"],
-            returncode=0,
-            stdout=json.dumps(browser_receipt),
-            stderr="",
+        release_smoke,
+        "_run_browser_probe",
+        lambda *_args, **_kwargs: browser_probe_result(
+            stdout=json.dumps(browser_receipt)
         ),
     )
     monkeypatch.setattr(
@@ -218,19 +236,16 @@ def test_release_smoke_stops_default_before_launching_off(
         lambda *_args, **_kwargs: ("http://127.0.0.1:53001", "http://127.0.0.1:53002/"),
     )
     monkeypatch.setattr(
-        release_smoke.subprocess,
-        "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            args=["node"],
-            returncode=0,
+        release_smoke,
+        "_run_browser_probe",
+        lambda *_args, **_kwargs: browser_probe_result(
             stdout=json.dumps(
                 browser_receipt_for(
                     current_mode[0],
                     "http://127.0.0.1:53002/",
                     "http://127.0.0.1:53001",
                 )
-            ),
-            stderr="",
+            )
         ),
     )
     monkeypatch.setattr(
@@ -565,6 +580,97 @@ def test_browser_receipt_validator_rejects_an_oversized_evidence_url() -> None:
         release_smoke._validate_browser_receipt(receipt, mode, frontend_url, api_url)
 
 
+def test_browser_receipt_validator_requires_the_exact_api_feature_response() -> None:
+    mode = release_smoke.MODE_SPECS["default"]
+    frontend_url = "http://127.0.0.1:52006/"
+    api_url = "http://127.0.0.1:52005"
+    receipt = browser_receipt_for("default", frontend_url, api_url)
+    frontend_features_url = f"{frontend_url}api/features"
+    unrelated_api_features_url = f"{api_url}/api/features?unrelated=1"
+    receipt["observed_requests"] = [
+        receipt["observed_requests"][0],
+        {
+            "method": "GET",
+            "url": frontend_features_url,
+            "path": "/api/features",
+        },
+        {
+            "method": "GET",
+            "url": unrelated_api_features_url,
+            "path": "/api/features",
+        },
+    ]
+    receipt["observed_responses"] = [
+        receipt["observed_responses"][0],
+        {
+            "status": 200,
+            "url": frontend_features_url,
+            "path": "/api/features",
+        },
+        {
+            "status": 200,
+            "url": unrelated_api_features_url,
+            "path": "/api/features",
+        },
+    ]
+
+    with pytest.raises(smoke.SmokeFailure, match="browser receipt"):
+        release_smoke._validate_browser_receipt(receipt, mode, frontend_url, api_url)
+
+
+def test_browser_probe_transport_kills_stdout_before_retaining_two_mebibytes(
+    tmp_path: Path,
+) -> None:
+    result = release_smoke._run_browser_probe(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys, time; "
+                "sys.stdout.buffer.write(b'x' * (2 * 1024 * 1024)); "
+                "sys.stdout.flush(); time.sleep(10)"
+            ),
+        ],
+        cwd=tmp_path,
+        timeout_seconds=5.0,
+    )
+
+    assert result.stdout_limit_exceeded is True
+    assert result.returncode != 0
+    assert result.peak_stdout_bytes <= release_smoke.MAX_BROWSER_RECEIPT_BYTES
+    assert len(result.stdout) <= release_smoke.MAX_BROWSER_RECEIPT_BYTES
+    assert result.peak_stdout_bytes < 2 * 1024 * 1024
+    with pytest.raises(smoke.SmokeFailure, match="exceeded"):
+        release_smoke._parse_browser_receipt(result)
+
+
+def test_browser_probe_transport_bounds_stderr_without_deadlocking(
+    tmp_path: Path,
+) -> None:
+    result = release_smoke._run_browser_probe(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.stderr.buffer.write(b'e' * (2 * 1024 * 1024))",
+        ],
+        cwd=tmp_path,
+        timeout_seconds=5.0,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr_limit_exceeded is True
+    assert len(result.stderr) <= release_smoke.MAX_BROWSER_STDERR_BYTES
+
+
+def test_browser_probe_transport_preserves_timeout_semantics(tmp_path: Path) -> None:
+    with pytest.raises(subprocess.TimeoutExpired):
+        release_smoke._run_browser_probe(
+            [sys.executable, "-c", "import time; time.sleep(10)"],
+            cwd=tmp_path,
+            timeout_seconds=0.05,
+        )
+
+
 def test_parse_browser_receipt_rejects_oversized_stdout_before_json_loading() -> None:
     browser = subprocess.CompletedProcess(
         args=["node"],
@@ -594,11 +700,9 @@ def test_release_smoke_does_not_persist_an_oversized_browser_payload(
         }
     )
     monkeypatch.setattr(
-        release_smoke.subprocess,
-        "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            args=["node"], returncode=0, stdout=oversized_stdout, stderr=""
-        ),
+        release_smoke,
+        "_run_browser_probe",
+        lambda *_args, **_kwargs: browser_probe_result(stdout=oversized_stdout),
     )
 
     assert release_smoke.run_release_smoke(arguments) == 1
@@ -649,11 +753,9 @@ def test_run_mode_uses_all_feature_expectations_and_cleans_up_on_browser_failure
         lambda *_a, **_k: ("http://127.0.0.1:52001", "http://127.0.0.1:52002/"),
     )
     monkeypatch.setattr(
-        release_smoke.subprocess,
-        "run",
-        lambda *_a, **_k: subprocess.CompletedProcess(
-            args=["node"], returncode=1, stdout="", stderr="browser failed"
-        ),
+        release_smoke,
+        "_run_browser_probe",
+        lambda *_a, **_k: browser_probe_result(returncode=1, stderr="browser failed"),
     )
     monkeypatch.setattr(
         release_smoke,
@@ -775,13 +877,10 @@ def test_run_mode_off_changes_only_source_visuals_and_parses_stdout_receipt(
         lambda *_a, **_k: ("http://127.0.0.1:52003", "http://127.0.0.1:52004/"),
     )
     monkeypatch.setattr(
-        release_smoke.subprocess,
-        "run",
-        lambda *_a, **_k: subprocess.CompletedProcess(
-            args=["node"],
-            returncode=0,
-            stdout=json.dumps(browser_receipt),
-            stderr="ignored",
+        release_smoke,
+        "_run_browser_probe",
+        lambda *_a, **_k: browser_probe_result(
+            stdout=json.dumps(browser_receipt), stderr="ignored"
         ),
     )
     monkeypatch.setattr(

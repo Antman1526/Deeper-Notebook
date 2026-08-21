@@ -186,10 +186,11 @@ async function main() {
     const route = args.mode === 'default' ? '/' : '/sources'
     await page.goto(new URL(route, frontend).href, { waitUntil: 'domcontentloaded', timeout: 120000 })
     await page.waitForTimeout(750)
-    const features = await page.evaluate(async () => {
-      const response = await fetch('/api/features')
+    const featureAuthorityUrl = new URL('/api/features', api.origin).href
+    const features = await page.evaluate(async (featureAuthorityUrl) => {
+      const response = await fetch(featureAuthorityUrl)
       return { status: response.status, body: await response.json() }
-    })
+    }, featureAuthorityUrl)
     const actualFeatures = features?.body?.features
     const expectedFeatures = {
       ...EXPECTED_FEATURES,
