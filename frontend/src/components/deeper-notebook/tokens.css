@@ -32,6 +32,27 @@
   --dn-graph-edge: var(--muted-foreground);
   --dn-graph-selected: var(--accent);
 
+  /* Artifact viewers and graph surfaces consume these roles instead of
+   * choosing a palette of their own. The fixed OKLCH status hue families
+   * stay distinct across every catalog theme. */
+  --dn-artifact-canvas: color-mix(in oklab, var(--background) 88%, var(--primary) 12%);
+  --dn-artifact-panel: var(--card);
+  --dn-artifact-ink: var(--foreground);
+  --dn-artifact-muted: var(--muted-foreground);
+  --dn-artifact-line: var(--border);
+  --dn-graph-source: color-mix(in oklab, var(--primary) 78%, var(--accent) 22%);
+  --dn-graph-source-foreground: var(--primary-foreground);
+  --dn-graph-note: color-mix(in oklab, var(--warning) 76%, var(--foreground) 24%);
+  --dn-graph-note-foreground: var(--warning-foreground);
+  --dn-graph-fallback: color-mix(in oklab, var(--muted) 72%, var(--background) 28%);
+  --dn-graph-fallback-foreground: var(--muted-foreground);
+  --dn-status-success: oklch(0.62 0.16 145);
+  --dn-status-success-foreground: oklch(0.97 0.02 145);
+  --dn-status-warning: oklch(0.71 0.17 70);
+  --dn-status-warning-foreground: oklch(0.2 0.05 70);
+  --dn-status-info: oklch(0.62 0.18 230);
+  --dn-status-info-foreground: oklch(0.97 0.02 230);
+
   /* Soft translucent versions of the primary/accent colors for chips, hover
    * states, subtle highlights. Works on both light and dark themes. */
   --dn-accent-soft: color-mix(in oklab, var(--primary) 12%, transparent);
@@ -110,6 +131,12 @@
 .dark {
   --dn-glass-bg: color-mix(in oklab, var(--card) 52%, transparent);
   --dn-glass-border: color-mix(in oklab, var(--primary) 24%, var(--border));
+  --dn-status-success: oklch(0.7 0.15 145);
+  --dn-status-success-foreground: oklch(0.15 0.03 145);
+  --dn-status-warning: oklch(0.75 0.15 70);
+  --dn-status-warning-foreground: oklch(0.15 0.04 70);
+  --dn-status-info: oklch(0.7 0.15 230);
+  --dn-status-info-foreground: oklch(0.15 0.03 230);
 }
 
 /* Frosted-glass surface for cards/headers that float above content. */
@@ -205,6 +232,26 @@ html[data-dn-motion="reduced"] .dn-aurora-bg::before {
 }
 
 @media (forced-colors: active) {
+  html[data-theme],
+  :root {
+    --dn-artifact-canvas: Canvas;
+    --dn-artifact-panel: Canvas;
+    --dn-artifact-ink: CanvasText;
+    --dn-artifact-muted: GrayText;
+    --dn-artifact-line: CanvasText;
+    --dn-graph-source: Highlight;
+    --dn-graph-source-foreground: HighlightText;
+    --dn-graph-note: Mark;
+    --dn-graph-note-foreground: MarkText;
+    --dn-graph-fallback: ButtonFace;
+    --dn-graph-fallback-foreground: ButtonText;
+    --dn-status-success: Highlight;
+    --dn-status-success-foreground: HighlightText;
+    --dn-status-warning: Mark;
+    --dn-status-warning-foreground: MarkText;
+    --dn-status-info: LinkText;
+    --dn-status-info-foreground: Canvas;
+  }
   [data-dn-visual-system="v2"] * { forced-color-adjust: auto; }
   [data-dn-visual-system="v2"] :focus-visible { outline: 2px solid CanvasText; }
 }

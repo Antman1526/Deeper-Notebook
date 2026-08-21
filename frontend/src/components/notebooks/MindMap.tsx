@@ -29,15 +29,21 @@ interface MindMapProps {
 }
 
 const NODE_BG: Record<string, string> = {
-  notebook: 'var(--primary)',
-  source: '#2563eb',
-  note: '#d97706',
+  notebook: 'var(--dn-graph-fallback)',
+  source: 'var(--dn-graph-source)',
+  note: 'var(--dn-graph-note)',
+}
+
+const NODE_FG: Record<string, string> = {
+  notebook: 'var(--dn-graph-fallback-foreground)',
+  source: 'var(--dn-graph-source-foreground)',
+  note: 'var(--dn-graph-note-foreground)',
 }
 
 function nodeStyle(type: string): CSSProperties {
   return {
-    background: NODE_BG[type] ?? '#64748b',
-    color: '#fff',
+    background: NODE_BG[type] ?? 'var(--dn-graph-fallback)',
+    color: NODE_FG[type] ?? 'var(--dn-graph-fallback-foreground)',
     border: 'none',
     borderRadius: type === 'notebook' ? 12 : 8,
     padding: type === 'notebook' ? '10px 16px' : '6px 12px',
@@ -102,7 +108,7 @@ export default function MindMap({
       id: `e${i}`,
       source: e.source,
       target: e.target,
-      style: { stroke: '#94a3b8', strokeWidth: 1.5 },
+      style: { stroke: 'var(--dn-graph-edge)', strokeWidth: 1.5 },
     }))
     return { nodes: rfNodes, edges: rfEdges }
   }, [data])

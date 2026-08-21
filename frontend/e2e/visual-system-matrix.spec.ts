@@ -153,6 +153,58 @@ test.describe('visual system matrix contract', () => {
     await expect.poll(() => fixture.ledger.unexpected).toContain('GET /api/visual-system/unknown (failed)')
   })
 
+  test('artifact and mind map roles stay readable in high contrast and forced colors', async ({ page }) => {
+    const viewport = VISUAL_MATRIX_VIEWPORTS[2]
+    const fixture = await installVisualSystemFixture(page, {
+      route: '/studio',
+      theme: 'high-contrast-light',
+      viewport,
+    })
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await page.goto('/studio', { waitUntil: 'domcontentloaded' })
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'high-contrast-light')
+
+    await page.evaluate(() => {
+      const contract = document.createElement('div')
+      contract.dataset.testid = 'semantic-visual-contract'
+      contract.innerHTML = `
+        <figure aria-label="Evidence at a glance" class="bg-[var(--dn-artifact-canvas)] text-[var(--dn-artifact-ink)]">
+          <div data-role="artifact-panel" class="border-[var(--dn-artifact-line)] bg-[var(--dn-artifact-panel)] text-[var(--dn-artifact-muted)]">Artifact panel</div>
+          <div data-role="graph-source" class="bg-[var(--dn-graph-source)] text-[var(--dn-graph-source-foreground)]">Source</div>
+          <div data-role="graph-note" class="bg-[var(--dn-graph-note)] text-[var(--dn-graph-note-foreground)]">Note</div>
+          <div data-role="graph-fallback" class="bg-[var(--dn-graph-fallback)] text-[var(--dn-graph-fallback-foreground)]">Notebook</div>
+          <div data-role="status-success" class="bg-[var(--dn-status-success)] text-[var(--dn-status-success-foreground)]">Success</div>
+          <div data-role="status-warning" class="bg-[var(--dn-status-warning)] text-[var(--dn-status-warning-foreground)]">Warning</div>
+          <div data-role="status-info" class="bg-[var(--dn-status-info)] text-[var(--dn-status-info-foreground)]">Info</div>
+        </figure>
+      `
+      document.body.append(contract)
+    })
+
+    const roleStyles = async () => page.locator('[data-testid="semantic-visual-contract"] [data-role]').evaluateAll(elements => (
+      elements.map(element => {
+        const style = getComputedStyle(element)
+        return {
+          background: style.backgroundColor,
+          color: style.color,
+        }
+      })
+    ))
+    for (const style of await roleStyles()) {
+      expect(style.background).not.toBe('rgba(0, 0, 0, 0)')
+      expect(style.color).not.toBe('rgba(0, 0, 0, 0)')
+    }
+
+    await page.emulateMedia({ forcedColors: 'active' })
+    for (const style of await roleStyles()) {
+      expect(style.background).not.toBe('rgba(0, 0, 0, 0)')
+      expect(style.color).not.toBe('rgba(0, 0, 0, 0)')
+    }
+
+    await settleVisualNetwork(page)
+    assertExactRequestLedgers('/studio', 'high-contrast-light', viewport, fixture.ledger, fixture.studyLedger)
+  })
+
   test('fixture aborts external API requests before path handlers', async ({ page }) => {
     const fixture = await installVisualSystemFixture(page, { theme: 'gemini-forward-light' })
     await page.goto('/')

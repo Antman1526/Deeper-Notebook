@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
@@ -9,6 +12,19 @@ import {
   SlideDeckViewer,
   type SlideDeckVisualDocument,
 } from './VisualArtifactViewers'
+
+const viewerSource = fs.readFileSync(
+  path.resolve(__dirname, 'VisualArtifactViewers.tsx'),
+  'utf8',
+)
+const tokenSource = fs.readFileSync(
+  path.resolve(__dirname, 'tokens.css'),
+  'utf8',
+)
+const globalStyleSource = fs.readFileSync(
+  path.resolve(__dirname, '../../app/globals.css'),
+  'utf8',
+)
 
 const slideDeck: SlideDeckVisualDocument = {
   schema_version: 1,
@@ -111,5 +127,44 @@ describe('InfographicViewer', () => {
     expect(screen.getByText('process')).toBeInTheDocument()
     expect(screen.getByText('[S1]')).toBeInTheDocument()
     expect(screen.getByText('[S2]')).toBeInTheDocument()
+  })
+
+  it('uses semantic artifact and status roles instead of fixed palette literals', () => {
+    expect(viewerSource).not.toMatch(/#17324d|#f7f8fa|#2563eb|#d97706|#94a3b8/)
+    expect(viewerSource).not.toMatch(/(?:bg|text|border)-(?:teal|white)-\d+/)
+
+    render(<InfographicViewer document={infographic} />)
+    const visual = screen.getByRole('figure', { name: 'Evidence at a glance' })
+    expect(visual).toHaveClass('bg-[var(--dn-artifact-canvas)]')
+    expect(visual).toHaveClass('text-[var(--dn-artifact-ink)]')
+
+    const metricPanel = visual.querySelector('section')
+    expect(metricPanel).toHaveClass('bg-[var(--dn-artifact-panel)]')
+    expect(metricPanel).toHaveClass('border-[var(--dn-artifact-line)]')
+    expect(metricPanel).toHaveClass('border-t-[var(--dn-status-success)]')
+    expect(screen.getByText('95%')).toHaveClass('text-[var(--dn-status-success)]')
+  })
+
+  it('defines artifact, graph, status, high-contrast, and forced-color roles', () => {
+    for (const token of [
+      '--dn-artifact-canvas', '--dn-artifact-panel', '--dn-artifact-ink',
+      '--dn-artifact-muted', '--dn-artifact-line', '--dn-graph-source',
+      '--dn-graph-note', '--dn-graph-fallback', '--dn-status-success',
+      '--dn-status-success-foreground', '--dn-status-warning',
+      '--dn-status-warning-foreground', '--dn-status-info',
+      '--dn-status-info-foreground',
+    ]) {
+      expect(tokenSource).toMatch(new RegExp(`${token}:`))
+    }
+
+    expect(tokenSource).toMatch(
+      /@media \(forced-colors: active\)[\s\S]*--dn-artifact-canvas:\s*Canvas;/,
+    )
+    expect(globalStyleSource).toMatch(
+      /html\[data-theme="high-contrast-light"\][\s\S]*--dn-status-success:/,
+    )
+    expect(globalStyleSource).toMatch(
+      /html\[data-theme="high-contrast-dark"\][\s\S]*--dn-status-success:/,
+    )
   })
 })

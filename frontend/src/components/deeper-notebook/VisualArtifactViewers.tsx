@@ -140,7 +140,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
           className={cn(
             'w-36 shrink-0 border-l-2 bg-muted/30 px-2 py-2 text-left transition-colors lg:w-full',
             index === 0
-              ? 'border-l-teal-600 bg-muted text-foreground'
+              ? 'border-l-[var(--dn-status-info)] bg-muted text-foreground'
               : 'border-l-transparent text-muted-foreground hover:bg-muted/60',
           )}
           onClick={() => {
@@ -162,7 +162,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
             className={cn(
               'w-36 shrink-0 border-l-2 bg-muted/30 px-2 py-2 text-left transition-colors lg:w-full',
               slideIndex + 1 === index
-                ? 'border-l-teal-600 bg-muted text-foreground'
+                ? 'border-l-[var(--dn-status-info)] bg-muted text-foreground'
                 : 'border-l-transparent text-muted-foreground hover:bg-muted/60',
             )}
             onClick={() => {
@@ -218,27 +218,27 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
         </div>
 
         {slide === null ? (
-          <article className="aspect-video min-h-0 overflow-hidden border bg-[#17324d] text-white shadow-sm [container-type:inline-size]">
+          <article className="aspect-video min-h-0 overflow-hidden border border-[var(--dn-artifact-line)] bg-[var(--dn-artifact-canvas)] text-[var(--dn-artifact-ink)] shadow-sm [container-type:inline-size]">
             <div className="grid h-full grid-cols-[0.65rem_minmax(0,1fr)] gap-[clamp(1rem,4cqi,2.5rem)] p-[clamp(1rem,5cqi,3rem)]">
-              <div className="rounded-full bg-teal-500" aria-hidden="true" />
+              <div className="rounded-full bg-[var(--dn-status-info)]" aria-hidden="true" />
               <div className="flex min-w-0 flex-col justify-center">
                 <h3 className="line-clamp-3 text-[clamp(1.35rem,5cqi,3rem)] font-semibold leading-tight">
                   {document.title}
                 </h3>
                 {document.audience && (
-                  <div className="mt-[clamp(1rem,5cqi,3rem)] text-[clamp(0.75rem,2.2cqi,1.2rem)] text-[#d8e3ed]">
+                  <div className="mt-[clamp(1rem,5cqi,3rem)] text-[clamp(0.75rem,2.2cqi,1.2rem)] text-[var(--dn-artifact-muted)]">
                     Prepared for {document.audience}
                   </div>
                 )}
-                <div className="mt-auto text-[clamp(0.55rem,1.4cqi,0.75rem)] font-semibold uppercase tracking-normal text-[#b7c8d8]">
+                <div className="mt-auto text-[clamp(0.55rem,1.4cqi,0.75rem)] font-semibold uppercase tracking-normal text-[var(--dn-artifact-muted)]">
                   Deeper Notebook / Evidence Studio
                 </div>
               </div>
             </div>
           </article>
         ) : (
-          <article className="aspect-video min-h-0 overflow-hidden border bg-[#f7f8fa] text-[#17202a] shadow-sm">
-            <div className="h-2 bg-teal-600" />
+          <article className="aspect-video min-h-0 overflow-hidden border border-[var(--dn-artifact-line)] bg-[var(--dn-artifact-panel)] text-[var(--dn-artifact-ink)] shadow-sm">
+            <div className="h-2 bg-[var(--dn-status-info)]" />
             <div className="grid h-[calc(100%_-_0.5rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 p-[clamp(1rem,4cqi,2.5rem)] [container-type:inline-size]">
               <h3 className="line-clamp-2 text-[clamp(1rem,4cqi,2rem)] font-semibold leading-tight">
                 {slide.title}
@@ -247,23 +247,23 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
                 <ul className="min-h-0 space-y-[clamp(0.3rem,1.4cqi,0.8rem)] overflow-y-auto pr-2 text-[clamp(0.72rem,2.4cqi,1.15rem)] leading-relaxed">
                   {slide.bullets.map((bullet, bulletIndex) => (
                     <li key={`${bulletIndex}-${bullet}`} className="flex gap-2">
-                      <span className="mt-[0.55em] h-1.5 w-1.5 shrink-0 rounded-full bg-teal-600" aria-hidden="true" />
+                      <span className="mt-[0.55em] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--dn-status-info)]" aria-hidden="true" />
                       <span>{bullet}</span>
                     </li>
                   ))}
                 </ul>
                 {slide.visual_direction && (
-                  <div className="hidden min-h-0 overflow-y-auto border-l border-[#d8dee8] pl-4 md:block">
-                    <div className="text-[0.62rem] font-semibold uppercase tracking-normal text-teal-700">
+                  <div className="hidden min-h-0 overflow-y-auto border-l border-[var(--dn-artifact-line)] pl-4 md:block">
+                    <div className="text-[0.62rem] font-semibold uppercase tracking-normal text-[var(--dn-status-info)]">
                       Visual direction
                     </div>
-                    <div className="mt-2 text-[clamp(0.68rem,1.8cqi,0.92rem)] leading-relaxed text-[#475467]">
+                    <div className="mt-2 text-[clamp(0.68rem,1.8cqi,0.92rem)] leading-relaxed text-[var(--dn-artifact-muted)]">
                       {slide.visual_direction}
                     </div>
                   </div>
                 )}
               </div>
-              <div className="flex min-h-5 items-end justify-between gap-3 text-[0.68rem] text-[#667085]">
+              <div className="flex min-h-5 items-end justify-between gap-3 text-[0.68rem] text-[var(--dn-artifact-muted)]">
                 <div className="flex flex-wrap gap-1">
                   {slide.citations.map((citation) => (
                     <span key={citation}>{citation}</span>
@@ -276,7 +276,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
         )}
 
         {slide && (slide.speaker_notes || slide.visual_direction) && (
-          <div className="border-l-2 border-l-teal-600 bg-muted/30 px-3 py-2">
+          <div className="border-l-2 border-l-[var(--dn-artifact-line)] bg-muted/30 px-3 py-2">
             <Button
               type="button"
               variant="ghost"
@@ -312,12 +312,12 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
 }
 
 const PANEL_STYLES: Record<InfographicPanelKind, string> = {
-  text: 'border-t-[#17324d]',
-  metric: 'border-t-[#168c84]',
-  timeline: 'border-t-[#e76f51]',
-  comparison: 'border-t-[#4f86c6]',
-  process: 'border-t-[#d6a53a]',
-  chart: 'border-t-[#168c84]',
+  text: 'border-t-[var(--dn-status-info)]',
+  metric: 'border-t-[var(--dn-status-success)]',
+  timeline: 'border-t-[var(--dn-status-info)]',
+  comparison: 'border-t-[var(--dn-status-warning)]',
+  process: 'border-t-[var(--dn-status-info)]',
+  chart: 'border-t-[var(--dn-status-success)]',
 }
 
 export function InfographicViewer({ document }: { document: InfographicVisualDocument }) {
@@ -326,15 +326,15 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
       aria-label={document.title}
       data-orientation={document.orientation}
       className={cn(
-        'mx-auto w-full overflow-hidden border bg-[#f7f8fa] p-4 text-[#17202a] shadow-sm sm:p-6',
+        'mx-auto w-full overflow-hidden border border-[var(--dn-artifact-line)] bg-[var(--dn-artifact-canvas)] p-4 text-[var(--dn-artifact-ink)] shadow-sm sm:p-6',
         document.orientation === 'portrait' && 'max-w-2xl',
         document.orientation === 'square' && 'max-w-3xl',
         document.orientation === 'landscape' && 'max-w-5xl',
       )}
     >
-      <div className="border-t-4 border-t-teal-600 pt-4">
+      <div className="border-t-4 border-t-[var(--dn-status-info)] pt-4">
         <h3 className="text-xl font-semibold leading-tight sm:text-2xl">{document.title}</h3>
-        <div className="mt-2 text-[0.68rem] font-semibold uppercase tracking-normal text-[#667085]">
+        <div className="mt-2 text-[0.68rem] font-semibold uppercase tracking-normal text-[var(--dn-artifact-muted)]">
           Evidence Studio · Source-grounded visual
         </div>
       </div>
@@ -347,27 +347,27 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
         {document.panels.map((panel, index) => (
           <section
             key={`${index}-${panel.heading}`}
-            className={cn('min-h-40 border border-t-4 bg-white p-4', PANEL_STYLES[panel.kind])}
+            className={cn('min-h-40 border border-[var(--dn-artifact-line)] border-t-4 bg-[var(--dn-artifact-panel)] p-4', PANEL_STYLES[panel.kind])}
           >
             <div className="flex items-start justify-between gap-2">
               <Badge variant="outline" className="rounded-sm text-[0.62rem] capitalize">
                 {panel.kind}
               </Badge>
-              <span className="text-[0.68rem] font-semibold text-[#667085]">
+              <span className="text-[0.68rem] font-semibold text-[var(--dn-artifact-muted)]">
                 {String(index + 1).padStart(2, '0')}
               </span>
             </div>
             <h4 className="mt-3 text-base font-semibold leading-tight">{panel.heading}</h4>
             {panel.value && (
-              <div className="mt-3 break-words text-3xl font-semibold text-teal-700">
+              <div className="mt-3 break-words text-3xl font-semibold text-[var(--dn-status-success)]">
                 {panel.value}
               </div>
             )}
             {panel.body && (
-              <div className="mt-3 text-sm leading-6 text-[#475467]">{panel.body}</div>
+              <div className="mt-3 text-sm leading-6 text-[var(--dn-artifact-muted)]">{panel.body}</div>
             )}
             {panel.citations.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-1 text-[0.68rem] text-[#667085]">
+              <div className="mt-4 flex flex-wrap gap-1 text-[0.68rem] text-[var(--dn-artifact-muted)]">
                 {panel.citations.map((citation) => (
                   <span key={citation}>{citation}</span>
                 ))}
@@ -376,7 +376,7 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
           </section>
         ))}
       </div>
-      <figcaption className="mt-4 text-[0.68rem] text-[#667085]">
+      <figcaption className="mt-4 text-[0.68rem] text-[var(--dn-artifact-muted)]">
         {document.panels.length} {document.panels.length === 1 ? 'panel' : 'panels'} · {document.orientation}
       </figcaption>
     </figure>
