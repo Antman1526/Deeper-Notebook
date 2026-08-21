@@ -85,6 +85,11 @@ vi.mock('@/lib/hooks/use-translation', () => ({
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
+function closeOpenMenu() {
+  const menu = screen.queryByRole('menu')
+  if (menu) fireEvent.keyDown(menu, { key: 'Escape' })
+}
+
 describe('SourcesPage', () => {
   const openSourceDialog = vi.fn()
 
@@ -164,17 +169,23 @@ describe('SourcesPage', () => {
     expect(screen.getByTestId('source-gallery-card-source:one')).toHaveAttribute('data-featured', 'true')
     expect(screen.getByText('Embedded image')).toBeVisible()
     expect(screen.getByText('Visual cover unavailable')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Field notes' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Field notes' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Field notes' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Refresh visual' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Field notes' }))
+    expect(screen.getByRole('menuitem', { name: 'Refresh visual' })).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     expect(mockRefreshVisual).toHaveBeenCalledOnce()
     expect(mockRefreshVisual).toHaveBeenCalledWith('source:one')
-    fireEvent.click(screen.getByRole('button', { name: 'Remove visual for Appendix scan' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Remove visual for Appendix scan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Appendix scan' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove visual' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Appendix scan' }))
+    expect(screen.getByRole('menuitem', { name: 'Remove visual' })).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     expect(mockRemoveVisual).toHaveBeenCalledOnce()
     expect(mockRemoveVisual).toHaveBeenCalledWith('source:two')
   })
 
-  it('keeps the existing source delete confirmation available for the selected gallery source', async () => {
+  it('opens confirmation for the menu source even when another gallery card is selected', async () => {
     mockVisualSystemEnabled.mockReturnValue(true)
     mockSourceVisualsEnabled.mockReturnValue(true)
     vi.mocked(sourcesApi.list).mockResolvedValueOnce([
@@ -191,14 +202,13 @@ describe('SourcesPage', () => {
     expect(await screen.findByLabelText('Source gallery')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Select Appendix scan' }))
     expect(screen.getByRole('button', { name: 'Created' })).toHaveClass('h-11', 'min-w-11')
-    const deleteButton = screen.getByRole('button', { name: 'Delete source' })
-    expect(deleteButton).toHaveClass('h-11', 'min-w-11')
-    fireEvent.click(deleteButton)
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Field notes' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete source' }))
 
     expect(mockConfirmDialog).toHaveBeenLastCalledWith(expect.objectContaining({
       open: true,
       title: 'Delete source',
-      description: 'Delete Appendix scan?',
+      description: 'Delete Field notes?',
     }))
   })
 
@@ -224,20 +234,25 @@ describe('SourcesPage', () => {
     render(<SourcesPage />)
 
     expect(await screen.findByText('Preparing visual cover')).toBeVisible()
-    const refreshButton = screen.getByRole('button', { name: 'Refresh visual for Field notes' })
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Field notes' }))
+    const refreshButton = screen.getByRole('menuitem', { name: 'Refresh visual' })
     fireEvent.click(refreshButton)
-    expect(refreshButton).toBeDisabled()
 
     await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:one'))
     expect(await screen.findByText('Visual cover unavailable')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Refresh visual for Field notes' })).not.toBeDisabled()
+    closeOpenMenu()
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Field notes' }))
+    expect(screen.getByRole('menuitem', { name: 'Refresh visual' })).not.toHaveAttribute('aria-disabled', 'true')
+    closeOpenMenu()
 
-    const removeButton = screen.getByRole('button', { name: 'Remove visual for Field notes' })
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Field notes' }))
+    const removeButton = screen.getByRole('menuitem', { name: 'Remove visual' })
     fireEvent.click(removeButton)
-    expect(removeButton).toBeDisabled()
 
     await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledTimes(2))
-    expect(screen.getByRole('button', { name: 'Remove visual for Field notes' })).not.toBeDisabled()
+    closeOpenMenu()
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Field notes' }))
+    expect(screen.getByRole('menuitem', { name: 'Remove visual' })).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('does not let gallery controls route through the page-global Enter handler', async () => {
@@ -254,8 +269,8 @@ describe('SourcesPage', () => {
     expect(await screen.findByLabelText('Source gallery')).toBeInTheDocument()
     fireEvent.keyDown(screen.getByRole('button', { name: 'Select Field notes' }), { key: 'Enter' })
     fireEvent.keyDown(screen.getByRole('button', { name: 'Open Field notes' }), { key: 'Enter' })
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Refresh visual for Field notes' }), { key: 'Enter' })
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Remove visual for Field notes' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Actions for Field notes' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
 
     expect(mockRouterPush).not.toHaveBeenCalled()
   })
@@ -322,7 +337,8 @@ describe('SourcesPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Source 45' }))
     expect(screen.getByRole('button', { name: 'Select Source 45' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Source 45' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Source 45' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Refresh visual' }))
 
     await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:45'))
     expect(sourcesApi.list).toHaveBeenCalledTimes(2)
@@ -360,7 +376,8 @@ describe('SourcesPage', () => {
       expect(await screen.findByTestId('source-gallery-card-source:31')).toBeInTheDocument()
       expect(screen.getAllByRole('listitem')).toHaveLength(31)
       fireEvent.click(screen.getByRole('button', { name: 'Select Source 31' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Refresh visual for Source 31' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for Source 31' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Refresh visual' }))
 
       await waitFor(() => expect(sourcesApi.get).toHaveBeenCalledWith('source:31'))
       await waitFor(() => expect(consoleError).toHaveBeenCalledWith(
@@ -372,8 +389,8 @@ describe('SourcesPage', () => {
       expect(screen.getByTestId('source-gallery-card-source:30')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Select Source 31' })).toHaveAttribute('aria-pressed', 'true')
       await waitFor(() => expect(
-        screen.getByRole('button', { name: 'Refresh visual for Source 31' }),
-      ).not.toBeDisabled())
+        screen.getByRole('button', { name: 'Actions for Source 31' }),
+      ).toBeInTheDocument())
     } finally {
       consoleError.mockRestore()
     }

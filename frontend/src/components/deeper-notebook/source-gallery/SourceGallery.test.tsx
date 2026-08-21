@@ -50,6 +50,19 @@ describe('SourceGallery', () => {
     expect(onOpen).toHaveBeenCalledWith('source:one')
   })
 
+  it('keeps Delete authority bound to the card source ID', () => {
+    const onDelete = vi.fn()
+    const sources = [source('source:one', 'First source'), source('source:two', 'Second source')]
+
+    render(<SourceGallery sources={sources} onDelete={onDelete} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for First source' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete source' }))
+
+    expect(onDelete).toHaveBeenCalledOnce()
+    expect(onDelete).toHaveBeenCalledWith('source:one')
+  })
+
   it('provides the bounded container, compact reflow, target, contrast, and no-motion CSS contract', () => {
     expect(css).toContain('container: source-gallery / inline-size')
     expect(css).toContain('repeat(auto-fit, minmax(min(100%, 14rem), 1fr))')

@@ -2,17 +2,19 @@
 
 import { useMemo, useRef, useState } from 'react'
 
-import { SourceVisualProvenance, sourceVisualOriginLabel } from './SourceVisualProvenance'
+import { SourceCoverActions } from './SourceCoverActions'
+import { sourceVisualOriginLabel } from './SourceVisualProvenance'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { SourceVisualReceipt } from '@/lib/types/source-visuals'
 
-type SourceCoverProps = {
+export type SourceCoverProps = {
   source: SourceListResponse
   variant?: 'card' | 'compact'
   priority?: boolean
   onOpen?: (sourceId: string) => void
   onRefresh?: (sourceId: string) => void | Promise<void>
   onRemove?: (sourceId: string) => void | Promise<void>
+  onDelete?: (sourceId: string) => void
 }
 
 function sourceTypeLabel(sourceType: SourceListResponse['source_type']): string {
@@ -88,6 +90,7 @@ export function SourceCover({
   onOpen,
   onRefresh,
   onRemove,
+  onDelete,
 }: SourceCoverProps) {
   const [failedAssetIdentity, setFailedAssetIdentity] = useState<string | null>(null)
   const [pendingIdentity, setPendingIdentity] = useState<string | null>(null)
@@ -104,6 +107,7 @@ export function SourceCover({
   // v0.8.86 — backend says the feature is off: Refresh/Remove could only
   // 404, so they are not offered. Open (navigation) stays.
   const visualsDisabled = source.visual_status?.state === 'disabled'
+  const visualState = source.visual_status?.state ?? 'unavailable'
 
   function dispatch(action: ((sourceId: string) => void | Promise<void>) | undefined) {
     if (!action || pending || pendingIdentityRef.current === identity) return
@@ -129,51 +133,65 @@ export function SourceCover({
     }
   }
 
-  return (
-    <section className={`dn-source-cover dn-source-cover--${variant}`} data-dn-source-cover="true">
-      <div className="dn-source-cover__visual" data-dn-source-cover-aspect>
-        {visual ? (
-          <>
-            {/* The receipt is an opaque same-origin, bounded WebP derivative, not an external image URL. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={visual.asset_url}
-              alt={`${title} — ${sourceVisualOriginLabel(visual.origin)}: ${visual.alt_text}`}
-              width={visual.width}
-              height={visual.height}
-              loading={priority ? 'eager' : 'lazy'}
-              decoding="async"
-              onError={() => setFailedAssetIdentity(assetIdentity)}
-            />
-            <SourceVisualProvenance origin={visual.origin} />
-          </>
-        ) : (
-          <div className="dn-source-cover__fallback">
-            <span className="dn-source-cover__shape" aria-hidden="true" />
-            <p className="dn-source-cover__title">{title}</p>
-            <p className="dn-source-cover__type">{sourceTypeLabel(source.source_type)}</p>
-            <p className="dn-source-cover__status" role="status">{statusCopy(source)}</p>
-          </div>
-        )}
-      </div>
+  const visualRegion = (
+    <span className="dn-source-cover__visual" data-dn-source-cover-aspect>
+      {visual ? (
+        <>
+          {/* The receipt is an opaque same-origin, bounded WebP derivative, not an external image URL. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={visual.asset_url}
+            alt={`${title} — ${sourceVisualOriginLabel(visual.origin)}: ${visual.alt_text}`}
+            width={visual.width}
+            height={visual.height}
+            loading={priority ? 'eager' : 'lazy'}
+            decoding="async"
+            onError={() => setFailedAssetIdentity(assetIdentity)}
+          />
+          <span className="dn-source-gallery__provenance" aria-label="Image origin">
+            {sourceVisualOriginLabel(visual.origin)}
+          </span>
+        </>
+      ) : (
+        <span className="dn-source-cover__fallback">
+          <span className="dn-source-cover__shape" aria-hidden="true" />
+          <span className="dn-source-cover__title">{title}</span>
+          <span className="dn-source-cover__type">{sourceTypeLabel(source.source_type)}</span>
+          <span className="dn-source-cover__status" role="status">{statusCopy(source)}</span>
+        </span>
+      )}
+    </span>
+  )
 
-      {(onOpen || onRefresh || onRemove) ? (
+  return (
+    <section
+      className={`dn-source-cover dn-source-cover--${variant}`}
+      data-dn-source-cover="true"
+      data-testid="source-cover"
+      data-dn-source-cover-state={visualState}
+      data-visual-state={visualState}
+    >
+      {onOpen ? (
+        <button
+          type="button"
+          className="dn-source-cover__open"
+          aria-label={`Open ${title}`}
+          onClick={() => onOpen(source.id)}
+        >
+          {visualRegion}
+        </button>
+      ) : visualRegion}
+
+      {(onRefresh || onRemove || onDelete) ? (
         <div className="dn-source-cover__actions">
-          {onOpen ? (
-            <button type="button" onClick={() => onOpen(source.id)}>
-              Open {title}
-            </button>
-          ) : null}
-          {onRefresh && !visualsDisabled ? (
-            <button type="button" disabled={pending} onClick={() => dispatch(onRefresh)}>
-              Refresh visual for {title}
-            </button>
-          ) : null}
-          {onRemove && !visualsDisabled ? (
-            <button type="button" disabled={pending} onClick={() => dispatch(onRemove)}>
-              Remove visual for {title}
-            </button>
-          ) : null}
+          <SourceCoverActions
+            title={title}
+            pending={pending}
+            visualsDisabled={visualsDisabled}
+            onRefresh={onRefresh ? () => dispatch(onRefresh) : undefined}
+            onRemove={onRemove ? () => dispatch(onRemove) : undefined}
+            onDelete={onDelete ? () => onDelete(source.id) : undefined}
+          />
         </div>
       ) : null}
     </section>

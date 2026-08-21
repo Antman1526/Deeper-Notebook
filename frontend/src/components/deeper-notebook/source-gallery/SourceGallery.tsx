@@ -11,6 +11,7 @@ type SourceGalleryProps = {
   onOpen?: (sourceId: string) => void
   onRefresh?: (sourceId: string) => void
   onRemove?: (sourceId: string) => void
+  onDelete?: (sourceId: string) => void
 }
 
 export function SourceGallery({
@@ -21,6 +22,7 @@ export function SourceGallery({
   onOpen,
   onRefresh,
   onRemove,
+  onDelete,
 }: SourceGalleryProps) {
   const featuredId = selectedId && sources.some(source => source.id === selectedId) ? selectedId : sources[0]?.id
 
@@ -53,6 +55,7 @@ export function SourceGallery({
                 onOpen={onOpen}
                 onRefresh={onRefresh}
                 onRemove={onRemove}
+                onDelete={onDelete}
               />
             </article>
           )

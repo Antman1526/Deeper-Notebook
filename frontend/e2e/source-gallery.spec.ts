@@ -540,20 +540,22 @@ async function exerciseCellInteraction(
   if (cell.id === 'sources-ready') {
     fixture.expectCall('POST /api/sources/source:fixture/visual:refresh')
     fixture.expectCall('GET /api/sources/source:fixture')
-    const refresh = page.getByRole('button', { name: 'Refresh visual for Fixture field notes' })
-    await refresh.evaluate((button: HTMLButtonElement) => {
-      button.click()
-      button.click()
+    await page.getByRole('button', { name: 'Actions for Fixture field notes' }).click()
+    const refresh = page.getByRole('menuitem', { name: 'Refresh visual' })
+    await refresh.evaluate((item: HTMLElement) => {
+      item.click()
+      item.click()
     })
     await expect.poll(() => fixture.ledger.seen['POST /api/sources/source:fixture/visual:refresh'] ?? 0).toBe(1)
   }
   if (cell.id === 'sources-missing-corrupt') {
     fixture.expectCall('DELETE /api/sources/source:fixture/visual')
     fixture.expectCall('GET /api/sources/source:fixture')
-    const remove = page.getByRole('button', { name: 'Remove visual for Fixture field notes' })
-    await remove.evaluate((button: HTMLButtonElement) => {
-      button.click()
-      button.click()
+    await page.getByRole('button', { name: 'Actions for Fixture field notes' }).click()
+    const remove = page.getByRole('menuitem', { name: 'Remove visual' })
+    await remove.evaluate((item: HTMLElement) => {
+      item.click()
+      item.click()
     })
     await expect.poll(() => fixture.ledger.seen['DELETE /api/sources/source:fixture/visual'] ?? 0).toBe(1)
   }
@@ -639,6 +641,45 @@ test.describe('source gallery visual contract', () => {
     // schema probe is the second exact same-origin feature request.
     expect(fixture.base.ledger.seen['GET /api/features']).toBe(2)
     expect(fixture.base.ledger.unexpected).toEqual([])
+  })
+
+  test('source actions keep keyboard activation, one-shot mutations, and exact delete confirmation', async ({ page }) => {
+    const cell = SOURCE_GALLERY_CELLS.find(candidate => candidate.id === 'sources-ready')!
+    const fixture = await installSourceGalleryFixture(page, {
+      cell,
+      theme: 'gemini-forward-light',
+      viewport: SOURCE_GALLERY_VIEWPORTS[3],
+    })
+    fixture.expectCall('POST /api/sources/source:fixture/visual:refresh')
+    fixture.expectCall('GET /api/sources/source:fixture')
+    fixture.releaseData()
+    await page.goto(cell.browserPath)
+
+    const actions = page.getByRole('button', { name: 'Actions for Fixture field notes' })
+    await expect(actions).toBeVisible()
+    const actionBounds = await actions.boundingBox()
+    expect(actionBounds?.width).toBeGreaterThanOrEqual(44)
+    expect(actionBounds?.height).toBeGreaterThanOrEqual(44)
+
+    await actions.focus()
+    await page.keyboard.press('Enter')
+    const refresh = page.getByRole('menuitem', { name: 'Refresh visual' })
+    await expect(refresh).toBeVisible()
+    await refresh.evaluate((item: HTMLElement) => {
+      item.click()
+      item.click()
+    })
+    await expect.poll(() => fixture.ledger.seen['POST /api/sources/source:fixture/visual:refresh'] ?? 0).toBe(1)
+    await expect.poll(() => fixture.ledger.seen['GET /api/sources/source:fixture'] ?? 0).toBe(1)
+
+    await actions.focus()
+    await page.keyboard.press('Enter')
+    await page.getByRole('menuitem', { name: 'Delete source' }).click()
+    const confirmation = page.getByRole('alertdialog')
+    await expect(confirmation).toBeVisible()
+    await expect(confirmation).toContainText('Are you sure you want to delete "Fixture field notes"?')
+
+    assertExactSourceGalleryLedger(fixture)
   })
 
   test('Source Gallery keeps backend config on the same-origin fixture contract', async ({ page }) => {

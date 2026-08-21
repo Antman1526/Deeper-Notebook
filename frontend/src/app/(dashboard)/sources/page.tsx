@@ -318,10 +318,10 @@ export default function SourcesPage() {
     setDeleteDialog({ open: true, source })
   }, [])
 
-  const handleGalleryDelete = useCallback(() => {
-    const source = sources[selectedIndex]
+  const handleGalleryDelete = useCallback((sourceId: string) => {
+    const source = sources.find(candidate => candidate.id === sourceId)
     if (source) setDeleteDialog({ open: true, source })
-  }, [selectedIndex, sources])
+  }, [sources])
 
   const handleDeleteConfirm = async () => {
     if (!deleteDialog.source) return
@@ -433,21 +433,13 @@ export default function SourcesPage() {
                         <span className="ml-1 text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
                       )}
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleGalleryDelete}
-                      className="h-11 min-w-11 px-2 text-destructive hover:bg-muted hover:text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-3 w-3" />
-                      {t('sources.delete')}
-                    </Button>
                   </div>
                 }
                 onSelect={handleGallerySelect}
                 onOpen={handleGalleryOpen}
                 onRefresh={handleGalleryRefresh}
                 onRemove={handleGalleryRemove}
+                onDelete={handleGalleryDelete}
               />
             </div>
           ) : (
