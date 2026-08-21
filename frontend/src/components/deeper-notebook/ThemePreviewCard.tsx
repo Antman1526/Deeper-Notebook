@@ -11,6 +11,7 @@ interface ThemePreviewCardProps {
   theme: ThemeDefinition
   selected: boolean
   previewing: boolean
+  sectionLabel?: string
   onPreview: () => void
   onApply: () => void
 }
@@ -19,6 +20,7 @@ export function ThemePreviewCard({
   theme,
   selected,
   previewing,
+  sectionLabel,
   onPreview,
   onApply,
 }: ThemePreviewCardProps) {
@@ -38,7 +40,7 @@ export function ThemePreviewCard({
         selected && 'border-primary/70 ring-1 ring-primary/20',
         previewing && 'border-accent-foreground/40 ring-1 ring-accent-foreground/15',
       )}
-      aria-label={`${theme.label} theme`}
+      aria-label={sectionLabel ? `${sectionLabel} ${theme.label} theme` : `${theme.label} theme`}
     >
       <div className="overflow-hidden rounded-lg border shadow-sm" style={previewProperties}>
         <div className="grid h-24 grid-cols-[1.35rem_1fr_.8fr] bg-[var(--preview-canvas)] text-[var(--preview-text)]">

@@ -128,17 +128,21 @@ export function ThemeGallery() {
     setSelectedTheme(themeId)
     setPreviewingTheme(null)
 
+    let didWriteStoredTheme = false
     try {
       writeStoredTheme(localStorage, themeId)
+      didWriteStoredTheme = true
     } catch {
       // The native bridge can still persist when browser storage is disabled.
     }
 
-    try {
-      recordRecentThemeId(localStorage, themeId)
-      setRecentThemeIds(readValidatedRecentThemeIds())
-    } catch {
-      // Recent history is best effort and must not block the canonical apply.
+    if (didWriteStoredTheme) {
+      try {
+        recordRecentThemeId(localStorage, themeId)
+        setRecentThemeIds(readValidatedRecentThemeIds())
+      } catch {
+        // Recent history is best effort and must not block the canonical apply.
+      }
     }
 
     const themeBridge = (window as ThemeWindow).DN ?? (window as ThemeWindow).ONP
@@ -149,9 +153,7 @@ export function ThemeGallery() {
   const hasSearch = query.trim().length > 0
   const recentThemes = recentThemeIds.map(themeId => THEME_BY_ID[themeId])
   const recentThemeIdSet = new Set(recentThemeIds)
-  const recommendedThemes = RECOMMENDED_THEME_IDS
-    .filter(themeId => !recentThemeIdSet.has(themeId))
-    .map(themeId => THEME_BY_ID[themeId])
+  const recommendedThemes = RECOMMENDED_THEME_IDS.map(themeId => THEME_BY_ID[themeId])
   const moreThemes = THEME_CATALOG.filter(theme =>
     !recentThemeIdSet.has(theme.id)
       && !RECOMMENDED_THEME_IDS.some(themeId => themeId === theme.id),
@@ -181,6 +183,7 @@ export function ThemeGallery() {
               theme={theme}
               selected={selectedTheme === theme.id}
               previewing={previewingTheme === theme.id}
+              sectionLabel={sectionId === 'recent' ? label : undefined}
               onPreview={() => handlePreview(theme.id)}
               onApply={() => handleApply(theme.id)}
             />
