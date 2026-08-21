@@ -34,7 +34,7 @@ _LOCAL_OPENER = build_opener(ProxyHandler({}))
 _MONITOR_FD_ENV = "DEEPER_NOTEBOOK_PACKAGE_SMOKE_MONITOR_FD"
 _MONITOR_LIVENESS_FD_ENV = "DEEPER_NOTEBOOK_PACKAGE_SMOKE_MONITOR_LIVENESS_FD"
 _MONITOR_PARENT_FD_ENV = "DEEPER_NOTEBOOK_PACKAGE_SMOKE_PARENT_FD"
-_MONITOR_SCRIPT = r'''
+_MONITOR_SCRIPT = r"""
 import json
 import os
 import select
@@ -151,7 +151,7 @@ while True:
         os.close(liveness_descriptor)
         os.close(parent_descriptor)
         raise SystemExit(0 if cleanup_completed else 1)
-'''
+"""
 
 
 class SmokeFailure(RuntimeError):
@@ -205,12 +205,7 @@ def parse_environment(values: list[str]) -> dict[str, str]:
     environment: dict[str, str] = {}
     for value in values:
         key, separator, setting = value.partition("=")
-        if (
-            not separator
-            or not key
-            or "\x00" in key
-            or "\x00" in setting
-        ):
+        if not separator or not key or "\x00" in key or "\x00" in setting:
             raise SmokeFailure("environment values must use KEY=VALUE")
         environment[key] = setting
     return environment
@@ -333,13 +328,9 @@ def validate_http_url(url: str, label: str, *, loopback_only: bool) -> str:
 def require_loopback_url(url: str, label: str) -> str:
     """Reject readiness values that could send a local proof off-device."""
     try:
-        return validate_http_url(
-            url, f"readiness {label}", loopback_only=True
-        )
+        return validate_http_url(url, f"readiness {label}", loopback_only=True)
     except SmokeFailure as error:
-        raise SmokeFailure(
-            f"readiness {label} must be an HTTP loopback URL"
-        ) from error
+        raise SmokeFailure(f"readiness {label} must be an HTTP loopback URL") from error
 
 
 def require_absent_readiness_file(readiness_file: Path) -> None:
@@ -412,9 +403,7 @@ def wait_for_readiness(
             elif type(payload.get("pid")) is not int:
                 last_error = "readiness file is missing an integer launch pid"
             elif payload["pid"] != launched_application_pid:
-                raise SmokeFailure(
-                    "readiness pid does not match launched process"
-                )
+                raise SmokeFailure("readiness pid does not match launched process")
             else:
                 api_url = payload.get("api_url")
                 frontend_url = payload.get("frontend_url")
@@ -538,9 +527,7 @@ def _application_exit_status(
         return cached
     deadline = time.monotonic() + timeout_seconds
     while True:
-        payload = _next_monitor_status(
-            process, max(0.0, deadline - time.monotonic())
-        )
+        payload = _next_monitor_status(process, max(0.0, deadline - time.monotonic()))
         if payload is None:
             return None
         if payload.get("event") == "exited":
@@ -637,9 +624,7 @@ def launch_monitored_process(
         raise
 
 
-def _owned_process_group_descendants(
-    process_group: int, leader_pid: int
-) -> set[int]:
+def _owned_process_group_descendants(process_group: int, leader_pid: int) -> set[int]:
     """Return live members other than the retained leader, or fail closed."""
     try:
         listing = subprocess.run(
@@ -729,7 +714,9 @@ def stop_process(
         try:
             os.killpg(process_group, signal.SIGTERM)
         except ProcessLookupError as error:
-            raise SmokeFailure("owned process group disappeared before cleanup") from error
+            raise SmokeFailure(
+                "owned process group disappeared before cleanup"
+            ) from error
 
         descendants = _wait_for_owned_process_group_descendants(
             process_group, process.pid, timeout_seconds
@@ -846,16 +833,12 @@ def apply_make_smoke_inputs(args: argparse.Namespace) -> None:
     values = {name: os.environ.get(name, "") for name in required}
     missing = [label for name, label in required.items() if not values[name]]
     if missing:
-        raise SmokeFailure(
-            "make smoke inputs require " + ", ".join(sorted(missing))
-        )
+        raise SmokeFailure("make smoke inputs require " + ", ".join(sorted(missing)))
     args.executable = Path(values["SMOKE_EXECUTABLE"])
     args.readiness_file = Path(values["SMOKE_READINESS_FILE"])
     args.artifact = [Path(values["SMOKE_ARTIFACT"])]
     args.receipt = Path(values["SMOKE_RECEIPT"])
-    args.timeout_seconds = os.environ.get(
-        "SMOKE_TIMEOUT_SECONDS", args.timeout_seconds
-    )
+    args.timeout_seconds = os.environ.get("SMOKE_TIMEOUT_SECONDS", args.timeout_seconds)
     environment_file = os.environ.get("SMOKE_ENVIRONMENT_FILE", "")
     legacy_environment = os.environ.get("SMOKE_ENVIRONMENT", "")
     if legacy_environment:
@@ -935,7 +918,10 @@ def parse_timeout_seconds(value: str) -> float:
         raise SmokeFailure(
             "timeout-seconds must be a finite number from 0 to 300"
         ) from error
-    if not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= MAX_TIMEOUT_SECONDS:
+    if (
+        not math.isfinite(timeout_seconds)
+        or not 0 < timeout_seconds <= MAX_TIMEOUT_SECONDS
+    ):
         raise SmokeFailure("timeout-seconds must be a finite number from 0 to 300")
     return timeout_seconds
 
@@ -1084,9 +1070,7 @@ def main() -> int:
                 launched_application_pid,
             )
             resolved_urls.update(api_url=api_url, frontend_url=frontend_url)
-            receipt["checks"]["api_readiness"]["url"] = endpoint_url(
-                api_url, "/readyz"
-            )
+            receipt["checks"]["api_readiness"]["url"] = endpoint_url(api_url, "/readyz")
             receipt["checks"]["frontend_route_load"]["url"] = frontend_url
         else:
             api_url = args.api_url
@@ -1106,9 +1090,7 @@ def main() -> int:
             )
             receipt["feature_results"] = feature_results
             receipt["checks"]["runtime_features"] = {
-                "passed": all(
-                    result["passed"] for result in feature_results.values()
-                ),
+                "passed": all(result["passed"] for result in feature_results.values()),
                 "skipped": False,
                 "url": endpoint_url(api_url, "/api/features"),
                 "expected": expected_features,
@@ -1120,9 +1102,7 @@ def main() -> int:
         else:
             receipt["checks"]["runtime_features"]["passed"] = True
 
-        wait_for_url(
-            frontend_url, args.timeout_seconds, args.frontend_marker, process
-        )
+        wait_for_url(frontend_url, args.timeout_seconds, args.frontend_marker, process)
         receipt["checks"]["frontend_route_load"]["passed"] = True
 
         stop_process(process, args.timeout_seconds)

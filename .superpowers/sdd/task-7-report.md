@@ -448,10 +448,11 @@ Developer ID/notarization, Windows, publish, and release remain out of scope.
 - Static identity and integrity gates are green: rebrand is `unexpected=0,
   stale=0`; compileall and `git diff --check` pass. The whole-branch review's
   “unchanged baseline” wording for Ruff format was incorrect: the exact base
-  blobs were formatted, but four tracked tests were modified by this branch.
-  A bounded follow-up reformatted only those four owned tests. The genuine
-  scope-external exceptions remain `api/routers/search.py` I001 at pre-Task-7
-  `5d50049e` and an untracked vendored Node lldb file; neither was edited.
+  blobs were formatted, but five branch-owned tracked files were modified by
+  this branch. A bounded follow-up repaired only the four owned tests plus
+  `desktop/build/package_smoke.py`. The genuine scope-external exceptions
+  remain `api/routers/search.py` I001 at pre-Task-7 `5d50049e` and an
+  untracked vendored Node lldb file; neither was edited.
 
 Initial-scope and final-receipt staged Gitleaks scans found zero leaks; the
 required `34ef47cd..HEAD` range scan also found zero leaks.
@@ -473,3 +474,28 @@ outside this source-only closeout.
 - No API, vendored LLDB, package, install, process, credential, remote, or
   publication action occurred. Commit receipt follows after staged diff and
   Gitleaks verification.
+
+## 2026-08-21 — Task 7 package-smoke Ruff-format review repair
+
+- Strict augmented full-tree RED used
+  `uv run ruff format --check --no-cache api deeper_notebook desktop tests
+  desktop/build/package_smoke.py` and exited `1`, reporting exactly
+  `desktop/build/package_smoke.py` and the untouched vendored
+  `desktop/bin/node-darwin-arm64/share/doc/node/lldb_commands.py`.
+- Ruff formatted only `desktop/build/package_smoke.py`. Its normalized AST
+  digest stayed exactly
+  `ca8b03a725f9eff962bdb31cbcdda2537fa4b31d8ce8f25eed982c25d9c2c217`
+  before and after; the 20-insertion/40-deletion delta is formatter-only.
+- The complete branch-owned formatter-repair set is exactly five files:
+  `desktop/build/package_smoke.py`,
+  `desktop/tests/test_package_smoke_contract.py`,
+  `desktop/tests/test_release_manifest.py`, `tests/test_product_identity.py`,
+  and `tests/test_sources_api.py`. Focused package/manifest pytest passed
+  `65 tests` with `7 dependency warnings`; exact-five Ruff format, scoped
+  package Ruff, package compileall, and diff-check passed.
+- After repair, full-tree format reports only the untouched vendored LLDB
+  file. `api/routers/search.py` I001 remains a separate unchanged
+  scope-external lint baseline; generated desktop pycs and supplied task
+  context remain preserved. No package, install, process, credential,
+  remote, or publication action occurred. Staged and post-commit range
+  Gitleaks are clean with zero leaks.
