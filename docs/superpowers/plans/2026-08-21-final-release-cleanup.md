@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Active checkout is `/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/today-productization` on `codex/today-productization`.
+- Active checkout is the repository-relative worktree `<repo>/.worktrees/today-productization` on `codex/today-productization`.
 - Preserve `/Applications/Deeper Notebook.app`, its timestamped backup, `dist/`, Task 8 receipts, user data, credentials, and the supplied untracked `.codex/agent-context/today-productization-2026-08-20.md`.
 - Never launch staged and installed smoke concurrently; every launch must own, stop, and reap only its own process group.
 - Never access non-loopback HTTP(S), download models, call providers, mutate source visuals, install, push, publish, notarize, or rewrite remote history.

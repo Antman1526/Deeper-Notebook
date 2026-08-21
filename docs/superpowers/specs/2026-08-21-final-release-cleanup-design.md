@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-21
 
-**Repository:** `/Users/Antman/Documents/Open Notebook/Deeper-Notebook/.worktrees/today-productization`
+**Repository/worktree:** repository-relative `<repo>/.worktrees/today-productization`
 
 **Branch:** `codex/today-productization`
 **Current release:** Deeper Notebook `0.8.114`
