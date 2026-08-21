@@ -21,6 +21,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
 from desktop.build.package_smoke import (  # noqa: E402
     SmokeFailure,
     launch_monitored_process,
+    require_application_running,
     stop_process,
     utc_now,
     wait_for_readiness,
@@ -35,6 +36,7 @@ PACKAGE_BROWSER_PROBE = (
 )
 SUMMARY_RECEIPT_NAME = "summary.json"
 MAX_TIMEOUT_SECONDS = 300.0
+APPLICATION_LIVENESS_POLL_SECONDS = 0.25
 
 DEFAULT_EXPECTED_FEATURES: dict[str, bool] = {
     "evidenceStudio": True,
@@ -91,6 +93,7 @@ def _mode_spec(mode: str) -> ModeSpec:
 
 def _validate_output_root(output_root: Path) -> None:
     """Allow a new or empty output root, never append to an existing receipt set."""
+    _reject_symlinked_output_ancestors(output_root)
     try:
         metadata = output_root.lstat()
     except FileNotFoundError:
@@ -111,6 +114,26 @@ def _validate_output_root(output_root: Path) -> None:
         ) from error
     if has_entries:
         raise SmokeFailure(f"smoke output root must be empty: {output_root}")
+
+
+def _reject_symlinked_output_ancestors(output_root: Path) -> None:
+    """Reject a new output path that would be created through a symlink."""
+    absolute = Path(os.path.abspath(output_root))
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            raise SmokeFailure(
+                f"could not inspect smoke output root ancestor: {current}"
+            ) from error
+        if stat.S_ISLNK(metadata.st_mode):
+            raise SmokeFailure(
+                f"smoke output root must not be below a symlinked ancestor: {current}"
+            )
 
 
 def _validate_inputs(arguments: argparse.Namespace) -> str:
@@ -208,6 +231,64 @@ def _parse_browser_receipt(browser: subprocess.CompletedProcess[str]) -> dict[st
     return payload
 
 
+def _validate_browser_receipt(
+    receipt: dict[str, Any],
+    mode: ModeSpec,
+    frontend_url: str,
+    api_url: str,
+) -> None:
+    """Accept only the complete read-only browser proof for one mode."""
+    if receipt.get("status") != "passed":
+        raise SmokeFailure("browser receipt status must be passed")
+    if receipt.get("mode") != mode.browser_mode:
+        raise SmokeFailure("browser receipt mode did not match the requested mode")
+    if receipt.get("frontend_url") != frontend_url:
+        raise SmokeFailure("browser receipt frontend URL did not match readiness")
+    if receipt.get("api_url") != api_url:
+        raise SmokeFailure("browser receipt API URL did not match readiness")
+
+    feature_checks = receipt.get("feature_checks")
+    if not isinstance(feature_checks, dict) or set(feature_checks) != set(
+        mode.expected_features
+    ):
+        raise SmokeFailure("browser receipt feature checks were incomplete")
+    for name, expected in mode.expected_features.items():
+        check = feature_checks[name]
+        if not isinstance(check, dict) or set(check) != {
+            "expected",
+            "actual",
+            "passed",
+        }:
+            raise SmokeFailure("browser receipt feature check had an invalid shape")
+        if (
+            check["expected"] is not expected
+            or check["actual"] is not expected
+            or check["passed"] is not True
+        ):
+            raise SmokeFailure("browser receipt feature check did not pass")
+
+    for key in ("blocked_requests", "non_get_requests"):
+        if receipt.get(key) != []:
+            raise SmokeFailure(f"browser receipt reported {key}")
+    if receipt.get("visual_mutation_request_observed") is not False:
+        raise SmokeFailure("browser receipt reported a visual mutation request")
+
+    if mode.browser_mode == "default":
+        theme = receipt.get("theme")
+        if not isinstance(theme, str) or not theme.startswith("gemini-forward-"):
+            raise SmokeFailure("browser receipt did not prove the Gemini Forward theme")
+        if receipt.get("visual_system_v2_shell_visible") is not True:
+            raise SmokeFailure("browser receipt did not prove the Visual System shell")
+    else:
+        for key in (
+            "sources_main_visible",
+            "sources_heading_visible",
+            "source_list_get_observed",
+        ):
+            if receipt.get(key) is not True:
+                raise SmokeFailure(f"browser receipt did not prove {key}")
+
+
 def _base_mode_receipt(mode: ModeSpec, arguments: argparse.Namespace) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -292,11 +373,20 @@ def run_mode(mode: str, arguments: argparse.Namespace) -> dict[str, Any]:
             text=True,
             timeout=timeout,
         )
+        require_application_running(
+            process, min(timeout, APPLICATION_LIVENESS_POLL_SECONDS)
+        )
         browser_receipt = _parse_browser_receipt(browser)
         receipt["browser"] = browser_receipt
         if browser.returncode != 0 or browser_receipt.get("status") != "passed":
             error = browser_receipt.get("error", "browser contract failed")
             raise SmokeFailure(f"browser contract failed: {error}")
+        _validate_browser_receipt(
+            browser_receipt,
+            mode_spec,
+            frontend_url,
+            api_url,
+        )
         receipt["checks"]["browser_ui"] = {"passed": True}
         receipt["status"] = "passed"
     except Exception as error:

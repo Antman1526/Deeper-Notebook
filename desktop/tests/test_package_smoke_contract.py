@@ -59,6 +59,12 @@ def test_release_browser_probe_requires_both_127_0_0_1_hosts() -> None:
     assert "api.hostname !== '127.0.0.1'" in source
 
 
+def test_release_browser_probe_preserves_exact_readiness_urls_in_its_receipt() -> None:
+    source = PACKAGE_BROWSER_PROBE_SCRIPT.read_text(encoding="utf-8")
+    assert "frontend_url: args['frontend-url']" in source
+    assert "api_url: args['api-url']" in source
+
+
 def wait_for_path(path: Path, timeout_seconds: float = 3) -> None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:

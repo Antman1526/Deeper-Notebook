@@ -121,8 +121,8 @@ async function main() {
     const result = {
       status: 'passed',
       mode: args.mode,
-      frontend_url: frontend.href,
-      api_url: api.href,
+      frontend_url: args['frontend-url'],
+      api_url: args['api-url'],
       feature_response: features,
       feature_checks: featureChecks,
       observed_requests: observed,

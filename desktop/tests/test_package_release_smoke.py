@@ -18,6 +18,96 @@ from desktop.build import package_smoke_fixture
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
+def browser_receipt_for(
+    mode: str, frontend_url: str, api_url: str
+) -> dict[str, object]:
+    mode_spec = release_smoke.MODE_SPECS[mode]
+    receipt: dict[str, object] = {
+        "status": "passed",
+        "mode": mode_spec.browser_mode,
+        "frontend_url": frontend_url,
+        "api_url": api_url,
+        "feature_checks": {
+            name: {
+                "expected": expected,
+                "actual": expected,
+                "passed": True,
+            }
+            for name, expected in mode_spec.expected_features.items()
+        },
+        "blocked_requests": [],
+        "non_get_requests": [],
+        "visual_mutation_request_observed": False,
+    }
+    if mode == "default":
+        receipt.update(
+            {
+                "theme": "gemini-forward-light",
+                "visual_system_v2_shell_visible": True,
+            }
+        )
+    else:
+        receipt.update(
+            {
+                "sources_main_visible": True,
+                "sources_heading_visible": True,
+                "source_list_get_observed": True,
+            }
+        )
+    return receipt
+
+
+def prepare_ready_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    browser_receipt: dict[str, object],
+) -> tuple[argparse.Namespace, SimpleNamespace, list[object]]:
+    arguments = arguments_for(tmp_path)
+    fixture_root = tmp_path / "fixture-ready"
+    fixture = package_smoke_fixture.SmokeFixture(
+        root=fixture_root,
+        home=fixture_root / "home",
+        data_dir=fixture_root / "data",
+        model_dir=fixture_root / "models",
+        readiness_file=fixture_root / "data" / "logs" / "desktop-readiness.json",
+        environment={"HOME": str(fixture_root / "home")},
+    )
+    process = SimpleNamespace(pid=904, returncode=None)
+    stopped: list[object] = []
+    monkeypatch.setattr(
+        release_smoke, "prepare_smoke_fixture", lambda *_args, **_kwargs: fixture
+    )
+    monkeypatch.setattr(
+        release_smoke,
+        "launch_monitored_process",
+        lambda *_args, **_kwargs: (process, process.pid),
+    )
+    monkeypatch.setattr(
+        release_smoke,
+        "wait_for_readiness",
+        lambda *_args, **_kwargs: (
+            "http://127.0.0.1:52005",
+            "http://127.0.0.1:52006/",
+        ),
+    )
+    monkeypatch.setattr(
+        release_smoke.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=["node"],
+            returncode=0,
+            stdout=json.dumps(browser_receipt),
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(
+        release_smoke,
+        "stop_process",
+        lambda process_arg, _timeout: stopped.append(process_arg),
+    )
+    return arguments, process, stopped
+
+
 def arguments_for(tmp_path: Path) -> argparse.Namespace:
     artifact = tmp_path / "release.dmg"
     artifact.write_bytes(b"release artifact")
@@ -95,7 +185,16 @@ def test_release_smoke_stops_default_before_launching_off(
         release_smoke.subprocess,
         "run",
         lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            args=["node"], returncode=0, stdout='{"status":"passed"}', stderr=""
+            args=["node"],
+            returncode=0,
+            stdout=json.dumps(
+                browser_receipt_for(
+                    current_mode[0],
+                    "http://127.0.0.1:53002/",
+                    "http://127.0.0.1:53001",
+                )
+            ),
+            stderr="",
         ),
     )
     monkeypatch.setattr(
@@ -152,6 +251,21 @@ def test_release_smoke_refuses_non_empty_output_root(
     assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
+def test_release_smoke_rejects_an_output_root_below_a_symlinked_ancestor(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    symlink = tmp_path / "linked-parent"
+    symlink.symlink_to(target, target_is_directory=True)
+    output_root = symlink / "new-output-root"
+
+    with pytest.raises(smoke.SmokeFailure, match="symlinked ancestor"):
+        release_smoke._validate_output_root(output_root)
+
+    assert not (target / "new-output-root").exists()
+
+
 def test_release_smoke_verifies_artifact_before_any_mode_launch(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -170,6 +284,85 @@ def test_release_smoke_verifies_artifact_before_any_mode_launch(
         (arguments.output_root / "summary.json").read_text(encoding="utf-8")
     )
     assert "sha256 mismatch" in summary["error"]
+
+
+def test_run_mode_rejects_a_bare_browser_success_receipt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    arguments, _process, stopped = prepare_ready_mode(
+        monkeypatch, tmp_path, {"status": "passed"}
+    )
+
+    result = release_smoke.run_mode("default", arguments)
+
+    assert result["status"] == "failed"
+    assert "browser receipt" in result["error"]
+    assert len(stopped) == 1
+
+
+def test_run_mode_rejects_browser_success_after_application_exit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    frontend_url = "http://127.0.0.1:52006/"
+    api_url = "http://127.0.0.1:52005"
+    arguments, process, stopped = prepare_ready_mode(
+        monkeypatch, tmp_path, browser_receipt_for("default", frontend_url, api_url)
+    )
+    liveness_polls: list[float] = []
+
+    def exited_after_browser(received_process: object, timeout_seconds: float) -> int:
+        assert received_process is process
+        liveness_polls.append(timeout_seconds)
+        return 9
+
+    monkeypatch.setattr(
+        smoke,
+        "_application_exit_status",
+        exited_after_browser,
+    )
+
+    result = release_smoke.run_mode("default", arguments)
+
+    assert result["status"] == "failed"
+    assert "exited with code 9" in result["error"]
+    assert len(liveness_polls) == 1
+    assert 0 < liveness_polls[0] <= arguments.timeout_seconds
+    assert stopped == [process]
+
+
+def test_browser_receipt_validator_rejects_inconsistent_success_data() -> None:
+    mode = release_smoke.MODE_SPECS["default"]
+    frontend_url = "http://127.0.0.1:52006/"
+    api_url = "http://127.0.0.1:52005"
+    valid = browser_receipt_for("default", frontend_url, api_url)
+    invalid_receipts = [
+        {"status": "passed"},
+        {**valid, "mode": "off"},
+        {**valid, "frontend_url": "http://127.0.0.1:52007/"},
+        {**valid, "api_url": "http://127.0.0.1:52008"},
+        {**valid, "feature_checks": {}},
+        {**valid, "blocked_requests": ["http://127.0.0.1:52006/"]},
+        {**valid, "non_get_requests": [{"method": "POST"}]},
+        {**valid, "visual_mutation_request_observed": True},
+        {**valid, "visual_system_v2_shell_visible": False},
+    ]
+
+    for receipt in invalid_receipts:
+        with pytest.raises(smoke.SmokeFailure, match="browser receipt"):
+            release_smoke._validate_browser_receipt(
+                receipt, mode, frontend_url, api_url
+            )
+
+
+def test_browser_receipt_validator_requires_the_complete_off_mode_proof() -> None:
+    mode = release_smoke.MODE_SPECS["source-visuals-off"]
+    frontend_url = "http://127.0.0.1:52010/"
+    api_url = "http://127.0.0.1:52009"
+    receipt = browser_receipt_for("source-visuals-off", frontend_url, api_url)
+    receipt["source_list_get_observed"] = False
+
+    with pytest.raises(smoke.SmokeFailure, match="browser receipt"):
+        release_smoke._validate_browser_receipt(receipt, mode, frontend_url, api_url)
 
 
 def test_run_mode_uses_all_feature_expectations_and_cleans_up_on_browser_failure(
@@ -313,7 +506,11 @@ def test_run_mode_off_changes_only_source_visuals_and_parses_stdout_receipt(
     launched: list[dict[str, str]] = []
     commands: list[list[str]] = []
     stopped: list[object] = []
-    browser_receipt = {"status": "passed", "mode": "off"}
+    browser_receipt = browser_receipt_for(
+        "source-visuals-off",
+        "http://127.0.0.1:52004/",
+        "http://127.0.0.1:52003",
+    )
 
     monkeypatch.setattr(
         release_smoke, "prepare_smoke_fixture", lambda *_a, **_k: fixture
