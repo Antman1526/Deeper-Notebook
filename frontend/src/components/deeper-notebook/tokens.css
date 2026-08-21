@@ -232,13 +232,17 @@ html[data-dn-motion="reduced"] .dn-aurora-bg::before {
 }
 
 @media (forced-colors: active) {
-  html[data-theme],
+  /* `globals.css` assigns catalog high-contrast roles on `html[data-theme]`
+   * later in the cascade. Keep OS system colors authoritative for every
+   * semantic role while forced colors are active. */
+  :root[data-theme],
   :root {
     --dn-artifact-canvas: Canvas;
     --dn-artifact-panel: Canvas;
     --dn-artifact-ink: CanvasText;
     --dn-artifact-muted: GrayText;
     --dn-artifact-line: CanvasText;
+    --dn-graph-edge: CanvasText;
     --dn-graph-source: Highlight;
     --dn-graph-source-foreground: HighlightText;
     --dn-graph-note: Mark;

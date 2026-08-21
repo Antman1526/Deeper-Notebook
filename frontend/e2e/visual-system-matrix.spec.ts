@@ -176,6 +176,10 @@ test.describe('visual system matrix contract', () => {
           <div data-role="status-success" class="bg-[var(--dn-status-success)] text-[var(--dn-status-success-foreground)]">Success</div>
           <div data-role="status-warning" class="bg-[var(--dn-status-warning)] text-[var(--dn-status-warning-foreground)]">Warning</div>
           <div data-role="status-info" class="bg-[var(--dn-status-info)] text-[var(--dn-status-info-foreground)]">Info</div>
+          <svg aria-label="Mind map connector" viewBox="0 0 100 10">
+            <path data-testid="semantic-graph-edge" d="M 0 5 H 100" fill="none" style="stroke: var(--dn-graph-edge); stroke-width: 2" />
+          </svg>
+          <span data-testid="forced-colors-canvas-text" style="color: CanvasText">System edge reference</span>
         </figure>
       `
       document.body.append(contract)
@@ -200,6 +204,14 @@ test.describe('visual system matrix contract', () => {
       expect(style.background).not.toBe('rgba(0, 0, 0, 0)')
       expect(style.color).not.toBe('rgba(0, 0, 0, 0)')
     }
+    const forcedColorsEdge = await page.getByTestId('semantic-graph-edge').evaluate(element => ({
+      edge: getComputedStyle(element).stroke,
+      token: getComputedStyle(document.documentElement).getPropertyValue('--dn-graph-edge').trim(),
+      systemCanvasText: getComputedStyle(document.querySelector('[data-testid="forced-colors-canvas-text"]')!).color,
+    }))
+    expect(forcedColorsEdge.token).toBe('CanvasText')
+    expect(forcedColorsEdge.edge).toBe(forcedColorsEdge.systemCanvasText)
+    expect(forcedColorsEdge.edge).not.toContain('oklab')
 
     await settleVisualNetwork(page)
     assertExactRequestLedgers('/studio', 'high-contrast-light', viewport, fixture.ledger, fixture.studyLedger)
