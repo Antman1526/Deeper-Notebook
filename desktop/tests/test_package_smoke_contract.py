@@ -17,6 +17,9 @@ from desktop.build import package_smoke as smoke
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_SMOKE_SCRIPT = REPOSITORY_ROOT / "desktop" / "build" / "package_smoke.py"
+PACKAGE_BROWSER_PROBE_SCRIPT = (
+    REPOSITORY_ROOT / "desktop" / "build" / "package_browser_probe.cjs"
+)
 
 
 def run_smoke(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -27,6 +30,24 @@ def run_smoke(*arguments: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def test_release_browser_probe_uses_exact_loopback_origins_and_get_only_contract() -> (
+    None
+):
+    source = PACKAGE_BROWSER_PROBE_SCRIPT.read_text(encoding="utf-8")
+    assert "const allowedOrigins = new Set([frontend.origin, api.origin])" in source
+    assert "!allowedOrigins.has(url.origin)" in source
+    assert "await route.abort()" in source
+    assert "entry.method !== 'GET'" in source
+    assert "visualMutationRequest" in source
+    assert "args.mode === 'default' ? '/' : '/sources'" in source
+
+
+def test_release_browser_probe_requires_both_127_0_0_1_hosts() -> None:
+    source = PACKAGE_BROWSER_PROBE_SCRIPT.read_text(encoding="utf-8")
+    assert "frontend.hostname !== '127.0.0.1'" in source
+    assert "api.hostname !== '127.0.0.1'" in source
 
 
 def wait_for_path(path: Path, timeout_seconds: float = 3) -> None:
