@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,9 @@ MAX_TIMEOUT_SECONDS = 300.0
 APPLICATION_LIVENESS_POLL_SECONDS = 0.25
 MAX_BROWSER_OBSERVED_REQUESTS = 64
 MAX_BROWSER_OBSERVED_RESPONSES = 64
+MAX_BROWSER_RECEIPT_BYTES = 64 * 1024
+MAX_BROWSER_STRING_BYTES = 4 * 1024
+MAX_RELEASE_RECEIPT_BYTES = 64 * 1024
 
 DEFAULT_EXPECTED_FEATURES: dict[str, bool] = {
     "evidenceStudio": True,
@@ -218,10 +222,43 @@ def _browser_command(
     ]
 
 
+def _browser_receipt_string(value: object, label: str) -> str:
+    """Return a bounded browser-receipt string or fail before retaining it."""
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise SmokeFailure(f"browser receipt {label} was not a valid string")
+    try:
+        byte_length = len(value.encode("utf-8"))
+    except UnicodeEncodeError as error:
+        raise SmokeFailure(f"browser receipt {label} was not valid UTF-8") from error
+    if byte_length > MAX_BROWSER_STRING_BYTES:
+        raise SmokeFailure(f"browser receipt {label} exceeded its byte limit")
+    return value
+
+
+def _bounded_diagnostic(error: object) -> str:
+    """Keep failure diagnostics useful without allowing unbounded receipt fields."""
+    value = str(error)
+    try:
+        if len(value.encode("utf-8")) <= MAX_BROWSER_STRING_BYTES:
+            return value
+    except UnicodeEncodeError:
+        pass
+    return "release smoke failure omitted an oversized diagnostic"
+
+
 def _parse_browser_receipt(browser: subprocess.CompletedProcess[str]) -> dict[str, Any]:
     """Parse exactly the probe's stdout JSON; stderr is diagnostic-only."""
-    output = browser.stdout.strip()
-    if not output:
+    if not isinstance(browser.stdout, str):
+        raise SmokeFailure("browser contract did not emit text JSON on stdout")
+    try:
+        output = browser.stdout.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise SmokeFailure(
+            "browser contract did not emit UTF-8 JSON on stdout"
+        ) from error
+    if len(output) > MAX_BROWSER_RECEIPT_BYTES:
+        raise SmokeFailure("browser contract receipt exceeded its byte limit")
+    if not output.strip():
         raise SmokeFailure("browser contract did not emit a JSON receipt on stdout")
     try:
         payload = json.loads(output)
@@ -231,6 +268,11 @@ def _parse_browser_receipt(browser: subprocess.CompletedProcess[str]) -> dict[st
         ) from error
     if not isinstance(payload, dict):
         raise SmokeFailure("browser contract receipt must be a JSON object")
+    status = _browser_receipt_string(payload.get("status"), "status")
+    if status == "failed":
+        if set(payload) != {"status", "error"}:
+            raise SmokeFailure("browser contract failure receipt had an invalid shape")
+        _browser_receipt_string(payload["error"], "error")
     return payload
 
 
@@ -242,13 +284,16 @@ def _validate_browser_receipt(
 ) -> None:
     """Accept only the complete read-only browser proof for one mode."""
     _validate_browser_receipt_schema(receipt, mode)
-    if receipt.get("status") != "passed":
+    if _browser_receipt_string(receipt.get("status"), "status") != "passed":
         raise SmokeFailure("browser receipt status must be passed")
-    if receipt.get("mode") != mode.browser_mode:
+    if _browser_receipt_string(receipt.get("mode"), "mode") != mode.browser_mode:
         raise SmokeFailure("browser receipt mode did not match the requested mode")
-    if receipt.get("frontend_url") != frontend_url:
+    if (
+        _browser_receipt_string(receipt.get("frontend_url"), "frontend URL")
+        != frontend_url
+    ):
         raise SmokeFailure("browser receipt frontend URL did not match readiness")
-    if receipt.get("api_url") != api_url:
+    if _browser_receipt_string(receipt.get("api_url"), "API URL") != api_url:
         raise SmokeFailure("browser receipt API URL did not match readiness")
 
     frontend_origin = _browser_origin(frontend_url, "frontend URL", strict=True)
@@ -256,6 +301,7 @@ def _validate_browser_receipt(
     allowed_origins = {frontend_origin, api_origin}
     requests = _validate_observed_requests(receipt, allowed_origins)
     responses = _validate_observed_responses(receipt, allowed_origins)
+    _validate_response_correlation(mode, api_origin, requests, responses)
     _validate_raw_feature_response(receipt, mode, api_origin, requests, responses)
     _validate_request_derivatives(receipt, requests)
 
@@ -286,8 +332,8 @@ def _validate_browser_receipt(
             raise SmokeFailure(f"browser receipt reported {key}")
 
     if mode.browser_mode == "default":
-        theme = receipt.get("theme")
-        if not isinstance(theme, str) or not theme.startswith("gemini-forward-"):
+        theme = _browser_receipt_string(receipt.get("theme"), "theme")
+        if not theme.startswith("gemini-forward-"):
             raise SmokeFailure("browser receipt did not prove the Gemini Forward theme")
         if receipt.get("visual_system_v2_shell_visible") is not True:
             raise SmokeFailure("browser receipt did not prove the Visual System shell")
@@ -337,8 +383,7 @@ def _validate_browser_receipt_schema(receipt: dict[str, Any], mode: ModeSpec) ->
 
 
 def _browser_origin(value: object, label: str, *, strict: bool) -> str:
-    if not isinstance(value, str) or not value or "\x00" in value:
-        raise SmokeFailure(f"browser receipt {label} was not a valid URL")
+    value = _browser_receipt_string(value, label)
     try:
         parsed = urlsplit(value)
         port = parsed.port
@@ -364,7 +409,7 @@ def _validate_evidence_url(
     if origin not in allowed_origins:
         raise SmokeFailure(f"browser receipt {label} escaped the allowed origins")
     parsed = urlsplit(value)
-    path = entry.get("path")
+    path = _browser_receipt_string(entry.get("path"), f"{label} path")
     expected_path = parsed.path or "/"
     if not isinstance(path, str) or path != expected_path:
         raise SmokeFailure(f"browser receipt {label} had an inconsistent path")
@@ -382,7 +427,7 @@ def _validate_observed_requests(
     for entry in entries:
         if type(entry) is not dict or set(entry) != {"method", "url", "path"}:
             raise SmokeFailure("browser receipt request evidence had an invalid shape")
-        if entry["method"] != "GET":
+        if _browser_receipt_string(entry["method"], "request method") != "GET":
             raise SmokeFailure("browser receipt contained a non-GET request")
         _validate_evidence_url(entry, allowed_origins, "request evidence")
     return entries
@@ -397,12 +442,59 @@ def _validate_observed_responses(
     for entry in entries:
         if type(entry) is not dict or set(entry) != {"status", "url", "path"}:
             raise SmokeFailure("browser receipt response evidence had an invalid shape")
-        if type(entry["status"]) is not int or not 100 <= entry["status"] <= 599:
-            raise SmokeFailure(
-                "browser receipt response evidence had an invalid status"
-            )
+        if type(entry["status"]) is not int or not 200 <= entry["status"] <= 299:
+            raise SmokeFailure("browser receipt response evidence was not successful")
         _validate_evidence_url(entry, allowed_origins, "response evidence")
     return entries
+
+
+def _evidence_key(entry: dict[str, Any], label: str) -> str:
+    """Use the full validated URL so response evidence cannot change a query."""
+    _browser_origin(entry["url"], label, strict=False)
+    return entry["url"]
+
+
+def _validate_response_correlation(
+    mode: ModeSpec,
+    api_origin: str,
+    requests: list[dict[str, Any]],
+    responses: list[dict[str, Any]],
+) -> None:
+    """Require one successful retained response per retained GET request."""
+    request_counts = Counter(
+        _evidence_key(request, "request evidence") for request in requests
+    )
+    critical_paths = {"/api/features"}
+    if mode.browser_mode == "off":
+        critical_paths.add("/api/sources")
+    critical_counts = Counter()
+
+    for response in responses:
+        response_key = _evidence_key(response, "response evidence")
+        if request_counts[response_key] <= 0:
+            raise SmokeFailure(
+                "browser receipt response evidence did not match a request"
+            )
+        request_counts[response_key] -= 1
+        if (
+            _browser_origin(response["url"], "response evidence", strict=False)
+            == api_origin
+            and response["path"] in critical_paths
+        ):
+            critical_counts[response["path"]] += 1
+
+    for path in critical_paths:
+        if not any(
+            _browser_origin(request["url"], "request evidence", strict=False)
+            == api_origin
+            and request["path"] == path
+            for request in requests
+        ):
+            raise SmokeFailure(f"browser receipt did not observe the {path} request")
+        if critical_counts[path] != 1:
+            raise SmokeFailure(
+                f"browser receipt did not include exactly one successful {path} response"
+            )
 
 
 def _validate_raw_feature_response(
@@ -452,7 +544,13 @@ def _validate_request_derivatives(
     receipt: dict[str, Any], requests: list[dict[str, Any]]
 ) -> None:
     methods = sorted({request["method"] for request in requests})
-    if receipt["http_methods"] != methods or methods != ["GET"]:
+    reported_methods = receipt["http_methods"]
+    if type(reported_methods) is not list or any(
+        _browser_receipt_string(method, "reported HTTP method") != "GET"
+        for method in reported_methods
+    ):
+        raise SmokeFailure("browser receipt HTTP methods had an invalid shape")
+    if reported_methods != methods or methods != ["GET"]:
         raise SmokeFailure("browser receipt HTTP methods did not match raw requests")
     non_get_requests = [request for request in requests if request["method"] != "GET"]
     if receipt["non_get_requests"] != non_get_requests:
@@ -469,6 +567,36 @@ def _validate_request_derivatives(
         )
     if visual_mutation:
         raise SmokeFailure("browser receipt reported a visual mutation request")
+
+
+def _receipt_json_bytes(receipt: dict[str, Any]) -> bytes:
+    try:
+        serialized = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
+        return serialized.encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError) as error:
+        raise SmokeFailure("release smoke receipt could not be serialized") from error
+
+
+def _write_bounded_receipt(path: Path, receipt: dict[str, Any]) -> None:
+    """Persist only receipts no larger than the documented 64 KiB protocol cap."""
+    if len(_receipt_json_bytes(receipt)) > MAX_RELEASE_RECEIPT_BYTES:
+        raise SmokeFailure("release smoke receipt exceeded its byte limit")
+    write_receipt(path, receipt)
+
+
+def _replace_with_bounded_failure(
+    receipt: dict[str, Any], *, kind: str, error: object
+) -> None:
+    receipt.clear()
+    receipt.update(
+        {
+            "schema_version": 1,
+            "status": "failed",
+            "receipt_kind": kind,
+            "error": _bounded_diagnostic(error),
+            "completed_at": utc_now(),
+        }
+    )
 
 
 def _base_mode_receipt(mode: ModeSpec, arguments: argparse.Namespace) -> dict[str, Any]:
@@ -559,20 +687,24 @@ def run_mode(mode: str, arguments: argparse.Namespace) -> dict[str, Any]:
             process, min(timeout, APPLICATION_LIVENESS_POLL_SECONDS)
         )
         browser_receipt = _parse_browser_receipt(browser)
-        receipt["browser"] = browser_receipt
-        if browser.returncode != 0 or browser_receipt.get("status") != "passed":
-            error = browser_receipt.get("error", "browser contract failed")
+        if browser.returncode != 0:
+            error = "browser contract failed"
+            if browser_receipt.get("status") == "failed":
+                error = _browser_receipt_string(browser_receipt.get("error"), "error")
             raise SmokeFailure(f"browser contract failed: {error}")
+        if browser_receipt.get("status") != "passed":
+            raise SmokeFailure("browser contract did not report a passed receipt")
         _validate_browser_receipt(
             browser_receipt,
             mode_spec,
             frontend_url,
             api_url,
         )
+        receipt["browser"] = browser_receipt
         receipt["checks"]["browser_ui"] = {"passed": True}
         receipt["status"] = "passed"
     except Exception as error:
-        receipt["error"] = str(error)
+        receipt["error"] = _bounded_diagnostic(error)
     finally:
         if process is None:
             receipt["checks"]["clean_shutdown"] = {"passed": True, "skipped": True}
@@ -582,10 +714,14 @@ def run_mode(mode: str, arguments: argparse.Namespace) -> dict[str, Any]:
                 receipt["checks"]["clean_shutdown"] = {"passed": True}
             except (OSError, SmokeFailure, subprocess.SubprocessError) as error:
                 receipt["checks"]["clean_shutdown"] = {"passed": False}
-                receipt.setdefault("error", str(error))
+                receipt.setdefault("error", _bounded_diagnostic(error))
                 receipt["status"] = "failed"
         receipt["completed_at"] = utc_now()
-        write_receipt(receipt_path, receipt)
+        try:
+            _write_bounded_receipt(receipt_path, receipt)
+        except SmokeFailure as error:
+            _replace_with_bounded_failure(receipt, kind="mode", error=error)
+            _write_bounded_receipt(receipt_path, receipt)
     return receipt
 
 
@@ -627,7 +763,7 @@ def run_release_smoke(arguments: argparse.Namespace) -> int:
         summary["status"] = "passed"
         return 0
     except Exception as error:
-        summary["error"] = str(error)
+        summary["error"] = _bounded_diagnostic(error)
         if active_mode is not None and "failed_mode" not in summary:
             summary["failed_mode"] = active_mode
         return 1
@@ -640,7 +776,11 @@ def run_release_smoke(arguments: argparse.Namespace) -> int:
             except Exception:
                 summary_path = None
         if summary_path is not None:
-            write_receipt(summary_path, summary)
+            try:
+                _write_bounded_receipt(summary_path, summary)
+            except SmokeFailure as error:
+                _replace_with_bounded_failure(summary, kind="summary", error=error)
+                _write_bounded_receipt(summary_path, summary)
 
 
 def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:

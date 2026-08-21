@@ -69,6 +69,9 @@ def test_release_browser_probe_bounds_raw_evidence_receipts() -> None:
     source = PACKAGE_BROWSER_PROBE_SCRIPT.read_text(encoding="utf-8")
     assert "MAX_OBSERVED_REQUEST_ENTRIES = 64" in source
     assert "MAX_OBSERVED_RESPONSE_ENTRIES = 64" in source
+    assert "MAX_RECEIPT_BYTES = 65536" in source
+    assert "MAX_CAPTURED_STRING_BYTES = 4096" in source
+    assert "emitReceipt" in source
     assert "observed.length >= MAX_OBSERVED_REQUEST_ENTRIES" in source
     assert "responses.length >= MAX_OBSERVED_RESPONSE_ENTRIES" in source
 

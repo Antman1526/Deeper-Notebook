@@ -492,6 +492,124 @@ def test_browser_receipt_validator_rejects_evidence_over_its_bounded_limits() ->
             )
 
 
+def test_browser_receipt_validator_requires_correlated_success_responses() -> None:
+    frontend_url = "http://127.0.0.1:52010/"
+    api_url = "http://127.0.0.1:52009"
+    off_mode = release_smoke.MODE_SPECS["source-visuals-off"]
+    off_receipt = browser_receipt_for("source-visuals-off", frontend_url, api_url)
+    missing_sources_response = dict(off_receipt)
+    missing_sources_response["observed_responses"] = off_receipt["observed_responses"][
+        :-1
+    ]
+
+    default_mode = release_smoke.MODE_SPECS["default"]
+    default_receipt = browser_receipt_for("default", frontend_url, api_url)
+    unmatched_response = dict(default_receipt)
+    unmatched_response["observed_responses"] = [
+        *default_receipt["observed_responses"],
+        {"status": 200, "url": f"{api_url}/ghost", "path": "/ghost"},
+    ]
+    conflicting_feature_responses = dict(default_receipt)
+    conflicting_feature_responses["observed_responses"] = [
+        *default_receipt["observed_responses"],
+        {
+            "status": 500,
+            "url": f"{api_url}/api/features",
+            "path": "/api/features",
+        },
+    ]
+    duplicate_feature_responses = dict(default_receipt)
+    duplicate_feature_responses["observed_requests"] = [
+        *default_receipt["observed_requests"],
+        {
+            "method": "GET",
+            "url": f"{api_url}/api/features",
+            "path": "/api/features",
+        },
+    ]
+    duplicate_feature_responses["observed_responses"] = [
+        *default_receipt["observed_responses"],
+        {
+            "status": 200,
+            "url": f"{api_url}/api/features",
+            "path": "/api/features",
+        },
+    ]
+
+    for receipt, mode in (
+        (missing_sources_response, off_mode),
+        (unmatched_response, default_mode),
+        (conflicting_feature_responses, default_mode),
+        (duplicate_feature_responses, default_mode),
+    ):
+        with pytest.raises(smoke.SmokeFailure, match="browser receipt"):
+            release_smoke._validate_browser_receipt(
+                receipt, mode, frontend_url, api_url
+            )
+
+
+def test_browser_receipt_validator_rejects_an_oversized_evidence_url() -> None:
+    mode = release_smoke.MODE_SPECS["default"]
+    frontend_url = "http://127.0.0.1:52006/"
+    api_url = "http://127.0.0.1:52005"
+    receipt = browser_receipt_for("default", frontend_url, api_url)
+    receipt["observed_requests"].append(
+        {
+            "method": "GET",
+            "url": f"{api_url}/?{'x' * (300 * 1024)}",
+            "path": "/",
+        }
+    )
+
+    with pytest.raises(smoke.SmokeFailure, match="browser receipt"):
+        release_smoke._validate_browser_receipt(receipt, mode, frontend_url, api_url)
+
+
+def test_parse_browser_receipt_rejects_oversized_stdout_before_json_loading() -> None:
+    browser = subprocess.CompletedProcess(
+        args=["node"],
+        returncode=0,
+        stdout=json.dumps({"status": "passed", "url": "x" * (300 * 1024)}),
+        stderr="",
+    )
+
+    with pytest.raises(smoke.SmokeFailure, match="exceeded"):
+        release_smoke._parse_browser_receipt(browser)
+
+
+def test_release_smoke_does_not_persist_an_oversized_browser_payload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    frontend_url = "http://127.0.0.1:52006/"
+    api_url = "http://127.0.0.1:52005"
+    arguments, _process, _stopped = prepare_ready_mode(
+        monkeypatch,
+        tmp_path,
+        browser_receipt_for("default", frontend_url, api_url),
+    )
+    oversized_stdout = json.dumps(
+        {
+            "status": "passed",
+            "frontend_url": f"{frontend_url}?{'x' * (300 * 1024)}",
+        }
+    )
+    monkeypatch.setattr(
+        release_smoke.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=["node"], returncode=0, stdout=oversized_stdout, stderr=""
+        ),
+    )
+
+    assert release_smoke.run_release_smoke(arguments) == 1
+
+    for receipt_name in ("default.json", "summary.json"):
+        raw_receipt = (arguments.output_root / receipt_name).read_bytes()
+        assert len(raw_receipt) <= 64 * 1024
+        receipt = json.loads(raw_receipt)
+        assert "browser" not in receipt
+
+
 def test_run_mode_uses_all_feature_expectations_and_cleans_up_on_browser_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
