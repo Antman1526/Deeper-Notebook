@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
 import time
@@ -319,6 +320,84 @@ def test_release_smoke_rejects_an_output_root_below_a_symlinked_ancestor(
         release_smoke._validate_output_root(output_root)
 
     assert not (target / "new-output-root").exists()
+
+
+def test_run_mode_creates_private_fixtures_parent_before_real_fixture_creation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    arguments = arguments_for(tmp_path)
+    fixtures_parent = arguments.output_root / "fixtures"
+    fixture_root = fixtures_parent / "default"
+    real_prepare = release_smoke.prepare_smoke_fixture
+    monkeypatch.setattr(
+        package_smoke_fixture,
+        "MODEL_PLACEHOLDERS",
+        {Path("placeholder.bin"): 1},
+    )
+    observed_roots: list[Path] = []
+
+    def observe_prepare(root: Path, *, source_visuals: bool, uv_cache_dir: Path):
+        observed_roots.append(root)
+        if not fixtures_parent.is_dir():
+            raise smoke.SmokeFailure("fixtures parent missing before fixture creation")
+        return real_prepare(
+            root,
+            source_visuals=source_visuals,
+            uv_cache_dir=uv_cache_dir,
+        )
+
+    monkeypatch.setattr(release_smoke, "prepare_smoke_fixture", observe_prepare)
+    launch_calls: list[tuple[object, ...]] = []
+
+    def block_launch(*args: object, **_kwargs: object):
+        launch_calls.append(args)
+        raise smoke.SmokeFailure("launch blocked by filesystem contract test")
+
+    monkeypatch.setattr(release_smoke, "launch_monitored_process", block_launch)
+
+    result = release_smoke.run_mode("default", arguments)
+
+    assert result["status"] == "failed"
+    assert "launch blocked" in result["error"]
+    assert observed_roots == [fixture_root]
+    assert fixtures_parent.is_dir()
+    assert fixture_root.is_dir()
+    assert (fixture_root / package_smoke_fixture.FIXTURE_MANIFEST_NAME).is_file()
+    assert launch_calls
+    if os.name == "posix":
+        assert stat.S_IMODE(fixtures_parent.stat().st_mode) == 0o700
+
+
+@pytest.mark.parametrize("parent_kind", ["file", "symlink"])
+def test_run_mode_rejects_invalid_fixtures_parent_before_fixture_creation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, parent_kind: str
+) -> None:
+    arguments = arguments_for(tmp_path)
+    arguments.output_root.mkdir()
+    fixtures_parent = arguments.output_root / "fixtures"
+    target = tmp_path / "fixtures-target"
+    if parent_kind == "file":
+        fixtures_parent.write_text("not a directory", encoding="utf-8")
+    else:
+        target.mkdir()
+        try:
+            fixtures_parent.symlink_to(target, target_is_directory=True)
+        except (NotImplementedError, OSError):
+            pytest.skip("symlink creation is unavailable")
+
+    fixture_calls: list[object] = []
+    monkeypatch.setattr(
+        release_smoke,
+        "prepare_smoke_fixture",
+        lambda *args, **kwargs: fixture_calls.append((args, kwargs)),
+    )
+
+    result = release_smoke.run_mode("default", arguments)
+
+    assert result["status"] == "failed"
+    assert fixture_calls == []
+    if parent_kind == "symlink":
+        assert not (target / "default").exists()
 
 
 def test_release_smoke_verifies_artifact_before_any_mode_launch(

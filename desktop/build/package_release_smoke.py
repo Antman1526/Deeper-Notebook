@@ -287,6 +287,35 @@ def _fixture_root(output_root: Path, mode: str) -> Path:
     return output_root / "fixtures" / mode
 
 
+def _ensure_fixture_parent(output_root: Path) -> Path:
+    """Create or validate the runner-owned parent for fresh mode fixtures."""
+    fixtures_parent = output_root / "fixtures"
+    _reject_symlinked_output_ancestors(fixtures_parent)
+    try:
+        fixtures_parent.mkdir(mode=0o700)
+    except FileExistsError as error:
+        try:
+            metadata = fixtures_parent.lstat()
+        except OSError as inspect_error:
+            raise SmokeFailure(
+                f"could not inspect smoke fixture parent: {fixtures_parent}"
+            ) from inspect_error
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise SmokeFailure(
+                "smoke fixture parent must be a non-symlink directory"
+            ) from error
+    except OSError as error:
+        raise SmokeFailure(
+            f"could not create smoke fixture parent: {fixtures_parent}"
+        ) from error
+    else:
+        try:
+            os.chmod(fixtures_parent, 0o700)
+        except OSError:
+            pass
+    return fixtures_parent
+
+
 def _browser_command(
     *, mode: ModeSpec, frontend_url: str, api_url: str, playwright_module: Path
 ) -> list[str]:
@@ -944,6 +973,7 @@ def run_mode(mode: str, arguments: argparse.Namespace) -> dict[str, Any]:
     timeout = 0.0
     try:
         timeout = _timeout(arguments)
+        _ensure_fixture_parent(output_root)
         fixture = prepare_smoke_fixture(
             _fixture_root(output_root, mode),
             source_visuals=mode_spec.source_visuals,
