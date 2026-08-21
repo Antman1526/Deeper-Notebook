@@ -418,3 +418,42 @@ proof also remain outside available authority.
 Open: native artifact and default-on package proof are green; rerun only the
 isolated rollback smoke when a reliable package-index connection is available.
 Developer ID/notarization, Windows, publish, and release remain out of scope.
+
+## 2026-08-21 — Task 7 source gate closure (Terra fallback)
+
+- Verified the recorded Task 7 Luna non-response escalation before acting.
+  This closeout stayed in the isolated worktree and did not invoke package,
+  install, signing, credential, deployment, or user-process work.
+- The complete frontend gate is green: Vitest `246 files / 1,832 tests`,
+  TypeScript, ESLint (four pre-existing unused-variable warnings), and the
+  production build all pass. The serial real-browser matrix is green on the
+  exact requested ports: 4161 `283 passed / 1 skipped`, 4162 `1 passed`,
+  4163 `38 passed / 1 skipped`, and 4164 `12 passed / 27 intentional skips`.
+  The canonical Playwright marker was restored after each run; only generated
+  result directories and a proven Task-7-owned orphaned 4161 server group were
+  removed.
+- Initial browser RED exposed a stale Settings selector, an action-label
+  clipping violation, fallback-card content compressed into a 72px visual
+  region, and two enabled-only action assertions running in the explicitly
+  disabled gallery build. The smallest repair selects an initially rendered
+  Settings recommendation, clips action-label overflow, gives only compact
+  fallback-card visuals accessible vertical space, and marks only those two
+  enabled-only browser assertions as intentional skips when the gallery is
+  unavailable. Unit and focused browser RED/GREEN receipts precede the final
+  matrix reruns.
+- Backend gates are green: no-integration `4,905 passed / 1 skipped`, real
+  Surreal `132 passed`, and product identity `142 passed`. The stale Python
+  static assertion now proves the current robust menu/default-prevented
+  keyboard guard rather than a superseded tag-name literal.
+- Static identity and integrity gates are green: rebrand is `unexpected=0,
+  stale=0`; compileall and `git diff --check` pass. Broad Ruff remains a
+  pre-existing scope-external exception: `api/routers/search.py` has the same
+  I001 import-order result at pre-Task-7 `5d50049e`, while an untracked vendored
+  Node lldb file also reports I001. Ruff format additionally reports four
+  unchanged tracked baseline files and that vendor file. None were edited.
+
+Initial-scope and final-receipt staged Gitleaks scans found zero leaks; the
+required `34ef47cd..HEAD` range scan also found zero leaks.
+Open: Sol review; local signing/notarization, Windows, installed-artifact
+equality, optional rollback-smoke bootstrap, release, and publication remain
+outside this source-only closeout.

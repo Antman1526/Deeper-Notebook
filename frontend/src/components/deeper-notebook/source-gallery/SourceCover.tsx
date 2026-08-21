@@ -134,7 +134,10 @@ export function SourceCover({
   }
 
   const visualRegion = (
-    <span className="dn-source-cover__visual" data-dn-source-cover-aspect>
+    <span
+      className={`dn-source-cover__visual${visual ? '' : ' dn-source-cover__visual--fallback'}`}
+      data-dn-source-cover-aspect
+    >
       {visual ? (
         <>
           {/* The receipt is an opaque same-origin, bounded WebP derivative, not an external image URL. */}

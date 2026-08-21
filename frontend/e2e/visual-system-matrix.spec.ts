@@ -563,7 +563,7 @@ const LOWER_CONTENT_SELECTOR_BY_ROUTE = {
   '/study': 'main section[aria-labelledby="study-review-heading"] > :last-child',
   '/study/plans/[planId]': 'main [role="tabpanel"][data-state="active"]',
   '/transformations': 'main [role="tabpanel"][data-state="active"]',
-  '/settings': 'main button[aria-label="Apply Midnight Aurora"]',
+  '/settings': 'main button[aria-label="Apply Gemini-Forward Light"]',
   '/settings/api-keys': 'main a[href*="ai-providers.md"]',
   '/settings/launcher-prefs': 'main [data-testid="save-button"]',
   '/settings/local-models': 'main [data-testid="local-model-tiers"]',

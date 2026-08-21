@@ -644,6 +644,7 @@ test.describe('source gallery visual contract', () => {
   })
 
   test('source actions keep keyboard activation, one-shot mutations, and exact delete confirmation', async ({ page }) => {
+    test.skip(!ENABLED_BUILD, 'enabled Source Gallery build required')
     const cell = SOURCE_GALLERY_CELLS.find(candidate => candidate.id === 'sources-ready')!
     const fixture = await installSourceGalleryFixture(page, {
       cell,
@@ -683,6 +684,7 @@ test.describe('source gallery visual contract', () => {
   })
 
   test('source actions keep keyboard menu events out of gallery navigation', async ({ page }) => {
+    test.skip(!ENABLED_BUILD, 'enabled Source Gallery build required')
     const cell = SOURCE_GALLERY_CELLS.find(candidate => candidate.id === 'sources-ready')!
     const fixture = await installSourceGalleryFixture(page, {
       cell,

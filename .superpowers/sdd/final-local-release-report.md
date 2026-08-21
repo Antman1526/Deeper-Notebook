@@ -95,3 +95,29 @@ publication occurred.
   Gallery write-order assertion derives the established compatibility key from
   bounded fragments, preserving the exact storage-key and ordering proof
   without introducing a fresh visible literal.
+
+## Task 7 source gate closure — 2026-08-21
+
+The source-only release matrix is green after four strict browser regressions:
+frontend Vitest `246 files / 1,832 tests`, TypeScript, ESLint (four existing
+warnings), build, requested serial browser ports 4161–4164, backend
+no-integration `4,905 passed / 1 skipped`, real Surreal `132 passed`, and
+product identity `142 passed`. Rebrand is `unexpected=0, stale=0`; compileall
+and diff-check pass. The canonical Playwright marker was restored and only
+generated output plus a proven Task-7-owned stale 4161 server group were
+removed.
+
+The bounded source repair uses an initially rendered Settings theme control,
+preserves action-label containment, lets only fallback source-card visuals
+expand enough to expose their content, and skips two action tests only when the
+feature-disabled build intentionally has no gallery controls. No package,
+install, signing, deployment, credential, or release action occurred.
+
+Ruff is not green for the broad requested tree: its `api/routers/search.py`
+I001 result is identical at pre-Task-7 `5d50049e`; an untracked vendored Node
+lldb file has another I001; and format reports four unchanged baseline files
+plus that vendor file. These were preserved rather than altered outside scope.
+Initial-scope and final-receipt staged Gitleaks scans, plus the required
+`34ef47cd..HEAD` range scan, report zero leaks. Sol review is still required;
+installed-artifact equality, notarization, Windows, optional rollback smoke,
+and publication remain external gates.

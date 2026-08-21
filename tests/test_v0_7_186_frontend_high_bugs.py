@@ -57,10 +57,14 @@ def test_sources_page_keyboard_handler_skips_inputs():
         "checks isContentEditable. Caret movement in contenteditable "
         "elements is broken whenever Sources is the active route."
     )
-    assert "['INPUT', 'TEXTAREA', 'SELECT']" in src, (
+    assert "target?.closest(" in src and "input, textarea, select" in src, (
         "v0.7.186 regression: Sources keydown handler no longer "
-        "guards against INPUT/TEXTAREA/SELECT focus. Typing in any "
-        "input is broken whenever Sources is the active route."
+        "guards input, textarea, and select targets (including nested "
+        "interactive descendants). Typing is broken whenever Sources is active."
+    )
+    assert "e.defaultPrevented" in src and '[role="menuitem"]' in src, (
+        "v0.7.186 regression: Sources keydown handler no longer preserves "
+        "handled menu interactions. Menu activation can drift gallery selection."
     )
 
 

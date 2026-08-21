@@ -49,6 +49,7 @@
   display: block;
   inline-size: 100%;
   min-inline-size: 0;
+  overflow: hidden;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -202,6 +203,11 @@
 
   .dn-source-cover--card .dn-source-cover__visual {
     min-height: 4.5rem;
+  }
+
+  .dn-source-cover--card .dn-source-cover__visual--fallback {
+    aspect-ratio: auto;
+    min-height: 8rem;
   }
 }
 
