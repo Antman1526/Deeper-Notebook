@@ -235,6 +235,16 @@ html[data-theme="gemini-forward-light"] {
   --dn-theme-accent-foreground: #FFFFFF;
   --dn-theme-border: #D9DDF0;
 }
+html[data-theme="gemini-forward-dark"] {
+  --dn-theme-canvas: #10111F;
+  --dn-theme-panel: #191B2E;
+  --dn-theme-text: #F1F2FF;
+  --dn-theme-primary: #91A0FF;
+  --dn-theme-primary-foreground: #000000;
+  --dn-theme-accent: #C59BFF;
+  --dn-theme-accent-foreground: #000000;
+  --dn-theme-border: #343855;
+}
 html[data-theme="research-core-light"] { --dn-theme-canvas: #F5FBF9; --dn-theme-panel: #FFFFFF; --dn-theme-text: #102A2A; --dn-theme-primary: #0F766E; --dn-theme-primary-foreground: #FFFFFF; --dn-theme-accent: #0284C7; --dn-theme-accent-foreground: #000000; --dn-theme-border: #C9DED8; }
 html[data-theme="deep-ocean"] { --dn-theme-canvas: #06151F; --dn-theme-panel: #0B2432; --dn-theme-text: #D8F3F8; --dn-theme-primary: #2DD4BF; --dn-theme-primary-foreground: #000000; --dn-theme-accent: #38BDF8; --dn-theme-accent-foreground: #000000; --dn-theme-border: #21485A; }
 html[data-theme="graphite-lab"] { --dn-theme-canvas: #151A1D; --dn-theme-panel: #20272B; --dn-theme-text: #EDF7F5; --dn-theme-primary: #5EEAD4; --dn-theme-primary-foreground: #000000; --dn-theme-accent: #67E8F9; --dn-theme-accent-foreground: #000000; --dn-theme-border: #3B494E; }

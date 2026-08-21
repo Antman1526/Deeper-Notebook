@@ -20,6 +20,18 @@ describe('pre-hydration Gemini-forward theme script', () => {
     expect(themeScript).toContain("classList.toggle('dark'")
   })
 
+  it('paints a stored Gemini-forward dark selection before hydration', () => {
+    localStorage.clear()
+    localStorage.setItem('dn-theme', 'gemini-forward-dark')
+    document.documentElement.dataset.theme = ''
+    document.documentElement.className = ''
+
+    window.eval(themeScript)
+
+    expect(document.documentElement.dataset.theme).toBe('gemini-forward-dark')
+    expect(document.documentElement).toHaveClass('dark')
+  })
+
   it('normalizes legacy light values and rejects unknown theme IDs', () => {
     expect(themeScript).toContain("theme === 'light'")
     expect(themeScript).toContain("theme = 'light-blue'")

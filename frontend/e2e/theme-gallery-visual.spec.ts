@@ -5,6 +5,7 @@ import { installThemeVisualFixture } from './fixtures/theme-visuals'
 const captures = [
   { theme: 'research-core-dark', viewport: { width: 1440, height: 900 } },
   { theme: 'research-core-light', viewport: { width: 1440, height: 900 } },
+  { theme: 'gemini-forward-dark', viewport: { width: 1440, height: 900 } },
   { theme: 'deep-ocean', viewport: { width: 1280, height: 800 } },
   { theme: 'archive-paper', viewport: { width: 1280, height: 800 } },
   { theme: 'high-contrast-dark', viewport: { width: 1440, height: 900 } },
@@ -41,6 +42,21 @@ async function unclipSettingsViewport(page: Parameters<typeof installThemeVisual
 for (const capture of captures) {
   test(`${capture.theme} theme gallery`, async ({ page }) => {
     const fixture = await installThemeVisualFixture(page, capture.theme)
+    await page.route('**/api/features', async route => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          features: {
+            evidenceStudio: true,
+            visualRefresh: true,
+            modelFleet: true,
+            researchRuns: true,
+            studyWorkbench: true,
+            sourceVisuals: true,
+          },
+        }),
+      })
+    })
     await page.setViewportSize(capture.viewport)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/settings')

@@ -13,7 +13,8 @@ import {
 } from './catalog'
 
 const expectedIds = [
-  'research-core-dark', 'gemini-forward-light', 'research-core-light',
+  'research-core-dark', 'gemini-forward-light', 'gemini-forward-dark',
+  'research-core-light',
   'deep-ocean', 'graphite-lab', 'arctic-research', 'archive-paper',
   'high-contrast-dark', 'high-contrast-light',
   'light-blue', 'system', 'solarized-light', 'github-light', 'paper',
@@ -23,10 +24,10 @@ const expectedIds = [
 ] as const
 
 describe('Research Core OS theme catalog', () => {
-  it('contains the exact 26 unique IDs and the approved fresh defaults', () => {
+  it('contains the exact 27 unique IDs and the approved fresh defaults', () => {
     expect(THEME_CATALOG.map(theme => theme.id)).toEqual(expectedIds)
-    expect(THEME_CATALOG).toHaveLength(26)
-    expect(new Set(THEME_CATALOG.map(theme => theme.id)).size).toBe(26)
+    expect(THEME_CATALOG).toHaveLength(27)
+    expect(new Set(THEME_CATALOG.map(theme => theme.id)).size).toBe(27)
     expect(DEFAULT_THEME_ID).toBe('research-core-dark')
     expect(LEGACY_DEFAULT_THEME_ID).toBe('research-core-dark')
     expect(VISUAL_SYSTEM_DEFAULT_THEME_ID).toBe('gemini-forward-light')
@@ -36,6 +37,7 @@ describe('Research Core OS theme catalog', () => {
 
   it('puts Gemini-forward light first among featured light themes', () => {
     expect(THEME_BY_ID['gemini-forward-light']).toMatchObject({ group: 'featured', dark: false })
+    expect(THEME_BY_ID['gemini-forward-dark']).toMatchObject({ group: 'featured', dark: true })
     expect(THEME_CATALOG.find(theme => theme.group === 'featured' && !theme.dark)?.id)
       .toBe('gemini-forward-light')
   })
@@ -49,6 +51,7 @@ describe('Research Core OS theme catalog', () => {
 
   it('exposes dark-mode and runtime guards', () => {
     expect(DARK_THEME_IDS).toContain('research-core-dark')
+    expect(DARK_THEME_IDS).toContain('gemini-forward-dark')
     expect(DARK_THEME_IDS).not.toContain('research-core-light')
     expect(isThemeId('archive-paper')).toBe(true)
     expect(isThemeId('unknown-neon')).toBe(false)
