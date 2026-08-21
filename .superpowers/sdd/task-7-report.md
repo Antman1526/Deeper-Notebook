@@ -446,14 +446,30 @@ Developer ID/notarization, Windows, publish, and release remain out of scope.
   static assertion now proves the current robust menu/default-prevented
   keyboard guard rather than a superseded tag-name literal.
 - Static identity and integrity gates are green: rebrand is `unexpected=0,
-  stale=0`; compileall and `git diff --check` pass. Broad Ruff remains a
-  pre-existing scope-external exception: `api/routers/search.py` has the same
-  I001 import-order result at pre-Task-7 `5d50049e`, while an untracked vendored
-  Node lldb file also reports I001. Ruff format additionally reports four
-  unchanged tracked baseline files and that vendor file. None were edited.
+  stale=0`; compileall and `git diff --check` pass. The whole-branch review's
+  “unchanged baseline” wording for Ruff format was incorrect: the exact base
+  blobs were formatted, but four tracked tests were modified by this branch.
+  A bounded follow-up reformatted only those four owned tests. The genuine
+  scope-external exceptions remain `api/routers/search.py` I001 at pre-Task-7
+  `5d50049e` and an untracked vendored Node lldb file; neither was edited.
 
 Initial-scope and final-receipt staged Gitleaks scans found zero leaks; the
 required `34ef47cd..HEAD` range scan also found zero leaks.
 Open: Sol review; local signing/notarization, Windows, installed-artifact
 equality, optional rollback-smoke bootstrap, release, and publication remain
 outside this source-only closeout.
+
+## 2026-08-21 — Task 7 Ruff-format review repair
+
+- Strict RED: exact `uv run ruff format --check` over
+  `desktop/tests/test_package_smoke_contract.py`,
+  `desktop/tests/test_release_manifest.py`, `tests/test_product_identity.py`,
+  and `tests/test_sources_api.py` exited 1 and reported all four files.
+- Ruff formatted only those four paths. The affected selector passed `232`
+  tests with `7` dependency warnings; exact four-file format check, scoped Ruff
+  check, and affected compileall pass. The product-identity chain keeps its
+  established three-line layout with an inline formatter skip so the pinned
+  selector inventory remains unchanged.
+- No API, vendored LLDB, package, install, process, credential, remote, or
+  publication action occurred. Commit receipt follows after staged diff and
+  Gitleaks verification.

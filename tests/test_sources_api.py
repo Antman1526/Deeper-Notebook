@@ -506,9 +506,7 @@ class TestSourceListingEmbeddingMetrics:
             }
         ]
 
-        response = client.get(
-            "/api/sources", params={"notebook_id": "notebook:1"}
-        )
+        response = client.get("/api/sources", params={"notebook_id": "notebook:1"})
 
         assert response.status_code == 200
         body = response.json()

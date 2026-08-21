@@ -50,9 +50,9 @@ def assert_process_is_gone(pid: int, timeout_seconds: float = 3) -> None:
 
 
 def test_parse_environment_accepts_key_value_pairs() -> None:
-    assert smoke.parse_environment(
-        ["DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED=0"]
-    ) == {"DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED": "0"}
+    assert smoke.parse_environment(["DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED=0"]) == {
+        "DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED": "0"
+    }
 
 
 def test_parse_environment_rejects_malformed_values() -> None:
@@ -319,7 +319,9 @@ def test_dynamic_smoke_rejects_readiness_urls_outside_loopback(
         return Process(), Process.pid
 
     monkeypatch.setattr(smoke, "launch_monitored_process", launch)
-    monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
+    monkeypatch.setattr(
+        smoke, "stop_process", lambda process, _timeout: stopped.append(process)
+    )
     monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         sys,
@@ -473,7 +475,9 @@ def test_dynamic_smoke_rejects_unbound_or_stale_readiness_identity(
         return Process(), Process.pid
 
     monkeypatch.setattr(smoke, "launch_monitored_process", launch)
-    monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
+    monkeypatch.setattr(
+        smoke, "stop_process", lambda process, _timeout: stopped.append(process)
+    )
     monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         sys,
@@ -577,7 +581,9 @@ def test_dynamic_smoke_reports_missing_readiness_urls_and_cleans_up(
         return Process(), Process.pid
 
     monkeypatch.setattr(smoke, "launch_monitored_process", launch)
-    monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
+    monkeypatch.setattr(
+        smoke, "stop_process", lambda process, _timeout: stopped.append(process)
+    )
     monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         sys,
@@ -614,6 +620,7 @@ def test_dynamic_smoke_times_out_when_the_retained_monitor_has_no_readiness(
 
     class Process:
         pid = 4321
+
         def wait(self, **_kwargs):
             waited.append(self)
             return 17
@@ -973,7 +980,9 @@ def test_dynamic_smoke_records_feature_mismatch_and_cleans_up(
 
     monkeypatch.setattr(smoke._LOCAL_OPENER.__class__, "open", Opener().open)
     monkeypatch.setattr(smoke, "launch_monitored_process", launch)
-    monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
+    monkeypatch.setattr(
+        smoke, "stop_process", lambda process, _timeout: stopped.append(process)
+    )
     monkeypatch.setattr(
         sys,
         "argv",
@@ -1214,7 +1223,9 @@ def test_make_inputs_preserve_a_spaced_environment_value(
     assert args.environment == ["DEEPER_NOTEBOOK_TITLE=local smoke value"]
 
 
-def test_make_inputs_reject_unsafe_environment_files(monkeypatch, tmp_path: Path) -> None:
+def test_make_inputs_reject_unsafe_environment_files(
+    monkeypatch, tmp_path: Path
+) -> None:
     for name, value in {
         "SMOKE_EXECUTABLE": "/tmp/deeper-notebook",
         "SMOKE_READINESS_FILE": "/tmp/desktop-readiness.json",
@@ -1241,7 +1252,9 @@ def test_make_inputs_reject_unsafe_environment_files(monkeypatch, tmp_path: Path
             smoke.apply_make_smoke_inputs(args)
         except smoke.SmokeFailure:
             continue
-        raise AssertionError(f"expected unsafe environment rejection: {environment_file}")
+        raise AssertionError(
+            f"expected unsafe environment rejection: {environment_file}"
+        )
 
 
 def test_make_inputs_reject_environment_file_swapped_before_descriptor_open(
@@ -1364,7 +1377,9 @@ def test_dynamic_smoke_writes_bounded_receipts_for_invalid_loopback_urls(
         def poll(self):
             return None
 
-    monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
+    monkeypatch.setattr(
+        smoke, "stop_process", lambda process, _timeout: stopped.append(process)
+    )
 
     for index, invalid_api_url in enumerate(
         (
@@ -1468,7 +1483,9 @@ def test_cli_validation_failures_write_a_supplied_receipt(tmp_path: Path) -> Non
         "--unknown-option",
     )
     assert argument_error.returncode != 0
-    assert json.loads(argument_receipt.read_text(encoding="utf-8"))["status"] == "failed"
+    assert (
+        json.loads(argument_receipt.read_text(encoding="utf-8"))["status"] == "failed"
+    )
 
 
 def test_keyboard_interrupt_writes_a_cancelled_receipt_and_cleans_up(
@@ -1490,7 +1507,9 @@ def test_keyboard_interrupt_writes_a_cancelled_receipt_and_cleans_up(
         "launch_monitored_process",
         lambda *_args, **_kwargs: (Process(), Process.pid),
     )
-    monkeypatch.setattr(smoke, "stop_process", lambda process, _timeout: stopped.append(process))
+    monkeypatch.setattr(
+        smoke, "stop_process", lambda process, _timeout: stopped.append(process)
+    )
     monkeypatch.setattr(
         smoke,
         "wait_for_url",

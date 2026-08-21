@@ -365,7 +365,7 @@ def test_package_smoke_target_does_not_evaluate_environment_injection(
     receipt = tmp_path / "receipt.json"
     injected_value = (
         f'DEEPER_NOTEBOOK_TITLE="quoted" `touch {backtick_marker}` '
-        f'$(touch {substitution_marker})\nwith a legitimate space'
+        f"$(touch {substitution_marker})\nwith a legitimate space"
     )
     result = subprocess.run(
         [

@@ -113,11 +113,26 @@ expand enough to expose their content, and skips two action tests only when the
 feature-disabled build intentionally has no gallery controls. No package,
 install, signing, deployment, credential, or release action occurred.
 
-Ruff is not green for the broad requested tree: its `api/routers/search.py`
-I001 result is identical at pre-Task-7 `5d50049e`; an untracked vendored Node
-lldb file has another I001; and format reports four unchanged baseline files
-plus that vendor file. These were preserved rather than altered outside scope.
+The whole-branch review's “unchanged baseline” wording for Ruff format was
+incorrect: the exact base blobs were formatted, but the branch modified four
+tracked test files. A bounded follow-up reformatted only
+`desktop/tests/test_package_smoke_contract.py`,
+`desktop/tests/test_release_manifest.py`, `tests/test_product_identity.py`,
+and `tests/test_sources_api.py`. The broad tree still retains the genuinely
+scope-external `api/routers/search.py` I001 at pre-Task-7 `5d50049e` and an
+untracked vendored Node lldb file; neither was altered.
 Initial-scope and final-receipt staged Gitleaks scans, plus the required
 `34ef47cd..HEAD` range scan, report zero leaks. Sol review is still required;
 installed-artifact equality, notarization, Windows, optional rollback smoke,
 and publication remain external gates.
+
+## Task 7 format review repair — 2026-08-21
+
+The strict four-file format RED reported all four owned tests would be
+reformatted and exited 1. Ruff then reformatted only those four paths. The
+affected focused selector passed `232 tests` with `7 dependency warnings`;
+exact four-file `ruff format --check`, scoped `ruff check`, and affected
+compileall all pass. The product-identity test retains its existing selector
+line inventory with an inline formatter skip on the unchanged method-chain
+layout, so no rebrand metadata was expanded. No implementation behavior,
+package, install, or external action changed.

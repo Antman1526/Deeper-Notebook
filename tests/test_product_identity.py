@@ -2598,7 +2598,7 @@ def test_source_visual_environment_alias_contract_is_closed():
     selectors = rebrand_audit.compatibility_selector_inventory(ROOT)
     source_lines = (
         ROOT / "tests/test_environment_aliases.py"
-    ).read_text(encoding="utf-8").splitlines()
+    ).read_text(encoding="utf-8").splitlines()  # fmt: skip
     legacy_alias_pattern = next(
         pattern
         for pattern in LEGACY_PATTERNS
