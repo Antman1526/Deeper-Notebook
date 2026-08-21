@@ -1,6 +1,6 @@
 # 11 — Build & Deployment Pipeline
 
-> Two independent artifacts: the **macOS desktop app** (primary, version `0.8.100`) and the
+> Two independent artifacts: the **macOS desktop app** (primary, version `0.8.114`) and the
 > **Docker server image** (upstream track, version `1.8.5`). They version different things
 > and must not be "reconciled".
 
@@ -15,7 +15,7 @@ build-mac: build-mac-test build-mac-lock build-mac-venv build-mac-frontend \
 
 | Stage | Time | Output |
 |---|---|---|
-| `build-mac-test` | ~6 min | Gate: preflight + 832 desktop + 4,767 backend |
+| `build-mac-test` | ~6 min | Gate: preflight + 940 desktop + 4,906 backend |
 | `build-mac-lock` | ~10 s | `desktop/requirements.lock` (963 pins) |
 | `build-mac-venv` | ~1 min | `.build-venv` |
 | `build-mac-frontend` | ~2 min | `frontend/.next` standalone — **bakes flags** |

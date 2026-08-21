@@ -3,7 +3,7 @@
 Every language, runtime, framework, library, tool, and external service the project uses,
 with **what it specifically does in this codebase** — not what it does in general.
 
-**Snapshot:** desktop `0.8.100` · server track `1.8.5` · 2026-08-17 · measured at `822d6fd3`
+**Snapshot:** desktop `0.8.114` · server track `1.8.5` · 2026-08-21 · measured at `58ff44b4`
 **Sources:** `pyproject.toml`, `desktop/requirements.txt`, `frontend/package.json`,
 `desktop/build/runtimes.toml`, `Makefile`, `.pre-commit-config.yaml`, `.github/workflows/`.
 
@@ -210,9 +210,9 @@ permissive policy — a localhost MCP server is legitimate).
 
 | Tool | Version | Specific role |
 |---|---|---|
-| **pytest** | `>=9.0.3,<10` | 4,767 backend tests + 832 desktop tests. Migrated 8→9 this cycle (PYSEC-2026-1845) |
+| **pytest** | `>=9.0.3,<10` | 4,906 backend tests + 940 desktop tests. Migrated 8→9 this cycle (PYSEC-2026-1845) |
 | **pytest-asyncio** | `>=1.2.0,<2` | Async route and graph tests |
-| **vitest** | `^4.1.8` | ~1,775 frontend unit tests. Run `--pool=forks --maxWorkers=1` — parallel workers made the jsdom suites flaky |
+| **vitest** | `^4.1.8` | 1,832 frontend unit tests. Run `--pool=forks --maxWorkers=1` — parallel workers made the jsdom suites flaky |
 | **@testing-library/react** + **jest-dom** | `^16.2.0` / `^6.6.3` | Component tests written against user-visible behaviour |
 | **jsdom** | `^26.0.0` | DOM for vitest |
 | **@vitejs/plugin-react** | `^4.3.4` | JSX transform for the test build |

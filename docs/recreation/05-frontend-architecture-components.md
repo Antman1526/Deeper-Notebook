@@ -261,7 +261,7 @@ per-request, nothing about it is persisted server-side.
 
 ## 10. Testing
 
-- **Unit:** Vitest + Testing Library — 240 files, ~1,775 tests.
+- **Unit:** Vitest + Testing Library — 240 files, 1,832 tests.
 - **Browser:** Playwright, `workers: 1` (shared stateful Next server), three projects:
   `mocked-browser`, `native-runtime`, `packaged-device`.
 - **Matrices:** the source-gallery spec runs 8 cells × 3 themes × 4 viewports = 96 with

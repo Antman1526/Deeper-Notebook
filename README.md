@@ -28,8 +28,8 @@ The product uses the approved **Notebook Spark** visual identity with the teal-t
 ![SurrealDB](https://img.shields.io/badge/SurrealDB-2.1-ff5722)
 ![Tests](https://img.shields.io/badge/tests-4929%20backend%20%2B%20807%20desktop%20%2B%201775%20frontend-success)
 
-> **Snapshot:** desktop app `0.8.100` · server/container track `1.8.5` · 2026-08-17.
-> Counts and measurements below were read from the tree at `822d6fd3`. Backend and desktop
+> **Snapshot:** desktop app `0.8.114` · server/container track `1.8.5` · 2026-08-21.
+> Counts and measurements below were read from the tree at `58ff44b4`. Backend and desktop
 > counts were re-collected this pass (`pytest --collect-only`); the frontend figure is
 > carried over from the prior snapshot, not re-run. The two version numbers track different
 > artifacts and are deliberately not reconciled — see [Two version tracks](#two-version-tracks).
@@ -693,7 +693,7 @@ cd frontend && npm run test:e2e:mocked   # Playwright, mocked-browser project
 make security-scan        # bandit (HIGH) + pip-audit over desktop/requirements.lock
 ```
 
-Current counts: **4,767 backend**, **832 desktop**, **~1,775 frontend** unit tests, plus
+Current counts: **4,906 backend**, **940 desktop**, **1,832 frontend** unit tests, plus
 Playwright projects `mocked-browser`, `native-runtime`, and `packaged-device`.
 
 Desktop packaging runs the launcher suite, all non-integration backend files through a
@@ -709,7 +709,7 @@ signal the test exists for.
 
 ## Security posture
 
-As of 2026-08-17: **Bandit HIGH in project code 0** · **B608 findings 0** (down from 79) ·
+As of 2026-08-21: **Bandit HIGH in project code 0** · **B608 findings 0** (down from 79) ·
 project MEDIUMs 4, all triaged false positives · pip-audit residuals 2, both documented.
 Full triage: `docs/verification/2026-08-16-security-scan.md`.
 
@@ -739,8 +739,8 @@ Multi-tenant isolation and network attackers are out of scope — nothing listen
 
 [`docs/recreation/`](docs/recreation/) is a source-controlled packet written so another AI
 system or a senior engineer can rebuild this project without guessing — real code snippets,
-exact versions, measured numbers, and explicit uncertainty notes. Regenerated 2026-08-17
-against `main` @ `aac7788b`.
+exact versions, measured numbers, and explicit uncertainty notes. Regenerated 2026-08-21
+against `main` @ `58ff44b4`.
 
 | Document | Coverage |
 |---|---|
@@ -808,7 +808,7 @@ Deeper-Notebook/
 │   ├── desktop_shims/        #   memory + OpenChronicle FastMCP micro-services
 │   ├── memory/               #   surreal_store.py — mem0 vector store on SurrealDB
 │   ├── build/                #   pyinstaller.spec, fetch_runtimes, runtimes.toml, dmg
-│   └── tests/                #   832 desktop tests
+│   └── tests/                #   940 desktop tests
 ├── frontend/                 # Next.js 16 + React 19
 │   ├── src/app/              #   (auth) and (dashboard) route groups
 │   ├── src/components/       #   ui/ layout/ deeper-notebook/ chat/ sources/ study/ …
@@ -816,7 +816,7 @@ Deeper-Notebook/
 │   └── e2e/                  #   Playwright specs + fixtures
 ├── scripts/                  # rebrand_audit, backup_restore, signing identity, verifiers
 ├── prompts/                  # Jinja templates (ai-prompter)
-├── tests/                    # 4,767 backend tests (+ tests/integration/)
+├── tests/                    # 4,906 backend tests (+ tests/integration/)
 ├── docs/                     # user docs, configuration reference, recreation packet,
 │                             #   verification receipts
 ├── deploy/searxng-private/   # ship-your-own localhost SearXNG
@@ -853,7 +853,7 @@ contracts — do not remove them as a cosmetic rename.
 
 | Track | File | Current | What it versions |
 |---|---|---|---|
-| Desktop app | `desktop/__init__.py` | `0.8.100` | The `.app` / `.dmg`, the window, `/api/version`, the update-notifier baseline |
+| Desktop app | `desktop/__init__.py` | `0.8.114` | The `.app` / `.dmg`, the window, `/api/version`, the update-notifier baseline |
 | Server / container | `pyproject.toml` | `1.8.5` | The Docker image tagged by `build-and-release.yml`, inherited from upstream |
 
 They version different artifacts and are intentionally **not** reconciled.

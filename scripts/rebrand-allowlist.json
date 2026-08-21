@@ -23612,7 +23612,7 @@
       "path": "docs/recreation/01-project-overview-architecture.md",
       "pattern": "open_notebook",
       "source": "content",
-      "line": 183,
+      "line": 184,
       "column": 1,
       "context_sha256": "bd16a23ed94f2db7a9255f325075d8c5fd54ef9b309c830f080a5e4e77e3f85e",
       "category": "historical_reference",
@@ -23620,7 +23620,7 @@
         "path": "docs/recreation/01-project-overview-architecture.md",
         "pattern": "open_notebook",
         "source": "content",
-        "line": 183,
+        "line": 184,
         "column": 1,
         "context_sha256": "bd16a23ed94f2db7a9255f325075d8c5fd54ef9b309c830f080a5e4e77e3f85e",
         "category": "historical_reference",
@@ -23824,7 +23824,7 @@
         "column": 5,
         "context_sha256": "a3b7710898f0c73cadbc3bfbbf54cd55dfe4fd9c313961c8b9e4aa0629ace960",
         "category": "historical_reference",
-        "explanation": "The recreation 15 file structure code organization document preserves the historical record in the \"15 — File Structure & Code Organization / 1. Top-level layout\" section because the statement uses that role while expressing ├── current legacy underscored identifier / Upstream compatibility shim package, while the preceding context concerns ├── commands/ surreal commands background job definitions; the following context concerns ├── tests/ Backend suite 4,767 tests.",
+        "explanation": "The recreation 15 file structure code organization document preserves the historical record in the \"15 — File Structure & Code Organization / 1. Top-level layout\" section because the statement uses that role while expressing ├── current legacy underscored identifier / Upstream compatibility shim package, while the preceding context concerns ├── commands/ surreal commands background job definitions; the following context concerns ├── tests/ Backend suite 4,906 tests.",
         "compatibility_contract": null
       }
     },

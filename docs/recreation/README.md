@@ -1,7 +1,7 @@
 # Deeper Notebook reconstruction packet
 
-> **Snapshot:** regenerated 2026-08-17 · desktop `0.8.100` · server track `1.8.5`.
-> Counts and measurements were read from the tree at `822d6fd3`. Every version, count, and measurement in this packet was read
+> **Snapshot:** regenerated 2026-08-21 · desktop `0.8.114` · server track `1.8.5`.
+> Counts and measurements were read from the tree at `58ff44b4`. Every version, count, and measurement in this packet was read
 > from the tree or a tool run at that commit — none are estimates.
 
 This directory is the source-controlled reconstruction packet for the current

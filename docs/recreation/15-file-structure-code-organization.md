@@ -14,7 +14,7 @@ Deeper-Notebook/
 ├── frontend/               Next.js 16 application
 ├── commands/               surreal_commands background job definitions
 ├── open_notebook/          Upstream compatibility shim package
-├── tests/                  Backend suite (4,767 tests)
+├── tests/                  Backend suite (4,906 tests)
 ├── scripts/                rebrand_audit.py, backup_restore.py, create-signing-identity.sh
 ├── prompts/                Jinja templates (ai-prompter)
 ├── brand/                  deeper-notebook-mark.svg (canonical mark)
@@ -87,7 +87,7 @@ deeper_notebook/
 
 ```
 desktop/
-├── __init__.py            __version__ = "0.8.100"  ← desktop track
+├── __init__.py            __version__ = "0.8.114"  ← desktop track
 ├── __main__.py            Entry point
 ├── app.py                 16 startup phases
 ├── launcher.py            Supervisor: 9+ sidecars, dynamic ports, process groups
@@ -109,7 +109,7 @@ desktop/
 │                          post_build_mac.sh, package_smoke.py, release_manifest.py
 ├── resources/             icon.icns, icon.ico, icon.png, make_icon.py
 ├── bin/                   Fetched runtimes (gitignored)
-└── tests/                 832 desktop tests
+└── tests/                 940 desktop tests
 ```
 
 ## 5. `frontend/`

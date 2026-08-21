@@ -1,6 +1,6 @@
 # 02 — Environment Setup & Dependencies
 
-> Exact versions as resolved at v0.8.100. Where a floor is stated (`>=`), the lockfile
+> Exact versions as resolved at v0.8.114. Where a floor is stated (`>=`), the lockfile
 > pins an exact version; both are given where they differ meaningfully.
 
 ---

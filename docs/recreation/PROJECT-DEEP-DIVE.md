@@ -2,7 +2,7 @@
 
 **Audience:** an AI system asked to critique this codebase and propose concrete
 optimisations, refactors, better patterns, or architectural improvements.
-**Version:** desktop `0.8.100` · **Written:** 2026-08-17 · measured at `822d6fd3`
+**Version:** desktop `0.8.114` · **Written:** 2026-08-21 · measured at `58ff44b4`
 
 Every snippet below is **real code** from the repository, annotated for intent. Where I am
 uncertain about an approach, it is marked **⚠️ UNCERTAIN** — those are the places I most
@@ -29,7 +29,7 @@ prompt template), and **Cornell Notes** (a seeded transformation) — all source
 React 19.2.3 · PyWebView 5.4 · PyInstaller · uv.
 
 **Scale.** 876 Python files (`git ls-files '*.py'`, tests included), 738 TS/TSX files,
-4,929 backend tests, 807 desktop tests, ~1,775 frontend tests (not re-collected this pass),
+4,906 backend tests, 940 desktop tests, 1,832 frontend tests (verified at the final local release gate),
 96 DB migrations (48 up/down pairs), ~76 tables, 298 API routes. Earlier snapshots of this
 document used a narrower file-count method (source only, no tests); the jump in file counts
 reflects that methodology change, not new code written this pass — the test and route counts
@@ -454,7 +454,7 @@ The fix (patch the predicate, or clear all spellings from the registry) is now d
 but the underlying mirroring behaviour is a footgun.
 
 ### 4.8 Two version tracks
-`pyproject.toml` = 1.8.5 (server/Docker), `desktop/__init__.py` = 0.8.100 (app). Correct,
+`pyproject.toml` = 1.8.5 (server/Docker), `desktop/__init__.py` = 0.8.114 (app). Correct,
 deliberately unreconciled — and confusing every single time.
 
 ### 4.9 Auto-route hard-failed with no benchmark history (found and fixed this pass)
@@ -545,7 +545,7 @@ you would build instead.
     a hexagonal/ports-and-adapters restructure pay for itself at this size, or is the
     current pragmatic layering appropriate?
 
-11. **Test suite economics.** 4,929 backend + 807 desktop + ~1,775 frontend tests gate a
+11. **Test suite economics.** 4,906 backend + 940 desktop + 1,832 frontend tests gate a
     25-minute build. Is there a defensible split — smoke gate on build, full suite on a
     schedule — that keeps the safety this project clearly depends on?
 

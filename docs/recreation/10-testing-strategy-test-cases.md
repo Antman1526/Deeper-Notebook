@@ -1,7 +1,7 @@
 # 10 — Testing Strategy & Test Cases
 
-> **4,767 backend tests** (1 skipped) · **832 desktop tests** (2 skipped) ·
-> **~1,775 frontend unit tests** across 240 files · Playwright browser matrices.
+> **4,906 backend tests** (1 skipped) · **940 desktop tests** (2 skipped) ·
+> **1,832 frontend unit tests** across the frontend suite · Playwright browser matrices.
 > Both Python suites gate `make build-mac`.
 
 ---
@@ -10,10 +10,10 @@
 
 | Layer | Runner | Location | Count |
 |---|---|---|---|
-| Backend unit/functional | pytest 9.1.1 | `tests/` | 4,767 |
-| Desktop | pytest (`.build-venv`) | `desktop/tests/`, `desktop/memory/tests/` | 832 |
+| Backend unit/functional | pytest 9.1.1 | `tests/` | 4,906 |
+| Desktop | pytest (`.build-venv`) | `desktop/tests/`, `desktop/memory/tests/` | 940 |
 | Integration (real DB) | pytest + SurrealDB | `tests/integration/` | opt-in |
-| Frontend unit | Vitest 4.1.8 | `frontend/src/**/*.test.tsx` | ~1,775 |
+| Frontend unit | Vitest 4.1.8 | `frontend/src/**/*.test.tsx` | 1,832 |
 | Browser | Playwright 1.61.1 | `frontend/e2e/` | matrices |
 
 ```bash

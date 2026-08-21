@@ -1,6 +1,6 @@
 # 14 — Security Implementation & Best Practices
 
-> **Current posture (2026-08-17):** Bandit HIGH in project code **0**; B608 findings
+> **Current posture (2026-08-21):** Bandit HIGH in project code **0**; B608 findings
 > **0** (down from 79); remaining project MEDIUMs **4**, all triaged false positives;
 > pip-audit residuals **2**, both with documented reasons. Full triage:
 > `docs/verification/2026-08-16-security-scan.md`.
