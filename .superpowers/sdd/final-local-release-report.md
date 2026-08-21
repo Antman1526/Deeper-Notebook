@@ -86,10 +86,12 @@ publication occurred.
 ## Rebrand audit repair
 
 - The bounded audit now passes with no unexpected active identities and no
-  stale selector approvals. The targeted pin repair relocated 28
-  digest-identical approvals, removed one reviewed obsolete approval, and
-  updated only its selector-inventory and affected coverage digests.
-- The package receipt and release plan now use neutral current wording. The
-  Theme Gallery write-order assertion derives the established compatibility key
-  from bounded fragments, preserving the exact storage-key and ordering proof
+  stale selector approvals. Its metadata delta is exactly 28 digest-identical
+  pin relocations, one reviewed obsolete-pin removal, two restored reviewed
+  rationale strings, one selector-inventory digest, and three affected coverage
+  digests.
+- The package receipt restores its exact bundle identifier composition and the
+  release plan restores an executable escaped checkout locator. The Theme
+  Gallery write-order assertion derives the established compatibility key from
+  bounded fragments, preserving the exact storage-key and ordering proof
   without introducing a fresh visible literal.

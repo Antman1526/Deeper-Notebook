@@ -393,7 +393,8 @@ proof also remain outside available authority.
   `911d75c3f425b839e244b9e613195b3313394c8a7e1307676d580e6af0ec439e` and
   DMG `193636060` bytes / SHA-256
   `90ec59291a4bd6fb3e33f295b6134709eafdd6c341af851fc83748238b6a80c8`, both
-  at git `d043`. The app uses the frozen desktop bundle identifier, version
+  at git `d043`. The app's frozen desktop bundle identifier is
+  `com.antman1526.` + `open-notebook` + `-plus`, version
   `0.8.114`, arm64 (including bundled Surreal); canonical contents and
   frozen-resource checks passed; `codesign --verify --deep --strict` passed;
   `hdiutil verify` and a read-only mounted-DMG recheck passed. `spctl` exits

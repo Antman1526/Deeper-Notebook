@@ -40084,7 +40084,7 @@
         "column": 34,
         "context_sha256": "dd2a263a0d22e35171ea877c3ff113518c08edc0aa2f9bbb19575f46adcbe711",
         "category": "compatibility_alias",
-        "explanation": "The frontend components deeper notebook theme gallery test client module keeps the legacy behavior in the \"for\" operation because the statement uses that role while expressing expect localStorage.getItem ' current legacy compatibility role ' .toBe 'archive-paper', while the preceding context concerns expect localStorage.getItem 'dn-theme' .toBe 'archive-paper'; the following context concerns expect canonical.setTheme .toHaveBeenCalledTimes 1.",
+        "explanation": "The frontend components deeper notebook theme gallery test client module keeps the legacy behavior in the \"updates the restore baseline after Apply\" operation because the statement uses that role while expressing expect localStorage.getItem ' current legacy compatibility role ' .toBe 'archive-paper', while the preceding context concerns expect localStorage.getItem 'dn-theme' .toBe 'archive-paper'; the following context concerns expect canonical.setTheme .toHaveBeenCalledTimes 1.",
         "compatibility_contract": "theme-storage-migration-v1"
       }
     },
@@ -41164,7 +41164,7 @@
         "column": 27,
         "context_sha256": "0746b8fe394bbc38cdf46f5419c09b609141c7444693b7faa54f434c3b7efbd2",
         "category": "compatibility_alias",
-        "explanation": "The frontend lib theme storage client module keeps the legacy behavior in the active artifact section because the statement uses that role while expressing const LEGACY THEME KEY = ' current legacy compatibility role ', while the preceding context concerns const CANONICAL THEME KEY = 'dn-theme'; the following context concerns const RECENT THEME KEY = 'dn-theme-recents'.",
+        "explanation": "The frontend lib theme storage client module keeps the legacy behavior in the active artifact section because the statement uses that role while expressing const LEGACY THEME KEY = ' current legacy compatibility role ', while the preceding context concerns const CANONICAL THEME KEY = 'dn-theme'; the following context concerns // Same-document consumers use this signal because the browser storage.",
         "compatibility_contract": "theme-storage-migration-v1"
       }
     },

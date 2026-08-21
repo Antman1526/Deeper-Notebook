@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Work only in the isolated release worktree on `codex/today-productization`.
+- Work only in `/Users/Antman/Documents/Open\ Notebook/Deeper-Notebook/.worktrees/today-productization` on `codex/today-productization`.
 - Preserve `.superpowers/sdd/task-7-report.md` and `.codex/agent-context/today-productization-2026-08-20.md` unless a task explicitly appends a receipt.
 - Do not push, merge, publish, notarize, dispatch Windows CI, change credentials, or mutate remote refs.
 - Do not install until all source, browser, integration, security, review, and package-content gates are green.
