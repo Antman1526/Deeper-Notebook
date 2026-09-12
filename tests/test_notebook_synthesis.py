@@ -10,8 +10,8 @@ from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from api.routers.notebooks import (
-    ExecutiveSynthesisResponse,
     _EXECUTIVE_SYNTHESIS_SYSTEM,
+    ExecutiveSynthesisResponse,
     router,
 )
 from deeper_notebook.domain.notebook import Notebook

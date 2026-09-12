@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 
+from api.routers.launcher_prefs import router
 from desktop.hardware_profiler import get_hardware_profile
 from desktop.launcher_prefs import ALLOWED_KEYS
-from api.routers.launcher_prefs import router
 
 
 def test_hardware_profiler_output_structure():

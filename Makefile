@@ -1,4 +1,4 @@
-.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart backup restore verify-backup test test-integration
+.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart backup restore verify-backup test test-backend test-integration
 .PHONY: docker-buildx-prepare docker-buildx-clean docker-buildx-reset
 .PHONY: docker-push docker-push-latest docker-release docker-build-local tag export-docs
 
@@ -200,6 +200,9 @@ restore:
 
 test:
 	uv run pytest tests/ -v --ignore=tests/integration
+
+test-backend:
+	.venv/bin/pytest tests -q -p no:cacheprovider --ignore=tests/integration
 
 test-integration:
 	@echo "Running integration tests against SurrealDB at $${SURREAL_URL:-ws://localhost:8000/rpc}..."

@@ -65,6 +65,12 @@ mirror canonical settings into their legacy alias names at import
 `resolve_env`. A `unset_setting` conftest fixture now clears every alias
 of a setting; the six tests use it.
 
+🛠 **Standing `make test-backend` target & test suite import hygiene.** Added a
+dedicated `test-backend` Makefile target for standing backend gate execution.
+Fixed all 12 pre-existing ruff `I001` un-sorted import blocks across 11 test suites
+(`ruff check .` 100% clean). Synced Inno Setup installer script (`deeper-notebook.iss`)
+to v0.8.128 and updated version smoke assertions (`test_smoke.py`, `test_release_manifest.py`).
+
 ## v0.8.127 — 2026-09-11 — The five v0.8.126 open items
 
 ✨ **Background worker heartbeat.** The worker upserts

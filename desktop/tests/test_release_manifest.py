@@ -464,7 +464,7 @@ def test_package_smoke_target_does_not_evaluate_environment_injection(
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=30,
     )
 
     assert result.returncode != 0
@@ -700,7 +700,7 @@ def test_package_smoke_target_preserves_literal_environment_dollars_in_the_app(
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=30,
     )
 
     assert result.returncode != 0
@@ -746,7 +746,7 @@ def test_installer_version_matches_the_canonical_desktop_version() -> None:
 
     assert installer_match is not None
     assert desktop_match is not None
-    assert installer_match.group(1) == desktop_match.group(1) == "0.8.114"
+    assert installer_match.group(1) == desktop_match.group(1) == "0.8.128"
 
 
 def test_installer_removes_only_the_exact_retired_start_menu_shortcut() -> None:

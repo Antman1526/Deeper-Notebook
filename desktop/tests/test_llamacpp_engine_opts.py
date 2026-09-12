@@ -1,7 +1,9 @@
 """Unit tests for Apple Silicon FlashAttention and KV quantization in LlamaCppProvider."""
 
 from pathlib import Path
+
 import pytest
+
 from desktop.providers.llamacpp import LlamaCppProvider
 
 
