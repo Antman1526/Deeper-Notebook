@@ -1,9 +1,12 @@
 # Project Handoff: Deeper Notebook (for Claude)
 
-**Date**: September 11, 2026 (v0.8.128)  
+**Date**: September 12, 2026 (v0.8.129)  
 **Repository Path**: `/Users/Antman/Desktop/BrainPulse Ventures LLC/DeeperNotebook/Deeper-Notebook`  
 **Current Branch**: `main`  
-**Latest Commits & Additions** (v0.8.115 – v0.8.128):
+**Latest Commits & Additions** (v0.8.115 – v0.8.129):
+- `65f46eee`: `refactor(tests): harden latent delenv settings to use unset_setting fixture` (v0.8.129 — hardened smart routing, studio flags, hot swap, ask caps, and chat caps against ambient alias pollution)
+- `1d64ff6d`: `fix(tests): adapt migration 51 round-trip test to migration 52 head` (v0.8.129 — live SurrealDB integration test suite 100% green across all 132 tests)
+- `7bbc7fad`: `test(infra): standing make test-backend target, ruff I001 import fixes, and installer version sync` (v0.8.129)
 - `0f85e969`: `fix(tests): strict ORDER BY projection guard, alias-safe env fixture, and the full-suite baseline failures` (v0.8.128 — first fully green full backend run)
 - `10ab30c0`: `feat(health): per-worker heartbeat rows, shutdown cleanup, worker status in Settings` (v0.8.128)
 - `b10f312a`: `fix(sources): explicit processing outcome instead of an extracted-text proxy` (v0.8.128)
@@ -82,8 +85,9 @@ All gates are currently passing 100%:
 | **Frontend ESLint** | `cd frontend && npm run lint` | **0 errors, 0 warnings** |
 | **Frontend TypeScript** | `cd frontend && npx tsc --noEmit` | **0 errors** |
 | **Desktop Test Suite**| `.venv/bin/pytest desktop/tests/` | **951 passed, 3 skipped, 0 failed** |
-| **Backend full suite** (strict query guard, ~5 min) | `make test-backend` (`.venv/bin/pytest tests -q -p no:cacheprovider`) | **5,110 passed, 133 skipped, 0 failed** (first green full run, v0.8.128) |
-| **Backend ruff** | `.venv/bin/python -m ruff check .` | **0 errors (100% clean across entire repository; all 12 I001 import blocks resolved)** |
+| **Backend full suite** (strict query guard, ~4.5 min) | `make test-backend` (`.venv/bin/pytest tests -q -p no:cacheprovider`) | **5,110 passed, 1 skipped, 0 failed** (v0.8.129) |
+| **Live SurrealDB Integration** | `SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q` | **132 passed, 0 failed** (v0.8.129) |
+| **Backend ruff** | `.venv/bin/python -m ruff check .` | **0 errors (100% clean across entire repository)** |
 | **Rebrand Audit** | `python3 scripts/rebrand_audit.py --check` | **0 unexpected identities, 0 stale entries** |
 | **Desktop Package** | `hdiutil verify dist/Deeper-Notebook-mac-arm64.dmg` | **Checksum VALID (183MB DMG)** |
 
