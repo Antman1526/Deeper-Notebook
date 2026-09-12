@@ -25,6 +25,14 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
+
+🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
+
+✨ **Live services & background worker observability verified.** Verified live API `/healthz/deep` worker status transitions from offline to online with active worker counts and sub-second heartbeats. Verified notebook ID scoping in Quick podcast dialog and Settings worker observability card.
+
+🛠 **Latent test setting hardening.** Hardened 5 key test suites against ambient alias pollution using the `unset_setting` fixture and dynamic precedence resolution: `test_phase3_smart_routing.py`, `test_evidence_studio_foundation.py`, `test_v0_8_40b_hot_swap.py`, `test_ask_result_caps.py`, and `test_chat_history_cap.py`. Full backend test suite passing 100% (5,110 passed, 0 failures).
+
 ## v0.8.128 — 2026-09-11 — The five v0.8.127 open items, plus the first full backend run
 
 Four workers were dispatched for these and all were killed by a usage
