@@ -641,6 +641,21 @@ export async function installKnowledgeShellMocks(
   );
   await fulfillJson(
     page,
+    "/api/features",
+    {
+      features: {
+        evidenceStudio: true,
+        visualRefresh: true,
+        modelFleet: true,
+        researchRuns: true,
+        studyWorkbench: true,
+        sourceVisuals: true,
+      },
+    },
+    unexpectedApiTraffic,
+  );
+  await fulfillJson(
+    page,
     "/api/local-models/health",
     {
       overall: "healthy",
