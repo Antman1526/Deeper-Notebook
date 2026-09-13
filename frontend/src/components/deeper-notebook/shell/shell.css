@@ -27,8 +27,8 @@
  * so neither can cover the other and neither needs a reserved width. */
 .dn-command-actions {
   display: flex;
-  min-width: 0;
-  flex: 0 1 auto;
+  min-width: max-content;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--dn-space-2, 0.5rem);
 }
@@ -182,6 +182,7 @@
 .dn-command-bar {
   grid-column: 1 / -1;
   display: flex;
+  min-width: 0;
   min-height: 4.25rem;
   align-items: center;
   justify-content: space-between;
@@ -193,7 +194,26 @@
   backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
 }
 
-.dn-command-title,
+.dn-command-breadcrumb {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.625rem;
+  overflow: hidden;
+}
+
+.dn-command-title {
+  margin: 0;
+  font-size: var(--dn-text-lg);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dn-navigator-heading h2,
 .dn-context-lens-heading h2 {
   margin: 0;
@@ -503,8 +523,20 @@
 
   .dn-command-bar {
     grid-column: 1;
+    min-width: 0;
     min-height: 4rem;
     padding: var(--dn-space-3) var(--dn-space-4);
+  }
+
+  .dn-command-breadcrumb {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .dn-command-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .dn-command-trigger {
@@ -531,6 +563,22 @@
  * the product name. Keep the control's accessible name/title while showing
  * its compact icon affordance, matching the other narrow-shell controls. */
 @media (max-width: 22.5rem) {
+  .dn-command-bar {
+    padding: var(--dn-space-2) var(--dn-space-3);
+    gap: var(--dn-space-2);
+  }
+
+  .dn-command-breadcrumb {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .dn-command-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .dn-focus-mode-control > span,
   .dn-focus-mode-control > .dn-focus-mode-shortcut {
     display: none;

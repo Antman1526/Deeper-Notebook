@@ -428,6 +428,7 @@ const VISUAL_ROUTE_BASE_EXPECTED_REQUESTS: Readonly<Record<string, VisualRequest
     'GET /api/transformations': 1,
     'GET /api/episode-profiles': 1,
     'GET /api/healthz/deep': 1,
+    'GET /api/studio/retention/status': 1,
   },
   '/settings/api-keys': {
     'GET /config': 2,
@@ -464,6 +465,7 @@ const VISUAL_ROUTE_BASE_EXPECTED_REQUESTS: Readonly<Record<string, VisualRequest
     'GET /api/updates/check': 1,
     'GET /api/system/network-status': 1,
     'GET /api/launcher-prefs': 1,
+    'GET /api/launcher-prefs/hardware-profile': 1,
     'GET /api/deeper-notebook/vaults': 1,
     'GET /api/notebooks': 2,
     'GET /api/deeper-notebook/overlay/notes': 1,
@@ -653,6 +655,7 @@ const health = {
     embedding_model: { status: 'ready', ok: true, error: null },
     chat_model: { status: 'ready', ok: true, error: null },
     command_registry: { status: 'ready', ok: true, error: null },
+    worker: { status: 'ready', ok: true, error: null },
   },
 } as const
 
@@ -664,6 +667,7 @@ const setupNotReadyHealth = {
     embedding_model: { status: 'missing', ok: false, error: 'Fixture setup gate' },
     chat_model: { status: 'missing', ok: false, error: 'Fixture setup gate' },
     command_registry: { status: 'error', ok: false, error: 'Fixture setup gate' },
+    worker: { status: 'error', ok: false, error: 'Fixture setup gate' },
   },
 } as const
 
@@ -865,6 +869,29 @@ function jsonBody(pathname: string, page: Page): unknown {
   if (pathname === '/api/study/plans/study_plan:fixture/syllabus') return studyWorkbenchFixtures.syllabus
   if (pathname === '/api/study/plans/study_plan:fixture/sources/readiness') return studyWorkbenchFixtures.readiness
   if (pathname === '/api/study/plans/study_plan:fixture/progress') return studyWorkbenchFixtures.progress
+  if (pathname === '/api/studio/retention/status') return {
+    enabled: false,
+    interval_hours: 24,
+    revision_keep_per_artifact: 5,
+    stale_export_max_age_days: 7,
+    dry_run_default: true,
+    last_run_at: null,
+    last_report: null,
+  }
+  if (pathname === '/api/launcher-prefs/hardware-profile') return {
+    system: 'Darwin',
+    machine: 'arm64',
+    chip_name: 'Apple M1',
+    is_apple_silicon: true,
+    total_ram_bytes: 17179869184,
+    total_ram_gb: 16,
+    tier_name: 'balanced',
+    guidance: 'Fixture hardware profile',
+    recommended_context: 4096,
+    recommended_quant: 'q4_k_m',
+    recommended_flash_attn: true,
+    recommended_kv_quant: 'q8_0',
+  }
   return {}
 }
 
@@ -898,11 +925,12 @@ const COMMON_GET_ROUTES = [
   '/api/notebooks', '/api/notebooks/notebook-fixture-001', '/api/notebooks/notebook-fixture-001/suggested-questions',
   '/api/sources', '/api/sources/source-fixture-001', '/api/sources/source-fixture-001/insights',
   '/api/sources/source-fixture-001/chat/sessions', '/api/notes', '/api/chat/sessions',
-  '/api/studio/notebooks/notebook-fixture-001/artifacts', '/api/deeper-notebook/gmail/status',
-  '/api/deeper-notebook/vaults', '/api/deeper-notebook/overlay/notes',
+  '/api/studio/notebooks/notebook-fixture-001/artifacts', '/api/studio/retention/status',
+  '/api/deeper-notebook/gmail/status', '/api/deeper-notebook/vaults', '/api/deeper-notebook/overlay/notes',
   '/api/deeper-notebook/knowledge/bookmarks', '/api/deeper-notebook/knowledge/bookmark-folders',
   '/api/deeper-notebook/knowledge/workspaces', '/api/settings', '/api/settings/observability',
-  '/api/launcher-prefs', '/api/mcp', '/api/mcp/recommendations', '/api/mcp/web-search',
+  '/api/launcher-prefs', '/api/launcher-prefs/hardware-profile',
+  '/api/mcp', '/api/mcp/recommendations', '/api/mcp/web-search',
   '/api/credentials', '/api/credentials/status', '/api/credentials/env-status',
   '/api/models', '/api/models/defaults', '/api/episode-profiles', '/api/speaker-profiles',
   '/api/podcasts/episodes', '/api/transformations', '/api/transformations/default-prompt',

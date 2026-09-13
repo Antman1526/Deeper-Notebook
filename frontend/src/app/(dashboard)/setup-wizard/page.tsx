@@ -125,24 +125,26 @@ function SubsystemRow({
   fixHint,
 }: {
   name: SubsystemKey
-  check: SubsystemCheck
+  check?: SubsystemCheck
   label: string
   fixPath?: string
   fixLabel: string
   fixHint?: string
 }) {
+  const isOk = Boolean(check?.ok)
+  const status = check?.status ?? 'unknown'
   return (
     <div className="flex items-start justify-between gap-4 py-3 border-b last:border-b-0">
       <div className="flex items-start gap-3 min-w-0 flex-1">
-        <StatusIcon ok={check.ok} status={check.status} />
+        <StatusIcon ok={isOk} status={status} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium">{label}</span>
-            <Badge variant={check.ok ? 'secondary' : 'destructive'}>
-              {check.status}
+            <Badge variant={isOk ? 'secondary' : 'destructive'}>
+              {status}
             </Badge>
           </div>
-          {check.error ? (
+          {check?.error ? (
             <p
               className="text-sm text-muted-foreground mt-1 break-words"
               data-testid={`subsystem-error-${name}`}
@@ -150,7 +152,7 @@ function SubsystemRow({
               {check.error}
             </p>
           ) : null}
-          {!check.ok && fixHint ? (
+          {!isOk && fixHint ? (
             <p
               className="text-xs text-muted-foreground mt-1 font-mono break-all"
               data-testid={`subsystem-hint-${name}`}
@@ -160,7 +162,7 @@ function SubsystemRow({
           ) : null}
         </div>
       </div>
-      {!check.ok && fixPath ? (
+      {!isOk && fixPath ? (
         <Button variant="outline" size="sm" asChild className="shrink-0">
           <Link href={fixPath}>
             {fixLabel}
@@ -268,7 +270,7 @@ export default function SetupWizardPage() {
               }
             >
               {isLoading || !data ? (
-                <div className="py-6 text-center text-muted-foreground">
+                <div className="py-6 min-h-[22rem] flex items-center justify-center text-center text-muted-foreground">
                   {t('common.loading')}
                 </div>
               ) : (

@@ -272,7 +272,7 @@ async function inspectClippedControls(page: Page) {
 }
 
 const sourceListFixture = {
-  id: 'source-fixture-001',
+  id: 'source:source-fixture-001',
   title: 'Deterministic source',
   topics: [],
   provenance: { origin: 'browser fixture' },
@@ -298,6 +298,16 @@ const sourceDetailFixture = {
 } as const
 
 const sharedBackgroundResponses: ReadonlyArray<readonly [string, unknown]> = [
+  ['/api/features', {
+    features: {
+      evidenceStudio: true,
+      visualRefresh: true,
+      modelFleet: true,
+      researchRuns: true,
+      studyWorkbench: true,
+      sourceVisuals: false,
+    },
+  }],
   ['/api/system/db-repair-needed', { needs_repair: false }],
   ['/api/updates/check', {
     current: 'fixture', latest: null, update_available: false, skipped: false,
@@ -310,12 +320,35 @@ const sharedBackgroundResponses: ReadonlyArray<readonly [string, unknown]> = [
   ['/api/deeper-notebook/overlay/notes', []],
   ['/api/settings', {}],
   ['/api/launcher-prefs', {}],
+  ['/api/launcher-prefs/hardware-profile', {
+    system: 'Darwin',
+    machine: 'arm64',
+    chip_name: 'Apple M1',
+    is_apple_silicon: true,
+    total_ram_bytes: 17179869184,
+    total_ram_gb: 16,
+    tier_name: 'balanced',
+    guidance: 'Fixture hardware profile',
+    recommended_context: 4096,
+    recommended_quant: 'q4_k_m',
+    recommended_flash_attn: true,
+    recommended_kv_quant: 'q8_0',
+  }],
   ['/api/mcp/web-search', { enabled: false, provider: null, tool_name: 'web_search' }],
   ['/api/deeper-notebook/workspace/knowledge', {}],
   ['/api/deeper-notebook/knowledge/bookmarks', { items: [], next_cursor: null }],
   ['/api/deeper-notebook/knowledge/bookmark-folders', { items: [] }],
   ['/api/deeper-notebook/knowledge/workspaces', { items: [] }],
   ['/api/settings/observability', {}],
+  ['/api/studio/retention/status', {
+    enabled: false,
+    interval_hours: 24,
+    revision_keep_per_artifact: 5,
+    stale_export_max_age_days: 7,
+    dry_run_default: true,
+    last_run_at: null,
+    last_report: null,
+  }],
   ['/api/deeper-notebook/gmail/status', { connected: false, configured: false }],
   ['/api/credentials/status', { configured: {}, source: {}, encryption_configured: true }],
   ['/api/credentials/env-status', {}],
@@ -458,13 +491,13 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
   await page.route('**/api/mcp/recommendations', async route => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ recommendations: [] }) })
   })
-  await page.route(/\/api\/sources\/source-fixture-001(?:\?|$)/, async route => {
+  await page.route(/\/api\/sources\/(?:source:)?source-fixture-001(?:\?|$)/, async route => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(sourceDetailFixture) })
   })
-  await page.route('**/api/sources/source-fixture-001/insights**', async route => {
+  await page.route(/.*\/api\/sources\/(?:source:)?source-fixture-001\/insights.*/, async route => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })
-  await page.route('**/api/sources/source-fixture-001/chat/sessions**', async route => {
+  await page.route(/.*\/api\/sources\/(?:source:)?source-fixture-001\/chat\/sessions.*/, async route => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })
   await page.route('**/api/transformations**', async route => {
@@ -474,6 +507,9 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })
   await page.route(url => url.pathname === '/api/study/plans', async route => {
+    await route.fulfill({ contentType: 'application/json', body: '[]' })
+  })
+  await page.route(url => url.pathname === '/api/study/exams/attempts', async route => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })
   await page.route('**/api/podcasts/episodes', async route => {
@@ -497,7 +533,7 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
       await expect(page.locator('h1').first(), `${route} ${viewport.width}px visible heading`).toBeVisible()
       await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(expectedMainLandmarks(route))
       await expect(
-        page.locator(rollbackBuild ? '.dn-legacy-shell' : '.dn-luminous-shell'),
+        page.locator(rollbackBuild ? '.dn-legacy-shell' : '.dn-workspace-shell, .dn-luminous-shell'),
         `${route} ${viewport.width}px shell mode`,
       ).toBeVisible()
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -513,6 +549,7 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
       expect(duplicateIds, `${route} ${viewport.width}px duplicate IDs`).toEqual([])
 
       const clippedReport = await inspectClippedControls(page)
+
       expect(
         clippedReport.markedContainers.every(container => container.containedInViewport),
         `${route} ${viewport.width}px marked scroll container fully contained in viewport`,
@@ -552,7 +589,7 @@ test('login retains a named main landmark and page heading at every audit width'
   for (const viewport of canonicalViewports) {
     await page.setViewportSize(viewport)
     await page.goto('/login')
-    await expect(page.locator('main[aria-label="Deeper Notebook sign in"]')).toBeVisible()
+    await expect(page.locator('main[aria-label="Deeper Notebook sign in"], main[aria-labelledby="workspace-auth-title"]')).toBeVisible()
     await expect(page.locator('main h1')).toHaveCount(1)
     await expect(page.locator('main h1').first()).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -591,6 +628,7 @@ test('first-launch setup retains a named main landmark and page heading at every
           embedding_model: { status: 'degraded', ok: false, error: null },
           chat_model: { status: 'ready', ok: true, error: null },
           command_registry: { status: 'ready', ok: true, error: null },
+          worker: { status: 'ready', ok: true, error: null },
         },
       }),
     })
