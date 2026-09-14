@@ -1,9 +1,12 @@
 # Project Handoff: Deeper Notebook (for Claude)
 
-**Date**: September 12, 2026 (v0.8.129)  
+**Date**: September 14, 2026 (v0.8.129)  
 **Repository Path**: `/Users/Antman/Desktop/BrainPulse Ventures LLC/DeeperNotebook/Deeper-Notebook`  
 **Current Branch**: `main`  
 **Latest Commits & Additions** (v0.8.115 – v0.8.129):
+- `57d080a0`: `fix(e2e): harden command bar layout at 320px, reserve setup wizard loading height, and complete visual fixtures` (v0.8.129 — command bar breadcrumbs truncate cleanly on 320px viewports preventing focus button overflow; setup wizard reserves 22rem loading height to eliminate layout shift on large desktop; visual system matrix fixtures mock retention status and hardware profile)
+- `5b130556`: `fix(e2e): mock /api/features in knowledge shell fixtures` (v0.8.129 — hermetic knowledge workbench fixtures provide default feature map)
+- `d4ca4b3e`: `chore(release): bump version to 0.8.129 and update release manifest & changelog` (v0.8.129)
 - `65f46eee`: `refactor(tests): harden latent delenv settings to use unset_setting fixture` (v0.8.129 — hardened smart routing, studio flags, hot swap, ask caps, and chat caps against ambient alias pollution)
 - `1d64ff6d`: `fix(tests): adapt migration 51 round-trip test to migration 52 head` (v0.8.129 — live SurrealDB integration test suite 100% green across all 132 tests)
 - `7bbc7fad`: `test(infra): standing make test-backend target, ruff I001 import fixes, and installer version sync` (v0.8.129)
@@ -84,12 +87,14 @@ All gates are currently passing 100%:
 | **Frontend Vitest** | `cd frontend && npm test` | **266/266 test files passed (2,000 tests)** |
 | **Frontend ESLint** | `cd frontend && npm run lint` | **0 errors, 0 warnings** |
 | **Frontend TypeScript** | `cd frontend && npx tsc --noEmit` | **0 errors** |
+| **Visual Matrix Suite** | `cd frontend && npm run test:e2e:visual-system` | **284/284 cells passed (100%)** |
+| **All-Screen Visual Audit** | `cd frontend && npx playwright test e2e/all-screen-visual-audit.spec.ts --project=mocked-browser` | **8/8 tests passed (100%)** |
 | **Desktop Test Suite**| `.venv/bin/pytest desktop/tests/` | **951 passed, 3 skipped, 0 failed** |
 | **Backend full suite** (strict query guard, ~4.5 min) | `make test-backend` (`.venv/bin/pytest tests -q -p no:cacheprovider`) | **5,110 passed, 1 skipped, 0 failed** (v0.8.129) |
 | **Live SurrealDB Integration** | `SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q` | **132 passed, 0 failed** (v0.8.129) |
 | **Backend ruff** | `.venv/bin/python -m ruff check .` | **0 errors (100% clean across entire repository)** |
 | **Rebrand Audit** | `python3 scripts/rebrand_audit.py --check` | **0 unexpected identities, 0 stale entries** |
-| **Desktop Package** | `hdiutil verify dist/Deeper-Notebook-mac-arm64.dmg` | **Checksum VALID (183MB DMG)** |
+| **Desktop Package** | `hdiutil verify dist/Deeper-Notebook-mac-arm64.dmg` | **Checksum VALID (186MB DMG)** |
 
 ---
 
