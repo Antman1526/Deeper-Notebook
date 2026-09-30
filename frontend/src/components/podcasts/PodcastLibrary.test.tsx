@@ -146,14 +146,16 @@ describe('PodcastLibrary', () => {
     expect(filtered.map(item => item.id)).toEqual(['external-recent'])
   })
 
-  it('keeps a stable empty state and the disabled Phase 3 evidence filter', () => {
+  it('keeps a stable empty state and a disabled evidence filter that says it is coming soon', () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <PodcastLibrary episodes={[]} onDelete={vi.fn()} onRetry={vi.fn()} />
     </QueryClientProvider>)
 
     expect(screen.getByText('No podcast episodes yet.')).toBeVisible()
-    const evidenceFilter = screen.getByRole('button', { name: 'Evidence filters — Phase 3' })
+    const evidenceFilter = screen.getByRole('button', { name: 'Evidence filters — coming soon' })
     expect(evidenceFilter).toBeDisabled()
-    expect(evidenceFilter).toHaveAttribute('title', 'Evidence-state filters arrive in Phase 3')
+    expect(evidenceFilter).toHaveAttribute('title', 'Evidence-state filters are not available yet')
+    // Internal roadmap labels are not user-facing copy.
+    expect(document.body).not.toHaveTextContent(/Phase[- ]\d/)
   })
 })

@@ -84,7 +84,7 @@ export function OutlineStoryboard({ segments, onChange }: OutlineStoryboardProps
     <section data-region="outline-storyboard" aria-label="Outline Storyboard" className="space-y-3 rounded-md border p-4">
       <header>
         <h3 className="font-semibold">Outline Storyboard</h3>
-        <p className="mt-1 text-sm text-muted-foreground">Outline storyboard review is the current Phase-2 gate; cited storyboard artifacts arrive in Phase 3.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Review the outline storyboard before production. Cited storyboard artifacts are not available yet.</p>
       </header>
       <ol className="space-y-2" aria-label="Outline segments">
         {labels.map((label, index) => {

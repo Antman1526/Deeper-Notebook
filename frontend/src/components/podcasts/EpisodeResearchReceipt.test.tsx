@@ -4,6 +4,13 @@ import { describe, expect, it } from 'vitest'
 import { EpisodeResearchReceipt } from './EpisodeResearchReceipt'
 
 describe('EpisodeResearchReceipt', () => {
+  it('labels the receipt provenance plainly, without an internal phase label', () => {
+    render(<EpisodeResearchReceipt selectionSummary={{ version: 1, total_count: 1, included_count: 1 }} />)
+
+    expect(screen.getByText('Provenance')).toBeVisible()
+    expect(document.body).not.toHaveTextContent(/Phase[- ]\d/)
+  })
+
   it('shows aggregate selection and routing receipts without source details', () => {
     render(
       <EpisodeResearchReceipt

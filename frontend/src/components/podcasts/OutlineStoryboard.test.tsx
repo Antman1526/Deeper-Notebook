@@ -17,6 +17,15 @@ describe('OutlineStoryboard', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Findings moved to position 1')
   })
 
+  it('describes the review in plain language, without internal phase labels', () => {
+    render(<OutlineStoryboard segments={['Introduction']} onChange={vi.fn()} />)
+
+    expect(screen.getByText(
+      'Review the outline storyboard before production. Cited storyboard artifacts are not available yet.',
+    )).toBeVisible()
+    expect(document.body).not.toHaveTextContent(/Phase[- ]\d/)
+  })
+
   it('supports drag reorder and keeps a moved segment actionable', () => {
     const onChange = vi.fn()
     render(<OutlineStoryboard segments={['One', 'Two', 'Three']} onChange={onChange} />)

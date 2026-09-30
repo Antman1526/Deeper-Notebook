@@ -41,7 +41,9 @@ describe('EpisodeLab', () => {
     render(<EpisodeLab episode={{ ...episode, job_status: 'failed' }} onClose={vi.fn()} onRetry={onRetry} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'citation:one' }))
-    expect(screen.getByText('Source citation — claim evidence mapping arrives in Phase 3')).toBeVisible()
+    expect(screen.getByText('Source citations for individual claims are not available yet.')).toBeVisible()
+    // Internal roadmap labels are not user-facing copy.
+    expect(document.body).not.toHaveTextContent(/Phase[- ]\d/)
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry episode' }))
     expect(onRetry).toHaveBeenCalledWith('episode:local-review')
@@ -113,7 +115,7 @@ describe('EpisodeLab', () => {
     expect(useAudioPlayerStore.getState().positionByEpisode['episode:local-review']).toBe(15)
   })
 
-  it('routes only bounded source citations to the optional callback and uses the Phase 3 fallback otherwise', () => {
+  it('routes only bounded source citations to the optional callback and uses the not-yet-available notice otherwise', () => {
     const onCitationClick = vi.fn()
     const sourceEpisode = {
       ...episode,
@@ -123,12 +125,12 @@ describe('EpisodeLab', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'source:source-123' }))
     expect(onCitationClick).toHaveBeenCalledWith('source:source-123')
-    expect(screen.queryByText('Source citation — claim evidence mapping arrives in Phase 3')).not.toBeInTheDocument()
+    expect(screen.queryByText('Source citations for individual claims are not available yet.')).not.toBeInTheDocument()
 
     rerender(<EpisodeLab episode={episode} onClose={vi.fn()} onCitationClick={onCitationClick} />)
     fireEvent.click(screen.getByRole('button', { name: 'citation:one' }))
     expect(onCitationClick).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Source citation — claim evidence mapping arrives in Phase 3')).toBeVisible()
+    expect(screen.getByText('Source citations for individual claims are not available yet.')).toBeVisible()
   })
 
   it('accepts only the bounded SourceId citation contract', () => {

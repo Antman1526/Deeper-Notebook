@@ -8,7 +8,9 @@ import { ACTIVE_EPISODE_STATUSES, FAILED_EPISODE_STATUSES, type PodcastEpisode }
 import { SyncedTranscript } from './SyncedTranscript'
 
 const PHASE_3_LOCK_COPY = 'Available after intellectual engine upgrade'
-const PHASE_3_CITATION_COPY = 'Source citation — claim evidence mapping arrives in Phase 3'
+// v0.8.130 — was 'Source citation — claim evidence mapping arrives in Phase 3'; internal phase
+// labels are not user-facing copy.
+const CLAIM_CITATION_UNAVAILABLE_COPY = 'Source citations for individual claims are not available yet.'
 const SOURCE_CITATION_ID = /^source:[A-Za-z0-9_-]{1,121}$/
 
 export interface EpisodeStageHistoryEntry {
@@ -145,7 +147,7 @@ export function EpisodeLab({ episode, onClose, onRetry, onCancel, onCitationClic
       onCitationClick(citationId)
       return
     }
-    setCitationNotice(PHASE_3_CITATION_COPY)
+    setCitationNotice(CLAIM_CITATION_UNAVAILABLE_COPY)
   }
 
   const runEpisodeAction = (action: 'retry' | 'cancel', callback: ((episodeId: string) => Promise<void> | void) | undefined) => {

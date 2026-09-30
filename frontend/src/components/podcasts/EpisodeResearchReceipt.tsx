@@ -46,7 +46,8 @@ export function EpisodeResearchReceipt({
     <section aria-label="Research receipt" className="space-y-3 rounded-md border bg-muted/20 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-sm font-semibold text-foreground">Research receipt</h4>
-        <span className="text-xs text-muted-foreground">Phase 2 provenance</span>
+        {/* v0.8.130 — was "Phase 2 provenance": an internal roadmap label is not user-facing copy. */}
+        <span className="text-xs text-muted-foreground">Provenance</span>
       </div>
       {selectionSummary ? (
         <div className="space-y-1 text-xs text-muted-foreground">
