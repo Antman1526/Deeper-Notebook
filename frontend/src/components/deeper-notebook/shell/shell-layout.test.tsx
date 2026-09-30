@@ -12,8 +12,8 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 })
 // against the shipped CSS with markup that mirrors the real components:
 //  T0-3  the Create button rendered as an empty square
 //  T0-4  the active navigator link only covered its text
-//  T0-9  the command bar ran off the right edge on phones, showed keyboard
-//        hints on touch devices, and the fixed Context lens covered content
+//  T0-9  the command bar ran off the right edge on phones and showed keyboard
+//        hints on touch devices
 
 const shellCss = fs.readFileSync(path.resolve(__dirname, 'shell.css'), 'utf8')
 const workspaceCss = fs.readFileSync(path.resolve(__dirname, '../workspace/workspace.css'), 'utf8')
@@ -246,60 +246,4 @@ describe('command bar (T0-9)', () => {
       await close()
     }
   })
-})
-
-describe('Context lens toggle (T0-9)', () => {
-  const shellWithLens = `
-    <div class="dn-workspace-shell">
-      <div class="dn-instrument-dock"></div>
-      <div class="dn-workspace-shell-body">
-        <header class="dn-command-bar"></header>
-        <nav class="dn-adaptive-navigator"></nav>
-        <main class="dn-workspace-canvas">Content</main>
-        <button type="button" class="dn-context-lens-toggle">Context lens</button>
-        <aside class="dn-context-lens">Context lens</aside>
-      </div>
-    </div>
-  `
-
-  for (const width of [390, 1280]) {
-    it(`still reserves that room in compact density at ${width}px (a more specific rule sets padding)`, async () => {
-      const { tab, close } = await measure(
-        page(shellWithLens, undefined, 'data-dn-density="compact"'),
-        { width, height: 900 },
-      )
-      try {
-        const canvas = await rect(tab, '.dn-workspace-canvas')
-        expect(canvas?.paddingBottom ?? 0).toBeGreaterThanOrEqual(56)
-      } finally {
-        await close()
-      }
-    })
-  }
-
-  it('does not reserve it in Focus mode, where the toggle is relocated', async () => {
-    const { tab, close } = await measure(
-      page(shellWithLens, undefined, 'data-dn-focus-mode="true"'),
-      { width: 1280, height: 900 },
-    )
-    try {
-      const canvas = await rect(tab, '.dn-workspace-canvas')
-      expect(canvas?.paddingBottom ?? 0).toBeLessThan(56)
-    } finally {
-      await close()
-    }
-  })
-
-  for (const width of [390, 768, 1280]) {
-    it(`reserves room at the end of the canvas so the fixed toggle never permanently covers content at ${width}px`, async () => {
-      const { tab, close } = await measure(page(shellWithLens), { width, height: 900 })
-      try {
-        const canvas = await rect(tab, '.dn-workspace-canvas')
-        // Toggle is ~2.75rem tall plus its own 1rem offset and a gap.
-        expect(canvas?.paddingBottom ?? 0).toBeGreaterThanOrEqual(56)
-      } finally {
-        await close()
-      }
-    })
-  }
 })

@@ -437,8 +437,10 @@ describe('shared workspace primitives', () => {
     expect(desktopStyles).toMatch(
       /html\[data-dn-focus-mode="true"\]\s+\.dn-workspace-shell\s*\{[\s\S]*?grid-template-columns:\s*var\(--dn-focus-rail\)\s+minmax\(0,\s*1fr\);/,
     )
+    // v0.8.130 — two tracks: the navigator's keyboard-revealable rail and the canvas. The
+    // third rail belonged to the Context lens, which the V2 shell no longer mounts.
     expect(desktopStyles).toMatch(
-      /html\[data-dn-focus-mode="true"\]\s+\.dn-workspace-shell-body\s*\{[\s\S]*?grid-template-columns:\s*var\(--dn-focus-rail\)\s+minmax\(0,\s*1fr\)\s+var\(--dn-focus-rail\);/,
+      /html\[data-dn-focus-mode="true"\]\s+\.dn-workspace-shell-body\s*\{[\s\S]*?grid-template-columns:\s*var\(--dn-focus-rail\)\s+minmax\(0,\s*1fr\);/,
     )
   })
 
@@ -551,73 +553,87 @@ describe('shared workspace primitives', () => {
     }
   })
 
-  it('keeps an opened Context Lens fully visible when desktop V2 Focus is active', async () => {
+  // v0.8.130 — the Context lens was static placeholder copy on every route: an empty
+  // 320px rail at 1536px+, and a floating button that covered content below that.
+  it('does not mount the placeholder Context lens in the V2 shell', () => {
+    render(
+      <WorkspaceAppShell>
+        <div data-testid="v2-page-slot">Page content</div>
+      </WorkspaceAppShell>,
+    )
+
+    expect(document.querySelector('.dn-context-lens')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Context lens' })).toBeNull()
+    expect(screen.queryByRole('complementary', { name: 'Context lens' })).toBeNull()
+  })
+
+  it('gives the canvas all the space beside the navigator: two columns, no lens rail', async () => {
     const browser = await chromium.launch({ headless: true })
+    const shell = `
+      <div class="dn-workspace-shell">
+        <div class="dn-instrument-dock"></div>
+        <div class="dn-workspace-shell-body">
+          <header class="dn-command-bar"></header>
+          <nav class="dn-adaptive-navigator"></nav>
+          <main class="dn-workspace-canvas">Canvas</main>
+        </div>
+      </div>
+    `
 
     try {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
-      await page.setContent(`
-        <!doctype html>
-        <html data-dn-focus-mode="true">
-          <head>
-            <style>
-              html, body { margin: 0; width: 100%; height: 100%; }
-              ${shellStyles}
-              ${workspaceStyles}
-            </style>
-          </head>
-          <body>
-            <div class="dn-workspace-shell">
-              <div class="dn-instrument-dock"></div>
-              <div class="dn-workspace-shell-body">
-                <div class="dn-command-bar"></div>
-                <nav class="dn-adaptive-navigator"></nav>
-                <main class="dn-workspace-canvas"></main>
-                <aside class="dn-context-lens is-open">Context lens</aside>
-              </div>
-            </div>
-          </body>
-        </html>
-      `)
+      for (const width of [1280, 1600, 1920]) {
+        const page = await browser.newPage({ viewport: { width, height: 800 } })
+        await page.setContent(`<!doctype html><html><head><style>
+          html, body { margin: 0; width: 100%; height: 100%; }
+          ${shellStyles}
+          ${workspaceStyles}
+        </style></head><body>${shell}</body></html>`)
 
-      const geometry = await page.locator('.dn-context-lens').evaluate((element) => {
-        const lens = element.getBoundingClientRect()
-        const shell = element.parentElement?.getBoundingClientRect()
+        const layout = await page.evaluate(() => {
+          const body = document.querySelector('.dn-workspace-shell-body')!
+          const nav = document.querySelector('.dn-adaptive-navigator')!.getBoundingClientRect()
+          const canvas = document.querySelector('.dn-workspace-canvas')!.getBoundingClientRect()
+          return {
+            tracks: getComputedStyle(body).gridTemplateColumns.trim().split(/\s+/).length,
+            canvasEndsAtBodyEdge: Math.abs(canvas.right - body.getBoundingClientRect().right) < 1,
+            canvasStartsAfterNav: Math.abs(canvas.left - nav.right) < 1,
+          }
+        })
 
-        return {
-          left: lens.left,
-          right: lens.right,
-          width: lens.width,
-          shellRight: shell?.right ?? Number.NaN,
-        }
-      })
-
-      expect(geometry.width).toBeGreaterThanOrEqual(17 * 16)
-      expect(geometry.left).toBeGreaterThanOrEqual(0)
-      expect(geometry.right).toBeLessThanOrEqual(1280)
-      expect(geometry.right).toBeCloseTo(geometry.shellRight, 0)
+        expect(layout, `${width}px`).toEqual({ tracks: 2, canvasEndsAtBodyEdge: true, canvasStartsAfterNav: true })
+        await page.close()
+      }
     } finally {
       await browser.close()
     }
   })
 
-  it('turns the Context Lens into an on-demand drawer when the desktop canvas is compact', () => {
-    const compactDesktopStyles = workspaceStyles.slice(
-      workspaceStyles.indexOf('@media (min-width: 1024px) and (max-width: 1535px)'),
-      workspaceStyles.indexOf('@media (min-width: 1024px) {'),
-    )
+  it('keeps two columns in Focus mode too, instead of reserving an empty right rail', async () => {
+    const browser = await chromium.launch({ headless: true })
 
-    expect(compactDesktopStyles).toMatch(
-      /\.dn-workspace-shell-body\s*\{[\s\S]*?grid-template-areas:\s*"command command"\s*"navigator canvas";/,
-    )
-    expect(compactDesktopStyles).toMatch(
-      /\.dn-workspace-shell\s+\.dn-context-lens\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?visibility:\s*hidden;[\s\S]*?pointer-events:\s*none;[\s\S]*?transform:\s*translateX/,
-    )
-    expect(compactDesktopStyles).toMatch(
-      /\.dn-workspace-shell\s+\.dn-context-lens\.is-open\s*\{[\s\S]*?visibility:\s*visible;[\s\S]*?pointer-events:\s*auto;[\s\S]*?transform:\s*translateX\(0\);/,
-    )
-    expect(compactDesktopStyles).toMatch(
-      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.dn-workspace-shell\s+\.dn-context-lens\s*\{[\s\S]*?transition:\s*none;/,
-    )
+    try {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 800 } })
+      await page.setContent(`<!doctype html><html data-dn-focus-mode="true"><head><style>
+        html, body { margin: 0; width: 100%; height: 100%; }
+        ${shellStyles}
+        ${workspaceStyles}
+      </style></head><body>
+        <div class="dn-workspace-shell">
+          <div class="dn-instrument-dock"></div>
+          <div class="dn-workspace-shell-body">
+            <header class="dn-command-bar"></header>
+            <nav class="dn-adaptive-navigator"></nav>
+            <main class="dn-workspace-canvas">Canvas</main>
+          </div>
+        </div>
+      </body></html>`)
+
+      const tracks = await page.locator('.dn-workspace-shell-body').evaluate(
+        (element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length,
+      )
+      expect(tracks).toBe(2)
+    } finally {
+      await browser.close()
+    }
   })
 })

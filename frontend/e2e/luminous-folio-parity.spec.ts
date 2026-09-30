@@ -31,15 +31,15 @@ for (const viewport of viewports) {
     if (await dismissTip.isVisible()) await dismissTip.click()
 
     const notebookIndex = page.getByRole('navigation', { name: 'Notebook index' })
-    const contextLens = page.getByRole('complementary', { name: 'Context lens' })
+    // v0.8.130 — the placeholder Context lens is no longer mounted in the V2 shell (it
+    // was static copy that reserved a 320px rail, or floated a button over content).
+    await expect(page.getByRole('complementary', { name: 'Context lens' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Context lens' })).toHaveCount(0)
     if (viewport.compact) {
       await page.getByRole('button', { name: 'Notebook index' }).click()
       await expect(notebookIndex).toBeVisible()
-      await page.getByRole('button', { name: 'Context lens' }).click()
-      await expect(contextLens).toBeVisible()
     } else {
       await expect(notebookIndex).toBeVisible()
-      await expect(contextLens).toBeVisible()
     }
 
     expect(consoleErrors).toEqual([])

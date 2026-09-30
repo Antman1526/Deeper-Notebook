@@ -4,7 +4,6 @@ import type { ReactNode } from 'react'
 
 import { AdaptiveNavigator } from '@/components/deeper-notebook/shell/AdaptiveNavigator'
 import { CommandBar } from '@/components/deeper-notebook/shell/CommandBar'
-import { ContextLens } from '@/components/deeper-notebook/shell/ContextLens'
 import { InstrumentDock } from '@/components/deeper-notebook/shell/InstrumentDock'
 import { ShellUtilities } from '@/components/deeper-notebook/shell/ShellUtilities'
 
@@ -20,7 +19,10 @@ export function WorkspaceAppShell({ children }: { children: ReactNode }) {
         <CommandBar />
         <AdaptiveNavigator />
         <section className="dn-workspace-canvas">{children}</section>
-        <ContextLens />
+        {/* v0.8.130 — the Context lens (static placeholder copy on every route) is no longer
+            mounted here. It reserved an empty 320px rail at 1536px+ and floated a button over
+            content below that. The component and the shared shell.css rules stay for the
+            Luminous and legacy rollback shells, and for when the lens has real content. */}
       </div>
       <ShellUtilities />
       {/* v0.8.96 — FocusModeControl moved into CommandBar so it lays out beside

@@ -31,10 +31,12 @@
   grid-area: body;
   position: relative;
   display: grid;
+  /* v0.8.130 — two columns. A third "lens" rail used to reserve 17.5rem–20rem of dead space
+   * on every route at 1536px and wider. */
   grid-template-areas:
-    "command command command"
-    "navigator canvas lens";
-  grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr) minmax(17.5rem, 20rem);
+    "command command"
+    "navigator canvas";
+  grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 100dvh;
@@ -58,10 +60,6 @@
   overflow: auto;
   background: color-mix(in oklab, var(--dn-canvas) 92%, transparent);
   padding: var(--dn-space-6);
-}
-
-.dn-workspace-shell-body > .dn-context-lens {
-  grid-area: lens;
 }
 
 .dn-workspace-shell > .dn-shell-utilities {
@@ -176,30 +174,6 @@
 
   .dn-workspace-shell .dn-navigator-toggle {
     display: none;
-  }
-
-  .dn-workspace-shell .dn-context-lens {
-    display: none;
-  }
-
-  .dn-workspace-shell .dn-context-lens.is-open {
-    position: fixed;
-    right: 0;
-    bottom: 0;
-    left: 4.25rem;
-    z-index: 5;
-    display: block;
-    max-height: min(55vh, 30rem);
-    border: 1px solid var(--dn-glass-border);
-    box-shadow: var(--dn-elevation-md);
-  }
-
-  .dn-workspace-shell .dn-context-lens-toggle {
-    position: fixed;
-    right: var(--dn-space-3);
-    bottom: var(--dn-space-3);
-    z-index: 6;
-    display: inline-flex;
   }
 
   .dn-workspace-canvas {
@@ -338,85 +312,13 @@
   }
 }
 
-/* Keep medium desktop canvases useful. A persistent navigator, context lens,
- * and three-pane notebook workspace cannot all remain readable at once below
- * 1536px. Preserve the familiar Context lens control, but present the lens as
- * an on-demand drawer until the shell has enough inline space for three rails. */
-@media (min-width: 1024px) and (max-width: 1535px) {
-  .dn-workspace-shell-body {
-    grid-template-areas:
-      "command command"
-      "navigator canvas";
-    grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr);
-  }
-
-  .dn-workspace-shell .dn-context-lens {
-    position: fixed;
-    inset: 4.25rem 0 0 auto;
-    z-index: 5;
-    display: block;
-    width: min(20rem, calc(100vw - 5rem));
-    border-left: 1px solid var(--dn-glass-border);
-    box-shadow: var(--dn-elevation-md);
-    visibility: hidden;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(calc(100% + 1rem));
-    transition:
-      transform var(--dn-motion-interface),
-      opacity var(--dn-motion-interface),
-      visibility 0s linear 200ms;
-  }
-
-  .dn-workspace-shell .dn-context-lens.is-open {
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0);
-    transition-delay: 0s;
-  }
-
-  .dn-workspace-shell .dn-context-lens-toggle {
-    position: fixed;
-    right: var(--dn-space-4);
-    bottom: var(--dn-space-4);
-    z-index: 6;
-    display: inline-flex;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .dn-workspace-shell .dn-context-lens {
-      transition: none;
-    }
-  }
-}
-
-/* v0.8.130 — Below 1536px the Context lens toggle is fixed to the bottom-right corner.
- * Reserve room at the end of the canvas so it never permanently covers the last
- * content when the page is scrolled to the bottom. Focus mode relocates the
- * toggle, so it needs no reserve there. The compact-density selector is spelled
- * out because its own `padding` shorthand is more specific than the first rule. */
-@media (max-width: 1535px) {
-  :root:not([data-dn-focus-mode="true"]) .dn-workspace-shell .dn-workspace-canvas,
-  :root[data-dn-density='compact']:not([data-dn-focus-mode="true"]) .dn-workspace-shell .dn-workspace-canvas {
-    padding-block-end: calc(var(--dn-space-4, 1rem) + 3.5rem);
-  }
-}
-
 @media (min-width: 1024px) {
   html[data-dn-focus-mode="true"] .dn-workspace-shell {
     grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr);
   }
 
   html[data-dn-focus-mode="true"] .dn-workspace-shell-body {
-    grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr) var(--dn-focus-rail);
-  }
-
-  /* The shared Focus reveal is wider than V2's right rail; anchor it to the
-   * track's inward edge so the full lens stays inside the shell viewport. */
-  html[data-dn-focus-mode="true"] .dn-workspace-shell-body > .dn-context-lens.is-open,
-  html[data-dn-focus-mode="true"] .dn-workspace-shell-body > .dn-context-lens:focus-within {
-    justify-self: end;
+    grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr);
   }
 }
 

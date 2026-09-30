@@ -19,9 +19,11 @@ describe('Guided Tips catalog', () => {
       version: 2,
       title: 'Notebook Index',
     })
+    // v0.8.130 — the tip advertised the Context lens, which is no longer mounted. The
+    // version stays 2 so people who already dismissed the tip are not shown it again.
     expect(GUIDED_TIPS.find(tip => tip.id === 'search-overview')).toMatchObject({
       version: 2,
-      title: 'Context Lens',
+      title: 'Ask and Search',
     })
     expect(GUIDED_TIPS.find(tip => tip.id === 'studio-overview')).toMatchObject({
       version: 2,
