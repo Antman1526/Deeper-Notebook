@@ -139,7 +139,10 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
           />
           
           <div className="text-sm text-muted-foreground">
-            {t('common.created').replace('{time}', formatDistanceToNow(new Date(notebook.created), { addSuffix: true, locale: dfLocale }))} • 
+            {t('common.created').replace('{time}', formatDistanceToNow(new Date(notebook.created), { addSuffix: true, locale: dfLocale }))}
+            {/* v0.8.130 — explicit separator: JSX trims the space before a line break, which rendered
+                "ago •Updated". */}
+            {' • '}
             {t('common.updated').replace('{time}', formatDistanceToNow(new Date(notebook.updated), { addSuffix: true, locale: dfLocale }))}
           </div>
         </div>

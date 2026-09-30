@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { NotebookResponse } from '@/lib/types/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -27,29 +27,33 @@ interface NotebookCardProps {
 export function NotebookCard({ notebook }: NotebookCardProps) {
   const { t, language } = useTranslation()
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const router = useRouter()
   const updateNotebook = useUpdateNotebook()
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const noReadableContent = notebook.source_count + notebook.note_count === 0
 
-  const handleArchiveToggle = (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleArchiveToggle = () => {
     updateNotebook.mutate({
       id: notebook.id,
       data: { archived: !notebook.archived }
     })
   }
 
-  const handleCardClick = () => {
-    router.push(`/notebooks/${encodeURIComponent(notebook.id)}`)
-  }
-
   return (
     <>
-      <div 
-        className="group relative rounded-2xl p-1 bg-gradient-to-b from-border/40 via-border/10 to-transparent ring-1 ring-border/30 transition-all duration-300 hover:ring-primary/40 hover:shadow-md active:scale-[0.99] cursor-pointer"
-        onClick={handleCardClick}
+      {/* v0.8.130 — The whole card opens the notebook through a link laid over it, so keyboard
+          and screen-reader users get a real link instead of a click-only <div>.
+          The link is a direct child of this positioned root on purpose: nested in
+          CardHeader (a size container) `inset-0` would only span the header, and a
+          link inside the title would also stop the title truncating. Controls that
+          must stay independently clickable sit above it with `relative z-10`. */}
+      <div
+        className="group relative rounded-2xl p-1 bg-gradient-to-b from-border/40 via-border/10 to-transparent ring-1 ring-border/30 transition-all duration-300 hover:ring-primary/40 hover:shadow-md active:scale-[0.99]"
       >
+        <Link
+          href={`/notebooks/${encodeURIComponent(notebook.id)}`}
+          aria-label={notebook.name}
+          className="absolute inset-0 z-[1] rounded-2xl"
+        />
         <Card 
           className="border-0 rounded-[calc(1rem-2px)] bg-card/95 py-3 transition-colors group-hover:bg-card shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]"
         >
@@ -71,14 +75,13 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0 rounded-full opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-all duration-200 hover:bg-muted/80"
+                    className="relative z-10 h-8 w-8 p-0 rounded-full opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-all duration-200 hover:bg-muted/80"
                     aria-label={`Actions for ${notebook.name}`}
-                    onClick={(e) => e.stopPropagation()}
                   >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={handleArchiveToggle}>
                     {notebook.archived ? (
                       <>
@@ -93,10 +96,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                     )}
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setShowDeleteDialog(true)
-                    }}
+                    onClick={() => setShowDeleteDialog(true)}
                     className="text-destructive"
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
@@ -119,7 +119,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
               }))}
             </div>
 
-            <div className="mt-3" onClick={(event) => event.stopPropagation()}>
+            <div className="relative z-10 mt-3">
               <TurnIntoPodcastAction
                 selection={{ kind: 'notebook', notebookId: notebook.id }}
                 destination="quick"
