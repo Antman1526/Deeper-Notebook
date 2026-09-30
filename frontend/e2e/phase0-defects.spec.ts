@@ -143,7 +143,8 @@ test.describe('notebook list (T0-6)', () => {
     await link.focus()
     await expect(link).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(page).toHaveURL(new RegExp(`/notebooks/${notebook.id}`))
+    // A generous timeout: navigation has taken >10s when the machine is saturated.
+    await expect(page).toHaveURL(new RegExp(`/notebooks/${notebook.id}`), { timeout: 30_000 })
   })
 
   test('clicking anywhere on the card still opens it', async ({ page }) => {
@@ -166,7 +167,7 @@ test.describe('notebook list (T0-6)', () => {
 
     for (const [where, point] of Object.entries(points)) {
       await page.mouse.click(point.x, point.y)
-      await expect(page, `click on ${where}`).toHaveURL(new RegExp(`/notebooks/${notebook.id}`))
+      await expect(page, `click on ${where}`).toHaveURL(new RegExp(`/notebooks/${notebook.id}`), { timeout: 30_000 })
       await page.goBack()
       await expect(page.getByRole('link', { name: notebook.name })).toBeVisible()
     }
