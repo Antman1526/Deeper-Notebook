@@ -102,19 +102,16 @@ const getSourceTypes = (t: TFunction) => [
     value: 'link' as const,
     label: t('sources.addUrl'),
     icon: LinkIcon,
-    description: t('sources.processDescription'),
   },
   {
     value: 'upload' as const,
     label: t('sources.uploadFile'),
     icon: FileIcon,
-    description: t('sources.processDescription'),
   },
   {
     value: 'text' as const,
     label: t('sources.enterText'),
     icon: FileTextIcon,
-    description: t('sources.processDescription'),
   },
 ]
 
@@ -200,10 +197,7 @@ export function SourceTypeStep({
   const isOverLimit = itemCount > MAX_BATCH_SIZE
   return (
     <div className="space-y-6">
-      <FormSection
-        title={t('sources.title')}
-        description={t('sources.processDescription')}
-      >
+      <FormSection title={t('sources.title')}>
         <Controller
           control={control}
           name="type"
@@ -227,8 +221,6 @@ export function SourceTypeStep({
               
               {getSourceTypes(t).map((type) => (
                 <TabsContent key={type.value} value={type.value} className="mt-4">
-                  <p className="text-sm text-muted-foreground mb-4">{type.description}</p>
-                  
                   {/* Type-specific fields */}
                   {type.value === 'link' && (
                     <div>

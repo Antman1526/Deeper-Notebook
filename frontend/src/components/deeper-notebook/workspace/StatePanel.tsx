@@ -68,9 +68,8 @@ export const StatePanel = React.forwardRef<HTMLElement, StatePanelProps>(
         data-dn-state-panel-kind={kind}
         className={cn('dn-state-panel', `dn-state-panel-${kind}`, className)}
       >
-        <p data-dn-state-panel-kind-label="true" className="dn-state-panel-kind">
-          {kind}
-        </p>
+        {/* v0.8.130 — the raw `kind` enum used to print above the title as a kicker ("LOADING",
+            "ERROR"). It is a styling and live-region hook, not copy, and read like a bug. */}
         <h2 id={titleId} data-dn-state-panel-title="true" className="dn-state-panel-title">
           {title}
         </h2>

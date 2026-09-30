@@ -46,10 +46,7 @@ export function ProcessingStep({
 
   return (
     <div className="space-y-8">
-      <FormSection
-        title={`${t('navigation.transformations')} (${t('common.optional')})`}
-        description={t('sources.processDescription')}
-      >
+      <FormSection title={`${t('navigation.transformations')} (${t('common.optional')})`}>
         <CheckboxList
           items={transformationItems}
           selectedIds={selectedTransformations}
@@ -59,10 +56,7 @@ export function ProcessingStep({
         />
       </FormSection>
 
-      <FormSection
-        title={t('navigation.settings')}
-        description={t('sources.processDescription')}
-      >
+      <FormSection title={t('navigation.settings')}>
         <div className="space-y-4">
           {settings?.default_embedding_option === 'ask' && (
             <Controller

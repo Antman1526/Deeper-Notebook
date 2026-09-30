@@ -167,6 +167,10 @@ describe('SetupWizardPage', () => {
     expect(screen.getByTestId('subsystem-error-worker')).toHaveTextContent('No background worker heartbeat')
     // useTranslation is mocked to echo keys in this file.
     expect(screen.getByTestId('subsystem-hint-worker')).toHaveTextContent('setupWizard.fixes.worker')
+    // T0-7 — the command wraps at spaces. `break-all` split it mid-word ("comman ds").
+    const hintClasses = screen.getByTestId('subsystem-hint-worker').className
+    expect(hintClasses).toContain('break-words')
+    expect(hintClasses).not.toContain('break-all')
   })
 
   it('disables Continue when status is not_ready', () => {

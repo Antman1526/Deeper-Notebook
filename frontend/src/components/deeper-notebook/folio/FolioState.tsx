@@ -36,9 +36,8 @@ export const FolioState = React.forwardRef<HTMLElement, FolioStateProps>(
         data-dn-folio-state-kind={kind}
         className={cn('dn-folio-state', `dn-folio-state-${kind}`)}
       >
-        <p data-dn-folio-state-kind-label="true" className="dn-folio-state-kind">
-          {kind}
-        </p>
+        {/* v0.8.130 — the raw `kind` enum used to print above the title as a kicker; it is a
+            styling and live-region hook, not copy. */}
         <h2 id={titleId} data-dn-folio-state-title="true">
           {title}
         </h2>

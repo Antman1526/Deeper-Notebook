@@ -152,9 +152,11 @@ function SubsystemRow({
               {check.error}
             </p>
           ) : null}
+          {/* v0.8.130 — `break-all` split the copy-paste command mid-word ("comman / ds"); `break-words`
+              wraps at spaces. */}
           {!isOk && fixHint ? (
             <p
-              className="text-xs text-muted-foreground mt-1 font-mono break-all"
+              className="text-xs text-muted-foreground mt-1 font-mono break-words"
               data-testid={`subsystem-hint-${name}`}
             >
               {fixHint}

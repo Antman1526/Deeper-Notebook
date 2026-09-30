@@ -272,7 +272,11 @@
     justify-content: flex-start;
   }
 
-  [data-dn-folio-spread] {
+  /* v0.8.130 — The Evidence Studio variant needs its own selector here: its two-column rule
+   * above is more specific, so a bare `[data-dn-folio-spread]` override lost to
+   * it and the 18rem rail crushed the source desk on phones. */
+  [data-dn-folio-spread],
+  [data-dn-folio-spread][data-dn-folio-variant='evidence-studio'] {
     grid-template-columns: minmax(0, 1fr);
   }
 }

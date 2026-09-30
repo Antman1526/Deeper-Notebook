@@ -116,9 +116,11 @@ export function AddSourceDialog({
   const { t } = useTranslation()
 
   const WIZARD_STEPS: readonly WizardStep[] = [
-    { number: 1, title: t('sources.addSource'), description: t('sources.processDescription') },
-    { number: 2, title: t('navigation.notebooks'), description: t('notebooks.searchPlaceholder') },
-    { number: 3, title: t('navigation.process'), description: t('sources.processDescription') },
+    // v0.8.130 — The dialog header carries the one sentence about AI processing; repeating
+    // it (or a search placeholder) under every step title only added noise.
+    { number: 1, title: t('sources.addSource') },
+    { number: 2, title: t('navigation.notebooks') },
+    { number: 3, title: t('navigation.process') },
   ]
 
   // Simplified state management
