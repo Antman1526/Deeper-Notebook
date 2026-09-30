@@ -422,8 +422,8 @@ def _theme_tokens(theme_id: str) -> dict:
     bg, fg = t["bg"], t["fg"]
     card, muted, muted_fg = t["card"], t["muted"], t["muted_fg"]
     primary, primary_fg = t["primary"], t["primary_fg"]
-    accent, accent_fg = t["accent"], t["accent_fg"]
-    border, destructive = t["border"], t["destructive"]
+    accent = t["accent"]
+    border = t["border"]
     is_dark = t["is_dark"]
 
     # Sidebar slightly offset from the body. Light → a touch grayer.
@@ -460,16 +460,19 @@ def _theme_tokens(theme_id: str) -> dict:
         # Brand
         "--primary": primary,
         "--primary-foreground": primary_fg,
-        # Secondary / muted / accent (used for chip + label colors)
+        # Secondary / muted
         "--secondary": muted,
         "--secondary-foreground": fg,
         "--muted": muted,
         "--muted-foreground": muted_fg,
-        "--accent": accent,
-        "--accent-foreground": accent_fg,
-        # Status
-        "--destructive": destructive,
-        "--destructive-foreground": "#FFFFFF",
+        # v0.8.130 — --accent/--accent-foreground and --destructive/-foreground are
+        # no longer injected. This block's `:root[data-theme="X"]` selector outranks
+        # frontend globals.css, so injecting them overrode two web fixes in the
+        # packaged app only: --accent is now a neutral hover/selected fill (it was a
+        # solid brand hue), and the destructive pair is contrast-measured per theme
+        # there (this file sent #FFFFFF text over the light pink destructive of the
+        # dark themes, ~2.6:1). The per-theme "accent_fg"/"destructive" values in
+        # _THEMES are now unused.
         # Lines + focus
         "--border": border,
         "--input": border,

@@ -78,31 +78,45 @@ def test_focus_ring_has_three_to_one_contrast_against_background(theme_id):
     assert _contrast_ratio(tokens["--ring"], tokens["--background"]) >= 3.0
 
 
-@pytest.mark.parametrize(
-    ("theme_id", "foreground_token"),
-    [
-        (theme_id, foreground_token)
-        for theme_id in _THEMES
-        for foreground_token in ("--primary-foreground", "--accent-foreground")
-    ],
-)
-def test_primary_and_accent_foregrounds_meet_wcag_aa(theme_id, foreground_token):
+@pytest.mark.parametrize("theme_id", list(_THEMES))
+def test_primary_foreground_meets_wcag_aa(theme_id):
+    # v0.8.130 — the accent pair is no longer injected (see the test below); its
+    # web replacement, --dn-theme-accent-foreground, is contrast-checked for every
+    # catalog theme in frontend ResearchCoreVisualSystem.test.tsx.
     tokens = _theme_tokens(theme_id)
-    color_token = (
-        "--primary" if foreground_token == "--primary-foreground" else "--accent"
-    )
-    ratio = _contrast_ratio(tokens[foreground_token], tokens[color_token])
+    ratio = _contrast_ratio(tokens["--primary-foreground"], tokens["--primary"])
     assert ratio >= 4.5, (
-        f"{theme_id}: {foreground_token}={tokens[foreground_token]} "
-        f"{color_token}={tokens[color_token]} contrast={ratio:.2f}, expected >= 4.5"
+        f"{theme_id}: --primary-foreground={tokens['--primary-foreground']} "
+        f"--primary={tokens['--primary']} contrast={ratio:.2f}, expected >= 4.5"
     )
+
+
+# v0.8.130 — These are owned by frontend/src/app/globals.css, which measures them
+# in every theme (frontend/e2e/theme-contract.spec.ts). The injected
+# `:root[data-theme="X"]` block outranks globals.css, so injecting them here used
+# to override those fixes in the packaged app only: --accent became a solid brand
+# hue again (it is now the neutral hover/selected fill) and --destructive-foreground
+# was #FFFFFF even on the light pink destructive of dark themes (~2.6:1).
+OWNED_BY_GLOBALS_CSS = {
+    "--accent",
+    "--accent-foreground",
+    "--destructive",
+    "--destructive-foreground",
+}
+
+
+@pytest.mark.parametrize("theme_id", list(_THEMES))
+def test_injection_leaves_state_layer_and_destructive_to_globals_css(theme_id):
+    injected = OWNED_BY_GLOBALS_CSS & set(_theme_tokens(theme_id))
+    assert not injected, f"{theme_id} still injects {sorted(injected)}"
 
 
 @pytest.mark.parametrize("theme_id", list(_THEMES.keys()))
-def test_every_theme_produces_27_shadcn_tokens(theme_id):
-    """Every theme must produce the full shadcn token set so no upstream
-    component falls back to default colors (the source of the v0.4
-    unreadable-labels bug)."""
+def test_every_theme_produces_the_injected_shadcn_tokens(theme_id):
+    """Every theme must produce the shadcn tokens it is responsible for so no
+    upstream component falls back to default colors (the source of the v0.4
+    unreadable-labels bug). The accent and destructive roles are defined for
+    every theme by globals.css instead (see OWNED_BY_GLOBALS_CSS)."""
     tokens = _theme_tokens(theme_id)
     required = {
         "--background",
@@ -117,10 +131,6 @@ def test_every_theme_produces_27_shadcn_tokens(theme_id):
         "--secondary-foreground",
         "--muted",
         "--muted-foreground",
-        "--accent",
-        "--accent-foreground",
-        "--destructive",
-        "--destructive-foreground",
         "--border",
         "--input",
         "--ring",
