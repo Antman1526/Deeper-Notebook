@@ -18,7 +18,8 @@ function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
+        // v0.8.130 — the global ring is drawn inset for this viewport (globals.css).
+        className="size-full rounded-[inherit] outline-none"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

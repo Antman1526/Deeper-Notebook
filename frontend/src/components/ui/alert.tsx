@@ -9,8 +9,13 @@ const alertVariants = cva(
     variants: {
       variant: {
         default: "bg-background text-foreground",
+        // v0.8.130 — soft status variants (11 of 23 alerts overrode the default with
+        // amber or green classes); destructive now matches them.
         destructive:
-          "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+          "border-destructive/30 bg-destructive-soft text-destructive-ink [&>svg]:text-destructive-ink",
+        success: "border-success/30 bg-success-soft text-success-ink [&>svg]:text-success-ink",
+        warning: "border-warning/40 bg-warning-soft text-warning-ink [&>svg]:text-warning-ink",
+        info: "border-info/30 bg-info-soft text-info-ink [&>svg]:text-info-ink",
       },
     },
     defaultVariants: {

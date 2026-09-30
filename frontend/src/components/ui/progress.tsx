@@ -21,7 +21,8 @@ function Progress({
     >
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
-        className="bg-primary h-full w-full flex-1 transition-all"
+        // v0.8.130 — only the transform animates (it animated every property).
+        className="bg-primary h-full w-full flex-1 transition-transform"
         style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
       />
     </ProgressPrimitive.Root>
