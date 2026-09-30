@@ -2,6 +2,13 @@
 @import "tw-animate-css";
 @import "../components/deeper-notebook/source-gallery/source-gallery.css";
 
+/* v0.8.130 — Tailwind v4 ignores tailwind.config.ts unless the CSS opts in with @config,
+   so the typography plugin and class-based dark mode are declared here.
+   Without these, every `prose` class compiled to nothing and every `dark:`
+   utility followed the OS color scheme instead of the selected theme. */
+@plugin "@tailwindcss/typography";
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -428,4 +435,33 @@ html[data-theme="nord"] { --dn-theme-canvas: #2E3440; --dn-theme-panel: #3B4252;
     outline: 3px solid var(--ring) !important;
     outline-offset: 2px !important;
   }
+}
+
+/* v0.8.130 — Prose (typography plugin) follows the active theme instead of its own gray
+   palette. Every theme already flips these semantic tokens, so `prose-invert`
+   and the neutral palette are no longer needed to get readable text. */
+.prose {
+  --tw-prose-body: var(--foreground);
+  --tw-prose-headings: var(--foreground);
+  --tw-prose-lead: var(--muted-foreground);
+  --tw-prose-links: var(--primary);
+  --tw-prose-bold: var(--foreground);
+  --tw-prose-counters: var(--muted-foreground);
+  --tw-prose-bullets: var(--muted-foreground);
+  --tw-prose-hr: var(--border);
+  --tw-prose-quotes: var(--foreground);
+  --tw-prose-quote-borders: var(--border);
+  --tw-prose-captions: var(--muted-foreground);
+  --tw-prose-code: var(--foreground);
+  --tw-prose-pre-code: var(--foreground);
+  --tw-prose-pre-bg: var(--muted);
+  --tw-prose-th-borders: var(--border);
+  --tw-prose-td-borders: var(--border);
+}
+
+/* v0.8.130 — The plugin wraps inline code in literal backticks; the chat renderer already
+   styles inline code as a chip, so the extra marks would read as stray text. */
+.prose code::before,
+.prose code::after {
+  content: none;
 }
