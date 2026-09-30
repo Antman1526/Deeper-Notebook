@@ -200,6 +200,26 @@ test.describe('notebook list (T0-6)', () => {
   })
 })
 
+test.describe('notebook layout toggle', () => {
+  test('switches notebooks between grid and list and remembers the choice', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/notebooks')
+
+    const grid = page.getByRole('button', { name: 'Grid view' })
+    const list = page.getByRole('button', { name: 'List view' })
+    await expect(grid).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-slot="card"]').first()).toBeVisible()
+
+    await list.click()
+    await expect(list).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-slot="card"]')).toHaveCount(0)
+    await expect(page.getByRole('link', { name: notebook.name })).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
 test.describe('copy and wrapping (T0-11, T0-12)', () => {
   test('the Add Source dialog states the AI-processing sentence once', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })

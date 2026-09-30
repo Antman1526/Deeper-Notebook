@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react'
 
 import { AppShell } from '@/components/layout/AppShell'
 import { NotebookList } from './components/NotebookList'
+import { NotebookViewToggle } from './components/NotebookViewToggle'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import { Download, Plus, RefreshCw, Sparkles, Loader2 } from 'lucide-react'
@@ -84,6 +85,8 @@ export default function NotebooksPage() {
             >
               <RefreshCw className="h-4 w-4" />
             </Button>
+            {/* v0.8.130 — the list layout existed but had no control to reach it. */}
+            <NotebookViewToggle />
             <Input
               id="notebook-search"
               name="notebook-search"
