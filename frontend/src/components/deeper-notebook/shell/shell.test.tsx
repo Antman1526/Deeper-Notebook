@@ -115,9 +115,12 @@ describe('LuminousAppShell', () => {
   afterEach(() => {
     if (previousStudyWorkbenchFlag === undefined) delete process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH
     else process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = previousStudyWorkbenchFlag
+    delete (window as { DEEPER_NOTEBOOK_VERSION?: string }).DEEPER_NOTEBOOK_VERSION
   })
 
   it('preserves the navigation, utilities, and one editorial page slot', () => {
+    // The packaged desktop app supplies a version; a plain browser shows none.
+    Object.assign(window, { DEEPER_NOTEBOOK_VERSION: '1.2.3' })
     render(
       <LuminousAppShell>
         <div data-testid="page-content">Page content</div>
@@ -158,7 +161,7 @@ describe('LuminousAppShell', () => {
     expect(screen.getByRole('button', { name: 'Language icon' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Gmail icon' })).toBeInTheDocument()
     expect(screen.getByTestId('local-model-health')).toBeInTheDocument()
-    expect(screen.getByText('v—')).toBeInTheDocument()
+    expect(screen.getByText('v1.2.3')).toBeInTheDocument()
     expect(screen.getByTestId('command-shortcut')).toHaveTextContent(/Ctrl\+K|⌘K/)
 
     expect(screen.getByTestId('setup-banner')).toBeInTheDocument()
@@ -185,6 +188,7 @@ describe('LuminousAppShell', () => {
   })
 
   it('keeps theme, language, Gmail, auth, health, and version controls in the mobile dock alternative', () => {
+    Object.assign(window, { DEEPER_NOTEBOOK_VERSION: '1.2.3' })
     render(<LuminousAppShell><div data-testid="page-content">Page content</div></LuminousAppShell>)
 
     const utilities = document.querySelector('[data-mobile-mode="utility-row"]')
@@ -195,7 +199,7 @@ describe('LuminousAppShell', () => {
     expect(mobileUtilities.getByRole('button', { name: 'Gmail icon' })).toBeInTheDocument()
     expect(mobileUtilities.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
     expect(mobileUtilities.getByTestId('local-model-health')).toBeInTheDocument()
-    expect(mobileUtilities.getByText('v—')).toBeInTheDocument()
+    expect(mobileUtilities.getByText('v1.2.3')).toBeInTheDocument()
   })
 
   it('keeps exactly one canonical guided-tip anchor for search', () => {

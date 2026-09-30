@@ -391,6 +391,18 @@
   }
 }
 
+/* v0.8.130 — Below 1536px the Context lens toggle is fixed to the bottom-right corner.
+ * Reserve room at the end of the canvas so it never permanently covers the last
+ * content when the page is scrolled to the bottom. Focus mode relocates the
+ * toggle, so it needs no reserve there. The compact-density selector is spelled
+ * out because its own `padding` shorthand is more specific than the first rule. */
+@media (max-width: 1535px) {
+  :root:not([data-dn-focus-mode="true"]) .dn-workspace-shell .dn-workspace-canvas,
+  :root[data-dn-density='compact']:not([data-dn-focus-mode="true"]) .dn-workspace-shell .dn-workspace-canvas {
+    padding-block-end: calc(var(--dn-space-4, 1rem) + 3.5rem);
+  }
+}
+
 @media (min-width: 1024px) {
   html[data-dn-focus-mode="true"] .dn-workspace-shell {
     grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr);
@@ -929,15 +941,15 @@
 }
 
 /* V2 presentation raises reachable controls without changing legacy or disabled behavior. */
-[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']) {
+[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']):not(.dn-navigator-link) {
   display: inline-flex;
   max-inline-size: 100%;
   align-items: center;
   flex-wrap: wrap;
 }
 
-[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-create > button > span:not(.sr-only),
-[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-utilities > button > span:not(.sr-only),
+[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-create > button > .dn-dock-label,
+[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-utilities > button > .dn-dock-label,
 [data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-utility-row button > .sr-only {
   display: none;
 }

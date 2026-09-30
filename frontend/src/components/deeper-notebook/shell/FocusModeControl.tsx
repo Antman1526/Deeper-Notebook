@@ -4,9 +4,8 @@ import { Focus, Minimize2 } from 'lucide-react'
 import { useEffect } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { useIsMac } from '@/lib/hooks/use-is-mac'
 import { useDisplayPreferencesStore } from '@/lib/stores/display-preferences-store'
-
-const FOCUS_SHORTCUT = 'Ctrl+Shift+F / ⌘⇧F'
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -44,6 +43,9 @@ export function FocusModeControl() {
   }, [focusMode, setFocusMode, toggleFocusMode])
 
   const label = focusMode ? 'Exit Focus mode' : 'Enter Focus mode'
+  const isMac = useIsMac()
+  // v0.8.130 — One shortcut for the platform in use; none until the platform is known.
+  const shortcut = isMac === null ? null : isMac ? '⌘⇧F' : 'Ctrl+Shift+F'
 
   return (
     <Button
@@ -53,8 +55,8 @@ export function FocusModeControl() {
       aria-pressed={focusMode}
       data-testid="focus-mode-control"
       data-focus-active={focusMode ? 'true' : 'false'}
-      data-focus-shortcut={FOCUS_SHORTCUT}
-      title={`${label} (${FOCUS_SHORTCUT})`}
+      data-focus-shortcut={shortcut ?? undefined}
+      title={shortcut ? `${label} (${shortcut})` : label}
       className="dn-focus-mode-control motion-reduce:transition-none"
       onClick={toggleFocusMode}
     >
@@ -63,9 +65,9 @@ export function FocusModeControl() {
       ) : (
         <Focus aria-hidden="true" className="h-4 w-4" />
       )}
-      <span>{label}</span>
-      {!focusMode ? (
-        <kbd className="dn-focus-mode-shortcut" aria-hidden="true">{FOCUS_SHORTCUT}</kbd>
+      <span className="dn-focus-mode-label">{label}</span>
+      {!focusMode && shortcut ? (
+        <kbd className="dn-focus-mode-shortcut" aria-hidden="true">{shortcut}</kbd>
       ) : null}
     </Button>
   )

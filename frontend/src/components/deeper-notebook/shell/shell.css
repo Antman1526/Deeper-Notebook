@@ -124,8 +124,11 @@
   padding-inline: 0.5rem;
 }
 
-.dn-dock-create > button > span:not(.sr-only),
-.dn-dock-utilities > button > span:not(.sr-only) {
+/* v0.8.130 — Only the text label is hidden in the narrow dock. This used to match every
+ * span, which also caught the Create button's icon wrapper and left an empty
+ * square. */
+.dn-dock-create > button > .dn-dock-label,
+.dn-dock-utilities > button > .dn-dock-label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -432,7 +435,7 @@
   }
 
   .dn-dock-utility-row button > span:not(.sr-only),
-  .dn-dock-utilities > button > span:not(.sr-only) {
+  .dn-dock-utilities > button > .dn-dock-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -543,8 +546,10 @@
     min-width: auto;
   }
 
-  .dn-command-trigger > span:not(.dn-command-shortcut),
-  .dn-command-trigger > svg {
+  /* v0.8.130 — Icon-only palette trigger: the label and the keyboard hint both go. It keeps
+   * its aria-label. With both controls icon-only the action row is only ~96px, so
+   * it keeps `min-width: max-content` and the breadcrumb is what gives way. */
+  .dn-command-trigger > span {
     display: none;
   }
 
@@ -581,6 +586,23 @@
 
   .dn-focus-mode-control > span,
   .dn-focus-mode-control > .dn-focus-mode-shortcut {
+    display: none;
+  }
+}
+
+/* v0.8.130 — Below 80rem the labelled Focus control (text plus shortcut hint) crowds the
+ * command bar. Show the icon only; the control keeps its aria-label and title. */
+@media (max-width: 79.99rem) {
+  .dn-focus-mode-control > .dn-focus-mode-label,
+  .dn-focus-mode-control > .dn-focus-mode-shortcut {
+    display: none;
+  }
+}
+
+/* v0.8.130 — Touch devices have no keyboard shortcut to advertise. */
+@media (hover: none) and (pointer: coarse) {
+  .dn-command-shortcut,
+  .dn-focus-mode-shortcut {
     display: none;
   }
 }
@@ -643,7 +665,7 @@ html[data-dn-focus-mode="true"] {
   }
 
   html[data-dn-focus-mode="true"] .dn-instrument-dock:focus-within .dn-dock-utility-row > button > span:not(.sr-only),
-  html[data-dn-focus-mode="true"] .dn-instrument-dock:focus-within .dn-dock-utilities > button > span:not(.sr-only) {
+  html[data-dn-focus-mode="true"] .dn-instrument-dock:focus-within .dn-dock-utilities > button > .dn-dock-label {
     position: static;
     width: auto;
     height: auto;

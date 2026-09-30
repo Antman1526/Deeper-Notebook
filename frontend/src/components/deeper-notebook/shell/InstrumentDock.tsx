@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Book, FileText, LogOut, Mic, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,27 @@ export function InstrumentDock() {
   const { t } = useTranslation()
   const { logout } = useAuth()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
+
+  // v0.8.130 — Only the packaged desktop app exposes a version. In a plain browser there is
+  // nothing to show, so render nothing instead of a `v—` placeholder. The desktop
+  // shell injects the value from its `loaded` handler, after React has hydrated,
+  // so a single read at mount would miss it: look again for a few seconds.
+  const [version, setVersion] = useState('')
+  useEffect(() => {
+    const read = () => {
+      const found = readDesktopVersion(window)
+      if (found) setVersion(found)
+      return Boolean(found)
+    }
+    if (read()) return undefined
+
+    let attempts = 0
+    const timer = window.setInterval(() => {
+      attempts += 1
+      if (read() || attempts >= 40) window.clearInterval(timer)
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [])
 
   const handleCreateSelection = (target: CreateTarget) => {
     if (target === 'source') openSourceDialog()
@@ -52,7 +74,9 @@ export function InstrumentDock() {
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/10 dark:bg-white/10 group-hover:scale-110 group-hover:bg-black/15 transition-all duration-150">
                 <Plus className="h-4 w-4" aria-hidden="true" />
               </span>
-              <span>{t('common.create')}</span>
+              {/* v0.8.130 — Only this span is visually hidden in the narrow dock; the icon
+                  wrapper above must stay outside `.dn-dock-label`. */}
+              <span className="dn-dock-label">{t('common.create')}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="top" className="w-48">
@@ -97,16 +121,14 @@ export function InstrumentDock() {
           aria-label={t('common.signOut')}
         >
           <LogOut className="h-4 w-4" aria-hidden="true" />
-          <span>{t('common.signOut')}</span>
+          <span className="dn-dock-label">{t('common.signOut')}</span>
         </Button>
 
         <div className="dn-dock-health" data-guided-tip-anchor="/settings/local-models">
           <LocalModelHealthBadges />
         </div>
 
-        <div className="dn-dock-version" suppressHydrationWarning>
-          v{typeof window !== 'undefined' ? (readDesktopVersion(window) || '—') : '—'}
-        </div>
+        {version ? <div className="dn-dock-version">v{version}</div> : null}
       </div>
     </nav>
   )

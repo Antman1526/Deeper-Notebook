@@ -1,22 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Command, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
 import { requestCommandSurface } from '@/lib/commands/command-surface-store'
+import { useIsMac } from '@/lib/hooks/use-is-mac'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { FocusModeControl } from './FocusModeControl'
 
 export function CommandBar() {
   const pathname = usePathname()
   const { t } = useTranslation()
-  const [isMac, setIsMac] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    setIsMac(navigator.platform.toLowerCase().includes('mac'))
-  }, [])
+  const isMac = useIsMac()
 
   const routeLabel = pathname && pathname !== '/'
     ? pathname.split('/').filter(Boolean)[0]
@@ -47,10 +43,13 @@ export function CommandBar() {
         >
           <Search className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" aria-hidden="true" />
           <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">{t('common.quickActions')}</span>
-          <span className="dn-command-shortcut ml-auto inline-flex items-center gap-0.5 rounded-md border border-border/80 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" data-testid="command-shortcut">
-            <Command className="h-2.5 w-2.5" aria-hidden="true" />
-            {isMac !== null ? (isMac ? '⌘K' : 'Ctrl+K') : 'K'}
-          </span>
+          {/* v0.8.130 — one platform-correct hint. The extra command icon doubled the glyph ("⌘ ⌘K"),
+              and the chip showed a bare "K" before the platform was known. */}
+          {isMac !== null ? (
+            <span className="dn-command-shortcut ml-auto inline-flex items-center gap-0.5 rounded-md border border-border/80 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" data-testid="command-shortcut">
+              {isMac ? '⌘K' : 'Ctrl+K'}
+            </span>
+          ) : null}
         </Button>
         <FocusModeControl />
       </div>
