@@ -1,5 +1,5 @@
 import { createEvent, fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { IntelligenceHorizon } from './IntelligenceHorizon'
 
@@ -101,9 +101,31 @@ describe('IntelligenceHorizon', () => {
     renderHorizon()
 
     expect(screen.getByRole('status', { name: 'Runtime status Ready' })).toBeVisible()
-    expect(screen.getByText(/⌘K/)).toBeVisible()
-    expect(screen.getByText(/Ctrl\+K/)).toBeVisible()
+    expect(screen.getByText(/⌘K|Ctrl\+K/)).toBeVisible()
     expect(screen.getByText('~/.deeper-notebook/')).toBeVisible()
+  })
+
+  // v0.8.130 — the tip used to print both platforms' shortcuts ("⌘K / Ctrl+K").
+  describe('command hint', () => {
+    const originalPlatform = window.navigator.platform
+    const setPlatform = (platform: string) =>
+      Object.defineProperty(window.navigator, 'platform', { value: platform, configurable: true })
+    afterEach(() => setPlatform(originalPlatform))
+
+    it('shows only ⌘K on macOS, in the shared key chip', () => {
+      setPlatform('MacIntel')
+      renderHorizon()
+      const key = screen.getByText('⌘K')
+      expect(key).toHaveAttribute('data-slot', 'kbd')
+      expect(screen.queryByText(/Ctrl\+K/)).toBeNull()
+    })
+
+    it('shows only Ctrl+K elsewhere', () => {
+      setPlatform('Win32')
+      renderHorizon()
+      expect(screen.getByText('Ctrl+K')).toHaveAttribute('data-slot', 'kbd')
+      expect(screen.queryByText(/⌘K/)).toBeNull()
+    })
   })
 
   it('preserves runtime loading separately from notebooks', () => {

@@ -4,6 +4,7 @@ import { Focus, Minimize2 } from 'lucide-react'
 import { useEffect } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
 import { useIsMac } from '@/lib/hooks/use-is-mac'
 import { useDisplayPreferencesStore } from '@/lib/stores/display-preferences-store'
 
@@ -67,7 +68,8 @@ export function FocusModeControl() {
       )}
       <span className="dn-focus-mode-label">{label}</span>
       {!focusMode && shortcut ? (
-        <kbd className="dn-focus-mode-shortcut" aria-hidden="true">{shortcut}</kbd>
+        // v0.8.130 — the shared key chip.
+        <Kbd className="dn-focus-mode-shortcut" aria-hidden="true">{shortcut}</Kbd>
       ) : null}
     </Button>
   )

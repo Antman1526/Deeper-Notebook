@@ -157,6 +157,14 @@ describe('shell keyboard hints', () => {
     expect(control.getAttribute('title')).not.toContain('Ctrl')
   })
 
+  // v0.8.130 — both chips use the shared Kbd primitive (they were hand-rolled, one at 10px).
+  it('renders both shortcut chips with the shared key chip', () => {
+    setPlatform('MacIntel')
+    render(<CommandBar />) // it renders FocusModeControl itself
+    expect(screen.getByTestId('command-shortcut')).toHaveAttribute('data-slot', 'kbd')
+    expect(screen.getByTestId('focus-mode-control').querySelector('kbd')).toHaveAttribute('data-slot', 'kbd')
+  })
+
   it('shows only the Ctrl Focus shortcut elsewhere', () => {
     setPlatform('Win32')
     render(<FocusModeControl />)

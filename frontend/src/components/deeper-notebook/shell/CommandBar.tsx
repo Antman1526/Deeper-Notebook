@@ -4,6 +4,7 @@ import { Search } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
 import { requestCommandSurface } from '@/lib/commands/command-surface-store'
 import { useIsMac } from '@/lib/hooks/use-is-mac'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -21,7 +22,8 @@ export function CommandBar() {
   return (
     <header className="dn-command-bar" aria-label="Command bar">
       <div className="dn-command-breadcrumb flex items-center gap-2.5">
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 shadow-[0_0_8px_rgba(45,212,191,0.12)]">
+        {/* v0.8.130 — 12px type floor, and no hard-coded teal glow (the old brand hue in every theme). */}
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
           <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
           <span className="dn-command-kicker m-0 leading-none">{routeLabel}</span>
         </span>
@@ -37,7 +39,7 @@ export function CommandBar() {
         <Button
           type="button"
           variant="outline"
-          className="dn-command-trigger group h-9 px-3 gap-2.5 rounded-xl border-border/80 bg-background/80 hover:bg-background/95 hover:border-primary/40 active:scale-[0.98] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_3px_rgba(0,0,0,0.04)] transition-all duration-150"
+          className="dn-command-trigger group h-9 px-3 gap-2.5 border-border/80 bg-background/80 hover:bg-background/95 hover:border-primary/40 transition-colors duration-150"
           aria-label="Open command palette"
           onClick={(event) => requestCommandSurface('global', '', event.currentTarget)}
         >
@@ -45,10 +47,11 @@ export function CommandBar() {
           <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">{t('common.quickActions')}</span>
           {/* v0.8.130 — one platform-correct hint. The extra command icon doubled the glyph ("⌘ ⌘K"),
               and the chip showed a bare "K" before the platform was known. */}
+          {/* v0.8.130 — the shared key chip (this one was hand-rolled at 10px). */}
           {isMac !== null ? (
-            <span className="dn-command-shortcut ml-auto inline-flex items-center gap-0.5 rounded-md border border-border/80 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" data-testid="command-shortcut">
+            <Kbd className="dn-command-shortcut ml-auto" data-testid="command-shortcut">
               {isMac ? '⌘K' : 'Ctrl+K'}
-            </span>
+            </Kbd>
           ) : null}
         </Button>
         <FocusModeControl />

@@ -11,6 +11,7 @@ import {
 import * as React from 'react'
 
 import { RuntimeStatusPanel } from '../runtime/RuntimeStatusPanel'
+import { CommandPaletteKey } from '../shell/CommandPaletteKey'
 import { FolioPage } from '../folio/FolioPage'
 import { FolioSpread } from '../folio/FolioSpread'
 import { FolioState } from '../folio/FolioState'
@@ -328,9 +329,7 @@ export function IntelligenceHorizon({
       >
         <span>
           <FileText aria-hidden="true" className="mr-1 inline h-3 w-3 align-text-bottom" />
-          Tip: hit <kbd className="rounded border bg-background px-1 font-mono">⌘K</kbd>{' '}
-          / <kbd className="rounded border bg-background px-1 font-mono">Ctrl+K</kbd> from
-          anywhere to jump to a notebook, source, or action.
+          Tip: hit <CommandPaletteKey /> from anywhere to jump to a notebook, source, or action.
         </span>
         <span>
           <Database aria-hidden="true" className="mr-1 inline h-3 w-3 align-text-bottom" />

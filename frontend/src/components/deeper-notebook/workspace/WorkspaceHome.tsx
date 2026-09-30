@@ -2,6 +2,7 @@ import Link from 'next/link'
 import * as React from 'react'
 
 import { RuntimeStatusPanel } from '@/components/deeper-notebook/runtime/RuntimeStatusPanel'
+import { CommandPaletteKey } from '@/components/deeper-notebook/shell/CommandPaletteKey'
 
 import type { IntelligenceHorizonProps } from '../horizon/IntelligenceHorizon'
 import { StatePanel } from './StatePanel'
@@ -228,7 +229,7 @@ export function WorkspaceHome({
 
       <aside aria-label="Notebook shortcuts and data path" className="dn-workspace-note">
         <span>
-          Tip: hit <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> from anywhere to jump to a notebook, source, or action.
+          Tip: hit <CommandPaletteKey /> from anywhere to jump to a notebook, source, or action.
         </span>
         <span>All data lives in <code>{dataPath}</code>.</span>
       </aside>

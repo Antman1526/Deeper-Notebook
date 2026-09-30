@@ -33,16 +33,8 @@
   gap: var(--dn-space-2, 0.5rem);
 }
 
-.dn-focus-mode-shortcut {
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  background: var(--muted);
-  padding: 0.15rem 0.35rem;
-  color: var(--muted-foreground);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.65rem;
-  white-space: nowrap;
-}
+/* v0.8.130 — the Focus shortcut chip is the shared Kbd primitive now; its own
+ * styling here (10.4px text, different radius and padding) would override it. */
 
 .dn-luminous-shell {
   position: relative;

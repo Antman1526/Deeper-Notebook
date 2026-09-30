@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { readDesktopVersion } from '@/lib/desktop-version'
 import { isStudyWorkbenchEnabled } from '@/lib/features'
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
@@ -393,11 +394,8 @@ export function AppSidebar() {
                 {/* v0.7.28 — only render after platform detection
                     completes (isMac !== null). Avoids a flash of the
                     wrong key on SSR/hydration. */}
-                {isMac !== null && (
-                  <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                    {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl+</span>}K
-                  </kbd>
-                )}
+                {/* v0.8.130 — the shared key chip (this one was 10px). */}
+                {isMac !== null && <Kbd>{isMac ? '⌘K' : 'Ctrl+K'}</Kbd>}
               </div>
                <p className="mt-1 text-[10px] text-sidebar-foreground/40">
                 {t('common.quickActionsDesc')}
