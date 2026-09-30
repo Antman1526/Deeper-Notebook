@@ -25,6 +25,48 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" feel, each with a regression test, plus the five items first deferred from that pass. The full mocked Playwright suite gives the same results as before (328 pass / 28 fail / 48 skipped, the same 28 failing on untouched `main`).
+
+🐛 **Typography plugin now loads.** Tailwind v4 ignores `tailwind.config.ts`, so every `prose` class (AI answers, the source reader, search, insights) compiled to nothing. `globals.css` now declares `@plugin "@tailwindcss/typography"`, maps the prose colors to theme tokens, and switches off the plugin's inline-code backticks.
+
+🐛 **`dark:` utilities follow the selected theme.** With no `@custom-variant`, all 109 compiled `dark:` rules sat inside `prefers-color-scheme: dark`, so 171 `dark:` classes followed the OS instead of the theme. They are now bound to the `.dark` class the theme script already toggles.
+
+🐛 **Create button shows its icon.** The narrow-dock CSS hid every `span` in the button, including the icon wrapper, leaving an empty square. Only the new `.dn-dock-label` span is hidden.
+
+🐛 **Active navigation link fills its row.** A V2 `a[href]{display:inline-flex}` rule shrank the highlight to the text width; `.dn-navigator-link` is excluded.
+
+🐛 **Phone command bar fits.** The Focus control is icon-only below 80rem and the palette trigger icon-only up to 1023px, so the row no longer runs off a 320px–390px screen.
+
+🎨 **One platform-correct shortcut hint.** The palette chip showed a doubled glyph ("⌘ ⌘K") and the Focus control listed both platforms; `useIsMac` now drives a single hint, hidden on touch devices.
+
+🐛 **Desktop version chip.** The `v—` placeholder no longer renders in a plain browser, and the packaged app's version (injected by pywebview after the page loads) is picked up by a short poll rather than a single read at mount.
+
+✨ **Citations render inline as numbered chips.** The answer was split on every marker and each piece rendered as its own block, putting every pill on its own line with an ID-fragment label. `linkifyCitations` turns markers into numbered links so one markdown pass keeps each chip in its sentence; the markdown component map is module-level so chips no longer remount on every streamed token, and legacy reference links number after the chips so no two sources share a number.
+
+🐛 **Notebook cards are keyboard-accessible.** The default tile was a click-only `div`. A link laid over the card (a direct child of the card root) makes it a real link while the menu and podcast action stay clickable and the title still truncates.
+
+🐛 **Notebook header spacing and wrapping.** "ago •Updated" gets its space back, and `InlineEdit` wraps with `overflow-wrap: anywhere` instead of `break-all` (which split words mid-word) or `break-words` (which overflowed a 320px row).
+
+🐛 **State panels no longer print their raw kind.** `StatePanel` and `FolioState` rendered "LOADING", "EMPTY" and "ERROR" as a kicker.
+
+🐛 **Transformation delete dialog** was titled "Delete Source"; it now uses the generic title.
+
+🐛 **Setup wizard command hint** wrapped mid-word; it now wraps at spaces.
+
+🐛 **Add Source dialog repeats one sentence four times.** A single translation key fed nine slots; it now appears once, in the header, and wizard step descriptions are optional.
+
+🐛 **Studio stacks on phones.** The Evidence Studio variant out-ranked the narrow-width single-column override, crushing the source desk to about 86px and overlapping the output-mode panel.
+
+🎨 **Shadows follow the theme.** Tailwind inlines shadow values, so the dark-mode shadow tokens never reached `shadow-*`. Each theme key now maps to a `var(--elevation-*)` reference and the `.dark` values apply across all variants. The plain tokens are renamed `--elevation-*`.
+
+🎨 **Podcast copy without internal phase labels.** "Phase 2 provenance", "the current Phase-2 gate", "arrives in Phase 3" and "Evidence filters — Phase 3" now read as plain language; the locked-stage teasers stay.
+
+🎨 **Placeholder Context lens no longer mounted in the V2 shell.** It was static copy on every route that reserved an empty rail at 1536px+ and floated a button over content below that. The V2 grid is two columns (including Focus mode); the component and shared rules stay for the rollback shells.
+
+✨ **Notebook grid/list toggle.** The list layout and its stored preference already existed but nothing could change them. A labelled two-button toggle now sits in the page header, with new keys in all 14 locales.
+
+🛠 **Tests.** A 12-test production-build regression spec (`e2e/phase0-defects.spec.ts`) plus a built-app shadow and layout-toggle check, real-browser layout tests for the shell and Studio, and the stale lens parity e2e updated.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
