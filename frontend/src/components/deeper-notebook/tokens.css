@@ -20,8 +20,8 @@
   --dn-radius-control: 0.75rem;
   --dn-radius-card: 1rem;
   --dn-radius-hero: 1.5rem;
-  --dn-shadow-low: var(--shadow-sm);
-  --dn-shadow-medium: var(--shadow-md);
+  --dn-shadow-low: var(--elevation-sm);
+  --dn-shadow-medium: var(--elevation-md);
   --dn-evidence: var(--accent);
   --dn-warning: var(--warning);
   --dn-editable: var(--primary);
@@ -146,7 +146,7 @@
   backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.4);
   border: 1px solid var(--dn-glass-border);
   box-shadow:
-    var(--shadow-lg),
+    var(--elevation-lg),
     inset 0 1px 0 0 color-mix(in oklab, white 16%, transparent);
 }
 

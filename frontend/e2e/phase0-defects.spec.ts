@@ -76,6 +76,28 @@ test.describe('build-level Tailwind config (T0-1, T0-2)', () => {
   })
 })
 
+test.describe('elevation tokens (T0-8)', () => {
+  test('dark themes get their own shadow values, not Tailwind\'s near-invisible default', async ({ page }) => {
+    await page.goto('/notebooks')
+
+    const shadows = await page.evaluate(() => {
+      const probe = document.createElement('div')
+      probe.className = 'shadow-md'
+      document.body.appendChild(probe)
+      const light = getComputedStyle(probe).boxShadow
+      document.documentElement.classList.add('dark')
+      const dark = getComputedStyle(probe).boxShadow
+      document.documentElement.classList.remove('dark')
+      return { light, dark }
+    })
+
+    // Light keeps the project's slate-tinted shadow; dark gets a real, stronger one.
+    expect(shadows.light).toContain('rgba(15, 23, 42')
+    expect(shadows.dark).toContain('rgba(0, 0, 0, 0.5)')
+    expect(shadows.dark).not.toBe(shadows.light)
+  })
+})
+
 test.describe('shell (T0-3, T0-4, T0-9)', () => {
   test('the Create button shows its icon (T0-3)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
