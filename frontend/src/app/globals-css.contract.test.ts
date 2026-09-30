@@ -44,3 +44,142 @@ describe('globals.css Tailwind v4 contract', () => {
     expect(css).toMatch(/\.prose code::before,\s*\.prose code::after\s*\{\s*content:\s*none;/)
   })
 })
+
+// Status colours are fixed hues. Every catalog theme goes through the shared
+// `html[data-theme]` block, which used to set success to the theme's primary
+// and warning/info to its accent, so no theme ever showed a real green, amber
+// or blue. The measured contrast of each role, in every theme, is checked in
+// e2e/theme-contract.spec.ts; this file pins the source contract.
+const block = (source: string, selector: string) => {
+  const start = source.indexOf(`${selector} {`)
+  expect(start, `${selector} block exists`).toBeGreaterThanOrEqual(0)
+  return source.slice(start, source.indexOf('}', start))
+}
+const STATUSES = ['success', 'warning', 'info', 'destructive'] as const
+
+describe('status colour contract', () => {
+  it('no catalog theme rewires the status colours', () => {
+    expect(block(css, 'html[data-theme]')).not.toMatch(/--(success|warning|info|destructive)(-[a-z]+)?:/)
+  })
+
+  it.each(STATUSES)('defines foreground, soft and ink roles for %s in light and dark', (status) => {
+    for (const selector of [':root', '.dark']) {
+      const scope = block(css, selector)
+      expect(scope).toMatch(new RegExp(`--${status}:`))
+      expect(scope).toMatch(new RegExp(`--${status}-foreground:`))
+      expect(scope).toMatch(new RegExp(`--${status}-soft:`))
+      expect(scope).toMatch(new RegExp(`--${status}-ink:`))
+    }
+  })
+
+  it.each(STATUSES)('exposes the soft, ink and foreground roles of %s as Tailwind colours', (status) => {
+    const theme = block(css, '@theme inline')
+    expect(theme).toMatch(new RegExp(`--color-${status}-soft:\\s*var\\(--${status}-soft\\)`))
+    expect(theme).toMatch(new RegExp(`--color-${status}-ink:\\s*var\\(--${status}-ink\\)`))
+    expect(theme).toMatch(new RegExp(`--color-${status}-foreground:\\s*var\\(--${status}-foreground\\)`))
+  })
+
+  it('keeps the high-contrast themes on their own, stronger status set', () => {
+    for (const theme of ['high-contrast-dark', 'high-contrast-light']) {
+      const scope = block(css, `html[data-theme="${theme}"]`)
+      for (const status of ['success', 'warning', 'info']) {
+        expect(scope).toMatch(new RegExp(`--${status}:`))
+        expect(scope).toMatch(new RegExp(`--${status}-ink:`))
+      }
+    }
+  })
+})
+
+// `--accent` is shadcn's hover/selected fill (49 hover and focus states plus the
+// selected rows use `bg-accent`), but this project had pointed it at a second
+// brand hue, so hovering a menu row painted it solid violet or cyan. It is now a
+// neutral state layer; the few surfaces that want the brand's second hue use
+// `--brand-accent`.
+describe('accent is a neutral state layer', () => {
+  it('defines --accent once, as a tint of the foreground', () => {
+    expect(block(css, ':root')).toMatch(/--accent:\s*color-mix\(in oklab, var\(--foreground\) 8%, transparent\);/)
+    expect(block(css, ':root')).toMatch(/--accent-foreground:\s*var\(--foreground\);/)
+    expect(block(css, '.dark')).not.toMatch(/--accent(-foreground)?:/)
+    expect(block(css, 'html[data-theme]')).not.toMatch(/--accent(-foreground)?:/)
+  })
+
+  it('keeps the theme second hue available as --brand-accent', () => {
+    expect(block(css, 'html[data-theme]')).toMatch(/--brand-accent:\s*var\(--dn-theme-accent\);/)
+    expect(block(css, ':root')).toMatch(/--brand-accent:/)
+  })
+
+  it('points every brand use in tokens.css at --brand-accent', () => {
+    const tokens = fs.readFileSync(path.resolve(__dirname, '../components/deeper-notebook/tokens.css'), 'utf8')
+    expect(tokens).not.toMatch(/var\(--accent\b/)
+    expect(tokens).toMatch(/--dn-graph-selected:\s*var\(--brand-accent\);/)
+  })
+})
+
+// The Phase 1 token spec (UI audit 4.2). The radius scale is remapped rather
+// than given new names so that every existing `rounded-*` lands on the spec:
+// seven radii in use collapse onto five steps plus `rounded-full`.
+describe('design token scale', () => {
+  it.each([
+    ['sm', '0.5rem'], // chips, tooltips: 8px
+    ['md', '0.75rem'], // inputs, menu items: 12px
+    ['lg', '1rem'], // menus, popovers: 16px
+    ['xl', '1.5rem'], // cards: 24px
+    ['2xl', '1.75rem'], // dialogs, hero surfaces: 28px
+  ])('rounded-%s is %s', (step, value) => {
+    expect(block(css, '@theme inline')).toMatch(new RegExp(`--radius-${step}:\\s*${value.replace('.', '\\.')};`))
+  })
+
+  it('uses one standard easing for every transition, with no springs', () => {
+    const theme = block(css, '@theme inline')
+    expect(theme).toMatch(/--default-transition-timing-function:\s*cubic-bezier\(0\.2, 0, 0, 1\);/)
+    const root = block(css, ':root')
+    for (const step of ['fast', 'base', 'slow']) {
+      expect(root).toMatch(new RegExp(`--motion-${step}:\\s*\\d+ms cubic-bezier\\(0\\.2, 0, 0, 1\\);`))
+    }
+    expect(css).not.toMatch(/--motion-spring/)
+  })
+
+  it('defines --font-serif (three stylesheets use it and fell back to Palatino/Georgia)', () => {
+    expect(block(css, '@theme inline')).toMatch(/--font-serif:\s*var\(--font-dn-editorial\)/)
+  })
+})
+
+// v0.7.121 made keyboard focus a 3px ring for low-vision users, with !important
+// so the 57 `outline-none` utilities could not remove it. An unlayered rule wins
+// over every layered utility just the same, without !important. The rendered
+// result is checked in e2e/theme-contract.spec.ts.
+describe('focus ring', () => {
+  it('keeps the 3px keyboard ring without !important', () => {
+    const rule = /:focus-visible\s*\{\s*outline:\s*3px solid var\(--ring\);\s*outline-offset:\s*2px;\s*\}/
+    expect(css).toMatch(rule)
+    const at = css.search(rule)
+    // Not inside `@layer base`, where a utility such as `outline-none` would beat it.
+    const layerStart = css.lastIndexOf('@layer base {', at)
+    const layerEnd = layerStart === -1 ? -1 : css.indexOf('\n}\n', layerStart)
+    expect(layerStart === -1 || layerEnd < at, 'focus rule is outside @layer base').toBe(true)
+    expect(css).not.toMatch(/outline(-offset)?:[^;]*!important/)
+  })
+
+  it('draws the ring inside menu rows and options, where an outer ring is clipped', () => {
+    expect(css).toMatch(/\[role='option'\]:focus-visible[\s\S]*?outline-offset:\s*-3px/)
+    expect(css).toMatch(/\[role='menuitem'\]:focus-visible/)
+  })
+})
+
+describe('tokens.css status aliases', () => {
+  const tokens = fs.readFileSync(path.resolve(__dirname, '../components/deeper-notebook/tokens.css'), 'utf8')
+
+  // One source of truth: the older names stay (artifact viewers use them) but
+  // only as aliases, so they can no longer drift from the canonical values.
+  it.each(['success', 'warning', 'info'])('aliases --dn-status-%s to the canonical token', (status) => {
+    expect(tokens).toMatch(new RegExp(`--dn-status-${status}:\\s*var\\(--${status}\\);`))
+    expect(tokens).toMatch(new RegExp(`--dn-status-${status}-foreground:\\s*var\\(--${status}-foreground\\);`))
+    expect(tokens).not.toMatch(new RegExp(`--dn-status-${status}:\\s*oklch`))
+  })
+
+  it('stops treating info as the brand colour', () => {
+    expect(tokens).toMatch(/--dn-success:\s*var\(--success\);/)
+    expect(tokens).toMatch(/--dn-info:\s*var\(--info\);/)
+    expect(tokens).not.toMatch(/--dn-info:\s*var\(--primary\)/)
+  })
+})

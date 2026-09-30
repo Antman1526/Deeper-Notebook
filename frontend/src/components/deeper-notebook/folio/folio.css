@@ -167,9 +167,11 @@
   color: var(--foreground);
 }
 
+/* v0.8.130 — 3px like the global ring (it overrode this rule with !important until
+ * Phase 1); inset because the tab strip clips. */
 [data-dn-folio-tab]:focus-visible {
-  outline: 2px solid var(--dn-focus);
-  outline-offset: -2px;
+  outline: 3px solid var(--dn-focus);
+  outline-offset: -3px;
 }
 
 [data-dn-folio-tab-badge] {

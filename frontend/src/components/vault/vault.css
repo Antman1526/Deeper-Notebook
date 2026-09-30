@@ -27,7 +27,8 @@
 .dn-vault-live-preview .dn-live-preview-code { border-radius: 0.25rem; background: color-mix(in oklab, var(--muted) 85%, transparent); color: var(--foreground); font-family: var(--font-mono), monospace; }
 .dn-vault-live-preview .dn-live-preview-link, .dn-vault-live-preview .dn-live-preview-link-mark { color: var(--primary); font: inherit; font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 55%, transparent); text-underline-offset: 0.18em; }
 .dn-vault-live-preview .dn-live-preview-link { padding: 0; border: 0; background: transparent; cursor: pointer; }
-.dn-vault-live-preview .dn-live-preview-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 0.125rem; }
+/* v0.8.130 — 3px like the global ring, which overrode this rule with !important until Phase 1. */
+.dn-vault-live-preview .dn-live-preview-link:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; border-radius: 0.125rem; }
 .dn-vault-live-preview .dn-live-preview-task { width: 1rem; height: 1rem; margin: 0 0.5rem 0 0; accent-color: var(--primary); vertical-align: -0.125em; }
 .dn-vault-live-preview .dn-live-preview-quote { border-left: 2px solid var(--primary); color: var(--muted-foreground); padding-left: 0.75rem; }
 .dn-vault-live-preview .dn-live-preview-list-marker { color: var(--primary); font-weight: 700; }

@@ -128,7 +128,9 @@ describe('Deeper Notebook brand', () => {
 
     expect(tokens).toContain('--dn-accent-soft: color-mix(in oklab, var(--primary)')
     expect(tokens).toContain('--dn-aurora-1: var(--primary, #2DD4BF);')
-    expect(tokens).toContain('--dn-aurora-2: var(--accent, #38BDF8);')
+    // v0.8.130 — the theme's second hue is --brand-accent; --accent became the
+    // neutral hover/selected fill, which must not tint the aurora.
+    expect(tokens).toContain('--dn-aurora-2: var(--brand-accent, #38BDF8);')
     expect(tokens).toContain('animation: dn-aurora-drift 26s ease-in-out infinite alternate;')
   })
 })

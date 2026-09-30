@@ -160,11 +160,13 @@ describe('InfographicViewer', () => {
     expect(tokenSource).toMatch(
       /@media \(forced-colors: active\)[\s\S]*--dn-artifact-canvas:\s*Canvas;/,
     )
+    // v0.8.130 — the high-contrast themes set the canonical status roles; the
+    // --dn-status-* names above are aliases of them in tokens.css.
     expect(globalStyleSource).toMatch(
-      /html\[data-theme="high-contrast-light"\][\s\S]*--dn-status-success:/,
+      /html\[data-theme="high-contrast-light"\] \{[^}]*--success:/,
     )
     expect(globalStyleSource).toMatch(
-      /html\[data-theme="high-contrast-dark"\][\s\S]*--dn-status-success:/,
+      /html\[data-theme="high-contrast-dark"\] \{[^}]*--success:/,
     )
   })
 })
